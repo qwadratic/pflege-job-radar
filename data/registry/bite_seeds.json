@@ -1,0 +1,227 @@
+[
+ {
+  "name": "Donauisar Klinikum Deggendorf",
+  "city": "Deggendorf",
+  "kr_id": 1485,
+  "career": "https://www.dik-karriere.de/stellenangebote",
+  "customer": "donauisar-klinikum-deggendorf-dingolfing-landau",
+  "listing": "main-listing",
+  "kez": "27106"
+ },
+ {
+  "name": "Berufsgenossenschaftliche Unfallklinik Murnau",
+  "city": "Murnau am Staffelsee",
+  "kr_id": 1381,
+  "career": "https://www.bg-kliniken.de/unfallklinik-murnau/karriere/offene-stellen/",
+  "customer": "klinikverbund-gesetzlichen-unfallversicherung-kuv",
+  "listing": "main-listing",
+  "kez": null
+ },
+ {
+  "name": "Kreisklinik Roth",
+  "city": "Roth, Mittelfranken",
+  "kr_id": 1599,
+  "career": "https://kreisklinik-roth.de/klinik/default-95eb3f2d0e/stellenangebote",
+  "customer": "kreisklinik-roth",
+  "listing": "main-listing",
+  "kez": "57601"
+ },
+ {
+  "name": "Klinik Vincentinum ",
+  "city": "Augsburg",
+  "kr_id": 1650,
+  "career": "https://www.klinik-vincentinum.de/karriere/stellenangebote",
+  "customer": "artemed-11",
+  "listing": "niiid",
+  "kez": "76108"
+ },
+ {
+  "name": "Klinikum Landsberg am Lech",
+  "city": "Landsberg am Lech",
+  "kr_id": 1383,
+  "career": "https://www.klinikum-landsberg.de/offene-stellen/",
+  "customer": "klinikum-landsberg-lech",
+  "listing": "main-listing",
+  "kez": "18101"
+ },
+ {
+  "name": "Donauklinik Neu-Ulm",
+  "city": "Neu-Ulm",
+  "kr_id": 1668,
+  "career": "https://karriere.suavia-donauklinik.de/",
+  "customer": "kreisspitalstiftung-weissenhorn",
+  "listing": "main-listing",
+  "kez": "77502"
+ },
+ {
+  "name": "Arberlandklinik Zwiesel",
+  "city": "Zwiesel",
+  "kr_id": 1494,
+  "career": "https://jobs.arberlandkliniken.de/",
+  "customer": "arberland-kliniken",
+  "listing": "main-listing",
+  "kez": "27601"
+ },
+ {
+  "name": "Arberlandklinik Viechtach",
+  "city": "Viechtach",
+  "kr_id": 1493,
+  "career": "https://jobs.arberlandkliniken.de/",
+  "customer": "arberland-kliniken",
+  "listing": "main-listing",
+  "kez": "27602"
+ },
+ {
+  "name": "Kreisklinik Wolfratshausen",
+  "city": "Wolfratshausen",
+  "kr_id": 1364,
+  "career": "https://www.kreisklinik-wolfratshausen.de/karriere/bfd.php",
+  "customer": "kreisklinik-wolfratshausen",
+  "listing": "main-listing",
+  "kez": "17301"
+ },
+ {
+  "name": "Stiftungsklinik Weißenhorn",
+  "city": "Weißenhorn",
+  "kr_id": 1669,
+  "career": "https://karriere.suavia-stiftungsklinik.de/",
+  "customer": "kreisspitalstiftung-weissenhorn",
+  "listing": "main-listing",
+  "kez": "77503"
+ },
+ {
+  "name": "Benedictus Krankenhaus Tutzing",
+  "city": "Tutzing",
+  "kr_id": 1413,
+  "career": "https://www.krankenhaus-tutzing.de/karriere",
+  "customer": "artemed-5",
+  "listing": "niiid",
+  "kez": "18802"
+ },
+ {
+  "name": "Klinik Mallersdorf",
+  "city": "Mallersdorf-Pfaffenberg",
+  "kr_id": 1499,
+  "career": "https://www.kreiskliniken-bogen-mallersdorf.de/klinik-bogen/karriere/ausbildung.html",
+  "customer": "kreiskliniken-bogen-mallersdorf",
+  "listing": "main-listing",
+  "kez": "27805"
+ },
+ {
+  "name": "Augustinum Klinik München",
+  "city": "München",
+  "kr_id": 1347,
+  "career": "https://augustinum.de/jobs-karriere/",
+  "customer": "augustinum",
+  "listing": "main-listing-v5",
+  "kez": "16217"
+ },
+ {
+  "name": "Max-Planck-Institut für Psychiatrie",
+  "city": "München",
+  "kr_id": 1351,
+  "career": "https://www.psych.mpg.de/2901316/stellenangebote",
+  "customer": "max-planck-institut-fuer-psychiatrie",
+  "listing": "main-listing",
+  "kez": "16265"
+ },
+ {
+  "name": "Klinik Bogen",
+  "city": "Bogen, Niederbayern",
+  "kr_id": 1498,
+  "career": "https://www.kreiskliniken-bogen-mallersdorf.de/klinik-bogen/karriere/ausbildung.html",
+  "customer": "kreiskliniken-bogen-mallersdorf",
+  "listing": "main-listing",
+  "kez": "27801"
+ },
+ {
+  "name": "Benedictus Krankenhaus Feldafing",
+  "city": "Feldafing",
+  "kr_id": 1407,
+  "career": "https://www.klinik-feldafing.de/karriere/stellenangebote",
+  "customer": "artemed-8",
+  "listing": "niiid",
+  "kez": "18813"
+ },
+ {
+  "name": "Krankenhaus für Naturheilweisen",
+  "city": "München",
+  "kr_id": 1348,
+  "career": "https://www.krankenhaus-naturheilweisen.de/karriere/",
+  "customer": "krankenhaus-naturheilweisen",
+  "listing": "main-listing",
+  "kez": "16222"
+ },
+ {
+  "name": "Artemed Klinikum München Süd",
+  "city": "München",
+  "kr_id": 1354,
+  "career": "https://www.artemed-muenchen-sued.de/karriere/stellenangebote",
+  "customer": "artemed-3",
+  "listing": "niiid",
+  "kez": "16228"
+ },
+ {
+  "name": "Donauisar Klinikum Dingolfing",
+  "city": "Dingolfing",
+  "kr_id": 1488,
+  "career": "https://www.dik-karriere.de/stellenangebote",
+  "customer": "donauisar-klinikum-deggendorf-dingolfing-landau",
+  "listing": "main-listing",
+  "kez": "27901"
+ },
+ {
+  "name": "Donauisar Klinikum Landau",
+  "city": "Landau an der Isar",
+  "kr_id": 1484,
+  "career": "https://www.dik-karriere.de/stellenangebote",
+  "customer": "donauisar-klinikum-deggendorf-dingolfing-landau",
+  "listing": "main-listing",
+  "kez": "27904"
+ },
+ {
+  "name": "Rangauklinik Ansbach",
+  "city": "Ansbach",
+  "kr_id": 1606,
+  "career": "https://www.rangauklinik.de/karriere",
+  "customer": "diakoniewerk-schwaebisch-hall",
+  "listing": "rangauklinik-listing",
+  "kez": "56103"
+ },
+ {
+  "name": "Behandlungszentrum Aschau (Orthopädische Kinderklinik)",
+  "city": "Aschau im Chiemgau",
+  "kr_id": 1399,
+  "career": "https://www.kiz-chiemgau.de/stellenangebote",
+  "customer": "behandlungszentrum-aschau",
+  "listing": "main-listing-v2",
+  "kez": "18710"
+ },
+ {
+  "name": "Psychosomatische Klinik Kloster Dießen",
+  "city": "Dießen am Ammersee",
+  "kr_id": 1322,
+  "career": "https://www.psychosomatik-diessen.de/karriere/stellenangebote",
+  "customer": "artemed-15",
+  "listing": "niiid",
+  "kez": "18105"
+ },
+ {
+  "name": "Artemed Fachklinik München",
+  "city": "München",
+  "kr_id": 1438,
+  "career": "https://www.artemedmuenchen.de/karriere/stellenangebote",
+  "customer": "artemed-2",
+  "listing": "niiid",
+  "kez": "16235"
+ },
+ {
+  "name": "CJD Asthmazentrum Berchtesgaden",
+  "city": "Berchtesgaden",
+  "kr_id": 1453,
+  "career": "https://berchtesgaden.cjd.de/de/stellenangebote-cjd-berchtesgaden",
+  "customer": "cjd",
+  "listing": "main-listing",
+  "kez": "17207"
+ }
+]

@@ -1,0 +1,215 @@
+[
+ {
+  "name": "Krankenhaus Barmherzige Brüder Regensburg",
+  "kez": "36201",
+  "career": "https://www.barmherzige-regensburg.de/karriere/offene-stellen-bewerbung.html",
+  "bavaria_only_operator": true,
+  "town": "Regensburg"
+ },
+ {
+  "name": "München Klinik",
+  "kez": "16205",
+  "career": "https://www.muenchen-klinik.de/stellenmarkt/",
+  "extra_seeds": [
+   "https://www.muenchen-klinik.de/jobs/"
+  ],
+  "bavaria_only_operator": true,
+  "town": null,
+  "sitemaps": [
+   "https://www.muenchen-klinik.de/sitemap.xml"
+  ]
+ },
+ {
+  "name": "Klinikum Nürnberg",
+  "kez": "56410",
+  "career": "https://karriere.klinikum-nuernberg.de/freie-stellen/aktuelle-stellenangebote",
+  "bavaria_only_operator": true,
+  "town": "Nürnberg"
+ },
+ {
+  "name": "Universitätsklinikum Regensburg",
+  "kez": "36290",
+  "career": "https://www.ukrjobs.de/stellen",
+  "extra_seeds": [
+   "https://www.ukrjobs.de/stellen?bereich=pflege"
+  ],
+  "hosts": [
+   "www.ukrjobs.de",
+   "ukrjobs.de",
+   "ukr.concludis.de"
+  ],
+  "bavaria_only_operator": true,
+  "town": "Regensburg"
+ },
+ {
+  "name": "Klinikum Fürth",
+  "kez": "56301",
+  "career": "https://jobs.klinikum-fuerth.de/de/jobs",
+  "bavaria_only_operator": true,
+  "town": "Fürth"
+ },
+ {
+  "name": "RHÖN-KLINIKUM Campus Bad Neustadt",
+  "kez": "67308",
+  "career": "https://bewerberportal.rhoen-klinikum-ag.com/stellenangebote.html",
+  "bavaria_only_operator": false,
+  "town": null
+ },
+ {
+  "name": "kbo-Isar-Amper-Klinikum",
+  "kez": "18402",
+  "career": "https://recruitingapp-5656.de.umantis.com/Jobs/1?CompanyID=22&Reset=G",
+  "extra_seeds": [
+   "https://recruitingapp-5656.de.umantis.com/Jobs/1?CompanyID=All&Reset=G"
+  ],
+  "bavaria_only_operator": true,
+  "town": null,
+  "hosts": [
+   "recruitingapp-5656.de.umantis.com"
+  ]
+ },
+ {
+  "name": "Klinikum Aschaffenburg-Alzenau",
+  "kez": "66101",
+  "career": "https://klinikum-ab-alz.de/karriere/",
+  "bavaria_only_operator": true,
+  "town": null,
+  "sitemaps": [
+   "https://klinikum-ab-alz.de/sitemap.xml"
+  ],
+  "extra_seeds": [
+   "https://klinikum-ab-alz.de/karriere/stellenangebote/"
+  ]
+ },
+ {
+  "name": "LMU Klinikum",
+  "kez": "16290",
+  "career": "https://www.lmu-klinikum.de/jobs",
+  "hosts": [
+   "www.lmu-klinikum.de",
+   "lmu-klinikum.de",
+   "jobs.lmu-klinikum.de"
+  ],
+  "bavaria_only_operator": true,
+  "extra_seeds": [
+   "https://www.lmu-klinikum.de/medizin-pflege/bereiche/pflege/stellenanzeigen"
+  ],
+  "town": "München",
+  "sitemaps": [
+   "https://www.lmu-klinikum.de/sitemap.xml"
+  ]
+ },
+ {
+  "name": "Klinikum Würzburg Mitte",
+  "kez": "66301",
+  "career": "https://www.kwm-klinikum.de/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/",
+  "bavaria_only_operator": true,
+  "town": "Würzburg",
+  "extra_seeds": [
+   "https://www.kwm-klinikum.de/beruf-chancen/stellenanzeigen/weitere-stellenangebote.html"
+  ]
+ },
+ {
+  "name": "Klinikum Bayreuth",
+  "kez": "46201",
+  "career": "https://karriere.klinikum-bayreuth.de/",
+  "bavaria_only_operator": true,
+  "town": "Bayreuth",
+  "sitemaps": [
+   "https://karriere.klinikum-bayreuth.de/sitemap.xml"
+  ]
+ },
+ {
+  "name": "Leopoldina-Krankenhaus Schweinfurt",
+  "kez": "66204",
+  "career": "https://karriere.leopoldina.de/stellenangebote/",
+  "hosts": [
+   "karriere.leopoldina.de",
+   "leopoldina.softgarden.io"
+  ],
+  "bavaria_only_operator": true,
+  "town": "Schweinfurt",
+  "sitemaps": [
+   "https://karriere.leopoldina.de/sitemap.xml"
+  ],
+  "extra_seeds": [
+   "https://leopoldina.softgarden.io/de/vacancies"
+  ]
+ },
+ {
+  "name": "Klinikum Passau",
+  "kez": "26201",
+  "career": "https://www.klinikum-passau.de/beruf-karriere/offene-stellen",
+  "bavaria_only_operator": true,
+  "town": "Passau",
+  "sitemaps": [
+   "https://www.klinikum-passau.de/sitemap.xml"
+  ]
+ },
+ {
+  "name": "Kliniken Nordoberpfalz",
+  "kez": "36301",
+  "career": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere/berufsfeld-pflege",
+  "hosts": [
+   "www.kliniken-nordoberpfalz.ag",
+   "kliniken-nordoberpfalz.ag"
+  ],
+  "bavaria_only_operator": true,
+  "extra_seeds": [
+   "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere"
+  ],
+  "town": null,
+  "sitemaps": [
+   "https://www.kliniken-nordoberpfalz.ag/sitemap.xml"
+  ]
+ },
+ {
+  "name": "Klinikum Dritter Orden München-Nymphenburg",
+  "kez": "16213",
+  "career": "https://www.dritter-orden.de/karriere/stellenanzeigen.php",
+  "hosts": [
+   "www.dritter-orden.de",
+   "dritter-orden.softgarden.io"
+  ],
+  "bavaria_only_operator": true,
+  "town": "München",
+  "sitemaps": [
+   "https://www.dritter-orden.de/sitemap.xml"
+  ],
+  "extra_seeds": [
+   "https://dritter-orden.softgarden.io/de/vacancies"
+  ]
+ },
+ {
+  "name": "medbo Bezirksklinikum Regensburg",
+  "kez": "36209",
+  "career": "https://www.medbo.de/karriere/jobsmedbo",
+  "bavaria_only_operator": true,
+  "town": "Regensburg"
+ },
+ {
+  "name": "RoMed Kliniken",
+  "kez": "16301",
+  "career": "https://romed-jobs.de/de/jobs/",
+  "bavaria_only_operator": true,
+  "town": null,
+  "sitemaps": [
+   "https://romed-jobs.de/sitemap.xml"
+  ],
+  "extra_seeds": [
+   "https://romed-jobs.de/de/jobs/iframe"
+  ]
+ },
+ {
+  "name": "Bezirksklinikum Mainkofen",
+  "kez": "27105",
+  "career": "https://mainkofen.de/karriere-bkm/aktuelle-jobs/",
+  "hosts": [
+   "mainkofen.de",
+   "www.mainkofen.de",
+   "www.mein-check-in.de"
+  ],
+  "bavaria_only_operator": true,
+  "town": "Deggendorf"
+ }
+]

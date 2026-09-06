@@ -1,0 +1,492 @@
+[
+ {
+  "kr_id": 1544,
+  "name": "Klinikum Bayreuth",
+  "city": "Bayreuth",
+  "beds": 662,
+  "website": "http://www.klinikum-bayreuth.de",
+  "career": "https://karriere.klinikum-bayreuth.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1612,
+  "name": "Leopoldina-Krankenhaus",
+  "city": "Schweinfurt",
+  "beds": 662,
+  "website": "http://www.leopoldina-krankenhaus.com",
+  "career": "https://karriere.leopoldina.de/stellenangebote/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1343,
+  "name": "Klinikum Dritter Orden München-Nymphenburg",
+  "city": "München",
+  "beds": 632,
+  "website": "http://www.dritter-orden.de",
+  "career": "https://www.dritter-orden.de/karriere/stellenanzeigen.php",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1558,
+  "name": "Klinikum Kulmbach",
+  "city": "Kulmbach",
+  "beds": 540,
+  "website": "https://www.klinikum-kulmbach.de",
+  "career": "https://www.klinikum-kulmbach.de/beruf-ausbildung/stellenangebote.html",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1345,
+  "name": "Krankenhaus Barmherzige Brüder München",
+  "city": "München",
+  "beds": 404,
+  "website": "http://www.barmherzige-muenchen.de",
+  "career": "https://karriere-barmherzige-muenchen.de/stellenangebote",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1645,
+  "name": "KJF Klinik Josefinum",
+  "city": "Nördlingen",
+  "beds": 348,
+  "website": "http://www.josefinum.de",
+  "career": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1548,
+  "name": "Bezirkskrankenhaus Bayreuth",
+  "city": "Bayreuth",
+  "beds": 333,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1543,
+  "name": "Klinik Hohe Warte",
+  "city": "Bayreuth",
+  "beds": 316,
+  "website": "http://www.klinikum-bayreuth.de",
+  "career": "https://karriere.klinikum-bayreuth.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1411,
+  "name": "Klinikum Starnberg",
+  "city": "Starnberg",
+  "beds": 300,
+  "website": "https://www.klinikum-starnberg.de",
+  "career": "https://www.starnberger-kliniken.de/de/mvz-praxen/fachbereiche/offene-stellen.htm",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1561,
+  "name": "Bezirksklinikum Obermain",
+  "city": "Ebensfeld",
+  "beds": 278,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1565,
+  "name": "Klinikum Fichtelgebirge (Haus Marktredwitz)",
+  "city": "Marktredwitz",
+  "beds": 263,
+  "website": "http://www.klinikum-fichtelgebirge.de",
+  "career": "https://karriere.klinikum-fichtelgebirge.de/de/stellenangebote/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1555,
+  "name": "Klinik Münchberg",
+  "city": "Münchberg, Oberfranken",
+  "beds": 235,
+  "website": "https://www.kliniken-hochfranken.de",
+  "career": "https://jobs.kliniken-hochfranken.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1651,
+  "name": "Orthopädische Fachkliniken der Hessing Stiftung",
+  "city": "Augsburg",
+  "beds": 206,
+  "website": "https://www.hessing-kliniken.de",
+  "career": "https://www.hessing-kliniken.de/karriere/ausbildung/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1660,
+  "name": "Krankenhaus Friedberg",
+  "city": "Friedberg, Bayern",
+  "beds": 180,
+  "website": "http://www.klipa.de",
+  "career": "https://www.klipa.de/karriere-start",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1556,
+  "name": "Klinik Naila",
+  "city": "Naila",
+  "beds": 165,
+  "website": "https://www.kliniken-hochfranken.de",
+  "career": "https://jobs.kliniken-hochfranken.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1567,
+  "name": "Bezirksklinik Rehau",
+  "city": "Rehau, Oberfranken",
+  "beds": 142,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1631,
+  "name": "Main-Klinik Ochsenfurt",
+  "city": "Ochsenfurt, Unterfranken",
+  "beds": 140,
+  "website": "http://www.main-klinik.de",
+  "career": "https://www.main-klinik.de/karriere/karriere/index.html",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1637,
+  "name": "Fachklinik Heiligenfeld",
+  "city": "Bad Kissingen",
+  "beds": 135,
+  "website": "https://www.heiligenfeld.de",
+  "career": "https://www.heiligenfeld.de/stellenangebote",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1536,
+  "name": "Heiligenfeld Klinik Waldmünchen",
+  "city": "Waldmünchen",
+  "beds": 130,
+  "website": "https://www.heiligenfeld.de",
+  "career": "https://www.heiligenfeld.de/stellenangebote",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1409,
+  "name": "Klinik Dr. Robert Schindlbeck",
+  "city": "Herrsching am Ammersee",
+  "beds": 126,
+  "website": "http://www.klinikum-herrsching.de",
+  "career": "https://www.starnberger-kliniken.de/de/mvz-praxen/fachbereiche/offene-stellen.htm",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1468,
+  "name": "Krankenhaus Neuwittelsbach",
+  "city": "München",
+  "beds": 122,
+  "website": "https://www.krankenhaus-neuwittelsbach.de",
+  "career": "https://karriere.barmherzige.net/jobs/?filter%5Bcompany%5D%5B%5D=Krankenhaus+Neuwittelsbach",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1566,
+  "name": "Klinikum Fichtelgebirge (Haus Selb)",
+  "city": "Selb",
+  "beds": 115,
+  "website": "http://www.klinikum-fichtelgebirge.de",
+  "career": "https://karriere.klinikum-fichtelgebirge.de/de/stellenangebote/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1659,
+  "name": "Krankenhaus Aichach",
+  "city": "Aichach an der Paar",
+  "beds": 100,
+  "website": "http://www.klipa.de",
+  "career": "https://www.klipa.de/karriere-start",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1472,
+  "name": "Klinikum Penzberg",
+  "city": "Penzberg",
+  "beds": 100,
+  "website": "https://www.klinikum-penzberg.de",
+  "career": "https://www.starnberger-kliniken.de/de/mvz-praxen/fachbereiche/offene-stellen.htm",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1457,
+  "name": "Danuvius Klinik Pfaffenhofen",
+  "city": "Pfaffenhofen an der Ilm",
+  "beds": 95,
+  "website": "http://www.danuviusklinik.de",
+  "career": "https://www.danuviusklinik.de/karriere/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1610,
+  "name": "Heiligenfeld Klinik Uffenheim",
+  "city": "Uffenheim",
+  "beds": 90,
+  "website": "https://www.heiligenfeld.de",
+  "career": "https://www.heiligenfeld.de/stellenangebote",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1607,
+  "name": "m&i Fachklinik Herzogenaurach",
+  "city": "Herzogenaurach",
+  "beds": 75,
+  "website": "http://www.fachklinik-herzogenaurach.de",
+  "career": "https://www.fachklinik-herzogenaurach.de/jobs",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1410,
+  "name": "Klinikum Seefeld",
+  "city": "Seefeld (Oberbayern)",
+  "beds": 72,
+  "website": "https://www.klinikum-seefeld.de",
+  "career": "https://www.starnberger-kliniken.de/de/mvz-praxen/fachbereiche/offene-stellen.htm",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1635,
+  "name": "Hescuro Klinik Bad Brückenau",
+  "city": "Bad Brückenau",
+  "beds": 70,
+  "website": "http://www.hescuro-bad-brueckenau.de",
+  "career": "https://karriere.hescuro.de/#anchor:4=Jobs&&jobs:company=%5B%22HESCURO%20KLINIK%20Bad%20Br%C3%BCckenau%22%5D",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1328,
+  "name": "Heiligenfeld Kliniken Bad Wörishofen",
+  "city": "Bad Wörishofen",
+  "beds": 66,
+  "website": "https://www.heiligenfeld.de",
+  "career": "https://www.heiligenfeld.de/stellenangebote",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1419,
+  "name": "Paracelsus Klinik München",
+  "city": "München",
+  "beds": 60,
+  "website": "https://www.paracelsus-kliniken.de",
+  "career": "https://jobs.pkd.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1646,
+  "name": "KJF Klinik Josefinum(Standort Kempten)",
+  "city": "Kempten (Allgäu)",
+  "beds": 40,
+  "website": "http://www.josefinum.de",
+  "career": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1455,
+  "name": "Danuvius Klinik Neuburg",
+  "city": "Neuburg an der Donau",
+  "beds": 40,
+  "website": "http://www.danuviusklinik.de",
+  "career": "https://www.danuviusklinik.de/karriere/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1314,
+  "name": "Passauer Wolf Bad Gögging - Klinik für Neurologie",
+  "city": "Neustadt an der Donau",
+  "beds": 40,
+  "website": "https://www.passauerwolf.de",
+  "career": "https://karriere.passauerwolf.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1344,
+  "name": "TCE - Therapie-Centrum für Essstörungen",
+  "city": "München",
+  "beds": 34,
+  "website": "https://dritter-orden.de",
+  "career": "https://www.dritter-orden.de/karriere/stellenanzeigen.php",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1506,
+  "name": "Passauer Wolf Bad Griesbach - Klinik für Neurologie",
+  "city": "Bad Griesbach im Rottal",
+  "beds": 25,
+  "website": "https://www.passauerwolf.de",
+  "career": "https://karriere.passauerwolf.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1559,
+  "name": "Fachklinik Stadtsteinach",
+  "city": "Stadtsteinach",
+  "beds": 25,
+  "website": "https://www.klinikum-kulmbach.de",
+  "career": "https://www.klinikum-kulmbach.de/beruf-ausbildung/stellenangebote.html",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1462,
+  "name": "KJF Klinik Hochried",
+  "city": "Murnau am Staffelsee",
+  "beds": 22,
+  "website": "http://www.klinikhochried.de",
+  "career": "https://www.klinikhochried.de/de/stellenangebote.html",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1537,
+  "name": "Reha-Zentrum Nittenau",
+  "city": "Nittenau",
+  "beds": 17,
+  "website": "https://www.passauerwolf.de",
+  "career": "https://karriere.passauerwolf.de/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1456,
+  "name": "Danuvius Klinik Ingolstadt",
+  "city": "Ingolstadt",
+  "beds": 15,
+  "website": "http://www.danuviusklinik.de",
+  "career": "https://www.danuviusklinik.de/karriere/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1454,
+  "name": "Danuvius Klinik Neuburg - Tagesklinik",
+  "city": "Neuburg an der Donau",
+  "beds": 15,
+  "website": "http://www.danuviusklinik.de",
+  "career": "https://www.danuviusklinik.de/karriere/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1647,
+  "name": "KJF Klinik Josefinum(Standort Nördlingen)",
+  "city": "Nördlingen",
+  "beds": 15,
+  "website": "http://www.josefinum.de",
+  "career": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1412,
+  "name": "Klinikum Starnberg - Außenstelle Wolfratshausen",
+  "city": "Wolfratshausen",
+  "beds": 12,
+  "website": "https://www.klinikum-starnberg.de",
+  "career": "https://www.starnberger-kliniken.de/de/mvz-praxen/fachbereiche/offene-stellen.htm",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1648,
+  "name": "KJF Klinik Josefinum  / Klinik Hochried",
+  "city": "Murnau am Staffelsee",
+  "beds": 10,
+  "website": "https://www.josefinum.de",
+  "career": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1649,
+  "name": "Alpenklinik Santa Maria",
+  "city": "Bad Hindelang",
+  "beds": 5,
+  "website": "https://www.santa-maria.de",
+  "career": "https://www.santa-maria.de/de/stellenangebote.html",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1546,
+  "name": "Tagesklinik für Kinder- und Jugendpsychiatrie und -psychotherapie in Coburg",
+  "city": "Bayreuth",
+  "beds": 0,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1547,
+  "name": "Tagesklinik für Kinder- und Jugendpsychiatrie und -psychotherapie in Bamberg",
+  "city": "Bayreuth",
+  "beds": 0,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1562,
+  "name": "Tagesklinik für Psychiatrie, Psychotherapie und Psychosomatik in Coburg",
+  "city": "Coburg",
+  "beds": 0,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ },
+ {
+  "kr_id": 1563,
+  "name": "Tagesklinik für Psychiatrie, Psychotherapie und Psychosomatik in Kronach",
+  "city": "Kronach, Oberfranken",
+  "beds": 0,
+  "website": "https://www.gebo-med.de",
+  "career": "https://www.gebo-med.de/karriere",
+  "ats": "softgarden",
+  "bite": null
+ }
+]

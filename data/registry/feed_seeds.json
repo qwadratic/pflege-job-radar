@@ -1,0 +1,7 @@
+[
+ {"kind":"personio","name":"Maximilians-Augenklinik","slug":"maximilians-augenklinik-ggmbh.jobs.personio.de","town":"Nürnberg","career":"https://maximilians-augenklinik-ggmbh.jobs.personio.de/"},
+ {"kind":"personio","name":"MediCare Flughafen München Medizinisches Zentrum","slug":"medicare-flughafen-muenchen.jobs.personio.com","town":"München-Flughafen","career":"https://munich-airport-clinic.com/karriere/"},
+ {"kind":"smartrecruiters","name":"Artemed SE","company":"ArtemedSE","career":"https://www.ms-klinik.de/karriere","site_map":{"Augsburg":{"employer":"Klinik Vincentinum"},"Feldafing":{"employer":"Benedictus Krankenhaus Feldafing"},"Tutzing":{"employer":"Benedictus Krankenhaus Tutzing"},"München Süd|München-Süd":{"employer":"Artemed Klinikum München Süd"},"Berg":{"employer":"Marianne-Strauß-Klinik"},"München":{"employer":"Artemed Fachklinik München"}}},
+ {"kind":"talention","name":"Kliniken Nordoberpfalz AG","host":"kliniken-nordoberpfalz.talention.com","career":"https://kliniken-nordoberpfalz.talention.com/jobs","bavaria_only_operator":true,"town":"Weiden in der Oberpfalz"},
+ {"kind":"talention","name":"Dr. Ebel Fachkliniken","host":"jobs.ebel-kliniken.com","career":"https://jobs.ebel-kliniken.com/jobs","bavaria_only_operator":false}
+]

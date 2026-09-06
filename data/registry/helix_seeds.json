@@ -1,0 +1,38 @@
+[
+ {
+  "name": "Orthopädisches Krankenhaus Schloss Werneck",
+  "kez": null,
+  "town": "Werneck",
+  "career": "https://bezirk-unterfranken.helixjobs.com/okh/joblist",
+  "hosts": [
+   "bezirk-unterfranken.helixjobs.com"
+  ],
+  "bavaria_only_operator": true
+ },
+ {
+  "name": "Krankenhaus für Psychiatrie, Psychotherapie und Psychosomatische Medizin Schloss Werneck",
+  "kez": null,
+  "town": "Werneck",
+  "career": "https://bezirk-unterfranken.helixjobs.com/bkhwerneck/joblist",
+  "extra_seeds": [
+   "https://bezirk-unterfranken.helixjobs.com/bkhwerneck/career"
+  ],
+  "hosts": [
+   "bezirk-unterfranken.helixjobs.com"
+  ],
+  "bavaria_only_operator": true
+ },
+ {
+  "name": "Thoraxzentrum Bezirk Unterfranken",
+  "kez": null,
+  "town": "Münnerstadt",
+  "career": "https://bezirk-unterfranken.helixjobs.com/tzbu/joblist",
+  "extra_seeds": [
+   "https://bezirk-unterfranken.helixjobs.com/tzbu/career"
+  ],
+  "hosts": [
+   "bezirk-unterfranken.helixjobs.com"
+  ],
+  "bavaria_only_operator": true
+ }
+]

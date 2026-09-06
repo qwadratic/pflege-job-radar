@@ -1,0 +1,107 @@
+[
+ {
+  "name": "Kliniken Nordoberpfalz",
+  "kez": "36301",
+  "career": "https://kliniken-nordoberpfalz.talention.com/jobs",
+  "hosts": [
+   "kliniken-nordoberpfalz.talention.com"
+  ],
+  "bavaria_only_operator": true,
+  "browser": true,
+  "browser_details": true
+ },
+ {
+  "name": "LA-REGIO Kliniken (Klinikum Landshut)",
+  "kez": "26101",
+  "career": "https://www.la-regio-kliniken.de/stellenportal",
+  "hosts": [
+   "www.la-regio-kliniken.de",
+   "la-regio-kliniken.de"
+  ],
+  "bavaria_only_operator": true,
+  "browser": false
+ },
+ {
+  "name": "Universitätsklinikum Regensburg",
+  "kez": "36290",
+  "career": "https://www.ukr.de/ausbildung-karriere/stellenangebote",
+  "hosts": [
+   "www.ukr.de",
+   "ukr.de",
+   "jobs.b-ite.com",
+   "ukr.concludis.de"
+  ],
+  "town": "Regensburg",
+  "bavaria_only_operator": true,
+  "browser": true,
+  "browser_details": true
+ },
+ {
+  "name": "München Klinik",
+  "kez": "16205",
+  "career": "https://www.muenchen-klinik.de/jobs/pflege/",
+  "extra_seeds": [
+   "https://www.muenchen-klinik.de/stellenmarkt/",
+   "https://www.muenchen-klinik.de/jobs/pflegefachkraft/",
+   "https://www.muenchen-klinik.de/jobs/intensivpflege/"
+  ],
+  "hosts": [
+   "www.muenchen-klinik.de",
+   "muenchen-klinik.de"
+  ],
+  "bavaria_only_operator": true,
+  "browser": true,
+  "browser_details": true
+ },
+ {
+  "name": "Fachklinik KJF Josefinum",
+  "kez": "76110",
+  "career": "https://www.josefinum.de/ueber-uns/karriere/",
+  "hosts": [
+   "www.josefinum.de",
+   "josefinum.de",
+   "kjf-augsburg.de",
+   "www.kjf-augsburg.de"
+  ],
+  "town": "Augsburg",
+  "bavaria_only_operator": true,
+  "browser": true
+ },
+ {
+  "name": "Klinikum St. Marien Amberg",
+  "kez": "36101",
+  "career": "https://www.klinikum-amberg.de/karriere/offene_stellen.php",
+  "hosts": [
+   "www.klinikum-amberg.de",
+   "klinikum-amberg.de"
+  ],
+  "town": "Amberg",
+  "bavaria_only_operator": true,
+  "browser": true
+ },
+ {
+  "name": "DONAUISAR Klinikum Deggendorf",
+  "kez": "27106",
+  "career": "https://www.donauisar.de/karriere/stellenangebote",
+  "hosts": [
+   "www.donauisar.de",
+   "donauisar.de"
+  ],
+  "town": "Deggendorf",
+  "bavaria_only_operator": true,
+  "browser": true
+ },
+ {
+  "name": "Klinikum Aschaffenburg-Alzenau",
+  "kez": "66101",
+  "career": "https://jobs.klinikum-ab-alz.de/Jobs",
+  "hosts": [
+   "jobs.klinikum-ab-alz.de",
+   "klinikum-ab-alz.de"
+  ],
+  "town": "Aschaffenburg",
+  "bavaria_only_operator": true,
+  "browser": true,
+  "browser_details": true
+ }
+]

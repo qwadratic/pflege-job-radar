@@ -1,0 +1,19 @@
+# Pflege-Stellen Bayern (Kliniken)
+> Open nursing job postings at clinics in Bavaria. Two sources merged with explicit precedence: clinic career sites (employer_ats) > Bundesagentur für Arbeit Jobsuche API (arbeitsagentur). Read-only public API; dashboard for humans.
+
+- RULE for agents: answer only from the Supabase API below; source_url is the web proof of each posting.
+- Skill (Claude skill format, start here): https://pflege-board.exe.xyz/skill/SKILL.md
+- One-file bundle (skill + references + query script): https://pflege-board.exe.xyz/skill/pflege-jobs.skill.md
+- API reference: https://pflege-board.exe.xyz/skill/api.md
+- Data model & reconciliation rules: https://pflege-board.exe.xyz/skill/data-model.md
+- Pipeline / refresh runbook: https://pflege-board.exe.xyz/skill/pipeline.md
+
+## API (PostgREST)
+Base https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/ · headers `apikey: <anon key in SKILL.md>` and `Accept-Profile: pflege_jobs` · main view `v_postings` · counts `v_stats` · max 1000 rows per call (`limit`/`offset`).
+Default filter for "clinic nursing postings": `employer_class=eq.clinic&is_pflege=eq.true&status=eq.open`.
+
+## Dashboard URL state
+Filters are URL params, e.g. `/?emp=clinic&role=fachpflege&housing=1&src=employer_ats`.
+
+Code: https://github.com/ivan-kotelnikov/pflege-jobs (pipeline, adapters, orchestrator; no secrets)
+Technical docs (human): https://pflege-board.exe.xyz/docs.html

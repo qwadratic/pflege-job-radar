@@ -1,0 +1,40 @@
+# secrets
+.env
+.env.*
+!.env.example
+# public build config (project URL + anon key, both public by design) -- needed to reproduce the build
+!web/.env.build
+
+# crawler output + backups (large, regenerable)
+crawl_output/
+crawl_indeed/
+crawl_portals/
+crawl_ats2/
+crawl_vendors/
+crawl_vendors.log
+backups/
+data/export/
+
+# the hosted zip is replaced by this repo
+web/pflege_jobs_repo.zip
+
+# source PDF (3.6 MB, re-downloadable from stmgp.bayern.de; see data/registry/README.md)
+*.pdf
+
+# build/deploy leftovers
+.netlify/
+web/.netlify/
+web/netlify/
+node_modules/
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.bak
+
+# run artefacts (regenerable outputs of a pipeline run, not source)
+data/*.log
+data/verify.json
+data/clinic_links.json
+data/cross_merge_pairs.json

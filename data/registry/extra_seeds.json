@@ -1,0 +1,44 @@
+[
+ {
+  "name": "kbo Kliniken des Bezirks Oberbayern",
+  "kez": null,
+  "career": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege",
+  "extra_seeds": [
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=2",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=3",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=4",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=5",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=6",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=7",
+   "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobProfession%3APflege&tx_solr%5Bpage%5D=8"
+  ],
+  "hosts": [
+   "kbo.de",
+   "www.kbo.de"
+  ],
+  "bavaria_only_operator": true,
+  "town": null
+ },
+ {
+  "name": "Martha-Maria Krankenhaus",
+  "kez": null,
+  "career": "https://karriere.martha-maria.de/offene-stellen",
+  "extra_seeds": [
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=2",
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=3",
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=4",
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=5",
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=6",
+   "https://karriere.martha-maria.de/offene-stellen?tx_solr%5Bpage%5D=7"
+  ],
+  "hosts": [
+   "karriere.martha-maria.de",
+   "kh-nuernberg.martha-maria.de",
+   "sz-nuernberg.martha-maria.de",
+   "kh-muenchen.martha-maria.de",
+   "www.martha-maria.de"
+  ],
+  "bavaria_only_operator": false,
+  "town": null
+ }
+]

@@ -1,0 +1,30 @@
+[
+ {
+  "name": "St. Vinzenz Klinik Pfronten",
+  "kez": null,
+  "town": "Pfronten",
+  "career": "https://recruitingapp-5580.de.umantis.com/Jobs/1?lang=ger",
+  "extra_seeds": [
+   "https://recruitingapp-5580.de.umantis.com/Jobs/2?lang=ger",
+   "https://recruitingapp-5580.de.umantis.com/Jobs/3?lang=ger"
+  ],
+  "hosts": [
+   "recruitingapp-5580.de.umantis.com"
+  ],
+  "bavaria_only_operator": true
+ },
+ {
+  "name": "Klinikum Fürstenfeldbruck",
+  "kez": null,
+  "town": "Fürstenfeldbruck",
+  "career": "https://www.klinikum-ffb.de/ausbildung-karriere/stellenangebote/",
+  "hosts": [
+   "www.klinikum-ffb.de",
+   "klinikum-ffb.de"
+  ],
+  "sitemaps": [
+   "https://www.klinikum-ffb.de/sitemap.xml"
+  ],
+  "bavaria_only_operator": true
+ }
+]

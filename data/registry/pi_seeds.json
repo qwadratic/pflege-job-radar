@@ -1,0 +1,5 @@
+[
+ {"name":"Helios Klinikum München West","host":"helios-gesundheit.pi-asp.de","companyEid":1134,"default":{"kez":"16207","town":"München","plz":"81241","employer":"Helios Klinikum München West"}},
+ {"name":"Helios Klinik München Perlach","host":"helios-gesundheit.pi-asp.de","companyEid":1135,"default":{"kez":"16208","town":"München","plz":"81737","employer":"Helios Klinik München Perlach"}},
+ {"name":"Helios Amper-Klinikum Dachau","host":"helios-gesundheit.pi-asp.de","companyEid":1130,"default":{"kez":"17401","town":"Dachau","plz":"85221","employer":"Helios Amper-Klinikum Dachau"},"sites":{"Indersdorf":{"kez":"17402","town":"Markt Indersdorf","plz":"85229","employer":"Helios Amper-Klinik Indersdorf"}}}
+]
