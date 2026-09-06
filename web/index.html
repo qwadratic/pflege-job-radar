@@ -666,7 +666,7 @@ async function pageScrape(p){
       tb.append(el("tr",{},
         el("td",{},en),
         el("td",{},el("div",{class:"t",text:s.name||"–"})),
-        el("td",{"data-l":t("s_preset")},el("div",{text:t("pr_"+(s.preset||"custom"))}),el("div",{class:"m",text:s.human||cronHuman(s.cron,s.stagger_days)})),
+        el("td",{"data-l":t("s_preset")},el("div",{text:t("pr_"+(s.preset||"custom"))}),el("div",{class:"m",text:(s.human&&typeof s.human==="object"?(s.human[LANG]||s.human.en):s.human)||cronHuman(s.cron,s.stagger_days)})),
         el("td",{"data-l":t("s_target")},el("b",{text:tg.scope||"all"})," ",vals.slice(0,4).join(", ")+(vals.length>4?" …":"")),
         el("td",{"data-l":t("s_mode"),text:(s.mode||"auto")+" · "+(s.max_credits??"–")}),
         el("td",{"data-l":t("s_next"),text:fmtDT(s.next_run_at)}),
