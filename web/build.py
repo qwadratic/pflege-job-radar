@@ -35,6 +35,15 @@ for f in skill_out.glob("*.md"):                      # fill any file already li
     txt = f.read_text(encoding="utf-8")
     if "__REPO_URL__" in txt:
         f.write_text(fill(txt), encoding="utf-8")
+# Single-file bundle: SKILL.md + every reference concatenated, so an agent can load one URL. Generated
+# here rather than maintained by hand -- it drifted out of date the moment the sources changed.
+_ref_order = ["api.md", "data-model.md", "pipeline.md"]
+_bundle = [fill((skill_src / "SKILL.md").read_text(encoding="utf-8")).rstrip()]
+for _name in _ref_order:
+    _p = skill_src / "references" / _name
+    if _p.exists():
+        _bundle.append("\n\n---\n\n" + fill(_p.read_text(encoding="utf-8")).rstrip())
+(skill_out / "pflege-jobs.skill.md").write_text("\n".join(_bundle) + "\n", encoding="utf-8")
 
 edge = root / "edge" / "pflege-dashboard"; edge.mkdir(parents=True, exist_ok=True)
 (edge / "index.ts").write_text(

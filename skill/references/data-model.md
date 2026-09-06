@@ -4,7 +4,7 @@
 - `sources(source_id, code, kind, precedence)` — 10 krankenhosplan(1), 20 employer_ats(2), 30 arbeitsagentur(3), 40 aggregator(4). Lower = wins.
 - `employers(employer_id, name_norm UNIQUE, name_display, employer_class, class_rule, class_source, aa_kundennummer_hashes[])`
   name_norm = lowercase, legal forms stripped (GmbH, gGmbH, e.V., KG, AG, Stiftung…). Conservative: "Klinikum X" and "Klinikum X Personalabteilung" stay separate.
-- `clinics(clinic_id=KeZ, name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, day_places, fachrichtungen, parse_quality)` — Bayerischer Krankenhausplan 2025 (StMGP PDF), 403 sites. `postings.clinic_id/clinic_match_rule/clinic_match_score` link postings to sites.
+- `clinics(clinic_id=KeZ, name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, day_places, fachrichtungen, parse_quality)` — Bayerischer Krankenhausplan 2026 (StMGP PDF), 407 sites. `postings.clinic_id/clinic_match_rule/clinic_match_score` link postings to sites.
 - `posting_observations` — identity `(source_id, source_ref)`; every crawl upserts here. Carries extracted fields + `payload` jsonb + `fuzzy_key` + `content_hash` + `details_fetched_at`.
 - `postings` — golden record, `fuzzy_key` (sha1 of normalized title | employer_norm | PLZ), `provenance` jsonb, `n_observations`, `first_seen/last_seen`, `status`.
 - `role_classes` — taxonomy; grade columns are inferred defaults.

@@ -12,7 +12,7 @@ Headers on every call: `apikey: <anon>` and `Accept-Profile: pflege_jobs`. Reads
 | `postings` | golden record incl. `description`, `provenance`, `enr_housing_evidence`, `salary_*`, `n_observations` | detail view |
 | `posting_observations` | raw per-source rows, `payload` jsonb = original API record | audits, re-classification |
 | `employers` | `employer_class`, `class_rule`, `class_source`, `aa_kundennummer_hashes` | who is a clinic |
-| `clinics` | KeZ registry from Krankenhausplan 2025: name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, fachrichtungen | structure |
+| `clinics` | KeZ registry from Krankenhausplan 2026: name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, fachrichtungen | structure |
 | `v_clinics` | one row per site with open_pflege_postings, open_pflege_live, employer_names[] | "which clinics", counts per site |
 | `v_clinic_portals` | clinic → website, careers_url, ats_type, has_live_site_source, open_pflege_live | "which portal / which ATS" |
 | `inbox` | anon-writable intake for browser collectors (`kind`, `source_host`, `source_url`, `payload`, `collector`, `client_id`) | submit walled-site postings |

@@ -1,6 +1,6 @@
 ---
 name: pflege-jobs
-description: Query, interpret, refresh and match against the pflege_jobs dataset — open nursing ("Pflege") job postings at clinics in Bavaria (Supabase schema pflege_jobs, public REST API, Netlify dashboard, Arbeitsagentur-based pipeline). Use this skill whenever the user mentions Pflege jobs, Pflegestellen, nursing postings, Bavarian clinics / Kliniken / Krankenhäuser, the pflege_jobs schema, the pflege-stellen-bayern dashboard, matching nursing candidates to openings, clinic hiring contacts, or refreshing/backfilling the job data — even if they only say "the jobs data", "the dashboard", "how many postings", or ask which clinics offer housing/TVöD.
+description: Query, interpret, refresh and match against the pflege_jobs dataset — open nursing ("Pflege") job postings at clinics in Bavaria (Supabase schema pflege_jobs, public REST API, dashboard at pflege-board.exe.xyz, multi-source pipeline). Use this skill whenever the user mentions Pflege jobs, Pflegestellen, nursing postings, Bavarian clinics / Kliniken / Krankenhäuser, the pflege_jobs schema, the pflege-stellen-bayern dashboard, matching nursing candidates to openings, clinic hiring contacts, or refreshing/backfilling the job data — even if they only say "the jobs data", "the dashboard", "how many postings", or ask which clinics offer housing/TVöD.
 ---
 
 # pflege-jobs
@@ -26,18 +26,26 @@ fields, `references/pipeline.md` before refreshing data or redeploying.
 | ingest endpoint (write, secret required) | `https://klkxfvieaxpjlplloljn.supabase.co/functions/v1/pflege-ingest` |
 | source of truth for postings | `v_postings` view; raw per-source rows in `posting_observations` |
 | helper script | `scripts/query.py` (filters → JSON/CSV/markdown, handles paging) |
-| registry | `clinics` / `v_clinics` — Krankenhausplan Bayern 2025 (KeZ, Träger, Versorgungsstufe, Regierungsbezirk, Betten) |
+| registry | `clinics` / `v_clinics` — **Krankenhausplan Bayern 2026 (51. Fortschreibung)**, 407 sites (KeZ, Träger, Versorgungsstufe, Regierungsbezirk, Betten, Fachrichtungen) |
+| source code | https://github.com/ivan-kotelnikov/pflege-jobs (public) · technical docs https://pflege-board.exe.xyz/docs.html |
 
-Scale (2026-09-06): 7,084 postings in Bavaria; **2,567 open nursing postings at clinic-classified
-employers, web-verified live**, at 232 Krankenhausplan sites (1,337 from career sites, 861 Arbeitsagentur-only
-at sites without a site source, 369 confirmed by both). Sources: Arbeitsagentur (`arbeitsagentur`), and `employer_ats`
-= a board snapshot + live adapters (career-site crawler, B-ITE Jobs API, softgarden portals, Playwright for JS sites).
-`clinics.ats_type` (from the ATS census) tells which adapter applies. At sites with a live career-site source, Arbeitsagentur-only rows are superseded (status expired, note kept) so counts are not inflated.
-Clinic identity: postings carry `clinic_id` = KeZ from the **Bayerischer Krankenhausplan 2025** (403 sites,
-table `clinics`; 86 % of clinic-class postings linked; `clinic_match_rule` says how, `R6_ambiguous_sites:…`
-means the operator has several sites in that town and the largest/preferred one was chosen). Count
-clinics by `clinic_id` (fall back to `employer_id` when null); never by employer name. `v_clinics` gives
-per-site counts, Regierungsbezirk, Versorgungsstufe, Träger, beds.
+Scale (2026-09-06): **7,622 open postings** in Bavaria; **2,617 at clinic-classified employers**
+(2,586 web-verified `live`), spread over **242 Krankenhausplan sites**; 2,155 of them carry a `clinic_id`.
+By source for those clinic postings: career sites 1,633 · Arbeitsagentur 994 (600 of them Arbeitsagentur-only)
+· aggregators 540 · 349 confirmed by both a career site and the Arbeitsagentur.
+
+Four sources, precedence 1→4 when they disagree: `krankenhausplan` (registry, identity only) >
+`employer_ats` (clinic career sites / ATS vendors) > `arbeitsagentur` (Jobsuche API) > `aggregator`
+(Indeed, StepStone). `clinics.ats_type` says which career-site adapter applies — 175 of 407 sites are
+labelled: softgarden 38, typo3_jobs 29, bite 24, rexx 17, umantis 16, mein-check-in 12, dvinci 11,
+pi_asp 8, concludis 7, oracle 4, personio 3, bite_jobs 3, helix/smartrecruiters/talention 1 each.
+The remaining 232 sites have no adapter yet, which is the main coverage gap.
+
+Clinic identity: postings carry `clinic_id` = KeZ from the **Bayerischer Krankenhausplan 2026**
+(407 sites in `clinics`; `clinic_match_rule` says how it matched, `R6_ambiguous_sites:…` means the
+operator has several sites in that town and the largest/preferred one was chosen). Count clinics by
+`clinic_id` (fall back to `employer_id` when null); never by employer name. `v_clinics` gives per-site
+counts, Regierungsbezirk, Versorgungsstufe, Träger, beds.
 
 ## Decide what the user needs
 
@@ -57,8 +65,9 @@ per-site counts, Regierungsbezirk, Versorgungsstufe, Träger, beds.
    `class_source='manual'` (SQL in `references/data-model.md`). Manual overrides survive re-runs.
 6. **Regional / structural questions** ("Oberbayern", "Maximalversorger", "öffentliche Träger") → filter
    `v_postings` on `regierungsbezirk`, `versorgungsstufe`, `traegerart`; per-site totals from `v_clinics`.
-7. **Dashboard change** → edit `web/index.template.html`, `python web/build.py`, redeploy Netlify
-   (`references/pipeline.md`).
+7. **Dashboard change** → edit `web/index.template.html`, run `python web/build.py`, done — the VM serves
+   `web/` directly (systemd unit `pflege-web`, port 8501). Prose for the docs page lives in
+   `docs/ARCHITECTURE.md` and is rendered into `web/docs.html` by the same build.
 
 ## Interpretation rules (get these right)
 
@@ -67,9 +76,14 @@ per-site counts, Regierungsbezirk, Versorgungsstufe, Träger, beds.
   of its registry sites (e.g. Diakoneo Altenhilfe); `non_clinic` = Altenhilfe/ambulant/agency. Raw
   keyword class is `employer_class_raw`. **unknown is not non-clinic** — say "unclassified".
 - `role_class` comes from title + Arbeitsagentur `hauptberuf`; the rule that fired is in `role_rule`.
-  **The DB is Pflege-only**: rows classified `nicht_pflege` (Rettungsdienst, MFA, physicians, logistics,
-  non-nursing Ausbildung) are dropped by every sink before loading and were purged on 2026-09-06.
-  `is_pflege` is therefore always true; the filter stays harmless.
+  **The DB is experienced-nursing-only.** Three classes are refused at ingest *and* were deleted from the
+  database on 2026-09-06 (1,322 postings): `nicht_pflege` (Rettungsdienst, MFA, physicians, logistics),
+  `ausbildung` (Azubi/Schüler) and `werkstudent_praktikum` (Werkstudent/Praktikum/FSJ). They cannot come
+  back — `config.EXCLUDED_ROLE_CLASSES` gates every sink. So `is_pflege` is always true, and you never
+  need to filter out trainees. `pflegehelfer` **is** included: it is a qualified occupation and the usual
+  role for internationally-trained nurses awaiting German recognition.
+  Remaining classes: pflegefachkraft, fachpflege, pflegehelfer, praxisanleitung, leitung, apn_experte,
+  hebamme, ota_ata, sonstige_pflege.
 - `department_hint` / `qualification_hint` are inferred from the title only; null means "not stated
   in title", not "none".
 - `enr_*` (housing, tariff, contact emails, bonus, childcare, language) exist only where a
@@ -120,12 +134,16 @@ show `employer_class` if any are `unknown`. Flag `last_seen` if older than 7 day
 - Reference numbers can arrive with leading spaces; the adapter trims. Never build URLs from raw refs.
 - The same clinic often posts one generic title several times (different wards) — those are separate
   postings by design; do not "dedupe" them by title.
-- Coverage: Arbeitsagentur carries roughly half of what operator career portals list (e.g.
-  Bezirkskliniken Schwaben 25 vs 54). Say "Arbeitsagentur-listed" when the user asks "all".
+- Coverage: no single source is complete. Career sites see the most (1,633 of 2,617 open clinic
+  postings) but miss the 232 sites without an adapter; the Arbeitsagentur uniquely supplies 600. Never
+  imply the dataset is exhaustive for a clinic whose `ats_type` is null.
+- `v_postings` builds `source_url` and `source_codes` with correlated subqueries. Selecting them for
+  thousands of rows *and* asking for `Prefer: count=exact` can hit the statement timeout (HTTP 500).
+  Page without an exact count, or count on the `postings` base table instead.
 - Never send the ingest secret or write to `pflege_jobs` from the anon key; reads only.
 
 
-<!-- references/api.md -->
+---
 
 # REST API (PostgREST, schema `pflege_jobs`)
 
@@ -141,7 +159,7 @@ Headers on every call: `apikey: <anon>` and `Accept-Profile: pflege_jobs`. Reads
 | `postings` | golden record incl. `description`, `provenance`, `enr_housing_evidence`, `salary_*`, `n_observations` | detail view |
 | `posting_observations` | raw per-source rows, `payload` jsonb = original API record | audits, re-classification |
 | `employers` | `employer_class`, `class_rule`, `class_source`, `aa_kundennummer_hashes` | who is a clinic |
-| `clinics` | KeZ registry from Krankenhausplan 2025: name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, fachrichtungen | structure |
+| `clinics` | KeZ registry from Krankenhausplan 2026: name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, fachrichtungen | structure |
 | `v_clinics` | one row per site with open_pflege_postings, open_pflege_live, employer_names[] | "which clinics", counts per site |
 | `v_clinic_portals` | clinic → website, careers_url, ats_type, has_live_site_source, open_pflege_live | "which portal / which ATS" |
 | `inbox` | anon-writable intake for browser collectors (`kind`, `source_host`, `source_url`, `payload`, `collector`, `client_id`) | submit walled-site postings |
@@ -191,7 +209,7 @@ URL-encode slashes in values (`Intensiv%2FIMC`).
 - Raw Arbeitsagentur record: `posting_observations?posting_id=eq.123&select=source_ref,source_url,payload`
 
 
-<!-- references/data-model.md -->
+---
 
 # Data model and rules
 
@@ -199,7 +217,7 @@ URL-encode slashes in values (`Intensiv%2FIMC`).
 - `sources(source_id, code, kind, precedence)` — 10 krankenhosplan(1), 20 employer_ats(2), 30 arbeitsagentur(3), 40 aggregator(4). Lower = wins.
 - `employers(employer_id, name_norm UNIQUE, name_display, employer_class, class_rule, class_source, aa_kundennummer_hashes[])`
   name_norm = lowercase, legal forms stripped (GmbH, gGmbH, e.V., KG, AG, Stiftung…). Conservative: "Klinikum X" and "Klinikum X Personalabteilung" stay separate.
-- `clinics(clinic_id=KeZ, name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, day_places, fachrichtungen, parse_quality)` — Bayerischer Krankenhausplan 2025 (StMGP PDF), 403 sites. `postings.clinic_id/clinic_match_rule/clinic_match_score` link postings to sites.
+- `clinics(clinic_id=KeZ, name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, day_places, fachrichtungen, parse_quality)` — Bayerischer Krankenhausplan 2026 (StMGP PDF), 407 sites. `postings.clinic_id/clinic_match_rule/clinic_match_score` link postings to sites.
 - `posting_observations` — identity `(source_id, source_ref)`; every crawl upserts here. Carries extracted fields + `payload` jsonb + `fuzzy_key` + `content_hash` + `details_fetched_at`.
 - `postings` — golden record, `fuzzy_key` (sha1 of normalized title | employer_norm | PLZ), `provenance` jsonb, `n_observations`, `first_seen/last_seen`, `status`.
 - `role_classes` — taxonomy; grade columns are inferred defaults.
@@ -229,7 +247,7 @@ select * from pflege_jobs.resolve_postings();   -- postings.employer_id unchange
 Single source (Arbeitsagentur) → ~half of operator-portal volume. `unknown` employers (~1.1k rows) are honest, mostly Altenhilfe/ambulant without name tokens. Regierungsbezirk not derived. Descriptions only for clinic rows.
 
 
-<!-- references/pipeline.md -->
+---
 
 # Pipeline runbook (repo: https://github.com/ivan-kotelnikov/pflege-jobs)
 
@@ -345,7 +363,7 @@ and only there; 2,000 rows/day/client trigger). `python -m pflege_jobs.cli inbox
 user's browser"), acks the inbox. Agents can POST to the inbox directly (see collect.html).
 
 ## Registry portal table
-`v_clinic_portals` = clinic × website × careers_url × ats_type × has_live_site_source × open_pflege_live (403 sites; website 300,
+`v_clinic_portals` = clinic × website × careers_url × ats_type × has_live_site_source × open_pflege_live (407 sites; website 300,
 careers_url 269, ats 139, live site source 56).
 
 ## Feed/API adapters (`pflege_jobs/sources/feeds.py`, seeds `data/registry/feed_seeds.json`, `python data/run_feeds.py`)
@@ -384,7 +402,7 @@ crawl/B-ITE/softgarden/rexx/d.vinci/mein-check-in rows), Arbeitsagentur-only pos
 
 ## Clinic registry (Krankenhausplan)
 `python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2025.pdf data/registry/clinics.csv data/raw.json`
-parses Teil II Abschnitt A of the StMGP PDF (403 sites, KeZ). `python -m pflege_jobs.cli link-clinics [--dry-run]` links postings
+parses Teil II Abschnitt A of the StMGP PDF (407 sites, KeZ). `python -m pflege_jobs.cli link-clinics [--dry-run]` links postings
 (rules R1 exact name, R2 operator, R3/R4 token overlap with town, R5 loose, R6 ambiguous multi-site → preferred/largest site) and
 pushes `clinics` + `clinic_links`. Re-run after every refresh; rows with `clinic_match_rule='manual'` are never touched.
 
@@ -394,90 +412,30 @@ Write `pflege_jobs/sources/<name>.py` that yields the same observation dict (see
 ## Ingest endpoint
 POST JSON `{employers?, observations?, resolve?, expire_days?, crawl_run?}` with `Authorization: Bearer <anon>` + `x-ingest-secret`. Batches ≤200 rows. Returns counts. Column lists are rendered from `pflege_jobs/schema.py` into the function by `python edge/build_ingest.py` — edit the spec, rebuild, redeploy. (The staging-table fallback was removed in migration 007.)
 
-## Dashboard redeploy (Netlify, no repo needed)
-1. `python web/build.py` (injects SUPABASE_URL / anon key into `web/index.html`).
-2. Ask the Netlify MCP `netlify-deploy-services-updater` → `deploy-site` with siteId `43985889-994a-4272-b234-dcba394c5189`; it returns a one-shot `npx -y @netlify/mcp@latest --site-id … --proxy-path …` command.
-3. Run that command inside `web/` (contains `netlify.toml` with `publish = "."`). Site: https://pflege-board.exe.xyz
-Also `python web/publish.py` + run `data/publish_dashboard.sql` keeps the copy in `pflege_jobs.assets`.
+## Dashboard redeploy (no Netlify, no repo needed)
+
+The dashboard is served straight off this VM by systemd, so "deploy" is just a rebuild:
+
+```bash
+set -a; . web/.env.build; set +a     # public project URL + anon key + REPO_URL
+python web/build.py                   # -> web/index.html, web/docs.html, web/llms.txt, web/skill/*
+```
+
+`systemd` unit `pflege-web` runs `busybox httpd -p 8501 -h web/` (port 8501 is the VM's default
+proxy port, so https://pflege-board.exe.xyz maps to it with no port suffix). Nothing to upload.
+
+```bash
+systemctl status pflege-web      # is it up?
+sudo systemctl restart pflege-web
+```
+
+**Build with the public config, not the VM proxy.** `.env` points `SUPABASE_URL` at
+`supabase.int.exe.xyz` with `apikey: implicit` — that only resolves *inside* this VM. Building the
+dashboard with it produces a page that works for us and returns 500 for every real visitor. Use
+`web/.env.build` (project URL + real anon key), which is what the command above does.
+
+Prose for the human docs page lives in `docs/ARCHITECTURE.md` and is rendered into `web/docs.html`
+by the same build (`web/render_md.py`). The agent skill in `skill/` is copied to `web/skill/`.
 
 ## Monitoring plan
 Daily cron (GitHub Actions or any scheduler) running the refresh above; alert when a slice's `maxErgebnisse` drops >30 %, when null-rate of role_class/city rises, or when HTTP errors > 2 %. `crawl_runs` holds the history.
-
-
-<!-- scripts/query.py -->
-
-```python
-#!/usr/bin/env python3
-"""Query pflege_jobs.v_postings with simple flags; handles PostgREST paging. Read-only, no secrets.
-
-  python query.py --emp clinic --role fachpflege --dept "Intensiv/IMC" --housing --format md
-  python query.py --q nürnberg --days 14 --format csv > out.csv
-  python query.py --stats
-"""
-import argparse, csv, json, os, sys, urllib.parse, urllib.request
-
-URL = os.environ.get("SUPABASE_URL", "https://klkxfvieaxpjlplloljn.supabase.co")
-KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3hmdmllYXhwamxwbGxvbGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjEwOTgsImV4cCI6MjA4OTQ5NzA5OH0.S0ED1qBUyRDP0YSDVBQ0s_L5_tKdu4jsPsLmyUo1YCk")
-COLS = "posting_id,title,role_class,department_hint,department_raw,qualification_hint,employer,employer_class,clinic_id,clinic_name,regierungsbezirk,versorgungsstufe,traegerart,city,plz,lat,lon,employment_types,contract,first_published,last_seen,status,verify_status,verified_at,enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,source_codes,source_url,external_url"
-
-def get(rel, params):
-    q = urllib.parse.urlencode(params, safe="*.,()/{}:")
-    req = urllib.request.Request(f"{URL}/rest/v1/{rel}?{q}", headers={"apikey": KEY, "Accept-Profile": "pflege_jobs"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.load(r)
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--emp", default="clinic", help="clinic|unknown|non_clinic|all")
-    p.add_argument("--role", help="comma list of role_class")
-    p.add_argument("--dept"); p.add_argument("--q", help="ilike on title/employer/city")
-    p.add_argument("--city"); p.add_argument("--bezirk"); p.add_argument("--vst"); p.add_argument("--traeger"); p.add_argument("--tariff"); p.add_argument("--contract")
-    p.add_argument("--housing", action="store_true"); p.add_argument("--email", action="store_true")
-    p.add_argument("--vollzeit", action="store_true"); p.add_argument("--teilzeit", action="store_true")
-    p.add_argument("--days", type=int); p.add_argument("--all-roles", action="store_true", help="include nicht_pflege")
-    p.add_argument("--include-expired", action="store_true"); p.add_argument("--include-unverified", action="store_true", help="also rows whose web check is blocked/error"); p.add_argument("--limit", type=int, default=100000)
-    p.add_argument("--format", default="json", choices=["json", "csv", "md", "count"]); p.add_argument("--stats", action="store_true")
-    a = p.parse_args()
-    if a.stats:
-        print(json.dumps(get("v_stats", {"order": "n.desc"}), ensure_ascii=False, indent=1)); return
-    f = {"select": COLS, "order": "first_published.desc"}
-    if a.emp != "all": f["employer_class"] = f"eq.{a.emp}"
-    if a.role: f["role_class"] = f"in.({a.role})"
-    if not a.all_roles: f["is_pflege"] = "eq.true"
-    if not a.include_expired: f["status"] = "eq.open"
-    if not a.include_unverified and not a.include_expired: f["verify_status"] = "eq.live"
-    if a.dept: f["department_hint"] = f"eq.{a.dept}"
-    if a.city: f["city"] = f"ilike.*{a.city}*"
-    if a.bezirk: f["regierungsbezirk"] = f"eq.{a.bezirk}"
-    if a.vst: f["versorgungsstufe"] = f"eq.{a.vst}"
-    if a.traeger: f["traegerart"] = f"eq.{a.traeger}"
-    if a.tariff: f["enr_tariff"] = f"eq.{a.tariff}"
-    if a.contract: f["contract"] = f"eq.{a.contract}"
-    if a.housing: f["enr_housing"] = "is.true"
-    if a.email: f["enr_contact_emails"] = "not.is.null"
-    if a.vollzeit: f["employment_types"] = "cs.{vollzeit}"
-    if a.teilzeit: f["employment_types"] = "cs.{teilzeit}"
-    if a.days:
-        import datetime; f["first_published"] = "gte." + (datetime.date.today() - datetime.timedelta(days=a.days)).isoformat()
-    if a.q: f["or"] = f"(title.ilike.*{a.q}*,employer.ilike.*{a.q}*,city.ilike.*{a.q}*)"
-    rows, off = [], 0
-    while len(rows) < a.limit:
-        chunk = get("v_postings", {**f, "limit": min(1000, a.limit - len(rows)), "offset": off})
-        rows += chunk; off += len(chunk)
-        if len(chunk) < 1000: break
-    if a.format == "count": print(len(rows)); return
-    if a.format == "json": print(json.dumps(rows, ensure_ascii=False, indent=1)); return
-    cols = COLS.split(",")
-    if a.format == "csv":
-        w = csv.DictWriter(sys.stdout, fieldnames=cols); w.writeheader()
-        for r in rows: w.writerow({k: ("|".join(v) if isinstance(v, list) else v) for k, v in r.items()})
-        return
-    print(f"| # | Stelle | Arbeitgeber | Ort | Rolle | Veröff. | Merkmale | Link |\n|---|---|---|---|---|---|---|---|")
-    for r in rows:
-        tags = [t for t, ok in (("✓web", r["verify_status"] == "live"), ("Wohnraum", r["enr_housing"]), (r["enr_pay_grade"], r["enr_pay_grade"]), (r["enr_tariff"], r["enr_tariff"]), ("E-Mail", r["enr_contact_emails"])) if ok]
-        print(f"| {r['posting_id']} | {r['title']} | {r['employer']} | {r['city']} | {r['role_class']} | {r['first_published']} | {', '.join(tags)} | {r['source_url']} |")
-
-if __name__ == "__main__":
-    main()
-
-```

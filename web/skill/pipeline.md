@@ -112,7 +112,7 @@ and only there; 2,000 rows/day/client trigger). `python -m pflege_jobs.cli inbox
 user's browser"), acks the inbox. Agents can POST to the inbox directly (see collect.html).
 
 ## Registry portal table
-`v_clinic_portals` = clinic × website × careers_url × ats_type × has_live_site_source × open_pflege_live (403 sites; website 300,
+`v_clinic_portals` = clinic × website × careers_url × ats_type × has_live_site_source × open_pflege_live (407 sites; website 300,
 careers_url 269, ats 139, live site source 56).
 
 ## Feed/API adapters (`pflege_jobs/sources/feeds.py`, seeds `data/registry/feed_seeds.json`, `python data/run_feeds.py`)
@@ -151,7 +151,7 @@ crawl/B-ITE/softgarden/rexx/d.vinci/mein-check-in rows), Arbeitsagentur-only pos
 
 ## Clinic registry (Krankenhausplan)
 `python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2025.pdf data/registry/clinics.csv data/raw.json`
-parses Teil II Abschnitt A of the StMGP PDF (403 sites, KeZ). `python -m pflege_jobs.cli link-clinics [--dry-run]` links postings
+parses Teil II Abschnitt A of the StMGP PDF (407 sites, KeZ). `python -m pflege_jobs.cli link-clinics [--dry-run]` links postings
 (rules R1 exact name, R2 operator, R3/R4 token overlap with town, R5 loose, R6 ambiguous multi-site → preferred/largest site) and
 pushes `clinics` + `clinic_links`. Re-run after every refresh; rows with `clinic_match_rule='manual'` are never touched.
 
@@ -161,11 +161,30 @@ Write `pflege_jobs/sources/<name>.py` that yields the same observation dict (see
 ## Ingest endpoint
 POST JSON `{employers?, observations?, resolve?, expire_days?, crawl_run?}` with `Authorization: Bearer <anon>` + `x-ingest-secret`. Batches ≤200 rows. Returns counts. Column lists are rendered from `pflege_jobs/schema.py` into the function by `python edge/build_ingest.py` — edit the spec, rebuild, redeploy. (The staging-table fallback was removed in migration 007.)
 
-## Dashboard redeploy (Netlify, no repo needed)
-1. `python web/build.py` (injects SUPABASE_URL / anon key into `web/index.html`).
-2. Ask the Netlify MCP `netlify-deploy-services-updater` → `deploy-site` with siteId `43985889-994a-4272-b234-dcba394c5189`; it returns a one-shot `npx -y @netlify/mcp@latest --site-id … --proxy-path …` command.
-3. Run that command inside `web/` (contains `netlify.toml` with `publish = "."`). Site: https://pflege-board.exe.xyz
-Also `python web/publish.py` + run `data/publish_dashboard.sql` keeps the copy in `pflege_jobs.assets`.
+## Dashboard redeploy (no Netlify, no repo needed)
+
+The dashboard is served straight off this VM by systemd, so "deploy" is just a rebuild:
+
+```bash
+set -a; . web/.env.build; set +a     # public project URL + anon key + REPO_URL
+python web/build.py                   # -> web/index.html, web/docs.html, web/llms.txt, web/skill/*
+```
+
+`systemd` unit `pflege-web` runs `busybox httpd -p 8501 -h web/` (port 8501 is the VM's default
+proxy port, so https://pflege-board.exe.xyz maps to it with no port suffix). Nothing to upload.
+
+```bash
+systemctl status pflege-web      # is it up?
+sudo systemctl restart pflege-web
+```
+
+**Build with the public config, not the VM proxy.** `.env` points `SUPABASE_URL` at
+`supabase.int.exe.xyz` with `apikey: implicit` — that only resolves *inside* this VM. Building the
+dashboard with it produces a page that works for us and returns 500 for every real visitor. Use
+`web/.env.build` (project URL + real anon key), which is what the command above does.
+
+Prose for the human docs page lives in `docs/ARCHITECTURE.md` and is rendered into `web/docs.html`
+by the same build (`web/render_md.py`). The agent skill in `skill/` is copied to `web/skill/`.
 
 ## Monitoring plan
 Daily cron (GitHub Actions or any scheduler) running the refresh above; alert when a slice's `maxErgebnisse` drops >30 %, when null-rate of role_class/city rises, or when HTTP errors > 2 %. `crawl_runs` holds the history.
