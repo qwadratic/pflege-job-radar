@@ -121,3 +121,21 @@ def test_canonical_ref():
     from pflege_jobs.cli import canonical_ref
     assert canonical_ref("https://jobs.smartrecruiters.com/ArtemedSE/744000143844579-needle-nurse-m-w-d-in-teilzeit") == canonical_ref("https://jobs.smartrecruiters.com/ArtemedSE/744000143844579")
     assert canonical_ref("https://x.de/job/1/?utm=a#top") == "https://x.de/job/1"
+
+
+# --- OP-Fachkraft is OP nursing written without the word "Pflege" ------------------------------
+# Real titles from rexx boards were dropped as nicht_pflege because no token matched. Neighbouring
+# titles (MFA, Stationsassistenz) genuinely are not nursing and must stay excluded.
+def test_op_fachkraft_is_nursing():
+    from pflege_jobs.classify import classify_role
+    assert classify_role("OP-Fachkraft (m/w/d) für unser Flexteam-OP")[0] == "fachpflege"
+    assert classify_role("OP-Fachkräfte (m/w/d) für das AOZ Holzkirchen")[0] == "fachpflege"
+
+
+def test_neighbouring_non_nursing_titles_stay_excluded():
+    from pflege_jobs.classify import classify_role
+    from pflege_jobs.config import EXCLUDED_ROLE_CLASSES
+    for t in ["Medizinische Fachangestellte (m/w/d) für die Endoskopie",
+              "Stationsassistenz (m/w/d) der Geriatrie in Teilzeit",
+              "Facharzt (m/w/d) Innere Medizin"]:
+        assert classify_role(t)[0] in EXCLUDED_ROLE_CLASSES, t

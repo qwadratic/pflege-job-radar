@@ -62,8 +62,8 @@ NON_CLINIC_PATTERNS = [
 LEGAL_FORMS = r"\b(gmbh|ggmbh|mbh|ag|kg|ohg|e\.?\s?v\.?|gbr|se|stiftung|gemeinnützige?|gemeinnuetzige?|& co\.?|und co\.?|kgaa|ek|e\.k\.)\b"
 
 # --- Role classification: order matters (first match wins), evaluated on title + hauptberuf.
-PFLEGE_TOKEN = r"pfleg|betreuungskraft|alltagsbegleit|\bstation(en)?\b|op-bereich|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|\bapn\b|\bnurse\b|stationsleit|bereichsleit|praxisanleit"
-STRONG_PFLEGE_TITLE = r"pfleg|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\bnurse\b|\bapn\b"
+PFLEGE_TOKEN = r"pfleg|betreuungskraft|alltagsbegleit|\bstation(en)?\b|op-bereich|op-fachkr|op-kraft|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|\bapn\b|\bnurse\b|stationsleit|bereichsleit|praxisanleit"
+STRONG_PFLEGE_TITLE = r"pfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\bnurse\b|\bapn\b"
 NICHT_PFLEGE = r"facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\barzt\b|ärztin\b|\bärzte\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|medizinische/?r? fachangestellte|\bmfa\b|\bmta\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|\berzieher|sozialpädag|hauswirtschaft|reinigung|\bkoch\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\baemp\b|\bzsva\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\bit-\b|haustechnik"
 ROLE_RULES = [
     ("werkstudent_praktikum", r"werkstudent|praktik|\bfsj\b|bufdi|bundesfreiwillig|freiwilliges soziales|studentische|ferienjob|hospitation"),
@@ -73,7 +73,7 @@ ROLE_RULES = [
     ("praxisanleitung",       r"praxisanleit"),
     ("leitung",               r"pflegedienstleit|pflegedirekt|stationsleit|bereichsleit|wohnbereichsleit|teamleit|gruppenleit|einrichtungsleit|heimleit|abteilungsleit|funktionsleit|ambulanzleit|zentrumsleit|schichtleit|pflegeleit|pflegerische leitung|(?<![a-zäöüß])leitung\b|(?<![a-zäöüß])leiter(/in|\*in|in)?\b|\bpdl\b"),
     ("apn_experte",           r"\bapn\b|advanced practice|pflegeexpert|pflegewissenschaft|pädagog|paedagog|pflegemanage|qualitätsmanage|hygienefachkraft|hygienebeauftragte"),
-    ("fachpflege",            r"fachkrankenpfleg|fachaltenpfleg|fachpfleg|fachweiterbildung|fachkraft für intensiv|fachkraft für anästhesie|intensivpflegekraft|anästhesiepflegekraft|\bcritical care\b|kinderintensiv"),
+    ("fachpflege",            r"op-fachkr[aä]ft|fachkrankenpfleg|fachaltenpfleg|fachpfleg|fachweiterbildung|fachkraft für intensiv|fachkraft für anästhesie|intensivpflegekraft|anästhesiepflegekraft|\bcritical care\b|kinderintensiv"),
     ("pflegehelfer",          r"pflegehelfer|pflegefachhelfer|pflege\(fach\)helfer|pflegeassist|krankenpflegehelfer|altenpflegehelfer|pflegehilfskraft|hilfskraft|pflegehilfe|betreuungskraft|alltagsbegleit|servicekraft|stationshilfe|pflegeassistenz|versorgungsassist|pflegefachassist|pflegeunterstützung|stationsassist|servicehelfer"),
     ("pflegefachkraft",       r"pflegefachkraft|pflegefachfrau|pflegefachmann|pflegefachperson|krankenpfleger|krankenschwester|kinderkrankenpfleg|altenpfleger|\bnurse\b|gesundheits- und|examinierte|pflegekraft|pflegefachkräfte|pfleger\b|pflegerin\b|dauernachtwache|nachtwache"),
 ]

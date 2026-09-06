@@ -308,6 +308,107 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
     return out
 
 
+def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+    """rexx systems: a server-rendered listing whose job links end in `-<lang>-j<id>.html`.
+
+    No JSON/feed endpoint is exposed (api/, f=json both 404), but the listing needs no JavaScript,
+    so a plain fetch + one request per detail page is enough. The `-j<id>` suffix is the stable
+    identifier; the rest of the slug is the (mutable) title, so dedupe on it.
+    """
+    cu = (c.get("careers_url") or "").strip()
+    if not cu:
+        return []
+    # The listing shows 100 jobs at a time and pages with ?start=N (no visible pager on some skins),
+    # so a single fetch silently truncates the biggest boards at exactly 100. Page until no new ids.
+    urls, seen, base = [], set(), None
+    for start in range(0, 1000, 100):
+        page_url = cu if start == 0 else cu + ("&" if "?" in cu else "?") + "start=%d" % start
+        r = get(page_url, session=session)
+        if not r or not r.ok:
+            break
+        if base is None:
+            base = "%s://%s" % (urlparse(r.url).scheme, urlparse(r.url).netloc)
+        fresh = 0
+        for h in re.findall(r'href="([^"#]*-j\d+\.html[^"]*)"', r.text):
+            u = urljoin(r.url, _html.unescape(h))
+            jid = re.search(r"-j(\d+)\.html", u)
+            if not jid or jid.group(1) in seen:
+                continue
+            seen.add(jid.group(1))
+            urls.append(u)
+            fresh += 1
+        if fresh == 0 or len(urls) >= max_jobs:
+            break
+        time.sleep(0.2)
+    if base is None:
+        return []
+    out = []
+    for u in urls[:max_jobs]:
+        d = get(u, session=session)
+        if not d or not d.ok:
+            continue
+        j = parse_job_page(d.text, d.url, c["name"])
+        if not j or not j.get("title"):
+            continue
+        if not j["loc"][0]["city"] and c.get("town"):
+            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+        out.append(row(urlparse(base).netloc, j["url"], j, "rexx"))
+        time.sleep(0.2)
+    return out
+
+
+# mein-check-in.de hosts one tenant per employer; the careers page just links into it.
+MCI_TENANT = re.compile(r"mein-check-in\.de/([a-z0-9][a-z0-9_-]*)/", re.I)
+
+
+def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+    """mein-check-in: resolve the tenant slug, then read /<tenant>/overview.
+
+    The clinic's own careers page is usually a thin wrapper that links to
+    `mein-check-in.de/<tenant>/index`; the listing lives on that host and is server-rendered, with
+    each vacancy as `position-<id>`. Titles are already in the listing anchors, so the detail fetch
+    is only needed for the description -- keeping the crawl to ~1 request per job.
+    """
+    cu = (c.get("careers_url") or "").strip()
+    tenant = None
+    m = MCI_TENANT.search(cu)
+    if m:
+        tenant = m.group(1)
+    else:                                             # follow the careers page and look for the link
+        r = get(cu, session=session) if cu else None
+        if r and r.ok:
+            m = MCI_TENANT.search(r.text)
+            tenant = m.group(1) if m else None
+    if not tenant:
+        return []
+    host = "www.mein-check-in.de"
+    listing = get("https://%s/%s/overview" % (host, tenant), session=session)
+    if not listing or not listing.ok:
+        return []
+    seen, out = set(), []
+    for pid, inner in re.findall(r'<a[^>]+position-(\d+)[^>]*>(.*?)</a>', listing.text, re.S):
+        if pid in seen:
+            continue
+        seen.add(pid)
+        title = _txt(inner, 300)
+        if not title:
+            continue
+        u = "https://%s/%s/position-%s" % (host, tenant, pid)
+        j = {"title": title, "org": c["name"],
+             "loc": [{"city": c.get("town"), "plz": None, "region": "BAYERN"}],
+             "url": u, "page": u, "description": None}
+        d = get(u, session=session)
+        if d and d.ok:
+            full = parse_job_page(d.text, u, c["name"])
+            if full and full.get("description"):
+                j["description"] = full["description"]
+        out.append(row(host, u, j, "mein-check-in"))
+        if len(out) >= max_jobs:
+            break
+        time.sleep(0.2)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Group portals: many census sites share one employer-group job board
 # ---------------------------------------------------------------------------
@@ -363,6 +464,8 @@ def crawl_group_portal(c, g, session=None, max_jobs=250):
 
 
 VENDORS = {
+    "rexx": crawl_rexx,
+    "mein-check-in": crawl_mein_check_in,
     "personio": crawl_personio,
     "smartrecruiters": crawl_smartrecruiters,
     "helix": crawl_helix,
@@ -415,6 +518,11 @@ def main():
     total = 0
     session = requests.Session(); session.headers.update(H)
     group_done = {}
+    # Several operators point every site at one shared board (Schön Klinik: 7 sites -> 1 rexx board;
+    # RHÖN: 2; Kliniken Südostbayern: 3). Fetching per site multiplied 490 real jobs into 1,319 rows.
+    # Key the cache by careers_url so a shared board is crawled once and attributed to the first site;
+    # link-clinics then spreads it across the group by employer/town like any other multi-site source.
+    url_done = {}
     for c in clinics:
         g = group_portal_for(c)
         fn = VENDORS[c["ats_type"]]
@@ -429,7 +537,15 @@ def main():
                     rows = []
                     print("  %-44s %-16s (shared group board, already fetched)" % (c["name"][:44], c["ats_type"]))
             else:
-                rows = fn(c, session=session)
+                key = (c.get("careers_url") or "").strip().lower()
+                if key and key in url_done:
+                    print("  %-44s %-16s (same board as %s, already fetched)"
+                          % (c["name"][:44], c["ats_type"], url_done[key]))
+                    rows = []
+                else:
+                    rows = fn(c, session=session)
+                    if key:
+                        url_done[key] = c["name"][:28]
         except Exception as e:
             print("  %-44s FAILED %s" % (c["name"][:44], str(e)[:70])); continue
         for r in rows:                                # registry town beats an empty/vendor-specific one

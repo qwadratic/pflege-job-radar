@@ -15,5 +15,5 @@ Default filter for "clinic nursing postings": `employer_class=eq.clinic&is_pfleg
 ## Dashboard URL state
 Filters are URL params, e.g. `/?emp=clinic&role=fachpflege&housing=1&src=employer_ats`.
 
-Code: https://github.com/ivan-kotelnikov/pflege-jobs (pipeline, adapters, orchestrator; no secrets)
+Code: https://github.com/qwadratic/pflege-job-radar (pipeline, adapters, orchestrator; no secrets)
 Technical docs (human): https://pflege-board.exe.xyz/docs.html

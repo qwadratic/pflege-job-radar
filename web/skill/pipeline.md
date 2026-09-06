@@ -1,4 +1,4 @@
-# Pipeline runbook (repo: https://github.com/ivan-kotelnikov/pflege-jobs)
+# Pipeline runbook (repo: https://github.com/qwadratic/pflege-job-radar)
 
 Env (`.env`): SUPABASE_URL, SUPABASE_ANON_KEY, PFLEGE_INGEST_URL (…/functions/v1/pflege-ingest), PFLEGE_INGEST_SECRET.
 Install: `pip install requests pytest --break-system-packages`; tests: `python -m pytest -q tests`.

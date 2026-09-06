@@ -1,7 +1,10 @@
 # Pflege-Stellen Bayern — how it works
 
-An open dataset of **open nursing jobs at Bavarian hospitals**, rebuilt daily from public sources and
-published as a read-only REST API plus a dashboard.
+An open dataset of **open nursing jobs at Bavarian hospitals**, rebuilt from public sources and published
+as a read-only REST API plus a dashboard.
+
+*Currently: 7,637 open postings, of which 2,633 are nursing roles at hospital employers across 242 of the
+407 sites in the state hospital plan.*
 
 The hard part is not fetching job ads. It is answering *"how many nursing jobs are open at Bavarian
 hospitals?"* with a number you can defend — which means knowing what a hospital **is**, noticing when
@@ -71,27 +74,48 @@ Four genuinely new sites were transcribed by hand. Sites that vanish are marked
 Lower number wins when sources disagree. A hospital's own careers page beats a job board about salary
 and description; the labour agency is trusted for publication dates and contract type.
 
-**Why not just crawl career sites?** Because they don't cover the field. Measured on the live dataset:
-career sites reach ~1,470 of ~2,250 open hospital postings. The rest exist only on the labour agency or
-an aggregator — mostly at hospitals whose ATS we haven't identified yet. Aggregators stay until their
-*unique* contribution falls below ~5 %, which is a measurement, not an opinion.
+**Why not just crawl career sites?** Because they don't cover the field. Measured on the live dataset,
+for the 2,633 open postings at hospital-classified employers:
+
+| source | reaches | *only* source for |
+|---|---|---|
+| career sites (`employer_ats`) | 1,650 | 1,193 |
+| Bundesagentur für Arbeit | 998 | 600 |
+| aggregators (Indeed, StepStone) | 541 | 337 |
+
+Aggregators stay until their *unique* contribution falls below ~5 % — a measurement, not an opinion.
 
 ### ATS vendors
 
 Hospital careers pages are mostly a handful of vendors wearing different CSS. Identifying the vendor turns
-"scrape a website" into "call a known endpoint":
+"scrape a website" into "call a known endpoint". Of 407 sites, **175 are vendor-labelled**:
 
-`softgarden` · `personio` · `d.vinci` · `concludis` · `umantis` · `smartrecruiters` · `b-ite` ·
-`typo3_jobs` · `helix` · `talention` · `oracle` · `pi_asp`
+| vendor | sites | adapter | how it is read |
+|---|---|---|---|
+| softgarden | 38 | yes | `jobs.feed.json` — no browser needed |
+| typo3_jobs | 29 | yes | jobs sitemap → detail pages |
+| b-ITE | 24+3 | yes | Jobs API |
+| rexx | 17 | yes | server-rendered listing, `?start=N` paging |
+| umantis | 16 | yes | server-rendered `/Jobs/1` — no browser needed |
+| mein-check-in | 12 | yes | tenant slug → `/<tenant>/overview` |
+| d.vinci | 11 | **no** | JS-rendered list, no static links or JSON |
+| P&I asp | 8 | yes | Playwright (render + click) |
+| concludis | 7 | yes | sitemap → detail pages |
+| oracle | 4 | yes | sitemap walk |
+| personio | 3 | yes | `<slug>.jobs.personio.de/xml` |
+| talention · helix · smartrecruiters | 1 each | yes | feed / joblist / public API |
 
-Two findings that saved a lot of work:
+Findings that saved real work:
 
 - **umantis and softgarden need no browser.** They server-render `/Jobs/1` and expose `jobs.feed.json`.
   Plain HTTP is faster and far more reliable than Playwright.
-- **Group portals are one board, many hospitals.** The kbo group's nine sites share a single job board
-  → one fetch yields 112 postings for nine hospitals, instead of nine crawls returning nothing.
-
----
+- **Group portals are one board, many hospitals.** kbo's nine sites share a single board → one fetch
+  yields 112 postings for nine hospitals. The same is true within vendors: seven Schön Klinik sites, three
+  Kliniken Südostbayern and two RHÖN sites each share one rexx board. Crawling per site turned 490 real
+  vacancies into 1,319 rows before the fetch was keyed by board URL.
+- **Listings silently truncate.** The rexx boards return exactly 100 jobs with no visible pager; the real
+  count is behind `?start=N`. Schön Klinik went 100 → 295 and RHÖN 100 → 321 once paged. A suspiciously
+  round number is a bug, not a fact.
 
 ## 4. Pipeline
 
@@ -118,6 +142,12 @@ One schema means one loader, and a new crawler needs zero pipeline changes.
 **classify** — title + labour-agency occupation → one of 12 `role_class` values, and employer → hospital /
 unclear / not-a-hospital. The rule that fired is stored (`role_rule`, `class_rule`), so a wrong answer is
 debuggable instead of mysterious.
+
+Storing the rule is what makes the classifier improvable. Vendor boards carry every profession, so ~1,150
+inbox rows are correctly refused as non-nursing — but auditing that pile by rule surfaced a real miss:
+*OP-Fachkraft* is operating-theatre nursing written without the word "Pflege", so no token matched and it
+was dropped. Neighbouring titles in the same pile (*MFA*, *Stationsassistenz*) genuinely are not nursing.
+The fix is two regex tokens plus a test that pins both sides of that line.
 
 **resolve** — decides whether two observations are the same job. Same source: URL variants collapse.
 Across sources: employer + city + normalised title. A merged posting keeps every observation, so
@@ -189,7 +219,7 @@ systemd: pflege-web.service → busybox httpd -p 8501 -h web/
 
 ---
 
-## 8. Two bugs worth remembering
+## 8. Three bugs worth remembering
 
 **The upsert that erased a column.** The ingest function builds its recordset from a fixed column list and
 assigns every column. A payload that *omits* a key therefore sends `NULL` — identical to sending a blank.
@@ -202,6 +232,15 @@ merging in what's already stored. Tests now assert both failure modes.
 **The stable-ID trap.** Indeed's anchor href is a rotating `/pagead/clk` redirect — using it as the
 posting's identity would have created duplicates on every crawl. The stable key is the `data-jk`
 attribute, so the source reference is built as `viewjob?jk=<data-jk>`.
+
+**Counting the same board once per hospital.** Seven Schön Klinik sites all point at one rexx board. The
+first run dutifully crawled it seven times and produced 1,319 rows for 490 vacancies — a 2.7× phantom
+inflation that would have landed straight in the headline number. Fetches are now keyed by board URL, and
+the shared board is attributed to one site; `link-clinics` spreads it across the group the same way it
+handles any other multi-site employer.
+
+> Two of these three are the same mistake: trusting a per-site loop to mean per-site data. When several
+> inputs can resolve to one upstream resource, deduplicate on that resource, not on the loop variable.
 
 ---
 

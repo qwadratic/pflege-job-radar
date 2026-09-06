@@ -27,19 +27,25 @@ fields, `references/pipeline.md` before refreshing data or redeploying.
 | source of truth for postings | `v_postings` view; raw per-source rows in `posting_observations` |
 | helper script | `scripts/query.py` (filters → JSON/CSV/markdown, handles paging) |
 | registry | `clinics` / `v_clinics` — **Krankenhausplan Bayern 2026 (51. Fortschreibung)**, 407 sites (KeZ, Träger, Versorgungsstufe, Regierungsbezirk, Betten, Fachrichtungen) |
-| source code | https://github.com/ivan-kotelnikov/pflege-jobs (public) · technical docs https://pflege-board.exe.xyz/docs.html |
+| source code | https://github.com/qwadratic/pflege-job-radar (public) · technical docs https://pflege-board.exe.xyz/docs.html |
 
-Scale (2026-09-06): **7,622 open postings** in Bavaria; **2,617 at clinic-classified employers**
-(2,586 web-verified `live`), spread over **242 Krankenhausplan sites**; 2,155 of them carry a `clinic_id`.
-By source for those clinic postings: career sites 1,633 · Arbeitsagentur 994 (600 of them Arbeitsagentur-only)
-· aggregators 540 · 349 confirmed by both a career site and the Arbeitsagentur.
+Scale (2026-09-06): **7,637 open postings** in Bavaria; **2,633 at clinic-classified employers**,
+spread over **242 Krankenhausplan sites**; 2,165 of them carry a `clinic_id`.
+By source for those clinic postings: career sites reach 1,650 (uniquely supply 1,193) · Arbeitsagentur 998
+(uniquely 600) · aggregators 541 (uniquely 337). No single source is complete.
 
 Four sources, precedence 1→4 when they disagree: `krankenhausplan` (registry, identity only) >
 `employer_ats` (clinic career sites / ATS vendors) > `arbeitsagentur` (Jobsuche API) > `aggregator`
 (Indeed, StepStone). `clinics.ats_type` says which career-site adapter applies — 175 of 407 sites are
-labelled: softgarden 38, typo3_jobs 29, bite 24, rexx 17, umantis 16, mein-check-in 12, dvinci 11,
-pi_asp 8, concludis 7, oracle 4, personio 3, bite_jobs 3, helix/smartrecruiters/talention 1 each.
-The remaining 232 sites have no adapter yet, which is the main coverage gap.
+labelled: softgarden 38, typo3_jobs 29, bite 24+3, rexx 17, umantis 16, mein-check-in 12, dvinci 11,
+pi_asp 8, concludis 7, oracle 4, personio 3, talention/helix/smartrecruiters 1 each.
+**Every labelled vendor has a working adapter except `dvinci` (11 sites)**, whose board is JS-rendered.
+The 232 unlabelled sites are the larger coverage gap.
+
+Careful with shared boards: several operators point all their sites at one job board (Schön Klinik 7
+sites, kbo 9, Kliniken Südostbayern 3, RHÖN 2). The crawler fetches such a board once and attributes it
+to one site; the rest of the group gets its postings through employer/town matching. So a per-site
+posting count is a lower bound for group members, not a statement that they are not hiring.
 
 Clinic identity: postings carry `clinic_id` = KeZ from the **Bayerischer Krankenhausplan 2026**
 (407 sites in `clinics`; `clinic_match_rule` says how it matched, `R6_ambiguous_sites:…` means the
@@ -83,7 +89,8 @@ counts, Regierungsbezirk, Versorgungsstufe, Träger, beds.
   need to filter out trainees. `pflegehelfer` **is** included: it is a qualified occupation and the usual
   role for internationally-trained nurses awaiting German recognition.
   Remaining classes: pflegefachkraft, fachpflege, pflegehelfer, praxisanleitung, leitung, apn_experte,
-  hebamme, ota_ata, sonstige_pflege.
+  hebamme, ota_ata, sonstige_pflege. Note `OP-Fachkraft` counts as `fachpflege` (it is OP nursing written
+  without the word "Pflege"); `MFA` and `Stationsassistenz` are deliberately `nicht_pflege`.
 - `department_hint` / `qualification_hint` are inferred from the title only; null means "not stated
   in title", not "none".
 - `enr_*` (housing, tariff, contact emails, bonus, childcare, language) exist only where a
@@ -249,7 +256,7 @@ Single source (Arbeitsagentur) → ~half of operator-portal volume. `unknown` em
 
 ---
 
-# Pipeline runbook (repo: https://github.com/ivan-kotelnikov/pflege-jobs)
+# Pipeline runbook (repo: https://github.com/qwadratic/pflege-job-radar)
 
 Env (`.env`): SUPABASE_URL, SUPABASE_ANON_KEY, PFLEGE_INGEST_URL (…/functions/v1/pflege-ingest), PFLEGE_INGEST_SECRET.
 Install: `pip install requests pytest --break-system-packages`; tests: `python -m pytest -q tests`.

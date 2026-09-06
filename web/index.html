@@ -182,7 +182,7 @@ details.api p{font-size:14px;color:var(--ink-2);margin:8px 0 4px}
       <p>Aktuelle Ansicht als PostgREST-Abfrage (Schema <code>pflege_jobs</code>, View <code>v_postings</code>, nur Lesen, anon-Key ist öffentlich):</p>
       <pre id="api-curl"></pre>
       <p>Diese Ansicht als Link: <a id="api-link" href="#">wird erzeugt …</a> · Gefilterte Zeilen als JSON: <button class="btn" id="copy-json">JSON kopieren</button></p>
-      <p><b>Pipeline-Code:</b> <a href="https://github.com/ivan-kotelnikov/pflege-jobs" target="_blank" rel="noopener">GitHub</a> (Python, Adapter, Orchestrator; ohne Secrets — <code>.env.example</code> ausfüllen). <a href="/docs.html">Technische Dokumentation</a>.</p>
+      <p><b>Pipeline-Code:</b> <a href="https://github.com/qwadratic/pflege-job-radar" target="_blank" rel="noopener">GitHub</a> (Python, Adapter, Orchestrator; ohne Secrets — <code>.env.example</code> ausfüllen). <a href="/docs.html">Technische Dokumentation</a>.</p>
       <p><b>Gesperrte Portale (Helios, StepStone, Indeed):</b> per Browser sammeln → <a href="/collect.html">Sammler-Lesezeichen</a>.</p>
       <p>Weitere Endpunkte: <code>v_stats</code> (Zähler je Klasse/Rolle/Status), <code>employers</code>, <code>role_classes</code> (inkl. Tarif-Stufen), <code>posting_observations</code> (Rohdaten je Quelle, <code>payload</code>), <code>sources</code> (Präzedenz). Header: <code>apikey</code>, <code>Accept-Profile: pflege_jobs</code>.</p>
     </details>
@@ -560,7 +560,7 @@ function agentsDialog(){
          <li>Read-only. The anon key cannot write.</li>
          <li>Always state the filter alongside the number.</li>`),
     h("div",`<div class="acts">
-        <a class="btn p" href="https://github.com/ivan-kotelnikov/pflege-jobs" target="_blank" rel="noopener">${de?"Quellcode auf GitHub":"Source on GitHub"}</a>
+        <a class="btn p" href="https://github.com/qwadratic/pflege-job-radar" target="_blank" rel="noopener">${de?"Quellcode auf GitHub":"Source on GitHub"}</a>
         <a class="btn" href="/docs.html">${de?"Technische Doku":"Technical docs"}</a>
       </div>`));
   b.querySelector(".acts").append(el("button",{class:"btn",type:"button",onclick:()=>$("#dlg-agents").close(),text:de?"Schließen":"Close"}));

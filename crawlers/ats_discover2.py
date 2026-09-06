@@ -26,6 +26,7 @@ so discoveries flow into clinics.ats_type through the existing loader.
 import argparse
 import json
 import os
+import html as _html
 import re
 import sys
 import time
@@ -136,7 +137,8 @@ def probe_stepstone(clinic, ad_url, session=None):
     r = get(ad_url, session=session)
     if not r or not r.ok:
         return None
-    ext = [u for u in re.findall(r'href="(https?://[^"]+)"', r.text) if "stepstone" not in u.lower()]
+    # HTML-unescape: raw href text carries &amp; etc., which would be stored verbatim as a broken URL.
+    ext = [_html.unescape(u) for u in re.findall(r'href="(https?://[^"]+)"', r.text) if "stepstone" not in u.lower()]
     ats, ev = fingerprint("", " ".join(ext))
     if not ats:
         ats, ev = fingerprint(r.text, "")
@@ -209,7 +211,8 @@ def probe_bewerben(clinic, career, session=None, max_follow=4):
     ats, ev = fingerprint(r.text, r.url)
     if ats:
         return {"ats": ats, "apply_url": None, "careers_url": r.url, "evidence": ev, "angle": "bewerben"}
-    anchors = re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', r.text, re.S | re.I)
+    anchors = [(_html.unescape(h), txt) for h, txt in
+               re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', r.text, re.S | re.I)]
     cands, seen = [], set()
     for href, text in anchors:
         label = re.sub(r"<[^>]+>", " ", text)

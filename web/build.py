@@ -3,7 +3,7 @@ Usage: SUPABASE_URL=... SUPABASE_ANON_KEY=... python web/build.py"""
 import json, os, pathlib, sys
 root = pathlib.Path(__file__).resolve().parent.parent
 # Single place the public repo URL is configured; every page and doc interpolates it.
-REPO_URL = os.environ.get("REPO_URL", "https://github.com/ivan-kotelnikov/pflege-jobs")
+REPO_URL = os.environ.get("REPO_URL", "https://github.com/qwadratic/pflege-job-radar")
 
 
 def fill(text):
