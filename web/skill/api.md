@@ -6,21 +6,27 @@
 |---|---|---|
 | GET | `/stats` | `{open_jobs, fresh_jobs, clinics, clinics_with_jobs, clinics_routable, last_crawl{at,status}, firecrawl{remaining,plan,used_period,period_end,spent_by_app}, next_autocrawl}` |
 | GET | `/facets` | `{cities[{v,n}], regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fachrichtungen[{v,label,n}], role_class[{v,label,n}], department_hint, employment_types, contract, enr_tariff, beds{min,max}, size_buckets}` |
-| GET | `/clinics` | `{total, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, routable, sort, limit, offset` |
+| GET | `/clinics` | `{total, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, fetch, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, sort, limit, offset` |
+| GET | `/cities?q=` | `[{city, regierungsbezirk, landkreis, clinics, jobs_open, jobs_fresh, ats_known}]` |
+| GET | `/plan?q=&regierungsbezirk=&sort=` | `{rows[every clinics.csv column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
 | GET | `/clinics/{kez}` | clinic + `jobs[]` + `runs[]` + `career_profile` |
 | GET | `/jobs` | `{total, rows[job]}` — filters: `clinic_id, q, role_class, department_hint, city, regierungsbezirk, employment_types, contract, housing, fresh_days, verify, sort, limit, offset` |
 | GET | `/jobs/{id}` | job + `description`, `enr_*`, `observations[{source_code, source_url, observed_at}]` |
 | GET | `/search?q=` | `{clinics[{clinic_id,name,town,score}], jobs[{posting_id,title,employer,city,clinic_id,score}], cities[]}` |
 | POST | `/cv` | multipart `file` (pdf/docx/txt) or JSON `{"text"}` → `{profile{roles,departments,qualifications,cities,experience_years,languages,skills,keywords}, matches[job+score+why[]], used_llm}` |
-| POST | `/crawl` | `{"scope":"clinic|city|regierungsbezirk|job|board|all","value":…,"mode":"auto|adapter|firecrawl","max_credits":40}` → `{run_id}` |
+| GET | `/crawl/plan?scope=&values=a,b&mode=` | `{clinics, boards, via_adapter, via_firecrawl, walled, est_credits, sample[]}` |
+| POST | `/crawl` | `{"target":{"scope":"all|regierungsbezirk|city|clinic|ats_type","values":[…]},"mode":"auto|adapter|firecrawl","max_credits":40,"fetch_details":false}` → `{run_id}` |
 | GET | `/crawl/runs?limit=` / `/crawl/runs/{id}` | `[{run_id, started_at, finished_at, scope, value, mode, status, n_rows, n_new, credits_used, log_tail, clinic_ids}]` / + `log[]` |
 | POST | `/clinics/{kez}/refetch-career` | `{"max_credits":40}` → `{run_id}`; result in `career_profile` + `clinics.careers_url/ats_type` |
-| GET | `/settings` | `{patterns, schedule{enabled,weekday,hour,batches,mode,firecrawl_weekly_budget}, firecrawl{default_max_credits}}` |
-| PUT | `/settings/patterns`, `/settings/schedule` | save (patterns: every `re` must compile) |
+| GET/POST/PUT/DELETE | `/schedules[/{id}]` | `{id, name, enabled, preset (weekly_staggered|daily|weekdays|hourly|custom), cron, stagger_days, target, mode, max_credits, fetch_details, last_run_at, next_run_at, human}`; `POST /schedules/{id}/run-now` |
+| GET | `/mechanics` | `[{id, title{de,en}, description{de,en}, stage, patterns_section, functions[{name,source,doc}], inputs[{name,label,example}], test_file, n_tests}]` |
+| POST | `/mechanics/{id}/try`, `/mechanics/{id}/test` | `{inputs}` → `{result, rule}` · → `{passed, failed, output}` |
+| GET | `/settings` | `{patterns, firecrawl{default_max_credits}}` |
+| PUT | `/settings/patterns` | save (every `re` must compile; `config.reload()`) |
 | GET | `/taxonomy`, `/ontology`, `/docs` | taxonomy.json, ontology.json, docs index |
 
 Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=L,XL`). `sort` = column or `-column`.
-Clinic row: `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`.
+Clinic row: `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch, fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`.
 Job row: `v_postings` columns (below) + `fresh`.
 
 ## B. PostgREST — `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/<relation>`

@@ -6,7 +6,7 @@ read-only API.
 
 **Live:** <https://pflege-board.exe.xyz> · **Docs:** [`docs/overview.md`](docs/overview.md) (ontology),
 [`docs/scraping.md`](docs/scraping.md), [`docs/api.md`](docs/api.md), [`docs/performance.md`](docs/performance.md),
-[`docs/agents.md`](docs/agents.md) · **Agents:** [`skill/SKILL.md`](skill/SKILL.md)
+· **Agents:** [`skill/SKILL.md`](skill/SKILL.md) (bundle served at `/skill/pflege-jobs.skill.md`)
 
 ```bash
 curl 'https://pflege-board.exe.xyz/api/jobs?fresh_days=7&verify=live&limit=5'
@@ -25,9 +25,9 @@ No labour agency, no job boards. Scope: experienced nursing roles only (trainees
 ## Layout
 
 ```
-app/                FastAPI backend: /api, crawl worker, weekly scheduler, CV match, Firecrawl (port 8501)
-web/                single-file SPA (clinics → jobs, docs, agents, settings)
-pflege_jobs/        pipeline: classify (patterns.json), resolve, link-clinics, verify, CLI
+app/                FastAPI backend: /api, scrape worker, cron/preset schedules, CV match, Firecrawl, mechanics (port 8501)
+web/                single-file SPA: Hospitals → Jobs, Cities, Plan (the PDF as a table), Scrape (targets, schedules, runs), Docs (ontology graph), Settings (mechanics)
+pflege_jobs/        pipeline: classify (patterns.json), resolve, link-clinics, verify, CLI; mechanics.py = the ten rules explained + testable
   sources/          one module per input (krankenhausplan, softgarden, bite, pi_asp, firecrawl_agent, …)
 crawlers/           vendor adapters, routing (clinic → board → adapter), portals
 sql/                schema + migrations
@@ -35,7 +35,7 @@ edge/               Supabase ingest function
 docs/               concise docs + ontology.json (rendered in the app)
 skill/              agent skill (Claude skill format), served at /skill/
 data/registry/      clinics.csv, taxonomy.json, seeds
-tests/              no network
+tests/              no network; one file per mechanic (tests/test_mech_<id>.py)
 ```
 
 ## Run it

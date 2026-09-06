@@ -51,11 +51,11 @@ not routable        246
    careers_url but no vendor label   104
    no adapter for dvinci              11
 ```
-The app shows this per clinic (`routable`, `route_reason`) and offers the Firecrawl fallback where `routable=false`.
+The app shows this per clinic as **Fetch via**: the adapter name, or *Firecrawl* when no adapter exists (`route_reason` says why). Everything is scrapeable; the difference is cost. The Scrape page (`#/scrape`) previews a target (`GET /api/crawl/plan`: hospitals, boards, via adapter / via Firecrawl, estimated credits) before you start it, and holds the schedules.
 
 ## Firecrawl agent fallback
 
-Used only when an adapter cannot: walled host, no label, dvinci, dead site, or a manual "Crawl → firecrawl" click. Every call is capped (`maxCredits`, default 40) and logged (`firecrawl_usage`); credits spent/remaining are in the header and `/api/stats`.
+Used only when an adapter cannot: walled host, no label, dvinci, dead site, or mode *firecrawl* chosen on the Scrape page. Every call is capped (`maxCredits`, default 40) and logged (`firecrawl_usage`); credits spent/remaining are in the header and `/api/stats`.
 
 **Jobs agent** (`run_jobs_agent(clinic)`): `urls=[careers_url or website]`, prompt = "open the career portal of <name> (<town>), list every open nursing/Pflege vacancy for this site, follow pagination and filters, open PDFs if listings are PDFs, return only Bavarian locations"; schema:
 ```json
@@ -84,3 +84,7 @@ Result → `career_profiles` (shown on the clinic page) and, when found, `clinic
 | umantis JS-paged lists | few | `/Jobs/All` first, Playwright otherwise |
 
 Kill rule per adapter: 3 runs with 0 rows at a site that had rows before, or 2× 403/429 → mark walled, route to Firecrawl (noted in `crawl_runs.notes`).
+
+## Schedules
+
+Any number of schedules (`/api/schedules`, Scrape page): preset `weekly_staggered` (03:00 daily, boards spread over 7 days by hash of the board URL), `daily`, `weekdays`, `hourly`, or a custom cron; each with a target (all · Bezirk · city · hospital · ATS vendor), mode, credit cap and an on/off switch. Subsets can be scheduled independently (e.g. rexx boards nightly, Firecrawl discovery for unlabeled Oberpfalz sites weekly within budget).

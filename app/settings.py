@@ -8,7 +8,7 @@ from . import config as A
 from . import runs as R
 from . import scheduler as S
 
-FIRECRAWL_DEFAULT = {"default_max_credits": 40}
+FIRECRAWL_DEFAULT = {"default_max_credits": 40, "weekly_budget": 100}
 
 
 def _patterns_path():
@@ -89,30 +89,24 @@ def save_patterns(obj):
     return {"saved": path, "reloaded": True}
 
 
+def get_firecrawl():
+    cur = {**FIRECRAWL_DEFAULT, **(R.get_setting("firecrawl") or {})}
+    legacy = R.get_setting("schedule") or {}
+    if "weekly_budget" not in (R.get_setting("firecrawl") or {}) and legacy.get("firecrawl_weekly_budget"):
+        cur["weekly_budget"] = int(legacy["firecrawl_weekly_budget"])
+    cur["spent_7d"] = R.usage_total(days=7)
+    return cur
+
+
 def get_all():
-    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "schedule": S.status(),
-            "firecrawl": {**FIRECRAWL_DEFAULT, **(R.get_setting("firecrawl") or {})}}
-
-
-def save_schedule(obj):
-    cur = S.schedule()
-    for k in ("enabled", "include_firecrawl"):
-        if k in obj:
-            cur[k] = bool(obj[k])
-    for k in ("weekday", "hour", "batches", "firecrawl_weekly_budget", "firecrawl_max_credits"):
-        if k in obj and obj[k] is not None:
-            cur[k] = int(obj[k])
-    if "mode" in obj and obj["mode"] in ("auto", "adapter", "firecrawl"):
-        cur["mode"] = obj["mode"]
-    cur["hour"] = max(0, min(23, cur["hour"]))
-    cur["batches"] = max(1, min(30, cur["batches"]))
-    R.set_setting("schedule", cur)
-    return S.status()
+    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": get_firecrawl()}
 
 
 def save_firecrawl(obj):
-    cur = {**FIRECRAWL_DEFAULT, **(R.get_setting("firecrawl") or {})}
+    cur = {k: v for k, v in get_firecrawl().items() if k != "spent_7d"}
     if "default_max_credits" in obj:
         cur["default_max_credits"] = max(1, min(500, int(obj["default_max_credits"])))
+    if "weekly_budget" in obj:
+        cur["weekly_budget"] = max(0, min(8000, int(obj["weekly_budget"])))
     R.set_setting("firecrawl", cur)
-    return cur
+    return get_firecrawl()

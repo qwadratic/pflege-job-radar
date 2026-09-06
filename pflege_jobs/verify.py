@@ -28,20 +28,20 @@ def _title_tokens(title):
     return toks[:3]
 
 
-def verify_url(session, url, title):
-    try:
-        r = session.get(url, headers={"User-Agent": UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"}, timeout=40, allow_redirects=True)
-    except requests.RequestException as e:
-        return "error", None, type(e).__name__
-    if r.status_code in (404, 410):
-        return "gone", r.status_code, None
-    if r.status_code in (401, 403, 429):
-        return "blocked", r.status_code, None
-    if r.status_code >= 500:
-        return "error", r.status_code, None
-    if r.status_code != 200:
-        return "error", r.status_code, None
-    body = norm_text(r.text[:400000])
+def decide(status_code, body, title, exc_name=None):
+    """Pure live/gone decision (unit-tested, used by the Settings "try it" box).
+
+    -> (verify_status, http, note). exc_name = transport error class name when no response arrived.
+    """
+    if exc_name:
+        return "error", None, exc_name
+    if status_code in (404, 410):
+        return "gone", status_code, None
+    if status_code in (401, 403, 429):
+        return "blocked", status_code, None
+    if status_code >= 500 or status_code != 200:
+        return "error", status_code, None
+    body = norm_text((body or "")[:400000])
     toks = _title_tokens(title)
     hit = sum(1 for t in toks if t in body)
     if toks and hit == 0 and GONE_MARKERS.search(body):
@@ -49,6 +49,14 @@ def verify_url(session, url, title):
     if toks and hit == 0:
         return "error", 200, "200 but title not found (JS-rendered or list page)"
     return "live", 200, f"title tokens {hit}/{len(toks)}"
+
+
+def verify_url(session, url, title):
+    try:
+        r = session.get(url, headers={"User-Agent": UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"}, timeout=40, allow_redirects=True)
+    except requests.RequestException as e:
+        return decide(None, None, title, exc_name=type(e).__name__)
+    return decide(r.status_code, r.text, title)
 
 
 def verify_all(rows, workers=6, log=print):

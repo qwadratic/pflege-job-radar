@@ -2,9 +2,10 @@
 
 ## State (2026-09-06, after the MVP rebuild)
 - Sources: Krankenhausplan (10), career sites via adapters (20), Firecrawl agent (25). Arbeitsagentur + aggregators removed, data purged.
-- App: FastAPI on :8501 (`app/`), SPA in `web/index.template.html`: clinics table → clinic → jobs, fuzzy search + CV match in the header, crawl controls per clinic/city/bezirk/job, runs page, settings (patterns.json, weekly schedule, Firecrawl budget), docs with ontology graph.
+- App: FastAPI on :8501 (`app/`), SPA in `web/index.template.html` (dark, Proximata-derived tokens): Hospitals → Jobs, Cities, Plan table (PDF as searchable table), Scrape page (target form with preview, cron/preset schedules with on/off, runs), Docs (animated ontology graph + markdown), Settings (mechanics: explanation, source, patterns, try-it, per-mechanic tests; Firecrawl budget).
 - Registry: 407 sites (399 in the 2026 plan + 8 gone). Structured columns synced from the 2026 PDF; names/towns kept from the trusted 2025 parse (see docs/scraping.md).
-- Weekly autocrawl: boards hashed into daily batches; adapters first, Firecrawl only where no adapter (credit-capped).
+- Schedules: default `weekly_staggered` (boards hashed over 7 days); any subset (Bezirk / city / hospital / vendor) can get its own cron. Adapters first, Firecrawl only where no adapter (credit-capped).
+- Mechanics: `pflege_jobs/mechanics.py` registry, `tests/test_mech_*.py` one file each; `GET /api/mechanics` renders them.
 
 ## Open, by value
 1. **Supabase access token** — blocks: edge-function redeploy (`coalesce` fix in ingest is live-tested locally only), DDL from `sql/008` (CHECK constraints) and everything in docs/performance.md (indexes, trigram, tsvector, LATERAL view).

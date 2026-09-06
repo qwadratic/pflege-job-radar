@@ -9,16 +9,21 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 |---|---|---|
 | GET | `/api/stats` | open/fresh jobs, clinic counts, last crawl, Firecrawl credits, next autocrawl |
 | GET | `/api/facets` | every filter value with counts (cities, bezirke, ATS, Träger, Stufe, Fachrichtungen, roles, departments …) |
-| GET | `/api/clinics` | clinic table with job counts, routing, last crawl |
+| GET | `/api/clinics` | clinic table with job counts, fetch route (adapter / Firecrawl), last scrape |
+| GET | `/api/cities` | one row per town: Bezirk, Landkreis, hospitals, open / fresh jobs |
+| GET | `/api/plan` | the post-processed Krankenhausplan (every registry column) + `pdf_url` |
 | GET | `/api/clinics/{kez}` | one clinic + jobs + runs + career profile |
 | GET | `/api/jobs` | postings (v_postings + clinic columns) |
 | GET | `/api/jobs/{id}` | full posting incl. description, observations |
 | GET | `/api/search?q=` | fuzzy search across clinics, jobs, cities |
 | POST | `/api/cv` | upload CV → profile + ranked matches |
-| POST | `/api/crawl` | trigger crawl (clinic / city / bezirk / job / board / all) |
+| POST | `/api/crawl` | start a scrape: `target{scope,values}`, mode, credits, fetch_details |
+| GET | `/api/crawl/plan` | preview of a target: hospitals, boards, via adapter / Firecrawl, est. credits |
 | GET | `/api/crawl/runs`, `/api/crawl/runs/{id}` | run status + log |
 | POST | `/api/clinics/{kez}/refetch-career` | Firecrawl discovery of the career portal |
-| GET/PUT | `/api/settings`, `/api/settings/patterns`, `/api/settings/schedule` | patterns.json, weekly schedule, Firecrawl budget |
+| GET/POST/PUT/DELETE | `/api/schedules[/{id}]`, `POST /api/schedules/{id}/run-now` | cron / preset schedules with target, mode, budget, enabled |
+| GET/POST | `/api/mechanics`, `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | the ten rule mechanics: explanation, source, patterns, try-it, run tests |
+| GET/PUT | `/api/settings`, `/api/settings/patterns` | patterns.json (every regex), Firecrawl default budget |
 | GET | `/api/taxonomy`, `/api/ontology`, `/api/docs` | taxonomy.json, ontology.json, docs index |
 
 List responses: `{"total": N, "rows": [...]}`; `limit`/`offset` page; comma lists for multi-value filters.
@@ -37,12 +42,17 @@ curl "$B/facets"
 curl "$B/clinics?city=München,Augsburg&has_jobs=1&sort=-jobs_open"
 curl "$B/clinics?regierungsbezirk=Oberbayern&beds_min=300&beds_max=800"
 curl "$B/clinics?size=L,XL&fach=INN,CHI&traegerart=oeffentlich"
-curl "$B/clinics?ats_type=softgarden&routable=1"
-curl "$B/clinics?routable=0"                      # the coverage gap, with route_reason
+curl "$B/clinics?ats_type=softgarden&fetch=adapter"
+curl "$B/clinics?fetch=firecrawl"                # no adapter → Firecrawl would read it (route_reason says why)
+curl "$B/clinics?q=rexx"                         # q also matches badge values: ATS, Bezirk, Landkreis, codes, status, size
 curl "$B/clinics?q=klinikum%20nürnberg"
 
 # one clinic, drill down
 curl "$B/clinics/16104"
+
+# cities and the plan table
+curl "$B/cities?q=regens"
+curl "$B/plan?regierungsbezirk=Oberpfalz&sort=-beds"
 
 # jobs: at a clinic, fresh only, by role/department/city/employment, housing, verified
 curl "$B/jobs?clinic_id=16104"
@@ -59,23 +69,33 @@ curl "$B/search?q=klinkum%20augsbrg%20intensiv"
 curl -F file=@lebenslauf.pdf "$B/cv"
 curl -H 'Content-Type: application/json' -d '{"text":"Pflegefachkraft, 6 Jahre Intensivstation, München, B2"}' "$B/cv"
 
-# crawl: clinic / city / bezirk / job / board / all; mode auto|adapter|firecrawl; credit cap
-curl -H 'Content-Type: application/json' -d '{"scope":"clinic","value":"16104","mode":"auto","max_credits":40}' "$B/crawl"
-curl -H 'Content-Type: application/json' -d '{"scope":"city","value":"Regensburg","mode":"adapter"}' "$B/crawl"
-curl -H 'Content-Type: application/json' -d '{"scope":"regierungsbezirk","value":"Oberpfalz"}' "$B/crawl"
+# scrape: target = {scope: all|regierungsbezirk|city|clinic|ats_type, values[]}; mode auto|adapter|firecrawl; credit cap
+curl "$B/crawl/plan?scope=city&values=Regensburg,Straubing&mode=auto"          # preview first
+curl -H 'Content-Type: application/json' -d '{"target":{"scope":"clinic","values":["16104"]},"mode":"auto","max_credits":40,"fetch_details":false}' "$B/crawl"
+curl -H 'Content-Type: application/json' -d '{"target":{"scope":"ats_type","values":["softgarden"]},"mode":"adapter"}' "$B/crawl"
 curl "$B/crawl/runs?limit=20"; curl "$B/crawl/runs/12"
+
+# schedules: presets weekly_staggered | daily | weekdays | hourly | custom (cron)
+curl "$B/schedules"
+curl -H 'Content-Type: application/json' -d '{"name":"Oberpfalz nightly","preset":"custom","cron":"15 2 * * *","target":{"scope":"regierungsbezirk","values":["Oberpfalz"]},"mode":"adapter","enabled":true}' "$B/schedules"
+curl -X PUT -H 'Content-Type: application/json' -d '{"enabled":false}' "$B/schedules/2"
+curl -X POST "$B/schedules/2/run-now"; curl -X DELETE "$B/schedules/2"
 
 # discover / refresh the career portal of a clinic (Firecrawl agent)
 curl -H 'Content-Type: application/json' -d '{"max_credits":40}' "$B/clinics/16104/refetch-career"
 
-# settings: patterns (all regexes) and weekly schedule
+# mechanics: explanation + source + patterns per rule; try one; run its tests
+curl "$B/mechanics"
+curl -H 'Content-Type: application/json' -d '{"title":"OP-Fachkraft (m/w/d)"}' "$B/mechanics/role_class/try"
+curl -X POST "$B/mechanics/clinic_link/test"
+
+# settings: patterns (all regexes), Firecrawl default budget
 curl "$B/settings"
 curl -X PUT -H 'Content-Type: application/json' -d @patterns.json "$B/settings/patterns"
-curl -X PUT -H 'Content-Type: application/json' -d '{"enabled":true,"weekday":0,"hour":3,"batches":7,"mode":"auto","firecrawl_weekly_budget":100}' "$B/settings/schedule"
 ```
 
 ### Clinic row
-`clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`
+`clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`
 
 ### Job row
 `posting_id, title, role_class, role_label, department_hint, department_raw, qualification_hint, employer, employer_class, clinic_id, clinic_name, regierungsbezirk, versorgungsstufe, traegerart, clinic_beds, city, plz, lat, lon, employment_types[], contract, start_date, first_published, first_seen, last_seen, status, verify_status, verified_at, source_url, external_url, source_codes[], n_observations, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare, fresh`

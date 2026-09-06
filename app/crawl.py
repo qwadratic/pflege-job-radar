@@ -33,38 +33,24 @@ def _log(run_id):
 
 
 def _budget_left():
-    s = R.get_setting("schedule") or {}
-    weekly = int(s.get("firecrawl_weekly_budget", 100))
+    fc = R.get_setting("firecrawl") or {}
+    legacy = R.get_setting("schedule") or {}
+    weekly = int(fc.get("weekly_budget") or legacy.get("firecrawl_weekly_budget") or 100)
     return weekly - R.usage_total(days=7)
 
 
 def _clinics_for_scope(scope, value):
-    cs = D.clinics()
-    v = (value or "").strip()
-    if scope == "all":
-        return [c for c in cs if c.get("status") != "nicht_mehr_im_plan"]
-    if scope == "clinic":
-        return [c for c in cs if c["clinic_id"] in {x.strip() for x in v.split(",")}]
-    if scope == "city":
-        return [c for c in cs if (c.get("town") or "").lower() == v.lower()]
-    if scope == "regierungsbezirk":
-        return [c for c in cs if (c.get("regierungsbezirk") or "").lower() == v.lower()]
-    if scope == "landkreis":
-        return [c for c in cs if (c.get("landkreis") or "").lower() == v.lower()]
-    if scope == "board":
-        return [c for c in cs if (c.get("board") or "").lower() == v.lower() or (c.get("careers_url") or "").lower() == v.lower()]
-    if scope == "job":
-        j = next((x for x in D.jobs() if str(x["posting_id"]) == v), None)
-        if not j:
-            full = A.rest_get("v_postings", {"select": "posting_id,clinic_id", "posting_id": f"eq.{int(v)}"})
-            j = full[0] if full else None
-        return [c for c in cs if j and c["clinic_id"] == j.get("clinic_id")]
-    raise ValueError(f"unknown scope {scope}")
+    from . import targets as T
+    return T.clinics_for(T.parse({"scope": scope, "value": value}))
 
 
-def plan_for(scope, value, mode, max_credits):
-    """What a run would do — also used by POST /api/crawl to validate before queueing."""
-    clinics = _clinics_for_scope(scope, value)
+def plan_for(scope, value, mode, max_credits, target=None):
+    """What a run would do — also used by POST /api/crawl to validate before queueing.
+    Accepts either scope+value (comma-separated values allowed) or a target dict."""
+    from . import targets as T
+    from crawlers.routing import plan as route
+    tgt = target or T.parse({"scope": scope, "value": value})
+    clinics = T.clinics_for(tgt)
     adapter, fire, skipped = [], [], []
     for c in clinics:
         can_adapter = c.get("routable") and not c.get("walled")
@@ -74,7 +60,12 @@ def plan_for(scope, value, mode, max_credits):
             fire.append(c)
         else:
             (adapter if can_adapter else fire).append(c)
-    return {"clinics": clinics, "adapter": adapter, "firecrawl": fire, "skipped": skipped,
+    try:
+        boards = len(route(adapter)[0]) if adapter else 0
+    except Exception:
+        boards = len({(c.get("board") or c.get("careers_url") or c["clinic_id"]).lower() for c in adapter})
+    walled = sum(1 for c in clinics if c.get("walled"))
+    return {"target": tgt, "clinics": clinics, "adapter": adapter, "firecrawl": fire, "skipped": skipped, "boards": boards, "walled": walled,
             "credits_needed": len(fire) * int(max_credits or 0), "credits_left": _budget_left()}
 
 
@@ -267,7 +258,7 @@ def execute(run_id):
         try:
             from pflege_jobs.verify import verify_url
             from pflege_jobs.sinks import EdgeSink
-            j = A.rest_get("v_postings", {"select": "posting_id,title,source_url,external_url", "posting_id": f"eq.{int(value)}"})[0]
+            j = A.rest_get("v_postings", {"select": "posting_id,title,source_url,external_url", "posting_id": f"eq.{int(value.split(',')[0])}"})[0]
             st, code, note = verify_url(session, j.get("external_url") or j.get("source_url"), j.get("title"))
             EdgeSink()._post({"verify": [{"posting_id": j["posting_id"], "verify_status": st, "verify_http": code, "verified_at": R.now(), "verify_note": note}]})
             log(f"posting {value} re-checked: {st} ({code}) {note or ''}")

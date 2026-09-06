@@ -1,6 +1,6 @@
 """Build: inject public config into the SPA and agent docs.
 Usage: SUPABASE_URL=... SUPABASE_ANON_KEY=... python web/build.py
-Outputs: web/index.html, web/collect.html, web/llms.txt, web/skill/* (+ single-file bundle).
+Outputs: web/index.html, web/collect.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md).
 The app server (app/) serves web/ directly; there is no hosted copy, no netlify/vercel, no edge dashboard."""
 import os, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -18,7 +18,6 @@ web = root / "web"
 html = fill((web / "index.template.html").read_text(encoding="utf-8"))
 (web / "index.html").write_text(html, encoding="utf-8")
 (web / "collect.html").write_text(fill((web / "collect.template.html").read_text(encoding="utf-8")), encoding="utf-8")
-(web / "llms.txt").write_text(fill((web / "llms.template.txt").read_text(encoding="utf-8")), encoding="utf-8")
 
 # Publish the agent skill: skill/ is the source of truth, web/skill/ is what gets served.
 skill_src, skill_out = root / "skill", web / "skill"
@@ -38,4 +37,4 @@ for _name in _ref_order:
     if _p.exists():
         _bundle.append("\n\n---\n\n" + fill(_p.read_text(encoding="utf-8")).rstrip())
 (skill_out / "pflege-jobs.skill.md").write_text("\n".join(_bundle) + "\n", encoding="utf-8")
-print("built web/index.html, web/collect.html, web/llms.txt, web/skill/", len(html), "bytes")
+print("built web/index.html, web/collect.html, web/skill/", len(html), "bytes")

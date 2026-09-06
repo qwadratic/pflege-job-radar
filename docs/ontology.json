@@ -1,60 +1,1614 @@
 {
-  "nodes": [
-    {"id": "krankenhausplan_pdf", "label": "Krankenhausplan Bayern 2026 (PDF)", "kind": "external", "desc": "Official StMGP register, 51. Fortschreibung. Source of truth for hospital identity.", "fields": ["KeZ", "name", "town", "Träger", "Trägerschaft", "Versorgungsstufe", "Betten", "Plätze", "Fachrichtungen"]},
-    {"id": "ats_boards", "label": "ATS boards / career sites", "kind": "external", "desc": "Hospital career portals: softgarden, B-ITE, rexx, umantis, mein-check-in, typo3_jobs, concludis, P&I, personio …", "fields": ["JSON-LD JobPosting", "vendor feed / API", "HTML list + detail"]},
-    {"id": "firecrawl_agent", "label": "Firecrawl /agent", "kind": "external", "desc": "LLM browsing agent, used only for walled / unlabeled / dead sites. Credit-capped per call.", "fields": ["prompt", "schema", "maxCredits", "creditsUsed"]},
-    {"id": "taxonomy_json", "label": "taxonomy.json", "kind": "file", "desc": "Fachrichtungen codes, Versorgungsstufe, Trägerart, status, size buckets, ats_type labels.", "fields": ["fachrichtungen", "versorgungsstufe", "traegerart", "status", "size_buckets", "ats_types"]},
-    {"id": "patterns_json", "label": "patterns.json", "kind": "file", "desc": "Every regex the pipeline uses: employer class, role class, department, enrichment, CV skills. Editable in Settings.", "fields": ["employer", "role", "qualification", "department", "enrichment", "cv"]},
-    {"id": "app_sqlite", "label": "app.sqlite", "kind": "file", "desc": "Backend state: crawl runs, logs, career profiles, schedule, firecrawl usage.", "fields": ["crawl_runs", "run_log", "career_profiles", "settings", "firecrawl_usage"]},
-    {"id": "sources", "label": "sources", "kind": "table", "desc": "Provenance + precedence. Lower wins.", "fields": ["source_id", "code", "kind", "precedence"]},
-    {"id": "clinics", "label": "clinics", "kind": "table", "desc": "One row per hospital site, keyed by KeZ. Registry columns from the PDF, routing columns from discovery.", "fields": ["clinic_id (KeZ)", "name", "town", "operator", "landkreis", "regierungsbezirk", "status", "versorgungsstufe", "traegerart", "beds", "day_places", "fachrichtungen", "website", "careers_url", "ats_type", "employer_id"]},
-    {"id": "employers", "label": "employers", "kind": "table", "desc": "Employer identity as written on postings, classified clinic / unknown / non_clinic.", "fields": ["employer_id", "name_norm", "name_display", "employer_class", "class_rule", "class_source"]},
-    {"id": "inbox", "label": "inbox", "kind": "table", "desc": "Raw crawler rows, one shape for every crawler.", "fields": ["kind", "source_host", "source_url", "payload", "collector", "client_id", "process_note"]},
-    {"id": "posting_observations", "label": "posting_observations", "kind": "table", "desc": "One row per sighting of a job in one source. The evidence.", "fields": ["observation_id", "source_id", "source_ref", "source_url", "posting_id", "observed_at", "title", "role_class", "role_rule", "city", "description", "payload"]},
-    {"id": "postings", "label": "postings", "kind": "table", "desc": "One row per real-world vacancy, fields resolved by precedence. The answer.", "fields": ["posting_id", "title", "employer_id", "clinic_id", "clinic_match_rule", "role_class", "department_hint", "city", "plz", "lat", "lon", "employment_types", "contract", "first_published", "last_seen", "status", "verify_status", "enr_*", "provenance", "n_observations"]},
-    {"id": "role_classes", "label": "role_classes", "kind": "table", "desc": "Role taxonomy + default tariff grades.", "fields": ["role_class", "label_de", "label_en", "is_pflege", "tvoed_p_grade", "tv_l_kr_grade"]},
-    {"id": "crawl_runs", "label": "crawl_runs", "kind": "table", "desc": "Run log per source / scope.", "fields": ["run_id", "source_id", "started_at", "finished_at", "n_fetched", "n_new", "slice_counts", "notes"]},
-    {"id": "v_postings", "label": "v_postings", "kind": "view", "desc": "postings ⋈ employers ⋈ role_classes ⋈ clinics + source_codes/source_url. Default read relation.", "fields": ["all posting columns", "employer", "employer_class", "clinic_name", "regierungsbezirk", "versorgungsstufe", "traegerart", "clinic_beds", "source_codes", "source_url"]},
-    {"id": "v_clinics", "label": "v_clinics", "kind": "view", "desc": "clinics + open/live nursing posting counts.", "fields": ["clinic_id", "open_pflege_postings", "open_pflege_live", "employer_names"]},
-    {"id": "v_clinic_portals", "label": "v_clinic_portals", "kind": "view", "desc": "clinic → website, careers_url, ats_type, has_live_site_source.", "fields": ["clinic_id", "website", "careers_url", "ats_type", "has_live_site_source", "open_pflege_live"]},
-    {"id": "classify", "label": "classify", "kind": "process", "desc": "patterns.json → employer_class, role_class, department_hint, qualification_hint, enr_*; rule that fired is stored.", "fields": ["classify_employer", "classify_role", "enrich_description"]},
-    {"id": "resolve", "label": "resolve_postings()", "kind": "process", "desc": "Link observations to postings by fuzzy_key, rebuild golden fields by precedence.", "fields": ["fuzzy_key", "precedence", "provenance"]},
-    {"id": "link_clinics", "label": "link-clinics", "kind": "process", "desc": "Attach postings to a KeZ: 6 ordered rules (exact name → operator+town).", "fields": ["R1..R6", "clinic_match_rule", "clinic_match_score"]},
-    {"id": "verify", "label": "verify", "kind": "process", "desc": "HTTP re-fetch of source_url: live / gone / blocked / error. gone → expired.", "fields": ["verify_status", "verify_http", "verified_at"]}
-  ],
-  "edges": [
-    {"from": "krankenhausplan_pdf", "to": "clinics", "label": "parse (krankenhausplan.py)", "kind": "derives"},
-    {"from": "krankenhausplan_pdf", "to": "taxonomy_json", "label": "legend", "kind": "derives"},
-    {"from": "ats_boards", "to": "inbox", "label": "adapters", "kind": "feeds"},
-    {"from": "firecrawl_agent", "to": "inbox", "label": "collector=firecrawl-agent", "kind": "feeds"},
-    {"from": "firecrawl_agent", "to": "app_sqlite", "label": "career_profiles, credits", "kind": "feeds"},
-    {"from": "firecrawl_agent", "to": "clinics", "label": "careers_url, ats_type", "kind": "feeds"},
-    {"from": "clinics", "to": "ats_boards", "label": "careers_url + ats_type = route", "kind": "reads"},
-    {"from": "inbox", "to": "classify", "label": "cli inbox", "kind": "feeds"},
-    {"from": "patterns_json", "to": "classify", "label": "regex", "kind": "reads"},
-    {"from": "classify", "to": "posting_observations", "label": "observation", "kind": "feeds"},
-    {"from": "classify", "to": "employers", "label": "employer_class", "kind": "feeds"},
-    {"from": "posting_observations", "to": "sources", "label": "source_id", "kind": "fk"},
-    {"from": "posting_observations", "to": "postings", "label": "posting_id", "kind": "fk"},
-    {"from": "posting_observations", "to": "employers", "label": "employer_id", "kind": "fk"},
-    {"from": "posting_observations", "to": "resolve", "label": "", "kind": "feeds"},
-    {"from": "resolve", "to": "postings", "label": "golden fields", "kind": "feeds"},
-    {"from": "postings", "to": "employers", "label": "employer_id", "kind": "fk"},
-    {"from": "postings", "to": "clinics", "label": "clinic_id", "kind": "fk"},
-    {"from": "postings", "to": "role_classes", "label": "role_class", "kind": "fk"},
-    {"from": "clinics", "to": "employers", "label": "employer_id", "kind": "fk"},
-    {"from": "link_clinics", "to": "postings", "label": "clinic_id", "kind": "feeds"},
-    {"from": "clinics", "to": "link_clinics", "label": "", "kind": "reads"},
-    {"from": "verify", "to": "postings", "label": "verify_status", "kind": "feeds"},
-    {"from": "postings", "to": "v_postings", "label": "", "kind": "derives"},
-    {"from": "employers", "to": "v_postings", "label": "", "kind": "derives"},
-    {"from": "clinics", "to": "v_postings", "label": "", "kind": "derives"},
-    {"from": "role_classes", "to": "v_postings", "label": "", "kind": "derives"},
-    {"from": "clinics", "to": "v_clinics", "label": "", "kind": "derives"},
-    {"from": "postings", "to": "v_clinics", "label": "counts", "kind": "derives"},
-    {"from": "clinics", "to": "v_clinic_portals", "label": "", "kind": "derives"},
-    {"from": "taxonomy_json", "to": "v_postings", "label": "labels (app)", "kind": "reads"},
-    {"from": "crawl_runs", "to": "sources", "label": "source_id", "kind": "fk"},
-    {"from": "app_sqlite", "to": "crawl_runs", "label": "mirror", "kind": "feeds"}
+ "nodes": [
+  {
+   "id": "krankenhausplan_pdf",
+   "label": "Krankenhausplan 2026 (PDF)",
+   "kind": "external",
+   "desc": {
+    "de": "Amtliches Verzeichnis des StMGP (51. Fortschreibung). Quelle der Wahrheit für Identität und Struktur jedes Standorts.",
+    "en": "Official StMGP register (51st update). Source of truth for identity and structure of every site."
+   },
+   "fields": [
+    {
+     "name": "KeZ",
+     "desc": {
+      "de": "5-stellige Kennzahl: Bezirk · Landkreis · Haus",
+      "en": "5-digit key: district · county · hospital"
+     }
+    },
+    {
+     "name": "Krankenhaus / Standort",
+     "desc": {
+      "de": "Name, Ortsteil, Träger in einer Zelle",
+      "en": "Name, site label, operator in one cell"
+     }
+    },
+    {
+     "name": "Status",
+     "desc": {
+      "de": "Plan-KH, Vertrags-KH, HS-Klinik, BF",
+      "en": "Plan, contract, university, planned"
+     }
+    },
+    {
+     "name": "VSt.",
+     "desc": {
+      "de": "Versorgungsstufe I–III oder F",
+      "en": "Care level I–III or F"
+     }
+    },
+    {
+     "name": "Trägerschaft",
+     "desc": {
+      "de": "ö / fg / p",
+      "en": "public / non-profit / private"
+     }
+    },
+    {
+     "name": "Betten",
+     "desc": {
+      "de": "zugelassene stationäre Betten",
+      "en": "admitted inpatient beds"
+     }
+    },
+    {
+     "name": "Plätze",
+     "desc": {
+      "de": "teilstationäre Plätze",
+      "en": "day-care places"
+     }
+    },
+    {
+     "name": "Fachrichtungen",
+     "desc": {
+      "de": "beplante Fachrichtungen als Kürzel",
+      "en": "planned departments as codes"
+     }
+    }
+   ]
+  },
+  {
+   "id": "ats_boards",
+   "label": "ATS boards / career sites",
+   "kind": "external",
+   "desc": {
+    "de": "Karriereportale der Kliniken, betrieben von ~15 ATS-Anbietern. Pro Anbieter ein Adapter, der Feed/API/HTML kennt.",
+    "en": "Hospital career portals, run by ~15 ATS vendors. One adapter per vendor that knows its feed/API/HTML."
+   },
+   "fields": [
+    {
+     "name": "careers_url",
+     "desc": {
+      "de": "Einstiegs-URL des Boards",
+      "en": "entry URL of the board"
+     }
+    },
+    {
+     "name": "ats_type",
+     "desc": {
+      "de": "erkannter Anbieter → Adapter",
+      "en": "detected vendor → adapter"
+     }
+    },
+    {
+     "name": "JSON-LD JobPosting",
+     "desc": {
+      "de": "strukturierte Stellendaten im HTML",
+      "en": "structured job data in the HTML"
+     }
+    },
+    {
+     "name": "feed / API",
+     "desc": {
+      "de": "softgarden jobs.feed.json, B-ITE search API, personio XML …",
+      "en": "softgarden jobs.feed.json, B-ITE search API, personio XML …"
+     }
+    }
+   ]
+  },
+  {
+   "id": "firecrawl_agent",
+   "label": "Firecrawl /agent",
+   "kind": "external",
+   "desc": {
+    "de": "LLM-Browsing-Agent für Portale ohne Adapter, mit Bot-Wand oder toter Seite. Jeder Lauf ist mit maxCredits gedeckelt und wird protokolliert.",
+    "en": "LLM browsing agent for portals without an adapter, behind a bot wall or dead. Every run is capped with maxCredits and logged."
+   },
+   "fields": [
+    {
+     "name": "prompt",
+     "desc": {
+      "de": "Anweisung: nur Pflege-Stellen dieses Standorts, Direkt-URLs, paginieren",
+      "en": "instruction: only nursing jobs of this site, direct URLs, paginate"
+     }
+    },
+    {
+     "name": "schema",
+     "desc": {
+      "de": "JOBS_SCHEMA / CAREER_SCHEMA — erzwungene Antwortstruktur",
+      "en": "JOBS_SCHEMA / CAREER_SCHEMA — enforced response shape"
+     }
+    },
+    {
+     "name": "maxCredits",
+     "desc": {
+      "de": "Kostendeckel pro Lauf (Standard 40)",
+      "en": "cost cap per run (default 40)"
+     }
+    },
+    {
+     "name": "creditsUsed",
+     "desc": {
+      "de": "tatsächlich verbrauchte Credits",
+      "en": "credits actually spent"
+     }
+    }
+   ]
+  },
+  {
+   "id": "taxonomy_json",
+   "label": "taxonomy.json",
+   "kind": "file",
+   "desc": {
+    "de": "Legende des PDFs + Vokabular der App: Fachrichtungen, Stufen, Träger, Status, Größenklassen, ATS-Typen, Glossar (DE/EN).",
+    "en": "PDF legend + the app's vocabulary: departments, levels, ownership, status, size buckets, ATS types, glossary (DE/EN)."
+   },
+   "fields": [
+    {
+     "name": "fachrichtungen",
+     "desc": {
+      "de": "Kürzel → Name",
+      "en": "code → name"
+     }
+    },
+    {
+     "name": "versorgungsstufe / traegerart / status",
+     "desc": {
+      "de": "Enum-Labels DE/EN",
+      "en": "enum labels DE/EN"
+     }
+    },
+    {
+     "name": "size_buckets",
+     "desc": {
+      "de": "S <100, M 100–299, L 300–799, XL 800+",
+      "en": "S <100, M 100–299, L 300–799, XL 800+"
+     }
+    },
+    {
+     "name": "ats_types",
+     "desc": {
+      "de": "Anbieter → hat Adapter?, wie gelesen",
+      "en": "vendor → adapter?, how it is read"
+     }
+    },
+    {
+     "name": "glossary",
+     "desc": {
+      "de": "Begriffe wie TVöD, KeZ, GuK mit Erklärung",
+      "en": "terms like TVöD, KeZ, GuK explained"
+     }
+    }
+   ]
+  },
+  {
+   "id": "patterns_json",
+   "label": "patterns.json",
+   "kind": "file",
+   "desc": {
+    "de": "Alle Regexe der Pipeline, nach Mechanik gruppiert. Über die Einstellungen editierbar; config.reload() lädt neu.",
+    "en": "Every regex the pipeline uses, grouped by mechanic. Editable in Settings; config.reload() reloads."
+   },
+   "fields": [
+    {
+     "name": "employer",
+     "desc": {
+      "de": "clinic / non_clinic Listen + schwache Gruppen",
+      "en": "clinic / non_clinic lists + weak groups"
+     }
+    },
+    {
+     "name": "role",
+     "desc": {
+      "de": "Pflege-Gate, nicht_pflege, geordnete Rollenregeln",
+      "en": "nursing gate, nicht_pflege, ordered role rules"
+     }
+    },
+    {
+     "name": "qualification / department",
+     "desc": {
+      "de": "Hinweis-Regeln (erster Treffer)",
+      "en": "hint rules (first hit)"
+     }
+    },
+    {
+     "name": "enrichment",
+     "desc": {
+      "de": "Wohnraum, Tarif, Entgelt, E-Mail, Sprache, Prämie, Kita",
+      "en": "housing, tariff, pay grade, e-mail, language, bonus, childcare"
+     }
+    },
+    {
+     "name": "cv",
+     "desc": {
+      "de": "Skills, Berufsjahre, Sprachen für das CV-Matching",
+      "en": "skills, experience years, languages for CV matching"
+     }
+    },
+    {
+     "name": "excluded_role_classes",
+     "desc": {
+      "de": "beim Import verworfene Klassen",
+      "en": "classes refused at ingest"
+     }
+    }
+   ]
+  },
+  {
+   "id": "app_sqlite",
+   "label": "app.sqlite",
+   "kind": "file",
+   "desc": {
+    "de": "Zustand des Backends: Scrape-Läufe mit Log, Zeitpläne, Karriereportal-Profile, Firecrawl-Verbrauch, Einstellungen.",
+    "en": "Backend state: scrape runs with logs, schedules, career-portal profiles, Firecrawl usage, settings."
+   },
+   "fields": [
+    {
+     "name": "crawl_runs / run_log",
+     "desc": {
+      "de": "Lauf je Ziel: Status, Zeilen, Credits, Log",
+      "en": "run per target: status, rows, credits, log"
+     }
+    },
+    {
+     "name": "schedules",
+     "desc": {
+      "de": "Cron/Preset, Ziel, Modus, Budget, an/aus",
+      "en": "cron/preset, target, mode, budget, on/off"
+     }
+    },
+    {
+     "name": "career_profiles",
+     "desc": {
+      "de": "Ergebnis der Portal-Erkennung je Klinik",
+      "en": "career-portal discovery result per clinic"
+     }
+    },
+    {
+     "name": "firecrawl_usage",
+     "desc": {
+      "de": "Credits je Lauf und Klinik",
+      "en": "credits per run and clinic"
+     }
+    },
+    {
+     "name": "settings",
+     "desc": {
+      "de": "Firecrawl-Standardbudget u. a.",
+      "en": "Firecrawl default budget etc."
+     }
+    }
+   ]
+  },
+  {
+   "id": "sources",
+   "label": "sources",
+   "kind": "table",
+   "desc": {
+    "de": "Herkunft + Rangfolge. Niedrigere precedence gewinnt feldweise: 10 Krankenhausplan, 20 Karriereseiten-Adapter, 25 Firecrawl-Agent.",
+    "en": "Provenance + precedence. Lower wins field by field: 10 Krankenhausplan, 20 career-site adapters, 25 Firecrawl agent."
+   },
+   "fields": [
+    {
+     "name": "source_id",
+     "desc": {
+      "de": "10 / 20 / 25",
+      "en": "10 / 20 / 25"
+     }
+    },
+    {
+     "name": "code",
+     "desc": {
+      "de": "krankenhausplan, employer_ats, firecrawl_agent",
+      "en": "krankenhausplan, employer_ats, firecrawl_agent"
+     }
+    },
+    {
+     "name": "kind",
+     "desc": {
+      "de": "registry oder employer_ats",
+      "en": "registry or employer_ats"
+     }
+    },
+    {
+     "name": "precedence",
+     "desc": {
+      "de": "1 = Identität, 2 = Stellen",
+      "en": "1 = identity, 2 = jobs"
+     }
+    }
+   ]
+  },
+  {
+   "id": "clinics",
+   "label": "clinics",
+   "kind": "table",
+   "desc": {
+    "de": "Ein Datensatz je Krankenhausstandort (KeZ). Registerspalten aus dem PDF, Routing-Spalten aus der Portal-Erkennung.",
+    "en": "One row per hospital site (KeZ). Register columns from the PDF, routing columns from portal discovery."
+   },
+   "fields": [
+    {
+     "name": "clinic_id",
+     "desc": {
+      "de": "KeZ, Primärschlüssel",
+      "en": "KeZ, primary key"
+     }
+    },
+    {
+     "name": "name / town / operator",
+     "desc": {
+      "de": "Standort, Ort, Träger",
+      "en": "site, town, operator"
+     }
+    },
+    {
+     "name": "landkreis / regierungsbezirk",
+     "desc": {
+      "de": "Region",
+      "en": "region"
+     }
+    },
+    {
+     "name": "status",
+     "desc": {
+      "de": "Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan",
+      "en": "plan, contract, university, planned, gone"
+     }
+    },
+    {
+     "name": "versorgungsstufe",
+     "desc": {
+      "de": "I / II / III / Fachkrankenhaus / -",
+      "en": "I / II / III / specialist / -"
+     }
+    },
+    {
+     "name": "traegerart",
+     "desc": {
+      "de": "öffentlich / freigemeinnützig / privat",
+      "en": "public / non-profit / private"
+     }
+    },
+    {
+     "name": "beds / day_places",
+     "desc": {
+      "de": "Betten, teilstationäre Plätze",
+      "en": "beds, day-care places"
+     }
+    },
+    {
+     "name": "fachrichtungen",
+     "desc": {
+      "de": "Kürzel, mit | getrennt",
+      "en": "codes, |-separated"
+     }
+    },
+    {
+     "name": "website / careers_url / ats_type",
+     "desc": {
+      "de": "Routing: wo ist das Board, welcher Adapter",
+      "en": "routing: where the board is, which adapter"
+     }
+    },
+    {
+     "name": "employer_id",
+     "desc": {
+      "de": "verknüpfter Arbeitgeber, wenn bekannt",
+      "en": "linked employer when known"
+     }
+    }
+   ]
+  },
+  {
+   "id": "employers",
+   "label": "employers",
+   "kind": "table",
+   "desc": {
+    "de": "Arbeitgeber wie im Posting geschrieben, normalisiert und klassifiziert. unknown = unklassifiziert, nicht „kein Krankenhaus“.",
+    "en": "Employer as written on the posting, normalised and classified. unknown = unclassified, not 'not a hospital'."
+   },
+   "fields": [
+    {
+     "name": "employer_id",
+     "desc": {
+      "de": "Schlüssel",
+      "en": "key"
+     }
+    },
+    {
+     "name": "name_norm",
+     "desc": {
+      "de": "Identität: klein, ohne Rechtsform",
+      "en": "identity: lowercase, legal form stripped"
+     }
+    },
+    {
+     "name": "name_display",
+     "desc": {
+      "de": "Anzeigename",
+      "en": "display name"
+     }
+    },
+    {
+     "name": "employer_class",
+     "desc": {
+      "de": "clinic / unknown / non_clinic",
+      "en": "clinic / unknown / non_clinic"
+     }
+    },
+    {
+     "name": "class_rule",
+     "desc": {
+      "de": "welche Regel gefeuert hat",
+      "en": "which rule fired"
+     }
+    },
+    {
+     "name": "class_source",
+     "desc": {
+      "de": "keyword_rule / registry / manual (Overrides überleben)",
+      "en": "keyword_rule / registry / manual (overrides survive)"
+     }
+    }
+   ]
+  },
+  {
+   "id": "inbox",
+   "label": "inbox",
+   "kind": "table",
+   "desc": {
+    "de": "Rohzeilen aller Crawler in einer Form. Ein Loader für alles; neue Crawler brauchen keine Pipeline-Änderung.",
+    "en": "Raw rows of every crawler in one shape. One loader for all; new crawlers need no pipeline change."
+   },
+   "fields": [
+    {
+     "name": "kind",
+     "desc": {
+      "de": "jobposting / listing / probe",
+      "en": "jobposting / listing / probe"
+     }
+    },
+    {
+     "name": "source_host / source_url",
+     "desc": {
+      "de": "Board-Host, Stellen-URL (Identität)",
+      "en": "board host, job URL (identity)"
+     }
+    },
+    {
+     "name": "payload",
+     "desc": {
+      "de": "title, org, loc[], description, department …",
+      "en": "title, org, loc[], description, department …"
+     }
+    },
+    {
+     "name": "collector",
+     "desc": {
+      "de": "wer geliefert hat; firecrawl-* → Quelle 25",
+      "en": "who delivered; firecrawl-* → source 25"
+     }
+    },
+    {
+     "name": "client_id",
+     "desc": {
+      "de": "Lauf/Client",
+      "en": "run/client"
+     }
+    },
+    {
+     "name": "processed_at / process_note",
+     "desc": {
+      "de": "Verarbeitungsergebnis",
+      "en": "processing result"
+     }
+    }
+   ]
+  },
+  {
+   "id": "posting_observations",
+   "label": "posting_observations",
+   "kind": "table",
+   "desc": {
+    "de": "Eine Zeile je Sichtung einer Stelle in einer Quelle — der Beleg. Identität (source_id, source_ref). Nichts wird gelöscht.",
+    "en": "One row per sighting of a job in one source — the evidence. Identity (source_id, source_ref). Nothing is thrown away."
+   },
+   "fields": [
+    {
+     "name": "observation_id",
+     "desc": {
+      "de": "Schlüssel",
+      "en": "key"
+     }
+    },
+    {
+     "name": "source_id / source_ref",
+     "desc": {
+      "de": "Quelle + Referenz (URL kanonisch)",
+      "en": "source + reference (canonical URL)"
+     }
+    },
+    {
+     "name": "source_url",
+     "desc": {
+      "de": "Web-Beleg",
+      "en": "web proof"
+     }
+    },
+    {
+     "name": "posting_id",
+     "desc": {
+      "de": "verknüpftes Posting",
+      "en": "linked posting"
+     }
+    },
+    {
+     "name": "observed_at",
+     "desc": {
+      "de": "Zeitpunkt der Sichtung",
+      "en": "time of sighting"
+     }
+    },
+    {
+     "name": "title / city / description",
+     "desc": {
+      "de": "extrahierte Felder",
+      "en": "extracted fields"
+     }
+    },
+    {
+     "name": "role_class / role_rule",
+     "desc": {
+      "de": "Klassifikation + Regel",
+      "en": "classification + rule"
+     }
+    },
+    {
+     "name": "fuzzy_key",
+     "desc": {
+      "de": "Schlüssel für quellenübergreifende Dubletten",
+      "en": "cross-source dedupe key"
+     }
+    },
+    {
+     "name": "payload",
+     "desc": {
+      "de": "Originaldaten",
+      "en": "original data"
+     }
+    }
+   ]
+  },
+  {
+   "id": "postings",
+   "label": "postings",
+   "kind": "table",
+   "desc": {
+    "de": "Eine Zeile je realer Stelle; Felder aus den Beobachtungen nach Rangfolge zusammengesetzt. Die Antwort.",
+    "en": "One row per real-world vacancy; fields resolved from the observations by precedence. The answer."
+   },
+   "fields": [
+    {
+     "name": "posting_id",
+     "desc": {
+      "de": "Schlüssel",
+      "en": "key"
+     }
+    },
+    {
+     "name": "title",
+     "desc": {
+      "de": "Titel (Quelle mit bester Rangfolge)",
+      "en": "title (best-ranked source)"
+     }
+    },
+    {
+     "name": "employer_id / clinic_id",
+     "desc": {
+      "de": "Arbeitgeber, Standort (KeZ)",
+      "en": "employer, site (KeZ)"
+     }
+    },
+    {
+     "name": "clinic_match_rule / _score",
+     "desc": {
+      "de": "wie verknüpft (R1–R6)",
+      "en": "how linked (R1–R6)"
+     }
+    },
+    {
+     "name": "role_class / department_hint / qualification_hint",
+     "desc": {
+      "de": "Taxonomie",
+      "en": "taxonomy"
+     }
+    },
+    {
+     "name": "city / plz / lat / lon",
+     "desc": {
+      "de": "Ort",
+      "en": "location"
+     }
+    },
+    {
+     "name": "employment_types / contract / start_date",
+     "desc": {
+      "de": "Vollzeit/Teilzeit, (un)befristet, Beginn",
+      "en": "full/part-time, contract, start"
+     }
+    },
+    {
+     "name": "first_published / first_seen / last_seen",
+     "desc": {
+      "de": "Daten für „neu“ und Ablauf",
+      "en": "dates for fresh + expiry"
+     }
+    },
+    {
+     "name": "status / verify_status / verified_at",
+     "desc": {
+      "de": "open/expired · live/gone/blocked/error",
+      "en": "open/expired · live/gone/blocked/error"
+     }
+    },
+    {
+     "name": "enr_*",
+     "desc": {
+      "de": "Wohnraum, Tarif, Entgeltgruppe, E-Mails, Prämie, Kita, Sprache",
+      "en": "housing, tariff, pay grade, e-mails, bonus, childcare, language"
+     }
+    },
+    {
+     "name": "provenance",
+     "desc": {
+      "de": "Feld → Quelle",
+      "en": "field → source"
+     }
+    },
+    {
+     "name": "n_observations",
+     "desc": {
+      "de": "Anzahl Sichtungen",
+      "en": "number of sightings"
+     }
+    }
+   ]
+  },
+  {
+   "id": "role_classes",
+   "label": "role_classes",
+   "kind": "table",
+   "desc": {
+    "de": "Rollen-Taxonomie mit Labels und abgeleiteten Standard-Entgeltgruppen.",
+    "en": "Role taxonomy with labels and inferred default pay grades."
+   },
+   "fields": [
+    {
+     "name": "role_class",
+     "desc": {
+      "de": "Schlüssel",
+      "en": "key"
+     }
+    },
+    {
+     "name": "label_de / label_en",
+     "desc": {
+      "de": "Labels",
+      "en": "labels"
+     }
+    },
+    {
+     "name": "is_pflege",
+     "desc": {
+      "de": "in der Datenbasis bedient?",
+      "en": "served in the dataset?"
+     }
+    },
+    {
+     "name": "tvoed_p_grade / tv_l_kr_grade / avr_caritas_grade",
+     "desc": {
+      "de": "abgeleitete Standardgruppen",
+      "en": "inferred default grades"
+     }
+    },
+    {
+     "name": "sort_order",
+     "desc": {
+      "de": "Anzeige-Reihenfolge",
+      "en": "display order"
+     }
+    }
+   ]
+  },
+  {
+   "id": "crawl_runs",
+   "label": "crawl_runs",
+   "kind": "table",
+   "desc": {
+    "de": "Lauf-Protokoll in der Datenbank (Spiegel der App-Läufe + Batch-Stages).",
+    "en": "Run log in the database (mirror of app runs + batch stages)."
+   },
+   "fields": [
+    {
+     "name": "run_id",
+     "desc": {
+      "de": "Schlüssel",
+      "en": "key"
+     }
+    },
+    {
+     "name": "source_id",
+     "desc": {
+      "de": "20 / 25 / null",
+      "en": "20 / 25 / null"
+     }
+    },
+    {
+     "name": "started_at / finished_at",
+     "desc": {
+      "de": "Zeiten",
+      "en": "times"
+     }
+    },
+    {
+     "name": "n_fetched / n_new / n_updated / n_expired",
+     "desc": {
+      "de": "Zähler",
+      "en": "counters"
+     }
+    },
+    {
+     "name": "slice_counts",
+     "desc": {
+      "de": "JSON je Board/Ziel",
+      "en": "JSON per board/target"
+     }
+    },
+    {
+     "name": "notes",
+     "desc": {
+      "de": "Ziel, Modus, Fehler",
+      "en": "target, mode, errors"
+     }
+    }
+   ]
+  },
+  {
+   "id": "v_postings",
+   "label": "v_postings",
+   "kind": "view",
+   "desc": {
+    "de": "postings ⋈ employers ⋈ role_classes ⋈ clinics, plus source_codes/source_url. Standard-Lesesicht für App und Agenten.",
+    "en": "postings ⋈ employers ⋈ role_classes ⋈ clinics, plus source_codes/source_url. Default read relation for app and agents."
+   },
+   "fields": [
+    {
+     "name": "alle posting-Spalten",
+     "desc": {
+      "de": "s. postings",
+      "en": "see postings"
+     }
+    },
+    {
+     "name": "employer / employer_class",
+     "desc": {
+      "de": "aus employers",
+      "en": "from employers"
+     }
+    },
+    {
+     "name": "clinic_name / regierungsbezirk / versorgungsstufe / traegerart / clinic_beds",
+     "desc": {
+      "de": "aus clinics",
+      "en": "from clinics"
+     }
+    },
+    {
+     "name": "role_label",
+     "desc": {
+      "de": "aus role_classes",
+      "en": "from role_classes"
+     }
+    },
+    {
+     "name": "source_codes / source_url",
+     "desc": {
+      "de": "welche Quellen, Beleg-URL",
+      "en": "which sources, proof URL"
+     }
+    }
+   ]
+  },
+  {
+   "id": "v_clinics",
+   "label": "v_clinics",
+   "kind": "view",
+   "desc": {
+    "de": "Standort + Anzahl offener / live-geprüfter Pflegestellen.",
+    "en": "Site + count of open / live-verified nursing jobs."
+   },
+   "fields": [
+    {
+     "name": "clinic_id + Registerspalten",
+     "desc": {
+      "de": "",
+      "en": ""
+     }
+    },
+    {
+     "name": "open_pflege_postings",
+     "desc": {
+      "de": "offene Stellen",
+      "en": "open jobs"
+     }
+    },
+    {
+     "name": "open_pflege_live",
+     "desc": {
+      "de": "davon live",
+      "en": "of which live"
+     }
+    },
+    {
+     "name": "employer_names",
+     "desc": {
+      "de": "Arbeitgebernamen, die hier landen",
+      "en": "employer names that resolve here"
+     }
+    }
+   ]
+  },
+  {
+   "id": "v_clinic_portals",
+   "label": "v_clinic_portals",
+   "kind": "view",
+   "desc": {
+    "de": "Standort → Website, Karriereseite, ATS, hat lebende Quelle.",
+    "en": "Site → website, careers page, ATS, has a live source."
+   },
+   "fields": [
+    {
+     "name": "website / careers_url / ats_type",
+     "desc": {
+      "de": "Routing",
+      "en": "routing"
+     }
+    },
+    {
+     "name": "has_live_site_source",
+     "desc": {
+      "de": "mindestens eine live-Sichtung von der Karriereseite",
+      "en": "at least one live sighting from the career site"
+     }
+    },
+    {
+     "name": "open_pflege_live",
+     "desc": {
+      "de": "live Stellen",
+      "en": "live jobs"
+     }
+    }
+   ]
+  },
+  {
+   "id": "classify",
+   "label": "classify",
+   "kind": "process",
+   "desc": {
+    "de": "Mechaniken 1–5 (Arbeitgeber, Rolle, Qualifikation, Fachbereich, Anreicherung) aus patterns.json. Die Regel wird mitgespeichert; ausgeschlossene Rollen werden verworfen.",
+    "en": "Mechanics 1–5 (employer, role, qualification, department, enrichment) from patterns.json. The rule is stored; excluded roles are refused."
+   },
+   "fields": [
+    {
+     "name": "classify_employer",
+     "desc": {
+      "de": "Name → clinic / unknown / non_clinic",
+      "en": "name → clinic / unknown / non_clinic"
+     }
+    },
+    {
+     "name": "classify_role",
+     "desc": {
+      "de": "Titel → role_class (Gate, nicht_pflege, geordnete Regeln)",
+      "en": "title → role_class (gate, nicht_pflege, ordered rules)"
+     }
+    },
+    {
+     "name": "qualification_hint / department_hint",
+     "desc": {
+      "de": "erster Treffer",
+      "en": "first hit"
+     }
+    },
+    {
+     "name": "enrich_description",
+     "desc": {
+      "de": "enr_* aus dem Text",
+      "en": "enr_* from the text"
+     }
+    },
+    {
+     "name": "only_pflege",
+     "desc": {
+      "de": "Import-Gate",
+      "en": "ingest gate"
+     }
+    }
+   ]
+  },
+  {
+   "id": "resolve",
+   "label": "resolve_postings()",
+   "kind": "process",
+   "desc": {
+    "de": "SQL-Funktion: unverknüpfte Beobachtungen an Postings hängen (fuzzy_key, nie zwei aus derselben Quelle), dann alle Felder nach Rangfolge neu bauen.",
+    "en": "SQL function: attach unlinked observations to postings (fuzzy_key, never two from one source), then rebuild every field by precedence."
+   },
+   "fields": [
+    {
+     "name": "fuzzy_key",
+     "desc": {
+      "de": "sha1(Titel|Arbeitgeber|Stadt)",
+      "en": "sha1(title|employer|city)"
+     }
+    },
+    {
+     "name": "precedence",
+     "desc": {
+      "de": "niedriger gewinnt, dann jüngste Sichtung",
+      "en": "lower wins, then most recent"
+     }
+    },
+    {
+     "name": "provenance",
+     "desc": {
+      "de": "Feld → Quelle",
+      "en": "field → source"
+     }
+    },
+    {
+     "name": "mark_expired",
+     "desc": {
+      "de": "7 Tage nicht gesehen → expired",
+      "en": "not seen for 7 days → expired"
+     }
+    }
+   ]
+  },
+  {
+   "id": "link_clinics",
+   "label": "link-clinics",
+   "kind": "process",
+   "desc": {
+    "de": "Postings an KeZ hängen: sechs geordnete, konservative Regeln (R1 exakter Name … R6 mehrdeutige Standorte eines Trägers). Mehrdeutig → nicht verknüpft.",
+    "en": "Attach postings to a KeZ: six ordered conservative rules (R1 exact name … R6 ambiguous sites of one operator). Ambiguous → not linked."
+   },
+   "fields": [
+    {
+     "name": "R1–R6",
+     "desc": {
+      "de": "Regelkette, s. Mechanik clinic_link",
+      "en": "rule chain, see mechanic clinic_link"
+     }
+    },
+    {
+     "name": "clinic_match_rule",
+     "desc": {
+      "de": "gefeuerte Regel",
+      "en": "rule that fired"
+     }
+    },
+    {
+     "name": "clinic_match_score",
+     "desc": {
+      "de": "1.0 … 0.5",
+      "en": "1.0 … 0.5"
+     }
+    }
+   ]
+  },
+  {
+   "id": "verify",
+   "label": "verify",
+   "kind": "process",
+   "desc": {
+    "de": "HTTP-Neuabruf jeder Stellen-URL: live / gone / blocked / error. Nur gone lässt ein Posting ablaufen.",
+    "en": "HTTP re-fetch of every job URL: live / gone / blocked / error. Only gone expires a posting."
+   },
+   "fields": [
+    {
+     "name": "verify_status",
+     "desc": {
+      "de": "Ergebnis",
+      "en": "result"
+     }
+    },
+    {
+     "name": "verify_http",
+     "desc": {
+      "de": "HTTP-Code",
+      "en": "HTTP code"
+     }
+    },
+    {
+     "name": "verified_at",
+     "desc": {
+      "de": "Zeitpunkt",
+      "en": "time"
+     }
+    },
+    {
+     "name": "verify_note",
+     "desc": {
+      "de": "Titel-Treffer / Grund",
+      "en": "title hits / reason"
+     }
+    }
+   ]
+  },
+  {
+   "id": "app",
+   "label": "app (FastAPI)",
+   "kind": "process",
+   "desc": {
+    "de": "Backend: Cache von v_postings + clinics, Facetten, Fuzzy-Suche, CV-Matching, Scrape-Läufe, Zeitpläne, Mechaniken-Editor. Bedient die SPA.",
+    "en": "Backend: cache of v_postings + clinics, facets, fuzzy search, CV matching, scrape runs, schedules, mechanics editor. Serves the SPA."
+   },
+   "fields": [
+    {
+     "name": "/api/clinics, /api/jobs, /api/cities, /api/plan",
+     "desc": {
+      "de": "Tabellen mit Filtern",
+      "en": "tables with filters"
+     }
+    },
+    {
+     "name": "/api/search, /api/cv",
+     "desc": {
+      "de": "Fuzzy-Suche, CV-Profil + Matches",
+      "en": "fuzzy search, CV profile + matches"
+     }
+    },
+    {
+     "name": "/api/crawl, /api/schedules",
+     "desc": {
+      "de": "Scrape-Läufe, Zeitpläne",
+      "en": "scrape runs, schedules"
+     }
+    },
+    {
+     "name": "/api/mechanics, /api/settings",
+     "desc": {
+      "de": "Regeln ansehen/testen/ändern",
+      "en": "view/test/edit rules"
+     }
+    }
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "from": "krankenhausplan_pdf",
+   "to": "clinics",
+   "label": "parse (krankenhausplan.py)",
+   "kind": "derives"
+  },
+  {
+   "from": "krankenhausplan_pdf",
+   "to": "taxonomy_json",
+   "label": "Legende",
+   "kind": "derives"
+  },
+  {
+   "from": "clinics",
+   "to": "ats_boards",
+   "label": "careers_url + ats_type = Route",
+   "kind": "reads"
+  },
+  {
+   "from": "ats_boards",
+   "to": "inbox",
+   "label": "Adapter",
+   "kind": "feeds"
+  },
+  {
+   "from": "firecrawl_agent",
+   "to": "inbox",
+   "label": "collector=firecrawl-agent",
+   "kind": "feeds"
+  },
+  {
+   "from": "firecrawl_agent",
+   "to": "app_sqlite",
+   "label": "career_profiles, credits",
+   "kind": "feeds"
+  },
+  {
+   "from": "firecrawl_agent",
+   "to": "clinics",
+   "label": "careers_url, ats_type",
+   "kind": "feeds"
+  },
+  {
+   "from": "inbox",
+   "to": "classify",
+   "label": "cli inbox",
+   "kind": "feeds"
+  },
+  {
+   "from": "patterns_json",
+   "to": "classify",
+   "label": "Regex",
+   "kind": "reads"
+  },
+  {
+   "from": "classify",
+   "to": "posting_observations",
+   "label": "Beobachtung",
+   "kind": "feeds"
+  },
+  {
+   "from": "classify",
+   "to": "employers",
+   "label": "employer_class",
+   "kind": "feeds"
+  },
+  {
+   "from": "posting_observations",
+   "to": "sources",
+   "label": "source_id",
+   "kind": "fk"
+  },
+  {
+   "from": "posting_observations",
+   "to": "postings",
+   "label": "posting_id",
+   "kind": "fk"
+  },
+  {
+   "from": "posting_observations",
+   "to": "employers",
+   "label": "employer_id",
+   "kind": "fk"
+  },
+  {
+   "from": "posting_observations",
+   "to": "resolve",
+   "label": "",
+   "kind": "feeds"
+  },
+  {
+   "from": "resolve",
+   "to": "postings",
+   "label": "goldene Felder",
+   "kind": "feeds"
+  },
+  {
+   "from": "postings",
+   "to": "employers",
+   "label": "employer_id",
+   "kind": "fk"
+  },
+  {
+   "from": "postings",
+   "to": "clinics",
+   "label": "clinic_id",
+   "kind": "fk"
+  },
+  {
+   "from": "postings",
+   "to": "role_classes",
+   "label": "role_class",
+   "kind": "fk"
+  },
+  {
+   "from": "clinics",
+   "to": "employers",
+   "label": "employer_id",
+   "kind": "fk"
+  },
+  {
+   "from": "clinics",
+   "to": "link_clinics",
+   "label": "",
+   "kind": "reads"
+  },
+  {
+   "from": "link_clinics",
+   "to": "postings",
+   "label": "clinic_id",
+   "kind": "feeds"
+  },
+  {
+   "from": "verify",
+   "to": "postings",
+   "label": "verify_status",
+   "kind": "feeds"
+  },
+  {
+   "from": "postings",
+   "to": "v_postings",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "employers",
+   "to": "v_postings",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "clinics",
+   "to": "v_postings",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "role_classes",
+   "to": "v_postings",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "clinics",
+   "to": "v_clinics",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "postings",
+   "to": "v_clinics",
+   "label": "counts",
+   "kind": "derives"
+  },
+  {
+   "from": "clinics",
+   "to": "v_clinic_portals",
+   "label": "",
+   "kind": "derives"
+  },
+  {
+   "from": "crawl_runs",
+   "to": "sources",
+   "label": "source_id",
+   "kind": "fk"
+  },
+  {
+   "from": "app_sqlite",
+   "to": "crawl_runs",
+   "label": "mirror",
+   "kind": "feeds"
+  },
+  {
+   "from": "v_postings",
+   "to": "app",
+   "label": "cache",
+   "kind": "reads"
+  },
+  {
+   "from": "v_clinics",
+   "to": "app",
+   "label": "",
+   "kind": "reads"
+  },
+  {
+   "from": "clinics",
+   "to": "app",
+   "label": "",
+   "kind": "reads"
+  },
+  {
+   "from": "taxonomy_json",
+   "to": "app",
+   "label": "Labels",
+   "kind": "reads"
+  },
+  {
+   "from": "app",
+   "to": "app_sqlite",
+   "label": "Läufe, Zeitpläne",
+   "kind": "feeds"
+  },
+  {
+   "from": "app",
+   "to": "ats_boards",
+   "label": "Scrape starten",
+   "kind": "feeds"
+  },
+  {
+   "from": "app",
+   "to": "firecrawl_agent",
+   "label": "Fallback",
+   "kind": "feeds"
+  },
+  {
+   "from": "app",
+   "to": "patterns_json",
+   "label": "Einstellungen",
+   "kind": "feeds"
+  }
+ ],
+ "process": {
+  "steps": [
+   {
+    "id": "parse_pdf",
+    "title": {
+     "de": "PDF parsen",
+     "en": "Parse the PDF"
+    },
+    "desc": {
+     "de": "Der Krankenhausplan wird zu 407 Standorten (KeZ, Betten, Fachrichtungen, Träger); die Legende wird taxonomy.json.",
+     "en": "The hospital plan becomes 407 sites (KeZ, beds, departments, operator); the legend becomes taxonomy.json."
+    },
+    "nodes": [
+     "krankenhausplan_pdf",
+     "clinics",
+     "taxonomy_json"
+    ],
+    "edges": [
+     [
+      "krankenhausplan_pdf",
+      "clinics"
+     ],
+     [
+      "krankenhausplan_pdf",
+      "taxonomy_json"
+     ]
+    ]
+   },
+   {
+    "id": "discover_ats",
+    "title": {
+     "de": "Portale erkennen",
+     "en": "Discover portals"
+    },
+    "desc": {
+     "de": "Für jeden Standort: Website → Karriereseite → ATS-Fingerabdruck. Ergebnis in clinics.careers_url / ats_type = die Route. Ohne Treffer hilft der Firecrawl-Agent (Portal-Erkennung).",
+     "en": "Per site: website → careers page → ATS fingerprint. Result in clinics.careers_url / ats_type = the route. Without a hit the Firecrawl agent discovers the portal."
+    },
+    "nodes": [
+     "clinics",
+     "ats_boards",
+     "firecrawl_agent"
+    ],
+    "edges": [
+     [
+      "clinics",
+      "ats_boards"
+     ],
+     [
+      "firecrawl_agent",
+      "clinics"
+     ]
+    ]
+   },
+   {
+    "id": "fetch_boards",
+    "title": {
+     "de": "Boards lesen (Adapter)",
+     "en": "Read boards (adapters)"
+    },
+    "desc": {
+     "de": "Ein Board ist die Arbeitseinheit, nicht der Standort: geteilte Boards werden einmal geholt. Adapter liefern Zeilen in der einen inbox-Form.",
+     "en": "The board is the unit of work, not the site: shared boards are fetched once. Adapters emit rows in the single inbox shape."
+    },
+    "nodes": [
+     "ats_boards",
+     "inbox",
+     "app"
+    ],
+    "edges": [
+     [
+      "ats_boards",
+      "inbox"
+     ],
+     [
+      "app",
+      "ats_boards"
+     ]
+    ]
+   },
+   {
+    "id": "firecrawl_fallback",
+    "title": {
+     "de": "Firecrawl-Fallback",
+     "en": "Firecrawl fallback"
+    },
+    "desc": {
+     "de": "Ohne Adapter, hinter Bot-Wand oder JS-only: der Agent liest das Portal mit Schema und Credit-Deckel und liefert dieselben inbox-Zeilen (Quelle 25).",
+     "en": "No adapter, bot wall or JS-only: the agent reads the portal with a schema and a credit cap and emits the same inbox rows (source 25)."
+    },
+    "nodes": [
+     "firecrawl_agent",
+     "inbox",
+     "app_sqlite"
+    ],
+    "edges": [
+     [
+      "firecrawl_agent",
+      "inbox"
+     ],
+     [
+      "firecrawl_agent",
+      "app_sqlite"
+     ],
+     [
+      "app",
+      "firecrawl_agent"
+     ]
+    ]
+   },
+   {
+    "id": "classify",
+    "title": {
+     "de": "Klassifizieren",
+     "en": "Classify"
+    },
+    "desc": {
+     "de": "cli inbox: jede Rohzeile → Beobachtung. Arbeitgeber-, Rollen-, Qualifikations-, Fachbereichs-Regeln und Text-Anreicherung aus patterns.json; Regel wird gespeichert; ausgeschlossene Rollen verworfen.",
+     "en": "cli inbox: every raw row → observation. Employer, role, qualification, department rules and enrichment from patterns.json; rule stored; excluded roles refused."
+    },
+    "nodes": [
+     "inbox",
+     "patterns_json",
+     "classify",
+     "posting_observations",
+     "employers"
+    ],
+    "edges": [
+     [
+      "inbox",
+      "classify"
+     ],
+     [
+      "patterns_json",
+      "classify"
+     ],
+     [
+      "classify",
+      "posting_observations"
+     ],
+     [
+      "classify",
+      "employers"
+     ]
+    ]
+   },
+   {
+    "id": "resolve",
+    "title": {
+     "de": "Zusammenführen",
+     "en": "Resolve"
+    },
+    "desc": {
+     "de": "resolve_postings(): Beobachtung → bestehendes Posting (gleicher fuzzy_key, andere Quelle) oder neues Posting; Felder nach Rangfolge, provenance merkt sich die Quelle je Feld.",
+     "en": "resolve_postings(): observation → existing posting (same fuzzy_key, other source) or a new one; fields by precedence, provenance records the source per field."
+    },
+    "nodes": [
+     "posting_observations",
+     "sources",
+     "resolve",
+     "postings"
+    ],
+    "edges": [
+     [
+      "posting_observations",
+      "resolve"
+     ],
+     [
+      "posting_observations",
+      "sources"
+     ],
+     [
+      "resolve",
+      "postings"
+     ]
+    ]
+   },
+   {
+    "id": "link_clinics",
+    "title": {
+     "de": "Standort zuordnen",
+     "en": "Link to site"
+    },
+    "desc": {
+     "de": "link-clinics: Arbeitgeber + Stadt → KeZ über R1–R6. Mehrdeutig bleibt mehrdeutig (R6 markiert). Erst jetzt zählt ein Posting als „an einem Krankenhaus“.",
+     "en": "link-clinics: employer + city → KeZ via R1–R6. Ambiguous stays ambiguous (R6 flagged). Only now does a posting count as 'at a hospital'."
+    },
+    "nodes": [
+     "clinics",
+     "link_clinics",
+     "postings"
+    ],
+    "edges": [
+     [
+      "clinics",
+      "link_clinics"
+     ],
+     [
+      "link_clinics",
+      "postings"
+     ],
+     [
+      "postings",
+      "clinics"
+     ]
+    ]
+   },
+   {
+    "id": "verify",
+    "title": {
+     "de": "Prüfen",
+     "en": "Verify"
+    },
+    "desc": {
+     "de": "Jede offene Stelle wird erneut geholt: live / gone / blocked / error. gone → expired; 7 Tage nicht gesehen → expired. Das Headline-Zahl heißt „wir haben nachgesehen“.",
+     "en": "Every open job is re-fetched: live / gone / blocked / error. gone → expired; unseen for 7 days → expired. The headline number means 'we checked'."
+    },
+    "nodes": [
+     "verify",
+     "postings"
+    ],
+    "edges": [
+     [
+      "verify",
+      "postings"
+     ]
+    ]
+   },
+   {
+    "id": "serve",
+    "title": {
+     "de": "Bereitstellen",
+     "en": "Serve"
+    },
+    "desc": {
+     "de": "Views verbinden alles; das Backend hält sie im Speicher, rechnet Facetten, Fuzzy-Suche und CV-Matches und schreibt Läufe/Zeitpläne nach app.sqlite. Ein Zeitplan startet den Kreislauf wieder bei „Boards lesen“.",
+     "en": "Views join everything; the backend keeps them in memory, computes facets, fuzzy search and CV matches, and writes runs/schedules to app.sqlite. A schedule restarts the loop at 'Read boards'."
+    },
+    "nodes": [
+     "postings",
+     "clinics",
+     "v_postings",
+     "v_clinics",
+     "v_clinic_portals",
+     "app",
+     "app_sqlite"
+    ],
+    "edges": [
+     [
+      "postings",
+      "v_postings"
+     ],
+     [
+      "clinics",
+      "v_postings"
+     ],
+     [
+      "clinics",
+      "v_clinics"
+     ],
+     [
+      "v_postings",
+      "app"
+     ],
+     [
+      "app",
+      "app_sqlite"
+     ]
+    ]
+   }
   ]
+ }
 }

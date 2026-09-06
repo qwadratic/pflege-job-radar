@@ -100,6 +100,10 @@ def _build():
         c["last_crawl_at"], c["last_crawl_status"], c["last_crawl_mode"] = lr.get("at"), lr.get("status"), lr.get("mode")
         c["career_profile"] = profiles.get(c["clinic_id"])
         c["ats_type"] = (c.get("ats_type") or "").strip()
+        # how a scrape would reach this site: a vendor adapter, or the Firecrawl agent (everything is scrapable)
+        via_adapter = bool(c.get("routable")) and not c.get("walled")
+        c["fetch"] = "adapter" if via_adapter else "firecrawl"
+        c["fetch_label"] = (c.get("vendor") or c["ats_type"]) if via_adapter else "Firecrawl"
     by_clinic = {c["clinic_id"]: c for c in clinics}
     for j in jobs:
         c = by_clinic.get(j.get("clinic_id") or "")
@@ -252,12 +256,19 @@ def filter_clinics(p):
         rows = [c for c in rows if c["routable"]]
     elif p.get("routable") in ("0", "false"):
         rows = [c for c in rows if not c["routable"]]
+    if p.get("fetch") in ("adapter", "firecrawl"):
+        rows = [c for c in rows if c.get("fetch") == p["fetch"]]
     if p.get("q"):
-        rows = [c for c in rows if _q_match(p["q"], c["name"], c.get("town"), c.get("operator"), c.get("landkreis"), c.get("clinic_id"))]
+        tax = snapshot()["taxonomy"]
+        ats_labels = {k: (v.get("label") if isinstance(v, dict) else v) for k, v in (tax.get("ats_types") or {}).items()}
+        rows = [c for c in rows if _q_match(p["q"], c["name"], c.get("town"), c.get("operator"), c.get("landkreis"), c.get("clinic_id"),
+                                            c.get("ats_type"), ats_labels.get(c.get("ats_type") or ""), c.get("fetch_label"), c.get("regierungsbezirk"),
+                                            c.get("status"), c.get("versorgungsstufe"), c.get("traegerart"), c.get("size"),
+                                            " ".join(c.get("fachrichtungen") or []))]
     sort = p.get("sort") or "-jobs_open"
     desc = sort.startswith("-")
     key = sort.lstrip("-+")
-    if key not in ("jobs_open", "jobs_fresh", "beds", "name", "town", "regierungsbezirk", "ats_type", "last_crawl_at"):
+    if key not in ("jobs_open", "jobs_fresh", "beds", "name", "town", "regierungsbezirk", "ats_type", "last_crawl_at", "fetch_label", "landkreis", "versorgungsstufe"):
         key = "jobs_open"
     rows = sorted(rows, key=lambda c: ((c.get(key) is None), c.get(key) if not isinstance(c.get(key), str) else c.get(key).lower()), reverse=desc)
     if desc:                                                    # None last in both directions
@@ -331,3 +342,59 @@ def stats():
             "last_crawl": {"at": last["finished_at"], "status": last["status"], "run_id": last["run_id"]} if last else {"at": None, "status": None},
             "snapshot_at": datetime.fromtimestamp(s["at"], timezone.utc).isoformat(timespec="seconds") if s["at"] else None,
             "snapshot_error": s.get("error")}
+
+
+# --- cities / plan ----------------------------------------------------------------------------
+def cities(q=None):
+    """One row per registry town: hospitals, open + fresh jobs (via clinic_id), how many have a known ATS."""
+    by = {}
+    for c in clinics():
+        t = (c.get("town") or "").strip()
+        if not t:
+            continue
+        r = by.setdefault(t, {"city": t, "regierungsbezirk": c.get("regierungsbezirk"), "landkreis": c.get("landkreis"),
+                              "clinics": 0, "jobs_open": 0, "jobs_fresh": 0, "ats_known": 0, "beds": 0})
+        r["clinics"] += 1
+        r["jobs_open"] += c["jobs_open"]
+        r["jobs_fresh"] += c["jobs_fresh"]
+        r["ats_known"] += int(bool(c.get("ats_type")))
+        r["beds"] += c.get("beds") or 0
+    rows = sorted(by.values(), key=lambda r: (-r["jobs_open"], -r["clinics"], r["city"]))
+    if q:
+        rows = [r for r in rows if _q_match(q, r["city"], r["regierungsbezirk"], r["landkreis"])]
+    return rows
+
+
+PLAN_SOURCE_URL = "https://www.stmgp.bayern.de/wp-content/uploads/2026/02/51.-Fortschreibung-Krankenhausplan-des-Freistaates-Bayern-Stand-01012026.pdf"
+PLAN_COLS = ("clinic_id", "name", "town", "operator", "landkreis", "regierungsbezirk", "status", "versorgungsstufe", "traegerart",
+             "beds", "day_places", "fachrichtungen", "parse_quality", "source", "website", "careers_url", "ats_type")
+
+
+def plan_rows(p=None):
+    """The post-processed Krankenhausplan (registry CSV, every column) as rows; DB-side aggregates added."""
+    p = p or {}
+    by = snapshot()["by_clinic"]
+    rows = []
+    for r in registry_csv_rows():
+        row = {k: r.get(k) for k in PLAN_COLS}
+        row["beds"] = int(r["beds"]) if (r.get("beds") or "").isdigit() else None
+        row["day_places"] = int(r["day_places"]) if (r.get("day_places") or "").isdigit() else None
+        row["fachrichtungen"] = [x for x in (r.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
+        live = by.get(r["clinic_id"]) or {}
+        row["size"] = live.get("size") if live else size_bucket(row["beds"])
+        row["jobs_open"] = live.get("jobs_open", 0)
+        rows.append(row)
+    for key in ("regierungsbezirk", "status", "traegerart", "versorgungsstufe"):
+        vals = set(_split(p.get(key)))
+        if vals:
+            rows = [r for r in rows if r.get(key) in vals]
+    if p.get("q"):
+        rows = [r for r in rows if _q_match(p["q"], r["clinic_id"], r["name"], r["town"], r["operator"], r["landkreis"], r["regierungsbezirk"],
+                                            r["status"], r["versorgungsstufe"], r["traegerart"], " ".join(r["fachrichtungen"]), r.get("ats_type"))]
+    sort = p.get("sort") or "clinic_id"
+    desc = sort.startswith("-")
+    key = sort.lstrip("-+")
+    if key not in PLAN_COLS + ("size", "jobs_open"):
+        key = "clinic_id"
+    rows = sorted(rows, key=lambda r: (r.get(key) is None, r.get(key) if not isinstance(r.get(key), str) else r.get(key).lower()), reverse=desc)
+    return rows

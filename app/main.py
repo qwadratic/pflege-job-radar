@@ -15,10 +15,13 @@ from . import config as A
 from . import crawl as CR
 from . import cv as CV
 from . import data as D
+from . import mechanics as ME
 from . import runs as R
 from . import scheduler as S
+from . import schedules as SC
 from . import search as SE
 from . import settings as ST
+from . import targets as T
 
 app = FastAPI(title="pflege-board", version="1.0", docs_url="/api/openapi-ui", redoc_url=None, openapi_url="/api/openapi.json")
 
@@ -76,6 +79,22 @@ def api_clinics(request: Request):
     p = dict(request.query_params)
     rows = D.filter_clinics(p)
     return _page(rows, p.get("limit", 500), p.get("offset", 0))
+
+
+@app.get("/api/cities")
+def api_cities(q: str = ""):
+    return D.cities(q)
+
+
+@app.get("/api/plan")
+def api_plan(request: Request):
+    p = dict(request.query_params)
+    rows = D.plan_rows(p)
+    pdf = A.DATA_DIR / "registry" / "krankenhausplan_2026.pdf"
+    out = _page(rows, p.get("limit", 1000), p.get("offset", 0))
+    out.update({"pdf_url": "/docs/krankenhausplan_2026.pdf" if pdf.exists() else None, "source": rows[0]["source"] if rows else None,
+                "source_url": D.PLAN_SOURCE_URL, "columns": list(D.PLAN_COLS) + ["size", "jobs_open"]})
+    return out
 
 
 @app.get("/api/clinics/{clinic_id}")
@@ -144,46 +163,59 @@ async def api_cv(request: Request, file: Optional[UploadFile] = File(None), limi
 
 
 # --- crawl ----------------------------------------------------------------------------------
-SCOPES = ("clinic", "city", "regierungsbezirk", "landkreis", "job", "board", "all")
+SCOPES = T.SCOPES
 MODES = ("auto", "adapter", "firecrawl")
+
+
+def _target_from_query(request: Request):
+    p = dict(request.query_params)
+    return T.parse({"scope": p.get("scope", "clinic"), "values": p.get("values", p.get("value", ""))})
 
 
 @app.post("/api/crawl")
 async def api_crawl(request: Request):
     body = await request.json()
-    scope, mode = body.get("scope", "clinic"), body.get("mode", "auto")
-    value = str(body.get("value") or "").strip()
-    if scope not in SCOPES:
-        raise HTTPException(400, f"scope must be one of {SCOPES}")
+    mode = body.get("mode", "auto")
     if mode not in MODES:
         raise HTTPException(400, f"mode must be one of {MODES}")
-    if scope != "all" and not value:
-        raise HTTPException(400, "value required")
-    max_credits = int(body.get("max_credits") or ST.get_all()["firecrawl"]["default_max_credits"])
-    if max_credits <= 0 or max_credits > 500:
-        raise HTTPException(400, "max_credits must be 1..500")
     try:
-        plan = CR.plan_for(scope, value, mode, max_credits)
+        target = T.parse(body)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    max_credits = int(body.get("max_credits") or ST.get_firecrawl()["default_max_credits"])
+    if max_credits < 0 or max_credits > 500:
+        raise HTTPException(400, "max_credits must be 0..500")
+    try:
+        plan = CR.plan_for(None, None, mode, max_credits, target=target)
     except Exception as e:
         raise HTTPException(400, str(e))
     if not plan["clinics"]:
-        raise HTTPException(404, "scope matched no clinic")
+        raise HTTPException(404, "target matched no hospital")
+    if target["scope"] == "all" and mode == "firecrawl":
+        raise HTTPException(400, "refusing firecrawl for every hospital at once; use auto or a narrower target")
     if mode == "firecrawl" and plan["credits_needed"] > plan["credits_left"]:
         raise HTTPException(409, f"firecrawl budget exhausted: need up to {plan['credits_needed']}, {plan['credits_left']} left this week")
-    if scope == "all" and mode == "firecrawl":
-        raise HTTPException(400, "refusing firecrawl for every clinic at once; use auto or a narrower scope")
-    params = {"max_credits": max_credits, "deep": bool(body.get("deep")), "verify": body.get("verify", True)}
-    rid = R.create_run(scope, value or "all", mode, params, [c["clinic_id"] for c in plan["clinics"]], trigger="api")
+    params = {"max_credits": max_credits, "deep": bool(body.get("fetch_details", body.get("deep"))), "verify": body.get("verify", True), "target": target}
+    rid = R.create_run(target["scope"], T.value_string(target), mode, params, [c["clinic_id"] for c in plan["clinics"]], trigger="api")
     R.enqueue(rid)
-    return {"run_id": rid, "queued": True, "clinics": len(plan["clinics"]), "adapter": len(plan["adapter"]), "firecrawl": len(plan["firecrawl"]),
-            "skipped": [{"clinic_id": c["clinic_id"], "reason": c.get("route_reason")} for c in plan["skipped"]][:50]}
+    return {"run_id": rid, "queued": True, "clinics": len(plan["clinics"]), "boards": plan["boards"], "adapter": len(plan["adapter"]),
+            "firecrawl": len(plan["firecrawl"]), "skipped": [{"clinic_id": c["clinic_id"], "reason": c.get("route_reason")} for c in plan["skipped"]][:50]}
 
 
 @app.get("/api/crawl/plan")
-def api_crawl_plan(scope: str = "clinic", value: str = "", mode: str = "auto", max_credits: int = 40):
-    p = CR.plan_for(scope, value, mode, max_credits)
-    return {"clinics": len(p["clinics"]), "adapter": [c["clinic_id"] for c in p["adapter"]], "firecrawl": [c["clinic_id"] for c in p["firecrawl"]],
-            "skipped": [{"clinic_id": c["clinic_id"], "reason": c.get("route_reason")} for c in p["skipped"]], "credits_needed": p["credits_needed"], "credits_left": p["credits_left"]}
+def api_crawl_plan(request: Request, mode: str = "auto", max_credits: int = 40):
+    try:
+        target = _target_from_query(request)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if mode not in MODES:
+        raise HTTPException(400, f"mode must be one of {MODES}")
+    p = CR.plan_for(None, None, mode, max_credits, target=target)
+    return {"target": target, "clinics": len(p["clinics"]), "boards": p["boards"], "via_adapter": len(p["adapter"]), "via_firecrawl": len(p["firecrawl"]),
+            "walled": p["walled"], "est_credits": p["credits_needed"], "credits_left": p["credits_left"],
+            "skipped": [{"clinic_id": c["clinic_id"], "reason": c.get("route_reason")} for c in p["skipped"]][:50],
+            "sample": [c["name"] for c in p["clinics"][:8]],
+            "adapter": [c["clinic_id"] for c in p["adapter"]], "firecrawl": [c["clinic_id"] for c in p["firecrawl"]], "credits_needed": p["credits_needed"]}
 
 
 @app.get("/api/crawl/runs")
@@ -207,7 +239,7 @@ async def api_refetch(clinic_id: str, request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    max_credits = int((body or {}).get("max_credits") or ST.get_all()["firecrawl"]["default_max_credits"])
+    max_credits = int((body or {}).get("max_credits") or ST.get_firecrawl()["default_max_credits"])
     if CR._budget_left() < max_credits:
         raise HTTPException(409, f"firecrawl budget exhausted ({CR._budget_left()} credits left this week)")
     rid = R.create_run("career", clinic_id, "firecrawl", {"max_credits": max_credits}, [clinic_id], trigger="api")
@@ -217,8 +249,94 @@ async def api_refetch(clinic_id: str, request: Request):
 
 @app.post("/api/autocrawl/tick")
 def api_autocrawl_tick():
-    """Run today's autocrawl batch now (what the scheduler would do at `hour`)."""
-    return S.tick(force=True) or {"runs": []}
+    """Fire every enabled schedule now (today's stagger slice) — what the scheduler thread would do at its cron time."""
+    return S.tick(force=True)
+
+
+# --- schedules ------------------------------------------------------------------------------
+@app.get("/api/schedules")
+def api_schedules():
+    return SC.list_all()
+
+
+@app.get("/api/schedules/presets")
+def api_schedule_presets():
+    return SC.PRESETS
+
+
+@app.post("/api/schedules")
+async def api_schedule_create(request: Request):
+    try:
+        return SC.create(await request.json())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.put("/api/schedules/{sid}")
+async def api_schedule_update(sid: int, request: Request):
+    try:
+        s = SC.update(sid, await request.json())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if not s:
+        raise HTTPException(404, "unknown schedule")
+    return s
+
+
+@app.delete("/api/schedules/{sid}")
+def api_schedule_delete(sid: int):
+    if not SC.delete(sid):
+        raise HTTPException(404, "unknown schedule")
+    return {"ok": True}
+
+
+@app.post("/api/schedules/{sid}/run-now")
+def api_schedule_run_now(sid: int, stagger: bool = False):
+    s = SC.get(sid)
+    if not s:
+        raise HTTPException(404, "unknown schedule")
+    rid = SC.fire(s, stagger=stagger, trigger="run-now")
+    if rid is None:
+        raise HTTPException(404, "schedule target matched no hospital")
+    return {"run_id": rid, "queued": True}
+
+
+# --- mechanics ------------------------------------------------------------------------------
+@app.get("/api/mechanics")
+def api_mechanics():
+    return [ME.describe(m) for m in ME.registry()]
+
+
+@app.get("/api/mechanics/{mid}")
+def api_mechanic(mid: str):
+    m = ME.get(mid)
+    if not m:
+        raise HTTPException(404, "unknown mechanic")
+    return ME.describe(m)
+
+
+@app.post("/api/mechanics/{mid}/try")
+async def api_mechanic_try(mid: str, request: Request):
+    m = ME.get(mid)
+    if not m:
+        raise HTTPException(404, "unknown mechanic")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    inputs = body.get("inputs", body) if isinstance(body, dict) else {}
+    try:
+        return ME.try_it(m, inputs)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(422, str(e))
+
+
+@app.post("/api/mechanics/{mid}/test")
+def api_mechanic_test(mid: str):
+    m = ME.get(mid)
+    if not m:
+        raise HTTPException(404, "unknown mechanic")
+    return ME.run_tests(m)
 
 
 # --- settings -------------------------------------------------------------------------------
@@ -241,11 +359,6 @@ async def api_put_patterns(request: Request):
 async def api_validate_patterns(request: Request):
     body = await request.json()
     return {"errors": ST.validate_patterns(body)}
-
-
-@app.put("/api/settings/schedule")
-async def api_put_schedule(request: Request):
-    return ST.save_schedule(await request.json())
 
 
 @app.put("/api/settings/firecrawl")
@@ -280,12 +393,12 @@ def api_docs():
     return _json_file(A.DOCS_DIR / "index.json")
 
 
-@app.get("/agents.md")
-def agents_md():
-    p = A.DOCS_DIR / "agents.md"
+@app.get("/docs/krankenhausplan_2026.pdf")
+def plan_pdf():
+    p = A.DATA_DIR / "registry" / "krankenhausplan_2026.pdf"
     if not p.exists():
-        raise HTTPException(404, "docs/agents.md missing")
-    return FileResponse(str(p), media_type="text/markdown; charset=utf-8")
+        raise HTTPException(404, "PDF not on this host (see data/registry/README.md)")
+    return FileResponse(str(p), media_type="application/pdf", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/docs/{name}")
@@ -311,11 +424,6 @@ def index():
     if not p.exists():
         return PlainTextResponse("web/index.html not built yet — run `python web/build.py`", status_code=503)
     return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
-
-
-@app.get("/llms.txt")
-def llms():
-    return _web("llms.txt", "text/plain; charset=utf-8")
 
 
 @app.get("/collect.html")

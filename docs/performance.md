@@ -10,7 +10,8 @@ Data is small (≈400 clinics, low thousands of postings). Speed problems come f
 | filtering | in-process on the cached lists; comma lists → sets; beds/fresh as integer compares |
 | fuzzy search | `rapidfuzz` (`WRatio`/`partial_ratio`) over a pre-built index of `name+town+operator` and `title+employer+city+department`; top-k |
 | CV match | regex profile from `patterns.json` → weighted score over cached jobs (role 40, department 25, city 20, qualification 10, skills 5) |
-| state | SQLite `data/app.sqlite` (runs, logs, profiles, settings) |
+| state | SQLite `data/app.sqlite` (runs, logs, schedules, profiles, settings) |
+| rules | `pflege_jobs/mechanics.py` registry; each mechanic's regexes are compiled once at load and after `config.reload()`; `/api/mechanics/{id}/test` runs one test file (≈0.1 s) |
 | client | filters in URL hash; debounced inputs (200 ms); rendering only the visible page; facet counts from the API, never recomputed in the browser |
 
 Limits: one process, one cache. Fine to ~50k postings. Above that, move filtering to Postgres (below).

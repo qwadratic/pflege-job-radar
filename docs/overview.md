@@ -3,7 +3,7 @@
 **What:** every open, experienced-level nursing job at every hospital site in the Bavarian *Krankenhausplan*, with the evidence for each row.
 **Live:** https://pflege-board.exe.xyz · **Read API:** PostgREST schema `pflege_jobs` · **App API:** `/api/*` (see [api.md](api.md)).
 
-## Entity graph
+The interactive graph above (nodes = entities, Play = the pipeline step by step, click a node = its fields) is `docs/ontology.json`. Same thing as an ER diagram:
 
 ```mermaid
 erDiagram
@@ -87,7 +87,8 @@ Arbeitsagentur (30) and aggregators (40, Indeed/StepStone) were **removed and th
 | `pflege_jobs/patterns.json` | every regex: employer class, role class, department, qualification, enrichment, CV skills. Editable in Settings; `config.reload()` |
 | `data/registry/taxonomy.json` | code → label for Fachrichtungen, Versorgungsstufe, Trägerart, status, size buckets, ats_type |
 | `data/registry/clinics.csv` | the register as CSV (regenerable from the PDF) |
-| `data/app.sqlite` | backend state: crawl runs + logs, career profiles, schedule, Firecrawl usage |
+| `data/app.sqlite` | backend state: scrape runs + logs, schedules (cron / presets, targets, on/off), career profiles, Firecrawl usage |
+| `pflege_jobs/mechanics.py` | registry of the ten rule mechanics (employer_class, role_class, qualification, department, enrichment, dedupe_key, clinic_link, bavaria_filter, verify_title, cv_profile): explanation, source, patterns section, try-it, one test file each (`tests/test_mech_<id>.py`) — rendered in Settings |
 
 ## Taxonomy
 
@@ -152,4 +153,4 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 ## Freshness & proof
 - `fresh` = `first_published` (or `first_seen`) within 7 days — the header counter.
 - `status=open` = seen in the latest crawl of its board; `verify_status=live` = URL re-fetched and title found. Default view: open + live.
-- Weekly autocrawl: boards are split into daily batches by hash of the board URL, so never everything at once.
+- Schedules (Scrape page): any number of cron / preset schedules, each with a target (all · Bezirk · city · hospital · ATS vendor), mode and credit budget; the weekly preset spreads boards over 7 days by hash, so never everything at once.

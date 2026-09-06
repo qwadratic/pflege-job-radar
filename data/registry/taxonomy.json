@@ -267,5 +267,275 @@
    "precedence": 2,
    "kind": "employer_ats"
   }
+ },
+ "glossary": {
+  "TVöD": {
+   "de": "Tarifvertrag für den öffentlichen Dienst — Pflege-Entgeltgruppen P5–P16 (TVöD-K = Krankenhäuser)",
+   "en": "Public-sector collective agreement; nursing pay grades P5–P16 (TVöD-K = hospitals)"
+  },
+  "TV-L": {
+   "de": "Tarifvertrag der Länder (Unikliniken); Pflege in KR-Gruppen KR7–KR17",
+   "en": "Collective agreement of the federal states (university hospitals); nursing in KR grades KR7–KR17"
+  },
+  "AVR Caritas": {
+   "de": "Arbeitsvertragsrichtlinien der Caritas — kirchlicher Tarif, Pflege in Anlage 32 (P-Gruppen)",
+   "en": "Caritas employment guidelines — church tariff, nursing in annex 32 (P grades)"
+  },
+  "AVR Diakonie": {
+   "de": "Arbeitsvertragsrichtlinien der Diakonie (evangelisch)",
+   "en": "Diakonie (Protestant) employment guidelines"
+  },
+  "Haustarif": {
+   "de": "Eigener Tarif des Trägers, nicht TVöD/TV-L/AVR",
+   "en": "Employer-specific tariff, not TVöD/TV-L/AVR"
+  },
+  "KeZ": {
+   "de": "Kennzahl des Krankenhausplans: 1. Stelle Regierungsbezirk, 2–3 Landkreis/Stadt, 4–5 Krankenhaus. Stabiler Standortschlüssel",
+   "en": "Krankenhausplan key: digit 1 = district, 2–3 = county/city, 4–5 = hospital. Stable site identifier"
+  },
+  "Versorgungsstufe": {
+   "de": "Stufe im Krankenhausplan: I Grundversorgung, II Schwerpunkt, III Maximalversorgung, F Fachkrankenhaus",
+   "en": "Care level in the hospital plan: I basic, II specialised, III maximum care, F specialist hospital"
+  },
+  "Plan-KH": {
+   "de": "Plankrankenhaus — im Krankenhausplan aufgenommen (Teil II Abschnitt A)",
+   "en": "Plan hospital — listed in the state hospital plan (part II section A)"
+  },
+  "Vertrags-KH": {
+   "de": "Vertragskrankenhaus nach § 108 Nr. 3 SGB V, außerhalb des Plans zugelassen",
+   "en": "Contract hospital under § 108 no. 3 SGB V, admitted outside the plan"
+  },
+  "HS-Klinik": {
+   "de": "Hochschulklinik (Universitätsklinikum), nicht in Versorgungsstufen eingeteilt",
+   "en": "University hospital, not assigned to a care level"
+  },
+  "Bedarfsfeststellung": {
+   "de": "Bedarf festgestellt, Standort noch nicht in Betrieb",
+   "en": "Need established, site not yet operating"
+  },
+  "GuK": {
+   "de": "Gesundheits- und Krankenpfleger/in (3-jährige Ausbildung, Erwachsene)",
+   "en": "Registered general nurse (3-year training, adults)"
+  },
+  "GKiK": {
+   "de": "Gesundheits- und Kinderkrankenpfleger/in (Pädiatrie)",
+   "en": "Registered paediatric nurse"
+  },
+  "generalistisch": {
+   "de": "Pflegefachfrau/-mann nach PflBG 2020 — eine Ausbildung für alle Bereiche",
+   "en": "Generalist nurse under the 2020 nursing act — one licence for all settings"
+  },
+  "Altenpflege": {
+   "de": "Altenpfleger/in — Altausbildung, in Kliniken meist als Pflegefachkraft eingesetzt",
+   "en": "Geriatric nurse — legacy licence, used as a nurse in hospitals"
+  },
+  "Fachweiterbildung": {
+   "de": "2-jährige Fachweiterbildung (Intensiv/Anästhesie, OP, Psychiatrie, Onkologie …) → Fachpflege",
+   "en": "2-year specialisation (ICU/anaesthesia, OR, psychiatry, oncology …) → specialist nurse"
+  },
+  "Praxisanleitung": {
+   "de": "Pflegefachkraft mit 300-h-Weiterbildung, die Auszubildende anleitet",
+   "en": "Nurse with a 300-hour qualification who trains students on the ward"
+  },
+  "PDL": {
+   "de": "Pflegedienstleitung — leitet den Pflegedienst eines Hauses",
+   "en": "Director of nursing"
+  },
+  "OTA": {
+   "de": "Operationstechnische/r Assistent/in — OP-Beruf ohne Pflegeexamen",
+   "en": "Surgical technologist — OR profession without a nursing licence"
+  },
+  "ATA": {
+   "de": "Anästhesietechnische/r Assistent/in",
+   "en": "Anaesthesia technologist"
+  },
+  "APN": {
+   "de": "Advanced Practice Nurse — Pflegeexpert/in mit Master",
+   "en": "Advanced Practice Nurse — master-level nurse expert"
+  },
+  "Träger": {
+   "de": "Betreiber des Krankenhauses (Kommune, Kirche, Konzern …)",
+   "en": "Operator of the hospital (municipality, church, group …)"
+  },
+  "freigemeinnützig": {
+   "de": "Trägerschaft: kirchlich/gemeinnützig (Caritas, Diakonie, Rotes Kreuz …)",
+   "en": "Ownership: non-profit / church (Caritas, Diakonie, Red Cross …)"
+  },
+  "öffentlich": {
+   "de": "Trägerschaft: Kommune, Bezirk, Freistaat",
+   "en": "Ownership: municipality, district, state"
+  },
+  "privat": {
+   "de": "Trägerschaft: privater Konzern (Helios, Sana, Asklepios, Schön …)",
+   "en": "Ownership: private group (Helios, Sana, Asklepios, Schön …)"
+  },
+  "ATS": {
+   "de": "Applicant Tracking System — Bewerbermanagement-Software, betreibt das Karriereportal (softgarden, rexx, B-ITE …)",
+   "en": "Applicant Tracking System — recruiting software that runs the career portal (softgarden, rexx, B-ITE …)"
+  },
+  "Adapter": {
+   "de": "Unser Leser für einen ATS-Typ: kennt Feed/API/HTML-Struktur des Portals, holt alle Stellen ohne Browser oder LLM",
+   "en": "Our reader for one ATS type: knows the portal's feed/API/HTML, fetches every job without a browser or LLM"
+  },
+  "Board": {
+   "de": "Das konkrete Karriereportal (URL) eines Trägers; mehrere Standorte teilen oft ein Board",
+   "en": "The concrete career portal (URL) of an operator; several sites often share one board"
+  },
+  "JSON-LD": {
+   "de": "schema.org JobPosting-Metadaten im HTML — strukturierte Stellendaten, die viele ATS einbetten",
+   "en": "schema.org JobPosting metadata in HTML — structured job data many ATS embed"
+  },
+  "Firecrawl": {
+   "de": "LLM-Browsing-Agent (firecrawl.dev), liest Portale ohne Adapter; kostet Credits pro Lauf",
+   "en": "LLM browsing agent (firecrawl.dev) that reads portals without an adapter; costs credits per run"
+  },
+  "Regierungsbezirk": {
+   "de": "Einer der 7 bayerischen Regierungsbezirke",
+   "en": "One of Bavaria's 7 administrative districts"
+  },
+  "Landkreis": {
+   "de": "Landkreis oder kreisfreie Stadt",
+   "en": "County or county-free city"
+  },
+  "Fachrichtung": {
+   "de": "Beplante medizinische Fachrichtung des Standorts laut Krankenhausplan (Kürzel)",
+   "en": "Planned medical department of the site per the hospital plan (code)"
+  },
+  "Fachkrankenhaus": {
+   "de": "Spezialklinik (z. B. Psychiatrie, Orthopädie) statt Vollversorger",
+   "en": "Specialist hospital (e.g. psychiatry, orthopaedics) instead of a general hospital"
+  },
+  "fresh": {
+   "de": "Erstveröffentlichung (oder erste Sichtung) innerhalb der letzten 7 Tage",
+   "en": "First published (or first seen) within the last 7 days"
+  },
+  "live": {
+   "de": "Stellenseite beim letzten Check erreichbar, Titel gefunden",
+   "en": "Job page reachable at last check, title found"
+  },
+  "gone": {
+   "de": "404/410 oder „nicht mehr verfügbar“ → Posting abgelaufen",
+   "en": "404/410 or 'no longer available' → posting expired"
+  },
+  "blocked": {
+   "de": "Bot-Wand (403/429) — ein Mensch kann die Seite öffnen",
+   "en": "Bot wall (403/429) — a human can still open it"
+  },
+  "error": {
+   "de": "JS-only-Seite, 5xx oder Timeout — nicht maschinell prüfbar",
+   "en": "JS-only page, 5xx or timeout — not machine-verifiable"
+  },
+  "unknown": {
+   "de": "employer_class unknown = unklassifiziert, nicht „kein Krankenhaus“",
+   "en": "employer_class unknown = unclassified, not 'not a hospital'"
+  },
+  "KJP": {
+   "de": "Kinder- und Jugendpsychiatrie",
+   "en": "Child and adolescent psychiatry"
+  },
+  "Betten": {
+   "de": "Zugelassene stationäre Betten zum 01.01.2026",
+   "en": "Admitted inpatient beds as of 2026-01-01"
+  },
+  "Plätze": {
+   "de": "Teilstationäre Plätze (Tagesklinik)",
+   "en": "Day-care places (day clinic)"
+  }
+ },
+ "fachrichtungen_en": {
+  "AUG": "Ophthalmology",
+  "CHI": "Surgery",
+  "GUG": "Gynaecology and obstetrics",
+  "GYN": "Gynaecology (no obstetrics)",
+  "HCH": "Cardiac surgery",
+  "HD": "Haemodialysis",
+  "HNO": "Ear, nose and throat",
+  "HUG": "Dermatology and venereology",
+  "INN": "Internal medicine",
+  "KCH": "Paediatric surgery",
+  "KIN": "Paediatrics",
+  "KJP": "Child and adolescent psychiatry",
+  "MKG": "Oral and maxillofacial surgery",
+  "NCH": "Neurosurgery",
+  "NEU": "Neurology",
+  "NUK": "Nuclear medicine (therapy)",
+  "PSO": "Psychosomatic medicine",
+  "PSY": "Psychiatry and psychotherapy",
+  "SON": "Other",
+  "STR": "Radiotherapy",
+  "URO": "Urology"
+ },
+ "versorgungsstufe_en": {
+  "Grundversorgung (I)": "Basic care (level I)",
+  "Schwerpunkt (II)": "Specialised care (level II)",
+  "Maximalversorgung (III)": "Maximum care (level III)",
+  "Fachkrankenhaus": "Specialist hospital (F)",
+  "-": "outside the levels (contract / university / planned)"
+ },
+ "traegerart_en": {
+  "oeffentlich": "public",
+  "freigemeinnuetzig": "non-profit",
+  "privat": "private"
+ },
+ "status_en": {
+  "Plan-KH": "Plan hospital (part II section A)",
+  "Vertrags-KH": "Contract hospital (§ 108 no. 3 SGB V)",
+  "HS-Klinik": "University hospital",
+  "Bedarfsfeststellung": "Need established — planned, not yet operating",
+  "nicht_mehr_im_plan": "No longer in the 51st update (postings stay linked)"
+ },
+ "role_class_en": {
+  "pflegefachkraft": "Registered nurse",
+  "fachpflege": "Specialist nurse (ICU/OR/psych …)",
+  "pflegehelfer": "Nursing assistant",
+  "praxisanleitung": "Clinical instructor",
+  "leitung": "Nursing management",
+  "apn_experte": "APN / nurse expert / educator",
+  "hebamme": "Midwife",
+  "ota_ata": "Surgical / anaesthesia technologist",
+  "sonstige_pflege": "Other nursing",
+  "ausbildung": "Trainee (refused)",
+  "werkstudent_praktikum": "Student / intern (refused)",
+  "nicht_pflege": "Not nursing (refused)"
+ },
+ "department_hint_en": {
+  "Intensiv/IMC": "ICU / IMC",
+  "Anästhesie": "Anaesthesia",
+  "OP": "Operating room",
+  "Notaufnahme": "Emergency department",
+  "Psychiatrie": "Psychiatry",
+  "Pädiatrie/Neonatologie": "Paediatrics / neonatology",
+  "Geburtshilfe": "Obstetrics",
+  "Onkologie": "Oncology",
+  "Kardiologie": "Cardiology",
+  "Neurologie": "Neurology",
+  "Geriatrie": "Geriatrics",
+  "Dialyse/Nephrologie": "Dialysis / nephrology",
+  "Chirurgie/Orthopädie": "Surgery / orthopaedics",
+  "Innere Medizin": "Internal medicine",
+  "Reha": "Rehabilitation",
+  "Springerpool": "Float pool",
+  "Ambulanz/Tagesklinik": "Outpatient / day clinic"
+ },
+ "qualification_hint_en": {
+  "GKiK": "Paediatric nurse",
+  "GuK": "General nurse",
+  "Altenpflege": "Geriatric nurse",
+  "generalistisch": "Generalist nurse"
+ },
+ "verify_status_en": {
+  "live": "page reachable, title found",
+  "gone": "404/410 or 'no longer available' → expired",
+  "blocked": "bot wall (403/429) — a human can open it",
+  "error": "JS-only / 5xx / timeout"
+ },
+ "employment_types_en": {
+  "vollzeit": "full-time",
+  "teilzeit": "part-time",
+  "minijob": "mini job"
+ },
+ "contract_en": {
+  "UNBEFRISTET": "permanent",
+  "BEFRISTET": "fixed-term"
  }
 }

@@ -11,7 +11,8 @@ Graph: `/docs/ontology.json` (rendered on the board's Docs page). Prose: `/docs/
 - `postings` — golden record: `fuzzy_key` (sha1 of normalised title | employer_norm | PLZ), `clinic_id/clinic_match_rule/clinic_match_score`, `provenance` jsonb, `n_observations`, `first_seen/last_seen`, `status`, `verify_*`.
 - `role_classes` — taxonomy; grade columns are inferred defaults.
 - `crawl_runs` — one row per run/stage (`source_id`, counts, `slice_counts`, `notes`); the app mirrors its own runs here.
-- App-side (SQLite `data/app.sqlite`): `crawl_runs`, `run_log`, `career_profiles(clinic_id, profile, fetched_at, credits_used)`, `settings`, `firecrawl_usage`.
+- App-side (SQLite `data/app.sqlite`): `crawl_runs`, `run_log`, `schedules`, `career_profiles(clinic_id, profile, fetched_at, credits_used)`, `settings`, `firecrawl_usage`.
+- Rules: `pflege_jobs/mechanics.py` — ten mechanics (employer_class, role_class, qualification, department, enrichment, dedupe_key, clinic_link, bavaria_filter, verify_title, cv_profile), each with DE/EN explanation, source, patterns section, try-it and its own test file; `GET /api/mechanics`.
 
 ## Files
 - `pflege_jobs/patterns.json` — all regexes: `employer.clinic[]`, `employer.non_clinic[]`, `role.rules[]` (ordered), `qualification[]`, `department[]`, `enrichment.*`, `cv.*`, `excluded_role_classes`. Edit via `PUT /api/settings/patterns` (validated, hot-reloaded) or in the repo; `config.reload()`.
@@ -46,4 +47,4 @@ select * from pflege_jobs.resolve_postings();
 `class_source='manual'` survives every later load.
 
 ## Known limits
-Coverage = what the adapters and the agent can read: ~230 sites are unlabeled (`routable=false`), dvinci has no adapter. `unknown` employers are honest. Descriptions exist only where a detail page was fetched.
+Coverage = what the adapters and the agent can read: ~230 sites are unlabeled (`fetch=firecrawl`), dvinci has no adapter. `unknown` employers are honest. Descriptions exist only where a detail page was fetched.

@@ -12,13 +12,13 @@ to a user is a posting's `source_url`.
 
 Read `references/api.md` before querying, `references/data-model.md` before interpreting fields,
 `references/pipeline.md` before crawling or redeploying. Human docs: `/docs/overview.md`, `/docs/scraping.md`,
-`/docs/api.md`, `/docs/performance.md`, `/docs/agents.md` on the board host.
+`/docs/api.md`, `/docs/performance.md` on the board host (Docs tab).
 
 ## Where things are
 
 | thing | value |
 |---|---|
-| app API | `https://pflege-board.exe.xyz/api` (JSON; stats, facets, clinics, jobs, search, cv, crawl, runs, settings) |
+| app API | `https://pflege-board.exe.xyz/api` (JSON; stats, facets, clinics, cities, plan, jobs, search, cv, crawl + plan, runs, schedules, mechanics, settings) |
 | Supabase project | `klkxfvieaxpjlplloljn`, schema `pflege_jobs`, REST `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/` + header `Accept-Profile: pflege_jobs` |
 | anon key (public, read-only) | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3hmdmllYXhwamxwbGxvbGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjEwOTgsImV4cCI6MjA4OTQ5NzA5OH0.S0ED1qBUyRDP0YSDVBQ0s_L5_tKdu4jsPsLmyUo1YCk` |
 | board | `https://pflege-board.exe.xyz` (clinics → jobs; filters live in the URL hash) |
@@ -39,6 +39,38 @@ are labelled, `dvinci` (11) has no adapter, ~230 sites are unlabeled → `routab
 Shared boards (Schön 7, kbo 9, Südostbayern 3, RHÖN 2) are fetched once and spread by link-clinics: a per-site
 count is a lower bound for group members.
 
+## Rules
+
+1. Read from `/api/*` or PostgREST `v_postings` — never from job boards or clinic sites.
+2. Default filter = `status=open`, `verify=live`, hospital-linked (`clinic_id` set). Say which filters you used.
+3. `employer_class=unknown` means **unclassified**, not "not a hospital".
+4. Experienced-only database: no trainees, students, interns, non-nursing. `pflegehelfer` is included.
+5. Count clinics by `clinic_id`, never by employer name. Shared boards: a per-site count is a lower bound for group members.
+6. `status=open` = seen in the last scrape; `verify_status=live` = re-fetched. Never call a `gone` posting open.
+7. A clinic with `fetch=firecrawl` (no adapter) and no Firecrawl run yet may have jobs we cannot see — say so.
+
+## Filters (meaning)
+
+| filter | on | values |
+|---|---|---|
+| `city` | clinics: `town`, jobs: `city` | comma list; `/api/facets` lists them |
+| `regierungsbezirk` | both | Oberbayern, Niederbayern, Oberpfalz, Oberfranken, Mittelfranken, Unterfranken, Schwaben |
+| `landkreis` | clinics | from facets |
+| `ats_type` | clinics | softgarden, bite, rexx, umantis, mein-check-in, typo3_jobs, dvinci, pi_asp, concludis, oracle, personio, smartrecruiters, talention, helix, `""` |
+| `fetch` | clinics | adapter · firecrawl (how the board would be read) |
+| `traegerart` | both | oeffentlich, freigemeinnuetzig, privat |
+| `versorgungsstufe` | both | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus, `-` |
+| `status` (clinics) | clinics | Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan |
+| `fach` | clinics | Fachrichtungen codes (INN, CHI, PSY …), any-of; labels in `/api/taxonomy` |
+| `beds_min`/`beds_max`, `size` | clinics | integers; S/M/L/XL |
+| `has_jobs` | clinics | 1/0 |
+| `q` | clinics | substring on name/operator/town/landkreis and badge values (ATS, Bezirk, codes, status, size); `/api/search` for fuzzy |
+| `role_class` | jobs | pflegefachkraft, fachpflege, pflegehelfer, praxisanleitung, leitung, apn_experte, hebamme, ota_ata, sonstige_pflege |
+| `department_hint` | jobs | Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie, Pädiatrie/Neonatologie, Geburtshilfe, Onkologie, Kardiologie, Neurologie, Geriatrie, Dialyse/Nephrologie, Chirurgie/Orthopädie, Innere Medizin, Reha, Springerpool, Ambulanz/Tagesklinik |
+| `employment_types`, `contract`, `housing`, `fresh_days`, `verify` | jobs | vollzeit/teilzeit/minijob · UNBEFRISTET/BEFRISTET · 1 · N days · live/gone/blocked/error |
+
+Terminology (TVöD, KeZ, GuK, Versorgungsstufe …): `/api/taxonomy` → `glossary` (DE/EN).
+
 ## Decide what the user needs
 
 1. **Numbers or lists** → `GET /api/jobs` / `GET /api/clinics` (filters in `references/api.md`), or PostgREST
@@ -48,10 +80,11 @@ count is a lower bound for group members.
    → `GET /api/clinics?...` (`regierungsbezirk`, `versorgungsstufe`, `traegerart`, `beds_min/max`, `size`, `fach`, `has_jobs`, `routable`).
 4. **Fuzzy / typo search** → `GET /api/search?q=` (clinics, jobs, cities).
 5. **Candidate ↔ posting** → `POST /api/cv` (file or `{"text":…}`) → `matches[]` with `score` and `why[]`. Anonymise; never send names elsewhere.
-6. **Fresh data for a clinic / city / bezirk** → `POST /api/crawl {"scope","value","mode":"auto","max_credits":40}` → poll
-   `GET /api/crawl/runs/{run_id}` → re-query. `mode=firecrawl` costs credits (see `/api/stats.firecrawl`).
+6. **Fresh data for a clinic / city / bezirk / vendor** → preview `GET /api/crawl/plan?scope=&values=` then `POST /api/crawl {"target":{"scope":"clinic","values":["<kez>"]},"mode":"auto","max_credits":40}` → poll
+   `GET /api/crawl/runs/{run_id}` → re-query. `mode=firecrawl` costs credits (see `/api/stats.firecrawl`). Recurring → `POST /api/schedules` (preset or cron, target, mode, budget).
+6b. **Cities / the plan itself** → `GET /api/cities`, `GET /api/plan` (every registry column, `pdf_url`).
 7. **Unknown career portal** → `POST /api/clinics/{kez}/refetch-career` (Firecrawl discovery: portal, ATS, filters, categories).
-8. **Rule change** (new keyword, new department pattern) → `GET /api/settings` → edit `patterns` → `PUT /api/settings/patterns`; then `python -m pflege_jobs.cli renormalize` for stored rows.
+8. **Rule change** (new keyword, new department pattern) → `GET /api/mechanics` (explanation + source + patterns per rule), test with `POST /api/mechanics/{id}/try`, edit `patterns` → `PUT /api/settings/patterns`, `POST /api/mechanics/{id}/test`; stored rows are re-classified on the next scrape.
 9. **"Is X a clinic?" / wrong class** → `employers.class_rule`; manual override SQL in `references/data-model.md`.
 
 ## Interpretation rules
@@ -62,7 +95,7 @@ count is a lower bound for group members.
 - `enr_*` exist only where a description was fetched; `enr_housing=false` = not mentioned, null = no text.
 - `status=open` = seen in the latest crawl of its board; `verify_status`: `live` (re-fetched, title found), `gone` (→ expired), `blocked` (bot wall), `error` (JS page / 5xx). Never call `gone` open.
 - `fresh` = `first_published`/`first_seen` within 7 days. `source_codes` ∈ {employer_ats, firecrawl_agent}; `provenance` = which source supplied each field.
-- `routable=false` clinics may have jobs we cannot see — say so; offer a Firecrawl crawl.
+- `fetch=firecrawl` clinics (no adapter) may have jobs we cannot see until a Firecrawl scrape ran — say so.
 - Count clinics by `clinic_id`, never by employer name.
 
 ## Query recipes
@@ -83,7 +116,7 @@ curl -I "$REST/postings?select=posting_id&status=eq.open" $H -H 'Prefer: count=e
 ## Answer format
 
 Lead with the number and the filter ("312 live nursing jobs at 87 Bavarian hospital sites, ICU, Oberbayern").
-Cite `source_url` per posting. Flag `last_seen` > 7 days, `verify_status` ≠ live, and clinics with `routable=false`.
+Cite `source_url` per posting. Flag `last_seen` > 7 days, `verify_status` ≠ live, and clinics with `fetch=firecrawl` that were never scraped.
 
 ## Pitfalls
 

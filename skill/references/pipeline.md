@@ -13,8 +13,8 @@ clinics.careers_url + ats_type ──routing──▶ board list ──adapter�
 One row shape for every crawler (`{kind, source_host, source_url, payload{title,org,loc[],url,description}, collector, client_id}`), one loader.
 
 ## From the app (preferred)
-- `POST /api/crawl {"scope":"clinic|city|regierungsbezirk|job|board|all","value":…,"mode":"auto|adapter|firecrawl","max_credits":40}` → background worker: routing → adapters (or agent) → inbox → `cli inbox` → `link-clinics` → `link-cross` → verify of the new postings → cache refresh. Poll `GET /api/crawl/runs/{id}`.
-- Weekly autocrawl (Settings → schedule): boards hashed into `batches` daily groups so not everything runs at once; Firecrawl only within `firecrawl_weekly_budget`.
+- `GET /api/crawl/plan?scope=&values=` (preview) → `POST /api/crawl {"target":{"scope":"all|regierungsbezirk|city|clinic|ats_type","values":[…]},"mode":"auto|adapter|firecrawl","max_credits":40}` → background worker: routing → adapters (or agent) → inbox → `cli inbox` → `link-clinics` → `link-cross` → verify of the new postings → cache refresh. Poll `GET /api/crawl/runs/{id}`.
+- Schedules (Scrape page, `/api/schedules`): presets `weekly_staggered` (boards hashed over 7 days so not everything runs at once), `daily`, `weekdays`, `hourly`, or a custom cron; each with its own target, mode, credit cap and on/off. Firecrawl only within the credit cap.
 - `POST /api/clinics/{kez}/refetch-career` → Firecrawl discovery → `career_profiles` + `clinics.careers_url/ats_type`.
 
 ## CLI (batch)
@@ -49,7 +49,7 @@ POST JSON `{employers?, observations?, verify?, clinics?, clinic_links?, merges?
 
 ## Deploy
 ```bash
-python web/build.py                          # web/index.html, web/llms.txt, web/skill/* (+ bundle)
+python web/build.py                          # web/index.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md)
 sudo systemctl restart pflege-web            # deploy/pflege-web.service: .venv/bin/uvicorn app.main:app --port 8501
 curl -s localhost:8501/api/stats
 ```
