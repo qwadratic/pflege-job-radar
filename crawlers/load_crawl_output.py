@@ -17,11 +17,8 @@ def q(path):
 
 def snapshot():
     v = q("v_postings?select=posting_id&employer_class=eq.clinic&is_pflege=eq.true&status=eq.open&verify_status=eq.live&limit=100000")
-    # v_postings?source_codes=cs.{aggregator} times out (per-row subquery over 6k+ postings) on the anon
-    # role's statement_timeout; posting_observations filtered by source_id is indexed and fast.
-    agg = q("posting_observations?select=posting_id&source_id=eq.40&posting_id=not.is.null&limit=100000")
     ats = q("clinics?select=clinic_id,ats_type&ats_type=not.is.null&limit=1000")
-    return {"live": {x["posting_id"] for x in v}, "agg": {x["posting_id"] for x in agg}, "ats": {x["clinic_id"]: x["ats_type"] for x in ats}}
+    return {"live": {x["posting_id"] for x in v}, "ats": {x["clinic_id"]: x["ats_type"] for x in ats}}
 
 
 rows = []
@@ -43,15 +40,14 @@ print("posted to inbox"); time.sleep(2)
 subprocess.run([sys.executable, "-m", "pflege_jobs.cli", "inbox"], check=False)
 subprocess.run([sys.executable, "-m", "pflege_jobs.cli", "link-cross"], check=False)
 time.sleep(2); after = snapshot()
-new_live = after["live"] - before["live"]; new_agg = after["agg"] - before["agg"]
+new_live = after["live"] - before["live"]
 print("\n=== RESULT ===")
 print(f"new verified clinic Pflege postings: {len(new_live)}  (total now {len(after['live'])})")
-print(f"new aggregator-sourced postings:     {len(new_agg)}")
 changed = {c: (before["ats"].get(c), t) for c, t in after["ats"].items() if before["ats"].get(c) != t}
 print(f"ATS labels set/changed:              {len(changed)}")
 if changed:
     names = {x["clinic_id"]: x["name"] for x in q("clinics?select=clinic_id,name&clinic_id=in.(" + ",".join(changed) + ")")}
     for c, (o, n) in changed.items(): print(f"   {names.get(c, c)}: {o or '—'} -> {n}")
-notes = q("inbox?select=process_note&collector=like.*egress*&order=inbox_id.desc&limit=2000")
+notes = q("inbox?select=process_note&processed_at=not.is.null&order=inbox_id.desc&limit=2000")
 from collections import Counter
 print("inbox notes:", Counter((n["process_note"] or "").split(" ->")[0].split(" (")[0] for n in notes).most_common(8))

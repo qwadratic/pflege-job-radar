@@ -1,0 +1,271 @@
+{
+ "_doc": "Controlled vocabularies of the registry (Krankenhausplan Bayern 2026, 51. Fortschreibung: Verzeichnis der Abkürzungen) and the pipeline. Served by the app at /api/taxonomy.",
+ "fachrichtungen": {
+  "AUG": "Augenheilkunde",
+  "CHI": "Chirurgie",
+  "GUG": "Gynäkologie und Geburtshilfe",
+  "GYN": "Gynäkologie (ohne Geburtshilfe)",
+  "HCH": "Herzchirurgie",
+  "HD": "Hämodialyse",
+  "HNO": "Hals-Nasen-Ohrenheilkunde",
+  "HUG": "Haut- und Geschlechtskrankheiten",
+  "INN": "Innere Medizin",
+  "KCH": "Kinderchirurgie",
+  "KIN": "Kinder- und Jugendmedizin",
+  "KJP": "Kinder- und Jugendpsychiatrie und -psychotherapie",
+  "MKG": "Mund-Kiefer-Gesichtschirurgie",
+  "NCH": "Neurochirurgie",
+  "NEU": "Neurologie",
+  "NUK": "Nuklearmedizin (Therapie)",
+  "PSO": "Psychosomatische Medizin und Psychotherapie",
+  "PSY": "Psychiatrie und Psychotherapie",
+  "SON": "Sonstiges",
+  "STR": "Strahlentherapie",
+  "URO": "Urologie"
+ },
+ "fachrichtungen_sites": {
+  "INN": 216,
+  "CHI": 195,
+  "HNO": 106,
+  "GUG": 94,
+  "PSO": 89,
+  "URO": 82,
+  "NEU": 72,
+  "PSY": 71,
+  "AUG": 51,
+  "KIN": 42,
+  "KJP": 37,
+  "NCH": 37,
+  "MKG": 32,
+  "HD": 31,
+  "GYN": 31,
+  "STR": 26,
+  "KCH": 16,
+  "NUK": 15,
+  "HCH": 14,
+  "HUG": 13,
+  "SON": 4
+ },
+ "versorgungsstufe": {
+  "Grundversorgung (I)": "Krankenhaus der ersten Versorgungsstufe",
+  "Schwerpunkt (II)": "Krankenhaus der zweiten Versorgungsstufe",
+  "Maximalversorgung (III)": "Krankenhaus der dritten Versorgungsstufe",
+  "Fachkrankenhaus": "Fachkrankenhaus (F)",
+  "-": "außerhalb der Stufen (Vertrags-KH / HS-Klinik / Bedarfsfeststellung)"
+ },
+ "traegerart": {
+  "oeffentlich": "öffentlich (ö)",
+  "freigemeinnuetzig": "freigemeinnützig (fg)",
+  "privat": "privat (p)"
+ },
+ "status": {
+  "Plan-KH": "Plankrankenhaus (Teil II Abschnitt A)",
+  "Vertrags-KH": "Vertragskrankenhaus (§ 108 Nr. 3 SGB V)",
+  "HS-Klinik": "Hochschulklinik",
+  "Bedarfsfeststellung": "Bedarfsfeststellung (BF) — geplant, noch nicht in Betrieb",
+  "nicht_mehr_im_plan": "in der 51. Fortschreibung nicht mehr enthalten (Postings bleiben verknüpft)"
+ },
+ "role_class": {
+  "pflegefachkraft": "Pflegefachkraft (examiniert)",
+  "fachpflege": "Fachpflege (Fachweiterbildung)",
+  "pflegehelfer": "Pflegehelfer / Assistenz",
+  "praxisanleitung": "Praxisanleitung",
+  "leitung": "Leitung (Station/Bereich/PDL)",
+  "apn_experte": "Pflegeexperte / APN / Pädagogik",
+  "hebamme": "Hebamme / Entbindungspfleger",
+  "ota_ata": "OTA / ATA",
+  "sonstige_pflege": "Sonstige Pflege",
+  "ausbildung": "Ausbildung / Azubi (nicht im Datensatz)",
+  "werkstudent_praktikum": "Werkstudent / Praktikum / FSJ (nicht im Datensatz)",
+  "nicht_pflege": "Nicht Pflege (nicht im Datensatz)"
+ },
+ "department_hint": [
+  "Intensiv/IMC",
+  "Anästhesie",
+  "OP",
+  "Notaufnahme",
+  "Psychiatrie",
+  "Pädiatrie/Neonatologie",
+  "Geburtshilfe",
+  "Onkologie",
+  "Kardiologie",
+  "Neurologie",
+  "Geriatrie",
+  "Dialyse/Nephrologie",
+  "Chirurgie/Orthopädie",
+  "Innere Medizin",
+  "Reha",
+  "Springerpool",
+  "Ambulanz/Tagesklinik"
+ ],
+ "qualification_hint": [
+  "GKiK",
+  "GuK",
+  "Altenpflege",
+  "generalistisch"
+ ],
+ "employment_types": [
+  "vollzeit",
+  "teilzeit",
+  "minijob"
+ ],
+ "contract": [
+  "UNBEFRISTET",
+  "BEFRISTET"
+ ],
+ "verify_status": {
+  "live": "Seite erreichbar, Titel gefunden",
+  "gone": "404/410 oder 'nicht mehr verfügbar' -> expired",
+  "blocked": "Bot-Wall (403/429) — Mensch kann öffnen",
+  "error": "JS-only / 5xx / Timeout"
+ },
+ "size_buckets": [
+  {
+   "key": "S",
+   "label": "< 100 Betten",
+   "max": 99
+  },
+  {
+   "key": "M",
+   "label": "100–299 Betten",
+   "min": 100,
+   "max": 299
+  },
+  {
+   "key": "L",
+   "label": "300–799 Betten",
+   "min": 300,
+   "max": 799
+  },
+  {
+   "key": "XL",
+   "label": "800+ Betten",
+   "min": 800
+  }
+ ],
+ "regierungsbezirk": [
+  "Oberbayern",
+  "Niederbayern",
+  "Oberpfalz",
+  "Oberfranken",
+  "Mittelfranken",
+  "Unterfranken",
+  "Schwaben"
+ ],
+ "kez": "5-stellige Kennzahl: 1. Stelle Regierungsbezirk, 2.–3. Stadt/Landkreis, 4.–5. Krankenhaus im Kreis",
+ "ats_types": {
+  "bite": {
+   "label": "B-ITE",
+   "adapter": true,
+   "how": "B-ITE Jobs API (loader key -> postings/search)",
+   "sites": 24
+  },
+  "bite_jobs": {
+   "label": "B-ITE (jobs)",
+   "adapter": true,
+   "how": "B-ITE Jobs API (loader key -> postings/search)",
+   "sites": 3
+  },
+  "concludis": {
+   "label": "concludis",
+   "adapter": true,
+   "how": "sitemap -> detail pages",
+   "sites": 7
+  },
+  "dvinci": {
+   "label": "d.vinci",
+   "adapter": false,
+   "how": "JS-rendered list, no static links/JSON — no adapter yet",
+   "sites": 11
+  },
+  "helix": {
+   "label": "HELIX",
+   "adapter": true,
+   "how": "<tenant>.helixjobs.com joblist",
+   "sites": 1
+  },
+  "mein-check-in": {
+   "label": "mein-check-in",
+   "adapter": true,
+   "how": "tenant slug -> /<tenant>/overview",
+   "sites": 12
+  },
+  "oracle": {
+   "label": "Oracle",
+   "adapter": true,
+   "how": "sitemap walk (Oracle Recruiting Cloud is otherwise an XHR SPA)",
+   "sites": 4
+  },
+  "personio": {
+   "label": "Personio",
+   "adapter": true,
+   "how": "<slug>.jobs.personio.de/xml feed",
+   "sites": 3
+  },
+  "pi_asp": {
+   "label": "P&I asp",
+   "adapter": true,
+   "how": "Playwright (render + click)",
+   "sites": 8
+  },
+  "rexx": {
+   "label": "rexx",
+   "adapter": true,
+   "how": "server-rendered listing, ?start=N paging",
+   "sites": 17
+  },
+  "smartrecruiters": {
+   "label": "SmartRecruiters",
+   "adapter": true,
+   "how": "api.smartrecruiters.com/v1/companies/<id>/postings",
+   "sites": 1
+  },
+  "softgarden": {
+   "label": "softgarden",
+   "adapter": true,
+   "how": "jobs.feed.json (schema.org DataFeed) — no browser",
+   "sites": 38
+  },
+  "talention": {
+   "label": "Talention",
+   "adapter": true,
+   "how": "feed / joblist",
+   "sites": 1
+  },
+  "typo3_jobs": {
+   "label": "TYPO3/WordPress jobs",
+   "adapter": true,
+   "how": "jobs sitemap -> detail pages (TYPO3/WordPress jobs post-type)",
+   "sites": 29
+  },
+  "umantis": {
+   "label": "umantis",
+   "adapter": true,
+   "how": "server-rendered /Jobs/1 (Haufe umantis)",
+   "sites": 16
+  },
+  "": {
+   "label": "unbekannt",
+   "adapter": false,
+   "how": "kein ATS erkannt — Firecrawl agent / manuelle Discovery",
+   "sites": 232
+  }
+ },
+ "sources": {
+  "krankenhausplan": {
+   "source_id": 10,
+   "precedence": 1,
+   "kind": "registry"
+  },
+  "employer_ats": {
+   "source_id": 20,
+   "precedence": 2,
+   "kind": "employer_ats"
+  },
+  "firecrawl_agent": {
+   "source_id": 25,
+   "precedence": 2,
+   "kind": "employer_ats"
+  }
+ }
+}

@@ -1,11 +1,10 @@
 import json, csv, sys, time
-sys.path.insert(0,'/home/claude/pflege/repo')
+sys.path.insert(0,'.')
 from pflege_jobs.sources.career_browser import BrowserCrawler
 from pflege_jobs.sources.career_crawl import Crawler
 from pflege_jobs.classify import norm_text
 seeds=[s for s in json.load(open('data/registry/js_seeds.json')) if s['name'] in sys.argv[1].split('|')]
-towns={norm_text(o['city']) for o in json.load(open('data/raw.json'))['observations'] if o.get('city')}
-towns|={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
+towns={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
 towns={t.split(',')[0].strip() for t in towns}
 bc=BrowserCrawler(towns,per_site_pages=int(sys.argv[2]) if len(sys.argv)>2 else 80,sleep=0.2); rc=Crawler(towns,per_site_pages=120,sleep=0.2)
 allrows=[]

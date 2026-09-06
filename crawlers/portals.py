@@ -1,21 +1,15 @@
-"""Playwright/HTTP crawlers for the walled aggregator (Indeed) and the JS portals the
-requests-based career crawler could not finish.
+"""HTTP + Playwright crawlers for the JS career portals the requests-based crawler could not finish
+(hospital career sites only; aggregators are not a source any more).
 
-Every mode emits the same inbox-shaped row as crawlers/claude_egress.py:
+Every mode emits the same inbox-shaped row as the other crawlers:
     {kind, source_host, source_url, payload{title,org,loc[],url,page,description}, collector, client_id}
-so crawlers/load_crawl_output.py ingests the output unchanged. Host decides the source:
-pflege_jobs/sources/inbox.py routes indeed -> aggregator (40) and clinic hosts -> employer_ats (20).
+so crawlers/load_crawl_output.py ingests the output unchanged (pflege_jobs/sources/inbox.py -> employer_ats 20).
 
-  python crawlers/portals.py indeed                          # full q x l matrix
-  python crawlers/portals.py indeed "München|Nürnberg"        # subset
   python crawlers/portals.py portals                         # all JS portals
   python crawlers/portals.py portals vinzenz muenchen-klinik  # subset
   python crawlers/portals.py list                            # show configured portals
 
 Findings that shaped this file (probed 2026-09-06):
-- Indeed serves .job_seen_beacon cards to a plain headless Chromium; no block. The title anchor's
-  href is a /pagead/clk redirect that rotates per impression, so the stable data-jk is used to
-  rebuild a canonical /viewjob?jk=<id> source_ref. Without that, every crawl would duplicate rows.
 - St. Vinzenz and Klinikverbund Allgäu are both Haufe umantis (instances 5580 / 5556). The vacancy
   list is server-rendered, so plain HTTP is enough — no browser, no JS. Allgäu really does publish
   only ~10 vacancies; filtering the search form by Funktion/Standort returns the same set.
@@ -36,92 +30,72 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from claude_egress import (CID, CITIES, fetch_page, parse_jsonld_pw, save_rows, _close_browser)  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/125.0.0.0 Safari/537.36")
+OUTPUT_DIR = Path(os.environ.get("CRAWL_OUTPUT_DIR", "crawl_output"))
+CID = "playwright-portals-" + os.environ.get("CRAWL_CLIENT", "default")
+
+# ---------------------------------------------------------------------------
+# Browser helpers (Playwright is imported lazily: the umantis/feed portals and the parsers need none)
+# ---------------------------------------------------------------------------
+_browser = None
+_pw = None
+
+
+def _get_browser():
+    global _browser, _pw
+    if _browser is None:
+        from playwright.sync_api import sync_playwright
+        _pw = sync_playwright().start()
+        _browser = _pw.chromium.launch(headless=True, args=["--no-sandbox"])
+    return _browser
+
+
+def _close_browser():
+    global _browser, _pw
+    if _browser:
+        try: _browser.close()
+        except Exception: pass
+        _browser = None
+    if _pw:
+        try: _pw.stop()
+        except Exception: pass
+        _pw = None
+
+
+def fetch_page(url, wait_ms=5000, timeout_ms=30000):
+    """Render a page with Playwright. Returns (page, ctx) — caller must close both."""
+    ctx = _get_browser().new_context(user_agent=UA, locale="de-DE", viewport={"width": 1280, "height": 2000})
+    page = ctx.new_page()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    except Exception:
+        page.close(); ctx.close(); raise
+    page.wait_for_timeout(wait_ms)
+    return page, ctx
+
+
+def parse_jsonld_pw(page):
+    """JSON-LD script contents of a rendered page."""
+    return page.evaluate("() => Array.from(document.querySelectorAll('script[type=\"application/ld+json\"]')).map(s => s.textContent)")
+
+
+def save_rows(rows, tag):
+    """Append rows to a JSONL file in OUTPUT_DIR."""
+    if not rows:
+        return 0
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUTPUT_DIR / ("%s_%s.jsonl" % (tag, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")))
+    with open(path, "a", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return len(rows)
 
 # gender marker: (m/w/d), (w|m|d), (m/w/x), (gn) ...
 GENDER_MARK = r"\((?:m|w|d|x|i|gn)\s?[/|*]\s?(?:m|w|d|x|i|gn)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn))?\)"
-
-
-# ---------------------------------------------------------------------------
-# Indeed
-# ---------------------------------------------------------------------------
-INDEED_KEYWORDS = ["pflegefachkraft", "gesundheits- und krankenpfleger", "intensivpflege",
-                   "stationsleitung", "praxisanleiter", "ota", "hebamme", "pflegedienstleitung"]
-
-
-def parse_indeed_pw(page, page_url):
-    """Extract .job_seen_beacon cards from a rendered Indeed listing page."""
-    cards = page.evaluate(
-        "() => {"
-        "  const txt = (el) => el ? (el.textContent || '').replace(/\\s+/g,' ').trim() : null;"
-        "  return Array.from(document.querySelectorAll('.job_seen_beacon')).map(c => {"
-        "    const a = c.querySelector('a.jcs-JobTitle') || c.querySelector('h2 a') || c.querySelector('a[data-jk]');"
-        "    const aria = a ? (a.getAttribute('aria-label') || '') : '';"
-        "    return {"
-        "      jk: a ? a.getAttribute('data-jk') : null,"
-        "      title: txt(c.querySelector('h2 span[title]')) || txt(a) || aria.replace(/^Alle Details zu\\s*/i,'') || null,"
-        "      org: txt(c.querySelector('[data-testid=\"company-name\"], .companyName')),"
-        "      city: txt(c.querySelector('[data-testid=\"text-location\"], .companyLocation')),"
-        "      snippet: txt(c.querySelector('[data-testid=\"belowJobSnippet\"], .job-snippet')),"
-        "      href: a ? a.href : null"
-        "    };"
-        "  });"
-        "}")
-    out = []
-    for c in cards:
-        if not c.get("title"):
-            continue
-        jk = c.get("jk")
-        # data-jk is stable; the anchor href is a rotating /pagead/clk tracking redirect.
-        url = "https://de.indeed.com/viewjob?jk=" + jk if jk else c.get("href")
-        if not url:
-            continue
-        loc = (c.get("city") or "").strip()
-        m = re.match(r"(\d{5})\b", loc)
-        plz = m.group(1) if m else None
-        city = re.sub(r"^\d{5}\s*", "", loc).split(",")[0].strip() or None
-        out.append({"title": c["title"], "org": (c.get("org") or "").strip(),
-                    "loc": [{"city": city, "plz": plz, "region": None}],
-                    "url": url, "page": page_url,
-                    "description": c.get("snippet") or None})
-    return out
-
-
-def indeed_urls(cities=None, keywords=None, pages=1):
-    from urllib.parse import quote_plus
-    out = []
-    for c in (cities or CITIES):
-        for k in (keywords or INDEED_KEYWORDS):
-            for p in range(pages):
-                u = "https://de.indeed.com/jobs?q=%s&l=%s" % (quote_plus(k), quote_plus(c))
-                out.append(u + ("&start=%d" % (p * 10) if p else ""))
-    return out
-
-
-def crawl_indeed(cities=None, keywords=None, pages=1, sleep=1.0):
-    urls = indeed_urls(cities, keywords, pages)
-    print("%d Indeed listing URLs" % len(urls))
-    seen, total = set(), 0
-    for u in urls:
-        try:
-            page, ctx = fetch_page(u, wait_ms=6000)
-        except Exception as e:
-            print("fetch failed %-45s %s" % (u[-45:], str(e)[:60])); continue
-        try:
-            jobs = parse_indeed_pw(page, u)
-        finally:
-            page.close(); ctx.close()
-        jobs = [j for j in jobs if j["url"] not in seen]
-        seen.update(j["url"] for j in jobs)
-        rows = [{"kind": "jobposting", "source_host": "de.indeed.com", "source_url": j["url"],
-                 "payload": j, "collector": "playwright-indeed-v1", "client_id": CID} for j in jobs]
-        n = save_rows(rows, "indeed"); total += n
-        print("%-58s new %3d saved %3d" % (u[-58:], len(jobs), n))
-        time.sleep(sleep)
-    return total
 
 
 # ---------------------------------------------------------------------------
@@ -327,12 +301,7 @@ def main(argv):
     mode, args = (argv[0] if argv else "list"), argv[1:]
     total = 0
     try:
-        if mode == "indeed":
-            cities = [c for c in args[0].split("|") if c] if args else None
-            kws = [k for k in args[1].split("|") if k] if len(args) > 1 else None
-            pages = int(args[2]) if len(args) > 2 else 1
-            total = crawl_indeed(cities, kws, pages)
-        elif mode == "portals":
+        if mode == "portals":
             total = crawl_portals(args or None)
         elif mode == "list":
             for k, v in JS_PORTALS.items():

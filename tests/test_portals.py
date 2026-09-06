@@ -1,11 +1,11 @@
-"""Parsers for the walled aggregator (Indeed) and the JS portals. Pure functions -> no network."""
+"""Parsers for the JS career portals. Pure functions -> no network, no Playwright."""
 import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "crawlers"))
 
-from portals import (JS_PORTALS, indeed_urls, parse_jobposting_feed, parse_umantis)   # noqa: E402
+from portals import (JS_PORTALS, parse_jobposting_feed, parse_umantis)   # noqa: E402
 
 
 UMANTIS_HTML = """
@@ -55,13 +55,6 @@ def test_parse_jobposting_feed():
 def test_parse_jobposting_feed_accepts_type_list():
     feed = {"dataFeedElement": [{"item": {"@type": ["JobPosting"], "title": "T", "url": "u"}}]}
     assert parse_jobposting_feed(feed, "p")[0]["title"] == "T"
-
-
-def test_indeed_urls_matrix_and_paging():
-    urls = indeed_urls(["München"], ["pflegefachkraft"], pages=2)
-    assert urls[0] == "https://de.indeed.com/jobs?q=pflegefachkraft&l=M%C3%BCnchen"
-    assert urls[1].endswith("&start=10")                       # Indeed pages in steps of 10
-    assert len(indeed_urls(["A", "B"], ["k1", "k2"], pages=1)) == 4
 
 
 def test_js_portals_are_well_formed():

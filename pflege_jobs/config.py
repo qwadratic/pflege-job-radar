@@ -1,134 +1,132 @@
-"""Central config: sources, precedence, slices, classification rules.
-Everything a human or agent might tune lives here."""
+"""Central config: sources, precedence, classification rules.
+
+The regexes live in pflege_jobs/patterns.json (editable from the app's Settings page); this module
+loads them into the module-level names classify.py has always used, so a rule change is a JSON edit
+plus reload() -- no code change. Env PFLEGE_PATTERNS overrides the path."""
+import json
+import os
 import re
 
 # --- Sources & precedence (lower = more authoritative). Mirrors pflege_jobs.sources in DB.
 SOURCES = {
-    "krankenhausplan": {"source_id": 10, "precedence": 1, "kind": "registry"},
-    "employer_ats":    {"source_id": 20, "precedence": 2, "kind": "employer_ats"},
-    "arbeitsagentur":  {"source_id": 30, "precedence": 3, "kind": "public_api"},
-    "aggregator":      {"source_id": 40, "precedence": 4, "kind": "aggregator"},
+    "krankenhausplan":  {"source_id": 10, "precedence": 1, "kind": "registry"},
+    "employer_ats":     {"source_id": 20, "precedence": 2, "kind": "employer_ats"},
+    "firecrawl_agent":  {"source_id": 25, "precedence": 2, "kind": "employer_ats"},
 }
 
-# --- Arbeitsagentur Jobsuche API (search = v6, details = v4; verified 2026-09-05)
-AA_SEARCH_BASE = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6"
-AA_DETAILS_BASE = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4"
-AA_API_KEY = "jobboerse-jobsuche"
-AA_PAGE_SIZE = 100
-AA_REGION = "Bayern"          # BUNDESLANDSUCHE
-AA_ANGEBOTSART = {"ARBEIT": 1, "SELBSTAENDIG": 2, "AUSBILDUNG": 4, "PRAKTIKUM_TRAINEE": 34}
-
-# Slices: union of these, deduped on referenznummer. berufsfeld = whole occupational field
-# (complete), `was` = keyword slices for roles that sit outside the two fields.
-AA_SLICES = [
-    {"name": "kp_arbeit",     "berufsfeld": "Krankenpflege, Rettungsdienst und Geburtshilfe", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "kp_ausbildung", "berufsfeld": "Krankenpflege, Rettungsdienst und Geburtshilfe", "angebotsart": 4},
-    {"name": "kp_praktikum",  "berufsfeld": "Krankenpflege, Rettungsdienst und Geburtshilfe", "angebotsart": 34},
-    {"name": "ap_arbeit",     "berufsfeld": "Altenpflege", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "ap_ausbildung", "berufsfeld": "Altenpflege", "angebotsart": 4},
-    {"name": "was_hebamme",   "was": "Hebamme", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_ota",       "was": "Operationstechnischer Assistent", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_ata",       "was": "Anästhesietechnischer Assistent", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_pdl",       "was": "Pflegedienstleitung", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_stl",       "was": "Stationsleitung", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_praxisanl", "was": "Praxisanleiter Pflege", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_apn",       "was": "Pflegeexperte", "angebotsart": 1, "zeitarbeit": "false"},
-    {"name": "was_werkstud",  "was": "Werkstudent Pflege", "angebotsart": 1},
-]
+PATTERNS_PATH = os.environ.get("PFLEGE_PATTERNS") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "patterns.json")
+PATTERNS = {}
 
 # --- Employer classification (clinic vs non-clinic). Both lists checked.
 # Conflict matrix: clinic token + WEAK non-clinic group (verband, sonstige) -> clinic
 #                  clinic token + STRONG non-clinic group (altenhilfe, ambulant, wohnen, agentur) -> unknown
-WEAK_NON_CLINIC_GROUPS = {"verband", "sonstige"}
-CLINIC_PATTERNS = [
-    ("klinik",      r"klinik"),
-    ("krankenhaus", r"krankenhaus|krankenhäuser|hospital\b|spital"),
-    ("uniklinik",   r"universitätsklinikum|uniklinik|universitätsmedizin"),
-    ("herz",        r"herzzentrum|herzchirurg"),
-    ("bezirk",      r"bezirkskrankenhaus|bezirksklinik|\bkbo\b|\bmedbo\b|\bgebo\b"),
-    ("chain",       r"\bsana\b|\bhelios\b|\basklepios\b|schön[- ]klinik|schoen[- ]klinik|\bameos\b|\bmedian\b|mediclin|\bvamed\b|\brhön\b|regiomed|\bromed\b|innklinikum|isar-amper|danuvius|\bbg klinikum\b|\bbgu\b"),
-    ("kurklinik",   r"kurklinik|sanatorium|reha-?zentrum|rehazentrum|rehabilitationszentrum|reha-?fachklinik"),
-    ("operator",    r"sozialstiftung bamberg|schwesternschaft münchen|schwesternschaft nürnberg|rotkreuz|medical park|passauer wolf|kirinus|johannesbad|m&i-fachklinik|dr\. becker|kinderzentrum|klinikverbund|kreiskrankenh|deutsches herzzentrum|thoraxzentrum|lungenzentrum|\boberberg\b|bg unfallklinik|schlossklinik|fachklinik"),
-]
-NON_CLINIC_PATTERNS = [
-    ("altenhilfe",  r"senioren|altenheim|altenpflegeheim|pflegeheim|pflegezentrum|wohnstift|residenz|altenzentrum|altenhilfe|seniorenwohnen|pflegewohn|wohnpark|pflegestift|kursana|pro seniore|azurit|korian|alloheim|schönes leben|domicil"),
-    ("ambulant",    r"ambulant|pflegedienst|sozialstation|tagespflege|hauskrankenpflege|häusliche|intensivpflege\b|heimbeatmung|betreuungsdienst|24[- ]stunden|deutschefachpflege|\bmvz\b|wundmanagement|wundzentrum|wundex"),
-    ("wohnen",      r"wohngruppe|betreutes wohnen|wohngemeinschaft|hospiz"),
-    ("verband",     r"\bawo\b|arbeiterwohlfahrt|caritasverband|caritas-verband|diakonisches werk|diakoniewerk|diakoniestation|johanniter|malteser|\basb\b|arbeiter-samariter|\bdrk\b|\bbrk\b|rotes kreuz|volkssolidarität|paritätisch|lebenshilfe|behindertenhilfe|heilpädagog|sozialwerk|sozialdienst"),
-    ("brand_nc",    r"vitolus|vitanas|anthojo|münchenstift|rummelsberger|\bcurata\b|cosmea|linimed|aiutanda|floni\.care|pflegius|\bghd\b|\bbipg\b|renafan|burchard führer|dr\. krantz|pelikids|körperbehinderte|advita|promedica|pflege & hilfe daheim|hilfe im alter"),
-    ("agentur",     r"personaldienst|personalservice|personalvermittlung|zeitarbeit|leasing|personalmanagement gmbh|staffing|recruit"),
-    ("sonstige",    r"praxis|apotheke|bundeswehr|krankenkasse|pflegekasse|medizinischer dienst|\bmdk\b|jugendhilfe|kinderheim|\bkita\b|kindergarten|schule|akademie|hochschule|bildungs|labor|sanitätshaus|homecare|versicherung|ministerium|landratsamt|gesundheitsamt"),
-]
-LEGAL_FORMS = r"\b(gmbh|ggmbh|mbh|ag|kg|ohg|e\.?\s?v\.?|gbr|se|stiftung|gemeinnützige?|gemeinnuetzige?|& co\.?|und co\.?|kgaa|ek|e\.k\.)\b"
+WEAK_NON_CLINIC_GROUPS = set()
+CLINIC_PATTERNS = []            # [(name, regex), ...]
+NON_CLINIC_PATTERNS = []
+LEGAL_FORMS = ""
 
 # --- Role classification: order matters (first match wins), evaluated on title + hauptberuf.
-PFLEGE_TOKEN = r"pfleg|betreuungskraft|alltagsbegleit|\bstation(en)?\b|op-bereich|op-fachkr|op-kraft|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|\bapn\b|\bnurse\b|stationsleit|bereichsleit|praxisanleit"
-STRONG_PFLEGE_TITLE = r"pfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\bota\b|\bata\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\bnurse\b|\bapn\b"
-NICHT_PFLEGE = r"facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\barzt\b|ärztin\b|\bärzte\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|medizinische/?r? fachangestellte|\bmfa\b|\bmta\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|\berzieher|sozialpädag|hauswirtschaft|reinigung|\bkoch\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\baemp\b|\bzsva\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\bit-\b|haustechnik"
-ROLE_RULES = [
-    ("werkstudent_praktikum", r"werkstudent|praktik|\bfsj\b|bufdi|bundesfreiwillig|freiwilliges soziales|studentische|ferienjob|hospitation"),
-    ("ausbildung",            r"\bausbildung\b|\bazubi|auszubildende|\(ausbildung\)|duales studium|dualstudium"),
-    ("hebamme",               r"hebamme|entbindungspfleg"),
-    ("ota_ata",               r"\bota\b|\bata\b|operationstechnische|anästhesietechnische|anaesthesietechnische"),
-    ("praxisanleitung",       r"praxisanleit"),
-    ("leitung",               r"pflegedienstleit|pflegedirekt|stationsleit|bereichsleit|wohnbereichsleit|teamleit|gruppenleit|einrichtungsleit|heimleit|abteilungsleit|funktionsleit|ambulanzleit|zentrumsleit|schichtleit|pflegeleit|pflegerische leitung|(?<![a-zäöüß])leitung\b|(?<![a-zäöüß])leiter(/in|\*in|in)?\b|\bpdl\b"),
-    ("apn_experte",           r"\bapn\b|advanced practice|pflegeexpert|pflegewissenschaft|pädagog|paedagog|pflegemanage|qualitätsmanage|hygienefachkraft|hygienebeauftragte"),
-    ("fachpflege",            r"op-fachkr[aä]ft|fachkrankenpfleg|fachaltenpfleg|fachpfleg|fachweiterbildung|fachkraft für intensiv|fachkraft für anästhesie|intensivpflegekraft|anästhesiepflegekraft|\bcritical care\b|kinderintensiv"),
-    ("pflegehelfer",          r"pflegehelfer|pflegefachhelfer|pflege\(fach\)helfer|pflegeassist|krankenpflegehelfer|altenpflegehelfer|pflegehilfskraft|hilfskraft|pflegehilfe|betreuungskraft|alltagsbegleit|servicekraft|stationshilfe|pflegeassistenz|versorgungsassist|pflegefachassist|pflegeunterstützung|stationsassist|servicehelfer"),
-    ("pflegefachkraft",       r"pflegefachkraft|pflegefachfrau|pflegefachmann|pflegefachperson|krankenpfleger|krankenschwester|kinderkrankenpfleg|altenpfleger|\bnurse\b|gesundheits- und|examinierte|pflegekraft|pflegefachkräfte|pfleger\b|pflegerin\b|dauernachtwache|nachtwache"),
-]
-# --- Intake policy: which role_classes are allowed into the database at all.
-# The board serves *qualified, experienced* nursing staff only. Trainees (Ausbildung/Azubi), interns,
-# working students and volunteers (FSJ/BFD) are classified so the rule is auditable, then dropped at the
-# sink — they are never stored. `nicht_pflege` was already excluded; this widens the same gate.
+PFLEGE_TOKEN = ""               # gate: no nursing token at all -> nicht_pflege
+STRONG_PFLEGE_TITLE = ""        # a strong token in the *title* overrides a nicht_pflege hit
+NICHT_PFLEGE = ""
+ROLE_RULES = []                 # [(role_class, regex), ...]
+ROLE_FALLBACK = "sonstige_pflege"
+# --- Intake policy: which role_classes are allowed into the database at all (experienced nursing only).
 # Enforced in pflege_jobs.sinks.only_pflege() (all sinks) and pflege_jobs.cli.cmd_inbox().
-EXCLUDED_ROLE_CLASSES = {
-    "nicht_pflege",            # not a nursing role at all (Arzt, MFA, Rettungsdienst, ...)
-    "ausbildung",              # Ausbildung / Azubi / duales Studium -> no professional experience yet
-    "werkstudent_praktikum",   # Werkstudent / Praktikum / FSJ / BFD / Hospitation
-}
+EXCLUDED_ROLE_CLASSES = set()
 
-QUALIFICATION_HINT = [
-    ("GKiK",           r"kinderkrankenpfleg"),
-    ("GuK",            r"gesundheits- und krankenpfleg|krankenschwester|krankenpfleger"),
-    ("Altenpflege",    r"altenpfleg"),
-    ("generalistisch", r"pflegefachmann/-frau|pflegefachkraft|pflegefachfrau|pflegefachmann|pflegefachperson"),
-]
-DEPARTMENT_HINT = [
-    ("Intensiv/IMC",           r"intensiv|\bits\b|\bimc\b|intermediate|beatmung|weaning"),
-    ("Anästhesie",             r"anästhesie|anaesthesie|aufwachraum"),
-    ("OP",                     r"\bop\b|operations|zentral-?op|opsaal|op-?bereich|op-?pflege"),
-    ("Notaufnahme",            r"notaufnahme|\bzna\b|notfallzentrum|notfallpflege|schockraum"),
-    ("Psychiatrie",            r"psychiatr|psychosomat|forensi|sucht|gerontopsych"),
-    ("Pädiatrie/Neonatologie", r"pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend"),
-    ("Geburtshilfe",           r"geburtshilfe|kreißsaal|kreisssaal|wochenbett|entbindung"),
-    ("Onkologie",              r"onkolog|hämatolog|haematolog|strahlen|palliativ"),
-    ("Kardiologie",            r"kardiolog|herzkath|chest pain|herzchirurg"),
-    ("Neurologie",             r"neurolog|stroke|schlaganfall|neurochirurg|frühreha"),
-    ("Geriatrie",              r"geriatr|altersmedizin"),
-    ("Dialyse/Nephrologie",    r"dialyse|nephrolog"),
-    ("Chirurgie/Orthopädie",   r"chirurg|unfall|orthop|traumatolog|wirbelsäule"),
-    ("Innere Medizin",         r"innere|internist|gastroenterolog|pneumolog|diabetolog"),
-    ("Reha",                   r"\breha\b|rehabilitation"),
-    ("Springerpool",           r"springer|\bpool\b|flexpool|flexteam"),
-    ("Ambulanz/Tagesklinik",   r"ambulanz|tagesklinik|funktionsdienst|endoskopie|herzkatheter"),
-]
+QUALIFICATION_HINT = []
+DEPARTMENT_HINT = []
 
-# --- Description enrichment (phase 2, needs jobdetails)
-HOUSING = r"personalwohn|personalunterkunft|personalappartement|personalapartment|wohnraum|wohnheim|dienstwohnung|mitarbeiterwohn|mitarbeiterapartment|betriebswohnung|unterstützung bei der wohnungssuche|hilfe bei der wohnungssuche|wohnungssuche|bezugsrecht|möblierte?s? (apartment|appartement|zimmer)|umzugskosten"
-TARIFF = [
-    ("TVöD", r"tvöd|tv-?öd|tvoed"), ("TV-L", r"\btv-?l\b"), ("AVR Caritas", r"avr[- ]caritas|avr-c\b|caritas.{0,30}\bavr\b|\bavr\b.{0,30}caritas"),
-    ("AVR Diakonie", r"avr[- ]diakonie|avr-?bayern|avr\.?dd"), ("Haustarif", r"haustarif|hausvertrag|firmentarif"), ("AVR (unspecified)", r"\bavr\b"),
-]
-PAY_GRADE = r"(?:entgeltgruppe|eingruppierung|vergütung|tarif|tvöd|tv-l|avr|gehalt|bezahlung|nach)[^.\n]{0,60}?\b((?:p|kr|eg|e|s)\s?0?(\d{1,2})(?:\s?[/–-]\s?(?:p|kr|eg|e|s)?\s?0?(\d{1,2}))?[a-c]?)\b|\b((?:p|kr)\s?0?(\d{1,2})[a-c]?)\b[^.\n]{0,40}(?:tvöd|tv-l|avr|entgelt|tarif)"
-PAY_TEXT = r"[^.\n]{0,80}(?:vergütung|entgelt|gehalt|tarif|tvöd|tv-l|avr)[^.\n]{0,120}"
-REQ_HEAD = r"(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit)"
-REQ_STOP = r"(?:wir bieten|unser angebot|was wir bieten|das bieten wir|ihre aufgaben|deine aufgaben|aufgaben|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)"
-EXPERIENCE = r"((?:\d+|mehrjährig\w*|langjährig\w*|erste|einschlägig\w*|fundiert\w*)\s?(?:-?\s?jahr\w*)?\s?(?:berufs|praxis)?erfahrung[^.\n]{0,60})"
-EMAIL = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
-LANGUAGE_REQ = r"\b(a2|b1|b2|c1)\b.{0,40}(deutsch|sprach)|deutsch.{0,40}\b(a2|b1|b2|c1)\b"
-BONUS = r"willkommensprämie|wechselprämie|startprämie|starterprämie|antrittsprämie"
-CHILDCARE = r"betriebskita|betriebskindergarten|kinderbetreuung|kita-?platz|kinderkrippe"
-ANERKENNUNG = r"anerkennung|berufsanerkennung|internationale? pflegekr|ausländische|defizitbescheid|kenntnisprüfung"
+# --- Description enrichment
+HOUSING = ""; TARIFF = []; PAY_GRADE = ""; PAY_TEXT = ""; REQ_HEAD = ""; REQ_STOP = ""; EXPERIENCE = ""
+EMAIL = ""; LANGUAGE_REQ = ""; BONUS = ""; CHILDCARE = ""; ANERKENNUNG = ""
+
+
+def validate(p):
+    """Every regex must compile; every section classify.py reads must exist. Raises ValueError."""
+    def chk(rx, where):
+        try:
+            re.compile(rx, re.IGNORECASE)
+        except re.error as e:
+            raise ValueError(f"{where}: bad regex {rx!r}: {e}")
+    for k in ("employer", "role", "qualification", "department", "enrichment"):
+        if k not in p:
+            raise ValueError(f"patterns: missing section {k!r}")
+    for grp in ("clinic", "non_clinic"):
+        for i, x in enumerate(p["employer"][grp]):
+            chk(x["re"], f"employer.{grp}[{i}]")
+    chk(p["employer"].get("legal_forms", ""), "employer.legal_forms")
+    for k in ("pflege_gate", "nicht_pflege", "strong_pflege"):
+        chk(p["role"][k], f"role.{k}")
+    for i, x in enumerate(p["role"]["rules"]):
+        chk(x["re"], f"role.rules[{i}]")
+    for sec in ("qualification", "department"):
+        for i, x in enumerate(p[sec]):
+            chk(x["re"], f"{sec}[{i}]")
+    e = p["enrichment"]
+    for k, v in e.items():
+        if isinstance(v, str):
+            chk(v, f"enrichment.{k}")
+        else:
+            for i, x in enumerate(v):
+                chk(x["re"], f"enrichment.{k}[{i}]")
+    for k, v in (p.get("cv") or {}).items():
+        if isinstance(v, str):
+            chk(v, f"cv.{k}")
+        else:
+            for i, x in enumerate(v):
+                chk(x["re"], f"cv.{k}[{i}]")
+    return p
+
+
+def _apply(p):
+    g = globals()
+    g["PATTERNS"] = p
+    g["CLINIC_PATTERNS"] = [(x["name"], x["re"]) for x in p["employer"]["clinic"]]
+    g["NON_CLINIC_PATTERNS"] = [(x["name"], x["re"]) for x in p["employer"]["non_clinic"]]
+    g["WEAK_NON_CLINIC_GROUPS"] = set(p["employer"].get("weak_non_clinic_groups", []))
+    g["LEGAL_FORMS"] = p["employer"]["legal_forms"]
+    r = p["role"]
+    g["PFLEGE_TOKEN"], g["NICHT_PFLEGE"], g["STRONG_PFLEGE_TITLE"] = r["pflege_gate"], r["nicht_pflege"], r["strong_pflege"]
+    g["ROLE_RULES"] = [(x["role_class"], x["re"]) for x in r["rules"]]
+    g["ROLE_FALLBACK"] = r.get("fallback", "sonstige_pflege")
+    g["EXCLUDED_ROLE_CLASSES"] = set(p.get("excluded_role_classes", ["nicht_pflege", "ausbildung", "werkstudent_praktikum"]))
+    g["QUALIFICATION_HINT"] = [(x["hint"], x["re"]) for x in p["qualification"]]
+    g["DEPARTMENT_HINT"] = [(x["hint"], x["re"]) for x in p["department"]]
+    e = p["enrichment"]
+    g["HOUSING"], g["PAY_GRADE"], g["PAY_TEXT"] = e["housing"], e["pay_grade"], e["pay_text"]
+    g["REQ_HEAD"], g["REQ_STOP"], g["EXPERIENCE"], g["EMAIL"] = e["req_head"], e["req_stop"], e["experience"], e["email"]
+    g["LANGUAGE_REQ"], g["BONUS"], g["CHILDCARE"], g["ANERKENNUNG"] = e["language"], e["bonus"], e["childcare"], e["anerkennung"]
+    g["TARIFF"] = [(x["label"], x["re"]) for x in e["tariff"]]
+
+
+def load(path=None):
+    with open(path or PATTERNS_PATH, encoding="utf-8") as f:
+        return validate(json.load(f))
+
+
+def reload(path=None):
+    """Re-read patterns.json (or `path`) and recompile classify's regexes. Returns the dict."""
+    p = load(path)
+    _apply(p)
+    from . import classify
+    classify._compile()
+    return p
+
+
+def save(p, path=None):
+    """Validate, then write atomically. Callers should reload() afterwards."""
+    validate(p)
+    path = path or PATTERNS_PATH
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(p, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+    return path
+
+
+_apply(load())
+
 
 def rx(p): return re.compile(p, re.IGNORECASE)

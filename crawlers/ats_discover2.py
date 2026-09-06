@@ -1,16 +1,12 @@
 """Second-pass ATS discovery for census sites that the first pass left unlabeled.
 
 The first pass walked homepage -> career link -> fingerprint and labelled 145 of 403 sites. The 258
-that stayed empty fall into three groups, and this pass attacks each with its own angle:
+that stayed empty are attacked with two angles (a third, StepStone ads, went with the aggregators):
 
-  1. stepstone   The site advertises on StepStone. A StepStone ad's "Auf Website des Unternehmens
-                 bewerben" button points at the employer's own ATS, so one detail page reveals the
-                 vendor without ever finding the career page. Uses the ads we already crawled
-                 (crawl_output/*.jsonl) — no new StepStone traffic.
-  2. sitemap     Fetch /sitemap.xml (+ the sitemap index, + robots.txt Sitemap: lines) and look for
+  1. sitemap     Fetch /sitemap.xml (+ the sitemap index, + robots.txt Sitemap: lines) and look for
                  job URLs. Many TYPO3/WordPress clinic sites never link the career page from the
                  homepage nav but do list every job in the sitemap.
-  3. bewerben    Fetch the career page and follow the "Bewerben" / "Jetzt bewerben" / "Online
+  2. bewerben    Fetch the career page and follow the "Bewerben" / "Jetzt bewerben" / "Online
                  bewerben" links. That button is the ATS hand-off; the career page itself is often
                  a plain CMS page with no vendor fingerprint at all.
 
@@ -18,7 +14,7 @@ Every angle ends in the same fingerprint() and emits the same inbox 'probe' row 
 pflege_jobs/cli.py:cmd_inbox already understands (kind='probe', payload.probe='ats_discovery'),
 so discoveries flow into clinics.ats_type through the existing loader.
 
-  python crawlers/ats_discover2.py                      # all three angles, all unlabeled sites
+  python crawlers/ats_discover2.py                      # both angles, all unlabeled sites
   python crawlers/ats_discover2.py --angle sitemap      # one angle
   python crawlers/ats_discover2.py --limit 20           # smoke test
   python crawlers/ats_discover2.py --report             # what is still unlabeled, and why
@@ -104,52 +100,7 @@ def fingerprint(html, url=""):
 
 
 # ---------------------------------------------------------------------------
-# angle 1: StepStone ads we already have on disk
-# ---------------------------------------------------------------------------
-def stepstone_candidates(crawl_dirs=("crawl_output",)):
-    """employer name -> a StepStone ad URL, taken from the crawl output already on disk."""
-    by_emp = {}
-    for d in crawl_dirs:
-        if not os.path.isdir(d):
-            continue
-        for fn in os.listdir(d):
-            if not fn.endswith(".jsonl"):
-                continue
-            for line in open(os.path.join(d, fn), encoding="utf-8", errors="replace"):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    r = json.loads(line)
-                except Exception:
-                    continue
-                if r.get("kind") != "jobposting":
-                    continue
-                p = r.get("payload") or {}
-                org = (p.get("org") or "").strip()
-                if org and "stepstone" in (r.get("source_host") or ""):
-                    by_emp.setdefault(org, r["source_url"])
-    return by_emp
-
-
-def probe_stepstone(clinic, ad_url, session=None):
-    """A StepStone ad links out to the employer's ATS ('Auf Website des Unternehmens bewerben')."""
-    r = get(ad_url, session=session)
-    if not r or not r.ok:
-        return None
-    # HTML-unescape: raw href text carries &amp; etc., which would be stored verbatim as a broken URL.
-    ext = [_html.unescape(u) for u in re.findall(r'href="(https?://[^"]+)"', r.text) if "stepstone" not in u.lower()]
-    ats, ev = fingerprint("", " ".join(ext))
-    if not ats:
-        ats, ev = fingerprint(r.text, "")
-    if not ats:
-        return None
-    apply_url = next((u for u in ext if re.search(ATS[[n for n, _ in ATS].index(ats)][1], u, re.I)), None)
-    return {"ats": ats, "apply_url": apply_url, "careers_url": apply_url, "evidence": ev, "angle": "stepstone"}
-
-
-# ---------------------------------------------------------------------------
-# angle 2: sitemap.xml
+# angle 1: sitemap.xml
 # ---------------------------------------------------------------------------
 def sitemap_urls(base, session=None, max_maps=6):
     """Collect sitemap locations: robots.txt Sitemap: lines + the usual paths, following indexes."""
@@ -201,7 +152,7 @@ def probe_sitemap(clinic, base, session=None):
 
 
 # ---------------------------------------------------------------------------
-# angle 3: "Bewerben" links on the career page
+# angle 2: "Bewerben" links on the career page
 # ---------------------------------------------------------------------------
 def probe_bewerben(clinic, career, session=None, max_follow=4):
     """The apply button is the ATS hand-off even when the career page itself is plain CMS HTML."""
@@ -255,7 +206,7 @@ def base_of(u):
     return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else None
 
 
-def discover_one(c, ss_by_emp, angles):
+def discover_one(c, angles):
     """Try each angle in turn for one clinic; first hit wins."""
     session = requests.Session(); session.headers.update(H)
     career = (c.get("careers_url") or "").strip()
@@ -263,16 +214,6 @@ def discover_one(c, ss_by_emp, angles):
     base = base_of(career) or base_of(site)
     tried = []
 
-    if "stepstone" in angles:
-        ad = next((u for e, u in ss_by_emp.items() if _match_name(c["name"], e)), None)
-        if ad:
-            tried.append("stepstone")
-            try:
-                hit = probe_stepstone(c, ad, session)
-                if hit and hit.get("ats"):
-                    return c, hit, tried
-            except Exception:
-                pass
     if "bewerben" in angles and career:
         tried.append("bewerben")
         try:
@@ -315,7 +256,7 @@ def _match_name(clinic_name, employer):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--angle", default="stepstone,bewerben,sitemap")
+    ap.add_argument("--angle", default="bewerben,sitemap")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--report", action="store_true")
@@ -336,13 +277,12 @@ def main():
     todo = [c for c in unlabeled if (c.get("careers_url") or c.get("website"))]
     if a.limit:
         todo = todo[:a.limit]
-    ss = stepstone_candidates() if "stepstone" in angles else {}
-    print(f"{len(todo)} sites to probe, angles={sorted(angles)}, stepstone ads on disk: {len(ss)} employers")
+    print(f"{len(todo)} sites to probe, angles={sorted(angles)}")
 
     rows, hits, stats = [], 0, Counter()
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=a.workers) as ex:
-        futs = [ex.submit(discover_one, c, ss, angles) for c in todo]
+        futs = [ex.submit(discover_one, c, angles) for c in todo]
         for i, f in enumerate(as_completed(futs), 1):
             try:
                 c, hit, tried = f.result()

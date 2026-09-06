@@ -1,25 +1,24 @@
 """Long-running pipeline orchestrator. Idempotent stages, per-stage timeouts, checkpoints, crawl_runs logging.
 
   python -m pflege_jobs.orchestrate --stages all            # daily job (~40 min)
-  python -m pflege_jobs.orchestrate --stages aa,verify      # subset
+  python -m pflege_jobs.orchestrate --stages ats,verify     # subset
   python -m pflege_jobs.orchestrate --list
 
+Sources are hospital career sites only (employer_ats 20; firecrawl_agent 25 runs from the app, not here).
 Stages (in order):
-  aa          Arbeitsagentur pull + clinic details + load + resolve
   ats         B-ITE, softgarden, rexx, d.vinci, mein-check-in, group portals (requests-based; resumable checkpoints)
   browser     P&I (Helios), Playwright seeds (js_seeds)       [needs chromium]
-  inbox       browser-collector / egress rows -> observations
-  egress      StepStone via Claude web_fetch                  [needs ANTHROPIC_API_KEY; capped by EGRESS_MAX_PAGES]
+  inbox       browser-collector / crawler / firecrawl rows -> observations
   link        registry links (link-clinics) + cross-source merge (link-cross)
-  verify      web-liveness of open postings (<=6 workers), then AA-supersede at covered sites, then expire(7)
+  verify      web-liveness of open postings (<=6 workers), then expire(7)
   publish     refresh dashboard assets (skill/html) if changed
-Every stage writes a crawl_runs row (source_id 30/20/40 or null) with counts and notes; failures don't stop later stages.
+Every stage writes a crawl_runs row (source_id 20 or null) with counts and notes; failures don't stop later stages.
 """
 import argparse, json, os, subprocess, sys, time, traceback
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STAGES = ["aa", "ats", "browser", "inbox", "egress", "link", "verify", "publish"]
+STAGES = ["ats", "browser", "inbox", "link", "verify", "publish"]
 
 
 def sh(cmd, timeout, env=None):
@@ -39,11 +38,6 @@ def log_run(source_id, notes, counts=None):
         EdgeSink()._post({"crawl_run": {"source_id": source_id, "notes": notes[:2000], "slice_counts": counts or {}}})
     except Exception as e:
         print("crawl_run log failed:", e)
-
-
-def stage_aa(a):
-    rc, out, s = sh("python -m pflege_jobs.cli run --sink edge --details clinic --inp data/raw.json", 1500)
-    log_run(30, f"aa: rc={rc} {s}s\n{out[-800:]}"); return rc
 
 
 def stage_ats(a):
@@ -69,12 +63,6 @@ def stage_inbox(a):
     rc, out, s = sh("python -m pflege_jobs.cli inbox", 900); log_run(20, f"inbox: rc={rc}\n{out[-600:]}"); return rc
 
 
-def stage_egress(a):
-    rc, out, s = sh("EGRESS_DISCOVER=0 python crawlers/claude_egress.py stepstone-matrix", 3600)
-    rc2, out2, s2 = sh("python crawlers/load_crawl_output.py", 900) if os.environ.get("SUPABASE_ANON_KEY") else (0, "skipped: no SUPABASE_ANON_KEY", 0)
-    log_run(40, f"egress stepstone-matrix: rc={rc} load rc={rc2}\n{out[-500:]}"); return max(rc, rc2)
-
-
 def stage_link(a):
     rc1, o1, s1 = sh("python -m pflege_jobs.cli link-clinics", 900)
     rc2, o2, s2 = sh("python -m pflege_jobs.cli link-cross", 900)
@@ -87,8 +75,7 @@ def stage_verify(a):
         from .sinks import EdgeSink
         sink = EdgeSink()
         import requests as rq
-        # supersede + expire via SQL functions exposed through the ingest function's expire op + a tiny RPC-less path:
-        r = sink._post({"supersede_aa": True, "expire_days": 7}); out += f"\nsuperseded_aa: {r.get('superseded_aa')} expired: {r.get('expired')}"
+        r = sink._post({"expire_days": 7}); out += f"\nexpired: {r.get('expired')}"
     except Exception as e:
         out += f"\nexpire failed: {e}"
     log_run(None, f"verify: rc={rc} {s}s\n{out[-600:]}"); return rc

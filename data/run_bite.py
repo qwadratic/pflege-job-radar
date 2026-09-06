@@ -1,9 +1,8 @@
 import json, sys, csv, time
-sys.path.insert(0,'/home/claude/pflege/repo')
+sys.path.insert(0,'.')
 from pflege_jobs.sources import bite
 from pflege_jobs.classify import norm_text
-towns={norm_text(o['city']) for o in json.load(open('data/raw.json'))['observations'] if o.get('city')}
-towns|={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
+towns={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
 seeds=json.load(open('data/registry/bite_seeds.json'))
 try: done=json.load(open('data/bite_done.json'))
 except Exception: done={}

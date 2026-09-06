@@ -12,7 +12,7 @@ import time
 import requests
 
 from .schema import OBS_COLUMNS, ARRAY_COLUMNS, JSON_COLUMNS  # single source of truth
-from .config import EXCLUDED_ROLE_CLASSES
+from . import config as C
 
 
 def only_pflege(observations, keep_non_pflege=False):
@@ -23,7 +23,7 @@ def only_pflege(observations, keep_non_pflege=False):
     classified first, so the reason a row was dropped stays reconstructible from its role_rule.
     `keep_non_pflege=True` bypasses the gate (used by inspection sinks / tests only).
     """
-    return observations if keep_non_pflege else [o for o in observations if o.get("role_class") not in EXCLUDED_ROLE_CLASSES]
+    return observations if keep_non_pflege else [o for o in observations if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES]
 
 
 def employers_from(observations):

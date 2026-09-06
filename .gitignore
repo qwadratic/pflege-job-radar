@@ -38,3 +38,8 @@ data/*.log
 data/verify.json
 data/clinic_links.json
 data/cross_merge_pairs.json
+
+# app state (SQLite) — regenerable
+data/app.sqlite*
+.venv/
+*.log

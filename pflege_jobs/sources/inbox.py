@@ -1,6 +1,6 @@
 """Browser-collector intake -> observations. Inbox rows come from the bookmarklet (web/collector.js) or agents posting to
 pflege_jobs.inbox (anon insert). kind='jobposting' = JSON-LD JobPosting captured on a detail page; kind='listing' = job links seen
-on a list page (title + href; no details). Source: employer sites -> employer_ats (20); stepstone/indeed -> aggregator (40)."""
+on a list page (title + href; no details). Source: collector 'firecrawl*' -> firecrawl_agent (25); everything else -> employer_ats (20)."""
 import json, re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -8,11 +8,8 @@ from .. import config as C
 from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm, enrich_description, fuzzy_key, qualification_hint, norm_text)
 from .career_crawl import in_bavaria, _strip
 
-AGG_HOSTS = re.compile(r"stepstone|indeed|kununu|xing|linkedin|jobware|medi-karriere|jobvector|monster|glassdoor", re.I)
-
-
-def _source_id(host):
-    return C.SOURCES["aggregator"]["source_id"] if AGG_HOSTS.search(host or "") else C.SOURCES["employer_ats"]["source_id"]
+def _source_id(collector):
+    return C.SOURCES["firecrawl_agent"]["source_id"] if (collector or "").lower().startswith("firecrawl") else C.SOURCES["employer_ats"]["source_id"]
 
 
 def jobposting_to_obs(row, towns):
@@ -28,7 +25,7 @@ def jobposting_to_obs(row, towns):
     et = p.get("employmentType"); et = " ".join(et) if isinstance(et, list) else (et or "")
     now = datetime.now(timezone.utc).isoformat()
     return {
-        "source_id": _source_id(host), "source_ref": url, "source_url": url, "observed_at": now,
+        "source_id": _source_id(row.get("collector")), "source_ref": url, "source_url": url, "observed_at": now,
         "title": title, "employer_name": emp, "employer_name_norm": employer_norm(emp), "employer_class": e_class, "employer_class_rule": e_rule,
         "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
         "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(title), "department_raw": None,

@@ -5,23 +5,26 @@ import re
 import unicodedata
 from . import config as C
 
-_CLINIC = [(n, C.rx(p)) for n, p in C.CLINIC_PATTERNS]
-_NONCLINIC = [(n, C.rx(p)) for n, p in C.NON_CLINIC_PATTERNS]
-_LEGAL = C.rx(C.LEGAL_FORMS)
-_PFLEGE = C.rx(C.PFLEGE_TOKEN)
-_NICHT = C.rx(C.NICHT_PFLEGE)
-_STRONG_T = C.rx(C.STRONG_PFLEGE_TITLE)
-_ROLES = [(n, C.rx(p)) for n, p in C.ROLE_RULES]
-_QUAL = [(n, C.rx(p)) for n, p in C.QUALIFICATION_HINT]
-_DEPT = [(n, C.rx(p)) for n, p in C.DEPARTMENT_HINT]
-_HOUSING = C.rx(C.HOUSING)
-_TARIFF = [(n, C.rx(p)) for n, p in C.TARIFF]
-_EMAIL = re.compile(C.EMAIL)
-_PAY = C.rx(C.PAY_GRADE); _PAYTXT = C.rx(C.PAY_TEXT); _REQH = C.rx(C.REQ_HEAD); _REQS = C.rx(C.REQ_STOP); _EXP = C.rx(C.EXPERIENCE)
-_LANG = C.rx(C.LANGUAGE_REQ)
-_BONUS = C.rx(C.BONUS)
-_CHILD = C.rx(C.CHILDCARE)
-_ANERK = C.rx(C.ANERKENNUNG)
+def _compile():
+    """(Re)compile every pattern from config; called at import and by config.reload()."""
+    g = globals()
+    g["_CLINIC"] = [(n, C.rx(p)) for n, p in C.CLINIC_PATTERNS]
+    g["_NONCLINIC"] = [(n, C.rx(p)) for n, p in C.NON_CLINIC_PATTERNS]
+    g["_LEGAL"] = C.rx(C.LEGAL_FORMS)
+    g["_PFLEGE"] = C.rx(C.PFLEGE_TOKEN)
+    g["_NICHT"] = C.rx(C.NICHT_PFLEGE)
+    g["_STRONG_T"] = C.rx(C.STRONG_PFLEGE_TITLE)
+    g["_ROLES"] = [(n, C.rx(p)) for n, p in C.ROLE_RULES]
+    g["_QUAL"] = [(n, C.rx(p)) for n, p in C.QUALIFICATION_HINT]
+    g["_DEPT"] = [(n, C.rx(p)) for n, p in C.DEPARTMENT_HINT]
+    g["_HOUSING"] = C.rx(C.HOUSING)
+    g["_TARIFF"] = [(n, C.rx(p)) for n, p in C.TARIFF]
+    g["_EMAIL"] = re.compile(C.EMAIL)
+    g["_PAY"], g["_PAYTXT"], g["_REQH"], g["_REQS"], g["_EXP"] = C.rx(C.PAY_GRADE), C.rx(C.PAY_TEXT), C.rx(C.REQ_HEAD), C.rx(C.REQ_STOP), C.rx(C.EXPERIENCE)
+    g["_LANG"], g["_BONUS"], g["_CHILD"], g["_ANERK"] = C.rx(C.LANGUAGE_REQ), C.rx(C.BONUS), C.rx(C.CHILDCARE), C.rx(C.ANERKENNUNG)
+
+
+_compile()
 
 
 def norm_text(s: str) -> str:
@@ -72,7 +75,7 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = ""):
         m = r.search(s)
         if m:
             return name, f"{name}:{m.group(0)}"
-    return "sonstige_pflege", "fallback"
+    return C.ROLE_FALLBACK, "fallback"
 
 
 def qualification_hint(title: str, hauptberuf: str = ""):

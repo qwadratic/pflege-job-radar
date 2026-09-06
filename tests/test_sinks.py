@@ -1,32 +1,48 @@
 import json, os, tempfile
-from pflege_jobs.sources.arbeitsagentur import to_observation
+from pflege_jobs.sources.inbox import jobposting_to_obs
 from pflege_jobs.sinks import SqlSink, CsvSink, employers_from
 
-RAW = {"stellenangebotsart":"ARBEIT","stellenangebotsTitel":"Pflegefachkraft (m/w/d) OP","arbeitszeitVollzeit":True,
- "eintrittszeitraum":{"von":"2026-08-31"},"verguetungsangabe":"KEINE_ANGABEN","vertragsdauer":"UNBEFRISTET",
- "stellenlokationen":[{"adresse":{"plz":"90419","ort":"Nürnberg","region":"BAYERN","land":"DEUTSCHLAND"},"breite":49.4,"laenge":11.0}],
- "veroeffentlichungszeitraum":{"von":"2026-08-31"},"datumErsteVeroeffentlichung":"2026-08-31","aenderungsdatum":"2026-08-31T10:55:55.684",
- "hauptberuf":"Gesundheits- und Krankenpfleger/in","firma":"Klinikum Nürnberg","arbeitgeberKundennummerHash":"abc=","referenznummer":"10000-1-S",
- "alleBerufe":["Pflegefachkraft"],"_slices":["kp_arbeit"], "externeURL":"https://karriere.klinikum-nuernberg.de/x'y"}
+# One inbox row as every crawler / the Firecrawl agent emits it (kind=jobposting).
+ROW = {"inbox_id": 1, "kind": "jobposting", "source_host": "karriere.klinikum-nuernberg.de", "collector": "vendor-adapters-test",
+       "source_url": "https://karriere.klinikum-nuernberg.de/job/1?x'y",
+       "payload": {"title": "Pflegefachkraft (m/w/d) OP", "org": "Klinikum Nürnberg", "employmentType": "FULL_TIME",
+                   "datePosted": "2026-08-31", "url": "https://karriere.klinikum-nuernberg.de/job/1?x'y",
+                   "loc": [{"city": "Nürnberg", "plz": "90419", "region": "Bayern"}],
+                   "description": "Wir suchen Sie. Personalwohnung vorhanden. Vergütung nach TVöD-K. Kontakt: pd@klinik.de"}}
+TOWNS = {"nürnberg"}
+
+
+def obs(**over):
+    return {**jobposting_to_obs({**ROW, "payload": {**ROW["payload"], **over.pop("payload", {})}}, TOWNS), **over}
+
 
 def test_to_observation():
-    o = to_observation(RAW)
-    assert o["employer_class"] == "clinic" and o["role_class"] == "pflegefachkraft" and o["department_hint"] == "OP"
-    assert o["in_bavaria"] and o["plz"] == "90419" and o["employment_types"] == ["vollzeit"]
-    assert json.loads(o["payload"])["referenznummer"] == "10000-1-S"
+    o = obs()
+    assert o["source_id"] == 20 and o["employer_class"] == "clinic" and o["role_class"] == "pflegefachkraft" and o["department_hint"] == "OP"
+    assert o["in_bavaria"] and o["plz"] == "90419" and o["employment_types"] == ["vollzeit"] and o["first_published"] == "2026-08-31"
+    assert o["enr_housing"] is True and o["enr_tariff"] == "TVöD" and o["enr_contact_emails"] == ["pd@klinik.de"]
+    assert json.loads(o["payload"])["inbox"]["collector"] == "vendor-adapters-test"
+
+
+def test_firecrawl_collector_maps_to_source_25():
+    assert jobposting_to_obs({**ROW, "collector": "firecrawl-agent"}, TOWNS)["source_id"] == 25
+    assert jobposting_to_obs({**ROW, "collector": None}, TOWNS)["source_id"] == 20
+
 
 def test_sql_sink_escapes_quotes():
-    o = to_observation(RAW)
+    o = obs()
     d = tempfile.mkdtemp()
     r = SqlSink(d, batch=1).write([o])
     sql = open(os.path.join(d, "020_observations_0000.sql"), encoding="utf-8").read()
     assert "x''y" in sql and "$j$" in sql and "on conflict (source_id, source_ref)" in sql
     assert r["employers"] == 1
 
+
 def test_csv_sink():
-    o = to_observation(RAW); d = tempfile.mkdtemp()
+    o = obs(); d = tempfile.mkdtemp()
     assert CsvSink(d).write([o])["observations"] == 1
-    assert employers_from([o])[0]["aa_kundennummer_hashes"] == ["abc="]
+    assert employers_from([o])[0]["name_norm"] == "klinikum nürnberg"
+
 
 def test_sinks_drop_nicht_pflege():
     from pflege_jobs.sinks import only_pflege
@@ -54,7 +70,7 @@ def test_edge_sink_write_drops_trainees(monkeypatch):
     monkeypatch.setenv("PFLEGE_INGEST_URL", "http://x"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k"); monkeypatch.setenv("PFLEGE_INGEST_SECRET", "s")
     sink = EdgeSink(); posted = []
     sink._post = lambda body: (posted.append(body), {"observations": len(body.get("observations", [])), "employers": 0, "resolve": {}})[1]
-    o = to_observation(RAW)
+    o = obs()
     stats = sink.write([o, {**o, "source_ref": "azubi", "role_class": "ausbildung"},
                         {**o, "source_ref": "fsj", "role_class": "werkstudent_praktikum"}], resolve=False)
     assert stats["dropped_non_pflege"] == 2

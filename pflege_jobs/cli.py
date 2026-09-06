@@ -1,12 +1,12 @@
 """CLI. Reusable for backfill AND recurring refresh (same code path, idempotent upserts).
+Sources are hospital career sites only (employer_ats 20, firecrawl_agent 25); crawlers write inbox rows.
 
-  python -m pflege_jobs.cli counts                       # live per-slice counts (no writes)
-  python -m pflege_jobs.cli pull  --out data/raw.json    # fetch + normalize -> json (no DB)
-  python -m pflege_jobs.cli details --inp data/raw.json --only clinic,unknown --workers 4
-  python -m pflege_jobs.cli load  --inp data/raw.json --sink csv|sql|edge [--no-resolve]
-  python -m pflege_jobs.cli load-board --csv data/board_snapshot.csv --sink edge   # career-site snapshot (source employer_ats)
+  python -m pflege_jobs.cli inbox                                                   # inbox rows -> observations (+ KeZ link, verify=live)
+  python -m pflege_jobs.cli link-clinics                                            # registry push + posting -> KeZ links
+  python -m pflege_jobs.cli link-cross                                              # merge the same job seen twice (url variants, title similarity)
   python -m pflege_jobs.cli verify --workers 6                                      # web-liveness check of all open postings
-  python -m pflege_jobs.cli run   --sink edge --details clinic,unknown   # pull+details+load in one go
+  python -m pflege_jobs.cli load  --inp data/obs.json --sink csv|sql|edge [--no-resolve]   # load a json {"observations":[...]} dump
+  python -m pflege_jobs.cli load-board --csv data/board_snapshot.csv --sink edge   # career-site snapshot (source employer_ats)
 """
 import argparse, re
 import json
@@ -15,7 +15,6 @@ import sys
 import time
 
 from . import config as C
-from .sources.arbeitsagentur import AAClient, fetch_all, to_observation, enrich_with_details
 from .sinks import CsvSink, SqlSink, EdgeSink
 
 
@@ -36,72 +35,16 @@ def _rows(resp, what="query"):
     raise SystemExit(f"{what}: HTTP {resp.status_code} {json.dumps(data)[:300]}")
 
 
-def cmd_counts(a):
-    c = AAClient()
-    tot = 0
-    for sl in C.AA_SLICES:
-        n = c.count(sl); tot += n
-        print(f"{sl['name']:<16} {n:>6}")
-    print(f"{'sum (pre-dedupe)':<16} {tot:>6}")
-
-
-def cmd_pull(a):
-    c = AAClient(sleep=a.sleep)
-    raw, counts = fetch_all(c)
-    obs = [to_observation(r) for r in raw]
-    with open(a.out, "w", encoding="utf-8") as f:
-        json.dump({"slice_counts": counts, "observations": obs}, f, ensure_ascii=False)
-    print(f"pulled {len(obs)} unique observations -> {a.out}")
-    return obs
-
-
-def cmd_renormalize(a):
-    """Re-derive all classification + enrichment from stored payloads/descriptions (rules changed, no re-crawl)."""
-    from .classify import enrich_description
-    obs, counts = _load_inp(a.inp)
-    new = []
-    for o in obs:
-        raw = json.loads(o["payload"])
-        n = to_observation(raw, observed_at=o["observed_at"])
-        for k in ("description", "details_fetched_at", "details_error"):
-            if k in o: n[k] = o[k]
-        if o.get("description"):
-            n.update({("enr_" + k): v for k, v in enrich_description(o["description"]).items()})
-        new.append(n)
-    seen, dedup = set(), []
-    for n in new:                       # rules may have changed identity (e.g. trimmed refs)
-        if n["source_ref"] in seen: continue
-        seen.add(n["source_ref"]); dedup.append(n)
-    with open(a.inp, "w", encoding="utf-8") as f:
-        json.dump({"slice_counts": counts, "observations": dedup}, f, ensure_ascii=False)
-    print(f"renormalized {len(dedup)} (dropped {len(new)-len(dedup)} duplicate refs; enriched {sum(1 for n in dedup if n.get('description'))})")
-
-
 def _load_inp(path):
     d = json.load(open(path, encoding="utf-8"))
     return d["observations"], d.get("slice_counts", {})
 
 
-def cmd_details(a):
-    obs, counts = _load_inp(a.inp)
-    only = set(a.only.split(",")) if a.only else None
-    refs = None
-    if only:
-        refs = {o["source_ref"] for o in obs if o["employer_class"] in only and o.get("in_bavaria", True)
-                and o["role_class"] not in C.EXCLUDED_ROLE_CLASSES and not o.get("details_fetched_at")}
-    c = AAClient(sleep=0)
-    t = time.time()
-    n = enrich_with_details(c, obs, workers=a.workers, only_refs=refs)
-    print(f"details fetched {n} in {time.time()-t:.0f}s")
-    with open(a.inp, "w", encoding="utf-8") as f:
-        json.dump({"slice_counts": counts, "observations": obs}, f, ensure_ascii=False)
-
-
 def cmd_load_board(a):
     """Import a pflege-board CSV snapshot as employer_ats observations (precedence 2)."""
     from .sources.board_csv import load_csv, city_coords_from
-    aa, _ = _load_inp(a.inp)
-    obs = load_csv(a.csv, city_coords_from(aa))
+    coords = city_coords_from(_load_inp(a.inp)[0]) if a.inp and os.path.exists(a.inp) else {}
+    obs = load_csv(a.csv, coords)
     print(f"board rows -> {len(obs)} observations; with coords {sum(1 for o in obs if o['lat'] is not None)}")
     s = _sink(a)
     kw = {"resolve": not a.no_resolve} if a.sink == "edge" else {}
@@ -120,14 +63,6 @@ def cmd_verify(a):
         q = f"{url}/rest/v1/v_postings?select=posting_id,title,source_codes,source_url,external_url,status&status=eq.open&order=posting_id&limit=1000&offset={off}"
         chunk = _rows(rq.get(q, headers=H, timeout=120), "v_postings"); rows += chunk; off += len(chunk)
         if len(chunk) < 1000: break
-    refs = {}
-    off = 0
-    while True:
-        q = f"{url}/rest/v1/posting_observations?select=posting_id,source_ref&source_id=eq.30&order=observation_id&limit=1000&offset={off}"
-        chunk = _rows(rq.get(q, headers=H, timeout=120), "paged query"); off += len(chunk)
-        for o in chunk: refs[o["posting_id"]] = o["source_ref"]
-        if len(chunk) < 1000: break
-    for r in rows: r["aa_ref"] = refs.get(r["posting_id"])
     if a.only_status:
         want = set(a.only_status.split(","))
         vs = {}; off = 0
@@ -138,7 +73,7 @@ def cmd_verify(a):
             if len(chunk) < 1000: break
         rows = [r for r in rows if vs.get(r["posting_id"]) in want]
     if a.limit: rows = rows[: a.limit]
-    print(f"verifying {len(rows)} open postings ({sum(1 for r in rows if r['aa_ref'])} via Arbeitsagentur, rest via employer URL)")
+    print(f"verifying {len(rows)} open postings via employer URL")
     t = time.time(); res = verify_all(rows, workers=a.workers)
     from collections import Counter
     print("result:", dict(Counter(x["verify_status"] for x in res)), f"in {time.time()-t:.0f}s")
@@ -220,7 +155,7 @@ def canonical_ref(url):
 
 def cmd_link_cross(a):
     """Dedupe: (1) same-source URL variants (canonical URL equal) -> merge; (2) cross-source: same clinic_id + city + similar
-    title (Jaccard>=0.6 or overlap>=0.9 w/ 3 shared tokens) between any two sources (AA, employer_ats, aggregator) -> merge."""
+    title (Jaccard>=0.6 or overlap>=0.9 w/ 3 shared tokens) between two different sources (employer_ats, firecrawl_agent) -> merge."""
     import requests as rq
     from collections import defaultdict
     from .classify import norm_text
@@ -250,12 +185,12 @@ def cmd_link_cross(a):
     def tk(t):
         t = re.sub(r"\((?:m|w|d|x|i|gn|\s|/|\*|:)+\)", " ", norm_text(t)); t = re.sub(r"[^\wäöüß ]", " ", t)
         return {x for x in t.split() if len(x) > 2 and x not in STOP}
-    RANK = {"employer_ats": 0, "arbeitsagentur": 1, "aggregator": 2}          # merge lower-rank (less authoritative) into higher
+    RANK = {code: v["precedence"] for code, v in C.SOURCES.items()}          # merge lower-precedence into higher; ties -> lower posting_id
     grp = defaultdict(list)
     for r in rows: grp[(r["clinic_id"], norm_text(r["city"] or "").split(",")[0])].append(r)
     pairs = []
     for g in grp.values():
-        g = sorted(g, key=lambda r: min(RANK.get(c, 3) for c in (r["source_codes"] or [])))
+        g = sorted(g, key=lambda r: (min((RANK.get(c, 9) for c in (r["source_codes"] or [])), default=9), r["posting_id"]))
         used = set()
         for i, y in enumerate(g):                       # y = candidate destination (more authoritative)
             ty = tk(y["title"])
@@ -283,9 +218,8 @@ def cmd_inbox(a):
     url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
     H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
     rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
-    towns = {norm_text(o["city"]) for o in json.load(open(a.inp))["observations"] if o.get("city")} if os.path.exists(a.inp) else set()
     clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
-    towns |= {norm_text(c["town"]) for c in clinics if c.get("town")}          # works without a prior AA pull
+    towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
     for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
     m = Matcher([dict(c) for c in clinics])
     obs, ack, probes = [], [], []
@@ -317,8 +251,8 @@ def cmd_inbox(a):
     if obs:
         print("load:", sink.write(obs, resolve=True, log=lambda *_: None))
         ids = {}
-        # Look up only the refs we just wrote, in chunks, instead of scanning every employer_ats /
-        # aggregator observation: the full scan grew past the anon role's statement_timeout as the
+        # Look up only the refs we just wrote, in chunks, instead of scanning every employer_ats
+        # observation: the full scan grew past the anon role's statement_timeout as the
         # table filled up, and a timeout here silently cost us the clinic links and verify marks.
         want = [o["source_ref"] for o in obs]
         for i in range(0, len(want), 50):
@@ -364,34 +298,18 @@ def cmd_load(a):
     print(json.dumps(s.write(obs, **kw), ensure_ascii=False))
 
 
-def cmd_run(a):
-    a.out = a.inp
-    obs = cmd_pull(a)
-    if a.details:
-        a.only = a.details
-        cmd_details(a)
-    cmd_load(a)
-
-
 def main(argv=None):
     p = argparse.ArgumentParser(prog="pflege_jobs")
     sp = p.add_subparsers(dest="cmd", required=True)
-    sp.add_parser("counts").set_defaults(fn=cmd_counts)
-    q = sp.add_parser("pull"); q.add_argument("--out", default="data/raw.json"); q.add_argument("--sleep", type=float, default=0.25); q.set_defaults(fn=cmd_pull)
-    d = sp.add_parser("details"); d.add_argument("--inp", default="data/raw.json"); d.add_argument("--only", default="clinic,unknown"); d.add_argument("--workers", type=int, default=4); d.set_defaults(fn=cmd_details)
-    rn = sp.add_parser("renormalize"); rn.add_argument("--inp", default="data/raw.json"); rn.set_defaults(fn=cmd_renormalize)
-    l = sp.add_parser("load"); l.add_argument("--inp", default="data/raw.json"); l.add_argument("--sink", default="csv"); l.add_argument("--out-dir", default="data/out")
+    l = sp.add_parser("load"); l.add_argument("--inp", default="data/obs.json"); l.add_argument("--sink", default="csv"); l.add_argument("--out-dir", default="data/out")
     l.add_argument("--no-resolve", action="store_true"); l.add_argument("--bavaria-only", action="store_true", default=True); l.set_defaults(fn=cmd_load)
-    lb = sp.add_parser("load-board"); lb.add_argument("--csv", required=True); lb.add_argument("--inp", default="data/raw.json"); lb.add_argument("--sink", default="edge")
+    lb = sp.add_parser("load-board"); lb.add_argument("--csv", required=True); lb.add_argument("--inp", default="", help="optional observations json for city coords"); lb.add_argument("--sink", default="edge")
     lb.add_argument("--out-dir", default="data/out"); lb.add_argument("--no-resolve", action="store_true"); lb.set_defaults(fn=cmd_load_board)
     v = sp.add_parser("verify"); v.add_argument("--workers", type=int, default=6); v.add_argument("--limit", type=int, default=0)
     v.add_argument("--out", default="data/verify.json"); v.add_argument("--only-status", default=""); v.add_argument("--dry-run", action="store_true"); v.set_defaults(fn=cmd_verify)
     lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
-    ib = sp.add_parser("inbox"); ib.add_argument("--inp", default="data/raw.json"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true"); ib.set_defaults(fn=cmd_inbox)
-    r = sp.add_parser("run"); r.add_argument("--inp", default="data/raw.json"); r.add_argument("--sink", default="edge"); r.add_argument("--out-dir", default="data/out")
-    r.add_argument("--details", default=""); r.add_argument("--workers", type=int, default=4); r.add_argument("--sleep", type=float, default=0.25)
-    r.add_argument("--no-resolve", action="store_true"); r.add_argument("--bavaria-only", action="store_true", default=True); r.set_defaults(fn=cmd_run)
+    ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true"); ib.set_defaults(fn=cmd_inbox)
     a = p.parse_args(argv)
     a.fn(a)
 

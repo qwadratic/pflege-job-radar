@@ -1,11 +1,10 @@
 import json, sys, csv, time
-sys.path.insert(0,'/home/claude/pflege/repo')
+sys.path.insert(0,'.')
 from pflege_jobs.sources.softgarden import seed_for
 from pflege_jobs.sources.career_crawl import Crawler
 from pflege_jobs.classify import norm_text
 from pflege_jobs.registry import Matcher
-towns={norm_text(o['city']) for o in json.load(open('data/raw.json'))['observations'] if o.get('city')}
-towns|={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
+towns={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
 clinics=list(csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')))
 for c in clinics: c['beds']=int(c['beds']) if c.get('beds') else None
 m=Matcher([dict(c) for c in clinics]); byid={c['clinic_id']:c for c in clinics}

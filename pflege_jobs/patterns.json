@@ -1,0 +1,349 @@
+{
+ "version": 1,
+ "_doc": "Every regex used by pflege_jobs.classify (and the app's CV matcher). Case-insensitive. Edit here or via the Settings page; pflege_jobs.config.reload() picks changes up. Order matters in role.rules (first match wins).",
+ "employer": {
+  "clinic": [
+   {
+    "name": "klinik",
+    "re": "klinik"
+   },
+   {
+    "name": "krankenhaus",
+    "re": "krankenhaus|krankenhäuser|hospital\\b|spital"
+   },
+   {
+    "name": "uniklinik",
+    "re": "universitätsklinikum|uniklinik|universitätsmedizin"
+   },
+   {
+    "name": "herz",
+    "re": "herzzentrum|herzchirurg"
+   },
+   {
+    "name": "bezirk",
+    "re": "bezirkskrankenhaus|bezirksklinik|\\bkbo\\b|\\bmedbo\\b|\\bgebo\\b"
+   },
+   {
+    "name": "chain",
+    "re": "\\bsana\\b|\\bhelios\\b|\\basklepios\\b|schön[- ]klinik|schoen[- ]klinik|\\bameos\\b|\\bmedian\\b|mediclin|\\bvamed\\b|\\brhön\\b|regiomed|\\bromed\\b|innklinikum|isar-amper|danuvius|\\bbg klinikum\\b|\\bbgu\\b"
+   },
+   {
+    "name": "kurklinik",
+    "re": "kurklinik|sanatorium|reha-?zentrum|rehazentrum|rehabilitationszentrum|reha-?fachklinik"
+   },
+   {
+    "name": "operator",
+    "re": "sozialstiftung bamberg|schwesternschaft münchen|schwesternschaft nürnberg|rotkreuz|medical park|passauer wolf|kirinus|johannesbad|m&i-fachklinik|dr\\. becker|kinderzentrum|klinikverbund|kreiskrankenh|deutsches herzzentrum|thoraxzentrum|lungenzentrum|\\boberberg\\b|bg unfallklinik|schlossklinik|fachklinik"
+   }
+  ],
+  "non_clinic": [
+   {
+    "name": "altenhilfe",
+    "re": "senioren|altenheim|altenpflegeheim|pflegeheim|pflegezentrum|wohnstift|residenz|altenzentrum|altenhilfe|seniorenwohnen|pflegewohn|wohnpark|pflegestift|kursana|pro seniore|azurit|korian|alloheim|schönes leben|domicil"
+   },
+   {
+    "name": "ambulant",
+    "re": "ambulant|pflegedienst|sozialstation|tagespflege|hauskrankenpflege|häusliche|intensivpflege\\b|heimbeatmung|betreuungsdienst|24[- ]stunden|deutschefachpflege|\\bmvz\\b|wundmanagement|wundzentrum|wundex"
+   },
+   {
+    "name": "wohnen",
+    "re": "wohngruppe|betreutes wohnen|wohngemeinschaft|hospiz"
+   },
+   {
+    "name": "verband",
+    "re": "\\bawo\\b|arbeiterwohlfahrt|caritasverband|caritas-verband|diakonisches werk|diakoniewerk|diakoniestation|johanniter|malteser|\\basb\\b|arbeiter-samariter|\\bdrk\\b|\\bbrk\\b|rotes kreuz|volkssolidarität|paritätisch|lebenshilfe|behindertenhilfe|heilpädagog|sozialwerk|sozialdienst"
+   },
+   {
+    "name": "brand_nc",
+    "re": "vitolus|vitanas|anthojo|münchenstift|rummelsberger|\\bcurata\\b|cosmea|linimed|aiutanda|floni\\.care|pflegius|\\bghd\\b|\\bbipg\\b|renafan|burchard führer|dr\\. krantz|pelikids|körperbehinderte|advita|promedica|pflege & hilfe daheim|hilfe im alter"
+   },
+   {
+    "name": "agentur",
+    "re": "personaldienst|personalservice|personalvermittlung|zeitarbeit|leasing|personalmanagement gmbh|staffing|recruit"
+   },
+   {
+    "name": "sonstige",
+    "re": "praxis|apotheke|bundeswehr|krankenkasse|pflegekasse|medizinischer dienst|\\bmdk\\b|jugendhilfe|kinderheim|\\bkita\\b|kindergarten|schule|akademie|hochschule|bildungs|labor|sanitätshaus|homecare|versicherung|ministerium|landratsamt|gesundheitsamt"
+   }
+  ],
+  "weak_non_clinic_groups": [
+   "sonstige",
+   "verband"
+  ],
+  "legal_forms": "\\b(gmbh|ggmbh|mbh|ag|kg|ohg|e\\.?\\s?v\\.?|gbr|se|stiftung|gemeinnützige?|gemeinnuetzige?|& co\\.?|und co\\.?|kgaa|ek|e\\.k\\.)\\b"
+ },
+ "role": {
+  "pflege_gate": "pfleg|betreuungskraft|alltagsbegleit|\\bstation(en)?\\b|op-bereich|op-fachkr|op-kraft|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|\\bapn\\b|\\bnurse\\b|stationsleit|bereichsleit|praxisanleit",
+  "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|medizinische/?r? fachangestellte|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik",
+  "strong_pflege": "pfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\\bnurse\\b|\\bapn\\b",
+  "rules": [
+   {
+    "role_class": "werkstudent_praktikum",
+    "re": "werkstudent|praktik|\\bfsj\\b|bufdi|bundesfreiwillig|freiwilliges soziales|studentische|ferienjob|hospitation"
+   },
+   {
+    "role_class": "ausbildung",
+    "re": "\\bausbildung\\b|\\bazubi|auszubildende|\\(ausbildung\\)|duales studium|dualstudium"
+   },
+   {
+    "role_class": "hebamme",
+    "re": "hebamme|entbindungspfleg"
+   },
+   {
+    "role_class": "ota_ata",
+    "re": "\\bota\\b|\\bata\\b|operationstechnische|anästhesietechnische|anaesthesietechnische"
+   },
+   {
+    "role_class": "praxisanleitung",
+    "re": "praxisanleit"
+   },
+   {
+    "role_class": "leitung",
+    "re": "pflegedienstleit|pflegedirekt|stationsleit|bereichsleit|wohnbereichsleit|teamleit|gruppenleit|einrichtungsleit|heimleit|abteilungsleit|funktionsleit|ambulanzleit|zentrumsleit|schichtleit|pflegeleit|pflegerische leitung|(?<![a-zäöüß])leitung\\b|(?<![a-zäöüß])leiter(/in|\\*in|in)?\\b|\\bpdl\\b"
+   },
+   {
+    "role_class": "apn_experte",
+    "re": "\\bapn\\b|advanced practice|pflegeexpert|pflegewissenschaft|pädagog|paedagog|pflegemanage|qualitätsmanage|hygienefachkraft|hygienebeauftragte"
+   },
+   {
+    "role_class": "fachpflege",
+    "re": "op-fachkr[aä]ft|fachkrankenpfleg|fachaltenpfleg|fachpfleg|fachweiterbildung|fachkraft für intensiv|fachkraft für anästhesie|intensivpflegekraft|anästhesiepflegekraft|\\bcritical care\\b|kinderintensiv"
+   },
+   {
+    "role_class": "pflegehelfer",
+    "re": "pflegehelfer|pflegefachhelfer|pflege\\(fach\\)helfer|pflegeassist|krankenpflegehelfer|altenpflegehelfer|pflegehilfskraft|hilfskraft|pflegehilfe|betreuungskraft|alltagsbegleit|servicekraft|stationshilfe|pflegeassistenz|versorgungsassist|pflegefachassist|pflegeunterstützung|stationsassist|servicehelfer"
+   },
+   {
+    "role_class": "pflegefachkraft",
+    "re": "pflegefachkraft|pflegefachfrau|pflegefachmann|pflegefachperson|krankenpfleger|krankenschwester|kinderkrankenpfleg|altenpfleger|\\bnurse\\b|gesundheits- und|examinierte|pflegekraft|pflegefachkräfte|pfleger\\b|pflegerin\\b|dauernachtwache|nachtwache"
+   }
+  ],
+  "fallback": "sonstige_pflege"
+ },
+ "qualification": [
+  {
+   "hint": "GKiK",
+   "re": "kinderkrankenpfleg"
+  },
+  {
+   "hint": "GuK",
+   "re": "gesundheits- und krankenpfleg|krankenschwester|krankenpfleger"
+  },
+  {
+   "hint": "Altenpflege",
+   "re": "altenpfleg"
+  },
+  {
+   "hint": "generalistisch",
+   "re": "pflegefachmann/-frau|pflegefachkraft|pflegefachfrau|pflegefachmann|pflegefachperson"
+  }
+ ],
+ "department": [
+  {
+   "hint": "Intensiv/IMC",
+   "re": "intensiv|\\bits\\b|\\bimc\\b|intermediate|beatmung|weaning"
+  },
+  {
+   "hint": "Anästhesie",
+   "re": "anästhesie|anaesthesie|aufwachraum"
+  },
+  {
+   "hint": "OP",
+   "re": "\\bop\\b|operations|zentral-?op|opsaal|op-?bereich|op-?pflege"
+  },
+  {
+   "hint": "Notaufnahme",
+   "re": "notaufnahme|\\bzna\\b|notfallzentrum|notfallpflege|schockraum"
+  },
+  {
+   "hint": "Psychiatrie",
+   "re": "psychiatr|psychosomat|forensi|sucht|gerontopsych"
+  },
+  {
+   "hint": "Pädiatrie/Neonatologie",
+   "re": "pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend"
+  },
+  {
+   "hint": "Geburtshilfe",
+   "re": "geburtshilfe|kreißsaal|kreisssaal|wochenbett|entbindung"
+  },
+  {
+   "hint": "Onkologie",
+   "re": "onkolog|hämatolog|haematolog|strahlen|palliativ"
+  },
+  {
+   "hint": "Kardiologie",
+   "re": "kardiolog|herzkath|chest pain|herzchirurg"
+  },
+  {
+   "hint": "Neurologie",
+   "re": "neurolog|stroke|schlaganfall|neurochirurg|frühreha"
+  },
+  {
+   "hint": "Geriatrie",
+   "re": "geriatr|altersmedizin"
+  },
+  {
+   "hint": "Dialyse/Nephrologie",
+   "re": "dialyse|nephrolog"
+  },
+  {
+   "hint": "Chirurgie/Orthopädie",
+   "re": "chirurg|unfall|orthop|traumatolog|wirbelsäule"
+  },
+  {
+   "hint": "Innere Medizin",
+   "re": "innere|internist|gastroenterolog|pneumolog|diabetolog"
+  },
+  {
+   "hint": "Reha",
+   "re": "\\breha\\b|rehabilitation"
+  },
+  {
+   "hint": "Springerpool",
+   "re": "springer|\\bpool\\b|flexpool|flexteam"
+  },
+  {
+   "hint": "Ambulanz/Tagesklinik",
+   "re": "ambulanz|tagesklinik|funktionsdienst|endoskopie|herzkatheter"
+  }
+ ],
+ "enrichment": {
+  "housing": "personalwohn|personalunterkunft|personalappartement|personalapartment|wohnraum|wohnheim|dienstwohnung|mitarbeiterwohn|mitarbeiterapartment|betriebswohnung|unterstützung bei der wohnungssuche|hilfe bei der wohnungssuche|wohnungssuche|bezugsrecht|möblierte?s? (apartment|appartement|zimmer)|umzugskosten",
+  "tariff": [
+   {
+    "label": "TVöD",
+    "re": "tvöd|tv-?öd|tvoed"
+   },
+   {
+    "label": "TV-L",
+    "re": "\\btv-?l\\b"
+   },
+   {
+    "label": "AVR Caritas",
+    "re": "avr[- ]caritas|avr-c\\b|caritas.{0,30}\\bavr\\b|\\bavr\\b.{0,30}caritas"
+   },
+   {
+    "label": "AVR Diakonie",
+    "re": "avr[- ]diakonie|avr-?bayern|avr\\.?dd"
+   },
+   {
+    "label": "Haustarif",
+    "re": "haustarif|hausvertrag|firmentarif"
+   },
+   {
+    "label": "AVR (unspecified)",
+    "re": "\\bavr\\b"
+   }
+  ],
+  "pay_grade": "(?:entgeltgruppe|eingruppierung|vergütung|tarif|tvöd|tv-l|avr|gehalt|bezahlung|nach)[^.\\n]{0,60}?\\b((?:p|kr|eg|e|s)\\s?0?(\\d{1,2})(?:\\s?[/–-]\\s?(?:p|kr|eg|e|s)?\\s?0?(\\d{1,2}))?[a-c]?)\\b|\\b((?:p|kr)\\s?0?(\\d{1,2})[a-c]?)\\b[^.\\n]{0,40}(?:tvöd|tv-l|avr|entgelt|tarif)",
+  "pay_text": "[^.\\n]{0,80}(?:vergütung|entgelt|gehalt|tarif|tvöd|tv-l|avr)[^.\\n]{0,120}",
+  "req_head": "(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit)",
+  "req_stop": "(?:wir bieten|unser angebot|was wir bieten|das bieten wir|ihre aufgaben|deine aufgaben|aufgaben|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
+  "experience": "((?:\\d+|mehrjährig\\w*|langjährig\\w*|erste|einschlägig\\w*|fundiert\\w*)\\s?(?:-?\\s?jahr\\w*)?\\s?(?:berufs|praxis)?erfahrung[^.\\n]{0,60})",
+  "email": "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}",
+  "language": "\\b(a2|b1|b2|c1)\\b.{0,40}(deutsch|sprach)|deutsch.{0,40}\\b(a2|b1|b2|c1)\\b",
+  "bonus": "willkommensprämie|wechselprämie|startprämie|starterprämie|antrittsprämie",
+  "childcare": "betriebskita|betriebskindergarten|kinderbetreuung|kita-?platz|kinderkrippe",
+  "anerkennung": "anerkennung|berufsanerkennung|internationale? pflegekr|ausländische|defizitbescheid|kenntnisprüfung"
+ },
+ "cv": {
+  "experience_years": "(\\d{1,2})\\s*(?:\\+\\s*)?(?:jahre?n?|years?|yrs?)\\b(?:[^.\\n]{0,40}?(?:erfahrung|experience|tätig|berufspraxis))?",
+  "languages": "\\b(deutsch|german|englisch|english|französisch|french|spanisch|spanish|italienisch|italian|türkisch|turkish|russisch|russian|arabisch|arabic|polnisch|polish|ukrainisch|ukrainian)\\b[^.\\n]{0,40}?\\b(a1|a2|b1|b2|c1|c2|muttersprache|native|fließend|fluent|verhandlungssicher|grundkenntnisse|basic)\\b|\\b(a1|a2|b1|b2|c1|c2)\\b[^.\\n]{0,20}?\\b(deutsch|german|englisch|english)\\b",
+  "skills": [
+   {
+    "tag": "Intensiv",
+    "re": "intensiv|\\bits\\b|\\bicu\\b|\\bimc\\b|intermediate care|critical care"
+   },
+   {
+    "tag": "Anästhesie",
+    "re": "anästhes|anaesthes|anesthes|aufwachraum|\\bpacu\\b"
+   },
+   {
+    "tag": "OP",
+    "re": "\\bop\\b|operationssaal|operating (room|theatre)|\\bor nurse\\b|zentral-?op|op-?pflege|surgical"
+   },
+   {
+    "tag": "Notaufnahme",
+    "re": "notaufnahme|\\bzna\\b|emergency|notfall|\\ber\\b|schockraum|trauma"
+   },
+   {
+    "tag": "Dialyse",
+    "re": "dialys|nephrolog|renal"
+   },
+   {
+    "tag": "Onkologie",
+    "re": "onkolog|oncolog|hämatolog|hematolog|chemotherap"
+   },
+   {
+    "tag": "Pädiatrie",
+    "re": "pädiatr|paediatr|pediatr|kinderkranken|neonat|\\bnicu\\b|kinderklinik"
+   },
+   {
+    "tag": "Psychiatrie",
+    "re": "psychiatr|psychosomat|mental health|forensi|sucht|addiction"
+   },
+   {
+    "tag": "Geriatrie",
+    "re": "geriatr|altersmedizin|elderly|altenpfleg|gerontolog"
+   },
+   {
+    "tag": "Kardiologie",
+    "re": "kardiolog|cardiolog|herzkath|cath lab|chest pain|herzchirurg|cardiac"
+   },
+   {
+    "tag": "Neurologie",
+    "re": "neurolog|stroke|schlaganfall|neurochirurg|neurosurg|frühreha"
+   },
+   {
+    "tag": "Palliativ",
+    "re": "palliativ|palliative|hospiz|hospice|end-of-life"
+   },
+   {
+    "tag": "Wundmanagement",
+    "re": "wundmanage|wundexpert|wound (care|management)|stoma"
+   },
+   {
+    "tag": "Praxisanleitung",
+    "re": "praxisanleit|clinical (instructor|educator)|mentor|preceptor"
+   },
+   {
+    "tag": "Leitung",
+    "re": "stationsleit|bereichsleit|pflegedienstleit|\\bpdl\\b|teamleit|leitung\\b|head nurse|charge nurse|nurse manager|ward manager|\\blead\\b"
+   },
+   {
+    "tag": "Beatmung",
+    "re": "beatm|ventilat|weaning|\\becmo\\b|respirator"
+   },
+   {
+    "tag": "Stroke Unit",
+    "re": "stroke unit|stroke-unit|schlaganfallstation"
+   },
+   {
+    "tag": "Endoskopie",
+    "re": "endoskop|endoscop|gastroenterolog"
+   },
+   {
+    "tag": "Ambulanz",
+    "re": "ambulanz|ambulant|outpatient|tagesklinik|day clinic|\\bmvz\\b|praxis"
+   },
+   {
+    "tag": "Hygiene",
+    "re": "hygiene|infection (control|prevention)|hygienefachkraft"
+   },
+   {
+    "tag": "Geburtshilfe",
+    "re": "geburtshilf|kreißsaal|kreisssaal|midwif|hebamme|obstetric|wochenbett|delivery room"
+   },
+   {
+    "tag": "Chirurgie",
+    "re": "chirurg|surgery|surgical|orthopäd|orthopaed|unfall|trauma"
+   }
+  ]
+ },
+ "excluded_role_classes": [
+  "ausbildung",
+  "nicht_pflege",
+  "werkstudent_praktikum"
+ ]
+}

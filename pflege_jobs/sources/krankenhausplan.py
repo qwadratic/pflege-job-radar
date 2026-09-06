@@ -1,7 +1,8 @@
 """Bayerischer Krankenhausplan (StMGP, PDF) -> clinics registry rows.
 Source: https://www.stmgp.bayern.de/wp-content/uploads/2025/02/bayerischer-krankenhausplan-2025.pdf (Stand 1.1.2025)
 Only Teil II Abschnitt A (Plankrankenhäuser, per Regierungsbezirk) is parsed. KeZ = 5-digit site key = clinic_id.
-Usage: python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2025.pdf data/registry/clinics.csv"""
+Usage: python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2026.pdf out.csv [towns.csv]
+(optional 3rd arg: a CSV with a `town` column -- e.g. the current clinics.csv -- used for town recovery)"""
 import csv
 import re
 import sys
@@ -21,6 +22,22 @@ def _dehyphen(t):
 
 def _clean(c):
     return _dehyphen(re.sub(r"\s+", " ", (c or "").replace("\n", " ")).strip())
+
+
+STATUS = {"plan-kh": "Plan-KH", "vertrags-kh": "Vertrags-KH", "hs-klinik": "HS-Klinik", "bedarfsfeststellung": "Bedarfsfeststellung"}
+
+
+def _status(cell):
+    """PDF cells break mid-word ('Vertra gs-KH', 'Bedarf sfests t.', 'icPhlaen - KH' = 'Plan-KH' with a wrapped
+    footnote). Canonical values only; anything else is kept verbatim so a new status is visible, not silently mapped."""
+    t = re.sub(r"[\s\-]", "", (cell or "")).lower().replace("feststt", "feststellung").replace("festst.", "feststellung")
+    t = re.sub(r"(gen|aft|ie)$", "", t)                  # wrapped footnote fragments glued to the cell
+    if t == "icphlaenkh":                               # column-interleaved 'Plan-KH'
+        t = "plankh"
+    for k, v in STATUS.items():
+        if t.startswith(k.replace("-", "")):
+            return v
+    return _clean(cell)
 
 
 KNOWN_TOWNS = set()   # optional: normalized AA city names for town recovery (set by parse())
@@ -168,7 +185,7 @@ def parse(pdf_path, known_towns=None):
                 if not r or len(r) < 13 or not re.fullmatch(r"\d{5}", _clean(r[1])):
                     continue
                 name, town, operator, quality = _split_name_block(r[2])
-                status = _clean(r[3]).replace("Vertra gs", "Vertrags").replace("Bedarfs festst.", "Bedarfsfeststellung").replace("HS- Klinik", "HS-Klinik"); vst = _clean(r[4]); tr = _clean(r[5])
+                status = _status(r[3]); vst = _clean(r[4]); tr = _clean(r[5])
                 beds = _clean(r[6]); places = _clean(r[7]); fach = _clean(r[12])
                 rows.append({
                     "clinic_id": _clean(r[1]), "name": name, "town": town, "operator": operator,
@@ -183,9 +200,8 @@ def parse(pdf_path, known_towns=None):
 
 if __name__ == "__main__":
     towns = None
-    if len(sys.argv) > 3:                       # optional data/raw.json -> city names for town recovery
-        import json
-        towns = {o.get("city") for o in json.load(open(sys.argv[3], encoding="utf-8"))["observations"]}
+    if len(sys.argv) > 3:                       # optional CSV with a `town` column -> town recovery
+        towns = {r.get("town") for r in csv.DictReader(open(sys.argv[3], encoding="utf-8"))}
     rows = parse(sys.argv[1], towns)
     with open(sys.argv[2], "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
