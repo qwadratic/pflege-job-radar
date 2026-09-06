@@ -241,7 +241,9 @@ def execute(run_id):
     except Exception as e:
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED: {e}"); return
     clinics = plan["clinics"]
-    R.update_run(run_id, clinic_ids=[c["clinic_id"] for c in clinics])
+    skipped_ids = {c["clinic_id"] for c in plan["skipped"]}
+    # only sites that are really fetched count as "last scraped"; skipped ones keep their old timestamp
+    R.update_run(run_id, clinic_ids=[c["clinic_id"] for c in clinics if c["clinic_id"] not in skipped_ids])
     if not clinics:
         R.update_run(run_id, status="failed", finished_at=R.now(), error="scope matched no clinic"); log("scope matched no clinic"); return
     log(f"scope {scope}={value!r}: {len(clinics)} clinics -> adapter {len(plan['adapter'])}, firecrawl {len(plan['firecrawl'])}, skipped {len(plan['skipped'])}")
