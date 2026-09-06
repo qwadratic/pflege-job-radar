@@ -1,19 +1,20 @@
 # Pflege-Stellen Bayern (Kliniken)
-> Open nursing job postings at clinics in Bavaria. Two sources merged with explicit precedence: clinic career sites (employer_ats) > Bundesagentur für Arbeit Jobsuche API (arbeitsagentur). Read-only public API; dashboard for humans.
+> Open, experienced-level nursing job postings at hospital sites in Bavaria. Identity = Krankenhausplan KeZ registry (407 sites: beds, Fachrichtungen, Träger). Postings come only from the hospitals' own career sites (ATS adapters, precedence 2) or the Firecrawl agent reading them (precedence 2). No labour agency, no job boards. Read-only public API; board for humans.
 
-- RULE for agents: answer only from the Supabase API below; source_url is the web proof of each posting.
-- Skill (Claude skill format, start here): https://pflege-board.exe.xyz/skill/SKILL.md
-- One-file bundle (skill + references + query script): https://pflege-board.exe.xyz/skill/pflege-jobs.skill.md
-- API reference: https://pflege-board.exe.xyz/skill/api.md
-- Data model & reconciliation rules: https://pflege-board.exe.xyz/skill/data-model.md
-- Pipeline / refresh runbook: https://pflege-board.exe.xyz/skill/pipeline.md
+- RULE for agents: answer only from the APIs below; a posting's `source_url` is its web proof. `employer_class=unknown` = unclassified, not "not a hospital". Trainees/students/non-nursing are not in the data.
+- Skill (start here): https://pflege-board.exe.xyz/skill/SKILL.md
+- One-file bundle: https://pflege-board.exe.xyz/skill/pflege-jobs.skill.md
+- Agent instructions (filters, patterns): https://pflege-board.exe.xyz/docs/agents.md
+- Docs: /docs/overview.md (ontology, taxonomy) · /docs/scraping.md (ATS strategies) · /docs/api.md · /docs/performance.md · ontology graph /docs/ontology.json
 
-## API (PostgREST)
-Base https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/ · headers `apikey: <anon key in SKILL.md>` and `Accept-Profile: pflege_jobs` · main view `v_postings` · counts `v_stats` · max 1000 rows per call (`limit`/`offset`).
-Default filter for "clinic nursing postings": `employer_class=eq.clinic&is_pflege=eq.true&status=eq.open`.
+## App API (JSON)
+Base https://pflege-board.exe.xyz/api · `GET /stats` · `GET /facets` · `GET /clinics?city=&regierungsbezirk=&ats_type=&traegerart=&versorgungsstufe=&fach=&beds_min=&beds_max=&size=&has_jobs=&routable=` · `GET /clinics/{kez}` · `GET /jobs?clinic_id=&role_class=&department_hint=&city=&fresh_days=&verify=live` · `GET /jobs/{id}` · `GET /search?q=` (fuzzy) · `POST /cv` (file or {"text"}) · `POST /crawl` {scope,value,mode,max_credits} · `GET /crawl/runs` · `POST /clinics/{kez}/refetch-career` · `GET/PUT /settings` · `GET /taxonomy`.
 
-## Dashboard URL state
-Filters are URL params, e.g. `/?emp=clinic&role=fachpflege&housing=1&src=employer_ats`.
+## PostgREST (bulk, read-only)
+Base https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/ · headers `apikey: <anon key in SKILL.md>` and `Accept-Profile: pflege_jobs` · `v_postings`, `v_clinics`, `v_clinic_portals`, `postings`, `posting_observations`, `clinics` · max 1000 rows per call (`limit`/`offset`).
+Default filter: `employer_class=eq.clinic&status=eq.open&verify_status=eq.live`.
 
-Code: https://github.com/qwadratic/pflege-job-radar (pipeline, adapters, orchestrator; no secrets)
-Technical docs (human): https://pflege-board.exe.xyz/docs.html
+## Board URL state
+Hash routes: `#/` clinics, `#/clinic/<kez>`, `#/jobs`, `#/job/<id>`, `#/docs`, `#/agents`, `#/settings`, `#/runs`; filters in the hash query.
+
+Code: https://github.com/qwadratic/pflege-job-radar (pipeline, adapters, backend; no secrets)

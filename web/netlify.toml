@@ -1,8 +1,0 @@
-[build]
-  publish = "."
-  functions = "netlify/functions"
-
-[[headers]]
-  for = "/skill/*.md"
-  [headers.values]
-    Content-Type = "text/markdown; charset=utf-8"
