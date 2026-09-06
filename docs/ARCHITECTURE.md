@@ -115,6 +115,40 @@ Findings that saved real work:
   count is behind `?start=N`. Schön Klinik went 100 → 295 and RHÖN 100 → 321 once paged. A suspiciously
   round number is a bug, not a fact.
 
+### The routing table
+
+Discovery runs **once per clinic**; crawling then needs no discovery at all. Two columns on `clinics`
+carry the result:
+
+| column | meaning |
+|---|---|
+| `ats_type` | which vendor, therefore which adapter |
+| `careers_url` | where that clinic's board actually lives |
+
+`crawlers/routing.py` turns those into a fetch plan and adds the three things the raw columns can't say:
+
+- **Not every label is fetchable.** `ats_type` records what discovery *found*; d.vinci (11 sites) is
+  labelled but JS-rendered, so routing reports it as unsupported rather than handing the scheduler work
+  that silently returns nothing. A test pins every advertised adapter to a real callable.
+- **The board is the unit of work, not the clinic.** 143 clinics share a `careers_url` with at least one
+  other. Grouping by exact URL turns 161 routable clinics into **101 fetches**. Grouping by *host* would
+  be wrong: two mein-check-in tenants share a host and list different jobs.
+- **Some boards are walled.** Helios answers datacenter IPs with `403 Access Denied`. Carrying that as a
+  property stops a zero-yield crawl being read as "this hospital isn't hiring".
+
+```
+$ python -m crawlers.routing
+  routable             161 clinics
+  -> boards to fetch   101   (31 shared by >1 clinic; 60 fetches saved)
+  not routable         246
+      no careers_url                      128
+      careers_url but no vendor label     104
+      no adapter for dvinci                11
+```
+
+The 246 unroutable clinics are the honest coverage gap, split by *why* — which is what makes it
+actionable: 104 already have an entry point and only need fingerprinting.
+
 ## 4. Pipeline
 
 ```
