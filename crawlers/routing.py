@@ -73,10 +73,35 @@ def load(key=None):
     return r.json()
 
 
+PI_SEEDS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "registry", "pi_seeds.json")
+
+
+def seed_overlays(path=PI_SEEDS):
+    """P&I boards are seeded by hand (data/registry/pi_seeds.json) because the vendor cannot be fingerprinted
+    from the clinic's own site -- Helios walls helios-gesundheit.de, but its P&I board answers. The seed is
+    therefore a routing fact in its own right: clinic_id -> (ats_type, careers_url)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            seeds = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for s in seeds:
+        url = "https://%s/bewerber-web/?companyEid=%s" % (s.get("host"), s.get("companyEid"))
+        kezs = [(s.get("default") or {}).get("kez")] + [(x or {}).get("kez") for x in (s.get("sites") or {}).values()]
+        for k in kezs:
+            if k:
+                out[str(k)] = ("pi_asp", url)
+    return out
+
+
 def plan(clinics):
     """Group routable clinics into one entry per board. Returns (boards, unroutable)."""
     boards, unroutable = defaultdict(lambda: {"clinics": [], "vendor": None, "adapter": None}), []
+    overlays = seed_overlays()
     for c in clinics:
+        if not (c.get("ats_type") or "").strip() and c.get("clinic_id") in overlays:
+            c = {**c, "ats_type": overlays[c["clinic_id"]][0], "careers_url": overlays[c["clinic_id"]][1]}
         vendor = (c.get("ats_type") or "").strip()
         url = (c.get("careers_url") or "").strip()
         if not url:

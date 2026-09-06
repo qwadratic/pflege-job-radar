@@ -139,4 +139,20 @@ for cid, old, new in diff:
     if r.status_code >= 300:
         print("  ERR", cid, r.status_code, r.text[:100])
 
+# h. P&I seeds are routing facts (Helios walls its own site; its P&I board answers): persist ats_type/careers_url.
+sys.path.insert(0, "/home/exedev/repo")
+from crawlers.routing import seed_overlays
+db_ats = {x["clinic_id"]: (x["ats_type"] or "", x["careers_url"] or "") for x in page("clinics", "clinic_id,ats_type,careers_url", "", "clinic_id")}
+n = 0
+for cid, (ats, url) in seed_overlays().items():
+    if cid in db_ats and not db_ats[cid][0]:
+        if DRY:
+            print("  DRY", cid, "->", ats, url); n += 1; continue
+        r = requests.patch(f"{U}/clinics?clinic_id=eq.{cid}", headers={**H, "Prefer": "return=minimal"}, json={"ats_type": ats, "careers_url": url}, timeout=60)
+        if r.status_code >= 300:
+            print("  ERR", cid, r.status_code, r.text[:100])
+        else:
+            n += 1
+print("seeded ats labels written:", n)
+
 report("after")

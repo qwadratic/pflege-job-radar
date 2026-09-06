@@ -426,6 +426,16 @@ def index():
     return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/simple")
+@app.get("/simple/")
+def simple():
+    """Second frontend variant (light, minimal). Built from web/simple.template.html by web/build.py."""
+    p = A.WEB_DIR / "simple.html"
+    if not p.exists():
+        return PlainTextResponse("web/simple.html not built yet — run `python web/build.py`", status_code=503)
+    return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/collect.html")
 def collect():
     return _web("collect.html", "text/html; charset=utf-8")
