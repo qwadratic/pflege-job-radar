@@ -1,0 +1,7 @@
+[
+  {"file": "overview.md",    "title": {"de": "Überblick & Ontologie",  "en": "Overview & ontology"}},
+  {"file": "scraping.md",    "title": {"de": "Scraping & ATS-Strategien", "en": "Scraping & ATS strategies"}},
+  {"file": "api.md",         "title": {"de": "API",                    "en": "API"}},
+  {"file": "performance.md", "title": {"de": "Suche & Performance",    "en": "Search & performance"}},
+  {"file": "agents.md",      "title": {"de": "Für Agenten",            "en": "For agents"}}
+]

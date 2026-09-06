@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Query pflege_jobs.v_postings with simple flags; handles PostgREST paging. Read-only, no secrets.
+"""Query pflege_jobs.v_postings (hospital career-site postings only) with simple flags; handles PostgREST paging.
+Read-only, no secrets. For fuzzy search, CV matching or triggering crawls use the app API (https://pflege-board.exe.xyz/api).
 
   python query.py --emp clinic --role fachpflege --dept "Intensiv/IMC" --housing --format md
   python query.py --q nürnberg --days 14 --format csv > out.csv
@@ -25,7 +26,7 @@ def main():
     p.add_argument("--city"); p.add_argument("--bezirk"); p.add_argument("--vst"); p.add_argument("--traeger"); p.add_argument("--tariff"); p.add_argument("--contract")
     p.add_argument("--housing", action="store_true"); p.add_argument("--email", action="store_true")
     p.add_argument("--vollzeit", action="store_true"); p.add_argument("--teilzeit", action="store_true")
-    p.add_argument("--days", type=int); p.add_argument("--all-roles", action="store_true", help="include nicht_pflege")
+    p.add_argument("--days", type=int); p.add_argument("--all-roles", action="store_true", help="no is_pflege filter (the DB is experienced-nursing-only anyway)")
     p.add_argument("--include-expired", action="store_true"); p.add_argument("--include-unverified", action="store_true", help="also rows whose web check is blocked/error"); p.add_argument("--limit", type=int, default=100000)
     p.add_argument("--format", default="json", choices=["json", "csv", "md", "count"]); p.add_argument("--stats", action="store_true")
     a = p.parse_args()
