@@ -78,12 +78,7 @@ München Klinik gGmbH  ← operator</code></pre>
 <blockquote><p>Lesson that generalises: when a new input format degrades one field and not others, sync the fields you can verify and quarantine the rest. Don't let one bad column overwrite a good table.</p></blockquote>
 <hr>
 <h2>3. Sources, and why there are four</h2>
-<pre><code> precedence  source            what it is                              why we keep it
- ─────────── ───────────────── ─────────────────────────────────────── ─────────────────────────────
- 1           krankenhausplan   official site register (KeZ, beds)      identity, not postings
- 2           employer_ats      hospital career sites / ATS vendors     authoritative, richest text
- 3           arbeitsagentur    federal labour agency Jobsuche API      broadest, structured, dated
- 4           aggregator        Indeed, StepStone                       catches what the others miss</code></pre>
+<table><thead><tr><th>precedence</th><th>source</th><th>what it is</th><th>why we keep it</th></tr></thead><tbody><tr><td>1</td><td><code>krankenhausplan</code></td><td>official site register (KeZ, beds)</td><td>identity, not postings</td></tr><tr><td>2</td><td><code>employer_ats</code></td><td>hospital career sites / ATS vendors</td><td>authoritative, richest text</td></tr><tr><td>3</td><td><code>arbeitsagentur</code></td><td>federal labour agency Jobsuche API</td><td>broadest, structured, dated</td></tr><tr><td>4</td><td><code>aggregator</code></td><td>Indeed, StepStone</td><td>catches what the others miss</td></tr></tbody></table>
 <p>Lower number wins when sources disagree. A hospital's own careers page beats a job board about salary and description; the labour agency is trusted for publication dates and contract type.</p>
 <p><strong>Why not just crawl career sites?</strong> Because they don't cover the field. Measured on the live dataset, for the 2,633 open postings at hospital-classified employers:</p>
 <table><thead><tr><th>source</th><th>reaches</th><th><em>only</em> source for</th></tr></thead><tbody><tr><td>career sites (<code>employer_ats</code>)</td><td>1,650</td><td>1,193</td></tr><tr><td>Bundesagentur für Arbeit</td><td>998</td><td>600</td></tr><tr><td>aggregators (Indeed, StepStone)</td><td>541</td><td>337</td></tr></tbody></table>

@@ -62,14 +62,12 @@ Four genuinely new sites were transcribed by hand. Sites that vanish are marked
 
 ## 3. Sources, and why there are four
 
-```
- precedence  source            what it is                              why we keep it
- ─────────── ───────────────── ─────────────────────────────────────── ─────────────────────────────
- 1           krankenhausplan   official site register (KeZ, beds)      identity, not postings
- 2           employer_ats      hospital career sites / ATS vendors     authoritative, richest text
- 3           arbeitsagentur    federal labour agency Jobsuche API      broadest, structured, dated
- 4           aggregator        Indeed, StepStone                       catches what the others miss
-```
+| precedence | source | what it is | why we keep it |
+|---|---|---|---|
+| 1 | `krankenhausplan` | official site register (KeZ, beds) | identity, not postings |
+| 2 | `employer_ats` | hospital career sites / ATS vendors | authoritative, richest text |
+| 3 | `arbeitsagentur` | federal labour agency Jobsuche API | broadest, structured, dated |
+| 4 | `aggregator` | Indeed, StepStone | catches what the others miss |
 
 Lower number wins when sources disagree. A hospital's own careers page beats a job board about salary
 and description; the labour agency is trusted for publication dates and contract type.
