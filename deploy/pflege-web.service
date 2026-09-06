@@ -1,0 +1,16 @@
+[Unit]
+Description=Pflege-Board (FastAPI backend + dashboard, exe.dev default port 8501)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8501 --workers 1 --timeout-keep-alive 30
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
