@@ -54,10 +54,52 @@ def mein_check_in(f, kez, town):
     return _base(f["name"], kez, town, lst, ["www.mein-check-in.de"], [f"https://www.mein-check-in.de/{slug}/", f"https://www.mein-check-in.de/{slug}/overview?page=2"], (), "mein-check-in")
 
 
+_UMANTIS_HOST = re.compile(r"^recruitingapp-\d+\.[a-z]{2}\.umantis\.com$", re.I)
+_UMANTIS_HOP = re.compile(r"/stellenangebot|karriere.*stellen", re.I)
+
+
 def umantis(f, kez, town):
-    """Haufe umantis: recruitingapp-<n>.de.umantis.com/Jobs/1?CompanyID=…  (Jobs/2, Jobs/3 pagination); details heuristic."""
-    r = _get(f["career"]); html = r.text if r else ""
+    """Haufe umantis: recruitingapp-<n>.de.umantis.com/Jobs/1?CompanyID=…  (Jobs/2, Jobs/3 pagination); details heuristic.
+
+    Some careers_url pages carry only relative /Vacancies/<id>/Description/1 links (no absolute
+    umantis URL in the HTML) -- e.g. https://recruitingapp-5545.de.umantis.com/Jobs/1?lang=ger itself.
+    Others are a CMS hub one hop away from the page that actually embeds absolute umantis URLs
+    -- e.g. ANregiomed's /karriere-jobs/ -> /karriere-jobs/stellenangebote-bewerbung/stellenangebote/.
+
+    Section-first (checked live 2026-09-07, not just from the earlier survey): some umantis boards
+    (e.g. recruitingapp-5545) DO render a real job-function facet -- a "Unternehmensbereich" <select
+    name="searchFunction"> with an <option value="10020">Pflegedienst</option> alongside Ärztlicher
+    Dienst/Therapie/Verwaltung/... -- which looked promising. But that field is submitted via
+    <form method="post" action="/Jobs/1">, and appending it as a GET query param
+    (?searchFunction=10020, case variants, ?function=10020) returned byte-identical page sizes to the
+    unfiltered listing -- i.e. silently ignored, exactly like the rexx/concludis-widget attempts in the
+    survey. Other umantis boards (recruitingapp-5656/CompanyID=All) only expose a "Klinik/Fachbereich"
+    org-unit picker, not a job-function one at all. Neither shape gives this GET-only seed builder a
+    working narrower URL, so umantis intentionally keeps the full board-URL-discovery fallback below
+    unchanged; career_crawl.Crawler's own section-first BFS gate still gets a shot at the *rendered*
+    listing page's job-level anchors once a seed is built.
+    """
+    career = f["career"] or ""
+    p = urlparse(career)
+    if _UMANTIS_HOST.match(p.netloc):
+        # careers_url IS the umantis board itself; no absolute umantis URL needed in the HTML.
+        netloc = p.netloc; base = f"https://{netloc}"; first = career
+        q = first.split("?", 1)[1] if "?" in first else ""
+        extra = [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
+        return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis")
+
+    r = _get(career); html = r.text if r else ""
     m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html)
+    if not m and r is not None:
+        # One hop: careers_url is a CMS hub; follow a same-site link that looks like the real
+        # job-listing page and re-run the umantis regex there.
+        for href in re.findall(r'href="([^"]+)"', html):
+            link = urljoin(career, href)
+            if urlparse(link).netloc != p.netloc: continue
+            if not _UMANTIS_HOP.search(link): continue
+            r2 = _get(link); html2 = r2.text if r2 else ""
+            m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html2)
+            if m: break
     if not m: return None
     netloc = m.group(1); path = m.group(2) or "/Jobs/1"
     base = f"https://{netloc}"; first = base + path.replace("&amp;", "&")

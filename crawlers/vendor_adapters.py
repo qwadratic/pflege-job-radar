@@ -21,6 +21,11 @@ How each vendor is reached (probed 2026-09-06):
                   tenants are handled by the same sitemap+detail path.
   wp_jobs         Same shape, used for the typo3_jobs/WordPress sites: find a job sitemap, then read
                   <title>/<h1> from each detail page. No JSON-LD on these, hence the HTML fallback.
+  dvinci          d.vinci HR boards answer a public GET <host>/jobPublication/list.json (no auth, no
+                  browser). The census careers_url is often a wrapper page (the clinic's own site)
+                  that only embeds the real d.vinci tenant host via a jobWidgetLoader script or a
+                  plain link -- resolve that host first, then hit its own list.json. Falls back to
+                  scraping `var DvinciData = ({...});` off <host>/de/jobs if list.json 404s there.
   oracle          Oracle Recruiting Cloud is a JS SPA behind an XHR API; its sites here (Altmühlfranken,
                   St. Josef) are already covered better by crawlers/portals.py, so they are routed
                   there rather than duplicated. Klinikum FFB is a plain career page -> wp_jobs.
@@ -37,6 +42,8 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from pflege_jobs import section  # noqa: E402
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/125.0.0.0 Safari/537.36")
@@ -62,6 +69,24 @@ def _txt(s, limit=20000):
 def row(host, url, payload, vendor):
     return {"kind": "jobposting", "source_host": host, "source_url": url,
             "payload": payload, "collector": "vendor-%s-v1" % vendor, "client_id": CID}
+
+
+def _section_keep(labels, nursing_label):
+    """Section-first gate for a single job once a board-wide nursing category/label has been
+    identified (nursing_label truthy). `labels` is that job's OWN category/department label(s) --
+    a single string, a list of strings, or None/empty when the vendor didn't tag this particular
+    job. Keep the job unless it carries an explicit label that is NOT the nursing one: an untagged
+    job might still be a real nursing posting (some vendors only tag some jobs), so absence of a
+    label must never be read as exclusion -- only a confidently different label is.
+    """
+    if not nursing_label:
+        return True
+    if isinstance(labels, str):
+        labels = [labels] if labels else []
+    labels = [l for l in (labels or []) if l]
+    if not labels:
+        return True
+    return bool(section.pick_nursing_category(labels))
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +120,15 @@ def parse_personio_xml(xml, org, page_url):
         # the caller fills in the clinic's own town when we leave this empty.
         office = f("office")
         city = office if office and not re.search(r"klinik|haus|zentrum|standort|gmbh", office, re.I) else None
+        # <department>/<recruitingCategory> are the tenant's own taxonomy -- free text, present on
+        # some tenants and not others (section-first signal, "sometimes"; see pflege_jobs.section).
+        department = f("department") or f("recruitingCategory")
         out.append({"title": name, "org": f("subcompany") or org,
                     "loc": [{"city": city, "plz": None, "region": None}],
                     "url": "%s/job/%s" % (page_url.rstrip("/").replace("/xml", ""), pid) if pid else page_url,
                     "page": page_url, "employmentType": f("employmentType"),
                     "datePosted": (f("createdAt") or "")[:10] or None,
+                    "department": department,
                     "description": desc[:20000] or None})
     return out
 
@@ -121,6 +150,19 @@ def crawl_personio(c, session=None):
             r.encoding = "utf-8"
             jobs = parse_personio_xml(r.text, c["name"], base + "/xml")
             if jobs:
+                # Section-first: <department>/<recruitingCategory> come for free in the one feed
+                # request already made above. When the tenant's taxonomy names a nursing department,
+                # narrow to it; an untagged posting is still kept (some tenants only tag some jobs).
+                # Surveyed 2026-09: no real coverage loss found on either tested personio board (one
+                # never narrows at all -- specialty-shaped taxonomy with no nursing label; the other's
+                # narrowing dropped only non-nursing postings) -- fetch-side behaviour is unchanged.
+                nursing_label = section.pick_nursing_category([j.get("department") for j in jobs])
+                if nursing_label:
+                    narrowed = [j for j in jobs if _section_keep(j.get("department"), nursing_label)]
+                    if narrowed:
+                        jobs = narrowed
+                for j in jobs:
+                    j["section_labels"] = [j["department"]] if j.get("department") else []
                 host = "%s.jobs.personio.de" % slug
                 return [row(host, j["url"], j, "personio") for j in jobs]
     return crawl_wp_jobs(c, session=session)
@@ -133,12 +175,15 @@ def parse_smartrecruiters(data, org, page_url):
     out = []
     for p in data.get("content") or []:
         loc = p.get("location") or {}
+        dept_label = (p.get("department") or {}).get("label")
         out.append({"title": p.get("name"), "org": (p.get("company") or {}).get("name") or org,
                     "loc": [{"city": loc.get("city"), "plz": loc.get("postalCode"), "region": loc.get("region")}],
                     "url": p.get("ref") or p.get("applyUrl") or
                            "https://jobs.smartrecruiters.com/%s/%s" % ((p.get("company") or {}).get("identifier", ""), p.get("id", "")),
                     "page": page_url, "datePosted": (p.get("releasedDate") or "")[:10] or None,
                     "employmentType": ((p.get("typeOfEmployment") or {}).get("label")),
+                    "department": dept_label,
+                    "section_labels": [dept_label] if dept_label else [],
                     "description": None})
     return out
 
@@ -156,16 +201,54 @@ def crawl_smartrecruiters(c, session=None):
             ident = m.group(1) if m else None
     if not ident:
         return crawl_wp_jobs(c, session=session)
-    url = "https://api.smartrecruiters.com/v1/companies/%s/postings?limit=100" % ident
-    r = get(url, session=session)
-    if not r or not r.ok:
+    limit = 100
+    ceiling = 1000
+    base_url = "https://api.smartrecruiters.com/v1/companies/%s/postings" % ident
+
+    def fetch_page(offset):
+        url = "%s?limit=%d&offset=%d" % (base_url, limit, offset)
+        r = get(url, session=session)
+        if not r or not r.ok:
+            return None, url
+        try:
+            return r.json(), url
+        except Exception:
+            return None, url
+
+    data, first_url = fetch_page(0)
+    if not data:
         return crawl_wp_jobs(c, session=session)
-    try:
-        data = r.json()
-    except Exception:
+    content = list(data.get("content") or [])
+    total_found = data.get("totalFound")
+
+    # Section-first (surveyed 2026-09, revised): postings[].department.{id,label} is a real taxonomy
+    # on this API, and &department=<id> is a confirmed working server-side filter -- but on a real
+    # board (Artemed group, 438 postings) hard-narrowing the FETCH to it dropped 63 genuine
+    # certified-nursing postings filed under other department buckets ("Funktionsdienst" OTA/
+    # Anästhesiepflege leads, "Personal der Ausbildungsstätten" Praxisanleiter) or left untagged
+    # entirely -- a real, measured coverage loss, not a hypothetical one. This API already returns
+    # the full posting (title, department, ...) with no separate per-job detail fetch, so a full,
+    # unfiltered walk costs the same per-page price as a filtered one: no reason to hard-filter the
+    # fetch at all. Walk the whole board every time, and thread each job's own department label
+    # (see parse_smartrecruiters above) into classify.classify_role's nursing_section_confirmed
+    # signal downstream instead -- same taxonomy data, used as an admit signal, not a fetch filter.
+    offset = limit
+    while offset < ceiling:
+        data, url = fetch_page(offset)
+        if data is None:
+            break
+        if total_found is None:
+            total_found = data.get("totalFound")
+        page = data.get("content") or []
+        content.extend(page)
+        if len(page) < limit or (total_found is not None and offset + limit >= total_found):
+            break
+        offset += limit
+
+    if not content:
         return crawl_wp_jobs(c, session=session)
     out = [row("jobs.smartrecruiters.com", j["url"], j, "smartrecruiters")
-           for j in parse_smartrecruiters(data, c["name"], url) if j.get("title") and j.get("url")]
+           for j in parse_smartrecruiters({"content": content}, c["name"], first_url) if j.get("title") and j.get("url")]
     return out or crawl_wp_jobs(c, session=session)
 
 
@@ -188,21 +271,54 @@ def parse_helix(htmltext, base, org, page_url):
     return out
 
 
+# The "Berufsfeld" filter fieldset (only rendered on boards with enough jobs/categories to need
+# one): <label for="category_<hash>">Pflege (1 Treffer)</label>, whose <hash> works as
+# ?category[]=<hash> on the very same joblist URL.
+HELIX_CATEGORY = re.compile(r'for="category_([a-f0-9]+)"[^>]*>([^<]*)</label>', re.I)
+
+
+def _helix_nursing_query(htmltext):
+    """-> the category hash for the nursing Berufsfeld option, or None if the board has no such
+    filter (small boards render no fieldset at all) or none of its options name nursing."""
+    options = [(h, _txt(label)) for h, label in HELIX_CATEGORY.findall(htmltext or "")]
+    nursing_label = section.pick_nursing_category([label for _, label in options])
+    if not nursing_label:
+        return None
+    for h, label in options:
+        if label == nursing_label:
+            return h
+    return None
+
+
 def crawl_helix(c, session=None):
     cu = c.get("careers_url") or ""
     r = get(cu, session=session)
     if not r or not r.ok:
         return []
     jobs = parse_helix(r.text, r.url, c["name"], r.url)
+    listing_url, listing_html = r.url, r.text
     if not jobs:                                     # career page may only link to the joblist
         for m in re.finditer(r'href="([^"]*(?:joblist|helixjobs[^"]*)[^"]*)"', r.text, re.I):
             r2 = get(urljoin(r.url, m.group(1)), session=session)
             if r2 and r2.ok:
                 jobs = parse_helix(r2.text, r2.url, c["name"], r2.url)
                 if jobs:
+                    listing_url, listing_html = r2.url, r2.text
                     break
     if not jobs:
         return crawl_wp_jobs(c, session=session)     # not a helix tenant after all
+
+    # Section-first: a Berufsfeld=Pflege filter narrows the very same joblist URL server-side.
+    cat_hash = _helix_nursing_query(listing_html)
+    if cat_hash:
+        sep = "&" if "?" in listing_url else "?"
+        narrowed_url = "%s%scategory%%5B%%5D=%s" % (listing_url, sep, cat_hash)
+        rn = get(narrowed_url, session=session)
+        if rn and rn.ok:
+            narrowed_jobs = parse_helix(rn.text, rn.url, c["name"], rn.url)
+            if narrowed_jobs:
+                jobs = narrowed_jobs
+
     host = urlparse(cu).netloc
     return [row(host, j["url"], j, "helix") for j in jobs]
 
@@ -236,7 +352,14 @@ def find_job_urls(base, session=None, max_maps=8):
             queue = job_maps + queue if job_maps else queue + locs[:3]
         else:
             out += locs
-    return [u for u in dict.fromkeys(out) if JOB_PATH.search(u)]
+    found = [u for u in dict.fromkeys(out) if JOB_PATH.search(u)]
+    if not found:
+        # Silent zero-yield here is indistinguishable from "board has no jobs right now" --
+        # but it is usually a JS-only site (sitemap has no job links) or an unmatched URL shape.
+        # Surface it in the run log so these boards are visible instead of vanishing quietly.
+        print("[wp_jobs] find_job_urls: no job links in sitemap for %s (%d sitemap urls seen)"
+              % (base, len(out)), file=sys.stderr)
+    return found
 
 
 def parse_job_page(htmltext, url, org):
@@ -281,19 +404,8 @@ def parse_job_page(htmltext, url, org):
             "url": url, "page": url, "description": _txt(body)}
 
 
-def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
-    cu = (c.get("careers_url") or "").strip()
-    if not cu:
-        return []
-    p = urlparse(cu)
-    base = "%s://%s" % (p.scheme, p.netloc)
-    urls = find_job_urls(base, session=session)
-    if not urls:                                      # fall back to job links on the career page
-        r = get(cu, session=session)
-        if r and r.ok:
-            urls = [urljoin(r.url, h) for h in re.findall(r'href="([^"#]+)"', r.text) if JOB_PATH.search(h)]
-            urls = list(dict.fromkeys(urls))
-    out, host = [], p.netloc
+def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None):
+    out = []
     for u in urls[:max_jobs]:
         r = get(u, session=session)
         if not r or not r.ok:
@@ -303,8 +415,115 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
             continue
         if not j["loc"][0]["city"] and c.get("town"):
             j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+        j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
+    return out
+
+
+def _wp_nursing_section_url(cu, cu_resp):
+    """Look for a Berufsgruppe-style nav <select>/<a> on the career page naming a nursing
+    department, and return (label, absolute_url) -- or (None, None) if no such nav exists on this
+    board at all (checked, not assumed) or none of its options/links name nursing."""
+    if not cu_resp or not cu_resp.ok:
+        return None, None
+    links = []
+    for h, label in re.findall(r'<option[^>]+data-url="([^"]+)"[^>]*>([^<]*)</option>', cu_resp.text, re.I):
+        links.append((_txt(label), urljoin(cu_resp.url, _html.unescape(h))))
+    for h, label in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>([^<]*)</a>', cu_resp.text, re.I):
+        label = _txt(label)
+        # A genuine Berufsgruppe/category nav label is a short word or two ("Pflege",
+        # "Pflegedienst"); a full job-posting title that merely happens to mention nursing
+        # ("Examinierte Pflegefachkraft (w/m/d) fuer unsere Notaufnahme, stellv. Stationsleitung")
+        # is not a category link, and following it would "narrow" to one job's own detail/related
+        # links instead of the section.
+        if label and len(label) <= 40:
+            links.append((label, urljoin(cu_resp.url, _html.unescape(h))))
+    href = section.pick_nursing_link(links)
+    if href and href.rstrip("/") == cu.rstrip("/"):
+        return None, None
+    if not href:
+        return None, None
+    label = next((t for t, h in links if h == href), None)
+    return label, href
+
+
+def _page_job_links(url, session=None, exclude=()):
+    """Job-looking links on one page, minus `exclude` -- the site-wide nav/footer (Berufsgruppe
+    siblings, "Karriere"/"Impressum"/...) repeats on every subpage, so without excluding whatever
+    already linked from the entry page, a "narrower" section page can resurface the whole board."""
+    r = get(url, session=session)
+    if not r or not r.ok:
+        return []
+    found = (urljoin(r.url, h) for h in re.findall(r'href="([^"#]+)"', r.text) if JOB_PATH.search(h))
+    return list(dict.fromkeys(u for u in found if u not in exclude))
+
+
+def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+    cu = (c.get("careers_url") or "").strip()
+    if not cu:
+        return []
+    p = urlparse(cu)
+    base = "%s://%s" % (p.scheme, p.netloc)
+    host = p.netloc
+
+    # Section-first (surveyed 2026-09, revised): some bespoke career pages nav to a distinct,
+    # already-narrowed nursing listing (a "Berufsgruppe" select or footer link) -- fetching it first
+    # beats walking the whole board cold. This used to STOP there when it yielded any rows -- but on
+    # a real board (Klinikum Nürnberg, 120 postings) that meant the full sitemap walk never even ran,
+    # silently missing 2 genuine certified-nursing postings filed under a different "Jobwelt"
+    # ("OTA / Pflegefachkraft OP (m/w/d) Zentral-OP", "ATA / Pflegefachkraft Anästhesie (m/w/d)
+    # Zentral-OP") whose own label never named nursing at all. Still fetch the confirmed section
+    # first (so it's never skipped for a partial board budget), but then top up with the rest of the
+    # board's job urls (deduped, budget-capped) instead of returning early -- this vendor's adapter
+    # has no cheap per-job label at fetch time to gate on the way career_crawl/bite do, so the only
+    # way to recover a mislabelled posting is to fetch it.
+    cu_resp = get(cu, session=session)
+    section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
+    out, fetched = [], set()
+    if section_url:
+        cu_links = ({urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
+                    if cu_resp and cu_resp.ok else set())
+        section_urls = _page_job_links(section_url, session=session, exclude=cu_links | {section_url})
+        if section_urls:
+            out = _wp_job_rows(section_urls, c, host, max_jobs, session,
+                               section_labels=[section_label] if section_label else None)
+            fetched = {j["payload"]["url"] for j in out}
+
+    urls = find_job_urls(base, session=session)
+    remaining = max(max_jobs - len(out), 0)
+    if urls and remaining:
+        more_urls = [u for u in urls if u not in fetched]
+        out = out + _wp_job_rows(more_urls, c, host, remaining, session)
+    if not out:
+        # Either the sitemap had no job urls, or every one of them was stale/unfetchable (some TYPO3
+        # sitemaps carry dead query-string job routes while the career page itself links the live,
+        # friendly-slug job pages) -- fall back to scanning the career page's own job links.
+        page_urls = ([urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text) if JOB_PATH.search(h)]
+                     if cu_resp and cu_resp.ok else [])
+        page_urls = list(dict.fromkeys(page_urls))
+        if page_urls and page_urls != urls:
+            out = _wp_job_rows(page_urls, c, host, max_jobs, session)
+    return out
+
+
+REXX_JOB_HREF = re.compile(r'href="([^"#]*-j\d+\.html[^"]*)"')
+REXX_TAG = re.compile(r'<span[^>]*class="[^"]*job_details_first[^"]*"[^>]*>(.*?)</span>', re.S)
+
+
+def _rexx_listing_jobs(htmltext):
+    """One listing page -> [(href, Fachbereich_tag_or_None)], one per job container. The tag is a
+    free label already sitting next to the title in the same fetch -- no extra request needed."""
+    # The container element's own tag varies by skin (<div>, <article>, ...) -- split on the class
+    # regardless of which tag carries it.
+    chunks = re.split(r'(?=<[a-zA-Z]+[^>]*\bclass="[^"]*\bjoboffer_container\b)', htmltext or "")
+    out = []
+    for chunk in chunks:
+        hm = REXX_JOB_HREF.search(chunk)
+        if not hm:
+            continue
+        tm = REXX_TAG.search(chunk)
+        out.append((hm.group(1), _txt(tm.group(1)) if tm else None))
     return out
 
 
@@ -320,7 +539,7 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
         return []
     # The listing shows 100 jobs at a time and pages with ?start=N (no visible pager on some skins),
     # so a single fetch silently truncates the biggest boards at exactly 100. Page until no new ids.
-    urls, seen, base = [], set(), None
+    urls, tags, seen, base = [], {}, set(), None
     for start in range(0, 1000, 100):
         page_url = cu if start == 0 else cu + ("&" if "?" in cu else "?") + "start=%d" % start
         r = get(page_url, session=session)
@@ -329,19 +548,32 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
         if base is None:
             base = "%s://%s" % (urlparse(r.url).scheme, urlparse(r.url).netloc)
         fresh = 0
-        for h in re.findall(r'href="([^"#]*-j\d+\.html[^"]*)"', r.text):
+        for h, tag in _rexx_listing_jobs(r.text):
             u = urljoin(r.url, _html.unescape(h))
             jid = re.search(r"-j(\d+)\.html", u)
             if not jid or jid.group(1) in seen:
                 continue
             seen.add(jid.group(1))
             urls.append(u)
+            if tag:
+                tags[u] = tag
             fresh += 1
         if fresh == 0 or len(urls) >= max_jobs:
             break
         time.sleep(0.2)
     if base is None:
         return []
+
+    # Section-first (surveyed 2026-09, revised): the listing already tags every job with a
+    # Fachbereich label (no extra request). This used to also HARD-FILTER which detail pages got
+    # fetched at all -- but on a real board (Schön Klinik group, 296 postings) that dropped 30
+    # genuine certified-nursing postings filed under a different Fachbereich than the one nursing
+    # bucket ("OP Pfleger oder Operationstechnischer Assistent", "MFA/MTRA/Pflegefachkraft
+    # Herzkatheterlabor..."), a real, measured coverage loss. `urls` here is already capped at
+    # max_jobs during pagination above, so fetching every one of them costs no more requests than the
+    # cap already allowed -- fetch them all, and thread each job's own Fachbereich tag (already sitting
+    # in `tags`, no extra request) into the payload for classify.classify_role's
+    # nursing_section_confirmed signal downstream instead of using it as a fetch filter.
     out = []
     for u in urls[:max_jobs]:
         d = get(u, session=session)
@@ -352,13 +584,14 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
             continue
         if not j["loc"][0]["city"] and c.get("town"):
             j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+        j["section_labels"] = [tags[u]] if tags.get(u) else []
         out.append(row(urlparse(base).netloc, j["url"], j, "rexx"))
         time.sleep(0.2)
     return out
 
 
 # mein-check-in.de hosts one tenant per employer; the careers page just links into it.
-MCI_TENANT = re.compile(r"mein-check-in\.de/([a-z0-9][a-z0-9_-]*)/", re.I)
+MCI_TENANT = re.compile(r"mein-check-in\.de/([a-z0-9][a-z0-9_-]*)/?", re.I)
 
 
 def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
@@ -385,9 +618,24 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
     listing = get("https://%s/%s/overview" % (host, tenant), session=session)
     if not listing or not listing.ok:
         return []
+
+    # Section-first: the overview page already groups every position under a sidebar heading
+    # (<li id="pg-<id>"><span>Pflegedienst</span><ul>...position-<id> links...</ul></li>) -- no
+    # extra request needed to read which ids belong to the nursing group.
+    pid_group = {}
+    groups = re.findall(r'<li id="pg-\d+"[^>]*>\s*<span[^>]*>(.*?)</span>(.*?)(?=<li id="pg-|\Z)', listing.text, re.S)
+    nursing_label = section.pick_nursing_category([_txt(label) for label, _ in groups]) if groups else None
+    if nursing_label:
+        for label, body in groups:
+            lbl = _txt(label)
+            for pid in re.findall(r'position-(\d+)', body):
+                pid_group.setdefault(pid, lbl)
+
     seen, out = set(), []
     for pid, inner in re.findall(r'<a[^>]+position-(\d+)[^>]*>(.*?)</a>', listing.text, re.S):
         if pid in seen:
+            continue
+        if not _section_keep(pid_group.get(pid), nursing_label):
             continue
         seen.add(pid)
         title = _txt(inner, 300)
@@ -396,7 +644,8 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
         u = "https://%s/%s/position-%s" % (host, tenant, pid)
         j = {"title": title, "org": c["name"],
              "loc": [{"city": c.get("town"), "plz": None, "region": "BAYERN"}],
-             "url": u, "page": u, "description": None}
+             "url": u, "page": u, "description": None,
+             "section_labels": [pid_group[pid]] if pid_group.get(pid) else []}
         d = get(u, session=session)
         if d and d.ok:
             full = parse_job_page(d.text, u, c["name"])
@@ -406,6 +655,121 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
         if len(out) >= max_jobs:
             break
         time.sleep(0.2)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# d.vinci: <host>/jobPublication/list.json
+# ---------------------------------------------------------------------------
+# careers_url on the census is often the clinic's own wrapper page, not the d.vinci tenant itself
+# (romed-jobs.de and jobs.klinikum-fuerth.de happen to *be* the tenant host, but www.ukw.de/jobs,
+# klinikum-neumarkt.de and sozialstiftung-bamberg.de are not -- they embed the real tenant via a
+# jobWidgetLoader script or a plain outbound link). Resolve that host first.
+DVINCI_TENANT = re.compile(r"https?://([a-z0-9][a-z0-9.\-]*?\.dvinci-(?:easy|hr)\.com)", re.I)
+DVINCI_LINK = re.compile(r'https?://([a-z0-9][a-z0-9.\-]*)/de/(?:jobs|p/[^/"\']+/jobs)/', re.I)
+
+
+def dvinci_host(careers_url, session=None):
+    """Return the host that answers /jobPublication/list.json for this board, or None."""
+    own = urlparse(careers_url or "").netloc
+    if own:
+        r = get("https://%s/jobPublication/list.json" % own, session=session)
+        if r and r.ok:
+            try:
+                if isinstance(r.json(), list):
+                    return own
+            except Exception:
+                pass
+    r = get(careers_url, session=session) if careers_url else None
+    if not r or not r.ok:
+        return None
+    m = DVINCI_TENANT.search(r.text)
+    if m:
+        return m.group(1)
+    for h in DVINCI_LINK.findall(r.text):
+        if h != own:
+            return h
+    return None
+
+
+def parse_dvinci(j, org, list_url):
+    """One entry of jobPublication/list.json -> our row shape.
+
+    jobOpening.location is free text -- usually a town ("Rosenheim") but sometimes the facility
+    name itself ("Klinikum Bamberg", seen when the tenant has no structured address at all). Reject
+    the latter shape here rather than mislabel it as a city; the caller fills in the registry town.
+    """
+    jo = j.get("jobOpening") or {}
+    addr = ((jo.get("locations") or [{}])[0] or {}).get("address") or {}
+    loc_text = jo.get("location")
+    if loc_text and re.search(r"klinik|krankenhaus|hospital|zentrum|stiftung|gmbh", loc_text, re.I):
+        loc_text = None
+    city = addr.get("city") or loc_text
+    desc = _txt(" ".join(_html.unescape(p) for p in
+                         (j.get("introduction"), j.get("tasks"), j.get("profile"), j.get("weOffer")) if p))
+    url = j.get("jobPublicationURL") or list_url
+    return {"title": j.get("position"), "org": (jo.get("company") or {}).get("name") or org,
+            "loc": [{"city": city, "plz": addr.get("zipCode"), "region": None}],
+            "url": url, "page": url,
+            "datePosted": (j.get("startDate") or "")[:10] or None,
+            "department": jo.get("department"), "reference": jo.get("reference"),
+            "description": desc}
+
+
+def crawl_dvinci(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+    cu = (c.get("careers_url") or "").strip()
+    if not cu:
+        return []
+    host = dvinci_host(cu, session=session)
+    if not host:
+        return []
+    list_url = "https://%s/jobPublication/list.json" % host
+    r = get(list_url, session=session)
+    jobs = []
+    if r and r.ok:
+        try:
+            data = r.json()
+            if isinstance(data, list):
+                jobs = data
+        except Exception:
+            jobs = []
+    if not jobs:
+        # list.json 404s on some tenants; the same data is inlined on the listing page as a JS var.
+        r2 = get("https://%s/de/jobs" % host, session=session)
+        if r2 and r2.ok:
+            m = re.search(r"var DvinciData\s*=\s*(\{.*?\});", r2.text, re.S)
+            if m:
+                try:
+                    data = json.loads(m.group(1))
+                    jobs = data.get("jobPublications") or data.get("jobs") or []
+                except Exception:
+                    jobs = []
+
+    # Section-first (surveyed 2026-09, revised): jobOpening.categories[].name is a real taxonomy
+    # already sitting in the same list.json response fetched above (jobOpening.department, used in
+    # parse_dvinci, is a different -- more granular -- field). This used to hard-narrow `jobs` to
+    # only the matched category -- but on two real boards (RoMed Rosenheim, Sozialstiftung Bamberg)
+    # that dropped genuine certified-nursing postings filed under other categories entirely
+    # ("Berufsfachschule für Pflege", teaching-school buckets; "B-PD-ANAE"/"OTK", functional-unit
+    # codes) -- 5/36 and 5/91 real, measured losses, unambiguous titles like "Advanced Practice
+    # Nurses", "Pflegerische Funktionsleitung". `jobs` here all came from the ONE list.json request
+    # already made above (no per-job detail fetch at all), so narrowing saved zero network cost --
+    # keep every job, and thread each job's own category name(s) into the payload for
+    # classify.classify_role's nursing_section_confirmed signal downstream instead of using it as a
+    # fetch filter.
+    def _cat_names(job):
+        return [(cat.get("name") or cat.get("internalName") or "")
+                for cat in ((job.get("jobOpening") or {}).get("categories") or [])]
+
+    out = []
+    for j in jobs[:max_jobs]:
+        p = parse_dvinci(j, c["name"], list_url)
+        if not p.get("title"):
+            continue
+        if not p["loc"][0]["city"] and c.get("town"):
+            p["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+        p["section_labels"] = _cat_names(j)
+        out.append(row(host, p["url"], p, "dvinci"))
     return out
 
 
@@ -473,6 +837,8 @@ VENDORS = {
     "typo3_jobs": crawl_wp_jobs,
     "talention": crawl_wp_jobs,
     "oracle": crawl_wp_jobs,
+    "dvinci": crawl_dvinci,
+    "wp_jobs": crawl_wp_jobs,   # routing.py default for careers_url-but-no-vendor-label boards
 }
 
 

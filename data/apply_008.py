@@ -6,6 +6,10 @@ migration is expressed as ordered DELETEs, which service-role PostgREST does sup
 application-level gate (pflege_jobs/config.py:EXCLUDED_ROLE_CLASSES, enforced in sinks.only_pflege)
 is what keeps these rows out going forward; this script removes what earlier runs already stored.
 
+EXCLUDED mirrors pflege_jobs/patterns.json:excluded_role_classes -- pflegehelfer (assistants) joined
+2026-09-07 alongside the trainee/intern/non-nursing classes, since the board's stated scope is
+certified nursing staff only.
+
   python data/apply_008.py --dry-run     # report only
   python data/apply_008.py               # delete
 """
@@ -16,7 +20,7 @@ import sys
 
 import requests
 
-EXCLUDED = ("ausbildung", "werkstudent_praktikum", "nicht_pflege")
+EXCLUDED = ("ausbildung", "werkstudent_praktikum", "nicht_pflege", "pflegehelfer")
 PROJECT = os.environ.get("SUPABASE_PROJECT_URL", "https://klkxfvieaxpjlplloljn.supabase.co")
 
 

@@ -67,6 +67,16 @@ def rest_get_all(path, params=None, page=1000, timeout=120):
             return out
 
 
+def rest_count(path, params=None, timeout=60):
+    """Exact row count for a relation/filter without paging the rows themselves (PostgREST has no
+    group-by, and paging thousands of rows just to len() them is wasteful)."""
+    h = {**rest_headers(), "Prefer": "count=exact"}
+    r = requests.head(f"{SUPABASE_URL}/rest/v1/{path}", params={**(params or {}), "select": "inbox_id", "limit": 1}, headers=h, timeout=timeout)
+    r.raise_for_status()
+    cr = (r.headers.get("content-range") or "*/0").split("/")[-1]
+    return int(cr) if cr.isdigit() else 0
+
+
 def rest_post(path, body, prefer="return=minimal", timeout=120):
     h = rest_headers(write=True)
     h["Prefer"] = prefer

@@ -60,11 +60,34 @@ def classify_employer(name: str):
     return "unknown", "no_match"
 
 
-def classify_role(title: str, hauptberuf: str = "", offer_kind: str = ""):
-    """-> (role_class, rule). Evaluated on title + hauptberuf; offer_kind AUSBILDUNG forces ausbildung."""
+def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursing_section_confirmed: bool = False):
+    """-> (role_class, rule). Evaluated on title + hauptberuf; offer_kind AUSBILDUNG forces ausbildung.
+
+    nursing_section_confirmed: True when the job's OWN vendor-provided category/department label
+    positively confirms it already sits in the nursing section of its board (see
+    pflege_jobs.section.job_confirmed_nursing) -- a structural signal, stronger than a free-text
+    keyword gate. Scope, grounded in the 2026-09 survey of real dept-tagged titles:
+      - Step 1 (the pflege_gate token requirement) is SKIPPED when True: a section-confirmed posting
+        must not be dropped just because its title alone carries no nursing keyword. Real, observed
+        titles that failed ONLY this gate: dvinci "Hygienefachkraft (m/w/d)" and "Advanced Practice
+        Nurses (m/w/d)" (dept "Pflege- und Funktionsdienst"/"02 Pflegedienst"), dvinci "Gerontofachkraft
+        (w/m/d)" (falls through to the sonstige_pflege fallback below, which is fine -- it is a kept,
+        non-excluded class), and smartrecruiters "Dauernachtwache (m/w/d)" (dept "Pflegedienst").
+      - Step 2 (the nicht_pflege/strong_pflege check) is left UNCHANGED regardless of this flag: the
+        survey found zero real examples of it wrongly excluding a genuinely-nursing section-confirmed
+        title, and found real examples of it correctly excluding a competing non-nursing occupation
+        (rexx "Medizinische Fachangestellte (m/w/d) für den OP in München", "Kodierfachkraft (m/w/d)
+        für DRG/PEPP") even inside a confirmed "Pflege, Patientenmanagement & Dokumentation"/
+        "Pflegedienst" bucket -- both HR groupings that also carry MFAs, Kodierfachkräfte,
+        Physiotherapeuten etc. Leaving step 2 active is what keeps those correctly excluded even
+        though step 1 no longer blocks them on the way in.
+      - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
+        detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
+    """
     s = norm_text(f"{title} || {hauptberuf}")
     if not _PFLEGE.search(s):                      # gate first: Ausbildung Elektroniker is not nursing
-        return "nicht_pflege", "no_pflege_token"
+        if not nursing_section_confirmed:
+            return "nicht_pflege", "no_pflege_token"
     if _NICHT.search(s) and not _STRONG_T.search(norm_text(title)):
         return "nicht_pflege", f"nicht_pflege:{_NICHT.search(s).group(0)}"
     if offer_kind == "AUSBILDUNG":

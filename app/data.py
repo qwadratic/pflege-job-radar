@@ -8,6 +8,7 @@ import threading
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from . import config as A
 from . import runs as R
@@ -342,6 +343,36 @@ def stats():
             "last_crawl": {"at": last["finished_at"], "status": last["status"], "run_id": last["run_id"]} if last else {"at": None, "status": None},
             "snapshot_at": datetime.fromtimestamp(s["at"], timezone.utc).isoformat(timespec="seconds") if s["at"] else None,
             "snapshot_error": s.get("error")}
+
+
+def inbox_summary(recent=25):
+    """Backlog visibility for GET /api/inbox: total row count (via rest_count -- 4297 rows is too
+    much to page just to len() it), then the unprocessed rows themselves (small enough, ~445, to
+    break down in Python since PostgREST has no group-by), plus the most recent rows for a log view."""
+    total = A.rest_count("inbox")
+    waiting = A.rest_get_all("inbox", {"select": "inbox_id,kind,collector,source_host,received_at", "processed_at": "is.null", "order": "inbox_id"})
+    host_clinic = {}
+    for c in clinics():
+        for u in (c.get("board"), c.get("careers_url")):
+            if not u:
+                continue
+            host = urlparse(u).netloc
+            if host:
+                host_clinic.setdefault(host, set()).add(c["name"])
+    host_clinic = {h: ", ".join(sorted(v)) for h, v in host_clinic.items()}
+    oldest_at = waiting[0]["received_at"] if waiting else None      # order=inbox_id ascending -> row 0 is the oldest
+    oldest_age_s = None
+    if oldest_at:
+        try:
+            oldest_age_s = int((datetime.now(timezone.utc) - datetime.fromisoformat(oldest_at.replace("Z", "+00:00"))).total_seconds())
+        except Exception:
+            oldest_age_s = None
+    n = max(0, min(int(recent or 0), 200))
+    recent_rows = A.rest_get("inbox", {"select": "inbox_id,kind,collector,source_host,source_url,received_at,processed_at,process_note",
+                                       "order": "inbox_id.desc", "limit": n}) if n else []
+    return {"total": total, "unprocessed": len(waiting), "by_kind": _count(waiting, "kind"),
+            "waiting_by_collector": _count(waiting, "collector"), "waiting_by_host": _count(waiting, "source_host", label=host_clinic),
+            "oldest_unprocessed_at": oldest_at, "oldest_unprocessed_age_s": oldest_age_s, "recent": recent_rows}
 
 
 # --- cities / plan ----------------------------------------------------------------------------

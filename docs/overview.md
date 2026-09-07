@@ -75,6 +75,7 @@ Arbeitsagentur (30) and aggregators (40, Indeed/StepStone) were **removed and th
  "collector":"vendor-adapters-…|firecrawl-agent|…","client_id":"…"}
 ```
 `collector` starting with `firecrawl` → source 25, otherwise source 20.
+Schema (columns, indexes, the RLS-off note, retention policy for the guarded purge): `sql/010_inbox.sql` — reconstructed from the live table, not yet applied (needs a Supabase access token).
 
 ### role_classes, crawl_runs, views
 - `role_classes`: taxonomy + default tariff grades (`tvoed_p_grade`, `tv_l_kr_grade`, `avr_caritas_grade` — inferred, not observed).

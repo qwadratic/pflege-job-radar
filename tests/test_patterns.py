@@ -22,7 +22,7 @@ def test_patterns_file_loads_and_every_regex_compiles():
     walk(p)
     assert n > 60
     assert [r["role_class"] for r in p["role"]["rules"]][:2] == ["werkstudent_praktikum", "ausbildung"]   # order = precedence
-    assert {"nicht_pflege", "ausbildung", "werkstudent_praktikum"} == set(p["excluded_role_classes"])
+    assert {"nicht_pflege", "ausbildung", "werkstudent_praktikum", "pflegehelfer"} == set(p["excluded_role_classes"])
     assert len(p["cv"]["skills"]) >= 20
 
 

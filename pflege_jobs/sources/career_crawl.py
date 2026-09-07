@@ -21,6 +21,7 @@ import requests
 from .. import config as C
 from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm,
                         enrich_description, fuzzy_key, norm_text, qualification_hint)
+from ..section import pick_nursing_link
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 pflege-jobs-crawler"
@@ -137,34 +138,63 @@ class Crawler:
             return out[:limit]
         return [l for l in locs if JOB_HREF.search(l) or re.search(r"/(job|stelle|vacanc|karriere/[^/]+/[^/]+)", l, re.I)][:limit]
 
-    def crawl(self, seed):
-        """Listing-first: seed + extra seeds + pagination/filter pages -> job links (title-like anchor text or job-like href)
-        -> fetch detail pages -> JSON-LD JobPosting or heuristic. seed: {name, kez, career, hosts?, extra_seeds?, bavaria_only_operator?}"""
-        hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
-        list_q = deque([seed["career"]] + list(seed.get("extra_seeds", [])))
-        seen_lists, job_links, stats = set(), {}, {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0, "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0}
+    def _page_hosts_ok(self, u, hosts):
+        p = urlparse(u)
+        if p.scheme not in ("http", "https") or LINK_BAD.search(u): return False
+        return p.netloc in hosts or any(p.netloc.endswith("." + h.split(".", 1)[-1]) and ("job" in p.netloc or "karriere" in p.netloc or "softgarden" in p.netloc or "dvinci" in p.netloc) for h in hosts)
+
+    def _section_link(self, r0, hosts):
+        """Look at the already-fetched seed page for a confident nursing-section nav/category link
+        (see pflege_jobs.section) -- e.g. a "Pflegedienst" menu item, a Berufsgruppe <select> filter
+        option, or a data-url-driven category picker (seen on real bespoke WP boards, e.g.
+        <option value="6" data-url="https://.../jobs/pflege/">Pflegedienst</option>) -- NOT an
+        individual job posting whose title happens to contain "Pflege". Returns an absolute URL or None."""
+        nav = []
+        for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r0.text, re.S | re.I):
+            href, inner = m.group(1), _strip(m.group(2))[:200]
+            u = urldefrag(urljoin(r0.url, href))[0]
+            if not self._page_hosts_ok(u, hosts): continue
+            is_job = bool(JOB_TEXT.search(inner)) or (bool(JOB_HREF.search(u)) and inner and not LIST_NAV.fullmatch(inner.strip()))
+            if is_job or not inner: continue
+            nav.append((inner, u))
+        for m in re.finditer(r'<option\b[^>]*data-url=["\']([^"\']+)["\'][^>]*>(.*?)</option>', r0.text, re.S | re.I):
+            href, inner = m.group(1), _strip(m.group(2))[:200]
+            u = urldefrag(urljoin(r0.url, href))[0]
+            if not self._page_hosts_ok(u, hosts) or not inner: continue
+            nav.append((inner, u))
+        return pick_nursing_link(nav)
+
+    def _crawl_urls(self, seed, hosts, start_urls, sitemaps, depth_cap=None, prefetched=None, section_confirmed=False):
+        """Shared listing-first walk: start_urls (+ sitemaps) -> job links (title-like anchor text or
+        job-like href) -> fetch detail pages -> JSON-LD JobPosting or heuristic. depth_cap, if given,
+        bounds how many list-page hops beyond start_urls (depth 0) the walk will follow; None keeps the
+        original unbounded-depth (page-budget-only) behaviour. prefetched lets a page already fetched by
+        the caller (the seed page, when peeking for a section link) be reused instead of re-fetched."""
+        prefetched = dict(prefetched or {})
+        list_q = deque((u, 0) for u in start_urls)
+        seen_lists, job_links = set(), {}
+        stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0, "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0}
         while list_q and stats["list_pages"] < self.list_budget:
-            url = urldefrag(list_q.popleft())[0]
+            url, depth = list_q.popleft()
+            url = urldefrag(url)[0]
             if url in seen_lists: continue
             seen_lists.add(url)
-            r = self.fetch(url)
+            r = prefetched.pop(url, None) or self.fetch(url)
             if not r: continue
             stats["list_pages"] += 1
             html = r.text
             for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S | re.I):
                 href, inner = m.group(1), _strip(m.group(2))[:200]
                 u = urldefrag(urljoin(r.url, href))[0]
-                p = urlparse(u)
-                if p.scheme not in ("http", "https") or LINK_BAD.search(u): continue
-                same_host = p.netloc in hosts or any(p.netloc.endswith("." + h.split(".", 1)[-1]) and ("job" in p.netloc or "karriere" in p.netloc or "softgarden" in p.netloc or "dvinci" in p.netloc) for h in hosts)
-                if not same_host: continue
+                if not self._page_hosts_ok(u, hosts): continue
                 if u in job_links or u in seen_lists: continue
                 is_job = bool(JOB_TEXT.search(inner)) or (bool(JOB_HREF.search(u)) and inner and not LIST_NAV.fullmatch(inner.strip()))
                 if is_job and inner and len(inner) > 6 and not re.search(r"^(mehr|details?|zur stelle|jetzt bewerben|weiterlesen|ansehen)$", inner.strip(), re.I) or (is_job and JOB_HREF.search(u) and not inner):
                     job_links[u] = inner
                 elif (PAGINATE.search(u) or LIST_NAV.search(inner) or LIST_NAV.search(u)) and len(seen_lists) + len(list_q) < self.list_budget * 2:
-                    list_q.append(u)
-        for sm in seed.get("sitemaps", []):
+                    if depth_cap is None or depth < depth_cap:
+                        list_q.append((u, depth + 1))
+        for sm in sitemaps:
             for u in self.sitemap_job_urls(sm):
                 if u not in job_links and not LINK_BAD.search(u): job_links[u] = ""
         stats["sitemap_links"] = sum(1 for v in job_links.values() if v == "")
@@ -176,9 +206,9 @@ class Crawler:
             jps = _jsonld_jobpostings(r.text)
             if jps:
                 stats["jobposting_pages"] += 1
-                jobs[r.url] = self._from_jsonld(jps[0], r.url, seed)
+                jobs[r.url] = self._from_jsonld(jps[0], r.url, seed, section_confirmed=section_confirmed)
             else:
-                h = self._heuristic(r.text, r.url, seed, anchor)
+                h = self._heuristic(r.text, r.url, seed, anchor, section_confirmed=section_confirmed)
                 if h: jobs[r.url] = h; stats["heuristic_pages"] += 1
         out = []
         for j in jobs.values():
@@ -190,10 +220,43 @@ class Crawler:
         stats["job_links_found"] = len(job_links)
         return out, stats
 
-    def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None):
+    def crawl(self, seed):
+        """Listing-first: seed + extra seeds + pagination/filter pages -> job links -> details -> JSON-LD/heuristic.
+        seed: {name, kez, career, hosts?, extra_seeds?, bavaria_only_operator?}
+
+        Section-first: if the seed page itself links to a confident nursing section/category (see
+        pflege_jobs.section.pick_nursing_link -- a "Pflegedienst" nav item, a Berufsgruppe/Fachbereich
+        filter option, ...), walk ONLY that link's subtree first (depth<=2 from there, same page
+        budget). Only when that subtree yields zero jobs do we fall back to the original full
+        board-wide walk from the seed itself; when no confident section link exists at all on the
+        seed page, we run that full walk unchanged, exactly as before this feature existed."""
+        hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
+        seed_url = seed["career"]
+        r0 = self.fetch(seed_url)
+        prefetched = {urldefrag(seed_url)[0]: r0} if r0 else {}
+        section_href = self._section_link(r0, hosts) if r0 else None
+        if section_href:
+            # Every job reached through this subtree came from a confirmed nursing-section nav link
+            # (see _section_link above) -- thread that as classify.classify_role's
+            # nursing_section_confirmed signal for each one, same structural signal as the other
+            # vendor adapters. Not narrowed further by it: this path was tested live 2026-09-06 on 2
+            # real umantis boards and section_first never actually engaged (no nursing nav rendered on
+            # either), so there is no observed classification-gap evidence for this path specifically
+            # -- wiring it through is precautionary/for consistency, not a fix for an observed bug.
+            rows, stats = self._crawl_urls(seed, hosts, [section_href], [], depth_cap=2, section_confirmed=True)
+            if rows:
+                stats["section_first"] = True
+                self.log(f"  {seed.get('name', '?')[:30]}: section-first -> {section_href} ({len(rows)} rows)")
+                return rows, stats
+            self.log(f"  {seed.get('name', '?')[:30]}: section-first subtree ({section_href}) empty -- falling back to full board walk")
+        rows, stats = self._crawl_urls(seed, hosts, [seed_url] + list(seed.get("extra_seeds", [])), seed.get("sitemaps", []), depth_cap=None, prefetched=prefetched)
+        stats["section_first"] = False
+        return rows, stats
+
+    def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False):
         emp = employer or seed["name"]
         e_class, e_rule = classify_employer(emp)
-        role, rule = classify_role(title, "")
+        role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
         return {
             "source_id": SOURCE_ID, "source_ref": url, "source_url": url, "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -212,7 +275,7 @@ class Crawler:
             "_kez": seed.get("kez"),
         }
 
-    def _from_jsonld(self, jp, url, seed):
+    def _from_jsonld(self, jp, url, seed, section_confirmed=False):
         locs = _location(jp)
         l = next((x for x in locs if in_bavaria(x["city"], x["plz"], x["region"], self.towns)), locs[0] if locs else {"city": None, "plz": None, "region": None})
         if not l.get("city") and not l.get("plz") and seed.get("town"):        # JSON-LD without address (d.vinci easy): seed town
@@ -227,12 +290,13 @@ class Crawler:
         ho_name = _strip(ho_name) if isinstance(ho_name, str) and len(ho_name) > 3 else None
         o = self._base(url, seed, _strip(jp.get("title") or ""), desc, l["city"], l["plz"], l["region"],
                        (jp.get("datePosted") or "")[:10] or None, (jp.get("validThrough") or "")[:10] or None, None, "jsonld",
-                       employer=ho_name if seed.get("town") is None else None)   # multi-site seeds: trust the posting's organisation
+                       employer=ho_name if seed.get("town") is None else None,   # multi-site seeds: trust the posting's organisation
+                       section_confirmed=section_confirmed)
         o["employment_types"] = [t for t, k in (("vollzeit", "FULL_TIME"), ("teilzeit", "PART_TIME"), ("minijob", "MINI")) if k in et.upper()]
         if re.search(r"TEMPORARY|BEFRISTET", et, re.I): o["contract"] = "BEFRISTET"
         return o
 
-    def _heuristic(self, html, url, seed, anchor=None):
+    def _heuristic(self, html, url, seed, anchor=None, section_confirmed=False):
         m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
         title = _strip(m.group(1)) if m else ""
         if not title or (anchor and not JOB_TEXT.search(title)):
@@ -250,7 +314,7 @@ class Crawler:
             if m and norm_text(m.group(1)).split()[0] in self.towns: city = m.group(1)
         m = re.search(r"\b(63[7-9]\d\d|8\d{4}|9[0-7]\d{3})\s+([A-ZÄÖÜ][a-zäöüß\-]+)", txt)
         if m and norm_text(m.group(2)) in self.towns: plz, city = m.group(1), m.group(2)
-        return self._base(url, seed, title, txt[:20000], city, plz, None, None, None, None, "heuristic")
+        return self._base(url, seed, title, txt[:20000], city, plz, None, None, None, None, "heuristic", section_confirmed=section_confirmed)
 
 
 def crawl_all(seeds, towns, budget=120, log=print):

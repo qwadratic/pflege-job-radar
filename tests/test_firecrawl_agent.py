@@ -102,3 +102,42 @@ def test_failed_job_raises(monkeypatch):
             return _Resp(200, {"success": False, "status": "failed", "error": "cancelled"})
     with pytest.raises(RuntimeError):
         FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=5, log=lambda *_: None, session=S())
+
+
+def test_failed_job_is_agentfailed_and_carries_credits(monkeypatch):
+    """A 'failed' status must not vanish from the local budget ledger: AgentFailed carries creditsUsed
+    when the API reports it, else falls back to max_credits (over-charging the ledger is safe)."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+
+    class SWithCredits(_Session):
+        def get(self, url, headers=None, timeout=None):
+            return _Resp(200, {"success": False, "status": "failed", "error": "cancelled", "creditsUsed": 12})
+    with pytest.raises(FA.AgentFailed) as ei:
+        FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=SWithCredits())
+    assert ei.value.credits_used == 12
+
+    class SNoCredits(_Session):
+        def get(self, url, headers=None, timeout=None):
+            return _Resp(200, {"success": False, "status": "failed", "error": "cancelled"})
+    with pytest.raises(FA.AgentFailed) as ei2:
+        FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=SNoCredits())
+    assert ei2.value.credits_used == 30                      # fallback to max_credits
+
+
+def test_timeout_is_agentfailed_with_max_credits(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    t = [0]
+
+    def fake_time():
+        t[0] += 1000
+        return t[0]
+    monkeypatch.setattr(FA.time, "time", fake_time)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            return _Resp(200, {"success": True, "status": "processing"})
+    with pytest.raises(FA.AgentFailed) as ei:
+        FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=8, timeout=5, log=lambda *_: None, session=S())
+    assert ei.value.credits_used == 8

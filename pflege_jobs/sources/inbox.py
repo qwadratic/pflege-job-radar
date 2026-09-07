@@ -5,6 +5,7 @@ import json, re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from .. import config as C
+from .. import section
 from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm, enrich_description, fuzzy_key, qualification_hint, norm_text)
 from .career_crawl import in_bavaria, _strip
 
@@ -20,7 +21,11 @@ def jobposting_to_obs(row, towns):
     title = _strip(p.get("title") or ""); desc = _strip(p.get("description") or "")
     locs = p.get("loc") or []
     l = next((x for x in locs if in_bavaria(x.get("city"), x.get("plz"), x.get("region"), towns)), locs[0] if locs else {})
-    role, rule = classify_role(title, "")
+    # Structural signal from the vendor's own category/department taxonomy, set by
+    # crawlers/vendor_adapters.py's section-aware crawl_* functions when the job's own label is
+    # known (personio/smartrecruiters/dvinci/rexx/mein-check-in/wp_jobs) -- see pflege_jobs/section.py.
+    nursing_section_confirmed = section.job_confirmed_nursing(p.get("section_labels"))
+    role, rule = classify_role(title, "", nursing_section_confirmed=nursing_section_confirmed)
     enr = {("enr_" + k): v for k, v in enrich_description(desc).items()}
     et = p.get("employmentType"); et = " ".join(et) if isinstance(et, list) else (et or "")
     now = datetime.now(timezone.utc).isoformat()

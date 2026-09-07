@@ -132,12 +132,23 @@ class EdgeSink:
     def _post(self, body):
         h = {"Authorization": f"Bearer {self.anon}", "apikey": self.anon, "x-ingest-secret": self.secret,
              "Content-Type": "application/json"}
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        last_exc = None
         for i in range(3):
-            r = requests.post(self.url, headers=h, data=json.dumps(body, ensure_ascii=False).encode("utf-8"), timeout=self.timeout)
+            try:
+                r = requests.post(self.url, headers=h, data=data, timeout=self.timeout)
+            except requests.exceptions.RequestException as e:
+                last_exc = e
+                if i < 2:
+                    time.sleep(2 * (i + 1))
+                continue
             if r.status_code == 200:
                 return r.json()
-            time.sleep(2 * (i + 1))
-        raise RuntimeError(f"ingest failed {r.status_code}: {r.text[:300]}")
+            if r.status_code >= 500 and i < 2:
+                time.sleep(2 * (i + 1))
+                continue
+            raise RuntimeError(f"ingest failed {r.status_code}: {r.text[:300]}")
+        raise RuntimeError(f"ingest failed: {last_exc}")
 
     def write(self, observations, resolve=True, log=print, keep_non_pflege=False):
         n_in = len(observations); observations = only_pflege(observations, keep_non_pflege)
@@ -158,4 +169,17 @@ class EdgeSink:
         if resolve:
             stats["resolve"] = self._post({"resolve": True}).get("resolve")
         return stats
+
+    def write_clinics(self, rows, log=print):
+        """POST full CLINIC_SPEC dicts to the ingest function's `clinics` op, in batches (MAX_ROWS 500
+        server-side, self.batch client-side). Callers must send every column (schema.CLINIC_SPEC) with
+        only the intended fields changed -- the edge function's upsert does `col=excluded.col` for every
+        column except ats_type/careers_url (coalesce(nullif(excluded.col,''), stored)), so a partial dict
+        nulls the rest. Returns the number of rows the server reports as upserted."""
+        n = 0
+        for i in range(0, len(rows), self.batch):
+            batch = rows[i:i + self.batch]
+            n += self._post({"clinics": batch}).get("clinics", 0)
+            log(f"clinics upserted {min(i + self.batch, len(rows))}/{len(rows)}")
+        return n
 

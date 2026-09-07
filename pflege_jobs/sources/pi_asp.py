@@ -1,6 +1,13 @@
 """P&I LOGA bewerber-web (GWT) adapter — used by Helios (pi-asp.de). RPC is encrypted, the host is not walled:
 render the company list (#positions), click each entry to obtain the SPA hash (#position,id=<uuid>) and the detail text.
 Seed: {name, host, companyEid, sites: {regex-on-title-or-text: {kez, town}}, default: {kez, town}}
+
+Section-first check (2026-09): re-verified live against a real seed (helios-gesundheit.pi-asp.de,
+companyEid=1134) -- the rendered board is a flat title list with no filter/category UI at all (grep of
+the rendered HTML for select/option/filter/Bereich/Kategorie/Fachbereich/Berufsgruppe/checkbox turns up
+nothing but unrelated CSS class names and one job title that happens to contain "Bereich"). No taxonomy
+field appears in the DOM or in the SPA hash either. So there is no section/category signal to mine here;
+left unchanged, classify_role() on the listed titles remains the only signal, as today.
 """
 import json, re, time
 from datetime import datetime, timezone

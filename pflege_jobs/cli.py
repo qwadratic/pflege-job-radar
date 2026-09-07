@@ -208,20 +208,19 @@ def cmd_link_cross(a):
     print("merged", n, "resolve:", sink._post({"resolve": True}).get("resolve"))
 
 
-def cmd_inbox(a):
-    """Process browser-collector inbox rows -> observations (+ registry link), then ack them."""
-    import requests as rq, csv
+# A path that names one specific job posting rather than a listing/board page. Used to reject an
+# ats-discovery probe's candidate careers_url: 44 of 46 probe rows have payload.ats null (careers-only
+# discovery is intentional, see ats_discover2.py stats['careers_only']), but ~10 of those wrote a
+# job-DETAIL url (payload.careers_url, apply_url is null in 44/46) as if it were the board itself.
+JOB_DETAIL_RX = re.compile(r"/(stellenanzeigen?|stellenangebote?|job|stelle)/[^/?#]+|-j\d+\.html|/Job/\d+", re.I)
+
+
+def _drain_once(a, url, H, m, towns):
+    """Fetch and process one page (<=1000 rows) of the inbox queue. Returns the number of rows read."""
+    import requests as rq
+    from urllib.parse import urlparse
     from .sources.inbox import jobposting_to_obs
-    from .registry import Matcher
-    from .sinks import EdgeSink
-    from .classify import norm_text
-    url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
-    H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
     rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
-    clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
-    towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
-    for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
-    m = Matcher([dict(c) for c in clinics])
     obs, ack, probes = [], [], []
     for r in rows:
         if r["kind"] == "jobposting":
@@ -240,7 +239,11 @@ def cmd_inbox(a):
             cl = _rows(rq.get(f"{url}/rest/v1/clinics?select=*&clinic_id=eq.{cid}", headers=H, timeout=60), "clinics") if cid else []
             if cl and (pl.get("ats") or pl.get("careers_url")) and (not cl[0].get("ats_type") or pl.get("ats") and pl.get("ats") != cl[0].get("ats_type")):
                 from .schema import CLINIC_SPEC
-                row = {k: cl[0].get(k) for k, _ in CLINIC_SPEC}; row["ats_type"] = pl.get("ats") or row.get("ats_type"); row["careers_url"] = pl.get("apply_url") or pl.get("careers_url") or row.get("careers_url")
+                row = {k: cl[0].get(k) for k, _ in CLINIC_SPEC}; row["ats_type"] = pl.get("ats") or row.get("ats_type")
+                cand = pl.get("apply_url") or pl.get("careers_url")
+                if cand and JOB_DETAIL_RX.search(urlparse(cand).path):
+                    cand = None  # looks like a single posting, not a listing page -- never overwrite careers_url with it
+                row["careers_url"] = cand or row.get("careers_url")
                 probes.append(row); ack.append({"inbox_id": r["inbox_id"], "note": f"ats set: {row['ats_type']} ({row['careers_url']})"})
             else:
                 ack.append({"inbox_id": r["inbox_id"], "note": "probe: nothing to update"})
@@ -279,7 +282,33 @@ def cmd_inbox(a):
         acked = 0
         for i in range(0, len(ack), 400): acked += sink._post({"inbox_ack": ack[i:i + 400]}).get("inbox_ack", 0)
         print("acked", acked)
+    return len(rows)
 
+
+def cmd_inbox(a):
+    """Process browser-collector inbox rows -> observations (+ registry link), then ack them.
+
+    Pages through the whole queue (not just one 1000-row page): PostgREST hard-caps a single
+    response at 1000 rows regardless of the limit param, so a batch of exactly 1000 means more
+    may be waiting. Acked rows drop out of the processed_at=is.null filter, so no offset is
+    needed between batches -- the same query just returns the next page.
+    """
+    import csv
+    from .registry import Matcher
+    from .classify import norm_text
+    url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
+    H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
+    clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
+    towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
+    for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
+    m = Matcher([dict(c) for c in clinics])
+    total = 0
+    for _ in range(a.max_batches):
+        n = _drain_once(a, url, H, m, towns)
+        total += n
+        if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
+            break
+    print(f"inbox drained {total} rows")
 
 
 def _sink(a):
@@ -309,7 +338,8 @@ def main(argv=None):
     v.add_argument("--out", default="data/verify.json"); v.add_argument("--only-status", default=""); v.add_argument("--dry-run", action="store_true"); v.set_defaults(fn=cmd_verify)
     lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
-    ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true"); ib.set_defaults(fn=cmd_inbox)
+    ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true")
+    ib.add_argument("--max-batches", type=int, default=20); ib.set_defaults(fn=cmd_inbox)
     a = p.parse_args(argv)
     a.fn(a)
 

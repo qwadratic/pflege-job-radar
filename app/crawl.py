@@ -81,11 +81,31 @@ def _seed_obs(board, c, towns, log):
     vendor = board["vendor"]
     from pflege_jobs.sources.career_crawl import Crawler
     if vendor == "softgarden":
-        from pflege_jobs.sources.softgarden import seed_for
+        from pflege_jobs.sources.softgarden import seed_for, fetch_feed
         seed = seed_for({"name": c["name"], "career": c["careers_url"]}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no softgarden host found on careers page"}
-        return Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log).crawl(seed)
+        cr = Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log)
+        items, feed_host = fetch_feed(seed["feed_hosts"], session=cr.s)
+        if items is None:
+            log("softgarden: no jobs.feed.json on", " / ".join(seed["feed_hosts"]), "-- falling back to BFS")
+            return cr.crawl(seed)
+        stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": len(items), "heuristic_pages": 0,
+                  "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0,
+                  "job_links_found": len(items), "feed_items": len(items), "feed_host": feed_host}
+        out = []
+        for jp in items:
+            j = cr._from_jsonld(jp, jp.get("url") or seed["host"], seed)
+            if j["role_class"] == "nicht_pflege":
+                stats["dropped_not_pflege"] += 1; continue
+            if j["in_bavaria"] is False:
+                stats["dropped_non_bavaria"] += 1; continue
+            if j["in_bavaria"] is None and seed.get("bavaria_only_operator"):
+                j["in_bavaria"] = True
+            if j["in_bavaria"] is None:
+                stats["dropped_unknown_loc"] += 1; continue
+            out.append(j)
+        return out, stats
     if vendor in ("bite", "bite_jobs"):
         from pflege_jobs.sources import bite
         seed = {"name": c["name"], "kez": c["clinic_id"], "career": c["careers_url"], "bavaria_only_operator": True, "town": c.get("town")}
@@ -150,10 +170,26 @@ def _post_inbox(rows, log):
     for r in rows:
         if r.get("source_url") and r["source_url"] not in seen:
             seen.add(r["source_url"]); uniq.append(r)
-    for i in range(0, len(uniq), 200):
-        A.rest_post("inbox", uniq[i:i + 200])
-    log(f"posted {len(uniq)} rows to inbox")
-    return [r["source_url"] for r in uniq]
+    # Dedupe against what's already sitting in the inbox, not just within this batch: group boards
+    # (kbo.de, karriere.barmherzige.net, ...) are fetched once per clinic label and refetched in full
+    # on every run, so most re-inserts of an already-known source_url were the table's real growth
+    # driver -- bigger than any one-off probe traffic.
+    existing = set()
+    urls = [r["source_url"] for r in uniq]
+    for i in range(0, len(urls), 200):
+        batch = urls[i:i + 200]
+        q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
+        try:
+            for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
+                if x.get("source_url"):
+                    existing.add(x["source_url"])
+        except Exception as e:
+            log(f"  inbox dedupe lookup failed ({e}); posting this batch unchecked")
+    new = [r for r in uniq if r["source_url"] not in existing]
+    for i in range(0, len(new), 200):
+        A.rest_post("inbox", new[i:i + 200])
+    log(f"posted {len(new)} rows to inbox ({len(uniq) - len(new)} already present, skipped)")
+    return [r["source_url"] for r in new]
 
 
 def _cli(args, log, timeout=1800):
@@ -280,12 +316,16 @@ def execute(run_id):
                     rows = _vendor_rows(b, c, session, log)
                     inbox_rows += rows
                     log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
+                    if not rows:
+                        log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
                 else:
                     obs, st = _seed_obs(b, c, towns, log)
                     observations += obs
                     log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
                     if st and st.get("error"):
                         errors += 1
+                    elif not obs:
+                        log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
             except Exception as e:
                 errors += 1
                 log(f"  {b['vendor']:<14} {url[:60]} FAILED {type(e).__name__}: {str(e)[:160]}")
@@ -306,6 +346,11 @@ def execute(run_id):
                 R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id)
                 inbox_rows += res["rows"]
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits")
+            except FA.AgentFailed as e:
+                errors += 1
+                credits_used += e.credits_used
+                R.add_usage("jobs", c["clinic_id"], e.credits_used, run_id)
+                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
             except Exception as e:
                 errors += 1
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
@@ -319,7 +364,9 @@ def execute(run_id):
     try:
         if inbox_rows:
             refs += _post_inbox(inbox_rows, log)
-            _cli(["inbox"], log)
+        _cli(["inbox"], log)          # drain the queue every run, not only when this run added rows --
+                                       # a run with only observations (e.g. seeded adapters) must not
+                                       # leave an earlier run's backlog stranded
         if observations:
             ids, obs = _load_observations(observations, by_id, log)
             refs += [o["source_ref"] for o in obs]
@@ -360,6 +407,9 @@ def refetch_career(run_id):
     from pflege_jobs.sources import firecrawl_agent as FA
     try:
         res = FA.run_career_agent(c, max_credits=max_credits, log=log)
+    except FA.AgentFailed as e:
+        R.add_usage("career", cid, e.credits_used, run_id)
+        R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     except Exception as e:
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     prof = res["profile"]
@@ -394,8 +444,26 @@ def refetch_career(run_id):
     R.mirror_to_supabase(R.get_run(run_id, with_log=False))
 
 
+def drain_inbox(run_id):
+    """Run `cli inbox` on demand (POST /api/inbox/drain), reusing the run log/status/polling UI that
+    every other run gets. execute() already calls the same `_cli(["inbox"])` after each crawl -- this
+    is for draining the backlog between crawls, e.g. right after a browser-collector drop."""
+    log = _log(run_id)
+    log("draining pflege_jobs.inbox")
+    rc = _cli(["inbox"], log)
+    R.update_run(run_id, status="done" if rc == 0 else "failed", finished_at=R.now(), error=None if rc == 0 else f"cli inbox exited {rc}")
+    try:
+        D.refresh()
+    except Exception as e:
+        log(f"cache refresh failed: {e}")
+    R.mirror_to_supabase(R.get_run(run_id, with_log=False))
+    log(f"run finished: {'done' if rc == 0 else 'failed'}")
+
+
 def dispatch(run_id):
     run = R.get_run(run_id, with_log=False)
     if run["scope"] == "career":
         return refetch_career(run_id)
+    if run["scope"] == "inbox":
+        return drain_inbox(run_id)
     return execute(run_id)

@@ -1,0 +1,3560 @@
+{
+ "16107": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Zentrum für psychische Gesundheit (ZPG) Ingolstadt Ingolstadt Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "author": "Stadt Ingolstadt",
+     "id": "https://www.ingolstadt.de/Karriere/Aktuelle-Stellenangebote/index.php?KatID=465.170&La=1&ModID=9&NavID=2789.204&alpha=Z&bn=0&call=0&kat=465.170.1&object=tx%7C2789.1.1&sfort=0",
+     "title": "Aktuelle Stellenangebote",
+     "url": "https://www.ingolstadt.de/Karriere/Aktuelle-Stellenangebote/index.php?KatID=465.170&La=1&ModID=9&NavID=2789.204&alpha=Z&bn=0&call=0&kat=465.170.1&object=tx%7C2789.1.1&sfort=0"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobSiteCity%3AIngolstadt&tx_solr%5Bsort%5D=title+desc",
+     "title": "kbo-Jobbörse",
+     "url": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobSiteCity%3AIngolstadt&tx_solr%5Bsort%5D=title+desc"
+    },
+    {
+     "id": "https://klinikum-ingolstadt.de/psychiatrisch-psychosomatische-versorgung-des-klinikums-ingolstadt/",
+     "publishedDate": "2026-02-11T00:00:00.000Z",
+     "title": "Psychiatrisch-psychosomatische Versorgung des Klinikums Ingolstadt",
+     "url": "https://klinikum-ingolstadt.de/psychiatrisch-psychosomatische-versorgung-des-klinikums-ingolstadt/"
+    },
+    {
+     "id": "https://www.ingolstadt.de/Karriere/Praktikum/Zentrum-f%C3%BCr-psychische-Gesundheit-im-Klinikum.php?FID=465.2472.1&ModID=9&NavID=2789.207&object=tx%2C2789.1.1",
+     "title": "Zentrum für psychische Gesundheit im Klinikum - Stadt Ingolstadt",
+     "url": "https://www.ingolstadt.de/Karriere/Praktikum/Zentrum-f%C3%BCr-psychische-Gesundheit-im-Klinikum.php?FID=465.2472.1&ModID=9&NavID=2789.207&object=tx%2C2789.1.1"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobLocation%3Akbo-Service&tx_solr%5Bfilter%5D%5B1%5D=jobLocation%3Akbo-Donau-Altm%C3%BChl-Kliniken&tx_solr%5Bfilter%5D%5B2%5D=jobLocation%3Akbo-Ambulanter+Psychiatrischer+Pflegedienst",
+     "title": "auf der Jobbörse von kbo – Kliniken des Bezirks Oberbayern",
+     "url": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobLocation%3Akbo-Service&tx_solr%5Bfilter%5D%5B1%5D=jobLocation%3Akbo-Donau-Altm%C3%BChl-Kliniken&tx_solr%5Bfilter%5D%5B2%5D=jobLocation%3Akbo-Ambulanter+Psychiatrischer+Pflegedienst"
+    }
+   ]
+  }
+ },
+ "16211": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "kbo-Kinderzentrum München, Fachklinik für Sozialpädiatrie München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kbo-kinderzentrum-muenchen.de/karriere",
+     "title": "Das Kinderzentrum München als Arbeitgeber",
+     "url": "https://kbo-kinderzentrum-muenchen.de/karriere"
+    },
+    {
+     "id": "https://recruitingapp-5545.de.umantis.com/Vacancies/438/Description/1",
+     "title": "Pflegefachkräfte /<br>Gesundheits- und (Kinder-) Krankenpfleger (w/m ...",
+     "url": "https://recruitingapp-5545.de.umantis.com/Vacancies/438/Description/1"
+    },
+    {
+     "id": "https://recruitingapp-5545.de.umantis.com/Vacancies/691/Description/1",
+     "title": "Gesundheits- und (Kinder-) Krankenpfleger/ Altenpfleger (w/m/d) für Nachtdienste<br>",
+     "url": "https://recruitingapp-5545.de.umantis.com/Vacancies/691/Description/1"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobs/700-11-26-pflegefachkraft-gesundheits-und-kinder-krankenpfleger-w-m-d-fuer-spezielles-gruppenangebot-im-regeldienst-von-montag-bis-freitag",
+     "title": "Pflegefachkraft / Gesundheits- und (Kinder-) Krankenpfleger (w/m/d) für ...",
+     "url": "https://kbo.de/karriere/jobs/700-11-26-pflegefachkraft-gesundheits-und-kinder-krankenpfleger-w-m-d-fuer-spezielles-gruppenangebot-im-regeldienst-von-montag-bis-freitag"
+    },
+    {
+     "id": "https://kbo-kinderzentrum-muenchen.de/karriere/das-kinderzentrum-als-arbeitgeber",
+     "title": "Das Kinderzentrum als Arbeitgeber - kbo-Kinderzentrum München",
+     "url": "https://kbo-kinderzentrum-muenchen.de/karriere/das-kinderzentrum-als-arbeitgeber"
+    }
+   ]
+  }
+ },
+ "16223": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Rotkreuzklinikum München, Betriebsstätte Taxisstraße München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://rotkreuzklinikum-muenchen.de/stellenangebote/",
+     "title": "Stellenangebote",
+     "url": "https://rotkreuzklinikum-muenchen.de/stellenangebote/"
+    },
+    {
+     "id": "https://rotkreuzklinikum-muenchen.de/karriere/",
+     "title": "Arbeiten im Rotkreuzklinikum München",
+     "url": "https://rotkreuzklinikum-muenchen.de/karriere/"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/rotkreuzklinikum-muenchen-gemeinnuetzige-gmbh/medizinischen-fachangestellten-m-w-d-krankenpflegehelfer-m-w-d-und-pflegefachpersonal-m-w-d/980184031.html",
+     "title": "Medizinischen Fachangestellten (m/w/d) / Krankenpflegehelfer (m/w/d) und Pflegefachpersonal (m/w/d) - Rotkreuzklinikum München gGmbH - München | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/rotkreuzklinikum-muenchen-gemeinnuetzige-gmbh/medizinischen-fachangestellten-m-w-d-krankenpflegehelfer-m-w-d-und-pflegefachpersonal-m-w-d/980184031.html"
+    },
+    {
+     "id": "https://www.bayern.jobs/job/pflegefachkraft-m-w-d-oder-medizinische-fachangestellte-m-w-d-17412061",
+     "title": "Pflegefachkraft (m/w/d) oder Medizinische Fachangestellte (m/w/d) - München | bayern.jobs",
+     "url": "https://www.bayern.jobs/job/pflegefachkraft-m-w-d-oder-medizinische-fachangestellte-m-w-d-17412061"
+    },
+    {
+     "id": "https://www.mfajobs.de/muenchen/medizinische-fachangestellte/rotkreuzklinikum-muenchen-gmbh/pflegefachkraft-oder-medizinische-fachangestellte-hkl-100",
+     "publishedDate": "2026-07-06T00:00:00.000Z",
+     "title": "Rotkreuzklinikum München GmbH",
+     "url": "https://www.mfajobs.de/muenchen/medizinische-fachangestellte/rotkreuzklinikum-muenchen-gmbh/pflegefachkraft-oder-medizinische-fachangestellte-hkl-100"
+    }
+   ]
+  }
+ },
+ "16257": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "kbo-Isar-Amper-Klinikum München-Pasing für PSY München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d",
+     "title": "Pflegefachfrau / Pflegefachmann / Gesundheits- und (Kinder-)Krankenpfleger / Altenpfleger / Heilerziehungspfleger oder Fachkrankenpfleger – Pflegeexperte für Psychiatrie (m/w/d)",
+     "url": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobs/704-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-fuer-psychiatrie-m-w-d",
+     "title": "Pflegefachfrau / Pflegefachmann / Gesundheits- und (Kinder-)Krankenpfleger / Altenpfleger / Heilerziehungspfleger oder Fachkrankenpfleger für Psychiatrie m/w/d",
+     "url": "https://kbo.de/karriere/jobs/704-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-fuer-psychiatrie-m-w-d"
+    },
+    {
+     "id": "https://kbo-iak.de/karriere",
+     "title": "Karriere - kbo-Isar-Amper-Klinikum",
+     "url": "https://kbo-iak.de/karriere"
+    },
+    {
+     "id": "https://kbo-iak.de/pflege",
+     "title": "Pflege",
+     "url": "https://kbo-iak.de/pflege"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobLocation%3Akbo-Isar-Amper-Klinikum&tx_solr%5Bfilter%5D%5B1%5D=jobProfession%3APflege",
+     "title": "kbo-Jobbörse",
+     "url": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobLocation%3Akbo-Isar-Amper-Klinikum&tx_solr%5Bfilter%5D%5B1%5D=jobProfession%3APflege"
+    }
+   ]
+  }
+ },
+ "16260": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Schön Klinik Tagesklinik München München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "author": "Schön Klinik SE",
+     "id": "https://www.schoen-klinik.de/muenchen-schwabing/karriere/pflege",
+     "title": "Berufliche Perspektiven für Pflegerinnen und Pfleger",
+     "url": "https://www.schoen-klinik.de/muenchen-schwabing/karriere/pflege"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/job/43f53ca7-592b-4315-a328-5a5b399e4697",
+     "title": "Exam. Altenpfleger/in in München - MEDWING",
+     "url": "https://medwing.com/jobs/de-de/job/43f53ca7-592b-4315-a328-5a5b399e4697"
+    },
+    {
+     "author": "Schön Klinik Karriere Jobportal",
+     "id": "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-in-Muenchen-de-j15107.html",
+     "title": "Stellenangebot Pflegefachkraft (m/w/d) in München bei Schön Klinik Karriere Jobportal",
+     "url": "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-in-Muenchen-de-j15107.html"
+    },
+    {
+     "id": "https://jobs.schoen-klinik.de/",
+     "title": "Stellenangebote Schön Klinik Gruppe",
+     "url": "https://jobs.schoen-klinik.de/"
+    },
+    {
+     "author": "Schön Klinik SE",
+     "id": "https://www.schoen-klinik.de/karriere/pflegekraefte",
+     "title": "Pflegerin/Pfleger: Ein Beruf mit Zukunft in der Schön Klinik",
+     "url": "https://www.schoen-klinik.de/karriere/pflegekraefte"
+    }
+   ]
+  }
+ },
+ "16261": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "kbo-Isar-Amper-Klinikum Tagesklinik am kbo Kinderzentrum München München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kbo-iak.de/kbo-karriere/stellenangebote-pflege",
+     "title": "Stellenangebote Pflege - Karriere - kbo-iak.de",
+     "url": "https://kbo-iak.de/kbo-karriere/stellenangebote-pflege"
+    },
+    {
+     "id": "https://recruitingapp-5545.de.umantis.com/Vacancies/438/Description/1",
+     "title": "Pflegefachkräfte /<br>Gesundheits- und (Kinder-) Krankenpfleger (w/m/d)<br>",
+     "url": "https://recruitingapp-5545.de.umantis.com/Vacancies/438/Description/1"
+    },
+    {
+     "id": "https://kbo-kinderzentrum-muenchen.de/karriere",
+     "title": "Das Kinderzentrum München als Arbeitgeber",
+     "url": "https://kbo-kinderzentrum-muenchen.de/karriere"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d",
+     "title": "Pflegefachfrau / Pflegefachmann / Gesundheits- und (Kinder-)Krankenpfleger / Altenpfleger / Heilerziehungspfleger oder Fachkrankenpfleger – Pflegeexperte für Psychiatrie (m/w/d)",
+     "url": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d"
+    },
+    {
+     "id": "https://recruitingapp-5545.de.umantis.com/Jobs",
+     "title": "kbo Kinderzentrum München Karriere Stellen",
+     "url": "https://recruitingapp-5545.de.umantis.com/Jobs"
+    }
+   ]
+  }
+ },
+ "16262": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Algesiologikum Tagesklinik für Schmerzmedizin München Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://algesiologikum.de/zentrum-fuer-schmerztherapie-in-muenchen/karriere",
+     "publishedDate": "2025-10-22T00:00:00.000Z",
+     "title": "Karriere - Algesiologikum GmbH",
+     "url": "https://algesiologikum.de/zentrum-fuer-schmerztherapie-in-muenchen/karriere"
+    },
+    {
+     "id": "https://exa.ai/library/organization/fph7x83hjr8",
+     "title": "Algesiologikum Zentrum für Schmerztherapie",
+     "url": "https://linkedin.com/company/algesiologikum-zentrum-fuer-schmerztherapie"
+    },
+    {
+     "id": "https://www.medi-jobs.de/3673/",
+     "title": "Stellenangebote von Algesiologikum - Zentren für Schmerzmedizin",
+     "url": "https://www.medi-jobs.de/3673/"
+    },
+    {
+     "id": "https://www.ethimedis.de/algesiologikum-ndash-zentrum-fuer-schmerztherapie-und-psychische-gesundheit",
+     "title": "Algesiologikum – Zentrum für Schmerztherapie und psychische Gesundheit | München",
+     "url": "https://www.ethimedis.de/algesiologikum-ndash-zentrum-fuer-schmerztherapie-und-psychische-gesundheit"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/517db4617a0bdf7a459fddd955ad3e81",
+     "title": "Mfa (m/w/d) im patienten- und belegungsmanagement - München - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/517db4617a0bdf7a459fddd955ad3e81"
+    }
+   ]
+  }
+ },
+ "16307": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Augenklinik Rosenheim Rosenheim Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.augencentrum.de/ueber-uns/karriere/",
+     "title": "Karriere im Augencentrum Rosenheim - Stellenanzeigen",
+     "url": "https://www.augencentrum.de/ueber-uns/karriere/"
+    },
+    {
+     "id": "https://jobs.meinestadt.de/rosenheim-bayern/standard?id=259483810",
+     "title": "Stellenangebot: Gesundheits- und Krankenpfleger/-in Augencentrum Rosenheim Rosenheim - Jobs meinestadt.de",
+     "url": "https://jobs.meinestadt.de/rosenheim-bayern/standard?id=259483810"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/e5dc8af476cc39704c8037d0eb56b0a0",
+     "title": "Ota/op-pflegefachkraft (m/w/d) - Rosenheim - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/e5dc8af476cc39704c8037d0eb56b0a0"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/0ea4421b975600019a0463d92341c5d4",
+     "title": "Ota/op-pflegefachkraft - Rosenheim - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/0ea4421b975600019a0463d92341c5d4"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/26d34c4c462ed7edcb198b6d1f92cae1",
+     "title": "Krankenschwester/-pfleger, (ges.&krankenpflegerin) in voll- oder teilzeit - Rosenheim - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/26d34c4c462ed7edcb198b6d1f92cae1"
+    }
+   ]
+  }
+ },
+ "17102": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "InnKlinikum Burghausen Burghausen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.innklinikum.de/stellenangebote-uebersicht",
+     "title": "Stellenangebote Übersicht",
+     "url": "https://www.innklinikum.de/stellenangebote-uebersicht"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/78i8257/",
+     "title": "🛠 Jetzt bewerben: Leitung Praktische Ausbildung Pflege (m/w/d) – InnKlinikum gKU Altötting und Mühldorf, Standort: Burghausen",
+     "url": "https://www.rapidjob.de/job/78i8257/"
+    },
+    {
+     "id": "https://www.innklinikum.de/ausbildung-karriere/unser-berufliches-angebot-fuer-sie/pflegedienst",
+     "title": "Pflegedienst - Innklinikum",
+     "url": "https://www.innklinikum.de/ausbildung-karriere/unser-berufliches-angebot-fuer-sie/pflegedienst"
+    },
+    {
+     "id": "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a99eb402dae",
+     "title": "und Krankenpfleger (m|w|d) / Pflegefachmann (m| ...",
+     "url": "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a99eb402dae"
+    },
+    {
+     "id": "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69f857fb9019fad129bd64225",
+     "title": "Ausbildung zum Pflegefachmann (m|w|d) - Innklinikum",
+     "url": "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69f857fb9019fad129bd64225"
+    }
+   ]
+  }
+ },
+ "17105": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für KJP am Zentrum für Kinder und Jugendliche Altötting Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kinderzentrum.de/pages/karriere",
+     "title": "Karriere\n – Zentrum für Kinder und Jugendliche",
+     "url": "https://kinderzentrum.de/pages/karriere"
+    },
+    {
+     "id": "https://kinderzentrum.de/pages/stellenangebote",
+     "title": "Stellenangebote – Zentrum für Kinder und Jugendliche",
+     "url": "https://kinderzentrum.de/pages/stellenangebote"
+    },
+    {
+     "id": "https://kinderzentrum.de/pages/kjp-ped-tagesklinik",
+     "title": "KJP PED Tagesklinik\n – Zentrum für Kinder und Jugendliche",
+     "url": "https://kinderzentrum.de/pages/kjp-ped-tagesklinik"
+    },
+    {
+     "id": "https://kinderzentrum.de/en/pages/stellenangebote",
+     "publishedDate": "2026-05-31T00:00:00.000Z",
+     "title": "Stellenangebote\n – Zentrum für Kinder und Jugendliche",
+     "url": "https://kinderzentrum.de/en/pages/stellenangebote"
+    },
+    {
+     "id": "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d263e66019d86ec6b6126f0",
+     "title": "Psychologe Kinder- und Jugendpsychiatrie (m|w|d)",
+     "url": "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d263e66019d86ec6b6126f0"
+    }
+   ]
+  }
+ },
+ "17202": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreisklinik Berchtesgaden Berchtesgaden Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.schoen-klinik.de/berchtesgadener-land/karriere/pflege",
+     "title": "Jobs für Pflegekräfte in der Schön Klinik Berchtesgaden",
+     "url": "https://www.schoen-klinik.de/berchtesgadener-land/karriere/pflege"
+    },
+    {
+     "author": "Schön Klinik SE",
+     "id": "https://www.schoen-klinik.de/karriere-berchtesgaden",
+     "title": "Ausgezeichnete Kolleginnen und Kollegen: #lebenswichtig",
+     "url": "https://www.schoen-klinik.de/karriere-berchtesgaden"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/job/36fbb2cb-0fdc-4967-a5be-d16b94438e83",
+     "title": "Exam. Gesundheits- und Krankenpfleger/in in Berchtesgaden",
+     "url": "https://medwing.com/jobs/de-de/job/36fbb2cb-0fdc-4967-a5be-d16b94438e83"
+    },
+    {
+     "author": "Schön Klinik Karriere Jobportal",
+     "id": "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-Medizinische-Zentrale-Psychosomatik-im-de-j16069.html",
+     "title": "Stellenangebot Pflegefachkraft (m/w/d) Medizinische Zentrale Psychosomatik im Berchtesgadener Land bei Schön Klinik Karriere Jobportal",
+     "url": "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-Medizinische-Zentrale-Psychosomatik-im-de-j16069.html"
+    },
+    {
+     "author": "Schön Klinik Karriere Jobportal",
+     "id": "https://jobs.schoen-klinik.de/Pflegefachkraft-Psychosomatik-mwd-im-Berchtesgadener-Land-de-j15314.html",
+     "title": "Stellenangebot Pflegefachkraft Psychosomatik (m/w/d) im Berchtesgadener Land bei Schön Klinik Karriere Jobportal",
+     "url": "https://jobs.schoen-klinik.de/Pflegefachkraft-Psychosomatik-mwd-im-Berchtesgadener-Land-de-j15314.html"
+    }
+   ]
+  }
+ },
+ "17205": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Salus Gesundheitszentrum Bad Reichenhall Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.salus-klinik.de/karriere/",
+     "title": "Karriere",
+     "url": "https://www.salus-klinik.de/karriere/"
+    },
+    {
+     "id": "https://salus-klinik.dvinci-hr.com/de/jobs/10045/gesundheits-und-krankenpfleger-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500",
+     "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft (m/w/d) inkl. Willkommensprämie bis zu 3.500 €",
+     "url": "https://salus-klinik.dvinci-hr.com/de/jobs/10045/gesundheits-und-krankenpfleger-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500"
+    },
+    {
+     "id": "https://salus-klinik.dvinci-hr.com/de/jobs/10047/exam-altenpfleger-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500",
+     "title": "exam. Altenpfleger / Pflegefachkraft (m/w/d) inkl. Willkommensprämie bis zu 3.500 €",
+     "url": "https://salus-klinik.dvinci-hr.com/de/jobs/10047/exam-altenpfleger-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500"
+    },
+    {
+     "id": "https://www.stepstone.de/stellenangebote--Gesundheits-und-Krankenpfleger-Pflegefachkraft-m-w-d-inkl-Willkommenspraemie-bis-zu-3-500-83435-Bad-Reichenhall-Salus-Gesundheitszentrum-GmbH-Co-KG--14112277-inline.html",
+     "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft (m/w/d) ...",
+     "url": "https://www.stepstone.de/stellenangebote--Gesundheits-und-Krankenpfleger-Pflegefachkraft-m-w-d-inkl-Willkommenspraemie-bis-zu-3-500-83435-Bad-Reichenhall-Salus-Gesundheitszentrum-GmbH-Co-KG--14112277-inline.html"
+    },
+    {
+     "id": "https://salus-klinik.dvinci-hr.com/en/jobs/10087/hebamme-in-der-funktion-als-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500",
+     "title": "Hebamme in der Funktion als Pflegefachkraft (m/w/d) inkl. ...",
+     "url": "https://salus-klinik.dvinci-hr.com/en/jobs/10087/hebamme-in-der-funktion-als-pflegefachkraft-mwd-inkl-willkommenspramie-bis-zu-3500"
+    }
+   ]
+  }
+ },
+ "17274": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik für Schlafstörungen Schlafstörungen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.alexianer.de/Pflegefachkraft-Schlaflabor-mwd-de-j7415.html",
+     "title": "Pflegefachkraft Schlaflabor mwd",
+     "url": "https://karriere.alexianer.de/Pflegefachkraft-Schlaflabor-mwd-de-j7415.html"
+    },
+    {
+     "id": "https://karriere.fresenius.de/job-detail/60739dd7-9b8c-533d-a390-4375382cd2fb/pflegefachkraft-m-w-d-fuer-das-schlaflabor",
+     "title": "Pflegefachkraft (m/w/d) für das Schlaflabor",
+     "url": "https://karriere.fresenius.de/job-detail/60739dd7-9b8c-533d-a390-4375382cd2fb/pflegefachkraft-m-w-d-fuer-das-schlaflabor"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/somnolab-privatklinik-fuer-schlaftherapie-dr-med-stoohs-dr-med-blum/pflegefachkraft-exam-gesundheits-krankenpfleger-in-m-w-d-13636514/",
+     "title": "Pflegefachkraft/exam. Gesundheits- + Krankenpfleger/in (m ...",
+     "url": "https://talents.studysmarter.de/companies/somnolab-privatklinik-fuer-schlaftherapie-dr-med-stoohs-dr-med-blum/pflegefachkraft-exam-gesundheits-krankenpfleger-in-m-w-d-13636514/"
+    },
+    {
+     "id": "https://jobborse24.de/pflegefachkraft_goppingen-kernstadt-c14845666/2026-08-christophsbad-gmbh-co-fachkrankenhaus-kg_i4180479224",
+     "title": "Pflegefachkraft (m/w/d) schlaflabor - Christophsbad GmbH & Co. Fachkrankenhaus KG",
+     "url": "https://jobborse24.de/pflegefachkraft_goppingen-kernstadt-c14845666/2026-08-christophsbad-gmbh-co-fachkrankenhaus-kg_i4180479224"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/universitaere-psychiatrische-kliniken/dipl-pflegefachfrau-pflegefachmann-hf-fh-80-fuer-den-bereich-schlafstoerungen-depressionen-und-stressfolgestoerungen-41861222/",
+     "title": "Dipl. Pflegefachfrau / Pflegefachmann HF / FH 80% für den Bereich Schlafstörungen, Depressionen und Stressfolgestörungen bei Universitäre Psychiatrische Kliniken | Jetzt bewerben! – StudySmarter – Talents",
+     "url": "https://talents.studysmarter.de/companies/universitaere-psychiatrische-kliniken/dipl-pflegefachfrau-pflegefachmann-hf-fh-80-fuer-den-bereich-schlafstoerungen-depressionen-und-stressfolgestoerungen-41861222/"
+    }
+   ]
+  }
+ },
+ "17306": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "kbo-Lech-Mangfall-Tagesklinik für PSY, PSO an der Kreisklinik Wolfratshausen Wolfratshausen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kbo.de/karriere/jobs/25-34-fgukp-wor-fachgesundheits-und-krankenpfleger-psychiatrie-m-w-d-institutsambulanz-in-wolfratshausen",
+     "title": "und Krankenpfleger Psychiatrie (m/w/d) Institutsambulanz ...",
+     "url": "https://kbo.de/karriere/jobs/25-34-fgukp-wor-fachgesundheits-und-krankenpfleger-psychiatrie-m-w-d-institutsambulanz-in-wolfratshausen"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobSiteCity%3AWolfratshausen",
+     "title": "kbo-Jobbörse",
+     "url": "https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobSiteCity%3AWolfratshausen"
+    },
+    {
+     "id": "https://kbo.de/karriere/jobboerse?tx_solr=jobSite%3Akbo-Lech-Mangfall-Klinik+Wolfratshausen",
+     "title": "kbo-Jobbörse",
+     "url": "https://kbo.de/karriere/jobboerse?tx_solr=jobSite%3Akbo-Lech-Mangfall-Klinik+Wolfratshausen"
+    },
+    {
+     "id": "https://kbo-lmk.de/karriere",
+     "title": "Karriere - kbo-Lech-Mangfall-Kliniken",
+     "url": "https://kbo-lmk.de/karriere"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/f001cc09db328382a38b25cb6b779e6f",
+     "title": "Gesundheits- und krankenpfleger (m/w/d) stationsäquivalente behandlung in wolfratshausen - Wolfratshausen - Stellenangebot Juni 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/f001cc09db328382a38b25cb6b779e6f"
+    }
+   ]
+  }
+ },
+ "17502": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Ebersberg, Zweigstelle des kbo-Inn-Salzach-Klinikums Ebersberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.kbo-inn-salzach-klinikum-karriere.de/offene-stellen",
+     "publishedDate": "2023-08-10T00:00:00.000Z",
+     "title": "Offene Stellen beim kbo-Inn-Salzach-Klinikum",
+     "url": "https://www.kbo-inn-salzach-klinikum-karriere.de/offene-stellen"
+    },
+    {
+     "id": "https://www.kbo-inn-salzach-klinikum-karriere.de/pflege-offene-stelle",
+     "title": "Pflege-Offene Stelle - kbo-Inn-Salzach-klinikum Karriere",
+     "url": "https://www.kbo-inn-salzach-klinikum-karriere.de/pflege-offene-stelle"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/kbo-kliniken-des-bezirks-oberbayern/medizinische-r-fachangestellte-r-m-w-d-tagesklinik-ebersberg-inn-salzach-klinikum-ebersbe-30977161/",
+     "title": "Medizinische/-r Fachangestellte/-r (m/w/d) Tagesklinik Ebersberg ...",
+     "url": "https://talents.studysmarter.de/companies/kbo-kliniken-des-bezirks-oberbayern/medizinische-r-fachangestellte-r-m-w-d-tagesklinik-ebersberg-inn-salzach-klinikum-ebersbe-30977161/"
+    },
+    {
+     "id": "https://kbo-isk.de/standorte/ebersberg",
+     "title": "Tagesklinik und Psychiatrische Institutsambulanz Ebersberg",
+     "url": "https://kbo-isk.de/standorte/ebersberg"
+    },
+    {
+     "id": "https://kbo-isk.de/karriere",
+     "title": "Beruf und Karriere kbo-Inn-Salzach-Klinikum",
+     "url": "https://kbo-isk.de/karriere"
+    }
+   ]
+  }
+ },
+ "17601": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Eichstätt Eichstätt Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.kna-online.de/Karriere/Stellenangebote.php",
+     "publishedDate": "2020-03-01T00:00:00.000Z",
+     "title": "Stellenangebote",
+     "url": "https://www.kna-online.de/Karriere/Stellenangebote.php"
+    },
+    {
+     "id": "https://www.mein-check-in.de/kna-online/position-175430",
+     "title": "Gesundheits- und Krankenpfleger/in (m/w/d) für die Kardiologie | Kliniken im Naturpark Altmühltal, A.d.ö.R Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/kna-online/position-175430"
+    },
+    {
+     "id": "https://www.mein-check-in.de/kna-online",
+     "title": "Kliniken im Naturpark Altmühltal, A.d.ö.R Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/kna-online"
+    },
+    {
+     "id": "https://www.mein-check-in.de/kna-online/position-348440",
+     "title": "Advanced  Practice Nurse (m/w/d) (Vollzeit/Teilzeit) | Kliniken im Naturpark Altmühltal, A.d.ö.R Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/kna-online/position-348440"
+    },
+    {
+     "id": "https://www.kna-online.de/Karriere/Wir-als-Arbeitgeber.php",
+     "title": "Wir als Arbeitgeber",
+     "url": "https://www.kna-online.de/Karriere/Wir-als-Arbeitgeber.php"
+    }
+   ]
+  }
+ },
+ "17602": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Kösching Kösching Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.kna-online.de/Karriere/Stellenangebote.php",
+     "publishedDate": "2020-03-01T00:00:00.000Z",
+     "title": "Stellenangebote",
+     "url": "https://www.kna-online.de/Karriere/Stellenangebote.php"
+    },
+    {
+     "id": "https://www.mein-check-in.de/kna-online/position-493232",
+     "title": "Gesundheits- und Krankenpfleger/in oder Altenpfleger/in (m/w/d) | Kliniken im Naturpark Altmühltal, A.d.ö.R Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/kna-online/position-493232"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/facility/45512337-7486-404b-9ca6-e07236727cb2",
+     "title": "Kliniken im Naturpark Altmühltal - Kommunalunternehmen des Landkreises Eichstätt, A.d.ö.R. - Klinik Kösching Stellenangebote",
+     "url": "https://medwing.com/jobs/de-de/facility/45512337-7486-404b-9ca6-e07236727cb2"
+    },
+    {
+     "id": "https://www.mein-check-in.de/kna-online",
+     "title": "Kliniken im Naturpark Altmühltal, A.d.ö.R Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/kna-online"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/y42zrct/",
+     "title": "💼 Karrierechance: Ausbildung als Pflegefachfrau/Pflegefachmann (m/w/d) in Kösching bei Kliniken im Naturpark Altmühltal",
+     "url": "https://www.rapidjob.de/job/y42zrct/"
+    }
+   ]
+  }
+ },
+ "17605": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "VAMED Klinik Kipfenberg Kipfenberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.vitrea-gesundheit.de/reha/kipfenberg/unsere-klinik/karriere/stellenangebote/",
+     "title": "Stellenangebote | VITREA Klinik Kipfenberg",
+     "url": "https://www.vitrea-gesundheit.de/reha/kipfenberg/unsere-klinik/karriere/stellenangebote/"
+    },
+    {
+     "id": "https://www.vitrea-gesundheit.de/reha/kipfenberg/unsere-klinik/karriere/",
+     "title": "Karriere | VITREA Klinik Kipfenberg",
+     "url": "https://www.vitrea-gesundheit.de/reha/kipfenberg/unsere-klinik/karriere/"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-fur-unsere-fruhreha_kipfenberg_515757708",
+     "title": "Pflegefachkraft (M/w/d) Für Unsere Frühreha - Kipfenberg | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-fur-unsere-fruhreha_kipfenberg_515757708"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/facility/5c458036-3a5f-403c-957f-9dfb0dc614da",
+     "title": "VAMED Klinik Kipfenberg GmbH Stellenangebote",
+     "url": "https://medwing.com/jobs/de-de/facility/5c458036-3a5f-403c-957f-9dfb0dc614da"
+    },
+    {
+     "id": "https://www.glassdoor.de/job-listing/pflegefachkraft-m-w-d-vamed-JV_IC2502114_KO0,21_KE22,27.htm?jl=1010182842812",
+     "title": "VAMED bietet Job als Pflegefachkraft (m/w/d) in Kipfenberg",
+     "url": "https://www.glassdoor.de/job-listing/pflegefachkraft-m-w-d-vamed-JV_IC2502114_KO0,21_KE22,27.htm?jl=1010182842812"
+    }
+   ]
+  }
+ },
+ "17706": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "kbo-Isar-Amper-Klinikum Tagesklinik für PSY am Klinikum Erding Erding Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d",
+     "title": "Pflegefachfrau / Pflegefachmann / Gesundheits- und (Kinder-)Krankenpfleger / Altenpfleger / Heilerziehungspfleger oder Fachkrankenpfleger – Pflegeexperte für Psychiatrie (m/w/d)",
+     "url": "https://kbo.de/karriere/jobs/3287-pflegefachfrau-pflegefachmann-gesundheits-und-kinder-krankenpfleger-altenpfleger-heilerziehungspfleger-oder-fachkrankenpfleger-pflegeexperte-fuer-psychiatrie-m-w-d"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/fpkjb2w/",
+     "title": "✅ Sofort starten: Fachkraft Soziale Arbeit / Fachpflegekraft Psychiatrie oder andere vergleichbare Studienabschlüsse für den Bereich ambulant betreutes Wohnen im Landkreis Erding – kbo Kliniken des Bezirks Oberbayern, Standort: Erding",
+     "url": "https://www.rapidjob.de/job/fpkjb2w/"
+    },
+    {
+     "id": "https://kbo-iak.de/karriere",
+     "title": "Karriere - kbo-Isar-Amper-Klinikum",
+     "url": "https://kbo-iak.de/karriere"
+    },
+    {
+     "id": "https://kbo-iak.de/pflege",
+     "title": "Pflege",
+     "url": "https://kbo-iak.de/pflege"
+    },
+    {
+     "id": "https://recruitingapp-5656.de.umantis.com/Jobs?CustomFunction=CheckMarket",
+     "title": "kbo-Isar-Amper-Klinikum Stellen",
+     "url": "https://recruitingapp-5656.de.umantis.com/Jobs?CustomFunction=CheckMarket"
+    }
+   ]
+  }
+ },
+ "17772": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Airport Clinic München, Terminal 1 München-Flughafen MediCare Flughafen München Medizinisches Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://medicare-flughafen-muenchen.jobs.personio.com/?language=de",
+     "title": "Jobs bei Munich Airport Clinic",
+     "url": "https://medicare-flughafen-muenchen.jobs.personio.com/?language=de"
+    },
+    {
+     "id": "https://medicare-flughafen-muenchen.jobs.personio.com/",
+     "title": "Jobs bei Munich Airport Clinic",
+     "url": "https://medicare-flughafen-muenchen.jobs.personio.com/"
+    },
+    {
+     "id": "https://munich-airport-clinic.com/karriere/",
+     "title": "Karriere",
+     "url": "https://munich-airport-clinic.com/karriere/"
+    },
+    {
+     "id": "https://jobborse24.de/gesundheits-und_freising-c148978/2026-08-munich-airport-clinic_i4180584921",
+     "title": "Gesundheits- und krankenpfleger/-in (m/w/d) - Munich Airport Clinic",
+     "url": "https://jobborse24.de/gesundheits-und_freising-c148978/2026-08-munich-airport-clinic_i4180584921"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/munich-airport-clinic/notfallsanitaeter-m-w-d-oder-gesundheits-und-krankenpfleger-m-w-d-mit-rettungsdienstlicher-29872238/",
+     "title": "Notfallsanitäter (m/w/d) oder Gesundheits- und Krankenpfleger (m/w/d) mit rettungsdienstlicher [...] bei Munich Airport Clinic | Jetzt bewerben! – StudySmarter – Talents",
+     "url": "https://talents.studysmarter.de/companies/munich-airport-clinic/notfallsanitaeter-m-w-d-oder-gesundheits-und-krankenpfleger-m-w-d-mit-rettungsdienstlicher-29872238/"
+    }
+   ]
+  }
+ },
+ "18004": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Oberammergau - Zentrum für Rheumatologie, Orthopädie und Schmerztherapie Oberammergau Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-fuer-unsere-abteilung-fuer-rheumaorthopaedie-und-handchirurgie-162/",
+     "title": "Pflegefachkraft (m/w/d) für unsere Abteilung für Rheumaorthopädie und Handchirurgie",
+     "url": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-fuer-unsere-abteilung-fuer-rheumaorthopaedie-und-handchirurgie-162/"
+    },
+    {
+     "id": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-fuer-die-abteilung-internistische-rheumatologie-187/",
+     "title": "Pflegefachkraft (m/w/d) für die Abteilung internistische Rheumatologie",
+     "url": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-fuer-die-abteilung-internistische-rheumatologie-187/"
+    },
+    {
+     "id": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/",
+     "title": "Stellenangebote Klinik Oberammergau - Waldburg-Zeil Kliniken",
+     "url": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/"
+    },
+    {
+     "id": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-188/",
+     "title": "Pflegefachkraft (m/w/d) - Waldburg-Zeil Kliniken",
+     "url": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/pflegefachkraft-188/"
+    },
+    {
+     "id": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/2/",
+     "title": "Stellenangebote Klinik Oberammergau",
+     "url": "https://www.wz-kliniken.de/klinik-oberammergau/karriere/stellenangebote/2/"
+    }
+   ]
+  }
+ },
+ "18102": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psychosomatische Klinik Windach Windach a. Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://klinik-windach.de/unsere-klinik/stellenangebote/",
+     "publishedDate": "2026-08-28T00:00:00.000Z",
+     "title": "✅ Stellenangebote - Klinik Windach | Psychosomatische ...",
+     "url": "https://klinik-windach.de/unsere-klinik/stellenangebote/"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/e0e4311be8c8787bc9ff91158c5c0c83",
+     "title": "Gesundheits- und krankenpfleger (w/m/d) in der co-therapie - Windach - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/e0e4311be8c8787bc9ff91158c5c0c83"
+    },
+    {
+     "id": "https://www.medi-jobs.de/10675/1/",
+     "publishedDate": "2026-01-01T00:00:00.000Z",
+     "title": "und Krankenpfleger (w/m/d) in der Medizinischen Zentrale ...",
+     "url": "https://www.medi-jobs.de/10675/1/"
+    },
+    {
+     "author": "Fuchsjobs",
+     "id": "https://fuchsjobs.de/de-de/job/stellenangebote--gesundheits-und-krankenpfleger-wmd-im-nachtdienst-windach-oberberg-gmbh-73f216",
+     "title": "Gesundheits- und Krankenpfleger (w/m/d) im Nachtdienst",
+     "url": "https://fuchsjobs.de/de-de/job/stellenangebote--gesundheits-und-krankenpfleger-wmd-im-nachtdienst-windach-oberberg-gmbh-73f216"
+    },
+    {
+     "author": "Fuchsjobs",
+     "id": "https://fuchsjobs.de/de-de/job/stellenangebote--gesundheits-und-krankenpfleger-wmd-imnachtdienst-windach-oberberg-gmbh-f99f95",
+     "title": "Gesundheits- und Krankenpfleger (w/m/d) imNachtdienst",
+     "url": "https://fuchsjobs.de/de-de/job/stellenangebote--gesundheits-und-krankenpfleger-wmd-imnachtdienst-windach-oberberg-gmbh-f99f95"
+    }
+   ]
+  }
+ },
+ "18302": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "InnKlinikum Haag in OB Haag in OB Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "author": "BRU",
+     "id": "https://inncare-pflegezentren.de/altenpfleger-gesundheits-und-krankenpfleger-pflegefachkraft-mwd-fuer-unsere-kurzzeitpflege-haag/",
+     "publishedDate": "2025-10-28T00:00:00.000Z",
+     "title": "Altenpfleger / Gesundheits- und Krankenpfleger / Pflegefachkraft (m|w|d) - für unsere Kurzzeitpflege - Haag - InnCare",
+     "url": "https://inncare-pflegezentren.de/altenpfleger-gesundheits-und-krankenpfleger-pflegefachkraft-mwd-fuer-unsere-kurzzeitpflege-haag/"
+    },
+    {
+     "id": "https://www.innklinikum.de/stellenangebote-uebersicht",
+     "title": "Stellenangebote Übersicht - Innklinikum",
+     "url": "https://www.innklinikum.de/stellenangebote-uebersicht"
+    },
+    {
+     "id": "https://inncare-pflegezentren.de/karriere/",
+     "title": "Karriere - InnCare",
+     "url": "https://inncare-pflegezentren.de/karriere/"
+    },
+    {
+     "id": "https://de.indeed.com/viewjob?jk=1c5503ab1c98c8ee",
+     "title": "w|d) - für unsere Kurzzeitpflege - Haag",
+     "url": "https://de.indeed.com/viewjob?jk=1c5503ab1c98c8ee"
+    },
+    {
+     "id": "https://www.innklinikum.de/medizin-standorte/inncare-tagespflege-und-kurzzeitpflege/inncare-haag-in-ob",
+     "title": "InnCare Haag i. OB - Innklinikum",
+     "url": "https://www.innklinikum.de/medizin-standorte/inncare-tagespflege-und-kurzzeitpflege/inncare-haag-in-ob"
+    }
+   ]
+  }
+ },
+ "18475": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Urologische Klinik Planegg Planegg Medical Team Clinic Clinic Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.ukmp.de/karriere.html",
+     "title": "Karriere - Urologische Klinik München-Planegg",
+     "url": "https://www.ukmp.de/karriere.html"
+    },
+    {
+     "id": "https://www.ukmp.de/karriere/stellenangebote.html",
+     "title": "Stellenangebote UKMP | Urologie Jobs | Ärzte & Fachkräfte gesucht",
+     "url": "https://www.ukmp.de/karriere/stellenangebote.html"
+    },
+    {
+     "id": "https://www.ukmp.de/karriere/stellenangebote/op-pflegekraefte-op-fachpersonal-w-m-d.html",
+     "title": "OP-Pflegekräfte / OP-Fachpersonal (w/m/d)",
+     "url": "https://www.ukmp.de/karriere/stellenangebote/op-pflegekraefte-op-fachpersonal-w-m-d.html"
+    },
+    {
+     "id": "https://www.ukmp.de/karriere",
+     "title": "Karriere",
+     "url": "https://www.ukmp.de/karriere"
+    },
+    {
+     "id": "https://www.ukmp.de/karriere/stellenangebote/mitarbeiterin-fuer-unsere-ambulanz-unseren-empfang-w-m-d.html",
+     "title": "Mitarbeiterin für unsere Ambulanz / unseren Empfang (w/m/d)",
+     "url": "https://www.ukmp.de/karriere/stellenangebote/mitarbeiterin-fuer-unsere-ambulanz-unseren-empfang-w-m-d.html"
+    }
+   ]
+  }
+ },
+ "18505": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Danuvius Klinik Neuburg a.d. Donau Neuburg/Donau Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.danuviusklinik.de/karriereportal/stellenangebote/",
+     "title": "Stellenangebote - emeis Danuvius Kliniken & Pflegeresidenzen",
+     "url": "https://www.danuviusklinik.de/karriereportal/stellenangebote/"
+    },
+    {
+     "id": "https://danuviusklinik.career.softgarden.de/jobs/63719749/Pflegefachkraft-m-w-d-f%C3%BCr-die-Ambulante-Pflege/",
+     "publishedDate": "2026-03-24T00:00:00.000Z",
+     "title": "Pflegefachkraft (m/w/d) für die Ambulante Pflege – danuviusklinik",
+     "url": "https://danuviusklinik.career.softgarden.de/jobs/63719749/Pflegefachkraft-m-w-d-f%C3%BCr-die-Ambulante-Pflege/"
+    },
+    {
+     "id": "https://www.danuviusklinik.de/karriere/",
+     "title": "Jobs & Stellenangebote bei Danuvius Klinik",
+     "url": "https://www.danuviusklinik.de/karriere/"
+    },
+    {
+     "id": "https://danuviusklinik.career.softgarden.de/jobs/66069703/Pflegefachkraft-mit-Weiterbildung-m-w-d-f%C3%BCr-unsere-Pflegeresidenz/",
+     "publishedDate": "2026-07-14T00:00:00.000Z",
+     "title": "Pflegefachkraft mit Zusatzqualifikation (m/w/d) für unsere Pflegeresidenz – danuviusklinik",
+     "url": "https://danuviusklinik.career.softgarden.de/jobs/66069703/Pflegefachkraft-mit-Weiterbildung-m-w-d-f%C3%BCr-unsere-Pflegeresidenz/"
+    },
+    {
+     "id": "https://www.xing.com/jobs/neuburg-donau-pflegefachkraft-157374369",
+     "publishedDate": "2026-09-04T18:03:19.829Z",
+     "title": "Pflegefachkraft (m/w/d) - Bei uns sind Sie richtig!",
+     "url": "https://www.xing.com/jobs/neuburg-donau-pflegefachkraft-157374369"
+    }
+   ]
+  }
+ },
+ "18601": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Ilmtalklinik Pfaffenhofen Pfaffenhofen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/fuer_pflege.php",
+     "title": "Stellenangebote für Pflege & Funktionsdienste - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/fuer_pflege.php"
+    },
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote.php",
+     "title": "Stellenangebote - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote.php"
+    },
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote-detail/job-guk-intensivstation-mainburg-pfaffenhofen-ilmtalklinik-pfleg/1959",
+     "title": "Pflegefachkräfte Intensivstation (m/w/d) - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote-detail/job-guk-intensivstation-mainburg-pfaffenhofen-ilmtalklinik-pfleg/1959"
+    },
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/bei-uns-arbeiten.php",
+     "title": "Bei uns arbeiten - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/bei-uns-arbeiten.php"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/ilmtalklinik-gmbh/pflegefachkraefte-m-w-d-altenpfleger-m-w-d/987093597.html",
+     "title": "Pflegefachkräfte (m/w/d), Altenpfleger (m/w/d) - Ilmtalklinik GmbH - Pfaffenhofen, Mainburg | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/ilmtalklinik-gmbh/pflegefachkraefte-m-w-d-altenpfleger-m-w-d/987093597.html"
+    }
+   ]
+  }
+ },
+ "18775": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Veramed-Klinik am Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.veramed.de/stellenangebote/",
+     "title": "Stellenangebote - Veramed Klinik am Wendelstein",
+     "url": "https://www.veramed.de/stellenangebote/"
+    },
+    {
+     "id": "https://www.veramed.de/stellenangebote/gesundheits-und-krankenpfleger/",
+     "title": "Gesundheits- und Krankenpfleger - Veramed Klinik am Wendelstein – Gemeinsam gegen Krebs",
+     "url": "https://www.veramed.de/stellenangebote/gesundheits-und-krankenpfleger/"
+    },
+    {
+     "id": "https://www.veramed.de/karriere/",
+     "title": "Karriere - Veramed Klinik am Wendelstein – Gemeinsam gegen ...",
+     "url": "https://www.veramed.de/karriere/"
+    },
+    {
+     "id": "https://www.veramed.de/stellenangebote/assistenzarzt/",
+     "title": "Arzt in Weiterbildung für Innere Medizin - Veramed Klinik am Wendelstein – Gemeinsam gegen Krebs",
+     "url": "https://www.veramed.de/stellenangebote/assistenzarzt/"
+    },
+    {
+     "id": "https://www.veramed.de/stellenangebote/oberarzt-haematologie-onkologie/",
+     "title": "Oberärzt:in Hämatologie & Onkologie - Veramed Klinik am Wendelstein – Gemeinsam gegen Krebs",
+     "url": "https://www.veramed.de/stellenangebote/oberarzt-haematologie-onkologie/"
+    }
+   ]
+  }
+ },
+ "18783": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klink Bad Trissl Oberaudorf Klinik Bad Trissl Trissl Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.klinik-bad-trissl.de/aktuelles/",
+     "publishedDate": "2018-07-26T00:00:00.000Z",
+     "title": "Aktuelles - Klinik Bad Trissl, Oberaudorf",
+     "url": "https://www.klinik-bad-trissl.de/aktuelles/"
+    },
+    {
+     "id": "https://www.medi-karriere.at/kliniken/klinikbadtrissl/",
+     "title": "Klinik Bad Trissl GmbH - Medi-Karriere",
+     "url": "https://www.medi-karriere.at/kliniken/klinikbadtrissl/"
+    },
+    {
+     "id": "https://www.medi-jobs.de/8116/",
+     "title": "Stellenangebote von Klinik Bad Trissl",
+     "url": "https://www.medi-jobs.de/8116/"
+    },
+    {
+     "id": "https://www.stellenmarkt.de/display_superlink.php?BEN_ID=682690",
+     "title": "Stellenangebote bei Klinik Bad Trissl GmbH",
+     "url": "https://www.stellenmarkt.de/display_superlink.php?BEN_ID=682690"
+    },
+    {
+     "author": "Fuchsjobs",
+     "id": "https://fuchsjobs.de/de-de/job/stellenangebote--pflegefachkraft-mwd-fur-die-psychosomatik-bei-uns-startet-ihre-karriere-oberaudorf-klinik-bad-trissl-1e7723",
+     "title": "Pflegefachkraft (m/w/d) für die Psychosomatik – Bei...",
+     "url": "https://fuchsjobs.de/de-de/job/stellenangebote--pflegefachkraft-mwd-fur-die-psychosomatik-bei-uns-startet-ihre-karriere-oberaudorf-klinik-bad-trissl-1e7723"
+    }
+   ]
+  }
+ },
+ "26108": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "LA-Regio Kliniken Landshut Landshut Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.la-regio-kliniken.de/stellenportal",
+     "title": "Stellenportal: Kliniken",
+     "url": "https://www.la-regio-kliniken.de/stellenportal"
+    },
+    {
+     "id": "https://www.la-regio-kliniken.de/karriere-ausbildung",
+     "title": "Karriere & Ausbildung: Kliniken",
+     "url": "https://www.la-regio-kliniken.de/karriere-ausbildung"
+    },
+    {
+     "id": "https://www.la-regio-kliniken.de/pflege",
+     "title": "Pflege: Kliniken",
+     "url": "https://www.la-regio-kliniken.de/pflege"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1003375874-S",
+     "title": "Pflegefachkraft  für unsere Gastroenterologie in Landshut, Isar",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1003375874-S"
+    },
+    {
+     "id": "https://www.stellenmarkt.de/anzeige26303330.html",
+     "title": "Stellenangebot Pflegefachkräfte (m/w/d) für unseren Pflegedienst in Klinik Landshut-Mitte bei LA-Regio Kliniken  Anstalt des öffentlichen Rechts der Stadt und des Landkreises Landshut",
+     "url": "https://www.stellenmarkt.de/anzeige26303330.html"
+    }
+   ]
+  }
+ },
+ "27107": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für KJP am Klinikum Deggendorf Deggendorf Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.donau-isar-klinikum.de/kooperationen/kinder-und-jugendpsychiatrie/index.html",
+     "title": "Kinder- und Jugendpsychiatrie - DONAUISAR Klinikum Deggendorf",
+     "url": "https://www.donau-isar-klinikum.de/kooperationen/kinder-und-jugendpsychiatrie/index.html"
+    },
+    {
+     "id": "https://www.dik-karriere.de/stellenangebote",
+     "title": "Stellenangebote beim DonauIsar Klinikum",
+     "url": "https://www.dik-karriere.de/stellenangebote"
+    },
+    {
+     "id": "https://www.mvz-klinikum-deggendorf.de/jobs/",
+     "publishedDate": "2017-03-24T00:00:00.000Z",
+     "title": "Stellenangebote - MVZ",
+     "url": "https://www.mvz-klinikum-deggendorf.de/jobs/"
+    },
+    {
+     "id": "https://www.bkh-landshut.de/karriere/arbeiten-im-bkh/",
+     "title": "Karriere im BKH Landshut | Jobs im Gesundheitswesen",
+     "url": "https://www.bkh-landshut.de/karriere/arbeiten-im-bkh/"
+    },
+    {
+     "id": "https://www.rekruter.de/amp/stellenangebot/?chiffre=10000-1202459851-S",
+     "title": "Pflegefachmann-frau mwd - 84130 Dingolfing",
+     "url": "https://www.rekruter.de/amp/stellenangebot/?chiffre=10000-1202459851-S"
+    }
+   ]
+  }
+ },
+ "27201": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreiskrankenhaus Grafenau Grafenau Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote",
+     "title": "Aktuelle Stellenangebote",
+     "url": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/66kdm4k/",
+     "title": "📣 Neues Kapitel deiner Karriere: Pflegefachkraft / Gesundheits- und Krankenpfleger*in (m/w/d) bei Klinik Am Kurpark, Grafenau",
+     "url": "https://www.rapidjob.de/job/66kdm4k/"
+    },
+    {
+     "id": "https://www.seniorenzentrum-grafenau.de/jobs-und-karriere/stellenboerse/stellenangebote/stelle/grafenau/ausbildung-als-pflegefachfrau-pflegefachmann-w-m-d/",
+     "title": "Stelle",
+     "url": "https://www.seniorenzentrum-grafenau.de/jobs-und-karriere/stellenboerse/stellenangebote/stelle/grafenau/ausbildung-als-pflegefachfrau-pflegefachmann-w-m-d/"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/e43d30a364f9267fc0a726daa9227734",
+     "title": "Gesundheits- und krankenpfleger (m/w/d) top gehalt seniorenzentrum - Grafenau - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/e43d30a364f9267fc0a726daa9227734"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/64a0bd6764d99cb5d6b3e8dc9f8a12ac",
+     "title": "Pflegefachkraft (m/w/d) - Grafenau - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/64a0bd6764d99cb5d6b3e8dc9f8a12ac"
+    }
+   ]
+  }
+ },
+ "27204": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreiskrankenhaus Freyung Freyung Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote?no_cache=1",
+     "title": "Aktuelle Stellenangebote - Kliniken am Goldenen Steig gGmbH",
+     "url": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote?no_cache=1"
+    },
+    {
+     "id": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote",
+     "title": "Aktuelle Stellenangebote",
+     "url": "https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote"
+    },
+    {
+     "id": "https://www.kvfreyung.brk.de/aktuell/stellenboerse/karriere-beim-brk.html",
+     "title": "Karriere beim BRK - BRK KV Freyung-Grafenau",
+     "url": "https://www.kvfreyung.brk.de/aktuell/stellenboerse/karriere-beim-brk.html"
+    },
+    {
+     "id": "https://www.facebook.com/frgkliniken/posts/wir-suchen-am-standort-freyung-f%C3%BCr-unsere-abteilung-an%C3%A4sthesiepflege-eine-funkti/1533081325493394/",
+     "publishedDate": "2026-02-06T18:03:30.128Z",
+     "title": "Wir suchen am Standort Freyung für unsere Abteilung ...",
+     "url": "https://www.facebook.com/frgkliniken/posts/wir-suchen-am-standort-freyung-f%C3%BCr-unsere-abteilung-an%C3%A4sthesiepflege-eine-funkti/1533081325493394/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=18398-E6WT7W9J5RFQUOVK-S",
+     "title": "Pflegefachkräfte  in Freyung, Niederbayern",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=18398-E6WT7W9J5RFQUOVK-S"
+    }
+   ]
+  }
+ },
+ "27302": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Krankenhaus Mainburg Mainburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/fuer_pflege.php",
+     "title": "Stellenangebote für Pflege & Funktionsdienste - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/fuer_pflege.php"
+    },
+    {
+     "id": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote.php",
+     "title": "Stellenangebote - Ilmtalkliniken",
+     "url": "https://www.ilmtalkliniken.de/bei-uns-arbeiten/stellenangebote.php"
+    },
+    {
+     "id": "https://karrieredahoam.de/arbeitgeber/ilmtalkliniken-krankenhaus-mainburg/",
+     "title": "Ilmtalkliniken - Krankenhaus Mainburg - Karriere Dahoam",
+     "url": "https://karrieredahoam.de/arbeitgeber/ilmtalkliniken-krankenhaus-mainburg/"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/ea94237a2d29731a0c0c036749749070",
+     "title": "Pflegefachkraft (m/w/d) mit geriatrischer fachweiterbildung - wir suchen zuwachs in unserem team! - Adelschlag - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/ea94237a2d29731a0c0c036749749070"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/0be66af0d737004bdc2de13d0776cc45",
+     "title": "Pflegekräfte (m/w/d) für den ambulanten dienst in mainburg - Mainburg - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/0be66af0d737004bdc2de13d0776cc45"
+    }
+   ]
+  }
+ },
+ "27401": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "LAKUMED Krankenhaus Vilsbiburg Vilsbiburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.la-regio-kliniken.de/stellenportal",
+     "title": "Stellenportal: Kliniken",
+     "url": "https://www.la-regio-kliniken.de/stellenportal"
+    },
+    {
+     "id": "https://www.lakumed.de/beruf-karriere/stellenangebote/medizinische-fachberufe",
+     "title": "Lakumed: Medizinische Fachberufe",
+     "url": "https://www.lakumed.de/beruf-karriere/stellenangebote/medizinische-fachberufe"
+    },
+    {
+     "id": "https://www.sg.lakumed.de/beruf-karriere",
+     "title": "Beruf & Karriere - sg.lakumed.de",
+     "url": "https://www.sg.lakumed.de/beruf-karriere"
+    },
+    {
+     "id": "https://www.bayern.jobs/job/pflegefachkraefte-m-w-d-17399181",
+     "title": "Pflegefachkräfte m/w/d - Vilsbiburg | bayern.jobs",
+     "url": "https://www.bayern.jobs/job/pflegefachkraefte-m-w-d-17399181"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1003304987-S",
+     "title": "Pflegefachkräfte  für die Frauenklinik in Vilsbiburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1003304987-S"
+    }
+   ]
+  }
+ },
+ "27501": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreiskrankenhaus Rotthalmünster Rotthalmünster Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.ge-passau.de/stellen/",
+     "title": "Stellenangebote und Jobs in unseren Kliniken und ...",
+     "url": "https://karriere.ge-passau.de/stellen/"
+    },
+    {
+     "id": "https://karriere.ge-passau.de/",
+     "title": "Gesundheitseinrichtungen Passau - Karriere",
+     "url": "https://karriere.ge-passau.de/"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/xrf725s/",
+     "title": "🧠 Mit klarem Fokus: Pflegefachkraft (m/w/d) – Internistische/Chirurgische Station – Landkreis Passau Gesundheitseinrichtungen, Rotthalmünster",
+     "url": "https://www.rapidjob.de/job/xrf725s/"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/5a6d68y/",
+     "title": "🌟 Landkreis Passau Gesundheitseinrichtungen stellt ein: Pflegefachkraft Stroke Unit – Rotthalmünster bei Passau – Vilshofen",
+     "url": "https://www.rapidjob.de/job/5a6d68y/"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-stroke-unit-rotthalmunster-bei_vilshofen-an-der-donau_517871973",
+     "title": "Pflegefachkraft Stroke Unit - Rotthalmünster Bei - Vilshofen an der Donau | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-stroke-unit-rotthalmunster-bei_vilshofen-an-der-donau_517871973"
+    }
+   ]
+  }
+ },
+ "27502": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreiskrankenhaus Vilshofen Vilshofen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://ge-passau.de/offene-stellen-vilshofen/",
+     "title": "Offene Stellen Vilshofen",
+     "url": "https://ge-passau.de/offene-stellen-vilshofen/"
+    },
+    {
+     "id": "https://ge-passau.de/medizin_pflege/gesundheits-und-krankenpfleger-mwd-altenpfleger-mwd/",
+     "title": "Gesundheitseinrichtungen Passau - Karriere",
+     "url": "https://ge-passau.de/medizin_pflege/gesundheits-und-krankenpfleger-mwd-altenpfleger-mwd/"
+    },
+    {
+     "id": "https://karriere.ge-passau.de/stellen/pflegefachkraft-mwd-akutgeriatrie/",
+     "title": "Pflegefachkraft (m/w/d) Akutgeriatrie",
+     "url": "https://karriere.ge-passau.de/stellen/pflegefachkraft-mwd-akutgeriatrie/"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d_vilshofen-an-der-donau_515824993",
+     "title": "Pflegefachkraft (M/w/d) - Vilshofen an der Donau | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d_vilshofen-an-der-donau_515824993"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/9efad1785bb527b3b421709a0ca52086",
+     "title": "Gesundheits- und krankenpflegerinnen/-pfleger - Vilshofen an der Donau - Stellenangebot Juni 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/9efad1785bb527b3b421709a0ca52086"
+    }
+   ]
+  }
+ },
+ "27503": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kreiskrankenhaus Wegscheid Wegscheid Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://ge-passau.de/klinik-krankenhaus/krankenhaus-wegscheid-mit-mvz/",
+     "title": "Krankenhaus Wegscheid mit MVZ",
+     "url": "https://ge-passau.de/klinik-krankenhaus/krankenhaus-wegscheid-mit-mvz/"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/ik8x5sc/",
+     "title": "📝 Job-Alert: Pflegefachkräfte (m/w/d) Chirurgische und Internistische Station bei Landkreis Passau Gesundheitseinrichtungen in Wegscheid",
+     "url": "https://www.rapidjob.de/job/ik8x5sc/"
+    },
+    {
+     "id": "https://bebee.com/de/jobs/pflegefachkraft-innere-medizin-landkreis-passau-krankenhaus-ggmbh-wegscheid--t7xk-771530769",
+     "title": "Pflegefachkraft (m/w/d) - Innere Medizin",
+     "url": "https://bebee.com/de/jobs/pflegefachkraft-innere-medizin-landkreis-passau-krankenhaus-ggmbh-wegscheid--t7xk-771530769"
+    },
+    {
+     "id": "https://ge-passau.de/medizin_pflege/reinigungskraft-wegscheid-bei-passau/",
+     "title": "Gesundheitseinrichtungen Passau - Karriere",
+     "url": "https://ge-passau.de/medizin_pflege/reinigungskraft-wegscheid-bei-passau/"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/xrf725s/",
+     "title": "🧠 Mit klarem Fokus: Pflegefachkraft (m/w/d) – Internistische/Chirurgische Station – Landkreis Passau Gesundheitseinrichtungen, Rotthalmünster",
+     "url": "https://www.rapidjob.de/job/xrf725s/"
+    }
+   ]
+  }
+ },
+ "27706": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "AMEOS Klinikum Inntal Simbach am Inn Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.ameos.de/reha-klinikum-inntal/karriere/komm-in-unser-pflegeteam/",
+     "title": "Komm in unser Pflegeteam! - AMEOS Reha Klinikum Inntal",
+     "url": "https://www.ameos.de/reha-klinikum-inntal/karriere/komm-in-unser-pflegeteam/"
+    },
+    {
+     "id": "https://www.ameos.eu/reha-klinikum-inntal/karriere/komm-in-unser-pflegeteam/",
+     "title": "Komm in unser Pflegeteam! - AMEOS Reha Klinikum Inntal",
+     "url": "https://www.ameos.eu/reha-klinikum-inntal/karriere/komm-in-unser-pflegeteam/"
+    },
+    {
+     "id": "https://www.ameos.de/klinikum-inntal-klinik-fuer-transkulturelle-psychosomatik/karriere/komm-in-unser-pflegeteam",
+     "title": "Komm in unser Pflegeteam!  | AMEOS Klinikum Inntal - Klinik für Transkulturelle Psychosomatik",
+     "url": "https://www.ameos.de/klinikum-inntal-klinik-fuer-transkulturelle-psychosomatik/karriere/komm-in-unser-pflegeteam"
+    },
+    {
+     "id": "https://www.ameos.de/klinikum-inntal-klinik-fuer-familienpsychosomatik/karriere/komm-in-unser-pflegeteam/",
+     "title": "Komm in unser Pflegeteam! - AMEOS Klinikum Inntal",
+     "url": "https://www.ameos.de/klinikum-inntal-klinik-fuer-familienpsychosomatik/karriere/komm-in-unser-pflegeteam/"
+    },
+    {
+     "id": "https://www.ameos.eu/klinikum-inntal-klinik-fuer-familienpsychosomatik/karriere/komm-in-unser-pflegeteam/",
+     "title": "Komm in unser Pflegeteam! | AMEOS Klinikum Inntal - Klinik für Familienpsychosomatik",
+     "url": "https://www.ameos.eu/klinikum-inntal-klinik-fuer-familienpsychosomatik/karriere/komm-in-unser-pflegeteam/"
+    }
+   ]
+  }
+ },
+ "36102": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psychiatrische Tagesklinik Amberg Amberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.medbo.de/karriere/jobsmedbo",
+     "title": "Stellenangebote Oberpfalz | jobs@medbo",
+     "url": "https://www.medbo.de/karriere/jobsmedbo"
+    },
+    {
+     "id": "https://www.medbo.de/kliniken-einrichtungen/psychiatrie-psychotherapie/institutsambulanz-tagesklinik-amberg",
+     "title": "Erwachsenenpsychiatrie Amberg",
+     "url": "https://www.medbo.de/kliniken-einrichtungen/psychiatrie-psychotherapie/institutsambulanz-tagesklinik-amberg"
+    },
+    {
+     "id": "https://www.klinikum-amberg.de/karriere/offene_stellen.php",
+     "title": "Offene Stellen",
+     "url": "https://www.klinikum-amberg.de/karriere/offene_stellen.php"
+    },
+    {
+     "id": "https://de.jooble.org/stellenangebote-psychiatrische+tagesklinik/Amberg",
+     "title": "Psychiatrische-tagesklinik Stellenangebote in Amberg",
+     "url": "https://de.jooble.org/stellenangebote-psychiatrische+tagesklinik/Amberg"
+    },
+    {
+     "author": "wwws.kliniken.de",
+     "id": "https://www.kliniken.de/krankenhaus/medbo-psychiatrische-institutsambulanz-tagesklinik-amberg-170491K.html",
+     "title": "Krankenhaus medbo Psychiatrische Institutsambulanz & Tagesklinik Amberg",
+     "url": "https://www.kliniken.de/krankenhaus/medbo-psychiatrische-institutsambulanz-tagesklinik-amberg-170491K.html"
+    }
+   ]
+  }
+ },
+ "36302": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psychiatrische Tagesklinik Weiden Weiden Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.medbo.de/kinder-jugendpsychiatrie-weiden",
+     "title": "Klinik für Kinder- und Jugendpsychiatrie Weiden",
+     "url": "https://www.medbo.de/kinder-jugendpsychiatrie-weiden"
+    },
+    {
+     "id": "https://www.oberpfalzjobs.de/job/41181/mitarbeiter-w-m-d-im-pflege-und-erziehungsdienst/",
+     "title": "Mitarbeiter (w/m/d) im Pflege- und Erziehungsdienst | Oberpfalzjobs",
+     "url": "https://www.oberpfalzjobs.de/job/41181/mitarbeiter-w-m-d-im-pflege-und-erziehungsdienst/"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/mitarbeiter-w-m-d-im-pflege-und-erziehungsdienst_weiden_472442671",
+     "title": "Mitarbeiter (W/m/d) Im Pflege- Und Erziehungsdienst - Weiden | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/mitarbeiter-w-m-d-im-pflege-und-erziehungsdienst_weiden_472442671"
+    },
+    {
+     "id": "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-1203375938-S",
+     "title": "Mitarbeiter (w/m/d) im Pflege- und Erziehungsdienst",
+     "url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-1203375938-S"
+    },
+    {
+     "id": "https://www.medbo.de/karriere/jobsmedbo",
+     "title": "Stellenangebote Oberpfalz | jobs@medbo",
+     "url": "https://www.medbo.de/karriere/jobsmedbo"
+    }
+   ]
+  }
+ },
+ "37202": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Sana Kliniken - Krankenhaus Cham Cham Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.sana.de/cham/karriere/",
+     "title": "Deine Karriere bei Sana im Landkreis Cham - Sana Karriere",
+     "url": "https://karriere.sana.de/cham/karriere/"
+    },
+    {
+     "id": "https://www.sana.de/cham/karriere/",
+     "title": "Deine Karriere bei Sana im Landkreis Cham",
+     "url": "https://www.sana.de/cham/karriere/"
+    },
+    {
+     "id": "https://www.sana.de/cham/karriere/?cHash=291c628cac99525946bcd2e0cf80338d&tx_asjobboerse_pi1=2",
+     "title": "Deine Karriere bei Sana im Landkreis Cham - Sana Karriere",
+     "url": "https://www.sana.de/cham/karriere/?cHash=291c628cac99525946bcd2e0cf80338d&tx_asjobboerse_pi1=2"
+    },
+    {
+     "id": "https://jobborse24.de/pflegefachkraft_cham-c148911/2026-08-sana-kliniken-des-landkreises-cham_i4180503553",
+     "title": "Pflegefachkraft / pflegehilfskraft m/w/d - Sana Kliniken Des Landkreises Cham",
+     "url": "https://jobborse24.de/pflegefachkraft_cham-c148911/2026-08-sana-kliniken-des-landkreises-cham_i4180503553"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-gesundheits-und-krankenpfleger-fachkrankenschwester-pfleger-ota-m-w-d-fur-den-operationsdienst_cham_511142730",
+     "title": "Pflegefachkraft, Gesundheits- Und Krankenpfleger, Fachkrankenschwester/-pfleger, Ota (M/w/d) Für Den Operationsdienst - Cham | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-gesundheits-und-krankenpfleger-fachkrankenschwester-pfleger-ota-m-w-d-fur-den-operationsdienst_cham_511142730"
+    }
+   ]
+  }
+ },
+ "37203": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Sana Kliniken - Krankenhaus Bad Kötzting Bad Kötzting Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.sana.de/cham/karriere/",
+     "title": "Deine Karriere bei Sana im Landkreis Cham",
+     "url": "https://www.sana.de/cham/karriere/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/stellenangebote/",
+     "title": "Tätigkeit Suchen - Sana Karriere",
+     "url": "https://www.sana.de/karriere/stellenangebote/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/beruf/pflege/",
+     "title": "Pflege Jobs & Karriere bei Sana",
+     "url": "https://www.sana.de/karriere/beruf/pflege/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/beruf/pflege/fachpflege/",
+     "title": "Pflegefachkraft Stellenangebote entdecken - Sana Karriere",
+     "url": "https://www.sana.de/karriere/beruf/pflege/fachpflege/"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/77c6ba0500bbf7c67045a3548b23052d",
+     "title": "Physiotherapeut/in (m/w/d) für unseren standort in der sana klinik bad kötzting - Bad Kötzting - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/77c6ba0500bbf7c67045a3548b23052d"
+    }
+   ]
+  }
+ },
+ "37208": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psychiatrische Klinik Cham Cham Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://talents.studysmarter.de/companies/medbo/pflegefachkraft-w-m-d-19544301/",
+     "title": "Pflegefachkraft (w/m/d) bei medbo | Jetzt bewerben!",
+     "url": "https://talents.studysmarter.de/companies/medbo/pflegefachkraft-w-m-d-19544301/"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/pflegefachkraft-w-m-d_cham_515723426",
+     "title": "Pflegefachkraft (W/m/d) - Cham | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/pflegefachkraft-w-m-d_cham_515723426"
+    },
+    {
+     "id": "https://www.sana.de/cham/karriere/",
+     "title": "Deine Karriere bei Sana im Landkreis Cham",
+     "url": "https://www.sana.de/cham/karriere/"
+    },
+    {
+     "id": "https://de.jooble.org/stellenangebote-psychiatrische+tagesklinik/Cham",
+     "title": "Psychiatrische-Tagesklinik Stellenangebote Cham",
+     "url": "https://de.jooble.org/stellenangebote-psychiatrische+tagesklinik/Cham"
+    },
+    {
+     "id": "https://www.medbo.de/karriere/jobsmedbo",
+     "title": "Stellenangebote Oberpfalz | jobs@medbo",
+     "url": "https://www.medbo.de/karriere/jobsmedbo"
+    }
+   ]
+  }
+ },
+ "37273": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Spezialkliniken Neukirchen und Rötz Neukirchen b Hl. Blut Spezialklinik Neukirchen/Rötz Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.spezialklinik-neukirchen.de/ueber-uns/stellenangebote/",
+     "title": "Stellenangebote - Spezialklinik Neukirchen",
+     "url": "https://www.spezialklinik-neukirchen.de/ueber-uns/stellenangebote/"
+    },
+    {
+     "id": "https://carerockets.com/spezialklinik-neukirchen",
+     "title": "Spezialklinik Neukirchen | Care Rockets",
+     "url": "https://carerockets.com/spezialklinik-neukirchen"
+    },
+    {
+     "id": "https://carerockets.com/de/stellenangebote/5701",
+     "title": "Spezialklinik Neukirchen - Stellenanzeigen Pflege Rötz",
+     "url": "https://carerockets.com/de/stellenangebote/5701"
+    },
+    {
+     "id": "https://de.indeed.com/cmp/Spezialklinik-Neukirchen-Gmbh-&-Co.-Kg",
+     "title": "Beruf und Karriere bei Spezialklinik Neukirchen GmbH & Co. KG - Indeed",
+     "url": "https://de.indeed.com/cmp/Spezialklinik-Neukirchen-Gmbh-&-Co.-Kg"
+    },
+    {
+     "id": "https://www.pflegia.de/job-details/neukirchen-beim-heiligen-blut/pflegefachkraft-w-m-d-fur-die-dermatologie-hier-gehoren-sie-hin/6c760c02-7efe-4e31-8671-2669bd575b0a/",
+     "title": "gehören Sie hin! (m/w/d) - Top Stelle in Neukirchen beim Heiligen Blut",
+     "url": "https://www.pflegia.de/job-details/neukirchen-beim-heiligen-blut/pflegefachkraft-w-m-d-fur-die-dermatologie-hier-gehoren-sie-hin/6c760c02-7efe-4e31-8671-2669bd575b0a/"
+    }
+   ]
+  }
+ },
+ "37275": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "TCM Klinik Bad Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://tcm.info/tcm-klinik/ueber-die-klinik/stellenangebote-tcmk/",
+     "title": "Stellenangebote | TCM-Klinik Bad Kötzting",
+     "url": "https://tcm.info/tcm-klinik/ueber-die-klinik/stellenangebote-tcmk/"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/job/c71f6873-a76c-4cd2-87b7-fb6b416d5d2a",
+     "title": "Pflegefachkraft / Examinierte Pflegekraft (m/w/d)",
+     "url": "https://medwing.com/jobs/de-de/job/c71f6873-a76c-4cd2-87b7-fb6b416d5d2a"
+    },
+    {
+     "id": "https://www.tcmklinik.de/klinik-fuer-chinesische-medizin/stellenangebote",
+     "title": "Stellenangebote & Karriere",
+     "url": "https://www.tcmklinik.de/klinik-fuer-chinesische-medizin/stellenangebote"
+    },
+    {
+     "id": "https://tcm.info/service/zusaetzliche-services/stellenangebote/",
+     "title": "Stellenangebote",
+     "url": "https://tcm.info/service/zusaetzliche-services/stellenangebote/"
+    },
+    {
+     "id": "https://exa.ai/library/organization/ytb2tk3565c",
+     "publishedDate": "2026-06-24T00:00:00.000Z",
+     "title": "tcm-klinik bad kötzting",
+     "url": "https://tcm-klinik-koetzting.de/"
+    }
+   ]
+  }
+ },
+ "37304": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik für Psychosomatische Medizin und Psychotherapie Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.psychosomatik.uk-erlangen.de/karriere/",
+     "title": "Karriere - Psychosomatik | Uniklinikum Erlangen",
+     "url": "https://www.psychosomatik.uk-erlangen.de/karriere/"
+    },
+    {
+     "id": "https://www.klinikum-stuttgart.de/medizin-pflege/psychosomatische-medizin-psychotherapie/stellenangebote",
+     "title": "Stellenangebote | Psychosomatische Medizin, ...",
+     "url": "https://www.klinikum-stuttgart.de/medizin-pflege/psychosomatische-medizin-psychotherapie/stellenangebote"
+    },
+    {
+     "author": "Schön Klinik SE",
+     "id": "https://www.schoen-klinik.de/bad-arolsen/karriere/pflege",
+     "title": "Psychosomatische Pflege: Co-Therapie und Karrierewege",
+     "url": "https://www.schoen-klinik.de/bad-arolsen/karriere/pflege"
+    },
+    {
+     "id": "https://psychosomatik.med.ovgu.de/Karriere.html",
+     "title": "Universitätsklinik für Psychosomatische Medizin und Psychotherapie -  \t\t Mitarbeit & Entwicklungschancen in der  Universitätsklinik für Psychosomatische Medizin und Psychotherapie",
+     "url": "https://psychosomatik.med.ovgu.de/Karriere.html"
+    },
+    {
+     "id": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/",
+     "title": "Pflegefachkraft Psychosomatik (w|m|d)",
+     "url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/"
+    }
+   ]
+  }
+ },
+ "37504": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Caritas-Krankenhaus St. Maria Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote",
+     "title": "Alle Stellenangebote - Caritas-Krankenhauses St. Maria",
+     "url": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote"
+    },
+    {
+     "id": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/pflegedienst/pflegefachkraefte-pneumologische-station-m/w/d",
+     "title": "Pflegekräfte Pneumologische Station (m/w/d) | Krankenhaus: Caritas-Krankenhauses St. Maria",
+     "url": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/pflegedienst/pflegefachkraefte-pneumologische-station-m/w/d"
+    },
+    {
+     "id": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/pflegedienst/mama-papa-dienst-in-der-pflege-auf-allgemeinstation-m/w/d",
+     "title": "Mama-Papa-Dienst in der Pflege auf Allgemeinstation (m/w/d)",
+     "url": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/pflegedienst/mama-papa-dienst-in-der-pflege-auf-allgemeinstation-m/w/d"
+    },
+    {
+     "id": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/ausbildung/ausbildung-zur-pflegefachkraft-w/m/d-dreijaehrige-ausbildung",
+     "title": "Ausbildung zur Pflegefachkraft (w/m/d), dreijährige Ausbildung: Caritas-Krankenhauses St. Maria",
+     "url": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/ausbildung/ausbildung-zur-pflegefachkraft-w/m/d-dreijaehrige-ausbildung"
+    },
+    {
+     "id": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/backup-stellenangebote/pflegefachkraefte-medizinische-fachangestellte-fuer-den-bereich-endoskopie-m/w/d",
+     "title": "Pflegefachkräfte, Medizinische | Krankenhaus St. Maria",
+     "url": "https://csm-donaustauf.de/beruf-und-karriere/stellenangebote/alle-stellenangebote/backup-stellenangebote/pflegefachkraefte-medizinische-fachangestellte-fuer-den-bereich-endoskopie-m/w/d"
+    }
+   ]
+  }
+ },
+ "37701": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Krankenhaus Tirschenreuth Tirschenreuth Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere",
+     "title": "Ausbildung & Karriere - Kliniken Nordoberpfalz",
+     "url": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-innere-medizin-und-akutgeriatrie_tirschenreuth_461980766",
+     "title": "Pflegefachkraft (m/w/d) Innere Medizin und Akutgeriatrie - Tirschenreuth | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-innere-medizin-und-akutgeriatrie_tirschenreuth_461980766"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/123104204c90e23f7943ad19a64f3447",
+     "title": "Pflegefachkraft (m/w/d) innere medizin und akutgeriatrie - Tirschenreuth - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/123104204c90e23f7943ad19a64f3447"
+    },
+    {
+     "author": "Fuchsjobs",
+     "id": "https://fuchsjobs.de/de-de/job/stellenangebote--anasthesietechnische-assistenz-pflegefachkraft-mwd-tirschenreuth-kliniken-nordoberpfalz-ag-2e3c1d",
+     "title": "Anästhesietechnische Assistenz / Pflegefachkraft...",
+     "url": "https://fuchsjobs.de/de-de/job/stellenangebote--anasthesietechnische-assistenz-pflegefachkraft-mwd-tirschenreuth-kliniken-nordoberpfalz-ag-2e3c1d"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/9f2a45360878eed7e8a5ba6d142a794e",
+     "title": "Pflegefachkraft (m/w/d) ambulanter pflegedienst - Tirschenreuth - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/9f2a45360878eed7e8a5ba6d142a794e"
+    }
+   ]
+  },
+  "B": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Krankenhaus Tirschenreuth Stellenangebote",
+   "results": [
+    {
+     "id": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere",
+     "title": "Ausbildung & Karriere",
+     "url": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere"
+    },
+    {
+     "id": "https://kliniken-nordoberpfalz.talention.com/jobs",
+     "title": "Kliniken Nordoberpfalz AG",
+     "url": "https://kliniken-nordoberpfalz.talention.com/jobs"
+    },
+    {
+     "id": "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Facharzt-m-w-d-Innere-Medizin-Krankenhaus-Tirschenreuth-Innere-Medizin-und-Akutgeriatrie-Kliniken-Nordoberpfalz-AG--685035480",
+     "title": "Facharzt (m/w/d) Innere Medizin - Krankenhaus Tirschenreuth | Innere Medizin und Akutgeriatrie - Kliniken Nordoberpfalz AG",
+     "url": "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Facharzt-m-w-d-Innere-Medizin-Krankenhaus-Tirschenreuth-Innere-Medizin-und-Akutgeriatrie-Kliniken-Nordoberpfalz-AG--685035480"
+    },
+    {
+     "id": "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Geriater-m-w-d-Krankenhaus-Tirschenreuth-und-Klinikum-Weiden-Kliniken-Nordoberpfalz-AG--20523866",
+     "title": "Geriater (m/w/d) - Krankenhaus Tirschenreuth und Klinikum Weiden - Kliniken Nordoberpfalz AG",
+     "url": "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Geriater-m-w-d-Krankenhaus-Tirschenreuth-und-Klinikum-Weiden-Kliniken-Nordoberpfalz-AG--20523866"
+    },
+    {
+     "id": "https://www.kliniken-nordoberpfalz.ag/",
+     "title": "Kliniken Nordoberpfalz: Home",
+     "url": "https://www.kliniken-nordoberpfalz.ag/"
+    }
+   ]
+  }
+ },
+ "37703": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Krankenhaus Kemnath Kemnath Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere",
+     "title": "Ausbildung & Karriere",
+     "url": "https://www.kliniken-nordoberpfalz.ag/ausbildung-karriere"
+    },
+    {
+     "id": "https://jobs.meinestadt.de/kemnath/standard?id=259748499",
+     "title": "Stellenangebot: Pflegefachkraft (m/w/d) für die Intensiveinheit am Krankenkaus Kemnath Kliniken Nordoberpfalz AG Kemnath - Jobs meinestadt.de",
+     "url": "https://jobs.meinestadt.de/kemnath/standard?id=259748499"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-pflegezentrum-chirurgie-orthopadie_kemnath_515739467",
+     "title": "Pflegefachkraft (M/w/d) Pflegezentrum Chirurgie / Orthopädie - Kemnath | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-pflegezentrum-chirurgie-orthopadie_kemnath_515739467"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-innere-medizin_kemnath_515063462",
+     "title": "Pflegefachkraft (M/w/d) Innere Medizin - Kemnath | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-innere-medizin_kemnath_515063462"
+    },
+    {
+     "id": "https://kliniken-nordoberpfalz.talention.com/jobs",
+     "title": "Kliniken Nordoberpfalz AG",
+     "url": "https://kliniken-nordoberpfalz.talention.com/jobs"
+    }
+   ]
+  }
+ },
+ "46110": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für KJP am Klinikum Bamberg - Betriebsstätte am Bruderwald- Bamberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52692/examinierte-pflegefachkraft-mwd-fur-die-kinder-und-jugendpsychosomatik",
+     "title": "Examinierte Pflegefachkraft (m/w/d) für die Kinder und ...",
+     "url": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52692/examinierte-pflegefachkraft-mwd-fur-die-kinder-und-jugendpsychosomatik"
+    },
+    {
+     "id": "https://www.sozialstiftung-bamberg.de/machsdirmoeglich/gesundheits-und-krankenpfleger-mwd-und-pflegefachhelfer-mwd/",
+     "title": "und Krankenpfleger (m/w/d) und Pflegefachhelfer (m/w/d)",
+     "url": "https://www.sozialstiftung-bamberg.de/machsdirmoeglich/gesundheits-und-krankenpfleger-mwd-und-pflegefachhelfer-mwd/"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/sozialstiftung-bamberg-klinikum-bamberg-betriebsstaette-am-bruderwald/gesundheits-und-krankenpfleger-altenpfleger-oder-pflegefachkraft-m-w-d-fuer-stationaere-orthopaedische-reha-abteilung/973895491.html",
+     "title": "Gesundheits- und Krankenpfleger, Altenpfleger oder Pflegefachkraft (m/w/d) für stationäre orthopädische Reha-Abteilung - Sozialstiftung Bamberg - Bamberg | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/sozialstiftung-bamberg-klinikum-bamberg-betriebsstaette-am-bruderwald/gesundheits-und-krankenpfleger-altenpfleger-oder-pflegefachkraft-m-w-d-fuer-stationaere-orthopaedische-reha-abteilung/973895491.html"
+    },
+    {
+     "id": "https://www.sozialstiftung-bamberg.de/stellenangebote/",
+     "title": "Stellenangebote",
+     "url": "https://www.sozialstiftung-bamberg.de/stellenangebote/"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/sozialstiftung-bamberg-klinikum-bamberg-betriebsstaette-am-bruderwald/gesundheits-und-kinderkrankenpfleger-gesundheits-und-krankenpfleger-m-w-d-kinder-und-jugendhospiz/967373187.html",
+     "title": "Gesundheits- und Kinderkrankenpfleger/Gesundheits- und Krankenpfleger (m/w/d) Kinder- und Jugendhospiz - Sozialstiftung Bamberg - Bamberg | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/sozialstiftung-bamberg-klinikum-bamberg-betriebsstaette-am-bruderwald/gesundheits-und-kinderkrankenpfleger-gesundheits-und-krankenpfleger-m-w-d-kinder-und-jugendhospiz/967373187.html"
+    }
+   ]
+  }
+ },
+ "46203": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Bezirkskranken-haus Bayreuth Bayreuth Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.gebo-med.de/news/detailansicht/karriere-planen",
+     "title": "Karriere planen",
+     "url": "https://www.gebo-med.de/news/detailansicht/karriere-planen"
+    },
+    {
+     "id": "https://gebo-med.career.softgarden.de/jobs/64785311/Pflegefachkraft-m-w-d-f%C3%BCr-die-Heilp%C3%A4dagogische-Station-der-Klinik-f%C3%BCr-Psychiatrie,-Psychotherapie-und-Psychosomatik/",
+     "title": "Pflegefachkraft (m/w/d) für die Heilpädagogische Station ...",
+     "url": "https://gebo-med.career.softgarden.de/jobs/64785311/Pflegefachkraft-m-w-d-f%C3%BCr-die-Heilp%C3%A4dagogische-Station-der-Klinik-f%C3%BCr-Psychiatrie,-Psychotherapie-und-Psychosomatik/"
+    },
+    {
+     "id": "https://www.gebo-med.de/karriere",
+     "title": "Karriere machen bei der GeBO",
+     "url": "https://www.gebo-med.de/karriere"
+    },
+    {
+     "id": "https://gebo-med.softgarden.io/",
+     "title": "Career board | Gesundheitseinrichtungen des Bezirks ...",
+     "url": "https://gebo-med.softgarden.io/"
+    },
+    {
+     "id": "https://www.valmedi.de/job/gesundheits-und-krankenpfleger-84181/bayreuth",
+     "title": "Stellenangebot Bayreuth Gesundheits- und Krankenpfleger",
+     "url": "https://www.valmedi.de/job/gesundheits-und-krankenpfleger-84181/bayreuth"
+    }
+   ]
+  }
+ },
+ "46301": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Sana Klinikum Coburg Coburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.sana.de/karriere/coburg/",
+     "title": "Karriere Coburg - Sana Kliniken",
+     "url": "https://www.sana.de/karriere/coburg/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/coburg/ausbildung-berufseinstieg/",
+     "title": "Ausbildung & Berufseinstieg in Coburg - Sana Karriere",
+     "url": "https://www.sana.de/karriere/coburg/ausbildung-berufseinstieg/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001213443-S",
+     "title": "Pflegefachkraft  für die Station 54  in Coburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001213443-S"
+    },
+    {
+     "id": "https://www.sana.de/karriere/coburg/ausbildung-berufseinstieg/ausbildung/",
+     "title": "Ausbildung",
+     "url": "https://www.sana.de/karriere/coburg/ausbildung-berufseinstieg/ausbildung/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001213327-S",
+     "title": "Pflegefachkraft für die Kindernotaufnahme in Coburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001213327-S"
+    }
+   ]
+  }
+ },
+ "46306": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Coburg für PSY des Bezirksklinikum Obermain Coburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://gebo-med.career.softgarden.de/jobs/65704226/Qualifizierte-Mitarbeiter-m-w-d-f%C3%BCr-den-Pflegedienst-der-aufsuchenden-Pflege/",
+     "publishedDate": "2026-06-30T00:00:00.000Z",
+     "title": "Qualifizierte Mitarbeiter (m/w/d) für den Pflegedienst der aufsuchenden Pflege – Gesundheitseinrichtungen des Bezirks Oberfranken",
+     "url": "https://gebo-med.career.softgarden.de/jobs/65704226/Qualifizierte-Mitarbeiter-m-w-d-f%C3%BCr-den-Pflegedienst-der-aufsuchenden-Pflege/"
+    },
+    {
+     "id": "https://gebo-med.softgarden.io/de/vacancies?openModal=true",
+     "title": "Karriere Board | Gesundheitseinrichtungen des Bezirks ...",
+     "url": "https://gebo-med.softgarden.io/de/vacancies?openModal=true"
+    },
+    {
+     "id": "https://www.gebo-med.de/news/detailansicht/karriere-planen",
+     "title": "Karriere planen",
+     "url": "https://www.gebo-med.de/news/detailansicht/karriere-planen"
+    },
+    {
+     "id": "https://www.gebo-med.de/standorte/tagesklinik-fuer-erwachsene-in-coburg",
+     "title": "Tagesklinik für Erwachsene in Coburg - Gesundheitseinrichtungen des Bezirks Oberfranken",
+     "url": "https://www.gebo-med.de/standorte/tagesklinik-fuer-erwachsene-in-coburg"
+    },
+    {
+     "id": "https://www.gebo-med.de/karriere",
+     "title": "Karriere machen bei der GeBO",
+     "url": "https://www.gebo-med.de/karriere"
+    }
+   ]
+  }
+ },
+ "46307": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Coburg für KJP des BKH Bayreuth Coburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://jobtensor.com/job/Mitarbeiter-mwd-im-Pflege-Erziehungsdienst-f%C3%BCr-die-Tagesklinik-Kinder-Jugendliche-in-Coburg-4bd80415944f",
+     "title": "Mitarbeiter (m/w/d) im Pflege- & Erziehungsdienst für die ...",
+     "url": "https://jobtensor.com/job/Mitarbeiter-mwd-im-Pflege-Erziehungsdienst-f%C3%BCr-die-Tagesklinik-Kinder-Jugendliche-in-Coburg-4bd80415944f"
+    },
+    {
+     "id": "https://gebo-med.career.softgarden.de/jobs/66657818/Facharzt-Oberarzt-m-w-d-f%C3%BCr-die-Tagesklinik-und-Institutsambulanz-Coburg-f%C3%BCr-Kinder-und-Jugendliche/",
+     "publishedDate": "2026-08-11T00:00:00.000Z",
+     "title": "Facharzt / Oberarzt (m/w/d) für die Tagesklinik und Institutsambulanz Coburg für Kinder und Jugendliche – Gesundheitseinrichtungen des Bezirks Oberfranken",
+     "url": "https://gebo-med.career.softgarden.de/jobs/66657818/Facharzt-Oberarzt-m-w-d-f%C3%BCr-die-Tagesklinik-und-Institutsambulanz-Coburg-f%C3%BCr-Kinder-und-Jugendliche/"
+    },
+    {
+     "id": "https://gebo-med.softgarden.io/job/66657818/Facharzt-Oberarzt-m-w-d-f%C3%BCr-die-Tagesklinik-und-Institutsambulanz-Coburg-f%C3%BCr-Kinder-und-Jugendliche",
+     "title": "Facharzt / Oberarzt (m/w/d) für die Tagesklinik und Institutsambulanz Coburg für Kinder und Jugendliche",
+     "url": "https://gebo-med.softgarden.io/job/66657818/Facharzt-Oberarzt-m-w-d-f%C3%BCr-die-Tagesklinik-und-Institutsambulanz-Coburg-f%C3%BCr-Kinder-und-Jugendliche"
+    },
+    {
+     "id": "https://www.bezirk-oberfranken.de/gesundheit/gesundheitseinrichtungen-des-bezirks-oberfranken-gebo/psychiatrische-tageskliniken-fuer-kinder-und-jugendliche",
+     "title": "Psychiatrische Tageskliniken für Kinder und Jugendliche",
+     "url": "https://www.bezirk-oberfranken.de/gesundheit/gesundheitseinrichtungen-des-bezirks-oberfranken-gebo/psychiatrische-tageskliniken-fuer-kinder-und-jugendliche"
+    },
+    {
+     "id": "https://www.xing.com/jobs/coburg-facharzt-oberarzt-tagesklinik-institutsambulanz-coburg-kinder-jugendliche-157195101",
+     "title": "Facharzt/Oberarzt (m/w/d) Tagesklinik und Institutsambulanz Coburg für Kinder und Jugendliche in Coburg | XING Jobs",
+     "url": "https://www.xing.com/jobs/coburg-facharzt-oberarzt-tagesklinik-institutsambulanz-coburg-kinder-jugendliche-157195101"
+    }
+   ]
+  }
+ },
+ "46405": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Hof für KJP des BKH Bayreuth Hof Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.gebo-med.de/fileadmin/user_upload/Bezirkskrankenhaus_Bayreuth/KJP/Tagesklinik_Hof/Downloads/Informationen_zu_unseren_Tageskliniken_fuer_Kinder_und_Jugendliche_Hof.pdf",
+     "title": "Institutsambulanz und Tagesklinik in Hof",
+     "url": "https://www.gebo-med.de/fileadmin/user_upload/Bezirkskrankenhaus_Bayreuth/KJP/Tagesklinik_Hof/Downloads/Informationen_zu_unseren_Tageskliniken_fuer_Kinder_und_Jugendliche_Hof.pdf"
+    },
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://gebo-med.softgarden.io/de/vacancies",
+     "title": "Karriere Board | Gesundheitseinrichtungen des Bezirks Oberfranken",
+     "url": "https://gebo-med.softgarden.io/de/vacancies"
+    },
+    {
+     "id": "https://www.bezirk-oberfranken.de/gesundheit/gesundheitseinrichtungen-des-bezirks-oberfranken-gebo/psychiatrische-tageskliniken-fuer-kinder-und-jugendliche",
+     "title": "Psychiatrische Tageskliniken für Kinder und Jugendliche",
+     "url": "https://www.bezirk-oberfranken.de/gesundheit/gesundheitseinrichtungen-des-bezirks-oberfranken-gebo/psychiatrische-tageskliniken-fuer-kinder-und-jugendliche"
+    },
+    {
+     "id": "https://www.instagram.com/reel/DbKV4SIknAE/",
+     "publishedDate": "2026-07-23T00:00:00.000Z",
+     "title": "Wir suchen Mitarbeiter im Pflege- und Erziehungsdienst für die Kinder",
+     "url": "https://www.instagram.com/reel/DbKV4SIknAE/"
+    },
+    {
+     "author": "MEHRKANAL GmbH",
+     "id": "https://klinikfinder.bkk-dachverband.de/Bezirkskrankenhaus-Bayreuth-Tagesklinik-fuer-Kinder-u-Jugendpsychiatrie-u-psychotherapie-Hof-in-95032-Hof/medizinisch-pflegerische-leistungsangebote/krankenhaus/26094012103",
+     "title": "Medizinisch-pflegerische Leistungsangebote | Bezirkskrankenhaus Bayreuth - Tagesklinik für Kinder- u. Jugendpsychiatrie u. -psychotherapie Hof in 95032 Hof | BKK Klinikfinder",
+     "url": "https://klinikfinder.bkk-dachverband.de/Bezirkskrankenhaus-Bayreuth-Tagesklinik-fuer-Kinder-u-Jugendpsychiatrie-u-psychotherapie-Hof-in-95032-Hof/medizinisch-pflegerische-leistungsangebote/krankenhaus/26094012103"
+    }
+   ]
+  }
+ },
+ "47301": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Sana Klinikum Neustadt Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.sana.de/karriere/neustadt/",
+     "title": "Karriere Neustadt - Sana Kliniken",
+     "url": "https://www.sana.de/karriere/neustadt/"
+    },
+    {
+     "id": "https://medwing.com/jobs/de-de/facility/bab45a1b-a57b-4b36-897c-b5a3bd3749f5",
+     "title": "Sana Klinikum Neustadt Stellenangebote - Berlin - MEDWING",
+     "url": "https://medwing.com/jobs/de-de/facility/bab45a1b-a57b-4b36-897c-b5a3bd3749f5"
+    },
+    {
+     "id": "https://www.sana.de/karriere/beruf/pflege/fachpflege/",
+     "title": "Pflegefachkraft Stellenangebote entdecken - Sana Karriere",
+     "url": "https://www.sana.de/karriere/beruf/pflege/fachpflege/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/beruf/pflege/",
+     "title": "Pflege Jobs & Karriere bei Sana | Arbeiten im Krankenhaus mit Herz und Perspektive",
+     "url": "https://www.sana.de/karriere/beruf/pflege/"
+    },
+    {
+     "id": "https://www.sana.de/neustadt/",
+     "title": "Neustadt",
+     "url": "https://www.sana.de/neustadt/"
+    }
+   ]
+  }
+ },
+ "47503": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Bezirksklinik Rehau Rehau Täger KU Gesundheitseinrichtungen des Bezirks Oberfranken Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://gebo-med.career.softgarden.de/jobs/66267703/Mitarbeiter-im-Pflegedienst---Pflegefachkraft-m-w-d-/",
+     "title": "Mitarbeiter im Pflegedienst - Pflegefachkraft (m/w/d)",
+     "url": "https://gebo-med.career.softgarden.de/jobs/66267703/Mitarbeiter-im-Pflegedienst---Pflegefachkraft-m-w-d-/"
+    },
+    {
+     "id": "https://gebo-med.softgarden.io/de/vacancies?openModal=true",
+     "title": "Karriere Board | Gesundheitseinrichtungen des Bezirks ...",
+     "url": "https://gebo-med.softgarden.io/de/vacancies?openModal=true"
+    },
+    {
+     "id": "https://www.gebo-med.de/karriere",
+     "title": "Karriere machen bei der GeBO",
+     "url": "https://www.gebo-med.de/karriere"
+    },
+    {
+     "id": "https://www.stepstone.de/stellenangebote--Mitarbeiter-im-Pflegedienst-Pflegefachkraft-m-w-d-Pflegefachmann-frau-Ausbildung-Rehau-Oberfranken-Kommunalunternehmen-Gesundheitseinrichtungen-des-Bezirks-Oberfranken-GeBO--14455489-inline.html",
+     "title": "Mitarbeiter im Pflegedienst - Pflegefachkraft (m/w/d) (Pflegefachmann/-frau (Ausbildung)) - Feste Anstellung, Teilzeit, Vollzeit Job in Rehau Oberfranken",
+     "url": "https://www.stepstone.de/stellenangebote--Mitarbeiter-im-Pflegedienst-Pflegefachkraft-m-w-d-Pflegefachmann-frau-Ausbildung-Rehau-Oberfranken-Kommunalunternehmen-Gesundheitseinrichtungen-des-Bezirks-Oberfranken-GeBO--14455489-inline.html"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/d01161d6734d7fef4e642790e6ec5ffd",
+     "title": "Mitarbeiter im pflegedienst - pflegefachkraft (m/w/d) - Rehau - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/d01161d6734d7fef4e642790e6ec5ffd"
+    }
+   ]
+  }
+ },
+ "47602": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Kronach für PSY des Bezirksklinikums Obermain Kronach Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.ethimedis.de/bezirksklinikum-obermain",
+     "title": "Karriereseite Bezirksklinikum Obermain",
+     "url": "https://www.ethimedis.de/bezirksklinikum-obermain"
+    },
+    {
+     "id": "https://klinikfuehrer.tk.de/Bezirksklinikum-Obermain-Tagesklinik-fuer-Psychiatrie-Psychotherapie-und-Psychosomatik-Kronach-in-96317-Kronach/personal/krankenhaus/26094047203",
+     "title": "Personal | Bezirksklinikum Obermain",
+     "url": "https://klinikfuehrer.tk.de/Bezirksklinikum-Obermain-Tagesklinik-fuer-Psychiatrie-Psychotherapie-und-Psychosomatik-Kronach-in-96317-Kronach/personal/krankenhaus/26094047203"
+    },
+    {
+     "id": "https://www.gebo-med.de/standorte/tagesklinik-fuer-erwachsene-in-kronach",
+     "title": "Tagesklinik für Erwachsene in Kronach",
+     "url": "https://www.gebo-med.de/standorte/tagesklinik-fuer-erwachsene-in-kronach"
+    },
+    {
+     "id": "https://www.gebo-med.de/karriere",
+     "title": "Karriere machen bei der GeBO",
+     "url": "https://www.gebo-med.de/karriere"
+    },
+    {
+     "author": "MEHRKANAL GmbH",
+     "id": "https://klinikfuehrer.tk.de/Bezirksklinikum-Obermain-Tagesklinik-fuer-Psychiatrie-Psychotherapie-und-Psychosomatik-Kronach-in-96317-Kronach/Allgemeine-Psychiatrie-Tagesklinik-fuer-teilstationaere-Pflegesaetze-/personal/fachabteilung/26094047203/1",
+     "title": "Personal | Allgemeine Psychiatrie/Tagesklinik (für teilstationäre Pflegesätze) | Bezirksklinikum Obermain - Tagesklinik für Psychiatrie, Psychotherapie und Psychosomatik Kronach in 96317 Kronach | TK-Klinikführer",
+     "url": "https://klinikfuehrer.tk.de/Bezirksklinikum-Obermain-Tagesklinik-fuer-Psychiatrie-Psychotherapie-und-Psychosomatik-Kronach-in-96317-Kronach/Allgemeine-Psychiatrie-Tagesklinik-fuer-teilstationaere-Pflegesaetze-/personal/fachabteilung/26094047203/1"
+    }
+   ]
+  }
+ },
+ "47770": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Privatklinik für Psychiatrie und Psychotherapie Wirsberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://klinik-wirsberg.de/stellenangebote",
+     "title": "Stellenangebote - Klinik Wirsberg GmbH & Co. KG",
+     "url": "https://klinik-wirsberg.de/stellenangebote"
+    },
+    {
+     "id": "https://www.xing.com/jobs/wirsberg-pflegefachkraft-verstaerkung-unseres-teams-suchen-157528722",
+     "title": "PFLEGEFACHKRAFT (M/ W/ D) – ZUR VERSTÄRKUNG UNSERES TEAMS SUCHEN WIR SIE in Wirsberg | XING Jobs",
+     "url": "https://www.xing.com/jobs/wirsberg-pflegefachkraft-verstaerkung-unseres-teams-suchen-157528722"
+    },
+    {
+     "id": "https://www.xing.com/jobs/wirsberg-pflegefachkraft-verstaerkung-unseres-teams-suchen-157562648",
+     "publishedDate": "2026-09-04T18:03:38.334Z",
+     "title": "Zur Verstärkung unseres Teams suchen wir Sie! in Wirsberg",
+     "url": "https://www.xing.com/jobs/wirsberg-pflegefachkraft-verstaerkung-unseres-teams-suchen-157562648"
+    },
+    {
+     "id": "https://www.pflegia.de/job-details/wirsberg/pflegefachkraft-m-w-d-psychosomatik-zur-verstarkung-unseres-teams-suchen-wir-sie/676987c7-e81e-426d-a2e3-3d0ea8b99b9c/",
+     "publishedDate": "2026-09-03T18:03:38.334Z",
+     "title": "Pflegefachkräfte (m/w/d) in Wirsberg – Krankenhaus ...",
+     "url": "https://www.pflegia.de/job-details/wirsberg/pflegefachkraft-m-w-d-psychosomatik-zur-verstarkung-unseres-teams-suchen-wir-sie/676987c7-e81e-426d-a2e3-3d0ea8b99b9c/"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-zur-verstarkung-unseres-teams-suchen-wir-sie_wirsberg_518980562",
+     "title": "Pflegefachkraft (m/w/d) – Zur Verstärkung unseres Teams suchen wir Sie! - Wirsberg | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/pflegefachkraft-m-w-d-zur-verstarkung-unseres-teams-suchen-wir-sie_wirsberg_518980562"
+    }
+   ]
+  }
+ },
+ "47801": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Sana Klinikum Lichtenfels Lichtenfels Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.sana.de/karriere/lichtenfels/",
+     "title": "Karriere Lichtenfels - Sana Kliniken",
+     "url": "https://www.sana.de/karriere/lichtenfels/"
+    },
+    {
+     "id": "https://www.sana.de/karriere/lichtenfels/ausbildung-berufseinstieg/",
+     "title": "Ausbildung & Berufseinstieg in Hameln - Sana Karriere",
+     "url": "https://www.sana.de/karriere/lichtenfels/ausbildung-berufseinstieg/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000940388-S",
+     "title": "Pflegefachkraft  als Dauernachtwache in Lichtenfels, Bayern",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000940388-S"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001789223-S",
+     "title": "Ausbildung 2026 - Pflegefachmann-frau  in Lichtenfels, Bayern",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001789223-S"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000940297-S",
+     "title": "Pflegefachhelfer  in Lichtenfels, Bayern",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000940297-S"
+    }
+   ]
+  }
+ },
+ "56303": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psych. Tagesklinik Fürth des Klinikums am Europakanal Fürth Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.klinikum-fuerth.de/de/karriere/stellenangebote.php",
+     "title": "Stellenangebote am Klinikum Fürth",
+     "url": "https://www.klinikum-fuerth.de/de/karriere/stellenangebote.php"
+    },
+    {
+     "id": "https://www.franken.jobs/job/pflegefachkraft-m-w-d-psychotherapeutische-station-g2-klinikum-am-europakanal-mit-neun-kliniken",
+     "title": "Pflegefachkraft (m/w/d) psychotherapeutische Station G2 - Klinikum am Europakanal - \nMit neun Kliniken und zwei sozialpsychiatrischen Einrichtungen, - Erlangen | franken.jobs",
+     "url": "https://www.franken.jobs/job/pflegefachkraft-m-w-d-psychotherapeutische-station-g2-klinikum-am-europakanal-mit-neun-kliniken"
+    },
+    {
+     "id": "https://www.franken.jobs/job/pflegefachfrau-pflegefachmann-m-w-d-psychosomatische-tagesklinik-mit-neun-kliniken-und-zwei-0",
+     "title": "Pflegefachfrau / Pflegefachmann (m/w/d) - Erlangen - franken.jobs",
+     "url": "https://www.franken.jobs/job/pflegefachfrau-pflegefachmann-m-w-d-psychosomatische-tagesklinik-mit-neun-kliniken-und-zwei-0"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/bezirkskliniken-mittelfranken/pflegefachkraft-m-w-d-bzw-altenpfleger-m-w-d-fachbereich-altersmedizin-klinik-fuer-psychiatrie-sucht-psychotherapie-und-psychosomatik-klinikum-am-europakanal-erlangen/974103800.html",
+     "title": "Pflegefachkraft (m/w/d) bzw. Altenpfleger (m/w/d) - Fachbereich Altersmedizin - Klinik für Psychiatrie, Sucht, Psychotherapie und Psychosomatik - Klinikum am Europakanal Erlangen - Bezirkskliniken Mittelfranken - Am Europakanal 7191056 Erlangen | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/bezirkskliniken-mittelfranken/pflegefachkraft-m-w-d-bzw-altenpfleger-m-w-d-fachbereich-altersmedizin-klinik-fuer-psychiatrie-sucht-psychotherapie-und-psychosomatik-klinikum-am-europakanal-erlangen/974103800.html"
+    },
+    {
+     "id": "https://www.valmedi.de/job/pflegerisches-fachpersonal-104452/fuerth",
+     "title": "Stellenangebot Fürth Pflegerisches Fachpersonal | valmedi",
+     "url": "https://www.valmedi.de/job/pflegerisches-fachpersonal-104452/fuerth"
+    }
+   ]
+  }
+ },
+ "56402": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "St. Theresien-Krankenhaus Nürnberg Nürnberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kh-nuernberg.martha-maria.de/karriere-ausbildung/stellenangebote",
+     "title": "Stellenangebote Krankenhaus Martha-Maria Nürnberg",
+     "url": "https://kh-nuernberg.martha-maria.de/karriere-ausbildung/stellenangebote"
+    },
+    {
+     "id": "https://tkh-nbg.de/",
+     "title": "Krankenhaus Martha-Maria St. Theresien Standort St. Theresien",
+     "url": "https://tkh-nbg.de/"
+    },
+    {
+     "id": "https://theresien-krankenhaus.career.softgarden.de/",
+     "title": "Karriereseite und Stellenangebote – TGE Altenhilfe",
+     "url": "https://theresien-krankenhaus.career.softgarden.de/"
+    },
+    {
+     "id": "https://kh-nuernberg.martha-maria.de/",
+     "title": "Krankenhaus Martha-Maria St. Theresien: Medizin und Pflege auf ...",
+     "url": "https://kh-nuernberg.martha-maria.de/"
+    },
+    {
+     "id": "https://www.jobleads.com/de/job/pflegefachkraft-m-w-d--nurnberg--ef05ff1e9e36452ccfb73f649a653a462",
+     "title": "Pflegefachkraft (m/w/d) | Nürnberg | JobLeads.com",
+     "url": "https://www.jobleads.com/de/job/pflegefachkraft-m-w-d--nurnberg--ef05ff1e9e36452ccfb73f649a653a462"
+    }
+   ]
+  }
+ },
+ "56413": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "KIRINUS Tagesklinik Nürnberg Nürnberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.kirinus.de/pflegekraefte/j1044-gesundheits-und-krankenpfleger-/-co-therapeut-m/w/d-tagesklinik-am-rosenaupark",
+     "publishedDate": "2026-07-27T00:00:00.000Z",
+     "title": "Gesundheits- und Krankenpfleger / Co-Therapeut (m/w/d) - Karriere",
+     "url": "https://karriere.kirinus.de/pflegekraefte/j1044-gesundheits-und-krankenpfleger-/-co-therapeut-m/w/d-tagesklinik-am-rosenaupark"
+    },
+    {
+     "id": "https://karriere.kirinus.de/pflegekraefte",
+     "title": "Pflegekräfte",
+     "url": "https://karriere.kirinus.de/pflegekraefte"
+    },
+    {
+     "id": "https://www.ajobis.de/jobs/nuernberg/kirinus-health-gmbh/gesundheits-und-krankenpfleger-co-therapeut-mwd-tagesklinik-am-rosenaupark-28361162.html",
+     "title": "KIRINUS Health GmbH sucht Gesundheits- und Krankenpfleger / Co-Therapeut (m/w/d) - Tagesklinik Am Rosenaupark (m/w/d) in Nürnberg",
+     "url": "https://www.ajobis.de/jobs/nuernberg/kirinus-health-gmbh/gesundheits-und-krankenpfleger-co-therapeut-mwd-tagesklinik-am-rosenaupark-28361162.html"
+    },
+    {
+     "id": "https://karriere.kirinus.de/stellenangebote",
+     "title": "Stellenangebote - Karriere - KIRINUS",
+     "url": "https://karriere.kirinus.de/stellenangebote"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/gesundheits-und-krankenpfleger-co-therapeut-m-w-d-tagesklinik-am-rosenaupark_nurnberg_452896302",
+     "title": "Gesundheits- und Krankenpfleger / Co-Therapeut (m/w/d) - Tagesklinik Am Rosenaupark - Nürnberg | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/gesundheits-und-krankenpfleger-co-therapeut-m-w-d-tagesklinik-am-rosenaupark_nurnberg_452896302"
+    }
+   ]
+  }
+ },
+ "57103": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "ANregiomed Klinik Rothenburg o.d.T. Rothenburg o.d. Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.anregiomed.de/karriere-jobs/stellenangebote-bewerbung/stellenangebote/",
+     "title": "Arbeiten bei ANregiomed: Aktuelle Stellenangebote",
+     "url": "https://www.anregiomed.de/karriere-jobs/stellenangebote-bewerbung/stellenangebote/"
+    },
+    {
+     "id": "https://www.anregiomed.de/karriere-jobs",
+     "title": "Karriere & Jobs | ANregiomed",
+     "url": "https://www.anregiomed.de/karriere-jobs"
+    },
+    {
+     "id": "https://www.anregiomed.de/karriere-jobs/berufserfahrene/pflegende/",
+     "title": "Arbeiten bei ANregiomed: Jobs und Karriere in der Pflege in Mittelfranken | ANregiomed",
+     "url": "https://www.anregiomed.de/karriere-jobs/berufserfahrene/pflegende/"
+    },
+    {
+     "id": "https://recruitingapp-5511.de.umantis.com/Vacancies/312/Description/1?lang=ger",
+     "title": "GKP bzw. Altenpfleger (m/w/d)",
+     "url": "https://recruitingapp-5511.de.umantis.com/Vacancies/312/Description/1?lang=ger"
+    },
+    {
+     "id": "https://jobs.meinestadt.de/rothenburg-tauber/standard?id=259680937",
+     "title": "Pflegefachkraft (m/w/d) ANregiomed Rothenburg ob der Tauber",
+     "url": "https://jobs.meinestadt.de/rothenburg-tauber/standard?id=259680937"
+    }
+   ]
+  }
+ },
+ "57504": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für Psychiatrie und Psychotherapie Neustadt a. d. Aisch Neustadt a.d. Aisch Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-bzw-gesundheits-und-krankenpfleger-m-w-d-tagesklinik_neustadt-an-der-aisch_512186621",
+     "title": "Pflegefachkraft (M/w/d) Bzw. Gesundheits- Und Krankenpfleger (M/w/d) Tagesklinik - Neustadt an der Aisch | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-bzw-gesundheits-und-krankenpfleger-m-w-d-tagesklinik_neustadt-an-der-aisch_512186621"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/medizinische-fachangestellte-m-w-d-tagesklinik-und-institutsambulanz-neustadt-a-d-aisch_neustadt-an-der-aisch_514977220",
+     "title": "Medizinische Fachangestellte (M/w/d) Tagesklinik Und Institutsambulanz Neustadt A.d. Aisch - Neustadt an der Aisch | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/medizinische-fachangestellte-m-w-d-tagesklinik-und-institutsambulanz-neustadt-a-d-aisch_neustadt-an-der-aisch_514977220"
+    },
+    {
+     "author": "Deutsche Jobmarkt GmbH",
+     "id": "https://www.mfajobs.de/neustadt-an-der-aisch/medizinische-fachangestellte/bezirkskliniken-mittelfranken/medizinische-fachangestellte-11366",
+     "title": "Stellenangebot Medizinische Fachangestellte (m/w/d) in Neustadt an der Aisch, Bezirkskliniken Mittelfranken - mfajobs.de",
+     "url": "https://www.mfajobs.de/neustadt-an-der-aisch/medizinische-fachangestellte/bezirkskliniken-mittelfranken/medizinische-fachangestellte-11366"
+    },
+    {
+     "id": "https://karriere.kliniken-nea.de/aktuelle-stellenangebote/",
+     "title": "Aktuelle Stellenangebote - Klinik NEA Karriere",
+     "url": "https://karriere.kliniken-nea.de/aktuelle-stellenangebote/"
+    },
+    {
+     "author": "Thilo Schulze",
+     "id": "https://karriere.kliniken-nea.de/",
+     "publishedDate": "2016-06-20T00:00:00.000Z",
+     "title": "Home - Klinik NEA Karriere",
+     "url": "https://karriere.kliniken-nea.de/"
+    }
+   ]
+  }
+ },
+ "57506": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für KJP Neustadt a. d. Aisch Neustadt a. d. Aisch Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.kliniken-nea.de/aktuelle-stellenangebote/",
+     "title": "Aktuelle Stellenangebote - Klinik NEA Karriere",
+     "url": "https://karriere.kliniken-nea.de/aktuelle-stellenangebote/"
+    },
+    {
+     "id": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/neustadt-ad-aisch/",
+     "title": "Psychiatrie & Psychotherapie Neustadt a.d. Aisch",
+     "url": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/neustadt-ad-aisch/"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-bzw-gesundheits-und-krankenpfleger-m-w-d-tagesklinik_neustadt-an-der-aisch_512186621",
+     "title": "Pflegefachkraft (M/w/d) Bzw. Gesundheits- Und Krankenpfleger (M/w/d) Tagesklinik - Neustadt an der Aisch | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-m-w-d-bzw-gesundheits-und-krankenpfleger-m-w-d-tagesklinik_neustadt-an-der-aisch_512186621"
+    },
+    {
+     "id": "https://www.bezirkskliniken-mfr.de/karriere/offene-stellen/",
+     "title": "Stellenangebote im Gesundheitswesen",
+     "url": "https://www.bezirkskliniken-mfr.de/karriere/offene-stellen/"
+    },
+    {
+     "id": "https://www.sercanto.de/detail/a/medizinische-fachangestellte-m-w-d-tagesklinik-und-institutsambulanz-neustadt-a-d-aisch_neustadt-an-der-aisch_514977220",
+     "title": "Medizinische Fachangestellte (M/w/d) Tagesklinik Und Institutsambulanz Neustadt A.d. Aisch - Neustadt an der Aisch | Sercanto",
+     "url": "https://www.sercanto.de/detail/a/medizinische-fachangestellte-m-w-d-tagesklinik-und-institutsambulanz-neustadt-a-d-aisch_neustadt-an-der-aisch_514977220"
+    }
+   ]
+  }
+ },
+ "57605": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für Psychiatrie an der Kreisklinik Roth Roth Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://jobs.bezirkskliniken-mfr.de/index.php?ac=jobad&id=825",
+     "title": "Stellenanzeige: Pflegefachkraft (m/w/d) mit Fachweiterbildung in der Psychiatrie, Psychosomatik und Psychotherapie - Psychiatrische Institutsambulanz Roth | Karriereportal | Bezirkskliniken Mittelfranken",
+     "url": "https://jobs.bezirkskliniken-mfr.de/index.php?ac=jobad&id=825"
+    },
+    {
+     "id": "https://kreisklinik-roth.de/klinik/default-95eb3f2d0e/stellenangebote",
+     "title": "Kreisklinik Roth: Stellenangebote",
+     "url": "https://kreisklinik-roth.de/klinik/default-95eb3f2d0e/stellenangebote"
+    },
+    {
+     "id": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/roth/",
+     "title": "Psychiatrische Institutsambulanz und Tagesklinik in Roth",
+     "url": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/roth/"
+    },
+    {
+     "id": "https://www.kimeta.de/stellenangebot/bezirkskliniken-mittelfranken/facharzt-m-w-d-bzw-assistenzarzt-m-w-d-in-weiterbildung-psychiatrische-institutsambulanz-und-tagesklinik/971475012.html",
+     "title": "Facharzt (m/w/d) bzw. Assistenzarzt (m/w/d) in Weiterbildung - Psychiatrische Institutsambulanz und Tagesklinik - Bezirkskliniken Mittelfranken - Weinbergweg 12a91154 Roth | Kimeta",
+     "url": "https://www.kimeta.de/stellenangebot/bezirkskliniken-mittelfranken/facharzt-m-w-d-bzw-assistenzarzt-m-w-d-in-weiterbildung-psychiatrische-institutsambulanz-und-tagesklinik/971475012.html"
+    },
+    {
+     "id": "https://traumjob-vor-ort.de/detail/2eac1c97-8ea0-11ee-99a5-005056a97e4b",
+     "publishedDate": "2023-11-29T00:00:00.000Z",
+     "title": "Ergotherapeuten (m/w/d) Psychiatrische Tagesklinik Roth",
+     "url": "https://traumjob-vor-ort.de/detail/2eac1c97-8ea0-11ee-99a5-005056a97e4b"
+    }
+   ]
+  }
+ },
+ "57706": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Psychiatrische Tagesklinik Weißenburg Weißenburg i.Bay. Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/weissenburg/",
+     "title": "Psychiatrie & Psychotherapie Weißenburg",
+     "url": "https://www.bezirkskliniken-mfr.de/standorte-und-kliniken/weissenburg/"
+    },
+    {
+     "id": "https://karriere.klinikum-altmuehlfranken.de/",
+     "title": "Klinikum Altmühlfranken: Startseite",
+     "url": "https://karriere.klinikum-altmuehlfranken.de/"
+    },
+    {
+     "id": "https://klinikradar.de/kliniken/psychiatrische-tagesklinik-mit-institutsambulanz-weissenburg",
+     "title": "Psychiatrische Tagesklinik mit Institutsambulanz Weißenburg – Klinikradar",
+     "url": "https://klinikradar.de/kliniken/psychiatrische-tagesklinik-mit-institutsambulanz-weissenburg"
+    },
+    {
+     "id": "https://app.reimbursement.info/clinics/260950033-771741000",
+     "title": "Psychiatrische Tagesklinik mit Institutsambulanz Weißenburg",
+     "url": "https://app.reimbursement.info/clinics/260950033-771741000"
+    },
+    {
+     "id": "https://www.deutsches-krankenhaus-verzeichnis.de/app/portrait/a0ca270c04ff3133/start",
+     "title": "Psychiatrische Tagesklinik mit Institutsambulanz Weißenburg - Krankenhausportrait | Deutsches Krankenhaus Verzeichnis",
+     "url": "https://www.deutsches-krankenhaus-verzeichnis.de/app/portrait/a0ca270c04ff3133/start"
+    }
+   ]
+  }
+ },
+ "57707": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Fachklinik für Psychosomatische Medizin und Psychotherapie Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "author": "Schön Klinik SE",
+     "id": "https://www.schoen-klinik.de/bad-arolsen/karriere/pflege",
+     "title": "Psychosomatische Pflege: Co-Therapie und Karrierewege",
+     "url": "https://www.schoen-klinik.de/bad-arolsen/karriere/pflege"
+    },
+    {
+     "id": "https://www.heiligenfeld.de/stellenangebote",
+     "title": "Stellenangebote | Heiligenfeld Kliniken für Psychosomatik",
+     "url": "https://www.heiligenfeld.de/stellenangebote"
+    },
+    {
+     "id": "https://www.klinikum-stuttgart.de/medizin-pflege/psychosomatische-medizin-psychotherapie/stellenangebote",
+     "title": "Stellenangebote | Psychosomatische Medizin, ...",
+     "url": "https://www.klinikum-stuttgart.de/medizin-pflege/psychosomatische-medizin-psychotherapie/stellenangebote"
+    },
+    {
+     "id": "https://www.fachklinik-bad-pyrmont.de/job/pflegefachkraft-in-der-psychosomatik-rehabilitation-m-w-d",
+     "title": "Pflegefachkraft in der Psychosomatik Rehabilitation (m/w/d) – m&i-Fachklinik Bad Pyrmont",
+     "url": "https://www.fachklinik-bad-pyrmont.de/job/pflegefachkraft-in-der-psychosomatik-rehabilitation-m-w-d"
+    },
+    {
+     "id": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/",
+     "title": "Pflegefachkraft Psychosomatik (w|m|d)",
+     "url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/"
+    }
+   ]
+  }
+ },
+ "66102": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Bergman Clinics Hofgartenklinik Aschaffenburg Aschaffenburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://bergmanclinics.de/hofgartenklinik-aschaffenburg/karriere",
+     "title": "Karriere",
+     "url": "https://bergmanclinics.de/hofgartenklinik-aschaffenburg/karriere"
+    },
+    {
+     "id": "https://bergmanclinics.jobs.personio.de/?language=de",
+     "title": "Jobs bei Bergman Clinics Karriereseite",
+     "url": "https://bergmanclinics.jobs.personio.de/?language=de"
+    },
+    {
+     "id": "https://bergmanclinics.jobs.personio.de/",
+     "title": "Jobs bei Bergman Clinics Karriereseite",
+     "url": "https://bergmanclinics.jobs.personio.de/"
+    },
+    {
+     "id": "https://bergmanclinics.jobs.personio.de/job/2557792?language=de",
+     "title": "Physiotherapeut (m/w/d) | Jobs bei Bergman Clinics Karriereseite",
+     "url": "https://bergmanclinics.jobs.personio.de/job/2557792?language=de"
+    },
+    {
+     "id": "https://bergmanclinics.jobs.personio.de/job/2404154?language=de",
+     "title": "Leitung OP- und Funktionspersonal (m/w/d) | Jobs bei Bergman Clinics Karriereseite",
+     "url": "https://bergmanclinics.jobs.personio.de/job/2404154?language=de"
+    }
+   ]
+  }
+ },
+ "66103": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik am Ziegelberg Frauenklinik Aschaffenburg Aschaffenburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1205749739-S",
+     "title": "Gesundheits- und Krankenpflegerin für die Klinik am Ziegelberg in Aschaffenburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1205749739-S"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000555426-S&jobsuche=Gesundheits-+und+Krankenpfleger%2Fin+f%C3%BCr+die+Klinik+am+Ziegelberg",
+     "title": "Gesundheits- und Krankenpflegerin für die Klinik am Ziegelberg in Aschaffenburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1000555426-S&jobsuche=Gesundheits-+und+Krankenpfleger%2Fin+f%C3%BCr+die+Klinik+am+Ziegelberg"
+    },
+    {
+     "id": "https://www.xing.com/jobs/aschaffenburg-gesundheits-krankenpfleger-klinik-ziegelberg-151768584",
+     "title": "Gesundheits- und Krankenpfleger/in für die Klinik am Ziegelberg in Aschaffenburg | XING Jobs",
+     "url": "https://www.xing.com/jobs/aschaffenburg-gesundheits-krankenpfleger-klinik-ziegelberg-151768584"
+    },
+    {
+     "id": "https://www.krankenpflegejobs24.de/klinik-am-ziegelberg-frauenklinik-aschaffenburg",
+     "title": "Klinik am Ziegelberg Frauenklinik Aschaffenburg",
+     "url": "https://www.krankenpflegejobs24.de/klinik-am-ziegelberg-frauenklinik-aschaffenburg"
+    },
+    {
+     "id": "https://portal.oproma.de/jobs/gesundheits-und-krankenpfleger-in-fuer-die-klinik-am-ziegelberg-ID-13052623",
+     "title": "Gesundheits- und Krankenpfleger/in für die Klinik am Ziegelberg",
+     "url": "https://portal.oproma.de/jobs/gesundheits-und-krankenpfleger-in-fuer-die-klinik-am-ziegelberg-ID-13052623"
+    }
+   ]
+  }
+ },
+ "66104": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik Aschaffenburg des BKH Lohr am Main Aschaffenburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriere.bezirkskrankenhaus-lohr.de/jobs/pflegefachkraft-m-w-d/",
+     "title": "Pflegefachkraft (m/w/d) in Lohr a.Main, Aschaffenburg oder für ...",
+     "url": "https://karriere.bezirkskrankenhaus-lohr.de/jobs/pflegefachkraft-m-w-d/"
+    },
+    {
+     "id": "https://karriere.bezirkskrankenhaus-lohr.de/",
+     "title": "Karriere im Bezirkskrankenhaus Lohr – –",
+     "url": "https://karriere.bezirkskrankenhaus-lohr.de/"
+    },
+    {
+     "author": "Regiogate GmbH",
+     "id": "https://www.bezirkskrankenhaus-lohr.de/unsere-einrichtung/unsere-auenstellen/standort-aschaffenburg/23029.Psychiatrische-Tagesklinik-im-Sozialzentrum-am-Rosensee-Aschaffenburg.html",
+     "title": "Bezirkskrankenhaus Lohr | Standort Aschaffenburg",
+     "url": "https://www.bezirkskrankenhaus-lohr.de/unsere-einrichtung/unsere-auenstellen/standort-aschaffenburg/23029.Psychiatrische-Tagesklinik-im-Sozialzentrum-am-Rosensee-Aschaffenburg.html"
+    },
+    {
+     "author": "Regiogate GmbH",
+     "id": "https://www.bezirkskrankenhaus-lohr.de/unsere-einrichtung/unsere-auenstellen/standort-aschaffenburg/23027.Psychiatrische-Klinik-Aschaffenburg.html",
+     "title": "Bezirkskrankenhaus Lohr | Standort Aschaffenburg",
+     "url": "https://www.bezirkskrankenhaus-lohr.de/unsere-einrichtung/unsere-auenstellen/standort-aschaffenburg/23027.Psychiatrische-Klinik-Aschaffenburg.html"
+    },
+    {
+     "id": "https://www.krankenpflegejobs24.de/tagesklinik-aschaffenburg-am-rosensee",
+     "title": "Tagesklinik Aschaffenburg Am Rosensee - krankenpflegejobs24.de",
+     "url": "https://www.krankenpflegejobs24.de/tagesklinik-aschaffenburg-am-rosensee"
+    }
+   ]
+  }
+ },
+ "66303": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Rotkreuzklinik Würzburg Würzburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "http://we-wuerzburg.rotkreuzklinikum.de/stellenangebote/",
+     "title": "Rotkreuzklinik Würzburg",
+     "url": "http://we-wuerzburg.rotkreuzklinikum.de/stellenangebote/"
+    },
+    {
+     "id": "http://rotkreuzklinik-wuerzburg.de/stellenangebote/",
+     "title": "Stellenangebote - Rotkreuzklinik Würzburg",
+     "url": "http://rotkreuzklinik-wuerzburg.de/stellenangebote/"
+    },
+    {
+     "id": "http://we-wuerzburg.rotkreuzklinikum.de/karriere/",
+     "title": "Arbeiten in der Rotkreuzklinik Würzburg",
+     "url": "http://we-wuerzburg.rotkreuzklinikum.de/karriere/"
+    },
+    {
+     "id": "http://we-wuerzburg.rotkreuzklinikum.de/bewerben/",
+     "title": "Rotkreuzklinik Würzburg",
+     "url": "http://we-wuerzburg.rotkreuzklinikum.de/bewerben/"
+    },
+    {
+     "id": "https://www.rapidjob.de/job/z4fznhe/",
+     "title": "💼 Für Gestalter:innen: Pflegefachhelfer (m/w/d) – Rotkreuzklinik Würzburg gemeinnützige GmbH",
+     "url": "https://www.rapidjob.de/job/z4fznhe/"
+    }
+   ]
+  }
+ },
+ "66310": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik für KJP Würzburg Würzburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://diakonie-wuerzburg.de/therapie-behandlung/tagesklinische-behandlung/",
+     "title": "Tagesklinische Behandlung",
+     "url": "https://diakonie-wuerzburg.de/therapie-behandlung/tagesklinische-behandlung/"
+    },
+    {
+     "id": "https://www.ukw.de/kinder-und-jugendpsychiatrie/karriere/",
+     "title": "Universitätsklinikum Würzburg: KJPPP: Karriere",
+     "url": "https://www.ukw.de/kinder-und-jugendpsychiatrie/karriere/"
+    },
+    {
+     "id": "https://www.koenig-ludwig-haus.de/karriere/jobs-im-klh/index.html?detID=1772",
+     "title": "Jobs im König-Ludwig-Haus",
+     "url": "https://www.koenig-ludwig-haus.de/karriere/jobs-im-klh/index.html?detID=1772"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1203219870-S",
+     "title": "Pflegefachkraft  mit Möglichkeit der Fachweiterbildung für Pflege in der Psychiatrie in Würzburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1203219870-S"
+    },
+    {
+     "id": "https://www.kwm-klinikum.de/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/",
+     "title": "Arbeiten im KWM – Ein Team für Dich/Stellenanzeigen/Pflege- & Funktionsdienst • Klinikum Würzburg Mitte gGmbH",
+     "url": "https://www.kwm-klinikum.de/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/"
+    }
+   ]
+  }
+ },
+ "67170": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Vital-Klinik Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.vital-kliniken.de/fuer-bewerber/klinik-buchenholm/",
+     "title": "STELLENANGEBOTE Klinik Buchenholm Bad Malente",
+     "url": "https://www.vital-kliniken.de/fuer-bewerber/klinik-buchenholm/"
+    },
+    {
+     "id": "https://www.vital-kliniken.de/fuer-bewerber/schloss-klinik-sonnenbuehl/gesundheits-und-krankenpfleger-mwd/",
+     "title": "Gesundheits- und Krankenpfleger (m/w/d) : Vital-Klinken",
+     "url": "https://www.vital-kliniken.de/fuer-bewerber/schloss-klinik-sonnenbuehl/gesundheits-und-krankenpfleger-mwd/"
+    },
+    {
+     "id": "https://www.vital-klinik.de/ueber-uns/stellenanzeigen",
+     "title": "Stellenangebote - Alzenau - Vital-Klinik",
+     "url": "https://www.vital-klinik.de/ueber-uns/stellenanzeigen"
+    },
+    {
+     "id": "https://www.vital-kliniken.de/fuer-bewerber/",
+     "title": "Für Bewerber : Vital-Klinken",
+     "url": "https://www.vital-kliniken.de/fuer-bewerber/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001657436-S&jobsuche=Pflegefachkr%C3%A4fte+%28m%2Fw%2Fd%29+f%C3%BCr+die+Vital-Klinik+Dreizehnlinden",
+     "title": "Pflegefachkräfte  für die Vital-Klinik Dreizehnlinden in Bad Driburg",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10001-1001657436-S&jobsuche=Pflegefachkr%C3%A4fte+%28m%2Fw%2Fd%29+f%C3%BCr+die+Vital-Klinik+Dreizehnlinden"
+    }
+   ]
+  }
+ },
+ "67401": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Haßberg-Kliniken - Haus Haßfurt- Haßfurt Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.mein-check-in.de/hassberg-kliniken/stellenangebote",
+     "title": "Haßberg Kliniken Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/hassberg-kliniken/stellenangebote"
+    },
+    {
+     "id": "https://www.mein-check-in.de/hassberg-kliniken/position-202156",
+     "title": "Ausbildung zur Pflegefachfrau / zum Pflegefachmann (m/w/d)  3 Jahre | Haßberg Kliniken Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/hassberg-kliniken/position-202156"
+    },
+    {
+     "id": "https://www.mein-check-in.de/hassberg-kliniken/position-202159",
+     "title": "Ausbildung zum Pflegefachhelfer/Krankenpflege (m/w/d)  1 Jahr | Haßberg Kliniken Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/hassberg-kliniken/position-202159"
+    },
+    {
+     "id": "https://www.mein-check-in.de/hassberg-kliniken/ausbildung",
+     "title": "Haßberg Kliniken Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/hassberg-kliniken/ausbildung"
+    },
+    {
+     "id": "https://www.mein-check-in.de/hassberg-kliniken/position-202054",
+     "title": "Pflegefachkraft (m/w/d)  | Haßberg Kliniken Onlinebewerbung",
+     "url": "https://www.mein-check-in.de/hassberg-kliniken/position-202054"
+    }
+   ]
+  }
+ },
+ "67805": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Augenklinik Schweinfurt-Gerolzhofen Gerolzhofen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://medwing.com/jobs/de-de/facility/573935b5-c4bd-4b17-a388-0eb64ec4955a",
+     "title": "Augenklinik Schweinfurt-Gerolzhofen Stellenangebote",
+     "url": "https://medwing.com/jobs/de-de/facility/573935b5-c4bd-4b17-a388-0eb64ec4955a"
+    },
+    {
+     "id": "https://jobs.osg.de/jobs",
+     "title": "Jobs - Ober Scharrer Gruppe",
+     "url": "https://jobs.osg.de/jobs"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/ober-scharrer-gruppe-gmbh/mfa-medizinische-fachangestellte-w-m-d-im-op-bereich-3894988/",
+     "title": "MFA / Medizinische Fachangestellte (w/m/d) im OP-Bereich",
+     "url": "https://talents.studysmarter.de/companies/ober-scharrer-gruppe-gmbh/mfa-medizinische-fachangestellte-w-m-d-im-op-bereich-3894988/"
+    },
+    {
+     "author": "MEHRKANAL GmbH",
+     "id": "https://klinikfinder.bkk-dachverband.de/Augenklinik-Schweinfurt-Gerolzhofen-in-97447-Gerolzhofen/personal/krankenhaus/26096156000",
+     "title": "Personal | Augenklinik Schweinfurt-Gerolzhofen in 97447 Gerolzhofen | BKK Klinikfinder",
+     "url": "https://klinikfinder.bkk-dachverband.de/Augenklinik-Schweinfurt-Gerolzhofen-in-97447-Gerolzhofen/personal/krankenhaus/26096156000"
+    },
+    {
+     "id": "https://www.deutsches-krankenhaus-verzeichnis.de/app/portrait/d59dbc3a52a3015b/start",
+     "title": "Augenklinik Schweinfurt-Gerolzhofen - Krankenhausportrait | Deutsches Krankenhaus Verzeichnis",
+     "url": "https://www.deutsches-krankenhaus-verzeichnis.de/app/portrait/d59dbc3a52a3015b/start"
+    }
+   ]
+  }
+ },
+ "76107": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Evangelische Diakonissenanstalt Augsburg Augsburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://diako-augsburg.de/diako/stellenangebote/",
+     "title": "Stellenangebote - Evangelische Diakonissenanstalt Augsburg",
+     "url": "https://diako-augsburg.de/diako/stellenangebote/"
+    },
+    {
+     "id": "https://jobs.bewerbung2go.de/job/pflegefachpersonen-m-w-d-mit-ausbildung-als-pflegefachkraft-oder-gesundheits-und-krankenpfleger-in.2009673535.html",
+     "title": "Pflegefachpersonen (m/w/d) mit Ausbildung als Pflegefachkraft oder ...",
+     "url": "https://jobs.bewerbung2go.de/job/pflegefachpersonen-m-w-d-mit-ausbildung-als-pflegefachkraft-oder-gesundheits-und-krankenpfleger-in.2009673535.html"
+    },
+    {
+     "id": "https://jobs.bewerbung2go.de/jobs/evangelische-diakonissenanstalt-augsburg.200680.html",
+     "title": "Jobs bei Evangelische Diakonissenanstalt Augsburg - Jobs & Stellenangebote - Bewerbung2Go",
+     "url": "https://jobs.bewerbung2go.de/jobs/evangelische-diakonissenanstalt-augsburg.200680.html"
+    },
+    {
+     "id": "https://stellenmarkt.faz.net/jobsuche/evangelische-diakonissenanstalt-augsburg.200680.html",
+     "title": "Jobs bei Evangelische Diakonissenanstalt Augsburg",
+     "url": "https://stellenmarkt.faz.net/jobsuche/evangelische-diakonissenanstalt-augsburg.200680.html"
+    },
+    {
+     "id": "https://www.stellencompass.de/employer/20987_evangelische-diakonissenanstalt-augsburg/",
+     "title": "Evangelische Diakonissenanstalt Augsburg - Stellencompass.de",
+     "url": "https://www.stellencompass.de/employer/20987_evangelische-diakonissenanstalt-augsburg/"
+    }
+   ]
+  }
+ },
+ "76110": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Fachklinik KJF Josefinum Augsburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/",
+     "title": "Josefinum: Stellenangebote Augsburg, Kempten, Nördlingen",
+     "url": "https://www.josefinum.de/ueber-uns/karriere/offene-stellen/"
+    },
+    {
+     "id": "https://www.josefinum.de/ueber-uns/karriere/",
+     "title": "Josefinum: Stellenangebote Augsburg, Kempten, Nördlingen",
+     "url": "https://www.josefinum.de/ueber-uns/karriere/"
+    },
+    {
+     "id": "https://www.kjf-augsburg.de/karriere/arbeiten-bei-der-kjf/pflegefachkraefte/",
+     "title": "Pflegefachkraft bei der KJF Augsburg – Jetzt bewerben",
+     "url": "https://www.kjf-augsburg.de/karriere/arbeiten-bei-der-kjf/pflegefachkraefte/"
+    },
+    {
+     "id": "https://www.kjf-augsburg.de/karriere/offene-stellen/stellenangebote-pflege/",
+     "title": "Stellenangebote Pflege",
+     "url": "https://www.kjf-augsburg.de/karriere/offene-stellen/stellenangebote-pflege/"
+    },
+    {
+     "id": "https://josefinum.softgarden.io/job/65532751/Pflegefachhelfer-m-w-d-",
+     "title": "Pflegefachhelfer m/w/d",
+     "url": "https://josefinum.softgarden.io/job/65532751/Pflegefachhelfer-m-w-d-"
+    }
+   ]
+  }
+ },
+ "77102": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Kliniken an der Paar Krankenhaus Friedberg Friedberg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://klipa.softgarden.io/de/vacancies",
+     "title": "Karriere Board | Kliniken an der Paar Krankenhaus Aichach",
+     "url": "https://klipa.softgarden.io/de/vacancies"
+    },
+    {
+     "author": "Frank",
+     "id": "https://www.klipa.de/index.php/karriere-start",
+     "title": "Karriere Start – Kliniken an der Paar - Krankenhaus Friedberg - Krankenhaus Aichach",
+     "url": "https://www.klipa.de/index.php/karriere-start"
+    },
+    {
+     "id": "https://www.klipa.de/karriere-start",
+     "title": "Karriere Start – Kliniken an der Paar - Krankenhaus Aichach",
+     "url": "https://www.klipa.de/karriere-start"
+    },
+    {
+     "id": "https://klipa.softgarden.io/",
+     "title": "Kliniken an der Paar Krankenhaus Aichach: Karriere Board",
+     "url": "https://klipa.softgarden.io/"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/2fd750a16d448a0ddcd75ff1811cf13e",
+     "title": "Pflegefachkraft (m/w/d) innere medizin - Friedberg - Stellenangebot Juni 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/2fd750a16d448a0ddcd75ff1811cf13e"
+    }
+   ]
+  }
+ },
+ "77402": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Krumbach Krumbach Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote?bereich=Pflege",
+     "title": "Stellenangebote",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote?bereich=Pflege"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote",
+     "title": "Stellenangebote - Kreiskliniken Günzburg-Krumbach",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/berufswelten/pflege",
+     "title": "Pflege Jobs Kreiskliniken Günzburg-Krumbach Jetzt bewerben",
+     "url": "https://kliniken-gz-kru.de/karriere/berufswelten/pflege"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/113-pflegefachmann-frau-im-flexpool-m-w-d?cHash=b0bf67563b2d70741a9108a80ef45b17",
+     "title": "Pflegefachmann/-frau im Flexpool (m/w/d)",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/113-pflegefachmann-frau-im-flexpool-m-w-d?cHash=b0bf67563b2d70741a9108a80ef45b17"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/46-pflegefachmann-frau-w-m-d-geriatrie?cHash=71e66bcaba7e0de627229f69216a32f6",
+     "title": "Pflegefachmann/-frau (w/m/d) Geriatrie",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/46-pflegefachmann-frau-w-m-d-geriatrie?cHash=71e66bcaba7e0de627229f69216a32f6"
+    }
+   ]
+  }
+ },
+ "77406": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Bezirkskrankenhaus Günzburg Günzburg Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote?bereich=Pflege",
+     "title": "Stellenangebote",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote?bereich=Pflege"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote",
+     "title": "Stellenangebote - Günzburg",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote"
+    },
+    {
+     "id": "https://jobs.bezirkskliniken-schwaben.de/Job/262984",
+     "title": "Pflegefachkräfte, Altenpfleger (m/w/d) Psychiatrie",
+     "url": "https://jobs.bezirkskliniken-schwaben.de/Job/262984"
+    },
+    {
+     "id": "https://www.bezirkskliniken-schwaben.de/ausbildung-karriere/stellenangebote-bewerbung",
+     "title": "Stellenangebote & Bewerbung",
+     "url": "https://www.bezirkskliniken-schwaben.de/ausbildung-karriere/stellenangebote-bewerbung"
+    },
+    {
+     "id": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/40-pflegefachmann-frau-m-w-d-intensivstation?cHash=8c58fd2cb217c93ff2a48a837f2090df",
+     "title": "Pflegefachmann/-frau (m/w/d) Intensivstation",
+     "url": "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/40-pflegefachmann-frau-m-w-d-intensivstation?cHash=8c58fd2cb217c93ff2a48a837f2090df"
+    }
+   ]
+  }
+ },
+ "77605": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Tagesklinik im Elisabethenhaus Lindau Lindau Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.bezirkskliniken-schwaben.de/kliniken/tagesklinik-lindau",
+     "title": "Psychiatrische Tagesklinik Lindau",
+     "url": "https://www.bezirkskliniken-schwaben.de/kliniken/tagesklinik-lindau"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/asklepios-klinik-lindau-gmbh/pflegefachkraft-w-m-d-tagesklinik-29950559/",
+     "title": "Pflegefachkraft (w/m/d) Tagesklinik bei Asklepios Klinik ...",
+     "url": "https://talents.studysmarter.de/companies/asklepios-klinik-lindau-gmbh/pflegefachkraft-w-m-d-tagesklinik-29950559/"
+    },
+    {
+     "author": "YoungCapital.de",
+     "id": "https://www.youngcapital.de/stellenangebote/6316206-pflegefachkraft-w-m-d-tagesklinik",
+     "title": "Pflegefachkraft (w/m/d) Tagesklinik~",
+     "url": "https://www.youngcapital.de/stellenangebote/6316206-pflegefachkraft-w-m-d-tagesklinik"
+    },
+    {
+     "id": "https://www.asklepios.com/lindau/unternehmen/bewerber/",
+     "title": "Arbeiten bei Asklepios - Asklepios Klinik Lindau",
+     "url": "https://www.asklepios.com/lindau/unternehmen/bewerber/"
+    },
+    {
+     "id": "https://www.stellenanzeigen.de/job/pflegefachkraft-w-m-d-verschiedene-fachbereiche-lindau-jim-243251/",
+     "title": "Pflegefachkraft (w/m/d) Verschiedene Fachbereiche bei Asklepios Klinik Lindau in Lindau",
+     "url": "https://www.stellenanzeigen.de/job/pflegefachkraft-w-m-d-verschiedene-fachbereiche-lindau-jim-243251/"
+    }
+   ]
+  }
+ },
+ "77606": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Panorama Fachklinik für Psychosomatik Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.panorama-fachklinik.de/akut/aktuelles/jobs/",
+     "title": "Jobs | Akutkrankenhaus - Panorama Fachkliniken",
+     "url": "https://www.panorama-fachklinik.de/akut/aktuelles/jobs/"
+    },
+    {
+     "id": "https://panorama.jobs.personio.de/?language=de",
+     "title": "Jobs bei Panorama Fachklinik GmbH",
+     "url": "https://panorama.jobs.personio.de/?language=de"
+    },
+    {
+     "id": "https://jobs.schwaebische.de/stelle/pflegefachkraft-m-w-d-dauernachtwache-pflege-m-w-d",
+     "publishedDate": "2026-02-04T00:00:00.000Z",
+     "title": "Pflegefachkraft (m/w/d) / Dauernachtwache Pflege (m/w/d) - Kurstraße 22, 88175 Scheidegg, Deutschland | schwäbische JOBS",
+     "url": "https://jobs.schwaebische.de/stelle/pflegefachkraft-m-w-d-dauernachtwache-pflege-m-w-d"
+    },
+    {
+     "id": "https://carerockets.com/de/stellenangebote/18156",
+     "title": "Stellenanzeigen Pflege Scheidegg | bei Panorama Fachklinik GmbH",
+     "url": "https://carerockets.com/de/stellenangebote/18156"
+    },
+    {
+     "id": "https://www.pflegia.de/job-details/scheidegg/pflegefachkraft-als-dauernachtwache-m-w-d-sichern-sie-sich-heute-ihre-zukunft/2302abeb-790d-486f-9d47-b88dab51aaf7/",
+     "title": "Krankenhaus Teilzeit (m/w/d) - Top Stelle in Scheidegg - Pflegia",
+     "url": "https://www.pflegia.de/job-details/scheidegg/pflegefachkraft-als-dauernachtwache-m-w-d-sichern-sie-sich-heute-ihre-zukunft/2302abeb-790d-486f-9d47-b88dab51aaf7/"
+    }
+   ]
+  }
+ },
+ "77673": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Panorama-Klinik für Psychosomatik, Psychotherapie und Naturheilverfahren Scheidegg im Allgäu Panorama Fachklinik Fachklinik Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.panorama-fachklinik.de/akut/aktuelles/jobs/",
+     "title": "Jobs | Akutkrankenhaus",
+     "url": "https://www.panorama-fachklinik.de/akut/aktuelles/jobs/"
+    },
+    {
+     "id": "https://jobs.schwaebische.de/stelle/pflegefachkraft-m-w-d-dauernachtwache-pflege-m-w-d",
+     "publishedDate": "2026-02-04T00:00:00.000Z",
+     "title": "Pflegefachkraft (m/w/d) / Dauernachtwache Pflege (m/w/d) - Kurstraße 22, 88175 Scheidegg, Deutschland | schwäbische JOBS",
+     "url": "https://jobs.schwaebische.de/stelle/pflegefachkraft-m-w-d-dauernachtwache-pflege-m-w-d"
+    },
+    {
+     "id": "https://carerockets.com/de/stellenangebote/18156",
+     "title": "Stellenanzeigen Pflege Scheidegg | Care Rockets | bei Panorama Fachklinik GmbH",
+     "url": "https://carerockets.com/de/stellenangebote/18156"
+    },
+    {
+     "id": "https://de.blackboardjob.com/detail/a/pflegefachkraft-als-dauernachtwache-m-w-d-sichern-sie-sich-heute-ihre-zukunft_scheidegg_498716675",
+     "title": "Pflegefachkraft als Dauernachtwache (m/w/d) – Sichern Sie sich heute Ihre Zukunft! - Scheidegg | Blackboardjob",
+     "url": "https://de.blackboardjob.com/detail/a/pflegefachkraft-als-dauernachtwache-m-w-d-sichern-sie-sich-heute-ihre-zukunft_scheidegg_498716675"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/5a816c20c8b793769a3a82c441517e1f",
+     "title": "Pflegefachkraft (m/w/d) – sichern sie sich heute ihre zukunft! - Scheidegg - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/5a816c20c8b793769a3a82c441517e1f"
+    }
+   ]
+  }
+ },
+ "77706": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "m&i-Fachklinik Enzensberg Hopfen am Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.fachklinik-enzensberg.de/inhalt/pflege",
+     "title": "Pflege",
+     "url": "https://www.fachklinik-enzensberg.de/inhalt/pflege"
+    },
+    {
+     "id": "https://www.fachklinik-enzensberg.de/jobs",
+     "title": "Karriere & Jobs",
+     "url": "https://www.fachklinik-enzensberg.de/jobs"
+    },
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://enzensberg.softgarden.io/de/vacancies",
+     "title": "Karriere Board | m&i-Klinikgruppe Enzensberg",
+     "url": "https://enzensberg.softgarden.io/de/vacancies"
+    },
+    {
+     "id": "https://www.enzensberg.de/jobs",
+     "title": "Karriere & Jobs",
+     "url": "https://www.enzensberg.de/jobs"
+    },
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://enzensberg.softgarden.io/en/vacancies",
+     "title": "Career board | m&i-Klinikgruppe Enzensberg",
+     "url": "https://enzensberg.softgarden.io/en/vacancies"
+    }
+   ]
+  }
+ },
+ "77801": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Mindelheim Mindelheim Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://pflegst-du-schon.de/",
+     "publishedDate": "2023-06-02T00:00:00.000Z",
+     "title": "Herzlich willkommen im Karriereportal des Klinikverbunds Allgäu - Klinikverbund Allgäu",
+     "url": "https://pflegst-du-schon.de/"
+    },
+    {
+     "id": "https://klinikverbund-allgaeu.de/karriere",
+     "title": "Karriere im Klinikverbund Allgäu - Jetzt bewerben!",
+     "url": "https://klinikverbund-allgaeu.de/karriere"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/klinik-mindelheim/pflegefachkraft-fuer-unsere-kurzzeitpflege-m-w-d-29074687/",
+     "title": "Pflegefachkraft für unsere Kurzzeitpflege m/w/d",
+     "url": "https://talents.studysmarter.de/companies/klinik-mindelheim/pflegefachkraft-fuer-unsere-kurzzeitpflege-m-w-d-29074687/"
+    },
+    {
+     "id": "https://karriere-im.klinikverbund-allgaeu.de/",
+     "title": "Klinikverbund Allgäu: Karriereportal",
+     "url": "https://karriere-im.klinikverbund-allgaeu.de/"
+    },
+    {
+     "id": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1207253198-S&jobsuche=Pflegefachkraft+%2F+Gesundheits-+und+Krankenpflegerin+mit+Weiterbildung+zur+Diabetesberaterin+%28m%2Fw%2Fd%29",
+     "title": "Pflegefachkraft  Gesundheits- und Krankenpflegerin mit Weiterbildung zur Diabetesberaterin  in Mindelheim",
+     "url": "https://www.rekruter.de/jobsuche/stellenangebot/?chiffre=10000-1207253198-S&jobsuche=Pflegefachkraft+%2F+Gesundheits-+und+Krankenpflegerin+mit+Weiterbildung+zur+Diabetesberaterin+%28m%2Fw%2Fd%29"
+    }
+   ]
+  }
+ },
+ "77802": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Klinik Ottobeuren Ottobeuren Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://pflegst-du-schon.de/",
+     "publishedDate": "2023-06-02T00:00:00.000Z",
+     "title": "Herzlich willkommen im Karriereportal des Klinikverbunds Allgäu - Klinikverbund Allgäu",
+     "url": "https://pflegst-du-schon.de/"
+    },
+    {
+     "id": "https://klinikverbund-allgaeu.de/karriere",
+     "title": "Karriere im Klinikverbund Allgäu - Jetzt bewerben!",
+     "url": "https://klinikverbund-allgaeu.de/karriere"
+    },
+    {
+     "id": "https://www.karriere.com/job-Pflegefachkraft-Gesundheits-und-Krankenpflegerin-m-w-d-26330919",
+     "publishedDate": "2026-09-01T18:03:26.979Z",
+     "title": "Pflegefachkraft / Gesundheits- und Krankenpflegerin (m/w/d)",
+     "url": "https://www.karriere.com/job-Pflegefachkraft-Gesundheits-und-Krankenpflegerin-m-w-d-26330919"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/4781831907c7d16c9e77c18462604a58",
+     "title": "Pflegefachkraft / gesundheits- und krankenpflegerin (m/w/d) - Ottobeuren - Stellenangebot August 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/4781831907c7d16c9e77c18462604a58"
+    },
+    {
+     "id": "https://www.jobijoba.de/detailanzeige/9/ef7091bb4a9c726d93fed741a4da3215",
+     "title": "Pflegefachkraft / gesundheits- und krankenpflegerin mit weiterbildung zur diabetesberaterin (m/w/d) - Ottobeuren - Stellenangebot Juli 2026 - Jobijoba",
+     "url": "https://www.jobijoba.de/detailanzeige/9/ef7091bb4a9c726d93fed741a4da3215"
+    }
+   ]
+  }
+ },
+ "77805": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Heiligenfeld Klinik Bad Wörishofen Bad Wörishofen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.heiligenfeld.de/stellenangebote",
+     "title": "Stellenangebote | Heiligenfeld Kliniken für Psychosomatik",
+     "url": "https://www.heiligenfeld.de/stellenangebote"
+    },
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://heiligenfeld.softgarden.io/de/vacancies",
+     "title": "Karriere Board | Heiligenfeld GmbH",
+     "url": "https://heiligenfeld.softgarden.io/de/vacancies"
+    },
+    {
+     "id": "https://jobs.augsburger-allgemeine.de/job/examinierte-pflegefachkraft-mwd-101612",
+     "publishedDate": "2026-08-21T00:00:00.000Z",
+     "title": "Examinierte Pflegefachkraft m/w/d - Bad Wörishofen",
+     "url": "https://jobs.augsburger-allgemeine.de/job/examinierte-pflegefachkraft-mwd-101612"
+    },
+    {
+     "id": "https://de.linkedin.com/jobs/view/pflegefachkraft-m-w-d-psychosomatische-familienklinik-at-heiligenfeld-kliniken-4405189290",
+     "title": "Pflegefachkraft (m/w/d) Psychosomatische Familienklinik",
+     "url": "https://de.linkedin.com/jobs/view/pflegefachkraft-m-w-d-psychosomatische-familienklinik-at-heiligenfeld-kliniken-4405189290"
+    },
+    {
+     "id": "https://talents.studysmarter.de/companies/heiligenfeld/bad-worishofen/pflegefachkraft-m-w-d-psychosomatik-34079989/",
+     "title": "Pflegefachkraft (m/w/d) Psychosomatik bei Heiligenfeld | Jetzt bewerben! – StudySmarter – Talents",
+     "url": "https://talents.studysmarter.de/companies/heiligenfeld/bad-worishofen/pflegefachkraft-m-w-d-psychosomatik-34079989/"
+    }
+   ]
+  }
+ },
+ "77873": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Heiligenfeld Kliniken Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://www.heiligenfeld.de/karriere/einstieg-pflege",
+     "title": "Pflegekräfte | Karriere in den Heiligenfeld Kliniken",
+     "url": "https://www.heiligenfeld.de/karriere/einstieg-pflege"
+    },
+    {
+     "id": "https://www.heiligenfeld.de/stellenangebote",
+     "title": "Stellenangebote | Heiligenfeld Kliniken für Psychosomatik",
+     "url": "https://www.heiligenfeld.de/stellenangebote"
+    },
+    {
+     "author": "softgarden e-recruiting GmbH",
+     "id": "https://heiligenfeld.softgarden.io/de/vacancies?openModal=true",
+     "title": "Karriere Board | Heiligenfeld GmbH",
+     "url": "https://heiligenfeld.softgarden.io/de/vacancies?openModal=true"
+    },
+    {
+     "id": "https://www.heiligenfeld.de/karriere",
+     "title": "Jobs & Karriere | Heiligenfeld Kliniken für Psychosomatik",
+     "url": "https://www.heiligenfeld.de/karriere"
+    },
+    {
+     "id": "https://heiligenfeld.softgarden.io/",
+     "title": "Heiligenfeld GmbH: Career board",
+     "url": "https://heiligenfeld.softgarden.io/"
+    }
+   ]
+  }
+ },
+ "77903": {
+  "A": {
+   "cost": {
+    "search": {
+     "neural": 0.007
+    },
+    "total": 0.007
+   },
+   "query": "Donau-Ries Klinik Oettingen Karriere Stellenangebote Pflege",
+   "results": [
+    {
+     "id": "https://karriereportal.dongku.de/stellenangebote/pflegefachhelfer-oet",
+     "title": "Pflegefachhelfer (m/w/d) - gKU",
+     "url": "https://karriereportal.dongku.de/stellenangebote/pflegefachhelfer-oet"
+    },
+    {
+     "id": "https://dongku.de/category/stellenangebote/donau-ries-klinik-oettingen/",
+     "title": "Donau-Ries Klinik Oettingen Archives - gKU",
+     "url": "https://dongku.de/category/stellenangebote/donau-ries-klinik-oettingen/"
+    },
+    {
+     "id": "https://donkliniken.de/",
+     "title": "Donau-Ries Kliniken: Startseite",
+     "url": "https://donkliniken.de/"
+    },
+    {
+     "author": "sw_admin",
+     "id": "https://donkliniken.de/klinik-oettingen/",
+     "publishedDate": "2020-07-12T00:00:00.000Z",
+     "title": "Klinik Oettingen - Donau-Ries Kliniken",
+     "url": "https://donkliniken.de/klinik-oettingen/"
+    },
+    {
+     "id": "https://de.linkedin.com/jobs/view/pflegefachkraft-m-w-d-f%C3%BCr-unsere-weaning-station-at-donau-ries-klinik-donauw%C3%B6rth-4434977857",
+     "publishedDate": "2026-07-17T00:00:00.000Z",
+     "title": "Pflegefachkraft (m/w/d) für unsere Weaning-Station",
+     "url": "https://de.linkedin.com/jobs/view/pflegefachkraft-m-w-d-f%C3%BCr-unsere-weaning-station-at-donau-ries-klinik-donauw%C3%B6rth-4434977857"
+    }
+   ]
+  }
+ }
+}

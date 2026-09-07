@@ -344,6 +344,7 @@
  "excluded_role_classes": [
   "ausbildung",
   "nicht_pflege",
+  "pflegehelfer",
   "werkstudent_praktikum"
  ]
 }

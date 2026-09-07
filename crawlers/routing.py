@@ -4,8 +4,8 @@ The registry already stores the two facts a crawler needs -- `ats_type` (which a
 `careers_url` (where the board is). This module makes that pair *usable* by adding the three things
 the raw columns do not express:
 
-1. **Which adapter implements a vendor.** `ats_type` is a label produced by discovery; it exists for
-   vendors we cannot yet crawl (d.vinci). Routing must say "labelled but unsupported", not crash.
+1. **Which adapter implements a vendor.** `ats_type` is a label produced by discovery; some labels
+   have no adapter yet. Routing must say "labelled but unsupported", not crash.
 2. **Shared boards.** 143 of 407 clinics share a careers_url with at least one other clinic (kbo 8,
    Schön Klinik 7, Asklepios 7 ...). Fetching per clinic multiplied 490 real vacancies into 1,319
    rows. The board -- not the clinic -- is the unit of work, so routing groups by it.
@@ -50,12 +50,19 @@ ADAPTERS = {
     "typo3_jobs":      ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "talention":       ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "oracle":          ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
+    # Default fallback for careers_url-but-no-vendor-label boards (see plan() below) -- same
+    # sitemap/page-link job discovery as the other WordPress/TYPO3 sites, just without a
+    # fingerprinted vendor name attached.
+    "wp_jobs":         ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
+    "dvinci":          ("vendor", "crawlers.vendor_adapters:crawl_dvinci"),
     "bite":            ("seeded", "pflege_jobs.sources.bite:crawl"),
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),
     "softgarden":      ("seeded", "pflege_jobs.sources.softgarden:seed_for"),
-    # umantis is server-rendered (/Jobs/1) and parsed by crawlers.portals, which imports Playwright
-    # at module load for the JS portals -- so it is named here but not imported by the check below.
+    # STALE: nothing imports crawlers.portals for this; ats_seeds.BUILDERS["umantis"] + the generic
+    # listing-first career_crawl.Crawler drive umantis in practice via _seed_obs. Left here only
+    # because ADAPTERS is keyed by ats_type and something may still look this entry up -- do not
+    # trust it as the live code path.
     "umantis":         ("external", "crawlers.portals:parse_umantis"),
 }
 
@@ -108,8 +115,12 @@ def plan(clinics):
             unroutable.append((c, "no careers_url" if not vendor else "vendor known, no entry point"))
             continue
         if not vendor:
-            unroutable.append((c, "careers_url but no vendor label"))
-            continue
+            # No fingerprinted vendor, but there is a careers_url -- default to the generic
+            # WordPress/TYPO3-style crawler (sitemap-or-page-link job discovery) rather than
+            # skipping the board outright. A zero-yield crawl_wp_jobs pass still beats never
+            # fetching at all; see plan action "Give unlabelled boards a default wp_jobs route".
+            vendor = "wp_jobs"
+            c = {**c, "ats_type": vendor}
         if vendor not in ADAPTERS:
             unroutable.append((c, "no adapter for %s" % vendor))
             continue

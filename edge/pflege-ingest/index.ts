@@ -1,7 +1,7 @@
 // pflege-ingest: authenticated bulk upsert into pflege_jobs.* over the project's own DB connection.
 // RENDERED from index.template.ts by edge/build_ingest.py — column lists come from pflege_jobs/schema.py.
 // Auth: Supabase JWT (verify_jwt=true; the anon key is a valid JWT) AND x-ingest-secret header.
-// Body: { employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, resolve?, supersede_aa?, expire_days?, assets?, crawl_run? }
+// Body: { employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, inbox_purge?, resolve?, supersede_aa?, expire_days?, assets?, crawl_run? }
 import postgres from "npm:postgres@3.4.5";
 
 // Set PFLEGE_INGEST_SECRET as a function secret; rotate it there.
@@ -97,6 +97,31 @@ Deno.serve(async (req: Request) => {
     if (body.inbox_ack?.length) {
       const r = await sql.unsafe(`update pflege_jobs.inbox i set processed_at=now(), process_note=t.note from json_to_recordset($1::json) as t(inbox_id bigint, note text) where i.inbox_id=t.inbox_id`, [sql.json(body.inbox_ack)]);
       out.inbox_ack = r.count;
+    }
+    if (body.inbox_purge) {
+      // Guards live HERE, in the SQL, not in whatever the caller sends: processed_at is not null
+      // (never touch a row still queued for cmd_inbox) and process_note not like 'ats set:%' (the
+      // ats-discover2-v1 probes are the only record of how each clinics.ats_type/careers_url was
+      // set -- never delete them, even if a caller's kinds/collectors filter would otherwise match).
+      // before/kinds/collectors/notes_like narrow the candidate set further; all optional. max_rows
+      // is a hard cap, clamped server-side -- a caller cannot raise it past 1000.
+      const p = body.inbox_purge;
+      const maxRows = Math.max(1, Math.min(Number(p.max_rows) || 1000, 1000));
+      const r = await sql.unsafe(
+        `with victims as (
+           select inbox_id from pflege_jobs.inbox
+            where processed_at is not null
+              and process_note not like 'ats set:%'
+              and ($1::timestamptz is null or received_at < $1::timestamptz)
+              and ($2::text[] is null or kind = any($2::text[]))
+              and ($3::text[] is null or collector = any($3::text[]))
+              and ($4::text is null or process_note ilike $4::text)
+            order by inbox_id
+            limit $5::int
+         ), deleted as (delete from pflege_jobs.inbox where inbox_id in (select inbox_id from victims) returning 1)
+         select count(*)::int as n from deleted`,
+        [p.before ?? null, p.kinds ?? null, p.collectors ?? null, p.notes_like ?? null, maxRows]);
+      out.inbox_purge = r[0]?.n ?? 0;
     }
     if (body.resolve) {
       await sql`update pflege_jobs.postings p set fuzzy_key = o.fuzzy_key from pflege_jobs.posting_observations o

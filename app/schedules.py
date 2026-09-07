@@ -72,6 +72,8 @@ def normalise(obj, base=None):
     cur["target"] = T.parse({"target": cur.get("target") or {}})
     if cur.get("mode") not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
+    if cur["target"]["scope"] == "all" and cur["mode"] == "firecrawl":
+        raise ValueError("refusing firecrawl for every hospital at once; use auto or a narrower target")
     cur["max_credits"] = max(0, min(500, int(cur.get("max_credits") or 0)))
     cur["enabled"] = bool(cur.get("enabled", True))
     cur["fetch_details"] = bool(cur.get("fetch_details"))

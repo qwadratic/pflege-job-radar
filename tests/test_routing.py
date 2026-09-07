@@ -26,10 +26,10 @@ def test_same_host_different_tenant_stays_separate():
 
 
 def test_labelled_but_unsupported_vendor_is_reported_not_crashed():
-    clinics = [{"clinic_id": "1", "name": "RoMed", "ats_type": "dvinci",
-                "careers_url": "https://romed-jobs.de/de/jobs/"}]
+    clinics = [{"clinic_id": "1", "name": "Some Clinic", "ats_type": "no-such-vendor",
+                "careers_url": "https://example.invalid/jobs"}]
     boards, unroutable = plan(clinics)
-    assert boards == {} and "dvinci" in unroutable[0][1]
+    assert boards == {} and "no-such-vendor" in unroutable[0][1]
 
 
 def test_missing_entry_point_is_reported():

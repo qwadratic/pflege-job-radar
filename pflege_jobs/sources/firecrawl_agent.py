@@ -102,6 +102,16 @@ def _career_prompt(clinic):
             "Answer strictly in the schema; use 'unknown' when you cannot tell.")
 
 
+class AgentFailed(RuntimeError):
+    """Firecrawl agent run ended in status=='failed' or timed out. Carries credits_used so the caller
+    can still charge the local ledger -- over-charging it is safe, under-charging is what lets the
+    weekly budget check (_budget_left) silently drift away from what the account actually spent."""
+
+    def __init__(self, message, credits_used):
+        super().__init__(message)
+        self.credits_used = credits_used
+
+
 def _headers():
     key = os.environ.get("FIRECRAWL_API_KEY")
     if not key:
@@ -152,8 +162,10 @@ def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5
         if st == "completed":
             return j.get("data") or {}, int(j.get("creditsUsed") or 0), j
         if st == "failed":
-            raise RuntimeError(f"firecrawl agent failed: {str(j.get('error') or j)[:300]}")
-    raise TimeoutError(f"firecrawl agent {job_id} still processing after {timeout}s")
+            used = j.get("creditsUsed")
+            raise AgentFailed(f"firecrawl agent failed: {str(j.get('error') or j)[:300]}",
+                               credits_used=int(used) if used is not None else int(max_credits))
+    raise AgentFailed(f"firecrawl agent {job_id} still processing after {timeout}s", credits_used=int(max_credits))
 
 
 def _host(url):
