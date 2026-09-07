@@ -1,0 +1,109 @@
+/* Autopilot dock — inherits host tokens (see docs/autopilot.md "The dock"). Square corners, JetBrains Mono.
+   Only reads --bg --surface --ink --ink-2 --ink-3 --line --neon --red --sky from the host; --pj-accent falls
+   back var(--accent, var(--blue, #202D85)); --pj-surface-2 falls back var(--surface-2, var(--surface)). */
+#pj-dock,#pj-dock *{box-sizing:border-box}
+#pj-dock{
+  --pj-bg:var(--bg,#fff);--pj-surface:var(--surface,#f4f7f8);--pj-surface-2:var(--surface-2,var(--surface,#f4f7f8));
+  --pj-ink:var(--ink,#23201e);--pj-ink-2:var(--ink-2,#5b5855);--pj-ink-3:var(--ink-3,#8c8985);--pj-line:var(--line,#e1e6e9);
+  --pj-neon:var(--neon,#9de146);--pj-red:var(--red,#d82434);--pj-sky:var(--sky,#c8f1ff);
+  --pj-accent:var(--accent,var(--blue,#202d85));
+  font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.45;color:var(--pj-ink);
+  position:fixed;z-index:99990;
+}
+#pj-dock *{border-radius:0!important}
+#pj-dock button{font:inherit;color:inherit;cursor:pointer;background:none}
+#pj-dock input,#pj-dock textarea{font:inherit;color:inherit;background:var(--pj-bg);border:1px solid var(--pj-line)}
+
+/* ---- launcher pill ------------------------------------------------------------------------- */
+#pj-launcher{position:fixed;right:18px;bottom:18px;z-index:99991;display:flex;align-items:center;gap:7px;
+  background:var(--pj-accent);color:#fff;border:1px solid var(--pj-accent);padding:9px 16px;font-size:13px;font-weight:500;
+  box-shadow:0 8px 24px rgba(0,0,0,.25);}
+#pj-launcher .dot{width:7px;height:7px;background:var(--pj-red);display:none}
+#pj-launcher.has-alert .dot{display:inline-block}
+#pj-dock.hidden #pj-launcher{display:flex}
+#pj-dock:not(.hidden) #pj-launcher{display:none}
+
+/* ---- panel ---------------------------------------------------------------------------------- */
+#pj-panel{position:fixed;background:var(--pj-bg);border:1px solid var(--pj-line);box-shadow:0 12px 40px rgba(0,0,0,.35);
+  display:flex;flex-direction:column;overflow:hidden}
+#pj-dock.hidden #pj-panel{display:none}
+#pj-dock.pos-right #pj-panel{right:0;top:var(--pj-top,0px);bottom:0;width:var(--pj-w,380px);border-right:0;border-top:0;border-bottom:0}
+#pj-dock.pos-left #pj-panel{left:0;top:var(--pj-top,0px);bottom:0;width:var(--pj-w,380px);border-left:0;border-top:0;border-bottom:0}
+#pj-dock.pos-bottom #pj-panel{left:0;right:0;bottom:0;height:40vh;border-left:0;border-right:0;border-bottom:0}
+#pj-dock.pos-minimised #pj-panel{right:18px;bottom:18px;width:280px;height:auto;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+
+/* ---- header ---------------------------------------------------------------------------------- */
+#pj-hd{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--pj-line);background:var(--pj-surface);flex:0 0 auto}
+#pj-hd .ttl{font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pj-hd .n{color:var(--pj-neon)}
+#pj-pos{display:inline-flex;border:1px solid var(--pj-line);flex:0 0 auto}
+#pj-pos button{padding:4px 7px;border:0;border-right:1px solid var(--pj-line);font-size:11px}
+#pj-pos button:last-child{border-right:0}
+#pj-pos button[aria-pressed=true]{background:var(--pj-ink);color:var(--pj-bg)}
+#pj-pos button:hover{background:var(--pj-surface-2)}
+#pj-close{padding:4px 8px;border:1px solid var(--pj-line)}
+#pj-close:hover{border-color:var(--pj-red);color:var(--pj-red)}
+
+/* ---- minimised bar --------------------------------------------------------------------------- */
+#pj-dock.pos-minimised #pj-body,#pj-dock.pos-minimised #pj-tabs,#pj-dock.pos-minimised #pj-search{display:none!important}
+
+/* ---- tabs / search --------------------------------------------------------------------------- */
+#pj-tabs{display:flex;gap:2px;padding:6px 8px 0;flex:0 0 auto;flex-wrap:wrap}
+#pj-tabs button{padding:5px 9px;border:1px solid var(--pj-line);font-size:11.5px;color:var(--pj-ink-2)}
+#pj-tabs button[aria-pressed=true]{background:var(--pj-ink);color:var(--pj-bg);border-color:var(--pj-ink)}
+#pj-search{padding:8px}
+#pj-search input{width:100%;padding:6px 8px}
+
+/* ---- body / list ----------------------------------------------------------------------------- */
+#pj-body{flex:1 1 auto;overflow:auto;position:relative}
+#pj-offline{padding:20px 14px;color:var(--pj-ink-3);text-align:center}
+.pj-row{display:flex;gap:8px;padding:9px 10px;border-bottom:1px solid var(--pj-line);align-items:flex-start;text-align:left;width:100%}
+.pj-row:hover{background:var(--pj-surface)}
+.pj-av{width:26px;height:26px;flex:0 0 26px;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;color:#111;margin-top:1px}
+.pj-row .main{flex:1;min-width:0}
+.pj-row .l1{display:flex;justify-content:space-between;gap:6px}
+.pj-row .name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pj-row .time{color:var(--pj-ink-3);font-size:11px;white-space:nowrap}
+.pj-row .phone{color:var(--pj-ink-3);font-size:11px}
+.pj-row .prev{color:var(--pj-ink-2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.pj-tag{display:inline-block;font-size:10px;letter-spacing:.03em;padding:1px 6px;margin-top:4px;border:1px solid var(--pj-line)}
+.pj-tag.manager{border-color:var(--pj-red);color:var(--pj-red)}
+.pj-tag.reply{border-color:#F2C94C;color:#7a5b00}
+.pj-tag.active{border-color:var(--pj-neon);color:#3d6600}
+.pj-tag.paused{border-color:var(--pj-ink-3);color:var(--pj-ink-3)}
+.pj-empty{padding:24px 14px;text-align:center;color:var(--pj-ink-3)}
+
+/* ---- thread ---------------------------------------------------------------------------------- */
+#pj-thread{display:flex;flex-direction:column;height:100%}
+#pj-th-hd{padding:8px 10px;border-bottom:1px solid var(--pj-line);flex:0 0 auto}
+#pj-th-hd .back{font-size:11px;color:var(--pj-ink-2);border:0;padding:0 0 6px}
+#pj-th-hd .who{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#pj-th-hd .name{font-weight:500}
+#pj-th-hd .state{color:var(--pj-ink-3);font-size:11px}
+#pj-modes{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+#pj-modes button{padding:3px 7px;font-size:10.5px;border:1px solid var(--pj-line);color:var(--pj-ink-2)}
+#pj-modes button[aria-pressed=true]{background:var(--pj-ink);color:var(--pj-bg);border-color:var(--pj-ink)}
+#pj-msgs{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.pj-b{max-width:82%;padding:7px 9px;font-size:12.5px;white-space:pre-wrap;word-break:break-word}
+.pj-b.in{align-self:flex-start;background:var(--pj-surface)}
+.pj-b.out{align-self:flex-end;background:var(--pj-accent);color:#fff}
+.pj-b.out.pending{background:transparent;border:1px dashed var(--pj-accent);color:var(--pj-ink)}
+.pj-b .meta{display:block;font-size:10px;opacity:.7;margin-top:3px}
+.pj-appr{display:flex;gap:6px;margin-top:6px}
+.pj-appr button{padding:3px 8px;font-size:11px;border:1px solid var(--pj-line)}
+.pj-appr .ok{border-color:var(--pj-neon);color:#3d6600}
+.pj-appr .no{border-color:var(--pj-red);color:var(--pj-red)}
+#pj-composer{border-top:1px solid var(--pj-line);padding:8px;flex:0 0 auto}
+#pj-composer textarea{width:100%;height:52px;padding:6px 8px;resize:vertical}
+#pj-composer .row{display:flex;gap:6px;margin-top:6px}
+#pj-composer .send{background:var(--pj-accent);color:#fff;border:1px solid var(--pj-accent);padding:5px 12px}
+#pj-composer .sug{border:1px solid var(--pj-line);padding:5px 10px}
+
+/* ---- context (dock-only) --------------------------------------------------------------------- */
+#pj-ctx{border-bottom:1px solid var(--pj-line);padding:9px 10px;background:var(--pj-surface-2)}
+#pj-ctx .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--pj-ink-3);margin:0 0 6px}
+#pj-ctx input{width:100%;padding:5px 7px;margin-bottom:6px}
+#pj-ctx .cand{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--pj-line);font-size:12px}
+#pj-ctx .cand button{border:1px solid var(--pj-accent);color:var(--pj-accent);padding:2px 7px;font-size:11px}
+#pj-ctx a{color:var(--pj-accent)}
+#pj-toast{position:absolute;left:8px;right:8px;bottom:8px;background:var(--pj-ink);color:var(--pj-bg);padding:7px 10px;font-size:12px;z-index:5}

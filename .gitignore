@@ -41,5 +41,6 @@ data/cross_merge_pairs.json
 
 # app state (SQLite) — regenerable
 data/app.sqlite*
+data/autopilot.sqlite*
 .venv/
 *.log

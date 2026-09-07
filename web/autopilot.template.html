@@ -1,0 +1,997 @@
+<!doctype html>
+<!-- AGENTS: operator console for the recruiting funnel. API contract: docs/autopilot.md, base /api/autopilot/*.
+     Proof of concept on synthetic data — nothing here sends a real WhatsApp message or e-mail. -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Autopilot · Pflege-Stellen Bayern</title>
+<meta name="description" content="Operator-Konsole: Kandidaten-Funnel, Matching, Klinik-Ausschreibung, Freigaben und Kampagnen für die Pflege-Stellen-Vermittlung.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Design tokens — same UI kit as web/pro.template.html (dark) and web/index.template.html (light "simple"). Default: dark. */
+:root,[data-theme="dark"]{--bg:#0B0D12;--surface:#12151C;--surface-2:#1A1E27;--line:#262B36;--ink:#F4F7F8;--ink-2:#A9B1BD;--ink-3:#6C7583;--neon:#9DE146;--sky:#C8F1FF;--blue:#202D85;--blue-2:#2C3CB0;--red:#D82434;--yellow:#F2C94C;--code:#07080B;
+ --font:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--head:"Archivo Black",Impact,sans-serif}
+[data-theme="light"]{--bg:#FFFFFF;--surface:#F4F7F8;--surface-2:#FFFFFF;--line:#E1E6E9;--ink:#23201E;--ink-2:#5B5855;--ink-3:#8C8985;--neon:#6E9E1E;--sky:#0B6FA8;--blue:#202D85;--blue-2:#2C3CB0;--red:#B71C2B;--yellow:#8A6300;--code:#12151C}
+*{box-sizing:border-box;border-radius:0!important}
+html{font-size:13.5px;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-variant-numeric:tabular-nums;line-height:1.5}
+a{color:var(--sky);text-underline-offset:3px} a:hover{color:var(--neon)}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:6px 8px}
+input::placeholder,textarea::placeholder{color:var(--ink-3)} select option{background:var(--surface-2)}
+:focus-visible{outline:2px solid var(--neon);outline-offset:2px}
+::selection{background:var(--neon);color:#0B0D12}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+[hidden]{display:none!important}
+h1,h2,.brand .w1{font-family:var(--head);font-weight:400;letter-spacing:0}
+h1{font-size:clamp(18px,2.2vw,26px);line-height:1.15;margin:0 0 4px} h2{font-size:16px;margin:0 0 8px}
+.lead{color:var(--ink-2);margin:0 0 14px;font-size:13px;max-width:72ch}
+code,pre{font-family:var(--font)}
+/* topbar */
+.topbar{position:sticky;top:0;z-index:30;border-bottom:1px solid var(--line);background:var(--bg)}
+.topbar .in{max-width:1680px;margin:0 auto;padding:7px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:6px;color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand .w1{font-size:14px} .brand .w2{font-size:11px;color:var(--ink-3);font-weight:400}
+.seg{display:inline-flex;border:1px solid var(--line);background:var(--surface)}
+.seg button{padding:5px 10px;border:0;background:transparent;cursor:pointer;font-size:12px;color:var(--ink-2);border-right:1px solid var(--line)} .seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--blue);color:#fff}
+.seg button.off[aria-pressed=true]{background:var(--ink-3);color:var(--bg)} .seg button.assist[aria-pressed=true]{background:var(--sky);color:#0B0D12} .seg button.auto[aria-pressed=true]{background:var(--neon);color:#0B0D12;font-weight:500}
+.pills{display:flex;gap:5px;flex-wrap:wrap}
+.pill{display:inline-flex;gap:6px;align-items:center;padding:4px 9px;border:1px solid var(--line);font-size:11.5px;color:var(--ink-2);white-space:nowrap;text-decoration:none;background:var(--surface)}
+.pill b{color:var(--ink);font-weight:500} .pill:hover{border-color:var(--neon);color:var(--ink)}
+.pill.hot b{color:var(--yellow)} .pill.crit b{color:var(--red)}
+.tt{display:inline-flex;border:1px solid var(--line);background:var(--surface)}
+.tt button{padding:5px 9px;border:0;border-right:1px solid var(--line);background:transparent;cursor:pointer;font-size:12px;color:var(--ink)} .tt button:last-child{border-right:0} .tt button:hover{color:var(--neon)}
+.clock{font-size:12px;color:var(--ink-2);white-space:nowrap;padding:0 4px}
+.langsw{display:inline-flex;border:1px solid var(--line);background:var(--surface)}
+.langsw button{padding:4px 9px;border:0;background:transparent;cursor:pointer;font-size:12px;color:var(--ink-3)} .langsw button[aria-pressed=true]{background:var(--ink);color:var(--bg);font-weight:500}
+.iconbtn{display:inline-flex;width:28px;height:28px;border:1px solid var(--line);align-items:center;justify-content:center;color:var(--ink-2);background:var(--surface);cursor:pointer} .iconbtn:hover{color:var(--neon);border-color:var(--neon)}
+.simple-l{font-size:11px;color:var(--ink-3);padding:5px 6px;text-decoration:none;white-space:nowrap} .simple-l:hover{color:var(--neon)}
+.sp{flex:1}
+/* shell */
+.shell{display:flex;align-items:flex-start;max-width:1680px;margin:0 auto}
+.sidenav{width:170px;flex:0 0 170px;padding:12px 8px;position:sticky;top:44px;align-self:flex-start;border-right:1px solid var(--line)}
+.sidenav a{display:flex;justify-content:space-between;gap:6px;align-items:center;padding:6px 9px;color:var(--ink-2);text-decoration:none;font-size:12.5px;margin-bottom:1px}
+.sidenav a:hover{color:var(--ink);background:var(--surface)} .sidenav a.on{color:var(--neon);background:var(--surface);box-shadow:inset 2px 0 0 var(--neon)}
+.sidenav a .bd{font-size:10px;padding:0 5px;background:var(--red);color:#fff;line-height:15px;min-width:15px;text-align:center}
+main.view{flex:1;min-width:0;padding:14px 16px 60px}
+/* cards / generic */
+.card{position:relative;background:var(--surface);border:1px solid var(--line);padding:12px 14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:11px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px 16px;font-size:12.5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:1000px){.two{grid-template-columns:1fr}}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px} @media (max-width:1100px){.three{grid-template-columns:1fr}}
+.m{color:var(--ink-2);font-size:12px} .t{font-weight:500}
+.f{min-width:130px} .f>.lbl{display:block;font-size:10.5px;color:var(--ink-3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);background:transparent;padding:2px 9px;font-size:12px;cursor:pointer;line-height:1.6;display:inline-flex;gap:5px;align-items:center;color:var(--ink-2)}
+.chip:hover{border-color:currentColor} .chip[aria-pressed=true]{box-shadow:inset 0 0 0 1px currentColor;font-weight:500}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:0 6px;border:1px solid var(--line);margin:1px 3px 1px 0;background:transparent;color:var(--ink-2);white-space:nowrap;line-height:1.7;text-transform:uppercase;letter-spacing:.03em}
+.tag.solid{color:#fff} .tag.red{background:var(--red);border-color:var(--red);color:#fff} .tag.yellow{background:var(--yellow);border-color:var(--yellow);color:#181400}
+.tag.green{background:var(--neon);border-color:var(--neon);color:#0B0D12} .tag.grey{background:var(--ink-3);border-color:var(--ink-3);color:var(--bg)}
+.tag.sky{background:transparent;border-color:var(--sky);color:var(--sky)} .tag.outline-red{color:var(--red);border-color:var(--red)}
+.btn{border:1px solid var(--line);background:var(--surface-2);padding:5px 10px;cursor:pointer;font-size:12px;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.btn:hover{border-color:var(--neon);color:var(--neon)} .btn.p{background:var(--blue);border-color:var(--blue);color:#fff} .btn.p:hover{background:var(--blue-2);color:#fff}
+.btn.n{background:var(--neon);border-color:var(--neon);color:#0B0D12;font-weight:500} .btn.n:hover{background:#b7f06a}
+.btn.danger:hover{border-color:var(--red);color:var(--red)} .btn.s{padding:2px 8px;font-size:11px} .btn:disabled{opacity:.45;cursor:default}
+input[type=checkbox],input[type=radio]{accent-color:var(--neon)}
+/* tables */
+.tbl{background:var(--surface);border:1px solid var(--line);overflow:hidden}
+.tbl .top{display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+.tbl .top h3{margin:0;font-size:12.5px;font-weight:500;color:var(--ink)}
+.tw{overflow:auto;max-height:78vh}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:6px 9px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-weight:500;color:var(--ink-3);background:var(--surface);position:sticky;top:0;white-space:nowrap;z-index:2;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+tbody tr.lnk{cursor:pointer} tbody tr.lnk:hover{background:var(--surface-2)}
+td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:7px 12px;color:var(--ink-2);font-size:12px}
+.empty{padding:30px;text-align:center;color:var(--ink-2)}
+.dotst{display:inline-block;width:7px;height:7px;margin-right:5px;background:var(--ink-3)}
+.dotst.green{background:var(--neon)} .dotst.yellow{background:var(--yellow)} .dotst.red{background:var(--red)}
+/* inbox */
+.inbox{display:grid;grid-template-columns:200px 320px 1fr;gap:10px;align-items:start}
+@media (max-width:1200px){.inbox{grid-template-columns:170px 280px 1fr}}
+.rail .tabs2{display:flex;flex-direction:column;gap:1px;margin-bottom:10px}
+.rail .tabs2 button{display:flex;justify-content:space-between;text-align:left;padding:6px 8px;border:0;background:transparent;color:var(--ink-2);cursor:pointer;font-size:12.5px}
+.rail .tabs2 button:hover{background:var(--surface)} .rail .tabs2 button[aria-pressed=true]{background:var(--surface);color:var(--neon);box-shadow:inset 2px 0 0 var(--neon)}
+.rail .tabs2 button span.n{color:var(--ink-3);font-size:11px}
+.list{background:var(--surface);border:1px solid var(--line);max-height:calc(100vh - 100px);overflow:auto}
+.lrow{display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
+.lrow:hover{background:var(--surface-2)} .lrow.on{background:var(--surface-2);box-shadow:inset 2px 0 0 var(--neon)}
+.lrow .cb{margin-top:3px}
+.avatar{width:30px;height:30px;flex:0 0 30px;display:flex;align-items:center;justify-content:center;color:#0B0D12;font-weight:500;font-size:11.5px}
+.lrow .body{min-width:0;flex:1}
+.lrow .top1{display:flex;justify-content:space-between;gap:6px;min-width:0} .lrow .nm{font-weight:500;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.lrow .tm{font-size:10.5px;color:var(--ink-3);white-space:nowrap}
+.lrow .pv{color:var(--ink-2);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.lrow .meta2{display:flex;gap:5px;align-items:center;margin-top:3px}
+.unreaddot{width:7px;height:7px;background:var(--neon);flex:0 0 7px;margin-top:5px}
+.overduemark{color:var(--red);font-size:10px;font-weight:500}
+.bulkbar{display:flex;gap:6px;align-items:center;padding:6px 10px;background:var(--surface-2);border-bottom:1px solid var(--line);font-size:12px;position:sticky;top:0;z-index:5}
+.thread-wrap{display:grid;grid-template-columns:1fr 250px;gap:10px} @media (max-width:1300px){.thread-wrap{grid-template-columns:1fr}}
+.thread{background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;min-height:60vh}
+.thread-hd{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.back-link{display:none;color:var(--ink-2);text-decoration:none;margin-right:8px;font-size:12.5px} .back-link:hover{color:var(--neon)}
+.bubbles{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;max-height:60vh}
+.bubble{max-width:74%;padding:8px 11px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;position:relative}
+.bubble.in{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line)}
+.bubble.out{align-self:flex-end;background:var(--blue);color:#fff}
+.bubble.pending{border:1px dashed var(--yellow);background:transparent;color:var(--ink)}
+.bubble .cap{font-size:10px;opacity:.7;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+.bubble .tm2{font-size:10px;opacity:.65;margin-top:4px;text-align:right}
+.composer{display:flex;gap:6px;padding:9px 12px;border-top:1px solid var(--line);flex-wrap:wrap}
+.composer textarea{flex:1;min-width:180px;min-height:38px;resize:vertical}
+.ctx{display:flex;flex-direction:column;gap:10px}
+.checklist{list-style:none;margin:0;padding:0;font-size:12px}
+.checklist li{display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid var(--line)}
+.checklist li:last-child{border-bottom:0}
+.ok{color:var(--neon)} .missing{color:var(--red)} .unclear{color:var(--yellow)}
+.matchrow{display:flex;justify-content:space-between;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}
+.matchrow:last-child{border-bottom:0}
+.scorebar{width:60px;height:6px;background:var(--line);position:relative;flex:0 0 60px}
+.scorebar i{position:absolute;left:0;top:0;bottom:0;background:var(--neon);display:block}
+.timeline{list-style:none;margin:0;padding:0;font-size:11.5px}
+.timeline li{padding:4px 0;border-bottom:1px solid var(--line);color:var(--ink-2)}
+.timeline li:last-child{border-bottom:0} .timeline b{color:var(--ink)}
+/* dialog / toast */
+dialog{border:1px solid var(--line);padding:0;max-width:720px;width:calc(100% - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+.d{padding:18px 20px;max-height:85vh;overflow:auto}
+#toasts{position:fixed;right:14px;bottom:14px;z-index:80;display:flex;flex-direction:column;gap:8px;max-width:360px}
+.toast{background:var(--ink);color:var(--bg);padding:9px 13px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.4)} .toast a{color:var(--blue)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap}
+.tabs button{background:transparent;border:0;border-bottom:2px solid transparent;padding:6px 9px;cursor:pointer;color:var(--ink-2);font-size:12.5px}
+.tabs button[aria-selected=true]{color:var(--neon);border-bottom-color:var(--neon)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px} .kv span:nth-child(odd){color:var(--ink-3)}
+.radio{display:flex;gap:10px;flex-wrap:wrap} .radio label{display:inline-flex;gap:5px;align-items:center;cursor:pointer;font-size:12.5px}
+details>summary{cursor:pointer;color:var(--ink-2);font-size:12px;margin:6px 0} details>summary:hover{color:var(--neon)}
+/* funnel */
+.funnelrow{display:grid;grid-template-columns:120px 1fr 60px 70px 90px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.funnelrow:last-child{border-bottom:0}
+.fbar{height:16px;background:var(--line);position:relative}
+.fbar i{position:absolute;left:0;top:0;bottom:0;background:var(--sky);display:block}
+/* clinic negotiation */
+.slotchip{display:inline-flex;gap:6px;border:1px solid var(--line);padding:4px 9px;font-size:12px;margin:2px 4px 2px 0;cursor:pointer} .slotchip:hover{border-color:var(--neon)}
+.slotchip.agreed{background:var(--neon);border-color:var(--neon);color:#0B0D12}
+/* accounts */
+.usebar{height:8px;background:var(--line);position:relative;width:100%;max-width:180px}
+.usebar i{position:absolute;left:0;top:0;bottom:0;background:var(--sky)} .usebar i.over{background:var(--red)}
+/* responsive */
+@media (max-width:900px){
+  .shell{flex-direction:column;align-items:stretch}
+  .sidenav{width:100%;flex:none;position:static;display:flex;flex-wrap:wrap;gap:2px;border-right:0;border-bottom:1px solid var(--line)}
+  .sidenav a{flex:1 1 auto}
+  .inbox{grid-template-columns:1fr} .inbox>*{min-width:0}
+  .rail{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end}
+  .rail .tabs2{flex-direction:row;flex-wrap:wrap}
+  main.view{padding:10px 10px 40px}
+  .back-link{display:inline}
+  .inbox.has-thread .ib-rail,.inbox.has-thread .ib-list-col{display:none}
+  .inbox:not(.has-thread) .ib-thread-col{display:none}
+}
+</style>
+</head>
+<body>
+<nav class="topbar" aria-label="Kopfzeile"><div class="in">
+  <a class="brand" href="/"><span class="w1">Autopilot</span><span class="w2">Pflege-Stellen Bayern</span></a>
+  <div class="seg" id="modeseg" role="group" aria-label="Autopilot-Modus"></div>
+  <div class="pills" id="pills"></div>
+  <div class="sp"></div>
+  <div class="tt" id="tt" role="group" aria-label="Zeit vorspulen"></div>
+  <span class="clock" id="clock">–</span>
+  <button class="iconbtn" id="btn-theme" type="button" title="Hell / Dunkel">◐</button>
+  <div class="langsw" role="group" aria-label="Sprache / Language"><button type="button" data-lang="de" aria-pressed="true">DE</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div>
+  <a class="simple-l" href="/pro" data-i18n="back_board">← Jobbörse</a>
+</div></nav>
+<div class="shell">
+  <nav class="sidenav" id="sidenav" aria-label="Bereiche"></nav>
+  <main class="view" id="view" aria-live="polite"></main>
+</div>
+<dialog id="dlg"><div class="d" id="dlg-body"></div></dialog>
+<div id="toasts" aria-live="polite"></div>
+<script>
+// ====================================================================================================
+// Autopilot console — single-file SPA, same idiom as web/pro.template.html. Backend: /api/autopilot/*.
+// ====================================================================================================
+const $=s=>document.querySelector(s);
+const el=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a)){if(y==null||y===false)continue;x==="text"?e.textContent=y:x==="html"?e.innerHTML=y:x==="value"?e.value=y:x.startsWith("on")?e.addEventListener(x.slice(2),y):e.setAttribute(x,y);}k.flat(9).forEach(c=>c!=null&&c!==false&&e.append(c));return e;};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const debounce=(f,ms)=>{let h;return(...a)=>{clearTimeout(h);h=setTimeout(()=>f(...a),ms);};};
+const num=n=>n==null?"–":Number(n).toLocaleString(LANG==="de"?"de-DE":"en-GB");
+const eur=n=>n==null?"–":Number(n).toLocaleString(LANG==="de"?"de-DE":"en-GB",{style:"currency",currency:"EUR",maximumFractionDigits:0});
+const pct=n=>n==null?"–":(Number(n)*100).toLocaleString(LANG==="de"?"de-DE":"en-GB",{maximumFractionDigits:1})+"%";
+const fmtDT=s=>s?new Date(s).toLocaleString(LANG==="de"?"de-DE":"en-GB",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"–";
+const fmtD=s=>s?new Date(s).toLocaleDateString(LANG==="de"?"de-DE":"en-GB",{day:"2-digit",month:"2-digit",year:"2-digit"}):"–";
+const ago=s=>{if(!s)return "–";const ms=Date.now()-new Date(s);const d=ms/864e5;if(d<0)return fmtDT(s);return d<1?t("today"):d<2?t("yesterday"):Math.round(d)+" "+t("days_ago");};
+
+// ---- i18n ---------------------------------------------------------------------------------------
+const I18N={
+ de:{brand_w1:"Autopilot",brand_w2:"Pflege-Stellen Bayern",back_board:"← Jobbörse",
+  mode_off:"Aus",mode_assist:"Assistiert",mode_auto:"Auto",confirm_auto:"Automatikmodus aktivieren? Luna sendet Nachrichten mit geringem Risiko dann ohne Freigabe.",
+  pill_reply:"Antwort nötig",pill_manager:"Manager",pill_paused:"Pausiert",pill_approvals:"Freigaben",pill_due:"Fällig",
+  tt_1h:"+1 Std",tt_8h:"+8 Std",tt_1d:"+1 Tag",tt_done:"Zeit vorgespult: {m} Nachrichten raus, {i} rein, {a} Freigaben, {q} Warteschlange erledigt, {l} neue Leads",
+  n_inbox:"Inbox",n_funnel:"Funnel",n_matching:"Matching",n_clinics:"Kliniken",n_approvals:"Freigaben",n_queue:"Warteschlange",n_campaigns:"Kampagnen",n_templates:"Vorlagen",n_accounts:"Konten & APIs",n_policy:"Regeln",
+  loading:"Lade …",err_load:"Laden fehlgeschlagen",empty:"Keine Einträge.",total:"gesamt",page:"Seite",of:"von",today:"heute",yesterday:"gestern",days_ago:"Tage",close:"Schließen",save:"Speichern",cancel_:"Abbrechen",all:"alle",reset:"Zurücksetzen",
+  tab_all:"Alle",tab_reply:"Antwort",tab_manager:"Manager",tab_paused:"Pausiert",tab_luna:"Luna aktiv",tab_clinics:"Kliniken",tab_overdue:"Überfällig",
+  search_ph:"Name, Vorschau, Tag …",f_channel:"Kanal",f_next:"Wartet auf",f_lang:"Sprache",f_campaign:"Kampagne",f_stage:"Stufe",
+  bulk_pause:"Pausieren",bulk_resume:"Fortsetzen",bulk_stop:"Stoppen",bulk_reason:"Grund für Pause/Stopp:",bulk_selected:"{n} ausgewählt",
+  tag_manager:"MANAGER",tag_reply:"ANTWORT NÖTIG",tag_active:"LUNA AKTIV",tag_paused:"LUNA PAUSIERT",tag_stopped:"GESTOPPT",tag_human:"MENSCH",
+  compose_ph:"Nachricht schreiben …",send:"Senden",suggest:"Luna vorschlagen",as_operator:"als Operator",as_luna:"als Luna",tpl_pick:"Vorlage",
+  mode_menu_reason:"Grund für Moduswechsel (optional):",empty_select:"Konversation links auswählen.",no_results:"Keine Treffer für diese Filter.",
+  ctx_checklist:"Checkliste",ctx_matches:"Top-Matches",ctx_timeline:"Verlauf",send_profile:"Profil senden",unread:"ungelesen",overdue:"überfällig",
+  approve:"Freigeben",edit_send:"Bearbeiten & freigeben",reject:"Ablehnen",pending_draft:"Entwurf wartet auf Freigabe",
+  group_by:"Gruppieren nach",g_campaign:"Kampagne",g_lang:"Sprache",g_region:"Bezirk",g_owner:"Owner",th_stage:"Stufe",th_count:"Anzahl",th_conv:"Konversion",th_days:"Median Tage",leaks:"Leak-Gründe",baseline:"Gesamt",
+  pick_candidate:"Kandidat wählen",search_candidate:"Kandidat suchen …",ranked_clinics:"Passende Kliniken",reasons:"Gründe",no_candidate:"Kandidat auswählen, um Matches zu sehen.",
+  build_cohort:"Kohorte bauen",criteria:"Kriterien",role_class:"Rolle",region:"Regierungsbezirk",qualification:"Qualifikation",german_min:"Deutsch mind.",anerkennung:"Anerkennung",
+  preview:"Vorschau",create_cohort:"Kohorte anlegen",send_cohort:"Senden",existing_cohorts:"Bestehende Kohorten",cohort_name:"Name",members:"Kandidaten",targets:"Kliniken",throttled:"Gedrosselt",bundle:"Bündel-Vorschau",
+  attempt:"Versuch",candidates_n:"Kandidat(en)",followup_now:"Follow-up jetzt",feedback_req:"Feedback anfragen",close_thread:"Schließen",won:"Gewonnen",lost:"Verloren",lost_reason:"Grund",
+  propose_slot:"Termin vorschlagen",confirm_slot:"Termin bestätigen",counter_slot:"Gegenvorschlag",round:"Runde",negotiation:"Terminverhandlung",interviews:"Interviews",no_slots:"Keine Termine vorgeschlagen.",
+  risk_high:"Hoch",risk_medium:"Mittel",risk_low:"Niedrig",remember:"für ähnliche merken",approve_all_low:"Alle niedrigen freigeben",kind:"Art",reason:"Grund",context:"Kontext",draft:"Entwurf",
+  due_at:"Fällig",target:"Ziel",status:"Status",run_now:"Jetzt ausführen",cancel:"Abbrechen",postpone:"Verschieben",queue_hint:"„Zeit vorspulen“ oben rechts lässt diese Zeilen ablaufen.",
+  budget:"Tagesbudget",spend7:"Ausgaben 7T",impressions:"Impressions",clicks:"Klicks",ctr:"CTR",leads:"Leads",cpl:"CPL",qualified:"Qualifiziert",cpq:"CPQ",placed:"Vermittelt",cpp:"CPP",
+  pause:"Pausieren",resume:"Fortsetzen",landing_pages:"Landingpages",set_winner:"Gewinner setzen",variant:"Variante",visits:"Besuche",conversion:"Conversion",winner:"Gewinner",
+  channel:"Kanal",lang:"Sprache",stage:"Stufe",name:"Name",version:"Version",uses:"Nutzungen",reply_rate:"Antwortrate",active:"Aktiv",edit:"Bearbeiten",subject:"Betreff",body:"Text",variables:"Variablen",
+  whatsapp:"WhatsApp",mailboxes:"Mailboxen",apis:"APIs",routing:"Routing-Regeln",quality:"Qualität",cap:"Kontingent",warmup:"Warm-up",last_error:"Letzter Fehler",last_ok:"Zuletzt ok",provider:"Anbieter",
+  policy_save:"Speichern",policy_saved:"Regeln gespeichert",quiet_hours:"Ruhezeit",max_per_day:"Max. Nachrichten/Tag (Kandidat)",cadence_cand:"Kadenz Kandidat (Std.)",cadence_clinic:"Kadenz Klinik (Werktage)",
+  max_concurrent:"Max. gleichzeitige Profile/Kandidat",max_clinic_week:"Max. Profile/Klinik/Woche",risk_rules:"Risikoregeln",escalation:"Eskalationsauslöser",auto_pause:"Auto-Pause bei",
+  err_send:"Fehler beim Senden: {m}",err_generic:"Fehler: {m}",saved:"Gespeichert",sent:"Gesendet",t_started:"gestartet",new_msg:"Neue Nachricht",match_status_sent:"Match gesendet",pending_approval:"wartet auf Freigabe",
+  keyhint:"„/“ Suche fokussieren · j/k Zeile wechseln · Esc schließt Dialoge",overdue_s:"überfällig",kez:"KeZ",jobs_open:"offene Stellen",score:"Score",department:"Fachbereich",posting:"Stelle",
+  scheduled:"geplant",done:"erledigt",cancelled:"storniert",failed:"fehlgeschlagen",running:"läuft"},
+ en:{brand_w1:"Autopilot",brand_w2:"Pflege-Stellen Bayern",back_board:"← Job board",
+  mode_off:"Off",mode_assist:"Assisted",mode_auto:"Auto",confirm_auto:"Enable auto mode? Luna will send low-risk messages without approval.",
+  pill_reply:"Reply needed",pill_manager:"Manager",pill_paused:"Paused",pill_approvals:"Approvals",pill_due:"Due",
+  tt_1h:"+1 h",tt_8h:"+8 h",tt_1d:"+1 day",tt_done:"Time advanced: {m} sent, {i} received, {a} approvals, {q} queue rows run, {l} new leads",
+  n_inbox:"Inbox",n_funnel:"Funnel",n_matching:"Matching",n_clinics:"Clinics",n_approvals:"Approvals",n_queue:"Queue",n_campaigns:"Campaigns",n_templates:"Templates",n_accounts:"Accounts & APIs",n_policy:"Rules",
+  loading:"Loading …",err_load:"Failed to load",empty:"No entries.",total:"total",page:"Page",of:"of",today:"today",yesterday:"yesterday",days_ago:"days ago",close:"Close",save:"Save",cancel_:"Cancel",all:"all",reset:"Reset",
+  tab_all:"All",tab_reply:"Reply",tab_manager:"Manager",tab_paused:"Paused",tab_luna:"Luna active",tab_clinics:"Clinics",tab_overdue:"Overdue",
+  search_ph:"Name, preview, tag …",f_channel:"Channel",f_next:"Waiting on",f_lang:"Language",f_campaign:"Campaign",f_stage:"Stage",
+  bulk_pause:"Pause",bulk_resume:"Resume",bulk_stop:"Stop",bulk_reason:"Reason for pause/stop:",bulk_selected:"{n} selected",
+  tag_manager:"MANAGER",tag_reply:"REPLY NEEDED",tag_active:"LUNA ACTIVE",tag_paused:"LUNA PAUSED",tag_stopped:"STOPPED",tag_human:"HUMAN",
+  compose_ph:"Write a message …",send:"Send",suggest:"Suggest (Luna)",as_operator:"as operator",as_luna:"as Luna",tpl_pick:"Template",
+  mode_menu_reason:"Reason for mode change (optional):",empty_select:"Select a conversation on the left.",no_results:"No matches for these filters.",
+  ctx_checklist:"Checklist",ctx_matches:"Top matches",ctx_timeline:"Timeline",send_profile:"Send profile",unread:"unread",overdue:"overdue",
+  approve:"Approve",edit_send:"Edit & approve",reject:"Reject",pending_draft:"Draft pending approval",
+  group_by:"Group by",g_campaign:"Campaign",g_lang:"Language",g_region:"Region",g_owner:"Owner",th_stage:"Stage",th_count:"Count",th_conv:"Conversion",th_days:"Median days",leaks:"Leak reasons",baseline:"Overall",
+  pick_candidate:"Pick a candidate",search_candidate:"Search candidate …",ranked_clinics:"Matching clinics",reasons:"Reasons",no_candidate:"Select a candidate to see matches.",
+  build_cohort:"Build a cohort",criteria:"Criteria",role_class:"Role",region:"District",qualification:"Qualification",german_min:"German ≥",anerkennung:"Anerkennung",
+  preview:"Preview",create_cohort:"Create cohort",send_cohort:"Send",existing_cohorts:"Existing cohorts",cohort_name:"Name",members:"Candidates",targets:"Clinics",throttled:"Throttled",bundle:"Bundle preview",
+  attempt:"Attempt",candidates_n:"candidate(s)",followup_now:"Follow up now",feedback_req:"Request feedback",close_thread:"Close",won:"Won",lost:"Lost",lost_reason:"Reason",
+  propose_slot:"Propose slots",confirm_slot:"Confirm slot",counter_slot:"Counter",round:"Round",negotiation:"Slot negotiation",interviews:"Interviews",no_slots:"No slots proposed yet.",
+  risk_high:"High",risk_medium:"Medium",risk_low:"Low",remember:"remember for similar",approve_all_low:"Approve all low-risk",kind:"Kind",reason:"Reason",context:"Context",draft:"Draft",
+  due_at:"Due",target:"Target",status:"Status",run_now:"Run now",cancel:"Cancel",postpone:"Postpone",queue_hint:"“Advance time” (top right) runs these rows.",
+  budget:"Daily budget",spend7:"Spend 7d",impressions:"Impressions",clicks:"Clicks",ctr:"CTR",leads:"Leads",cpl:"CPL",qualified:"Qualified",cpq:"CPQ",placed:"Placed",cpp:"CPP",
+  pause:"Pause",resume:"Resume",landing_pages:"Landing pages",set_winner:"Set winner",variant:"Variant",visits:"Visits",conversion:"Conversion",winner:"Winner",
+  channel:"Channel",lang:"Lang",stage:"Stage",name:"Name",version:"Version",uses:"Uses",reply_rate:"Reply rate",active:"Active",edit:"Edit",subject:"Subject",body:"Body",variables:"Variables",
+  whatsapp:"WhatsApp",mailboxes:"Mailboxes",apis:"APIs",routing:"Routing rules",quality:"Quality",cap:"Cap",warmup:"Warm-up",last_error:"Last error",last_ok:"Last OK",provider:"Provider",
+  policy_save:"Save",policy_saved:"Policy saved",quiet_hours:"Quiet hours",max_per_day:"Max messages/day (candidate)",cadence_cand:"Candidate cadence (h)",cadence_clinic:"Clinic cadence (business days)",
+  max_concurrent:"Max concurrent profiles/candidate",max_clinic_week:"Max profiles/clinic/week",risk_rules:"Risk rules",escalation:"Escalation triggers",auto_pause:"Auto-pause on",
+  err_send:"Send failed: {m}",err_generic:"Error: {m}",saved:"Saved",sent:"Sent",t_started:"started",new_msg:"New message",match_status_sent:"Match sent",pending_approval:"pending approval",
+  keyhint:"“/” focus search · j/k move · Esc closes dialogs",overdue_s:"overdue",kez:"KeZ",jobs_open:"open jobs",score:"Score",department:"Department",posting:"Posting",
+  scheduled:"scheduled",done:"done",cancelled:"cancelled",failed:"failed",running:"running"}};
+let LANG=localStorage.getItem("ap_lang")||(navigator.language||"de").slice(0,2); if(!I18N[LANG]) LANG="de";
+const t=(k,v)=>{let s=(I18N[LANG]||I18N.de)[k]??I18N.de[k]??k; if(v) for(const[a,b] of Object.entries(v)) s=String(s).replace("{"+a+"}",b); return s;};
+function setLang(l){ if(!I18N[l]) return; LANG=l; localStorage.setItem("ap_lang",l); applyLang(); route(); }
+function applyLang(){ document.documentElement.lang=LANG; document.querySelectorAll("[data-i18n]").forEach(n=>n.textContent=t(n.dataset.i18n)); document.querySelectorAll(".langsw button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lang===LANG))); }
+document.querySelectorAll(".langsw button").forEach(b=>b.addEventListener("click",()=>setLang(b.dataset.lang)));
+
+// ---- theme ----------------------------------------------------------------------------------------
+let THEME=localStorage.getItem("ap_theme")||"dark";
+function applyTheme(){ document.documentElement.setAttribute("data-theme",THEME); $("#btn-theme").textContent=THEME==="dark"?"◐":"◑"; }
+$("#btn-theme").addEventListener("click",()=>{ THEME=THEME==="dark"?"light":"dark"; localStorage.setItem("ap_theme",THEME); applyTheme(); });
+applyTheme();
+
+// ---- API ------------------------------------------------------------------------------------------
+const BASE="/api/autopilot";
+async function api(path,opt={}){
+  const r=await fetch(BASE+path,opt); const ct=r.headers.get("content-type")||"";
+  const b=ct.includes("json")?await r.json():await r.text();
+  if(!r.ok) throw new Error((b&&b.error)||(b&&b.detail&&(typeof b.detail==="string"?b.detail:JSON.stringify(b.detail)))||("HTTP "+r.status));
+  return b;
+}
+const post=(path,body)=>api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+const put=(path,body)=>api(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+const qs=o=>{const p=new URLSearchParams();for(const[k,v]of Object.entries(o||{})){if(v===""||v==null||v===false||(Array.isArray(v)&&!v.length))continue;p.set(k,Array.isArray(v)?v.join(","):v===true?"1":v);}const s=p.toString();return s?"?"+s:"";};
+
+function toast(html,ms=6000){ const n=el("div",{class:"toast",html}); $("#toasts").append(n); setTimeout(()=>n.remove(),ms); }
+function dialog(...kids){ const b=$("#dlg-body"); b.replaceChildren(...kids, el("div",{class:"row",style:"margin-top:14px"},el("span",{class:"sp"}),el("button",{class:"btn",type:"button",onclick:()=>$("#dlg").close(),text:t("close")}))); $("#dlg").showModal(); return b; }
+$("#dlg").addEventListener("click",e=>{ if(e.target===$("#dlg")) $("#dlg").close(); });
+function loadingCard(){ return el("div",{class:"card"},el("p",{class:"lead",text:t("loading")})); }
+function errorCard(e){ return el("div",{class:"card"},el("b",{text:t("err_load")})," — ",el("code",{text:e.message})); }
+function emptyCard(msg){ return el("div",{class:"empty",text:msg||t("empty")}); }
+function pager(total,limit,offset,onpage){ const pages=Math.max(1,Math.ceil(total/limit)), cur=Math.floor(offset/limit)+1;
+  return el("div",{class:"pager"},el("span",{text:`${num(total)} ${t("total")} · ${t("page")} ${cur} ${t("of")} ${pages}`}),
+    el("button",{class:"btn s",type:"button",disabled:cur<=1,onclick:()=>onpage((cur-2)*limit),text:"‹"}),
+    el("button",{class:"btn s",type:"button",disabled:cur>=pages,onclick:()=>onpage(cur*limit),text:"›"})); }
+
+// ---- shared vocab -----------------------------------------------------------------------------------
+const ROLE_LABEL={pflegefachkraft:"Pflegefachkraft",fachpflege:"Fachpflege",pflegehelfer:"Pflegehelfer",praxisanleitung:"Praxisanleitung",leitung:"Leitung",apn_experte:"APN/Experte",hebamme:"Hebamme",ota_ata:"OTA/ATA",sonstige_pflege:"Sonstige Pflege"};
+const roleLabel=v=>ROLE_LABEL[v]||v||"–";
+const STAGE_DE=["new","contacted","qualifying","docs_pending","qualified","matching","profile_sent","interview_scheduling","interview_scheduled","interviewed","offer","placed"];
+const STAGE_LABEL={de:{new:"Neu",contacted:"Kontaktiert",qualifying:"Qualifizierung",docs_pending:"Unterlagen",qualified:"Qualifiziert",matching:"Matching",profile_sent:"Profil gesendet",interview_scheduling:"Termin wird geplant",interview_scheduled:"Termin geplant",interviewed:"Interview geführt",offer:"Angebot",placed:"Platziert",lost:"Verloren",dormant:"Ruhend"},
+ en:{new:"New",contacted:"Contacted",qualifying:"Qualifying",docs_pending:"Docs pending",qualified:"Qualified",matching:"Matching",profile_sent:"Profile sent",interview_scheduling:"Scheduling",interview_scheduled:"Scheduled",interviewed:"Interviewed",offer:"Offer",placed:"Placed",lost:"Lost",dormant:"Dormant"}};
+const stageLabel=s=>(STAGE_LABEL[LANG]||STAGE_LABEL.de)[s]||s||"–";
+const THREAD_LABEL={de:{draft:"Entwurf",intro_sent:"Intro gesendet",awaiting_reply:"Wartet auf Antwort",interested:"Interessiert",scheduling:"Terminierung",scheduled:"Termin steht",feedback_pending:"Feedback ausstehend",closed_won:"Gewonnen",closed_lost:"Verloren",no_response:"Keine Antwort"},
+ en:{draft:"Draft",intro_sent:"Intro sent",awaiting_reply:"Awaiting reply",interested:"Interested",scheduling:"Scheduling",scheduled:"Scheduled",feedback_pending:"Feedback pending",closed_won:"Won",closed_lost:"Lost",no_response:"No response"}};
+const threadLabel=s=>(THREAD_LABEL[LANG]||THREAD_LABEL.de)[s]||s||"–";
+const RISK_COLOR={low:"green",medium:"yellow",high:"red"};
+function riskTag(risk){ return el("span",{class:"tag "+(RISK_COLOR[risk]||"grey"),text:t("risk_"+(risk||"low"))}); }
+function avatar(cand_or_id,initials){ const seed=typeof cand_or_id==="object"?(cand_or_id.avatar_color):null; return el("div",{class:"avatar",style:`background:${seed||"#6C7583"}`,text:initials||"?"}); }
+// conversation status chip per the WhatsApp operator vocabulary (MANAGER / ANTWORT NÖTIG / LUNA AKTIV / LUNA PAUSIERT / GESTOPPT / MENSCH)
+function modeTag(cv){
+  if(cv.mode==="stopped") return el("span",{class:"tag red",text:t("tag_stopped")});
+  if(cv.mode==="manager") return el("span",{class:"tag red",text:t("tag_manager")});
+  if(cv.mode==="human") return el("span",{class:"tag sky",text:t("tag_human")});
+  if(cv.mode==="paused") return el("span",{class:"tag grey",text:t("tag_paused")});
+  if(cv.next_actor==="us") return el("span",{class:"tag yellow",text:t("tag_reply")});
+  return el("span",{class:"tag green",text:t("tag_active")});
+}
+function scorebar(score){ return el("div",{class:"scorebar"},el("i",{style:`width:${Math.max(2,Math.min(100,score))}%`})); }
+
+// ---- router -----------------------------------------------------------------------------------------
+const NAV=[["/inbox","n_inbox"],["/funnel","n_funnel"],["/matching","n_matching"],["/clinics","n_clinics"],["/approvals","n_approvals"],["/queue","n_queue"],["/campaigns","n_campaigns"],["/templates","n_templates"],["/accounts","n_accounts"],["/policy","n_policy"]];
+function parseHash(){ const h=location.hash.replace(/^#/,"")||"/inbox"; const [p,q]=h.split("?"); const params={}; new URLSearchParams(q||"").forEach((v,k)=>params[k]=v); return {path:p||"/inbox",params}; }
+function nav(path,params){ location.hash=path+qs(params||{}); }
+function setParams(params){ const {path}=parseHash(); history.replaceState(null,"","#"+path+qs(params)); }
+function renderSidenav(){ const {path}=parseHash();
+  $("#sidenav").replaceChildren(...NAV.map(([p,k])=>{
+    const on=p==="/matching"?(path.startsWith("/matching")||path.startsWith("/cohorts")):p==="/clinics"?path.startsWith("/clinics"):path.startsWith(p);
+    let bd=null; if(p==="/approvals"&&OVERVIEW?.counts?.approvals_pending) bd=el("span",{class:"bd",text:num(OVERVIEW.counts.approvals_pending)});
+    if(p==="/queue"&&OVERVIEW?.counts?.queue_due) bd=el("span",{class:"bd",text:num(OVERVIEW.counts.queue_due)});
+    return el("a",{href:"#"+p,class:on?"on":""},t(k),bd);
+  }));
+}
+let ROUTE_TOKEN=0;
+async function route(){
+  const {path,params}=parseHash(); const token=++ROUTE_TOKEN; const v=$("#view"); renderSidenav(); renderTopbar();
+  v.replaceChildren(loadingCard());
+  try{
+    let m; let page;
+    if(path==="/"||path==="") { nav("/inbox"); return; }
+    else if((m=path.match(/^\/inbox\/(\d+)$/))) page=await pageInbox(params, +m[1]);
+    else if(path==="/inbox") page=await pageInbox(params, null);
+    else if(path==="/funnel") page=await pageFunnel(params);
+    else if(path==="/matching") page=await pageMatching(params);
+    else if((m=path.match(/^\/cohorts\/(\d+)$/))) page=await pageCohortDetail(+m[1]);
+    else if((m=path.match(/^\/clinics\/(\d+)$/))) page=await pageClinicDetail(+m[1]);
+    else if(path==="/clinics") page=await pageClinics(params);
+    else if(path==="/approvals") page=await pageApprovals(params);
+    else if(path==="/queue") page=await pageQueue(params);
+    else if(path==="/campaigns") page=await pageCampaigns();
+    else if(path==="/templates") page=await pageTemplates(params);
+    else if(path==="/accounts") page=await pageAccounts();
+    else if(path==="/policy") page=await pagePolicy();
+    else page=el("p",{class:"empty",text:"404"});
+    if(token!==ROUTE_TOKEN) return;
+    v.replaceChildren(...[].concat(page));
+  }catch(e){ if(token!==ROUTE_TOKEN) return; v.replaceChildren(errorCard(e)); console.error(e); }
+}
+window.addEventListener("hashchange",route);
+
+// ---- topbar: mode switch, pills, time travel, clock ---------------------------------------------------
+let OVERVIEW=null, POLICY=null;
+function renderTopbar(){
+  const modes=["off","assist","auto"];
+  $("#modeseg").replaceChildren(...modes.map(m=>el("button",{type:"button",class:m,"aria-pressed":String(POLICY?.mode===m),onclick:()=>setMode(m)},t("mode_"+m))));
+  const c=OVERVIEW?.counts||{};
+  const pillDef=[["pill_reply","needs_reply","/inbox?view=needs_reply"],["pill_manager","manager","/inbox?view=manager"],["pill_paused","paused","/inbox?view=paused"],["pill_approvals","approvals_pending","/approvals"],["pill_due","queue_due","/queue"]];
+  $("#pills").replaceChildren(...pillDef.map(([k,ck,href])=>el("a",{class:"pill"+((c[ck]||0)>0?" hot":""),href:"#"+href},el("b",{text:num(c[ck]||0)})," "+t(k))));
+  $("#tt").replaceChildren(...[["tt_1h",60],["tt_8h",480],["tt_1d",1440]].map(([k,m])=>el("button",{type:"button",onclick:()=>tick(m)},t(k))));
+  $("#clock").textContent=POLICY?.sim_now?fmtDT(POLICY.sim_now):"–";
+}
+async function setMode(m){ if(POLICY?.mode===m) return; if(m==="auto"&&!confirm(t("confirm_auto"))) return; try{ POLICY=await put("/policy",{mode:m}); renderTopbar(); }catch(e){ toast(t("err_generic",{m:e.message})); } }
+async function tick(minutes){ try{ const r=await post("/tick",{minutes}); POLICY={...POLICY,sim_now:r.sim_now}; const s=r.summary||{}; toast(t("tt_done",{m:s.messages_out||0,i:s.messages_in||0,a:s.approvals_created||0,q:s.queue_run||0,l:s.leads_new||0})); await loadOverview(); route(); }catch(e){ toast(t("err_generic",{m:e.message})); } }
+async function loadOverview(){ try{ OVERVIEW=await api("/overview"); POLICY=POLICY?{...POLICY,mode:OVERVIEW.mode,sim_now:OVERVIEW.sim_now}:{mode:OVERVIEW.mode,sim_now:OVERVIEW.sim_now}; renderTopbar(); renderSidenav(); }catch(e){ /* offline: keep last known */ } }
+setInterval(loadOverview,20000);
+
+// ==================================================================================================
+// INBOX
+// ==================================================================================================
+const INBOX_TABS=[["all","tab_all",null],["needs_reply","tab_reply","needs_reply"],["manager","tab_manager","manager"],["paused","tab_paused","paused"],["luna","tab_luna","luna_active"],["clinics","tab_clinics",null],["overdue","tab_overdue","overdue"]];
+let INBOX_STATE=null;
+async function pageInbox(params, id){
+  const st=INBOX_STATE&&INBOX_STATE.keep?INBOX_STATE:{view:params.view||"all",q:"",channel:"",next_actor:"",language:"",campaign_id:"",selected:new Set()};
+  st.keep=false; INBOX_STATE=st; if(params.view) st.view=params.view;
+  const root=el("div",{class:"inbox"+(id?" has-thread":"")});
+  const rail=el("div",{class:"rail ib-rail"});
+  const tabs2=el("div",{class:"tabs2"});
+  let clinicsTotal=null;
+  try{ clinicsTotal=(await api("/conversations"+qs({view:"clinics",limit:1}))).total; }catch(e){}
+  function tabCount(ck,key){ if(key==="clinics") return clinicsTotal; return OVERVIEW?.counts?.[ck]??null; }
+  INBOX_TABS.forEach(([v,lk,ck])=>{
+    const n=v==="all"?null:tabCount(v,ck);
+    const b=el("button",{type:"button","aria-pressed":String(st.view===v),onclick:()=>{st.view=v;st.keep=true;setParams({view:v==="all"?"":v});renderList();}},t(lk),n!=null?el("span",{class:"n",text:num(n)}):null);
+    tabs2.append(b);
+  });
+  rail.append(tabs2);
+  const search=el("input",{type:"search",placeholder:t("search_ph"),"data-ph":"search_ph",id:"ib-search",value:st.q,oninput:debounce(e=>{st.q=e.target.value;st.keep=true;renderList();},250)});
+  rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:"⌕"}),search));
+  const selChannel=el("select",{onchange:e=>{st.channel=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),el("option",{value:"whatsapp",text:"WhatsApp"}),el("option",{value:"email",text:"E-Mail"}));
+  selChannel.value=st.channel;
+  rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_channel")}),selChannel));
+  const selNext=el("select",{onchange:e=>{st.next_actor=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),el("option",{value:"us",text:"us"}),el("option",{value:"candidate",text:"candidate"}),el("option",{value:"clinic",text:"clinic"}),el("option",{value:"none",text:"none"}));
+  selNext.value=st.next_actor;
+  rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_next")}),selNext));
+  const selLang=el("select",{onchange:e=>{st.language=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),...["de","en","ro"].map(l=>el("option",{value:l,text:l})));
+  selLang.value=st.language;
+  rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_lang")}),selLang));
+  root.append(rail);
+
+  const listBox=el("div");
+  const middle=el("div",{class:"ib-list-col"},listBox);
+  root.append(middle);
+  const threadBox=el("div",{class:"ib-thread-col"});
+  root.append(threadBox);
+
+  async function renderList(){
+    listBox.replaceChildren(loadingCard());
+    let data;
+    try{ data=await api("/conversations"+qs({view:st.view==="all"?"":st.view,q:st.q,channel:st.channel,next_actor:st.next_actor,lang:st.language,limit:200})); }
+    catch(e){ listBox.replaceChildren(errorCard(e)); return; }
+    const rows=data.rows||[];
+    const list=el("div",{class:"list",id:"ib-list"});
+    if(!rows.length) list.append(emptyCard(t("no_results")));
+    rows.forEach(r=>{
+      const cb=el("input",{type:"checkbox",class:"cb",onclick:e=>{e.stopPropagation(); r._checked=cb.checked; renderBulk();}});
+      const row=el("div",{class:"lrow"+(id===r.id?" on":""),"data-id":r.id,onclick:()=>nav("/inbox/"+r.id,{view:st.view==="all"?"":st.view})},
+        cb, avatar(r,r.initials),
+        el("div",{class:"body"},
+          el("div",{class:"top1"},el("span",{class:"nm",text:r.name}),el("span",{class:"tm",text:ago(r.last_at)})),
+          el("div",{class:"pv",text:r.last_preview||""}),
+          el("div",{class:"meta2"}, modeTag(r), r.overdue?el("span",{class:"overduemark",text:"⏰ "+t("overdue")}):null)),
+        r.unread?el("div",{class:"unreaddot",title:t("unread")}):null);
+      list.append(row);
+    });
+    listBox.replaceChildren(list, el("div",{class:"m",style:"padding:6px 2px",text:`${num(data.total)} ${t("total")}`}));
+    renderBulk();
+    function renderBulk(){
+      const chosen=rows.filter(r=>r._checked);
+      let bar=listBox.querySelector(".bulkbar"); if(bar) bar.remove();
+      if(!chosen.length) return;
+      bar=el("div",{class:"bulkbar"}, el("span",{text:t("bulk_selected",{n:chosen.length})}), el("span",{class:"sp"}),
+        el("button",{class:"btn s",type:"button",onclick:()=>bulkMode(chosen,"luna")},t("bulk_resume")),
+        el("button",{class:"btn s",type:"button",onclick:()=>bulkMode(chosen,"paused")},t("bulk_pause")),
+        el("button",{class:"btn s danger",type:"button",onclick:()=>bulkMode(chosen,"stopped")},t("bulk_stop")));
+      list.prepend(bar);
+    }
+    async function bulkMode(chosen,mode){
+      let reason=null; if(mode!=="luna") reason=prompt(t("bulk_reason"))||""; if(reason===null) return;
+      try{ await post("/conversations/bulk",{ids:chosen.map(r=>r.id),mode,reason}); toast(t("saved")); renderList(); }catch(e){ toast(t("err_generic",{m:e.message})); }
+    }
+  }
+  await renderList();
+  if(id) await renderThread(threadBox, id, ()=>renderList()); else threadBox.replaceChildren(el("div",{class:"card"},emptyCard(t("empty_select"))));
+  root._focusSearch=()=>search.focus();
+  root._move=dir=>{ const items=[...listBox.querySelectorAll(".lrow")]; if(!items.length) return; let i=items.findIndex(x=>x.classList.contains("on")); i=i<0?0:Math.max(0,Math.min(items.length-1,i+dir)); items[i].click(); items[i].scrollIntoView({block:"nearest"}); };
+  return root;
+}
+
+async function renderThread(box, id, onchange){
+  box.replaceChildren(loadingCard());
+  let d; try{ d=await api("/conversations/"+id); }catch(e){ box.replaceChildren(errorCard(e)); return; }
+  post(`/conversations/${id}/action`,{action:"mark_read"}).catch(()=>{});
+  const row=document.querySelector(`.lrow[data-id="${id}"]`); if(row){ const dot=row.querySelector(".unreaddot"); if(dot) dot.remove(); }
+  const cv=d.conversation, cand=d.candidate;
+  const wrap=el("div",{class:"thread-wrap"});
+  const thread=el("div",{class:"thread"});
+  const modeOptions=["luna","paused","human","manager","stopped"].map(m=>el("option",{value:m,selected:cv.mode===m,text:m}));
+  const modeSelect=el("select",{},...modeOptions);
+  modeSelect.addEventListener("change",async()=>{
+    const mode=modeSelect.value; const reason=(mode==="paused"||mode==="stopped")?(prompt(t("mode_menu_reason"))||""):null;
+    try{ await post(`/conversations/${id}/mode`,{mode,reason}); toast(t("saved")); renderThread(box,id,onchange); onchange&&onchange(); }
+    catch(er){ toast(t("err_generic",{m:er.message})); modeSelect.value=cv.mode; }
+  });
+  const backLink=el("a",{class:"back-link",href:"#/inbox",text:"‹ "+t("n_inbox")});
+  const hd=el("div",{class:"thread-hd"},
+    el("div",{},backLink,el("b",{text:cand?cand.name:(d.clinic_thread?d.clinic_thread.clinic_name:cv.kind)}),el("span",{class:"m",text:" · "+stageLabel(cv.state)}), modeTag(cv)),
+    el("div",{class:"row"},modeSelect));
+  thread.append(hd);
+  const bubbles=el("div",{class:"bubbles"});
+  (d.messages||[]).forEach(m=>{
+    const out=m.dir==="out"; const pend=m.status==="pending_approval";
+    const b=el("div",{class:"bubble "+(pend?"pending":(out?"out":"in"))},
+      m.template_id?el("div",{class:"cap",text:(m.author||"")+(pend?" · "+t("pending_draft"):"")}):null,
+      el("div",{text:m.text}), el("div",{class:"tm2",text:fmtDT(m.at)+(m.attachments&&m.attachments.length?" · 📎"+m.attachments.length:"")}));
+    bubbles.append(b);
+  });
+  thread.append(bubbles);
+  const pendingApprovals=(d.approvals||[]).filter(a=>a.status==="pending");
+  if(pendingApprovals.length){
+    const box2=el("div",{style:"padding:0 12px 8px"});
+    pendingApprovals.forEach(a=>{
+      const ta=el("textarea",{style:"width:100%;min-height:50px",value:a.draft||""});
+      box2.append(el("div",{class:"card",style:"margin-bottom:6px;border-style:dashed;border-color:var(--yellow)"},
+        el("div",{class:"row"},riskTag(a.risk),el("span",{class:"m",text:a.reason||a.kind})),
+        ta,
+        el("div",{class:"row",style:"margin-top:6px"},
+          el("button",{class:"btn n s",type:"button",onclick:async()=>{ try{ await post(`/approvals/${a.id}`,{decision:"approve"}); toast(t("approve")); renderThread(box,id,onchange); onchange&&onchange(); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("approve")),
+          el("button",{class:"btn s",type:"button",onclick:async()=>{ try{ await post(`/approvals/${a.id}`,{decision:"edit",text:ta.value}); toast(t("approve")); renderThread(box,id,onchange); onchange&&onchange(); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("edit_send")),
+          el("button",{class:"btn s danger",type:"button",onclick:async()=>{ try{ await post(`/approvals/${a.id}`,{decision:"reject"}); toast(t("reject")); renderThread(box,id,onchange); onchange&&onchange(); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("reject")))));
+    });
+    thread.append(box2);
+  }
+  const ta=el("textarea",{placeholder:t("compose_ph")});
+  const asSel=el("select",{},el("option",{value:"operator",text:t("as_operator")}),el("option",{value:"luna",text:t("as_luna")}));
+  const composer=el("div",{class:"composer"}, ta, asSel,
+    el("button",{class:"btn",type:"button",title:t("suggest"),onclick:()=>{ if(d.suggestion&&d.suggestion.text) ta.value=d.suggestion.text; }},"✨ "+t("suggest")),
+    el("button",{class:"btn n",type:"button",onclick:async()=>{
+      const text=ta.value.trim(); if(!text) return;
+      try{ await post(`/conversations/${id}/send`,{text,as:asSel.value}); ta.value=""; toast(t("sent")); renderThread(box,id,onchange); onchange&&onchange(); }
+      catch(e){ toast(t("err_send",{m:e.message})); }
+    }},t("send")));
+  thread.append(composer);
+  wrap.append(thread);
+
+  const ctx=el("div",{class:"ctx"});
+  if(d.checklist&&d.checklist.length){
+    ctx.append(el("div",{class:"card"},el("h3",{text:t("ctx_checklist")}),
+      el("ul",{class:"checklist"},...d.checklist.map(c=>el("li",{},el("span",{text:c.label}),el("span",{class:c.status==="ok"?"ok":c.status==="missing"?"missing":"unclear",text:c.value||c.status}))))));
+  }
+  if(cand){
+    ctx.append(el("div",{class:"card"},el("h3",{text:"Profil"}),el("div",{class:"kv"},
+      el("span",{text:"Rolle"}),el("span",{text:roleLabel(cand.role_class)}),
+      el("span",{text:"Ort"}),el("span",{text:(cand.plz?cand.plz+" ":"")+(cand.city||"–")}),
+      el("span",{text:"Radius"}),el("span",{text:(cand.radius_km??"–")+" km"}),
+      el("span",{text:"Deutsch"}),el("span",{text:cand.german_level||"–"}),
+      el("span",{text:t("anerkennung")}),el("span",{text:cand.anerkennung_status||"–"}),
+      el("span",{text:"Start"}),el("span",{text:cand.start_from||"–"}))));
+  }
+  if(d.matches&&d.matches.length){
+    ctx.append(el("div",{class:"card"},el("h3",{text:t("ctx_matches")}),
+      ...d.matches.slice(0,5).map(m=>el("div",{class:"matchrow"},
+        el("a",{href:"#/clinics/"+(m.clinic&&m.clinic.clinic_id||""),onclick:e=>e.stopPropagation(),text:(m.clinic&&m.clinic.name)||m.clinic_id,style:"max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block"}),
+        scorebar(m.score), el("span",{class:"m",text:m.status}),
+        m.status==="proposed"?el("button",{class:"btn s",type:"button",onclick:async()=>{ try{ await post(`/matches/${m.id}/status`,{status:"sent"}); toast(t("match_status_sent")); renderThread(box,id,onchange); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("send_profile")):null))));
+  }
+  if(d.timeline&&d.timeline.length){
+    ctx.append(el("div",{class:"card"},el("h3",{text:t("ctx_timeline")}),
+      el("ul",{class:"timeline"},...d.timeline.slice(0,25).map(ev=>el("li",{},el("b",{text:fmtDT(ev.at)+" "}),ev.actor+": "+(ev.detail||ev.kind))))));
+  }
+  wrap.append(ctx);
+  box.replaceChildren(wrap);
+}
+
+// ==================================================================================================
+// FUNNEL
+// ==================================================================================================
+async function pageFunnel(params){
+  const root=el("div");
+  root.append(el("h1",{text:t("n_funnel")}));
+  const by=params.by||"source";
+  let data; try{ data=await api("/funnel"+qs({by})); }catch(e){ return errorCard(e); }
+  const card=el("div",{class:"card"});
+  const maxCount=Math.max(1,...data.stages.map(s=>s.count));
+  data.stages.forEach(s=>{
+    card.append(el("div",{class:"funnelrow"},
+      el("a",{href:"#/inbox?view=needs_reply",onclick:e=>{},text:stageLabel(s.stage)}),
+      el("div",{class:"fbar"},el("i",{style:`width:${Math.max(2,s.count/maxCount*100)}%`})),
+      el("span",{class:"num",text:num(s.count)}),
+      el("span",{class:"m",text:s.conversion_from_prev!=null?pct(s.conversion_from_prev):"–"}),
+      el("span",{class:"m",text:s.median_days!=null?s.median_days+"d":"–"})));
+  });
+  root.append(card);
+  const b=data.baseline||{};
+  root.append(el("div",{class:"card"},el("h3",{text:t("baseline")}),el("div",{class:"grid"},
+    ...["leads","qualified","interviews","placed"].map(k=>el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},k),el("span",{class:"t",text:num(b[k])}))),
+    el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPL"),el("span",{class:"t",text:eur(b.cost_per_lead)})),
+    el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPQ"),el("span",{class:"t",text:eur(b.cost_per_qualified)})),
+    el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPI"),el("span",{class:"t",text:eur(b.cost_per_interview)})),
+    el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPP"),el("span",{class:"t",text:eur(b.cost_per_placed)})))));
+
+  const groupSel=el("select",{onchange:e=>nav("/funnel",{by:e.target.value})},...[["source","g_campaign"],["language","g_lang"],["region","g_region"],["owner","g_owner"]].map(([v,k])=>el("option",{value:v,selected:v===by,text:t(k)})));
+  const groupHead=el("thead",{},el("tr",{},el("th",{text:t("group_by")}),...data.stages.map(s=>el("th",{class:"num",text:stageLabel(s.stage)}))));
+  const groupBody=el("tbody",{},...(data.groups||[]).map(g=>el("tr",{},el("td",{text:g.key||"–"}),...g.stages.map(s=>el("td",{class:"num",text:num(s.count)})))));
+  const groupTable=el("div",{class:"tw",style:"margin-top:10px"},el("table",{},groupHead,groupBody));
+  root.append(el("div",{class:"card"},el("div",{class:"row"},el("b",{text:t("group_by")+": "}),groupSel),groupTable));
+
+  const leakHead=el("thead",{},el("tr",{},el("th",{text:t("reason")}),el("th",{class:"num",text:t("th_count")})));
+  const leakBody=el("tbody",{},...(data.leaks||[]).map(l=>el("tr",{},el("td",{text:l.reason}),el("td",{class:"num",text:num(l.count)}))));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:t("leaks")})),el("table",{},leakHead,leakBody)));
+  return root;
+}
+
+// ==================================================================================================
+// MATCHING
+// ==================================================================================================
+async function pageMatching(params){
+  const root=el("div");
+  root.append(el("h1",{text:t("n_matching")}));
+  const two=el("div",{class:"two"});
+  // -- candidate picker + ranked clinics --
+  const left=el("div",{class:"card"},el("h3",{text:t("pick_candidate")}));
+  const searchIn=el("input",{type:"search",placeholder:t("search_candidate"),style:"width:100%;margin-bottom:8px"});
+  const results=el("div",{style:"max-height:220px;overflow:auto;margin-bottom:10px"});
+  const rankedBox=el("div");
+  left.append(searchIn, results, rankedBox);
+  async function searchCand(q){
+    let data; try{ data=await api("/candidates"+qs({q,stage:"qualified,matching,profile_sent,interview_scheduling,interview_scheduled,interviewed",limit:20})); }catch(e){ results.replaceChildren(errorCard(e)); return; }
+    results.replaceChildren(...(data.rows||[]).map(c=>el("div",{class:"row",style:"padding:4px 0;cursor:pointer;border-bottom:1px solid var(--line)",onclick:()=>loadRanked(c)},avatar(c,c.initials),el("span",{text:c.name}),el("span",{class:"m",text:roleLabel(c.role_class)+" · "+c.city}))));
+  }
+  async function loadRanked(c){
+    let data; try{ data=await api("/matches"+qs({candidate_id:c.id})); }catch(e){ rankedBox.replaceChildren(errorCard(e)); return; }
+    rankedBox.replaceChildren(el("div",{class:"row"},el("b",{text:c.name}),el("span",{class:"m",text:roleLabel(c.role_class)})),
+      ...(data.rows||[]).sort((a,b)=>b.score-a.score).map(m=>el("div",{class:"matchrow"},
+        el("div",{style:"min-width:0"},el("div",{class:"t",text:m.clinic.name}),el("div",{class:"m",text:(m.posting?m.posting.title:"")+" · "+(m.reasons||[]).join(", ")})),
+        scorebar(m.score), el("span",{class:"m",text:m.status}),
+        m.status==="proposed"?el("button",{class:"btn s",type:"button",onclick:async()=>{ try{ await post(`/matches/${m.id}/status`,{status:"sent"}); toast(t("match_status_sent")); loadRanked(c); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("send_profile")):null)));
+  }
+  searchIn.addEventListener("input",debounce(()=>searchCand(searchIn.value),250));
+  searchCand("");
+  two.append(left);
+
+  // -- cohort builder --
+  const right=el("div",{class:"card"},el("h3",{text:t("build_cohort")}));
+  const crit={role_class:"pflegefachkraft",region:"",qualification:"",german_level_min:"",anerkennung:""};
+  const roleSel=el("select",{},...Object.keys(ROLE_LABEL).map(k=>el("option",{value:k,text:roleLabel(k)})));
+  const regionIn=el("input",{type:"text",placeholder:"z. B. Oberbayern"});
+  const glSel=el("select",{},el("option",{value:"",text:t("all")}),...["A1","A2","B1","B2","C1","C2"].map(l=>el("option",{value:l,text:l})));
+  const form=el("div",{class:"grid"},
+    el("div",{},el("span",{class:"lbl",style:"display:block"},t("role_class")),roleSel),
+    el("div",{},el("span",{class:"lbl",style:"display:block"},t("region")),regionIn),
+    el("div",{},el("span",{class:"lbl",style:"display:block"},t("german_min")),glSel));
+  const previewBox=el("div"); let previewData=null;
+  const btnPreview=el("button",{class:"btn",type:"button",onclick:async()=>{
+    const criteria={role_class:roleSel.value,region:regionIn.value||undefined,german_level_min:glSel.value||undefined};
+    try{ previewData=await post("/cohorts/preview",{criteria}); renderPreview(); }catch(e){ toast(t("err_generic",{m:e.message})); }
+  }},t("preview"));
+  right.append(form, el("div",{class:"row",style:"margin:8px 0"},btnPreview), previewBox);
+  function renderPreview(){
+    if(!previewData){ previewBox.replaceChildren(); return; }
+    const p=previewData;
+    previewBox.replaceChildren(
+      el("div",{class:"m"},`${p.candidates.length} ${t("members")} · ${p.clinics.length} ${t("targets")}`),
+      el("details",{},el("summary",{text:t("members")}),...p.candidates.slice(0,10).map(c=>el("div",{class:"m",text:c.profile}))),
+      el("details",{},el("summary",{text:t("targets")}),...p.clinics.slice(0,10).map(cl=>el("div",{class:"m",text:`${cl.name} · ${cl.open_postings} ${t("jobs_open")} · ${t("score")} ${cl.score}`}))),
+      p.throttled&&(p.throttled.candidates.length||p.throttled.clinics.length)?el("div",{class:"m",style:"color:var(--yellow)"},t("throttled")+`: ${p.throttled.candidates.length} ${t("members")}, ${p.throttled.clinics.length} ${t("targets")}`):null,
+      el("details",{},el("summary",{text:t("bundle")}),el("div",{class:"card",style:"white-space:pre-wrap;font-size:12px"},p.bundle_preview.subject+"\n\n"+p.bundle_preview.body)),
+      el("div",{class:"row"},el("button",{class:"btn n",type:"button",onclick:async()=>{
+        try{ const coh=await post("/cohorts",{name:`${roleLabel(roleSel.value)} ${regionIn.value||""}`.trim(),criteria:{role_class:roleSel.value,region:regionIn.value||undefined,german_level_min:glSel.value||undefined},candidate_ids:p.candidates.map(c=>c.id),clinic_ids:p.clinics.map(c=>c.clinic_id)});
+          toast(t("saved")); nav("/cohorts/"+coh.id); }catch(e){ toast(t("err_generic",{m:e.message})); }
+      }},t("create_cohort"))));
+  }
+  two.append(right);
+  root.append(two);
+
+  // -- existing cohorts --
+  let cohorts; try{ cohorts=await api("/cohorts"+qs({limit:50})); }catch(e){ cohorts={rows:[]}; }
+  const cohortHead=el("thead",{},el("tr",{},el("th",{text:t("cohort_name")}),el("th",{text:t("status")}),el("th",{class:"num",text:t("members")}),el("th",{class:"num",text:t("targets")}),el("th",{class:"num",text:(THREAD_LABEL[LANG]||THREAD_LABEL.de).interested})));
+  const cohortBody=el("tbody",{},...(cohorts.rows||[]).map(c=>el("tr",{class:"lnk",onclick:()=>nav("/cohorts/"+c.id)},
+    el("td",{text:c.name}),el("td",{text:c.status}),el("td",{class:"num",text:num(c.n_candidates)}),el("td",{class:"num",text:num(c.n_clinics)}),el("td",{class:"num",text:num(c.interested)}))));
+  const cohortTable=el("table",{},cohortHead,cohortBody);
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:t("existing_cohorts")})),el("div",{class:"tw"},cohortTable)));
+  return root;
+}
+
+async function pageCohortDetail(id){
+  let d; try{ d=await api("/cohorts/"+id); }catch(e){ return errorCard(e); }
+  const root=el("div");
+  const cohortHdLeft=el("div",{},el("h1",{text:d.name}),el("p",{class:"lead",text:`${t("status")}: ${d.status} · ${d.members.length} ${t("members")} · ${d.clinics.length} ${t("targets")}`}));
+  const cohortSendBtn=d.status==="draft"?el("button",{class:"btn n",type:"button",onclick:async()=>{
+    try{ const r=await post(`/cohorts/${id}/send`); toast(r.approval_id?t("pending_approval"):t("sent")); pageCohortDetail(id).then(p=>$("#view").replaceChildren(p)); }
+    catch(e){ toast(t("err_generic",{m:e.message})); }
+  }},t("send_cohort")):null;
+  root.append(el("div",{class:"hd"},cohortHdLeft,cohortSendBtn));
+  root.append(el("div",{class:"card"},el("h3",{text:t("criteria")}),el("div",{class:"m",text:JSON.stringify(d.criteria)})));
+  const tw=el("div",{class:"tw"});
+  const table=el("table",{},el("thead",{},el("tr",{},el("th",{text:t("members")+" \\ "+t("targets")}),...d.clinics.map(cl=>el("th",{text:cl.name,style:"max-width:120px;overflow:hidden;text-overflow:ellipsis"})))));
+  const tbody=el("tbody",{});
+  d.members.forEach(m=>{
+    const tr=el("tr",{},el("td",{text:m.name||m.initials}));
+    d.clinics.forEach(cl=>{
+      const outcome=d.outcomes.find(o=>o.candidate_id===m.id&&o.clinic_id===cl.clinic_id);
+      tr.append(el("td",{text:outcome?outcome.status:"–"}));
+    });
+    tbody.append(tr);
+  });
+  table.append(tbody); tw.append(table);
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:"Outcomes"})),tw));
+  return root;
+}
+
+// ==================================================================================================
+// CLINICS
+// ==================================================================================================
+async function pageClinics(params){
+  const root=el("div"); root.append(el("h1",{text:t("n_clinics")}));
+  let data; try{ data=await api("/clinic-threads"+qs({limit:200})); }catch(e){ return errorCard(e); }
+  const rows=data.rows||[];
+  if(!rows.length){ root.append(emptyCard()); return root; }
+  const tw=el("div",{class:"tw"});
+  const chHead=el("thead",{},el("tr",{},el("th",{text:LANG==="de"?"Klinik":"Hospital"}),el("th",{text:t("status")}),el("th",{text:t("attempt")}),el("th",{class:"num",text:t("candidates_n")}),el("th",{text:LANG==="de"?"Letzte Aktivität":"Last activity"})));
+  const chBody=el("tbody",{},...rows.map(r=>{
+    const nameCell=el("td",{},el("div",{class:"t",text:r.clinic_name}),el("div",{class:"m",text:r.clinic&&r.clinic.town}));
+    const attemptTxt=`${r.followup_attempt||0}/3`+(r.next_followup_at?" · "+fmtD(r.next_followup_at):"");
+    return el("tr",{class:"lnk",onclick:()=>nav("/clinics/"+r.id)},
+      nameCell, el("td",{text:threadLabel(r.state)}), el("td",{text:attemptTxt}),
+      el("td",{class:"num",text:num((r.candidate_ids||[]).length)}), el("td",{text:ago(r.last_at)}));
+  }));
+  tw.append(el("table",{},chHead,chBody));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:num(data.total)+" "+t("n_clinics")})),tw));
+  return root;
+}
+
+async function pageClinicDetail(id){
+  let d; try{ d=await api("/clinic-threads/"+id); }catch(e){ return errorCard(e); }
+  const th=d.thread;
+  const root=el("div");
+  async function act(action,params){ try{ await post(`/clinic-threads/${id}/action`,{action,params:params||{}}); toast(t("saved")); pageClinicDetail(id).then(p=>$("#view").replaceChildren(p)); }catch(e){ toast(t("err_generic",{m:e.message})); } }
+  function closeAct(outcome){ const reason=prompt(t("lost_reason")); if(reason==null) return; act("close",{outcome,reason}); }
+  const hdLeft=el("div",{},el("h1",{text:th.clinic_name}),el("p",{class:"lead",text:threadLabel(th.state)+" · "+(th.clinic&&th.clinic.town)}));
+  const hdActions=el("div",{class:"row"},
+    el("button",{class:"btn",type:"button",onclick:()=>act("follow_up_now")},t("followup_now")),
+    el("button",{class:"btn",type:"button",onclick:()=>act("request_feedback")},t("feedback_req")),
+    el("button",{class:"btn danger",type:"button",onclick:()=>closeAct("won")},t("won")),
+    el("button",{class:"btn danger",type:"button",onclick:()=>closeAct("lost")},t("lost")));
+  root.append(el("div",{class:"hd"},hdLeft,hdActions));
+
+  const two=el("div",{class:"two"});
+  const msgs=el("div",{class:"card"},el("h3",{text:"E-Mail"}),el("div",{class:"bubbles",style:"max-height:400px"},...(d.messages||[]).map(m=>el("div",{class:"bubble "+(m.dir==="out"?"out":"in"),style:"max-width:100%"},el("div",{text:m.text}),el("div",{class:"tm2",text:fmtDT(m.at)})))));
+  two.append(msgs);
+  const neg=d.negotiation||{};
+  const negCard=el("div",{class:"card"},el("h3",{text:t("negotiation")}),
+    el("div",{class:"m"},`${t("round")} ${neg.round||1} · ${t("attempt")} ${neg.followup_attempt||0}/${neg.followup_max||3}`),
+    el("div",{style:"margin:8px 0"},(neg.proposed_slots&&neg.proposed_slots.length)?neg.proposed_slots.map(s=>el("span",{class:"slotchip"+(neg.agreed_slot===s?" agreed":""),onclick:()=>act("confirm_slot",{slot:s})},s)):el("span",{class:"m",text:t("no_slots")})),
+    el("div",{class:"row"},
+      el("button",{class:"btn s",type:"button",onclick:()=>act("propose_slots")},t("propose_slot")),
+      el("button",{class:"btn s",type:"button",onclick:()=>{ const slot=prompt(t("counter_slot")+":"); if(!slot) return; act("counter_slot",{slot}); }},t("counter_slot"))));
+  two.append(negCard);
+  root.append(two);
+  if(d.interviews&&d.interviews.length){
+    root.append(el("div",{class:"card"},el("h3",{text:t("interviews")}),...d.interviews.map(i=>el("div",{class:"row"},el("span",{text:fmtDT(i.at)}),el("span",{class:"m",text:i.format+" · "+t("round")+" "+i.round}),el("span",{class:"tag",text:i.status})))));
+  }
+  if(d.matches&&d.matches.length){
+    root.append(el("div",{class:"card"},el("h3",{text:t("ctx_matches")}),...d.matches.map(m=>el("div",{class:"matchrow"},el("span",{text:m.candidate?m.candidate.initials:m.candidate_id}),scorebar(m.score),el("span",{class:"m",text:m.status})))));
+  }
+  if(d.timeline&&d.timeline.length){
+    root.append(el("div",{class:"card"},el("h3",{text:t("ctx_timeline")}),el("ul",{class:"timeline"},...d.timeline.slice(0,20).map(ev=>el("li",{},el("b",{text:fmtDT(ev.at)+" "}),ev.detail||ev.kind)))));
+  }
+  return root;
+}
+
+// ==================================================================================================
+// APPROVALS
+// ==================================================================================================
+async function pageApprovals(params){
+  const root=el("div");
+  root.append(el("div",{class:"hd"},el("h1",{text:t("n_approvals")}),
+    el("button",{class:"btn n",type:"button",onclick:async()=>{ try{ const r=await post("/approvals/bulk",{decision:"approve",risk:"low"}); toast(t("saved")+`: ${r.decided}`); pageApprovals({}).then(p=>$("#view").replaceChildren(p)); }catch(e){ toast(t("err_generic",{m:e.message})); } }},t("approve_all_low"))));
+  let data; try{ data=await api("/approvals"+qs({status:"pending",limit:200})); }catch(e){ return errorCard(e); }
+  const rows=data.rows||[];
+  ["high","medium","low"].forEach(risk=>{
+    const group=rows.filter(a=>a.risk===risk);
+    if(!group.length) return;
+    const card=el("div",{class:"card"});
+    card.append(el("h3",{text:t("risk_"+risk)+` (${group.length})`}));
+    group.forEach(a=>{
+      const ta=el("textarea",{style:"width:100%;min-height:60px",value:a.draft||""});
+      card.append(el("div",{class:"card",style:"margin-bottom:8px"},
+        el("div",{class:"row"},riskTag(a.risk),el("b",{text:a.kind}),el("span",{class:"m",text:a.reason}),
+          a.candidate?el("a",{href:"#/inbox/"+(a.context.conversation_id||""),text:a.candidate.name||a.candidate.initials}):null,
+          a.clinic_thread?el("a",{href:"#/clinics/"+a.clinic_thread.id,text:a.clinic_thread.clinic_name}):null),
+        ta,
+        el("label",{class:"row",style:"font-size:12px;margin-top:4px"},el("input",{type:"checkbox",id:"rem-"+a.id}),t("remember")),
+        el("div",{class:"row",style:"margin-top:6px"},
+          el("button",{class:"btn n s",type:"button",onclick:()=>decide(a.id,"approve")},t("approve")),
+          el("button",{class:"btn s",type:"button",onclick:()=>decide(a.id,"edit",ta.value)},t("edit_send")),
+          el("button",{class:"btn s danger",type:"button",onclick:()=>decide(a.id,"reject")},t("reject")))));
+      async function decide(id,decision,text){
+        try{ await post(`/approvals/${id}`,{decision,text,remember:$("#rem-"+id)?.checked}); toast(t("saved")); pageApprovals({}).then(p=>$("#view").replaceChildren(p)); }
+        catch(e){ toast(t("err_generic",{m:e.message})); }
+      }
+    });
+    root.append(card);
+  });
+  if(!rows.length) root.append(emptyCard());
+  return root;
+}
+
+// ==================================================================================================
+// QUEUE
+// ==================================================================================================
+async function pageQueue(params){
+  const root=el("div");
+  root.append(el("h1",{text:t("n_queue")}), el("p",{class:"lead",text:t("queue_hint")}));
+  let data; try{ data=await api("/queue"+qs({status:"scheduled",limit:300})); }catch(e){ return errorCard(e); }
+  const rows=data.rows||[];
+  const tw=el("div",{class:"tw"});
+  async function queueAct(id,action,params){ try{ await post(`/queue/${id}`,{action,...(params||{})}); toast(t("saved")); pageQueue({}).then(p=>$("#view").replaceChildren(p)); }catch(e){ toast(t("err_generic",{m:e.message})); } }
+  const qHead=el("thead",{},el("tr",{},el("th",{text:t("due_at")}),el("th",{text:t("kind")}),el("th",{text:t("target")}),el("th",{text:t("reason")}),el("th",{text:t("status")}),el("th",{text:t("attempt")}),el("th",{})));
+  const qBody=el("tbody",{},...rows.map(r=>{
+    const actions=el("div",{class:"row",style:"flex-wrap:nowrap"},
+      el("button",{class:"btn s",type:"button",onclick:()=>queueAct(r.id,"run_now")},t("run_now")),
+      el("button",{class:"btn s",type:"button",onclick:()=>{ const reason=prompt(t("reason")); if(reason==null) return; queueAct(r.id,"cancel",{reason}); }},t("cancel")),
+      el("button",{class:"btn s",type:"button",onclick:()=>queueAct(r.id,"snooze",{minutes:240})},t("postpone")));
+    return el("tr",{style:r.overdue?"background:rgba(216,36,52,.08)":""},
+      el("td",{text:fmtDT(r.due_at)}),el("td",{text:r.kind}),
+      el("td",{text:r.candidate?r.candidate.name:(r.clinic_name||"–")}),
+      el("td",{text:r.reason}),el("td",{text:r.status}),el("td",{text:r.attempt}),
+      el("td",{},actions));
+  }));
+  tw.append(el("table",{},qHead,qBody));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:num(data.total)+" · "+data.overdue+" "+t("overdue_s")})),tw));
+  return root;
+}
+
+// ==================================================================================================
+// CAMPAIGNS
+// ==================================================================================================
+async function pageCampaigns(){
+  const root=el("div"); root.append(el("h1",{text:t("n_campaigns")}));
+  let data; try{ data=await api("/campaigns"); }catch(e){ return errorCard(e); }
+  if(data.alerts&&data.alerts.length){
+    root.append(el("div",{class:"card"},...data.alerts.map(a=>el("div",{class:"row"},el("span",{class:"tag "+(a.level==="warn"||a.level==="alert"?"yellow":"sky"),text:a.level}),el("a",{href:a.link||"#",text:a.text})))));
+  }
+  const tw=el("div",{class:"tw"});
+  const tbody=el("tbody",{});
+  async function campaignAct(id,action,extra){ try{ const r=await post(`/campaigns/${id}`,{action,...(extra||{})}); toast(r.approval_id?t("pending_approval"):t("saved")); pageCampaigns().then(p=>$("#view").replaceChildren(p)); }catch(e){ toast(t("err_generic",{m:e.message})); } }
+  (data.campaigns||[]).forEach(c=>{
+    const nameCell=el("td",{},el("div",{class:"t",text:c.name}),el("div",{class:"m",text:c.status}));
+    const pauseBtn=el("button",{class:"btn s",type:"button",onclick:e=>{e.stopPropagation(); campaignAct(c.id,c.status==="active"?"pause":"resume");}},c.status==="active"?t("pause"):t("resume"));
+    const budgetBtn=el("button",{class:"btn s",type:"button",onclick:e=>{ e.stopPropagation(); const v=prompt(t("budget")+":",c.daily_budget); if(v==null) return; campaignAct(c.id,"budget",{daily_budget:+v}); }},"€");
+    const actionsCell=el("td",{},el("div",{class:"row",style:"flex-wrap:nowrap"},pauseBtn,budgetBtn));
+    const tr=el("tr",{class:"lnk"},
+      nameCell,
+      el("td",{class:"num",text:eur(c.daily_budget)}),el("td",{class:"num",text:eur(c.spend_7d)}),
+      el("td",{class:"num",text:num(c.impressions)}),el("td",{class:"num",text:num(c.clicks)}),el("td",{class:"num",text:c.ctr!=null?c.ctr+"%":"–"}),
+      el("td",{class:"num",text:num(c.leads)}),el("td",{class:"num",text:eur(c.cpl)}),
+      el("td",{class:"num",text:num(c.qualified)}),el("td",{class:"num",text:eur(c.cpq)}),
+      el("td",{class:"num",text:num(c.interviews??(c.attributed&&c.attributed.interview))}),el("td",{class:"num",text:num(c.placed)}),el("td",{class:"num",text:eur(c.cpp)}),
+      actionsCell);
+    tr.addEventListener("click",()=>{
+      if(tr.nextRow&&tr.nextRow._open){ tr.nextRow.remove(); tr.nextRow._open=false; return; }
+      const adsetLines=(c.adsets||[]).map(a=>el("div",{class:"row",style:"padding:2px 0"},el("span",{text:a.name}),el("span",{class:"m",text:`${num(a.leads)} leads · CPL ${eur(a.cpl)}`})));
+      const td=el("td",{colspan:14},el("div",{class:"m",text:"Ad sets"}),...adsetLines);
+      const detail=el("tr",{},td); detail._open=true; tr.after(detail); tr.nextRow=detail;
+    });
+    tbody.append(tr);
+  });
+  const campHead=el("thead",{},el("tr",{},...["name","budget","spend7","impressions","clicks","ctr","leads","cpl","qualified","cpq","interviews","placed","cpp",""].map(k=>el("th",{class:k?"num":"",text:k?t(k):""}))));
+  tw.append(el("table",{},campHead,tbody));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:t("n_campaigns")})),tw));
+
+  const lpCards=(data.landing_pages||[]).map(lp=>{
+    const variantRows=lp.variants.map(v=>{
+      const setWinnerBtn=!v.winner?el("button",{class:"btn s",type:"button",onclick:async()=>{
+        try{ await post(`/landing-pages/${lp.id}`,{action:"set_winner",variant:v.key}); toast(t("saved")); pageCampaigns().then(p=>$("#view").replaceChildren(p)); }
+        catch(e){ toast(t("err_generic",{m:e.message})); }
+      }},t("set_winner")):null;
+      return el("div",{class:"row",style:"padding:3px 0"},el("span",{text:v.key+(v.winner?" 🏆":"")}),el("span",{class:"m",text:`${num(v.visits)} → ${num(v.leads)} (${pct(v.conversion)})`}),setWinnerBtn);
+    });
+    return el("div",{class:"card",style:"flex:1 1 260px"},
+      el("div",{class:"t",text:lp.title}),el("div",{class:"m",text:lp.slug+" · "+lp.status}),
+      ...variantRows,
+      el("a",{href:lp.wa_deeplink,target:"_blank",rel:"noopener",class:"m",text:"WA deep link ↗"}));
+  });
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:t("landing_pages")})),el("div",{style:"padding:10px;display:flex;gap:10px;flex-wrap:wrap"},...lpCards)));
+  return root;
+}
+
+// ==================================================================================================
+// TEMPLATES
+// ==================================================================================================
+async function pageTemplates(params){
+  const root=el("div"); root.append(el("h1",{text:t("n_templates")}));
+  let data; try{ data=await api("/templates"+qs({limit:200})); }catch(e){ return errorCard(e); }
+  const tw=el("div",{class:"tw"});
+  const tplHead=el("thead",{},el("tr",{},el("th",{text:t("channel")}),el("th",{text:t("lang")}),el("th",{text:t("stage")}),el("th",{text:t("name")}),el("th",{class:"num",text:t("version")}),el("th",{class:"num",text:t("uses")}),el("th",{class:"num",text:t("reply_rate")}),el("th",{text:t("active")}),el("th",{})));
+  const tplBody=el("tbody",{},...(data.rows||[]).map(tp=>{
+    const editBtn=el("button",{class:"btn s",type:"button",onclick:()=>editTemplate(tp)},t("edit"));
+    return el("tr",{},
+      el("td",{text:tp.channel}),el("td",{text:tp.lang}),el("td",{text:tp.stage}),el("td",{text:tp.name}),
+      el("td",{class:"num",text:tp.version}),el("td",{class:"num",text:num(tp.uses)}),el("td",{class:"num",text:pct(tp.reply_rate)}),
+      el("td",{text:tp.active?"✓":"–"}), el("td",{},editBtn));
+  }));
+  tw.append(el("table",{},tplHead,tplBody));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:num(data.total)+" "+t("n_templates")})),tw));
+  return root;
+}
+function editTemplate(tp){
+  const subj=el("input",{type:"text",style:"width:100%",value:tp.subject||""});
+  const body=el("textarea",{style:"width:100%;min-height:160px",value:tp.body||""});
+  const preview=el("div",{class:"card",style:"white-space:pre-wrap;font-size:12px"});
+  const sample={contact_name:"Frau Beispiel",clinic_name:"Klinikum Beispiel",posting_title:"Pflegefachkraft (m/w/d)",initials:"AB.",profile:"AB. – Pflegefachkraft, 5 Jahre Erfahrung.",start_from:"01.11.2026"};
+  function renderPreview(){ preview.textContent=(body.value||"").replace(/{{\s*(\w+)\s*}}/g,(m,k)=>sample[k]??m); }
+  body.addEventListener("input",renderPreview); renderPreview();
+  dialog(el("h2",{text:tp.name}),
+    el("div",{class:"m"},`${tp.channel} · ${tp.lang} · ${tp.stage} · v${tp.version}`),
+    tp.channel==="email"?el("div",{style:"margin:8px 0"},el("span",{class:"lbl",style:"display:block"},t("subject")),subj):null,
+    el("div",{style:"margin:8px 0"},el("span",{class:"lbl",style:"display:block"},t("body")),body),
+    el("div",{style:"margin:8px 0"},el("span",{class:"lbl",style:"display:block"},t("preview")),preview),
+    el("div",{class:"row"},el("button",{class:"btn n",type:"button",onclick:async()=>{
+      try{ await put(`/templates/${tp.id}`,{subject:subj.value,body:body.value}); toast(t("saved")); $("#dlg").close(); route(); }catch(e){ toast(t("err_generic",{m:e.message})); }
+    }},t("save"))));
+}
+
+// ==================================================================================================
+// ACCOUNTS
+// ==================================================================================================
+function useBar(used,cap){ const pctv=cap?Math.min(100,used/cap*100):0; return el("div",{class:"usebar"},el("i",{class:pctv>=95?"over":"",style:`width:${pctv}%`})); }
+function qualityDot(q){ return el("span",{class:"dotst "+(q==="green"?"green":q==="yellow"?"yellow":q==="red"?"red":"")}); }
+async function pageAccounts(){
+  const root=el("div"); root.append(el("h1",{text:t("n_accounts")}));
+  let data; try{ data=await api("/accounts"); }catch(e){ return errorCard(e); }
+  function acctTable(title,rows){
+    const head=el("thead",{},el("tr",{},el("th",{text:t("name")}),el("th",{text:t("status")}),el("th",{text:t("quality")}),el("th",{text:t("cap")}),el("th",{text:t("warmup")}),el("th",{text:t("last_error")}),el("th",{text:t("last_ok")})));
+    const body=el("tbody",{},...rows.map(a=>{
+      const nameCell=el("td",{},el("div",{class:"t",text:a.name}),el("div",{class:"m",text:a.identifier}));
+      const qualityCell=el("td",{},qualityDot(a.quality),a.quality||"–");
+      const capCell=el("td",{},useBar(a.used_today,a.daily_cap),el("div",{class:"m",text:`${num(a.used_today)} / ${num(a.daily_cap)}`}));
+      return el("tr",{},nameCell,el("td",{text:a.status}),qualityCell,capCell,el("td",{text:a.warmup_stage||"–"}),el("td",{class:"m",text:a.last_error||"–"}),el("td",{text:ago(a.last_ok_at)}));
+    }));
+    const table=el("table",{},head,body);
+    return el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:title})),el("div",{class:"tw"},table));
+  }
+  root.append(acctTable(t("whatsapp"),data.whatsapp||[]));
+  root.append(acctTable(t("mailboxes"),data.mailboxes||[]));
+  root.append(acctTable(t("apis"),data.apis||[]));
+  const routeHead=el("thead",{},el("tr",{},el("th",{text:t("name")}),el("th",{text:t("f_campaign")}),el("th",{text:t("f_lang")})));
+  const routeBody=el("tbody",{},...(data.routing||[]).map(r=>el("tr",{},el("td",{text:r.name}),el("td",{text:(r.campaigns||[]).join(", ")}),el("td",{text:(r.languages||[]).join(", ")}))));
+  root.append(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:t("routing")})),el("div",{class:"tw"},el("table",{},routeHead,routeBody))));
+  return root;
+}
+
+// ==================================================================================================
+// POLICY
+// ==================================================================================================
+async function pagePolicy(){
+  const root=el("div"); root.append(el("h1",{text:t("n_policy")}));
+  let p; try{ p=await api("/policy"); }catch(e){ return errorCard(e); }
+  const modeSel=el("select",{},...["off","assist","auto"].map(m=>el("option",{value:m,selected:p.mode===m,text:t("mode_"+m)})));
+  const qhStart=el("input",{type:"number",min:0,max:24,value:p.quiet_hours[0]}), qhEnd=el("input",{type:"number",min:0,max:24,value:p.quiet_hours[1]});
+  const maxDay=el("input",{type:"number",min:1,style:"width:100%",value:p.max_msgs_per_candidate_per_day});
+  const cadCand=el("input",{type:"text",style:"width:100%",value:(p.cadence_candidate_hours||[]).join(",")});
+  const cadClinic=el("input",{type:"text",style:"width:100%",value:(p.cadence_clinic_business_days||[]).join(",")});
+  const maxConc=el("input",{type:"number",min:1,style:"width:100%",value:p.max_concurrent_profiles_per_candidate});
+  const maxWeek=el("input",{type:"number",min:1,style:"width:100%",value:p.max_profiles_per_clinic_per_week});
+  const riskSel=k=>el("select",{"data-risk":k},...["auto","approve"].map(v=>el("option",{value:v,selected:p.risk_rules[k]===v,text:v})));
+  const riskLow=riskSel("low"), riskMed=riskSel("medium"), riskHigh=riskSel("high");
+  const escList=el("textarea",{style:"width:100%;min-height:60px",value:(p.escalation_triggers||[]).join(", ")});
+  const pauseList=el("textarea",{style:"width:100%;min-height:40px",value:(p.auto_pause_on||[]).join(", ")});
+  root.append(el("div",{class:"card"},el("h3",{text:t("n_policy")}),
+    el("div",{class:"grid"},
+      el("div",{},el("span",{class:"lbl",style:"display:block"},"Mode"),modeSel),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("quiet_hours")),el("div",{class:"row"},qhStart,el("span",{text:"–"}),qhEnd)),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("max_per_day")),maxDay),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("cadence_cand")),cadCand),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("cadence_clinic")),cadClinic),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("max_concurrent")),maxConc),
+      el("div",{},el("span",{class:"lbl",style:"display:block"},t("max_clinic_week")),maxWeek)),
+    el("div",{style:"margin-top:10px"},el("span",{class:"lbl",style:"display:block"},t("risk_rules")),
+      el("div",{class:"row"},t("risk_low"),riskLow,t("risk_medium"),riskMed,t("risk_high"),riskHigh)),
+    el("div",{style:"margin-top:10px"},el("span",{class:"lbl",style:"display:block"},t("escalation")),escList),
+    el("div",{style:"margin-top:10px"},el("span",{class:"lbl",style:"display:block"},t("auto_pause")),pauseList),
+    el("div",{style:"margin-top:12px"},el("button",{class:"btn n",type:"button",onclick:async()=>{
+      const body={mode:modeSel.value,quiet_hours:[+qhStart.value,+qhEnd.value],max_msgs_per_candidate_per_day:+maxDay.value,
+        cadence_candidate_hours:cadCand.value.split(",").map(x=>+x.trim()).filter(Boolean),
+        cadence_clinic_business_days:cadClinic.value.split(",").map(x=>+x.trim()).filter(Boolean),
+        max_concurrent_profiles_per_candidate:+maxConc.value, max_profiles_per_clinic_per_week:+maxWeek.value,
+        risk_rules:{low:riskLow.value,medium:riskMed.value,high:riskHigh.value},
+        escalation_triggers:escList.value.split(",").map(x=>x.trim()).filter(Boolean),
+        auto_pause_on:pauseList.value.split(",").map(x=>x.trim()).filter(Boolean)};
+      try{ await put("/policy",body); toast(t("policy_saved")); loadOverview(); }catch(e){ toast(t("err_generic",{m:e.message})); }
+    }},t("policy_save")))));
+  return root;
+}
+
+// ---- keyboard shortcuts ---------------------------------------------------------------------------
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ if($("#dlg").open) $("#dlg").close(); return; }
+  const tag=(e.target.tagName||"").toLowerCase(); if(tag==="input"||tag==="textarea"||tag==="select") return;
+  if(e.key==="/"){ const s=$("#ib-search"); if(s){ e.preventDefault(); s.focus(); } }
+  if((e.key==="j"||e.key==="k") && parseHash().path.startsWith("/inbox")){
+    const items=[...document.querySelectorAll(".lrow")]; if(!items.length) return;
+    let i=items.findIndex(x=>x.classList.contains("on")); i=i<0?0:Math.max(0,Math.min(items.length-1,i+(e.key==="j"?1:-1)));
+    items[i].click(); items[i].scrollIntoView({block:"nearest"});
+  }
+});
+
+// ---- boot -----------------------------------------------------------------------------------------
+applyLang();
+(async()=>{ await loadOverview(); route(); })();
+</script>
+</body>
+</html>
