@@ -49,7 +49,7 @@ POST JSON `{employers?, observations?, verify?, clinics?, clinic_links?, merges?
 
 ## Deploy
 ```bash
-python web/build.py                          # web/index.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md)
+python web/build.py                          # web/index.html, web/pro.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md)
 sudo systemctl restart pflege-web            # deploy/pflege-web.service: .venv/bin/uvicorn app.main:app --port 8501
 curl -s localhost:8501/api/stats
 ```

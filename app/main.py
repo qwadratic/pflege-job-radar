@@ -1,6 +1,6 @@
 """FastAPI entry point. `uvicorn app.main:app --port 8501`.
 
-Serves the SPA (web/index.html), the agent skill, docs, and the JSON API documented in docs/api.md.
+Serves two frontends (web/index.html = default light page at /, web/pro.html = full dashboard at /pro), the agent skill, docs, and the JSON API documented in docs/api.md.
 """
 import json
 import pathlib
@@ -23,7 +23,15 @@ from . import search as SE
 from . import settings as ST
 from . import targets as T
 
+try:                                                        # operator console for the recruiting funnel (docs/autopilot.md)
+    from .autopilot.api import router as _autopilot_router
+except Exception as _e:                                     # pragma: no cover - keeps the job board up if the PoC is broken
+    _autopilot_router = None
+    print("autopilot router not loaded:", _e)
+
 app = FastAPI(title="pflege-board", version="1.0", docs_url="/api/openapi-ui", redoc_url=None, openapi_url="/api/openapi.json")
+if _autopilot_router is not None:
+    app.include_router(_autopilot_router, prefix="/api/autopilot", tags=["autopilot"])
 
 
 @app.on_event("startup")
@@ -231,6 +239,23 @@ def api_run(run_id: int):
     return r
 
 
+@app.get("/api/inbox")
+def api_inbox(recent: int = 25):
+    return D.inbox_summary(recent=max(0, min(int(recent), 200)))
+
+
+@app.post("/api/inbox/drain")
+def api_inbox_drain():
+    """Queue a run that drains pflege_jobs.inbox via `cli inbox`. Guarded against active runs: a crawl's
+    own `execute()` already calls `_cli(["inbox"])` at the end, and two `cli inbox` processes racing the
+    same ack/offset-free pagination would double-process rows."""
+    if R.active_run_count():
+        raise HTTPException(409, "a run is already queued or running; try again once it finishes")
+    rid = R.create_run("inbox", "", "adapter", {}, [], trigger="api")
+    R.enqueue(rid)
+    return {"run_id": rid, "queued": True}
+
+
 @app.post("/api/clinics/{clinic_id}/refetch-career")
 async def api_refetch(clinic_id: str, request: Request):
     if not D.clinic(clinic_id):
@@ -418,22 +443,45 @@ def _web(rel, media=None):
     return FileResponse(str(p), media_type=media)
 
 
+def _ui(name):
+    """Serve a built HTML page from web/. 503 (not 404) when web/build.py has not run yet."""
+    p = A.WEB_DIR / name
+    if not p.exists():
+        return PlainTextResponse(f"web/{name} not built yet — run `python web/build.py`", status_code=503)
+    return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/")
 def index():
-    p = A.WEB_DIR / "index.html"
+    """Default frontend: light, minimal. Built from web/index.template.html."""
+    return _ui("index.html")
+
+
+@app.get("/pro")
+@app.get("/pro/")
+def pro():
+    """Full dashboard: dark; Plan, Scrape, schedules, runs, Docs, Settings. Built from web/pro.template.html."""
+    return _ui("pro.html")
+
+
+@app.get("/autopilot")
+@app.get("/autopilot/")
+def autopilot_page():
+    """Operator console for the recruiting funnel (docs/autopilot.md). Built from web/autopilot.template.html by web/build.py."""
+    p = A.WEB_DIR / "autopilot.html"
     if not p.exists():
-        return PlainTextResponse("web/index.html not built yet — run `python web/build.py`", status_code=503)
+        return PlainTextResponse("web/autopilot.html not built yet — run `python web/build.py`", status_code=503)
     return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
 
 
-@app.get("/simple")
-@app.get("/simple/")
-def simple():
-    """Second frontend variant (light, minimal). Built from web/simple.template.html by web/build.py."""
-    p = A.WEB_DIR / "simple.html"
-    if not p.exists():
-        return PlainTextResponse("web/simple.html not built yet — run `python web/build.py`", status_code=503)
-    return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+@app.get("/dock.js")
+def dock_js():
+    return _web("dock.js", "application/javascript")
+
+
+@app.get("/dock.css")
+def dock_css():
+    return _web("dock.css", "text/css")
 
 
 @app.get("/collect.html")

@@ -1,6 +1,6 @@
 """Build: inject public config into the SPA and agent docs.
 Usage: SUPABASE_URL=... SUPABASE_ANON_KEY=... python web/build.py
-Outputs: web/index.html, web/simple.html (light variant at /simple), web/collect.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md).
+Outputs: web/index.html (default at /), web/pro.html (/pro), web/autopilot.html (/autopilot), web/collect.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md).
 The app server (app/) serves web/ directly; there is no hosted copy, no netlify/vercel, no edge dashboard."""
 import os, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -15,10 +15,15 @@ def fill(text):
 
 
 web = root / "web"
-html = fill((web / "index.template.html").read_text(encoding="utf-8"))
-(web / "index.html").write_text(html, encoding="utf-8")
-(web / "simple.html").write_text(fill((web / "simple.template.html").read_text(encoding="utf-8")), encoding="utf-8")
-(web / "collect.html").write_text(fill((web / "collect.template.html").read_text(encoding="utf-8")), encoding="utf-8")
+# (template, output). index.* is whatever is served at "/" -- today the light minimal page; pro.* is the dashboard at /pro.
+PAGES = [("index.template.html", "index.html"), ("pro.template.html", "pro.html"), ("collect.template.html", "collect.html")]
+sizes = {}
+for _tpl, _out in PAGES:
+    _txt = fill((web / _tpl).read_text(encoding="utf-8"))
+    (web / _out).write_text(_txt, encoding="utf-8")
+    sizes[_out] = len(_txt)
+if (web / "autopilot.template.html").exists():                      # operator console, /autopilot (docs/autopilot.md)
+    (web / "autopilot.html").write_text(fill((web / "autopilot.template.html").read_text(encoding="utf-8")), encoding="utf-8")
 
 # Publish the agent skill: skill/ is the source of truth, web/skill/ is what gets served.
 skill_src, skill_out = root / "skill", web / "skill"
@@ -38,4 +43,4 @@ for _name in _ref_order:
     if _p.exists():
         _bundle.append("\n\n---\n\n" + fill(_p.read_text(encoding="utf-8")).rstrip())
 (skill_out / "pflege-jobs.skill.md").write_text("\n".join(_bundle) + "\n", encoding="utf-8")
-print("built web/index.html, web/collect.html, web/skill/", len(html), "bytes")
+print("built " + ", ".join(f"web/{k} ({v} bytes)" for k, v in sizes.items()) + ", web/skill/")

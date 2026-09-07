@@ -2,7 +2,7 @@
 Usage: set -a; . ./.env; set +a; python web/publish.py"""
 import json, os, pathlib, requests
 root = pathlib.Path(__file__).resolve().parent.parent
-assets = [{"key": "dashboard", "content": (root / "web" / "index.html").read_text(encoding="utf-8"), "content_type": "text/html; charset=utf-8"}]
+assets = [{"key": "dashboard", "content": (root / "web" / "pro.html").read_text(encoding="utf-8"), "content_type": "text/html; charset=utf-8"}]
 sk = root / "web" / "skill" / "pflege-jobs.skill.md"
 if sk.exists():
     assets.append({"key": "skill", "content": sk.read_text(encoding="utf-8"), "content_type": "text/markdown; charset=utf-8"})

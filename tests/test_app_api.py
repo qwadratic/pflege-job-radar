@@ -115,6 +115,16 @@ def test_schedules_crud_and_presets(client):
     assert client.get("/api/stats").json()["next_autocrawl"]
 
 
+def test_schedule_refuses_scope_all_firecrawl(client):
+    """Mirrors the /api/crawl guard: a schedule must not be able to bypass it via scope=all + mode=firecrawl,
+    since fire() would otherwise stagger every hospital through the paid agent over the run cycle."""
+    r = client.post("/api/schedules", json={"name": "danger", "preset": "custom", "cron": "0 3 * * *",
+                                             "target": {"scope": "all"}, "mode": "firecrawl"})
+    assert r.status_code == 422
+    r = client.put("/api/schedules/1", json={"mode": "firecrawl"})
+    assert r.status_code == 422
+
+
 def test_mechanics_list_try_test(client):
     ms = client.get("/api/mechanics").json()
     assert ms[0]["id"] == "role_class" and "def _classify" in ms[0]["functions"][0]["source"] and ms[0]["n_tests"] >= 5
@@ -126,3 +136,13 @@ def test_mechanics_list_try_test(client):
 def test_removed_routes(client):
     assert client.get("/agents.md").status_code == 404
     assert client.get("/llms.txt").status_code == 404
+
+
+def test_ui_routes(client):
+    for path in ("/", "/pro", "/pro/"):        # 503 is the documented unbuilt-tree answer
+        assert client.get(path).status_code in (200, 503)
+    assert client.get("/simple").status_code == 404
+    home = client.get("/")
+    if home.status_code == 200:
+        assert 'href="/pro"' in home.text and 'content="light"' in home.text
+        assert 'content="dark"' in client.get("/pro").text
