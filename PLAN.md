@@ -2,7 +2,7 @@
 
 ## State (2026-09-06, after the MVP rebuild)
 - Sources: Krankenhausplan (10), career sites via adapters (20), Firecrawl agent (25). Arbeitsagentur + aggregators removed, data purged.
-- App: FastAPI on :8501 (`app/`), two SPAs in `web/`: `index.template.html` (default at `/`, light: Hospitals → Jobs, Cities) and `pro.template.html` (`/pro`, dark, Proximata-derived tokens: + Plan table (PDF as searchable table), Scrape page (target form with preview, cron/preset schedules with on/off, runs), Docs (animated ontology graph + markdown), Settings (mechanics: explanation, source, patterns, try-it, per-mechanic tests; Firecrawl budget)).
+- App: FastAPI on :8501 (`app/`), two SPAs in `web/`: `index.template.html` (default at `/`, light: Hospitals → Jobs, Cities) and `pro.template.html` (`/pro`, dark, Proximata-derived tokens: + Plan table (PDF as searchable table), Clawl page (target form with preview, cron/preset schedules with on/off, runs), Docs (animated ontology graph + markdown), Settings (mechanics: explanation, source, patterns, try-it, per-mechanic tests; Firecrawl budget)).
 - Registry: 407 sites (399 in the 2026 plan + 8 gone). Structured columns synced from the 2026 PDF; names/towns kept from the trusted 2025 parse (see docs/scraping.md).
 - Schedules: default `weekly_staggered` (boards hashed over 7 days); any subset (Bezirk / city / hospital / vendor) can get its own cron. Adapters first, Firecrawl only where no adapter (credit-capped).
 - Mechanics: `pflege_jobs/mechanics.py` registry, `tests/test_mech_*.py` one file each; `GET /api/mechanics` renders them.

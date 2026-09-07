@@ -154,4 +154,4 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 ## Freshness & proof
 - `fresh` = `first_published` (or `first_seen`) within 7 days — the header counter.
 - `status=open` = seen in the latest crawl of its board; `verify_status=live` = URL re-fetched and title found. Default view: open + live.
-- Schedules (Scrape page): any number of cron / preset schedules, each with a target (all · Bezirk · city · hospital · ATS vendor), mode and credit budget; the weekly preset spreads boards over 7 days by hash, so never everything at once.
+- Schedules (Clawl page): any number of cron / preset schedules, each with a target (all · Bezirk · city · hospital · ATS vendor), mode and credit budget; the weekly preset spreads boards over 7 days by hash, so never everything at once.

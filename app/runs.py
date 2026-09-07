@@ -28,6 +28,10 @@ create index if not exists run_log_run on run_log(run_id);
 create table if not exists career_profiles (clinic_id text primary key, profile text, fetched_at text, credits_used integer default 0, run_id integer);
 create table if not exists settings (key text primary key, value text);
 create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer);
+create table if not exists firecrawl_events (
+  id integer primary key autoincrement, at text, event_type text, job_id text, clinic_id text, run_id integer,
+  success integer, credits_used integer default 0, raw text);
+create index if not exists firecrawl_events_job on firecrawl_events(job_id);
 """
 
 
@@ -152,15 +156,53 @@ def add_usage(kind, clinic_id, credits, run_id=None):
         c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id) values(?,?,?,?,?)", (now(), kind, clinic_id, int(credits or 0), run_id))
 
 
-def usage_total(days=None):
+def usage_total(days=None, hours=None):
+    """Sum of credits recorded via add_usage(). hours takes precedence over days when both are given."""
     with _lock, db() as c:
-        if days:
+        if hours:
+            since = datetime.now(timezone.utc).timestamp() - hours * 3600
+            since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
+            r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage where at>=?", (since_iso,)).fetchone()
+        elif days:
             since = datetime.now(timezone.utc).timestamp() - days * 86400
             since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
             r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage where at>=?", (since_iso,)).fetchone()
         else:
             r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage").fetchone()
     return int(r[0])
+
+
+# --- firecrawl webhook events -----------------------------------------------------------------
+def add_firecrawl_event(event_type, job_id, clinic_id=None, run_id=None, success=None, credits_used=None, raw=None):
+    with _lock, db() as c:
+        c.execute("insert into firecrawl_events(at,event_type,job_id,clinic_id,run_id,success,credits_used,raw) values(?,?,?,?,?,?,?,?)",
+                  (now(), event_type, job_id, clinic_id, run_id, None if success is None else int(bool(success)),
+                   int(credits_used or 0), json.dumps(raw, ensure_ascii=False) if raw is not None else None))
+
+
+def _event_row(r):
+    d = dict(r)
+    try:
+        d["raw"] = json.loads(d["raw"]) if d.get("raw") else None
+    except Exception:
+        pass
+    d["success"] = None if d.get("success") is None else bool(d["success"])
+    return d
+
+
+def firecrawl_events_for_job(job_id):
+    with _lock, db() as c:
+        rows = c.execute("select * from firecrawl_events where job_id=? order by id", (job_id,)).fetchall()
+    return [_event_row(r) for r in rows]
+
+
+def firecrawl_event_exists(job_id, event_type=None):
+    with _lock, db() as c:
+        if event_type:
+            r = c.execute("select 1 from firecrawl_events where job_id=? and event_type=? limit 1", (job_id, event_type)).fetchone()
+        else:
+            r = c.execute("select 1 from firecrawl_events where job_id=? limit 1", (job_id,)).fetchone()
+    return bool(r)
 
 
 def save_career_profile(clinic_id, profile, credits, run_id=None):

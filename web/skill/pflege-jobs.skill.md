@@ -286,7 +286,7 @@ One row shape for every crawler (`{kind, source_host, source_url, payload{title,
 
 ## From the app (preferred)
 - `GET /api/crawl/plan?scope=&values=` (preview) → `POST /api/crawl {"target":{"scope":"all|regierungsbezirk|city|clinic|ats_type","values":[…]},"mode":"auto|adapter|firecrawl","max_credits":40}` → background worker: routing → adapters (or agent) → inbox → `cli inbox` → `link-clinics` → `link-cross` → verify of the new postings → cache refresh. Poll `GET /api/crawl/runs/{id}`.
-- Schedules (Scrape page, `/api/schedules`): presets `weekly_staggered` (boards hashed over 7 days so not everything runs at once), `daily`, `weekdays`, `hourly`, or a custom cron; each with its own target, mode, credit cap and on/off. Firecrawl only within the credit cap.
+- Schedules (Clawl page, `/api/schedules`): presets `weekly_staggered` (boards hashed over 7 days so not everything runs at once), `daily`, `weekdays`, `hourly`, or a custom cron; each with its own target, mode, credit cap and on/off. Firecrawl only within the credit cap.
 - `POST /api/clinics/{kez}/refetch-career` → Firecrawl discovery → `career_profiles` + `clinics.careers_url/ats_type`.
 
 ## CLI (batch)

@@ -8,7 +8,14 @@ from . import config as A
 from . import runs as R
 from . import scheduler as S
 
-FIRECRAWL_DEFAULT = {"default_max_credits": 40, "weekly_budget": 100}
+FIRECRAWL_DEFAULT = {
+    "default_max_credits": 40, "weekly_budget": 100,
+    # spend gate + 24h kill switch (docs/firecrawl.md) -- eur_per_credit is Hobby-plan pricing
+    # ($16/3000); the user's actual 8000/mo plan price is unknown so it stays editable here.
+    "eur_per_credit": 0.0053, "max_eur_unknown_clinic": 5.0,
+    "kill_switch_pct": [10, 20, 30],       # % of plan credits spent in a rolling 24h -> warn / throttle / disable
+    "reserve_credits": 150,                # never let remaining credits fall below this in the current period
+}
 
 
 def _patterns_path():
@@ -98,8 +105,13 @@ def get_firecrawl():
     return cur
 
 
+def public_firecrawl():
+    """get_firecrawl() minus the webhook secret: GET /api/settings has no auth, so the secret must never leave the server."""
+    return {k: v for k, v in get_firecrawl().items() if k != "webhook_secret"}
+
+
 def get_all():
-    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": get_firecrawl()}
+    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": public_firecrawl()}
 
 
 def save_firecrawl(obj):
@@ -108,5 +120,17 @@ def save_firecrawl(obj):
         cur["default_max_credits"] = max(1, min(500, int(obj["default_max_credits"])))
     if "weekly_budget" in obj:
         cur["weekly_budget"] = max(0, min(8000, int(obj["weekly_budget"])))
+    if "eur_per_credit" in obj:
+        cur["eur_per_credit"] = max(0.0, float(obj["eur_per_credit"]))
+    if "max_eur_unknown_clinic" in obj:
+        cur["max_eur_unknown_clinic"] = max(0.0, float(obj["max_eur_unknown_clinic"]))
+    if "reserve_credits" in obj:
+        cur["reserve_credits"] = max(0, int(obj["reserve_credits"]))
+    if "kill_switch_pct" in obj:
+        pct = obj["kill_switch_pct"]
+        if not (isinstance(pct, list) and len(pct) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in pct)
+                and pct[0] < pct[1] < pct[2]):
+            raise ValueError("kill_switch_pct must be an ascending [warn, throttle, disable] triple, e.g. [10, 20, 30]")
+        cur["kill_switch_pct"] = [float(x) for x in pct]
     R.set_setting("firecrawl", cur)
-    return get_firecrawl()
+    return public_firecrawl()

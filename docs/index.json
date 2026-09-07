@@ -33,5 +33,12 @@
    "de": "Autopilot – Kandidatinnen, Matching, Kliniken",
    "en": "Autopilot – candidates, matching, clinics"
   }
+ },
+ {
+  "file": "coverage-plan.md",
+  "title": {
+   "de": "Abdeckungsplan – ganz Bayern",
+   "en": "Coverage plan – all of Bavaria"
+  }
  }
 ]

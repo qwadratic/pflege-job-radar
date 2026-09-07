@@ -7,17 +7,37 @@ from datetime import datetime, timezone
 from . import schedules as SC
 
 _thread = None
-_state = {"last_tick": None, "fired": []}
+_state = {"last_tick": None, "fired": [], "paused": False, "paused_reason": None}
 
 
 def next_run_at(now=None):
     return SC.status()["next_run_at"]
 
 
+def pause(reason=None):
+    """Stop the scheduler from firing anything -- set by the Firecrawl 24h kill switch's 'disable' tier
+    (app/crawl.py kill_switch()) when >=30% of plan credits were spent in a rolling 24h."""
+    _state["paused"] = True
+    _state["paused_reason"] = reason
+
+
+def resume():
+    _state["paused"] = False
+    _state["paused_reason"] = None
+
+
+def is_paused():
+    return _state["paused"]
+
+
 def tick(force=False, now=None):
-    """Evaluate all schedules. force=True fires every enabled schedule now (today's stagger slice)."""
+    """Evaluate all schedules. force=True fires every enabled schedule now (today's stagger slice).
+    A paused scheduler fires nothing on its own clock (force still works, e.g. from /api/autocrawl/tick,
+    since that is an explicit human action, not the automatic loop)."""
     now = now or datetime.now(timezone.utc)
     _state["last_tick"] = now.isoformat(timespec="minutes")
+    if _state["paused"] and not force:
+        return {"runs": [], "fired": [], "paused": True, "paused_reason": _state["paused_reason"]}
     fired = []
     for s in SC.list_all():
         if force and s["enabled"] or (not force and SC.is_due(s, now)):
@@ -49,4 +69,5 @@ def start():
 
 
 def status():
-    return {**SC.status(), "last_tick": _state["last_tick"], "last_fired": _state["fired"]}
+    return {**SC.status(), "last_tick": _state["last_tick"], "last_fired": _state["fired"],
+            "paused": _state["paused"], "paused_reason": _state["paused_reason"]}

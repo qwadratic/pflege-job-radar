@@ -26,7 +26,7 @@ No labour agency, no job boards. Scope: experienced nursing roles only (trainees
 
 ```
 app/                FastAPI backend: /api, scrape worker, cron/preset schedules, CV match, Firecrawl, mechanics (port 8501)
-web/                two single-file SPAs: index.template.html (default at /, light: Hospitals → Jobs, Cities) and pro.template.html (/pro, dark: + Plan (the PDF as a table), Scrape (targets, schedules, runs), Docs (ontology graph), Settings (mechanics))
+web/                two single-file SPAs: index.template.html (default at /, light: Hospitals → Jobs, Cities) and pro.template.html (/pro, dark: + Plan (the PDF as a table), Clawl (targets, schedules, runs), Docs (ontology graph), Settings (mechanics))
 pflege_jobs/        pipeline: classify (patterns.json), resolve, link-clinics, verify, CLI; mechanics.py = the ten rules explained + testable
   sources/          one module per input (krankenhausplan, softgarden, bite, pi_asp, firecrawl_agent, …)
 crawlers/           vendor adapters, routing (clinic → board → adapter), portals

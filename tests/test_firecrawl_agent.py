@@ -8,10 +8,10 @@ from pflege_jobs.sources import firecrawl_agent as FA
 CLINIC = {"clinic_id": "16104", "name": "kbo-Heckscher-Klinikum Ingolstadt", "town": "Ingolstadt", "operator": "kbo-Heckscher-Klinikum gGmbH",
           "website": "https://kbo-heckscher-klinikum.de", "careers_url": "https://kbo-heckscher-klinikum.de/arbeiten-bei-uns"}
 
-ANSWER = {"portal_url": "https://kbo-heckscher-klinikum.de/arbeiten-bei-uns/stellen", "notes": "list is plain HTML",
+ANSWER = {"portal_url": "https://kbo-heckscher-klinikum.de/arbeiten-bei-uns/stellen", "notes": "list is plain HTML", "blocked_reason": "",
           "jobs": [
               {"title": "Pflegefachkraft (m/w/d) Kinder- und Jugendpsychiatrie", "url": "https://kbo-heckscher-klinikum.de/jobs/123", "city": "Ingolstadt",
-               "plz": "85049", "department": "KJP Station 3", "employment_type": "Vollzeit/Teilzeit", "contract": "unbefristet",
+               "plz": "85049", "department": "KJP Station 3", "seniority": "fachkraft", "employment_type": "Vollzeit/Teilzeit", "contract": "unbefristet",
                "published": "2026-09-01", "description": "Sie betreuen ...", "requirements": "examinierte Pflegefachkraft", "tariff_or_salary": "TVöD P8",
                "contact_email": "bewerbung@kbo.de"},
               {"title": "Stationsleitung (m/w/d)", "url": "https://kbo-heckscher-klinikum.de/jobs/124", "contract": "befristet", "published": "September 2026"},
@@ -31,10 +31,29 @@ def test_jobs_to_inbox_rows():
     assert p["datePosted"] == "2026-09-01" and "FULL_TIME" in p["employmentType"] and "PART_TIME" in p["employmentType"]
     assert "Anforderungen: examinierte" in p["description"] and "TVöD P8" in p["description"]
     assert p["department"] == "KJP Station 3" and p["page"] == ANSWER["portal_url"]
+    assert p["seniority"] == "fachkraft"
     r2 = rows[1]["payload"]
     assert r2["loc"][0]["city"] == "Ingolstadt" and r2["loc"][0]["plz"] is None      # falls back to the registry town
     assert r2["datePosted"] is None and "TEMPORARY" in r2["employmentType"]
+    assert r2["seniority"] == "unknown"                     # job had no seniority field at all
     json.dumps(rows)                                        # serialisable for the inbox POST
+
+
+def test_jobs_prompt_keeps_every_hard_rule():
+    p = FA._jobs_prompt(CLINIC)
+    assert CLINIC["name"] in p and "Bavaria" in p
+    for must in ("Pflegefachkraft", "Gesundheits- und Krankenpfleger", "Praxisanleitung", "Stationsleitung",
+                 "Hebamme", "OTA/ATA", "Pflegeexperte", "Pflegehelfer", "Ausbildung", "Praktikum", "Werkstudent",
+                 "FSJ/BFD", "physicians", "MFA", "therapists", "admin", "logistics", "outside Bavaria",
+                 "blocked_reason", "leitung", "fachkraft", "experte"):
+        assert must in p, f"missing {must!r} from jobs prompt"
+
+
+def test_jobs_schema_has_seniority_and_blocked_reason():
+    props = FA.JOBS_SCHEMA["properties"]["jobs"]["items"]["properties"]
+    assert set(FA.JOBS_SCHEMA["properties"]["jobs"]["items"]["properties"]["seniority"]["enum"]) == set(FA.SENIORITY)
+    assert "blocked_reason" in FA.JOBS_SCHEMA["properties"]
+    assert "department" in props
 
 
 def test_build_request_is_capped():
@@ -123,6 +142,28 @@ def test_failed_job_is_agentfailed_and_carries_credits(monkeypatch):
     with pytest.raises(FA.AgentFailed) as ei2:
         FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=SNoCredits())
     assert ei2.value.credits_used == 30                      # fallback to max_credits
+
+
+def test_build_request_passes_webhook_through():
+    hook = {"url": "https://x/webhook", "headers": {"X-Pflege-Webhook-Secret": "s"}, "metadata": {"clinic_id": "1"}}
+    b = FA.build_request("p", FA.JOBS_SCHEMA, max_credits=10, webhook=hook)
+    assert b["webhook"] == hook
+    b2 = FA.build_request("p", FA.JOBS_SCHEMA, max_credits=10)
+    assert "webhook" not in b2
+
+
+def test_check_webhook_short_circuits_polling(monkeypatch):
+    """If check_webhook reports the job done, run_agent must not fall back to an HTTP poll for that tick."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            raise AssertionError("should not poll the API once the webhook already answered")
+    hit = {"status": "completed", "data": ANSWER, "creditsUsed": 5}
+    data, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=10, log=lambda *_: None, session=S(),
+                                    check_webhook=lambda job_id: hit)
+    assert used == 5 and data == ANSWER
 
 
 def test_timeout_is_agentfailed_with_max_credits(monkeypatch):

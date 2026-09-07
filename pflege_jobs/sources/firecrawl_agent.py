@@ -28,13 +28,15 @@ COLLECTOR = "firecrawl-agent"
 KNOWN_VENDORS = ["softgarden", "typo3_jobs", "bite", "rexx", "umantis", "mein-check-in", "dvinci", "pi_asp", "concludis",
                  "oracle", "personio", "smartrecruiters", "talention", "helix", "workday", "sap_successfactors", "other", "unknown"]
 
+SENIORITY = ("leitung", "fach", "fachkraft", "experte", "unknown")
+
 JOBS_SCHEMA = {
     "type": "object",
     "properties": {
         "portal_url": {"type": "string", "description": "URL of the job board / listing page the jobs were read from"},
         "jobs": {
             "type": "array",
-            "description": "Every open nursing (Pflege) vacancy at this hospital site",
+            "description": "Every open, certified-nursing (Pflegedienst) vacancy at this hospital site -- maximise count, do not stop early",
             "items": {
                 "type": "object",
                 "properties": {
@@ -42,7 +44,10 @@ JOBS_SCHEMA = {
                     "url": {"type": "string", "description": "Direct URL of this job advertisement (detail page), not the list page"},
                     "city": {"type": "string", "description": "Town of the workplace"},
                     "plz": {"type": "string", "description": "German postal code of the workplace, if shown"},
-                    "department": {"type": "string", "description": "Ward / department / Fachbereich as written (e.g. Intensivstation, OP, Notaufnahme)"},
+                    "department": {"type": "string", "description": "Ward / department / Fachbereich AS THE BOARD ITSELF LABELS IT, if the board has a category/filter for it (e.g. Intensivstation, OP, Notaufnahme); empty if the board has no such label"},
+                    "seniority": {"type": "string", "enum": list(SENIORITY),
+                                  "description": "leitung=Stationsleitung/Pflegedienstleitung/PDL; fach=Fachpflege specialist (Intensiv/Anästhesie/OP); "
+                                                  "fachkraft=general Pflegefachkraft/Gesundheits- und Krankenpfleger; experte=APN/Pflegeexperte; unknown=cannot tell"},
                     "employment_type": {"type": "string", "description": "Vollzeit, Teilzeit, Minijob, or a combination"},
                     "contract": {"type": "string", "description": "unbefristet or befristet, if stated"},
                     "start_date": {"type": "string", "description": "Earliest start (ISO date or 'ab sofort')"},
@@ -56,6 +61,7 @@ JOBS_SCHEMA = {
             },
         },
         "notes": {"type": "string", "description": "Anything odd: login wall, jobs only as PDF, pagination you could not follow, non-Bavarian sites skipped"},
+        "blocked_reason": {"type": "string", "description": "Empty if jobs were found. Otherwise WHY jobs is empty: login wall, bot block, board offline, no nursing roles listed, etc."},
     },
     "required": ["jobs"],
 }
@@ -80,15 +86,29 @@ CAREER_SCHEMA = {
 
 
 def _jobs_prompt(clinic):
-    return (f"You are collecting OPEN NURSING VACANCIES (Pflege-Stellen) at ONE hospital in Bavaria, Germany: "
-            f"\"{clinic.get('name')}\" in {clinic.get('town') or 'Bavaria'} (operator: {clinic.get('operator') or 'unknown'}). "
-            "Start at the given URL(s): the hospital's careers page and any job board / ATS it links to (softgarden, B-ITE, rexx, umantis, "
-            "mein-check-in, d.vinci, Personio, etc.). Follow pagination and 'mehr laden' until every job is seen. "
-            "INCLUDE only nursing roles for qualified, experienced staff: Pflegefachkraft, Gesundheits- und Krankenpfleger, Fachpflege "
-            "(Intensiv, Anästhesie, OP), Pflegehelfer, Praxisanleitung, Stationsleitung / Pflegedienstleitung, Hebamme, OTA/ATA, Pflegeexperte/APN. "
-            "EXCLUDE trainees (Ausbildung, Azubi, Schüler), Praktikum, Werkstudent, FSJ/BFD, physicians, MFA, therapists, admin, logistics, "
-            "and every job located outside Bavaria. Each job MUST have its own direct URL (the detail page, not the list). "
-            "Do not invent jobs; if the board is empty or blocked, return an empty list and say why in notes.")
+    name = clinic.get("name")
+    town = clinic.get("town") or "Bavaria"
+    op = clinic.get("operator") or "unknown"
+    return (
+        f"GOAL: find MAX number of open Pflegedienst (nursing dept) jobs at ONE hospital: \"{name}\", {town}, Bavaria, Germany "
+        f"(operator: {op}). Also capture seniority per job. Not a survey -- a full count. Missed job = failure.\n"
+        "HARD RULES, no exceptions:\n"
+        "1. ONE hospital only. Start at given URL(s): careers page + any board it links to (softgarden, B-ITE, rexx, umantis, "
+        "mein-check-in, d.vinci, Personio, ...).\n"
+        "2. Paginate FULLY. Follow next/page2/'mehr laden' until board end. Do not stop at page 1.\n"
+        "3. INCLUDE only certified nursing staff: Pflegefachkraft, Gesundheits- und Krankenpfleger(in), Fachpflege "
+        "(Intensiv, Anästhesie, OP), Praxisanleitung, Stationsleitung / Pflegedienstleitung / PDL, Hebamme, OTA/ATA, "
+        "APN / Pflegeexperte.\n"
+        "4. EXCLUDE always: Pflegehelfer, Pflegefachhelfer, Assistenz; Ausbildung/Azubi/Schüler; Praktikum; Werkstudent; "
+        "FSJ/BFD; physicians; MFA; therapists; admin; logistics; any job outside Bavaria.\n"
+        "5. Each job = own direct detail-page URL. Never the list-page URL. Never a URL you did not see.\n"
+        "6. Never invent a job. Board empty or blocked (login wall, bot block, offline, no nursing listed) -> jobs=[] "
+        "and say why in blocked_reason.\n"
+        "PER JOB, fill: department = board's own category label if it has one (else empty); seniority = one of "
+        "leitung|fach|fachkraft|experte|unknown (leitung=Stationsleitung/PDL, fach=Fachpflege specialist e.g. "
+        "Intensiv/Anästhesie/OP, fachkraft=general Pflegefachkraft/GKP, experte=APN/Pflegeexperte, unknown=unclear).\n"
+        "Answer strictly in the schema."
+    )
 
 
 def _career_prompt(clinic):
@@ -130,19 +150,26 @@ def credits(session=None):
         return {"error": f"{type(e).__name__}: {str(e)[:120]}", "remaining": None, "plan": None, "period_end": None}
 
 
-def build_request(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, model=MODEL):
+def build_request(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, model=MODEL, webhook=None):
     body = {"prompt": prompt, "schema": schema, "model": model, "maxCredits": int(max_credits)}
     if urls:
         body["urls"] = [u for u in urls if u]
+    if webhook:
+        body["webhook"] = webhook
     return body
 
 
-def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5, timeout=900, log=print, session=None):
-    """Submit an agent job and poll it. Returns (data, credits_used, raw). Raises on failure."""
+def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5, timeout=900, log=print, session=None,
+              webhook=None, check_webhook=None):
+    """Submit an agent job and poll it. Returns (data, credits_used, raw). Raises on failure.
+
+    webhook: optional {url, headers, metadata, events} passed straight to the API (see docs/firecrawl.md).
+    check_webhook: optional callable(job_id) -> agent-shaped dict ({'status', 'data', 'creditsUsed', ...}) or None,
+    checked before every poll so a webhook event that already arrived stops the polling loop early."""
     if not max_credits or int(max_credits) <= 0:
         raise ValueError("max_credits must be a positive cap")
     s = session or requests.Session()
-    body = build_request(prompt, schema, urls, max_credits)
+    body = build_request(prompt, schema, urls, max_credits, webhook=webhook)
     r = s.post(API + "/agent", headers=_headers(), json=body, timeout=60)
     if r.status_code >= 300:
         raise RuntimeError(f"firecrawl agent submit {r.status_code}: {r.text[:300]}")
@@ -156,8 +183,13 @@ def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5
     t0 = time.time()
     while time.time() - t0 < timeout:
         time.sleep(poll)
-        g = s.get(f"{API}/agent/{job_id}", headers=_headers(), timeout=60)
-        j = g.json() if g.status_code < 500 else {}
+        hit = check_webhook(job_id) if check_webhook else None
+        if hit is not None:
+            log(f"firecrawl agent job {job_id}: webhook event arrived, stopping poll")
+            j = hit
+        else:
+            g = s.get(f"{API}/agent/{job_id}", headers=_headers(), timeout=60)
+            j = g.json() if g.status_code < 500 else {}
         st = j.get("status")
         if st == "completed":
             return j.get("data") or {}, int(j.get("creditsUsed") or 0), j
@@ -200,9 +232,11 @@ def jobs_to_inbox_rows(data, clinic):
                       ("Vertrag: " + j["contract"]) if j.get("contract") else None,
                       ("Kontakt: " + j["contact_email"]) if j.get("contact_email") else None]
         pub = (j.get("published") or "")[:10]
+        seniority = (j.get("seniority") or "unknown").strip().lower()
         payload = {"title": title, "org": clinic.get("name"), "loc": [{"city": city, "plz": plz, "region": "BAYERN"}], "url": url,
                    "page": (data or {}).get("portal_url") or clinic.get("careers_url"),
                    "description": " ".join(p for p in desc_parts if p)[:20000], "department": j.get("department") or None,
+                   "seniority": seniority if seniority in SENIORITY else "unknown",
                    "employmentType": _employment(j.get("employment_type")) + (["TEMPORARY"] if "befristet" in (j.get("contract") or "").lower() and "unbefristet" not in (j.get("contract") or "").lower() else []),
                    "datePosted": pub if re.fullmatch(r"\d{4}-\d{2}-\d{2}", pub) else None, "start_date": j.get("start_date"),
                    "contact_email": j.get("contact_email"), "agent": "firecrawl", "clinic_id": clinic.get("clinic_id")}
@@ -211,18 +245,21 @@ def jobs_to_inbox_rows(data, clinic):
     return rows
 
 
-def run_jobs_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, urls=None, log=print, session=None):
+def run_jobs_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, urls=None, log=print, session=None, webhook=None, check_webhook=None, **run_kw):
     urls = urls or [u for u in (clinic.get("careers_url"), clinic.get("website")) if u]
-    data, used, raw = run_agent(_jobs_prompt(clinic), JOBS_SCHEMA, urls=urls, max_credits=max_credits, log=log, session=session)
+    data, used, raw = run_agent(_jobs_prompt(clinic), JOBS_SCHEMA, urls=urls, max_credits=max_credits, log=log, session=session,
+                                 webhook=webhook, check_webhook=check_webhook, **run_kw)
     rows = jobs_to_inbox_rows(data, clinic)
     log(f"firecrawl agent: {len((data or {}).get('jobs') or [])} jobs -> {len(rows)} rows, credits used {used}"
-        + (f"; notes: {data.get('notes')[:200]}" if isinstance(data, dict) and data.get("notes") else ""))
+        + (f"; notes: {data.get('notes')[:200]}" if isinstance(data, dict) and data.get("notes") else "")
+        + (f"; blocked_reason: {data.get('blocked_reason')[:200]}" if isinstance(data, dict) and data.get("blocked_reason") else ""))
     return {"rows": rows, "credits_used": used, "raw": raw, "data": data}
 
 
-def run_career_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, log=print, session=None):
+def run_career_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, log=print, session=None, webhook=None, check_webhook=None, **run_kw):
     urls = [u for u in (clinic.get("careers_url"), clinic.get("website")) if u]
-    data, used, raw = run_agent(_career_prompt(clinic), CAREER_SCHEMA, urls=urls or None, max_credits=max_credits, log=log, session=session)
+    data, used, raw = run_agent(_career_prompt(clinic), CAREER_SCHEMA, urls=urls or None, max_credits=max_credits, log=log, session=session,
+                                 webhook=webhook, check_webhook=check_webhook, **run_kw)
     profile = dict(data or {})
     profile["clinic_id"] = clinic.get("clinic_id")
     profile["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")

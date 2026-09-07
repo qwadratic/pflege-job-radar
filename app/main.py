@@ -32,6 +32,10 @@ except Exception as _e:                                     # pragma: no cover -
 app = FastAPI(title="pflege-board", version="1.0", docs_url="/api/openapi-ui", redoc_url=None, openapi_url="/api/openapi.json")
 if _autopilot_router is not None:
     app.include_router(_autopilot_router, prefix="/api/autopilot", tags=["autopilot"])
+from .coverage import router as _coverage_router                    # GET /api/coverage (Clawl page)
+from .firecrawl_hooks import router as _firecrawl_router           # POST /api/firecrawl/webhook, spend gate, kill switch
+app.include_router(_coverage_router, prefix="/api", tags=["coverage"])
+app.include_router(_firecrawl_router, prefix="/api", tags=["firecrawl"])
 
 
 @app.on_event("startup")
