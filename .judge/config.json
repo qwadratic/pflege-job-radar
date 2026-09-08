@@ -1,0 +1,11 @@
+{
+  "bugs_per_day": 5,
+  "mrs_per_day": 2,
+  "judges": 3,
+  "judge_lenses": ["correctness", "security", "reproduction"],
+  "finder_lenses": ["correctness", "security", "data-quality", "performance", "ux-copy"],
+  "focus_paths": ["app/", "pflege_jobs/", "crawlers/", "web/pro.template.html", "web/index.template.html"],
+  "exclude_paths": ["backups/", "crawl_output/", "data/registry/exa_career_seeds.json", "web/skill/"],
+  "style": {"prose": "caveman ultra", "code": "ponytail lite"},
+  "schedule": {"find_utc": "0 6 * * *", "propose_utc": "0 14 * * *"}
+}

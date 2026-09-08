@@ -40,5 +40,12 @@
    "de": "Abdeckungsplan – ganz Bayern",
    "en": "Coverage plan – all of Bavaria"
   }
+ },
+ {
+  "file": "judge-runner.md",
+  "title": {
+   "de": "Judge-Runner – Bugs finden, MRs vorschlagen",
+   "en": "Judge runner – find bugs, propose MRs"
+  }
  }
 ]

@@ -1,92 +1,29 @@
-"""Firecrawl hunt: one agent run per clinic, N at a time, stop on anything suspicious.
-
-Runs OUTSIDE the app's single worker queue so several agent jobs can be in flight: each clinic gets a
-normal crawl_runs row (trigger='hunt') and app.crawl.execute(run_id) is called in a thread pool, so the
-spend gate, kill switch, ledger, inbox posting and drain are exactly the production path.
+"""Firecrawl hunt, one-shot: one agent run per clinic from a hand-picked candidate list, N at a time, stop on anything
+suspicious. Thin wrapper over app/hunter.py (precheck, run_one, suspicious, pools live there now); the resilient,
+stateful, forever-running variant is `python -m app.hunter` (docs/firecrawl.md §6).
 
   set -a; . ./.env; set +a
   .venv/bin/python tools/fc_hunt.py --candidates /tmp/fc_hunt_candidates.json --concurrency 3 --cap 60 --max-runs 8
   .venv/bin/python tools/fc_hunt.py --ids 27501,27502 --concurrency 2 --cap 60
 
-Pre-check (free): the careers page is fetched with plain HTTP first; a page that says there are no
-openings in the nursing section is skipped without spending a run (the Freyung lesson, run 35).
-Suspicious = stop submitting new runs (in-flight ones finish): a run charged more than --max-charge
-credits, a token delta above --max-tokens, an API/balance disagreement, an error, more than 60 rows
-from one clinic, or three billable runs in a row that returned nothing.
+Each clinic gets a normal crawl_runs row (trigger='hunt') and app.crawl.execute(run_id) runs in a thread pool, so the
+spend gate, kill switch, ledger, inbox posting and drain are exactly the production path. Pre-check (free): a careers
+page that says there are no openings is skipped without spending a run. Suspicious = stop submitting (in-flight runs
+finish): a run charged more than --max-charge, a token delta above --max-tokens, an API/balance disagreement, an
+error, more than 60 rows from one clinic, or three billable runs in a row that returned nothing.
 """
 import argparse
 import json
 import os
-import re
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests  # noqa: E402
 
-from app import crawl as CR  # noqa: E402
 from app import runs as R  # noqa: E402
-from pflege_jobs.sources import firecrawl_agent as FA  # noqa: E402
-
-UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
-NO_JOBS = re.compile(r"(leider\s+)?(sind\s+)?(derzeit|aktuell|momentan|zur\s*zeit)\s+(sind\s+)?(in\s+diesem\s+bereich\s+)?keine\s+(offenen\s+)?stellen|keine\s+stellenangebote\s+(vorhanden|verf)", re.I)
-
-
-def precheck(c):
-    """('run', why) or ('skip', why). Free: one plain GET of the careers page (or website)."""
-    url = (c.get("careers_url") or c.get("website") or "").strip()
-    if not url:
-        return "run", "no url to pre-check (agent must search)"
-    try:
-        r = requests.get(url, headers=UA, timeout=25, allow_redirects=True)
-    except Exception as e:
-        return "run", f"pre-check fetch failed ({type(e).__name__}); leaving it to the agent"
-    text = re.sub(r"<[^>]+>", " ", r.text or "")
-    if r.status_code >= 400:
-        return "run", f"careers page HTTP {r.status_code}; agent may find the board elsewhere"
-    if NO_JOBS.search(text):
-        return "skip", "careers page says there are no openings right now"
-    return "run", f"careers page HTTP {r.status_code}, {len(text)//1000} kB"
-
-
-def pools():
-    d = FA.credits(historical=False) if "historical" in FA.credits.__code__.co_varnames else FA.credits()
-    return {"credits": d.get("remaining"), "tokens": d.get("tokens_remaining"), "runs_today": d.get("agent_runs_today"), "free_left": d.get("free_runs_left_today")}
-
-
-def run_one(c, cap):
-    rid = R.create_run("clinic", c["clinic_id"], "firecrawl", {"max_credits": cap}, [c["clinic_id"]], trigger="hunt")
-    t0 = time.time()
-    CR.execute(rid)
-    run = R.get_run(rid)
-    log = run.get("log") or []
-    charged = next((l for l in log if "charging" in l), "")
-    tok = re.search(r"tokens delta (-?\d+|None)", charged)
-    return {"clinic_id": c["clinic_id"], "name": c["name"], "run_id": rid, "status": run.get("status"), "rows": run.get("n_rows"), "new": run.get("n_new"),
-            "credits": run.get("credits_used"), "tokens_delta": (tok.group(1) if tok else None), "error": run.get("error"),
-            "disagree": any("DISAGREE" in l for l in log), "gate": next((l for l in log if "spend gate" in l or "refused" in l or "skipped" in l), ""),
-            "notes": next((l[l.find("notes:"):][:160] for l in log if "notes:" in l), ""), "secs": round(time.time() - t0)}
-
-
-def suspicious(res, a, zero_streak):
-    if res["error"]:
-        return f"run {res['run_id']} error: {res['error'][:120]}"
-    if res["disagree"]:
-        return f"run {res['run_id']}: API creditsUsed and balance delta disagree"
-    if (res["credits"] or 0) > a.max_charge:
-        return f"run {res['run_id']} charged {res['credits']} credits (> {a.max_charge})"
-    try:
-        if res["tokens_delta"] not in (None, "None") and abs(int(res["tokens_delta"])) > a.max_tokens:
-            return f"run {res['run_id']} token delta {res['tokens_delta']} (> {a.max_tokens})"
-    except ValueError:
-        pass
-    if (res["rows"] or 0) > 60:
-        return f"run {res['run_id']} returned {res['rows']} rows from one clinic"
-    if zero_streak >= 3:
-        return "three billable runs in a row returned nothing"
-    return None
+from app.hunter import pools, precheck, run_one, suspicious  # noqa: E402,F401  (re-exported for older imports)
 
 
 def main():
@@ -121,7 +58,7 @@ def main():
                     print(f"skip {c['clinic_id']} {c['name'][:40]}: {why}", flush=True)
                     continue
                 print(f"submit {c['clinic_id']} {c['name'][:40]} (cap {a.cap}) -- {why}", flush=True)
-                futures[ex.submit(run_one, c, a.cap)] = c
+                futures[ex.submit(run_one, c, a.cap, "hunt")] = c
             if not futures:
                 break
             done = next(as_completed(list(futures)))

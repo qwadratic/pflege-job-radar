@@ -1,0 +1,28 @@
+# Pflege-Board Firecrawl hunter (app/hunter.py --daemon): one agent run per fetch=firecrawl Plan-KH clinic per UTC
+# day, N at a time, with its own stop bar (docs/firecrawl.md §6). Separate from pflege-web so a restart of one
+# never touches the other; they share the SQLite state in data/app.sqlite.
+#
+# Install (not done by the build -- a human decides when the hunter goes live):
+#   sudo cp deploy/pflege-hunter.service /etc/systemd/system/pflege-hunter.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-hunter
+#   journalctl -u pflege-hunter -f
+# The daemon submits nothing until POST /api/hunter/start (or settings hunter.enabled=true); POST /api/hunter/stop or
+# `touch data/HUNTER_STOP` halts it without stopping the unit.
+[Unit]
+Description=Pflege-Board Firecrawl hunter (app.hunter --daemon)
+After=network-online.target pflege-web.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.hunter --daemon
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -24,6 +24,7 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | GET/POST/PUT/DELETE | `/api/schedules[/{id}]`, `POST /api/schedules/{id}/run-now` | cron / preset schedules with target, mode, budget, enabled |
 | GET/POST | `/api/mechanics`, `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | the ten rule mechanics: explanation, source, patterns, try-it, run tests |
 | GET/PUT | `/api/settings`, `/api/settings/patterns` | patterns.json (every regex), Firecrawl default budget |
+| GET | `/api/billing` | spend report over a window: series (hour/day buckets), totals, by kind, runs, Firecrawl pools, Exa |
 | GET | `/api/taxonomy`, `/api/ontology`, `/api/docs` | taxonomy.json, ontology.json, docs index |
 
 List responses: `{"total": N, "rows": [...]}`; `limit`/`offset` page; comma lists for multi-value filters.
@@ -93,6 +94,34 @@ curl -X POST "$B/mechanics/clinic_link/test"
 curl "$B/settings"
 curl -X PUT -H 'Content-Type: application/json' -d @patterns.json "$B/settings/patterns"
 ```
+
+### Billing (`GET /api/billing`)
+Spend / usage report from the local ledger (`crawl_runs` + `firecrawl_usage` in `data/app.sqlite`), the Firecrawl account (`FA.credits()`) and the Exa seed cache. No auth.
+
+Query: `window=today|24h|7d|30d|period|custom` (default `today`; `period` = the Firecrawl billing period, falls back to 30 d with `window.note` when the API is down), `from=ISO&to=ISO` for `custom` (date-only accepted, naive = UTC, `to` defaults to now), `granularity=auto|hour|day` (`auto`: hour up to 48 h, day beyond). Buckets are UTC, one per hour/day from floor(from) to floor(to) inclusive, empty buckets included. All numbers except `exa_*`, `pools` and `hist` are scoped to the window.
+
+```bash
+curl "$B/billing?window=7d"
+curl "$B/billing?window=custom&from=2026-09-01&to=2026-09-08T00:00:00Z&granularity=day"
+```
+
+```json
+{"window": {"key": "7d", "from": "2026-09-01T09:00:00+00:00", "to": "2026-09-08T09:00:00+00:00", "granularity": "day", "note": null},
+ "price_per_credit": 0.0053, "currency": "USD",
+ "series": [{"t": "2026-09-08T00:00:00+00:00", "credits_billable": 151, "credits_free": 0, "tokens": 1890, "runs": 11, "runs_free": 5, "new_postings": 66, "usd": 0.8003}],
+ "totals": {"credits": 151, "credits_billable": 151, "credits_free": 0, "tokens": 1890, "usd": 0.8003, "runs": 39, "runs_free": 6, "runs_billable": 3,
+            "runs_failed": 7, "runs_adapter": 23, "new_postings": 73, "cost_per_posting_usd": 0.011, "refills": 0, "exa_usd": 0.644, "exa_searches": 92},
+ "by_kind": [{"kind": "firecrawl_jobs", "runs": 16, "credits": 151, "usd": 0.8003}, {"kind": "firecrawl_career", "runs": 0, "credits": 0, "usd": 0.0},
+             {"kind": "adapter", "runs": 23, "credits": 0, "usd": 0.0}, {"kind": "exa", "runs": 92, "credits": null, "usd": 0.644}],
+ "runs": [{"run_id": 39, "at": "2026-09-08T08:01:47+00:00", "clinic_id": "27501", "clinic": "Kreiskrankenhaus Rotthalmünster", "clinics": 1, "scope": "clinic",
+           "value": "27501", "mode": "firecrawl", "trigger": "hunt", "status": "done", "credits": 77, "tokens": 1155, "rows": 11, "new": 11, "free": false, "usd": 0.4081, "error": null}],
+ "pools": {"credits_remaining": 228, "credits_plan": 8000, "tokens_remaining": 3420, "tokens_plan": 120000, "period_start": "2026-08-19T20:01:50.000Z",
+           "period_end": "2026-09-19T20:01:50.000Z", "free_runs_left_today": 0, "free_runs_per_day": 5, "agent_runs_today": 10, "error": null},
+ "hist": {"credits_used_period": 222, "tokens_used_period": 3330},
+ "exa_note": "cache has no timestamps: total over all 92 cached searches (file updated 2026-09-06T18:05:17+00:00), not scoped to the window"}
+```
+
+Rules: `usd = credits * price_per_credit` (`settings.firecrawl.eur_per_credit`, Hobby pricing, USD-derived -- label it USD/credit); a run is booked at `finished_at` (else `started_at` / `queued_at`); `free` = a Firecrawl run with status `done` and 0 credits (Firecrawl's 5 free daily agent runs; the ledger records the balance delta, so free runs carry 0 credits and `credits_free` is only non-zero when Firecrawl bills inside the allowance); `runs_billable` = credits > 0; `runs_failed` = status `failed`; `runs_adapter` = runs without Firecrawl; `new_postings` = `crawl_runs.n_new`; `cost_per_posting_usd = usd / new_postings` (null when 0); `refills` = `hunt_meta '<day>/refills'` summed over the window's days (0 when absent); `tokens` = Extract-token deltas from `firecrawl_usage`; `runs` newest first, at most 500 (totals count every run); ledger rows without a run row appear with `trigger: "ledger"` (free when 0 credits / 0 tokens inside the day's first 5 submissions). `by_kind.exa` and `totals.exa_*` are a whole-cache total (the cache has no timestamps; `exa_note` says so) and are not part of `totals.usd`. `pools` / `hist` come from `FA.credits()`; keys are null with `pools.error` set when the API is unreachable.
 
 ### Clinic row
 `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`

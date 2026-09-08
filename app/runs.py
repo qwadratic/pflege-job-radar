@@ -1,7 +1,8 @@
 """Local state (SQLite) + the crawl worker queue.
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
-settings (json blobs by key), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
+settings (json blobs by key), hunt_state + hunt_meta (app/hunter.py: one row per clinic and UTC day, and the hunter's
+per-day accumulators / flags -- schema here, all reads and writes live in app/hunter.py), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
 job the row belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
 Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the public API shows them too.
 """
@@ -33,6 +34,12 @@ create table if not exists firecrawl_events (
   id integer primary key autoincrement, at text, event_type text, job_id text, clinic_id text, run_id integer,
   success integer, credits_used integer default 0, raw text);
 create index if not exists firecrawl_events_job on firecrawl_events(job_id);
+create table if not exists hunt_state (
+  clinic_id text, day text, name text, host text, status text default 'pending', run_id integer, cap integer,
+  credits integer default 0, tokens integer, rows integer default 0, new integer default 0, attempts integer default 0,
+  last_error text, updated_at text, primary key(clinic_id, day));
+create index if not exists hunt_state_day on hunt_state(day);
+create table if not exists hunt_meta (key text primary key, value text);
 """
 
 

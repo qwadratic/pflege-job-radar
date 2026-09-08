@@ -44,3 +44,7 @@ data/app.sqlite*
 data/autopilot.sqlite*
 .venv/
 *.log
+
+# judge runner state (queue/mr files are written by the scheduled routines, not committed)
+.judge/*
+!.judge/config.json

@@ -36,6 +36,14 @@ from .coverage import router as _coverage_router                    # GET /api/c
 from .firecrawl_hooks import router as _firecrawl_router           # POST /api/firecrawl/webhook, spend gate, kill switch
 app.include_router(_coverage_router, prefix="/api", tags=["coverage"])
 app.include_router(_firecrawl_router, prefix="/api", tags=["firecrawl"])
+from .hunter_api import router as _hunter_router                   # /api/hunter/* (resilient Firecrawl runner)
+app.include_router(_hunter_router, prefix="/api", tags=["hunter"])
+from .billing import router as _billing_router                     # GET /api/billing (spend report)
+app.include_router(_billing_router, prefix="/api", tags=["billing"])
+from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)
+from .stripe_gate import router as _stripe_router                  # Stripe pay-per-closed-posting gate
+app.include_router(_auth_router, prefix="/api", tags=["auth"])
+app.include_router(_stripe_router, prefix="/api", tags=["stripe"])
 
 
 @app.on_event("startup")

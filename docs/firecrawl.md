@@ -247,3 +247,74 @@ months, the open month has `endDate: null`); the docs page for the credit one sh
 `totalCredits` — the live API says `creditsUsed`, `credits()` accepts either.
 
 No second run was submitted, per the hard credit rule.
+
+## 6. Hunter (`app/hunter.py`, `deploy/pflege-hunter.service`, `/api/hunter/*`)
+
+The hunter is the long-running version of `tools/fc_hunt.py`: one Firecrawl agent run per `fetch == 'firecrawl'`
+`Plan-KH` clinic per UTC day, largest (beds) first, N in parallel, through the very same path as every other
+run (`crawl_runs` row with `trigger='hunter'` → `app.crawl.execute`: spend gate, kill switch, ledger, inbox, drain).
+`tools/fc_hunt.py` is now a thin wrapper over the hunter's helpers (`precheck`, `run_one`, `suspicious`, `pools`).
+
+**The bar (the user's words):** *stop after (2 credit autorefills AND 0.5 $ per posting) OR all clinics updated for
+today.* Cost per posting = credits the hunter spent today × `firecrawl.eur_per_credit` (USD-derived, 0.0053) ÷ unique
+new postings the hunter's runs produced today (`n_new` of its runs). Credits for zero postings count as infinite.
+
+**State** (`data/app.sqlite`): `hunt_state` — one row per clinic and UTC day (`status` pending | running | done |
+skipped | failed | needs_manual, `run_id`, `cap`, `credits`, `tokens`, `rows`, `new`, `attempts`, `last_error`);
+`hunt_meta` — per-day accumulators (`<day>/credits_spent`, `tokens_spent`, `new_postings`, `runs`, `refills`,
+`stop_reason`, `started_at`) plus `enabled`, `last_balance`, `last_period_end`, `pack_size_observed`, `last_pools`,
+`last_run`, `running`. A restart resumes from it: a clinic done today is never re-run; a row left `running` by a dead
+process becomes `failed` (it may have been billed). One instance at a time: `flock` on `data/hunter.lock`.
+
+**Target set for a day:** `fetch == 'firecrawl'` and `status == 'Plan-KH'`, ordered by beds desc, minus rows already
+done / skipped / needs_manual / failed today, minus sibling boards — a clinic whose `careers_url` host already produced
+a run with rows > 0 today under another clinic is recorded `skipped` (`sibling board already harvested today`); a host
+that is in flight right now is deferred, not skipped.
+
+**Fail-fast ladder per clinic**
+1. free pre-check (`precheck`): one plain GET of the careers page; a "derzeit keine Stellen" page → `skipped`, no run;
+2. first attempt at `hunter.cap` (120 — a 60 cap fails on any real board, 120 succeeds);
+3. if the run failed with `Agent reached max credits` and was **not billed** → exactly one retry at
+   `hunter.escalate_cap` (200);
+4. anything else — a billed failure, a second max-credits failure, an exception, a spend-gate refusal → `needs_manual`
+   for today, no more retries.
+
+**Stop rules** — evaluated after every terminal run and before every submission, first match wins, each logged as
+`STOP <name>: <the numbers>` and written to `hunt_meta <day>/stop_reason`:
+
+| # | name | fires when | daemon then |
+|---|---|---|---|
+| 1 | `all_updated` | no pending target left today | sleeps (60 s polls) until the next UTC day — the 5 free runs reset |
+| 2 | `combined_bar` | `refills >= hunter.max_refills` (2) **AND** `cost_per_posting > hunter.max_usd_per_posting` (0.50) | waits for `POST /api/hunter/start` |
+| 3 | `suspicious` | any `fc_hunt.suspicious()` rule (run charged > `max_charge_per_run` 150, token delta > `max_tokens_per_run` 2500, API/balance DISAGREE, a run error, > 60 rows from one clinic, three empty billable runs in a row); 3 failures in a row; burn rate of the hunter's runs in the last 60 min > `max_credits_per_hour` (600); `tokens_remaining < min_tokens` (300); Firecrawl API 429/5xx 5 times despite backoff 30 → 60 → 120 → 300 → 600 s; an empty registry snapshot | waits for a human |
+| 4 | `kill_switch` | `app.crawl.kill_switch()` refuses (§3, the last-resort backstop; the hunter passes `run_mode='hunter'`, so the throttle tier refuses it too); `firecrawl.enabled` false; the file `data/HUNTER_STOP` exists; `POST /api/hunter/stop` | waits for a human |
+
+In-flight runs always finish (they are billed anyway); only new submissions stop.
+
+**Refill detection:** `FA.credits()` is read before every submission and after every terminal run. `remaining` went
+**up** while `period_end` stayed the same → `refills += 1`, the delta is the pack size (`pack_size_observed`,
+this account's pack is unknown until the first reload is seen). A new `period_end` resets the baseline without
+counting. No API or webhook reports a reload, so this is the only signal.
+
+**Run it**
+
+```
+python -m app.hunter --dry-run   # today's target list with pre-check verdicts; submits nothing
+python -m app.hunter --status    # the same JSON as GET /api/hunter/status
+python -m app.hunter --once      # one pass, then exit
+python -m app.hunter --daemon    # what the systemd unit runs
+sudo cp deploy/pflege-hunter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now pflege-hunter
+```
+
+The daemon submits nothing until enabled: `POST /api/hunter/start` (sets `enabled`, clears today's stop reason);
+`POST /api/hunter/stop` disables it; `POST /api/hunter/run-once` runs one pass in the web process when no daemon holds
+the lock; `GET /api/hunter/targets?day=YYYY-MM-DD` lists the `hunt_state` rows; `PUT /api/settings/hunter` edits the
+thresholds (`concurrency`, `cap`, `escalate_cap`, `max_refills`, `max_usd_per_posting`, `max_credits_per_hour`,
+`min_tokens`, `max_charge_per_run`, `max_tokens_per_run`, `enabled`). `touch data/HUNTER_STOP` halts it without the API.
+
+**Reading the card** (`/pro#/clawl`, under "Coverage by adapter", refreshes every 20 s while enabled): the status
+line shows *running* / *enabled, waiting for the daemon* / *enabled, but no daemon* / *stopped* and the stop reason
+with its numbers; the tiles show targets done / total, pending, skipped, needs-manual, credits and tokens spent today,
+new postings, `$ per posting / 0.50` (red once over the bar), `refills / 2` (red once reached, `(+pack)` once a
+reload was seen), and the account pools (credits · tokens · free runs left). The table is today's `hunt_state`:
+clinic, status, cap, credits, rows, new, run id + last error — `needs_manual` rows are the ones a human should look at.

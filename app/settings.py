@@ -15,6 +15,21 @@ FIRECRAWL_DEFAULT = {
     "eur_per_credit": 0.0053, "max_eur_unknown_clinic": 5.0,
     "kill_switch_pct": [10, 20, 30],       # % of plan credits spent in a rolling 24h -> warn / throttle / disable
     "reserve_credits": 150,                # never let remaining credits fall below this in the current period
+    "enabled": True,                       # false = no Firecrawl call at all (the hunter reads it as a kill switch)
+}
+
+# app/hunter.py -- the resilient runner over every fetch=='firecrawl' Plan-KH clinic (docs/firecrawl.md §6).
+HUNTER_DEFAULT = {
+    "enabled": False,                      # the daemon only submits while this is true (POST /api/hunter/start|stop)
+    "concurrency": 3,                      # agent runs in flight at once
+    "cap": 120,                            # maxCredits of the first attempt (a 60 cap fails on any real board, 120 succeeds)
+    "escalate_cap": 200,                   # one retry at this cap after an UNBILLED 'Agent reached max credits' failure
+    "max_refills": 2,                      # combined bar: stop once refills >= this AND cost_per_posting > max_usd_per_posting
+    "max_usd_per_posting": 0.5,
+    "max_credits_per_hour": 600,           # burn rate over the hunter's runs of the last 60 minutes
+    "min_tokens": 300,                     # Extract-token pool floor
+    "max_charge_per_run": 150,             # one run charging more than this is suspicious
+    "max_tokens_per_run": 2500,            # one run moving more Extract tokens than this is suspicious
 }
 
 
@@ -111,7 +126,46 @@ def public_firecrawl():
 
 
 def get_all():
-    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": public_firecrawl()}
+    return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": public_firecrawl(),
+            "hunter": get_hunter()}
+
+
+def get_hunter():
+    return {**HUNTER_DEFAULT, **(R.get_setting("hunter") or {})}
+
+
+_HUNTER_INT = {"concurrency": (1, 10), "cap": (20, 500), "escalate_cap": (20, 500), "max_refills": (0, 100),
+               "max_credits_per_hour": (0, 100000), "min_tokens": (0, 10 ** 6), "max_charge_per_run": (1, 1000), "max_tokens_per_run": (1, 10 ** 6)}
+
+
+def save_hunter(obj):
+    """Validated merge into the 'hunter' settings block; unknown keys are ignored, bad values raise ValueError."""
+    if not isinstance(obj, dict):
+        raise ValueError("hunter settings must be a JSON object")
+    cur = get_hunter()
+    for k, (lo, hi) in _HUNTER_INT.items():
+        if k in obj:
+            try:
+                v = int(obj[k])
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} must be an integer")
+            if isinstance(obj[k], bool) or not lo <= v <= hi:
+                raise ValueError(f"{k} must be between {lo} and {hi}")
+            cur[k] = v
+    if "max_usd_per_posting" in obj:
+        try:
+            v = float(obj["max_usd_per_posting"])
+        except (TypeError, ValueError):
+            raise ValueError("max_usd_per_posting must be a number")
+        if v < 0:
+            raise ValueError("max_usd_per_posting must be >= 0")
+        cur["max_usd_per_posting"] = v
+    if "enabled" in obj:
+        cur["enabled"] = bool(obj["enabled"])
+    if cur["escalate_cap"] < cur["cap"]:
+        raise ValueError("escalate_cap must be >= cap")
+    R.set_setting("hunter", cur)
+    return get_hunter()
 
 
 def save_firecrawl(obj):
@@ -126,6 +180,8 @@ def save_firecrawl(obj):
         cur["max_eur_unknown_clinic"] = max(0.0, float(obj["max_eur_unknown_clinic"]))
     if "reserve_credits" in obj:
         cur["reserve_credits"] = max(0, int(obj["reserve_credits"]))
+    if "enabled" in obj:
+        cur["enabled"] = bool(obj["enabled"])
     if "kill_switch_pct" in obj:
         pct = obj["kill_switch_pct"]
         if not (isinstance(pct, list) and len(pct) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in pct)
