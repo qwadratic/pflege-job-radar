@@ -49,6 +49,13 @@
   }
  },
  {
+  "file": "campaign.md",
+  "title": {
+   "de": "Reingest-Kampagne – Firecrawl-Verifikation, Adapter-Fallback",
+   "en": "Reingest campaign – Firecrawl verification, adapter fallback"
+  }
+ },
+ {
   "file": "auth.md",
   "title": {
    "de": "Auth – Owner, Kunden, Magic Link",

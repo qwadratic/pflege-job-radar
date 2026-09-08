@@ -307,9 +307,9 @@ def api_flags():
 
 # --- middleware ----------------------------------------------------------------------------
 WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/inbox/drain", "/api/hunter", "/api/scheduler")
+OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/inbox/drain", "/api/hunter", "/api/scheduler", "/api/campaign")
 OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
-OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl/runs")
+OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl/runs", "/api/campaign")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 
 

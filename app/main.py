@@ -11,6 +11,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import campaign as CAM
 from . import config as A
 from . import crawl as CR
 from . import cv as CV
@@ -409,6 +410,22 @@ async def api_put_firecrawl(request: Request):
 async def api_put_flags(request: Request):
     try:
         return ST.save_feature_flags(await request.json())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/campaign")
+def api_campaign():
+    """State of the Firecrawl-only reingest campaign (docs/campaign.md) -- owner-only, like /api/hunter."""
+    return CAM.get()
+
+
+@app.post("/api/campaign")
+async def api_post_campaign(request: Request):
+    """The scheduled campaign routine's write path: append a reasoning snapshot and/or update safety_level
+    / stopped. Not a human toggle -- the routine is the only intended caller."""
+    try:
+        return CAM.save(await request.json())
     except ValueError as e:
         raise HTTPException(422, str(e))
 
