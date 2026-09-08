@@ -297,8 +297,8 @@ def test_owner_closes_on_behalf_of_customer(client, env, configured):
 def test_cancelled_customer_not_billed(client, env, configured):
     h = _customer_cookie()
     AU.upsert_customer(CUSTOMER, status="cancelled")
-    d = client.post("/api/postings/700/closed", headers=h).json()
-    assert d["billed"] is False and env.calls == [] and SG.closed_row(700)
+    r = client.post("/api/postings/700/closed", headers=h)              # a cancelled subscription revokes the session at once
+    assert r.status_code == 401 and env.calls == [] and not SG.closed_row(700)
 
 
 def test_schema_is_self_sufficient(tmp_path, monkeypatch):

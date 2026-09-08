@@ -174,7 +174,7 @@ DENIED = [("POST", "/api/crawl"), ("POST", "/api/schedules"), ("PUT", "/api/sche
           ("GET", "/api/billing"), ("GET", "/api/billing?window=7d"), ("GET", "/api/hunter/status"), ("GET", "/api/hunter/targets"),
           ("GET", "/api/settings"), ("GET", "/api/coverage"), ("GET", "/api/inbox")]
 OPEN = [("GET", "/api/me"), ("GET", "/api/stats"), ("GET", "/api/clinics"), ("GET", "/api/jobs"), ("GET", "/api/search?q=x"),
-        ("GET", "/api/crawl/runs"), ("GET", "/api/schedules"), ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"),
+        ("GET", "/api/schedules"), ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"),
         ("GET", "/pro"), ("GET", "/autopilot"), ("POST", "/api/auth/magic")]
 
 
@@ -209,7 +209,7 @@ def test_pages_served_to_anonymous_not_redirected(client):
 
 def test_required_role_matrix():
     rr = AU.required_role
-    assert rr("POST", "/api/crawl") == "owner" and rr("GET", "/api/crawl/runs") is None and rr("GET", "/api/crawl/plan") is None
+    assert rr("POST", "/api/crawl") == "owner" and rr("GET", "/api/crawl/runs") == "owner" and rr("GET", "/api/firecrawl/credits") == "owner" and rr("GET", "/api/crawl/plan") is None
     assert rr("POST", "/api/clinics/36201/refetch-career") == "owner" and rr("GET", "/api/clinics/36201") is None
     assert rr("GET", "/api/billing") == "owner" and rr("GET", "/api/hunter/status") == "owner" and rr("GET", "/api/inbox") == "owner"
     assert rr("GET", "/pro") == "member" and rr("GET", "/autopilot/") == "member" and rr("GET", "/") is None

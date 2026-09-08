@@ -196,6 +196,7 @@ tr.hl>td{background:rgba(157,225,70,.08);box-shadow:inset 3px 0 0 var(--neon)} t
   .md{padding:16px} #cy{height:320px}
   .strip{padding:10px 12px} .strip .grp{width:100%} .tiles{grid-template-columns:repeat(2,1fr)} .bl-hero b{font-size:40px}
 }
+body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 </style>
 </head>
 <body>
@@ -1028,7 +1029,7 @@ function crawlStrip({onHunter}={}){
 // ---- gate: GET /api/me → owner | customer render the dashboard; anonymous gets the Pro-Zugang card -------------------
 const GATE={on:false,me:null};
 async function gate(){ let me; try{ me=await api("/api/me"); }catch(e){ me={role:"anonymous",error:e.message}; } GATE.me=me; const ok=me&&me.role==="owner";   // customers get a view of their own once "Stelle besetzt" exists; until then the dashboard is owner-only GATE.on=!ok; if(ok){ $("#gate")?.remove(); return true; } renderGate(me); return false; }
-function renderGate(me){ $("#gate")?.remove(); const email=el("input",{type:"email",required:"",autocomplete:"email",placeholder:"name@example.org","aria-label":t("g_email")}); const send=el("button",{type:"submit",class:"btn p",text:t("g_send")}); const msg=el("div",{class:"msg","aria-live":"polite"});
+function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gated"); document.getElementById("pj-dock")?.remove(); document.getElementById("pj-launcher")?.remove(); const email=el("input",{type:"email",required:"",autocomplete:"email",placeholder:"name@example.org","aria-label":t("g_email")}); const send=el("button",{type:"submit",class:"btn p",text:t("g_send")}); const msg=el("div",{class:"msg","aria-live":"polite"});
   const form=el("form",{novalidate:""},email,send); form.addEventListener("submit",async e=>{ e.preventDefault(); const v=email.value.trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ msg.className="msg err"; msg.textContent=t("g_invalid"); return; } send.disabled=true; msg.className="msg"; msg.textContent=t("g_sending"); try{ await post("/api/auth/magic",{email:v,redirect:"/pro"}); msg.textContent=t("g_sent"); }catch(err){ msg.className="msg err"; msg.textContent=t("t_err",{m:err.message}); } send.disabled=false; });
   const login=el("a",{class:"btn n",href:"/__exe.dev/login?redirect=/pro",text:t("g_login")});
   const lang=el("div",{class:"langsw",role:"group","aria-label":"Sprache / Language"},...["de","en"].map(l=>el("button",{type:"button","aria-pressed":String(l===LANG),onclick:()=>setLang(l),text:l.toUpperCase()})));

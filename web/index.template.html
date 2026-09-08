@@ -188,7 +188,7 @@ const term=(txt,key)=>{const g=gl(key||txt); return el("span",{"data-tip":g?(key
 const nav=h=>{location.hash=h;};
 let BILL_TODAY=null;                                   // today's USD for the header badge; null = API down/stub → badge hidden
 let ME={role:"anonymous"}; let TODAY_P=null,TODAY_AT=0; const billToday=()=>{ if(!TODAY_P||Date.now()-TODAY_AT>60e3){ TODAY_AT=Date.now(); TODAY_P=api("/api/billing?window=today"); } return TODAY_P; };   // shared by the badge and the page (window=today)
-function renderNav(){ const h=location.hash||"#/"; const items=[["#/","n_clinics",/^#\/($|\?|clinic|cv)/],["#/jobs","n_jobs",/^#\/job/],["#/billing","n_billing",/^#\/(billing|kosten)/]];
+function renderNav(){ const h=location.hash||"#/"; const items=[["#/","n_clinics",/^#\/($|\?|clinic|cv)/],["#/jobs","n_jobs",/^#\/job/]]; if(ME.role==="owner") items.push(["#/billing","n_billing",/^#\/(billing|kosten)/]);
   $("#nav").replaceChildren(...items.map(([href,k,re])=>el("a",{href,class:re.test(h)?"on":""},t(k),k==="n_billing"&&BILL_TODAY!=null?el("span",{class:"badge",text:usd(BILL_TODAY)}):null))); }
 window.addEventListener("hashchange",()=>{renderNav();route();});
 async function route(){ const v=$("#view"); const [path,q]=(location.hash.slice(1)||"/").split("?"); const g=Object.fromEntries(new URLSearchParams(q||"")); v.replaceChildren(el("p",{class:"empty",text:t("loading")})); window.scrollTo({top:0});
