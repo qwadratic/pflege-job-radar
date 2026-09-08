@@ -476,10 +476,15 @@ def docs_file(name: str):
 
 
 def _web(rel, media=None):
+    """Serve a file under web/ with Cache-Control: no-cache (forces revalidation every load, same as _ui()) --
+    dock.js/dock.css gate on a live feature flag (GET /api/flags), so a browser that heuristically caches an
+    older copy indefinitely (no explicit header = no guaranteed revalidation) can keep showing/hiding the dock
+    long after the flag changes server-side. Without this, toggling chats_dock off does not reach an already-
+    cached client until its cache happens to expire."""
     p = (A.WEB_DIR / rel).resolve()
     if A.WEB_DIR.resolve() not in p.parents or not p.is_file():
         raise HTTPException(404, "not found")
-    return FileResponse(str(p), media_type=media)
+    return FileResponse(str(p), media_type=media, headers={"Cache-Control": "no-cache"})
 
 
 def _ui(name):
