@@ -541,16 +541,6 @@ def dock_css():
     return _web("dock.css", "text/css")
 
 
-@app.get("/collect.html")
-def collect():
-    return _web("collect.html", "text/html; charset=utf-8")
-
-
-@app.get("/collector.js")
-def collector():
-    return _web("collector.js", "application/javascript")
-
-
 @app.get("/skill/{name:path}")
 def skill(name: str):
     if ".." in name:

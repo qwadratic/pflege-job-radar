@@ -1,6 +1,6 @@
 """Build: inject public config into the SPA and agent docs.
 Usage: SUPABASE_URL=... SUPABASE_ANON_KEY=... python web/build.py
-Outputs: web/index.html (default at /), web/pro.html (/pro), web/autopilot.html (/autopilot), web/collect.html, web/skill/* (+ single-file bundle pflege-jobs.skill.md).
+Outputs: web/index.html (default at /), web/pro.html (/pro), web/autopilot.html (/autopilot), web/skill/* (+ single-file bundle pflege-jobs.skill.md).
 The app server (app/) serves web/ directly; there is no hosted copy, no netlify/vercel, no edge dashboard."""
 import os, pathlib
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -16,7 +16,7 @@ def fill(text):
 
 web = root / "web"
 # (template, output). index.* is whatever is served at "/" -- today the light minimal page; pro.* is the dashboard at /pro.
-PAGES = [("index.template.html", "index.html"), ("pro.template.html", "pro.html"), ("collect.template.html", "collect.html")]
+PAGES = [("index.template.html", "index.html"), ("pro.template.html", "pro.html")]
 sizes = {}
 for _tpl, _out in PAGES:
     _txt = fill((web / _tpl).read_text(encoding="utf-8"))

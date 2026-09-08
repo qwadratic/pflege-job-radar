@@ -1,4 +1,4 @@
-"""Browser-collector intake -> observations. Inbox rows come from the bookmarklet (web/collector.js) or agents posting to
+"""Inbox intake -> observations. Rows come from crawler adapters or agents posting directly to
 pflege_jobs.inbox (anon insert). kind='jobposting' = JSON-LD JobPosting captured on a detail page; kind='listing' = job links seen
 on a list page (title + href; no details). Source: collector 'firecrawl*' -> firecrawl_agent (25); everything else -> employer_ats (20)."""
 import json, re

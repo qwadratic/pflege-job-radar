@@ -25,8 +25,8 @@ PYTHON = str(VENV_PY if VENV_PY.exists() else sys.executable)
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://klkxfvieaxpjlplloljn.supabase.co").rstrip("/")
 # Anon key only, deliberately -- no service-role/secret key anywhere in this codebase. Reads are
 # already fully covered by the public_read RLS policy (sql/001_schema.sql); the one PostgREST write
-# this module makes (rest_post -> inbox) already works with the anon key too, same grant
-# web/collect.html's bookmarklet posts through (sql/010_inbox.sql). Anything needing more than that
+# this module makes (rest_post -> inbox) already works with the anon key too -- that table's own
+# public-insert grant, independent of this module (sql/010_inbox.sql). Anything needing more than that
 # (employers/observations/verify/clinics/... upserts) goes through the pflege-ingest edge function
 # and its own secret (PFLEGE_INGEST_SECRET), never this module.
 ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")

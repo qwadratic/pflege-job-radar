@@ -23,13 +23,13 @@
 --
 -- RLS: deliberately NOT enabled here. sql/001's RLS block names seven tables (sources,
 -- role_classes, employers, clinics, postings, posting_observations, crawl_runs) and inbox has never
--- been one of them. web/collect.html's bookmarklet posts rows to
--- POST {SUPABASE_URL}/rest/v1/inbox directly with the anon key and it works today -- if inbox has
--- RLS off and a plain table-level grant, enabling RLS here (with no matching policy) would start
--- rejecting every bookmarklet POST with 42501. Whatever grant currently lets anon INSERT here was
--- not made by any file in sql/ either; it is not reconstructed below because it cannot be verified
--- without an access token. Do not add `alter table pflege_jobs.inbox enable row level security`
--- to this file for that reason.
+-- been one of them. A plain POST {SUPABASE_URL}/rest/v1/inbox with just the anon key works today
+-- (confirmed live 2026-09-08, tools/kindt_healthcheck.sh's probe-row check) -- if inbox has RLS off
+-- and a plain table-level grant, enabling RLS here (with no matching policy) would start rejecting
+-- every such POST with 42501. Whatever grant currently lets anon INSERT here was not made by any
+-- file in sql/ either; it is not reconstructed below because it cannot be verified without an
+-- access token. Do not add `alter table pflege_jobs.inbox enable row level security` to this file
+-- for that reason.
 
 create table if not exists pflege_jobs.inbox (
   inbox_id      bigint generated always as identity primary key,
