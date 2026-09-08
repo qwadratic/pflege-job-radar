@@ -136,11 +136,17 @@ New editable settings under `PUT /api/settings/firecrawl` (`app/settings.py: FIR
 **What a run really cost** (`run_agent()`, 2026-09-08): the API's `creditsUsed` is 0 inside the free allowance
 whatever the run consumed, so `run_agent()` reads `GET /team/credit-usage` before submitting and after the
 terminal status and charges the ledger with the **balance delta** (authoritative; falls back to the API's
-number when either read failed or the balance went *up*, i.e. a period reset happened in between). Both numbers,
-the two snapshots, the run's number in today's count and whether it was free are kept in `raw['_cost']` and in
-the `credits_api` / `credits_delta` / `credits_before` / `credits_after` / `run_number_today` / `free_run` /
-`job_id` keys of `run_jobs_agent()` / `run_career_agent()`; every submission logs `free daily run N/5` or
-`billable run (#N today, 5 free runs already used)`. `FA.credits()` now returns both pools —
+number when either read failed or the balance went *up*, i.e. a period reset happened in between). The Extract
+token pool (`GET /team/token-usage`) is read at the same two moments, because the 2026-09-08 batch (runs 31–35,
+four free + one billable at 27 credits) moved it 5,685 → 5,280 and only a per-run read can say which run did it.
+Both numbers, the four snapshots, the run's number in today's count and whether it was free are kept in
+`raw['_cost']` and in the `credits_api` / `credits_delta` / `credits_before` / `credits_after` /
+`tokens_before` / `tokens_after` / `tokens_delta` / `run_number_today` / `free_run` / `job_id` keys of
+`run_jobs_agent()` / `run_career_agent()`; the ledger row gets the token delta too (`firecrawl_usage.tokens`,
+migration-safe like `job_id`; `R.tokens_total()`), shown as `tokens_7d` next to `credits_7d` on the coverage
+`firecrawl` row and as `spent_tokens_by_app` / `spent_tokens_by_app_7d` on `GET /api/firecrawl/credits`. Every
+submission logs `free daily run N/5` or `billable run (#N today, 5 free runs already used)`, every settlement
+`credits delta N, tokens delta M`. `FA.credits()` now returns both pools —
 `remaining`/`plan` (credits, what the Agent bills) and `tokens_remaining`/`tokens_plan` (the Extract token pool,
 `GET /team/token-usage`, never spent here) — plus `credits_used_hist`/`tokens_used_hist` for the current
 calendar month from the two `/historical` endpoints and `free_runs_per_day`/`agent_runs_today`/

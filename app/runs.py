@@ -1,8 +1,8 @@
 """Local state (SQLite) + the crawl worker queue.
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
-settings (json blobs by key), firecrawl_usage (credits per call; job_id = the Firecrawl agent job the row
-belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
+settings (json blobs by key), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
+job the row belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
 Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the public API shows them too.
 """
 import json
@@ -28,7 +28,7 @@ create table if not exists run_log (id integer primary key autoincrement, run_id
 create index if not exists run_log_run on run_log(run_id);
 create table if not exists career_profiles (clinic_id text primary key, profile text, fetched_at text, credits_used integer default 0, run_id integer);
 create table if not exists settings (key text primary key, value text);
-create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer, job_id text);
+create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer, job_id text, tokens integer);
 create table if not exists firecrawl_events (
   id integer primary key autoincrement, at text, event_type text, job_id text, clinic_id text, run_id integer,
   success integer, credits_used integer default 0, raw text);
@@ -49,7 +49,8 @@ def db():
 
 # (table, column, type) added after the table first shipped; applied by init() with a plain
 # 'alter table add column' when pragma table_info says the column is missing (SQLite has no IF NOT EXISTS for columns).
-MIGRATIONS = (("firecrawl_usage", "job_id", "text"),)
+MIGRATIONS = (("firecrawl_usage", "job_id", "text"),
+              ("firecrawl_usage", "tokens", "integer"))      # Extract-token delta of the run (None = not measured)
 
 
 def _migrate(c):
@@ -165,18 +166,29 @@ def active_run_count():
 
 
 # --- firecrawl usage / career profiles ------------------------------------------------------
-def add_usage(kind, clinic_id, credits, run_id=None, job_id=None):
+def add_usage(kind, clinic_id, credits, run_id=None, job_id=None, tokens=None):
     """Charge the local ledger. With a job_id the row is keyed by it: the first call (on_submit, credits 0)
     inserts, later calls for the same job (poll result, webhook, AgentFailed) update the credits in place --
-    so a job is one ledger row however many paths report it, and agent_runs_today() counts submissions."""
-    with _lock, db() as c:
+    so a job is one ledger row however many paths report it, and agent_runs_today() counts submissions.
+    tokens = the run's measured Extract-token delta (None = not measured; an update never erases a value)."""
+    tok = int(tokens) if isinstance(tokens, int) else None
+
+    def write(c):
         if job_id:
-            cur = c.execute("update firecrawl_usage set credits=?, clinic_id=coalesce(?,clinic_id), run_id=coalesce(?,run_id) where job_id=?",
-                            (int(credits or 0), clinic_id, run_id, job_id))
+            cur = c.execute("update firecrawl_usage set credits=?, tokens=coalesce(?,tokens), clinic_id=coalesce(?,clinic_id), run_id=coalesce(?,run_id) where job_id=?",
+                            (int(credits or 0), tok, clinic_id, run_id, job_id))
             if cur.rowcount:
                 return
-        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id,job_id) values(?,?,?,?,?,?)",
-                  (now(), kind, clinic_id, int(credits or 0), run_id, job_id))
+        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id,job_id,tokens) values(?,?,?,?,?,?,?)",
+                  (now(), kind, clinic_id, int(credits or 0), run_id, job_id, tok))
+
+    with _lock, db() as c:
+        try:
+            write(c)
+        except sqlite3.OperationalError:            # job_id / tokens column not there yet (a writer that never ran init())
+            c.executescript(SCHEMA)
+            _migrate(c)
+            write(c)
 
 
 def agent_runs_today():
@@ -196,20 +208,26 @@ def agent_runs_today():
     return int(r[0])
 
 
-def usage_total(days=None, hours=None):
-    """Sum of credits recorded via add_usage(). hours takes precedence over days when both are given."""
+def _usage_sum(column, days=None, hours=None):
+    """Sum of one firecrawl_usage column. hours takes precedence over days when both are given."""
+    secs = hours * 3600 if hours else (days * 86400 if days else None)
     with _lock, db() as c:
-        if hours:
-            since = datetime.now(timezone.utc).timestamp() - hours * 3600
-            since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
-            r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage where at>=?", (since_iso,)).fetchone()
-        elif days:
-            since = datetime.now(timezone.utc).timestamp() - days * 86400
-            since_iso = datetime.fromtimestamp(since, timezone.utc).isoformat(timespec="seconds")
-            r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage where at>=?", (since_iso,)).fetchone()
+        if secs:
+            since_iso = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - secs, timezone.utc).isoformat(timespec="seconds")
+            r = c.execute(f"select coalesce(sum({column}),0) from firecrawl_usage where at>=?", (since_iso,)).fetchone()
         else:
-            r = c.execute("select coalesce(sum(credits),0) from firecrawl_usage").fetchone()
+            r = c.execute(f"select coalesce(sum({column}),0) from firecrawl_usage").fetchone()
     return int(r[0])
+
+
+def usage_total(days=None, hours=None):
+    """Sum of credits recorded via add_usage()."""
+    return _usage_sum("credits", days, hours)
+
+
+def tokens_total(days=None, hours=None):
+    """Sum of the Extract-token deltas recorded via add_usage(tokens=...); rows without a measurement count 0."""
+    return _usage_sum("tokens", days, hours)
 
 
 # --- firecrawl webhook events -----------------------------------------------------------------

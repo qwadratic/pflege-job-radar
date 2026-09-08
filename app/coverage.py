@@ -7,7 +7,7 @@ ats_type label (or under the default wp_jobs route when it is unlabelled but rou
 overlaps with labelled-but-unroutable clinics on purpose, so `totals` counts each clinic once instead of summing
 the rows. Reads the in-memory snapshot, the local SQLite run log and the routing plan; the one network call is
 the Firecrawl balance for the `firecrawl` row (credits + Extract tokens + free agent runs left today), tolerant
-of failure (keys stay None).
+of failure (keys stay None). credits_7d / tokens_7d are what the app's own runs moved per the local ledger.
 """
 import re
 from collections import Counter, defaultdict
@@ -110,6 +110,7 @@ def compute():
     boards, unroutable = _plan(clinics)
     runs = R.list_runs(limit=300)
     credits_7d = R.usage_total(days=7)
+    tokens_7d = R.tokens_total(days=7)
     account = _firecrawl_account()
 
     acc = {k: _empty() for k in keys}
@@ -142,6 +143,7 @@ def compute():
         row = {"adapter": key, **a, "coverage_pct": _pct(a), "last_run": _last_run(runs, key, members.get(key) or set())}
         if key == FIRECRAWL:
             row["credits_7d"] = credits_7d
+            row["tokens_7d"] = tokens_7d
             row.update(account)
         rows.append(row)
     rows.sort(key=lambda r: (-r["clinics_labelled"], r["adapter"] == FIRECRAWL, r["adapter"]))
@@ -152,6 +154,7 @@ def compute():
     totals["boards"] = sum(1 for b in boards.values() if not b.get("walled")) + len(fc_boards)
     totals["coverage_pct"] = _pct(totals)
     totals["credits_7d"] = credits_7d
+    totals["tokens_7d"] = tokens_7d
     totals["free_runs_left_today"] = account.get("free_runs_left_today")
     jobs = snap.get("jobs") or []
     orphan = [j for j in jobs if not j.get("clinic_id")]

@@ -95,10 +95,12 @@ TOKEN_HIST = {"success": True, "periods": [{"startDate": "2026-08-01T00:00:00.00
 
 class _Session:
     """Fake HTTP: submit returns a job id, first agent poll is processing, second completed (creditsUsed 17).
-    /team/credit-usage answers the current balance, which drops by `cost` once the job completes -- so the
-    before/after delta run_agent() measures is `cost`, independent of the API's creditsUsed."""
-    def __init__(self, cost=17, balance=379, api_credits=17):
+    /team/credit-usage answers the current credit balance, /team/token-usage the Extract-token balance; both
+    drop (by `cost` / `token_cost`) once the job completes -- so the before/after deltas run_agent() measures
+    are exactly those, independent of the API's creditsUsed."""
+    def __init__(self, cost=17, balance=379, api_credits=17, token_cost=0, tokens=5685):
         self.posts, self.gets, self.cost, self.balance, self.api_credits = [], 0, cost, balance, api_credits
+        self.token_cost, self.tokens = token_cost, tokens
 
     def post(self, url, headers=None, json=None, timeout=None):
         self.posts.append((url, json))
@@ -108,7 +110,7 @@ class _Session:
         if url.endswith("/team/credit-usage"):
             return _Resp(200, {"success": True, "data": {**CREDIT_USAGE["data"], "remainingCredits": self.balance}})
         if url.endswith("/team/token-usage"):
-            return _Resp(200, TOKEN_USAGE)
+            return _Resp(200, {"success": True, "data": {**TOKEN_USAGE["data"], "remainingTokens": self.tokens}})
         if url.endswith("/team/credit-usage/historical"):
             return _Resp(200, CREDIT_HIST)
         if url.endswith("/team/token-usage/historical"):
@@ -123,6 +125,7 @@ class _Session:
         if self.gets == 1:
             return _Resp(200, {"success": True, "status": "processing"})
         self.balance -= self.cost
+        self.tokens -= self.token_cost
         return _Resp(200, {"success": True, "status": "completed", "data": ANSWER, "creditsUsed": self.api_credits})
 
 
@@ -137,6 +140,7 @@ def test_run_jobs_agent_polls_and_converts(monkeypatch):
     assert res["credits_used"] == 17 and len(res["rows"]) == 2
     assert res["credits_api"] == 17 and res["credits_delta"] == 17 and res["job_id"] == "job-1"
     assert res["credits_before"] == 379 and res["credits_after"] == 362
+    assert res["tokens_before"] == 5685 and res["tokens_after"] == 5685 and res["tokens_delta"] == 0   # a run that moved no tokens
     assert res["run_number_today"] == 1 and res["free_run"] is True
 
 
@@ -241,6 +245,7 @@ def test_credits_carries_both_pools_and_free_runs(monkeypatch):
     assert fc["credits_used_hist"] == 71 and fc["tokens_used_hist"] == 1065          # the open (endDate null) period
     assert fc["hist_period_start"] == "2026-09-01T00:00:00.000Z" and fc["hist_period_end"] is None
     assert fc["free_runs_per_day"] == 5 and fc["agent_runs_today"] == 0 and fc["free_runs_left_today"] == 5
+    assert "spent_tokens_by_app" in fc and "spent_tokens_by_app_7d" in fc
     assert "error" not in fc and "tokens_error" not in fc and "hist_error" not in fc
 
 
@@ -301,12 +306,16 @@ def test_agent_runs_today_counts_only_todays_utc_submissions(ledger):
 
 def test_add_usage_keyed_by_job_id_updates_instead_of_duplicating(ledger):
     R = ledger
-    R.add_usage("jobs", "77406", 0, 28, job_id="job-a")                 # on_submit
-    R.add_usage("jobs", "77406", 25, 28, job_id="job-a")                # poll result
-    R.add_usage("jobs", "77406", 25, 28, job_id="job-a")                # webhook for the same job
+    R.add_usage("jobs", "77406", 0, 28, job_id="job-a")                 # on_submit: nothing measured yet
+    R.add_usage("jobs", "77406", 25, 28, job_id="job-a", tokens=405)    # poll result with both deltas
+    R.add_usage("jobs", "77406", 25, 28, job_id="job-a")                # webhook for the same job: no token figure, must not erase it
     with R.db() as c:
-        rows = c.execute("select credits, job_id from firecrawl_usage").fetchall()
-    assert [tuple(r) for r in rows] == [(25, "job-a")] and R.usage_total() == 25 and FA.agent_runs_today() == 1
+        rows = c.execute("select credits, tokens, job_id from firecrawl_usage").fetchall()
+    assert [tuple(r) for r in rows] == [(25, 405, "job-a")] and R.usage_total() == 25 and FA.agent_runs_today() == 1
+    assert R.tokens_total() == 405 and R.tokens_total(days=7) == 405 and R.tokens_total(hours=1) == 405
+    R.add_usage("jobs", "77406", 0, 29, job_id="job-b", tokens=None)    # unmeasured run counts 0 tokens, not an error
+    R.add_usage("career", "77406", 27, 30, job_id="job-c", tokens=12)
+    assert R.tokens_total() == 417 and FA.tokens_spent_by_app(days=7) == 417
 
 
 def test_job_id_column_is_added_to_an_old_ledger(tmp_path, monkeypatch):
@@ -322,7 +331,25 @@ def test_job_id_column_is_added_to_an_old_ledger(tmp_path, monkeypatch):
     R.init()                                                             # idempotent
     with sqlite3.connect(path) as c:
         cols = [r[1] for r in c.execute("pragma table_info(firecrawl_usage)")]
-        assert "job_id" in cols and c.execute("select count(*) from firecrawl_usage").fetchone()[0] == 1
+        assert "job_id" in cols and "tokens" in cols and c.execute("select count(*) from firecrawl_usage").fetchone()[0] == 1
+    assert R.tokens_total() == 0                                         # the legacy row has no token figure
+    R.add_usage("jobs", "77406", 0, 31, job_id="job-new", tokens=81)
+    assert R.tokens_total() == 81 and R.usage_total() == 0
+
+
+def test_add_usage_on_an_unmigrated_ledger_migrates_first(tmp_path, monkeypatch):
+    """A process that writes usage without ever calling init() (old schema on disk) must not crash on the new columns."""
+    from app import config as A
+    from app import runs as R
+    path = tmp_path / "old.sqlite"
+    with sqlite3.connect(path) as c:
+        c.execute("create table firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer)")
+    monkeypatch.setattr(A, "SQLITE_PATH", path)
+    monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    R.add_usage("jobs", "77406", 27, 35, job_id="job-35", tokens=405)
+    with sqlite3.connect(path) as c:
+        assert [tuple(r) for r in c.execute("select job_id, credits, tokens from firecrawl_usage")] == [("job-35", 27, 405)]
+    assert R.tokens_total() == 405 and R.agent_runs_today() == 1
 
 
 # --- run_agent(): balance delta is what gets charged; free-run label in the log ----------------------------
@@ -335,6 +362,38 @@ def test_run_agent_charges_balance_delta_not_api_creditsused(monkeypatch):
     assert used == 250 and raw["_cost"]["api_credits_used"] == 0 and raw["_cost"]["credits_delta"] == 250
     assert raw["_cost"]["credits_before"] == 379 and raw["_cost"]["credits_after"] == 129 and raw["_cost"]["job_id"] == "job-1"
     assert any("free daily run 1/5" in l for l in logged) and any("DISAGREE" in l for l in logged)
+
+
+def test_run_agent_records_token_delta_next_to_credit_delta(monkeypatch):
+    """2026-09-08: a batch of five runs moved the Extract pool 5685 -> 5280 and nobody could say which run did it.
+    Both pools are read before submit and after the terminal status; both deltas land in the result and the log."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    logged = []
+    res = FA.run_jobs_agent(CLINIC, max_credits=40, log=logged.append, session=_Session(cost=27, api_credits=27, token_cost=405))
+    assert res["credits_used"] == 27 and res["credits_delta"] == 27
+    assert res["tokens_before"] == 5685 and res["tokens_after"] == 5280 and res["tokens_delta"] == 405
+    assert any("credits delta 27, tokens delta 405" in l for l in logged)
+    raw = res["raw"]["_cost"]
+    assert raw["tokens_before"] == 5685 and raw["tokens_after"] == 5280 and raw["tokens_delta"] == 405
+
+
+def test_run_agent_token_delta_unreadable_or_rising_is_none(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            if url.endswith("/team/token-usage"):
+                raise ConnectionError("token endpoint down")
+            return super().get(url, headers, timeout)
+    logged = []
+    _, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=logged.append, session=S(cost=3, api_credits=3))
+    assert used == 3 and raw["_cost"]["credits_delta"] == 3                       # the credit side is unaffected
+    assert raw["_cost"]["tokens_before"] is None and raw["_cost"]["tokens_after"] is None and raw["_cost"]["tokens_delta"] is None
+    assert any("credits delta 3, tokens delta unknown" in l for l in logged)
+    _, _, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=_Session(cost=0, api_credits=0, token_cost=-120000))
+    assert raw["_cost"]["tokens_delta"] is None and raw["_cost"]["tokens_after"] == 125685   # pool went up: period reset, not measurable
 
 
 def test_run_agent_sixth_run_is_billable_in_the_log(monkeypatch):
@@ -397,8 +456,10 @@ def test_failed_job_carries_job_id_and_delta(monkeypatch):
         def get(self, url, headers=None, timeout=None):
             if "/agent/" in url:
                 self.balance -= 9
+                self.tokens -= 40
                 return _Resp(200, {"success": False, "status": "failed", "error": "cancelled"})
             return super().get(url, headers, timeout)
     with pytest.raises(FA.AgentFailed) as ei:
         FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=S())
     assert ei.value.job_id == "job-1" and ei.value.credits_delta == 9 and ei.value.credits_used == 30   # ledger charge stays conservative
+    assert ei.value.tokens_delta == 40

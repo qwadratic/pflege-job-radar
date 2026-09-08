@@ -122,6 +122,28 @@ def test_webhook_updates_the_submission_row_instead_of_adding_one(client, monkey
         assert c.execute("select count(*) from firecrawl_usage").fetchone()[0] == 1
 
 
+def test_execute_stores_the_token_delta_on_the_ledger_row(client, monkeypatch):
+    """The firecrawl branch of execute(): on_submit writes the row, the result updates credits AND tokens on it."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: [])
+    monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 0)
+    monkeypatch.setattr(CR, "_budget_left", lambda: 1000)
+    monkeypatch.setattr(R, "mirror_to_supabase", lambda run: None)
+
+    def fake_jobs_agent(clinic, max_credits, log, session, on_submit=None, **kw):
+        on_submit("job-77")
+        return {"rows": [], "credits_used": 27, "credits_api": 27, "credits_delta": 27, "job_id": "job-77",
+                "tokens_before": 5685, "tokens_after": 5280, "tokens_delta": 405, "raw": {}, "data": {"jobs": []}}
+    monkeypatch.setattr(FA, "run_jobs_agent", fake_jobs_agent)
+    rid = R.create_run("clinic", "36202", "firecrawl", {"max_credits": 40, "verify": False}, ["36202"], trigger="api")
+    CR.execute(rid)
+    with R.db() as c:
+        rows = [tuple(r) for r in c.execute("select job_id, credits, tokens from firecrawl_usage")]
+    assert rows == [("job-77", 27, 405)] and R.tokens_total(days=7) == 405 and R.agent_runs_today() == 1
+    assert any("tokens delta 405" in l for l in R.get_run(rid)["log"])
+
+
 def test_crawl_webhook_check_reads_back_terminal_event(client):
     secret = _secret(client)
     run_id = R.create_run("clinic", "36202", "firecrawl", {}, ["36202"], trigger="api")

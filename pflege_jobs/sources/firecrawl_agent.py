@@ -138,11 +138,12 @@ class AgentFailed(RuntimeError):
     can still charge the local ledger -- over-charging it is safe, under-charging is what lets the
     weekly budget check (_budget_left) silently drift away from what the account actually spent."""
 
-    def __init__(self, message, credits_used, job_id=None, credits_delta=None):
+    def __init__(self, message, credits_used, job_id=None, credits_delta=None, tokens_delta=None):
         super().__init__(message)
         self.credits_used = credits_used
         self.job_id = job_id                    # lets the caller update the ledger row on_submit created
         self.credits_delta = credits_delta      # measured balance movement, or None when it could not be read
+        self.tokens_delta = tokens_delta        # same for the Extract token pool
 
 
 def _headers():
@@ -158,14 +159,26 @@ def _get_json(path, session=None, timeout=30):
     return j if isinstance(j, dict) else {}
 
 
-def _remaining_credits(session=None, timeout=20):
-    """Remaining credits right now (int) or None; never raises -- it only feeds the before/after delta."""
+def _remaining(path, field, session=None, timeout=20):
+    """One balance read (int) or None; never raises -- it only feeds the before/after deltas."""
     try:
-        d = _get_json("/team/credit-usage", session, timeout).get("data") or {}
-        v = d.get("remainingCredits", d.get("remaining_credits"))
+        d = _get_json(path, session, timeout).get("data") or {}
+        v = d.get(field)
         return v if isinstance(v, int) else None
     except Exception:
         return None
+
+
+def _balances(session=None, timeout=20):
+    """{'credits': int|None, 'tokens': int|None} -- both pools, read together so a run's movement in each is
+    attributable to that run (the Agent bills credits; the 2026-09-08 batch also moved Extract tokens)."""
+    return {"credits": _remaining("/team/credit-usage", "remainingCredits", session, timeout),
+            "tokens": _remaining("/team/token-usage", "remainingTokens", session, timeout)}
+
+
+def _delta(before, after):
+    """before - after when both were read and the balance did not go UP (period reset / top-up in between), else None."""
+    return (before - after) if isinstance(before, int) and isinstance(after, int) and after <= before else None
 
 
 def _iso(s):
@@ -198,6 +211,15 @@ def agent_runs_today():
         return None
 
 
+def tokens_spent_by_app(days=None):
+    """Sum of the Extract-token deltas the app's own agent runs recorded (app/runs.py tokens_total); None outside the app."""
+    try:
+        from app import runs as R
+        return R.tokens_total(days=days)
+    except Exception:
+        return None
+
+
 def free_runs_left_today():
     n = agent_runs_today()
     return max(0, FREE_RUNS_PER_DAY - n) if isinstance(n, int) else None
@@ -212,6 +234,7 @@ def credits(session=None, timeout=30, tokens=True, historical=True):
       credits_used_hist, tokens_used_hist,             GET /team/credit-usage/historical + /team/token-usage/historical,
       hist_period_start, hist_period_end                 the current (calendar-month) period; skipped when historical=False
       free_runs_per_day, agent_runs_today, free_runs_left_today   local ledger, UTC day (agent_runs_today() above)
+      spent_tokens_by_app, spent_tokens_by_app_7d      local ledger: Extract tokens the app's own agent runs moved (tokens_total())
     """
     out = {"remaining": None, "plan": None, "period_start": None, "period_end": None}
     try:
@@ -244,7 +267,8 @@ def credits(session=None, timeout=30, tokens=True, historical=True):
             out["hist_error"] = "; ".join(errs)
     n = agent_runs_today()
     out.update({"free_runs_per_day": FREE_RUNS_PER_DAY, "agent_runs_today": n,
-                "free_runs_left_today": max(0, FREE_RUNS_PER_DAY - n) if isinstance(n, int) else None})
+                "free_runs_left_today": max(0, FREE_RUNS_PER_DAY - n) if isinstance(n, int) else None,
+                "spent_tokens_by_app": tokens_spent_by_app(), "spent_tokens_by_app_7d": tokens_spent_by_app(days=7)})
     return out
 
 
@@ -266,19 +290,22 @@ def _run_label(run_no):
 
 
 def _settle(j, api_used, before, session, run_no, job_id, log):
-    """Measure the run's real cost as the balance delta, attach it to the raw answer as j['_cost'] and return
-    the amount to charge the local ledger: the delta when it could be measured (authoritative -- the API's
-    creditsUsed is 0 inside the free allowance whatever the run consumed), else the API's creditsUsed."""
-    after = _remaining_credits(session)
-    delta = (before - after) if isinstance(before, int) and isinstance(after, int) else None
-    if delta is not None and delta < 0:           # balance went UP (period reset / top-up mid-run): not measurable
-        delta = None
+    """Measure the run's real cost as the balance deltas (credits and Extract tokens), attach them to the raw
+    answer as j['_cost'] and return the credits to charge the local ledger: the credit delta when it could be
+    measured (authoritative -- the API's creditsUsed is 0 inside the free allowance whatever the run consumed),
+    else the API's creditsUsed."""
+    after = _balances(session)
+    delta = _delta(before["credits"], after["credits"])
+    tdelta = _delta(before["tokens"], after["tokens"])
     charged = delta if delta is not None else int(api_used or 0)
-    j["_cost"] = {"job_id": job_id, "api_credits_used": int(api_used or 0), "credits_before": before, "credits_after": after,
-                  "credits_delta": delta, "charged": charged, "run_number_today": run_no,
+    j["_cost"] = {"job_id": job_id, "api_credits_used": int(api_used or 0),
+                  "credits_before": before["credits"], "credits_after": after["credits"], "credits_delta": delta,
+                  "tokens_before": before["tokens"], "tokens_after": after["tokens"], "tokens_delta": tdelta,
+                  "charged": charged, "run_number_today": run_no,
                   "free_run": (run_no <= FREE_RUNS_PER_DAY) if isinstance(run_no, int) else None}
-    log(f"firecrawl agent job {job_id or '-'}: creditsUsed {int(api_used or 0)} (API), balance {before} -> {after} "
-        f"(delta {'unknown' if delta is None else delta}); charging {charged} -- {_run_label(run_no)}"
+    unk = lambda v: "unknown" if v is None else v  # noqa: E731
+    log(f"firecrawl agent job {job_id or '-'}: creditsUsed {int(api_used or 0)} (API); credits {before['credits']} -> {after['credits']}, "
+        f"tokens {before['tokens']} -> {after['tokens']}: credits delta {unk(delta)}, tokens delta {unk(tdelta)}; charging {charged} -- {_run_label(run_no)}"
         + (" -- API creditsUsed and balance delta DISAGREE" if delta is not None and delta != int(api_used or 0) else ""))
     return charged
 
@@ -289,8 +316,10 @@ def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5
 
     credits_used is the amount to charge the local ledger: the before/after delta of GET /team/credit-usage
     when both reads worked (authoritative), else the API's creditsUsed. raw['_cost'] carries both numbers,
-    the balance snapshots, the run's number in today's UTC count and whether that is inside Firecrawl's
-    FREE_RUNS_PER_DAY free allowance ("free daily run N/5" vs "billable run" in the log).
+    the credit AND Extract-token balance snapshots with their deltas (tokens_before/after/delta -- the token
+    pool moved on 2026-09-08's batch and only a per-run read can say which run did it), the run's number in
+    today's UTC count and whether that is inside Firecrawl's FREE_RUNS_PER_DAY free allowance ("free daily
+    run N/5" vs "billable run" in the log).
     webhook: optional {url, headers, metadata, events} passed straight to the API (see docs/firecrawl.md).
     check_webhook: optional callable(job_id) -> agent-shaped dict ({'status', 'data', 'creditsUsed', ...}) or None,
     checked before every poll so a webhook event that already arrived stops the polling loop early.
@@ -300,7 +329,7 @@ def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5
         raise ValueError("max_credits must be a positive cap")
     s = session or requests.Session()
     body = build_request(prompt, schema, urls, max_credits, webhook=webhook)
-    before = _remaining_credits(s)
+    before = _balances(s)
     n_today = agent_runs_today()
     run_no = (n_today + 1) if isinstance(n_today, int) else None
     r = s.post(API + "/agent", headers=_headers(), json=body, timeout=60)
@@ -334,10 +363,10 @@ def run_agent(prompt, schema, urls=None, max_credits=DEFAULT_MAX_CREDITS, poll=5
             return j.get("data") or {}, _settle(j, j.get("creditsUsed"), before, s, run_no, job_id, log), j
         if st == "failed":
             used = j.get("creditsUsed")
-            after = _remaining_credits(s)
-            delta = (before - after) if isinstance(before, int) and isinstance(after, int) and after <= before else None
+            after = _balances(s)
             raise AgentFailed(f"firecrawl agent failed: {str(j.get('error') or j)[:300]}",
-                               credits_used=int(used) if used is not None else int(max_credits), job_id=job_id, credits_delta=delta)
+                               credits_used=int(used) if used is not None else int(max_credits), job_id=job_id,
+                               credits_delta=_delta(before["credits"], after["credits"]), tokens_delta=_delta(before["tokens"], after["tokens"]))
     raise AgentFailed(f"firecrawl agent {job_id} still processing after {timeout}s", credits_used=int(max_credits), job_id=job_id)
 
 
@@ -393,7 +422,7 @@ def run_jobs_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, urls=None, log=print
     rows = jobs_to_inbox_rows(data, clinic)
     cost = _cost_of(raw, used)
     log(f"firecrawl agent: {len((data or {}).get('jobs') or [])} jobs -> {len(rows)} rows, credits charged {used} "
-        f"(API creditsUsed {cost['credits_api']}, balance delta {cost['credits_delta']})"
+        f"(API creditsUsed {cost['credits_api']}, credits delta {cost['credits_delta']}, tokens delta {cost['tokens_delta']})"
         + (f"; notes: {data.get('notes')[:200]}" if isinstance(data, dict) and data.get("notes") else "")
         + (f"; blocked_reason: {data.get('blocked_reason')[:200]}" if isinstance(data, dict) and data.get("blocked_reason") else ""))
     return {"rows": rows, "credits_used": used, "raw": raw, "data": data, **cost}
@@ -405,6 +434,7 @@ def _cost_of(raw, used):
     c = c or {}
     return {"credits_api": c.get("api_credits_used", used), "credits_delta": c.get("credits_delta"),
             "credits_before": c.get("credits_before"), "credits_after": c.get("credits_after"),
+            "tokens_before": c.get("tokens_before"), "tokens_after": c.get("tokens_after"), "tokens_delta": c.get("tokens_delta"),
             "job_id": c.get("job_id"), "run_number_today": c.get("run_number_today"), "free_run": c.get("free_run")}
 
 
@@ -420,7 +450,7 @@ def run_career_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, log=print, session
     cost = _cost_of(raw, used)
     log(f"firecrawl career agent: vendor {profile['ats_vendor']}, tech {profile.get('listing_technology')}, "
         f"jobs {profile.get('visible_job_count')} / nursing {profile.get('nursing_job_count')}, credits charged {used} "
-        f"(API creditsUsed {cost['credits_api']}, balance delta {cost['credits_delta']})")
+        f"(API creditsUsed {cost['credits_api']}, credits delta {cost['credits_delta']}, tokens delta {cost['tokens_delta']})")
     return {"profile": profile, "credits_used": used, "raw": raw, **cost}
 
 

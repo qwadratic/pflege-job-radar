@@ -142,15 +142,59 @@ def cmd_link_clinics(a):
 
 CANON = [
     (re.compile(r"^(https?://jobs\.smartrecruiters\.com/[^/]+/\d+)[-/].*$", re.I), r"\1"),           # strip slug after posting id
-    (re.compile(r"^(https?://[^?#]+?)/?(\?.*)?(#.*)?$"), r"\1"),                                        # drop query/fragment/trailing slash
+    (re.compile(r"^(https?://[^/]+\.softgarden\.(?:io|de)/jobs?/\d+)(?:[/?#].*)?$", re.I), r"\1"),  # softgarden: /job/<id>/<slug>?jobDbPVId=..&l=de
 ]
+# Query parameters that never identify a job: campaign/click trackers and TYPO3's cHash cache token
+# (karriere-im.klinikverbund-allgaeu.de emits the same job with and without cHash).
+NOISE_PARAM = re.compile(r"^(utm(_\w+)?|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|_ga|_gl|chash|lang|language|locale|portfoliocats)$", re.I)
+PLAIN_ANCHOR = re.compile(r"^[A-Za-z_-]*$")                                                         # '#top', '#content' -- not '#position,id=73'
+
+
+def _noise_param(k, v):
+    """`ref=homepage` (klinikum-landsberg) is a referrer marker, but `ref` is also a common name for a job
+    reference number -- treat it as noise only when the value is a plain word."""
+    return bool(NOISE_PARAM.match(k)) or (k.lower() == "ref" and re.fullmatch(r"[A-Za-z_-]+", v or "") is not None)
 
 
 def canonical_ref(url):
-    u = url or ""
+    """Same-source identity of a job URL, used to fold URL *variants* of one posting (link-cross pass 1).
+
+    Conservative by design: within one source identity is (source_id, source_ref), so folding two refs
+    means asserting they are the same page. Many hospital ATSs carry the job id ONLY in the query
+    string or fragment (`index.php?ac=jobad&id=613`, `jobad?prj=2618P932`, `index.html?detID=185`,
+    `bewerber-web/?companyEid=1135#position,id=73`) -- the previous rule dropped both, which folded
+    every job on such a board into one posting (2026-09-08: 27 distinct Helios/Bezirkskliniken jobs
+    collapsed into postings 7416/5625/7543). Now only known tracking/cache parameters, plain anchors,
+    the trailing slash and the smartrecruiters title slug are removed; parameter order is normalised.
+    """
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    u = (url or "").strip()
     for rx, rep in CANON:
         u = rx.sub(rep, u)
-    return u.lower()
+    p = urlsplit(u)
+    q = sorted((k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if not _noise_param(k, v))
+    frag = "" if PLAIN_ANCHOR.match(p.fragment or "") else p.fragment
+    return urlunsplit((p.scheme.lower(), p.netloc.lower(), re.sub(r"/+$", "", p.path).lower(), urlencode(q), frag))   # path case-folded (asklepios emits both), query/fragment kept verbatim
+
+
+def same_source_variant_pairs(observations):
+    """Merge pairs for postings that hold URL variants of one job within one source.
+
+    Groups by (source_id, canonical_ref(source_ref)); every posting in a multi-posting group is merged
+    into the group's lowest posting_id (all of them, not just the highest -- so one run converges).
+    Pure: takes rows with posting_id/source_id/source_ref, returns [{src, dst}] sorted by src.
+    """
+    from collections import defaultdict
+    groups = defaultdict(set)
+    for o in observations:
+        if o.get("posting_id"):
+            groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
+    pairs = []
+    for ps in groups.values():
+        if len(ps) > 1:
+            dst = min(ps)
+            pairs += [{"src": src, "dst": dst} for src in sorted(ps) if src != dst]
+    return sorted(pairs, key=lambda x: (x["src"], x["dst"]))
 
 
 def cmd_link_cross(a):
@@ -169,12 +213,13 @@ def cmd_link_cross(a):
         q = f"{url}/rest/v1/posting_observations?select=posting_id,source_id,source_ref&order=observation_id&limit=1000&offset={off}"
         ch = _rows(rq.get(q, headers=H, timeout=120), "observations"); obs += ch; off += len(ch)
         if len(ch) < 1000: break
-    groups = defaultdict(set)
-    for o in obs: groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
-    pairs = [{"src": max(ps), "dst": min(ps)} for ps in groups.values() if len(ps) > 1]
+    pairs = same_source_variant_pairs(obs)
     n1 = 0
-    for i in range(0, len(pairs), 400): n1 += int(sink._post({"merges": pairs[i:i+400]}).get("merges") or 0)
-    print(f"same-source url variants: {len(pairs)} pairs, merged {n1}")
+    if a.dry_run:
+        json.dump(pairs, open(a.out.replace(".json", "_url_variants.json"), "w"))
+    else:
+        for i in range(0, len(pairs), 400): n1 += int(sink._post({"merges": pairs[i:i+400]}).get("merges") or 0)
+    print(f"same-source url variants: {len(pairs)} pairs, merged {n1}" + (" (dry-run)" if a.dry_run else ""))
     # (2) cross-source by title similarity
     rows, off = [], 0
     while True:
@@ -215,6 +260,44 @@ def cmd_link_cross(a):
 JOB_DETAIL_RX = re.compile(r"/(stellenanzeigen?|stellenangebote?|job|stelle)/[^/?#]+|-j\d+\.html|/Job/\d+", re.I)
 
 
+def lookup_posting_ids(get, url, H, observations, chunk=50, log=print):
+    """posting_id of each observation we just wrote, keyed by (source_id, source_ref).
+
+    Only the refs just written are queried, in chunks, per source (a full employer_ats scan used to
+    trip the anon statement_timeout). Two things this must get right, both regressions seen live on
+    2026-09-08 (Firecrawl run for clinic 56202, postings 10201-10204 left with clinic_id NULL):
+      * refs go through `params=` so PostgREST sees them URL-encoded -- interpolated into the query
+        string, a ref like `index.php?ac=jobad&id=968` split the filter at `&` and every batch came
+        back `400 PGRST100 "failed to parse filter"`, silently skipping all links and verify marks;
+      * the same URL may be observed by two sources (employer_ats 20 and firecrawl_agent 25 both saw
+        `...&id=745`), so the filter is per source_id and the result keyed by (source_id, source_ref)
+        -- keyed by ref alone the row of the *other* source could win and mis-link the posting.
+    `get` is requests.get-compatible (injected for tests). Returns {(source_id, source_ref): posting_id}.
+    """
+    from collections import defaultdict
+    ids = {}
+    by_src = defaultdict(list)
+    for o in observations:
+        by_src[o["source_id"]].append(o["source_ref"])
+    for sid, refs in by_src.items():
+        for i in range(0, len(refs), chunk):
+            batch = refs[i:i + chunk]
+            q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
+            try:
+                resp = get(f"{url}/rest/v1/posting_observations",
+                           params={"select": "posting_id,source_id,source_ref", "source_id": f"eq.{sid}", "source_ref": f"in.({q})"},
+                           headers=H, timeout=120)
+                ch = resp.json()
+            except Exception as e:
+                log(f"  ref lookup failed ({e}); skipping {len(batch)} refs"); continue
+            if not isinstance(ch, list):        # PostgREST returns {code,message} on error
+                log(f"  ref lookup error: {str(ch)[:120]}"); continue
+            for x in ch:
+                if x.get("posting_id"):
+                    ids[(x["source_id"], x["source_ref"])] = x["posting_id"]
+    return ids
+
+
 def _drain_once(a, url, H, m, towns):
     """Fetch and process one page (<=1000 rows) of the inbox queue. Returns the number of rows read."""
     import requests as rq
@@ -253,27 +336,12 @@ def _drain_once(a, url, H, m, towns):
     sink = EdgeSink(batch=200)
     if obs:
         print("load:", sink.write(obs, resolve=True, log=lambda *_: None))
-        ids = {}
-        # Look up only the refs we just wrote, in chunks, instead of scanning every employer_ats
-        # observation: the full scan grew past the anon role's statement_timeout as the
-        # table filled up, and a timeout here silently cost us the clinic links and verify marks.
-        want = [o["source_ref"] for o in obs]
-        for i in range(0, len(want), 50):
-            batch = want[i:i + 50]
-            q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
-            try:
-                resp = rq.get(f"{url}/rest/v1/posting_observations?select=posting_id,source_ref&source_ref=in.({q})",
-                              headers=H, timeout=120)
-                ch = resp.json()
-            except Exception as e:
-                print(f"  ref lookup failed ({e}); skipping {len(batch)} refs"); continue
-            if not isinstance(ch, list):        # PostgREST returns {code,message} on error
-                print(f"  ref lookup error: {str(ch)[:120]}"); continue
-            for x in ch:
-                if x.get("posting_id"):
-                    ids[x["source_ref"]] = x["posting_id"]
-        links = [{"posting_id": ids[o["source_ref"]], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9} for o in obs if o["source_ref"] in ids and o.get("_kez")]
-        ver = [{"posting_id": ids[o["source_ref"]], "verify_status": "live", "verify_http": 200, "verified_at": o["observed_at"], "verify_note": "collected in a user's browser"} for o in obs if o["source_ref"] in ids]
+        ids = lookup_posting_ids(rq.get, url, H, obs)
+        key = lambda o: (o["source_id"], o["source_ref"])
+        links = [{"posting_id": ids[key(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9} for o in obs if key(o) in ids and o.get("_kez")]
+        ver = [{"posting_id": ids[key(o)], "verify_status": "live", "verify_http": 200, "verified_at": o["observed_at"], "verify_note": "collected in a user's browser"} for o in obs if key(o) in ids]
+        if len(ids) < len(obs):
+            print(f"  warning: {len(obs) - len(ids)} of {len(obs)} written observations not found on re-read; their clinic links/verify marks are skipped")
         for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
         for i in range(0, len(ver), 400): sink._post({"verify": ver[i:i + 400]})
     if probes:

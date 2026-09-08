@@ -36,13 +36,14 @@ def test_coverage_last_run_and_credits(client):
     R.update_run(rid, status="done", started_at=R.now(), finished_at=R.now(), n_rows=12, n_new=4, error="2 error(s), see log")
     rid2 = R.create_run("clinic", "16104", "firecrawl", clinic_ids=["16104"])
     R.update_run(rid2, status="failed", started_at=R.now(), finished_at=R.now(), n_rows=0, n_new=0)
-    R.add_usage("agent", "16104", 37, run_id=rid2)
+    R.add_usage("agent", "16104", 37, run_id=rid2, tokens=405)
     d = client.get("/api/coverage").json()
     lr = _row(d, "typo3_jobs")["last_run"]
     assert lr == {"run_id": rid, "at": lr["at"], "status": "done", "rows": 12, "new": 4, "errors": 2} and lr["at"]
     fc = _row(d, "firecrawl")
     assert fc["last_run"]["run_id"] == rid2 and fc["last_run"]["status"] == "failed" and fc["last_run"]["errors"] == 0
     assert fc["credits_7d"] == 37 and d["totals"]["credits_7d"] == 37
+    assert fc["tokens_7d"] == 405 and d["totals"]["tokens_7d"] == 405 and "tokens_7d" not in _row(d, "rexx")
     assert _row(d, "rexx")["last_run"] is None
 
 
@@ -59,4 +60,4 @@ def test_coverage_firecrawl_row_shows_both_pools_and_free_runs(client, monkeypat
     assert "tokens_remaining" not in _row(d, "typo3_jobs")
     monkeypatch.setattr(FA, "credits", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
     fc = _row(client.get("/api/coverage").json(), "firecrawl")
-    assert fc["tokens_remaining"] is None and fc["free_runs_left_today"] is None and fc["credits_7d"] == 0
+    assert fc["tokens_remaining"] is None and fc["free_runs_left_today"] is None and fc["credits_7d"] == 0 and fc["tokens_7d"] == 0

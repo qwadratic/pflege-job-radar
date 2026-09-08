@@ -514,14 +514,14 @@ def execute(run_id):
                 res = FA.run_jobs_agent(c, max_credits=gate["cap"], log=log, session=session,
                                         on_submit=lambda job_id, cid=c["clinic_id"]: R.add_usage("jobs", cid, 0, run_id, job_id=job_id))
                 credits_used += res["credits_used"]
-                R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id, job_id=res.get("job_id"))
+                R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
                 inbox_rows += res["rows"]
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits charged "
-                    f"(API {res.get('credits_api')}, balance delta {res.get('credits_delta')}, cap {gate['cap']})")
+                    f"(API {res.get('credits_api')}, credits delta {res.get('credits_delta')}, tokens delta {res.get('tokens_delta')}, cap {gate['cap']})")
             except FA.AgentFailed as e:
                 errors += 1
                 credits_used += e.credits_used
-                R.add_usage("jobs", c["clinic_id"], e.credits_used, run_id, job_id=getattr(e, "job_id", None))
+                R.add_usage("jobs", c["clinic_id"], e.credits_used, run_id, job_id=getattr(e, "job_id", None), tokens=getattr(e, "tokens_delta", None))
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
             except Exception as e:
                 errors += 1
@@ -589,12 +589,12 @@ def refetch_career(run_id):
         res = FA.run_career_agent(c, max_credits=gate["cap"], log=log,
                                   on_submit=lambda job_id: R.add_usage("career", cid, 0, run_id, job_id=job_id))
     except FA.AgentFailed as e:
-        R.add_usage("career", cid, e.credits_used, run_id, job_id=getattr(e, "job_id", None))
+        R.add_usage("career", cid, e.credits_used, run_id, job_id=getattr(e, "job_id", None), tokens=getattr(e, "tokens_delta", None))
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     except Exception as e:
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     prof = res["profile"]
-    R.add_usage("career", cid, res["credits_used"], run_id, job_id=res.get("job_id"))
+    R.add_usage("career", cid, res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
     R.save_career_profile(cid, prof, res["credits_used"], run_id)
     R.update_run(run_id, credits_used=res["credits_used"], n_rows=1)
     new_ats = FA.ats_type_for(prof)
