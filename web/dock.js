@@ -1,8 +1,15 @@
 /* Autopilot dock — self-contained side inbox for the job-board pages (docs/autopilot.md "The dock").
    No globals except window.PJDock{open,close,setPosition}. No dependencies. Never breaks the host page
-   if /api/autopilot is down: every fetch is wrapped, failure just shows "Autopilot offline". */
+   if /api/autopilot is down: every fetch is wrapped, failure just shows "Autopilot offline".
+   Gated on the public "chats_dock" feature flag (off by default, Settings > Feature flags): while it is
+   off this file does nothing at all -- no DOM, no polling, no request to /api/autopilot/* -- so turning
+   the flag on is the only way to make the dock appear again on the next page load. */
 (function () {
   if (window.PJDock) return;
+  fetch("/api/flags").then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; })
+    .then(function (flags) { if (flags && flags.chats_dock) boot(); });
+
+  function boot() {
   var API = "/api/autopilot";
   var LS_KEY = "pj_dock";
   var POLL_MS = 30000;
@@ -282,4 +289,5 @@
   // ---- boot --------------------------------------------------------------------------------------------------
   renderTabs();
   if (visible()) loadList();
+  } // end boot() -- gated on the chats_dock feature flag, see top of file
 })();

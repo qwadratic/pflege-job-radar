@@ -136,13 +136,18 @@ def get_all():
 # are actually togglable (save_feature_flags); FEATURE_STATUS_NOTES documents things this settings block
 # cannot safely toggle itself (an env var, a daemon with its own switch, a paused cloud routine) so they are
 # still visible in one place.
-FEATURE_FLAGS_DEFAULT = {"stripe": False}
+FEATURE_FLAGS_DEFAULT = {"stripe": False, "chats_dock": False}
 
 FEATURE_FLAGS_INFO = {
     "stripe": {"label": "Stripe billing (pay-per-closed-posting)",
                "note": "Scaffold only: no live key, no customer-facing UI, never charged anyone. Off by default; "
                        "the checkout/webhook/usage endpoints 503 regardless of this flag until STRIPE_SECRET_KEY is "
                        "also set. Turn on only after testing in Stripe test mode."},
+    "chats_dock": {"label": "Chat dock (Autopilot widget on / and /pro)",
+                    "note": "The 'Chats' launcher pill and side panel on both job-board pages. Off by default -- "
+                            "the recruiting funnel it talks to is a synthetic-data PoC, not a real candidate "
+                            "channel yet. dock.js reads this from the public GET /api/flags and renders nothing "
+                            "at all (no DOM, no polling) while it is off."},
 }
 
 FEATURE_STATUS_NOTES = [
@@ -161,8 +166,16 @@ FEATURE_STATUS_NOTES = [
 ]
 
 
+PUBLIC_FLAG_KEYS = ("chats_dock",)
+
+
 def get_feature_flags():
     return {**FEATURE_FLAGS_DEFAULT, **(R.get_setting("feature_flags") or {})}
+
+
+def public_feature_flags():
+    flags = get_feature_flags()
+    return {k: flags[k] for k in PUBLIC_FLAG_KEYS}
 
 
 def save_feature_flags(obj):

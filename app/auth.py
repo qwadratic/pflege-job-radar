@@ -297,6 +297,14 @@ def api_me(request: Request):
     return ident
 
 
+@router.get("/flags")
+def api_flags():
+    """Public, unauthenticated: only the render-relevant subset of feature_flags (settings.PUBLIC_FLAG_KEYS),
+    so e.g. dock.js can decide whether to render at all before a visitor is known to be owner/customer/anonymous."""
+    from . import settings as ST
+    return ST.public_feature_flags()
+
+
 # --- middleware ----------------------------------------------------------------------------
 WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/inbox/drain", "/api/hunter", "/api/scheduler")
