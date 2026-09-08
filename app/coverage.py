@@ -5,7 +5,9 @@ softgarden, bite, pi_asp, umantis, wp_jobs) and a synthetic 'firecrawl' row for 
 adapter (fetch == 'firecrawl': walled host, no label, no careers_url, unknown vendor). A clinic counts under its
 ats_type label (or under the default wp_jobs route when it is unlabelled but routable); the Firecrawl row
 overlaps with labelled-but-unroutable clinics on purpose, so `totals` counts each clinic once instead of summing
-the rows. Reads only the in-memory snapshot, the local SQLite run log and the routing plan -- no network.
+the rows. Reads the in-memory snapshot, the local SQLite run log and the routing plan; the one network call is
+the Firecrawl balance for the `firecrawl` row (credits + Extract tokens + free agent runs left today), tolerant
+of failure (keys stay None).
 """
 import re
 from collections import Counter, defaultdict
@@ -74,6 +76,20 @@ def _errors(run):
     return int(m.group(1)) if m else (1 if run.get("error") else 0)
 
 
+def _firecrawl_account():
+    """{'credits_remaining', 'credits_plan', 'tokens_remaining', 'tokens_plan', 'free_runs_left_today',
+    'free_runs_per_day', 'agent_runs_today'} from FA.credits(); every value None when the API is unreachable."""
+    keys = ("tokens_remaining", "tokens_plan", "free_runs_left_today", "free_runs_per_day", "agent_runs_today")
+    try:
+        from pflege_jobs.sources import firecrawl_agent as FA
+        fc = FA.credits(timeout=10, historical=False) or {}
+    except Exception:
+        fc = {}
+    out = {k: fc.get(k) for k in keys}
+    out["credits_remaining"], out["credits_plan"] = fc.get("remaining"), fc.get("plan")
+    return out
+
+
 def _last_run(runs, key, members):
     """Most recent run that targeted this adapter (scope ats_type) or touched one of its clinics."""
     for r in runs:                                    # list_runs() is newest first
@@ -94,6 +110,7 @@ def compute():
     boards, unroutable = _plan(clinics)
     runs = R.list_runs(limit=300)
     credits_7d = R.usage_total(days=7)
+    account = _firecrawl_account()
 
     acc = {k: _empty() for k in keys}
     members = defaultdict(set)
@@ -125,6 +142,7 @@ def compute():
         row = {"adapter": key, **a, "coverage_pct": _pct(a), "last_run": _last_run(runs, key, members.get(key) or set())}
         if key == FIRECRAWL:
             row["credits_7d"] = credits_7d
+            row.update(account)
         rows.append(row)
     rows.sort(key=lambda r: (-r["clinics_labelled"], r["adapter"] == FIRECRAWL, r["adapter"]))
 
@@ -134,6 +152,7 @@ def compute():
     totals["boards"] = sum(1 for b in boards.values() if not b.get("walled")) + len(fc_boards)
     totals["coverage_pct"] = _pct(totals)
     totals["credits_7d"] = credits_7d
+    totals["free_runs_left_today"] = account.get("free_runs_left_today")
     jobs = snap.get("jobs") or []
     orphan = [j for j in jobs if not j.get("clinic_id")]
     unattributed = {"open_jobs": len(orphan), "fresh_jobs": sum(1 for j in orphan if j.get("fresh"))}

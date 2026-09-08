@@ -3,7 +3,8 @@
 This is the Firecrawl track's design note. It owns `app/firecrawl_hooks.py`, `pflege_jobs/sources/firecrawl_agent.py`,
 `app/crawl.py`, `app/runs.py`, `app/settings.py`, `app/schedules.py`, `app/scheduler.py`, `app/firecrawl_gate.py`,
 `tools/firecrawl_agent.sh`, `.claude/skills/firecrawl/`, and this file. It does **not** touch `app/main.py`,
-`web/*`, `app/data.py`, or `app/coverage.py` (those are already wired and owned by the coverage track).
+`web/*` or `app/data.py` (already wired, owned by the coverage track); `app/coverage.py`'s `firecrawl` row reads
+`FA.credits()` for the balance / token / free-run fields since 2026-09-08 (§3, §5).
 
 ## 1. The jobs prompt (`_jobs_prompt`, `pflege_jobs/sources/firecrawl_agent.py`)
 
@@ -91,10 +92,21 @@ New editable settings under `PUT /api/settings/firecrawl` (`app/settings.py: FIR
 | `reserve_credits` | `150` | never let `remaining` fall below this in the current billing period |
 
 **`spend_gate(clinic, max_credits, probe_adapter=None, log=print)`** (`app/crawl.py`) — `{'allowed',
-'cap', 'reason', 'unseen'}`:
+'cap', 'reason', 'unseen', 'free_runs_left_today', 'billable'}`:
+- **Free allowance first** (2026-09-08): Firecrawl's agent docs — "All users receive 5 free daily runs, which
+  can be used from either the playground or the API"; past those, "additional usage is billed based on credit
+  consumption". `FA.agent_runs_today()` counts today's (UTC) accepted submissions in the local ledger
+  (`firecrawl_usage` rows of kind `jobs`/`career` with a `job_id`; the column is added by a migration-safe
+  `alter table add column` in `runs.init()`, and `run_agent(on_submit=...)` writes the row the moment the API
+  accepts a job, keyed by job id, so a crashed process still counts it and a webhook for the same job updates
+  the row instead of adding one). While `agent_runs_today() < 5` the run is expected-free: the EUR cap below
+  is skipped, but the `reserve_credits` floor and the kill switch still apply, because the promise could
+  change and a "free" run that turns out billable must not be able to drain the account. From the 6th run of
+  the day the EUR cap applies and the gate logs `billable run`. The gate result carries
+  `free_runs_left_today` and `billable`; an unreadable ledger (`None`) counts as billable, never as free.
 - **Unknown clinic** (`not clinic.routable or clinic.walled`): `cap = min(max_credits,
-  max_eur_unknown_clinic / eur_per_credit, remaining - reserve_credits)`. Refused (`cap=0`) once the
-  reserve floor is hit.
+  max_eur_unknown_clinic / eur_per_credit, remaining - reserve_credits)` — the EUR term only on billable runs.
+  Refused (`cap=0`) once the reserve floor is hit.
 - **Known clinic** (routable, not walled): runs the real adapter for just that one clinic
   (`_adapter_probe_rows`, injectable as `probe_adapter=` for tests) and checks which of its URLs are
   **unseen** — not already sitting in `inbox` or `posting_observations` (`_unseen_source_urls`, one
@@ -117,6 +129,22 @@ New editable settings under `PUT /api/settings/firecrawl` (`app/settings.py: FIR
   not just Firecrawl work. `GET /api/settings` (unmodified endpoint, already returns `scheduler:
   S.status()`) now surfaces `paused`/`paused_reason` because `S.status()` includes them.
 - A `None`/unreachable plan (`FA.credits()` failed) never blocks on this signal alone (`pct = 0.0`).
+- `kill_switch_status()` returns the dict behind the decision (`pct`, `thresholds`, `plan`, `remaining`,
+  `used_24h`) plus, for the reader, both pools and the allowance: `tokens_remaining`, `tokens_plan`,
+  `free_runs_left_today`, `agent_runs_today`. The decision itself is unchanged and looks at credits only.
+
+**What a run really cost** (`run_agent()`, 2026-09-08): the API's `creditsUsed` is 0 inside the free allowance
+whatever the run consumed, so `run_agent()` reads `GET /team/credit-usage` before submitting and after the
+terminal status and charges the ledger with the **balance delta** (authoritative; falls back to the API's
+number when either read failed or the balance went *up*, i.e. a period reset happened in between). Both numbers,
+the two snapshots, the run's number in today's count and whether it was free are kept in `raw['_cost']` and in
+the `credits_api` / `credits_delta` / `credits_before` / `credits_after` / `run_number_today` / `free_run` /
+`job_id` keys of `run_jobs_agent()` / `run_career_agent()`; every submission logs `free daily run N/5` or
+`billable run (#N today, 5 free runs already used)`. `FA.credits()` now returns both pools —
+`remaining`/`plan` (credits, what the Agent bills) and `tokens_remaining`/`tokens_plan` (the Extract token pool,
+`GET /team/token-usage`, never spent here) — plus `credits_used_hist`/`tokens_used_hist` for the current
+calendar month from the two `/historical` endpoints and `free_runs_per_day`/`agent_runs_today`/
+`free_runs_left_today`; `GET /api/firecrawl/credits` and `GET /api/stats` pass them through unchanged.
 
 Usage-on-failure: `AgentFailed` already carries `credits_used` (falls back to `max_credits` when the API
 doesn't report one); both `execute()` and `refetch_career()` call `R.add_usage(...)` in the `except
@@ -173,19 +201,43 @@ must be strings; `events` must be the bare names — see §2) — confirmed zero
 |---|---|
 | status | `completed` |
 | wall time | 184.7 s (~3 min) |
-| `creditsUsed` (API-reported) | **0** |
-| `remaining` credits before / after (`FA.credits()`) | 379 / 379 — **measured spend: 0 credits**, confirms the self-reported 0 rather than assuming it |
+| `creditsUsed` (API-reported) | **0** — this is the **free daily allowance**, not the run's cost (see below) |
+| `remaining` credits before / after (`FA.credits()`) | 379 / 379 — consistent with a free run; says nothing about what a billable run costs |
+| run number that UTC day | 1 of the 5 free runs (`agent_runs_today()` counts it from the ledger row now that `job_id` is recorded) |
 | raw jobs returned | 5 (board listed 60 total across all 8 sites of the operator; agent excluded non-hospital `WOHNEN-und-FÖRDERN` postings, the cross-site initiative application, and everything not this one hospital) |
 | unique jobs (deduped by URL) | 5 |
 | certified nursing after `classify_role` + `jobs_to_inbox_rows` | **5 / 5 (100%)** |
 | seniority distribution | `fach: 1, fachkraft: 4` (no `leitung`/`experte`/`unknown` in this batch) |
 | webhook event received (`firecrawl_events` for this run) | **none** — as expected, since `pflege-board.exe.xyz` is login-gated and this VM cannot make it public; the polling fallback is what actually delivered the result |
 
-**Cost per unique certified job**: `0 credits × €0.0053/credit = €0.00`. Even pricing it conservatively at
-Firecrawl's documented "a few hundred credits" per typical agent run (which this one did not hit) —
-300 credits ÷ 5 jobs × €0.0053 ≈ **€0.32/job** — would still be in the right ballpark of the user's
-$0.20/job bar; at the *measured* 0 credits it trivially beats it. Given the 0-credit result is a single
-data point on a small (5-job) target, do not generalise "Firecrawl agent runs are free" from it — the
-kill switch and spend gate above are what actually protect the account if a future run isn't this cheap.
+**What the 0 means (corrected 2026-09-08, verified against Firecrawl's API and docs).** Firecrawl's agent
+docs: "All users receive 5 free daily runs, which can be used from either the playground or the API"; beyond
+those, "additional usage is billed based on credit consumption", dynamic, "most agent runs consume a few
+hundred credits", capped by `maxCredits`. This job was the account's first agent run of that UTC day, i.e.
+**free daily run 1/5** — the 0 is the allowance, not a measurement of what the run consumed. **The real cost
+per billable run is unknown until a 6th run in one UTC day is measured.** `run_agent()` now records the
+before/after balance delta next to the API's `creditsUsed` and logs `free daily run N/5` / `billable run` for
+every submission (§3), so that measurement happens by itself the first time the allowance is exceeded.
+
+**Cost per unique certified job**: €0.00 on a free run, by construction. For a billable run it is *unknown*;
+the ≤ $0.20/job bar can only be tested once one is measured. For orientation only, at the docs' "a few hundred
+credits" and the Hobby price: 300 credits ÷ 5 jobs × €0.0053 ≈ €0.32/job would miss the bar, 150 credits
+would meet it — neither number is a measurement. Do not generalise "Firecrawl agent runs are free" from this
+run (they are: five per day, and only those); the kill switch and spend gate are what protect the account past
+the allowance.
+
+**Two pools, both surfaced now** (`FA.credits()`, `GET /api/firecrawl/credits`, `GET /api/stats`, the coverage
+`firecrawl` row), read 2026-09-08:
+
+| pool | endpoint | value |
+|---|---|---|
+| credits (what the Agent bills past the free runs) | `GET /v2/team/credit-usage` | `remainingCredits 379 / planCredits 8000`, period 2026-08-19 → 2026-09-19 |
+| Extract tokens (not spent by anything here) | `GET /v2/team/token-usage` | `remainingTokens 5685 / planTokens 120000`, same period |
+| credits per calendar month | `GET /v2/team/credit-usage/historical` | September so far 71; August 6694; July 920; June 5080 |
+| tokens per calendar month | `GET /v2/team/token-usage/historical` | September so far 1065; August 100410; July 13800; June 76200 |
+
+The historical endpoints answer `{"periods": [{startDate, endDate|null, creditsUsed|tokensUsed}]}` (calendar
+months, the open month has `endDate: null`); the docs page for the credit one shows the field as
+`totalCredits` — the live API says `creditsUsed`, `credits()` accepts either.
 
 No second run was submitted, per the hard credit rule.

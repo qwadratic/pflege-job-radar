@@ -1,8 +1,11 @@
-"""Firecrawl webhook receiver (app/firecrawl_hooks.py) + spend gate / 24h kill switch (app/crawl.py).
+"""Firecrawl webhook receiver (app/firecrawl_hooks.py) + spend gate / 24h kill switch (app/crawl.py), including the
+free-daily-run allowance (5 agent runs per UTC day at zero credits) the gate prefers before applying the EUR cap.
 
 No network: app.config's rest_get/rest_post are monkeypatched, and pflege_jobs.sources.firecrawl_agent.credits()
-is monkeypatched wherever the plan/remaining numbers matter to the test.
+is monkeypatched wherever the plan/remaining numbers matter to the test. The client fixture's temp SQLite starts
+with an empty ledger, i.e. 0 agent runs today / 5 free runs left; _submitted() seeds accepted submissions.
 """
+import itertools
 import time
 
 import pytest
@@ -103,6 +106,22 @@ def test_webhook_failed_records_credits_and_error(client):
     assert any("agent.failed" in l and "cancelled by user" in l for l in log)
 
 
+def test_webhook_updates_the_submission_row_instead_of_adding_one(client, monkeypatch):
+    """on_submit wrote a 0-credit row keyed by the job id; the webhook for that job must update it, so the job is
+    one ledger row (agent_runs_today counts it once) with the webhook's credits."""
+    secret = _secret(client)
+    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: [])
+    run_id = R.create_run("clinic", "36202", "firecrawl", {}, ["36202"], trigger="api")
+    R.add_usage("jobs", "36202", 0, run_id, job_id="job-9")
+    assert R.agent_runs_today() == 1
+    payload = {"type": "agent.completed", "id": "job-9", "success": True, "metadata": {"clinic_id": "36202", "run_id": run_id},
+               "data": [{"creditsUsed": 42, "data": {"jobs": []}}]}
+    assert client.post("/api/firecrawl/webhook", json=payload, headers={"X-Pflege-Webhook-Secret": secret}).status_code == 200
+    assert R.usage_total() == 42 and R.agent_runs_today() == 1
+    with R.db() as c:
+        assert c.execute("select count(*) from firecrawl_usage").fetchone()[0] == 1
+
+
 def test_crawl_webhook_check_reads_back_terminal_event(client):
     secret = _secret(client)
     run_id = R.create_run("clinic", "36202", "firecrawl", {}, ["36202"], trigger="api")
@@ -114,14 +133,69 @@ def test_crawl_webhook_check_reads_back_terminal_event(client):
     assert CR.webhook_check("no-such-job") is None
 
 
+_seq = itertools.count()
+
+
+def _submitted(n, clinic_id="36202"):
+    """Seed n accepted agent submissions today (what run_agent's on_submit callback writes)."""
+    for _ in range(n):
+        R.add_usage("jobs", clinic_id, 0, None, job_id=f"seed-job-{next(_seq)}")
+
+
 # --- spend gate ----------------------------------------------------------------------------------
-def test_spend_gate_unknown_clinic_caps_by_euro_budget(client, monkeypatch):
+def test_spend_gate_free_run_is_allowed_regardless_of_the_eur_cap(client, monkeypatch):
     from pflege_jobs.sources import firecrawl_agent as FA
     monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
     R.set_setting("firecrawl", {"eur_per_credit": 0.01, "max_eur_unknown_clinic": 1.0, "reserve_credits": 150})
-    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500)
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500, log=lambda *_: None)
+    assert gate["allowed"] and gate["cap"] == 500          # the 1.0 EUR cap (100 credits) is not applied to a free run
+    assert gate["free_runs_left_today"] == 5 and gate["billable"] is False
+    assert "unknown clinic" in gate["reason"] and "free daily run 1/5" in gate["reason"]
+
+
+def test_spend_gate_sixth_run_of_the_day_gets_the_euro_cap(client, monkeypatch):
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+    R.set_setting("firecrawl", {"eur_per_credit": 0.01, "max_eur_unknown_clinic": 1.0, "reserve_credits": 150})
+    _submitted(4)
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500, log=lambda *_: None)
+    assert gate["allowed"] and gate["cap"] == 500 and gate["free_runs_left_today"] == 1 and "free daily run 5/5" in gate["reason"]
+    _submitted(1, clinic_id="16104")                        # 5th accepted submission today, any clinic
+    logged = []
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500, log=logged.append)
     assert gate["allowed"] and gate["cap"] == 100          # 1.0 EUR / 0.01 EUR-per-credit
-    assert "unknown clinic" in gate["reason"]
+    assert gate["free_runs_left_today"] == 0 and gate["billable"] is True and "billable run (#6 today" in gate["reason"]
+    assert any("billable" in l and "EUR cap applies" in l for l in logged)
+
+
+def test_spend_gate_free_run_still_refused_by_the_reserve_floor(client, monkeypatch):
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100, "plan": 8000})   # below the 150 reserve floor
+    R.set_setting("firecrawl", {"eur_per_credit": 0.01, "max_eur_unknown_clinic": 5.0, "reserve_credits": 150})
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500, log=lambda *_: None)
+    assert not gate["allowed"] and gate["cap"] == 0 and gate["free_runs_left_today"] == 5 and "reserve_credits" in gate["reason"]
+
+
+def test_spend_gate_unreadable_ledger_is_treated_as_billable(client, monkeypatch):
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: None)
+    R.set_setting("firecrawl", {"eur_per_credit": 0.01, "max_eur_unknown_clinic": 1.0, "reserve_credits": 150})
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=500, log=lambda *_: None)
+    assert gate["allowed"] and gate["cap"] == 100 and gate["free_runs_left_today"] is None and gate["billable"] is True
+    assert "ledger unavailable" in gate["reason"]
+
+
+def test_spend_gate_free_run_then_kill_switch_still_refuses(client, monkeypatch):
+    """A free run is still subject to the kill switch: the gate says free, the switch says no -- execute() asks the switch first."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 5600, "plan": 8000, "tokens_remaining": 5685, "tokens_plan": 120000})
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=40, log=lambda *_: None)
+    assert gate["allowed"] and gate["billable"] is False
+    monkeypatch.setattr(R, "usage_total", lambda days=None, hours=None: 2400)  # 30% of plan in 24h
+    allowed, reason = CR.kill_switch(run_mode="firecrawl", trigger="api", log=lambda *_: None)
+    assert not allowed and "DISABLE" in reason
+    S.resume()
 
 
 def test_spend_gate_unknown_clinic_blocked_by_reserve(client, monkeypatch):
@@ -145,7 +219,10 @@ def test_spend_gate_known_clinic_allows_unseen_rows(client, monkeypatch):
     monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
     monkeypatch.setattr(A, "rest_get", lambda path, params=None, **k: [])
     gate = CR.spend_gate(CLINIC_KNOWN, max_credits=40, probe_adapter=lambda c: ["https://x/jobs/1", "https://x/jobs/2"])
-    assert gate["allowed"] and gate["cap"] == 40 and gate["unseen"] == 2
+    assert gate["allowed"] and gate["cap"] == 40 and gate["unseen"] == 2 and gate["free_runs_left_today"] == 5
+    _submitted(5)
+    gate = CR.spend_gate(CLINIC_KNOWN, max_credits=40, probe_adapter=lambda c: ["https://x/jobs/1", "https://x/jobs/2"], log=lambda *_: None)
+    assert gate["allowed"] and gate["cap"] == 40 and gate["billable"] is True     # known clinics never had the EUR cap; reserve only
 
 
 def test_spend_gate_adapter_probe_failure_refuses(client):
@@ -199,6 +276,17 @@ def test_kill_switch_disables_everything_and_pauses_scheduler_at_30pct(client, m
     assert not allowed and "DISABLE" in reason
     assert S.is_paused()
     S.resume()                                              # don't leak paused state into other tests
+
+
+def test_kill_switch_status_includes_both_pools_and_free_runs(client, monkeypatch):
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 379, "plan": 8000, "tokens_remaining": 5685, "tokens_plan": 120000,
+                                                        "free_runs_left_today": 4, "agent_runs_today": 1})
+    monkeypatch.setattr(R, "usage_total", lambda days=None, hours=None: 80)
+    st = CR.kill_switch_status()
+    assert st["pct"] == 1.0 and st["thresholds"] == [10, 20, 30] and st["plan"] == 8000 and st["remaining"] == 379 and st["used_24h"] == 80
+    assert st["tokens_remaining"] == 5685 and st["tokens_plan"] == 120000 and st["free_runs_left_today"] == 4 and st["agent_runs_today"] == 1
+    assert CR.kill_switch_pct() == (1.0, [10, 20, 30])
 
 
 def test_kill_switch_unknown_plan_never_blocks(client, monkeypatch):

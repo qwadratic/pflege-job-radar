@@ -3,6 +3,8 @@
   adapter    the board's vendor adapter (crawlers.vendor_adapters, or the seeded modules softgarden / bite / pi_asp /
              umantis via career_crawl.Crawler). The board, not the clinic, is the unit of work (shared boards fetched once).
   firecrawl  pflege_jobs.sources.firecrawl_agent.run_jobs_agent — LLM-driven, credit-capped; for walled / unlabelled sites.
+             Firecrawl gives every account FREE_RUNS_PER_DAY (5) free agent runs per UTC day; spend_gate() prefers
+             those and only applies the EUR cap to runs past the allowance (docs/firecrawl.md §5, docs/coverage-plan.md §2).
   auto       adapter where routable and not walled, else firecrawl while the weekly credit budget allows.
 
 Rows flow through the same intake as every other crawler: inbox rows -> pflege_jobs.inbox -> `cli inbox`;
@@ -45,17 +47,27 @@ def _firecrawl_cfg():
 
 
 # --- 24h kill switch --------------------------------------------------------------------------
-def kill_switch_pct(log=None):
-    """(pct, [warn, throttle, disable]) -- pct of the account's plan credits spent in the last 24h.
-    None plan (credits() unreachable / unknown) -> pct 0.0, never blocks on this alone."""
+def kill_switch_status(log=None):
+    """What the kill switch sees: {'pct', 'thresholds', 'plan', 'remaining', 'used_24h', 'tokens_remaining',
+    'tokens_plan', 'free_runs_left_today', 'agent_runs_today'}. pct = the account's plan credits spent in the
+    last 24h per the local ledger; None plan (credits() unreachable / unknown) -> pct 0.0, never blocks on
+    this alone. Tokens are the Extract pool -- shown so a reader sees both balances, not part of the decision."""
     from pflege_jobs.sources import firecrawl_agent as FA
     cfg = _firecrawl_cfg()
     thresholds = cfg.get("kill_switch_pct") or [10, 20, 30]
-    plan = (FA.credits() or {}).get("plan")
+    fc = FA.credits(historical=False) or {}
+    plan = fc.get("plan")
     used_24h = R.usage_total(hours=24)
-    if not isinstance(plan, int) or plan <= 0:
-        return 0.0, thresholds
-    return 100.0 * used_24h / plan, thresholds
+    pct = 100.0 * used_24h / plan if isinstance(plan, int) and plan > 0 else 0.0
+    return {"pct": pct, "thresholds": thresholds, "plan": plan, "remaining": fc.get("remaining"), "used_24h": used_24h,
+            "tokens_remaining": fc.get("tokens_remaining"), "tokens_plan": fc.get("tokens_plan"),
+            "free_runs_left_today": fc.get("free_runs_left_today"), "agent_runs_today": fc.get("agent_runs_today")}
+
+
+def kill_switch_pct(log=None):
+    """(pct, [warn, throttle, disable]) -- see kill_switch_status()."""
+    st = kill_switch_status(log=log)
+    return st["pct"], st["thresholds"]
 
 
 def kill_switch(run_mode=None, trigger=None, log=print):
@@ -129,38 +141,59 @@ def _adapter_probe_rows(clinic):
 
 def spend_gate(clinic, max_credits, probe_adapter=None, log=print):
     """Decide whether Firecrawl may run for this clinic, and the credit cap to use.
-    -> {'allowed': bool, 'cap': int, 'reason': str, 'unseen': int|None}
+    -> {'allowed': bool, 'cap': int, 'reason': str, 'unseen': int|None, 'free_runs_left_today': int|None, 'billable': bool}
 
-    Unknown clinic (no routable adapter): capped by max_eur_unknown_clinic/eur_per_credit and by the
-    reserve_credits floor on the account's remaining credits.
+    Free allowance first: Firecrawl grants FREE_RUNS_PER_DAY (5) agent runs per UTC day at zero credits. While
+    FA.agent_runs_today() < 5 the run is expected-free and the EUR cap (max_eur_unknown_clinic) is not applied;
+    the reserve_credits floor still is (and the caller's kill switch), because the free promise could change
+    and a free run that turns out billable must not be able to drain the account. From the 6th run on, the
+    EUR cap applies as before and the gate says the run is billable. An unreadable ledger (None) counts as
+    'past the allowance', never as free.
+    Unknown clinic (no routable adapter): capped by max_eur_unknown_clinic/eur_per_credit (billable runs only)
+    and by the reserve_credits floor on the account's remaining credits.
     Known clinic (routable adapter, not walled): the adapter is run first; if every row it finds is
     already known (inbox or posting_observations), Firecrawl is refused outright -- 'adapter covers it'."""
     cfg = _firecrawl_cfg()
     eur_per_credit = float(cfg.get("eur_per_credit") or 0.0053)
     reserve = int(cfg.get("reserve_credits") or 150)
     from pflege_jobs.sources import firecrawl_agent as FA
-    remaining = (FA.credits() or {}).get("remaining")
+    remaining = (FA.credits(tokens=False, historical=False) or {}).get("remaining")
     remaining = remaining if isinstance(remaining, int) else 10 ** 9     # unknown -> don't block on this alone
     budget_cap = remaining - reserve
+    runs_today = FA.agent_runs_today()
+    free_left = max(0, FA.FREE_RUNS_PER_DAY - runs_today) if isinstance(runs_today, int) else None
+    free = bool(free_left)
+    extra = {"free_runs_left_today": free_left, "billable": not free}
+    if free:
+        allowance = f"free daily run {runs_today + 1}/{FA.FREE_RUNS_PER_DAY} (expected 0 credits; reserve floor still applies)"
+    else:
+        allowance = (f"billable run (#{runs_today + 1} today, {FA.FREE_RUNS_PER_DAY} free runs used)" if isinstance(runs_today, int)
+                     else "billable run (ledger unavailable, free allowance not assumed)")
+        log(f"spend gate: {clinic.get('clinic_id')} {allowance}; EUR cap applies")
     known = bool(clinic.get("routable")) and not clinic.get("walled")
     if known:
         probe_adapter = probe_adapter or _adapter_probe_rows
         try:
             urls = probe_adapter(clinic)
         except Exception as e:
-            return {"allowed": False, "cap": 0, "reason": f"adapter probe failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None}
+            return {"allowed": False, "cap": 0, "reason": f"adapter probe failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None, **extra}
         unseen = _unseen_source_urls(urls)
         if urls and not unseen:
-            return {"allowed": False, "cap": 0, "reason": "adapter covers it", "unseen": 0}
+            return {"allowed": False, "cap": 0, "reason": "adapter covers it", "unseen": 0, **extra}
         cap = min(int(max_credits or 0), max(0, budget_cap))
         if cap <= 0:
-            return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached", "unseen": len(unseen)}
-        return {"allowed": True, "cap": cap, "reason": f"{len(unseen)} unseen row(s) the adapter did not cover", "unseen": len(unseen)}
+            return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached", "unseen": len(unseen), **extra}
+        return {"allowed": True, "cap": cap, "reason": f"{len(unseen)} unseen row(s) the adapter did not cover; {allowance}", "unseen": len(unseen), **extra}
+    if free:
+        cap = min(int(max_credits or 0), max(0, budget_cap))
+        if cap <= 0:
+            return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached", "unseen": None, **extra}
+        return {"allowed": True, "cap": cap, "reason": f"unknown clinic (no adapter route); {allowance}", "unseen": None, **extra}
     max_eur = float(cfg.get("max_eur_unknown_clinic") or 5.0)
     cap = min(int(max_credits or 0), int(max_eur / eur_per_credit) if eur_per_credit > 0 else int(max_credits or 0), max(0, budget_cap))
     if cap <= 0:
-        return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached, or max_eur_unknown_clinic caps it to 0", "unseen": None}
-    return {"allowed": True, "cap": cap, "reason": "unknown clinic (no adapter route)", "unseen": None}
+        return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached, or max_eur_unknown_clinic caps it to 0", "unseen": None, **extra}
+    return {"allowed": True, "cap": cap, "reason": f"unknown clinic (no adapter route); {allowance}", "unseen": None, **extra}
 
 
 def _clinics_for_scope(scope, value):
@@ -476,16 +509,19 @@ def execute(run_id):
                 errors += 1
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: refused by spend gate — {gate['reason']}")
                 continue
+            log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {gate['reason']} (cap {gate['cap']})")
             try:
-                res = FA.run_jobs_agent(c, max_credits=gate["cap"], log=log, session=session)
+                res = FA.run_jobs_agent(c, max_credits=gate["cap"], log=log, session=session,
+                                        on_submit=lambda job_id, cid=c["clinic_id"]: R.add_usage("jobs", cid, 0, run_id, job_id=job_id))
                 credits_used += res["credits_used"]
-                R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id)
+                R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id, job_id=res.get("job_id"))
                 inbox_rows += res["rows"]
-                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits (cap {gate['cap']})")
+                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits charged "
+                    f"(API {res.get('credits_api')}, balance delta {res.get('credits_delta')}, cap {gate['cap']})")
             except FA.AgentFailed as e:
                 errors += 1
                 credits_used += e.credits_used
-                R.add_usage("jobs", c["clinic_id"], e.credits_used, run_id)
+                R.add_usage("jobs", c["clinic_id"], e.credits_used, run_id, job_id=getattr(e, "job_id", None))
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
             except Exception as e:
                 errors += 1
@@ -548,15 +584,17 @@ def refetch_career(run_id):
         R.update_run(run_id, status="failed", finished_at=R.now(), error=f"spend gate refused: {gate['reason']}")
         log(f"spend gate refused: {gate['reason']}"); return
     from pflege_jobs.sources import firecrawl_agent as FA
+    log(f"spend gate: {gate['reason']} (cap {gate['cap']})")
     try:
-        res = FA.run_career_agent(c, max_credits=gate["cap"], log=log)
+        res = FA.run_career_agent(c, max_credits=gate["cap"], log=log,
+                                  on_submit=lambda job_id: R.add_usage("career", cid, 0, run_id, job_id=job_id))
     except FA.AgentFailed as e:
-        R.add_usage("career", cid, e.credits_used, run_id)
+        R.add_usage("career", cid, e.credits_used, run_id, job_id=getattr(e, "job_id", None))
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     except Exception as e:
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     prof = res["profile"]
-    R.add_usage("career", cid, res["credits_used"], run_id)
+    R.add_usage("career", cid, res["credits_used"], run_id, job_id=res.get("job_id"))
     R.save_career_profile(cid, prof, res["credits_used"], run_id)
     R.update_run(run_id, credits_used=res["credits_used"], n_rows=1)
     new_ats = FA.ats_type_for(prof)

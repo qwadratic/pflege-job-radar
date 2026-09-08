@@ -1,9 +1,21 @@
-"""Firecrawl agent source: request shape (always credit-capped) and answer -> inbox row conversion."""
+"""Firecrawl agent source: request shape (always credit-capped), answer -> inbox row conversion, both balance pools
+(credits + Extract tokens), the free-daily-run ledger and the before/after credit delta run_agent() charges.
+No network: every HTTP call goes through the fake _Session; FA.agent_runs_today is stubbed so the real app.sqlite
+is never read (the ledger tests use a temp SQLite)."""
 import json
+import sqlite3
 
 import pytest
 
 from pflege_jobs.sources import firecrawl_agent as FA
+
+_REAL_AGENT_RUNS_TODAY = FA.agent_runs_today          # captured before the autouse stub below replaces it
+
+
+@pytest.fixture(autouse=True)
+def _no_ledger(monkeypatch):
+    """run_agent() asks the app ledger how many runs happened today; keep that off the real data/app.sqlite."""
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: 0)
 
 CLINIC = {"clinic_id": "16104", "name": "kbo-Heckscher-Klinikum Ingolstadt", "town": "Ingolstadt", "operator": "kbo-Heckscher-Klinikum gGmbH",
           "website": "https://kbo-heckscher-klinikum.de", "careers_url": "https://kbo-heckscher-klinikum.de/arbeiten-bei-uns"}
@@ -71,20 +83,47 @@ class _Resp:
         return self._b
 
 
+CREDIT_USAGE = {"success": True, "data": {"remainingCredits": 379, "planCredits": 8000,
+                                           "billingPeriodStart": "2026-08-19T20:01:50.000Z", "billingPeriodEnd": "2026-09-19T20:01:50.000Z"}}
+TOKEN_USAGE = {"success": True, "data": {"remainingTokens": 5685, "planTokens": 120000,
+                                          "billingPeriodStart": "2026-08-19T20:01:50.000Z", "billingPeriodEnd": "2026-09-19T20:01:50.000Z"}}
+CREDIT_HIST = {"success": True, "periods": [{"startDate": "2026-08-01T00:00:00.000Z", "endDate": "2026-09-01T00:00:00.000Z", "creditsUsed": 6694},
+                                            {"startDate": "2026-09-01T00:00:00.000Z", "endDate": None, "creditsUsed": 71}]}
+TOKEN_HIST = {"success": True, "periods": [{"startDate": "2026-08-01T00:00:00.000Z", "endDate": "2026-09-01T00:00:00.000Z", "tokensUsed": 100410},
+                                           {"startDate": "2026-09-01T00:00:00.000Z", "endDate": None, "tokensUsed": 1065}]}
+
+
 class _Session:
-    """Fake HTTP: submit returns a job id, first poll is processing, second completed."""
-    def __init__(self):
-        self.posts, self.gets = [], 0
+    """Fake HTTP: submit returns a job id, first agent poll is processing, second completed (creditsUsed 17).
+    /team/credit-usage answers the current balance, which drops by `cost` once the job completes -- so the
+    before/after delta run_agent() measures is `cost`, independent of the API's creditsUsed."""
+    def __init__(self, cost=17, balance=379, api_credits=17):
+        self.posts, self.gets, self.cost, self.balance, self.api_credits = [], 0, cost, balance, api_credits
 
     def post(self, url, headers=None, json=None, timeout=None):
         self.posts.append((url, json))
         return _Resp(200, {"success": True, "id": "job-1", "status": "processing"})
 
+    def _team(self, url):
+        if url.endswith("/team/credit-usage"):
+            return _Resp(200, {"success": True, "data": {**CREDIT_USAGE["data"], "remainingCredits": self.balance}})
+        if url.endswith("/team/token-usage"):
+            return _Resp(200, TOKEN_USAGE)
+        if url.endswith("/team/credit-usage/historical"):
+            return _Resp(200, CREDIT_HIST)
+        if url.endswith("/team/token-usage/historical"):
+            return _Resp(200, TOKEN_HIST)
+        return None
+
     def get(self, url, headers=None, timeout=None):
+        t = self._team(url)
+        if t is not None:
+            return t
         self.gets += 1
         if self.gets == 1:
             return _Resp(200, {"success": True, "status": "processing"})
-        return _Resp(200, {"success": True, "status": "completed", "data": ANSWER, "creditsUsed": 17})
+        self.balance -= self.cost
+        return _Resp(200, {"success": True, "status": "completed", "data": ANSWER, "creditsUsed": self.api_credits})
 
 
 def test_run_jobs_agent_polls_and_converts(monkeypatch):
@@ -96,6 +135,9 @@ def test_run_jobs_agent_polls_and_converts(monkeypatch):
     assert url.endswith("/agent") and body["maxCredits"] == 30 and body["urls"] == [CLINIC["careers_url"], CLINIC["website"]]
     assert "Pflege" in body["prompt"] and CLINIC["name"] in body["prompt"] and body["schema"]["required"] == ["jobs"]
     assert res["credits_used"] == 17 and len(res["rows"]) == 2
+    assert res["credits_api"] == 17 and res["credits_delta"] == 17 and res["job_id"] == "job-1"
+    assert res["credits_before"] == 379 and res["credits_after"] == 362
+    assert res["run_number_today"] == 1 and res["free_run"] is True
 
 
 def test_run_career_agent(monkeypatch):
@@ -159,11 +201,17 @@ def test_check_webhook_short_circuits_polling(monkeypatch):
 
     class S(_Session):
         def get(self, url, headers=None, timeout=None):
-            raise AssertionError("should not poll the API once the webhook already answered")
+            if "/agent/" in url:
+                raise AssertionError("should not poll the API once the webhook already answered")
+            return super().get(url, headers, timeout)                 # balance reads are not polls
+    s = S()
     hit = {"status": "completed", "data": ANSWER, "creditsUsed": 5}
-    data, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=10, log=lambda *_: None, session=S(),
-                                    check_webhook=lambda job_id: hit)
-    assert used == 5 and data == ANSWER
+
+    def webhook(job_id):
+        s.balance -= 5                                                # the account was charged by the time the event landed
+        return hit
+    data, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=10, log=lambda *_: None, session=s, check_webhook=webhook)
+    assert used == 5 and data == ANSWER and raw["_cost"]["credits_delta"] == 5
 
 
 def test_timeout_is_agentfailed_with_max_credits(monkeypatch):
@@ -182,3 +230,175 @@ def test_timeout_is_agentfailed_with_max_credits(monkeypatch):
     with pytest.raises(FA.AgentFailed) as ei:
         FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=8, timeout=5, log=lambda *_: None, session=S())
     assert ei.value.credits_used == 8
+
+
+# --- two pools + free allowance in credits() -----------------------------------------------------------
+def test_credits_carries_both_pools_and_free_runs(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    fc = FA.credits(session=_Session())
+    assert fc["remaining"] == 379 and fc["plan"] == 8000 and fc["period_end"] == "2026-09-19T20:01:50.000Z"
+    assert fc["tokens_remaining"] == 5685 and fc["tokens_plan"] == 120000
+    assert fc["credits_used_hist"] == 71 and fc["tokens_used_hist"] == 1065          # the open (endDate null) period
+    assert fc["hist_period_start"] == "2026-09-01T00:00:00.000Z" and fc["hist_period_end"] is None
+    assert fc["free_runs_per_day"] == 5 and fc["agent_runs_today"] == 0 and fc["free_runs_left_today"] == 5
+    assert "error" not in fc and "tokens_error" not in fc and "hist_error" not in fc
+
+
+def test_credits_tolerates_a_dead_token_endpoint(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: 3)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            if "token-usage" in url:
+                raise ConnectionError("boom")
+            return super().get(url, headers, timeout)
+    fc = FA.credits(session=S())
+    assert fc["remaining"] == 379 and fc["tokens_remaining"] is None and fc["tokens_plan"] is None
+    assert "boom" in fc["tokens_error"] and "boom" in fc["hist_error"] and fc["credits_used_hist"] == 71 and fc["tokens_used_hist"] is None
+    assert fc["free_runs_left_today"] == 2
+    lean = FA.credits(session=_Session(), tokens=False, historical=False)
+    assert "tokens_remaining" not in lean and "credits_used_hist" not in lean and lean["remaining"] == 379
+
+
+def test_credits_unknown_ledger_means_unknown_free_runs(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: None)
+    fc = FA.credits(session=_Session())
+    assert fc["agent_runs_today"] is None and fc["free_runs_left_today"] is None and FA.free_runs_left_today() is None
+
+
+# --- the ledger: agent_runs_today() counts today's UTC submissions only ------------------------------------
+@pytest.fixture()
+def ledger(tmp_path, monkeypatch):
+    from app import config as A
+    from app import runs as R
+    monkeypatch.setattr(A, "SQLITE_PATH", tmp_path / "app.sqlite")
+    monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(FA, "agent_runs_today", _REAL_AGENT_RUNS_TODAY)   # the real one, on the temp DB
+    R.init()
+    return R
+
+
+def test_agent_runs_today_counts_only_todays_utc_submissions(ledger):
+    R = ledger
+    from datetime import datetime, timedelta, timezone
+    assert FA.agent_runs_today() == 0
+    R.add_usage("jobs", "77406", 0, 28, job_id="job-a")                 # accepted submission today
+    R.add_usage("career", "77406", 0, 29, job_id="job-b")               # career agent counts too
+    R.add_usage("jobs", "77406", 12, 30)                                 # legacy row without a job id: not a submission
+    R.add_usage("webhook", None, 3, 31, job_id="job-c")                  # webhook with no clinic: not an agent submission of ours
+    assert FA.agent_runs_today() == 2 and FA.free_runs_left_today() == 3
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
+    with R.db() as c:
+        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id,job_id) values(?,?,?,?,?,?)", (yesterday, "jobs", "1", 0, 1, "job-old"))
+    assert FA.agent_runs_today() == 2                                    # yesterday's row is outside the UTC day
+    last_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    with R.db() as c:
+        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id,job_id) values(?,?,?,?,?,?)", (last_midnight, "jobs", "1", 0, 1, "job-midnight"))
+    assert FA.agent_runs_today() == 3                                    # midnight itself is today
+
+
+def test_add_usage_keyed_by_job_id_updates_instead_of_duplicating(ledger):
+    R = ledger
+    R.add_usage("jobs", "77406", 0, 28, job_id="job-a")                 # on_submit
+    R.add_usage("jobs", "77406", 25, 28, job_id="job-a")                # poll result
+    R.add_usage("jobs", "77406", 25, 28, job_id="job-a")                # webhook for the same job
+    with R.db() as c:
+        rows = c.execute("select credits, job_id from firecrawl_usage").fetchall()
+    assert [tuple(r) for r in rows] == [(25, "job-a")] and R.usage_total() == 25 and FA.agent_runs_today() == 1
+
+
+def test_job_id_column_is_added_to_an_old_ledger(tmp_path, monkeypatch):
+    from app import config as A
+    from app import runs as R
+    path = tmp_path / "old.sqlite"
+    with sqlite3.connect(path) as c:                                     # the table as it shipped before job_id existed
+        c.execute("create table firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer)")
+        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id) values('2026-09-07T21:16:43+00:00','jobs','77406',0,28)")
+    monkeypatch.setattr(A, "SQLITE_PATH", path)
+    monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    R.init()
+    R.init()                                                             # idempotent
+    with sqlite3.connect(path) as c:
+        cols = [r[1] for r in c.execute("pragma table_info(firecrawl_usage)")]
+        assert "job_id" in cols and c.execute("select count(*) from firecrawl_usage").fetchone()[0] == 1
+
+
+# --- run_agent(): balance delta is what gets charged; free-run label in the log ----------------------------
+def test_run_agent_charges_balance_delta_not_api_creditsused(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    logged = []
+    s = _Session(cost=250, api_credits=0)                                # API says 0 (free allowance), balance says 250
+    data, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=300, log=logged.append, session=s)
+    assert used == 250 and raw["_cost"]["api_credits_used"] == 0 and raw["_cost"]["credits_delta"] == 250
+    assert raw["_cost"]["credits_before"] == 379 and raw["_cost"]["credits_after"] == 129 and raw["_cost"]["job_id"] == "job-1"
+    assert any("free daily run 1/5" in l for l in logged) and any("DISAGREE" in l for l in logged)
+
+
+def test_run_agent_sixth_run_is_billable_in_the_log(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: 5)
+    logged = []
+    _, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=logged.append, session=_Session(cost=0, api_credits=0))
+    assert used == 0 and raw["_cost"]["run_number_today"] == 6 and raw["_cost"]["free_run"] is False
+    assert any("billable run" in l for l in logged) and not any("free daily run" in l for l in logged)
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: 4)
+    logged.clear()
+    _, _, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=logged.append, session=_Session(cost=0, api_credits=0))
+    assert raw["_cost"]["run_number_today"] == 5 and raw["_cost"]["free_run"] is True and any("free daily run 5/5" in l for l in logged)
+
+
+def test_run_agent_falls_back_to_api_credits_when_balance_unreadable(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(FA, "agent_runs_today", lambda: None)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            if "/team/" in url:
+                raise ConnectionError("no balance")
+            return super().get(url, headers, timeout)
+    logged = []
+    _, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=logged.append, session=S(api_credits=17))
+    assert used == 17 and raw["_cost"]["credits_delta"] is None and raw["_cost"]["credits_before"] is None
+    assert raw["_cost"]["run_number_today"] is None and raw["_cost"]["free_run"] is None
+    assert any("treat as billable" in l for l in logged)
+
+
+def test_run_agent_ignores_a_balance_that_went_up(monkeypatch):
+    """Period reset / top-up between the two reads: the delta is meaningless, charge the API number."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    _, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=_Session(cost=-7621, api_credits=3))
+    assert used == 3 and raw["_cost"]["credits_delta"] is None and raw["_cost"]["credits_after"] == 8000
+
+
+def test_run_agent_calls_on_submit_with_the_job_id(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    seen = []
+    res = FA.run_jobs_agent(CLINIC, max_credits=30, log=lambda *_: None, session=_Session(), on_submit=seen.append)
+    assert seen == ["job-1"] and res["job_id"] == "job-1"
+
+    def boom(job_id):
+        raise RuntimeError("ledger down")
+    res = FA.run_jobs_agent(CLINIC, max_credits=30, log=lambda *_: None, session=_Session(), on_submit=boom)   # never fatal
+    assert res["credits_used"] == 17
+
+
+def test_failed_job_carries_job_id_and_delta(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            if "/agent/" in url:
+                self.balance -= 9
+                return _Resp(200, {"success": False, "status": "failed", "error": "cancelled"})
+            return super().get(url, headers, timeout)
+    with pytest.raises(FA.AgentFailed) as ei:
+        FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=S())
+    assert ei.value.job_id == "job-1" and ei.value.credits_delta == 9 and ei.value.credits_used == 30   # ledger charge stays conservative

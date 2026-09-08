@@ -44,3 +44,19 @@ def test_coverage_last_run_and_credits(client):
     assert fc["last_run"]["run_id"] == rid2 and fc["last_run"]["status"] == "failed" and fc["last_run"]["errors"] == 0
     assert fc["credits_7d"] == 37 and d["totals"]["credits_7d"] == 37
     assert _row(d, "rexx")["last_run"] is None
+
+
+def test_coverage_firecrawl_row_shows_both_pools_and_free_runs(client, monkeypatch):
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 379, "plan": 8000, "tokens_remaining": 5685, "tokens_plan": 120000,
+                                                        "free_runs_per_day": 5, "agent_runs_today": 2, "free_runs_left_today": 3})
+    d = client.get("/api/coverage").json()
+    fc = _row(d, "firecrawl")
+    assert fc["credits_remaining"] == 379 and fc["credits_plan"] == 8000
+    assert fc["tokens_remaining"] == 5685 and fc["tokens_plan"] == 120000
+    assert fc["free_runs_left_today"] == 3 and fc["free_runs_per_day"] == 5 and fc["agent_runs_today"] == 2
+    assert d["totals"]["free_runs_left_today"] == 3
+    assert "tokens_remaining" not in _row(d, "typo3_jobs")
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    fc = _row(client.get("/api/coverage").json(), "firecrawl")
+    assert fc["tokens_remaining"] is None and fc["free_runs_left_today"] is None and fc["credits_7d"] == 0

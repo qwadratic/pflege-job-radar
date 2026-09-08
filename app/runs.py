@@ -1,8 +1,9 @@
 """Local state (SQLite) + the crawl worker queue.
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
-settings (json blobs by key), firecrawl_usage (credits per call). Finished runs are mirrored, best effort, into
-pflege_jobs.crawl_runs so the public API shows them too.
+settings (json blobs by key), firecrawl_usage (credits per call; job_id = the Firecrawl agent job the row
+belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
+Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the public API shows them too.
 """
 import json
 import queue
@@ -27,7 +28,7 @@ create table if not exists run_log (id integer primary key autoincrement, run_id
 create index if not exists run_log_run on run_log(run_id);
 create table if not exists career_profiles (clinic_id text primary key, profile text, fetched_at text, credits_used integer default 0, run_id integer);
 create table if not exists settings (key text primary key, value text);
-create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer);
+create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer, job_id text);
 create table if not exists firecrawl_events (
   id integer primary key autoincrement, at text, event_type text, job_id text, clinic_id text, run_id integer,
   success integer, credits_used integer default 0, raw text);
@@ -46,9 +47,22 @@ def db():
     return c
 
 
+# (table, column, type) added after the table first shipped; applied by init() with a plain
+# 'alter table add column' when pragma table_info says the column is missing (SQLite has no IF NOT EXISTS for columns).
+MIGRATIONS = (("firecrawl_usage", "job_id", "text"),)
+
+
+def _migrate(c):
+    for table, col, typ in MIGRATIONS:
+        cols = {r[1] for r in c.execute(f"pragma table_info({table})").fetchall()}
+        if cols and col not in cols:
+            c.execute(f"alter table {table} add column {col} {typ}")
+
+
 def init():
     with _lock, db() as c:
         c.executescript(SCHEMA)
+        _migrate(c)
 
 
 # --- settings -------------------------------------------------------------------------------
@@ -151,9 +165,35 @@ def active_run_count():
 
 
 # --- firecrawl usage / career profiles ------------------------------------------------------
-def add_usage(kind, clinic_id, credits, run_id=None):
+def add_usage(kind, clinic_id, credits, run_id=None, job_id=None):
+    """Charge the local ledger. With a job_id the row is keyed by it: the first call (on_submit, credits 0)
+    inserts, later calls for the same job (poll result, webhook, AgentFailed) update the credits in place --
+    so a job is one ledger row however many paths report it, and agent_runs_today() counts submissions."""
     with _lock, db() as c:
-        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id) values(?,?,?,?,?)", (now(), kind, clinic_id, int(credits or 0), run_id))
+        if job_id:
+            cur = c.execute("update firecrawl_usage set credits=?, clinic_id=coalesce(?,clinic_id), run_id=coalesce(?,run_id) where job_id=?",
+                            (int(credits or 0), clinic_id, run_id, job_id))
+            if cur.rowcount:
+                return
+        c.execute("insert into firecrawl_usage(at,kind,clinic_id,credits,run_id,job_id) values(?,?,?,?,?,?)",
+                  (now(), kind, clinic_id, int(credits or 0), run_id, job_id))
+
+
+def agent_runs_today():
+    """Accepted Firecrawl agent submissions today (UTC midnight to now): firecrawl_usage rows of kind
+    'jobs' or 'career' that carry a job id. Rows without a job id (legacy, webhook-only 'webhook' kind,
+    manual charges) are not submissions and do not count. Firecrawl's 5 free daily agent runs are what
+    this is measured against (pflege_jobs.sources.firecrawl_agent.FREE_RUNS_PER_DAY)."""
+    midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    q = "select count(*) from firecrawl_usage where kind in ('jobs','career') and job_id is not null and job_id != '' and at >= ?"
+    with _lock, db() as c:
+        try:
+            r = c.execute(q, (midnight,)).fetchone()
+        except sqlite3.OperationalError:            # table or job_id column not there yet (process older than the migration)
+            c.executescript(SCHEMA)
+            _migrate(c)
+            r = c.execute(q, (midnight,)).fetchone()
+    return int(r[0])
 
 
 def usage_total(days=None, hours=None):

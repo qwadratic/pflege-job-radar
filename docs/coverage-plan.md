@@ -16,10 +16,12 @@ The Clawl page's coverage table has one row per adapter plus one synthetic `fire
 
 | fact | value | consequence |
 |---|---|---|
-| Firecrawl credits left | 379 of 8000 until 2026-09-19 | one capped experiment now; the exhaustive run waits for the reset |
-| typical agent run | "a few hundred credits" (docs) | ~25–40 clinics per 8000-credit month if every clinic needs an agent |
+| Firecrawl agent free allowance | **5 free agent runs per account per UTC day** ("All users receive 5 free daily runs, which can be used from either the playground or the API"; verified 2026-09-08 — the one experiment was run 1/5 and cost 0) ≈ 150 runs/month | the exhaustive pass is 5 clinics per day at zero credits; the 58 clinics in the `firecrawl` row take ~12 days; `spend_gate` prefers the allowance and only applies the EUR cap from the 6th run of a day |
+| Firecrawl credits left | 379 of 8000 until 2026-09-19 | credits only matter past 5 runs/day; nothing waits for the reset |
+| Firecrawl Extract tokens | 5,685 of 120,000, same period (`GET /v2/team/token-usage`); September so far: 71 credits, 1,065 tokens; August: 6,694 credits, 100,410 tokens (`/historical`) | the Agent bills credits, not tokens; both pools are shown on `/api/firecrawl/credits` and the coverage row so nobody reads one balance as the other |
+| typical billable agent run | "a few hundred credits" (docs); the real number is **unknown until a 6th run in one UTC day is measured** — the experiment's `creditsUsed: 0` was the free allowance, not a cost | beyond 5 runs/day: ~25–40 extra clinics per 8000-credit month if every one needs an agent |
 | price per credit | unknown for the 8000/mo plan; Hobby is $16/3000 ≈ $0.0053 | `eur_per_credit` is a setting, not a constant; refine after the first bill |
-| your bar | ≤ $0.20 per unique certified job | at $0.0053/credit that is ≤ 38 credits per job — a 150-credit run must return ≥ 4 unique certified jobs |
+| your bar | ≤ $0.20 per unique certified job | free runs meet it by construction; for a billable run at $0.0053/credit that is ≤ 38 credits per job — a 150-credit run must return ≥ 4 unique certified jobs |
 | adapters | 371 of 407 sites routable at zero credits | Firecrawl is the last resort, not the plan |
 | LLM gateway | no credits | classification stays rule-based until `LLM_API_BASE` has a budget |
 | webhook reachability | VM is login-gated unless `ssh exe.dev share set-public pflege-board` | webhooks are an optimisation with polling as fallback until that is confirmed |
@@ -42,7 +44,8 @@ Real-time delivery: every technique yields inbox rows as they are produced, not 
 
 ### 3.3 Spend policy
 
-- **Unknown clinic** (no adapter route): cap = min(requested, `max_eur_unknown_clinic` ÷ `eur_per_credit`, remaining − `reserve_credits`). Default €5, reserve 150.
+- **Free allowance first**: Firecrawl grants 5 free agent runs per UTC day. `FA.agent_runs_today()` counts accepted submissions in the local ledger (`firecrawl_usage.job_id`, written the moment the API accepts a job); while it is below 5 the run is expected-free and the EUR cap is not applied — the reserve floor and the kill switch still are, because the promise could change. From the 6th run the EUR cap applies and the log says `billable run`. Every run is charged to the ledger at the measured balance delta (`GET /team/credit-usage` before/after), not the API's `creditsUsed`, which reads 0 inside the allowance.
+- **Unknown clinic** (no adapter route), billable runs: cap = min(requested, `max_eur_unknown_clinic` ÷ `eur_per_credit`, remaining − `reserve_credits`). Default €5, reserve 150.
 - **Known clinic** (adapter route exists): run the adapter first; count rows whose URL is not already in inbox or observations ("unseen"); Firecrawl only if unseen is 0 *and* the adapter failed structurally. No agent run for something we can already do.
 - **24 h kill switch**, thresholds as percent of plan credits spent in a rolling 24 h: 10 % warn on every run, 20 % refuse Firecrawl for scheduled and `auto` runs, 30 % refuse every Firecrawl call and pause the scheduler until a human re-enables it. Failures are charged to the local ledger even if Firecrawl does not bill them (over-counting is the safe direction).
 - **Clinic-level refresh on new jobs** (your ask): when an adapter run finds ≥1 unseen posting at a clinic, and that clinic's board is one where the adapter historically under-counts against the Firecrawl reference (section 3.7), queue one Firecrawl full sync for that clinic, subject to the same gate. Where the adapter matches the reference, no Firecrawl — new jobs are simply the adapter's new rows. Without the reference this rule would burn credits on every routine change, so it lands after the evals.
@@ -65,9 +68,9 @@ Every run already writes `run_log` and `crawl_runs` with per-board rows, new, er
 
 ### 3.6 The Firecrawl experiment and the exhaustive run
 
-One agent run, 150-credit cap, on a clinic no adapter serves, with the caveman prompt (maximise Pflegedienst openings, capture seniority, certified only). Success = ≤ $0.20 per unique certified job at the configured price per credit, and the webhook arrived. The result is in `docs/firecrawl.md` once the running workflow lands it.
+One agent run, 150-credit cap, on a clinic no adapter serves, with the caveman prompt (maximise Pflegedienst openings, capture seniority, certified only). Success = ≤ $0.20 per unique certified job at the configured price per credit, and the webhook arrived. Result (`docs/firecrawl.md` §5): 5 of 5 certified jobs, `creditsUsed` 0 and the balance unchanged at 379 — because it was **free daily run 1/5**, not because agent runs are cheap. It therefore says nothing about the cost of a billable run, which stays unknown until a 6th run in one UTC day is measured (`run_agent()` now records that delta automatically). The webhook did not arrive (login-gated host); polling delivered the result.
 
-The exhaustive run (one agent per clinic, one at a time) is gated on three things: the experiment beat the bar, the credit period has reset on 2026-09-19, and the target list is the `firecrawl` row of the coverage table only (today ~36 clinics), not all 407. At "a few hundred credits" per run, 36 clinics is roughly 7,000–10,000 credits — a whole month's plan. That is the honest size of the exhaustive run; it is worth doing once to build the reference, not as a schedule.
+The exhaustive run (one agent per clinic) is scheduled **inside the free allowance**: 5 clinics per UTC day at zero credits ≈ 150 runs per month, which covers the 58 clinics in the `firecrawl` row in about 12 days — without waiting for the 2026-09-19 reset and without touching the 379 remaining credits. It is deliberately *not* a one-day burst after the reset: everything past the 5th run of a day is billable at the docs' "a few hundred credits" per run, i.e. 58 clinics × 200–300 credits ≈ 12,000–17,000 credits, more than a month's plan; anything beyond 5/day goes through the EUR cap and the €/credit math in section 2. Target list: the `firecrawl` row only, not all 407; largest clinics first; each clinic's reference count is frozen with its date (3.7). The scheduler batch for it is therefore "5 firecrawl-row clinics not yet referenced, daily", and the gate refuses the 6th on its own.
 
 ### 3.7 Evals with Firecrawl as the oracle (plan-mode item)
 
@@ -75,8 +78,8 @@ An eval set is a list of clinics with a reference count of mid-level-and-up cert
 
 ## 4. Critique, from the credit-and-token side
 
-- **Firecrawl agents are the most expensive way to read a web page, and 371 of 407 sites do not need them.** Every credit spent on a clinic an adapter can serve is wasted twice: once on Firecrawl, once on the classifier re-reading the same jobs. The spend gate's "unseen == 0 → refuse" rule exists to stop exactly that. Keep the agent for the `firecrawl` row and for building the reference set; nothing else.
-- **"Update all of a clinic's jobs via Firecrawl whenever there are new jobs" is the rule most likely to drain the account.** Hospitals post weekly; 180 clinics with jobs × a few hundred credits is the whole plan every week. Tied to the evals it becomes cheap: only clinics where the adapter provably under-counts get the refresh.
+- **Past the 5 free daily runs, Firecrawl agents are the most expensive way to read a web page, and 371 of 407 sites do not need them.** Every credit spent on a clinic an adapter can serve is wasted twice: once on Firecrawl, once on the classifier re-reading the same jobs. The spend gate's "unseen == 0 → refuse" rule exists to stop exactly that. Keep the agent for the `firecrawl` row and for building the reference set; nothing else.
+- **"Update all of a clinic's jobs via Firecrawl whenever there are new jobs" is the rule most likely to drain the account.** Hospitals post weekly; 180 clinics with jobs × a few hundred credits is the whole plan every week, and the free allowance covers 35 runs a week, not 180. Tied to the evals it becomes cheap: only clinics where the adapter provably under-counts get the refresh.
 - **Webhooks do not save credits; they save wall time and polling requests.** Worth having, but the login-gated VM means they may never arrive until the share is made public. Do not build anything that depends on them.
 - **The 24 h kill switch is the right shape, but 10/20/30 % of plan is 800/1600/2400 credits.** With 379 left, no threshold can fire this period. That is fine for the mechanism; just do not read silence as safety until the reset.
 - **The raw store in git will grow.** ~2,000 postings × ~4 KB is 8 MB, and every nightly commit rewrites changed files. On a separate branch with periodic squashing that is acceptable; on `main` it would bury the code history within a month. Hence the branch.
@@ -87,13 +90,13 @@ An eval set is a list of clinics with a reference count of mid-level-and-up cert
 
 | step | what | credits | effort |
 |---|---|---|---|
-| 0 | Clawl rename + coverage table, Firecrawl gate/kill switch/webhook, caveman prompt, CLI wrapper, one experiment | ≤ 150 | running now |
+| 0 | Clawl rename + coverage table, Firecrawl gate/kill switch/webhook, caveman prompt, CLI wrapper, one experiment | 0 (free daily run 1/5) | done |
 | 1 | shared fetch envelope: backoff, Retry-After, circuit breaker, batch streaming into inbox, unavailability on Clawl | 0 | 1 session |
 | 2 | raw store on the `raw-data` branch with explicit removal; nightly reconcile with `postings.status` | 0 | 1 session |
 | 3 | delta report `GET /api/dynamics` + weekly digest routine | 0 | ½ session |
 | 4 | classification questions for non-section postings (rules now, LLM when funded), shown on list and page | 0 now | 1 session |
 | 5 | evals harness: reference set from the experiment clinics, recall/precision per adapter on Clawl | 0 (reuses paid runs) | 1 session — **plan mode** |
-| 6 | exhaustive Firecrawl pass over the `firecrawl` row, one clinic at a time, after 2026-09-19 | ~7–10k | a day of wall time, gated |
-| 7 | clinic-level Firecrawl refresh on new jobs, only where evals show the adapter under-counts | recurring, bounded by the gate | after 5 |
+| 6 | exhaustive Firecrawl pass over the `firecrawl` row, **5 clinics per UTC day inside the free allowance**, starting now | 0 (≈150 free runs/month; 58 clinics ≈ 12 days); a 6th run in a day is billable, measured, and refused by the gate unless asked for | ~12 days of calendar time, scheduled, gated by reserve + kill switch |
+| 7 | clinic-level Firecrawl refresh on new jobs, only where evals show the adapter under-counts | recurring; free while the day's allowance lasts, then bounded by the gate | after 5 |
 
 Decisions I need from you in plan mode: confirm the `raw-data` branch (vs. committing to `main`), confirm 5 € / 150-credit reserve / 10-20-30 % as the defaults, confirm that the exhaustive run targets only the `firecrawl` row, and tell me whether the evals reference should be "mid-level and up" (Fachkraft and above) or "all certified" — the number the adapters converge to depends on that choice.

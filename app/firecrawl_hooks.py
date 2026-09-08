@@ -60,7 +60,7 @@ def _run_log(run_id, line):
             pass
 
 
-def _handle_completed(payload, items, clinic_id, run_id, credits_used):
+def _handle_completed(payload, items, clinic_id, run_id, credits_used, job_id=None):
     from pflege_jobs.sources import firecrawl_agent as FA
     from . import crawl as CR
     data = _first_data_dict(payload, items)
@@ -72,15 +72,15 @@ def _handle_completed(payload, items, clinic_id, run_id, credits_used):
         n_rows = len(rows)
         if rows:
             CR._post_inbox(rows, log=(lambda *a: _run_log(run_id, " ".join(str(x) for x in a))))
-    if run_id:
-        R.add_usage("jobs" if clinic_id else "webhook", clinic_id, credits_used, int(run_id))
+    if run_id:                                 # keyed by job id: updates the row the poller's on_submit wrote instead of adding a second one
+        R.add_usage("jobs" if clinic_id else "webhook", clinic_id, credits_used, int(run_id), job_id=job_id)
     _run_log(run_id, f"firecrawl webhook: agent.completed, {credits_used} credits, {n_jobs} jobs -> {n_rows} inbox rows"
                      + (f"; blocked_reason: {data.get('blocked_reason')[:200]}" if isinstance(data, dict) and data.get("blocked_reason") else ""))
 
 
-def _handle_terminal_failure(event_type, payload, clinic_id, run_id, credits_used):
+def _handle_terminal_failure(event_type, payload, clinic_id, run_id, credits_used, job_id=None):
     if run_id:
-        R.add_usage("jobs" if clinic_id else "webhook", clinic_id, credits_used, int(run_id))
+        R.add_usage("jobs" if clinic_id else "webhook", clinic_id, credits_used, int(run_id), job_id=job_id)
     _run_log(run_id, f"firecrawl webhook: {event_type} error={str(payload.get('error'))[:250]}")
 
 
@@ -105,9 +105,9 @@ async def firecrawl_webhook(request: Request, x_pflege_webhook_secret: str = Hea
                            success=payload.get("success"), credits_used=credits_used, raw=payload)
     try:
         if event_type == "agent.completed":
-            _handle_completed(payload, items, clinic_id, run_id, credits_used)
+            _handle_completed(payload, items, clinic_id, run_id, credits_used, job_id=job_id)
         elif event_type in ("agent.failed", "agent.cancelled"):
-            _handle_terminal_failure(event_type, payload, clinic_id, run_id, credits_used)
+            _handle_terminal_failure(event_type, payload, clinic_id, run_id, credits_used, job_id=job_id)
         elif event_type == "agent.action":
             _run_log(run_id, f"firecrawl webhook: agent.action {str(payload.get('action') or payload.get('message') or '')[:200]}")
         elif event_type == "agent.started":
