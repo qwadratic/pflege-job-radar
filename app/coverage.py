@@ -9,11 +9,13 @@ the rows. Reads the in-memory snapshot, the local SQLite run log and the routing
 the Firecrawl balance for the `firecrawl` row (credits + Extract tokens + free agent runs left today), tolerant
 of failure (keys stay None). credits_7d / tokens_7d are what the app's own runs moved per the local ledger.
 """
+import json
 import re
+import sqlite3
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 
 from . import data as D
 from . import runs as R
@@ -171,3 +173,172 @@ def compute():
 @router.get("/coverage")
 def api_coverage():
     return compute()
+
+
+# --- GET /api/billing/clinics: spend per clinic in a window (Kosten je Klinik) --------------------------------------
+# Same booking rules as app/billing.py (duplicated on purpose: that module's helpers are private and in flux):
+# a run is booked at finished_at | started_at | queued_at; usd = credits * settings firecrawl.eur_per_credit; a run is
+# attributed to a clinic when it targets exactly one clinic; multi-clinic Firecrawl runs are split by the
+# firecrawl_usage ledger rows (each carries clinic_id, credits, tokens); ledger rows without a run row count as one
+# run of their clinic. Postings gained (n_new) are only attributable for single-clinic runs.
+CLINIC_WINDOWS = ("today", "24h", "7d", "30d", "period", "custom")
+DEFAULT_USD_PER_CREDIT = 0.0053
+
+
+def _bc_parse(s):
+    if not s:
+        return None
+    if isinstance(s, datetime):
+        d = s
+    else:
+        s = str(s).strip()
+        try:
+            d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                d = datetime.strptime(s[:10], "%Y-%m-%d")
+            except ValueError:
+                return None
+    return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
+def _bc_now():
+    return datetime.now(timezone.utc)
+
+
+def _bc_window(key, frm=None, to=None):
+    """-> (from, to, note) in UTC; 'period' asks the Firecrawl API for the billing period and falls back to 30 days."""
+    now = _bc_now()
+    note = None
+    if key == "today":
+        f, t = now.replace(hour=0, minute=0, second=0, microsecond=0), now
+    elif key in ("24h", "7d", "30d"):
+        f, t = now - {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}[key], now
+    elif key == "period":
+        try:
+            from pflege_jobs.sources import firecrawl_agent as FA
+            fc = FA.credits(timeout=10) or {}
+        except Exception:
+            fc = {}
+        f = _bc_parse(fc.get("period_start") or fc.get("hist_period_start"))
+        t = min(_bc_parse(fc.get("period_end") or fc.get("hist_period_end")) or now, now)
+        if not f:
+            f, t, note = now - timedelta(days=30), now, "billing period unknown (Firecrawl API unreachable); showing the last 30 days"
+    elif key == "custom":
+        f, t = _bc_parse(frm), _bc_parse(to) or now
+        if not f:
+            raise HTTPException(400, "custom window needs from=ISO (and optional to=ISO)")
+        if t < f:
+            raise HTTPException(400, "to must not be before from")
+    else:
+        raise HTTPException(400, f"window must be one of {', '.join(CLINIC_WINDOWS)}")
+    return f, t, note
+
+
+def _bc_price():
+    try:
+        from . import settings as ST
+        return float(ST.get_firecrawl().get("eur_per_credit") or DEFAULT_USD_PER_CREDIT)
+    except Exception:
+        return DEFAULT_USD_PER_CREDIT
+
+
+def _bc_rows(sql, args=()):
+    with R._lock, R.db() as c:
+        try:
+            return [dict(r) for r in c.execute(sql, args).fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+
+def billing_clinics(window="today", frm=None, to=None, limit=30):
+    f, t, note = _bc_window(window, frm, to)
+    price = _bc_price()
+    limit = max(1, min(int(limit or 30), 500))
+
+    runs = []
+    for r in _bc_rows("select * from crawl_runs order by run_id desc"):
+        at = _bc_parse(r.get("finished_at") or r.get("started_at") or r.get("queued_at"))
+        if at and f <= at <= t:
+            r["_at"] = at
+            runs.append(r)
+    run_ids = {r["run_id"] for r in runs}
+    by_run = {}
+    orphans = []
+    for l in _bc_rows("select * from firecrawl_usage order by id"):
+        l["_at"] = _bc_parse(l.get("at"))
+        if l.get("run_id") in run_ids:
+            by_run.setdefault(l["run_id"], []).append(l)
+        elif l.get("clinic_id") and l["_at"] and f <= l["_at"] <= t:
+            orphans.append(l)
+
+    acc = {}
+
+    def bucket(cid):
+        cid = str(cid)
+        return acc.setdefault(cid, {"clinic_id": cid, "runs": 0, "runs_free": 0, "credits": 0, "tokens": 0, "new_postings": 0, "last_run_at": None, "_runs": set()})
+
+    def touch(b, at, run_id):
+        if run_id is not None and run_id in b["_runs"]:
+            return
+        b["_runs"].add(run_id if run_id is not None else object())
+        b["runs"] += 1
+        iso = at.isoformat(timespec="seconds")
+        if not b["last_run_at"] or iso > b["last_run_at"]:
+            b["last_run_at"] = iso
+
+    for r in runs:
+        lrows = by_run.get(r["run_id"], [])
+        credits = int(r.get("credits_used") or 0)
+        try:
+            cids = r["clinic_ids"] if isinstance(r.get("clinic_ids"), list) else json.loads(r.get("clinic_ids") or "[]")
+        except Exception:
+            cids = []
+        cid = cids[0] if len(cids) == 1 else (str(r.get("value")) if r.get("scope") == "clinic" and len(cids) <= 1 and r.get("value") else None)
+        is_fc = r.get("mode") == "firecrawl" or bool(lrows)
+        free = bool(is_fc and r.get("status") == "done" and credits == 0)
+        if cid:
+            b = bucket(cid)
+            touch(b, r["_at"], r["run_id"])
+            b["credits"] += credits
+            b["tokens"] += sum(int(l["tokens"]) for l in lrows if isinstance(l.get("tokens"), int))
+            b["new_postings"] += int(r.get("n_new") or 0)
+            b["runs_free"] += int(free)
+        else:                                          # multi-clinic run: split by the ledger rows that name a clinic
+            for l in lrows:
+                if not l.get("clinic_id"):
+                    continue
+                b = bucket(l["clinic_id"])
+                touch(b, r["_at"], r["run_id"])
+                b["credits"] += int(l.get("credits") or 0)
+                b["tokens"] += int(l["tokens"]) if isinstance(l.get("tokens"), int) else 0
+    for l in orphans:
+        b = bucket(l["clinic_id"])
+        touch(b, l["_at"], None)
+        b["credits"] += int(l.get("credits") or 0)
+        b["tokens"] += int(l["tokens"]) if isinstance(l.get("tokens"), int) else 0
+
+    rows = []
+    tot = {"clinics": 0, "runs": 0, "runs_free": 0, "credits": 0, "tokens": 0, "usd": 0.0, "new_postings": 0, "open_jobs": 0}
+    for cid, b in acc.items():
+        c = D.clinic(cid) or {}
+        b.pop("_runs", None)
+        b["clinic"] = c.get("name")
+        b["town"] = c.get("town")
+        b["open_jobs"] = int(c.get("jobs_open") or 0)
+        b["usd"] = round(b["credits"] * price, 4)
+        b["cost_per_posting_usd"] = round(b["usd"] / b["new_postings"], 4) if b["new_postings"] else None
+        rows.append(b)
+        tot["clinics"] += 1
+        for k in ("runs", "runs_free", "credits", "tokens", "new_postings", "open_jobs"):
+            tot[k] += b[k]
+        tot["usd"] = round(tot["usd"] + b["usd"], 4)
+    rows.sort(key=lambda b: (b["usd"], b["credits"], b["runs"], b["last_run_at"] or ""), reverse=True)
+    tot["cost_per_posting_usd"] = round(tot["usd"] / tot["new_postings"], 4) if tot["new_postings"] else None
+    return {"window": {"key": window, "from": f.isoformat(timespec="seconds"), "to": t.isoformat(timespec="seconds"), "note": note},
+            "price_per_credit": price, "currency": "USD", "limit": limit, "rows": rows[:limit], "totals": tot}
+
+
+@router.get("/billing/clinics")
+def api_billing_clinics(window: str = "today", frm: str = Query(None, alias="from"), to: str = None, limit: int = 30):
+    return billing_clinics(window, frm, to, limit)

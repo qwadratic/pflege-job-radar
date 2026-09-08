@@ -74,3 +74,31 @@ async def api_put_hunter(request: Request):
         return ST.save_hunter(await request.json())
     except ValueError as e:
         raise HTTPException(422, str(e))
+
+
+# --- scheduler pause / resume (app/scheduler.py): the 'Parser' toggle of the Clawl page's Crawling strip -------------
+from . import scheduler as S
+
+
+def _scheduler_state():
+    st = S.status()
+    return {"paused": bool(st.get("paused")), "reason": st.get("paused_reason")}
+
+
+@router.post("/scheduler/pause")
+async def scheduler_pause(request: Request):
+    """Stop the automatic schedule loop (explicit run-now / force ticks still work). Body may carry {reason}."""
+    reason = None
+    try:
+        body = await request.json()
+        reason = (body or {}).get("reason") if isinstance(body, dict) else None
+    except Exception:
+        pass
+    S.pause(str(reason)[:200] if reason else "paused via POST /api/scheduler/pause")
+    return _scheduler_state()
+
+
+@router.post("/scheduler/resume")
+def scheduler_resume():
+    S.resume()
+    return _scheduler_state()

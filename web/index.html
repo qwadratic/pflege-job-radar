@@ -187,7 +187,7 @@ const term=(txt,key)=>{const g=gl(key||txt); return el("span",{"data-tip":g?(key
 // ---- router / nav ------------------------------------------------------------------------------
 const nav=h=>{location.hash=h;};
 let BILL_TODAY=null;                                   // today's USD for the header badge; null = API down/stub → badge hidden
-let TODAY_P=null,TODAY_AT=0; const billToday=()=>{ if(!TODAY_P||Date.now()-TODAY_AT>60e3){ TODAY_AT=Date.now(); TODAY_P=api("/api/billing?window=today"); } return TODAY_P; };   // shared by the badge and the page (window=today)
+let ME={role:"anonymous"}; let TODAY_P=null,TODAY_AT=0; const billToday=()=>{ if(!TODAY_P||Date.now()-TODAY_AT>60e3){ TODAY_AT=Date.now(); TODAY_P=api("/api/billing?window=today"); } return TODAY_P; };   // shared by the badge and the page (window=today)
 function renderNav(){ const h=location.hash||"#/"; const items=[["#/","n_clinics",/^#\/($|\?|clinic|cv)/],["#/jobs","n_jobs",/^#\/job/],["#/billing","n_billing",/^#\/(billing|kosten)/]];
   $("#nav").replaceChildren(...items.map(([href,k,re])=>el("a",{href,class:re.test(h)?"on":""},t(k),k==="n_billing"&&BILL_TODAY!=null?el("span",{class:"badge",text:usd(BILL_TODAY)}):null))); }
 window.addEventListener("hashchange",()=>{renderNav();route();});
@@ -387,7 +387,7 @@ function mockApi(path,opt){ const M=mockApi.D||(mockApi.D=(()=>{ let seed=11; co
 
 applyLang(); route();
 // Header badge: today's USD from the same endpoint, fetched once; stays hidden while the API is down or a stub.
-billToday().then(d=>{ if(d&&!d.stub&&!d.error&&(d.totals||d.series)){ BILL_TODAY=normBilling(d).tot.usd; renderNav(); } }).catch(()=>{});
+api("/api/me").then(me=>{ ME=me||{}; if(ME.role==="owner"){ billToday().then(d=>{ if(d&&!d.stub&&!d.error&&(d.totals||d.series)){ BILL_TODAY=normBilling(d).tot.usd; renderNav(); } }).catch(()=>{}); } else renderNav(); }).catch(()=>{});
 </script>
 <link rel="stylesheet" href="/dock.css">
 <script src="/dock.js" defer></script>

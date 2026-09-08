@@ -2,7 +2,8 @@
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
 settings (json blobs by key), hunt_state + hunt_meta (app/hunter.py: one row per clinic and UTC day, and the hunter's
-per-day accumulators / flags -- schema here, all reads and writes live in app/hunter.py), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
+per-day accumulators / flags -- schema here, all reads and writes live in app/hunter.py), magic_links + sessions + customers
+(app/auth.py: single-use login tokens, cookie sessions, Stripe customers -- schema here, reads/writes in app/auth.py), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
 job the row belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
 Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the public API shows them too.
 """
@@ -40,6 +41,13 @@ create table if not exists hunt_state (
   last_error text, updated_at text, primary key(clinic_id, day));
 create index if not exists hunt_state_day on hunt_state(day);
 create table if not exists hunt_meta (key text primary key, value text);
+create table if not exists magic_links (
+  id integer primary key autoincrement, email text, token_hash text, role text, created_at text, expires_at text, used_at text);
+create index if not exists magic_links_email on magic_links(email, created_at);
+create index if not exists magic_links_hash on magic_links(token_hash);
+create table if not exists sessions (
+  sid_hash text primary key, email text, role text, created_at text, expires_at text, last_seen_at text, stripe_customer_id text);
+create table if not exists customers (email text primary key, stripe_customer_id text, status text default 'active', created_at text);
 """
 
 

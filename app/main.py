@@ -44,6 +44,8 @@ from .auth import router as _auth_router                            # GET /api/m
 from .stripe_gate import router as _stripe_router                  # Stripe pay-per-closed-posting gate
 app.include_router(_auth_router, prefix="/api", tags=["auth"])
 app.include_router(_stripe_router, prefix="/api", tags=["stripe"])
+from .auth import install as _install_auth                          # identity middleware: owner / tailnet / magic link / customer
+_install_auth(app)
 
 
 @app.on_event("startup")

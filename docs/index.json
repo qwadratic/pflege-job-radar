@@ -47,5 +47,19 @@
    "de": "Judge-Runner – Bugs finden, MRs vorschlagen",
    "en": "Judge runner – find bugs, propose MRs"
   }
+ },
+ {
+  "file": "auth.md",
+  "title": {
+   "de": "Auth – Owner, Kunden, Magic Link",
+   "en": "Auth – owner, customers, magic link"
+  }
+ },
+ {
+  "file": "stripe.md",
+  "title": {
+   "de": "Stripe – Abrechnung pro besetzter Stelle",
+   "en": "Stripe – pay per closed posting"
+  }
  }
 ]
