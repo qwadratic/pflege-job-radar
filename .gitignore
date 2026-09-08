@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.kindt.example
 # public build config (project URL + anon key, both public by design) -- needed to reproduce the build
 !web/.env.build
 

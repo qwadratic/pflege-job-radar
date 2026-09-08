@@ -1,8 +1,12 @@
 """Settings: keyword patterns (pflege_jobs/patterns.json, hot-reloaded), autocrawl schedule, Firecrawl defaults."""
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import tempfile
+from datetime import datetime, timezone
 
 from . import config as A
 from . import runs as R
@@ -128,7 +132,7 @@ def public_firecrawl():
 def get_all():
     return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": public_firecrawl(),
             "hunter": get_hunter(), "feature_flags": get_feature_flags(), "feature_flags_info": FEATURE_FLAGS_INFO,
-            "feature_status_notes": FEATURE_STATUS_NOTES}
+            "feature_status_notes": FEATURE_STATUS_NOTES, "agent_key": public_agent_key()}
 
 
 # --- feature flags: things that are real code paths but not production-ready. One place to see and toggle
@@ -250,3 +254,41 @@ def save_firecrawl(obj):
         cur["kill_switch_pct"] = [float(x) for x in pct]
     R.set_setting("firecrawl", cur)
     return public_firecrawl()
+
+
+# --- agent API key: a non-interactive door for app/auth.py's AGENT_WRITE_PREFIXES subset only. Only the
+# SHA-256 hash is ever persisted (settings key "agent_key"); the plaintext exists nowhere after the one
+# response that generates or rotates it -- not in the DB, not in any later GET. ---------------------------
+def _hash_key(raw):
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def public_agent_key():
+    """Status only, safe for the owner-gated GET /api/settings -- never the key or its hash."""
+    cur = R.get_setting("agent_key") or {}
+    return {"configured": bool(cur.get("hash")), "created_at": cur.get("created_at"), "rotated_at": cur.get("rotated_at")}
+
+
+def set_agent_key(rotate=False):
+    """Generate a new key, store only its hash, return the plaintext once. `rotate` just labels the timestamp
+    field differently in the stored record (created_at is set once, rotated_at on every regeneration after)."""
+    cur = R.get_setting("agent_key") or {}
+    raw = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    record = {"hash": _hash_key(raw), "created_at": cur.get("created_at") or now}
+    if rotate or cur.get("hash"):
+        record["rotated_at"] = now
+    R.set_setting("agent_key", record)
+    return raw
+
+
+def clear_agent_key():
+    R.set_setting("agent_key", {})
+
+
+def check_agent_key(candidate):
+    cur = R.get_setting("agent_key") or {}
+    stored = cur.get("hash")
+    if not stored or not candidate:
+        return False
+    return hmac.compare_digest(_hash_key(candidate), stored)

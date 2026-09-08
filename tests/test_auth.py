@@ -217,6 +217,52 @@ def test_required_role_matrix():
     assert AU.allowed("customer", "member") and not AU.allowed("customer", "owner") and not AU.allowed("anonymous", "member")
 
 
+# --- agent API key ---------------------------------------------------------------------------
+def test_agent_key_generation_is_owner_only_and_shown_once(client):
+    assert client.put("/api/settings/agent-key").status_code == 401           # anonymous can't mint one
+    r = client.put("/api/settings/agent-key", headers=OWNER_H)
+    assert r.status_code == 200
+    d = r.json()
+    key = d["key"]
+    assert len(key) > 20 and d["configured"] is True and d["created_at"]
+    settings = client.get("/api/settings", headers=OWNER_H).json()
+    assert "agent_key" in settings and settings["agent_key"] == {**settings["agent_key"], "configured": True}
+    assert key not in str(settings) and AU.hashlib.sha256(key.encode()).hexdigest() not in str(settings)
+
+
+@pytest.mark.parametrize("method,path", [("POST", "/api/crawl"), ("POST", "/api/inbox/drain"), ("POST", "/api/clinics/36201/refetch-career")])
+def test_agent_key_unlocks_only_the_crawl_subset(client, method, path):
+    key = client.put("/api/settings/agent-key", headers=OWNER_H).json()["key"]
+    assert client.request(method, path, json={}).status_code == 401                       # no key: still gated
+    assert client.request(method, path, json={}, headers={"X-Api-Key": "wrong"}).status_code == 401
+    r = client.request(method, path, json={}, headers={"X-Api-Key": key})
+    assert r.status_code != 401, (path, r.text)                                            # anonymous + right key: in
+
+
+@pytest.mark.parametrize("method,path", [("PUT", "/api/settings/firecrawl"), ("POST", "/api/hunter/start"), ("POST", "/api/schedules"), ("POST", "/api/campaign")])
+def test_agent_key_does_not_unlock_settings_hunter_scheduler_campaign(client, method, path):
+    key = client.put("/api/settings/agent-key", headers=OWNER_H).json()["key"]
+    assert client.request(method, path, json={}, headers={"X-Api-Key": key}).status_code == 401
+
+
+def test_agent_key_rotate_invalidates_previous_key(client):
+    old = client.put("/api/settings/agent-key", headers=OWNER_H).json()["key"]
+    new = client.put("/api/settings/agent-key?rotate=true", headers=OWNER_H).json()["key"]
+    assert old != new
+    assert client.post("/api/inbox/drain", headers={"X-Api-Key": old}).status_code == 401
+    assert client.post("/api/inbox/drain", headers={"X-Api-Key": new}).status_code != 401
+
+
+def test_agent_key_delete_locks_the_door_again(client):
+    key = client.put("/api/settings/agent-key", headers=OWNER_H).json()["key"]
+    assert client.delete("/api/settings/agent-key", headers=OWNER_H).json()["configured"] is False
+    assert client.post("/api/inbox/drain", headers={"X-Api-Key": key}).status_code == 401
+
+
+def test_no_agent_key_configured_means_subset_stays_owner_only(client):
+    assert client.post("/api/inbox/drain", headers={"X-Api-Key": "anything"}).status_code == 401
+
+
 # --- AUTH_DISABLED --------------------------------------------------------------------------
 def test_auth_disabled_makes_everyone_owner(client, monkeypatch):
     monkeypatch.setenv("AUTH_DISABLED", "1")

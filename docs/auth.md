@@ -39,6 +39,30 @@ become a customer, so today the gate resolves to owner / anonymous.
    `auth.set_session_cookie(response, value)` right after Checkout).
 4. `POST /api/auth/logout` deletes the session row and clears the cookie.
 
+## Agent API key (non-interactive access to a crawl-firing subset)
+
+For an agent with no exe.dev account and no session cookie — e.g. a partner's crawler/reviewer
+running off this VM. `PUT /api/settings/agent-key` (owner-login only, add `?rotate=true` to replace
+an existing one) generates a key and returns it **once**, in that response only. Only its SHA-256
+hash is persisted (`settings.agent_key`, `app/settings.py: set_agent_key/check_agent_key`) — it is
+never stored in plaintext, never echoed by `GET /api/settings` (which shows only `{configured,
+created_at, rotated_at}`), and never logged. Losing the plaintext means rotating, not recovering it.
+`DELETE /api/settings/agent-key` revokes it outright.
+
+Send it as `X-Api-Key: <key>` on a request. It unlocks **only** `app/auth.py: AGENT_WRITE_PREFIXES`
+— deliberately a narrow subset of the owner-write matrix below, not owner access:
+
+| unlocked by a valid `X-Api-Key` | stays owner-login-only even with a valid key |
+|---|---|
+| `POST /api/crawl` | `/api/schedules`, `/api/settings*`, `/api/hunter*`, `/api/scheduler*`, `/api/campaign*` |
+| `POST /api/inbox/drain` | (spend controls, kill switches, config — human only) |
+| `POST /api/clinics/{id}/refetch-career` | |
+
+The key check is independent of `identity()`/sessions: it does not grant the `owner` role, does not
+pass `GET` owner-read gates (`/api/billing`, `/api/coverage`, …), and a wrong or missing key falls
+through to the normal 401. `app/auth.py: agent_key_ok()`/`agent_write_allowed()` are the single
+source of both the subset and the check, mirrored in `tests/test_auth.py`'s agent-key tests.
+
 ## What the middleware enforces
 
 | who | may |

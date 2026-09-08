@@ -312,9 +312,31 @@ OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
 OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl/runs", "/api/campaign")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 
+# Agent API key: a narrower door than a full owner login, for a non-interactive crawler/reviewer agent
+# (no exe.dev account, no session cookie). Deliberately a SUBSET of OWNER_WRITE_PREFIXES -- the crawl-firing
+# surface only. /api/settings, /api/hunter, /api/scheduler, /api/campaign (spend controls, kill switches,
+# config) stay owner-login-only even with a valid key.
+AGENT_WRITE_PREFIXES = ("/api/crawl", "/api/inbox/drain")
+AGENT_WRITE_RE = OWNER_WRITE_RE  # refetch-career: same narrow, per-clinic action
+
 
 def _prefixed(path, prefixes):
     return any(path == p or path.startswith(p + "/") for p in prefixes)
+
+
+def agent_write_allowed(method, path):
+    return method in WRITE_METHODS and (_prefixed(path, AGENT_WRITE_PREFIXES) or AGENT_WRITE_RE.match(path))
+
+
+def agent_key_ok(request):
+    """X-Api-Key header vs the hash set by PUT /api/settings/agent-key. No key configured -> always False
+    (the door stays owner-only until someone opts in). Only ever compares hashes -- the plaintext key is
+    never stored, so a DB read (or a GET /api/settings response) can't leak it."""
+    from . import settings as ST
+    given = request.headers.get("x-api-key")
+    if not given:
+        return False
+    return ST.check_agent_key(given)
 
 
 def required_role(method, path):
@@ -353,8 +375,11 @@ class AuthMiddleware:
         scope.setdefault("state", {})["identity"] = ident
         if auth_disabled():
             return await self.app(scope, receive, send)
-        need = required_role(scope.get("method", "GET"), scope.get("path", ""))
-        if not allowed(ident["role"], need) and scope.get("path", "").startswith("/api/"):
+        method, path = scope.get("method", "GET"), scope.get("path", "")
+        need = required_role(method, path)
+        if not allowed(ident["role"], need) and path.startswith("/api/"):
+            if need == "owner" and agent_write_allowed(method, path) and agent_key_ok(request):
+                return await self.app(scope, receive, send)
             resp = JSONResponse({"error": "owner only" if need == "owner" else "sign in required", "role": ident["role"],
                                  "login_url": "/__exe.dev/login?redirect=/pro"}, status_code=401)
             return await resp(scope, receive, send)

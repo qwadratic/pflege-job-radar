@@ -414,6 +414,19 @@ async def api_put_flags(request: Request):
         raise HTTPException(422, str(e))
 
 
+@app.put("/api/settings/agent-key")
+def api_put_agent_key(rotate: bool = False):
+    """Generate (or rotate) the agent API key. The plaintext is returned in THIS response only -- only its
+    hash is stored, so it never appears again (not in GET /api/settings, not in any log of this call)."""
+    return {"key": ST.set_agent_key(rotate=rotate), **ST.public_agent_key()}
+
+
+@app.delete("/api/settings/agent-key")
+def api_delete_agent_key():
+    ST.clear_agent_key()
+    return ST.public_agent_key()
+
+
 @app.get("/api/campaign")
 def api_campaign():
     """State of the Firecrawl-only reingest campaign (docs/campaign.md) -- owner-only, like /api/hunter."""

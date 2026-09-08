@@ -1,0 +1,14 @@
+{
+  "id": "intensiv_experienced",
+  "description": "synthetic: 6y ICU/anaesthesia nurse, GuK, C1 German, Munich -- same profile as tests/test_mech_cv_profile.py",
+  "cv_text": "Lebenslauf\nGesundheits- und Krankenpflegerin\n6 Jahre Berufserfahrung auf der Intensivstation, davon 2 Jahre Anästhesie / Aufwachraum\nBeatmung, Stroke Unit\nWohnort: München\nSprachen: Deutsch C1, Englisch B2\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft", "fachpflege"],
+    "qualifications_all": ["GuK"],
+    "departments_any": ["Intensiv/IMC", "Anästhesie"],
+    "experience_years": 6,
+    "languages_all": ["Deutsch C1", "Englisch B2"],
+    "cities_any": ["München"],
+    "min_matches": 1
+  }
+}

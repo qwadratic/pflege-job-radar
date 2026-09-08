@@ -1,0 +1,9 @@
+{
+  "id": "generalist_no_experience",
+  "description": "synthetic: fresh Pflegefachkraft, no ward/city stated -- edge case, expect a weak but non-empty match",
+  "cv_text": "Bewerbung\nExaminierte Pflegefachkraft, Berufsanfängerin\nSprachen: Deutsch Muttersprache\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft"],
+    "min_matches": 0
+  }
+}
