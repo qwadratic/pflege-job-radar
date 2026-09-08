@@ -26,6 +26,12 @@ from . import runs as R
 
 VENDOR_KINDS = {}                   # filled lazily from crawlers.routing.ADAPTERS
 POLITE_SLEEP = 1.0
+# 2026-09-08 run 69: remaining credits (26) minus reserve_credits (20) left a cap of 6 -- every one of 4
+# billable attempts in the district failed with the API's own "Agent reached max credits" (unbilled, but a
+# wasted attempt every time; app/settings.py's own HUNTER_DEFAULT.cap=120 comment says a 60 cap already fails
+# on a real board). Below this floor a Firecrawl attempt cannot plausibly succeed, so spend_gate() refuses
+# outright instead of submitting a doomed job.
+MIN_VIABLE_CAP = 40
 
 
 def _log(run_id):
@@ -181,19 +187,25 @@ def spend_gate(clinic, max_credits, probe_adapter=None, log=print):
         if urls and not unseen:
             return {"allowed": False, "cap": 0, "reason": "adapter covers it", "unseen": 0, **extra}
         cap = min(int(max_credits or 0), max(0, budget_cap))
-        if cap <= 0:
-            return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached", "unseen": len(unseen), **extra}
+        if cap < MIN_VIABLE_CAP:
+            return {"allowed": False, "cap": 0, "reason": _budget_thin_reason(cap), "unseen": len(unseen), **extra}
         return {"allowed": True, "cap": cap, "reason": f"{len(unseen)} unseen row(s) the adapter did not cover; {allowance}", "unseen": len(unseen), **extra}
     if free:
         cap = min(int(max_credits or 0), max(0, budget_cap))
-        if cap <= 0:
-            return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached", "unseen": None, **extra}
+        if cap < MIN_VIABLE_CAP:
+            return {"allowed": False, "cap": 0, "reason": _budget_thin_reason(cap), "unseen": None, **extra}
         return {"allowed": True, "cap": cap, "reason": f"unknown clinic (no adapter route); {allowance}", "unseen": None, **extra}
     max_eur = float(cfg.get("max_eur_unknown_clinic") or 5.0)
     cap = min(int(max_credits or 0), int(max_eur / eur_per_credit) if eur_per_credit > 0 else int(max_credits or 0), max(0, budget_cap))
-    if cap <= 0:
-        return {"allowed": False, "cap": 0, "reason": "reserve_credits floor reached, or max_eur_unknown_clinic caps it to 0", "unseen": None, **extra}
+    if cap < MIN_VIABLE_CAP:
+        return {"allowed": False, "cap": 0, "reason": _budget_thin_reason(cap) + ", or max_eur_unknown_clinic caps it too low", "unseen": None, **extra}
     return {"allowed": True, "cap": cap, "reason": f"unknown clinic (no adapter route); {allowance}", "unseen": None, **extra}
+
+
+def _budget_thin_reason(cap):
+    if cap <= 0:
+        return "reserve_credits floor reached"
+    return f"budget too thin for a viable attempt ({cap} credits available, need >= {MIN_VIABLE_CAP})"
 
 
 def _clinics_for_scope(scope, value):

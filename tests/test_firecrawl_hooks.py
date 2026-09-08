@@ -228,6 +228,20 @@ def test_spend_gate_unknown_clinic_blocked_by_reserve(client, monkeypatch):
     assert not gate["allowed"] and gate["cap"] == 0
 
 
+def test_spend_gate_refuses_a_cap_too_thin_to_ever_succeed(client, monkeypatch):
+    """2026-09-08 run 69: remaining 26 - reserve 20 = cap 6; every one of 4 attempts failed with the API's own
+    'Agent reached max credits' (a 60 cap already fails on a real board per HUNTER_DEFAULT's own comment).
+    Below MIN_VIABLE_CAP the gate must refuse outright instead of submitting a doomed job."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 26, "plan": 8000})
+    R.set_setting("firecrawl", {"eur_per_credit": 0.01, "max_eur_unknown_clinic": 5.0, "reserve_credits": 20})
+    gate = CR.spend_gate(CLINIC_UNKNOWN, max_credits=40, log=lambda *_: None)
+    assert not gate["allowed"] and gate["cap"] == 0 and "budget too thin" in gate["reason"] and "6 credits available" in gate["reason"]
+    monkeypatch.setattr(A, "rest_get", lambda path, params=None, **k: [])
+    gate = CR.spend_gate(CLINIC_KNOWN, max_credits=40, probe_adapter=lambda c: ["https://x/jobs/1"], log=lambda *_: None)
+    assert not gate["allowed"] and "budget too thin" in gate["reason"] and gate["unseen"] == 1
+
+
 def test_spend_gate_known_clinic_refuses_when_adapter_covers_it(client, monkeypatch):
     from pflege_jobs.sources import firecrawl_agent as FA
     monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
