@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <link rel="skill" type="text/markdown" href="/skill/pflege-jobs.skill.md">
 <meta name="ai-skill" content="/skill/pflege-jobs.skill.md">
-<meta name="ai-api" content="/api/clinics · /api/jobs · /api/search · https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/v_postings (Accept-Profile: pflege_jobs)">
+<meta name="ai-api" content="/api/clinics · /api/jobs · /api/search · https://supabase.int.exe.xyz/rest/v1/v_postings (Accept-Profile: pflege_jobs)">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Pflege-Stellen Bayern · Pro</title>
@@ -127,6 +127,11 @@ td .acts{display:flex;gap:4px;flex-wrap:nowrap}
 /* dialog / toast / tabs */
 dialog{border:1px solid var(--line);border-radius:0;padding:0;max-width:960px;width:calc(100% - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.6)} dialog::backdrop{background:rgba(0,0,0,.6)}
 .d{padding:20px 24px;max-height:85vh;overflow:auto}
+/* side panel: same <dialog>, flush right, full height -- progressive disclosure for the crawl plan gate */
+dialog.side{margin:0 0 0 auto;max-width:420px;width:420px;height:100vh;max-height:100vh;animation:slidein .15s ease-out}
+@keyframes slidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.gaterow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed var(--line)} .gaterow span{color:var(--ink-3)} .gaterow b{color:var(--neon)}
+.gatewarn{padding:10px 12px;border:1px solid var(--warn,#e5484d);color:var(--warn,#e5484d);margin:10px 0;font-size:13px}
 #toasts{position:fixed;right:16px;bottom:16px;z-index:60;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--ink);color:#0B0D12;padding:10px 14px;border-radius:0;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4)} .toast a{color:var(--blue)}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:12px;flex-wrap:wrap} .tabs button{background:transparent;border:0;border-bottom:2px solid transparent;padding:6px 10px;cursor:pointer;color:var(--ink-2);font-size:13px} .tabs button[aria-selected=true]{color:var(--neon);border-bottom-color:var(--neon)}
@@ -220,6 +225,7 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 </div></nav>
 <main class="wrap" id="view" aria-live="polite"></main>
 <dialog id="dlg"><div class="d" id="dlg-body"></div></dialog>
+<dialog id="plan-dlg" class="side"><div class="d" id="plan-dlg-body"></div></dialog>
 <div id="toasts" aria-live="polite"></div>
 <div id="tip" hidden role="tooltip"></div>
 
@@ -264,7 +270,8 @@ const I18N={
   h_scrape:"Clawl",lead_scrape:"Stellen von Klinik-Karriereportalen abrufen: gezielt jetzt, oder nach Zeitplan. Adapter lesen bekannte ATS-Boards direkt; der Firecrawl-Agent übernimmt alles andere (kostet Credits).",
   h_coverage:"Abdeckung nach Adapter",lead_coverage:"Die Firecrawl-Zeile ist jede Klinik ohne funktionierenden Adapter; ein Adapter, dessen Abdeckung % hinter den Nachbarn zurückbleibt, ist der nächste, den es zu reparieren gilt. Zeile anklicken öffnet die Kliniken mit diesem ATS.",cv_adapter:"Adapter",cv_clinics:"Kliniken",cv_routable:"routbar",cv_boards:"Boards",cv_withjobs:"mit Stellen",cv_open:"offen",cv_fresh:"frisch",cv_pct:"Abdeckung %",cv_lastrun:"letzter Lauf",cv_credits:"Firecrawl-Credits 7 T",cv_total:"gesamt",cv_unroutable:"nicht routbar",cv_norun:"noch kein Lauf",s_new:"Neuer Clawl",s_target:"Ziel",s_all:"alle Kliniken",s_bezirk:"Regierungsbezirk",s_city:"Ort",s_clinic:"Klinik",s_ats:"ATS-Anbieter",s_mode:"Modus",s_credits:"max. Firecrawl-Credits",s_details:"Detailseiten laden",s_preview:"Vorschau",
   m_auto:"auto",m_auto_x:"Adapter wenn vorhanden, sonst Firecrawl-Agent",m_adapter:"nur Adapter",m_adapter_x:"nur Kliniken mit bekanntem ATS-Board, keine Credits",m_firecrawl:"Firecrawl-Agent",m_firecrawl_x:"LLM-Agent liest das Karriereportal, verbraucht Credits",
-  pv_clinics:"Kliniken",pv_boards:"Boards",pv_adapter:"via Adapter",pv_firecrawl:"via Firecrawl",pv_walled:"Bot-Sperre",pv_credits:"geschätzte Credits",
+  pv_clinics:"Kliniken",pv_boards:"Boards",pv_adapter:"via Adapter",pv_firecrawl:"via Firecrawl",pv_walled:"Bot-Sperre",pv_credits:"geschätzte Credits",pv_skipped:"übersprungen",pv_credits_left:"Credits übrig diese Woche",
+  s_plan:"Plan anzeigen",s_gates:"Plan & Gates",s_cancel:"Abbrechen",s_blocked_all_fc:"Firecrawl läuft nie für alle Kliniken auf einmal — engeres Ziel wählen (Bezirk, Ort, ATS) oder Modus „auto“ nutzen.",s_over_budget:"Schätzung übersteigt das verbleibende Wochenbudget.",
   hu_title:"Hunter (Firecrawl-Dauerläufer)",hu_lead:"Ein Agent-Lauf pro Firecrawl-Klinik und UTC-Tag, N parallel. Stoppt bei (2 Nachladungen UND > 0,50 $ pro Stelle) ODER wenn alle Kliniken heute aktualisiert sind; davor bei allem Verdächtigen.",hu_running:"läuft",hu_enabled:"aktiv, wartet auf den Daemon",hu_daemon_off:"aktiv, aber kein Daemon (pflege-hunter.service nicht installiert)",hu_stopped:"gestoppt",hu_stop_reason:"Stopp-Grund",hu_start:"Start",hu_stop:"Stopp",hu_started:"Hunter aktiviert – der Daemon nimmt es innerhalb von 60 s auf",hu_stopped_toast:"Hunter gestoppt – laufende Läufe enden noch",hu_targets:"Ziele erledigt / gesamt",hu_pending:"ausstehend",hu_skipped:"übersprungen",hu_manual:"manuell prüfen",hu_failed:"fehlgeschlagen",hu_credits:"Credits heute",hu_tokens:"Tokens heute",hu_new:"neue Stellen heute",hu_cost:"$ pro Stelle / Grenze",hu_refills:"Nachladungen / Grenze",hu_pools:"Konto: Credits · Tokens · freie Läufe",hu_free:"frei",hu_clinic:"Klinik",hu_status:"Status",hu_cap:"Cap",hu_rows:"Zeilen",hu_error:"Lauf / Fehler",hu_norows:"heute noch keine Ziele bearbeitet",
   h_schedules:"Zeitpläne",s_name:"Name",s_preset:"Vorlage",s_cron:"Cron",s_enabled:"aktiv",s_next:"nächster Lauf",s_last:"letzter Lauf",s_stagger:"verteilt über Tage",
   pr_weekly_staggered:"wöchentlich, über 7 Tage verteilt",pr_daily:"täglich",pr_weekdays:"werktags",pr_hourly:"stündlich",pr_custom:"eigener Cron",
@@ -308,7 +315,8 @@ const I18N={
   h_scrape:"Clawl",lead_scrape:"Fetch jobs from hospital career portals: targeted now, or on a schedule. Adapters read known ATS boards directly; the Firecrawl agent handles everything else (costs credits).",
   h_coverage:"Coverage by adapter",lead_coverage:"The Firecrawl row is every hospital without a working adapter; an adapter whose coverage % lags its neighbours is the next one to fix. Click a row to open the hospitals with that ATS.",cv_adapter:"Adapter",cv_clinics:"Hospitals",cv_routable:"routable",cv_boards:"Boards",cv_withjobs:"with jobs",cv_open:"open",cv_fresh:"fresh",cv_pct:"Coverage %",cv_lastrun:"last run",cv_credits:"Firecrawl credits 7 d",cv_total:"total",cv_unroutable:"not routable",cv_norun:"no run yet",s_new:"New Clawl",s_target:"Target",s_all:"all hospitals",s_bezirk:"District",s_city:"Town",s_clinic:"Hospital",s_ats:"ATS vendor",s_mode:"Mode",s_credits:"max Firecrawl credits",s_details:"fetch detail pages",s_preview:"Preview",
   m_auto:"auto",m_auto_x:"adapter where available, otherwise the Firecrawl agent",m_adapter:"adapter only",m_adapter_x:"only hospitals with a known ATS board, no credits",m_firecrawl:"Firecrawl agent",m_firecrawl_x:"an LLM agent reads the career portal, uses credits",
-  pv_clinics:"hospitals",pv_boards:"boards",pv_adapter:"via adapter",pv_firecrawl:"via Firecrawl",pv_walled:"bot wall",pv_credits:"estimated credits",
+  pv_clinics:"hospitals",pv_boards:"boards",pv_adapter:"via adapter",pv_firecrawl:"via Firecrawl",pv_walled:"bot wall",pv_credits:"estimated credits",pv_skipped:"skipped",pv_credits_left:"credits left this week",
+  s_plan:"Show plan",s_gates:"Plan & gates",s_cancel:"Cancel",s_blocked_all_fc:"Firecrawl never runs for every hospital at once — pick a narrower target (district, town, ATS) or switch to auto mode.",s_over_budget:"Estimate exceeds the remaining weekly budget.",
   hu_title:"Hunter (Firecrawl long-runner)",hu_lead:"One agent run per Firecrawl hospital per UTC day, N in parallel. Stops at (2 refills AND > $0.50 per posting) OR once every hospital is updated today; earlier on anything suspicious.",hu_running:"running",hu_enabled:"enabled, waiting for the daemon",hu_daemon_off:"enabled, but no daemon (pflege-hunter.service not installed)",hu_stopped:"stopped",hu_stop_reason:"stop reason",hu_start:"Start",hu_stop:"Stop",hu_started:"Hunter enabled – the daemon picks it up within 60 s",hu_stopped_toast:"Hunter stopped – runs in flight still finish",hu_targets:"targets done / total",hu_pending:"pending",hu_skipped:"skipped",hu_manual:"needs manual",hu_failed:"failed",hu_credits:"credits today",hu_tokens:"tokens today",hu_new:"new postings today",hu_cost:"$ per posting / bar",hu_refills:"refills / bar",hu_pools:"account: credits · tokens · free runs",hu_free:"free",hu_clinic:"Hospital",hu_status:"Status",hu_cap:"Cap",hu_rows:"Rows",hu_error:"Run / error",hu_norows:"no targets processed yet today",
   h_schedules:"Schedules",s_name:"Name",s_preset:"Preset",s_cron:"Cron",s_enabled:"enabled",s_next:"next run",s_last:"last run",s_stagger:"spread over days",
   pr_weekly_staggered:"weekly, spread over 7 days",pr_daily:"daily",pr_weekdays:"weekdays",pr_hourly:"hourly",pr_custom:"custom cron",
@@ -396,6 +404,7 @@ const atsLabel=v=>v?(TAX?.ats_types?.[v]?.label||v):t("unknown_ats");
 function toast(html,ms=6000){ const n=el("div",{class:"toast",html}); $("#toasts").append(n); setTimeout(()=>n.remove(),ms); }
 function dialog(...kids){ const b=$("#dlg-body"); b.replaceChildren(...kids, el("div",{class:"row",style:"margin-top:14px"},el("span",{class:"sp"}),el("button",{class:"btn",type:"button",onclick:()=>$("#dlg").close(),text:t("b_close")}))); $("#dlg").showModal(); }
 $("#dlg").addEventListener("click",e=>{ if(e.target===$("#dlg")) $("#dlg").close(); });
+$("#plan-dlg").addEventListener("click",e=>{ if(e.target===$("#plan-dlg")) $("#plan-dlg").close(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ $("#sr").hidden=true; hideTip(); } });
 const scrapeLink=(scope,values,label,small=true)=>el("a",{class:"btn"+(small?" s":""),href:"#/clawl"+qs({scope,values}),title:t("b_scrape")+(label?" · "+label:""),onclick:e=>e.stopPropagation()},"⟳ "+t("b_scrape"));
 </script>
@@ -695,16 +704,40 @@ async function targetForm(init={}){
   root.get=()=>({scope,values:scope==="all"?[]:vals[scope]}); return root;
 }
 function modeSelect(value){ const s=el("select",{},...MODES.map(m=>el("option",{value:m,text:`${t("m_"+m)} — ${t("m_"+m+"_x")}`}))); s.value=value||"auto"; return s; }
+// The plan-gate panel: exactly what a run would do, with the one hard rule (Firecrawl refuses "all hospitals
+// at once") shown up front instead of as a surprise 400 after clicking run. Reuses the crawlers/routing.py +
+// spend_gate() logic already behind GET /api/crawl/plan and POST /api/crawl -- no new backend gate, just the
+// existing one made visible before it fires.
+function showPlanGate(tg,mode,credits,fetchDetails,r){
+  const blocked=tg.scope==="all"&&mode==="firecrawl";
+  const overBudget=mode!=="adapter"&&r.est_credits>r.credits_left;
+  const rows=[["pv_clinics",r.clinics],["pv_boards",r.boards],["pv_adapter",r.via_adapter],["pv_firecrawl",r.via_firecrawl],["pv_walled",r.walled],["pv_skipped",(r.skipped||[]).length],["pv_credits",r.est_credits],["pv_credits_left",r.credits_left]]
+    .map(([k,v])=>el("div",{class:"gaterow"},el("span",{text:t(k)}),el("b",{text:num(v)})));
+  const reasons=Object.entries((r.skipped||[]).reduce((a,s)=>{ a[s.reason||"?"]=(a[s.reason||"?"]||0)+1; return a; },{}))
+    .map(([reason,n])=>el("div",{class:"m"},`${n}× ${reason}`));
+  const confirm=el("button",{class:"btn n",type:"button",text:t("b_run")});
+  const cancel=el("button",{class:"btn",type:"button",text:t("s_cancel"),onclick:()=>$("#plan-dlg").close()});
+  confirm.disabled=blocked||!r.clinics;
+  confirm.addEventListener("click",async()=>{ confirm.disabled=true; try{ const res=await post("/api/crawl",{target:tg,scope:tg.scope,value:tg.values.join(","),mode,max_credits:credits,fetch_details:fetchDetails}); toast(t("t_started",{id:res.run_id})); $("#plan-dlg").close(); loadRuns(); }catch(e){ toast(t("t_err",{m:esc(e.message)})); confirm.disabled=false; } });
+  $("#plan-dlg-body").replaceChildren(el("h2",{text:t("s_gates")}),el("p",{class:"m",text:[t("s_"+tg.scope)||tg.scope,t("m_"+mode)].join(" · ")}),
+    blocked?el("div",{class:"gatewarn",text:t("s_blocked_all_fc")}):null,
+    !blocked&&overBudget?el("div",{class:"gatewarn",text:t("s_over_budget")}):null,
+    ...rows,reasons.length?el("div",{style:"margin-top:8px"},...reasons):null,r.sample?.length?el("div",{class:"m",style:"margin-top:8px",text:r.sample.slice(0,6).join(" · ")+(r.sample.length>6?" …":"")}):null,
+    el("div",{class:"row",style:"margin-top:16px"},el("span",{class:"sp"}),cancel,confirm));
+  $("#plan-dlg").showModal();
+}
 async function pageScrape(p){
   SET=SET||await api("/api/settings").catch(()=>({})); const defCred=SET?.firecrawl?.default_max_credits||40;
   const tf=await targetForm({scope:p.scope,values:p.values?p.values.split(","):(p.value?[p.value]:[])});
   const mode=modeSelect(p.mode||"auto"), cred=el("input",{type:"number",min:"5",max:"400",value:String(p.max_credits||defCred),style:"width:90px"}), det=el("input",{type:"checkbox"});
-  const prev=el("div",{class:"prev"},el("span",{class:"m",text:t("loading")})); const start=el("button",{class:"btn n",type:"button",text:"⟳ "+t("b_run")});
-  const preview=debounce(async()=>{ const tg=tf.get(); try{ const r=await api("/api/crawl/plan"+qs({scope:tg.scope,values:tg.values,mode:mode.value,max_credits:+cred.value})); prev.replaceChildren(...[["pv_clinics",r.clinics],["pv_boards",r.boards],["pv_adapter",r.via_adapter],["pv_firecrawl",r.via_firecrawl],["pv_walled",r.walled],["pv_credits",r.est_credits]].map(([k,v])=>el("div",{},el("span",{text:t(k)}),el("b",{text:num(v)}))),r.sample?.length?el("div",{class:"m",style:"flex-basis:100%",text:r.sample.slice(0,6).join(" · ")+(r.sample.length>6?" …":"")}):null); start.disabled=!r.clinics; }catch(e){ prev.replaceChildren(el("span",{class:"m",text:t("t_err",{m:e.message})})); } },300);
-  tf.addEventListener("change",preview); mode.addEventListener("change",preview); cred.addEventListener("change",preview); preview();
-  start.addEventListener("click",async()=>{ start.disabled=true; try{ const tg=tf.get(); const r=await post("/api/crawl",{target:tg,scope:tg.scope,value:tg.values.join(","),mode:mode.value,max_credits:+cred.value,fetch_details:det.checked}); toast(t("t_started",{id:r.run_id})); loadRuns(); }catch(e){ toast(t("t_err",{m:esc(e.message)})); } start.disabled=false; });
+  const plan=el("button",{class:"btn n",type:"button",text:"⟳ "+t("s_plan")});
+  // Progressive disclosure: no live-updating strip on the page itself -- "Show plan" pulls GET /api/crawl/plan
+  // (the exact gate the run would hit) into a right-side panel with a Cancel, so what fires is never a surprise.
+  plan.addEventListener("click",async()=>{ plan.disabled=true; const tg=tf.get();
+    try{ const r=await api("/api/crawl/plan"+qs({scope:tg.scope,values:tg.values,mode:mode.value,max_credits:+cred.value})); showPlanGate(tg,mode.value,+cred.value,det.checked,r); }
+    catch(e){ toast(t("t_err",{m:esc(e.message)})); } plan.disabled=false; });
   const form=el("div",{class:"card hud"},el("h3",{text:t("s_new")}),el("div",{class:"two"},el("div",{},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_target")}),tf)),el("div",{},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_mode")}),mode),el("div",{class:"row",style:"margin-top:8px"},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_credits")}),cred),el("label",{class:"toggle"},det,t("s_details"))))),
-    el("div",{class:"f",style:"margin-top:12px"},el("span",{class:"lbl",text:t("s_preview")}),prev),el("div",{class:"row",style:"margin-top:10px"},el("span",{class:"sp"}),start));
+    el("div",{class:"row",style:"margin-top:12px"},el("span",{class:"sp"}),plan));
   // coverage by adapter (GET /api/coverage): which adapter covers how much; the Firecrawl row is the remainder
   const covBox=el("div",{},el("span",{class:"m",text:t("loading")}));
   const COV_COLS=[["clinics_labelled","cv_clinics"],["clinics_routable","cv_routable"],["boards","cv_boards"],["clinics_with_jobs","cv_withjobs"],["open_jobs","cv_open"],["fresh_jobs","cv_fresh"]];
