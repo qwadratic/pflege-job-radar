@@ -14,6 +14,12 @@ Read `references/api.md` before querying, `references/data-model.md` before inte
 `references/pipeline.md` before crawling or redeploying. Human docs: `/docs/overview.md`, `/docs/scraping.md`,
 `/docs/api.md`, `/docs/performance.md` on the board host (Docs tab).
 
+**Work API-level.** Everything above (`/api/*`, PostgREST, `POST /api/crawl`) is the interface. Do not open
+`/` or `/pro` in a browser, screenshot it, or drive it as a UI to get an answer — every number, list or
+match it shows comes from the same API you already have. Load the board frontend only when a human
+explicitly asks you to look at the frontend itself (a UI bug, a layout question, "does the Pro page render
+right") — not as a way to read data.
+
 ## Where things are
 
 | thing | value |
@@ -27,7 +33,7 @@ Read `references/api.md` before querying, `references/data-model.md` before inte
 | postings | `v_postings` (read), `postings` (+description), `posting_observations` (evidence) |
 | registry | `clinics` / `v_clinics` / `v_clinic_portals` — Krankenhausplan Bayern 2026, 407 sites (KeZ, Träger, Stufe, Bezirk, Betten, Fachrichtungen, careers_url, ats_type) |
 | taxonomy / patterns | `/api/taxonomy` (code → label), `/api/settings` → `patterns` (every regex the classifier uses; editable) |
-| helper script | `scripts/query.py` (PostgREST paging → json/csv/md) |
+| helper script | `skill/scripts/query.py` (PostgREST paging → json/csv/md; served copy at `web/skill/query.py`) |
 | source code | __REPO_URL__ |
 
 Scale: **do not hard-code numbers — call `GET /api/stats`** (open_jobs, fresh_jobs, clinics, clinics_with_jobs,
@@ -35,17 +41,20 @@ clinics_routable, last_crawl, firecrawl credits). History: before the 2026-09-06
 open postings from four sources; now only hospital career sites count.
 
 Three sources, precedence when they disagree: `krankenhausplan` (10, identity only) > `employer_ats` (20,
-adapters) = `firecrawl_agent` (25, agent-read career sites). `clinics.ats_type` names the adapter; ~175 of 407 sites
-are labelled, `dvinci` (11) has no adapter, ~230 sites are unlabeled → `routable=false` with a `route_reason`.
-Shared boards (Schön 7, kbo 9, Südostbayern 3, RHÖN 2) are fetched once and spread by link-clinics: a per-site
-count is a lower bound for group members.
+adapters) = `firecrawl_agent` (25, agent-read career sites). `clinics.ats_type` names the adapter; 294 of 407 sites
+are labelled, `dvinci` (13) now has an adapter (`crawl_dvinci`) and is fully routable. 113 sites have no `ats_type`
+label, but a generic `wp_jobs` fallback adapter routes many of those anyway — only 58 sites are actually
+`fetch=firecrawl` (mostly `ats_type=self_hosted`, 47) → `routable=false` with a `route_reason`.
+Shared boards (Schön 12, kbo — split across 5+ boards: kbo-iak 11, kbo-heckscher-klinikum 9, kbo-lmk 5, kbo-isk 4,
+umantis 2, 33 kbo sites total, Südostbayern 4, RHÖN 3) are fetched once per board and spread by link-clinics: a
+per-site count is a lower bound for group members.
 
 ## Rules
 
 1. Read from `/api/*` or PostgREST `v_postings` — never from job boards or clinic sites.
 2. Default filter = `status=open`, `verify=live`, hospital-linked (`clinic_id` set). Say which filters you used.
 3. `employer_class=unknown` means **unclassified**, not "not a hospital".
-4. Experienced-only database: no trainees, students, interns, non-nursing. `pflegehelfer` is included.
+4. Experienced-only database: no trainees, students, interns, non-nursing. `pflegehelfer` (assistants) is excluded too as of 2026-09-07 — only certified roles remain.
 5. Count clinics by `clinic_id`, never by employer name. Shared boards: a per-site count is a lower bound for group members.
 6. `status=open` = seen in the last scrape; `verify_status=live` = re-fetched. Never call a `gone` posting open.
 7. A clinic with `fetch=firecrawl` (no adapter) and no Firecrawl run yet may have jobs we cannot see — say so.
@@ -91,7 +100,7 @@ Terminology (TVöD, KeZ, GuK, Versorgungsstufe …): `/api/taxonomy` → `glossa
 ## Interpretation rules
 
 - `employer_class`: `clinic` = linked to a KeZ or keyword-clinic; `unknown` = **unclassified, not "not a hospital"**; `non_clinic` = Altenhilfe/ambulant/agency.
-- The DB is **experienced-nursing-only**: `nicht_pflege`, `ausbildung`, `werkstudent_praktikum` are refused at ingest (`patterns.json.excluded_role_classes`). `pflegehelfer` is included. `OP-Fachkraft` = `fachpflege`; `MFA`, `Stationsassistenz` = not nursing.
+- The DB is **experienced-nursing-only**: `nicht_pflege`, `ausbildung`, `werkstudent_praktikum`, and (since 2026-09-07) `pflegehelfer` are refused at ingest (`patterns.json.excluded_role_classes`). `OP-Fachkraft` = `fachpflege`; `MFA`, `Stationsassistenz` = not nursing.
 - `role_class`, `department_hint`, `qualification_hint` come from title/department text; the rule that fired is in `role_rule`. Null hint = not stated, not none.
 - `enr_*` exist only where a description was fetched; `enr_housing=false` = not mentioned, null = no text.
 - `status=open` = seen in the latest crawl of its board; `verify_status`: `live` (re-fetched, title found), `gone` (→ expired), `blocked` (bot wall), `error` (JS page / 5xx). Never call `gone` open.

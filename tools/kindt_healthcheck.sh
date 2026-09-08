@@ -4,8 +4,8 @@
 # current directory, exercises every door kindt is supposed to have -- and a couple it should NOT
 # have -- and prints PASS/FAIL per check. No repo checkout needed: only curl + the env file.
 #
-#   cp .env.kindt.example .env.kindt   # fill in AGENT_API_KEY / SUPABASE_URL / SUPABASE_ANON_KEY
-#   bash tools/kindt_healthcheck.sh
+#   python tools/mint_kindt_env.py   # writes ./.env.kindt with a real key -- never prints it
+#   bash tools/kindt_healthcheck.sh  # from kindt's machine: scp/copy .env.kindt over first
 #
 # Not a dry run: it inserts one throwaway probe row into the live inbox (kind=probe, never becomes
 # a posting, harmless) and queues one real adapter-mode crawl (softgarden, free -- no Firecrawl

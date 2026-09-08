@@ -263,6 +263,18 @@ def test_no_agent_key_configured_means_subset_stays_owner_only(client):
     assert client.post("/api/inbox/drain", headers={"X-Api-Key": "anything"}).status_code == 401
 
 
+def test_gate_password_door_opens_skill_doc_not_the_dashboard(client):
+    """POST /api/auth/agent -- the gate's password field for a headless agent. Right key -> points at
+    the public skill doc, never a session/dashboard access; wrong/missing key -> 401, no cookie set."""
+    key = client.put("/api/settings/agent-key", headers=OWNER_H).json()["key"]
+    r = client.post("/api/auth/agent", json={"key": key})
+    assert r.status_code == 200 and r.json() == {"ok": True, "skill_url": "/skill/SKILL.md"}
+    assert "set-cookie" not in {k.lower() for k in r.headers}
+    assert client.get("/api/me").json()["role"] == "anonymous"          # did not log the caller in
+    assert client.post("/api/auth/agent", json={"key": "wrong"}).status_code == 401
+    assert client.post("/api/auth/agent", json={}).status_code == 401
+
+
 # --- AUTH_DISABLED --------------------------------------------------------------------------
 def test_auth_disabled_makes_everyone_owner(client, monkeypatch):
     monkeypatch.setenv("AUTH_DISABLED", "1")

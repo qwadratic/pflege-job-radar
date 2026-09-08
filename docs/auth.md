@@ -63,6 +63,19 @@ pass `GET` owner-read gates (`/api/billing`, `/api/coverage`, …), and a wrong 
 through to the normal 401. `app/auth.py: agent_key_ok()`/`agent_write_allowed()` are the single
 source of both the subset and the check, mirrored in `tests/test_auth.py`'s agent-key tests.
 
+**Gate page door** ("I'm an agent →" on the `/pro` login card): `POST /api/auth/agent {key}`
+(`api_auth_agent`) checks the same key and, on success, answers `{ok, skill_url: "/skill/SKILL.md"}`
+-- no cookie, no session, no dashboard. The gate's JS navigates straight to that URL, which
+`GET /skill/{name}` already serves unauthenticated. The check exists for the login UX (a wrong key
+gets an error, not a silent redirect to a page that needs no auth anyway) -- it never grants owner
+or customer role. `skill/SKILL.md` tells the agent to work API-level and only load the board
+frontend when a human explicitly asks it to look at the UI itself.
+
+**Never paste a minted key into a chat/agent transcript.** `tools/mint_kindt_env.py [--rotate]`
+mints or rotates the key and writes it straight into `.env.kindt` (gitignored) -- it never prints
+the value, so it can't leak into a log or a session transcript the way a `PUT
+/api/settings/agent-key` response pasted into chat would.
+
 ## What the middleware enforces
 
 | who | may |

@@ -297,6 +297,18 @@ def api_me(request: Request):
     return ident
 
 
+@router.post("/auth/agent")
+async def api_auth_agent(request: Request):
+    """The gate's password field for a non-interactive agent (no e-mail, no exe.dev account): checks
+    the same key AGENT_WRITE_PREFIXES uses, but never grants owner/customer access -- success just
+    tells the caller where the agent doc lives, GET is what actually serves it (already public)."""
+    from . import settings as ST
+    body = await request.json()
+    if ST.check_agent_key((body.get("key") or "").strip()):
+        return {"ok": True, "skill_url": "/skill/SKILL.md"}
+    return JSONResponse({"ok": False, "error": "invalid key"}, status_code=401)
+
+
 @router.get("/flags")
 def api_flags():
     """Public, unauthenticated: only the render-relevant subset of feature_flags (settings.PUBLIC_FLAG_KEYS),

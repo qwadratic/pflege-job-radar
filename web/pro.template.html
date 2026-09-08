@@ -286,7 +286,8 @@ const I18N={
   bc_h:"Kosten je Klinik",bc_lead:"Top-Kliniken nach USD im Zeitraum: Credits, gewonnene Stellen und Kosten je Stelle; die Haarlinie ist die $0,50-Grenze des Hunters. Zeile anklicken → Klinik.",bc_clinic:"Klinik",bc_usd:"USD",bc_credits:"Credits",bc_runs:"Läufe",bc_new:"Stellen gewonnen",bc_cpp:"Kosten je Stelle",bc_open:"offen",bc_last:"letzter Lauf",bc_none:"Keine Kosten je Klinik im Zeitraum.",bc_top:"Top {n} von {m}",
   st_h:"Crawling",st_auto:"Auto-Modus",st_auto_x:"Hunter: ein Firecrawl-Lauf je Klinik und UTC-Tag",st_parser:"Parser",st_parser_x:"Zeitpläne: Adapter-Läufe nach Cron",st_on:"an",st_off:"aus",st_paused:"pausiert",st_free:"freie Läufe heute",st_spark:"Kosten 7 T je Klinik",st_nospark:"noch keine Kosten je Klinik",st_parser_on:"Zeitpläne laufen wieder",st_parser_off:"Zeitpläne pausiert",st_credits_err:"Firecrawl nicht erreichbar",
   r_cost:"Kosten",r_log:"Log",
-  g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit exe.dev anmelden oder einen Anmelde-Link per E-Mail anfordern.",g_login:"Mit exe.dev anmelden",g_or:"oder",g_email:"E-Mail",g_send:"Link senden",g_sending:"sende …",g_sent:"Link gesendet",g_invalid:"Bitte eine gültige E-Mail-Adresse eingeben.",g_simple:"Zur einfachen Ansicht →"},
+  g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit exe.dev anmelden oder einen Anmelde-Link per E-Mail anfordern.",g_login:"Mit exe.dev anmelden",g_or:"oder",g_email:"E-Mail",g_send:"Link senden",g_sending:"sende …",g_sent:"Link gesendet",g_invalid:"Bitte eine gültige E-Mail-Adresse eingeben.",g_simple:"Zur einfachen Ansicht →",
+  g_agent_toggle:"Ich bin ein Agent →",g_agent_lead:"Agent-Key eingeben, um die Skill-Doku statt des Dashboards zu öffnen.",g_agent_ph:"Agent-Key",g_agent_send:"Öffnen",g_agent_bad:"Ungültiger Agent-Key."},
  en:{search_ph:"Search hospital, job, town, ATS … or upload a CV",cv_btn:"CV ↑",k_credits:"credits",nav_agents:"For agents",nav_simple:"Simple →",
   n_clinics:"Hospitals",n_cities:"Cities",n_jobs:"Jobs",n_scrape:"Clawl",n_docs:"Docs",n_settings:"Settings",n_plan:"Hospital plan",
   today:"today",yesterday:"yesterday",days_ago:"days ago",reset:"Reset",more:"More filters",less:"Less",all:"all",loading:"Loading …",err_load:"Failed to load",page:"Page",of:"of",total:"total",
@@ -329,7 +330,8 @@ const I18N={
   bc_h:"Cost per hospital",bc_lead:"Top hospitals by USD in the window: credits, postings gained and cost per posting; the hairline is the Hunter's $0.50 bar. Click a row → hospital.",bc_clinic:"Hospital",bc_usd:"USD",bc_credits:"Credits",bc_runs:"Runs",bc_new:"Postings gained",bc_cpp:"Cost per posting",bc_open:"open",bc_last:"last run",bc_none:"No cost per hospital in the window.",bc_top:"Top {n} of {m}",
   st_h:"Crawling",st_auto:"Auto mode",st_auto_x:"Hunter: one Firecrawl run per hospital per UTC day",st_parser:"Parser",st_parser_x:"Schedules: adapter runs by cron",st_on:"on",st_off:"off",st_paused:"paused",st_free:"free runs left today",st_spark:"Cost 7 d per hospital",st_nospark:"no cost per hospital yet",st_parser_on:"Schedules running again",st_parser_off:"Schedules paused",st_credits_err:"Firecrawl unreachable",
   r_cost:"Cost",r_log:"Log",
-  g_title:"Pro access",g_lead:"The Pro dashboard is for operators and customers. Sign in with exe.dev or request a sign-in link by e-mail.",g_login:"Sign in with exe.dev",g_or:"or",g_email:"E-mail",g_send:"Send link",g_sending:"sending …",g_sent:"Link sent",g_invalid:"Please enter a valid e-mail address.",g_simple:"Simple view →"}};
+  g_title:"Pro access",g_lead:"The Pro dashboard is for operators and customers. Sign in with exe.dev or request a sign-in link by e-mail.",g_login:"Sign in with exe.dev",g_or:"or",g_email:"E-mail",g_send:"Send link",g_sending:"sending …",g_sent:"Link sent",g_invalid:"Please enter a valid e-mail address.",g_simple:"Simple view →",
+  g_agent_toggle:"I'm an agent →",g_agent_lead:"Enter the agent key to open the skill doc instead of the dashboard.",g_agent_ph:"Agent key",g_agent_send:"Open",g_agent_bad:"Invalid agent key."}};
 let LANG=localStorage.getItem("lang")||(navigator.language||"de").slice(0,2); if(!I18N[LANG]) LANG="de";
 const t=(k,v)=>{let s=(I18N[LANG]||I18N.de)[k]??I18N.de[k]??k; if(v) for(const[a,b] of Object.entries(v)) s=String(s).replace("{"+a+"}",b); return s;};
 function setLang(l){ if(!I18N[l]) return; LANG=l; localStorage.setItem("lang",l); applyLang(); if(GATE.on) renderGate(GATE.me); else route(); }
@@ -1043,7 +1045,18 @@ function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gate
   const form=el("form",{novalidate:""},email,send); form.addEventListener("submit",async e=>{ e.preventDefault(); const v=email.value.trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ msg.className="msg err"; msg.textContent=t("g_invalid"); return; } send.disabled=true; msg.className="msg"; msg.textContent=t("g_sending"); try{ await post("/api/auth/magic",{email:v,redirect:"/pro"}); msg.textContent=t("g_sent"); }catch(err){ msg.className="msg err"; msg.textContent=t("t_err",{m:err.message}); } send.disabled=false; });
   const login=el("a",{class:"btn n",href:"/__exe.dev/login?redirect=/pro",text:t("g_login")});
   const lang=el("div",{class:"langsw",role:"group","aria-label":"Sprache / Language"},...["de","en"].map(l=>el("button",{type:"button","aria-pressed":String(l===LANG),onclick:()=>setLang(l),text:l.toUpperCase()})));
-  document.body.append(el("div",{class:"gate",id:"gate",role:"dialog","aria-modal":"true","aria-labelledby":"gate-h"},el("div",{class:"card hud"},el("h1",{id:"gate-h",text:t("g_title")}),el("p",{class:"lead",text:t("g_lead")}),login,el("div",{class:"or",text:t("g_or")}),form,msg,el("div",{class:"foot"},el("a",{class:"simple-l",href:"/",text:t("g_simple")}),lang)))); }
+  // Agent door: a non-interactive agent has no e-mail and no exe.dev account, only its API key.
+  // Success never lands on the dashboard -- it opens the skill doc, the only thing such an agent needs.
+  const agentMsg=el("div",{class:"msg","aria-live":"polite"});
+  const agentKey=el("input",{type:"password",required:"",autocomplete:"off",placeholder:t("g_agent_ph"),"aria-label":t("g_agent_ph")});
+  const agentSend=el("button",{type:"submit",class:"btn n",text:t("g_agent_send")});
+  const agentForm=el("form",{novalidate:"",hidden:true},el("p",{class:"m",text:t("g_agent_lead")}),el("div",{style:"display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"},agentKey,agentSend),agentMsg);
+  agentForm.addEventListener("submit",async e=>{ e.preventDefault(); agentSend.disabled=true; agentMsg.className="msg"; agentMsg.textContent="";
+    try{ const r=await post("/api/auth/agent",{key:agentKey.value}); if(r&&r.ok&&r.skill_url) location.href=r.skill_url; else throw new Error(t("g_agent_bad")); }
+    catch(err){ agentMsg.className="msg err"; agentMsg.textContent=t("g_agent_bad"); } agentSend.disabled=false; });
+  const agentToggle=el("a",{class:"simple-l",href:"#",text:t("g_agent_toggle")});
+  agentToggle.addEventListener("click",e=>{ e.preventDefault(); agentForm.hidden=!agentForm.hidden; if(!agentForm.hidden) agentKey.focus(); });
+  document.body.append(el("div",{class:"gate",id:"gate",role:"dialog","aria-modal":"true","aria-labelledby":"gate-h"},el("div",{class:"card hud"},el("h1",{id:"gate-h",text:t("g_title")}),el("p",{class:"lead",text:t("g_lead")}),login,el("div",{class:"or",text:t("g_or")}),form,msg,agentForm,el("div",{class:"foot"},el("a",{class:"simple-l",href:"/",text:t("g_simple")}),agentToggle,lang)))); }
 </script>
 <script>
 // ---- mock (offline demo: ?mock=1) — 50 deterministic hospitals -----------------------------------
