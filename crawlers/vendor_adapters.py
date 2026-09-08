@@ -843,7 +843,7 @@ VENDORS = {
 
 
 def load_clinics(vendors):
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ["SUPABASE_ANON_KEY"]
+    key = os.environ["SUPABASE_ANON_KEY"]
     r = requests.get(PROJECT + "/rest/v1/clinics?select=clinic_id,name,town,website,careers_url,ats_type"
                      "&ats_type=in.(%s)&limit=1000" % ",".join(vendors),
                      headers={"apikey": key, "Authorization": "Bearer " + key,

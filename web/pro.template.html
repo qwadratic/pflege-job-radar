@@ -229,7 +229,7 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 // ====================================================================================================
 // Pflege-Stellen Bayern — single-file SPA. Backend: /api/* (FastAPI on this host). ?mock=1 = offline demo data (50 hospitals).
 // ====================================================================================================
-const SUPABASE_URL="__SUPABASE_URL__", ANON="__SUPABASE_ANON_KEY__", REPO="__REPO_URL__";
+const REPO="__REPO_URL__";
 const $=s=>document.querySelector(s);
 const el=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a)){if(y==null||y===false)continue;x==="text"?e.textContent=y:x==="html"?e.innerHTML=y:x.startsWith("on")?e.addEventListener(x.slice(2),y):e.setAttribute(x,y);}k.flat(9).forEach(c=>c!=null&&c!==false&&e.append(c));return e;};
 const num=n=>n==null?"–":Number(n).toLocaleString(LANG==="de"?"de-DE":"en-GB");

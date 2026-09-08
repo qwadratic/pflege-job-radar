@@ -23,8 +23,13 @@ VENV_PY = ROOT / ".venv" / "bin" / "python"
 PYTHON = str(VENV_PY if VENV_PY.exists() else sys.executable)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://klkxfvieaxpjlplloljn.supabase.co").rstrip("/")
+# Anon key only, deliberately -- no service-role/secret key anywhere in this codebase. Reads are
+# already fully covered by the public_read RLS policy (sql/001_schema.sql); the one PostgREST write
+# this module makes (rest_post -> inbox) already works with the anon key too, same grant
+# web/collect.html's bookmarklet posts through (sql/010_inbox.sql). Anything needing more than that
+# (employers/observations/verify/clinics/... upserts) goes through the pflege-ingest edge function
+# and its own secret (PFLEGE_INGEST_SECRET), never this module.
 ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
-SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY") or ANON_KEY
 FIRECRAWL_API_KEY = os.environ.get("FIRECRAWL_API_KEY", "")
 LLM_API_BASE = os.environ.get("LLM_API_BASE", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-5.4-mini")
@@ -32,7 +37,7 @@ FRESH_DAYS = 7
 
 
 def rest_headers(write=False):
-    h = {"apikey": SECRET_KEY, "Authorization": "Bearer " + SECRET_KEY, "Accept-Profile": "pflege_jobs"}
+    h = {"apikey": ANON_KEY, "Authorization": "Bearer " + ANON_KEY, "Accept-Profile": "pflege_jobs"}
     if write:
         h["Content-Profile"] = "pflege_jobs"
         h["Content-Type"] = "application/json"

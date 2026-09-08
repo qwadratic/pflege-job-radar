@@ -229,7 +229,7 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 // ====================================================================================================
 // Pflege-Stellen Bayern — single-file SPA. Backend: /api/* (FastAPI on this host). ?mock=1 = offline demo data (50 hospitals).
 // ====================================================================================================
-const SUPABASE_URL="https://klkxfvieaxpjlplloljn.supabase.co", ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3hmdmllYXhwamxwbGxvbGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjEwOTgsImV4cCI6MjA4OTQ5NzA5OH0.S0ED1qBUyRDP0YSDVBQ0s_L5_tKdu4jsPsLmyUo1YCk", REPO="https://github.com/qwadratic/pflege-job-radar";
+const REPO="https://github.com/qwadratic/pflege-job-radar";
 const $=s=>document.querySelector(s);
 const el=(t,a={},...k)=>{const e=document.createElement(t);for(const[x,y]of Object.entries(a)){if(y==null||y===false)continue;x==="text"?e.textContent=y:x==="html"?e.innerHTML=y:x.startsWith("on")?e.addEventListener(x.slice(2),y):e.setAttribute(x,y);}k.flat(9).forEach(c=>c!=null&&c!==false&&e.append(c));return e;};
 const num=n=>n==null?"–":Number(n).toLocaleString(LANG==="de"?"de-DE":"en-GB");
