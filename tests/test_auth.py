@@ -209,7 +209,7 @@ def test_pages_served_to_anonymous_not_redirected(client):
 
 def test_required_role_matrix():
     rr = AU.required_role
-    assert rr("POST", "/api/crawl") == "owner" and rr("GET", "/api/crawl/runs") == "owner" and rr("GET", "/api/firecrawl/credits") == "owner" and rr("GET", "/api/crawl/plan") is None
+    assert rr("POST", "/api/crawl") == "owner" and rr("GET", "/api/crawl/runs") == "owner" and rr("GET", "/api/firecrawl/credits") == "owner" and rr("GET", "/api/crawl/plan") == "owner"
     assert rr("POST", "/api/clinics/36201/refetch-career") == "owner" and rr("GET", "/api/clinics/36201") is None
     assert rr("GET", "/api/billing") == "owner" and rr("GET", "/api/hunter/status") == "owner" and rr("GET", "/api/inbox") == "owner"
     assert rr("GET", "/pro") == "member" and rr("GET", "/autopilot/") == "member" and rr("GET", "/") is None

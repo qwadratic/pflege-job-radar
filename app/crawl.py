@@ -79,7 +79,18 @@ def kill_switch_pct(log=None):
 def kill_switch(run_mode=None, trigger=None, log=print):
     """(allowed: bool, reason: str|None). >=warn%: log only. >=throttle%: refuse for scheduled/auto runs,
     but an explicit mode='firecrawl' call is still allowed (logged). >=disable%: refuse every Firecrawl
-    call, manual included, and pause the scheduler (app/scheduler.py) so it stops firing anything."""
+    call, manual included, and pause the scheduler (app/scheduler.py) so it stops firing anything.
+
+    This is the one choke point execute() calls before any Firecrawl run -- so the two other documented
+    'stop everything' switches live here too, instead of being read by nobody (2026-09-08 API audit):
+    firecrawl.enabled (settings, app/settings.py's own docstring says 'no Firecrawl call at all') and the
+    reingest campaign's own stopped flag (app/campaign.py, POST /api/campaign)."""
+    if not _firecrawl_cfg().get("enabled", True):
+        return False, "firecrawl.enabled is false (Settings > Feature flags)"
+    from . import campaign as CAM
+    cam = CAM.get()
+    if cam.get("stopped"):
+        return False, f"campaign stopped: {cam.get('stop_reason') or 'no reason recorded'}"
     pct, (warn_t, throttle_t, disable_t) = kill_switch_pct(log=log)
     manual = run_mode == "firecrawl"
     if pct >= disable_t:

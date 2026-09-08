@@ -74,13 +74,20 @@ def _page(rows, limit, offset):
 
 # --- read -----------------------------------------------------------------------------------
 @app.get("/api/stats")
-def api_stats():
-    from pflege_jobs.sources import firecrawl_agent as FA
+def api_stats(request: Request):
     s = D.stats()
-    fc = FA.credits()
-    fc["spent_by_app"] = R.usage_total()
-    fc["spent_by_app_7d"] = R.usage_total(days=7)
-    fc["used_period"] = (fc["plan"] - fc["remaining"]) if isinstance(fc.get("plan"), int) and isinstance(fc.get("remaining"), int) else None
+    # the full balance/spend breakdown is what GET /api/firecrawl/credits and GET /api/billing 401 for --
+    # only the owner gets it here too; everyone else gets just enough for the header credits pill to render.
+    if request.state.identity["role"] == "owner":
+        from pflege_jobs.sources import firecrawl_agent as FA
+        fc = FA.credits()
+        fc["spent_by_app"] = R.usage_total()
+        fc["spent_by_app_7d"] = R.usage_total(days=7)
+        fc["used_period"] = (fc["plan"] - fc["remaining"]) if isinstance(fc.get("plan"), int) and isinstance(fc.get("remaining"), int) else None
+    else:
+        from pflege_jobs.sources import firecrawl_agent as FA
+        pub = FA.credits(tokens=False, historical=False)
+        fc = {"remaining": pub.get("remaining"), "plan": pub.get("plan")}
     s["firecrawl"] = fc
     s["next_autocrawl"] = S.next_run_at()
     s["active_runs"] = R.active_run_count()
@@ -214,9 +221,11 @@ async def api_crawl(request: Request):
         raise HTTPException(400, str(e))
     if not plan["clinics"]:
         raise HTTPException(404, "target matched no hospital")
-    if target["scope"] == "all" and mode == "firecrawl":
-        raise HTTPException(400, "refusing firecrawl for every hospital at once; use auto or a narrower target")
-    if mode == "firecrawl" and plan["credits_needed"] > plan["credits_left"]:
+    # keyed on the actual plan, not the mode string: mode="auto" routes every non-routable/walled clinic to
+    # Firecrawl too (crawl.py:plan_for), so {"scope":"all","mode":"auto"} used to skip both guards below.
+    if plan["firecrawl"] and target["scope"] == "all":
+        raise HTTPException(400, "refusing firecrawl for every hospital at once; use a narrower target")
+    if plan["firecrawl"] and plan["credits_needed"] > plan["credits_left"]:
         raise HTTPException(409, f"firecrawl budget exhausted: need up to {plan['credits_needed']}, {plan['credits_left']} left this week")
     params = {"max_credits": max_credits, "deep": bool(body.get("fetch_details", body.get("deep"))), "verify": body.get("verify", True), "target": target}
     rid = R.create_run(target["scope"], T.value_string(target), mode, params, [c["clinic_id"] for c in plan["clinics"]], trigger="api")

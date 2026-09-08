@@ -319,9 +319,13 @@ def api_flags():
 
 # --- middleware ----------------------------------------------------------------------------
 WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/inbox/drain", "/api/hunter", "/api/scheduler", "/api/campaign")
+OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/inbox/drain", "/api/hunter", "/api/scheduler", "/api/campaign",
+                        "/api/autopilot", "/api/autocrawl", "/api/mechanics")
 OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
-OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl/runs", "/api/campaign")
+# "/api/crawl" (not just "/api/crawl/runs") also covers GET /api/crawl/plan -- it previews the same
+# credits_left / per-clinic routing decision the gated endpoints above protect (2026-09-08 API audit).
+OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl", "/api/campaign",
+                       "/api/autopilot")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 
 # Agent API key: a narrower door than a full owner login, for a non-interactive crawler/reviewer agent

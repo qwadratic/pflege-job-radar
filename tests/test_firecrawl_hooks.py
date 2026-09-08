@@ -269,6 +269,26 @@ def test_spend_gate_adapter_probe_failure_refuses(client):
 
 
 # --- 24h kill switch -------------------------------------------------------------------------
+def test_kill_switch_refuses_when_firecrawl_disabled(client, monkeypatch):
+    """2026-09-08 API audit: firecrawl.enabled=False was only read by app/hunter.py -- POST /api/crawl and the
+    reingest campaign kept spending after the master switch was off. Now the one choke point checks it."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 7900, "plan": 8000})
+    R.set_setting("firecrawl", {"enabled": False})
+    allowed, reason = CR.kill_switch(run_mode="firecrawl", log=lambda *_: None)
+    assert not allowed and "firecrawl.enabled is false" in reason
+
+
+def test_kill_switch_refuses_when_campaign_stopped(client, monkeypatch):
+    from app import campaign as CAM
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 7900, "plan": 8000})
+    monkeypatch.setattr(R, "usage_total", lambda days=None, hours=None: 50)
+    CAM.save({"stopped": True, "stop_reason": "plateau: no growth in 5 ticks"})
+    allowed, reason = CR.kill_switch(run_mode="firecrawl", log=lambda *_: None)
+    assert not allowed and "campaign stopped" in reason and "plateau" in reason
+
+
 def test_kill_switch_ok_below_warn(client, monkeypatch):
     from pflege_jobs.sources import firecrawl_agent as FA
     monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 7900, "plan": 8000})

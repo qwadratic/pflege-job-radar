@@ -394,6 +394,8 @@ class Hunter:
     def _kill_switch(self):
         if stop_file().exists():
             return f"kill_switch: {stop_file()} exists"
+        # Kept as its own check (not just relying on CR.kill_switch(), which now also checks this): tests
+        # stub kill_switch_fn to isolate hunter's other stop rules, and this stays effective even then.
         if ST.get_firecrawl().get("enabled", True) is False:
             return "kill_switch: firecrawl.enabled is false"
         try:
