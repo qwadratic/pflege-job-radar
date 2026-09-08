@@ -1,7 +1,10 @@
 # Autopilot — candidate funnel, matching, clinic outreach
 
 **What:** the operator console for the recruiting side of the business: nurses arrive on WhatsApp (from Meta ads and landing pages), Luna (the agent) qualifies them and collects their documents, we match them against the clinics in the registry, send anonymised profiles (singly or as a cohort), and drive interview scheduling with the clinics by e-mail — with automatic follow-ups, human approvals where the risk is real, and a pause/stop switch on every conversation.
-**Route:** `/autopilot` (console) · **Dock:** the same inbox as a side panel on `/` and `/pro` (`/dock.js`).
+**Route:** `/autopilot` (console) -- **disabled 2026-09-08** (503, WIP: still needs real WhatsApp/e-mail wiring
+before it's worth exposing). Code, `/api/autopilot/*` and `web/autopilot.template.html` are untouched; re-enable
+in `app/main.py:autopilot_page`. **Dock:** the chat-dock side panel (`/dock.js`) no longer links into it either
+(off by default behind the `chats_dock` feature flag regardless).
 **Status:** proof of concept on synthetic data. Nothing here sends a real WhatsApp message or e-mail; the "accounts" are an inventory, the engine is a deterministic simulation with a virtual clock (`POST /api/autopilot/tick` advances it).
 
 ## Why these features, in this order

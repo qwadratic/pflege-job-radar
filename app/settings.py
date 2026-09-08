@@ -156,7 +156,9 @@ FEATURE_FLAGS_INFO = {
 
 FEATURE_STATUS_NOTES = [
     {"key": "autopilot", "label": "Autopilot console (/autopilot)",
-     "note": "Recruiting-funnel proof of concept on synthetic, seeded data. No real WhatsApp/e-mail/Meta integration is wired."},
+     "note": "WIP, route disabled 2026-09-08 (503) -- recruiting-funnel proof of concept on synthetic, seeded "
+             "data, no real WhatsApp/e-mail/Meta integration wired. Code and API untouched, needs more work "
+             "before it's worth exposing; not a runtime toggle -- re-enable in app/main.py:autopilot_page."},
     {"key": "tailnet_login", "label": "Tailnet login for /pro",
      "note": "Code path exists (identity() checks 100.64.0.0/10) but is inert: env TAILNET_TRUST is unset and this "
              "VM is not joined to a tailnet. Not a runtime toggle -- needs an auth key and a restart."},

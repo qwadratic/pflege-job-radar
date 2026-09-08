@@ -263,7 +263,8 @@
     var qParam = clinicId ? "clinic_id=" + encodeURIComponent(clinicId) : "posting_id=" + postingId;
     api("/matches?" + qParam + "&status=proposed,clinic_interested,sent").catch(function () { return { rows: [] }; })
       .then(function (r) { r = r || { rows: [] }; var n = (r.rows || []).length;
-        matchesLink.replaceChildren(el("a", { href: "/autopilot#/matching" }, [n + " " + t("ctx_matches")])); });
+        // /autopilot is WIP and disabled (app/main.py:autopilot_page) -- no link to it, just the count.
+        matchesLink.replaceChildren(el("span", {}, [n + " " + t("ctx_matches")])); });
     var deb;
     function loadCandidates(q) {
       picked.replaceChildren(el("p", { class: "pj-empty", text: t("loading") }));

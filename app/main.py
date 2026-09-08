@@ -533,11 +533,10 @@ def pro():
 @app.get("/autopilot")
 @app.get("/autopilot/")
 def autopilot_page():
-    """Operator console for the recruiting funnel (docs/autopilot.md). Built from web/autopilot.template.html by web/build.py."""
-    p = A.WEB_DIR / "autopilot.html"
-    if not p.exists():
-        return PlainTextResponse("web/autopilot.html not built yet — run `python web/build.py`", status_code=503)
-    return FileResponse(str(p), media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+    """Operator console for the recruiting funnel (docs/autopilot.md) -- WIP, route disabled 2026-09-08 (no
+    real WhatsApp/e-mail integration, synthetic seed data only, needs more work before it's worth exposing).
+    Code and web/autopilot.template.html are untouched; flip this back to the FileResponse below to re-enable."""
+    return PlainTextResponse("Autopilot console: work in progress, not available yet.", status_code=503)
 
 
 @app.get("/dock.js")
