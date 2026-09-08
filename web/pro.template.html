@@ -52,6 +52,7 @@ nav.main a .bd{font-size:10.5px;padding:0 5px;border-radius:0;background:var(--n
 .sr a small{color:var(--ink-3);margin-left:6px}
 .pill{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border:1px solid var(--line);border-radius:0;font-size:12px;color:var(--ink-2);white-space:nowrap;text-decoration:none;background:var(--surface)}
 .pill b{color:var(--neon);font-weight:500} .pill:hover{border-color:var(--neon);color:var(--ink)}
+.pill.warn{border-color:var(--red)} .pill.warn b{color:var(--red)}
 .tb-btn{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--line);border-radius:0;background:var(--surface);cursor:pointer;font-size:12.5px;text-decoration:none;color:var(--ink);white-space:nowrap}
 .tb-btn:hover{border-color:var(--neon);color:var(--neon)} .tb-btn.p{background:var(--blue);border-color:var(--blue);color:#fff} .tb-btn.p:hover{background:var(--blue-2);color:#fff}
 .langsw{display:inline-flex;border:1px solid var(--line);border-radius:0;overflow:hidden;background:var(--surface)}
@@ -250,7 +251,7 @@ const L=o=>o==null?"":(typeof o==="string"?o:(o[LANG]||o.de||o.en||""));   // {d
 <script>
 // ---- i18n ---------------------------------------------------------------------------------------
 const I18N={
- de:{search_ph:"Klinik, Stelle, Ort, ATS … suchen oder CV hochladen",cv_btn:"CV ↑",k_credits:"Credits",nav_agents:"Für Agenten",nav_simple:"Einfach →",
+ de:{search_ph:"Klinik, Stelle, Ort, ATS … suchen oder CV hochladen",cv_btn:"CV ↑",k_credits:"Credits",k_credits_low:"knapp — ein Lauf kann unter MIN_VIABLE_CAP fallen",nav_agents:"Für Agenten",nav_simple:"Einfach →",
   n_clinics:"Kliniken",n_cities:"Orte",n_jobs:"Stellen",n_scrape:"Clawl",n_docs:"Docs",n_settings:"Einstellungen",n_plan:"Krankenhausplan",
   today:"heute",yesterday:"gestern",days_ago:"Tage",reset:"Zurücksetzen",more:"Mehr Filter",less:"Weniger",all:"alle",loading:"Lade …",err_load:"Laden fehlgeschlagen",page:"Seite",of:"von",total:"gesamt",
   h_clinics:"Kliniken des Bayerischen Krankenhausplans",lead_clinics_a:"{n} Standorte (KeZ) aus dem ",lead_clinics_b:" — mit Karriereportal, ATS, Betten, Fachrichtungen und den offenen Pflege-Stellen je Klinik. Klinik anklicken → alle Stellen.",plan_link:"Krankenhausplan 2026",
@@ -295,7 +296,7 @@ const I18N={
   r_cost:"Kosten",r_log:"Log",
   g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit exe.dev anmelden oder einen Anmelde-Link per E-Mail anfordern.",g_login:"Mit exe.dev anmelden",g_or:"oder",g_email:"E-Mail",g_send:"Link senden",g_sending:"sende …",g_sent:"Link gesendet",g_invalid:"Bitte eine gültige E-Mail-Adresse eingeben.",g_simple:"Zur einfachen Ansicht →",
   g_agent_toggle:"Ich bin ein Agent →",g_agent_lead:"Agent-Key eingeben, um die Skill-Doku statt des Dashboards zu öffnen.",g_agent_ph:"Agent-Key",g_agent_send:"Öffnen",g_agent_bad:"Ungültiger Agent-Key."},
- en:{search_ph:"Search hospital, job, town, ATS … or upload a CV",cv_btn:"CV ↑",k_credits:"credits",nav_agents:"For agents",nav_simple:"Simple →",
+ en:{search_ph:"Search hospital, job, town, ATS … or upload a CV",cv_btn:"CV ↑",k_credits:"credits",k_credits_low:"low — a run can fall below MIN_VIABLE_CAP",nav_agents:"For agents",nav_simple:"Simple →",
   n_clinics:"Hospitals",n_cities:"Cities",n_jobs:"Jobs",n_scrape:"Clawl",n_docs:"Docs",n_settings:"Settings",n_plan:"Hospital plan",
   today:"today",yesterday:"yesterday",days_ago:"days ago",reset:"Reset",more:"More filters",less:"Less",all:"all",loading:"Loading …",err_load:"Failed to load",page:"Page",of:"of",total:"total",
   h_clinics:"Hospitals of the Bavarian state hospital plan",lead_clinics_a:"{n} sites (KeZ) from the ",lead_clinics_b:" — with career portal, ATS, beds, departments and the open nursing jobs per hospital. Click a hospital → all its jobs.",plan_link:"2026 Krankenhausplan",
@@ -379,7 +380,13 @@ async function taxonomy(){ if(!TAX) TAX=await api("/api/taxonomy").catch(()=>({}
 const tx=(map,key)=>(LANG==="en"&&TAX?.[map+"_en"]?.[key])||TAX?.[map]?.[key]||key;
 const fachLabel=code=>tx("fachrichtungen",code);
 const gl=term=>{ const g=TAX?.glossary?.[term]; return g?L(g):null; };
-async function loadStats(){ try{ STATS=await api("/api/stats"); const fc=STATS.firecrawl||{}; $("#k-fc").textContent=fc.remaining==null?"–":num(fc.remaining); $("#k-fc-a").title=`Firecrawl: ${fc.remaining} / ${fc.plan} · ${t("s_used")}: ${fc.used_period}`; renderNav(); }catch(e){ $("#k-fc").textContent="–"; } }
+async function loadStats(){ try{ STATS=await api("/api/stats"); const fc=STATS.firecrawl||{};
+    // 2026-09-08: balance sat near the reserve floor with no visible signal anywhere -- a run then burned
+    // several doomed attempts before anyone noticed (fixed server-side, app/crawl.py MIN_VIABLE_CAP=40).
+    // Warn here too, everywhere the pill shows, so a thin budget is never silently discovered by a failed run.
+    const low=typeof fc.remaining==="number"&&fc.remaining<50;
+    $("#k-fc").textContent=fc.remaining==null?"–":num(fc.remaining); $("#k-fc-a").classList.toggle("warn",low);
+    $("#k-fc-a").title=`Firecrawl: ${fc.remaining} / ${fc.plan} · ${t("s_used")}: ${fc.used_period}`+(low?` · ${t("k_credits_low")}`:""); renderNav(); }catch(e){ $("#k-fc").textContent="–"; } }
 
 // ---- tooltip (hover; tap on touch) --------------------------------------------------------------
 const TIP=$("#tip");
