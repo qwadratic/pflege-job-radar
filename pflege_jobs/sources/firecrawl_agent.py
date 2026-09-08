@@ -291,13 +291,16 @@ def _run_label(run_no):
 
 def _settle(j, api_used, before, session, run_no, job_id, log):
     """Measure the run's real cost as the balance deltas (credits and Extract tokens), attach them to the raw
-    answer as j['_cost'] and return the credits to charge the local ledger: the credit delta when it could be
-    measured (authoritative -- the API's creditsUsed is 0 inside the free allowance whatever the run consumed),
-    else the API's creditsUsed."""
+    answer as j['_cost'] and return the credits to charge the local ledger: the API's per-job creditsUsed when it
+    reports a charge (balance deltas are shared by concurrent jobs), else the measured delta (0 inside the free
+    allowance), else 0."""
     after = _balances(session)
     delta = _delta(before["credits"], after["credits"])
     tdelta = _delta(before["tokens"], after["tokens"])
-    charged = delta if delta is not None else int(api_used or 0)
+    # The API's creditsUsed is per job; the balance delta is shared by every job in flight at the same time (three
+    # concurrent hunter runs once booked 174 credits on one run and 0 on the other two). Prefer the per-job figure
+    # whenever the API reports a charge; fall back to the delta only inside the free allowance / when the API says 0.
+    charged = int(api_used) if api_used not in (None, "", 0, "0") and int(api_used) > 0 else (delta if delta is not None else 0)
     j["_cost"] = {"job_id": job_id, "api_credits_used": int(api_used or 0),
                   "credits_before": before["credits"], "credits_after": after["credits"], "credits_delta": delta,
                   "tokens_before": before["tokens"], "tokens_after": after["tokens"], "tokens_delta": tdelta,

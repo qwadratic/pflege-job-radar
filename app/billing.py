@@ -13,6 +13,7 @@ a crawl_runs row is free when it carries 0 credits / 0 tokens inside the day's f
 submissions of the UTC day). Buckets are UTC and continuous (empty buckets included).
 """
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -86,13 +87,23 @@ def _free_runs_per_day():
         return 5
 
 
+POOLS_TTL = timedelta(seconds=60)
+_POOLS_CACHE = {}                                    # {"at": datetime, "v": dict}; one FA.credits() per 60 s per process
+
+
 def _pools():
-    """FA.credits() with everything tolerated; {} when the module or the API is unreachable."""
+    """FA.credits() with everything tolerated ({} when the module or the API is unreachable), cached for POOLS_TTL:
+    the page fetches this endpoint for the badge and the view, and the pools change once per run at most."""
+    now = _now()
+    if _POOLS_CACHE and now - _POOLS_CACHE["at"] < POOLS_TTL:
+        return _POOLS_CACHE["v"]
     try:
         from pflege_jobs.sources import firecrawl_agent as FA
-        return FA.credits(timeout=10) or {}
+        v = FA.credits(timeout=10) or {}
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+        v = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+    _POOLS_CACHE.update(at=now, v=v)
+    return v
 
 
 def resolve_window(key, frm=None, to=None, granularity="auto", fc=None, now=None):
@@ -117,6 +128,8 @@ def resolve_window(key, frm=None, to=None, granularity="auto", fc=None, now=None
         t = min(t, now)
     elif key == "custom":
         f, t = _parse(frm), _parse(to) or now
+        if t and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(to).strip()):        # date-only 'to' is inclusive: end of that day
+            t = t + timedelta(days=1) - timedelta(seconds=1)
         if not f:
             raise HTTPException(400, "custom window needs from=ISO (and optional to=ISO)")
         if t < f:
@@ -280,7 +293,7 @@ def report(window="today", frm=None, to=None, granularity="auto"):
             cids = r.get("clinic_ids") if isinstance(r.get("clinic_ids"), list) else json.loads(r.get("clinic_ids") or "[]")
         except Exception:
             cids = []
-        cid = cids[0] if len(cids) == 1 else (str(r.get("value")) if r.get("scope") == "clinic" and len(cids) <= 1 and r.get("value") else None)
+        cid = cids[0] if cids else (str(r.get("value")) if r.get("scope") == "clinic" and r.get("value") else None)   # first clinic; 'clinics' = count
         out_runs.append({"run_id": r["run_id"], "at": _iso(r["_at"]), "clinic_id": cid, "clinic": _clinic_name(cid) if cid else None,
                          "clinics": len(cids), "scope": r.get("scope"), "value": r.get("value"), "mode": r.get("mode"), "trigger": r.get("trigger"),
                          "status": status, "credits": credits, "tokens": tokens, "rows": int(r.get("n_rows") or 0), "new": new,

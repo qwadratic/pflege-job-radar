@@ -452,14 +452,14 @@ class Hunter:
 
     # -- one pass
     def import_runs(self, day):
-        """Firecrawl runs of today that were not made through this state (tools/fc_hunt.py 'hunt', or a hunter
-        pass before a schema reset) become hunt_state rows, so a clinic that already had its run today is never
+        """Firecrawl runs of today that were not made through this state (tools/fc_hunt.py 'hunt', POST /api/crawl 'api',
+        experiments, or a hunter pass before a schema reset) become hunt_state rows, so a clinic that already had its run today is never
         run again. Per clinic: any done run -> done (its rows/new), else needs_manual; credits summed over all."""
         have = {r["clinic_id"] for r in state_rows(day)}
         by = {c["clinic_id"]: c for c in self.candidates()}
         with R._lock, R.db() as c:
             runs = c.execute("select run_id, value, status, n_rows, n_new, credits_used, error, params from crawl_runs where mode='firecrawl' and scope='clinic' "
-                             "and trigger in ('hunt','hunter') and finished_at >= ? and status in ('done','failed') order by run_id", (day,)).fetchall()
+                             "and finished_at >= ? and status in ('done','failed') order by run_id", (day,))   # any trigger: api/experiment runs count too.fetchall()
         per = {}
         for r in runs:
             if r["value"] in have or r["value"] not in by:

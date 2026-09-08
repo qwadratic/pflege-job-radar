@@ -48,3 +48,7 @@ data/autopilot.sqlite*
 # judge runner state (queue/mr files are written by the scheduled routines, not committed)
 .judge/*
 !.judge/config.json
+
+# hunter single-instance lock + stop file
+data/hunter.lock
+data/HUNTER_STOP

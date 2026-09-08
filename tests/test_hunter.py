@@ -290,15 +290,15 @@ def test_resume_imports_todays_hunt_runs(hdb):
     R.update_run(rb, status="failed", finished_at=R.now(), error="1 error(s), see log")
     ra0 = R.create_run("clinic", "A", "firecrawl", {"max_credits": 60}, ["A"], trigger="hunt")     # A's earlier failed try: credits add up, done wins
     R.update_run(ra0, status="failed", finished_at=R.now(), credits_used=5, error="1 error(s), see log")
-    rx = R.create_run("clinic", "C", "firecrawl", {"max_credits": 60}, ["C"], trigger="api")      # not a hunt run: ignored
+    rx = R.create_run("clinic", "C", "firecrawl", {"max_credits": 60}, ["C"], trigger="api")      # an API/experiment run counts too
     R.update_run(rx, status="done", finished_at=R.now(), n_rows=1)
     run = Runner({"C": [res("C", 9, rows=1, new=1, credits=47)]})
     reason = mk(cl, run).run_once(day)
     st = rows_by_id(day)
     assert st["A"]["status"] == "done" and st["A"]["run_id"] == ra and st["A"]["credits"] == 82 and st["A"]["new"] == 11 and st["A"]["cap"] == 120 and st["A"]["attempts"] == 2
     assert st["B"]["status"] == "needs_manual" and st["B"]["run_id"] == rb
-    assert run.calls == [("C", 120)] and st["C"]["status"] == "done" and reason.startswith("all_updated")
-    assert H.day_get(day, "credits_spent") == 129 and H.day_get(day, "new_postings") == 12 and H.day_get(day, "runs") == 4
+    assert run.calls == [] and st["C"]["status"] == "done" and st["C"]["run_id"] == rx and reason.startswith("all_updated")
+    assert H.day_get(day, "credits_spent") == 82 and H.day_get(day, "new_postings") == 11 and H.day_get(day, "runs") == 4   # A x2, B, C (api) imported; C not re-run
 
 
 def test_helpers(hdb):
@@ -371,8 +371,15 @@ def test_api_run_once(hclient):
 
 
 def test_daemon_polls_enabled_and_stop_reason(hdb, monkeypatch):
-    """The daemon runs a pass only while enabled and today's stop_reason is clear; otherwise it just polls."""
-    day = H.today()
+    """The daemon runs a pass only while enabled and today's stop_reason is clear; otherwise it just polls.
+    Deterministic: the clock is injected (no midnight roll-over between the test's `day` and the daemon's today()),
+    and a hunter pass still running in a thread from an earlier test is waited for (bounded) so its stop_reason /
+    enabled writes cannot land in this test's DB while the daemon polls."""
+    for t in threading.enumerate():
+        if t is not threading.current_thread() and t.name.startswith("hunter"):
+            t.join(15)
+    day = "2026-09-08"
+    monkeypatch.setattr(H, "today", lambda: day)
     calls = []
     h = mk(_pending(), run_fn=lambda c, cap: res("A", 1, rows=1, new=1))
     monkeypatch.setattr(h, "run_once", lambda d=None: calls.append(d) or "all_updated: x")

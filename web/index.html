@@ -69,7 +69,29 @@ select.sm{border:1px solid var(--line);background:#fff;padding:5px 8px;font-size
 [data-tip]{cursor:help;text-decoration:underline dotted var(--ink-3);text-underline-offset:3px} .tag[data-tip]{text-decoration:none}
 #tip{position:fixed;z-index:80;max-width:320px;background:var(--ink);color:#fff;padding:6px 9px;font-size:12px;line-height:1.4;pointer-events:none;white-space:pre-line} #tip b{color:var(--neon);display:block}
 footer{border-top:1px solid var(--line);padding:34px 0 50px;font-size:12px;color:var(--ink-3)} footer .in{display:flex;gap:22px;flex-wrap:wrap;max-width:1080px;margin:0 auto;padding:0 24px} footer a{color:var(--ink-2);text-decoration:none} footer a:hover{color:var(--accent);background:none;text-decoration:underline}
-@media(max-width:720px){.top .in{padding:10px 14px;gap:10px;flex-wrap:wrap} .lang{margin-left:auto} .wrap{padding:0 14px} .hero{padding:50px 0 34px} nav.main{width:100%;order:9;margin-left:0} .row{grid-template-columns:1fr} .row .n{text-align:left;font-size:16px} .row .n small{display:inline;margin-left:6px}}
+.badge{display:inline-block;background:var(--neon);color:var(--ink);font-size:10.5px;padding:0 6px;line-height:16px;margin-left:6px;vertical-align:1px;font-variant-numeric:tabular-nums}
+.tag.red{border-color:var(--red);color:var(--red)}
+/* home: towns */
+.cities{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:26px auto 0;max-width:820px} .cities .eyebrow{width:100%;margin:0 0 2px}
+.cities a,.cities button{text-decoration:none;color:var(--ink-2);background:#fff;border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:40px;display:inline-flex;align-items:center;gap:6px} .cities a b{font-weight:500;color:var(--ink)} .cities a:hover,.cities button:hover{background:var(--surface)} .cities button{color:var(--accent)}
+/* billing */
+.bl-win{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:18px} .bl-win .chip{padding:0 14px;font-size:13px;min-height:40px}
+.bl-custom{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;margin:0 0 22px;font-size:12.5px;color:var(--ink-2)} .bl-custom[hidden]{display:none} .bl-custom input{border:1px solid var(--line);background:#fff;padding:0 10px;font-size:13px;min-height:40px} .bl-custom button{background:var(--ink);color:#fff;border:0;padding:0 14px;min-height:40px}
+.bl-body.busy{opacity:.45;transition:opacity .2s}
+.bl-hero{display:flex;align-items:flex-end;gap:28px;flex-wrap:wrap;margin:6px 0 26px} .bl-hero b{font-family:"Archivo Black";font-weight:400;font-size:clamp(48px,7vw,84px);line-height:1;display:block;letter-spacing:-.02em} .bl-hero .sub{font-size:12.5px;color:var(--ink-2);max-width:44ch;padding-bottom:8px}
+.bl-chart{position:relative;margin-bottom:6px} .bl-chart svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.bl-chart .ax{font-size:11px;fill:var(--ink-3)} .bl-chart .grid{stroke:var(--line);stroke-width:1;shape-rendering:crispEdges} .bl-chart .dl{font-size:11px;fill:var(--ink-2)} .bl-chart .xh{stroke:var(--ink-3);stroke-width:1;shape-rendering:crispEdges;pointer-events:none}
+.bl-chart .bar.hot{opacity:.8}
+.bl-tip{position:absolute;z-index:5;pointer-events:none;background:var(--ink);color:#fff;padding:8px 10px;font-size:12px;line-height:1.5;min-width:190px} .bl-tip b{display:block;color:var(--neon);margin-bottom:2px} .bl-tip .r{display:flex;justify-content:space-between;gap:14px} .bl-tip .r span:last-child{font-weight:500;font-variant-numeric:tabular-nums} .bl-tip .k{opacity:.8} .bl-tip i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin-right:6px}
+.bl-leg{display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin:6px 0 30px} .bl-leg i{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-right:6px} .bl-leg .tb{margin-left:auto;background:#fff;border:1px solid var(--line);padding:0 12px;min-height:34px;font-size:12px;color:var(--ink-2)} .bl-leg .tb[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.bl-tbl,.bl-runs{width:100%;border-collapse:collapse;font-size:12.5px} .bl-tbl th,.bl-runs th{text-align:left;font-weight:400;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap} .bl-tbl td,.bl-runs td{padding:8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top} .bl-runs td.n{white-space:nowrap} .bl-runs td.wrap{overflow-wrap:anywhere} .bl-tbl .n,.bl-runs .n{text-align:right} .bl-tbl{margin-bottom:30px}
+.bl-runs a{text-decoration:none} .bl-runs a:hover{text-decoration:underline}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:1px;background:#fff;border:1px solid var(--line);margin-bottom:44px} .tile{background:#fff;box-shadow:0 0 0 1px var(--line);padding:14px 16px;min-height:100px} .tile span{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)} .tile b{display:block;font-family:"Archivo Black";font-weight:400;font-size:24px;line-height:1.2;margin-top:6px} .tile small{display:block;color:var(--ink-2);font-size:12px;margin-top:4px} .tile.bad b{color:var(--red)}
+.meter{height:6px;background:var(--surface);margin-top:10px;position:relative} .meter i{position:absolute;left:0;top:0;bottom:0;background:var(--accent)} .meter i.over{background:var(--red)} .meter em{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+@media(max-width:720px){.top .in{padding:10px 14px;gap:10px;flex-wrap:wrap} .lang{margin-left:auto} .wrap{padding:0 14px} .hero{padding:50px 0 34px} nav.main{width:100%;order:9;margin-left:0;flex-wrap:nowrap;overflow-x:auto;gap:0} nav.main a{padding:10px 8px;white-space:nowrap} .row{grid-template-columns:1fr} .row .n{text-align:left;font-size:16px} .row .n small{display:inline;margin-left:6px}
+  .bl-hero b{font-size:48px} .bl-leg .tb{margin-left:0} .tiles{grid-template-columns:repeat(2,1fr)} .tile{padding:12px} .tile b{font-size:20px}
+  .bl-runs thead{display:none} .bl-runs,.bl-runs tbody{display:block} .bl-runs tr{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);margin-bottom:8px;padding:6px 0} .bl-runs td{border:0;padding:4px 10px;text-align:left} .bl-runs td.n{text-align:left} .bl-runs td::before{content:attr(data-l);display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  .bl-tbl{display:block;overflow-x:auto}}
 </style>
 </head>
 <body>
@@ -109,7 +131,13 @@ const I18N={
   d_meta:"Stammdaten",d_operator:"Träger",d_district:"Regierungsbezirk",d_county:"Landkreis",d_level:"Versorgungsstufe",d_owner:"Trägerschaft",d_beds:"Betten",d_status:"Status",d_web:"Website",d_career:"Karriereseite",d_fach:"Fachrichtungen",d_jobs:"Stellen an dieser Klinik",
   j_source:"Originalanzeige öffnen",j_hospital:"Klinik",j_town:"Ort",j_pub:"Veröffentlicht",j_role:"Rolle",j_dept:"Fachbereich",j_qual:"Qualifikation",j_emp:"Arbeitszeit",j_contract:"Vertrag",j_desc:"Beschreibung",j_proof:"Web-Nachweis",
   cv_h:"Passende Stellen zu deinem Lebenslauf",cv_profile:"Erkanntes Profil",cv_wait:"Lebenslauf wird analysiert …",cv_none:"Keine passenden Stellen gefunden.",cv_years:"Jahre Erfahrung",match:"Treffer",
-  today:"heute",yesterday:"gestern",days:"Tage",back:"← zurück"},
+  today:"heute",yesterday:"gestern",days:"Tage",back:"← zurück",
+  h_towns:"Städte · offene Stellen",more_short:"mehr",n_billing:"Kosten",
+  b_e:"Kosten",b_h:"Firecrawl-Ausgaben",b_p:"Credits, Tokens und Läufe im gewählten Zeitraum. Preis in USD je Credit; Free-Runs kosten 0. Filter gelten für alles auf dieser Seite.",
+  w_today:"Heute",w_7:"7 T",w_30:"30 T",w_period:"Abrechnungszeitraum",w_custom:"Benutzerdefiniert",w_from:"von",w_to:"bis",w_apply:"Anwenden",
+  b_usd_in:"USD im Zeitraum",b_billable:"abrechenbare Credits",b_free:"Free-Run-Credits",b_table:"Tabelle",b_graph:"Grafik",b_bucket:"Abschnitt",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Läufe",b_usd:"USD",b_chart_aria:"Credits je Zeitabschnitt, abrechenbar und frei",
+  b_free_s:"frei",b_free_runs:"freie Läufe",b_bill_s:"abrechenbar",b_failed:"fehlgeschlagen",b_postings:"Stellen gewonnen",b_cpp:"Kosten je Stelle",b_cpp_bar:"Grenze $0,50",b_reloads:"Nachladungen",b_exa:"Exa USD",b_exa_note:"Periodensumme, keine Zeitreihe",b_pool:"Credits verbleibend",b_until:"bis",b_of:"von",
+  b_runs_h:"Läufe im Zeitraum",b_start:"Start",b_scope:"Umfang",b_mode:"Modus",b_status:"Status",b_rows:"Zeilen / neu",b_clinic:"Klinik",b_detail:"Details",b_run:"Lauf",b_stub:"Abrechnungsdaten noch nicht verfügbar — die API wird gerade gebaut.",b_none:"Keine Läufe im Zeitraum.",b_nodata:"Keine Daten im Zeitraum."},
  en:{pro_ui:"Pro view →",f_skill:"Skill for agents (single file)",n_clinics:"Hospitals",n_jobs:"Jobs",n_cities:"Cities",
   hero:"Open nursing jobs at Bavarian hospitals",hero_lead:"Every hospital in the Bavarian state hospital plan, every open job for qualified nurses — straight from the career portals, with proof.",
   q_ph:"Search hospital, job or town …",cv_hint:"Or upload a CV →",cv_link:"Upload a CV (PDF, DOCX)",cta:"See all jobs",
@@ -122,7 +150,13 @@ const I18N={
   d_meta:"Master data",d_operator:"Operator",d_district:"District",d_county:"County",d_level:"Care level",d_owner:"Ownership",d_beds:"Beds",d_status:"Status",d_web:"Website",d_career:"Careers page",d_fach:"Departments",d_jobs:"Jobs at this hospital",
   j_source:"Open original posting",j_hospital:"Hospital",j_town:"Town",j_pub:"Published",j_role:"Role",j_dept:"Department",j_qual:"Qualification",j_emp:"Hours",j_contract:"Contract",j_desc:"Description",j_proof:"Web proof",
   cv_h:"Jobs matching your CV",cv_profile:"Detected profile",cv_wait:"Analysing the CV …",cv_none:"No matching jobs found.",cv_years:"years of experience",match:"match",
-  today:"today",yesterday:"yesterday",days:"days ago",back:"← back"}};
+  today:"today",yesterday:"yesterday",days:"days ago",back:"← back",
+  h_towns:"Towns · open jobs",more_short:"more",n_billing:"Billing",
+  b_e:"Billing",b_h:"Firecrawl spend",b_p:"Credits, tokens and runs in the selected window. Price in USD per credit; free runs cost 0. Filters scope everything on this page.",
+  w_today:"Today",w_7:"7 d",w_30:"30 d",w_period:"Billing period",w_custom:"Custom",w_from:"from",w_to:"to",w_apply:"Apply",
+  b_usd_in:"USD in window",b_billable:"billable credits",b_free:"free-run credits",b_table:"Table",b_graph:"Chart",b_bucket:"Bucket",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Runs",b_usd:"USD",b_chart_aria:"Credits per bucket, billable and free",
+  b_free_s:"free",b_free_runs:"free runs",b_bill_s:"billable",b_failed:"failed",b_postings:"Postings gained",b_cpp:"Cost per posting",b_cpp_bar:"Bar $0.50",b_reloads:"Reloads",b_exa:"Exa USD",b_exa_note:"Period total, no series",b_pool:"Credits remaining",b_until:"until",b_of:"of",
+  b_runs_h:"Runs in window",b_start:"Start",b_scope:"Scope",b_mode:"Mode",b_status:"Status",b_rows:"Rows / new",b_clinic:"Hospital",b_detail:"Details",b_run:"Run",b_stub:"Billing data not available yet — the API is being built.",b_none:"No runs in window.",b_nodata:"No data in window."}};
 let LANG=localStorage.getItem("lang")||(navigator.language||"de").slice(0,2); if(!I18N[LANG]) LANG="de";
 const t=k=>(I18N[LANG]||I18N.de)[k]??I18N.de[k]??k;
 function applyLang(){ document.documentElement.lang=LANG; document.querySelectorAll("[data-i18n]").forEach(n=>n.textContent=t(n.dataset.i18n)); document.querySelectorAll(".lang button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.lang===LANG)); renderNav(); }
@@ -152,13 +186,17 @@ const term=(txt,key)=>{const g=gl(key||txt); return el("span",{"data-tip":g?(key
 
 // ---- router / nav ------------------------------------------------------------------------------
 const nav=h=>{location.hash=h;};
-function renderNav(){ const h=location.hash||"#/"; const items=[["#/","n_clinics",/^#\/($|clinic|cv)/],["#/jobs","n_jobs",/^#\/job/],["#/cities","n_cities",/^#\/cities/]]; $("#nav").replaceChildren(...items.map(([href,k,re])=>el("a",{href,class:re.test(h)?"on":"",text:t(k)}))); }
+let BILL_TODAY=null;                                   // today's USD for the header badge; null = API down/stub → badge hidden
+let TODAY_P=null,TODAY_AT=0; const billToday=()=>{ if(!TODAY_P||Date.now()-TODAY_AT>60e3){ TODAY_AT=Date.now(); TODAY_P=api("/api/billing?window=today"); } return TODAY_P; };   // shared by the badge and the page (window=today)
+function renderNav(){ const h=location.hash||"#/"; const items=[["#/","n_clinics",/^#\/($|\?|clinic|cv)/],["#/jobs","n_jobs",/^#\/job/],["#/billing","n_billing",/^#\/(billing|kosten)/]];
+  $("#nav").replaceChildren(...items.map(([href,k,re])=>el("a",{href,class:re.test(h)?"on":""},t(k),k==="n_billing"&&BILL_TODAY!=null?el("span",{class:"badge",text:usd(BILL_TODAY)}):null))); }
 window.addEventListener("hashchange",()=>{renderNav();route();});
 async function route(){ const v=$("#view"); const [path,q]=(location.hash.slice(1)||"/").split("?"); const g=Object.fromEntries(new URLSearchParams(q||"")); v.replaceChildren(el("p",{class:"empty",text:t("loading")})); window.scrollTo({top:0});
   try{ let m; let out;
     if(path==="/") out=await pageHome(g);
     else if(path==="/jobs") out=await pageJobs(g);
-    else if(path==="/cities") out=await pageCities(g);
+    else if(path==="/cities"){ location.replace("#/"); return; }          // Cities page retired → home (towns row)
+    else if(path==="/billing"||path==="/kosten") out=await pageBilling(g);
     else if(path==="/cv") out=pageCv();
     else if((m=path.match(/^\/clinic\/(.+)$/))) out=await pageClinic(m[1]);
     else if((m=path.match(/^\/job\/(\d+)$/))) out=await pageJob(m[1]);
@@ -191,7 +229,8 @@ async function pageHome(g){ await taxonomy(); const fc=await facets(); STATS=STA
   const hero=el("section",{class:"hero"},el("p",{class:"eyebrow",text:"Bayern · Krankenhausplan 2026"}),el("h1",{text:t("hero")}),el("p",{class:"lead",text:t("hero_lead")}),searchBox(),
     el("p",{class:"sec"},el("button",{type:"button",text:t("cv_link"),onclick:()=>$("#cv-file").click()})),el("input",{type:"file",id:"cv-file",accept:".pdf,.docx,.txt",hidden:true,onchange:e=>uploadCv(e.target.files[0])}),
     el("a",{class:"cta",href:"#/jobs",text:t("cta")}),
-    STATS?el("div",{class:"kpis"},kpi(STATS.clinics,"k_clinics"),kpi(STATS.open_jobs,"k_jobs"),kpi(STATS.fresh_jobs,"k_fresh"),kpi(fc.cities?.length,"k_cities")):null);
+    STATS?el("div",{class:"kpis"},kpi(STATS.clinics,"k_clinics"),kpi(STATS.open_jobs,"k_jobs"),kpi(STATS.fresh_jobs,"k_fresh"),kpi(fc.cities?.length,"k_cities")):null,
+    townChips(fc));
   const sec=el("section",{class:"block",id:"clinics"},el("div",{class:"hd"},el("div",{},el("p",{class:"eyebrow",text:t("e_clinics")}),el("h2",{text:t("h_clinics")}),el("p",{text:t("p_clinics")}))));
   const body=el("div"); const draw=()=>{ body.replaceChildren(chips(fc.regierungsbezirk||[],F.bez,v=>{F.bez=F.bez.includes(v)?F.bez.filter(x=>x!==v):[...F.bez,v];draw();}),
       el("div",{class:"filters"},cityPicker(F.city,v=>{F.city=v;draw();},fc.cities),el("label",{class:"tg"},el("input",{type:"checkbox",checked:F.withJobs,onchange:e=>{F.withJobs=e.target.checked;draw();}}),t("with_jobs"))),
@@ -213,9 +252,87 @@ async function pageJobs(g){ await taxonomy(); const fc=await facets(); J.q=g.q||
     body.replaceChildren(el("div",{class:"filters"},sel,cityPicker(J.city,v=>{J.city=v;draw();},fc.job_cities||fc.cities),el("label",{class:"tg"},el("input",{type:"checkbox",checked:J.fresh,onchange:e=>{J.fresh=e.target.checked;draw();}}),t("fresh_only")),J.q?el("span",{class:"tag",text:"„"+J.q+"“ ×",style:"cursor:pointer",onclick:()=>{J.q="";draw();}}):null),
       ...paged(jobRow,(off,lim)=>api("/api/jobs"+qs({q:J.q,role_class:J.role,city:J.city,fresh_days:J.fresh?7:"",sort:"-first_published",limit:lim,offset:off})),25)); };
   draw(); return [el("section",{class:"block",style:"border-top:0"},head,body)]; }
-async function pageCities(){ await taxonomy(); const rows=await api("/api/cities"); const list=el("div",{class:"list"}); rows.sort((a,b)=>(b.jobs_open||0)-(a.jobs_open||0)).forEach(c=>list.append(el("a",{class:"row",href:"#/?city="+encodeURIComponent(c.city)},
-    el("div",{},el("div",{class:"t"},c.city),el("div",{class:"m"},[c.regierungsbezirk,c.landkreis,num(c.clinics)+" "+t("hospitals")].filter(Boolean).join(" · "))),el("div",{class:"n"},num(c.jobs_open),el("small",{},t("jobs"),c.jobs_fresh?" · +"+c.jobs_fresh+" "+t("new"):"")))));
-  return [el("section",{class:"block",style:"border-top:0"},el("div",{class:"hd"},el("div",{},el("p",{class:"eyebrow",text:t("e_cities")}),el("h2",{text:t("h_cities")}),el("p",{text:t("p_cities")}))),list)]; }
+// Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; "mehr" reveals the rest.
+function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities)||[]; if(!src.length) return null; const TOP=12; const box=el("div",{class:"cities"});
+  const draw=all=>{ const rows=all?src:src.slice(0,TOP); box.replaceChildren(el("span",{class:"eyebrow",text:t("h_towns")}),...rows.map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))),
+    !all&&src.length>TOP?el("button",{type:"button",text:t("more_short")+" +"+(src.length-TOP),onclick:()=>draw(true)}):null); };
+  draw(false); return box; }
+
+// ---- billing (#/billing, alias #/kosten) --------------------------------------------------------
+// Contract: GET /api/billing?window=today|7d|30d|period|custom[&from=YYYY-MM-DD&to=YYYY-MM-DD] → {series,totals,by_kind,runs,pools}.
+// Everything on the page re-renders from that one fetch. Series colours (validated, light surface): billable #3b6fd6, free #3f9d3a.
+const B={win:"7d",from:"",to:"",table:false}; const C_BILL="#3b6fd6",C_FREE="#3f9d3a",USD_PER_CREDIT=0.0053;
+const usd=n=>n==null||isNaN(n)?"–":"$"+Number(n).toLocaleString(LANG==="de"?"de-DE":"en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
+const cmp=n=>n==null||isNaN(n)?"–":Math.abs(n)>=1e6?(n/1e6).toFixed(1).replace(/\.0$/,"")+"M":Math.abs(n)>=1e4?(n/1e3).toFixed(1).replace(/\.0$/,"")+"K":num(Math.round(n));
+const fmtDT=s=>s?new Date(s).toLocaleString(LANG==="de"?"de-DE":"en-GB",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"–";
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const bLabel=(at,gran)=>{ at=String(at||""); const m=at.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}))?/); if(!m) return at; if(gran!=="day"&&m[4]) return m[4]+":00"; return LANG==="de"?m[3]+"."+m[2]+".":MON[+m[2]-1]+" "+ +m[3]; };
+function normBilling(d){ d=d||{}; const T=d.totals||{},P=d.pools||{},pc=+(d.price_per_credit??USD_PER_CREDIT),gran=d.window?.granularity||"hour";
+  const series=(d.series||[]).map(b=>{const bill=+(b.credits_billable??0),free=+(b.credits_free??0); return {at:b.t??"",billable:bill,free,tokens:+(b.tokens??0),runs:+(b.runs??0),runs_free:+(b.runs_free??0),usd:+(b.usd??(bill*pc))};});
+  const sum=k=>series.reduce((a,b)=>a+(b[k]||0),0);
+  const tot={price:pc,usd:T.usd??sum("usd"),billable:T.credits_billable??sum("billable"),free:T.credits_free??sum("free"),tokens:T.tokens??sum("tokens"),runs:T.runs??sum("runs"),runs_free:T.runs_free,runs_billable:T.runs_billable,runs_failed:T.runs_failed,postings:T.new_postings,cpp:T.cost_per_posting_usd,reloads:T.refills,exa_usd:T.exa_usd,exa_series:false};
+  tot.credits=T.credits??(tot.billable+tot.free); if(tot.cpp==null&&tot.postings>0) tot.cpp=tot.usd/tot.postings;
+  const pools={credits:P.credits_remaining,credits_plan:P.credits_plan,tokens:P.tokens_remaining,tokens_plan:P.tokens_plan,period_end:P.period_end,period_start:P.period_start,free_left:P.free_runs_left_today};
+  const runs=(d.runs||[]).map(r=>{const free=!!r.free, cr=+(r.credits??0);
+    return {id:r.run_id,at:r.at,scope:r.scope,value:r.value,mode:r.mode,status:r.status,credits:cr,usd:r.usd??(free?0:cr*pc),free,n_rows:r.rows,n_new:r.new,clinic:r.clinic_id,clinic_name:r.clinic,n_clinics:+(r.clinics??0),trigger:r.trigger};});
+  return {series,tot,pools,runs,by_kind:d.by_kind||[],window:d.window||{},gran,fm:series.every(b=>!b.free)}; }   // fm: no free credits anywhere -> the green mark counts free runs
+const niceTicks=(max,n)=>{ const raw=max/n, p=Math.pow(10,Math.floor(Math.log10(raw||1))); const step=[1,2,2.5,5,10].map(s=>s*p).find(s=>s>=raw)||p*10; const top=Math.max(step,Math.ceil(max/step)*step); const out=[]; for(let v=0;v<=top+1e-9;v+=step) out.push(+v.toFixed(6)); return out; };
+function billingChart(d,mount){ const {series,gran,fm}=d; mount.replaceChildren(); if(!series.length){ mount.append(el("p",{class:"empty",text:t("b_nodata")})); return; }
+  const gap=2, mk=5, mg=2, marks=fm?Math.max(0,...series.map(b=>b.runs_free||0))*(mk+mg)+gap:0;                       // free-run marks: 5px squares stacked above the bar
+  const W=Math.max(280,Math.floor(mount.getBoundingClientRect().width)||640), narrow=W<520, H=(narrow?190:270)+marks, pl=narrow?36:46, pr=12, pt=20+marks, pb=26, iw=W-pl-pr, ih=H-pt-pb, n=series.length, slot=iw/n, bw=Math.min(24,Math.max(3,Math.floor(slot*.62)));
+  const max=Math.max(1,...series.map(b=>b.billable+b.free)), ticks=niceTicks(max,narrow?3:4), ymax=ticks[ticks.length-1]; const y=v=>pt+ih-(v/ymax)*ih, x=i=>pl+slot*i+(slot-bw)/2;
+  const NS="http://www.w3.org/2000/svg", s=(tag,a={},txt)=>{const e=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(a))e.setAttribute(k,v);if(txt!=null)e.textContent=txt;return e;};
+  const svg=s("svg",{viewBox:"0 0 "+W+" "+H,width:W,height:H,role:"img","aria-label":t("b_chart_aria")});
+  const lab=narrow&&ticks.length>3?[0,ticks[Math.floor((ticks.length-1)/2)],ymax]:ticks; ticks.forEach(v=>{ svg.append(s("line",{class:"grid",x1:pl,x2:W-pr,y1:y(v),y2:y(v)})); if(lab.includes(v)) svg.append(s("text",{class:"ax",x:pl-6,y:y(v)+4,"text-anchor":"end"},cmp(v))); });
+  const cap=(x0,yTop,h,r)=>"M"+x0+","+(yTop+r)+"a"+r+","+r+" 0 0 1 "+r+","+(-r)+"h"+(bw-2*r)+"a"+r+","+r+" 0 0 1 "+r+","+r+"v"+(h-r)+"h"+(-bw)+"z";  // 4px rounded data-end, square baseline
+  const maxI=series.reduce((m,b,i)=>b.billable+b.free>series[m].billable+series[m].free?i:m,0), every=Math.max(1,Math.ceil(n/(narrow?4:8))); const bars=[];
+  series.forEach((b,i)=>{ const x0=x(i), tot=b.billable+b.free, g=s("g",{class:"bar"}); let top=y(0);
+    if(b.billable>0){ const yt=y(b.billable), h=y(0)-yt; g.append(b.free>0?s("rect",{x:x0,y:yt+gap,width:bw,height:Math.max(0,h-gap),fill:C_BILL}):s("path",{d:cap(x0,yt,h,Math.min(4,h,bw/2)),fill:C_BILL})); top=yt; }   // the 2px surface gap sits between the segments; the baseline stays square
+    if(b.free>0){ const yt=y(tot), h=top-yt; if(h>0) g.append(s("path",{d:cap(x0,yt,h,Math.min(4,h,bw/2)),fill:C_FREE})); top=yt; }
+    if(fm) for(let k=0;k<(b.runs_free||0);k++){ top-=(k?mg:gap)+mk; g.append(s("rect",{x:x0+(bw-Math.min(mk,bw))/2,y:top,width:Math.min(mk,bw),height:mk,fill:C_FREE})); }
+    svg.append(g); bars.push(g);
+    if(i===0||i===n-1||(i%every===0&&i<n-1-every/2)) svg.append(s("text",{class:"ax",x:x0+bw/2,y:H-8,"text-anchor":"middle"},bLabel(b.at,gran)));   // the last label is forced; skip a periodic one that would touch it
+    if((i===maxI||i===n-1)&&tot>0) svg.append(s("text",{class:"dl",x:x0+bw/2,y:top-5,"text-anchor":"middle"},num(tot))); });
+  const xh=s("line",{class:"xh",y1:pt,y2:pt+ih,x1:-9,x2:-9}); xh.style.display="none"; svg.append(xh);
+  const hit=s("rect",{x:pl,y:0,width:iw,height:H,fill:"transparent"}); svg.append(hit);
+  const tip=el("div",{class:"bl-tip",hidden:true}); mount.append(svg,tip); let hot=-1;
+  const show=i=>{ if(i===hot) return; if(hot>=0) bars[hot].classList.remove("hot"); hot=i; const b=series[i]; bars[i].classList.add("hot"); const cx=x(i)+bw/2; xh.setAttribute("x1",cx); xh.setAttribute("x2",cx); xh.style.display="";
+    const row=(k,v,c)=>el("div",{class:"r"},el("span",{class:"k"},c?el("i",{style:"background:"+c}):null,k),el("span",{text:v}));
+    tip.replaceChildren(el("b",{text:bLabel(b.at,gran)}),row(t("b_bill_s"),num(b.billable)+" cr",C_BILL),fm?row(t("b_free_runs"),num(b.runs_free),C_FREE):row(t("b_free_s"),num(b.free)+" cr",C_FREE),row(t("b_tokens"),cmp(b.tokens)),row(t("b_runs"),num(b.runs)),row("USD",usd(b.usd))); tip.hidden=false;
+    const sc=mount.clientWidth/W, px=cx*sc, tw=tip.offsetWidth; tip.style.left=Math.max(0,px>mount.clientWidth/2?px-tw-14:Math.min(px+14,mount.clientWidth-tw))+"px"; tip.style.top=(pt*sc)+"px"; };
+  const hide=()=>{ if(hot>=0) bars[hot].classList.remove("hot"); hot=-1; tip.hidden=true; xh.style.display="none"; };
+  const at=e=>{ const rc=svg.getBoundingClientRect(); const px=(e.clientX-rc.left)*(W/rc.width); return Math.max(0,Math.min(n-1,Math.floor((px-pl)/slot))); };
+  hit.addEventListener("pointermove",e=>show(at(e))); hit.addEventListener("pointerdown",e=>show(at(e))); svg.addEventListener("pointerleave",hide); }
+function bucketTable({series,gran}){ const th=(k,c)=>el("th",{class:c,text:k}); return el("table",{class:"bl-tbl"},el("thead",{},el("tr",{},th(t("b_bucket")),th(t("b_bill_s"),"n"),th(t("b_free_s"),"n"),th(t("b_tokens"),"n"),th(t("b_runs"),"n"),th("USD","n"))),
+  el("tbody",{},...series.map(b=>el("tr",{},el("td",{text:bLabel(b.at,gran)}),el("td",{class:"n",text:num(b.billable)}),el("td",{class:"n",text:num(b.free)}),el("td",{class:"n",text:num(b.tokens)}),el("td",{class:"n",text:num(b.runs)}),el("td",{class:"n",text:usd(b.usd)}))))); }
+function runsTable(runs){ if(!runs.length) return el("p",{class:"empty",text:t("b_none")}); const th=(k,c)=>el("th",{class:c,text:t(k)}), td=(k,v,c)=>el("td",{class:c,"data-l":t(k)},v);
+  const st=r=>el("span",{class:"tag"+(r.status==="failed"||r.status==="error"?" red":r.status==="done"||r.status==="ok"?" neon":""),text:r.status||"–"});
+  const cut=(v,n)=>v.length>n?v.slice(0,n-3)+"…":v, scope=r=>{ const full=[r.scope,r.value].filter(Boolean).join(": ")||"–", name=r.scope==="clinic"?(r.clinic_name||r.clinic):null;   // clinic runs: first clinic +N; anything else truncated (full value in the title)
+    return el("span",{title:full,text:name?"clinic: "+cut(name,44)+(r.n_clinics>1?" +"+(r.n_clinics-1):""):cut(full,60)}); };
+  return el("table",{class:"bl-runs"},el("thead",{},el("tr",{},th("b_start"),th("b_scope"),th("b_mode"),th("b_status"),th("b_credits","n"),th("b_usd","n"),th("b_rows","n"),th("b_clinic"),th("b_detail"))),
+    el("tbody",{},...runs.map(r=>el("tr",{},td("b_start",fmtDT(r.at)),td("b_scope",scope(r),"wrap"),td("b_mode",r.mode||"–"),td("b_status",st(r)),td("b_credits",r.free?num(r.credits)+" · "+t("b_free_s"):num(r.credits),"n"),td("b_usd",usd(r.usd),"n"),td("b_rows",num(r.n_rows)+" / "+num(r.n_new),"n"),
+      td("b_clinic",r.clinic?el("a",{href:"#/clinic/"+encodeURIComponent(r.clinic),text:(r.clinic_name||r.clinic)+(r.n_clinics>1?" +"+(r.n_clinics-1):"")}):"–"),td("b_detail",r.id!=null?el("a",{href:"/pro#/clawl?run="+encodeURIComponent(r.id),text:t("b_run")+" →"}):"–"))))); }
+async function pageBilling(g){ if(g.window) B.win=g.window; if(g.from) B.from=g.from; if(g.to) B.to=g.to;
+  const head=el("div",{class:"hd"},el("div",{},el("p",{class:"eyebrow",text:t("b_e")}),el("h2",{text:t("b_h")}),el("p",{text:t("b_p")})));
+  const wins=[["today","w_today"],["7d","w_7"],["30d","w_30"],["period","w_period"],["custom","w_custom"]]; const winRow=el("div",{class:"bl-win"}); const custom=el("div",{class:"bl-custom"}); const body=el("div",{class:"bl-body"});
+  const from=el("input",{type:"date",value:B.from,"aria-label":t("w_from")}), to=el("input",{type:"date",value:B.to,"aria-label":t("w_to")});
+  custom.append(el("span",{text:t("w_from")}),from,el("span",{text:t("w_to")}),to,el("button",{type:"button",text:t("w_apply"),onclick:()=>{B.from=from.value;B.to=to.value;load();}}));
+  const drawWins=()=>{ winRow.replaceChildren(...wins.map(([v,k])=>el("button",{type:"button",class:"chip","aria-pressed":B.win===v,text:t(k),onclick:()=>{B.win=v;drawWins();if(v!=="custom"||(B.from&&B.to))load();}}))); custom.hidden=B.win!=="custom"; };
+  let cur=null;
+  const draw=()=>{ const d=cur; body.replaceChildren(); if(!d){ body.append(el("p",{class:"empty",text:t("b_stub")})); return; } const {series,tot,pools,runs,fm}=d;
+    body.append(el("div",{class:"bl-hero"},el("div",{},el("span",{class:"eyebrow",text:t("b_usd_in")}),el("b",{text:usd(tot.usd)})),el("div",{class:"sub",text:num(tot.billable)+" "+t("b_billable")+" · "+num(tot.free)+" "+t("b_free")+" · "+tot.price.toFixed(4)+" USD/credit"})));
+    const chart=el("div",{class:"bl-chart"}); const tbl=el("button",{type:"button",class:"tb","aria-pressed":B.table,text:B.table?t("b_graph"):t("b_table"),onclick:()=>{B.table=!B.table;draw();}});
+    const leg=el("div",{class:"bl-leg"},el("span",{},el("i",{style:"background:"+C_BILL}),t("b_billable")),el("span",{},el("i",{style:"background:"+C_FREE}),t(fm?"b_free_runs":"b_free")),tbl);
+    if(B.table) body.append(bucketTable(d),leg); else { body.append(chart,leg); requestAnimationFrame(()=>billingChart(d,chart)); if(!chart._ro&&window.ResizeObserver){ let w=0; chart._ro=new ResizeObserver(()=>{const nw=chart.clientWidth; if(nw&&Math.abs(nw-w)>8){w=nw;billingChart(d,chart);}}); chart._ro.observe(chart); } }
+    const tile=(k,v,sub,cls)=>el("div",{class:"tile"+(cls?" "+cls:"")},el("span",{text:t(k)}),el("b",{text:v}),sub?el("small",{text:sub}):null); const over=tot.cpp!=null&&tot.cpp>0.5;
+    const cppTile=tile("b_cpp",usd(tot.cpp),t("b_cpp_bar")+(tot.postings!=null?" · "+num(tot.postings)+" "+t("b_postings").toLowerCase():""),over?"bad":""); if(tot.cpp!=null) cppTile.append(el("div",{class:"meter"},el("i",{class:over?"over":"",style:"width:"+Math.min(100,tot.cpp/1*100)+"%"}),el("em",{style:"left:50%"})));
+    body.append(el("div",{class:"tiles"},tile("b_credits",cmp(tot.credits),num(tot.billable)+" "+t("b_bill_s")+" · "+num(tot.free)+" "+t("b_free_s")),tile("b_tokens",cmp(tot.tokens)),
+      tile("b_runs",num(tot.runs),[tot.runs_free!=null?num(tot.runs_free)+" "+t("b_free_s"):null,tot.runs_billable!=null?num(tot.runs_billable)+" "+t("b_bill_s"):null,tot.runs_failed!=null?num(tot.runs_failed)+" "+t("b_failed"):null].filter(Boolean).join(" · ")),
+      tile("b_postings",num(tot.postings)),cppTile,tile("b_reloads",num(tot.reloads)),tile("b_exa",usd(tot.exa_usd),tot.exa_series?null:t("b_exa_note")),
+      tile("b_pool",cmp(pools.credits)+(pools.credits_plan?" / "+cmp(pools.credits_plan):""),[pools.period_end?t("b_until")+" "+fmtD(pools.period_end):null,pools.tokens!=null?cmp(pools.tokens)+" "+t("b_tokens"):null,pools.free_left!=null?num(pools.free_left)+" free":null].filter(Boolean).join(" · "))));
+    body.append(el("p",{class:"eyebrow",text:t("b_runs_h")+" · "+runs.length}),runsTable(runs)); };
+  async function load(){ body.classList.add("busy"); try{ const d=B.win==="today"?await billToday():await api("/api/billing"+qs({window:B.win,from:B.win==="custom"?B.from:"",to:B.win==="custom"?B.to:""})); cur=d&&!d.stub&&!d.error?normBilling(d):null; if(cur&&B.win==="today"){ BILL_TODAY=cur.tot.usd; renderNav(); } }catch(e){ cur=null; } body.classList.remove("busy"); draw(); }
+  drawWins(); await load(); return [el("section",{class:"block",style:"border-top:0"},head,winRow,custom,body)]; }
 async function pageClinic(id){ await taxonomy(); const c=await api("/api/clinics/"+encodeURIComponent(id)); const jobs=c.jobs||[];
   const meta=el("div",{class:"card"},el("p",{class:"eyebrow",text:t("d_meta")}),el("dl",{},
     ...[["KeZ",term(c.clinic_id,"KeZ")],[t("d_operator"),c.operator],[t("d_district"),term(c.regierungsbezirk,"Regierungsbezirk")],[t("d_county"),c.landkreis],[t("d_level"),c.versorgungsstufe?term(tx("versorgungsstufe",c.versorgungsstufe),"Versorgungsstufe"):null],[t("d_owner"),c.traegerart?term(tx("traegerart",c.traegerart),"Träger"):null],[t("d_beds"),c.beds!=null?num(c.beds):null],[t("d_status"),c.status?term(tx("status",c.status),c.status):null],
@@ -255,10 +372,22 @@ function mockApi(path,opt){ const M=mockApi.D||(mockApi.D=(()=>{ let seed=11; co
   if((m=p.match(/^\/api\/jobs\/(\d+)$/))){ const j=M.jobs.find(x=>x.posting_id===+m[1]); return j?wrap(j):Promise.reject(new Error("404")); }
   if(p==="/api/cities"){ const by={}; M.clinics.forEach(c=>{const o=by[c.town]||(by[c.town]={city:c.town,regierungsbezirk:c.regierungsbezirk,landkreis:c.landkreis,clinics:0,jobs_open:0,jobs_fresh:0}); o.clinics++; o.jobs_open+=c.jobs_open; o.jobs_fresh+=c.jobs_fresh;}); return wrap(Object.values(by)); }
   if(p==="/api/search"){ const q=(g.q||"").toLowerCase(); return wrap({clinics:M.clinics.filter(c=>(c.name+c.town).toLowerCase().includes(q)).slice(0,6),jobs:M.jobs.filter(j=>(j.title+j.city).toLowerCase().includes(q)).slice(0,6),cities:[...new Set(M.clinics.map(c=>c.town))].filter(c=>c.toLowerCase().includes(q)).map(c=>({city:c}))}); }
+  if(p==="/api/billing"){ const w=g.window||"7d", now=new Date(), hourly=w==="today"; const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"), hh=d=>String(d.getHours()).padStart(2,"0");
+    const n=hourly?now.getHours()+1:w==="7d"?7:w==="30d"?30:w==="period"?now.getDate():(g.from&&g.to?Math.max(1,Math.min(120,Math.round((new Date(g.to)-new Date(g.from))/864e5)+1)):7); let s2=w.length*7+n; const r2=()=>(s2=(s2*16807)%2147483647)/2147483647;
+    const series=[]; for(let i=n-1;i>=0;i--){ const d=hourly?new Date(now.getFullYear(),now.getMonth(),now.getDate(),now.getHours()-i):new Date(now.getFullYear(),now.getMonth(),now.getDate()-i); const runs=Math.floor(r2()*3)+(r2()>.25?1:0), bill=runs&&r2()>.4?Math.floor(r2()*90):0, free=runs?Math.floor(r2()*40):0;
+      series.push({t:iso(d)+"T"+(hourly?hh(d):"00")+":00:00+00:00",credits_billable:bill,credits_free:free,tokens:(bill+free)*15,runs,runs_free:free?1:0,usd:+(bill*0.0053).toFixed(4)}); }
+    const sum=k=>series.reduce((a,b)=>a+b[k],0); const runs=[]; series.slice(-8).forEach((b,i)=>{ for(let k=0;k<Math.min(b.runs,2);k++){ const free=k===1||!b.credits_billable; const c=M.clinics[(i*3+k)%M.clinics.length];
+      runs.push({run_id:1000+i*3+k,at:b.t.slice(0,hourly?13:10)+(hourly?":"+String(10+k*7).padStart(2,"0")+":00":"T"+String(7+k*4).padStart(2,"0")+":12:00")+"+00:00",scope:free?"clinic":"district",value:free?c.clinic_id:c.regierungsbezirk,mode:k?"deep":"fast",status:k&&i%3===0?"failed":"done",credits:free?0:Math.round(b.credits_billable/2),free,rows:12+i*3,new:k?0:2+i,clinic_id:c.clinic_id,clinic:c.name,clinics:1,trigger:k?"manual":"schedule"}); } });
+    const usdT=+sum("usd").toFixed(2), postings=runs.reduce((a,r)=>a+(r.new||0),0);
+    return wrap({window:{key:w,from:series[0].t,to:series[series.length-1].t,granularity:hourly?"hour":"day"},price_per_credit:0.0053,currency:"USD",series,
+      totals:{usd:usdT,credits:sum("credits_billable")+sum("credits_free"),credits_billable:sum("credits_billable"),credits_free:sum("credits_free"),tokens:sum("tokens"),runs:runs.length,runs_free:runs.filter(r=>r.free).length,runs_billable:runs.filter(r=>!r.free).length,runs_failed:runs.filter(r=>r.status==="failed").length,new_postings:postings,cost_per_posting_usd:postings?+(usdT/postings).toFixed(3):null,refills:hourly?0:1,exa_usd:3.42},
+      by_kind:[{kind:"firecrawl_jobs",credits:sum("credits_billable")},{kind:"firecrawl_career",credits:sum("credits_free")}],runs:runs.reverse(),pools:{credits_remaining:4120,credits_plan:5000,tokens_remaining:61800,tokens_plan:75000,period_start:iso(new Date(now.getFullYear(),now.getMonth(),1)),period_end:iso(new Date(now.getFullYear(),now.getMonth()+1,0)),free_runs_left_today:3,agent_runs_today:2}}); }
   if(p==="/api/cv") return wrap({profile:{roles:["fachpflege"],departments:["Intensiv/IMC"],qualifications:["GuK"],cities:["Nürnberg"],experience_years:6,languages:["Deutsch C1"],skills:["Beatmung"]},matches:M.jobs.slice(0,8).map((j,i)=>({...j,score:95-i*6}))});
   return Promise.reject(new Error("mock: "+p)); }
 
 applyLang(); route();
+// Header badge: today's USD from the same endpoint, fetched once; stays hidden while the API is down or a stub.
+billToday().then(d=>{ if(d&&!d.stub&&!d.error&&(d.totals||d.series)){ BILL_TODAY=normBilling(d).tot.usd; renderNav(); } }).catch(()=>{});
 </script>
 <link rel="stylesheet" href="/dock.css">
 <script src="/dock.js" defer></script>
