@@ -307,9 +307,15 @@ def _settle(j, api_used, before, session, run_no, job_id, log):
                   "charged": charged, "run_number_today": run_no,
                   "free_run": (run_no <= FREE_RUNS_PER_DAY) if isinstance(run_no, int) else None}
     unk = lambda v: "unknown" if v is None else v  # noqa: E731
+    api_charged = api_used not in (None, "", 0, "0") and int(api_used) > 0
+    # DISAGREE only matters when delta is what gets charged (api_used <= 0, the free-run branch above) -- that's
+    # the only case a wrong delta could actually mischarge. When the API reports a real per-job charge, `charged`
+    # already uses THAT, ignoring delta entirely, so a gap is expected noise (three concurrent runs share the same
+    # balance reads: 2026-09-08 run 55 measured a 24-credit delta for a 20-credit job, the other 4 being a sibling
+    # run's charge landing inside this job's before/after window) and must not flag or trip the suspicious check.
     log(f"firecrawl agent job {job_id or '-'}: creditsUsed {int(api_used or 0)} (API); credits {before['credits']} -> {after['credits']}, "
         f"tokens {before['tokens']} -> {after['tokens']}: credits delta {unk(delta)}, tokens delta {unk(tdelta)}; charging {charged} -- {_run_label(run_no)}"
-        + (" -- API creditsUsed and balance delta DISAGREE" if delta is not None and delta != int(api_used or 0) else ""))
+        + (" -- API creditsUsed and balance delta DISAGREE" if not api_charged and delta is not None and delta != int(api_used or 0) else ""))
     return charged
 
 

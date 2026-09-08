@@ -364,6 +364,21 @@ def test_run_agent_charges_balance_delta_not_api_creditsused(monkeypatch):
     assert any("free daily run 1/5" in l for l in logged) and any("DISAGREE" in l for l in logged)
 
 
+def test_run_agent_concurrent_sibling_delta_noise_is_not_disagree(monkeypatch):
+    """2026-09-08 run 55: 3 hunter runs submitted concurrently share the same balance reads, so one job's
+    before/after window can catch a few credits a sibling run charged -- API said 20, measured delta was 24.
+    That gap wrongly flagged DISAGREE and tripped the hunter kill switch. When the API reports a real per-job
+    charge, `charged` already uses it (delta is irrelevant to what gets billed), so a gap here is expected
+    concurrency noise, not a discrepancy -- must not flag."""
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    logged = []
+    s = _Session(cost=24, balance=971, api_credits=20)          # balance drops 971 -> 947 (24), API charged 20
+    data, used, raw = FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=300, log=logged.append, session=s)
+    assert used == 20 and raw["_cost"]["credits_delta"] == 24
+    assert not any("DISAGREE" in l for l in logged)
+
+
 def test_run_agent_records_token_delta_next_to_credit_delta(monkeypatch):
     """2026-09-08: a batch of five runs moved the Extract pool 5685 -> 5280 and nobody could say which run did it.
     Both pools are read before submit and after the terminal status; both deltas land in the result and the log."""
