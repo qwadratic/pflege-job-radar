@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app import config as A                      # noqa: E402
 from app import crawl as CR                      # noqa: E402
 from app import data as D                        # noqa: E402
+from app import hunter as HU                      # noqa: E402  (MAX_CREDITS_RE, the same cap-ladder regex)
 from app import runs as R                        # noqa: E402
 from app import settings as ST                    # noqa: E402
 from pflege_jobs import classify as CL           # noqa: E402
@@ -57,7 +58,21 @@ def fc_rows(clinic, max_credits, log=print):
     cap = min(int(max_credits), max(0, budget_cap))
     if cap < CR.MIN_VIABLE_CAP:
         return None, f"budget too thin for a viable attempt ({cap} credits available, need >= {CR.MIN_VIABLE_CAP})"
-    res = FA.run_jobs_agent(clinic, max_credits=cap, log=log)
+    # Mirror app/hunter.py's cap ladder: one retry at a higher cap after an UNBILLED "Agent reached max
+    # credits" refusal -- a big board (900+ beds) can need more than a modest first attempt.
+    escalate_cap = min(200, max(0, budget_cap))
+    try:
+        res = FA.run_jobs_agent(clinic, max_credits=cap, log=log)
+    except FA.AgentFailed as e:
+        R.add_usage("jobs", clinic["clinic_id"], e.credits_used, job_id=getattr(e, "job_id", None))
+        if not HU.MAX_CREDITS_RE.search(str(e)) or escalate_cap <= cap:
+            return None, f"firecrawl agent failed: {str(e)[:200]}"
+        log(f"unbilled 'Agent reached max credits' at cap {cap} -> one retry at {escalate_cap}")
+        try:
+            res = FA.run_jobs_agent(clinic, max_credits=escalate_cap, log=log)
+        except FA.AgentFailed as e2:
+            R.add_usage("jobs", clinic["clinic_id"], e2.credits_used, job_id=getattr(e2, "job_id", None))
+            return None, f"firecrawl agent failed even at cap {escalate_cap}: {str(e2)[:200]}"
     R.add_usage("jobs", clinic["clinic_id"], res["credits_used"], job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
     log(f"firecrawl: {res['credits_used']} credits charged, {len(res['rows'])} rows")
     out = []
@@ -112,7 +127,7 @@ def main():
         print(f"firecrawl: SKIPPED -- {err}")
         return
 
-    gaps, filtered, extra = [], [], []
+    gaps, filtered = [], []
     for r in f_rows:
         if match(r, a_rows):
             continue
@@ -121,24 +136,33 @@ def main():
             filtered.append({**r, "role_class": role_class, "rule": rule})
         else:
             gaps.append({**r, "role_class": role_class, "rule": rule})
+    # The adapter's raw board scrape is PRE-classify (every job on the board, doctors/trainees/cleaners
+    # included) while f_rows is Firecrawl's OWN already-nursing-only answer -- comparing them raw would
+    # call every non-nursing adapter row a "miss". Classify the adapter side the same way so "extra" only
+    # ever means a real, explainable discrepancy, on both sides symmetrically.
+    fc_gap = []
     for r in a_rows:
-        if not match(r, f_rows):
-            extra.append(r)
+        if match(r, f_rows):
+            continue
+        role_class, rule = CL.classify_role(r["title"])
+        if role_class in C.EXCLUDED_ROLE_CLASSES:
+            continue                      # our own pipeline would drop this too -- not a real discrepancy
+        fc_gap.append({**r, "role_class": role_class, "rule": rule})
 
     print(f"\nmatched: {len(f_rows) - len(gaps) - len(filtered)}")
     print(f"\n--- ADAPTER GAP: Firecrawl found it, our pipeline would keep it, adapter never fetched it ({len(gaps)}) ---")
     for r in gaps:
         print(f"  {r['title']}  ({r['role_class']}:{r['rule']})\n    {r['url']}")
-    print(f"\n--- CORRECTLY FILTERED: Firecrawl found it, classify_role would exclude it ({len(filtered)}) ---")
+    print(f"\n--- CORRECTLY FILTERED (Firecrawl side): Firecrawl found it, classify_role would exclude it ({len(filtered)}) ---")
     for r in filtered:
         print(f"  {r['title']}  ({r['role_class']}:{r['rule']})\n    {r['url']}")
-    print(f"\n--- ADAPTER EXTRA: adapter found it, Firecrawl didn't ({len(extra)}) ---")
-    for r in extra:
-        print(f"  {r['title']}\n    {r['url']}")
+    print(f"\n--- FIRECRAWL GAP: adapter found a real nursing role, Firecrawl's own agent missed it ({len(fc_gap)}) ---")
+    for r in fc_gap:
+        print(f"  {r['title']}  ({r['role_class']}:{r['rule']})\n    {r['url']}")
 
     out_path = A.DATA_DIR / f"compare_{clinic['clinic_id']}.json"
     out_path.write_text(json.dumps({"clinic": clinic["name"], "clinic_id": clinic["clinic_id"], "adapter_rows": len(a_rows),
-                                     "firecrawl_rows": len(f_rows), "gaps": gaps, "correctly_filtered": filtered, "adapter_extra": extra}, ensure_ascii=False, indent=1))
+                                     "firecrawl_rows": len(f_rows), "gaps": gaps, "correctly_filtered": filtered, "firecrawl_gap": fc_gap}, ensure_ascii=False, indent=1))
     print(f"\nsaved: {out_path}")
 
 
