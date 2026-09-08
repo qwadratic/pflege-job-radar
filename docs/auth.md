@@ -55,7 +55,7 @@ in `app/auth.py` is the single source of the matrix.
 
 | var | default | meaning |
 |---|---|---|
-| `OWNER_EMAILS` | `ivan.d.kotelnikov@gmail.com` | comma list of owner addresses (case-insensitive) |
+| `OWNER_EMAILS` | `ukraine.bz1@gmail.com,ivan.d.kotelnikov@gmail.com` | comma list of owner addresses (case-insensitive) |
 | `SESSION_SECRET` | generated, stored in `settings.session_secret` | HMAC key for the `pj_session` cookie; rotating it logs everyone out |
 | `TAILNET_TRUST` | unset | `1` = requests from `100.64.0.0/10` are the owner |
 | `AUTH_DISABLED` | unset | `1` = everyone is `owner` via `disabled`, nothing is enforced. Local dev and tests only (`tests/conftest.py` sets it; `tests/test_auth.py` switches it off per test). Never set it on the VM. |
