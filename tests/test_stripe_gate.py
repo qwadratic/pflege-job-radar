@@ -14,6 +14,11 @@ from app import scheduler as S
 from app import schedules as SC
 from app import stripe_gate as SG
 
+
+def SG_ST():
+    from app import settings as ST
+    return ST
+
 OWNER = "owner@example.org"
 CUSTOMER = "clinic@example.org"
 OWNER_H = {"X-ExeDev-Email": OWNER}
@@ -82,10 +87,14 @@ def client(env):
 
 
 @pytest.fixture()
-def configured(monkeypatch):
+def configured(monkeypatch, env):
+    """Stripe fully wired: key + price + webhook secret, AND the feature_flags.stripe switch on (off by
+    default -- see test_settings_flags.py for the flag itself)."""
+    from app import settings as ST
     monkeypatch.setenv("STRIPE_SECRET_KEY", KEY)
     monkeypatch.setenv("STRIPE_PRICE_ID", "price_closed")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", WH)
+    ST.save_feature_flags({"stripe": True})
 
 
 def _customer_cookie(email=CUSTOMER, cus="cus_1"):
@@ -118,6 +127,7 @@ def test_503_paths_without_key(client, env):
 
 def test_checkout_needs_price_id(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", KEY)
+    SG_ST().save_feature_flags({"stripe": True})
     r = client.post("/api/stripe/checkout", json={"email": CUSTOMER})
     assert r.status_code == 503 and "price" in r.json()["error"]
     assert client.get("/api/stripe/status").json() == {**client.get("/api/stripe/status").json(), "configured": True, "price_id_set": False}
@@ -243,6 +253,7 @@ def test_webhook_rejects_bad_signature(client, env, configured):
 
 def test_webhook_needs_secret(client, monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", KEY)
+    SG_ST().save_feature_flags({"stripe": True})
     r = client.post("/api/stripe/webhook", content=b"{}", headers={"Stripe-Signature": "t=1,v1=00"})
     assert r.status_code == 503 and "webhook" in r.json()["error"]
 

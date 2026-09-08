@@ -405,6 +405,14 @@ async def api_put_firecrawl(request: Request):
     return ST.save_firecrawl(await request.json())
 
 
+@app.put("/api/settings/flags")
+async def api_put_flags(request: Request):
+    try:
+        return ST.save_feature_flags(await request.json())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
 @app.get("/api/firecrawl/credits")
 def api_credits():
     from pflege_jobs.sources import firecrawl_agent as FA

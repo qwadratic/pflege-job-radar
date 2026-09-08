@@ -84,7 +84,8 @@ def api_base():
 
 
 def configured():
-    return bool(secret_key())
+    from . import settings as ST                          # local import: avoids a settings<->stripe_gate import cycle
+    return bool(secret_key()) and ST.get_feature_flags().get("stripe", False)
 
 
 def _now():

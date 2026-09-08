@@ -163,6 +163,8 @@ details>summary{cursor:pointer;color:var(--ink-2);font-size:12.5px;margin:6px 0}
 .sw{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 10px 0 6px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;font-size:13px;color:var(--ink);white-space:nowrap}
 .sw i{position:relative;display:inline-block;width:34px;height:18px;background:var(--ink-3);transition:background .15s} .sw i::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;background:var(--bg);transition:transform .15s}
 .sw[aria-checked=true] i{background:var(--neon)} .sw[aria-checked=true] i::after{transform:translateX(16px)} .sw:hover{border-color:var(--neon)} .sw:disabled{opacity:.5;cursor:wait} .sw .st{color:var(--ink-3);font-size:11.5px}
+.flagrow{padding:10px 0;border-top:1px solid var(--line)} .flagrow:first-of-type{border-top:0} .flagrow>.m{margin:4px 0 0}
+.flagrow.off .dot.off{display:inline-block;width:7px;height:7px;background:var(--ink-3);margin-right:8px;vertical-align:middle}
 .spark{display:inline-flex;align-items:flex-end;gap:8px} .spark svg{display:block;height:40px;overflow:visible} .spark rect{cursor:pointer} .spark rect:hover{opacity:.8} .spark .ax{font-size:10px;fill:var(--ink-3)}
 /* billing */
 .bl-win{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px} .bl-win .chip{padding:0 14px;font-size:13px;min-height:40px;color:var(--ink-2)} .bl-win .chip[aria-pressed=true]{color:var(--neon);border-color:var(--neon);box-shadow:none;background:var(--surface)}
@@ -269,7 +271,7 @@ const I18N={
   h_runs:"Läufe",lead_runs:"Aktive Läufe werden alle 5 s aktualisiert.",r_id:"#",r_start:"Start",r_target:"Ziel",r_mode:"Modus",r_status:"Status",r_rows:"Zeilen",r_new:"neu",r_credits:"Credits",r_dur:"Dauer",
   h_inbox:"Inbox",i_waiting:"wartend",b_drain:"Inbox leeren",
   h_settings:"Einstellungen",lead_settings:"Jede Mechanik der Pipeline: Erklärung, Code, editierbare Muster, Live-Test und Tests. Änderungen an Mustern wirken sofort.",
-  s_patterns:"Muster",s_test:"Testtext",s_pname:"Name",s_regex:"Regex",s_raw:"Roh-JSON",s_form:"Formular",s_code:"So wird es verwendet (Code)",s_try:"Ausprobieren",s_result:"Ergebnis",s_rule:"Regel",s_tests:"Tests",s_passed:"bestanden",s_failed:"fehlgeschlagen",s_default_credits:"Standard max. Credits je Agent-Lauf",s_firecrawl:"Firecrawl",s_used:"verbraucht (Periode)",s_byapp:"davon durch diese App",s_period:"Periode endet",s_plan:"Plan",s_saveall:"Alle Muster speichern",
+  s_patterns:"Muster",s_test:"Testtext",s_pname:"Name",s_regex:"Regex",s_raw:"Roh-JSON",s_form:"Formular",s_code:"So wird es verwendet (Code)",s_try:"Ausprobieren",s_result:"Ergebnis",s_rule:"Regel",s_tests:"Tests",s_passed:"bestanden",s_failed:"fehlgeschlagen",s_default_credits:"Standard max. Credits je Agent-Lauf",s_firecrawl:"Firecrawl",s_used:"verbraucht (Periode)",s_byapp:"davon durch diese App",s_period:"Periode endet",s_plan:"Plan",s_saveall:"Alle Muster speichern",s_flags:"Feature-Flags",s_flags_lead:"Was fertig ist, ist im Produkt sichtbar. Was hier steht, ist es (noch) nicht — an oder aus, mit dem Grund.",s_flags_status_lead:"Nicht hier umschaltbar, aber der Vollständigkeit halber gelistet:",
   h_docs:"Dokumentation",g_hint:"Knoten anklicken → Felder und Bedeutung. Play startet die Animation des Datenflusses.",g_fields:"Felder",g_play:"Play",g_pause:"Pause",g_step:"Schritt",g_reset:"Reset",g_step_of:"Schritt {i} / {n}",
   h_cv:"Passende Stellen zu deinem Lebenslauf",cv_profile:"Erkanntes Profil",cv_matches:"Treffer",cv_none:"Keine passenden Stellen gefunden.",cv_llm:"mit LLM analysiert",cv_kw:"per Keyword-Analyse (kein LLM)",cv_years:"Jahre Erfahrung",cv_wait:"Lebenslauf wird analysiert …",
   a_title:"Für Agenten",a_hint:"Ein-Datei-Skill (Claude-Skill-Format): alles, was ein Agent braucht — API, Datenmodell, Pipeline.",
@@ -312,7 +314,7 @@ const I18N={
   h_runs:"Runs",lead_runs:"Active runs refresh every 5 s.",r_id:"#",r_start:"Started",r_target:"Target",r_mode:"Mode",r_status:"Status",r_rows:"Rows",r_new:"new",r_credits:"Credits",r_dur:"Duration",
   h_inbox:"Inbox",i_waiting:"waiting",b_drain:"Drain inbox",
   h_settings:"Settings",lead_settings:"Every mechanic of the pipeline: explanation, code, editable patterns, live try-out and tests. Pattern changes apply immediately.",
-  s_patterns:"Patterns",s_test:"Test text",s_pname:"Name",s_regex:"Regex",s_raw:"Raw JSON",s_form:"Form",s_code:"How it is used (code)",s_try:"Try it",s_result:"Result",s_rule:"Rule",s_tests:"Tests",s_passed:"passed",s_failed:"failed",s_default_credits:"Default max credits per agent run",s_firecrawl:"Firecrawl",s_used:"used (period)",s_byapp:"by this app",s_period:"period ends",s_plan:"plan",s_saveall:"Save all patterns",
+  s_patterns:"Patterns",s_test:"Test text",s_pname:"Name",s_regex:"Regex",s_raw:"Raw JSON",s_form:"Form",s_code:"How it is used (code)",s_try:"Try it",s_result:"Result",s_rule:"Rule",s_tests:"Tests",s_passed:"passed",s_failed:"failed",s_default_credits:"Default max credits per agent run",s_firecrawl:"Firecrawl",s_used:"used (period)",s_byapp:"by this app",s_period:"period ends",s_plan:"plan",s_saveall:"Save all patterns",s_flags:"Feature flags",s_flags_lead:"What is finished shows up in the product. What is listed here is not (yet) — on or off, with the reason.",s_flags_status_lead:"Not togglable here, listed for completeness:",
   h_docs:"Documentation",g_hint:"Click a node → fields and meaning. Play animates the data flow.",g_fields:"Fields",g_play:"Play",g_pause:"Pause",g_step:"Step",g_reset:"Reset",g_step_of:"step {i} / {n}",
   h_cv:"Jobs matching your CV",cv_profile:"Detected profile",cv_matches:"Matches",cv_none:"No matching jobs found.",cv_llm:"analysed with LLM",cv_kw:"keyword analysis (no LLM)",cv_years:"years of experience",cv_wait:"Analysing CV …",
   a_title:"For agents",a_hint:"Single-file skill (Claude skill format): everything an agent needs — API, data model, pipeline.",
@@ -850,11 +852,19 @@ async function pageSettings(){
   const rest=Object.keys(pat).filter(k=>k!=="version"&&!seen.has(k)).map(k=>el("div",{class:"card mech"},el("h2",{style:"font-size:15px",text:k}),...sectionForm(k)));
   const fc=STATS?.firecrawl||{}; const defc=el("input",{type:"number",min:"5",value:String(SET.firecrawl?.default_max_credits??40),style:"width:90px"});
   const saveFc=el("button",{class:"btn s p",type:"button",text:t("b_save"),onclick:async()=>{ try{ await put("/api/settings/firecrawl",{default_max_credits:+defc.value}); SET.firecrawl={...(SET.firecrawl||{}),default_max_credits:+defc.value}; toast(t("t_saved")); }catch(e){ toast(t("t_err",{m:esc(e.message)})); } }});
+  const flags=SET.feature_flags||{}, flagsInfo=SET.feature_flags_info||{}, statusNotes=SET.feature_status_notes||[];
+  const flagRows=Object.keys(flagsInfo).map(k=>{ const info=flagsInfo[k];
+    return el("div",{class:"flagrow"},switchBtn(info.label||k,info.note||"",!!flags[k],async next=>{ const r=await put("/api/settings/flags",{[k]:next}); SET.feature_flags=r; toast(t("t_saved")); return r[k]; }),el("p",{class:"m",text:info.note||""})); });
+  const statusRows=statusNotes.map(n=>el("div",{class:"flagrow off"},el("div",{class:"row"},el("span",{class:"dot off"}),el("b",{text:n.label})),el("p",{class:"m",text:n.note})));
+  const flagsCard=el("div",{class:"card"},el("h3",{text:t("s_flags")}),el("p",{class:"m",style:"margin:-4px 0 12px",text:t("s_flags_lead")}),...flagRows,
+    flagRows.length&&statusRows.length?el("hr",{style:"border:0;border-top:1px solid var(--line);margin:14px 0"}):null,
+    statusRows.length?el("p",{class:"m",style:"margin:0 0 8px",text:t("s_flags_status_lead")}):null,...statusRows);
   return [el("h1",{text:t("h_settings")}),el("p",{class:"lead",text:t("lead_settings")}),
     el("div",{class:"card"},el("div",{class:"row"},el("div",{class:"f",style:"flex:1"},el("span",{class:"lbl",text:t("s_test")}),sample),saveAll)),
     ...cards,...rest,
     el("div",{class:"two"},el("div",{class:"card"},el("h3",{text:t("s_firecrawl")}),el("div",{class:"grid"},el("div",{},el("span",{text:t("k_credits")}),num(fc.remaining)),el("div",{},el("span",{text:t("s_plan")}),num(fc.plan)),el("div",{},el("span",{text:t("s_used")}),num(fc.used_period)),el("div",{},el("span",{text:t("s_byapp")}),num(fc.spent_by_app)),el("div",{},el("span",{text:t("s_period")}),fmtD(fc.period_end)),el("div",{},el("span",{text:t("s_default_credits")}),el("div",{class:"row"},defc,saveFc)))),
-      el("div",{class:"card"},el("h3",{text:t("s_raw")}),rawTa,el("div",{class:"row",style:"margin-top:8px"},el("span",{class:"sp"}),rawApply)))];
+      el("div",{class:"card"},el("h3",{text:t("s_raw")}),rawTa,el("div",{class:"row",style:"margin-top:8px"},el("span",{class:"sp"}),rawApply))),
+    flagsCard];
 }
 
 // ---- docs + animated ontology -------------------------------------------------------------------
@@ -1028,7 +1038,7 @@ function crawlStrip({onHunter}={}){
 
 // ---- gate: GET /api/me → owner | customer render the dashboard; anonymous gets the Pro-Zugang card -------------------
 const GATE={on:false,me:null};
-async function gate(){ let me; try{ me=await api("/api/me"); }catch(e){ me={role:"anonymous",error:e.message}; } GATE.me=me; const ok=me&&me.role==="owner";   // customers get a view of their own once "Stelle besetzt" exists; until then the dashboard is owner-only GATE.on=!ok; if(ok){ $("#gate")?.remove(); return true; } renderGate(me); return false; }
+async function gate(){ let me; try{ me=await api("/api/me"); }catch(e){ me={role:"anonymous",error:e.message}; } GATE.me=me; const ok=me&&me.role==="owner"; /* customers: no dashboard view yet */ GATE.on=!ok; if(ok){ $("#gate")?.remove(); return true; } renderGate(me); return false; }
 function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gated"); document.getElementById("pj-dock")?.remove(); document.getElementById("pj-launcher")?.remove(); const email=el("input",{type:"email",required:"",autocomplete:"email",placeholder:"name@example.org","aria-label":t("g_email")}); const send=el("button",{type:"submit",class:"btn p",text:t("g_send")}); const msg=el("div",{class:"msg","aria-live":"polite"});
   const form=el("form",{novalidate:""},email,send); form.addEventListener("submit",async e=>{ e.preventDefault(); const v=email.value.trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ msg.className="msg err"; msg.textContent=t("g_invalid"); return; } send.disabled=true; msg.className="msg"; msg.textContent=t("g_sending"); try{ await post("/api/auth/magic",{email:v,redirect:"/pro"}); msg.textContent=t("g_sent"); }catch(err){ msg.className="msg err"; msg.textContent=t("t_err",{m:err.message}); } send.disabled=false; });
   const login=el("a",{class:"btn n",href:"/__exe.dev/login?redirect=/pro",text:t("g_login")});

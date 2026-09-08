@@ -127,7 +127,54 @@ def public_firecrawl():
 
 def get_all():
     return {"patterns": get_patterns(), "patterns_path": _patterns_path(), "scheduler": S.status(), "firecrawl": public_firecrawl(),
-            "hunter": get_hunter()}
+            "hunter": get_hunter(), "feature_flags": get_feature_flags(), "feature_flags_info": FEATURE_FLAGS_INFO,
+            "feature_status_notes": FEATURE_STATUS_NOTES}
+
+
+# --- feature flags: things that are real code paths but not production-ready. One place to see and toggle
+# them, so "is X finished" has an answer other than reading the diff. Only entries in FEATURE_FLAGS_DEFAULT
+# are actually togglable (save_feature_flags); FEATURE_STATUS_NOTES documents things this settings block
+# cannot safely toggle itself (an env var, a daemon with its own switch, a paused cloud routine) so they are
+# still visible in one place.
+FEATURE_FLAGS_DEFAULT = {"stripe": False}
+
+FEATURE_FLAGS_INFO = {
+    "stripe": {"label": "Stripe billing (pay-per-closed-posting)",
+               "note": "Scaffold only: no live key, no customer-facing UI, never charged anyone. Off by default; "
+                       "the checkout/webhook/usage endpoints 503 regardless of this flag until STRIPE_SECRET_KEY is "
+                       "also set. Turn on only after testing in Stripe test mode."},
+}
+
+FEATURE_STATUS_NOTES = [
+    {"key": "autopilot", "label": "Autopilot console (/autopilot)",
+     "note": "Recruiting-funnel proof of concept on synthetic, seeded data. No real WhatsApp/e-mail/Meta integration is wired."},
+    {"key": "tailnet_login", "label": "Tailnet login for /pro",
+     "note": "Code path exists (identity() checks 100.64.0.0/10) but is inert: env TAILNET_TRUST is unset and this "
+             "VM is not joined to a tailnet. Not a runtime toggle -- needs an auth key and a restart."},
+    {"key": "hunter", "label": "Firecrawl hunter (24/7 agent runner)",
+     "note": "Caused a credit overrun on 2026-09-08 (a daemon restart mid-run orphaned 3 jobs; fixed since). "
+             "Toggle from the Clawl page's Auto-Modus switch, not here."},
+    {"key": "judge_runner", "label": "Judge runner (scheduled bug-finder + MR proposer)",
+     "note": "Two cloud routines exist (judge-find 06:00 UTC, judge-propose 14:00 UTC) but are paused. gh is not "
+             "authenticated on this VM, so a proposal today is a pushed branch + e-mail, not a real pull request. "
+             "Manage at claude.ai/code/routines."},
+]
+
+
+def get_feature_flags():
+    return {**FEATURE_FLAGS_DEFAULT, **(R.get_setting("feature_flags") or {})}
+
+
+def save_feature_flags(obj):
+    """Validated merge into the 'feature_flags' settings block; only known keys are accepted."""
+    if not isinstance(obj, dict):
+        raise ValueError("feature flags must be a JSON object")
+    cur = get_feature_flags()
+    for k in FEATURE_FLAGS_DEFAULT:
+        if k in obj:
+            cur[k] = bool(obj[k])
+    R.set_setting("feature_flags", cur)
+    return get_feature_flags()
 
 
 def get_hunter():
