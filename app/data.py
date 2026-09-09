@@ -96,6 +96,12 @@ def _build():
         c["fachrichtungen"] = [x for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
         c["size"] = size_bucket(c.get("beds"), tax)
         c.update(agg.get(c["clinic_id"], {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0}))
+        # Display-only signal for a human sorting/scanning the clinic list -- a big hospital with very
+        # few open postings is worth a human's second look, but this number is never read by any
+        # automated decision (hunter/campaign/spend_gate do not import or sort on it): staffing ratios
+        # genuinely vary by hospital type/specialty, so a low number here is a prompt to go check, not
+        # evidence of anything on its own.
+        c["jobs_per_100_beds"] = round(c["jobs_open"] / c["beds"] * 100, 1) if c.get("beds") else None
         c.update(routing.get(c["clinic_id"], {"routable": False, "route_reason": "unknown", "walled": False, "board": None, "vendor": None}))
         lr = last.get(c["clinic_id"]) or {}
         c["last_crawl_at"], c["last_crawl_status"], c["last_crawl_mode"] = lr.get("at"), lr.get("status"), lr.get("mode")
@@ -269,7 +275,7 @@ def filter_clinics(p):
     sort = p.get("sort") or "-jobs_open"
     desc = sort.startswith("-")
     key = sort.lstrip("-+")
-    if key not in ("jobs_open", "jobs_fresh", "beds", "name", "town", "regierungsbezirk", "ats_type", "last_crawl_at", "fetch_label", "landkreis", "versorgungsstufe"):
+    if key not in ("jobs_open", "jobs_fresh", "beds", "name", "town", "regierungsbezirk", "ats_type", "last_crawl_at", "fetch_label", "landkreis", "versorgungsstufe", "jobs_per_100_beds"):
         key = "jobs_open"
     rows = sorted(rows, key=lambda c: ((c.get(key) is None), c.get(key) if not isinstance(c.get(key), str) else c.get(key).lower()), reverse=desc)
     if desc:                                                    # None last in both directions

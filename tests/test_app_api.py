@@ -85,6 +85,17 @@ def test_clinics_q_matches_badges_and_fetch(client):
     assert {c["clinic_id"] for c in fire} == {"36202", "16104"} and all(c["fetch_label"] == "Firecrawl" for c in fire)
 
 
+def test_clinics_sort_by_jobs_per_100_beds(client, monkeypatch):
+    """Display-only sort for a human scanning the clinic list -- not read by any automated decision."""
+    ratios = {"36201": 2.4, "36202": 0.0, "16104": None}         # 24/985, 0/400, N/A (beds=0)
+    for c in D._snap["clinics"]:
+        c["jobs_per_100_beds"] = ratios[c["clinic_id"]]
+    r = client.get("/api/clinics?sort=jobs_per_100_beds").json()["rows"]
+    assert [c["clinic_id"] for c in r] == ["36202", "36201", "16104"]     # ascending, None last
+    r = client.get("/api/clinics?sort=-jobs_per_100_beds").json()["rows"]
+    assert [c["clinic_id"] for c in r] == ["36201", "36202", "16104"]     # descending, None still last
+
+
 def test_crawl_plan_targets(client):
     d = client.get("/api/crawl/plan?scope=city&values=Regensburg&mode=auto").json()
     assert d["clinics"] == 2 and d["via_adapter"] == 1 and d["via_firecrawl"] == 1 and d["est_credits"] == 40 and d["target"]["values"] == ["Regensburg"]
