@@ -61,6 +61,15 @@ def test_jobs_prompt_keeps_every_hard_rule():
         assert must in p, f"missing {must!r} from jobs prompt"
 
 
+def test_render_prompts_for_a_real_clinic_and_generic_placeholder():
+    r = FA.render_prompts(CLINIC)
+    assert r["model"] == FA.MODEL and r["default_max_credits"] == FA.DEFAULT_MAX_CREDITS
+    assert CLINIC["name"] in r["jobs"]["prompt"] and r["jobs"]["schema"] == FA.JOBS_SCHEMA
+    assert CLINIC["name"] in r["career"]["prompt"] and r["career"]["schema"] == FA.CAREER_SCHEMA
+    generic = FA.render_prompts(None)
+    assert "<hospital name>" in generic["jobs"]["prompt"] and "Bavaria" in generic["jobs"]["prompt"]
+
+
 def test_jobs_schema_has_seniority_and_blocked_reason():
     props = FA.JOBS_SCHEMA["properties"]["jobs"]["items"]["properties"]
     assert set(FA.JOBS_SCHEMA["properties"]["jobs"]["items"]["properties"]["seniority"]["enum"]) == set(FA.SENIORITY)

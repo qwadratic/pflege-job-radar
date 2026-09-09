@@ -27,6 +27,8 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | GET/PUT | `/api/settings`, `/api/settings/patterns` | patterns.json (every regex), Firecrawl default budget |
 | GET | `/api/billing` | spend report over a window: series (hour/day buckets), totals, by kind, runs, Firecrawl pools, Exa |
 | GET | `/api/coverage` | per-adapter coverage breakdown (routable, boards, open/fresh jobs, last run), owner-only |
+| GET | `/api/firecrawl/credits` | account balance + token pool + spend, owner-only |
+| GET | `/api/firecrawl/prompts?clinic_id=` | the live jobs/career prompt templates + schemas, rendered for a real hospital when given one, else generic placeholder text; read-only, no credits, owner-only |
 | GET/POST | `/api/campaign` | reingest-campaign routine state: safety_level, stopped, history; owner-only |
 | GET | `/api/taxonomy`, `/api/ontology`, `/api/docs` | taxonomy.json, ontology.json, docs index |
 

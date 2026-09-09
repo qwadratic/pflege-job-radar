@@ -471,6 +471,18 @@ def api_credits():
     return fc
 
 
+@app.get("/api/firecrawl/prompts")
+def api_firecrawl_prompts(clinic_id: str = None):
+    """Read-only: the live prompt templates + schemas Firecrawl actually runs against, so an operator
+    doesn't have to read pflege_jobs/sources/firecrawl_agent.py to know what's being asked. ?clinic_id=
+    renders them for a real hospital; omitted -> generic placeholder text. No network, no credits."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    c = D.clinic(clinic_id) if clinic_id else None
+    if clinic_id and not c:
+        raise HTTPException(404, "unknown clinic")
+    return FA.render_prompts(c)
+
+
 # --- docs / static --------------------------------------------------------------------------
 def _json_file(path):
     try:

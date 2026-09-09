@@ -324,7 +324,7 @@ OWNER_WRITE_PREFIXES = ("/api/crawl", "/api/schedules", "/api/settings", "/api/i
 OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
 # "/api/crawl" (not just "/api/crawl/runs") also covers GET /api/crawl/plan -- it previews the same
 # credits_left / per-clinic routing decision the gated endpoints above protect (2026-09-08 API audit).
-OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl/credits", "/api/crawl", "/api/campaign",
+OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl", "/api/crawl", "/api/campaign",
                        "/api/autopilot")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 

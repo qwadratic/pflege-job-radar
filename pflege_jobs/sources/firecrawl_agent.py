@@ -96,6 +96,19 @@ CAREER_SCHEMA = {
 }
 
 
+_TEMPLATE_CLINIC = {"name": "<hospital name>", "town": None, "operator": None, "website": None}
+
+
+def render_prompts(clinic=None):
+    """GET /api/firecrawl/prompts: the two live prompt templates + schemas, rendered for a real clinic
+    when given one, else with placeholder text -- so an operator can see exactly what Firecrawl is
+    asked to do without reading firecrawl_agent.py. Read-only, no network, no credits."""
+    c = clinic or _TEMPLATE_CLINIC
+    return {"model": MODEL, "default_max_credits": DEFAULT_MAX_CREDITS,
+            "jobs": {"prompt": _jobs_prompt(c), "schema": JOBS_SCHEMA},
+            "career": {"prompt": _career_prompt(c), "schema": CAREER_SCHEMA}}
+
+
 def _jobs_prompt(clinic):
     name = clinic.get("name")
     town = clinic.get("town") or "Bavaria"

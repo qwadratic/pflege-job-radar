@@ -416,3 +416,21 @@ def test_api_crawl_estimate_known_clinic(client, monkeypatch):
     r = client.get("/api/crawl/estimate?clinic_id=36201")
     assert r.status_code == 200 and r.json() == {"clinic_id": "36201", "board_rows": 1, "definite_pflege": 1,
                                                   "ambiguous": 0, "definite_excluded": 0, "confidence": "high", "note": None}
+
+
+# --- prompts: read-only visibility into what Firecrawl is actually asked (GET /api/firecrawl/prompts) ----
+def test_api_firecrawl_prompts_generic(client):
+    r = client.get("/api/firecrawl/prompts")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["model"] and d["default_max_credits"] and "jobs" in d and "career" in d
+    assert "<hospital name>" in d["jobs"]["prompt"]
+
+
+def test_api_firecrawl_prompts_for_a_real_clinic(client):
+    r = client.get("/api/firecrawl/prompts?clinic_id=36201")
+    assert r.status_code == 200 and CLINIC_KNOWN["name"] in r.json()["jobs"]["prompt"]
+
+
+def test_api_firecrawl_prompts_unknown_clinic_404s(client):
+    assert client.get("/api/firecrawl/prompts?clinic_id=nope").status_code == 404
