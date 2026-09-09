@@ -29,6 +29,14 @@ def test_umantis_host_is_the_board_itself(monkeypatch):
 def test_umantis_one_hop_hub_page(monkeypatch):
     # ANregiomed's careers_url is a CMS hub with no umantis URL; the real listing page is one
     # click away and carries an absolute recruitingapp-5511 URL.
+    #
+    # Verified live 2026-09-08: ANregiomed's real hub page (this listing_html's real-world
+    # counterpart) lists ~100 /Vacancies/<id> links directly, including genuine nursing postings
+    # ("Gesundheits- und Krankenpfleger bzw. Altenpfleger (m/w/d)") -- but a guessed .../Jobs/1
+    # built from just the bare umantis host lands on a *different*, narrower listing that never
+    # includes those (confirmed: 0/24 pflege rows on the guessed path in a live run). So when the
+    # hop page itself already lists real job links (no /Jobs/<n> path found on it at all), umantis()
+    # must use the hop page itself as the seed's start URL, not the guessed board URL.
     hub_html = '<a href="/karriere-jobs/stellenangebote-bewerbung/stellenangebote/">Stellenangebote</a>'
     listing_html = '<a href="https://recruitingapp-5511.de.umantis.com/Vacancies/1/Description/1">Job</a>'
 
@@ -43,8 +51,10 @@ def test_umantis_one_hop_hub_page(monkeypatch):
     f = {"name": "ANregiomed Klinikum Ansbach", "career": "https://www.anregiomed.de/karriere-jobs/"}
     seed = ats_seeds.umantis(f, "56101", "Ansbach")
     assert seed is not None
-    assert seed["career"] == "https://recruitingapp-5511.de.umantis.com/Jobs/1"
+    assert seed["career"] == "https://www.anregiomed.de/karriere-jobs/stellenangebote-bewerbung/stellenangebote/"
     assert seed["hosts"] == ["recruitingapp-5511.de.umantis.com"]
+    # the guessed board URL is still tried too, as a top-up seed
+    assert "https://recruitingapp-5511.de.umantis.com/Jobs/1" in seed["extra_seeds"]
 
 
 def test_umantis_none_when_no_umantis_url_anywhere(monkeypatch):

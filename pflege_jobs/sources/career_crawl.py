@@ -103,9 +103,20 @@ class Crawler:
     def allowed(self, url):
         host = urlparse(url).scheme + "://" + urlparse(url).netloc
         if host not in self.robots:
-            rp = urllib.robotparser.RobotFileParser()
-            try: rp.set_url(host + "/robots.txt"); rp.read()
-            except Exception: rp = None
+            rp = None
+            try:
+                # Fetch robots.txt ourselves rather than letting RobotFileParser.read() do it:
+                # urllib.robotparser treats a 401/403 on robots.txt as "disallow everything"
+                # (rp.disallow_all = True), but a site that 403s its *robots.txt* while serving its
+                # real pages fine (confirmed live: recruitingapp-5580.de.umantis.com) is not actually
+                # saying "crawl nothing" -- there is no robots.txt to honour, so fail open, matching
+                # the except-Exception branch below for a robots.txt that doesn't exist/times out.
+                rr = self.s.get(host + "/robots.txt", timeout=15)
+                if rr.status_code == 200:
+                    rp = urllib.robotparser.RobotFileParser()
+                    rp.parse(rr.text.splitlines())
+            except Exception:
+                rp = None
             self.robots[host] = rp
         rp = self.robots[host]
         try: return rp.can_fetch(UA, url) if rp else True

@@ -90,21 +90,44 @@ def umantis(f, kez, town):
 
     r = _get(career); html = r.text if r else ""
     m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html)
+    hub_url = None
     if not m and r is not None:
-        # One hop: careers_url is a CMS hub; follow a same-site link that looks like the real
-        # job-listing page and re-run the umantis regex there.
+        # One hop: careers_url is a CMS hub; follow a link that looks like the real job-listing page
+        # and re-run the umantis regex there. Allow a same-registrable-domain subdomain hop (e.g.
+        # karriere-im.<site> from <site>'s own /karriere page), not just an exact host match -- some
+        # operators run the umantis-embedding page on a different subdomain than careers_url.
+        reg_domain = ".".join(p.netloc.split(".")[-2:])
         for href in re.findall(r'href="([^"]+)"', html):
             link = urljoin(career, href)
-            if urlparse(link).netloc != p.netloc: continue
-            if not _UMANTIS_HOP.search(link): continue
+            link_netloc = urlparse(link).netloc
+            if ".".join(link_netloc.split(".")[-2:]) != reg_domain: continue
+            # Within the same registrable domain, a distinct subdomain (e.g. karriere-im.<site> from
+            # <site>'s own /karriere page) is itself a strong enough "this is the careers portal"
+            # signal even when the link's own path/anchor carries no "stellen" text (confirmed live:
+            # Klinikverbund Allgäu's hub only labels this link "Offene Stellen" in nearby markup, not
+            # in the href or its own host name) -- only same-host links still need the path match.
+            if link_netloc == p.netloc and not _UMANTIS_HOP.search(link): continue
             r2 = _get(link); html2 = r2.text if r2 else ""
             m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html2)
-            if m: break
+            if m:
+                # The hop page itself sometimes already lists the real /Vacancies/<id> job links
+                # directly (no /Jobs/<n> path found on it at all) -- a guessed .../Jobs/1 fallback
+                # from just the bare umantis host can then land on a *different*, narrower listing
+                # than what the hub page actually shows (confirmed live: ANregiomed's own hub page
+                # lists ~100 vacancies incl. nursing roles the guessed Jobs/1..5 pagination never
+                # surfaces). Prefer the hub page itself as the seed's start URL in that case.
+                if not m.group(2) and re.search(r"/Vacancies/\d+", html2):
+                    hub_url = link
+                break
     if not m: return None
     netloc = m.group(1); path = m.group(2) or "/Jobs/1"
-    base = f"https://{netloc}"; first = base + path.replace("&amp;", "&")
-    q = first.split("?", 1)[1] if "?" in first else ""
+    base = f"https://{netloc}"
+    guessed = base + path.replace("&amp;", "&")
+    first = hub_url or guessed
+    q = guessed.split("?", 1)[1] if "?" in guessed else ""
     extra = [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
+    if hub_url:
+        extra = [guessed] + extra   # still top up with the guessed listing, just not as the primary seed
     return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis")
 
 

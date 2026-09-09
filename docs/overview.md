@@ -148,8 +148,10 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 | personio | yes | `<slug>.jobs.personio.de/xml` |
 | smartrecruiters | yes | public JSON API |
 | helix | yes | `/joblist` HTML |
-| dvinci | **no** | JS-rendered — Firecrawl agent fallback |
-| `""` (unknown) | — | ~230 sites; discovery / Firecrawl "refetch career" |
+| dvinci | yes | public GET `<tenant>.dvinci-easy.com/jobPublication/list.json` |
+| self_hosted | no | discovery labelled it, no adapter yet (47 sites) — Firecrawl agent fallback |
+| coveto | no | discovery labelled it, no adapter yet (1 site) — Firecrawl agent fallback |
+| `""` (unknown) | — | ~113 sites; discovery / Firecrawl "refetch career" |
 
 ## Freshness & proof
 - `fresh` = `first_published` (or `first_seen`) within 7 days — the header counter.

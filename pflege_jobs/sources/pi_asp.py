@@ -37,7 +37,17 @@ def crawl(seed, towns, max_items=120, log=print):
             if classify_role(title, "")[0] == "nicht_pflege":
                 continue
             try:
-                items.nth(i).click(timeout=4000); pg.wait_for_timeout(1500)
+                # On long boards (regiomed/Sana's wildcard companyEid=%2a board: 90 listed items vs.
+                # 51 on Helios) a fixed click(timeout=4000) with no scroll-into-view times out for
+                # almost every item further down the list -- confirmed live (28/90 consecutive click
+                # failures, only ~2/90 opened). The list is "scrolled" by repositioning items with a
+                # large negative/positive Y offset rather than a real overflow container, so
+                # Playwright's own scroll_into_view_if_needed() also times out (verified live: it
+                # can't find a scrollable ancestor to act on). A plain JS Element.scrollIntoView()
+                # runs in-page and repositions it regardless -- confirmed live this makes the
+                # click land.
+                items.nth(i).evaluate("el => el.scrollIntoView({block: 'center'})")
+                items.nth(i).click(timeout=6000); pg.wait_for_timeout(1500)
                 try: pg.wait_for_load_state("networkidle", timeout=6000)
                 except Exception: pass
                 hash_ = pg.url.split("#", 1)[1] if "#" in pg.url else ""

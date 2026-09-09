@@ -13,6 +13,7 @@ No consent, no browser, no HTML scraping of the clinic site itself.
 import json
 import re
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
 import requests
 
@@ -176,27 +177,119 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
     return obs
 
 
+# --- fallbacks for tenants that never mount the standard jobs-api widget --------------------------
+# Some real B-ITE tenants render their career page a different way and carry no
+# data-bite-jobs-api-listing attribute / static.b-ite.com script for detect() to find, but their
+# postings still live on the normal jobs.b-ite.com-style detail-page host (<host>/jobposting/<40hex>)
+# -- verified 2026-09-08 on two shapes:
+#   (a) a same-origin JSON proxy the page's own JS calls, "<origin>/_json.jobs.php"
+#       (advertisements[] with title/url.href/address/custom_field1..5) -- klinikum-gap.de.
+#   (b) server-rendered <a href="…/jobposting/<40hex>"> links straight in the career page HTML, each
+#       detail page carrying a full schema.org JobPosting JSON-LD block -- klinikum-amberg.de.
+JOBPOSTING_LINK = re.compile(r"https?://[a-z0-9.\-]+/jobposting/[0-9a-f]{40}", re.I)
+JSONLD_BLOCK = re.compile(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.S | re.I)
+
+
+def _jsonld_jobposting(html):
+    for m in JSONLD_BLOCK.finditer(html or ""):
+        try:
+            d = json.loads(m.group(1))
+        except ValueError:
+            continue
+        for x in (d if isinstance(d, list) else [d]):
+            if isinstance(x, dict) and x.get("@type") == "JobPosting":
+                return x
+    return None
+
+
+def _jp_from_json_jobs_php(ad):
+    addr = ad.get("address") or {}
+    city_raw = addr.get("city") or ""
+    m = re.match(r"(\d{5})\s+(.*)", city_raw)
+    plz, city = (m.group(1), m.group(2)) if m else (None, city_raw or None)
+    href = (ad.get("url") or {}).get("href")
+    custom = {k: v for k, v in ad.items() if k.startswith("custom_field") and v}
+    return {"title": ad.get("title"), "url": href, "applyUrl": href,
+            "address": {"city": city, "postCode": plz, "latitude": addr.get("latitude"), "longitude": addr.get("longitude")},
+            "employmentType": [], "custom": custom,
+            "activatedOn": ad.get("ctime") or None, "modifiedOn": ad.get("mtime") or None,
+            "endsOn": ad.get("channel0EndDate") or None}
+
+
+def _jp_from_jsonld(url, ld):
+    loc = ld.get("jobLocation") or {}
+    addr = loc.get("address") or {}
+    geo = loc.get("geo") or {}
+    et_raw = ld.get("employmentType")
+    et = [str(x).lower() for x in (et_raw if isinstance(et_raw, list) else [et_raw]) if x]
+    jp = {"title": ld.get("title"), "url": url, "applyUrl": url,
+          "address": {"city": addr.get("addressLocality"), "postCode": addr.get("postalCode"),
+                      "latitude": geo.get("latitude"), "longitude": geo.get("longitude")},
+          "employmentType": et, "custom": {},
+          "activatedOn": (ld.get("datePosted") or "")[:10] or None, "modifiedOn": ld.get("datePosted"),
+          "endsOn": ld.get("validThrough")}
+    jp["_desc_html"] = ld.get("description")
+    return jp
+
+
+def _fallback_json_jobs_php(career_url, session):
+    try:
+        r = session.get(urljoin(career_url, "/_json.jobs.php"), headers={"User-Agent": UA}, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return None
+    jps = [_jp_from_json_jobs_php(a) for a in (data.get("advertisements") or [])]
+    jps = [j for j in jps if j.get("title") and j.get("url")]
+    return jps or None
+
+
+def _fallback_jobposting_links(html, session, limit=150):
+    links = list(dict.fromkeys(JOBPOSTING_LINK.findall(html or "")))[:limit]
+    jps = []
+    for u in links:
+        try:
+            r = session.get(u, headers={"User-Agent": UA}, timeout=30)
+            r.raise_for_status()
+        except requests.RequestException:
+            continue
+        ld = _jsonld_jobposting(r.text)
+        if ld and ld.get("title"):
+            jps.append(_jp_from_jsonld(u, ld))
+    return jps or None
+
+
 def crawl(seed: dict, towns, with_descriptions=True, log=print):
     """seed: {name, kez, career (page with the widget), customer?, listing?}"""
     s = requests.Session()
     cust, lst = seed.get("customer"), seed.get("listing")
     candidates = [{"customer": cust, "listing": lst}] if cust else None
+    r = None
     if candidates is None:
         r = s.get(seed["career"], headers={"User-Agent": UA}, timeout=40)
         candidates = [d for d in detect(r.text) if d.get("customer")]
-        if not candidates:
+    if candidates:
+        key = None
+        for d in candidates:
+            key = api_key(d["customer"], d["listing"], s)
+            if key:
+                cust, lst = d["customer"], d["listing"]
+                break
+        if not key:
+            return [], {"error": "no B-ITE listing bundle on page carried a usable API key "
+                                  f"(tried {len(candidates)}: {[(d['customer'], d['listing']) for d in candidates]})"}
+        data = search(key, s)
+        jps = data.get("jobPostings") or []
+    else:
+        # No jobs-api widget mount on the page at all -- some real B-ITE tenants render their career
+        # page a different way but still keep the standard jobposting detail-page host underneath.
+        jps = _fallback_json_jobs_php(seed["career"], s)
+        cust, lst = "same-origin", "json_jobs_php"
+        if jps is None and r is not None:
+            jps = _fallback_jobposting_links(r.text, s)
+            lst = "jobposting_links"
+        if jps is None:
             return [], {"error": "no B-ITE listing attribute on page"}
-    key = None
-    for d in candidates:
-        key = api_key(d["customer"], d["listing"], s)
-        if key:
-            cust, lst = d["customer"], d["listing"]
-            break
-    if not key:
-        return [], {"error": "no B-ITE listing bundle on page carried a usable API key "
-                              f"(tried {len(candidates)}: {[(d['customer'], d['listing']) for d in candidates]})"}
-    data = search(key, s)
-    jps = data.get("jobPostings") or []
     tax_key, nursing_label = find_nursing_taxonomy(jps)
     # Section-first (surveyed 2026-09, revised): find_nursing_taxonomy()/`_has_label` used to also
     # hard-restrict which postings got processed AT ALL -- but on two real boards (Augustinum, DONAU-
@@ -212,7 +305,8 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
                        "section_field": tax_key, "section_label": nursing_label, "section_matched": matched}
     for jp in jps:
         section_confirmed = bool(tax_key) and _has_label(jp, tax_key, nursing_label)
-        o = to_observation(jp, seed, towns, None, section_confirmed=section_confirmed)  # cheap pass: classify + locate first
+        desc0 = jp.get("_desc_html")   # jobposting_links fallback already fetched the detail page's own JSON-LD
+        o = to_observation(jp, seed, towns, desc0, section_confirmed=section_confirmed)  # cheap pass: classify + locate first
         if o["role_class"] == "nicht_pflege":
             continue
         if o["in_bavaria"] is False:
@@ -221,7 +315,7 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
             o["in_bavaria"] = True
         if o["in_bavaria"] is None:
             continue
-        if with_descriptions:                                            # enrich survivors only
+        if with_descriptions and not desc0:                               # enrich survivors only (skip if already fetched above)
             html = posting_html(jp["url"], s)
             if html: o = to_observation(jp, seed, towns, html, section_confirmed=section_confirmed); o["in_bavaria"] = True
         stats["pflege"] += 1; out.append(o)

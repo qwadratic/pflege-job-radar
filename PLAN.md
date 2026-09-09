@@ -9,8 +9,8 @@
 
 ## Open, by value
 1. **Supabase access token** — blocks: edge-function redeploy (`coalesce` fix in ingest is live-tested locally only), DDL from `sql/008` (CHECK constraints) and everything in docs/performance.md (indexes, trigram, tsvector, LATERAL view).
-2. **Coverage gap**: ~230 unlabeled sites (104 have a careers_url). Weekly refetch-career batches (Firecrawl) → labels → adapters. dvinci adapter (11 sites): probe JSON endpoints, else Playwright.
-3. **Firecrawl credits**: 381 left in this period (8,000/month). Every call is capped; budget in Settings. Raise plan or wait for 2026-09-19 reset before bulk discovery.
+2. **Coverage gap**: ~113 unlabeled sites (106 have a careers_url). Weekly refetch-career batches (Firecrawl) → labels → adapters. dvinci now has an adapter (`crawl_dvinci`, 13 sites, public JSON endpoint) — done.
+3. **Firecrawl credits**: 971 left in this period (8,000/month). Every call is capped; budget in Settings. Raise plan or wait for 2026-09-19 reset before bulk discovery.
 4. **LLM for CV parsing**: gateway credits exhausted; CV match runs on patterns.json regexes. Set `LLM_API_BASE`/`LLM_MODEL` to upgrade.
 5. München Klinik JobFinder (consent-gated XHR), UKR B-ITE widget key, Josefinum, DONAUISAR, Passau PDFs — see docs/scraping.md table.
 6. Alerting: per-board row deltas > 30 %, null-rate of role_class/city, 403/429 twice → mark walled.

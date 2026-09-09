@@ -188,7 +188,11 @@ details>summary{cursor:pointer;color:var(--ink-2);font-size:12.5px;margin:6px 0}
 .hbar{display:flex;align-items:center;gap:8px;min-width:120px} .hbar i{display:block;height:8px;background:#3b6fd6;flex:0 0 auto} .hbar span{white-space:nowrap}
 tr.hl>td{background:rgba(157,225,70,.08);box-shadow:inset 3px 0 0 var(--neon)} tr.detail>td{background:#07080B;padding:0} tr.detail pre{margin:0;border:0;max-height:40vh}
 /* home city chips */
-.cities{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px} .cities a,.cities button{text-decoration:none;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:34px;display:inline-flex;align-items:center;gap:6px;cursor:pointer} .cities a b{font-weight:500;color:var(--neon)} .cities a:hover,.cities button:hover{border-color:var(--neon);color:var(--ink)} .cities .eyebrow{margin:0 6px 0 0}
+.cities{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px} .cities a{text-decoration:none;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:34px;display:inline-flex;align-items:center;gap:6px;cursor:pointer} .cities a b{font-weight:500;color:var(--neon)} .cities a:hover{border-color:var(--neon);color:var(--ink)} .cities .eyebrow{margin:0 6px 0 0}
+.twn-box{position:relative;min-width:200px} .twn{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:0;min-height:34px;padding:0 10px;-webkit-appearance:none} .twn::placeholder{color:var(--ink-3)} .twn:focus{outline:1px solid var(--neon);outline-offset:-1px;border-color:var(--neon)}
+.twn-box .dd{position:absolute;z-index:30;top:calc(100% + 4px);left:0;right:0;max-height:280px;overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.5)} .twn-box .dd[hidden]{display:none}
+.twn-box .o{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 10px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap} .twn-box .o small{color:var(--ink-3);font-variant-numeric:tabular-nums} .twn-box .o:hover,.twn-box .o[aria-selected=true]{background:var(--surface-2);color:var(--ink)} .twn-box .o.empty{cursor:default;justify-content:center;color:var(--ink-3)}
+@media(max-width:560px){.twn-box{width:100%}}
 /* gate (anonymous visitors) */
 .gate{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
 .gate .card{max-width:460px;width:100%;padding:24px 26px;margin:0} .gate h1{margin-bottom:8px} .gate .lead{max-width:none} .gate form{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px} .gate form input{flex:1 1 180px;min-height:40px} .gate form button{min-height:40px}
@@ -285,7 +289,7 @@ const I18N={
   a_title:"Für Agenten",a_hint:"Ein-Datei-Skill (Claude-Skill-Format): alles, was ein Agent braucht — API, Datenmodell, Pipeline.",
   size_S:"< 100 Betten",size_M:"100–299",size_L:"300–799",size_XL:"800+",unknown_ats:"kein ATS bekannt",live:"live",gone:"weg",blocked:"gesperrt",error:"Fehler",
   sr_filters:"Filter",
-  n_billing:"Kosten",h_towns:"Städte · offene Stellen",more_short:"mehr",
+  n_billing:"Kosten",h_towns:"Städte · offene Stellen",city_ph:"Ort …",tp_none:"Nichts gefunden.",
   b_h:"Firecrawl-Ausgaben",b_p:"Credits, Tokens und Läufe im gewählten Zeitraum. Preis in USD je Credit; Free-Runs kosten 0. Der Zeitraum gilt für alles auf dieser Seite.",
   w_today:"Heute",w_24:"24 h",w_7:"7 T",w_30:"30 T",w_period:"Abrechnungszeitraum",w_custom:"Benutzerdefiniert",w_from:"von",w_to:"bis",w_apply:"Anwenden",
   b_usd_in:"USD im Zeitraum",b_billable:"abrechenbare Credits",b_free:"Free-Run-Credits",b_table:"Tabelle",b_graph:"Grafik",b_bucket:"Abschnitt",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Läufe",b_usd:"USD",b_chart_aria:"Credits je Zeitabschnitt, abrechenbar und frei",
@@ -330,7 +334,7 @@ const I18N={
   a_title:"For agents",a_hint:"Single-file skill (Claude skill format): everything an agent needs — API, data model, pipeline.",
   size_S:"< 100 beds",size_M:"100–299",size_L:"300–799",size_XL:"800+",unknown_ats:"no ATS known",live:"live",gone:"gone",blocked:"blocked",error:"error",
   sr_filters:"Filters",
-  n_billing:"Billing",h_towns:"Towns · open jobs",more_short:"more",
+  n_billing:"Billing",h_towns:"Towns · open jobs",city_ph:"Town …",tp_none:"Nothing found.",
   b_h:"Firecrawl spend",b_p:"Credits, tokens and runs in the selected window. Price in USD per credit; free runs cost 0. The window scopes everything on this page.",
   w_today:"Today",w_24:"24 h",w_7:"7 d",w_30:"30 d",w_period:"Billing period",w_custom:"Custom",w_from:"from",w_to:"to",w_apply:"Apply",
   b_usd_in:"USD in window",b_billable:"billable credits",b_free:"free-run credits",b_table:"Table",b_graph:"Chart",b_bucket:"Bucket",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Runs",b_usd:"USD",b_chart_aria:"Credits per bucket, billable and free",
@@ -540,10 +544,34 @@ async function pageClinics(p){
   }
   root.append(head,townChips(F),filters,tblBox); load(); return root;
 }
-// Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; 'mehr +N' reveals the rest.
-function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities)||[]; if(!src.length) return null; const TOP=12; const box=el("div",{class:"cities"});
-  const draw=all=>{ const rows=all?src:src.slice(0,TOP); box.replaceChildren(el("span",{class:"eyebrow",text:t("h_towns")}),...rows.map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))),!all&&src.length>TOP?el("button",{type:"button",text:t("more_short")+" +"+(src.length-TOP),onclick:()=>draw(true)}):null); };
-  draw(false); return box; }
+// Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; every other town lives in the combobox beside them.
+function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities)||[]; if(!src.length) return null; const TOP=12;
+  const row=el("div",{class:"cities"},el("span",{class:"eyebrow",text:t("h_towns")}),
+    ...src.slice(0,TOP).map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))));
+  if(src.length>TOP) row.append(townPicker(src));
+  return row; }
+// Town combobox: type to filter (umlaut/ß-insensitive), ↑/↓ to walk, Enter picks, Esc closes; picking navigates to that town's jobs.
+// ARIA combobox + listbox, so screen readers and keyboards get the same thing the mouse does.
+function townPicker(src){ const MAX=200;
+  const norm=s=>String(s).toLowerCase().replace(/ß/g,"ss").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const inp=el("input",{class:"twn",type:"text",role:"combobox",autocomplete:"off",spellcheck:"false","aria-autocomplete":"list","aria-expanded":"false","aria-controls":"twn-dd","aria-label":t("h_towns"),placeholder:t("city_ph")});
+  const dd=el("div",{class:"dd",id:"twn-dd",role:"listbox",hidden:true}); const box=el("div",{class:"twn-box"},inp,dd);
+  let hits=[],cur=-1;
+  const close=()=>{ dd.hidden=true; cur=-1; inp.setAttribute("aria-expanded","false"); inp.removeAttribute("aria-activedescendant"); };
+  const mark=i=>{ cur=i; [...dd.children].forEach((n,k)=>n.setAttribute("aria-selected",String(k===i)));
+    if(dd.children[i]){ inp.setAttribute("aria-activedescendant",dd.children[i].id); dd.children[i].scrollIntoView({block:"nearest"}); } else inp.removeAttribute("aria-activedescendant"); };
+  const pick=c=>{ close(); inp.value=""; inp.blur(); location.hash="#/jobs?city="+encodeURIComponent(c.v); };
+  const draw=()=>{ const q=norm(inp.value.trim()); hits=(q?src.filter(c=>norm(c.v).includes(q)):src).slice(0,MAX);
+    dd.replaceChildren(...(hits.length?hits.map((c,i)=>el("div",{class:"o",id:"twn-o"+i,role:"option","aria-selected":"false",onmousedown:e=>{e.preventDefault();pick(c);}},el("span",{text:c.v}),el("small",{text:num(c.n)})))
+      :[el("div",{class:"o empty",text:t("tp_none")})]));
+    dd.hidden=false; inp.setAttribute("aria-expanded","true"); mark(-1); };
+  inp.addEventListener("focus",draw); inp.addEventListener("input",draw);
+  inp.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(dd.hidden) draw(); if(!hits.length) return; e.preventDefault(); mark(e.key==="ArrowDown"?(cur+1)%hits.length:(cur<=0?hits.length-1:cur-1)); return; }
+    if(e.key==="Enter"){ const exact=hits.find(c=>norm(c.v)===norm(inp.value.trim())); const c=cur>=0?hits[cur]:exact||(hits.length===1?hits[0]:null); if(c){ e.preventDefault(); pick(c); } return; }
+    if(e.key==="Escape"&&!dd.hidden){ e.preventDefault(); close(); } });
+  box.addEventListener("focusout",e=>{ if(!box.contains(e.relatedTarget)) close(); });
+  return box; }
 
 // (the Cities page was cut: '#/cities' redirects to '#/'; the home page carries the town chips instead)
 

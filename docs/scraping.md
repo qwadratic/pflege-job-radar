@@ -23,20 +23,20 @@ Goal: read every hospital's own career board. No job boards, no labour agency.
 
 | vendor | sites | how it is read | module |
 |---|---|---|---|
-| softgarden | 38 | `jobs.feed.json` (no browser) | `pflege_jobs/sources/softgarden.py` |
-| typo3_jobs | 29 | `wp-sitemap-posts-jobs-N.xml` / job sitemap → `<h1>` + text | `crawlers/vendor_adapters.py:crawl_wp_jobs` |
-| bite (+bite_jobs) | 27 | loader script → 40-hex key → `POST jobs.b-ite.com/api/v1/postings/search` | `pflege_jobs/sources/bite.py` |
-| rexx | 17 | `/stellenangebote.html?start=N`, JSON-LD on detail | `crawlers/vendor_adapters.py:crawl_rexx` |
-| umantis | 16 | `recruitingapp-N.de.umantis.com/Jobs/1` server-rendered | `crawlers/portals.py:parse_umantis` |
-| mein-check-in | 12 | `/<tenant>/overview` → `/position-<id>` | `crawlers/vendor_adapters.py:crawl_mein_check_in` |
-| dvinci | 11 | **none** — JS list, no feed | Firecrawl agent |
-| pi_asp | 8 | P&I bewerber-web, Playwright render+click | `pflege_jobs/sources/pi_asp.py` |
-| concludis | 7 | sitemap → detail | `crawl_wp_jobs` |
+| softgarden | 56 | `jobs.feed.json` (no browser) | `pflege_jobs/sources/softgarden.py` |
+| typo3_jobs | 50 | `wp-sitemap-posts-jobs-N.xml` / job sitemap → `<h1>` + text | `crawlers/vendor_adapters.py:crawl_wp_jobs` |
+| bite (+bite_jobs) | 31 | loader script → 40-hex key → `POST jobs.b-ite.com/api/v1/postings/search` | `pflege_jobs/sources/bite.py` |
+| rexx | 24 | `/stellenangebote.html?start=N`, JSON-LD on detail | `crawlers/vendor_adapters.py:crawl_rexx` |
+| pi_asp | 16 | P&I bewerber-web, Playwright render+click | `pflege_jobs/sources/pi_asp.py` |
+| dvinci | 13 | public GET `<tenant>.dvinci-easy.com/jobPublication/list.json` | `crawlers/vendor_adapters.py:crawl_dvinci` |
+| mein-check-in | 13 | `/<tenant>/overview` → `/position-<id>` | `crawlers/vendor_adapters.py:crawl_mein_check_in` |
+| umantis | 13 | `recruitingapp-N.de.umantis.com/Jobs/1` server-rendered | `crawlers/portals.py:parse_umantis` |
+| concludis | 8 | sitemap → detail | `crawl_wp_jobs` |
+| talention | 6 | `POST /talention/api/3.2/job` | `crawl_wp_jobs` / `feeds.py` |
+| helix | 5 | `<tenant>.helixjobs.com/<unit>/joblist` | `crawl_helix` |
+| personio | 5 | `<slug>.jobs.personio.de/xml` | `crawl_personio` |
 | oracle | 4 | sitemap walk (SPA sites → portals.py) | `crawl_wp_jobs` / `portals.py` |
-| personio | 3 | `<slug>.jobs.personio.de/xml` | `crawl_personio` |
-| smartrecruiters | 1 | `api.smartrecruiters.com/v1/companies/<id>/postings` | `crawl_smartrecruiters` |
-| talention | 1 | `POST /talention/api/3.2/job` | `crawl_wp_jobs` / `feeds.py` |
-| helix | 1 | `<tenant>.helixjobs.com/<unit>/joblist` | `crawl_helix` |
+| smartrecruiters | 2 | `api.smartrecruiters.com/v1/companies/<id>/postings` | `crawl_smartrecruiters` |
 | group portals | kbo, Schön, RHÖN, Südostbayern | one board, many sites | `vendor_adapters.py:GROUP_PORTALS` |
 
 All adapters emit the inbox row shape; one loader (`crawlers/load_crawl_output.py` / backend worker) ingests everything.
@@ -45,11 +45,12 @@ All adapters emit the inbox row shape; one loader (`crawlers/load_crawl_output.p
 
 `python -m crawlers.routing` → for each clinic: `routable` (vendor label + careers_url + adapter exists), `route_reason` otherwise, `walled`.
 ```
-routable            161 clinics -> 101 boards (31 shared)
-not routable        246
-   no careers_url                    128
-   careers_url but no vendor label   104
-   no adapter for dvinci              11
+routable            352 clinics -> 205 boards (62 shared, 147 fetches saved)
+walled boards          1
+not routable           55
+   no adapter for self_hosted            47
+   no careers_url                         7
+   no adapter for coveto                  1
 ```
 The app shows this per clinic as **Fetch via**: the adapter name, or *Firecrawl* when no adapter exists (`route_reason` says why). Everything is scrapeable; the difference is cost. The Clawl page (`#/clawl`) previews a target (`GET /api/crawl/plan`: hospitals, boards, via adapter / via Firecrawl, estimated credits) before you start it, and holds the schedules.
 
@@ -74,8 +75,8 @@ Result → `career_profiles` (shown on the clinic page) and, when found, `clinic
 
 | gap | sites | next step |
 |---|---|---|
-| unlabeled (`ats_type=""`) | ~230 (104 have a careers_url) | refetch-career agent in weekly batches (≈15 credits each) → label → adapter; Playwright fingerprint on the 104 with a URL |
-| dvinci | 11 | try `/de/jobs.json` / `?format=json` probe; else Playwright list + JSON-LD detail; interim: Firecrawl |
+| unlabeled (`ats_type=""`) | ~113 (106 have a careers_url) | refetch-career agent in weekly batches (≈15 credits each) → label → adapter; Playwright fingerprint on the 106 with a URL |
+| dvinci | done | adapter shipped (`crawl_dvinci`, public `jobPublication/list.json`); 13 clinics now routable |
 | Helios (wall) | 3 | `pi_asp` covers München West/Perlach/Dachau; keep |
 | München Klinik JobFinder | 5 | consent-gated XHR API → capture with Playwright, replay with requests |
 | UKR (B-ITE widget) | 1 | B-ITE key extraction from widget loader → `bite.py` |

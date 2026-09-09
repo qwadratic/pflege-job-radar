@@ -26,6 +26,8 @@ Two cloud routines on the `pflege-board:repo` bridge environment (they execute o
 | judge-find | `0 6 * * *` | phase=find: 5 finder lenses → 3 judges each → `.judge/queue/<day>.json` |
 | judge-propose | `0 14 * * *` | phase=propose: top 2 → worktree fix + test → branch push → PR (gh) or MR file + e-mail |
 
+As of 2026-09-08 both routines are disabled (`enabled=false`) on claude.ai/code/routines — re-enable them there to resume the daily schedule.
+
 Frequency: change the cron on the routine (claude.ai/code/routines) or ask for an update; counts and lenses live in `.judge/config.json` and can be overridden per run through `args`. Minimum interval for routines is one hour.
 
 ## Multiple judges mode

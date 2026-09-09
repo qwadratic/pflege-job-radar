@@ -17,8 +17,13 @@ How each vendor is reached (probed 2026-09-06):
   smartrecruiters api.smartrecruiters.com/v1/companies/<id>/postings — public JSON, paginated.
   helix           <tenant>.helixjobs.com/<unit>/joblist -> /jobad?prj=<id> links, server-rendered.
   concludis       In this census the "concludis" label mostly sits on WordPress career sites that
-                  expose a jobs post-type sitemap (wp-sitemap-posts-jobs-N.xml). Real *.concludis.de
-                  tenants are handled by the same sitemap+detail path.
+                  expose a jobs post-type sitemap (wp-sitemap-posts-jobs-N.xml), handled by the same
+                  sitemap+detail path as wp_jobs. Real *.concludis.de tenants (verified 2026-09-08:
+                  ukr.concludis.de, swmbrk.concludis.de) are NOT -- their listing is populated by a
+                  client-side jobboard widget with no static job links and no discoverable sitemap;
+                  crawl_wp_jobs correctly returns 0 rows for those rather than a wrong guess. They
+                  need a JS-aware adapter (not written yet) -- see crawlers/portals.py's Playwright
+                  machinery for a starting point.
   wp_jobs         Same shape, used for the typo3_jobs/WordPress sites: find a job sitemap, then read
                   <title>/<h1> from each detail page. No JSON-LD on these, hence the HTML fallback.
   dvinci          d.vinci HR boards answer a public GET <host>/jobPublication/list.json (no auth, no
@@ -26,9 +31,12 @@ How each vendor is reached (probed 2026-09-06):
                   that only embeds the real d.vinci tenant host via a jobWidgetLoader script or a
                   plain link -- resolve that host first, then hit its own list.json. Falls back to
                   scraping `var DvinciData = ({...});` off <host>/de/jobs if list.json 404s there.
-  oracle          Oracle Recruiting Cloud is a JS SPA behind an XHR API; its sites here (Altmühlfranken,
-                  St. Josef) are already covered better by crawlers/portals.py, so they are routed
-                  there rather than duplicated. Klinikum FFB is a plain career page -> wp_jobs.
+  oracle          Oracle Recruiting Cloud is a JS SPA behind an XHR API; crawl_oracle tries a
+                  same-origin public jobs.feed.json (schema.org DataFeed, softgarden-fronted tenants
+                  like St. Josef publish this, no auth/browser needed -- reuses
+                  crawlers/portals.py:parse_jobposting_feed) and falls back to crawl_wp_jobs for
+                  tenants that render job links server-side instead (Klinikum FFB) or neither
+                  (Altmühlfranken, still needs crawlers/portals.py's Playwright path -- not wired in).
 """
 import argparse
 import html as _html
@@ -123,7 +131,7 @@ def parse_personio_xml(xml, org, page_url):
         # <department>/<recruitingCategory> are the tenant's own taxonomy -- free text, present on
         # some tenants and not others (section-first signal, "sometimes"; see pflege_jobs.section).
         department = f("department") or f("recruitingCategory")
-        out.append({"title": name, "org": f("subcompany") or org,
+        out.append({"title": name, "org": f("subcompany") or org, "office_raw": office,
                     "loc": [{"city": city, "plz": None, "region": None}],
                     "url": "%s/job/%s" % (page_url.rstrip("/").replace("/xml", ""), pid) if pid else page_url,
                     "page": page_url, "employmentType": f("employmentType"),
@@ -150,6 +158,29 @@ def crawl_personio(c, session=None):
             r.encoding = "utf-8"
             jobs = parse_personio_xml(r.text, c["name"], base + "/xml")
             if jobs:
+                # Some personio tenants (e.g. bergmanclinics) run one nationwide feed shared by many
+                # unrelated facilities, with <subcompany> naming the actual site per job. When the
+                # feed clearly spans more than one facility, narrow to jobs whose org text plausibly
+                # names *this* clinic (token overlap, same heuristic pflege_jobs.registry uses to
+                # link postings to clinics) -- fail open to the full list if nothing matches, so a
+                # clinic whose own name just doesn't textually resemble its subcompany field never
+                # loses all its jobs.
+                orgs = {j.get("org") for j in jobs if j.get("org")}
+                if len(orgs) > 1:
+                    from pflege_jobs.registry import toks, overlap
+                    # Prefer <office> (a bare per-site label, e.g. "Hofgartenklinik Aschaffenburg")
+                    # over <subcompany>/org for the match text: subcompany usually repeats the
+                    # tenant's own group brand ("Bergman Clinics ...") on every job regardless of
+                    # site, which token-overlaps enough with a clinic's own "Bergman Clinics <site>"
+                    # name to false-match a *different* site in the same group (verified live:
+                    # "Bergman Clinics Augenklinik Weinheim GmbH" otherwise scores 0.5 against
+                    # "Bergman Clinics Hofgartenklinik Aschaffenburg" on shared "bergman"/"clinics"
+                    # tokens alone) -- office_raw carries no such shared brand noise.
+                    want = toks(c.get("name"))
+                    narrowed = [j for j in jobs
+                               if overlap(want, toks(j.get("office_raw") or j.get("org"))) >= 0.5]
+                    if narrowed:
+                        jobs = narrowed
                 # Section-first: <department>/<recruitingCategory> come for free in the one feed
                 # request already made above. When the tenant's taxonomy names a nursing department,
                 # narrow to it; an untagged posting is still kept (some tenants only tag some jobs).
@@ -327,12 +358,16 @@ def crawl_helix(c, session=None):
 # WordPress / TYPO3 "jobs" sites + concludis tenants: sitemap -> detail pages
 # ---------------------------------------------------------------------------
 JOB_SITEMAP = re.compile(r"(jobs?|stellen|karriere|career|vacan)", re.I)
-JOB_PATH = re.compile(r"/(jobs?|stellen?|stellenangebote?|stellenanzeige|karriere/stellen|vacan)[/-]", re.I)
+JOB_PATH = re.compile(r"/(jobs?|stellen?|stellenangebote?|stellenanzeigen?|karriere/stellen|vacan)[/-]", re.I)
+# Loose fallback: a detail URL directly under a job-ish path segment (e.g. Wix's bare
+# /karriere/<slug>), only tried against locs pulled from a sitemap whose own URL already
+# matched JOB_SITEMAP (so it's not applied to a site's whole, unfiltered sitemap).
+JOB_PATH_LOOSE = re.compile(r"/(jobs?|stellen?|stellenangebote?|stellenanzeigen?|karriere|vacan)/[^/]+$", re.I)
 
 
 def find_job_urls(base, session=None, max_maps=8):
     """Follow robots.txt + sitemap indexes, prefer a jobs-specific sitemap, return job detail URLs."""
-    maps, out = [], []
+    maps, out, job_out = [], [], []
     r = get(urljoin(base, "/robots.txt"), timeout=15, session=session)
     if r and r.ok:
         maps += re.findall(r"(?im)^\s*sitemap:\s*(\S+)", r.text)
@@ -352,7 +387,11 @@ def find_job_urls(base, session=None, max_maps=8):
             queue = job_maps + queue if job_maps else queue + locs[:3]
         else:
             out += locs
+            if JOB_SITEMAP.search(u):
+                job_out += locs
     found = [u for u in dict.fromkeys(out) if JOB_PATH.search(u)]
+    if not found and job_out:
+        found = [u for u in dict.fromkeys(job_out) if JOB_PATH_LOOSE.search(u)]
     if not found:
         # Silent zero-yield here is indistinguishable from "board has no jobs right now" --
         # but it is usually a JS-only site (sitemap has no job links) or an unmatched URL shape.
@@ -459,6 +498,14 @@ def _page_job_links(url, session=None, exclude=()):
     return list(dict.fromkeys(u for u in found if u not in exclude))
 
 
+def _listing_page_key(u):
+    """Normalize a URL for "is this the listing page itself" comparisons -- strip index.php/.html
+    and a trailing slash so http://x/stellenangebote/ == http://x/stellenangebote/index.php."""
+    p = urlparse(u)
+    path = re.sub(r"/index\.(php|html?)$", "/", p.path or "/", flags=re.I).rstrip("/") or "/"
+    return (p.netloc.lower(), path.lower())
+
+
 def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
@@ -466,6 +513,10 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
     p = urlparse(cu)
     base = "%s://%s" % (p.scheme, p.netloc)
     host = p.netloc
+    # A JS-rendered listing page (concludis widgets etc.) can end up as its own only "job" link when
+    # nothing else on the static HTML matches JOB_PATH; never let the listing page masquerade as a
+    # posting -- parse_job_page would just re-extract the listing's own <h1> as a fake job title.
+    not_a_job = {_listing_page_key(cu)}
 
     # Section-first (surveyed 2026-09, revised): some bespoke career pages nav to a distinct,
     # already-narrowed nursing listing (a "Berufsgruppe" select or footer link) -- fetching it first
@@ -479,18 +530,21 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
     # has no cheap per-job label at fetch time to gate on the way career_crawl/bite do, so the only
     # way to recover a mislabelled posting is to fetch it.
     cu_resp = get(cu, session=session)
+    if cu_resp and cu_resp.ok:
+        not_a_job.add(_listing_page_key(cu_resp.url))
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
     out, fetched = [], set()
     if section_url:
         cu_links = ({urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
                     if cu_resp and cu_resp.ok else set())
-        section_urls = _page_job_links(section_url, session=session, exclude=cu_links | {section_url})
+        section_urls = [u for u in _page_job_links(section_url, session=session, exclude=cu_links | {section_url})
+                        if _listing_page_key(u) not in not_a_job]
         if section_urls:
             out = _wp_job_rows(section_urls, c, host, max_jobs, session,
                                section_labels=[section_label] if section_label else None)
             fetched = {j["payload"]["url"] for j in out}
 
-    urls = find_job_urls(base, session=session)
+    urls = [u for u in find_job_urls(base, session=session) if _listing_page_key(u) not in not_a_job]
     remaining = max(max_jobs - len(out), 0)
     if urls and remaining:
         more_urls = [u for u in urls if u not in fetched]
@@ -501,10 +555,34 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
         # friendly-slug job pages) -- fall back to scanning the career page's own job links.
         page_urls = ([urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text) if JOB_PATH.search(h)]
                      if cu_resp and cu_resp.ok else [])
-        page_urls = list(dict.fromkeys(page_urls))
+        page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job]
         if page_urls and page_urls != urls:
             out = _wp_job_rows(page_urls, c, host, max_jobs, session)
     return out
+
+
+def crawl_oracle(c, session=None):
+    """Oracle Recruiting Cloud is a client-rendered SPA -- no server-rendered job links to walk a
+    sitemap for. Some tenants (softgarden-fronted, e.g. karriere.josef.de) also publish a public,
+    unauthenticated schema.org DataFeed at <origin>/jobs.feed.json; prefer that when present, since
+    it has full descriptions and needs no browser. Falls back to crawl_wp_jobs for tenants that
+    render job links server-side instead (Klinikum FFB)."""
+    cu = (c.get("careers_url") or "").strip()
+    if cu:
+        p = urlparse(cu)
+        feed_url = "%s://%s/jobs.feed.json" % (p.scheme, p.netloc)
+        r = get(feed_url, session=session)
+        if r and r.ok:
+            try:
+                data = r.json()
+            except ValueError:
+                data = None
+            if isinstance(data, dict) and data.get("dataFeedElement"):
+                from crawlers.portals import parse_jobposting_feed
+                jobs = parse_jobposting_feed(data, feed_url)
+                if jobs:
+                    return [row(p.netloc, j["url"], j, "oracle") for j in jobs if j.get("title") and j.get("url")]
+    return crawl_wp_jobs(c, session=session)
 
 
 REXX_JOB_HREF = re.compile(r'href="([^"#]*-j\d+\.html[^"]*)"')
@@ -800,10 +878,22 @@ def group_portal_for(c):
 
 
 def crawl_group_portal(c, g, session=None, max_jobs=250):
-    """Page the group board, then read each job's JSON-LD. Shared across every site of the group."""
+    """Page the group board, then read each job's JSON-LD. Shared across every site of the group.
+
+    Some clinics carry their own pre-filtered querystring on the shared board (e.g.
+    ?filter[company][]=<this clinic>) in their registry careers_url -- start from that page rather
+    than the group's bare listing URL, so a per-clinic filter that the tenant's own server already
+    honours isn't silently dropped in favour of the whole group's unfiltered job list.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+    cu = c.get("careers_url") or ""
+    base_list = cu if g["host"] in cu else g["list"]
+    parts = urlsplit(base_list)
+    base_qs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != g["page_param"]]
     urls, seen = [], set()
     for i in range(1, g.get("pages", 8) + 1):
-        u = g["list"] if i == 1 else "%s?%s=%d" % (g["list"], g["page_param"], i)
+        qs = base_qs if i == 1 else base_qs + [(g["page_param"], str(i))]
+        u = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(qs), ""))
         r = get(u, session=session)
         if not r or not r.ok:
             break
@@ -836,7 +926,7 @@ VENDORS = {
     "concludis": crawl_wp_jobs,
     "typo3_jobs": crawl_wp_jobs,
     "talention": crawl_wp_jobs,
-    "oracle": crawl_wp_jobs,
+    "oracle": crawl_oracle,
     "dvinci": crawl_dvinci,
     "wp_jobs": crawl_wp_jobs,   # routing.py default for careers_url-but-no-vendor-label boards
 }

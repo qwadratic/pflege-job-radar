@@ -72,8 +72,12 @@ footer{border-top:1px solid var(--line);padding:34px 0 50px;font-size:12px;color
 .badge{display:inline-block;background:var(--neon);color:var(--ink);font-size:10.5px;padding:0 6px;line-height:16px;margin-left:6px;vertical-align:1px;font-variant-numeric:tabular-nums}
 .tag.red{border-color:var(--red);color:var(--red)}
 /* home: towns */
-.cities{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:26px auto 0;max-width:820px} .cities .eyebrow{width:100%;margin:0 0 2px}
-.cities a,.cities button{text-decoration:none;color:var(--ink-2);background:#fff;border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:40px;display:inline-flex;align-items:center;gap:6px} .cities a b{font-weight:500;color:var(--ink)} .cities a:hover,.cities button:hover{background:var(--surface)} .cities button{color:var(--accent)}
+.cities{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center;margin:26px auto 0;max-width:820px} .cities .eyebrow{width:100%;margin:0 0 2px}
+.cities a{text-decoration:none;color:var(--ink-2);background:#fff;border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:40px;display:inline-flex;align-items:center;gap:6px} .cities a b{font-weight:500;color:var(--ink)} .cities a:hover{background:var(--surface)}
+.twn-box{position:relative;min-width:210px} .twn{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:0;min-height:40px;padding:0 12px;-webkit-appearance:none} .twn::placeholder{color:var(--ink-3)} .twn:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.twn-box .dd{position:absolute;z-index:30;top:calc(100% + 4px);left:0;right:0;max-height:290px;overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid var(--line);box-shadow:0 10px 28px rgba(0,0,0,.12);text-align:left} .twn-box .dd[hidden]{display:none}
+.twn-box .o{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;font-size:13px;color:var(--ink-2);cursor:pointer} .twn-box .o small{color:var(--ink-3);font-variant-numeric:tabular-nums} .twn-box .o:hover,.twn-box .o[aria-selected=true]{background:var(--surface);color:var(--ink)} .twn-box .o.empty{cursor:default;justify-content:center;color:var(--ink-3)}
+@media(max-width:560px){.twn-box{width:100%}}
 /* billing */
 .bl-win{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:18px} .bl-win .chip{padding:0 14px;font-size:13px;min-height:40px}
 .bl-custom{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;margin:0 0 22px;font-size:12.5px;color:var(--ink-2)} .bl-custom[hidden]{display:none} .bl-custom input{border:1px solid var(--line);background:#fff;padding:0 10px;font-size:13px;min-height:40px} .bl-custom button{background:var(--ink);color:#fff;border:0;padding:0 14px;min-height:40px}
@@ -132,7 +136,7 @@ const I18N={
   j_source:"Originalanzeige öffnen",j_hospital:"Klinik",j_town:"Ort",j_pub:"Veröffentlicht",j_role:"Rolle",j_dept:"Fachbereich",j_qual:"Qualifikation",j_emp:"Arbeitszeit",j_contract:"Vertrag",j_desc:"Beschreibung",j_proof:"Web-Nachweis",
   cv_h:"Passende Stellen zu deinem Lebenslauf",cv_profile:"Erkanntes Profil",cv_wait:"Lebenslauf wird analysiert …",cv_none:"Keine passenden Stellen gefunden.",cv_years:"Jahre Erfahrung",match:"Treffer",
   today:"heute",yesterday:"gestern",days:"Tage",back:"← zurück",
-  h_towns:"Städte · offene Stellen",more_short:"mehr",n_billing:"Kosten",
+  h_towns:"Städte · offene Stellen",tp_none:"Nichts gefunden.",n_billing:"Kosten",
   b_e:"Kosten",b_h:"Firecrawl-Ausgaben",b_p:"Credits, Tokens und Läufe im gewählten Zeitraum. Preis in USD je Credit; Free-Runs kosten 0. Filter gelten für alles auf dieser Seite.",
   w_today:"Heute",w_7:"7 T",w_30:"30 T",w_period:"Abrechnungszeitraum",w_custom:"Benutzerdefiniert",w_from:"von",w_to:"bis",w_apply:"Anwenden",
   b_usd_in:"USD im Zeitraum",b_billable:"abrechenbare Credits",b_free:"Free-Run-Credits",b_table:"Tabelle",b_graph:"Grafik",b_bucket:"Abschnitt",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Läufe",b_usd:"USD",b_chart_aria:"Credits je Zeitabschnitt, abrechenbar und frei",
@@ -151,7 +155,7 @@ const I18N={
   j_source:"Open original posting",j_hospital:"Hospital",j_town:"Town",j_pub:"Published",j_role:"Role",j_dept:"Department",j_qual:"Qualification",j_emp:"Hours",j_contract:"Contract",j_desc:"Description",j_proof:"Web proof",
   cv_h:"Jobs matching your CV",cv_profile:"Detected profile",cv_wait:"Analysing the CV …",cv_none:"No matching jobs found.",cv_years:"years of experience",match:"match",
   today:"today",yesterday:"yesterday",days:"days ago",back:"← back",
-  h_towns:"Towns · open jobs",more_short:"more",n_billing:"Billing",
+  h_towns:"Towns · open jobs",tp_none:"Nothing found.",n_billing:"Billing",
   b_e:"Billing",b_h:"Firecrawl spend",b_p:"Credits, tokens and runs in the selected window. Price in USD per credit; free runs cost 0. Filters scope everything on this page.",
   w_today:"Today",w_7:"7 d",w_30:"30 d",w_period:"Billing period",w_custom:"Custom",w_from:"from",w_to:"to",w_apply:"Apply",
   b_usd_in:"USD in window",b_billable:"billable credits",b_free:"free-run credits",b_table:"Table",b_graph:"Chart",b_bucket:"Bucket",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Runs",b_usd:"USD",b_chart_aria:"Credits per bucket, billable and free",
@@ -252,11 +256,34 @@ async function pageJobs(g){ await taxonomy(); const fc=await facets(); J.q=g.q||
     body.replaceChildren(el("div",{class:"filters"},sel,cityPicker(J.city,v=>{J.city=v;draw();},fc.job_cities||fc.cities),el("label",{class:"tg"},el("input",{type:"checkbox",checked:J.fresh,onchange:e=>{J.fresh=e.target.checked;draw();}}),t("fresh_only")),J.q?el("span",{class:"tag",text:"„"+J.q+"“ ×",style:"cursor:pointer",onclick:()=>{J.q="";draw();}}):null),
       ...paged(jobRow,(off,lim)=>api("/api/jobs"+qs({q:J.q,role_class:J.role,city:J.city,fresh_days:J.fresh?7:"",sort:"-first_published",limit:lim,offset:off})),25)); };
   draw(); return [el("section",{class:"block",style:"border-top:0"},head,body)]; }
-// Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; "mehr" reveals the rest.
-function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities)||[]; if(!src.length) return null; const TOP=12; const box=el("div",{class:"cities"});
-  const draw=all=>{ const rows=all?src:src.slice(0,TOP); box.replaceChildren(el("span",{class:"eyebrow",text:t("h_towns")}),...rows.map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))),
-    !all&&src.length>TOP?el("button",{type:"button",text:t("more_short")+" +"+(src.length-TOP),onclick:()=>draw(true)}):null); };
-  draw(false); return box; }
+// Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; every other town lives in the combobox beside them.
+function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities)||[]; if(!src.length) return null; const TOP=12;
+  const row=el("div",{class:"cities"},el("span",{class:"eyebrow",text:t("h_towns")}),
+    ...src.slice(0,TOP).map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))));
+  if(src.length>TOP) row.append(townPicker(src));
+  return row; }
+// Town combobox: type to filter (umlaut/ß-insensitive), ↑/↓ to walk, Enter picks, Esc closes; picking navigates to that town's jobs.
+// ARIA combobox + listbox, so screen readers and keyboards get the same thing the mouse does.
+function townPicker(src){ const MAX=200;
+  const norm=s=>String(s).toLowerCase().replace(/ß/g,"ss").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const inp=el("input",{class:"twn",type:"text",role:"combobox",autocomplete:"off",spellcheck:"false","aria-autocomplete":"list","aria-expanded":"false","aria-controls":"twn-dd","aria-label":t("h_towns"),placeholder:t("city_ph")});
+  const dd=el("div",{class:"dd",id:"twn-dd",role:"listbox",hidden:true}); const box=el("div",{class:"twn-box"},inp,dd);
+  let hits=[],cur=-1;
+  const close=()=>{ dd.hidden=true; cur=-1; inp.setAttribute("aria-expanded","false"); inp.removeAttribute("aria-activedescendant"); };
+  const mark=i=>{ cur=i; [...dd.children].forEach((n,k)=>n.setAttribute("aria-selected",String(k===i)));
+    if(dd.children[i]){ inp.setAttribute("aria-activedescendant",dd.children[i].id); dd.children[i].scrollIntoView({block:"nearest"}); } else inp.removeAttribute("aria-activedescendant"); };
+  const pick=c=>{ close(); inp.value=""; inp.blur(); location.hash="#/jobs?city="+encodeURIComponent(c.v); };
+  const draw=()=>{ const q=norm(inp.value.trim()); hits=(q?src.filter(c=>norm(c.v).includes(q)):src).slice(0,MAX);
+    dd.replaceChildren(...(hits.length?hits.map((c,i)=>el("div",{class:"o",id:"twn-o"+i,role:"option","aria-selected":"false",onmousedown:e=>{e.preventDefault();pick(c);}},el("span",{text:c.v}),el("small",{text:num(c.n)})))
+      :[el("div",{class:"o empty",text:t("tp_none")})]));
+    dd.hidden=false; inp.setAttribute("aria-expanded","true"); mark(-1); };
+  inp.addEventListener("focus",draw); inp.addEventListener("input",draw);
+  inp.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(dd.hidden) draw(); if(!hits.length) return; e.preventDefault(); mark(e.key==="ArrowDown"?(cur+1)%hits.length:(cur<=0?hits.length-1:cur-1)); return; }
+    if(e.key==="Enter"){ const exact=hits.find(c=>norm(c.v)===norm(inp.value.trim())); const c=cur>=0?hits[cur]:exact||(hits.length===1?hits[0]:null); if(c){ e.preventDefault(); pick(c); } return; }
+    if(e.key==="Escape"&&!dd.hidden){ e.preventDefault(); close(); } });
+  box.addEventListener("focusout",e=>{ if(!box.contains(e.relatedTarget)) close(); });
+  return box; }
 
 // ---- billing (#/billing, alias #/kosten) --------------------------------------------------------
 // Contract: GET /api/billing?window=today|7d|30d|period|custom[&from=YYYY-MM-DD&to=YYYY-MM-DD] → {series,totals,by_kind,runs,pools}.

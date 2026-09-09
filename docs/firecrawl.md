@@ -285,7 +285,7 @@ that is in flight right now is deferred, not skipped.
 | # | name | fires when | daemon then |
 |---|---|---|---|
 | 1 | `all_updated` | no pending target left today | sleeps (60 s polls) until the next UTC day — the 5 free runs reset |
-| 2 | `combined_bar` | `refills >= hunter.max_refills` (2) **AND** `cost_per_posting > hunter.max_usd_per_posting` (0.50) | waits for `POST /api/hunter/start` |
+| 2 | `combined_bar` | `refills >= hunter.max_refills` (2) **AND** `cost_per_posting > hunter.max_usd_per_posting` (0.10) | waits for `POST /api/hunter/start` |
 | 3 | `suspicious` | any `fc_hunt.suspicious()` rule (run charged > `max_charge_per_run` 150, token delta > `max_tokens_per_run` 2500, API/balance DISAGREE, a run error, > 60 rows from one clinic, three empty billable runs in a row); 3 failures in a row; burn rate of the hunter's runs in the last 60 min > `max_credits_per_hour` (600); `tokens_remaining < min_tokens` (300); Firecrawl API 429/5xx 5 times despite backoff 30 → 60 → 120 → 300 → 600 s; an empty registry snapshot | waits for a human |
 | 4 | `kill_switch` | `app.crawl.kill_switch()` refuses (§3, the last-resort backstop; the hunter passes `run_mode='hunter'`, so the throttle tier refuses it too); `firecrawl.enabled` false; the file `data/HUNTER_STOP` exists; `POST /api/hunter/stop` | waits for a human |
 
@@ -315,6 +315,6 @@ thresholds (`concurrency`, `cap`, `escalate_cap`, `max_refills`, `max_usd_per_po
 **Reading the card** (`/pro#/clawl`, under "Coverage by adapter", refreshes every 20 s while enabled): the status
 line shows *running* / *enabled, waiting for the daemon* / *enabled, but no daemon* / *stopped* and the stop reason
 with its numbers; the tiles show targets done / total, pending, skipped, needs-manual, credits and tokens spent today,
-new postings, `$ per posting / 0.50` (red once over the bar), `refills / 2` (red once reached, `(+pack)` once a
+new postings, `$ per posting / 0.10` (red once over the bar), `refills / 2` (red once reached, `(+pack)` once a
 reload was seen), and the account pools (credits · tokens · free runs left). The table is today's `hunt_state`:
 clinic, status, cap, credits, rows, new, run id + last error — `needs_manual` rows are the ones a human should look at.

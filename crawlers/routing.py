@@ -49,7 +49,7 @@ ADAPTERS = {
     "concludis":       ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "typo3_jobs":      ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "talention":       ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
-    "oracle":          ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
+    "oracle":          ("vendor", "crawlers.vendor_adapters:crawl_oracle"),
     # Default fallback for careers_url-but-no-vendor-label boards (see plan() below) -- same
     # sitemap/page-link job discovery as the other WordPress/TYPO3 sites, just without a
     # fingerprinted vendor name attached.
