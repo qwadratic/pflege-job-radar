@@ -171,6 +171,36 @@ def test_wp_jobs_fetches_the_nursing_nav_link_first_and_tags_it(monkeypatch):
     assert rows[0]["payload"]["section_labels"] == ["Pflegedienst"]
 
 
+def test_wp_jobs_resolves_relative_nav_link_against_base_href_and_skips_hidden_h1(monkeypatch):
+    # 2026-09 KWM fix: a <base href> page (Contao and similar German-clinic CMSs always emit one)
+    # makes urljoin(page_url, relative_href) double up the path and 404 unless <base> is honoured.
+    # The detail page also carries a site-wide a11y <h1 class="visuallyhidden"> that is never the
+    # job title -- the real title sits in a plain <h3> instead.
+    cu = "https://www.kwm-example.de/beruf-chancen/stellenanzeigen/"
+    cu_page = _R(
+        '<base href="https://www.kwm-example.de/">'
+        '<a href="beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/">Pflege- &amp; Funktionsdienst</a>',
+        url=cu, ok=True)
+    section_url = "https://www.kwm-example.de/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/"
+    section_page = _R(
+        '<base href="https://www.kwm-example.de/">'
+        '<a href="/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/details/?job=1">x</a>',
+        url=section_url, ok=True)
+    detail_url = "https://www.kwm-example.de/beruf-chancen/stellenanzeigen/pflege-und-funktionsdienst/details/?job=1"
+    detail = _R(
+        '<h1 class="visuallyhidden">Klinikum Beispiel gGmbH</h1>'
+        "<h3>Pflegefachkraft (m/w/d) für die Station</h3>",
+        url=detail_url, ok=True)
+    calls = []
+    mapping = {cu: cu_page, section_url: section_page, detail_url: detail}
+    monkeypatch.setattr(va, "get", _router(mapping, calls))
+    rows = va.crawl_wp_jobs({"name": "Klinikum Beispiel", "careers_url": cu})
+    assert section_url in calls  # <base>-resolved, not the doubled-up 404 URL
+    assert len(rows) == 1
+    assert rows[0]["payload"]["title"] == "Pflegefachkraft (m/w/d) für die Station"
+    assert rows[0]["payload"]["section_labels"] == ["Pflege- & Funktionsdienst"]
+
+
 def test_wp_jobs_recovers_a_job_filed_outside_the_nursing_nav_bucket(monkeypatch):
     # 2026-09 coverage-loss fix: stopping as soon as the confirmed nursing nav subtree yielded any
     # rows used to mean the full-board sitemap walk never ran at all -- silently missing a real

@@ -74,6 +74,17 @@ def _txt(s, limit=20000):
     return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", s or ""))).strip()[:limit] or None
 
 
+def _page_base(resp):
+    """Resolve relative hrefs against a page's <base href="..."> when present (Contao and similar
+    German-clinic CMSs always emit one) -- falling back to the response's own URL otherwise.
+    Without this, urljoin(resp.url, relative_href) on a <base>-carrying page silently doubles up
+    the path and 404s."""
+    if not resp:
+        return ""
+    m = re.search(r'<base[^>]+href="([^"]+)"', resp.text, re.I)
+    return urljoin(resp.url, _html.unescape(m.group(1))) if m else resp.url
+
+
 def row(host, url, payload, vendor):
     return {"kind": "jobposting", "source_host": host, "source_url": url,
             "payload": payload, "collector": "vendor-%s-v1" % vendor, "client_id": CID}
@@ -426,6 +437,13 @@ def parse_job_page(htmltext, url, org):
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
     h1 = re.search(r"<h1[^>]*>(.*?)</h1>", htmltext or "", re.S)
+    # A site-wide a11y label (e.g. <h1 class="visuallyhidden">Klinikum X gGmbH</h1>) sits on every
+    # page including the shell of a JS-rendered detail page -- never a job title, so treat it as no
+    # h1 at all rather than let it win by default.
+    a11y_h1 = bool(h1 and re.search(r'class="[^"]*\b(visuallyhidden|visually-hidden|sr-only|screen-reader-text)\b',
+                                     h1.group(0), re.I))
+    if a11y_h1:
+        h1 = None
     title = _txt(h1.group(1), 300) if h1 else None
     if title:
         title = re.sub(r"^(Bewirb dich als|Jetzt bewerben als|Stellenangebot:?)\s+", "", title, flags=re.I)
@@ -436,6 +454,21 @@ def parse_job_page(htmltext, url, org):
             cand = re.split(r"\s+[–—|]\s+", cand)[0].strip()
             if GENDER.search(cand) or not title:
                 title = cand
+    if not title or not GENDER.search(title):
+        # Neither h1 nor <title> carries a gender marker (bespoke CMS keeps the real title in a
+        # plain <h2>/<h3> instead, e.g. KWM) -- take the first heading that does, else give up
+        # rather than return a fake title (a11y h1 above, or a generic <title>).
+        for hm in re.finditer(r"<h[23][^>]*>(.*?)</h[23]>", htmltext or "", re.S):
+            cand = _txt(hm.group(1), 300)
+            if cand and GENDER.search(cand):
+                title = cand
+                break
+        else:
+            # Suppressed a11y h1 and no gender-marked heading anywhere (Initiativbewerbung/
+            # Blitzbewerbung shell) -- the only title left is the generic <title> tag, not a real
+            # posting; drop it instead of ingesting a fake row.
+            if a11y_h1:
+                return None
     if not title:
         return None
     body = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or "")
@@ -466,9 +499,10 @@ def _wp_nursing_section_url(cu, cu_resp):
     board at all (checked, not assumed) or none of its options/links name nursing."""
     if not cu_resp or not cu_resp.ok:
         return None, None
+    base = _page_base(cu_resp)
     links = []
     for h, label in re.findall(r'<option[^>]+data-url="([^"]+)"[^>]*>([^<]*)</option>', cu_resp.text, re.I):
-        links.append((_txt(label), urljoin(cu_resp.url, _html.unescape(h))))
+        links.append((_txt(label), urljoin(base, _html.unescape(h))))
     for h, label in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>([^<]*)</a>', cu_resp.text, re.I):
         label = _txt(label)
         # A genuine Berufsgruppe/category nav label is a short word or two ("Pflege",
@@ -477,7 +511,7 @@ def _wp_nursing_section_url(cu, cu_resp):
         # is not a category link, and following it would "narrow" to one job's own detail/related
         # links instead of the section.
         if label and len(label) <= 40:
-            links.append((label, urljoin(cu_resp.url, _html.unescape(h))))
+            links.append((label, urljoin(base, _html.unescape(h))))
     href = section.pick_nursing_link(links)
     if href and href.rstrip("/") == cu.rstrip("/"):
         return None, None
@@ -494,7 +528,9 @@ def _page_job_links(url, session=None, exclude=()):
     r = get(url, session=session)
     if not r or not r.ok:
         return []
-    found = (urljoin(r.url, h) for h in re.findall(r'href="([^"#]+)"', r.text) if JOB_PATH.search(h))
+    base = _page_base(r)
+    html = re.sub(r"(?s)<!--.*?-->", "", r.text)
+    found = (urljoin(base, h) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h))
     return list(dict.fromkeys(u for u in found if u not in exclude))
 
 
@@ -535,7 +571,7 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
     out, fetched = [], set()
     if section_url:
-        cu_links = ({urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
+        cu_links = ({urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
                     if cu_resp and cu_resp.ok else set())
         section_urls = [u for u in _page_job_links(section_url, session=session, exclude=cu_links | {section_url})
                         if _listing_page_key(u) not in not_a_job]
@@ -553,7 +589,8 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
         # Either the sitemap had no job urls, or every one of them was stale/unfetchable (some TYPO3
         # sitemaps carry dead query-string job routes while the career page itself links the live,
         # friendly-slug job pages) -- fall back to scanning the career page's own job links.
-        page_urls = ([urljoin(cu_resp.url, h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text) if JOB_PATH.search(h)]
+        cu_html = re.sub(r"(?s)<!--.*?-->", "", cu_resp.text) if cu_resp and cu_resp.ok else ""
+        page_urls = ([urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_html) if JOB_PATH.search(h)]
                      if cu_resp and cu_resp.ok else [])
         page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job]
         if page_urls and page_urls != urls:
