@@ -81,6 +81,12 @@ GENERIC_PREFIX = {"bad", "sankt", "st", "st.", "markt", "neu", "ober", "unter", 
 
 
 def in_bavaria(city, plz, region, towns):
+    # A malformed upstream row can carry a one-item list instead of a scalar (seen live 2026-09-09,
+    # inbox_id 13576: {"plz": ["97318"], "city": ["Kitzingen"]}) -- one bad row must never crash the
+    # whole drain for every other pending row behind it.
+    if isinstance(plz, list): plz = plz[0] if plz else None
+    if isinstance(city, list): city = city[0] if city else None
+    if isinstance(region, list): region = region[0] if region else None
     if region and re.search(r"bayern|bavaria|^by$", str(region).strip(), re.I): return True
     if region and re.search(r"hessen|thüringen|sachsen|brandenburg|baden|württemberg|nordrhein|niedersachsen|berlin|hamburg|rheinland|saarland|schleswig|mecklenburg|bremen|^(nw|he|bw|th|sn|ni|rp|sh|mv|bb|hh|hb|be|sl|st)$", str(region).strip(), re.I): return False
     if plz and BAV_PLZ.match(plz): return True

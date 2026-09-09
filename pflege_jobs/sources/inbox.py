@@ -19,7 +19,13 @@ def jobposting_to_obs(row, towns):
     emp = org or host
     e_class, e_rule = classify_employer(emp)
     title = _strip(p.get("title") or ""); desc = _strip(p.get("description") or "")
-    locs = p.get("loc") or []
+    # A malformed upstream row can carry a one-item list instead of a scalar per field (seen live
+    # 2026-09-09, inbox_id 13576: {"plz": ["97318"], "city": ["Kitzingen"]}) -- normalize once, here,
+    # before anything downstream (in_bavaria, fuzzy_key, content_hash, the locations json below) sees
+    # city/plz/region, rather than defending each caller separately.
+    def _scalar(v):
+        return (v[0] if v else None) if isinstance(v, list) else v
+    locs = [{**x, "city": _scalar(x.get("city")), "plz": _scalar(x.get("plz")), "region": _scalar(x.get("region"))} for x in (p.get("loc") or [])]
     l = next((x for x in locs if in_bavaria(x.get("city"), x.get("plz"), x.get("region"), towns)), locs[0] if locs else {})
     # Structural signal from the vendor's own category/department taxonomy, set by
     # crawlers/vendor_adapters.py's section-aware crawl_* functions when the job's own label is

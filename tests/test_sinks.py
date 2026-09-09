@@ -28,6 +28,15 @@ def test_to_observation():
     assert json.loads(o["payload"])["inbox"]["collector"] == "vendor-adapters-test"
 
 
+def test_one_item_list_loc_fields_do_not_crash():
+    # Live 2026-09-09, inbox_id 13576: a malformed upstream row carried loc=[{"plz": ["97318"],
+    # "city": ["Kitzingen"], "region": None}] -- crashed the whole drain (first in_bavaria's regex,
+    # then classify.norm_text via fuzzy_key/content_hash) for every other pending row behind it.
+    o = obs(payload={"loc": [{"city": ["Kitzingen"], "plz": ["97318"], "region": None}]})
+    assert o["city"] == "Kitzingen" and o["plz"] == "97318" and o["in_bavaria"] is True
+    assert isinstance(o["fuzzy_key"], str) and isinstance(o["content_hash"], str)
+
+
 def test_firecrawl_collector_maps_to_source_25():
     assert jobposting_to_obs({**ROW, "collector": "firecrawl-agent"}, TOWNS)["source_id"] == 25
     assert jobposting_to_obs({**ROW, "collector": None}, TOWNS)["source_id"] == 20
