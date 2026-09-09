@@ -16,8 +16,6 @@ import json
 import os
 import sys
 
-import requests
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app import config as A                      # noqa: E402
 from app import crawl as CR                      # noqa: E402
@@ -31,21 +29,10 @@ from pflege_jobs.cli import canonical_ref        # noqa: E402
 from pflege_jobs.sources import firecrawl_agent as FA  # noqa: E402
 
 
-def adapter_rows(clinic):
-    """Fresh, free: exactly what execute() would ingest right now, before classify."""
-    boards = CR._boards([clinic])
-    session = requests.Session()
-    out = []
-    for _url, b in boards.items():
-        if b["kind"] == "vendor":
-            for r in CR._vendor_rows(b, clinic, session, lambda *_: None):
-                pl = r.get("payload") or {}
-                out.append({"title": pl.get("title"), "url": r.get("source_url")})
-        else:
-            obs, _st = CR._seed_obs(b, clinic, D.towns(), lambda *_: None)
-            for o in obs:
-                out.append({"title": o.get("title"), "url": o.get("source_ref") or o.get("source_url")})
-    return [r for r in out if r["title"] and r["url"]]
+# adapter_rows() used to be a private copy of the board-walk; it now lives in app/crawl.py as
+# raw_board_rows() (shared with GET /api/crawl/estimate too). Kept as a thin alias so the rest of this
+# file (and its docstrings/log lines) don't need to change.
+adapter_rows = CR.raw_board_rows
 
 
 def fc_rows(clinic, max_credits, log=print):

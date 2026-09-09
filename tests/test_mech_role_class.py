@@ -9,6 +9,9 @@ def test_roles():
              ("Fachkrankenpfleger Intensiv (m/w/d)", "Gesundheits- und Krankenpfleger/in", "fachpflege"),
              ("Pflegefachkraft Intensivstation (m/w/d)", "Gesundheits- und Krankenpfleger/in", "pflegefachkraft"),
              ("Pflegehelfer (m/w/d)", "Altenpflegehelfer/in", "pflegehelfer"),
+             # 2026-09-09: Firecrawl (compare_adapter_fc.py, clinic 46101) found this plural slipping through
+             # as sonstige_pflege -- "pflegehilfskraft" didn't match the umlaut plural "pflegehilfskräfte".
+             ("Pflegehilfskräfte (m/w) für ambulant, teilstationär und stationär", "", "pflegehelfer"),
              ("Hebamme (m/w/d)", "Hebamme/Entbindungspfleger", "hebamme"),
              ("OTA (m/w/d)", "Operationstechnische/r Assistent/in", "ota_ata"),
              ("Praxisanleiter (m/w/d)", "Praxisanleiter/in - Pflegeberufe", "praxisanleitung"),

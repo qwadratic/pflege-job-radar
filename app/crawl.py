@@ -138,22 +138,67 @@ def _unseen_source_urls(urls):
     return [u for u in urls if u not in existing]
 
 
-def _adapter_probe_rows(clinic):
-    """Run the routable adapter for exactly this one clinic, just to see what it would find --
-    used by spend_gate() to decide whether Firecrawl would add anything an adapter doesn't already cover."""
+def raw_board_rows(clinic):
+    """Every job on this clinic's board straight from the adapter, before classify: {title, url} per row.
+    Free (no Firecrawl). Shared by _adapter_probe_rows(), GET /api/crawl/estimate, and
+    tools/compare_adapter_fc.py -- one board-walk, three consumers."""
     boards = _boards([clinic])
     if not boards:
         return []
     session = requests.Session()
     out = []
-    for url, b in boards.items():
+    for _url, b in boards.items():
         if b["kind"] == "vendor":
-            rows = _vendor_rows(b, clinic, session, lambda *_: None)
-            out += [r.get("source_url") for r in rows if r.get("source_url")]
+            for r in _vendor_rows(b, clinic, session, lambda *_: None):
+                pl = r.get("payload") or {}
+                out.append({"title": pl.get("title"), "url": r.get("source_url")})
         else:
             obs, _st = _seed_obs(b, clinic, D.towns(), lambda *_: None)
-            out += [o.get("source_ref") or o.get("source_url") for o in obs if (o.get("source_ref") or o.get("source_url"))]
-    return out
+            for o in obs:
+                out.append({"title": o.get("title"), "url": o.get("source_ref") or o.get("source_url")})
+    return [r for r in out if r["title"] and r["url"]]
+
+
+def _adapter_probe_rows(clinic):
+    """URLs only -- used by spend_gate() to decide whether Firecrawl would add anything an adapter
+    doesn't already cover."""
+    return [r["url"] for r in raw_board_rows(clinic)]
+
+
+def estimate_clinic(clinic):
+    """Free, pre-parse estimate of how many Pflegedienst vacancies are on this clinic's board, classified
+    from the title alone (GET /api/crawl/estimate; docs/api.md). Deliberately three-way, not binary: a
+    title with no nursing/non-nursing signal at all (classify_role's own 'no_pflege_token' rule) is
+    'ambiguous', never silently folded into excluded -- it genuinely needs a full read (department label,
+    description) to know, which is exactly the case a human asking 'how many Pflege jobs are here' can't
+    answer from a title list either. No adapter route (or walled) -> can't estimate for free at all;
+    say so rather than guess (a paid Firecrawl probe is the only way to know, see POST /api/crawl)."""
+    if not clinic.get("routable") or clinic.get("walled"):
+        return {"clinic_id": clinic["clinic_id"], "confidence": "none", "board_rows": None,
+                "note": "no adapter route (or walled) -- would need a paid Firecrawl probe to estimate at all"}
+    try:
+        rows = raw_board_rows(clinic)
+    except Exception as e:
+        return {"clinic_id": clinic["clinic_id"], "confidence": "none", "board_rows": None,
+                "note": f"board fetch failed: {type(e).__name__}: {str(e)[:150]}"}
+    from pflege_jobs import classify as CL
+    from pflege_jobs import config as PC
+    definite, ambiguous, excluded = [], [], []
+    for r in rows:
+        role_class, rule = CL.classify_role(r["title"])
+        if rule == "no_pflege_token":
+            ambiguous.append(r)
+        elif role_class in PC.EXCLUDED_ROLE_CLASSES:
+            excluded.append(r)
+        else:
+            definite.append(r)
+    total = len(rows)
+    amb_share = (len(ambiguous) / total) if total else 0.0
+    confidence = "high" if total and amb_share < 0.15 else ("low" if total else "none")
+    return {"clinic_id": clinic["clinic_id"], "board_rows": total, "definite_pflege": len(definite),
+            "ambiguous": len(ambiguous), "definite_excluded": len(excluded), "confidence": confidence,
+            "note": ("many titles carry no nursing/non-nursing signal at all -- the true Pflegedienst count "
+                     "is only known after a full crawl reads descriptions/department labels" if confidence == "low" else None)}
 
 
 def spend_gate(clinic, max_credits, probe_adapter=None, log=print):

@@ -372,3 +372,47 @@ def test_paused_scheduler_tick_fires_nothing_unless_forced(client):
         assert out["fired"] == [] and out.get("paused") is True
     finally:
         S.resume()
+
+
+# --- estimate: free, pre-parse read of a board (GET /api/crawl/estimate) ------------------------
+def test_estimate_no_adapter_route_says_so(client):
+    r = CR.estimate_clinic(CLINIC_UNKNOWN)
+    assert r["confidence"] == "none" and r["board_rows"] is None and "no adapter route" in r["note"]
+
+
+def test_estimate_board_fetch_failure_says_so(client, monkeypatch):
+    def boom(_c):
+        raise RuntimeError("HTTP 503")
+    monkeypatch.setattr(CR, "raw_board_rows", boom)
+    r = CR.estimate_clinic(CLINIC_KNOWN)
+    assert r["confidence"] == "none" and r["board_rows"] is None and "board fetch failed" in r["note"]
+
+
+def test_estimate_buckets_definite_ambiguous_excluded(client, monkeypatch):
+    rows = [{"title": "Pflegefachkraft (m/w/d)", "url": "https://x/1"},          # definite
+            {"title": "Pflegehelfer (m/w/d)", "url": "https://x/2"},            # definite_excluded (explicit keyword)
+            {"title": "Irgendwas Buchhaltung (m/w/d)", "url": "https://x/3"}]    # ambiguous (no signal either way)
+    monkeypatch.setattr(CR, "raw_board_rows", lambda _c: rows)
+    r = CR.estimate_clinic(CLINIC_KNOWN)
+    assert r == {"clinic_id": "36201", "board_rows": 3, "definite_pflege": 1, "ambiguous": 1, "definite_excluded": 1,
+                 "confidence": "low", "note": r["note"]}
+    assert "only known after a full crawl" in r["note"]
+
+
+def test_estimate_high_confidence_when_ambiguous_share_is_low(client, monkeypatch):
+    rows = [{"title": "Pflegefachkraft (m/w/d)", "url": f"https://x/{i}"} for i in range(9)] + \
+           [{"title": "Irgendwas (m/w/d)", "url": "https://x/9"}]                # 1/10 ambiguous = 10% < 15%
+    monkeypatch.setattr(CR, "raw_board_rows", lambda _c: rows)
+    r = CR.estimate_clinic(CLINIC_KNOWN)
+    assert r["confidence"] == "high" and r["note"] is None and r["definite_pflege"] == 9 and r["ambiguous"] == 1
+
+
+def test_api_crawl_estimate_unknown_clinic_404s(client):
+    assert client.get("/api/crawl/estimate?clinic_id=nope").status_code == 404
+
+
+def test_api_crawl_estimate_known_clinic(client, monkeypatch):
+    monkeypatch.setattr(CR, "raw_board_rows", lambda _c: [{"title": "Pflegefachkraft (m/w/d)", "url": "https://x/1"}])
+    r = client.get("/api/crawl/estimate?clinic_id=36201")
+    assert r.status_code == 200 and r.json() == {"clinic_id": "36201", "board_rows": 1, "definite_pflege": 1,
+                                                  "ambiguous": 0, "definite_excluded": 0, "confidence": "high", "note": None}

@@ -1,0 +1,497 @@
+[
+ {
+  "id": 10700,
+  "language": "de",
+  "position": "Examinierte Pflegefachkraft (m/w/d) für den stationären Bereich mit den Schwerpunkten Allgemein- und Viszeralchirurgie",
+  "pageTitle": "Examinierte Pflegefachkraft (m/w/d) für den stationären Bereich mit den Schwerpunkten Allgemein- und Viszeralchirurgie",
+  "subtitle": null,
+  "pageDescription": null,
+  "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10700/examinierte-pflegefachkraft-mwd-fur-den-stationaren-bereich-mit-den-schwerpunkten-allgemein-und-viszeralchirurgie",
+  "applicationFormURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10700/apply",
+  "applicationApplyApiURL": "https://sozialstiftung-bamberg.dvinci-easy.com/jobs/10700/applyApi",
+  "applicationApplyWhatsAppURL": null,
+  "startDate": "2025-08-03T22:00Z",
+  "endDate": "2026-12-31T22:59:59.999Z",
+  "introduction": "<p>Unsere Klinik für Allgemein- und Viszeralchirurgie bietet Ihnen eine umfangreiche Behandlungsbreite: Sie reicht von der allgemeinen Chirurgie über Kinderchirurgie bis hin zur speziellen Eingeweide- und Bauch-Chirurgie (Viszeralchirurgie).<br> Die chirurgischen Behandlungsmöglichkeiten vieler Krankheitsbilder werden immer komplexer und anspruchsvoller. Um diesen zunehmenden Anforderungen auch künftig gerecht zu werden, haben wir in unserer Klinik bereits seit 2010 neue Strukturen geschaffen. So können wir unseren Patienten gerade auch bei besonderen Erkrankungen jederzeit die entsprechende Behandlungskompetenz garantieren,</p>",
+  "tasks": "<ul><li>Übernahme      der Verantwortung für eine ganzheitliche, prozessorientierte      Patientenversorgung und Betreuung</li><li>Beobachtung      und Einschätzung des Gesundheitszustandes und des Therapieverlaufes unter      Berücksichtigung und Förderung der Ressourcen des Patienten</li><li>Nach      Einschätzung des Versorgungsbedarfs&nbsp;die Planung, fortlaufende      Dokumentation und Evaluation der Pflegemaßnahmen</li><li>Enge      Zusammenarbeit im multiprofessionellen Team</li><li>Organisation,      Durchführung bzw. Assistenz ärztlich veranlasster, diagnostischer und      therapeutischer Maßnahmen</li><li>Bedienung      medizintechnischer Geräte im Zusammenhang mit Diagnostik und Therapie</li><li>Unterstützung,      Anleitung und Beratung von Patienten und ihren Angehörigen</li></ul>",
+  "profile": "<ul><li>Sie sind examinierte Pflegefachkraft</li><li>Sie arbeiten&nbsp;gerne im Drei-Schicht-System</li><li>Sie verfügen über soziale und kommunikative Kompetenzen und schätzen Teamarbeit</li><li>Sie haben Interesse an Wundversorgung&nbsp;</li><li>Sie haben Interesse an Fort- und&nbsp;Weiterbildung sowie innovativen Pflegeansätzen</li><li>Berufserfahrung im Bereich der Viszeralchirurgie und/oder Gastroenterologie sind wünschenswert, jedoch keine Voraussetzung</li></ul>",
+  "weOffer": null,
+  "closingText": null,
+  "benefits": [],
+  "jobOpening": {
+   "id": 10762,
+   "name": "Examinierte Pflegefachkraft (m/w/d) für den stationären Bereich mit den Schwerpunkten Allgemein- und Viszeralchirurgie",
+   "type": "DEFAULT",
+   "categories": [
+    {
+     "id": 2,
+     "internalName": "02",
+     "name": "02 Pflegedienst"
+    }
+   ],
+   "reference": "2019-0286",
+   "location": "Klinikum Bamberg",
+   "department": "Allgemeinchirurgie",
+   "costUnit": null,
+   "targetGroups": [
+    {
+     "id": 1,
+     "internalName": "6",
+     "name": "Fachkraft"
+    }
+   ],
+   "workingTimes": [
+    {
+     "id": 1,
+     "internalName": "FULL_TIME",
+     "name": "Vollzeit"
+    },
+    {
+     "id": 2,
+     "internalName": "PART_TIME",
+     "name": "Teilzeit"
+    }
+   ],
+   "salaryRange": "45.428,61 bis 55.645,64 EUR brutto pro Jahr",
+   "locations": [
+    {
+     "id": "4",
+     "name": "Klinikum Bamberg",
+     "country": null,
+     "latitude": null,
+     "longitude": null,
+     "additionalInformation": null,
+     "address": null
+    }
+   ],
+   "contractPeriod": {
+    "id": 1,
+    "internalName": "LIMITED_3C35952A_F237_430A_BE8B_C192338250BA",
+    "name": "befristet"
+   },
+   "earliestEntryDate": null,
+   "orgUnit": {
+    "id": 2,
+    "name": "Sozialstiftung Bamberg 700"
+   },
+   "createdDate": "2019-09-13T06:37:07.380Z",
+   "responsibleUser": {
+    "salutation": {
+     "internalName": "MS",
+     "name": "Frau"
+    },
+    "title": null,
+    "firstName": "<redacted>",
+    "lastName": "<redacted>",
+    "email": "<redacted>",
+    "division": "Pflegedienstleitung",
+    "telephone": "<redacted>",
+    "mobile": null,
+    "street": null,
+    "number": null,
+    "additionalAddress": null,
+    "zipCode": null,
+    "city": null,
+    "country": null,
+    "company": "Sozialstiftung Bamberg 700",
+    "position": null,
+    "photoURL": null
+   },
+   "reward": null,
+   "formFieldAnswers": [],
+   "company": {
+    "id": 1,
+    "internalName": "700",
+    "name": "Sozialstiftung Bamberg 700",
+    "description1": "<p>----------------------------------------<br> Sozialstiftung Bamberg<br> Buger Straße 80, 96049 Bamberg<br> Vorsitzender des Stiftungsrates: Oberbürgermeister Sebastian Martins Niedermaier<br> Vorsitzender des Vorstandes:&nbsp;Martin Wilde<br> Vorstand - Finanzen: Johannes Goth<br> ----------------------------------------</p>",
+    "description2": "<p>Die Sozialstiftung Bamberg ist als Maximalversorger einer der größten Gesundheits- und Sozialdienstleister in Bayern. Wir haben einen gemeinnützigen Auftrag: Mit unseren medizinischen, therapeutischen, pflegerischen und betreuenden Angeboten sichern wir eine qualitativ hochwertige Versorgung der Menschen in der Region Bamberg.&nbsp;Gemeinsam arbeiten wir daran, die Umwelt zu schützen, nachhaltig zu wirtschaften und gleichzeitig unsere Angebote für die Patienten, Bewohner und Mitarbeiter stetig zu verbessern.</p>",
+    "description3": null,
+    "description4": "<p>Wir bieten Ihnen <!-- einen familienfreundlichen Arbeitsplatz mit Kinderbetreuung auf dem Klinikgel&auml;nde sowie -->eine kollegiale und moderne Arbeitsatmosphäre mit allen Möglichkeiten zur fachlichen und persönlichen Weiterentwicklung. Bamberg als UNESCO-Weltkulturerbe wird Sie durch sein breites kulturelles und gesellschaftliches Angebot und ein hohes Maß an Lebensqualität überzeugen.</p>",
+    "description5": null,
+    "description6": null,
+    "description7": null,
+    "description8": null,
+    "description9": null,
+    "description10": null,
+    "address": null
+   },
+   "salary": {
+    "currency": "EUR",
+    "value": {
+     "maxValue": 55645.64,
+     "minValue": 45428.61,
+     "unitText": "YEAR"
+    }
+   }
+  }
+ },
+ {
+  "id": 10862,
+  "language": "de",
+  "position": "Pflegehilfskräfte (m/w) für ambulant, teilstationär und stationär",
+  "pageTitle": "Pflegehilfskräfte (m/w) für ambulant, teilstationär und stationär",
+  "subtitle": null,
+  "pageDescription": null,
+  "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10862/pflegehilfskrafte-mw-fur-ambulant-teilstationar-und-stationar",
+  "applicationFormURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10862/apply",
+  "applicationApplyApiURL": "https://sozialstiftung-bamberg.dvinci-easy.com/jobs/10862/applyApi",
+  "applicationApplyWhatsAppURL": null,
+  "startDate": null,
+  "endDate": null,
+  "introduction": null,
+  "tasks": "<ul><li>Berufs&uuml;bliche Aufgaben</li><li>Kollegiale Dienstplangestaltung</li></ul>",
+  "profile": "<ul><li>Erfahrung in der Helfert&auml;tigkeit in der Pflege</li><li>Ausgeglichenheit und Geduld</li><li>Positive Einstellung</li><li>Flexible, eigenst&auml;ndige und kreative Arbeitsweise</li><li>Kommunikationsfreude</li><li>Initiative, Einsatz- und Verantwortungsbereitschaft</li><li>Teamf&auml;higkeit, Konfliktf&auml;higkeit und Organisationsf&auml;higkeit</li><li>W&uuml;nschenswert: 1 j&auml;hrige Alten-/Krankenpflegehelferausbildung</li></ul>",
+  "weOffer": null,
+  "closingText": null,
+  "benefits": [],
+  "jobOpening": {
+   "id": 10933,
+   "name": "Pflegehilfskräfte (m/w) für ambulant, teilstationär und stationär",
+   "type": "DEFAULT",
+   "categories": [
+    {
+     "id": 2,
+     "internalName": "02",
+     "name": "02 Pflegedienst"
+    }
+   ],
+   "reference": "2020-0057",
+   "location": "Zentrum für Senioren Bamberg",
+   "department": "Pflege",
+   "costUnit": null,
+   "targetGroups": [
+    {
+     "id": 1,
+     "internalName": "6",
+     "name": "Fachkraft"
+    }
+   ],
+   "workingTimes": [
+    {
+     "id": 1,
+     "internalName": "FULL_TIME",
+     "name": "Vollzeit"
+    },
+    {
+     "id": 10,
+     "internalName": "TEILZEIT_BIS_25",
+     "name": "Teilzeit bis 25%"
+    },
+    {
+     "id": 13,
+     "internalName": "TEILZEIT_5075",
+     "name": "Teilzeit 50-75%"
+    },
+    {
+     "id": 12,
+     "internalName": "TEILZEIT_AB_75",
+     "name": "Teilzeit ab 75%"
+    },
+    {
+     "id": 14,
+     "internalName": "MINIJOB",
+     "name": "Minijob"
+    }
+   ],
+   "salaryRange": null,
+   "locations": [
+    {
+     "id": "5",
+     "name": "Zentrum für Senioren Bamberg",
+     "country": null,
+     "latitude": null,
+     "longitude": null,
+     "additionalInformation": null,
+     "address": null
+    }
+   ],
+   "contractPeriod": {
+    "id": 1,
+    "internalName": "LIMITED_3C35952A_F237_430A_BE8B_C192338250BA",
+    "name": "befristet"
+   },
+   "earliestEntryDate": null,
+   "orgUnit": {
+    "id": 10,
+    "name": "Sozialstiftung Bamberg Altenhilfe gGmbH 780"
+   },
+   "createdDate": "2020-03-02T16:07:59.004Z",
+   "responsibleUser": {
+    "salutation": {
+     "internalName": "MS",
+     "name": "Frau"
+    },
+    "title": null,
+    "firstName": "<redacted>",
+    "lastName": "<redacted>",
+    "email": "<redacted>",
+    "division": "Pflegefachliche Leitung",
+    "telephone": "<redacted>",
+    "mobile": null,
+    "street": null,
+    "number": null,
+    "additionalAddress": null,
+    "zipCode": null,
+    "city": null,
+    "country": null,
+    "company": "Sozialstiftung Bamberg Altenhilfe gGmbH 780",
+    "position": null,
+    "photoURL": null
+   },
+   "reward": null,
+   "formFieldAnswers": [],
+   "company": {
+    "id": 9,
+    "internalName": "780",
+    "name": "Sozialstiftung Bamberg Altenhilfe gGmbH 780",
+    "description1": "<p>--------------------------------------------------<br> Sozialstiftung Bamberg Altenhilfe gGmbH<br> St.–Getreu–Straße 1, 96049 Bamberg<br> Aufsichtsrat: Oberbürgermeister Sebastian Martins Niedermaier<br> Geschäftsführer: Johannes Goth, Jutta Weigand, Martin Wilde | HRB 5393 | Sitz: Bamberg<br> --------------------------------------------------</p>",
+    "description2": "<p>Das Zentrum für Senioren der Sozialstiftung Bamberg ist der Partner für ältere Menschen in jeder Lebenssituation. Angefangen bei Beratungs- und Hilfsangeboten, gefolgt von der ambulanten Betreuung und dem selbstbestimmten Servicewohnen bis hin zur stationären Pflege stellen wir alle Leistungen zur Verfügung, die ein würdevolles Altern ermöglichen.&nbsp;Gemeinsam arbeiten wir daran, die Umwelt zu schützen, nachhaltig zu wirtschaften und gleichzeitig unsere Angebote für die Patienten, Bewohner und Mitarbeiter stetig zu verbessern.</p>",
+    "description3": null,
+    "description4": "<p>Wir bieten Ihnen <!-- einen familienfreundlichen Arbeitsplatz mit Kinderbetreuung auf dem Klinikgel&auml;nde sowie -->eine kollegiale und moderne Arbeitsatmosphäre mit allen Möglichkeiten zur fachlichen und persönlichen Weiterentwicklung. Bamberg als UNESCO-Weltkulturerbe wird Sie durch sein breites kulturelles und gesellschaftliches Angebot und ein hohes Maß an Lebensqualität überzeugen.</p>",
+    "description5": null,
+    "description6": null,
+    "description7": null,
+    "description8": null,
+    "description9": null,
+    "description10": null,
+    "address": null
+   },
+   "salary": null
+  }
+ },
+ {
+  "id": 52776,
+  "language": "de",
+  "position": "Assistenzarzt (m/w/d) Frauenheilkunde und Geburtshilfe",
+  "pageTitle": "Assistenzarzt (m/w/d) Frauenheilkunde und Geburtshilfe",
+  "subtitle": null,
+  "pageDescription": null,
+  "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52776/assistenzarzt-mwd-frauenheilkunde-und-geburtshilfe",
+  "applicationFormURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52776/apply",
+  "applicationApplyApiURL": "https://sozialstiftung-bamberg.dvinci-easy.com/jobs/52776/applyApi",
+  "applicationApplyWhatsAppURL": null,
+  "startDate": "2026-08-26T22:00Z",
+  "endDate": "2026-09-27T21:59:59.999Z",
+  "introduction": "<p>Für unsere Klinik für Frauenheilkunde und Geburtshilfe unter der Leitung von Chefarzt Dr. med. Thomas Bernar suchen wir Sie zum nächstmöglichen Zeitpunkt als&nbsp;Assistenzarzt (m/w/d)&nbsp;in Voll- oder Teilzeit.</p><p>Mit einem engagierten Team in einer positiven Arbeitsatmosphäre bieten wir Ihnen das komplette Spektrum der Frauenheilkunde und Geburtshilfe. </p><p>Die Klinik für Frauenheilkunde und Geburtshilfe verfügt über 73 Planbetten. Jährlich werden über 5.800 stationäre sowie über 12.000 ambulante Patientinnen behandelt. Zusammen mit der Klinik für Kinder und Jugendliche bilden wir ein Perinatalzentrum der Versorgungsstufe Level I mit über 2.200 Geburten pro Jahr. Die Abteilung bietet alle Methoden und Techniken der vorgeburtlichen Diagnostik und Therapie an und verfügt über eine moderne medizinische Ausstattung.</p><p>In der Klinik für Frauenheilkunde und Geburtshilfe versorgen wir das gesamte Spektrum der konservativen und operativen Therapie, einschließlich urogynäkologischer und onkologischer Operationen. Dabei werden alle modernen operativen Verfahren, insbesondere vaginale und minimal-invasive Operationstechniken angeboten. Es besteht zudem die Möglichkeit einer Ausbildung in computerassistierten Operationsverfahren an unserem hochmodern DaVinci OP-Robotersystem. </p><p>Die Klinik verfügt über ein zertifiziertes Brustzentrum, ein zertifiziertes Gynäkologisch-onkologisches Zentrum sowie ein Beckenbodenzentrum. </p><p>Angeschlossen an die Frauenklinik ist ein MVZ mit gynäkologischer Onkologie, Chemotherapieambulanz, Urogynäkologie, Senologie und Pränataldiagnostik.</p>",
+  "tasks": "<p><strong></strong></p><p><strong></strong>In Ihrer Funktion als Assistenzarzt (m/w/d) in Voll- oder Teilzeit erwartet Sie eine abwechslungsreiche, verantwortungsvolle Position, die Ihnen eine attraktive und langfristige, berufliche und persönliche Entwicklung ermöglicht:</p><ul><li>Verantwortungsvolle Mitarbeit in der Klinik für Frauenheilkunde und Geburtshilfe<ul><li>Sie betreuen Risikoschwangerschaften und Frühgeburten im Perinatalzentrum Level I</li></ul></li></ul><p>Teilnahme am assistenzärztlichen Ruf- und Bereitschaftsdienst</p><ul><li>Durchführung von operativen Eingriffen unter fachärztlicher Aufsicht</li><li>Assistenz bei größeren operativen on onkologischen Eingriffen</li></ul><h3>Das bieten wir Ihnen</h3><ul><li>Eine außerordentlich vielseitige und interessante klinische Tätigkeit in einem kollegialen Team </li><li>Individuelle Arbeitszeitmodelle, weil erfolgreiches Arbeiten nur in einer guten Balance mit Freizeit und Familie gelingen kann </li><li>Ausgehend von Ihren persönlichen Interessen können Sie bei uns eigene Schwerpunkte entwickeln und sich entsprechend weiterbilden</li><li>Sie haben umfangreiche interne und externe Fort- und Weiterbildungsmöglichkeiten</li><li>Für jeden Mitarbeiter steht dafür pro Jahr ein eigenes Fort- und Weiterbildungsbudget zur Verfügung</li><li>Als familienfreundlicher Arbeitgeber bieten wir Ihnen Kinderbetreuungsmöglichkeiten in der naheliegenden Kita</li><li>Damit Sie stressfrei zu Ihrem Arbeitsplatz gelangen, bezuschussen wir ein Jobticket</li></ul><p style=\"text-align: left;\">Wie bieten eine strukturierte Aus- und Weiterbildung an:</p><ul><li>Komplette Weiterbildung für den Facharzt „Frauenheilkunde und Geburtshilfe“</li><li>Komplette Weiterbildung für den Schwerpunkt „Spezielle Geburtshilfe und Perinatalmedizin“</li><li>Komplette Weiterbildung für den Schwerpunkt „Gynäkologische Onkologie“ </li><li>Komplette Zusatz-Weiterbildung „medikamentöser Tumortherapie“</li></ul>",
+  "profile": "<ul><li>Sie bringen Begeisterung für das Fach Frauenheilkunde und Geburtshilfe mit und haben Freude an teamorientierter und interdisziplinärer Zusammenarbeit </li><li>Sie arbeiten engagiert, eigenständig und verantwortungsbewusst und besitzen ein ausgeprägtes Einfühlungsvermögen gegenüber unseren Patientinnen</li><li>Hervorragende kommunikative Fähigkeiten, hohes Verantwortungsbewusstsein, Engagement und Durchsetzungsvermögen sowie ein hohes Maß an organisatorischen Fähigkeiten zeichnen Sie aus</li></ul>",
+  "weOffer": null,
+  "closingText": null,
+  "benefits": [],
+  "jobOpening": {
+   "id": 52873,
+   "name": "Assistenzarzt (m/w/d) Frauenheilkunde und Geburtshilfe",
+   "type": "DEFAULT",
+   "categories": [
+    {
+     "id": 1,
+     "internalName": "01",
+     "name": "01 Ärztlicher Dienst"
+    }
+   ],
+   "reference": "2026-0198",
+   "location": "Klinikum Bamberg",
+   "department": "Frauenklinik",
+   "costUnit": null,
+   "targetGroups": [
+    {
+     "id": 1,
+     "internalName": "6",
+     "name": "Fachkraft"
+    }
+   ],
+   "workingTimes": [
+    {
+     "id": 1,
+     "internalName": "FULL_TIME",
+     "name": "Vollzeit"
+    }
+   ],
+   "salaryRange": "68.664,60 bis 88.263,48 EUR brutto pro Jahr",
+   "locations": [
+    {
+     "id": "4",
+     "name": "Klinikum Bamberg",
+     "country": null,
+     "latitude": null,
+     "longitude": null,
+     "additionalInformation": null,
+     "address": null
+    }
+   ],
+   "contractPeriod": {
+    "id": 12,
+    "internalName": "BEFRISTET_5_JAHRE",
+    "name": "befristet 5 Jahre"
+   },
+   "earliestEntryDate": "01.10.2026",
+   "orgUnit": {
+    "id": 2,
+    "name": "Sozialstiftung Bamberg 700"
+   },
+   "createdDate": "2026-08-27T05:58:41.981Z",
+   "responsibleUser": {
+    "salutation": {
+     "internalName": "MR",
+     "name": "Herr"
+    },
+    "title": "Dr. med",
+    "firstName": "<redacted>",
+    "lastName": "<redacted>",
+    "email": "<redacted>",
+    "division": "Chefarzt",
+    "telephone": "<redacted>",
+    "mobile": null,
+    "street": null,
+    "number": null,
+    "additionalAddress": null,
+    "zipCode": null,
+    "city": null,
+    "country": null,
+    "company": "Sozialstiftung Bamberg 700",
+    "position": null,
+    "photoURL": null
+   },
+   "reward": null,
+   "formFieldAnswers": [],
+   "company": {
+    "id": 1,
+    "internalName": "700",
+    "name": "Sozialstiftung Bamberg 700",
+    "description1": "<p>----------------------------------------<br> Sozialstiftung Bamberg<br> Buger Straße 80, 96049 Bamberg<br> Vorsitzender des Stiftungsrates: Oberbürgermeister Sebastian Martins Niedermaier<br> Vorsitzender des Vorstandes:&nbsp;Martin Wilde<br> Vorstand - Finanzen: Johannes Goth<br> ----------------------------------------</p>",
+    "description2": "<p>Die Sozialstiftung Bamberg ist als Maximalversorger einer der größten Gesundheits- und Sozialdienstleister in Bayern. Wir haben einen gemeinnützigen Auftrag: Mit unseren medizinischen, therapeutischen, pflegerischen und betreuenden Angeboten sichern wir eine qualitativ hochwertige Versorgung der Menschen in der Region Bamberg.&nbsp;Gemeinsam arbeiten wir daran, die Umwelt zu schützen, nachhaltig zu wirtschaften und gleichzeitig unsere Angebote für die Patienten, Bewohner und Mitarbeiter stetig zu verbessern.</p>",
+    "description3": null,
+    "description4": "<p>Wir bieten Ihnen <!-- einen familienfreundlichen Arbeitsplatz mit Kinderbetreuung auf dem Klinikgel&auml;nde sowie -->eine kollegiale und moderne Arbeitsatmosphäre mit allen Möglichkeiten zur fachlichen und persönlichen Weiterentwicklung. Bamberg als UNESCO-Weltkulturerbe wird Sie durch sein breites kulturelles und gesellschaftliches Angebot und ein hohes Maß an Lebensqualität überzeugen.</p>",
+    "description5": null,
+    "description6": null,
+    "description7": null,
+    "description8": null,
+    "description9": null,
+    "description10": null,
+    "address": null
+   },
+   "salary": {
+    "currency": "EUR",
+    "value": {
+     "maxValue": 88263.48,
+     "minValue": 68664.6,
+     "unitText": "YEAR"
+    }
+   }
+  }
+ },
+ {
+  "id": 52377,
+  "language": "de",
+  "position": "Ausbildung Kaufmann im Gesundheitswesen (m/w/d) 2027",
+  "pageTitle": "Ausbildung Kaufmann im Gesundheitswesen (m/w/d) 2027",
+  "subtitle": null,
+  "pageDescription": null,
+  "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52377/ausbildung-kaufmann-im-gesundheitswesen-mwd-2027",
+  "applicationFormURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52377/apply",
+  "applicationApplyApiURL": "https://sozialstiftung-bamberg.dvinci-easy.com/jobs/52377/applyApi",
+  "applicationApplyWhatsAppURL": null,
+  "startDate": "2026-07-12T22:00Z",
+  "endDate": "2026-10-13T21:59:59.999Z",
+  "introduction": "<p>Starten Sie Ihre Ausbildung zum Kaufmann im Gesundheitswesen (m/w/d) im Klinikum Bamberg und lernen Sie die vielseitigen kaufmännischen Aufgaben im Gesundheitsbereich kennen. Wir bieten Ihnen eine praxisorientierte Ausbildung in einem zukunftssicheren Berufsfeld mit guten Übernahmechancen.</p><p>Werden Sie Teil unseres Teams und tragen Sie aktiv zur erfolgreichen Versorgung unserer Patienten bei!</p>",
+  "tasks": "<ul><li><strong>Vielseitige Einblicke in die kaufmännische Verwaltung</strong>: Sie lernen die verschiedenen Bereiche, unter anderem&nbsp;Personalabteilung, Medizincontrolling, Patientenservice und Finanzbuchhaltung, kennen und unterstützen bei der Organisation des Klinikalltags.</li><li><strong>Praxisorientierte Ausbildung</strong>: Sie arbeiten eng im Team zusammen und übernehmen eigenverantwortlich Aufgaben, die es Ihnen ermöglichen, Ihre Fähigkeiten kontinuierlich zu erweitern und die erlernte Theorie praxisnah anzuwenden.</li><li><strong>Zukunftssichere Perspektiven</strong>: Nach der Ausbildung erwarten Sie gute Übernahmechancen und vielfältige Weiterentwicklungsmöglichkeiten in einem wachsenden Gesundheitsunternehmen.</li></ul>",
+  "profile": "<ul><li>Abitur, einen Abschluss der mittleren Reife oder einen vergleichbaren Bildungsweg</li><li>Interesse an kaufmännischen Prozessen und organisatorischen Aufgaben</li><li>Teamfähigkeit, Verantwortungsbewusstsein und eine selbstständige Arbeitsweise</li><li>Sehr gute Deutschkenntnisse</li></ul>",
+  "weOffer": null,
+  "closingText": null,
+  "benefits": [],
+  "jobOpening": {
+   "id": 52467,
+   "name": "Ausbildung Kaufmann im Gesundheitswesen (m/w/d) 2027",
+   "type": "DEFAULT",
+   "categories": [
+    {
+     "id": 12,
+     "internalName": "12",
+     "name": "12 Ausbildung, Studium, Praktikum"
+    }
+   ],
+   "reference": "2025-0079",
+   "location": "Klinikum Bamberg",
+   "department": "Personalabteilung und rotierend im Haus",
+   "costUnit": null,
+   "targetGroups": [
+    {
+     "id": 14,
+     "internalName": "1",
+     "name": "Ausbildung"
+    }
+   ],
+   "workingTimes": [
+    {
+     "id": 1,
+     "internalName": "FULL_TIME",
+     "name": "Vollzeit"
+    }
+   ],
+   "salaryRange": null,
+   "locations": [
+    {
+     "id": "4",
+     "name": "Klinikum Bamberg",
+     "country": null,
+     "latitude": null,
+     "longitude": null,
+     "additionalInformation": null,
+     "address": null
+    }
+   ],
+   "contractPeriod": {
+    "id": 1,
+    "internalName": "LIMITED_3C35952A_F237_430A_BE8B_C192338250BA",
+    "name": "befristet"
+   },
+   "earliestEntryDate": null,
+   "orgUnit": {
+    "id": 3,
+    "name": "Service Gesellschaft Sozialstiftung Bamberg mbH 720"
+   },
+   "createdDate": "2025-03-27T11:56:39.408Z",
+   "responsibleUser": {
+    "salutation": {
+     "internalName": "MS",
+     "name": "Frau"
+    },
+    "title": null,
+    "firstName": "<redacted>",
+    "lastName": "<redacted>",
+    "email": "<redacted>",
+    "division": null,
+    "telephone": "<redacted>",
+    "mobile": null,
+    "street": null,
+    "number": null,
+    "additionalAddress": null,
+    "zipCode": null,
+    "city": null,
+    "country": null,
+    "company": null,
+    "position": null,
+    "photoURL": null
+   },
+   "reward": null,
+   "formFieldAnswers": [],
+   "company": {
+    "id": 13,
+    "internalName": "720A",
+    "name": "Service Gesellschaft Sozialstiftung Bamberg mbH 720 als Ausbildungsträger",
+    "description1": "<p>----------------------------------------<br> Service Gesellschaft Sozialstiftung Bamberg mbH<br> Buger Straße 80, 96049 Bamberg<br> Aufsichtsrat: Oberbürgermeister Sebastian Martins Niedermaier, Martin Wilde, Thomas Badum<br> Geschäftsführer: Johannes Goth, Hermann Schleier, Katy Schmidt | HRB 4951 | Sitz: Bamberg<br> ----------------------------------------</p>",
+    "description2": "<p>Die Sozialstiftung Bamberg ist einer der größten Gesundheits- und Sozialdienstleister in Bayern. Wir haben einen gemeinnützigen Auftrag: Mit unseren medizinischen, therapeutischen, pflegerischen und betreuenden Angeboten sichern wir eine qualitativ hochwertige Versorgung der Menschen in der Region Bamberg.&nbsp;Gemeinsam arbeiten wir daran, die Umwelt zu schützen, nachhaltig zu wirtschaften und gleichzeitig unsere Angebote für die Patienten, Bewohner und Mitarbeiter stetig zu verbessern.</p>",
+    "description3": null,
+    "description4": "<p>Wir bieten eine kollegiale und moderne Lernatmosphäre mit allen Möglichkeiten zur fachlichen und persönlichen Weiterentwicklung. Bamberg als UNESCO-Weltkulturerbe überzeugt durch sein breites kulturelles und gesellschaftliches Angebot und ein hohes Maß an Lebensqualität.</p>",
+    "description5": null,
+    "description6": null,
+    "description7": null,
+    "description8": null,
+    "description9": null,
+    "description10": null,
+    "address": null
+   },
+   "salary": null
+  }
+ }
+]

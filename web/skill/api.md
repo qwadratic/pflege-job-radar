@@ -1,6 +1,6 @@
 # API reference
 
-## A. App API — `https://pflege-board.exe.xyz/api` (JSON, no auth for reads)
+## A. App API — `https://pflege-board.exe.xyz/api` (JSON; most reads are open, but `/settings`, `/coverage`, `/billing`, `/hunter`, `/inbox`, `/firecrawl/credits`, `/crawl/runs`, `/campaign` need owner auth — header `X-ExeDev-Email: <owner email>` or an exe.dev/tailnet session — and return 401 `{"error":"owner only"}` otherwise. All writes — `POST /crawl`, `POST/PUT/DELETE /schedules`, `PUT /settings/*`, `POST /clinics/{kez}/refetch-career` — are owner-only too.)
 
 | method | path | returns |
 |---|---|---|
@@ -15,6 +15,7 @@
 | GET | `/search?q=` | `{clinics[{clinic_id,name,town,score}], jobs[{posting_id,title,employer,city,clinic_id,score}], cities[]}` |
 | POST | `/cv` | multipart `file` (pdf/docx/txt) or JSON `{"text"}` → `{profile{roles,departments,qualifications,cities,experience_years,languages,skills,keywords}, matches[job+score+why[]], used_llm}` |
 | GET | `/crawl/plan?scope=&values=a,b&mode=` | `{clinics, boards, via_adapter, via_firecrawl, walled, est_credits, sample[]}` |
+| GET | `/crawl/estimate?clinic_id=` | `{clinic_id, board_rows, definite_pflege, ambiguous, definite_excluded, confidence: none\|low\|high, note}` — free, title-only read of one clinic's board before running a real crawl. `confidence: none` + `board_rows: null` means no adapter route (would need a paid Firecrawl probe to know at all); `low` means too many titles have no nursing/non-nursing signal either way (`classify_role`'s own `no_pflege_token` case) to trust the count -- the real number is only known after a full crawl reads descriptions/department labels. Owner-only. |
 | POST | `/crawl` | `{"target":{"scope":"all|regierungsbezirk|city|clinic|ats_type","values":[…]},"mode":"auto|adapter|firecrawl","max_credits":40,"fetch_details":false}` → `{run_id}` |
 | GET | `/crawl/runs?limit=` / `/crawl/runs/{id}` | `[{run_id, started_at, finished_at, scope, value, mode, status, n_rows, n_new, credits_used, log_tail, clinic_ids}]` / + `log[]` |
 | POST | `/clinics/{kez}/refetch-career` | `{"max_credits":40}` → `{run_id}`; result in `career_profile` + `clinics.careers_url/ats_type` |
@@ -55,7 +56,7 @@ n_observations, provenance, enr_housing, enr_tariff, enr_pay_grade, enr_contact_
 
 ### Enums
 - employer_class: clinic | unknown | non_clinic
-- role_class: pflegefachkraft, fachpflege, pflegehelfer, praxisanleitung, leitung, apn_experte, hebamme, ota_ata, sonstige_pflege (refused: ausbildung, werkstudent_praktikum, nicht_pflege)
+- role_class: pflegefachkraft, fachpflege, pflegehelfer (legacy rows only — refused at ingest since 2026-09-07), praxisanleitung, leitung, apn_experte, hebamme, ota_ata, sonstige_pflege (refused: ausbildung, werkstudent_praktikum, nicht_pflege, pflegehelfer)
 - qualification_hint: GuK | GKiK | Altenpflege | generalistisch | null
 - department_hint: Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie, Pädiatrie/Neonatologie, Geburtshilfe, Onkologie, Kardiologie, Neurologie, Geriatrie, Dialyse/Nephrologie, Chirurgie/Orthopädie, Innere Medizin, Reha, Springerpool, Ambulanz/Tagesklinik, null
 - contract: UNBEFRISTET | BEFRISTET | null · employment_types: vollzeit, teilzeit, minijob

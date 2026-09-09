@@ -37,6 +37,7 @@ __pycache__/
 # run artefacts (regenerable outputs of a pipeline run, not source)
 data/*.log
 data/verify.json
+data/compare_*.json
 data/clinic_links.json
 data/cross_merge_pairs.json
 

@@ -19,12 +19,15 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | POST | `/api/cv` | upload CV → profile + ranked matches |
 | POST | `/api/crawl` | start a scrape: `target{scope,values}`, mode, credits, fetch_details |
 | GET | `/api/crawl/plan` | preview of a target: hospitals, boards, via adapter / Firecrawl, est. credits |
+| GET | `/api/crawl/estimate?clinic_id=` | free, pre-parse read of one clinic's board: how many titles look Pflegedienst, before running any real crawl. Honest about not knowing -- `confidence: none` if there's no adapter route at all (would need a paid Firecrawl probe), `low` if too many titles carry no nursing/non-nursing signal to say for sure (mixed-department board, or titles that need the full description read) |
 | GET | `/api/crawl/runs`, `/api/crawl/runs/{id}` | run status + log |
 | POST | `/api/clinics/{kez}/refetch-career` | Firecrawl discovery of the career portal |
 | GET/POST/PUT/DELETE | `/api/schedules[/{id}]`, `POST /api/schedules/{id}/run-now` | cron / preset schedules with target, mode, budget, enabled |
 | GET/POST | `/api/mechanics`, `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | the ten rule mechanics: explanation, source, patterns, try-it, run tests |
 | GET/PUT | `/api/settings`, `/api/settings/patterns` | patterns.json (every regex), Firecrawl default budget |
 | GET | `/api/billing` | spend report over a window: series (hour/day buckets), totals, by kind, runs, Firecrawl pools, Exa |
+| GET | `/api/coverage` | per-adapter coverage breakdown (routable, boards, open/fresh jobs, last run), owner-only |
+| GET/POST | `/api/campaign` | reingest-campaign routine state: safety_level, stopped, history; owner-only |
 | GET | `/api/taxonomy`, `/api/ontology`, `/api/docs` | taxonomy.json, ontology.json, docs index |
 
 List responses: `{"total": N, "rows": [...]}`; `limit`/`offset` page; comma lists for multi-value filters.

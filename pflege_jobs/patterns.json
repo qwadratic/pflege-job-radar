@@ -111,7 +111,7 @@
    },
    {
     "role_class": "pflegehelfer",
-    "re": "pflegehelfer|pflegefachhelfer|pflege\\(fach\\)helfer|pflegeassist|krankenpflegehelfer|altenpflegehelfer|pflegehilfskraft|hilfskraft|pflegehilfe|betreuungskraft|alltagsbegleit|servicekraft|stationshilfe|pflegeassistenz|versorgungsassist|pflegefachassist|pflegeunterstützung|stationsassist|servicehelfer"
+    "re": "pflegehelfer|pflegefachhelfer|pflege\\(fach\\)helfer|pflegeassist|krankenpflegehelfer|altenpflegehelfer|pflegehilfskr[aä]ft|hilfskraft|pflegehilfe|betreuungskraft|alltagsbegleit|servicekraft|stationshilfe|pflegeassistenz|versorgungsassist|pflegefachassist|pflegeunterstützung|stationsassist|servicehelfer"
    },
    {
     "role_class": "pflegefachkraft",

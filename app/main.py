@@ -250,6 +250,16 @@ def api_crawl_plan(request: Request, mode: str = "auto", max_credits: int = 40):
             "adapter": [c["clinic_id"] for c in p["adapter"]], "firecrawl": [c["clinic_id"] for c in p["firecrawl"]], "credits_needed": p["credits_needed"]}
 
 
+@app.get("/api/crawl/estimate")
+def api_crawl_estimate(clinic_id: str):
+    """Free, pre-parse read of one clinic's board: how many titles look like Pflegedienst, before running
+    any real crawl (docs/api.md). Honest about not knowing -- see CR.estimate_clinic()."""
+    c = D.clinic(clinic_id)
+    if not c:
+        raise HTTPException(404, "unknown clinic")
+    return CR.estimate_clinic(c)
+
+
 @app.get("/api/crawl/runs")
 def api_runs(limit: int = 50):
     return R.list_runs(max(1, min(limit, 500)))
