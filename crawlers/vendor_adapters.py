@@ -966,6 +966,7 @@ VENDORS = {
     "oracle": crawl_oracle,
     "dvinci": crawl_dvinci,
     "wp_jobs": crawl_wp_jobs,   # routing.py default for careers_url-but-no-vendor-label boards
+    "self_hosted": crawl_wp_jobs,  # discovery found no vendor fingerprint; try the generic reader anyway
 }
 
 

@@ -149,7 +149,7 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 | smartrecruiters | yes | public JSON API |
 | helix | yes | `/joblist` HTML |
 | dvinci | yes | public GET `<tenant>.dvinci-easy.com/jobPublication/list.json` |
-| self_hosted | no | discovery labelled it, no adapter yet (47 sites) — Firecrawl agent fallback |
+| self_hosted | yes | no vendor fingerprint (47 sites) — routed through the generic `crawl_wp_jobs` reader, same as unlabelled boards |
 | coveto | no | discovery labelled it, no adapter yet (1 site) — Firecrawl agent fallback |
 | `""` (unknown) | — | ~113 sites; discovery / Firecrawl "refetch career" |
 

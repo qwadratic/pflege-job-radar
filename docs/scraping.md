@@ -45,13 +45,15 @@ All adapters emit the inbox row shape; one loader (`crawlers/load_crawl_output.p
 
 `python -m crawlers.routing` → for each clinic: `routable` (vendor label + careers_url + adapter exists), `route_reason` otherwise, `walled`.
 ```
-routable            352 clinics -> 205 boards (62 shared, 147 fetches saved)
+routable            396 clinics -> 221 boards (74 shared, 178 fetches saved)
 walled boards          1
-not routable           55
-   no adapter for self_hosted            47
+not routable            8
    no careers_url                         7
    no adapter for coveto                  1
 ```
+`self_hosted` (47 sites, discovery found no vendor fingerprint) routes through the generic `crawl_wp_jobs`
+reader, same as unlabelled boards — a live probe found 7 of the 14 largest self_hosted boards yield real
+postings at zero Firecrawl cost (`backlog/decisions/decision-3`).
 The app shows this per clinic as **Fetch via**: the adapter name, or *Firecrawl* when no adapter exists (`route_reason` says why). Everything is scrapeable; the difference is cost. The Clawl page (`#/clawl`) previews a target (`GET /api/crawl/plan`: hospitals, boards, via adapter / via Firecrawl, estimated credits) before you start it, and holds the schedules.
 
 ## Firecrawl agent fallback

@@ -55,6 +55,12 @@ ADAPTERS = {
     # fingerprinted vendor name attached.
     "wp_jobs":         ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "dvinci":          ("vendor", "crawlers.vendor_adapters:crawl_dvinci"),
+    # `self_hosted` means discovery found no vendor fingerprint, not that the board is unreadable.
+    # Route it through the same generic sitemap/page-link job discovery as unlabelled boards
+    # (`wp_jobs` above) -- a 0-row crawl_wp_jobs pass costs a few GETs, and a live probe of the 14
+    # largest self_hosted boards this session found 7 yield real postings at zero Firecrawl cost
+    # (see backlog/decisions/decision-3).
+    "self_hosted":     ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "bite":            ("seeded", "pflege_jobs.sources.bite:crawl"),
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),

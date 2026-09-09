@@ -43,8 +43,9 @@ open postings from four sources; now only hospital career sites count.
 Three sources, precedence when they disagree: `krankenhausplan` (10, identity only) > `employer_ats` (20,
 adapters) = `firecrawl_agent` (25, agent-read career sites). `clinics.ats_type` names the adapter; 294 of 407 sites
 are labelled, `dvinci` (13) now has an adapter (`crawl_dvinci`) and is fully routable. 113 sites have no `ats_type`
-label, but a generic `wp_jobs` fallback adapter routes many of those anyway — only 58 sites are actually
-`fetch=firecrawl` (mostly `ats_type=self_hosted`, 47) → `routable=false` with a `route_reason`.
+label, but a generic `wp_jobs` fallback adapter routes many of those anyway — `ats_type=self_hosted` (47
+sites, no vendor fingerprint) also routes through it now, so only 11 sites are actually
+`fetch=firecrawl` (mostly `coveto` and a few unlabeled) → `routable=false` with a `route_reason`.
 Shared boards (Schön 12, kbo — split across 5+ boards: kbo-iak 11, kbo-heckscher-klinikum 9, kbo-lmk 5, kbo-isk 4,
 umantis 2, 33 kbo sites total, Südostbayern 4, RHÖN 3) are fetched once per board and spread by link-clinics: a
 per-site count is a lower bound for group members.

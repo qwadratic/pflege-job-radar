@@ -47,4 +47,4 @@ select * from pflege_jobs.resolve_postings();
 `class_source='manual'` survives every later load.
 
 ## Known limits
-Coverage = what the adapters and the agent can read: 58 sites are `fetch=firecrawl` (no adapter match, mostly `ats_type=self_hosted`/`coveto`). dvinci has an adapter now (`crawl_dvinci`). `unknown` employers are honest. Descriptions exist only where a detail page was fetched.
+Coverage = what the adapters and the agent can read: 11 sites are `fetch=firecrawl` (no adapter match, mostly `coveto` and a few unlabeled — `ats_type=self_hosted` now routes through the generic `wp_jobs` reader). dvinci has an adapter now (`crawl_dvinci`). `unknown` employers are honest. Descriptions exist only where a detail page was fetched.
