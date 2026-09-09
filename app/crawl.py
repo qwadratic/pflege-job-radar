@@ -528,11 +528,17 @@ def execute(run_id):
         except Exception as e:
             log(f"posting re-check failed: {str(e)[:120]}")
 
+    cancelled = False
+
     # adapters, grouped by board
-    if plan["adapter"]:
+    if plan["adapter"] and not cancelled:
         boards = _boards(plan["adapter"])
         log(f"{len(boards)} board(s) to fetch")
         for url, b in boards.items():
+            if R.get_run(run_id, with_log=False).get("cancel_requested"):
+                cancelled = True
+                log(f"cancelled by operator ({len(boards)} board(s) planned, stopping before the rest)")
+                break
             c = b["clinics"][0]
             names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
             t0 = time.time()
@@ -557,7 +563,7 @@ def execute(run_id):
             time.sleep(POLITE_SLEEP)
 
     # firecrawl agent
-    if plan["firecrawl"]:
+    if plan["firecrawl"] and not cancelled:
         from pflege_jobs.sources import firecrawl_agent as FA
         ks_allowed, ks_reason = kill_switch(run_mode=mode, trigger=run.get("trigger"), log=log)
         if not ks_allowed:
@@ -567,6 +573,10 @@ def execute(run_id):
         else:
             plan_firecrawl = plan["firecrawl"]
         for c in plan_firecrawl:
+            if R.get_run(run_id, with_log=False).get("cancel_requested"):
+                cancelled = True
+                log("cancelled by operator (remaining Firecrawl clinics skipped)")
+                break
             left = _budget_left()
             if left < max_credits:
                 errors += 1
@@ -621,7 +631,7 @@ def execute(run_id):
     except Exception as e:
         errors += 1
         log(f"intake FAILED {type(e).__name__}: {str(e)[:300]}")
-    status = "done" if not errors or n_rows else "failed"
+    status = "cancelled" if cancelled else ("done" if not errors or n_rows else "failed")
     if errors and status == "done":
         log(f"finished with {errors} error(s)")
     R.update_run(run_id, status=status, finished_at=R.now(), error=(f"{errors} error(s), see log" if errors else None))

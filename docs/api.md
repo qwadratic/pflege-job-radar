@@ -21,6 +21,7 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | GET | `/api/crawl/plan` | preview of a target: hospitals, boards, via adapter / Firecrawl, est. credits |
 | GET | `/api/crawl/estimate?clinic_id=` | free, pre-parse read of one clinic's board: how many titles look Pflegedienst, before running any real crawl. Honest about not knowing -- `confidence: none` if there's no adapter route at all (would need a paid Firecrawl probe), `low` if too many titles carry no nursing/non-nursing signal to say for sure (mixed-department board, or titles that need the full description read) |
 | GET | `/api/crawl/runs`, `/api/crawl/runs/{id}` | run status + log |
+| POST | `/api/crawl/runs/{id}/cancel` | best-effort: a queued run never starts; a running one stops at the next board/Firecrawl-clinic boundary (no hard kill mid-request) → updated run row |
 | POST | `/api/clinics/{kez}/refetch-career` | Firecrawl discovery of the career portal |
 | GET/POST/PUT/DELETE | `/api/schedules[/{id}]`, `POST /api/schedules/{id}/run-now` | cron / preset schedules with target, mode, budget, enabled |
 | GET/POST | `/api/mechanics`, `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | the ten rule mechanics: explanation, source, patterns, try-it, run tests |

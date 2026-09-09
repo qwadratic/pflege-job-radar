@@ -273,6 +273,23 @@ def api_run(run_id: int):
     return r
 
 
+@app.post("/api/crawl/runs/{run_id}/cancel")
+def api_run_cancel(run_id: int):
+    """Best-effort: a queued run never starts; a running one stops at the next board/Firecrawl-clinic
+    boundary in app/crawl.py:execute() (there is no hard kill mid-request -- whatever finished before
+    the check still gets ingested). Returns the updated run row."""
+    r = R.get_run(run_id, with_log=False)
+    if not r:
+        raise HTTPException(404, "unknown run")
+    if r["status"] not in ("queued", "running"):
+        raise HTTPException(409, f"run is already {r['status']}, nothing to cancel")
+    if r["status"] == "queued":
+        R.update_run(run_id, status="cancelled", finished_at=R.now(), error="cancelled by operator (never started)")
+    else:
+        R.update_run(run_id, cancel_requested=1)
+    return R.get_run(run_id, with_log=False)
+
+
 @app.get("/api/inbox")
 def api_inbox(recent: int = 25):
     return D.inbox_summary(recent=max(0, min(int(recent), 200)))

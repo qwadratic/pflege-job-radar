@@ -65,7 +65,8 @@ def db():
 # (table, column, type) added after the table first shipped; applied by init() with a plain
 # 'alter table add column' when pragma table_info says the column is missing (SQLite has no IF NOT EXISTS for columns).
 MIGRATIONS = (("firecrawl_usage", "job_id", "text"),
-              ("firecrawl_usage", "tokens", "integer"))      # Extract-token delta of the run (None = not measured)
+              ("firecrawl_usage", "tokens", "integer"),      # Extract-token delta of the run (None = not measured)
+              ("crawl_runs", "cancel_requested", "integer"))  # POST /api/crawl/runs/{id}/cancel; execute() polls it between boards/clinics
 
 
 def _migrate(c):
@@ -310,6 +311,8 @@ def _loop():
     while True:
         run_id = _queue.get()
         try:
+            if (get_run(run_id, with_log=False) or {}).get("status") == "cancelled":
+                continue    # cancelled while still queued (POST /api/crawl/runs/{id}/cancel); finally still runs task_done()
             update_run(run_id, status="running", started_at=now())
             log(run_id, "run started")
             _executor(run_id)

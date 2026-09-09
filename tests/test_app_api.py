@@ -104,6 +104,34 @@ def test_crawl_plan_targets(client):
     assert client.get("/api/crawl/plan?scope=nope").status_code == 400
     r = client.post("/api/crawl", json={"target": {"scope": "clinic", "values": ["36201"]}, "mode": "adapter"})
     assert r.status_code == 200 and r.json()["boards"] == 1
+
+
+def test_cancel_queued_run_marks_cancelled_immediately(client):
+    """R.enqueue is stubbed in this fixture, so a created run stays 'queued' -- exactly the case a
+    cancel click can land on before the (single, serial) worker ever picks it up."""
+    rid = client.post("/api/crawl", json={"target": {"scope": "clinic", "values": ["36201"]}, "mode": "adapter"}).json()["run_id"]
+    r = client.post(f"/api/crawl/runs/{rid}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+    assert client.get(f"/api/crawl/runs/{rid}").json()["status"] == "cancelled"
+
+
+def test_cancel_running_run_sets_flag_not_status(client):
+    """A running crawl can't be hard-killed mid-request -- cancel just flags it; app/crawl.py:execute()
+    polls cancel_requested between boards/Firecrawl clinics and stops there."""
+    rid = R.create_run("clinic", "36201", "adapter")
+    R.update_run(rid, status="running", started_at=R.now())
+    r = client.post(f"/api/crawl/runs/{rid}/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "running" and r.json()["cancel_requested"] == 1
+
+
+def test_cancel_finished_run_409s(client):
+    rid = R.create_run("clinic", "36201", "adapter")
+    R.update_run(rid, status="done", finished_at=R.now())
+    assert client.post(f"/api/crawl/runs/{rid}/cancel").status_code == 409
+
+
+def test_cancel_unknown_run_404s(client):
+    assert client.post("/api/crawl/runs/999999/cancel").status_code == 404
     r = client.post("/api/crawl", json={"scope": "regierungsbezirk", "value": "Oberpfalz", "mode": "auto"})   # legacy shape
     assert r.status_code == 200 and r.json()["clinics"] == 2
     assert client.post("/api/crawl", json={"target": {"scope": "all"}, "mode": "firecrawl"}).status_code == 400

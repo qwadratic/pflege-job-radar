@@ -96,7 +96,7 @@ CAREER_SCHEMA = {
 }
 
 
-_TEMPLATE_CLINIC = {"name": "<hospital name>", "town": None, "operator": None, "website": None}
+_TEMPLATE_CLINIC = {"name": "<hospital name>", "town": "<town>", "operator": None, "website": None}
 
 
 def render_prompts(clinic=None):
