@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-11 15:10'
+updated_date: '2026-09-11 15:12'
 labels: []
 dependencies:
   - TASK-57
@@ -33,3 +34,9 @@ Exact commands to run once confirmed reachable (quick check first: curl -sS -o /
 - [ ] #2 Bamberg board re-delivered; the 5 previously-null Bruderwald postings now show clinic_id=46101
 - [ ] #3 Spot-check confirms TASK-51's earlier deliveries (ukw.de, ebel-kliniken, AMEOS) are still intact
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Also found + fixed (code only, needs delivery): kbo-dak.de (clinic 16107, Zentrum für psychische Gesundheit Ingolstadt) was never routed through the shared kbo.de group portal at all -- the old GROUP_PORTALS regex was anchored to the clinic's own NAME starting with 'kbo-', which this one doesn't. Widened in commit 8d0d7eb. Add this board to the re-delivery list once Supabase is back.
+<!-- SECTION:NOTES:END -->

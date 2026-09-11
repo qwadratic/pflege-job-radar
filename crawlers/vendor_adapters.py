@@ -426,7 +426,10 @@ JOB_SITEMAP = re.compile(r"(jobs?|stellen|karriere|career|vacan)", re.I)
 # TYPO3's softgarden connector extension (e.g. hessing-kliniken.de) puts the job id in the query
 # string, not the path -- /karriere/detail/?tx_softgarden_jobliste[job]=53551366 -- so the path-only
 # alternatives above never match it; add the query-string shape as its own alternative.
-JOB_PATH = re.compile(r"/(jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(karriere-)?detail/[^/?#]"
+# `[/-]` (not bare `/`) before the keyword: a compound URL slug joins words with a hyphen, not a
+# slash -- /beruf-karriere/aktuelle-stellenangebote/details/<slug> (confirmed live 2026-09-11:
+# frg-kliniken.de) has "stellenangebote" preceded by "-", never matched the old bare-`/` anchor.
+JOB_PATH = re.compile(r"[/-](jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(karriere-)?detail/[^/?#]"
                        r"|tx_\w*jobliste%5[Bb]job%5[Dd]=\d+", re.I)
 # A job-alert subscribe widget's own path ("/job-newsletter", concludis' "/jobletter") matches
 # JOB_PATH on "job[/-]" alone -- it is a write-only email-signup page, never a posting (confirmed
