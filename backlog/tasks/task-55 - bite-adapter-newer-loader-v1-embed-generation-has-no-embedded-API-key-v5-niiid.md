@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-11 12:38'
+updated_date: '2026-09-11 15:38'
 labels: []
 dependencies: []
 ordinal: 55000
@@ -23,3 +24,25 @@ Discovered while triaging TASK-48 (Benedictus Krankenhaus Feldafing, clinic_id 1
 - [ ] #2 Benedictus Krankenhaus Feldafing's real postings (if any) reachable via this adapter, or the board correctly flagged as needing Playwright
 - [ ] #3 Check whether other Artemed-group clinics share this same newer bite embed (the group also runs a separate smartrecruiters board for the same clinics, company_code ArtemedSE -- confirm the two aren't just duplicate postings of the same jobs before adding a second read path)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-11 further investigation: fully reverse-engineered the v5 API's real endpoint and request
+shape (useful for any OTHER bite tenant on this same generation with a real key, not just Feldafing):
+  POST https://jobs.b-ite.com/api/v1/postings/search
+  body: {"key": "<the tenant's real key>", "filter": {...}}  (JSON)
+  (also GET https://jobs.b-ite.de/api/v1/address-autocomplete for the location-filter UI, irrelevant
+  to scraping)
+Confirmed live: calling this with key="" (exactly what the niiid.min.js bundle hardcodes for
+artemed-8/Feldafing) returns 400 {"error":"API key is missing"} -- the empty key is not a bug in our
+reading of the bundle, the real API genuinely rejects it.
+
+This means either: (a) the "niiid" listing type is not a standard job-search widget at all -- static.b-ite.com/niiid/v1
+references a chatbot/"recruiting-assistant" product (dot.niiid.io, BiteChatbotV1) distinct from the
+postingSearch API, so this specific Feldafing listing may be chatbot-driven jobs discovery with no
+REST search surface at all; or (b) the real key is resolved by a runtime JS call this static analysis
+didn't find (would need Playwright to observe the actual network traffic once the loader executes).
+Not resolved further this session -- genuinely needs either Playwright or confirmation from bite that
+this listing type has no scrapeable API.
+<!-- SECTION:NOTES:END -->
