@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-11 15:10'
-updated_date: '2026-09-11 15:12'
+updated_date: '2026-09-11 15:22'
 labels: []
 dependencies:
   - TASK-57
@@ -39,4 +39,6 @@ Exact commands to run once confirmed reachable (quick check first: curl -sS -o /
 
 <!-- SECTION:NOTES:BEGIN -->
 Also found + fixed (code only, needs delivery): kbo-dak.de (clinic 16107, Zentrum für psychische Gesundheit Ingolstadt) was never routed through the shared kbo.de group portal at all -- the old GROUP_PORTALS regex was anchored to the clinic's own NAME starting with 'kbo-', which this one doesn't. Widened in commit 8d0d7eb. Add this board to the re-delivery list once Supabase is back.
+
+Also add: re-verify TASK-52's meinkrankenhaus2030.de/karriere/stellenboerse board (clinics 19001 Schongau + 19002 Weilheim) with description-aware Matcher.match() the same way as the other TASK-51 cases -- both currently-delivered postings resolved to 19001 only, unconfirmed whether that's correct for all of them or an org-name-defaulting artifact.
 <!-- SECTION:NOTES:END -->
