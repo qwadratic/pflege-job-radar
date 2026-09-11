@@ -3,7 +3,7 @@ Detection input = census row {name, city, career, ats}. The generic listing-firs
 """
 import re, requests
 from urllib.parse import urlparse, urljoin
-from .career_crawl import UA
+from .career_crawl import UA, JOB_TEXT
 
 S = requests.Session(); S.headers.update({"User-Agent": UA})
 
@@ -91,6 +91,7 @@ def umantis(f, kez, town):
     r = _get(career); html = r.text if r else ""
     m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html)
     hub_url = None
+    hub_needs_own_host = False
     if not m and r is not None:
         # One hop: careers_url is a CMS hub; follow a link that looks like the real job-listing page
         # and re-run the umantis regex there. Allow a same-registrable-domain subdomain hop (e.g.
@@ -110,14 +111,36 @@ def umantis(f, kez, town):
             r2 = _get(link); html2 = r2.text if r2 else ""
             m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html2)
             if m:
-                # The hop page itself sometimes already lists the real /Vacancies/<id> job links
-                # directly (no /Jobs/<n> path found on it at all) -- a guessed .../Jobs/1 fallback
-                # from just the bare umantis host can then land on a *different*, narrower listing
-                # than what the hub page actually shows (confirmed live: ANregiomed's own hub page
-                # lists ~100 vacancies incl. nursing roles the guessed Jobs/1..5 pagination never
-                # surfaces). Prefer the hub page itself as the seed's start URL in that case.
-                if not m.group(2) and re.search(r"/Vacancies/\d+", html2):
+                # The hop page itself sometimes already lists the real job links directly (no
+                # /Jobs/<n> path found on it at all) -- a guessed .../Jobs/1 fallback from just the
+                # bare umantis host can then land on a *different*, narrower listing than what the
+                # hub page actually shows (confirmed live: ANregiomed's own hub page lists ~100
+                # vacancies incl. nursing roles the guessed Jobs/1..5 pagination never surfaces).
+                # Prefer the hub page itself as the seed's start URL in that case -- either it names
+                # real umantis /Vacancies/<id> URLs directly, or (Klinikverbund Allgäu: a custom CMS
+                # front-end server-renders its OWN "/karriere-detail/<city>/<slug>" URLs instead,
+                # proxying umantis rather than linking it, so /Vacancies/\d+ never appears at all --
+                # confirmed live 2026-09-11: 84 real job anchors on the hub, only ~11 vacancies
+                # reachable via the guessed umantis Jobs/1..5+All pagination) several of its own
+                # gender-marker-bearing anchors, the same signal career_crawl.Crawler itself uses to
+                # recognize a real job link.
+                if re.search(r"/Vacancies/\d+", html2):
+                    if not m.group(2): hub_url = link
+                elif not m.group(2) and len(JOB_TEXT.findall(html2)) >= 5:
                     hub_url = link
+                    hub_needs_own_host = True
+                    # This exact href is rarely the site's actual listing index (confirmed live:
+                    # Klinikverbund Allgäu's short careers_url happens to link "wir-als-arbeitgeber"
+                    # first, an "about us" page with a handful of incidental job mentions -- the
+                    # real 84-posting listing sits at this subdomain's bare root). Only relevant to
+                    # this JOB_TEXT-based branch -- a /Vacancies/<id> hub above is already the real
+                    # listing itself, no need for the extra fetch. Prefer whichever of the two
+                    # carries more job-shaped anchors.
+                    root = f"{urlparse(link).scheme}://{link_netloc}/"
+                    if root != link:
+                        r3 = _get(root); html3 = r3.text if r3 else ""
+                        if len(JOB_TEXT.findall(html3)) > len(JOB_TEXT.findall(html2)):
+                            hub_url = root
                 break
     if not m: return None
     netloc = m.group(1); path = m.group(2) or "/Jobs/1"
@@ -133,7 +156,13 @@ def umantis(f, kez, town):
     extra = [base + "/Jobs/1"] + [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
     if hub_url:
         extra = [guessed] + extra   # still top up with the guessed listing, just not as the primary seed
-    return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis")
+    # A hub whose OWN page is the real listing (the JOB_TEXT branch above -- e.g. Klinikverbund
+    # Allgäu's CMS front-end, server-rendering its own "/karriere-detail/..." job links instead of
+    # linking real umantis URLs) needs its own host allowlisted too, or Crawler._page_hosts_ok()
+    # rejects every one of those links. A /Vacancies/<id>-style hub (ANregiomed) already names real
+    # umantis.com URLs directly and needs no widening.
+    hosts = [netloc, urlparse(hub_url).netloc] if hub_needs_own_host else [netloc]
+    return _base(f["name"], kez, town, first, hosts, extra, (), "umantis")
 
 
 BUILDERS = {"rexx": rexx, "dvinci": dvinci, "mein-check-in": mein_check_in, "umantis": umantis}

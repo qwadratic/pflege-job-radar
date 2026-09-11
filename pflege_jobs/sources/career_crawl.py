@@ -249,31 +249,36 @@ class Crawler:
 
         Section-first: if the seed page itself links to a confident nursing section/category (see
         pflege_jobs.section.pick_nursing_link -- a "Pflegedienst" nav item, a Berufsgruppe/Fachbereich
-        filter option, ...), walk ONLY that link's subtree first (depth<=2 from there, same page
-        budget). Only when that subtree yields zero jobs do we fall back to the original full
-        board-wide walk from the seed itself; when no confident section link exists at all on the
-        seed page, we run that full walk unchanged, exactly as before this feature existed."""
+        filter option, ...), fetch that subtree first (depth<=2 from there, same page budget) so it is
+        never skipped for a partial board budget -- then ALWAYS top up with the full board-wide walk
+        too, deduped by URL, instead of returning early. Stopping at the section subtree used to be
+        precautionary (no observed gap when this path was added); it turned out to silently drop most
+        of the board once one was (confirmed live 2026-09-11: Klinikverbund Allgäu's section-first hit
+        a narrow "pflegerische Fachweiterbildungen" nav item and returned only 9 of 84 real postings,
+        the exact same class of gap crawl_wp_jobs's own equivalent was already fixed for)."""
         hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
         seed_url = seed["career"]
         r0 = self.fetch(seed_url)
         prefetched = {urldefrag(seed_url)[0]: r0} if r0 else {}
         section_href = self._section_link(r0, hosts) if r0 else None
+        section_rows, section_stats = [], None
         if section_href:
             # Every job reached through this subtree came from a confirmed nursing-section nav link
             # (see _section_link above) -- thread that as classify.classify_role's
             # nursing_section_confirmed signal for each one, same structural signal as the other
-            # vendor adapters. Not narrowed further by it: this path was tested live 2026-09-06 on 2
-            # real umantis boards and section_first never actually engaged (no nursing nav rendered on
-            # either), so there is no observed classification-gap evidence for this path specifically
-            # -- wiring it through is precautionary/for consistency, not a fix for an observed bug.
-            rows, stats = self._crawl_urls(seed, hosts, [section_href], [], depth_cap=2, section_confirmed=True)
-            if rows:
-                stats["section_first"] = True
-                self.log(f"  {seed.get('name', '?')[:30]}: section-first -> {section_href} ({len(rows)} rows)")
-                return rows, stats
-            self.log(f"  {seed.get('name', '?')[:30]}: section-first subtree ({section_href}) empty -- falling back to full board walk")
+            # vendor adapters.
+            section_rows, section_stats = self._crawl_urls(seed, hosts, [section_href], [], depth_cap=2, section_confirmed=True)
+            if section_rows:
+                self.log(f"  {seed.get('name', '?')[:30]}: section-first -> {section_href} ({len(section_rows)} rows)")
+            else:
+                self.log(f"  {seed.get('name', '?')[:30]}: section-first subtree ({section_href}) empty")
         rows, stats = self._crawl_urls(seed, hosts, [seed_url] + list(seed.get("extra_seeds", [])), seed.get("sitemaps", []), depth_cap=None, prefetched=prefetched)
-        stats["section_first"] = False
+        if section_rows:
+            seen_urls = {r["external_url"] for r in rows}
+            rows = rows + [r for r in section_rows if r["external_url"] not in seen_urls]
+            for k in ("list_pages", "job_pages", "jobposting_pages", "heuristic_pages"):
+                stats[k] = stats.get(k, 0) + section_stats.get(k, 0)
+        stats["section_first"] = bool(section_href)
         return rows, stats
 
     def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False):
