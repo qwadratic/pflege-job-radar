@@ -4,9 +4,11 @@ Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (
 settings (json blobs by key), hunt_state + hunt_meta (app/hunter.py: one row per clinic and UTC day, and the hunter's
 per-day accumulators / flags -- schema here, all reads and writes live in app/hunter.py), magic_links + sessions + customers
 (app/auth.py: single-use login tokens, cookie sessions, Stripe customers -- schema here, reads/writes in app/auth.py), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
-job the row belongs to, so an accepted submission is counted once even when both the poller and the webhook report it).
+job the row belongs to, so an accepted submission is counted once even when both the poller and the webhook report it),
+idem (one row per caller and Idempotency-Key seen on a write route -- see idem_scope() -- carrying the request fingerprint and, once it finished, the response to replay).
 Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the public API shows them too.
 """
+import hashlib
 import json
 import queue
 import sqlite3
@@ -45,9 +47,12 @@ create table if not exists magic_links (
   id integer primary key autoincrement, email text, token_hash text, role text, created_at text, expires_at text, used_at text);
 create index if not exists magic_links_email on magic_links(email, created_at);
 create index if not exists magic_links_hash on magic_links(token_hash);
+create table if not exists login_failures (id integer primary key autoincrement, ip text, at text);
+create index if not exists login_failures_ip on login_failures(ip, at);
 create table if not exists sessions (
   sid_hash text primary key, email text, role text, created_at text, expires_at text, last_seen_at text, stripe_customer_id text);
 create table if not exists customers (email text primary key, stripe_customer_id text, status text default 'active', created_at text);
+create table if not exists idem (key text primary key, fingerprint text, status text, response text, at text);
 """
 
 
@@ -179,6 +184,54 @@ def last_run_per_clinic():
 def active_run_count():
     with _lock, db() as c:
         return c.execute("select count(*) from crawl_runs where status in ('queued','running')").fetchone()[0]
+
+
+# --- idempotency ----------------------------------------------------------------------------
+# A retried POST /api/crawl used to queue a second paying run: the caller's socket dies, it retries, and
+# nothing on this side knows the two are the same request. With an Idempotency-Key header the second
+# attempt replays the first one's response instead of spending again.
+def idem_scope(caller, key):
+    """The row key: the caller's own name plus the key it chose. The namespace used to be global, so any
+    authenticated caller could hand in a key another one was using and get that caller's stored response
+    back (a read of someone else's run ids), or claim the key first and lock the owner out with 409/422.
+    Keys are per caller now: two callers picking the same UUID get two independent rows.
+    NUL cannot occur in an HTTP header value or in an e-mail address, so the two halves cannot be confused."""
+    return f"{caller}\x00{key}"
+
+
+def idem_fingerprint(method, path, body):
+    """What "the same request" means: method, path and the exact body. A key reused with a different body
+    is a caller bug, not a retry, and gets 422 rather than the first call's answer."""
+    blob = json.dumps(body, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(f"{method} {path} {blob}".encode()).hexdigest()
+
+
+def idem_begin(key, fingerprint):
+    """Claim a key. ('new', None) -> go ahead; ('replay', response) -> the same request already finished;
+    ('in_flight', None) -> a copy is still running (409); ('conflict', None) -> different body (422)."""
+    with _lock, db() as c:
+        try:
+            c.execute("insert into idem(key,fingerprint,status,at) values(?,?,'in_flight',?)", (key, fingerprint, now()))
+            return "new", None
+        except sqlite3.IntegrityError:
+            r = c.execute("select fingerprint, status, response from idem where key=?", (key,)).fetchone()
+    if not r or r["fingerprint"] != fingerprint:
+        return "conflict", None
+    if r["status"] != "done":
+        return "in_flight", None
+    return "replay", json.loads(r["response"] or "null")
+
+
+def idem_finish(key, response):
+    with _lock, db() as c:
+        c.execute("update idem set status='done', response=?, at=? where key=?",
+                  (json.dumps(response, ensure_ascii=False, default=str), now(), key))
+
+
+def idem_drop(key):
+    """An attempt that raised releases its key: a 500 must not lock the caller out of retrying for good."""
+    with _lock, db() as c:
+        c.execute("delete from idem where key=?", (key,))
 
 
 # --- firecrawl usage / career profiles ------------------------------------------------------
