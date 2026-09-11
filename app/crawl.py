@@ -337,6 +337,9 @@ def _seed_obs(board, c, towns, log):
         if not seed:
             return [], {"error": "no umantis instance found on careers page"}
         return Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log).crawl(seed)
+    if vendor == "klinikum_passau":
+        from pflege_jobs.sources.klinikum_passau import crawl as crawl_klinikum_passau
+        return crawl_klinikum_passau(c, towns, log=log)
     if vendor == "pi_asp":
         try:
             import playwright  # noqa: F401

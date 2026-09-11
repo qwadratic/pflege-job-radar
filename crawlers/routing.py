@@ -70,6 +70,10 @@ ADAPTERS = {
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),
     "softgarden":      ("seeded", "pflege_jobs.sources.softgarden:seed_for"),
+    # Klinikum Passau's own bespoke TYPO3 extension (klinikumpassau_joboffers) renders every posting's
+    # full title+description inline on the one listing page -- no JSON-LD, no real per-job detail
+    # page, unique to this tenant. See pflege_jobs/sources/klinikum_passau.py's module docstring.
+    "klinikum_passau": ("seeded", "pflege_jobs.sources.klinikum_passau:crawl"),
     # app/crawl.py's _seed_obs dispatches on vendor == "umantis" directly (not through this table's
     # module path) and drives it via ats_seeds.BUILDERS["umantis"] + the generic listing-first
     # career_crawl.Crawler -- crawlers.portals:parse_umantis (the old entry here) is unused dead code.
