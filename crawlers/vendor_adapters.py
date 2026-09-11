@@ -519,7 +519,12 @@ def parse_job_page(htmltext, url, org):
         t = re.search(r"<title>(.*?)</title>", htmltext or "", re.S)
         cand = _txt(t.group(1), 300) if t else None
         if cand:
-            cand = re.split(r"\s+[–—|]\s+", cand)[0].strip()
+            # Usually "<real title> | SiteName", segment 0 -- but a HubSpot-templated board
+            # (confirmed live: meinkrankenhaus2030.de) instead writes "Stellenanzeige | <real
+            # title>", the generic label first. Prefer whichever segment actually carries a
+            # gender marker; only default to segment 0 when neither (or only one) does.
+            segs = [s.strip() for s in re.split(r"\s+[–—|]\s+", cand) if s.strip()]
+            cand = next((s for s in segs if GENDER.search(s)), segs[0] if segs else cand)
             if GENDER.search(cand) or not title:
                 title = cand
     if not title or not GENDER.search(title):
@@ -551,17 +556,29 @@ def parse_job_page(htmltext, url, org):
             "employmentType": facts.get("schedule")}
 
 
-def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=None):
+def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=None, titles=None):
     """Fetch each url and turn it into a row -- except a klinikum-jobs widget page (ALLJOBS_RX),
     whose own title is never a job (see the regex's docstring): walk its embedded postings' own
-    `link`s instead of accepting the division page itself as one fake row."""
+    `link`s instead of accepting the division page itself as one fake row. `titles` (url -> anchor
+    text, from the discovery step) backs a PDF-linked posting: its response body has no HTML to
+    read a title from at all, so parse_job_page would otherwise just drop it."""
     seen = seen if seen is not None else set()
+    titles = titles or {}
     out = []
     for u in urls:
         key = _listing_page_key(u)
         if len(out) >= max_jobs or key in seen:
             continue
         seen.add(key)
+        if PDF_LINK_RX.search(u):
+            title = titles.get(u)
+            if not title:
+                continue
+            j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "url": u, "page": u, "description": None, "employmentType": None}
+            j["section_labels"] = list(section_labels) if section_labels else []
+            out.append(row(host, u, j, "wp_jobs"))
+            continue
         r = get(u, session=session)
         if not r or not r.ok:
             continue
@@ -621,6 +638,30 @@ def _wp_nursing_section_url(cu, cu_resp):
     return label, href
 
 
+# A small clinic often skips a real detail page entirely and links a PDF flyer straight off the
+# listing page (confirmed live: augenklinik-muenchen.de, 3 "..._v02.pdf" attachments, no HTML detail
+# anywhere) -- the anchor's own visible text is the only real title available (a PDF response body
+# has no <h1>/<title> parse_job_page can read), so every job-link scan below captures it alongside
+# the href, not just the href.
+PDF_LINK_RX = re.compile(r"\.pdf(?:[?#]|$)", re.I)
+
+
+def _job_link_pairs(html, base, exclude=()):
+    """(url, anchor text) for every JOB_PATH-matching link on one already-fetched page. `.*?` (not
+    `[^<]*`) for the text span: a job title often sits inside a nested <span itemprop="title"> (seen
+    live: karriere.ameos.eu's own schema.org microdata markup) -- requiring tag-free anchor content
+    silently dropped every one of its links pre-fix. _txt() strips whatever tags are inside."""
+    out = {}
+    for h, t in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S):
+        if not JOB_PATH.search(h) or NOT_JOB_PATH.search(h):
+            continue
+        u = urljoin(base, _html.unescape(h))
+        if u in exclude or u in out:
+            continue
+        out[u] = _txt(t)
+    return out
+
+
 def _page_job_links(url, session=None, exclude=()):
     """Job-looking links on one page, minus `exclude` -- the site-wide nav/footer (Berufsgruppe
     siblings, "Karriere"/"Impressum"/...) repeats on every subpage, so without excluding whatever
@@ -630,12 +671,7 @@ def _page_job_links(url, session=None, exclude=()):
         return []
     base = _page_base(r)
     html = re.sub(r"(?s)<!--.*?-->", "", r.text)
-    # unescape before urljoin: a TYPO3 multi-param query link is written as "...&amp;tx_..." in the
-    # raw HTML -- left un-decoded, the literal "&amp;" becomes part of the first param's value and
-    # every request to the resulting URL fails outright (confirmed live: hessing-kliniken.de detail
-    # links 404 with `&amp;` intact, load fine once decoded to `&`).
-    found = (urljoin(base, _html.unescape(h)) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h) and not NOT_JOB_PATH.search(h))
-    return list(dict.fromkeys(u for u in found if u not in exclude))
+    return list(_job_link_pairs(html, base, exclude))
 
 
 # Server-rendered pager (TYPO3 ameosjobs and similar bespoke listing tables): an anchor whose own
@@ -664,11 +700,13 @@ def _next_page_url(html, base):
     return None
 
 
-def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, max_pages=200):
+def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, max_pages=200, titles=None):
     """Job-looking links across a server-rendered listing's own pagination, walking its "next page"
     link (NEXT_PAGE_RX) until none remains or a page adds nothing new. `first_resp` reuses an
     already-fetched page 1 (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. 200 pages
-    is a loop-safety ceiling, not a board-size cap -- no real board is near it."""
+    is a loop-safety ceiling, not a board-size cap -- no real board is near it. `titles`, if given, is
+    filled in-place with each link's own anchor text (url -> text) -- the only real title a PDF-linked
+    posting has, see PDF_LINK_RX."""
     out, visited, url, resp = [], set(), start_url, first_resp
     for _ in range(max_pages):
         if not url or url in visited:
@@ -680,8 +718,11 @@ def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, m
             break
         base = _page_base(r)
         html = re.sub(r"(?s)<!--.*?-->", "", r.text)
-        links = [urljoin(base, _html.unescape(h)) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h) and not NOT_JOB_PATH.search(h)]
-        fresh = [u for u in dict.fromkeys(links) if u not in exclude and u not in out]
+        pairs = _job_link_pairs(html, base, exclude=exclude)
+        if titles is not None:
+            for u, t in pairs.items():
+                titles.setdefault(u, t)
+        fresh = [u for u in pairs if u not in out]
         out += fresh
         nxt = _next_page_url(html, base)
         if not fresh and not nxt:
@@ -723,6 +764,72 @@ def _listing_page_key(u):
     return (p.netloc.lower(), path.lower())
 
 
+def _faqpage_job_rows(cu_resp, c, host):
+    """Some small-clinic WordPress sites (confirmed live: klinik-steger.de, the "Ultimate Addons for
+    Gutenberg" FAQ block) render their whole job listing as one FAQPage JSON-LD block instead of a
+    JobPosting -- each posting is a Question (title) + Answer (description), inline on the listing
+    page itself, no per-job href to walk at all. parse_job_page never sees this (it only recognizes
+    @type JobPosting) and there is no detail link for the generic href/sitemap scan to find either --
+    a dedicated, narrow read of this one schema shape."""
+    if not cu_resp or not cu_resp.ok:
+        return []
+    out = []
+    for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', cu_resp.text, re.S):
+        try:
+            d = json.loads(m)
+        except Exception:
+            continue
+        for node in (d if isinstance(d, list) else [d]):
+            if not isinstance(node, dict) or "FAQPage" not in str(node.get("@type") or ""):
+                continue
+            for q in node.get("mainEntity") or []:
+                title = _txt(q.get("name"))
+                if not title:
+                    continue
+                answer = (q.get("acceptedAnswer") or {}).get("text")
+                j = {"title": title, "org": c["name"],
+                     "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                     "url": cu_resp.url, "page": cu_resp.url, "description": _txt(answer), "employmentType": None}
+                out.append(row(host, cu_resp.url, j, "wp_jobs"))
+    return out
+
+
+# A second, unrelated small-clinic "job FAQ accordion" theme (confirmed live: waldhausklinik.de) --
+# no JSON-LD at all here, plain HTML with descriptive class names. Every posting is one
+# <div class="faqAccCard">, its title in .jobHeadmain, publish date next to "Veröffentlicht am:",
+# description in the matching .faqAccCardBody.
+FAQ_CARD_RX = re.compile(r'<div class="faqAccCard">(.*?)(?=<div class="faqAccCard">|$)', re.S)
+FAQ_TITLE_RX = re.compile(r'class="jobHeadmain">\s*(.*?)\s*<div', re.S)
+FAQ_BODY_RX = re.compile(r'class="faqAccCardBody">(.*?)</div>\s*</div>\s*</div>', re.S)
+FAQ_DATE_RX = re.compile(r'Ver\xf6ffentlicht am:.*?<b>\s*(\d{1,2})\.?\s*([A-Za-zä]+)\.?\s*(\d{4})', re.S)
+DE_MONTHS = {"januar": 1, "februar": 2, "märz": 3, "april": 4, "mai": 5, "juni": 6, "juli": 7,
+             "august": 8, "september": 9, "oktober": 10, "november": 11, "dezember": 12}
+
+
+def _faq_accordion_job_rows(cu_resp, c, host):
+    if not cu_resp or not cu_resp.ok or 'class="faqAccCard"' not in cu_resp.text:
+        return []
+    out = []
+    for card in FAQ_CARD_RX.findall(cu_resp.text):
+        tm = FAQ_TITLE_RX.search(card)
+        title = _txt(tm.group(1)) if tm else None
+        if not title:
+            continue
+        bm = FAQ_BODY_RX.search(card)
+        dm = FAQ_DATE_RX.search(card)
+        date_posted = None
+        if dm:
+            month = DE_MONTHS.get(dm.group(2).lower())
+            if month:
+                date_posted = f"{dm.group(3)}-{month:02d}-{int(dm.group(1)):02d}"
+        j = {"title": title, "org": c["name"],
+             "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+             "url": cu_resp.url, "page": cu_resp.url, "description": _txt(bm.group(1)) if bm else None,
+             "employmentType": None, "datePosted": date_posted}
+        out.append(row(host, cu_resp.url, j, "wp_jobs"))
+    return out
+
+
 def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, not a board-size cap
     cu = (c.get("careers_url") or "").strip()
     if not cu:
@@ -755,27 +862,38 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
         from pflege_jobs.sources.beesite import is_beesite, crawl_beesite
         if is_beesite(cu_resp):
             return crawl_beesite(c, session=session)
+        faq_rows = _faqpage_job_rows(cu_resp, c, host) or _faq_accordion_job_rows(cu_resp, c, host)
+        if faq_rows:
+            return _enrich_wp_fallback_fields(faq_rows, session=session)
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
     # One `seen` set shared across every _wp_job_rows call below (section, sitemap, career-page-link
     # stages) -- without it each stage's own fresh dedup set can't see a page (or a klinikum-jobs
     # widget page's own embedded postings, ALLJOBS_RX) another stage already fetched, and the same
     # job comes back as a duplicate row once per stage that happens to reach it.
-    out, fetched, seen = [], set(), set()
+    out, fetched, seen, titles = [], set(), set(), {}
+    # Seed `titles` from the career page itself before the sitemap stage runs (not just from the
+    # career-page-link stage below, which runs last): a PDF-linked posting's title only exists as
+    # anchor text on a page that links it, never inside the PDF response `_wp_job_rows` would
+    # otherwise fetch -- if the sitemap discovers that same PDF url first with no title available
+    # yet, `seen` permanently drops it before the later stage ever gets a chance to supply one
+    # (confirmed live: augenklinik-muenchen.de, one of 3 PDFs lost this way pre-fix).
+    if cu_resp and cu_resp.ok:
+        titles.update(_job_link_pairs(re.sub(r"(?s)<!--.*?-->", "", cu_resp.text), _page_base(cu_resp)))
     if section_url:
         cu_links = ({urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
                     if cu_resp and cu_resp.ok else set())
-        section_urls = [u for u in _paginated_job_links(section_url, session=session, exclude=cu_links | {section_url})
+        section_urls = [u for u in _paginated_job_links(section_url, session=session, exclude=cu_links | {section_url}, titles=titles)
                         if _listing_page_key(u) not in not_a_job]
         if section_urls:
             out = _wp_job_rows(section_urls, c, host, max_jobs, session,
-                               section_labels=[section_label] if section_label else None, seen=seen)
+                               section_labels=[section_label] if section_label else None, seen=seen, titles=titles)
             fetched = {j["payload"]["url"] for j in out}
 
     urls = [u for u in find_job_urls(base, session=session) if _listing_page_key(u) not in not_a_job]
     remaining = max(max_jobs - len(out), 0)
     if urls and remaining:
         more_urls = [u for u in urls if u not in fetched]
-        new = _wp_job_rows(more_urls, c, host, remaining, session, seen=seen)
+        new = _wp_job_rows(more_urls, c, host, remaining, session, seen=seen, titles=titles)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
@@ -786,12 +904,12 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
     # _paginated_job_links reuses the already-fetched `cu_resp` as page 1, then follows the career
     # page's own "next page" link -- a table paginated on the career page itself (ameosjobs), not
     # just a distinct narrower section, would otherwise only ever be read one page deep.
-    page_urls = _paginated_job_links(cu, session=session, first_resp=cu_resp) if cu_resp and cu_resp.ok else []
+    page_urls = _paginated_job_links(cu, session=session, first_resp=cu_resp, titles=titles) if cu_resp and cu_resp.ok else []
     page_urls += _widget_endpoint_job_links(cu_resp, session=session)
     page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job and u not in fetched]
     remaining = max(max_jobs - len(out), 0)
     if page_urls and remaining:
-        new = _wp_job_rows(page_urls, c, host, remaining, session, seen=seen)
+        new = _wp_job_rows(page_urls, c, host, remaining, session, seen=seen, titles=titles)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
