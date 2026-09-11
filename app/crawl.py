@@ -333,7 +333,7 @@ def _seed_obs(board, c, towns, log):
         return rows, st
     if vendor == "umantis":
         from pflege_jobs.sources.ats_seeds import BUILDERS
-        seed = BUILDERS["umantis"]({"name": c["name"], "career": c["careers_url"]}, c["clinic_id"], c.get("town"))
+        seed = BUILDERS["umantis"]({"name": c["name"], "career": c["careers_url"], "operator": c.get("operator")}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no umantis instance found on careers page"}
         return Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log).crawl(seed)
