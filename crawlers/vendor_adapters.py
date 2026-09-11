@@ -1321,7 +1321,16 @@ GROUP_PORTALS = [
      "list": "https://kbo.de/karriere/jobboerse",
      # decoded on purpose: crawl_group_portal urlencodes it (pre-encoded value paged nothing, 10 vs 109 jobs)
      "page_param": "tx_solr[page]",
-     "job_rx": r"https://kbo\.de/karriere/jobs/[^\"'\s>]+", "host": "kbo.de"},
+     "job_rx": r"https://kbo\.de/karriere/jobs/[^\"'\s>]+", "host": "kbo.de",
+     # Every posting's own JSON-LD jobLocation is the kbo GROUP's Munich headquarters address
+     # (Prinzregentenstraße 18) -- never the real work site of any of its 32 Bavaria clinics
+     # (confirmed live 2026-09-11 across 3 sampled postings, different sub-brands, same address
+     # every time). The real site is only named in the title's own trailing "in <Ort>" / "am
+     # Standort <Ort>" / "des Standorts <Ort>" text, when present at all -- best-effort, not every
+     # posting names one (e.g. a bare "Pflegefachhelfer (m/w/d)" carries no location clue anywhere).
+     "title_city_rx": re.compile(r"(?:\bin\b|am Standort|des Standorts)\s+([A-ZÄÖÜ][\wäöüß.\-]*"
+                                  r"(?:\s+(?:an|am|a\.\s?d\.|i\.\s?d\.)\s+[\wäöüß.\-]+)?"
+                                  r"(?:\s+[A-ZÄÖÜ][\wäöüß.\-]*){0,2})$")},
     # Barmherzige Brüder run one board for all their Bavarian houses.
     {"match": r"barmherzige", "list": "https://karriere.barmherzige.net/jobs/",
      "page_param": "c_page",
@@ -1372,6 +1381,11 @@ def crawl_group_portal(c, g, session=None, max_jobs=100_000):  # loop-safety cei
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if j and j.get("title"):
+            title_city_rx = g.get("title_city_rx")
+            if title_city_rx:
+                m = title_city_rx.search(j["title"].strip())
+                if m:
+                    j["loc"] = [{"city": m.group(1), "plz": j["loc"][0].get("plz"), "region": j["loc"][0].get("region")}]
             out.append(row(g["host"], j["url"], j, "group"))
         time.sleep(0.15)
     return out

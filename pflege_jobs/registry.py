@@ -128,7 +128,14 @@ class Matcher:
                     ok = o >= 0.8 or (o >= thr and shared >= 2)
                 else:                                   # site name is just kind + town ("Klinikum Fürth"): need matching kind
                     ok = bool(ek & x["_kinds"]) and not et - ek  # employer carries no other distinguishing tokens
-                    if not ok and ek & x["_kinds"] and len(et) <= 1: ok = True   # e.g. 'Klinikum Fürth Personalabteilung' (stopword) / 'Klinikum Fürth AöR'
+                    # A former extra fallback here (`or (ek & x["_kinds"] and len(et) <= 1)`) treated
+                    # ANY single leftover employer token as safe to ignore -- meant for a stopword the
+                    # tokenizer missed ('Klinikum Fürth Personalabteilung'/'AöR', both already reduce
+                    # et to empty on their own, see above), but it just as readily waved through a
+                    # single REAL distinguishing token that happens to not match this candidate (found
+                    # live 2026-09-11: 'Klinik Reinhardshöhe GmbH', a Hesse site, false-matched to
+                    # 'Klinik Bad Windsheim' purely because both towns collapse to city_key() == 'bad'
+                    # and Bad Windsheim's own name/operator carry no distinguishing token at all).
                 cands.append((ok, x))
             best = [x for ok, x in cands if ok]
             if len(best) == 1: return best[0]["clinic_id"], rule, score
@@ -138,6 +145,16 @@ class Matcher:
                 if len(full) == 1: return full[0]["clinic_id"], rule + "_full", score - 0.05
                 js = sorted(((jaccard(et, x[key]), x) for x in best), key=lambda t: -t[0])
                 if js[0][0] - js[1][0] >= 0.1: return js[0][1]["clinic_id"], rule + "_bestj", score - 0.1
+                # decision-4: the Bayern Krankenhausplan legitimately lists a real Plan-KH site
+                # alongside a near-duplicate placeholder entry for the same building (a Vertrags-KH
+                # or a beds-less satellite day-clinic, e.g. Klinikum Bamberg-Bruderwald: the real
+                # 911-bed hospital (46101) plus a 0-bed Vertrags-KH twin (46170) AND a 0-bed KJP
+                # day-clinic under a different operator (46110) -- all three token-tie on
+                # "bruderwald"). A single candidate carrying real bed capacity among placeholders
+                # is a safe, operator-independent signal; only fall through to the same-operator R6
+                # tie-break below when more than one candidate actually has real capacity.
+                real = [x for x in best if x.get("beds")]
+                if len(real) == 1: return real[0]["clinic_id"], rule + "_realsite", score - 0.1
                 ops = {employer_norm(x.get("operator") or x["name"]) for x in best}
                 if len(ops) == 1:
                     top = _pick_site(best)

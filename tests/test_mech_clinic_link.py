@@ -24,9 +24,38 @@ def test_never_links_ambiguous_or_non_clinic():
     assert m.match("AWO Seniorenzentrum Fürth", "Fürth") is None
 
 
+def test_no_false_match_across_city_key_bad_collapse():
+    # city_key() reduces every "Bad X" town to the single key "bad" (Bad Reichenhall, Bad Windsheim,
+    # Bad Steben, ... all collapse together) -- a real out-of-state employer whose own name carries
+    # no token overlapping any Bavaria "Bad *" site must not fall through to a match just because it
+    # shares that collapsed town bucket. Found live 2026-09-11: 'Klinik Reinhardshöhe GmbH' (Bad
+    # Wildungen, Hesse) false-matched to 'Kreisklinik Bad Reichenhall' this way.
+    m = Matcher(CL)
+    assert m.match("Klinik Reinhardshöhe GmbH", "Bad Wildungen") is None
+
+
 def test_tokens_and_stopwords():
     m = Matcher(CL)
     assert m.match("Klinikum Fürth Personalabteilung", "Fürth")[0] == "58101"
+
+
+def test_prefers_real_site_over_beds_less_duplicate():
+    # decision-4: the Bayern Krankenhausplan lists a real Plan-KH site (real beds) alongside a
+    # near-duplicate placeholder entry for the same building (Vertrags-KH, or a beds-less satellite
+    # day-clinic under a DIFFERENT operator) -- both token-tie against a generic employer string.
+    # Found live 2026-09-11: Klinikum Bamberg-Bruderwald (46101, 911 beds) vs. its Vertrags-KH twin
+    # (46170, 0 beds, same operator) vs. a beds-less KJP day-clinic sharing the building name under a
+    # third operator (46110) -- three-way token tie, only one candidate has real capacity.
+    m = Matcher([
+        {"clinic_id": "46101", "name": "Klinikum Bamberg - Betriebsstätte am Bruderwald-", "town": "Bamberg",
+         "operator": "Sozialstiftung Bamberg", "beds": 911},
+        {"clinic_id": "46110", "name": "Tagesklinik für KJP am Klinikum Bamberg - Betriebsstätte am Bruderwald-",
+         "town": "Bamberg", "operator": "KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)", "beds": 0},
+        {"clinic_id": "46170", "name": "Klinikum Bamberg - Betriebsstätte am Bruderwald", "town": "Bamberg",
+         "operator": "Sozialstiftung Bamberg", "beds": 0},
+    ])
+    r = m.match("Klinikum Bamberg (Bruderwald)", "Bamberg")
+    assert r[0] == "46101" and r[1].endswith("_realsite")
 
 
 def test_uni_aliases():
