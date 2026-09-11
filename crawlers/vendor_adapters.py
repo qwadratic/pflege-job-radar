@@ -1317,7 +1317,13 @@ def crawl_dvinci(c, session=None):
 # domain, not on each clinic's own host — so the per-site sitemap walk finds nothing. Listing pages
 # are paginated with tx_solr[page]; detail pages carry a complete JSON-LD JobPosting.
 GROUP_PORTALS = [
-    {"match": r"^kbo-|kbo\.de|kbo-isk|kbo-heckscher|kbo-iak|kbo-lech-mangfall",
+    # Not anchored to the string start: a clinic's own NAME rarely starts with "kbo-" (e.g. 16107
+    # "Zentrum für psychische Gesundheit (ZPG) Ingolstadt", the kbo-Donau-Altmühl-Kliniken site --
+    # missed entirely by the old `^kbo-` anchor, confirmed live 2026-09-11 that kbo-dak.de/karriere
+    # itself links straight to kbo.de/karriere/jobboerse filtered to this sub-brand) -- match "kbo-"
+    # or "kbo.de" ANYWHERE in name+careers_url so every kbo-<subbrand> site is caught generically,
+    # not just the ones enumerated by name so far.
+    {"match": r"kbo-|kbo\.de",
      "list": "https://kbo.de/karriere/jobboerse",
      # decoded on purpose: crawl_group_portal urlencodes it (pre-encoded value paged nothing, 10 vs 109 jobs)
      "page_param": "tx_solr[page]",
