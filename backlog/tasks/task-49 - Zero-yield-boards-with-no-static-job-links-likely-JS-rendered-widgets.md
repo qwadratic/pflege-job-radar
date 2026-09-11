@@ -4,7 +4,7 @@ title: Zero-yield boards with no static job links -- likely JS-rendered widgets
 status: To Do
 assignee: []
 created_date: '2026-09-11 10:49'
-updated_date: '2026-09-11 13:42'
+updated_date: '2026-09-11 15:17'
 labels: []
 dependencies: []
 ordinal: 49000
@@ -27,4 +27,19 @@ Same 2026-09-11 recon as TASK-48, but this bucket (20 boards) has ZERO JOB_PATH-
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-11: klinikverbund-allgaeu.de (1048 beds combined, 6 clinics) partially fixed. Klinikum Kempten's careers_url was a photo gallery page ('Impressionen'), not a job board -- repointed to the same shared umantis board its 5 sibling clinics (Mindelheim/Ottobeuren/Immenstadt/Oberstdorf/Sonthofen) already resolve to. Delivered live: raw=10, kept=1 pflege posting matched to Kempten. Note: only 10 total job links found across the whole 6-clinic group despite the board's own live pages showing more distinct /karriere-detail/ links than that in a single page fetch -- career_crawl.Crawler's pagination (list_pages=6) may be under-walking this specific portal; not investigated further this session, flagging as a possible completeness gap rather than a confirmed one.
+
+2026-09-11 further recon (Supabase down all session from ~15:00 UTC, code-only investigation, no delivery possible):
+
+CONFIRMED FIXED, code committed (59c71bf), needs delivery once DB is back:
+- www.frg-kliniken.de (365 beds, clinics 27201 Grafenau + 27204 Freyung -- registry currently has NO careers_url for either per stale CSV, DB value unknown): real listing at /beruf-karriere/aktuelle-stellenangebote/details/<slug> was invisible to JOB_PATH because "stellenangebote" sits after a HYPHEN in the slug ("aktuelle-stellenangebote"), not a slash -- the regex only matched a leading "/". Widened JOB_PATH to accept [/-] before the keyword (commit 59c71bf). Verified live: crawl_wp_jobs now returns 6 real rows for careers_url=https://www.frg-kliniken.de/beruf-karriere/aktuelle-stellenangebote (was 0). Needs: confirm/fix registry careers_url + ats_type for both clinics, then deliver.
+
+READY TO FIX, needs a registry write once DB is back (no code change needed, crawl_rexx already handles it correctly):
+- wertachkliniken.de (256 beds): the registered domain has no real content, but https://karriere-wertachkliniken.de/stellenangebote.html is a working rexx-systems board (confirmed live: crawl_rexx returns 15 real rows, several genuine "Gesundheits- und Krankenpfleger / Pflegefachkraft" postings). Set careers_url to this URL and ats_type='rexx', then deliver.
+
+PARTIALLY DIAGNOSED, needs more work (not a quick registry fix):
+- www.kliniken-nea.de (316 beds): registry's careers_url is almost certainly the bare domain (no content); the real board is at https://karriere.kliniken-nea.de/ (a distinct subdomain). Even pointed at the right subdomain, crawl_wp_jobs still only finds 1 row (the listing page itself) -- the real individual postings are plain WordPress date-permalinks (/2026/08/20/ota-operationstechnischer-assistent-m-w-d-oder-op-fachpfleger-m-w-d-2/, confirmed a real nursing role: OTA/OP-Fachpfleger) that carry NO job/stellen/karriere/vacan keyword anywhere in the path, so JOB_PATH can't find them by pattern alone, and the WP SEO sitemap's own sub-sitemap ("post-sitemap.xml") isn't itself job-keyword-named either so find_job_urls's JOB_SITEMAP preference-filter doesn't flag it as the one to trust. Needs a different strategy: once a page is confirmed to BE the job listing (title match, or JOB_PATH match on its OWN url), treat every link found ON that specific page as a job candidate regardless of whether the link itself matches JOB_PATH -- crawl_wp_jobs's `_paginated_job_links(cu,...)` walk is close to this already but still filters through JOB_PATH per-link; would need a separate no-filter mode scoped to a confirmed listing page.
+
+Domain fix widened as a side effect (unrelated board, found while investigating kbo.de): kbo-dak.de now correctly routes through the shared kbo.de group portal (commit 8d0d7eb, see TASK-58).
+
+NOT yet re-checked with the new JOB_PATH fix: the rest of TASK-49's original 20-board list (klinikverbund-allgaeu.de done separately, klinikum-ab-alz.de confirmed still genuinely JS-templated {{PortalUrl}}/{{Id}} placeholders -- no fix possible without Playwright, kh-nuernberger-land.de/kbo-dak.de/reisach-kliniken.de/klinik-vincentinum.de already resolved earlier). Worth a quick re-sweep of the remaining ones (waldkrankenhaus.de, hire.klinikum-fuenfseenland.de, klinik-bad-trissl.de, artemed-muenchen-sued.de, kreiskrankenhaus-hoechstadt.de, st-irmingard.de, klinik-menterschwaige.de, klinik-wirsberg.de, clinic-dr-decker.de, klinik-am-birkenwald.de, fachklinikum-mainschleife.de) now that JOB_PATH catches hyphenated slugs too -- some may have been hitting the exact same gap.
 <!-- SECTION:NOTES:END -->
