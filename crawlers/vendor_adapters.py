@@ -650,18 +650,27 @@ PDF_LINK_RX = re.compile(r"\.pdf(?:[?#]|$)", re.I)
 
 
 def _job_link_pairs(html, base, exclude=()):
-    """(url, anchor text) for every JOB_PATH-matching link on one already-fetched page. `.*?` (not
+    """(url, anchor text) for every job-looking link on one already-fetched page. `.*?` (not
     `[^<]*`) for the text span: a job title often sits inside a nested <span itemprop="title"> (seen
     live: karriere.ameos.eu's own schema.org microdata markup) -- requiring tag-free anchor content
-    silently dropped every one of its links pre-fix. _txt() strips whatever tags are inside."""
+    silently dropped every one of its links pre-fix. _txt() strips whatever tags are inside.
+
+    A link counts as job-looking on EITHER signal, not just JOB_PATH on the href: a small clinic's
+    WordPress site often gives each posting its own post slug with no job/stellen/karriere keyword
+    in the URL at all (confirmed live 2026-09-11: klinik-menterschwaige.de's real detail pages are
+    plain "/mitarbeiter-pflege-m-w-d-in-der-analytischen-milieutherapie/"-style permalinks), but the
+    anchor's own visible TEXT still carries the gender marker every German job title does -- the
+    same OR-of-href-or-text signal pflege_jobs/sources/career_crawl.py's _crawl_urls already uses,
+    just missing here."""
     out = {}
     for h, t in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S):
-        if not JOB_PATH.search(h) or NOT_JOB_PATH.search(h):
+        text = _txt(t)
+        if not ((JOB_PATH.search(h) or (text and GENDER.search(text))) and not NOT_JOB_PATH.search(h)):
             continue
         u = urljoin(base, _html.unescape(h))
         if u in exclude or u in out:
             continue
-        out[u] = _txt(t)
+        out[u] = text
     return out
 
 
@@ -833,6 +842,91 @@ def _faq_accordion_job_rows(cu_resp, c, host):
     return out
 
 
+# A whole class of small-clinic sites (own page builder each -- Elementor, Divi, plain TYPO3, no
+# shared vendor at all) puts a posting's real title in a heading, then its real detail-page link a
+# little further down as a generic "mehr erfahren"/"Details"/"Jetzt bewerben" button whose OWN
+# anchor text carries no job signal at all -- neither JOB_PATH (the URL is a plain post slug, no
+# job/stellen keyword) nor a gender marker on the link itself (confirmed live 2026-09-11:
+# klinik-menterschwaige.de's Elementor loop-item cards). Keyed by a distinctive per-site heading
+# regex rather than one shared fingerprint, since there is no shared vendor to detect generically --
+# each entry names the one clinic it was found for.
+INLINE_HEADING_SITES = {
+    "klinik-menterschwaige.de": re.compile(r'<h3[^>]*class="[^"]*elementor-heading-title[^"]*"[^>]*>(.*?)</h3>', re.S),
+}
+
+
+def _inline_heading_job_rows(cu_resp, c, host):
+    heading_rx = next((rx for domain, rx in INLINE_HEADING_SITES.items() if domain in host), None)
+    if not heading_rx or not cu_resp or not cu_resp.ok:
+        return []
+    out = []
+    base = _page_base(cu_resp)
+    for hm in heading_rx.finditer(cu_resp.text):
+        title = _txt(hm.group(1))
+        if not title or not GENDER.search(title):
+            continue
+        chunk = cu_resp.text[hm.end():hm.end() + 4000]
+        lm = re.search(r'href="([^"#]+)"', chunk)
+        if not lm:
+            continue
+        url = urljoin(base, _html.unescape(lm.group(1)))
+        j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+             "url": url, "page": url, "description": _txt(chunk[:lm.start()]), "employmentType": None}
+        out.append(row(host, url, j, "wp_jobs"))
+    return out
+
+
+# Some page builders (confirmed live 2026-09-11: klinik-bad-trissl.de, Divi) list postings as bare
+# title text with NO link or description at all -- a JS tab widget re-renders the same title text
+# once per department filter tab, so the raw page repeats each title several times.
+TITLE_ONLY_SITES = {
+    "klinik-bad-trissl.de": re.compile(r'et_pb_text_inner">\s*<p>([^<]+)</p>'),
+}
+
+
+def _title_only_job_rows(cu_resp, c, host):
+    title_rx = next((rx for domain, rx in TITLE_ONLY_SITES.items() if domain in host), None)
+    if not title_rx or not cu_resp or not cu_resp.ok:
+        return []
+    seen, out = set(), []
+    for tm in title_rx.finditer(cu_resp.text):
+        title = _txt(tm.group(1))
+        if not title or not GENDER.search(title) or title in seen:
+            continue
+        seen.add(title)
+        j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+             "url": cu_resp.url, "page": cu_resp.url, "description": None, "employmentType": None}
+        out.append(row(host, cu_resp.url, j, "wp_jobs"))
+    return out
+
+
+# A Bootstrap 3 "panel" accordion (confirmed live 2026-09-11: klinik-wirsberg.de) -- title in
+# .panel-title > a, description in the matching .panel-body, same shared-URL/no-detail-page shape as
+# the FAQPage/FAQ-accordion cases above but neither JSON-LD nor those exact class names. Not gated on
+# a gender marker (unlike the other helpers): this site abbreviates some postings as "(VZ/TZ)" rather
+# than "(m/w/d)", and being inside the page's own Stellenangebote accordion is confirmation enough.
+BOOTSTRAP_PANEL_SITES = {"klinik-wirsberg.de"}
+PANEL_TITLE_RX = re.compile(r'class="panel-title"><a[^>]*>(.*?)</a>', re.S)
+PANEL_BODY_RX = re.compile(r'class="panel-body">(.*?)</div>\s*</div>\s*</div>', re.S)
+
+
+def _bootstrap_panel_job_rows(cu_resp, c, host):
+    if not any(d in host for d in BOOTSTRAP_PANEL_SITES) or not cu_resp or not cu_resp.ok:
+        return []
+    out = []
+    parts = PANEL_TITLE_RX.split(cu_resp.text)[1:]  # alternating [title, tail, title, tail, ...]
+    for title_html, tail in zip(parts[0::2], parts[1::2]):
+        title = _txt(title_html)
+        if not title:
+            continue
+        bm = PANEL_BODY_RX.search(tail)
+        j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+             "url": cu_resp.url, "page": cu_resp.url, "description": _txt(bm.group(1)) if bm else None,
+             "employmentType": None}
+        out.append(row(host, cu_resp.url, j, "wp_jobs"))
+    return out
+
+
 def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, not a board-size cap
     cu = (c.get("careers_url") or "").strip()
     if not cu:
@@ -865,7 +959,9 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
         from pflege_jobs.sources.beesite import is_beesite, crawl_beesite
         if is_beesite(cu_resp):
             return crawl_beesite(c, session=session)
-        faq_rows = _faqpage_job_rows(cu_resp, c, host) or _faq_accordion_job_rows(cu_resp, c, host)
+        faq_rows = (_faqpage_job_rows(cu_resp, c, host) or _faq_accordion_job_rows(cu_resp, c, host)
+                    or _inline_heading_job_rows(cu_resp, c, host) or _title_only_job_rows(cu_resp, c, host)
+                    or _bootstrap_panel_job_rows(cu_resp, c, host))
         if faq_rows:
             return _enrich_wp_fallback_fields(faq_rows, session=session)
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
