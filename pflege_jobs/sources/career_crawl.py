@@ -282,7 +282,10 @@ class Crawler:
         return rows, stats
 
     def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False):
-        emp = employer or seed["name"]
+        # seed.get("operator") beats seed["name"]: a shared-hub seed (e.g. ats_seeds.umantis()'s
+        # hub_needs_own_host case) sets it precisely when the seed clinic's own name would be wrong
+        # for every OTHER site's postings on that same hub -- see ats_seeds.py's umantis() docstring.
+        emp = employer or seed.get("operator") or seed["name"]
         e_class, e_rule = classify_employer(emp)
         role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}

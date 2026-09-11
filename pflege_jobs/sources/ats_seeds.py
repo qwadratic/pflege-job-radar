@@ -16,10 +16,10 @@ def _get(u):
 NATIONWIDE = re.compile(r"schoen-klinik|schön|helios|sana\b|asklepios|rhoen|rhön|paracelsus|median|mediclin|bg-?klinik|bgu|cjd|augustinum|vamed|ameos|artemed|vitos|klinikverbund-gesetzlichen|diakoneo|caritas|malteser|johanniter|drk|brk", re.I)
 
 
-def _base(seed_name, kez, town, career, hosts, extra=(), sitemaps=(), ats=""):
+def _base(seed_name, kez, town, career, hosts, extra=(), sitemaps=(), ats="", operator=None):
     nationwide = bool(NATIONWIDE.search(career + " " + seed_name))
     return {"name": seed_name, "kez": kez, "town": town, "career": career, "extra_seeds": list(extra), "sitemaps": list(sitemaps),
-            "hosts": list(dict.fromkeys(hosts)), "bavaria_only_operator": not nationwide, "ats": ats}
+            "hosts": list(dict.fromkeys(hosts)), "bavaria_only_operator": not nationwide, "ats": ats, "operator": operator}
 
 
 def rexx(f, kez, town):
@@ -86,7 +86,7 @@ def umantis(f, kez, town):
         netloc = p.netloc; base = f"https://{netloc}"; first = career
         q = first.split("?", 1)[1] if "?" in first else ""
         extra = [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
-        return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis")
+        return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis", operator=f.get("operator"))
 
     r = _get(career); html = r.text if r else ""
     m = re.search(r'https?://([a-z0-9\-\.]+\.umantis\.com)(/Jobs/\d+[^"\'\s<>]*)?', html)
@@ -162,7 +162,16 @@ def umantis(f, kez, town):
     # rejects every one of those links. A /Vacancies/<id>-style hub (ANregiomed) already names real
     # umantis.com URLs directly and needs no widening.
     hosts = [netloc, urlparse(hub_url).netloc] if hub_needs_own_host else [netloc]
-    return _base(f["name"], kez, town, first, hosts, extra, (), "umantis")
+    # A hub_needs_own_host hub proxies its own CMS front-end rather than linking real umantis URLs
+    # (see the comment above) -- it also has no per-posting hiringOrganization field for
+    # _base()/career_crawl.py to read, so every row's employer defaults to whichever single site
+    # kicked off this crawl (confirmed live 2026-09-11: Klinikverbund Allgäu's Kempten/Mindelheim/
+    # Ottobeuren/Oberstdorf/Sonthofen postings all silently landed on Immenstadt, the seed clinic,
+    # even though each row's own CITY was independently and correctly extracted). Default to the
+    # shared OPERATOR name instead when known, so Matcher's R2_operator_town falls through to the
+    # real per-posting city rather than R1_exact locking every row to the seed site's own name.
+    return _base(f["name"], kez, town, first, hosts, extra, (), "umantis",
+                 operator=f.get("operator") if hub_needs_own_host else None)
 
 
 BUILDERS = {"rexx": rexx, "dvinci": dvinci, "mein-check-in": mein_check_in, "umantis": umantis}
