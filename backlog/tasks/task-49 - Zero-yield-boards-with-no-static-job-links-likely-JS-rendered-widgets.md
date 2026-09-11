@@ -4,6 +4,7 @@ title: Zero-yield boards with no static job links -- likely JS-rendered widgets
 status: To Do
 assignee: []
 created_date: '2026-09-11 10:49'
+updated_date: '2026-09-11 13:42'
 labels: []
 dependencies: []
 ordinal: 49000
@@ -21,3 +22,9 @@ Same 2026-09-11 recon as TASK-48, but this bucket (20 boards) has ZERO JOB_PATH-
 - [ ] #2 boards + beds from recon: klinikverbund-allgaeu.de(1048) klinikum-ab-alz.de(831) www.frg-kliniken.de(365) www.kliniken-nea.de(316) www.waldkrankenhaus.de(290) kbo-dak.de(275) www.kh-nuernberger-land.de(257) wertachkliniken.de(256) www.reisach-kliniken.de(251, 2 distinct board urls both zero) www.klinik-vincentinum.de(200, NOT a bug -- real jobs already covered via the shared Artemed smartrecruiters board, this is a decoy SmartRecruiters JS widget on the clinic's own page, see registry board ['18872','18105','18802','18808','76108']) hire.klinikum-fuenfseenland.de(130) www.klinik-bad-trissl.de(120) www.artemed-muenchen-sued.de(110) www.kreiskrankenhaus-hoechstadt.de(80) www.st-irmingard.de(75) klinik-menterschwaige.de(62) klinik-wirsberg.de(50) www.clinic-dr-decker.de(45) www.klinik-am-birkenwald.de(40) www.fachklinikum-mainschleife.de(40)
 - [ ] #3 www.klinik-vincentinum.de excluded from further action -- confirmed not a bug, its board already covered elsewhere
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-11: klinikverbund-allgaeu.de (1048 beds combined, 6 clinics) partially fixed. Klinikum Kempten's careers_url was a photo gallery page ('Impressionen'), not a job board -- repointed to the same shared umantis board its 5 sibling clinics (Mindelheim/Ottobeuren/Immenstadt/Oberstdorf/Sonthofen) already resolve to. Delivered live: raw=10, kept=1 pflege posting matched to Kempten. Note: only 10 total job links found across the whole 6-clinic group despite the board's own live pages showing more distinct /karriere-detail/ links than that in a single page fetch -- career_crawl.Crawler's pagination (list_pages=6) may be under-walking this specific portal; not investigated further this session, flagging as a possible completeness gap rather than a confirmed one.
+<!-- SECTION:NOTES:END -->
