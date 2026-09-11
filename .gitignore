@@ -46,6 +46,8 @@ data/cross_merge_pairs.json
 # app state (SQLite) — regenerable
 data/app.sqlite*
 data/autopilot.sqlite*
+# WhatsApp threads (app/wa) — NOT regenerable, and holds lead phone numbers: never commit it
+data/wa.sqlite*
 .venv/
 *.log
 

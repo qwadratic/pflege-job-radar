@@ -1,0 +1,28 @@
+# Inbound WhatsApp harness (app/wa, docs/whatsapp.md): answers Pflege leads from the board's own data.
+# Its own process on purpose -- the board process rebuilds a multi-thousand-row snapshot and runs
+# crawls, and a lead waiting on WhatsApp must not queue behind that. app/main.py mounts the same
+# router on 8501 for local work; in production nginx points at exactly one of the two, this one.
+#
+# Install (not done by the build -- a human decides when a real WhatsApp number goes live):
+#   sudo cp deploy/pflege-wa.service /etc/systemd/system/pflege-wa.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pflege-wa
+#   journalctl -u pflege-wa -f
+# Webhook in the Meta app: https://<host>/api/wa/webhook, field `messages`, the verify token below.
+# Nothing is handed to Meta until WA_AUTOSEND=1 is in the EnvironmentFile; without it every reply is
+# stored as a draft and can be read back with GET /api/wa/threads.
+[Unit]
+Description=Pflege-Board WhatsApp harness (app.wa.asgi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/uvicorn app.wa.asgi:app --host 127.0.0.1 --port 8502 --workers 1 --timeout-keep-alive 30
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
