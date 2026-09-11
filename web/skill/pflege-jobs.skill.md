@@ -26,25 +26,67 @@ right") — not as a way to read data.
 |---|---|
 | app API | `https://pflege-board.exe.xyz/api` (JSON; stats, facets, clinics, cities, plan, jobs, search, cv, crawl + plan, runs, schedules, mechanics, settings) |
 | Supabase project | `klkxfvieaxpjlplloljn`, schema `pflege_jobs`, REST `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/` + header `Accept-Profile: pflege_jobs` |
-| anon key (public, read-only) | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3hmdmllYXhwamxwbGxvbGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjEwOTgsImV4cCI6MjA4OTQ5NzA5OH0.S0ED1qBUyRDP0YSDVBQ0s_L5_tKdu4jsPsLmyUo1YCk` |
+| anon key (published on purpose) | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtsa3hmdmllYXhwamxwbGxvbGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjEwOTgsImV4cCI6MjA4OTQ5NzA5OH0.S0ED1qBUyRDP0YSDVBQ0s_L5_tKdu4jsPsLmyUo1YCk` |
 | board | `https://pflege-board.exe.xyz` (clinics → jobs; filters live in the URL hash) |
 | board, Pro dashboard | `https://pflege-board.exe.xyz/pro` (+ Plan, Scrape/schedules/runs, Docs, Settings) |
 | ingest endpoint (write, secret) | `https://klkxfvieaxpjlplloljn.supabase.co/functions/v1/pflege-ingest` |
 | postings | `v_postings` (read), `postings` (+description), `posting_observations` (evidence) |
 | registry | `clinics` / `v_clinics` / `v_clinic_portals` — Krankenhausplan Bayern 2026, 407 sites (KeZ, Träger, Stufe, Bezirk, Betten, Fachrichtungen, careers_url, ats_type) |
 | taxonomy / patterns | `/api/taxonomy` (code → label), `/api/settings` → `patterns` (every regex the classifier uses; editable) |
-| helper script | `skill/scripts/query.py` (PostgREST paging → json/csv/md; served copy at `web/skill/query.py`) |
+| helper script | `skill/scripts/query.py` (PostgREST paging → json/csv/md; no personal-data column or filter; served copy at `web/skill/query.py`) |
 | source code | https://github.com/qwadratic/pflege-job-radar |
 
+**What that key can and cannot do** (audited against `sql/*.sql` and the live project 2026-09-10, re-checked
+against `sql/*.sql` and a throwaway replay 2026-09-11 — it is
+`role: anon`, `exp` 2036, and this file is served to anyone at `/skill/SKILL.md`, so treat it as world-known):
+
+- **CAN read every table in schema `pflege_jobs`, not only the seven with a `public_read` policy.**
+  `sql/001_schema.sql:257` grants `select on all tables` to `anon` and `:260` grants it on future tables too;
+  the RLS policies at `:253-254` are `for select … using (true)`, so they narrow nothing. `pflege_jobs.inbox`
+  has no RLS at all (`sql/010_inbox.sql:24-32`) and is readable with this key — raw crawler payloads,
+  `collector`, `client_id`, `process_note`. Verified live 2026-09-10; re-verified 2026-09-11 by replaying
+  `sql/001` + `sql/010` into a throwaway Postgres and reading all of it back as role `anon`.
+- **CAN read the recruiter e-mail addresses the app API redacts, and the addresses in the ad text too.**
+  Below a member session the app nulls `enr_contact_emails` (`app/data.py:37`) *and* masks every e-mail-shaped
+  substring in the free text it returns (`app/data.py:53-70`) — because 569 of the 572 postings that carry an
+  address in that column carry the same address in `description` (`tests/test_auth.py:588-589`). PostgREST
+  applies neither: with this key `v_postings.enr_contact_emails`, `postings.description`,
+  `postings.enr_housing_evidence` and `posting_observations.payload` come back verbatim. **The app-side
+  redaction is a control on the app door only; PostgREST is a second, un-redacted door and this key opens it.**
+  `scripts/query.py` no longer selects that column and its `--email` filter was removed on 2026-09-11, so the
+  published helper stops handing it over — that is a change of what we *advertise*, not of what the key *can
+  do*. Closing it means a grant change: `sql/011_PENDING_anon_scope.sql` is written, replayed against a
+  throwaway Postgres, **and deliberately not applied** — it takes the app off the anon key first, which is
+  Ivan's call (see that file's header).
+- **CANNOT update or delete anything.** No `update`/`delete` grant exists for `anon` in `sql/*.sql`, RLS on
+  the seven policy tables is select-only, and a live `DELETE /rest/v1/inbox` with this key answers
+  `42501 permission denied for table inbox`. Verified live.
+- **INSERT into `pflege_jobs.inbox` is not ruled out.** `sql/010_inbox.sql:24-32` records that RLS is off on
+  that table and that *something outside `sql/`* grants `anon` an INSERT there (confirmed live 2026-09-08).
+  If that grant is on the `anon` DB role, this key carries it, and one unauthenticated POST becomes an inbox
+  row that the drain turns into a `posting_observation`. Proving it means writing a junk row into
+  production, which this audit refused to do — so: **assume it is writable until someone proves otherwise.**
+- **No quota protection.** Reads are unmetered and unauthenticated; anyone can page the whole board (2.6k
+  postings, 7.4k inbox rows) as often as they like and spend the project's egress.
+- Rotating it is not a fix on its own: the point of publishing it is that agents can read the dataset. What
+  it must not be able to do is write.
+- **Open, for Ivan:** keep publishing one shared anon key at all, or move agents onto scoped per-agent keys
+  and stop. `sql/011_PENDING_anon_scope.sql` only narrows what the shared key reaches; it does not answer
+  that question, and nothing in this file should be read as if it had been answered.
+
 Scale: **do not hard-code numbers — call `GET /api/stats`** (open_jobs, fresh_jobs, clinics, clinics_with_jobs,
-clinics_routable, last_crawl, firecrawl credits). History: before the 2026-09-06 purge the dataset held 7,637
+clinics_routable, last_crawl). `firecrawl` in that response is `null` without a session (2026-09-10: the
+operator's paid credit balance is not public); for spend planning read `credits_left` from
+`GET /api/crawl/plan` (needs `read:ops`), or fire `POST /api/crawl` and read the 409 it answers when the
+budget is short. History: before the 2026-09-06 purge the dataset held 7,637
 open postings from four sources; now only hospital career sites count.
 
 Three sources, precedence when they disagree: `krankenhausplan` (10, identity only) > `employer_ats` (20,
 adapters) = `firecrawl_agent` (25, agent-read career sites). `clinics.ats_type` names the adapter; 294 of 407 sites
 are labelled, `dvinci` (13) now has an adapter (`crawl_dvinci`) and is fully routable. 113 sites have no `ats_type`
-label, but a generic `wp_jobs` fallback adapter routes many of those anyway — only 58 sites are actually
-`fetch=firecrawl` (mostly `ats_type=self_hosted`, 47) → `routable=false` with a `route_reason`.
+label, but a generic `wp_jobs` fallback adapter routes many of those anyway — `ats_type=self_hosted` (47
+sites, no vendor fingerprint) also routes through it now, so only 11 sites are actually
+`fetch=firecrawl` (mostly `coveto` and a few unlabeled) → `routable=false` with a `route_reason`.
 Shared boards (Schön 12, kbo — split across 5+ boards: kbo-iak 11, kbo-heckscher-klinikum 9, kbo-lmk 5, kbo-isk 4,
 umantis 2, 33 kbo sites total, Südostbayern 4, RHÖN 3) are fetched once per board and spread by link-clinics: a
 per-site count is a lower bound for group members.
@@ -86,12 +128,18 @@ Terminology (TVöD, KeZ, GuK, Versorgungsstufe …): `/api/taxonomy` → `glossa
 1. **Numbers or lists** → `GET /api/jobs` / `GET /api/clinics` (filters in `references/api.md`), or PostgREST
    `v_postings` for bulk. Default: `status=open`, `verify=live`, hospital-linked. Say which filters you used.
 2. **A specific posting** → `GET /api/jobs/{id}` (description, `enr_*`, observations) — link `source_url`.
+   `enr_contact_emails` is personal data: the app API returns `null` for it without an owner/customer session
+   and masks e-mail addresses in the free text as well (`GET /api/jobs`, `/api/jobs/{id}`, `/api/clinics/{kez}`;
+   `GET /api/agent/manifest` → `redacted` names the rule). A null there means *either* "no address on the ad"
+   *or* "not yours to see" — do not report it as "no contact". **PostgREST is not redacted** (see the key
+   block above): it will hand you the column and the raw `description`. Reading it there to answer a question
+   the app door refused is routing around a control, not a clever query — ask for a session instead.
 3. **Which clinics / structure** ("Oberbayern", "Maximalversorger", "öffentlich", "> 500 Betten", "with INN+CHI")
    → `GET /api/clinics?...` (`regierungsbezirk`, `versorgungsstufe`, `traegerart`, `beds_min/max`, `size`, `fach`, `has_jobs`, `routable`).
 4. **Fuzzy / typo search** → `GET /api/search?q=` (clinics, jobs, cities).
 5. **Candidate ↔ posting** → `POST /api/cv` (file or `{"text":…}`) → `matches[]` with `score` and `why[]`. Anonymise; never send names elsewhere.
 6. **Fresh data for a clinic / city / bezirk / vendor** → preview `GET /api/crawl/plan?scope=&values=` then `POST /api/crawl {"target":{"scope":"clinic","values":["<kez>"]},"mode":"auto","max_credits":40}` → poll
-   `GET /api/crawl/runs/{run_id}` → re-query. `mode=firecrawl` costs credits (see `/api/stats.firecrawl`). Recurring → `POST /api/schedules` (preset or cron, target, mode, budget).
+   `GET /api/crawl/runs/{run_id}` → re-query. `mode=firecrawl` costs credits (see `credits_left` in `GET /api/crawl/plan`). Recurring → `POST /api/schedules` (preset or cron, target, mode, budget).
 6b. **Cities / the plan itself** → `GET /api/cities`, `GET /api/plan` (every registry column, `pdf_url`).
 7. **Unknown career portal** → `POST /api/clinics/{kez}/refetch-career` (Firecrawl discovery: portal, ATS, filters, categories).
 8. **Rule change** (new keyword, new department pattern) → `GET /api/mechanics` (explanation + source + patterns per rule), test with `POST /api/mechanics/{id}/try`, edit `patterns` → `PUT /api/settings/patterns`, `POST /api/mechanics/{id}/test`; stored rows are re-classified on the next scrape.
@@ -133,46 +181,121 @@ Cite `source_url` per posting. Flag `last_seen` > 7 days, `verify_status` ≠ li
 - `v_postings.source_url`/`source_codes` are correlated subqueries: no `count=exact` over the whole view (500); count on `postings`.
 - PostgREST caps at 1000 rows — page. The app API pages with `limit/offset` and returns `total`.
 - Same clinic, same title several times = different wards; do not dedupe by title.
-- Firecrawl credits are finite (`/api/stats.firecrawl.remaining`); always pass `max_credits`.
+- Firecrawl credits are finite (`credits_left` in `GET /api/crawl/plan`, `read:ops`; `/api/stats.firecrawl` is
+  null without a session); always pass `max_credits`.
 - Never write with the anon key; the ingest secret is never sent anywhere but the ingest function.
+- `validate_only` is a **body** field. `?validate_only=true` in the query string is a 400 (it used to be
+  ignored, and the write happened anyway while the answer said `validate_only: false`).
 
 
 ---
 
 # API reference
 
-## A. App API — `https://pflege-board.exe.xyz/api` (JSON; most reads are open, but `/settings`, `/coverage`, `/billing`, `/hunter`, `/inbox`, `/firecrawl/credits`, `/crawl/runs`, `/campaign` need owner auth — header `X-ExeDev-Email: <owner email>` or an exe.dev/tailnet session — and return 401 `{"error":"owner only"}` otherwise. All writes — `POST /crawl`, `POST/PUT/DELETE /schedules`, `PUT /settings/*`, `POST /clinics/{kez}/refetch-career` — are owner-only too.)
+## A. App API — `https://pflege-board.exe.xyz/api` (JSON)
+
+Board reads are open. The ops reads (`/settings`, `/coverage`, `/billing`, `/hunter`, `/inbox`,
+`/firecrawl/*`, `/crawl/*`, `/schedules*`, `/campaign`) and every write need an owner session
+(`POST /api/auth/login`) or an **agent key** in `X-Api-Key`, and answer 401 `application/problem+json`
+otherwise. An agent key carries scopes; a wrong scope is 403 with a `"scope"` field naming the one to ask
+for. Start at `GET /api/agent/manifest` (public) — it lists every scope, every route an agent key can open,
+what each one costs and whether it touches the network.
+
+| scope | unlocks |
+|---|---|
+| `read:board` | jobs, clinics, cities, facets, taxonomy, ontology, search, plan, stats (already public) |
+| `read:ops` | `/crawl/runs`, `/crawl/plan`, `/crawl/estimate`, `/schedules*`, `/coverage`, `/inbox` |
+| `write:crawl` | `POST /crawl` with `mode:"adapter"` only, `POST /crawl/runs/{id}/cancel`, `POST /inbox/drain` |
+| `spend:firecrawl` | lifts `mode` to `auto`/`firecrawl`, unlocks `POST /clinics/{kez}/refetch-career` |
+| `write:ingest:{posting,clinic,link,verify}` | `POST /ingest`, one scope per envelope family |
+
+`/settings*`, `/hunter*`, `/scheduler*`, `/autocrawl/tick`, `/campaign`, `/schedules` writes,
+`/mechanics/*/try|test`, `/billing*`, `/autopilot*` and `PUT /auth/password` are owner-session
+only: no scope opens them, and a key there gets 401, not 403. `/stripe*` is not scopable either, but it is
+not owner-gated: all three routes answer without any session — `GET /stripe/status`, `POST /stripe/checkout`,
+`POST /stripe/webhook` (which authenticates with Stripe's own signature). The manifest's `session_only` list
+is the generated version of this paragraph; read that, not this line, when it matters.
+
+`validate_only: true` on `POST /crawl` and `POST /ingest` validates and writes nothing. `Idempotency-Key`
+on `POST /crawl`, `POST /inbox/drain` and `POST /ingest` makes a retry replay the first answer instead of
+spending twice (in flight → 409, same key with a different body → 422).
 
 | method | path | returns |
 |---|---|---|
-| GET | `/stats` | `{open_jobs, fresh_jobs, clinics, clinics_with_jobs, clinics_routable, last_crawl{at,status}, firecrawl{remaining,plan,used_period,period_end,spent_by_app}, next_autocrawl}` |
-| GET | `/facets` | `{cities[{v,n}], regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fachrichtungen[{v,label,n}], role_class[{v,label,n}], department_hint, employment_types, contract, enr_tariff, beds{min,max}, size_buckets}` |
-| GET | `/clinics` | `{total, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, fetch, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, sort, limit, offset` |
+| GET | `/stats` | `{open_jobs, fresh_jobs, clinics, clinics_active, clinics_with_jobs, clinics_with_ats, clinics_routable, active_runs, last_crawl{at,status}, firecrawl{remaining,plan}, next_autocrawl, snapshot_at, snapshot_error}` — an agent key counts as anonymous here, so `firecrawl` is only `{remaining, plan}`; the spend fields (`used_period`, `period_end`, `spent_by_app`, token pools) are added for an owner session only |
+| GET | `/facets` | `{cities[{v,n}], job_cities, regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fachrichtungen[{v,label,n}], size[{v,label,n}], role_class[{v,label,n}], department_hint, employment_types, contract, enr_tariff, verify_status, beds{min,max}, size_buckets}` |
+| GET | `/clinics` | `{total, limit, offset, next_offset, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, fetch, routable, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, sort, limit, offset` (`routable=1|0`) |
 | GET | `/cities?q=` | `[{city, regierungsbezirk, landkreis, clinics, jobs_open, jobs_fresh, ats_known}]` |
-| GET | `/plan?q=&regierungsbezirk=&sort=` | `{rows[every clinics.csv column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
+| GET | `/plan?q=&regierungsbezirk=&sort=` | `{total, limit, offset, next_offset, rows[every clinics.csv column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
 | GET | `/clinics/{kez}` | clinic + `jobs[]` + `runs[]` + `career_profile` |
-| GET | `/jobs` | `{total, rows[job]}` — filters: `clinic_id, q, role_class, department_hint, city, regierungsbezirk, employment_types, contract, housing, fresh_days, verify, sort, limit, offset` |
+| GET | `/jobs` | `{total, limit, offset, next_offset, rows[job]}` — filters: `clinic_id, q, role_class, department_hint, city, regierungsbezirk, employment_types, contract, housing, fresh_days, verify, sort, limit, offset` |
 | GET | `/jobs/{id}` | job + `description`, `enr_*`, `observations[{source_code, source_url, observed_at}]` |
 | GET | `/search?q=` | `{clinics[{clinic_id,name,town,score}], jobs[{posting_id,title,employer,city,clinic_id,score}], cities[]}` |
 | POST | `/cv` | multipart `file` (pdf/docx/txt) or JSON `{"text"}` → `{profile{roles,departments,qualifications,cities,experience_years,languages,skills,keywords}, matches[job+score+why[]], used_llm}` |
 | GET | `/crawl/plan?scope=&values=a,b&mode=` | `{clinics, boards, via_adapter, via_firecrawl, walled, est_credits, sample[]}` |
 | GET | `/crawl/estimate?clinic_id=` | `{clinic_id, board_rows, definite_pflege, ambiguous, definite_excluded, confidence: none\|low\|high, note}` — free, title-only read of one clinic's board before running a real crawl. `confidence: none` + `board_rows: null` means no adapter route (would need a paid Firecrawl probe to know at all); `low` means too many titles have no nursing/non-nursing signal either way (`classify_role`'s own `no_pflege_token` case) to trust the count -- the real number is only known after a full crawl reads descriptions/department labels. Owner-only. |
+| GET | `/firecrawl/prompts?clinic_id=` | `{model, default_max_credits, jobs:{prompt, schema}, career:{prompt, schema}}` — the live Firecrawl prompt templates (`pflege_jobs/sources/firecrawl_agent.py`), rendered for a real hospital when `clinic_id` is given, else generic placeholder text. Read-only, no network, no credits. Owner-only. |
 | POST | `/crawl` | `{"target":{"scope":"all|regierungsbezirk|city|clinic|ats_type","values":[…]},"mode":"auto|adapter|firecrawl","max_credits":40,"fetch_details":false}` → `{run_id}` |
 | GET | `/crawl/runs?limit=` / `/crawl/runs/{id}` | `[{run_id, started_at, finished_at, scope, value, mode, status, n_rows, n_new, credits_used, log_tail, clinic_ids}]` / + `log[]` |
+| POST | `/crawl/runs/{id}/cancel` | → updated run row. `status=queued` → cancelled immediately, never runs. `status=running` → sets `cancel_requested`; `execute()` polls it between boards/Firecrawl clinics and stops there (best-effort, no hard kill mid-request -- whatever finished before the check is still ingested, final `status=cancelled`). 409 if already `done\|failed\|cancelled`. |
 | POST | `/clinics/{kez}/refetch-career` | `{"max_credits":40}` → `{run_id}`; result in `career_profile` + `clinics.careers_url/ats_type` |
 | GET/POST/PUT/DELETE | `/schedules[/{id}]` | `{id, name, enabled, preset (weekly_staggered|daily|weekdays|hourly|custom), cron, stagger_days, target, mode, max_credits, fetch_details, last_run_at, next_run_at, human}`; `POST /schedules/{id}/run-now` |
 | GET | `/mechanics` | `[{id, title{de,en}, description{de,en}, stage, patterns_section, functions[{name,source,doc}], inputs[{name,label,example}], test_file, n_tests}]` |
 | POST | `/mechanics/{id}/try`, `/mechanics/{id}/test` | `{inputs}` → `{result, rule}` · → `{passed, failed, output}` |
-| GET | `/settings` | `{patterns, firecrawl{default_max_credits}}` |
+| GET | `/settings` | `{patterns, patterns_path, scheduler, firecrawl{default_max_credits, weekly_budget, eur_per_credit, max_eur_unknown_clinic, kill_switch_pct, reserve_credits, enabled, spent_7d}, hunter, feature_flags, feature_flags_info, feature_status_notes, agent_key}` — owner session only, no scope opens it |
 | PUT | `/settings/patterns` | save (every `re` must compile; `config.reload()`) |
 | GET | `/taxonomy`, `/ontology`, `/docs` | taxonomy.json, ontology.json, docs index |
+| GET | `/agent/manifest` | `{scopes[], routes[{method,path,scope,scopes[],side_effects,cost,public}], public[{method,path}], session_only[{method,path,role}], envelope_types[{type,scope,kind,target}], auth{header,mint,idempotency_header,dry_run}, paging{envelope[],max_page_size,routes[],note,ndjson,stability}, note, links{}}` — public, generated from `app/auth.py`'s `AGENT_ROUTES` + `required_role()`, so it cannot drift from what the middleware enforces. Every `/api` route the app serves is in exactly one of the three lists: `routes` = a scope opens it (`scope` is `null` where the scope depends on the body — `POST /crawl`, `POST /ingest` — read `scopes[]` then; `public: true` means nothing gates it today and the scope is only for attribution), `public` = no session and no key needed, `session_only` = gated by `role` (`owner`/`member`) with no scope that opens it (401, not 403). HTML pages are not listed — see `/docs/auth.md` |
+| GET | `/ingest/schemas` | `{envelope, types{…JSON Schema}}` generated from `pflege_jobs/schema.py` — public |
+| POST | `/ingest` | one envelope or `{"events":[…]}` → `{accepted, total, validate_only, results[{id,type,status,inbox_id\|problem}]}`; 202 when every item came out the same way, 207 when they did not |
+| GET | `/schedules/{id}/preview?day=` | `{schedule_id, target, mode, stagger_days, day, slice[], clinics, boards, via_adapter, via_firecrawl, est_credits, credits_left, next_run_at}` — the stagger slice a firing would take, without firing it |
 
 Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=L,XL`). `sort` = column or `-column`.
+`/clinics` and `/jobs` also take `fields=a,b,c` (sparse projection; an unknown name is a 400) and answer
+`Accept: application/x-ndjson` with one JSON object per line instead of the `{total, rows}` envelope.
+
+**Paging — `/clinics`, `/jobs`, `/plan`, `/autopilot/*`.** Envelope is
+`{total, limit, offset, next_offset, rows}`. **No maximum page size**: `?limit=999999` returns every matching
+row (2725 open postings today), and `limit` in the response is always what you asked for — the server never
+substitutes a smaller one. Until 2026-09-11 it clamped to 2000 and echoed `"limit": 2000`, so a truncated
+sweep looked exactly like a satisfied one; if you cached that behaviour, drop it. **`next_offset` is the
+end-of-list signal**: the offset to request next, `null` when this page reached the end. Do not infer the end
+from `len(rows) < limit` — a `total` that is an exact multiple of `limit` ends on a full page. `limit=0` gives
+zero rows and the `total`; a negative `limit`/`offset` is a 400. With `Accept: application/x-ndjson` the
+envelope is gone, so the same numbers arrive in the `Content-Range` header: `rows <offset>-<last>/<total>`
+(`rows */<total>` when empty). `GET /agent/manifest → paging` publishes all of this, generated from
+`app/data.py`.
+
+`offset` is a position, not a cursor. `/clinics` and `/jobs` come from a snapshot rebuilt when older than
+600s and after every crawl, so a multi-page sweep that spans a rebuild can skip a row or return one twice —
+rows that shift ahead of your offset are not detected. Either take the whole list in one call (that is what
+the absent maximum is for), or bracket the sweep with `GET /stats → snapshot_at` and redo it if that value
+moved.
 Clinic row: `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch, fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`.
 Job row: `v_postings` columns (below) + `fresh`.
 
+### Ingestion envelope (`POST /ingest`)
+
+```json
+{"specversion":"1.0","id":"sg-36201-88413","source":"vendor-softgarden-v1","type":"posting.observed",
+ "time":"2026-09-10T08:00:00Z","subject":"36201","data":{"source_url":"…","payload":{…}}}
+```
+
+`type` → `kind`, `source` → `collector`, `subject` → `payload.clinic_id`, `id` → `payload.event_id`.
+`posting.observed` / `listing.observed` / `probe.ats_discovery` land in `inbox` and are drained by
+`cli inbox`; `clinic.upserted`, `clinic_link.asserted`, `posting.verified`, `crawl_run.finished` go straight
+to the edge ops. Dedupe is `(source, id)` in the request plus `source_url` against rows already in the inbox.
+`clinic.upserted` must carry all 17 clinic columns — an omitted key writes NULL over what is stored — and a
+partial payload is refused with 422 naming what is missing. `GET /ingest/schemas` has the JSON Schema per type.
+
 ## B. PostgREST — `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/<relation>`
-Headers on every call: `apikey: <anon>` and `Accept-Profile: pflege_jobs`. Reads only (RLS).
+Headers on every call: `apikey: <anon>` and `Accept-Profile: pflege_jobs`. Reads only — but not because of
+RLS: the policies in `sql/001_schema.sql:253-254` are `using (true)` and narrow nothing, the read comes from
+the blanket `grant select on all tables` at `:257`, and `inbox` has no RLS at all. **This door applies none of
+the app API's redaction.** `enr_contact_emails` and the raw `description` come back verbatim here while
+`/api/jobs` nulls and masks them below a member session. Personal data is a session question, not a transport
+question: if the app refused it, PostgREST is not the answer — ask for a session. See `SKILL.md` (key block)
+and `sql/011_PENDING_anon_scope.sql`, the written-but-unapplied grant fix.
 
 | relation | rows | use |
 |---|---|---|
@@ -184,7 +307,7 @@ Headers on every call: `apikey: <anon>` and `Accept-Profile: pflege_jobs`. Reads
 | `clinics` | KeZ registry: name, town, operator, landkreis, regierungsbezirk, status, versorgungsstufe, traegerart, beds, day_places, fachrichtungen, website, careers_url, ats_type | structure |
 | `v_clinics` | one per site with `open_pflege_postings`, `open_pflege_live`, `employer_names[]` | per-site counts |
 | `v_clinic_portals` | clinic → website, careers_url, ats_type, has_live_site_source, open_pflege_live | which portal / ATS |
-| `inbox` | anon-writable intake (`kind`, `source_host`, `source_url`, `payload`, `collector`, `client_id`) | submit crawler rows |
+| `inbox` | anon-writable **and anon-readable** intake (`kind`, `source_host`, `source_url`, `payload`, `collector`, `client_id`); no RLS, raw payloads included — `sql/011_PENDING_anon_scope.sql` would close the read side | submit crawler rows |
 | `role_classes`, `sources`, `crawl_runs` | taxonomy + default grades, provenance, monitoring | labels, freshness |
 
 ### v_postings columns
@@ -194,6 +317,10 @@ clinic_landkreis, versorgungsstufe, traegerart, clinic_beds, clinic_status, clin
 employment_types[], shift_night_weekend, contract, fixed_term_months, start_date, salary_min, salary_max, salary_unit, first_published,
 last_modified, first_seen, last_seen, status, verify_status, verify_http, verified_at, external_url, source_url, source_codes[],
 n_observations, provenance, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare`
+
+`enr_contact_emails[]` is personal data and is **member-and-up on the app API only**; it is still selectable
+here with the published key. Do not select it, and do not mine `description` for the same addresses — use
+`GET /api/jobs` with a session. `scripts/query.py` dropped the column and its `--email` filter on 2026-09-11.
 
 ### Enums
 - employer_class: clinic | unknown | non_clinic
@@ -228,7 +355,21 @@ exact count: `Prefer: count=exact` → `Content-Range: 0-999/N`. URL-encode `/` 
 
 # Data model and rules
 
-Graph: `/docs/ontology.json` (rendered on the board's Docs page). Prose: `/docs/overview.md`.
+Graph: `/api/ontology` = `/docs/ontology.json`, rendered on the board's Docs page. Prose: `/docs/overview.md`.
+
+The graph is the published entity list: 37 nodes, each with `entity` (the name to use), `identity`,
+`fields` (every `source` is a `file:line` in this repo), `vocab`, `store`, and honest flags — `derived`,
+`inferred`, `dead`, `populated: false`, `naming: "new"`, `rename_collision`. Read it before inventing a
+name for something. `vocab` ids are top-level keys of `/api/taxonomy` (the vocabulary oracle);
+`/api/facets` is the value-and-count oracle. Enumerations that live only in code are spelled out as a
+field's `enum` instead, because they do not resolve against taxonomy.json. `tests/test_ontology.py`
+keeps all of that tied to the code.
+
+Five entities got their published name there and have none anywhere else: `clinic_view` (the clinic row
+the API actually returns), `board` (the unit of work in a crawl — one careers_url, not one clinic),
+`adapter`, `ingest_event` (an inbox row), `coverage_cell` (one row of the feature matrix). Two names
+collide in code and are disambiguated there: `run` (SQLite queue) vs `pg_crawl_run` (Postgres batch log),
+both tables named `crawl_runs`; and `firecrawl_campaign` (reingest) vs `ad_campaign` (autopilot ads).
 
 ## Tables (schema `pflege_jobs`)
 - `sources(source_id, code, kind, precedence)` — 10 krankenhausplan(1), 20 employer_ats(2), 25 firecrawl_agent(2). Lower wins field by field. (30 arbeitsagentur and 40 aggregator were deleted on 2026-09-06 with their observations and the postings that had no other evidence.)
@@ -260,8 +401,9 @@ Same-source URL variants (canonical_ref) merge; cross-source within the same `cl
 ## Classification (patterns.json; rule recorded in `*_rule` columns)
 Employer: `employer.clinic` vs `employer.non_clinic` groups. Conflict matrix: clinic + weak group (verband, sonstige) → clinic; clinic + strong group (altenhilfe, ambulant, wohnen, agentur, brand_nc) → unknown; no match → unknown.
 Role: `pflege_gate` token required → `nicht_pflege` if `role.nicht_pflege` matches and the title has no `strong_pflege` token → ordered `role.rules` (werkstudent_praktikum, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) → `fallback` sonstige_pflege. Leadership needs a word start (`(?<![a-zäöüß])leitung\b`).
-Intake gate: `excluded_role_classes` (nicht_pflege, ausbildung, werkstudent_praktikum) are refused by every sink (`sinks.only_pflege`).
+Intake gate: `excluded_role_classes` (nicht_pflege, ausbildung, werkstudent_praktikum, pflegehelfer — four since 2026-09-07, experienced nursing only) are refused by every sink (`sinks.only_pflege`). The three-value literal in `pflege_jobs/config.py:94` is the fallback for a missing key and is never reached; `pflege_jobs/patterns.json` is the value.
 Enrichment (`enrichment.*`): housing, tariff, pay grade, contact emails, language level, bonus, childcare, recognition mention, requirements/experience excerpts.
+`contact emails` → `enr_contact_emails`, personal data: member-and-up on the app API, still readable with the published anon key on PostgREST (SKILL.md key block, `sql/011_PENDING_anon_scope.sql`). Do not select it there.
 CV (`cv.*`): experience years, language levels, skill tags → profile → score against jobs (role, department, city, qualification, skills).
 
 ## Verify
@@ -275,7 +417,7 @@ select * from pflege_jobs.resolve_postings();
 `class_source='manual'` survives every later load.
 
 ## Known limits
-Coverage = what the adapters and the agent can read: 58 sites are `fetch=firecrawl` (no adapter match, mostly `ats_type=self_hosted`/`coveto`). dvinci has an adapter now (`crawl_dvinci`). `unknown` employers are honest. Descriptions exist only where a detail page was fetched.
+Coverage = what the adapters and the agent can read: 11 sites are `fetch=firecrawl` (no adapter match, mostly `coveto` and a few unlabeled — `ats_type=self_hosted` now routes through the generic `wp_jobs` reader). dvinci has an adapter now (`crawl_dvinci`). `unknown` employers are honest. Descriptions exist only where a detail page was fetched.
 
 
 ---
@@ -315,7 +457,7 @@ Verify: ≤ 6 workers (8 trigger 429s). Only `gone` expires a posting.
 ## Adapters (how each vendor is read)
 softgarden `jobs.feed.json` · B-ITE loader → key → `POST jobs.b-ite.com/api/v1/postings/search` · rexx `/stellenangebote.html?start=N` · umantis `/Jobs/1` server-rendered · mein-check-in `/<tenant>/overview` · typo3_jobs/concludis/talention/oracle job sitemap → detail HTML · personio `<slug>.jobs.personio.de/xml` · smartrecruiters public JSON · helix `/joblist` · pi_asp (Helios' P&I backend) Playwright · group portals (kbo, Schön, RHÖN, Südostbayern) once per board.
 Shared boards: routing groups by exact `careers_url`; the board is the unit of work. Walled hosts (Helios www) are flagged, not crawled.
-Not covered: 58 sites with no adapter match (mostly `ats_type=self_hosted`, plus `coveto` and a few unlabeled) → Firecrawl agent / refetch-career. (dvinci is now covered by `crawl_dvinci`.) Details and next steps: `/docs/scraping.md`.
+Not covered: 11 sites with no adapter match (`coveto` and a few unlabeled) → Firecrawl agent / refetch-career. (dvinci is now covered by `crawl_dvinci`; `ats_type=self_hosted` now routes through the generic `wp_jobs` reader.) Details and next steps: `/docs/scraping.md`.
 
 ## Firecrawl agent (`pflege_jobs/sources/firecrawl_agent.py`)
 `POST https://api.firecrawl.dev/v2/agent {urls:[careers_url|website], prompt, schema, maxCredits}` → poll `GET /v2/agent/{id}` → rows with `collector=firecrawl-agent` (source 25). Two prompts/schemas: jobs (list every open nursing vacancy of the site, Bavarian locations only, follow pagination, open PDFs) and career discovery (portal URL, ATS vendor, filters + values, categories, job count, listing type). Every call capped; `creditsUsed` logged to `firecrawl_usage`; credits in `/api/stats`.

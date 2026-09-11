@@ -126,8 +126,9 @@ def test_crawl_uses_section_signal_to_narrow_candidates(monkeypatch):
     assert stats["section_label"] == "pflege"
     assert stats["section_matched"] == 3      # narrowed from 8 total to the 3 "pflege"-tagged postings
     assert stats["total"] == 8
-    assert len(rows) == 3
-    assert all(r["role_class"] != "nicht_pflege" for r in rows)
+    # every listed posting is kept and labelled; the section signal is data, not a drop
+    assert len(rows) == 8
+    assert sum(r["role_class"] == "nicht_pflege" for r in rows) == 5
 
 
 def test_crawl_recovers_a_real_nursing_posting_filed_outside_the_matched_bucket(monkeypatch):
@@ -150,7 +151,8 @@ def test_crawl_recovers_a_real_nursing_posting_filed_outside_the_matched_bucket(
     assert stats["section_matched"] == 3          # unchanged: still counts only the matched bucket
     titles = {r["title"] for r in rows}
     assert "Pflegefachfrau (m/w/d)" in titles      # recovered -- would have been dropped before the fix
-    assert "Koch (m/w/d)" not in titles            # classify_role still excludes it, unchanged
+    assert "Koch (m/w/d)" in titles                # kept too, carrying role_class=nicht_pflege as a label
+    assert {r["role_class"] for r in rows if r["title"] == "Koch (m/w/d)"} == {"nicht_pflege"}
 
 
 def test_crawl_falls_back_to_full_list_when_no_taxonomy_signal(monkeypatch):
@@ -163,4 +165,5 @@ def test_crawl_falls_back_to_full_list_when_no_taxonomy_signal(monkeypatch):
     assert stats["section_field"] is None
     assert stats["section_matched"] is None
     assert stats["total"] == 2
-    assert len(rows) == 1   # Pflegefachkraft survives classify_role, Koch doesn't -- unchanged behaviour
+    assert len(rows) == 2   # both kept; classify_role only labels
+    assert sorted(r["role_class"] for r in rows) == ["nicht_pflege", "pflegefachkraft"]

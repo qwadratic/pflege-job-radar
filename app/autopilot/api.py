@@ -10,6 +10,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 
+from .. import data as D                 # D.int_param: the one numeric-query-parameter door
 from . import db
 from . import engine as E
 from . import matching as M
@@ -56,9 +57,13 @@ async def body(request):
 
 
 def _page(rows, q):
-    limit = max(1, min(int(q.get("limit") or 100), 2000))
-    offset = max(0, int(q.get("offset") or 0))
-    return {"total": len(rows), "limit": limit, "offset": offset, "rows": rows[offset:offset + limit]}
+    # D.page, not a local copy: `?limit=abc` used to reach a bare int() here. It only ever answered 400 rather
+    # than 500 because conn() above happens to translate ValueError, so the caller got sqlite's wording
+    # ("invalid literal for int() with base 10") without the parameter's name in it -- and OverflowError,
+    # which is not a ValueError, went straight out as a 500. It also carried its own copy of the 2000-row
+    # clamp that app/data.py:page() documents removing, which every one of the nine autopilot lists below
+    # inherited. One helper, so /api/jobs and /api/autopilot/candidates cannot disagree about what `limit` is.
+    return D.page(rows, q, 100)
 
 
 def _like(key, val):
@@ -490,7 +495,7 @@ def matches(request: Request):
         where, params = [], []
         if q.get("candidate_id"):
             where.append("candidate_id=?")
-            params.append(int(q["candidate_id"]))
+            params.append(D.int_param(q, "candidate_id"))
         if q.get("clinic_id"):
             where.append("clinic_id=?")
             params.append(str(q["clinic_id"]))
@@ -499,7 +504,7 @@ def matches(request: Request):
             params += q["status"].split(",")
         if q.get("cohort_id"):
             where.append("cohort_id=?")
-            params.append(int(q["cohort_id"]))
+            params.append(D.int_param(q, "cohort_id"))
         sql = "select * from matches" + (" where " + " and ".join(where) if where else "") + " order by score desc, id"
         rows = [_match_row(c, m) for m in db.rows("matches", c.execute(sql, params))]
         if q.get("clinic_id") and not rows and not q.get("status"):                   # live ranking for a registry clinic without stored matches
@@ -659,7 +664,7 @@ def clinic_threads(request: Request):
             params.append(str(q["clinic_id"]))
         if q.get("cohort_id"):
             where.append("cohort_id=?")
-            params.append(int(q["cohort_id"]))
+            params.append(D.int_param(q, "cohort_id"))
         sql = "select * from clinic_threads" + (" where " + " and ".join(where) if where else "") + " order by coalesce(last_at, created_at) desc"
         rows = [_thread_row(c, t) for t in db.rows("clinic_threads", c.execute(sql, params))]
         if q.get("q"):

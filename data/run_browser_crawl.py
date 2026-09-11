@@ -11,7 +11,7 @@ allrows=[]
 for s in seeds:
     t=time.time()
     rows,st=(bc if s.get('browser') else rc).crawl(s)
-    print(f"{s['name'][:34]:<34} lists {st['list_pages']} links {st['job_links_found']:>3} fetched {st['job_pages']:>3} jsonld {st['jobposting_pages']:>3} heur {st['heuristic_pages']:>3} -> {len(rows):>3} Pflege/BY (nonBY {st['dropped_non_bavaria']}, noloc {st['dropped_unknown_loc']}, nonpflege {st['dropped_not_pflege']}) {time.time()-t:.0f}s")
+    print(f"{s['name'][:34]:<34} lists {st['list_pages']} links {st['job_links_found']:>3} fetched {st['job_pages']:>3} jsonld {st['jobposting_pages']:>3} heur {st['heuristic_pages']:>3} -> {len(rows):>3} rows {time.time()-t:.0f}s")
     allrows+=rows
 bc.close()
 tag='b'+str(sum(map(ord,sys.argv[1]))%100000)

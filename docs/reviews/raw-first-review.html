@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raw-first pipeline — review</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0D12; --surface:#12151C; --surface2:#171B24; --line:#262B36;
+  --ink:#F4F7F8; --dim:#8A93A6; --faint:#5B6478;
+  --neon:#9DE146; --sky:#C8F1FF; --blue:#202D85; --red:#D82434; --amber:#E8A33D;
+  --r:0; --font:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 13px/1.55 var(--font)}
+a{color:var(--sky)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 120px}
+
+header{border-bottom:1px solid var(--line);padding:28px 0 20px;margin-bottom:8px}
+h1{font-size:19px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:12px}
+.sub b{color:var(--ink);font-weight:500}
+
+nav{position:sticky;top:0;z-index:20;background:rgba(11,13,18,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);margin-bottom:26px}
+nav ol{list-style:none;display:flex;gap:0;margin:0;padding:0;overflow-x:auto}
+nav a{display:block;padding:10px 14px;color:var(--dim);text-decoration:none;font-size:11px;white-space:nowrap;
+      border-right:1px solid var(--line)}
+nav a:hover{color:var(--ink);background:var(--surface)}
+nav .n{color:var(--faint);margin-right:6px}
+
+section{margin:0 0 44px;scroll-margin-top:52px}
+h2{font-size:13px;font-weight:700;margin:0 0 4px;letter-spacing:.06em;text-transform:uppercase}
+h2 .n{color:var(--neon);margin-right:10px}
+.lede{color:var(--dim);font-size:12px;margin:0 0 16px;max-width:76ch}
+
+/* ---- verdict strip ---- */
+.strip{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line)}
+.strip>div{background:var(--surface);padding:14px 16px}
+.strip .k{font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.strip .v{font-size:26px;font-weight:700;line-height:1.1;margin:6px 0 2px}
+.strip .d{font-size:11px;color:var(--dim)}
+.bad .v{color:var(--red)} .warn .v{color:var(--amber)} .ok .v{color:var(--neon)}
+
+/* ---- flow ---- */
+.flow{border:1px solid var(--line);background:var(--surface);padding:0}
+.lane{display:grid;grid-template-columns:150px 1fr;border-bottom:1px solid var(--line)}
+.lane:last-child{border-bottom:0}
+.lane-h{padding:12px 14px;border-right:1px solid var(--line);background:var(--surface2)}
+.lane-h .t{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.lane-h .s{font-size:10px;color:var(--faint);margin-top:4px;line-height:1.4}
+.nodes{display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px;align-items:flex-start}
+.node{border:1px solid var(--line);background:var(--bg);padding:8px 10px;min-width:0;flex:0 1 auto}
+.node .f{font-size:11px;color:var(--sky)}
+.node .w{font-size:10px;color:var(--dim);margin-top:3px}
+.node .c{font-size:10px;margin-top:4px;font-weight:700}
+.node.loss{border-left:3px solid var(--red)}
+.node.rec{border-left:3px solid var(--neon)}
+.node.trunc{border-left:3px solid var(--amber)}
+.node.loss .c{color:var(--red)} .node.rec .c{color:var(--neon)} .node.trunc .c{color:var(--amber)}
+
+/* ---- bars ---- */
+.bars{border:1px solid var(--line);background:var(--surface);padding:18px}
+.bar{display:grid;grid-template-columns:230px 1fr 70px;gap:14px;align-items:center;margin-bottom:12px}
+.bar:last-child{margin-bottom:0}
+.bar .lbl{font-size:11px;color:var(--dim)}
+.bar .lbl b{display:block;color:var(--ink);font-weight:500;font-size:12px}
+.track{height:22px;background:var(--bg);border:1px solid var(--line);position:relative}
+.fill{height:100%;display:block}
+.fill.bad{background:var(--red)} .fill.good{background:var(--neon)}
+.bar .num{text-align:right;font-size:16px;font-weight:700}
+.bar .num.bad{color:var(--red)} .bar .num.good{color:var(--neon)}
+.thresh{position:absolute;top:-5px;bottom:-5px;width:1px;background:var(--sky)}
+.thresh span{position:absolute;top:-15px;left:4px;font-size:9px;color:var(--sky);white-space:nowrap}
+
+/* ---- tables ---- */
+table{width:100%;border-collapse:collapse;font-size:11.5px;border:1px solid var(--line)}
+th{text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+   padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface2);font-weight:500}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;background:var(--surface)}
+tr:last-child td{border-bottom:0}
+code{font-family:var(--font);font-size:11px;color:var(--sky);word-break:break-word}
+.mut{color:var(--dim)}
+
+/* ---- blockers ---- */
+.blk{border:1px solid var(--line);border-left:3px solid var(--red);background:var(--surface);margin-bottom:12px}
+.blk-h{display:flex;gap:12px;align-items:baseline;padding:12px 16px;border-bottom:1px solid var(--line)}
+.blk-h .tag{font-size:9px;letter-spacing:.1em;background:var(--red);color:#fff;padding:2px 6px;font-weight:700}
+.blk-h .ti{font-size:13px;font-weight:700}
+.blk-b{padding:12px 16px;display:grid;grid-template-columns:70px 1fr;gap:4px 14px;font-size:11.5px}
+.blk-b .k{color:var(--faint);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding-top:2px}
+
+/* ---- decisions ---- */
+.dec{border:1px solid var(--line);background:var(--surface);margin-bottom:12px}
+.dec-h{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:baseline}
+.dec-h .id{color:var(--neon);font-weight:700;font-size:12px}
+.dec-h .q{font-size:13px;font-weight:500}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.opt{background:var(--surface);padding:12px 16px}
+.opt.pick{background:var(--surface2);border-top:2px solid var(--neon)}
+.opt .h{font-size:11.5px;font-weight:700;margin-bottom:5px}
+.opt.pick .h::after{content:" ← recommend";color:var(--neon);font-weight:400;font-size:10px}
+.opt .b{font-size:11px;color:var(--dim);line-height:1.5}
+
+/* ---- steps ---- */
+.steps{border:1px solid var(--line)}
+.step{display:grid;grid-template-columns:34px 1fr 108px;border-bottom:1px solid var(--line);background:var(--surface)}
+.step:last-child{border-bottom:0}
+.step .i{padding:11px 0;text-align:center;color:var(--faint);font-size:11px;border-right:1px solid var(--line);background:var(--surface2)}
+.step .m{padding:11px 14px}
+.step .m .t{font-size:12px;font-weight:500}
+.step .m .f{font-size:10.5px;color:var(--dim);margin-top:3px}
+.step .g{padding:11px 12px;border-left:1px solid var(--line);font-size:10px;letter-spacing:.04em}
+.g.auto{color:var(--neon)} .g.you{color:var(--amber)}
+.step.cut{opacity:.42}
+.step.cut .m .t::after{content:" — cut";color:var(--red)}
+
+.note{border:1px solid var(--line);border-left:3px solid var(--sky);background:var(--surface);padding:12px 16px;font-size:11.5px;margin-top:14px}
+.note b{color:var(--sky)}
+@media(max-width:820px){
+  .strip{grid-template-columns:1fr}
+  .lane{grid-template-columns:1fr}
+  .lane-h{border-right:0;border-bottom:1px solid var(--line)}
+  .opts{grid-template-columns:1fr}
+  .bar{grid-template-columns:1fr;gap:6px}
+}
+</style></head><body>
+
+<div class="wrap">
+<header>
+  <h1>Raw-first pipeline — design review</h1>
+  <div class="sub">11-agent audit + adversarial critique &nbsp;·&nbsp; <b>2026-09-09</b> &nbsp;·&nbsp;
+  corpus <b>18,470</b> records / <b>5,779</b> URLs &nbsp;·&nbsp; live <b>2,396</b> observations &nbsp;·&nbsp;
+  nothing implemented, nothing committed</div>
+</header>
+
+<nav><ol>
+  <li><a href="#v"><span class="n">00</span>Verdict</a></li>
+  <li><a href="#drops"><span class="n">01</span>Where rows die</a></li>
+  <li><a href="#del"><span class="n">02</span>Real deletes</a></li>
+  <li><a href="#dedup"><span class="n">03</span>Dedup evidence</a></li>
+  <li><a href="#blk"><span class="n">04</span>Blockers</a></li>
+  <li><a href="#dec"><span class="n">05</span>Your decisions</a></li>
+  <li><a href="#plan"><span class="n">06</span>Plan</a></li>
+  <li><a href="#geo"><span class="n">07</span>Geo — built</a></li>
+  <li><a href="#harvest"><span class="n">08</span>Harvest</a></li>
+  <li><a href="#swarm"><span class="n">09</span>Swarm</a></li>
+  <li><a href="#engine"><span class="n">10</span>Engine + backlog</a></li>
+  <li><a href="#mirror"><span class="n">11</span>Mirror</a></li>
+  <li><a href="#principles"><span class="n">12</span>Principles</a></li>
+  <li><a href="#delta"><span class="n">13</span>Mirror-first delta</a></li>
+  <li><a href="#filters"><span class="n">14</span>Filters · report · operator</a></li>
+  <li><a href="#plan2"><span class="n">15</span>Plan v2 + graph</a></li>
+  <li><a href="#rq"><span class="n">16</span>Research questions</a></li>
+  <li><a href="#parity"><span class="n">17</span>API ↔ site parity</a></li>
+  <li><a href="#strip"><span class="n">18</span>Filters stripped</a></li>
+  <li><a href="#khp"><span class="n">19</span>Krankenhausplan diff</a></li>
+</ol></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', primaryColor: '#171B24', primaryBorderColor: '#262B36', primaryTextColor: '#F4F7F8', lineColor: '#8A93A6', background: '#0B0D12' }, flowchart: { curve: 'linear', nodeSpacing: 22, rankSpacing: 34 } });
+</script>
+<style>
+pre.mermaid{background:var(--surface);border:1px solid var(--line);padding:14px;overflow-x:auto;margin:0 0 14px}
+.st{display:inline-block;font-size:9px;letter-spacing:.08em;padding:1px 6px;font-weight:700}
+.st.ok{background:var(--neon);color:#000}.st.fix{background:var(--sky);color:#000}.st.dec{background:var(--amber);color:#000}.st.no{background:var(--red);color:#fff}
+</style>
+
+<section id="v">
+<h2><span class="n">00</span>Verdict</h2>
+<p class="lede">Design is sound in shape, wrong in three mechanisms. All three verified against real data, not reasoned.</p>
+<div class="strip">
+  <div class="bad"><div class="k">Blockers</div><div class="v">3</div><div class="d">dedup key · research mode poisons coverage · rollback deletes live rows</div></div>
+  <div class="warn"><div class="k">Lossy drop sites</div><div class="v">14</div><div class="d">rows fetched, classified, discarded — recrawl is the only way back</div></div>
+  <div class="ok"><div class="k">Already recoverable</div><div class="v">4,736</div><div class="d">inbox rows dropped but still on disk (4,199 role + 537 geo)</div></div>
+</div>
+</section>
+
+<section id="drops">
+<h2><span class="n">01</span>Where rows die today</h2>
+<p class="lede">Three loss classes, not one. Only the green lane satisfies "never remove" today.</p>
+<div class="flow">
+
+  <div class="lane">
+    <div class="lane-h"><div class="t" style="color:var(--neon)">Recoverable</div>
+      <div class="s">raw row survives in <code>inbox</code> (7,279 rows, no delete path)</div></div>
+    <div class="nodes">
+      <div class="node rec"><div class="f">cli.py:311</div><div class="w">role_class in EXCLUDED</div><div class="c">4,199 rows</div></div>
+      <div class="node rec"><div class="f">cli.py:313</div><div class="w">in_bavaria is False</div><div class="c">537 rows</div></div>
+      <div class="node rec"><div class="f">cli.py:392</div><div class="w">--bavaria-only, drops False AND None</div><div class="c">opt-in flag</div></div>
+    </div>
+  </div>
+
+  <div class="lane">
+    <div class="lane-h"><div class="t" style="color:var(--red)">Lossy</div>
+      <div class="s">page fetched, classified, discarded in the same pass — dict goes out of scope</div></div>
+    <div class="nodes">
+      <div class="node loss"><div class="f">career_crawl.py:232-235</div><div class="w">nicht_pflege · BY False · BY None</div><div class="c">3 continues</div></div>
+      <div class="node loss"><div class="f">career_browser.py:118-121</div><div class="w">same, Playwright variant</div><div class="c">3 continues</div></div>
+      <div class="node loss"><div class="f">bite.py:310-317</div><div class="w">BY None branch uncounted</div><div class="c">3 continues</div></div>
+      <div class="node loss"><div class="f">feeds.py:49,65,67,83,102,117</div><div class="w">personio · smartrecruiters · talention</div><div class="c">6 continues</div></div>
+      <div class="node loss"><div class="f">pi_asp.py:37</div><div class="w">title-only, pre-fetch</div><div class="c">cheapest drop</div></div>
+      <div class="node loss"><div class="f">crawl.py:326-330</div><div class="w">_seed_obs, stats in memory only</div><div class="c">3 counters</div></div>
+      <div class="node loss"><div class="f">crawl.py:451</div><div class="w">combined role + geo, feeds EdgeSink</div><div class="c">1 line</div></div>
+      <div class="node loss" style="border-left-color:#fff"><div class="f">firecrawl_agent.py:126,129</div><div class="w">EXCLUDE runs inside the hosted agent</div><div class="c" style="color:#fff">no local artifact at all</div></div>
+    </div>
+  </div>
+
+  <div class="lane">
+    <div class="lane-h"><div class="t" style="color:var(--amber)">Silent truncation</div>
+      <div class="s">never observed, so nothing to label on a posting — run-level flag only</div></div>
+    <div class="nodes">
+      <div class="node trunc"><div class="f">career_crawl.py:104,194,219</div><div class="w">per_site_pages=120 · list_pages=12</div><div class="c">links past #120 never fetched</div></div>
+      <div class="node trunc"><div class="f">bite.py:247</div><div class="w">_fallback_jobposting_links</div><div class="c">limit=150</div></div>
+      <div class="node trunc"><div class="f">feeds.py talention</div><div class="w">safety stop</div><div class="c">off &gt; 1000</div></div>
+      <div class="node trunc"><div class="f">firecrawl_agent.py</div><div class="w">credits or timeout mid-board</div><div class="c">900s / DEFAULT_MAX_CREDITS</div></div>
+    </div>
+  </div>
+</div>
+<div class="note"><b>Firecrawl is the worst case.</b> Its EXCLUDE clause runs on Firecrawl's side before any of our code sees a candidate. Not even a fetched-then-discarded page exists locally. No per-posting label is possible without changing the paid prompt — so this source can never be fully raw-first.</div>
+</section>
+
+<section id="del">
+<h2><span class="n">02</span>Code that actually deletes</h2>
+<p class="lede">Six real delete paths found. One matters for your rule.</p>
+<table>
+<tr><th style="width:30%">Where</th><th>What it deletes</th><th style="width:22%">Status</th></tr>
+<tr><td><code>sql/008_experienced_only.sql</code></td><td>observations + postings where role_class in (ausbildung, werkstudent_praktikum, nicht_pflege), then orphan employers — <b>and adds a CHECK blocking reinsertion</b></td><td class="mut">already applied · why live shows 0 such rows</td></tr>
+<tr><td><code>sql/009_retire_aa_aggregator.sql</code></td><td>everything from source_id 30 &amp; 40</td><td class="mut">already applied</td></tr>
+<tr><td><code>data/purge_retired_sources.py</code></td><td>same purge, live, against Supabase</td><td class="mut">backs up to backups/*.jsonl first</td></tr>
+<tr><td><code>data/repair_split_merged.py:183</code></td><td>postings left with zero observations after a merge repair</td><td class="mut">orphan cleanup</td></tr>
+<tr><td><code>sql/010_inbox.sql:53-77</code></td><td>documented inbox_purge op, scoped to rate-limit probes (1,201 rows)</td><td class="mut">not called by anything</td></tr>
+<tr><td><code>app/autopilot/seed.py:129</code></td><td>local SQLite demo tables</td><td class="mut">unrelated</td></tr>
+</table>
+<div class="note"><b>The 008 CHECK constraint does not block the plan.</b> It guards <code>posting_observations</code>. The raw table is new and unconstrained, so "never remove" holds there without touching 008. The live product keeps filtering exactly as today.</div>
+</section>
+
+<section id="dedup">
+<h2><span class="n">03</span>Dedup key — measured, not argued</h2>
+<p class="lede">Plan proposed <code>unique(content_hash)</code> over the payload. Plan set its own kill threshold at 1.2 hashes/URL. I ran both keys over the real corpus.</p>
+<div class="bars">
+  <div class="bar">
+    <div class="lbl"><b>Plan key</b>url + payload minus page/validThrough/datePosted</div>
+    <div class="track"><span class="fill bad" style="width:73%"></span><span class="thresh" style="left:60%"><span>kill threshold 1.20</span></span></div>
+    <div class="num bad">1.46</div>
+  </div>
+  <div class="bar">
+    <div class="lbl"><b>Title+description key</b>url + norm(title) + norm(description)</div>
+    <div class="track"><span class="fill good" style="width:51.5%"></span><span class="thresh" style="left:60%"></span></div>
+    <div class="num good">1.03</div>
+  </div>
+</div>
+<p class="lede" style="margin-top:14px">Same posting splits into ~1.5 rows on a <b>single-day</b> corpus. Churn sources, all on identical postings:</p>
+<table>
+<tr><th>Churn key</th><th style="width:16%">URLs affected</th><th>Why it changes</th></tr>
+<tr><td><code>section_labels</code></td><td>3,626</td><td><code>None</code> vs <code>[]</code> — different adapters, same job</td></tr>
+<tr><td><code>page</code></td><td>2,553</td><td>pagination URL the job was found on</td></tr>
+<tr><td><code>org</code></td><td>1,290</td><td>shared board, crawling clinic's name stamped in</td></tr>
+<tr><td><code>loc</code></td><td>1,090</td><td><code>crawl.py:376-380</code> stamps the crawling clinic's town when empty</td></tr>
+<tr><td><code>department</code> / <code>description</code></td><td>883 / 486</td><td>whitespace and label drift</td></tr>
+</table>
+<div class="note"><b>Concrete merge failure.</b> One <code>la-regio-kliniken.de</code> posting appears as <code>org="Kinderkrankenhaus St. Marien Landshut", loc=Landshut</code> and as <code>org="Klinikum Landshut", loc=Rottenburg</code>. With <code>resolution=merge-duplicates</code> every column is overwritten, so <code>clinic_id</code> becomes last-writer-wins and "seen while crawling clinic A" is destroyed. That is removing an observation — the exact thing you forbade.</div>
+</section>
+
+<section id="blk">
+<h2><span class="n">04</span>Blockers</h2>
+
+<div class="blk">
+  <div class="blk-h"><span class="tag">B1</span><span class="ti">Dedup key both splits and merges wrongly</span></div>
+  <div class="blk-b">
+    <div class="k">Break</div><div>1.46 hashes/URL splits one posting into many; <code>merge-duplicates</code> overwrites <code>clinic_id</code>, <code>collector</code>, <code>run_id</code>, <code>first_seen_at</code></div>
+    <div class="k">Cost</div><div>silent loss of which clinic/run observed a row, on every shared board</div>
+    <div class="k">Fix</div><div>append-only. No unique constraint, hash as a plain index, <code>Prefer: return=minimal</code>. Dedupe in the query, never in the write.</div>
+  </div>
+</div>
+
+<div class="blk">
+  <div class="blk-h"><span class="tag">B2</span><span class="ti">mode=research silently degrades the live site</span></div>
+  <div class="blk-b">
+    <div class="k">Break</div><div><code>app/runs.py:167</code> — <code>last_run_per_clinic()</code> selects any run in done/failed/running with <b>no mode filter</b>. Verified by reading it.</div>
+    <div class="k">Chain</div><div>research run writes <code>clinic_ids=[X]</code> → coverage shows X crawled today → <code>app/hunter.py:12</code> skips the real crawl → coverage decays, no error</div>
+    <div class="k">Fix</div><div>research never calls <code>execute()</code>, writes <code>clinic_ids=[]</code>; add <code>and mode != 'research'</code>. Or skip HTTP mode entirely — a CLI has none of this.</div>
+  </div>
+</div>
+
+<div class="blk">
+  <div class="blk-h"><span class="tag">B3</span><span class="ti">Backfill rollback deletes live tee rows</span></div>
+  <div class="blk-b">
+    <div class="k">Break</div><div>backfill posts <code>run_id=null</code>; rerun after the tee is live sets <code>run_id=null</code> on colliding tee rows; rollback is <code>delete where run_id is null</code></div>
+    <div class="k">Worse</div><div><code>raw_labels.raw_id</code> FK makes that delete fail halfway, no transaction</div>
+    <div class="k">Fix</div><div>falls out of B1 — append-only has no upsert, so nothing to collide</div>
+  </div>
+</div>
+
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h" style="border-bottom:1px solid var(--line)"><span class="tag" style="background:var(--amber);color:#000">S1</span><span class="ti">Research mode still reaches the network</span></div>
+  <div class="blk-b">
+    <div class="k">Break</div><div>the guard patches <code>requests.Session.request</code> in-process. <code>crawl.py:616-624</code> spawns <code>python -m pflege_jobs.cli</code> as a <b>subprocess</b> — fresh interpreter, no patch. Playwright (<code>pi_asp</code>, <code>portals</code>) never touches <code>requests</code>.</div>
+    <div class="k">Worse</div><div>patching <code>requests</code> process-wide inside uvicorn also blocks concurrent <b>live</b> runs</div>
+    <div class="k">Fix</div><div>research = read raw table, run pure functions, write labels. Nothing else. Then the guard has nothing to guard and gets deleted.</div>
+  </div>
+</div>
+
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">S2</span><span class="ti">Region is injected, so geo evidence would be fake</span></div>
+  <div class="blk-b">
+    <div class="k">Break</div><div><code>sources/inbox.py:43</code> writes <code>region:"BAYERN"</code> unconditionally; <code>crawl.py:379</code> injects it too</div>
+    <div class="k">Cost</div><div>any region-first labeller returns <code>geo:region_exact</code> → BY for 100% of the 2,396 live rows. The A/B that was supposed to prove the geo swap proves nothing.</div>
+    <div class="k">Fix</div><div>trust <code>region</code> only from vendor payload, never from our own injection. Must land before the geo A/B, not after.</div>
+  </div>
+</div>
+</section>
+
+<section id="dec">
+<h2><span class="n">05</span>Decisions I need from you</h2>
+
+<div class="dec">
+  <div class="dec-h"><span class="id">D1</span><span class="q">Dedup: how does a duplicate get removed?</span></div>
+  <div class="opts">
+    <div class="opt pick"><div class="h">Append-only, dedupe at query time</div>
+      <div class="b">Nothing is ever overwritten, so "never remove" is true by construction. Costs ~3% extra rows (1.03/URL). Storage ≈ 230 MB/year at full Bavarian coverage.</div></div>
+    <div class="opt"><div class="h">unique(content_hash) + upsert</div>
+      <div class="b">Smaller table, but measured at 1.46 hashes/URL it fails its own threshold, and every collision overwrites clinic/run attribution. ≈ 10 GB/year — past Supabase Pro's 8 GB inside a year.</div></div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="dec-h"><span class="id">D2</span><span class="q">Scope of the first build</span></div>
+  <div class="opts">
+    <div class="opt pick"><div class="h">Lazy version — 5 pieces, one day</div>
+      <div class="b">Two tables · backfill 458 files + 7,279 inbox rows · 4-line tee behind a flag · geo module + dataset · one research CLI. Captures ~80% of the corpus because the vendor path (14k of 18k records) drops nothing inline.</div></div>
+    <div class="opt"><div class="h">Full 11-step plan</div>
+      <div class="b">Adds drop_reason across 6 adapters, mode=research over HTTP, parallel workers, truncation logging in 8 files, harness graders. Every one carries a blocker or a YAGNI flag above.</div></div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="dec-h"><span class="id">D3</span><span class="q">The <code>bite.py</code> drop_reason refactor</span></div>
+  <div class="opts">
+    <div class="opt pick"><div class="h">Leave it alone for now</div>
+      <div class="b">Replacing the <code>continue</code>s at <code>bite.py:310-317</code> triggers a detail-page fetch for every non-nursing posting <b>and</b> <code>:318-320</code> forces <code>in_bavaria=True</code> and loses the tag on reassign — non-nursing rows would reach <code>posting_observations</code>. Live output changes.</div></div>
+    <div class="opt"><div class="h">Do it with the guard</div>
+      <div class="b">Tag then <code>out.append(o); continue</code> before enrichment, plus <code>and not o.get("drop_reason")</code> at <code>crawl.py:451</code>. Recovers the seeded adapters' lost rows — but needs a per-family off/on diff to prove live output is byte-identical.</div></div>
+  </div>
+</div>
+
+<div class="dec">
+  <div class="dec-h"><span class="id">D4</span><span class="q">Remote research session</span></div>
+  <div class="opts">
+    <div class="opt pick"><div class="h">CLI only</div>
+      <div class="b"><code>python -m app.research --a live_v1 --b geo_v1</code>. No B2, no S1, no run rows. Runs from any session over SSH.</div></div>
+    <div class="opt"><div class="h">POST /api/crawl mode=research</div>
+      <div class="b">Nicer to trigger remotely, but needs the <code>last_run_per_clinic</code> fix first, and its rollback doesn't roll back — SQLite run rows outlive the revert.</div></div>
+  </div>
+</div>
+</section>
+
+<section id="plan">
+<h2><span class="n">06</span>Plan after the fixes</h2>
+<p class="lede">Green = safe unattended. Amber = you present. Struck = cut from v1.</p>
+<div class="steps">
+  <div class="step"><div class="i">1</div><div class="m"><div class="t">DDL: postings_raw + raw_labels, append-only</div>
+    <div class="f">sql/011_postings_raw.sql · pflege_jobs/schema.py</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">2</div><div class="m"><div class="t">Backfill 458 files + 7,279 inbox rows</div>
+    <div class="f">data/load_raw_corpus.py — first copy of a gitignored, unrecoverable corpus</div></div><div class="g auto">unattended · $0</div></div>
+  <div class="step"><div class="i">3</div><div class="m"><div class="t">Geo dataset + labeller + region-injection fix (S2)</div>
+    <div class="f">data/geo/ · pflege_jobs/geo.py · tests/test_geo.py · inbox.py:43</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">4</div><div class="m"><div class="t">Strategies + research CLI</div>
+    <div class="f">pflege_jobs/strategies.py · app/research.py</div></div><div class="g auto">unattended · $0</div></div>
+  <div class="step"><div class="i">5</div><div class="m"><div class="t">Tee, 4 lines behind a flag, vendor path only</div>
+    <div class="f">app/crawl.py execute() · app/settings.py</div></div><div class="g you">first run</div></div>
+  <div class="step cut"><div class="i">6</div><div class="m"><div class="t">mode=research over HTTP</div><div class="f">B2</div></div><div class="g">—</div></div>
+  <div class="step cut"><div class="i">7</div><div class="m"><div class="t">drop_reason across 6 adapters</div><div class="f">D3</div></div><div class="g">—</div></div>
+  <div class="step cut"><div class="i">8</div><div class="m"><div class="t">CLAWL_WORKERS parallel boards</div>
+    <div class="f">nondeterministic city attribution — fix first</div></div><div class="g">—</div></div>
+  <div class="step cut"><div class="i">9</div><div class="m"><div class="t">truncated_by_budget logging in 8 files</div><div class="f">existing logs answer it</div></div><div class="g">—</div></div>
+  <div class="step"><div class="i">10</div><div class="m"><div class="t">Swap in_bavaria → geo label</div>
+    <div class="f">gated on the step-4 A/B passing</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">11</div><div class="m"><div class="t">Role gate fix — 5 measured gaps + dauernachtwache</div>
+    <div class="f">gated on the step-4 A/B passing</div></div><div class="g you">you present</div></div>
+</div>
+<div class="note"><b>Parallel workers are not just deferred, they are unsafe today.</b> <code>_vendor_rows</code> stamps whichever clinic fetched a shared board first into <code>payload.loc</code>, so with <code>CLAWL_WORKERS&gt;1</code> the same kbo posting gets city=Haar or city=Wasserburg depending on thread order — which flips <code>fuzzy_key</code> and splits golden rows. Also <code>ats_seeds.py:8</code> shares one cookie jar across threads.</div>
+</section>
+
+<section id="geo">
+<h2><span class="n">07</span>Geo labeller — built, unwired</h2>
+<p class="lede">8 agents. Files exist, tests green. Zero wrong-Land answers on every official name and every dataset PLZ — the hard part is done. The problem is recall, and it has a free fix.</p>
+
+<div class="strip">
+  <div class="ok"><div class="k">Tests</div><div class="v">101</div><div class="d">pass · full suite 571 pass · verified by re-run</div></div>
+  <div class="ok"><div class="k">Wrong Land</div><div class="v">0</div><div class="d">on official names and dataset PLZ</div></div>
+  <div class="warn"><div class="k">Registry recall</div><div class="v">81%</div><div class="d">330 of 407 clinic towns labelled BY</div></div>
+</div>
+
+<table style="margin-top:18px">
+<tr><th style="width:34%">File</th><th style="width:16%">Size</th><th>What</th></tr>
+<tr><td><code>data/geo/gemeinden_de.csv</code></td><td>1.18 MB</td><td>13,762 rows, all 16 Länder, Destatis + cleaned GeoNames, with lat/lon</td></tr>
+<tr><td><code>pflege_jobs/geo.py</code></td><td class="mut">—</td><td><code>resolve()</code> → <code>land</code> + <code>rule</code>; UNKNOWN over guessing</td></tr>
+<tr><td><code>tools/build_geo_table.py</code></td><td class="mut">—</td><td>stdlib only, no openpyxl, re-runnable</td></tr>
+<tr><td><code>tests/test_geo.py</code></td><td class="mut">101 tests</td><td>incl. live regression vs <code>posting_observations</code></td></tr>
+</table>
+
+<div class="note" style="border-left-color:var(--neon);margin-top:16px"><b>The recall fix is already in the registry.</b>
+Measured just now: <code>resolve(city=town)</code> alone → <b>330/407 = 81%</b>. Adding the existing <code>regierungsbezirk</code> column as a fallback → <b>407/407 = 100%</b>, zero unknown. Every clinic row already carries Oberbayern / Niederbayern / Oberpfalz / Oberfranken / Mittelfranken / Unterfranken / Schwaben. Same shape extends to any Land whose PDF names its own admin divisions — so it is data, not a Bavaria special case.</div>
+
+<p class="lede" style="margin-top:18px">Why the 77 unlabelled towns are unlabelled — and it is mostly not the labeller's fault:</p>
+<table>
+<tr><th style="width:20%">Cause</th><th style="width:10%">Count</th><th>Examples</th></tr>
+<tr><td style="color:var(--neon)">Registry CSV junk<br><span class="mut" style="font-size:10px">geo correctly refuses</span></td><td>20</td><td class="mut"><code>GmbH &amp; Co. KG</code> · <code>Clinic</code> · <code>Fachklinik</code> · <code>(GeBO)</code> · <code>RHÖN KLINIKUM AG</code> · <code>Bad</code> · <code>Zentrum GmbH</code></td></tr>
+<tr><td style="color:var(--neon)">More CSV residue<br><span class="mut" style="font-size:10px">not towns at all</span></td><td>~7</td><td class="mut"><code>Schlafstörungen</code> · <code>Willi Pinkow</code> · <code>Trissl</code> · <code>Tauber</code> · <code>See/Füssen</code></td></tr>
+<tr><td style="color:var(--amber)">Genuinely ambiguous<br><span class="mut" style="font-size:10px">Bavaria has one, so does another Land</span></td><td>~33</td><td class="mut">Rosenheim (also RP) · Fürth (also HE) · Lindau (also ST) · Lichtenfels (also HE) · Neustadt (8 Länder) · Hof · Berg · Friedberg · Landau · Weilheim</td></tr>
+</table>
+
+<p class="lede" style="margin-top:18px">Critique findings worth acting on:</p>
+<div class="blk">
+  <div class="blk-h"><span class="tag">G1</span><span class="ti">One wrong-Land row shipped in the dataset</span></div>
+  <div class="blk-b">
+    <div class="k">Row</div><div><code>gemeinden_de.csv:11672</code> → <code>BB,,Daimler Verwaltungsgesellschaft (DGrund),…,10875</code>. PLZ 10875 is Berlin, tagged Brandenburg. Verified on disk.</div>
+    <div class="k">Cause</div><div>Großempfänger regex matches <code>verwaltung\b</code>, misses <code>Verwaltungsgesellschaft</code></div>
+    <div class="k">Fix</div><div>one regex character; plus the builder silently first-wins on GeoNames' 12 multi-Land PLZ instead of dropping them</div>
+  </div>
+</div>
+
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">G2</span><span class="ti">Naive swap would delete 5% of the live site</span></div>
+  <div class="blk-b">
+    <div class="k">Measured</div><div>2,396 live rows → 2,241 stay BY, <b>120 flip True→UNKNOWN</b>, 6 flip to another Land and are correct (Lauda-Königshofen 97922 BW, Meersburg, Überlingen)</div>
+    <div class="k">Why</div><div>Hof 16 · Wartenberg 9 · Freiburg i.B. 8 · Berg 7 · Forchheim/Oberfranken 7 · Fürth 6 — the same ambiguous stems</div>
+    <div class="k">Fix</div><div>never swap. Ship <code>land</code> + <code>land_rule</code> as <b>shadow columns</b> — TASK-11 AC#7 requires live behaviour unchanged anyway</div>
+  </div>
+</div>
+
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">G3</span><span class="ti">Shape misses the brief: one inert rare case, a second dataset on a false premise</span></div>
+  <div class="blk-b">
+    <div class="k">Rare cases</div><div>you asked for "rare cases coded and concisely commented" — the table is <b>one</b> entry (Jungholz) wrapped in a 32-line comment, and 3 of its 4 bullets document things not in the table. Deleting the entry does not change the answer, only the rule string.</div>
+    <div class="k">Second file</div><div><code>ambiguous_stems.txt</code> (425 lines) ships "because computing at import is wasteful" — but <code>_load()</code> already walks every row. Set-equality verified: fully derivable. Delete it.</div>
+    <div class="k">Missing</div><div>the rare cases you actually meant are absent: Destatis abbreviation aliases (<code>i.d.OPf.</code> ↔ <code>in der Oberpfalz</code>, <code>a.d.</code> ↔ <code>an der</code>) and Regierungsbezirk→Land. Both are ~10–19 row tables that buy real recall.</div>
+  </div>
+</div>
+
+<div class="note"><b>Housekeeping done:</b> two untracked zip caches (<code>geonames_de.zip</code>, <code>gv_fixed.zip</code>, 770 KB) had been left in the repo root by a build agent and were described in its report as "pre-existing". They were not — a <code>git add -A</code> would have committed them. Deleted.</div>
+
+<div class="dec" style="margin-top:16px">
+  <div class="dec-h"><span class="id">D5</span><span class="q">Geo: ship now or reshape first?</span></div>
+  <div class="opts">
+    <div class="opt pick"><div class="h">Reshape, then shadow-column</div>
+      <div class="b">Fix G1's regex · delete <code>ambiguous_stems.txt</code> and the duplicated normalizers · collapse <code>resolve()</code> to a candidate-set core · add the two alias tables · accept <code>regierungsbezirk</code> → 100% registry recall. Then write <code>land</code>/<code>land_rule</code> as nullable shadow columns. Live site byte-identical.</div></div>
+    <div class="opt"><div class="h">Ship as-is, unwired</div>
+      <div class="b">Correct today, zero wrong answers, 101 tests green. But 81% recall, one bad dataset row, and the shape does not match what you asked for — the reshape gets more expensive once something consumes it.</div></div>
+  </div>
+</div>
+</section>
+
+<section id="harvest">
+<h2><span class="n">08</span>Harvest — coverage, freshness, what ran</h2>
+<p class="lede">Every clinic accounted for. Corpus re-verified against the live boards. Vendor pull executed.</p>
+
+<div class="strip">
+  <div class="ok"><div class="k">Never even tried</div><div class="v">5</div><div class="d">of 407 clinics · the other 402 were attempted at least once</div></div>
+  <div class="bad"><div class="k">Live boards never harvested</div><div class="v">184</div><div class="d">15,603 beds sitting behind reachable, unwalled boards</div></div>
+  <div class="ok"><div class="k">Bot walls</div><div class="v">2</div><div class="d">140 beds — walls are not the problem</div></div>
+</div>
+
+<p class="lede" style="margin-top:20px"><b>Where the on-disk corpus came from.</b> Not this session — file dates: <code>crawl_output/</code> 377 files 09-06, 5 on 09-07, 25 on 09-08, 3 on 09-09; <code>crawl_vendors/</code> 43 files all 09-06; <code>crawl_portals/</code> 5 files 09-06.</p>
+
+<table>
+<tr><th style="width:44%">Clinic status</th><th style="width:12%">Count</th><th>Detail</th></tr>
+<tr><td>attempted, has postings</td><td>208</td><td class="mut">79 app runs between 09-06 and 09-09</td></tr>
+<tr><td style="color:var(--amber)">attempted, zero postings</td><td>194</td><td class="mut">157 routed · 37 without an adapter</td></tr>
+<tr><td style="color:var(--red)">never attempted</td><td>5</td><td class="mut">Klinikum Landshut 520 · Cnopf'sche Kinderklinik 139 · AMEOS Inntal 60 · Haßberg Ebern 50 · Markt Werneck 40</td></tr>
+</table>
+
+<p class="lede" style="margin-top:20px"><b>Why the 199 yield nothing</b> — probed all of them over plain HTTP just now:</p>
+<table>
+<tr><th>Verdict</th><th style="width:10%">Clinics</th><th style="width:10%">Beds</th><th>Meaning</th></tr>
+<tr><td style="color:var(--red)"><b>live_board</b></td><td><b>184</b></td><td><b>15,603</b></td><td>board reachable, job links present — <b>our pipeline simply never fetched it</b></td></tr>
+<tr><td>no_url</td><td>6</td><td>625</td><td>registry has neither <code>careers_url</code> nor <code>website</code></td></tr>
+<tr><td>error</td><td>3</td><td>375</td><td><code>ConnectionResetError</code> — Sana Cham, Sana Bad Kötzting, Klinik Oberammergau</td></tr>
+<tr><td>no_job_links</td><td>3</td><td>100</td><td>page exists, publishes no vacancies</td></tr>
+<tr><td style="color:var(--amber)">bot_wall</td><td>2</td><td>140</td><td>Rotkreuzklinik Würzburg <code>HTTP 403</code> · Waldhausklinik Deuringen</td></tr>
+<tr><td>dead</td><td>1</td><td>40</td><td><code>HTTP 404</code></td></tr>
+</table>
+<div class="note"><b>13 clinics carry the wrong <code>ats_type</code> in the registry.</b> Live fingerprint disagrees: 8 kbo-Isar-Amper listed <code>typo3_jobs</code> are really <code>umantis</code>; 2 listed <code>wp_jobs</code> are <code>pi_asp</code>; Garmisch <code>bite_jobs</code> is <code>bite</code>. Their adapter was guaranteed to return zero.</div>
+
+<p class="lede" style="margin-top:20px"><b>Is the 09-06 corpus still true today?</b> Stratified sample, seed 20260909 — 13 hosts covering 15 of 16 collectors, 60% of records, 59% of distinct URLs. Re-fetched with the repo's own parsers.</p>
+<div class="bars">
+  <div class="bar"><div class="lbl"><b>Still the same live posting</b>63 of 65 re-fetched</div>
+    <div class="track"><span class="fill good" style="width:96.9%"></span></div><div class="num good">97%</div></div>
+  <div class="bar"><div class="lbl"><b>Genuinely closed</b>1 hard 404, 1 soft-404</div>
+    <div class="track"><span class="fill bad" style="width:3.1%"></span></div><div class="num bad">3%</div></div>
+</div>
+<p class="lede" style="margin-top:14px">Zero blocked. Zero errors. All 7 title mismatches trace to collector shape, not edited postings — Helix corpus titles came from listing anchor text and carry a <code>Festanstellung</code> badge the detail <code>&lt;h1&gt;</code> lacks.</p>
+
+<table style="margin-top:14px">
+<tr><th style="width:26%">Adapter defect found</th><th style="width:14%">Cost</th><th>Evidence</th></tr>
+<tr><td style="color:var(--neon)"><b>kbo pagination — FIXED</b></td><td><b>10 → 109 jobs</b></td><td><code>page_param</code> was stored pre-encoded as <code>tx_solr%5Bpage%5D</code>, then <code>urlencode()</code> encoded it again into <code>tx_solr%255Bpage%255D</code> — an unknown parameter, so every page returned page 1 and the loop broke after one pass. One line. Verified live both ways, re-crawled, 29 adapter tests pass.</td></tr>
+<tr><td>München Klinik <code>careers_url</code></td><td>18 → 62 jobs</td><td>registry points at <code>/jobs/</code>, a marketing hub whose category pages <code>parse_job_page</code> mistakes for postings. <code>/stellenmarkt/</code> serves 62 real posting links server-side — and removes the need for Playwright on this host. <b>Registry write, not done — needs your approval.</b></td></tr>
+<tr><td>personio narrowing</td><td>56 → 2</td><td class="mut">not drift: the XML feed still returns all 56. Today's office-token narrowing is intentional; the other 54 are other Bergman sites, mostly non-Bavarian. Corpus over-collected.</td></tr>
+<tr><td>mein-check-in <code>kna-online</code></td><td>30 → 4</td><td class="mut">section-first narrowing picks only the <code>Pflegedienst</code> sidebar group; board still lists 29</td></tr>
+<tr><td style="color:var(--amber)">soft-404 ingestion</td><td>fake rows</td><td><code>parse_job_page</code> happily stores <code>Dieses Stellenangebot ist leider nicht mehr verfügbar.</code> as a job title</td></tr>
+</table>
+<div class="note"><b>Careful reading the drift numbers.</b> <code>crawlers/vendor_adapters.py</code> gained +118 lines in <code>247bcb5</code> at <b>2026-09-09 00:24</b> — three days after the corpus was written. Most listing-count changes are code drift, not board drift. Excluding the three adapter causes above, URL retention is <b>96.9%</b>. Separately, <code>www.stepstone.de</code> is 1,955 URLs = 34% of the corpus by distinct URL and is stale <i>by policy</i> — retired source, <code>data/purge_retired_sources.py</code> deletes it.</div>
+
+<p class="lede" style="margin-top:20px"><b>What actually ran.</b> Vendor family only — plain HTTP, zero Firecrawl credits, nothing written to the live DB:</p>
+<table>
+<tr><th style="width:30%">Path</th><th style="width:14%">Status</th><th>Detail</th></tr>
+<tr><td style="color:var(--neon)">vendor family</td><td><b>79/79 ok</b></td><td>140 clinics grouped into 79 distinct boards · <b>2,086 raw rows</b> in <code>crawl_raw/</code>, unfiltered · 0 errors</td></tr>
+<tr><td class="mut">seeded family</td><td class="mut">held</td><td class="mut">bite 10 · softgarden 28 · pi_asp 1 — these drop rows inside the loop, that is decision D3</td></tr>
+<tr><td class="mut">umantis</td><td class="mut">held</td><td class="mut">3 clinics; the <code>ADAPTERS</code> entry is marked STALE, driven by <code>ats_seeds</code> in practice</td></tr>
+<tr><td class="mut">Playwright</td><td class="mut">not needed</td><td class="mut">every <code>playwright-*</code> host proved reachable over plain HTTP today; <code>JS_PORTALS</code> still marks München Klinik and Altmühlfranken as <code>browser</code> unnecessarily</td></tr>
+<tr><td class="mut">Firecrawl</td><td class="mut">not used</td><td class="mut">2 walled clinics, 140 beds — last credits, deliberately untouched</td></tr>
+</table>
+
+<p class="lede" style="margin-top:20px"><b>Data model — confirmed against the live DB.</b></p>
+<table>
+<tr><th style="width:34%">Question</th><th style="width:16%">Answer</th><th>Evidence</th></tr>
+<tr><td>Can one job belong to several clinics?</td><td style="color:var(--neon)"><b>No</b></td><td><code>postings.clinic_id</code> is a single column, with <code>clinic_match_rule</code> + <code>clinic_match_score</code> beside it — the link is fuzzy but singular. 1,892 of 2,146 matched (<code>R1_exact</code> 1,195 · <code>R3_tokens</code> 428 · <code>R2_operator</code> 98), 254 unmatched.</td></tr>
+<tr><td>Can one job have several locations?</td><td style="color:var(--amber)"><b>Structurally yes</b></td><td><code>n_locations</code> + a <code>locations</code> jsonb per observation. But live: <b>all 2,146 postings and all 2,396 observations have n_locations = 1</b>. Either multi-site ads do not occur, or they collapse upstream — testable on the raw corpus, where nothing is filtered.</td></tr>
+<tr><td>Seed chain</td><td>holds</td><td>seed (a Land's PDF) → clinics → boards → raw postings → labels (Land from the geo data, role from classify) → filter by label. 16 seeds eventually; <code>pflege_jobs/geo.py</code> already covers all 16 Länder unchanged.</td></tr>
+</table>
+</section>
+
+<section id="swarm">
+<h2><span class="n">09</span>Swarm — ten probes, plain HTTP, no Firecrawl</h2>
+<p class="lede">Every "small question" from the harvest table, answered with a fetch. Playwright was never needed. Legend: <span class="st ok">SOLVED</span> plain HTTP works · <span class="st fix">FIX</span> code or registry change · <span class="st dec">DECIDE</span> needs you · <span class="st no">CLOSED</span> clinic gone.</p>
+<table>
+<tr><th style="width:17%">Probe</th><th style="width:9%">Status</th><th>Finding</th><th style="width:26%">Change</th></tr>
+<tr><td>reset-3<br><span class="mut">Sana Cham · Sana Bad Kötzting · Oberammergau</span></td><td><span class="st ok">SOLVED</span></td><td>Cold-connection flake, not a block. 5/5 plain GETs succeed after the first; curl never reset at all. TYPO3 confirmed. Sana houses share one board <code>sana.de/cham/karriere/</code>, 30 job links; Oberammergau 18.</td><td>one bare retry on <code>ConnectionResetError</code> in <code>vendor_adapters.get()</code> :66</td></tr>
+<tr><td>botwall-2<br><span class="mut">Rotkreuzklinik Würzburg</span></td><td><span class="st no">CLOSED</span></td><td><b>Not a bot wall.</b> nginx directory-403 on every clean-URL path, host-wide, identical for every client. Nothing to unlock. <code>decision-1</code> already records the clinic closed 2026-04.</td><td>registry <code>status=closed</code></td></tr>
+<tr><td>botwall-2<br><span class="mut">Waldhausklinik Deuringen</span></td><td><span class="st fix">FIX</span></td><td><b>False positive</b> in my probe — body contains <code>captcha</code> only as <code>google.com/recaptcha/api.js</code> on the application modal. 11 jobs server-rendered in <code>div.faqAccCard</code>, no API, bespoke Laravel build.</td><td>tiny parser: <code>div.faqAccCard → .jobHeadmain</code> + Job Start date</td></tr>
+<tr><td>no-url-6</td><td><span class="st fix">FIX</span></td><td>27773 AMEOS Inntal = <b>duplicate row</b> of 27706 (same operator, town, 60 beds) · 26105 Landshut-Achdorf → <code>la-regio-kliniken.de/stellenportal</code> (91 links) · 56406 Cnopf'sche → <code>diakoneo.de/karriere/</code> (19) · 37102 Auerbach → <code>kh-as.de/…/stellenangebote/</code> (12) · 67402 Haßberg Ebern → mein-check-in tenant · 17274 Schlafstörungen: no jobs page exists.</td><td>5 registry URLs + 1 merge (mark <code>merged_into</code>, never delete)</td></tr>
+<tr><td>dead-and-empty-4</td><td><span class="st fix">FIX</span></td><td>Markt Werneck 404 → closed · kbo-Kinderzentrum jobs live on <code>kbo.de/karriere/jobboerse</code> with a <code>jobSite</code> filter the group crawler already honours · Dr. Becker Kiliani ×2 → group board <code>karriere.drbecker.jobs</code> (rexx, 10 jobs), 57570 duplicates 57505.</td><td>route 2 to kbo group · 1 new rexx board · 1 closed · 1 merge</td></tr>
+<tr><td>muenchen-klinik<br><span class="mut">5 registry rows, 1 board</span></td><td><span class="st ok">SOLVED</span></td><td>Rung 1 wins: <code>/stellenmarkt/</code> 62 links server-rendered, every detail page carries JSON-LD <code>JobPosting</code> with <b>description as HTML</b>. <code>robots.txt</code> disallows <code>/*json*</code> and names <code>JobCrawlerBot</code> — a feed exists, fenced. Site attribution from <code>jobLocation.name = "München Klinik / Standort Harlaching"</code>.</td><td>5 rows → <code>/stellenmarkt/</code>, <code>typo3_jobs</code> · delete <code>JS_PORTALS["muenchen-klinik"]</code></td></tr>
+<tr><td>ats-mismatch-13</td><td><span class="st dec">DECIDE</span></td><td>All 13 confirmed. But kbo-Isar-Amper's umantis tenant <code>recruitingapp-5656</code> <b>fully duplicates</b> <code>kbo.de/karriere/jobboerse</code> — relabelling 11 rows to <code>umantis</code> would double-count. No umantis API exists (<code>/api/Vacancies</code> 404, <code>.rss</code> 404); <code>/Jobs/All</code> is server-rendered.</td><td>leave kbo rows on the group board · 17606 + 77301 → <code>pi_asp</code> · <b>do not delete</b> <code>ADAPTERS["umantis"]</code> — 10 live clinics route through it, relabel its value to <code>seeded</code></td></tr>
+<tr><td>narrowing<br><span class="mut">personio · mein-check-in</span></td><td><span class="st dec">DECIDE</span></td><td><b>personio</b>: 56 jobs across 10 Bergman offices, exactly 2 Bavarian (Hofgartenklinik) — narrowing kept both, lost 0 Bavarian. Attribution, valid. A <i>second</i> narrow (department, :199-203) exists and is pinned by <code>test_vendor_adapters.py:49</code>. <b>mein-check-in</b> kna-online 29 → 4: dropped groups include <code>Initiativ Pflege (m/w/d)</code>, 7× <code>Ausbildung Pflegefachfrau</code>, <code>Pflegepraktikum</code> — nursing-relevant titles gone.</td><td>keep rows, write <code>office_match</code> / <code>section</code> as labels; let the matcher attribute</td></tr>
+<tr><td>seeded-drops<br><span class="mut">measured live, drops on vs off</span></td><td><span class="st dec">DECIDE</span></td><td>Amberg (bite) <b>17 of 46</b> kept · Garmisch (bite) <b>35 of 56</b> · Klinikum Bayreuth (softgarden) <b>44 of 116</b>, all 72 dropped as <code>not_pflege</code>, 0 non-Bavaria · pi_asp title pre-filter would newly click <b>19 of 44</b> Helios and <b>48 of 90</b> Sana titles in Playwright.</td><td>bite/softgarden: append-always + <code>drop_reason</code> · pi_asp: keep pre-filter as a browser-cost guard, store a stub row</td></tr>
+<tr><td>retired-traces<br><span class="mut">StepStone · AA</span></td><td><span class="st dec">DECIDE</span></td><td>14 pure-text hits in 12 files — safe. Live dependencies: <code>sql/002</code> still seeds sources 30/40 · <code>sql/001</code> CHECK + <code>aa_kundennummer_hash</code> columns · edge op <code>supersede_aa</code> called live at <code>index.ts:133</code> · and <code>sql/009</code> holds the <b>only</b> INSERT of source 25 <code>firecrawl_agent</code> — delete it naively and a fresh DB fails on FK.</td><td>text now · move source-25 insert to <code>002</code> · 009 fate + edge op = your call</td></tr>
+<tr><td>unmatched-254</td><td><span class="st fix">FIX</span></td><td>B1 ambiguous operator 36 · <b>B2 non-registry entity 142</b> (Diakoneo Wohnen, Artemed Reha, MVZ) · B3 name-form gap 46 (Arberland, Kreiskrankenhaus, ss/ß) · B4 out-of-Bavaria 6 (+19 overlap) · B5 extraction artefacts 24.</td><td>B3 → matcher rules · B1 → operator entity · B2 is correct as NULL</td></tr>
+</table>
+</section>
+
+<section id="engine">
+<h2><span class="n">10</span>Engine design, its critique, backlog proposal</h2>
+<p class="lede">Fable designed the modular harvester you described; a second fable tore into it. Read the critique's blockers first — they are correct.</p>
+
+<div class="blk">
+  <div class="blk-h"><span class="tag">E1</span><span class="ti">The ladder never escalates on the case it exists for</span></div>
+  <div class="blk-b"><div class="k">Break</div><div><code>run()</code> treats zero rows with no error as success and stops. The 184 live boards / 15,603 beds are exactly "HTTP 200, 0 rows" — they would sit at <code>last_result=ok, next_rung=null</code> forever.</div><div class="k">Fix</div><div>zero rows on a cheap rung = try the next cheap rung; stop only before expensive ones</div></div>
+</div>
+<div class="blk">
+  <div class="blk-h"><span class="tag">E2</span><span class="ti">Deleting <code>ADAPTERS["umantis"]</code> breaks 10 live clinics</span></div>
+  <div class="blk-b"><div class="k">Break</div><div><code>routing.py:126</code> marks any ats_type not in <code>ADAPTERS</code> as unroutable. 10 live rows are <code>umantis</code> (ANregiomed ×3, Klinikverbund Allgäu ×3, …). The entry is mislabelled, not dead.</div><div class="k">Fix</div><div>change the value to <code>("seeded", "pflege_jobs.sources.ats_seeds:umantis")</code>, keep the key</div></div>
+</div>
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">E3</span><span class="ti">The vendor family is already raw-first — <code>inbox</code> keeps every row</span></div>
+  <div class="blk-b"><div class="k">Fact</div><div><code>sql/010</code> inbox has no unique constraint and no delete path; the drain acks with a note. <code>client_id</code> is free text → provenance today = <code>client_id = "load:&lt;n&gt;"</code>, zero DDL.</div><div class="k">So</div><div><code>postings_raw</code> only adds value for page <b>bodies</b> — and your mirror requirement moves those to disk anyway</div></div>
+</div>
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">E4</span><span class="ti">Three more: seeded wrapper, site_status rot, health SQL</span></div>
+  <div class="blk-b"><div class="k">Seeded</div><div>bite/softgarden/pi_asp return observations, need towns and their own sessions — <code>app/crawl.py:304-363 _seed_obs</code> is the real wrapper, 60 lines, reuse it</div><div class="k">Status</div><div><code>site_status</code> is written only by the new engine, never by <code>execute()</code> — two crawl paths, disjoint truth → make it a view over <code>loads</code> + <code>incidents</code></div><div class="k">Health</div><div><code>sum(distinct beds)</code> collapses two 60-bed sites into 60 — and the metric is computable <b>today</b> from <code>clinics</code> + <code>clinic_links</code> + <code>v_postings</code></div></div>
+</div>
+
+<p class="lede" style="margin-top:20px"><b>Pipeline as designed</b> (pre-mirror — being revised by the running delta):</p>
+<pre class="mermaid">
+graph LR
+  PDF["Krankenhausplan PDF"] --> REG["clinics registry"]
+  REG --> BRD["boards grouped by careers_url"]
+  BRD --> JOB["engine jobs: family x board set"]
+  JOB --> LAD["ladder: html > api > wall > playwright > firecrawl_sample"]
+  LAD --> PG["raw pages"]
+  PG --> RAW[("postings_raw append-only")]
+  RAW --> STR["structuring: parse_* over body"]
+  STR --> TAG["tagger: geo / Matcher / classify"]
+  TAG --> LBL[("raw_labels by strategy")]
+  LBL --> NF["nursing filter — last stage"]
+  NF --> MV[("mv_app_postings")]
+  MV --> APP["app / API"]
+  LAD -.-> SS[("site_status")]
+  JOB -.-> LD[("loads")]
+  LAD -.-> INC[("incidents")]
+  RAW --> RC["research CLI, no network"]
+  RC --> LBL
+  REG --> HM["health: beds vs vacancies"]
+  MV --> HM
+</pre>
+
+<p class="lede"><b>Backlog proposal T1–T15</b> (not created), with the critique's cuts applied:</p>
+<div class="steps">
+  <div class="step"><div class="i">T1</div><div class="m"><div class="t">Registry data-fix batch</div><div class="f">13 ats_type · 5 URLs · 6 no-url · 2 merges as <code>merged_into</code> · 2 closed — one checklist</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">T2</div><div class="m"><div class="t">Delete StepStone / AA traces — text + seeds</div><div class="f">14 text hits · <code>sql/002</code> · move source-25 insert first</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T4</div><div class="m"><div class="t">One retry on ConnectionResetError in <code>get()</code></div><div class="f">crawlers/vendor_adapters.py:66</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T7a</div><div class="m"><div class="t">Vendor-side drops → labels</div><div class="f">mci :753 · personio :190 + :199 → <code>office_match</code> · flip test :49 — live-safe, drain still gates</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T11</div><div class="m"><div class="t">New html boards, code half</div><div class="f">München <code>/stellenmarkt/</code> seed · Waldhaus parser · Dr. Becker rexx · kbo jobSite · delete JS_PORTALS entry</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T12</div><div class="m"><div class="t">Full html+api load over all 221 boards</div><div class="f">cheap class, incidents recorded — closes the 15,603-bed gap</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T13</div><div class="m"><div class="t">Health view — beds vs nursing vacancies</div><div class="f"><code>sum(beds)</code> not distinct · computable today</div></div><div class="g auto">unattended</div></div>
+  <div class="step cut"><div class="i">T3</div><div class="m"><div class="t">DDL postings_raw + site_status</div><div class="f">superseded by mirror-on-disk + inbox (E3)</div></div><div class="g">—</div></div>
+  <div class="step cut"><div class="i">T5</div><div class="m"><div class="t">Engine skeleton dataclasses</div><div class="f">wait for a captured corpus</div></div><div class="g">—</div></div>
+  <div class="step"><div class="i">T7b</div><div class="m"><div class="t">Seeded drops → <code>drop_reason</code></div><div class="f">changes live output — after switch-over only</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">T8–T10</div><div class="m"><div class="t">Region-injection fix · tagger v1 · research CLI</div><div class="f">geo shadow labels · role vocab incl. arzt/mfa/therapie · A/B strategies offline</div></div><div class="g auto">unattended</div></div>
+  <div class="step"><div class="i">T14</div><div class="m"><div class="t">SWITCH-OVER: materialised app view, nursing filter last</div><div class="f">first live change · index pass</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">T15</div><div class="m"><div class="t">Escalation pass: Playwright per board on approval</div><div class="f">pi_asp API probe · concludis tenants · Altmühlfranken</div></div><div class="g you">per board</div></div>
+</div>
+<div class="note"><b>Collision warning for parallel sessions.</b> T4, T5, T7a, T11 all touch <code>crawlers/vendor_adapters.py</code>; T7 and T8 both touch <code>app/crawl.py</code>. Serialize per file or merge into one PR each.</div>
+</section>
+
+<section id="mirror">
+<h2><span class="n">11</span>Mirror — why the megabytes, measured</h2>
+<p class="lede">Your requirement: a folder that opens in a browser and clicks like the live site. Two live tests before the delta workflow's systematic pass.</p>
+<div class="strip">
+  <div class="bad"><div class="k">la-regio, full profile</div><div class="v">311 MB</div><div class="d"><code>--page-requisites</code>, no scope — escaped to the whole site</div></div>
+  <div class="warn"><div class="k">of which jpg</div><div class="v">69%</div><div class="d">930 files, 214.8 MB — single stock banners of 10 MB</div></div>
+  <div class="ok"><div class="k">HTML, 267 pages</div><div class="v">78.6 MB</div><div class="d">the part that carries vacancies</div></div>
+</div>
+<table style="margin-top:16px">
+<tr><th style="width:26%">Board</th><th style="width:12%">Profile</th><th style="width:10%">Size</th><th style="width:10%">HTML</th><th>Observation</th></tr>
+<tr><td><code>la-regio-kliniken.de</code> typo3</td><td>full</td><td>311 MB</td><td>267</td><td>jpg 214.8 · html 78.6 · pdf 9.1 · css/js/fonts &lt; 1. Start URL without trailing slash defeated <code>--no-parent</code>. Killed at 328 MB.</td></tr>
+<tr><td><code>karriere.ukw.de</code> dvinci</td><td>full</td><td>3.0 MB</td><td>3</td><td>JS application: fonts 1.6 · js 0.5 · html 0.34. <b>wget saw no jobs at all</b> — the list comes from an API. Mirror for API boards = saved responses + saved detail pages + generated index.</td></tr>
+</table>
+<div class="note"><b>Answer to "why so many MB":</b> images. Text is a quarter of the bytes on a static board and a tenth on a JS board. Lean profile = <code>--reject</code> images/fonts/media, keep css+js for browsability, scope with <code>-I</code> to the careers + detail paths, trailing slash on the start URL. Measured systematically in section 13.</div>
+</section>
+
+<section id="principles">
+<h2><span class="n">12</span>Principles you set — the design is checked against these</h2>
+<table>
+<tr><th style="width:22%">Principle</th><th>Meaning in this codebase</th></tr>
+<tr><td><b>Adapter = one script + parameters</b></td><td>All 12 vendor functions already share <code>get()</code>, <code>row()</code>, <code>parse_job_page()</code>. What differs — listing URL, pagination param, job-link regex, detail parse mode, include/reject paths — becomes the family's <b>variables</b>. Hand code only where a variable cannot express it (Waldhausklinik selector), and even that is a parameter.</td></tr>
+<tr><td><b>Download everything</b></td><td>Zero filtering, zero narrowing at the provider. personio's 56 → stored 56 with <code>office</code> as a tag. Attribution is a later phase, never a fetch-time drop.</td></tr>
+<tr><td><b>"Why is this the end?"</b></td><td>Every board load ends with a <code>completeness</code> record: method (<code>api_total</code> · <code>listing_total</code> · <code>pagination_end</code> · <code>sitemap_count</code> · <code>single_page</code>), page list, expected N vs got N, verdict. Our own caps (<code>pages: 12</code>, <code>per_site_pages=120</code>, <code>limit=150</code>, <code>VENDOR_MAX_JOBS=300</code>) are <b>never</b> "complete" — they are <code>stopped_by_cap</code>.</td></tr>
+<tr><td><b>Every algorithm has a justification</b></td><td><code>harvest_report.note</code> / <code>method_reason</code> records why a rung was chosen — e.g. "robots.txt disallows <code>/*json*</code>, HTML path allowed, plain HTTP kept".</td></tr>
+<tr><td><b>API is a source change → prove parity</b></td><td>Wherever an API replaces the page: sampled two-way evaluation. API queried ≥2 ways; sample → page → field-by-field; and the reverse — enumerate the whole site, nothing on the site may be absent from the API. Running now for 6 families (section 17 when it lands).</td></tr>
+<tr><td><b>Clinics have a life</b></td><td><code>clinic_events(clinic_id, at, kind, evidence, resolved_by)</code> — closed / merged_into / renamed / board_moved / url_changed. Rotkreuzklinik is row 1. A Krankenhausplan refresh produces rows by diffing registries.</td></tr>
+<tr><td><b>Comment walls are a red flag</b></td><td>≤3-line WHY comments. Numbers, dates, "measured/probed" → <code>harvest_report</code>. Architecture → <code>docs/</code>. Scan: 115 blocks, 1,329 lines, <b>92% removable</b>.</td></tr>
+<tr><td><b>Robots.txt is respected</b></td><td>Not law, but BGH 2014 (Flugvermittlung): scraping is fine unless technical protection is circumvented; an explicit robots block reads as protection. Practical risk: IP ban, hoster complaint, Abmahnung. München Klinik: <code>/stellenmarkt/</code> allowed, <code>/*json*</code> not — HTML path it is, Playwright changes nothing about paths.</td></tr>
+<tr><td><b>Never delete</b></td><td>Duplicate registry rows get <code>status=merged</code> + <code>merged_into</code>. Snapshots are immutable folders. Filters write verdicts, never drop.</td></tr>
+</table>
+</section>
+
+<section id="delta">
+<h2><span class="n">13</span>Mirror-first delta — measured on 4 boards, 4 families</h2>
+<div class="strip">
+  <div class="ok"><div class="k">la-regio lean vs full</div><div class="v">26 MB</div><div class="d">vs 311 MB — 8.4%. 91 html, 0 images, 90 job pages</div></div>
+  <div class="ok"><div class="k">Images load-bearing</div><div class="v">0 / 256</div><div class="d">job pages across 4 families; 0 PDF-only postings</div></div>
+  <div class="bad"><div class="k">Browsable offline</div><div class="v">1 / 3</div><div class="d">html boards — back-links stay absolute (F3)</div></div>
+</div>
+<table style="margin-top:16px">
+<tr><th>Board</th><th style="width:9%">Family</th><th style="width:7%">Secs</th><th style="width:8%">Size</th><th style="width:8%">HTML</th><th style="width:8%">Jobs</th><th>Findings</th></tr>
+<tr><td><code>jobs.kliniken-suedostbayern.de</code></td><td>rexx</td><td>90</td><td>8.3 MB</td><td>117</td><td>49</td><td>JSON-LD yes. <b>First lean run was 53 MB — 85% disguised images</b>: <code>inc/open_graph_images/index.html?job_id=…</code> is a PNG, <code>display_image.php</code> a JPEG. Extension reject is not enough; path regex needed. <code>robots.txt</code> denies <code>User-agent: wget</code> by name.</td></tr>
+<tr><td><code>la-regio-kliniken.de/stellenportal</code></td><td>typo3</td><td>95</td><td>26 MB</td><td>91</td><td>90</td><td>Forward links relative. Detail → listing back-link stays <code>https://…/stellenportal</code> (301 without trailing slash, wget never rewrites the redirect source).</td></tr>
+<tr><td><code>innklinikum.de</code></td><td>self_hosted</td><td>44</td><td>2.7 MB</td><td>56</td><td>55</td><td>Same back-link issue. <code>--no-parent</code> silently dropped 55 detail pages — never use it by default.</td></tr>
+<tr><td><code>romed-jobs.de</code></td><td>dvinci (API)</td><td>31</td><td>3.0 MB</td><td>62 + index</td><td>62</td><td><code>list.json</code> 1.1 MB, one request. Detail pages via <code>wget -x -nH</code>, generated <code>index.html</code> with one link per job — verified clickable. Zero extra requests.</td></tr>
+</table>
+
+<div class="blk" style="margin-top:16px">
+  <div class="blk-h"><span class="tag">F3</span><span class="ti">Mirror not browsable on 2 of 3 html boards</span></div>
+  <div class="blk-b"><div class="k">Cause</div><div>site links <code>/stellenportal</code> → 301 → <code>/stellenportal/</code>; wget saves under the target, <code>--convert-links</code> never rewrites the source URL. rexx: 117 pages link <code>http://…f186.html?</code> (scheme + trailing <code>?</code>) — not converted either.</div><div class="k">Fix</div><div>10 lines post-wget in <code>snapshot.py</code>: map url-modulo-scheme/slash → local path from the manifest, rewrite hrefs; generate a root <code>index.html</code> for every rung</div></div>
+</div>
+<div class="blk">
+  <div class="blk-h"><span class="tag">F4</span><span class="ti">Reject regex both too narrow and harmful</span></div>
+  <div class="blk-b"><div class="k">Cause</div><div><code>(\?|&amp;)(page|filter|sort)=</code> matches none of kbo <code>tx_solr%5Bpage%5D</code>, rexx <code>filter[aufgabengebiet_id][]</code>, barmherzige <code>c_page</code> — and <b>would</b> reject a legitimate <code>?page=2</code>, so the mirror gets page 1 and reports <code>ok</code>. TYPO3 extbase links with <code>cHash=</code> multiply per facet; the 150-page cap has no wget flag (<code>-Q</code> is bytes).</div><div class="k">Fix</div><div>default reject = image paths only; per-family extras <code>cHash=|search_mode=|filter\[</code>; wrapper counts <code>-nv</code> log lines, kills wget at 150, writes <code>result=truncated</code></div></div>
+</div>
+<div class="note"><b>Folder layout</b> <code>crawl_snapshots/&lt;host&gt;/&lt;YYYY-MM-DD&gt;_load&lt;run_id&gt;/</code> — wget tree · <code>api/*.json</code> · <code>index.html</code> · <code>wget.log</code> · <code>manifest.jsonl</code> {url, file, sha256, status, bytes, content_type, fetched_at, rung}. Manifest is a file, not a table — nothing queries pages in SQL yet, and the folder stays self-describing when copied. DB keeps pointers: <code>crawl_runs.snapshot_path</code>. <b>Diff noise measured:</b> only cache-busting <code>?1785165254</code> on merged JS/CSS in <code>&lt;head&gt;</code> — hash the description container, not the page. Re-fetching the same page twice gave <code>diff</code> = 0 lines on both boards tested.</div>
+</section>
+
+<section id="filters">
+<h2><span class="n">14</span>Filters · report table · operator</h2>
+<div class="strip">
+  <div class="warn"><div class="k">Filter sites</div><div class="v">51</div><div class="d">15 files, ~6 underlying rules</div></div>
+  <div class="bad"><div class="k">Land gate call sites</div><div class="v">9</div><div class="d">one tool, <b>3 different defaults</b> for unknown location, 2 bypasses</div></div>
+  <div class="warn"><div class="k">Role gate copies</div><div class="v">5</div><div class="d">sinks · cli drain · crawl.py:451 · feeds ×3 · SQL CHECK</div></div>
+</div>
+<p class="lede" style="margin-top:16px"><b>Shape:</b> <code>pflege_jobs/filters.py</code> — a registry of tools <code>fn(row, ctx) → (verdict, rule)</code> and one <code>apply_all(rows, ctx, workers)</code> that writes verdicts, never drops. Eight tools: <code>role</code> · <code>employer_class</code> · <code>land</code> (tri-state, one default) · <code>section_keep</code> · <code>aggregator</code> · <code>walled_host</code> · <code>job_url_shape</code> · <code>budget</code>. One application phase: at drain, after normalisation. Two places already do this right and are the template: <code>routing.WALLED</code> and the SmartRecruiters branch — both label without dropping, after measuring real loss from hard-narrowing.</p>
+<div class="blk" style="border-left-color:var(--amber)">
+  <div class="blk-h"><span class="tag" style="background:var(--amber);color:#000">F6</span><span class="ti">Three "safe" filter moves would change live output</span></div>
+  <div class="blk-b"><div class="k">a</div><div><code>land</code> tool sketched as <code>bool(v)</code> → collapses <code>None</code> to False; today <code>:451</code> keeps <code>is not False</code>. Row with empty city loaded today, dropped tomorrow. Contract must be <code>(True|False|None, rule)</code>.</div><div class="k">b</div><div><code>role</code> tool re-runs <code>classify_role</code> without <code>nursing_section_confirmed</code> — "Hygienefachkraft" in dept Pflegedienst flips. Tool must read the stored <code>role_class</code>, never reclassify.</div><div class="k">c</div><div><code>sql/008</code> has a <b>second</b> CHECK on <code>posting_observations</code>; switch-over must relax both.</div></div>
+</div>
+
+<p class="lede" style="margin-top:18px"><b>Report table</b> — <code>harvest_report</code>: one row per (board, load): rung, result (<code>ok · zero_rows · error · walled · dead · truncated</code>), rows, suspicious[], problems, non_problems, measured{pages, bytes, secs}, note. Zero rows is never <code>ok</code>. <code>v_site_status</code> = latest row per board; incidents = <code>result in (error, zero_rows, walled, dead)</code> — no second table. Written from the existing branches in <code>execute()</code> <b>and</b> on snapshot-folder close, so subprocess runners (<code>orchestrate.py</code>) cannot bypass it (F8).</p>
+
+<p class="lede" style="margin-top:18px"><b>Operator</b> — measured: 231 distinct operators, 0 normalisation collisions inside the registry, <b>149 single-site</b> (operator match == clinic match), 82 multi-site, 61 multi-town. DDL: <code>operators(operator_id, name, name_norm unique)</code>, <code>clinics.operator_id</code>, <code>postings.operator_id + operator_match_rule</code>. Matcher resolves employer → operator first, keeps <code>operator_id</code> whether or not a site resolves; ambiguous sites → <code>clinic_id NULL</code>, no guessing. 64 of the 254 unmatched gain an operator immediately (Diakoneo 58).</p>
+<div class="blk">
+  <div class="blk-h"><span class="tag">F1</span><span class="ti">Matcher return shape would NULL clinic links</span></div>
+  <div class="blk-b"><div class="k">Cause</div><div>design returns a 4-tuple; every caller unpacks 3 (<code>cli.py:314</code>, <code>app/crawl.py:456</code>, <code>registry.py:141 link_postings</code>) → writes <code>clinic_id=None</code>, rule = an int. Edge <code>index.ts:82</code> updates unconditionally.</div><div class="k">Fix</div><div>keep 3-tuple, encode operator in the rule string <code>R2_operator_no_site:op=&lt;id&gt;</code>; <code>link_postings</code> skips <code>None</code></div></div>
+</div>
+<div class="blk">
+  <div class="blk-h"><span class="tag">F2</span><span class="ti">Operator backfill wiped by the next registry push</span></div>
+  <div class="blk-b"><div class="k">Cause</div><div><code>full_clinic_rows</code> upserts every column; an omitted key sends NULL. First CSV push after backfill NULLs 407 rows.</div><div class="k">Fix</div><div>keep <code>operator_id</code> out of the ingest column list; backfill by SQL only, or derive via view on <code>name_norm</code></div></div>
+</div>
+<div class="note"><b>Multi-town answer, final:</b> 0 of 114 is structural — both R6 branches only ever see town-filtered candidates. A cross-town case needs employer → operator hit with a city matching none of its towns; today that returns <code>None</code> (59 such postings exist, Diakoneo from Himmelkron etc.). New design: <code>operator_id</code> set, <code>clinic_id NULL</code>, city kept verbatim. Stays a research question.</div>
+</section>
+
+<section id="plan2">
+<h2><span class="n">15</span>Plan v2 — 14 tasks, 5 for the first two days</h2>
+<pre class="mermaid">
+graph LR
+  PDF["Krankenhausplan PDF"] --> REG["registry: clinics + operators"]
+  REG --> BRD["boards grouped by careers_url"]
+  BRD --> JOB["engine job = execute() board loop"]
+  JOB --> LAD["rung loop: html > api > wall > playwright — zero rows = escalate"]
+  LAD --> SNAP["snapshot folder host/date_loadN — lean wget | api json + index | DOM"]
+  SNAP --> MAN["manifest.jsonl"]
+  SNAP --> PARSE["parse offline from folder"]
+  PARSE --> INB[("inbox client_id=load:N")]
+  INB --> NORM["normalise _drain_once"]
+  NORM --> FLT["filters.apply_all — labels, never drops"]
+  FLT --> OBS[("posting_observations verdicts, load_id")]
+  OBS --> RES["resolve_postings / mark_expired"]
+  RES --> PST[("postings")]
+  PST --> NF["nursing filter — last"]
+  NF --> MV[("app view")]
+  MV --> APP["app / API"]
+  JOB -.-> LD[("loads = crawl_runs.snapshot_path")]
+  LAD -.-> HR[("harvest_report / v_site_status")]
+  FLT -.-> HR
+  SNAP --> DIFF["snapshot diff job, weekly"]
+  DIFF -.-> HR
+  SNAP --> RC["research CLI, no network"]
+  RC --> FLT
+  REG --> HM["v_health sum(beds) vs vacancies"]
+  MV --> HM
+</pre>
+<div class="steps">
+  <div class="step"><div class="i">L1</div><div class="m"><div class="t">Registry fix batch + Firecrawl hard-off</div><div class="f">status/URL/ats_type only, merges as <code>merged_into</code> · point 9 kbo rows at the group board · <code>kill_switch</code> refuses when flag unset (F9)</div></div><div class="g you">2h · you present</div></div>
+  <div class="step"><div class="i">L2</div><div class="m"><div class="t"><code>pflege_jobs/snapshot.py</code></div><div class="f"><code>save()</code> · wget wrapper (150-line kill, image-path reject) · post-wget href fix (F3) · root <code>index.html</code> every rung · <code>crawl_runs.snapshot_path</code> · hooks in <code>get()</code> + <code>Crawler.fetch</code></div></div><div class="g auto">½ day</div></div>
+  <div class="step"><div class="i">L3</div><div class="m"><div class="t"><code>harvest_report</code> in SQLite + <code>report()</code></div><div class="f">from <code>execute()</code> branches and snapshot close · <code>zero_rows ≠ ok</code> · <code>truncated</code> from L2</div></div><div class="g auto">½ day</div></div>
+  <div class="step"><div class="i">L4</div><div class="m"><div class="t">Lean html rung for rexx / typo3 / wp_jobs / self_hosted</div><div class="f"><code>include_paths</code> + per-family <code>reject_regex</code> · <code>robots_off</code> rexx · <code>ADAPTERS["umantis"]</code> value · delete <code>portals.py:1-21</code> + JS_PORTALS München · <b>first load: 20 boards</b>, not 221</div></div><div class="g auto">1 day</div></div>
+  <div class="step"><div class="i">L5</div><div class="m"><div class="t"><code>filters.py</code> — 3 tools + <code>apply_all</code></div><div class="f"><code>role</code> reads stored class · <code>land</code> tri-state · <code>section_keep</code> moved · verdict counts → report. No DDL, no drop removed, no test flipped</div></div><div class="g auto">½ day</div></div>
+  <div class="step cut"><div class="i">S6–S9</div><div class="m"><div class="t">Full 221-board load · offline parse CLI · snapshot diff job · retired traces</div><div class="f">after L4 shows &gt;100 boards mirror clean</div></div><div class="g">next</div></div>
+  <div class="step cut"><div class="i">S10</div><div class="m"><div class="t">Operator entity</div><div class="f">needs F1/F2 fixes + Supabase token</div></div><div class="g">token</div></div>
+  <div class="step cut"><div class="i">S11–S12</div><div class="m"><div class="t">Comment cuts · region-injection fix · tagger vocab</div><div class="f">S11 after S12 — both edit <code>classify.py</code> (F10)</div></div><div class="g">next</div></div>
+  <div class="step"><div class="i">S13</div><div class="m"><div class="t">SWITCH-OVER: delete seeded drops, relax both 008 CHECKs, nursing filter last</div><div class="f">off/on diff proves identical first</div></div><div class="g you">you present</div></div>
+  <div class="step"><div class="i">S14</div><div class="m"><div class="t">Escalation: zero-rows rung loop · Playwright API-first per board</div><div class="f"><code>EXPENSIVE={"firecrawl_sample"}</code>, disabled</div></div><div class="g you">per board</div></div>
+</div>
+<div class="note"><b>File serialization for parallel sessions:</b> <code>vendor_adapters.py</code> = L2 → L4 → L5/S7 → S11 → S12 · <code>app/crawl.py</code> = L2 → L3 → S12 → S13 → S14 · <code>career_crawl.py</code> = L2 → S4 → S13. <b>Token-blocked chain</b> (unmarked in the design): S7b columns, S8, S11–S13, <code>v_health</code> all need Supabase DDL — S10 was the only one saying so.</div>
+<pre class="mermaid">
+graph LR
+  L1 --> S10
+  L2 --> L3 --> S6
+  L2 --> L4 --> S6
+  L4 --> L5
+  S6 --> S8
+  L5 --> S8
+  S6 --> S9
+  L5 --> S12 --> S11
+  L5 --> S13
+  S10 --> S13
+  S12 --> S13
+  S13 --> S14
+</pre>
+</section>
+
+<section id="rq">
+<h2><span class="n">16</span>Research questions — revised, answerable from the artefacts</h2>
+<p class="lede">Dropped seven that the live DB answers today. These need the mirror + report.</p>
+<table>
+<tr><th style="width:4%">#</th><th style="width:38%">Question</th><th style="width:30%">Query shape</th><th>Decision it changes</th></tr>
+<tr><td>1</td><td>What changes between snapshots, per family per week?</td><td><code>snapshot_diff</code> grouped by family: added / removed / body-changed</td><td>load cadence per family; which families need description-container hashing</td></tr>
+<tr><td>2</td><td>Are images ever load-bearing?</td><td>pages with no <code>&lt;p|&lt;li</code> in body ∩ <code>&lt;img&gt;</code> in description container; <code>.pdf</code> in manifest</td><td>global image reject vs per-family exceptions</td></tr>
+<tr><td>3</td><td>Does description keep formatting per family?</td><td><code>count(pages) where body ~ '&lt;(p|ul|li)'</code></td><td>html→markdown vs plain text per family</td></tr>
+<tr><td>4</td><td>How often is employer the operator vs the site?</td><td><code>operator_match_rule like 'R2%'</code> share per family</td><td>operator-first matching for some families</td></tr>
+<tr><td>5</td><td>Do html and api rungs disagree in count for the same board?</td><td>"run all cheap rungs" mode → <code>harvest_report group by family, rung</code></td><td>ladder order per family — <b>needs the mode, absent from S14</b></td></tr>
+<tr><td>6</td><td>Zero-row boards: really empty or parser gap?</td><td><code>v_site_status result='zero_rows'</code> × manifest html pages &gt; 1</td><td>S14 priority</td></tr>
+<tr><td>7</td><td>Share each filter tool would drop, per family</td><td><code>verdicts->>'role'</code>, <code>->>'land'</code> false counts</td><td>a family &gt;80% false on role = mis-scoped board, not a non-nursing employer</td></tr>
+<tr><td>8</td><td>Does <code>land=None</code> ever hide Bavarian rows?</td><td>sample 50 <code>verdicts.land is null</code> by hand</td><td>the single default for unknown location at switch-over (today 3 defaults)</td></tr>
+<tr><td>9</td><td>Same posting on two boards of one operator?</td><td><code>group by norm(title), operator_id having count(distinct board) &gt; 1</code></td><td>dedup key upgrade</td></tr>
+<tr><td>10</td><td>Multi-town candidate sets</td><td><code>R2_operator_no_site</code> with city outside the operator's towns</td><td>whether a manual operator hierarchy (kbo, Artemed SE) is worth a row</td></tr>
+<tr><td>11</td><td>Truncation: boards hitting a cap</td><td><code>harvest_report result='truncated'</code></td><td>cap value per family</td></tr>
+<tr><td>12</td><td>False bot-walls / transient resets over 4 weeks</td><td><code>non_problems</code> per host — writer = the <code>get()</code> retry path</td><td>entries removed from <code>WALLED</code></td></tr>
+<tr><td>13</td><td>Do non-nursing role clusters hold?</td><td>50 samples per new role (arzt, mfa, therapie…)</td><td>vocabulary validation before switch-over</td></tr>
+<tr><td>14</td><td>Beds vs vacancies outliers</td><td><code>v_health</code> residuals &gt; 2σ per Regierungsbezirk</td><td>coverage bug vs real signal; S14 board order</td></tr>
+</table>
+</section>
+
+<section id="parity">
+<h2><span class="n">17</span>API ↔ site parity — six families, live, both directions</h2>
+<p class="lede">Your rule: switching to an API is a source change and must be proven one-to-one. Each family: API queried ≥2 ways · 8 random postings → their page → field by field · then the whole site enumerated and diffed against the API. Column to read first: <b>site-only</b>.</p>
+<table>
+<tr><th style="width:11%">Family</th><th style="width:15%">Board</th><th style="width:9%">API ways agree</th><th style="width:10%">Sample<br><span class="mut">ident / differ / missing</span></th><th style="width:9%">Site-only</th><th style="width:8%">API-only</th><th style="width:13%">Completeness signal</th><th>Verdict</th></tr>
+<tr><td><b>softgarden</b></td><td>Klinikum Bayreuth · 116</td><td>6 ways, same 116</td><td>8 / 0 / 0</td><td>0</td><td>0</td><td>listing "N Stellenanzeigen" · sitemap 116</td><td><span class="st ok">SAFE</span> feed = listing = sitemap = 116, 8/8 byte-identical HTML</td></tr>
+<tr><td><b>oracle</b></td><td>Josefinum · 22</td><td>3 ways, same 22</td><td>8 / 0 / 0</td><td>0</td><td>0</td><td><code>numberOfItems=22</code> · <code>/jobs/</code> = 22</td><td><span class="st ok">SAFE</span> feed lacks <code>validThrough</code> the page has · Altmühlfranken feed 404, unverified</td></tr>
+<tr><td><b>bite</b></td><td>Kreisklinik Roth · 11</td><td>5 ways, same 11</td><td>8 / 0 / 0</td><td><b>5</b></td><td>0</td><td>API <code>page.total</code> · vendor sitemap 11</td><td><span class="st ok">SAFE</span> the 5 are expired Initiativbewerbung pages (<code>validThrough</code> 2025-12-30) linked from a CTA page — design-correct exclusion, still reportable</td></tr>
+<tr><td><b>dvinci</b></td><td>UKW Würzburg · 75</td><td>4 ways byte-identical, all params ignored</td><td>1 / <b>7</b> / 0</td><td>0</td><td>0</td><td>sitemap 75, server-side</td><td><span class="st fix">FIX</span> only <code>datePosted</code> differs: <code>parse_dvinci</code> reads <code>startDate</code> (null 7/8); the page's date is API <code>jobOpening.createdDate</code></td></tr>
+<tr><td><b>personio</b></td><td>Bergman · 56</td><td>5 ways, same 56 · <code>query=</code> inert</td><td>8 / 0 / 0 ids<br>6 / 8 differ fields</td><td>0</td><td>0</td><td>none — no total, no "N Stellen"; SSR listing = 56</td><td><span class="st dec">FIELDS_DIFFER</span> page has <code>published_at</code> and <code>PostalAddress</code> city — <b>absent from XML</b>; API <code>office</code> leaks "Dermatologikum Hamburg" as city. Reading only the API loses two fields.</td></tr>
+<tr><td><b>smartrecruiters</b></td><td>Artemed SE · 442<br><span class="mut">5 registry clinics</span></td><td>pages / dept / sort agree · <code>limit&gt;100</code> capped · <code>keyword</code> no-op</td><td>8 / 0 / 0<br><span class="mut">title prefix cosmetic</span></td><td>0 on the 50 SSR-reachable<br><span class="mut">392 need JS</span></td><td>0</td><td><code>totalFound=442</code> · 6 dept tiles match exactly</td><td><span class="st no">ADAPTER BROKEN</span> — see below</td></tr>
+</table>
+
+<div class="blk" style="margin-top:16px">
+  <div class="blk-h"><span class="tag">P1</span><span class="ti">smartrecruiters: the adapter never reaches the API — 442 postings, 5 clinics, zero ingested</span></div>
+  <div class="blk-b">
+    <div class="k">Repro</div><div><code>crawl_smartrecruiters(Benedictus Feldafing)</code> → 5 rows: <code>Unsere Stellenangebote im Pflegedienst</code>, <code>…im Ärztlichen Dienst</code> — category pages, descriptions are the cookie banner. Reproduced by me, live.</div>
+    <div class="k">Cause</div><div><code>vendor_adapters.py:242</code> regexes the careers page for <code>smartrecruiters\.com/([A-Za-z0-9\-_]+)</code>; first hit is the widget script <code>static.smartrecruiters.com/<b>job-widget</b>/1.6.2/…</code>. Tenant becomes <code>job-widget</code>, API returns empty, code falls to <code>crawl_wp_jobs</code>. Real id <code>ArtemedSE</code> sits in the widget's <code>company_code</code> JSON, un-regexed. Line dates from 09-06.</div>
+    <div class="k">Second</div><div><code>parse_smartrecruiters</code> :223 stores <code>p.get("ref")</code> as the posting URL — that is the API's self-link, not a browsable page.</div>
+    <div class="k">Also</div><div>SR detail pages carry <b>no JSON-LD</b>; <code>parse_job_page</code> falls to h1/title and never fills loc/date/employmentType — a parser gap, the data is on the page as text. API and page agree 1:1 on every field once the right tenant is used.</div>
+    <div class="k" style="color:var(--neon)">Fixed</div><div>Tenant is not on the careers page at all — only on its category subpages as <code>jobs.smartrecruiters.com/ni/ArtemedSE/&lt;id&gt;</code>. Adapter now scans up to 8 same-path subpages for that link; posting URL built as <code>jobs.smartrecruiters.com/&lt;tenant&gt;/&lt;id&gt;</code>. Live: <b>5 junk rows → 442 real postings</b>, 0 API self-links, 30 adapter tests pass. Cities include Düren, Berlin, Frankfurt — stored, not filtered; attribution is a later phase. Bonus finding: the same page also embeds a B-ITE widget (<code>data-bite-jobs-api-listing="artemed-8:niiid"</code>) — two vendors on one board.</div>
+  </div>
+</div>
+
+<p class="lede" style="margin-top:18px"><b>Spec, condensed</b> (full: TASK-22). Pass = ways agree ∧ all sampled fields identical or known-cosmetic ∧ <code>site_only_live = 0</code> ∧ <code>api_only = 0</code>. <b>UNVERIFIED is never SAFE</b> — a site whose listing needs JS beyond reach (smartrecruiters pages ≥ 2) cannot pass until enumerated. Site enumeration sources: careers page HTML · every vendor listing route · sitemaps incl. those named in robots.txt · every category/department/locale filter URL · sibling CTA pages. Each site-only URL is fetched and classified <code>expired</code> vs <code>live</code> by JSON-LD <code>validThrough</code>. Result row goes to <code>harvest_report</code> with <code>rung=api_parity</code>: sample n, identical, differs + fields, missing, site_only live/expired, api_only, completeness signal, verdict, one evidence line, ignored params, seed.</p>
+<div class="note"><b>Where the page carries more than the API</b> — the case you asked to watch: personio (city, republish date), oracle (<code>validThrough</code>), bite (API text carries a <code>title | employer | anr</code> prefix the page does not). Where the API carries more: smartrecruiters (contact e-mail plain in API, redacted to <code>[email address]</code> on the page). Description HTML structure survived on every family sampled.</div>
+</section>
+
+<section id="strip">
+<h2><span class="n">18</span>Filters stripped from every adapter — done</h2>
+<p class="lede">Your instruction: remove all of them, decide their place later, keep only a list of what they encoded. Four agents, disjoint files, then a read-only verifier, then the list.</p>
+<div class="strip">
+  <div class="ok"><div class="k">Tests</div><div class="v">571</div><div class="d">full suite passes · 3 bite tests flipped from "dropped" to "kept + labelled"</div></div>
+  <div class="ok"><div class="k">Diff</div><div class="v">−172 / +65</div><div class="d">9 files · deletion over addition · no new guard, retry or flag</div></div>
+  <div class="ok"><div class="k">Surviving drops</div><div class="v">0</div><div class="d">grep: every <code>classify_role</code> / <code>in_bavaria</code> call left is label-only</div></div>
+</div>
+<table style="margin-top:16px">
+<tr><th style="width:24%">Family · board</th><th style="width:12%">Before</th><th style="width:12%">After</th><th>Labels on the kept rows</th></tr>
+<tr><td>personio · Bergman 66102</td><td>2</td><td><b>56</b></td><td><code>office_raw</code> + <code>department</code> on every row (Klinik Büdingen / Psychiatrie …)</td></tr>
+<tr><td>mein-check-in · kna-online</td><td>4</td><td><b>29</b></td><td><code>section_labels</code> on every group: Pflegedienst · Ärztlicher Dienst · MTD/Funktionsdienst</td></tr>
+<tr><td>bite · St. Marien Amberg</td><td>17 of 46</td><td><b>46</b></td><td>29 <code>role_class=nicht_pflege</code> kept · <code>in_bavaria</code> True 46/46 from the address, not forced</td></tr>
+<tr><td>softgarden · Klinikum Bayreuth</td><td>44 of 116</td><td><b>116</b></td><td>72 <code>nicht_pflege</code> kept · <code>in_bavaria</code> True 116/116</td></tr>
+<tr><td>pi_asp</td><td>title prefilter</td><td>gone</td><td>every listed title gets its detail click; classify only labels afterwards</td></tr>
+</table>
+<p class="lede" style="margin-top:16px"><b>What was deleted:</b> personio office + department narrowing and the <code>_section_keep</code> helper · helix <code>category[]</code> re-fetch and its regex · mein-check-in sidebar-group narrowing · career_crawl / career_browser three <code>continue</code>s and the <code>bavaria_only_operator</code> drop · bite drops and the forced <code>in_bavaria=True</code> on enrichment · feeds personio / smartrecruiters region-mismatch / talention drops · pi_asp title prefilter · <code>_seed_obs</code> drops with their unread counters. <code>_wp_nursing_section_url</code> traced end to end: a discovery start hint, not a filter — left alone.</p>
+<div class="note"><b>The list you asked for:</b> <code>docs/harvest/filters-removed.md</code> — 13 numbered items, each with where it lived, what it decided, what might be a real fact about the vendor vs a policy nobody chose, the measured evidence, and one confirm/refute question for the rewrite. Ends with "What still filters today": <code>sinks.only_pflege</code> (:18), <code>cli.py:311-313</code>, <code>app/crawl.py:439/444</code>, <code>sql/008</code> CHECKs at :49 and :53, the Firecrawl prompt clauses :117-132 — deliberately untouched, that is the next decision.</div>
+</section>
+
+<section id="khp">
+<h2><span class="n">19</span>Krankenhausplan — three editions, the 8-clinic mystery solved</h2>
+<table>
+<tr><th style="width:10%">Edition</th><th style="width:22%">Source</th><th style="width:10%">Pages</th><th style="width:10%">Sites parsed</th><th>Layout</th></tr>
+<tr><td><b>2024</b> · 49.</td><td>Wayback (StMGP URL now 404), sha256 matches a second mirror</td><td>304</td><td>415</td><td>Acrobat export, positional name block — same as 2026</td></tr>
+<tr><td><b>2025</b> · 50.</td><td><code>stmgp.bayern.de/…/2025/02/</code>, live</td><td>274</td><td>403</td><td>Word/PDFMaker export, explicit <code>Träger</code> separator — town + Landkreis come out clean</td></tr>
+<tr><td><b>2026</b> · 51.</td><td>already on disk</td><td>307</td><td>399</td><td>as 2024</td></tr>
+</table>
+<p class="lede" style="margin-top:14px">Agentic transfer <b>not needed</b>: <code>pflege_jobs/sources/krankenhausplan.py</code> already detects both layouts and parsed all three unmodified.</p>
+<div class="strip">
+  <div class="warn"><div class="k">2024 → 2025</div><div class="v">−13 +1</div><div class="d">beds changed 39 · status 2 · incl. Deutsches Herzzentrum München, KWM Missioklinik</div></div>
+  <div class="warn"><div class="k">2025 → 2026</div><div class="v">−8 +4</div><div class="d">beds changed 34 · status 2</div></div>
+  <div class="ok"><div class="k">Registry = 2026 + 8</div><div class="v">407</div><div class="d">399 from the 2026 plan plus exactly the 8 rows 2026 dropped</div></div>
+</div>
+<div class="note" style="margin-top:14px"><b>The 8 registry rows absent from the 2026 plan are exactly the "no URL / never tried" clinics:</b> <code>26101 Klinikum Landshut</code> + <code>26105 Landshut-Achdorf</code> → merged into new <code>26108 LA-Regio Kliniken</code> · <code>27773 AMEOS Inntal</code> → re-keyed as <code>27706</code> · <code>56406 Cnopf'sche Kinderklinik</code> · <code>37102 St. Johannes Auerbach</code> · <code>67402 Haßberg Ebern</code> · <code>67802 Werneck</code> (HTTP 404) · <code>47902 Selb</code>. First batch for <code>clinic_events</code> — after per-clinic research, per your rule. "Renamed 275" in both diffs is a parser artefact (2024/2026 glue the town onto the name); real renames need normalisation first.</div>
+</section>
+
+</div></body></html>

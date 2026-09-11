@@ -1,6 +1,20 @@
 # Data model and rules
 
-Graph: `/docs/ontology.json` (rendered on the board's Docs page). Prose: `/docs/overview.md`.
+Graph: `/api/ontology` = `/docs/ontology.json`, rendered on the board's Docs page. Prose: `/docs/overview.md`.
+
+The graph is the published entity list: 37 nodes, each with `entity` (the name to use), `identity`,
+`fields` (every `source` is a `file:line` in this repo), `vocab`, `store`, and honest flags — `derived`,
+`inferred`, `dead`, `populated: false`, `naming: "new"`, `rename_collision`. Read it before inventing a
+name for something. `vocab` ids are top-level keys of `/api/taxonomy` (the vocabulary oracle);
+`/api/facets` is the value-and-count oracle. Enumerations that live only in code are spelled out as a
+field's `enum` instead, because they do not resolve against taxonomy.json. `tests/test_ontology.py`
+keeps all of that tied to the code.
+
+Five entities got their published name there and have none anywhere else: `clinic_view` (the clinic row
+the API actually returns), `board` (the unit of work in a crawl — one careers_url, not one clinic),
+`adapter`, `ingest_event` (an inbox row), `coverage_cell` (one row of the feature matrix). Two names
+collide in code and are disambiguated there: `run` (SQLite queue) vs `pg_crawl_run` (Postgres batch log),
+both tables named `crawl_runs`; and `firecrawl_campaign` (reingest) vs `ad_campaign` (autopilot ads).
 
 ## Tables (schema `pflege_jobs`)
 - `sources(source_id, code, kind, precedence)` — 10 krankenhausplan(1), 20 employer_ats(2), 25 firecrawl_agent(2). Lower wins field by field. (30 arbeitsagentur and 40 aggregator were deleted on 2026-09-06 with their observations and the postings that had no other evidence.)
@@ -32,8 +46,9 @@ Same-source URL variants (canonical_ref) merge; cross-source within the same `cl
 ## Classification (patterns.json; rule recorded in `*_rule` columns)
 Employer: `employer.clinic` vs `employer.non_clinic` groups. Conflict matrix: clinic + weak group (verband, sonstige) → clinic; clinic + strong group (altenhilfe, ambulant, wohnen, agentur, brand_nc) → unknown; no match → unknown.
 Role: `pflege_gate` token required → `nicht_pflege` if `role.nicht_pflege` matches and the title has no `strong_pflege` token → ordered `role.rules` (werkstudent_praktikum, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) → `fallback` sonstige_pflege. Leadership needs a word start (`(?<![a-zäöüß])leitung\b`).
-Intake gate: `excluded_role_classes` (nicht_pflege, ausbildung, werkstudent_praktikum) are refused by every sink (`sinks.only_pflege`).
+Intake gate: `excluded_role_classes` (nicht_pflege, ausbildung, werkstudent_praktikum, pflegehelfer — four since 2026-09-07, experienced nursing only) are refused by every sink (`sinks.only_pflege`). The three-value literal in `pflege_jobs/config.py:94` is the fallback for a missing key and is never reached; `pflege_jobs/patterns.json` is the value.
 Enrichment (`enrichment.*`): housing, tariff, pay grade, contact emails, language level, bonus, childcare, recognition mention, requirements/experience excerpts.
+`contact emails` → `enr_contact_emails`, personal data: member-and-up on the app API, still readable with the published anon key on PostgREST (SKILL.md key block, `sql/011_PENDING_anon_scope.sql`). Do not select it there.
 CV (`cv.*`): experience years, language levels, skill tags → profile → score against jobs (role, department, city, qualification, skills).
 
 ## Verify

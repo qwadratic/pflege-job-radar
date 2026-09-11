@@ -10,6 +10,7 @@ the Firecrawl balance for the `firecrawl` row (credits + Extract tokens + free a
 of failure (keys stay None). credits_7d / tokens_7d are what the app's own runs moved per the local ledger.
 """
 import json
+import os
 import re
 import sqlite3
 from collections import Counter, defaultdict
@@ -25,6 +26,36 @@ router = APIRouter()
 EXTRA_KEYS = ("softgarden", "bite", "pi_asp", "umantis", "wp_jobs")
 FIRECRAWL = "firecrawl"
 _ERR_RE = re.compile(r"(\d+)\s+error")
+
+# --- feature matrix: the weighted score computed beside coverage_pct (docs/feature-matrix.md) ---------------------
+# One cell per (board, feature) in data/feature_cells.jsonl, written by tools/cells_from_pytest.py. Weights, one line:
+FEATURE_WEIGHTS = {"read_path_coverage": 3, "declared_total_parity": 3, "field_completeness": 2, "public_url": 2, "round_trip": 1}
+VERDICT_VALUE = {"supported": 1.0, "partial": 0.5, "absent": 0.0}   # unknown and not_checked are counted, never scored
+CELLS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "feature_cells.jsonl")
+
+
+def _read_cells(path=CELLS_PATH):
+    """Latest cell per (subject, feature_id); the file is append-only, so the last line wins. Missing file raises:
+    the store is committed, and a vanished store must not read as 'every board scores zero'."""
+    latest = {}
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                c = json.loads(line)
+                latest[(c["subject"], c["feature_id"])] = c
+    return list(latest.values())
+
+
+def _feature_score(cells):
+    """{'feature_score': weighted % of the cells that carry a verdict, or None when none do, 'feature_verdicts': counts}."""
+    num = den = 0.0
+    for c in cells:
+        v = VERDICT_VALUE.get(c["verdict"])
+        if v is not None:
+            w = FEATURE_WEIGHTS.get(c["feature_id"], 1)
+            num, den = num + w * v, den + w
+    return {"feature_score": round(100.0 * num / den, 1) if den else None,
+            "feature_verdicts": dict(Counter(c["verdict"] for c in cells))}
 
 
 def adapter_keys():
@@ -139,10 +170,16 @@ def compute():
             board_count[b.get("vendor")] += 1
     fc_boards = {(c.get("careers_url") or "").strip().lower() for c in clinics if c.get("fetch") == FIRECRAWL and (c.get("careers_url") or "").strip()}
 
+    cells = _read_cells()
+    by_adapter = defaultdict(list)
+    for c in cells:
+        by_adapter[c["adapter"]].append(c)
+
     rows = []
     for key, a in acc.items():
         a["boards"] = len(fc_boards) if key == FIRECRAWL else board_count.get(key, 0)
-        row = {"adapter": key, **a, "coverage_pct": _pct(a), "last_run": _last_run(runs, key, members.get(key) or set())}
+        row = {"adapter": key, **a, "coverage_pct": _pct(a), **_feature_score(by_adapter.get(key) or []),
+               "last_run": _last_run(runs, key, members.get(key) or set())}
         if key == FIRECRAWL:
             row["credits_7d"] = credits_7d
             row["tokens_7d"] = tokens_7d
@@ -155,6 +192,7 @@ def compute():
         _add(totals, c)
     totals["boards"] = sum(1 for b in boards.values() if not b.get("walled")) + len(fc_boards)
     totals["coverage_pct"] = _pct(totals)
+    totals.update(_feature_score(cells))              # every cell once, not the mean of the per-adapter scores
     totals["credits_7d"] = credits_7d
     totals["tokens_7d"] = tokens_7d
     totals["free_runs_left_today"] = account.get("free_runs_left_today")

@@ -665,8 +665,8 @@
     {
      "name": "enr_*",
      "desc": {
-      "de": "Wohnraum, Tarif, Entgeltgruppe, E-Mails, Prämie, Kita, Sprache",
-      "en": "housing, tariff, pay grade, e-mails, bonus, childcare, language"
+      "de": "Wohnraum, Tarif, Entgeltgruppe, E-Mails, Prämie, Kita, Sprache — E-Mails sind personenbezogen: über die App-API erst ab „member“ (app/data.py:37), über PostgREST mit dem veröffentlichten anon-Key ungeschützt lesbar (sql/011_PENDING_anon_scope.sql, nicht angewendet)",
+      "en": "housing, tariff, pay grade, e-mails, bonus, childcare, language — e-mails are personal data: member-and-up on the app API (app/data.py:37), still readable un-redacted over PostgREST with the published anon key (sql/011_PENDING_anon_scope.sql, not applied)"
      }
     },
     {

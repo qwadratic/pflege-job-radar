@@ -14,7 +14,9 @@ crawlers/load_crawl_output.py ingests them unchanged:
 
 How each vendor is reached (probed 2026-09-06):
   personio        <slug>.jobs.personio.de/xml — public XML feed, full descriptions. Documented.
-  smartrecruiters api.smartrecruiters.com/v1/companies/<id>/postings — public JSON, paginated.
+  smartrecruiters api.smartrecruiters.com/v1/companies/<id>/postings — public JSON, paginated, no
+                  description; .../postings/<posting-id> (fetched per row) carries jobAd.sections
+                  (description) and the real slugged postingUrl.
   helix           <tenant>.helixjobs.com/<unit>/joblist -> /jobad?prj=<id> links, server-rendered.
   concludis       In this census the "concludis" label mostly sits on WordPress career sites that
                   expose a jobs post-type sitemap (wp-sitemap-posts-jobs-N.xml), handled by the same
@@ -90,36 +92,20 @@ def row(host, url, payload, vendor):
             "payload": payload, "collector": "vendor-%s-v1" % vendor, "client_id": CID}
 
 
-def _section_keep(labels, nursing_label):
-    """Section-first gate for a single job once a board-wide nursing category/label has been
-    identified (nursing_label truthy). `labels` is that job's OWN category/department label(s) --
-    a single string, a list of strings, or None/empty when the vendor didn't tag this particular
-    job. Keep the job unless it carries an explicit label that is NOT the nursing one: an untagged
-    job might still be a real nursing posting (some vendors only tag some jobs), so absence of a
-    label must never be read as exclusion -- only a confidently different label is.
-    """
-    if not nursing_label:
-        return True
-    if isinstance(labels, str):
-        labels = [labels] if labels else []
-    labels = [l for l in (labels or []) if l]
-    if not labels:
-        return True
-    return bool(section.pick_nursing_category(labels))
-
-
 # ---------------------------------------------------------------------------
 # personio: <slug>.jobs.personio.de/xml
 # ---------------------------------------------------------------------------
-def personio_slug(careers_url, session=None):
-    m = re.search(r"https?://([a-z0-9\-]+)\.jobs\.personio\.(?:de|com)", careers_url or "", re.I)
+def personio_domain(careers_url, session=None):
+    """Full <slug>.jobs.personio.(de|com) host -- some tenants (munich-airport-clinic.com) only
+    ever link the .com form, and the client's own read path must be hit on that same TLD."""
+    m = re.search(r"https?://([a-z0-9\-]+\.jobs\.personio\.(?:de|com))", careers_url or "", re.I)
     if m:
-        return m.group(1)
+        return m.group(1).lower()
     r = get(careers_url, session=session)
     if r and r.ok:
-        m = re.search(r"([a-z0-9\-]+)\.jobs\.personio\.(?:de|com)", r.text, re.I)
+        m = re.search(r"([a-z0-9\-]+\.jobs\.personio\.(?:de|com))", r.text, re.I)
         if m:
-            return m.group(1)
+            return m.group(1).lower()
     return None
 
 
@@ -152,16 +138,52 @@ def parse_personio_xml(xml, org, page_url):
     return out
 
 
+def personio_wp_posts(careers_url, session=None):
+    """Sites running the 'Personio Integration Light' WordPress plugin (ProSomno) have no
+    <slug>.jobs.personio.* tenant at all -- jobs are a wp/v2/personioposition custom-post-type,
+    served by WordPress's own public REST API, no auth."""
+    p = urlparse(careers_url or "")
+    if not p.scheme or not p.netloc:
+        return None
+    r = get("%s://%s/wp-json/wp/v2/personioposition?per_page=100" % (p.scheme, p.netloc), session=session)
+    if not r or not r.ok:
+        return None
+    try:
+        data = r.json()
+    except ValueError:
+        return None
+    return data if isinstance(data, list) else None
+
+
+def parse_personio_wp(posts, org):
+    """The plugin's own excerpt is a single line 'Anstellungsart • Arbeitszeit • Ort' -- split on
+    its own bullet separator rather than re-deriving employment type/city from the free-text body."""
+    out = []
+    for p in posts or []:
+        title = _txt((p.get("title") or {}).get("rendered"))
+        if not title:
+            continue
+        parts = [s.strip() for s in re.split(r"[•·]", _txt((p.get("excerpt") or {}).get("rendered")) or "") if s.strip()]
+        link = p.get("link")
+        out.append({"title": title, "org": org,
+                    "loc": [{"city": parts[-1] if parts else None, "plz": None, "region": None}],
+                    "url": link, "page": link, "employmentType": parts[0] if parts else None,
+                    "datePosted": (p.get("date") or "")[:10] or None, "department": None,
+                    "description": _txt((p.get("content") or {}).get("rendered"))})
+    return out
+
+
 def crawl_personio(c, session=None):
-    """Prefer the XML feed; fall back to the site's own job pages.
+    """Prefer the XML feed; fall back to the WordPress plugin's own REST API, then to the site's
+    own job pages.
 
     Some sites the census labelled "personio" only run the Personio *WordPress plugin* (ProSomno) or
     turned out not to be Personio at all (barmherzige.net). They still publish jobs under their own
     /stelle/ or /jobs/ URLs, so falling through to the generic crawler beats returning nothing.
     """
-    slug = personio_slug(c.get("careers_url"), session)
-    if slug:
-        base = "https://%s.jobs.personio.de" % slug
+    domain = personio_domain(c.get("careers_url"), session)
+    if domain:
+        base = "https://%s" % domain
         r = get(base + "/xml", session=session)
         if r and r.ok:
             # the feed declares UTF-8 in its XML prolog but often ships no charset header, and
@@ -169,44 +191,16 @@ def crawl_personio(c, session=None):
             r.encoding = "utf-8"
             jobs = parse_personio_xml(r.text, c["name"], base + "/xml")
             if jobs:
-                # Some personio tenants (e.g. bergmanclinics) run one nationwide feed shared by many
-                # unrelated facilities, with <subcompany> naming the actual site per job. When the
-                # feed clearly spans more than one facility, narrow to jobs whose org text plausibly
-                # names *this* clinic (token overlap, same heuristic pflege_jobs.registry uses to
-                # link postings to clinics) -- fail open to the full list if nothing matches, so a
-                # clinic whose own name just doesn't textually resemble its subcompany field never
-                # loses all its jobs.
-                orgs = {j.get("org") for j in jobs if j.get("org")}
-                if len(orgs) > 1:
-                    from pflege_jobs.registry import toks, overlap
-                    # Prefer <office> (a bare per-site label, e.g. "Hofgartenklinik Aschaffenburg")
-                    # over <subcompany>/org for the match text: subcompany usually repeats the
-                    # tenant's own group brand ("Bergman Clinics ...") on every job regardless of
-                    # site, which token-overlaps enough with a clinic's own "Bergman Clinics <site>"
-                    # name to false-match a *different* site in the same group (verified live:
-                    # "Bergman Clinics Augenklinik Weinheim GmbH" otherwise scores 0.5 against
-                    # "Bergman Clinics Hofgartenklinik Aschaffenburg" on shared "bergman"/"clinics"
-                    # tokens alone) -- office_raw carries no such shared brand noise.
-                    want = toks(c.get("name"))
-                    narrowed = [j for j in jobs
-                               if overlap(want, toks(j.get("office_raw") or j.get("org"))) >= 0.5]
-                    if narrowed:
-                        jobs = narrowed
-                # Section-first: <department>/<recruitingCategory> come for free in the one feed
-                # request already made above. When the tenant's taxonomy names a nursing department,
-                # narrow to it; an untagged posting is still kept (some tenants only tag some jobs).
-                # Surveyed 2026-09: no real coverage loss found on either tested personio board (one
-                # never narrows at all -- specialty-shaped taxonomy with no nursing label; the other's
-                # narrowing dropped only non-nursing postings) -- fetch-side behaviour is unchanged.
-                nursing_label = section.pick_nursing_category([j.get("department") for j in jobs])
-                if nursing_label:
-                    narrowed = [j for j in jobs if _section_keep(j.get("department"), nursing_label)]
-                    if narrowed:
-                        jobs = narrowed
+                # office_raw/department come free in the feed already fetched -- kept as labels on
+                # the row (below); no fetch-side narrowing by either one.
                 for j in jobs:
                     j["section_labels"] = [j["department"]] if j.get("department") else []
-                host = "%s.jobs.personio.de" % slug
-                return [row(host, j["url"], j, "personio") for j in jobs]
+                return [row(domain, j["url"], j, "personio") for j in jobs]
+    posts = personio_wp_posts(c.get("careers_url"), session)
+    if posts:
+        jobs = parse_personio_wp(posts, c["name"])
+        if jobs:
+            return [row(urlparse(c["careers_url"]).netloc, j["url"], j, "personio") for j in jobs]
     return crawl_wp_jobs(c, session=session)
 
 
@@ -220,14 +214,30 @@ def parse_smartrecruiters(data, org, page_url):
         dept_label = (p.get("department") or {}).get("label")
         out.append({"title": p.get("name"), "org": (p.get("company") or {}).get("name") or org,
                     "loc": [{"city": loc.get("city"), "plz": loc.get("postalCode"), "region": loc.get("region")}],
-                    "url": p.get("ref") or p.get("applyUrl") or
-                           "https://jobs.smartrecruiters.com/%s/%s" % ((p.get("company") or {}).get("identifier", ""), p.get("id", "")),
+                    # postingUrl comes from the per-posting detail fetch (the real public page, with
+                    # its title slug); the hand-built jobs.smartrecruiters.com/<tenant>/<id> link is
+                    # only a fallback for when that detail fetch failed.
+                    "url": p.get("postingUrl") or ("https://jobs.smartrecruiters.com/%s/%s" %
+                           ((p.get("company") or {}).get("identifier") or "", p.get("id") or "")
+                           if p.get("id") else (p.get("applyUrl") or p.get("ref"))),
                     "page": page_url, "datePosted": (p.get("releasedDate") or "")[:10] or None,
                     "employmentType": ((p.get("typeOfEmployment") or {}).get("label")),
                     "department": dept_label,
                     "section_labels": [dept_label] if dept_label else [],
-                    "description": None})
+                    "description": p.get("description")})
     return out
+
+
+def _smartrecruiters_ident(html):
+    """The tenant identifier the widget itself uses -- present directly as company_code on the
+    page's own data-widget JSON (e.g. Klinik Vincentinum's /karriere/stellenangebote, which IS the
+    listing page). Falls back to a jobs.smartrecruiters.com/<tenant>/<id> link, for boards that embed
+    the widget on a category subpage instead (Artemed's own /karriere hub)."""
+    m = re.search(r'"company_code"\s*:\s*"([A-Za-z0-9\-_]+)"', html or "")
+    if m:
+        return m.group(1)
+    m = re.search(r"jobs\.smartrecruiters\.com/(?:ni/)?([A-Za-z0-9\-_]+)/[0-9a-f-]{8,}", html or "")
+    return m.group(1) if m else None
 
 
 def crawl_smartrecruiters(c, session=None):
@@ -239,12 +249,17 @@ def crawl_smartrecruiters(c, session=None):
     else:
         r = get(cu, session=session)
         if r and r.ok:
-            m = re.search(r"smartrecruiters\.com/([A-Za-z0-9\-_]+)", r.text)
-            ident = m.group(1) if m else None
+            ident = _smartrecruiters_ident(r.text)
+            if not ident:
+                subs = {urljoin(cu, h) for h in re.findall(r'href="([^"#?]+)"', r.text)
+                        if urljoin(cu, h).startswith(cu.rstrip("/") + "/")}
+                for sub in sorted(subs)[:8]:
+                    rs = get(sub, session=session)
+                    ident = _smartrecruiters_ident(rs.text) if rs and rs.ok else None
+                    if ident: break
     if not ident:
         return crawl_wp_jobs(c, session=session)
     limit = 100
-    ceiling = 1000
     base_url = "https://api.smartrecruiters.com/v1/companies/%s/postings" % ident
 
     def fetch_page(offset):
@@ -274,8 +289,9 @@ def crawl_smartrecruiters(c, session=None):
     # fetch at all. Walk the whole board every time, and thread each job's own department label
     # (see parse_smartrecruiters above) into classify.classify_role's nursing_section_confirmed
     # signal downstream instead -- same taxonomy data, used as an admit signal, not a fetch filter.
+    # No offset ceiling: the board's own totalFound / a short page is the only stop.
     offset = limit
-    while offset < ceiling:
+    while True:
         data, url = fetch_page(offset)
         if data is None:
             break
@@ -289,6 +305,29 @@ def crawl_smartrecruiters(c, session=None):
 
     if not content:
         return crawl_wp_jobs(c, session=session)
+
+    # The list endpoint carries no description (see module docstring) -- jobAd.sections lives only on
+    # the per-posting detail endpoint. Fetch it for every posting, not a sample: it is the only source
+    # for description, and its postingUrl is the real slugged public page.
+    for p in content:
+        pid = p.get("id")
+        if not pid:
+            continue
+        r = get("%s/%s" % (base_url, pid), session=session)
+        d = None
+        if r and r.ok:
+            try:
+                d = r.json()
+            except Exception:
+                d = None
+        if d:
+            p["postingUrl"] = d.get("postingUrl")
+            secs = ((d.get("jobAd") or {}).get("sections")) or {}
+            parts = [t for t in (_txt((s or {}).get("text")) for s in secs.values()) if t]
+            if parts:
+                p["description"] = " ".join(parts)
+        time.sleep(0.5)
+
     out = [row("jobs.smartrecruiters.com", j["url"], j, "smartrecruiters")
            for j in parse_smartrecruiters({"content": content}, c["name"], first_url) if j.get("title") and j.get("url")]
     return out or crawl_wp_jobs(c, session=session)
@@ -298,6 +337,9 @@ def crawl_smartrecruiters(c, session=None):
 # helix: <tenant>.helixjobs.com/<unit>/joblist -> /jobad?prj=<id>
 # ---------------------------------------------------------------------------
 def parse_helix(htmltext, base, org, page_url):
+    """The joblist card wraps title AND its badge spans (schedule/contract type, e.g. "Vollzeit
+    oder Teilzeit", "Festanstellung") in one anchor -- title here is a placeholder only, overwritten
+    by the jobad detail's own JSON-LD title in crawl_helix (never truncated apart from the badges)."""
     out, seen = [], set()
     for m in re.finditer(r'<a[^>]+href="((?:/[^"]*)?/?jobad\?prj=([A-Za-z0-9]+))"[^>]*>(.*?)</a>',
                          htmltext or "", re.S | re.I):
@@ -309,26 +351,31 @@ def parse_helix(htmltext, base, org, page_url):
             continue
         seen.add(prj)
         out.append({"title": title, "org": org, "loc": [{"city": None, "plz": None, "region": None}],
-                    "url": urljoin(base, m.group(1)), "page": page_url, "description": None})
+                    "url": urljoin(base, m.group(1)), "page": page_url, "description": None,
+                    "datePosted": None, "employmentType": None})
     return out
 
 
-# The "Berufsfeld" filter fieldset (only rendered on boards with enough jobs/categories to need
-# one): <label for="category_<hash>">Pflege (1 Treffer)</label>, whose <hash> works as
-# ?category[]=<hash> on the very same joblist URL.
-HELIX_CATEGORY = re.compile(r'for="category_([a-f0-9]+)"[^>]*>([^<]*)</label>', re.I)
-
-
-def _helix_nursing_query(htmltext):
-    """-> the category hash for the nursing Berufsfeld option, or None if the board has no such
-    filter (small boards render no fieldset at all) or none of its options name nursing."""
-    options = [(h, _txt(label)) for h, label in HELIX_CATEGORY.findall(htmltext or "")]
-    nursing_label = section.pick_nursing_category([label for _, label in options])
-    if not nursing_label:
-        return None
-    for h, label in options:
-        if label == nursing_label:
-            return h
+def parse_helix_detail(htmltext, url, org):
+    """jobad?prj= carries a schema.org JobPosting JSON-LD the joblist card lacks: real title
+    (unmixed with badge text), description, jobLocation, datePosted, employmentType."""
+    for m in re.finditer(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
+        try:
+            d = json.loads(m.group(1))
+        except Exception:
+            continue
+        for n in (d if isinstance(d, list) else [d]):
+            if not (isinstance(n, dict) and "JobPosting" in str(n.get("@type") or "")):
+                continue
+            a = (n.get("jobLocation") or {}).get("address") or {}
+            o = n.get("hiringOrganization") or {}
+            return {"title": _txt(n.get("title"), 300),
+                    "org": (o.get("name") if isinstance(o, dict) else o) or org,
+                    "loc": [{"city": a.get("addressLocality"), "plz": a.get("postalCode"),
+                             "region": a.get("addressRegion")}],
+                    "employmentType": n.get("employmentType"),
+                    "datePosted": (n.get("datePosted") or "")[:10] or None,
+                    "description": _txt(n.get("description"))}
     return None
 
 
@@ -338,42 +385,62 @@ def crawl_helix(c, session=None):
     if not r or not r.ok:
         return []
     jobs = parse_helix(r.text, r.url, c["name"], r.url)
-    listing_url, listing_html = r.url, r.text
     if not jobs:                                     # career page may only link to the joblist
         for m in re.finditer(r'href="([^"]*(?:joblist|helixjobs[^"]*)[^"]*)"', r.text, re.I):
             r2 = get(urljoin(r.url, m.group(1)), session=session)
             if r2 and r2.ok:
                 jobs = parse_helix(r2.text, r2.url, c["name"], r2.url)
                 if jobs:
-                    listing_url, listing_html = r2.url, r2.text
                     break
     if not jobs:
         return crawl_wp_jobs(c, session=session)     # not a helix tenant after all
 
-    # Section-first: a Berufsfeld=Pflege filter narrows the very same joblist URL server-side.
-    cat_hash = _helix_nursing_query(listing_html)
-    if cat_hash:
-        sep = "&" if "?" in listing_url else "?"
-        narrowed_url = "%s%scategory%%5B%%5D=%s" % (listing_url, sep, cat_hash)
-        rn = get(narrowed_url, session=session)
-        if rn and rn.ok:
-            narrowed_jobs = parse_helix(rn.text, rn.url, c["name"], rn.url)
-            if narrowed_jobs:
-                jobs = narrowed_jobs
-
     host = urlparse(cu).netloc
-    return [row(host, j["url"], j, "helix") for j in jobs]
+    out = []
+    for j in jobs:
+        d = get(j["url"], session=session)
+        detail = parse_helix_detail(d.text, j["url"], c["name"]) if d and d.ok else None
+        if detail:
+            j["description"], j["employmentType"], j["datePosted"] = (
+                detail["description"], detail["employmentType"], detail["datePosted"])
+            if detail["title"]:
+                j["title"] = detail["title"]
+            if detail["loc"][0]["city"]:
+                j["loc"] = detail["loc"]
+        if not j["loc"][0]["city"] and c.get("town"):
+            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+        time.sleep(0.5)                              # <=2 concurrent per host, 0.5s between requests
+        out.append(row(host, j["url"], j, "helix"))
+    return out
 
 
 # ---------------------------------------------------------------------------
 # WordPress / TYPO3 "jobs" sites + concludis tenants: sitemap -> detail pages
 # ---------------------------------------------------------------------------
 JOB_SITEMAP = re.compile(r"(jobs?|stellen|karriere|career|vacan)", re.I)
-JOB_PATH = re.compile(r"/(jobs?|stellen?|stellenangebote?|stellenanzeigen?|karriere/stellen|vacan)[/-]", re.I)
+# `stellen?\w*` covers both the German compounds the fixed alternatives missed (stellenmarkt,
+# stellenboerse/stellenbörse, stellenportal) and the singular noun some boards use for a single
+# posting's own path segment (TYPO3 ameosjobs: /offene-stellen/stelle/<id>-<slug>, no 'n'). `detail`
+# families are how TYPO3/PERSIS boards name a single posting: /detail/j/<slug>-<id>.html,
+# /karriere-detail/<city>/<slug>/<id>, /detail/<uuid>/.
+# TYPO3's softgarden connector extension (e.g. hessing-kliniken.de) puts the job id in the query
+# string, not the path -- /karriere/detail/?tx_softgarden_jobliste[job]=53551366 -- so the path-only
+# alternatives above never match it; add the query-string shape as its own alternative.
+JOB_PATH = re.compile(r"/(jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(karriere-)?detail/[^/?#]"
+                       r"|tx_\w*jobliste%5[Bb]job%5[Dd]=\d+", re.I)
+# A job-alert subscribe widget's own path ("/job-newsletter", concludis' "/jobletter") matches
+# JOB_PATH on "job[/-]" alone -- it is a write-only email-signup page, never a posting (confirmed
+# live: karriere.ameos.eu's own "/job-newsletter" parsed as a fake "Job-Newsletter" row).
+NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b", re.I)
 # Loose fallback: a detail URL directly under a job-ish path segment (e.g. Wix's bare
 # /karriere/<slug>), only tried against locs pulled from a sitemap whose own URL already
 # matched JOB_SITEMAP (so it's not applied to a site's whole, unfiltered sitemap).
 JOB_PATH_LOOSE = re.compile(r"/(jobs?|stellen?|stellenangebote?|stellenanzeigen?|karriere|vacan)/[^/]+$", re.I)
+# TYPO3 "klinikumbasics/klinikumjobs" widget (München Klinik and sibling city-clinic sites): every
+# division/category page under /jobs/<division>/ renders an empty <ul class="job-results"> -- the
+# real postings sit only in this inline JSON var, client-filtered by JS. Its own <h1> is the
+# division's marketing headline ("HEILEN KÖNNEN."), never a job title -- see _wp_job_rows.
+ALLJOBS_RX = re.compile(r"var\s+allJobs\s*=\s*(\[.*?\])\s*;", re.S)
 
 
 def find_job_urls(base, session=None, max_maps=8):
@@ -400,7 +467,7 @@ def find_job_urls(base, session=None, max_maps=8):
             out += locs
             if JOB_SITEMAP.search(u):
                 job_out += locs
-    found = [u for u in dict.fromkeys(out) if JOB_PATH.search(u)]
+    found = [u for u in dict.fromkeys(out) if JOB_PATH.search(u) and not NOT_JOB_PATH.search(u)]
     if not found and job_out:
         found = [u for u in dict.fromkeys(job_out) if JOB_PATH_LOOSE.search(u)]
     if not found:
@@ -433,6 +500,7 @@ def parse_job_page(htmltext, url, org):
                                  "region": a.get("addressRegion")}],
                         "url": n.get("url") or url, "page": url,
                         "datePosted": (n.get("datePosted") or "")[:10] or None,
+                        "employmentType": n.get("employmentType"),
                         "description": _txt(n.get("description"))}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
@@ -472,15 +540,47 @@ def parse_job_page(htmltext, url, org):
     if not title:
         return None
     body = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or "")
-    return {"title": title, "org": org, "loc": [{"city": None, "plz": None, "region": None}],
-            "url": url, "page": url, "description": _txt(body)}
+    # No JSON-LD JobPosting anywhere (confirmed live: karriere.barmherzige.net) -- but the page still
+    # states employmentType/city plainly next to a schedule/location icon; read that instead of
+    # leaving fields the source does expose empty.
+    facts = dict(re.findall(r'icons/([a-z]+)\.svg"[^>]*/?>\s*<span class="fact">([^<]+)</span>',
+                             htmltext or "", re.I))
+    return {"title": title, "org": org,
+            "loc": [{"city": facts.get("location"), "plz": None, "region": None}],
+            "url": url, "page": url, "description": _txt(body),
+            "employmentType": facts.get("schedule")}
 
 
-def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None):
+def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=None):
+    """Fetch each url and turn it into a row -- except a klinikum-jobs widget page (ALLJOBS_RX),
+    whose own title is never a job (see the regex's docstring): walk its embedded postings' own
+    `link`s instead of accepting the division page itself as one fake row."""
+    seen = seen if seen is not None else set()
     out = []
-    for u in urls[:max_jobs]:
+    for u in urls:
+        key = _listing_page_key(u)
+        if len(out) >= max_jobs or key in seen:
+            continue
+        seen.add(key)
         r = get(u, session=session)
         if not r or not r.ok:
+            continue
+        final_key = _listing_page_key(r.url)
+        if final_key in seen and final_key != key:
+            # A stale/expired job slug that 200s instead of 404ing (seen live: medbo.de) redirects
+            # to one shared generic landing page instead -- a second, different, candidate slug
+            # landing on a final url another candidate already claimed is that catch-all, not a
+            # second distinct posting.
+            continue
+        seen.add(final_key)
+        m = ALLJOBS_RX.search(r.text)
+        if m:
+            try:
+                entries = json.loads(m.group(1))
+            except Exception:
+                entries = []
+            widget_urls = [urljoin(r.url, e["link"]) for e in entries if e.get("link")]
+            out += _wp_job_rows(widget_urls, c, host, max_jobs - len(out), session, section_labels, seen)
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if not j or not j.get("title"):
@@ -530,8 +630,89 @@ def _page_job_links(url, session=None, exclude=()):
         return []
     base = _page_base(r)
     html = re.sub(r"(?s)<!--.*?-->", "", r.text)
-    found = (urljoin(base, h) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h))
+    # unescape before urljoin: a TYPO3 multi-param query link is written as "...&amp;tx_..." in the
+    # raw HTML -- left un-decoded, the literal "&amp;" becomes part of the first param's value and
+    # every request to the resulting URL fails outright (confirmed live: hessing-kliniken.de detail
+    # links 404 with `&amp;` intact, load fine once decoded to `&`).
+    found = (urljoin(base, _html.unescape(h)) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h) and not NOT_JOB_PATH.search(h))
     return list(dict.fromkeys(u for u in found if u not in exclude))
+
+
+# Server-rendered pager (TYPO3 ameosjobs and similar bespoke listing tables): an anchor whose own
+# text is "nächste"/"next"/"weiter"/"»" keeps pointing at the next page -- following it is the only
+# way to see a table beyond page 1 (confirmed live: karriere.ameos.eu declares 765 postings, page 1
+# alone lists 10).
+# href="([^"]+)" (not [^"#]+) -- a next-page link's own query string can legitimately carry a
+# same-page anchor after it (ameosjobs: "...&page]=2&cHash=...#jobs-listing"); excluding '#' from
+# the class made the whole href-then-closing-quote match impossible, so the pattern never fired.
+NEXT_PAGE_RX = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>\s*(?:nächste|next|weiter|»)\s*</a>', re.I)
+# TYPO3 Solr search widgets (concludis-fronted "mama-search" web component, martha-maria group)
+# instead embed the pager as a JSON `"next":"..."` field inside an inline <script> (TYPO3.settings.TS
+# xhrCache), never as a plain anchor -- confirmed live: karriere.martha-maria.de declares 60
+# postings, the visible page 1 lists 10, and the widget's own `result-url`/`suggest-url` attributes
+# name the same tx_solr endpoint this JSON pager walks.
+NEXT_PAGE_JSON_RX = re.compile(r'"next"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _next_page_url(html, base):
+    m = NEXT_PAGE_RX.search(html)
+    if m:
+        return urljoin(base, _html.unescape(m.group(1)))
+    m = NEXT_PAGE_JSON_RX.search(html)
+    if m and m.group(1):
+        return urljoin(base, m.group(1).replace("\\/", "/"))
+    return None
+
+
+def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, max_pages=200):
+    """Job-looking links across a server-rendered listing's own pagination, walking its "next page"
+    link (NEXT_PAGE_RX) until none remains or a page adds nothing new. `first_resp` reuses an
+    already-fetched page 1 (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. 200 pages
+    is a loop-safety ceiling, not a board-size cap -- no real board is near it."""
+    out, visited, url, resp = [], set(), start_url, first_resp
+    for _ in range(max_pages):
+        if not url or url in visited:
+            break
+        visited.add(url)
+        r = resp if resp is not None else get(url, session=session)
+        resp = None
+        if not r or not r.ok:
+            break
+        base = _page_base(r)
+        html = re.sub(r"(?s)<!--.*?-->", "", r.text)
+        links = [urljoin(base, _html.unescape(h)) for h in re.findall(r'href="([^"#]+)"', html) if JOB_PATH.search(h) and not NOT_JOB_PATH.search(h)]
+        fresh = [u for u in dict.fromkeys(links) if u not in exclude and u not in out]
+        out += fresh
+        nxt = _next_page_url(html, base)
+        if not fresh and not nxt:
+            break
+        url = nxt
+        time.sleep(0.3)
+    return out
+
+
+# A job-filter/listing widget (medbo's TYPO3 cn_medbo_jobs extension) advertises its own AJAX read
+# path as a `data-url` attribute on the career page itself -- the board's own client calls it (seen
+# live: a job-shaped `?tx_..._joblist[action]=ajaxFilter...` url), so crawl_wp_jobs must too, even
+# when every posting is already reachable through friendlier detail-page links found elsewhere.
+DATA_URL_JOB_RX = re.compile(r'data-url="([^"]*(?:job|stellen)[^"]*)"', re.I)
+
+
+def _widget_endpoint_job_links(cu_resp, session=None):
+    if not cu_resp or not cu_resp.ok:
+        return []
+    out = []
+    for h in dict.fromkeys(DATA_URL_JOB_RX.findall(cu_resp.text)):
+        u = urljoin(cu_resp.url, _html.unescape(h))
+        r = get(u, session=session)
+        if not r or not r.ok:
+            continue
+        try:
+            content = r.json().get("content") or ""
+        except Exception:
+            content = r.text
+        out += [urljoin(r.url, hh) for hh in re.findall(r'href="([^"#]+)"', content)]
+    return list(dict.fromkeys(out))
 
 
 def _listing_page_key(u):
@@ -542,7 +723,7 @@ def _listing_page_key(u):
     return (p.netloc.lower(), path.lower())
 
 
-def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, not a board-size cap
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
@@ -568,34 +749,108 @@ def crawl_wp_jobs(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS"
     cu_resp = get(cu, session=session)
     if cu_resp and cu_resp.ok:
         not_a_job.add(_listing_page_key(cu_resp.url))
+        # beesite (muz global-jobboard-client): fingerprinted on the page already fetched here, no
+        # extra request -- its own listing is JS-injected, so the walk below would find nothing.
+        # Never a registry label (see pflege_jobs.sources.beesite docstring, TASK-40 AC#3).
+        from pflege_jobs.sources.beesite import is_beesite, crawl_beesite
+        if is_beesite(cu_resp):
+            return crawl_beesite(c, session=session)
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
-    out, fetched = [], set()
+    # One `seen` set shared across every _wp_job_rows call below (section, sitemap, career-page-link
+    # stages) -- without it each stage's own fresh dedup set can't see a page (or a klinikum-jobs
+    # widget page's own embedded postings, ALLJOBS_RX) another stage already fetched, and the same
+    # job comes back as a duplicate row once per stage that happens to reach it.
+    out, fetched, seen = [], set(), set()
     if section_url:
         cu_links = ({urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
                     if cu_resp and cu_resp.ok else set())
-        section_urls = [u for u in _page_job_links(section_url, session=session, exclude=cu_links | {section_url})
+        section_urls = [u for u in _paginated_job_links(section_url, session=session, exclude=cu_links | {section_url})
                         if _listing_page_key(u) not in not_a_job]
         if section_urls:
             out = _wp_job_rows(section_urls, c, host, max_jobs, session,
-                               section_labels=[section_label] if section_label else None)
+                               section_labels=[section_label] if section_label else None, seen=seen)
             fetched = {j["payload"]["url"] for j in out}
 
     urls = [u for u in find_job_urls(base, session=session) if _listing_page_key(u) not in not_a_job]
     remaining = max(max_jobs - len(out), 0)
     if urls and remaining:
         more_urls = [u for u in urls if u not in fetched]
-        out = out + _wp_job_rows(more_urls, c, host, remaining, session)
+        new = _wp_job_rows(more_urls, c, host, remaining, session, seen=seen)
+        out += new
+        fetched |= {j["payload"]["url"] for j in new}
+
+    # Always also walk the career page's own job-shaped links, not just when the two paths above
+    # found nothing: a client-side "klinikum-jobs" division page (ALLJOBS_RX) exposes real postings
+    # via an embedded widget the sitemap crawl above can miss (it's paged/capped, not a full site
+    # index), and the career page's own nav links straight to every such division page.
+    # _paginated_job_links reuses the already-fetched `cu_resp` as page 1, then follows the career
+    # page's own "next page" link -- a table paginated on the career page itself (ameosjobs), not
+    # just a distinct narrower section, would otherwise only ever be read one page deep.
+    page_urls = _paginated_job_links(cu, session=session, first_resp=cu_resp) if cu_resp and cu_resp.ok else []
+    page_urls += _widget_endpoint_job_links(cu_resp, session=session)
+    page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job and u not in fetched]
+    remaining = max(max_jobs - len(out), 0)
+    if page_urls and remaining:
+        new = _wp_job_rows(page_urls, c, host, remaining, session, seen=seen)
+        out += new
+        fetched |= {j["payload"]["url"] for j in new}
+
     if not out:
-        # Either the sitemap had no job urls, or every one of them was stale/unfetchable (some TYPO3
-        # sitemaps carry dead query-string job routes while the career page itself links the live,
-        # friendly-slug job pages) -- fall back to scanning the career page's own job links.
-        cu_html = re.sub(r"(?s)<!--.*?-->", "", cu_resp.text) if cu_resp and cu_resp.ok else ""
-        page_urls = ([urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_html) if JOB_PATH.search(h)]
-                     if cu_resp and cu_resp.ok else [])
-        page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job]
-        if page_urls and page_urls != urls:
-            out = _wp_job_rows(page_urls, c, host, max_jobs, session)
-    return out
+        # hr4you: the career page names no vendor markup at all (its tenant links sit on a
+        # location/jobs subpage the page itself points to, not on the page or its own scripts) --
+        # tried last, after every generic sitemap/page-link path above found nothing. Never a
+        # registry label either (see pflege_jobs.sources.hr4you docstring, TASK-40 AC#3).
+        from pflege_jobs.sources.hr4you import crawl_hr4you
+        out = crawl_hr4you(c, session=session)
+    # crawl_wp_jobs's own parser extracts no employmentType/datePosted from plain HTML (only from
+    # JSON-LD, where present) -- backfill both from what these WordPress/TYPO3 boards already
+    # publish (Vollzeit/Teilzeit in the body, WP SEO meta dates), not just for crawl_oracle's fallback.
+    return _enrich_wp_fallback_fields(out, session=session)
+
+
+WP_META_DATE_RX = re.compile(r'(?:property="article:modified_time"|property="og:updated_time"'
+                              r'|property="article:published_time")\s+content="([^"]+)"')
+# InnKlinikum (non-WordPress, no SEO-plugin meta at all) instead labels its own posting window in the
+# body: "Interne Ausschreibung: vom DD.MM.YYYY bis DD.MM.YYYY" -- the "vom" (from) date is this
+# posting's own publish date, not a guess (verified against 14/15 sampled detail pages).
+AUSSCHREIBUNG_DATE_RX = re.compile(r"Ausschreibung:\s*</div>\s*<div[^>]*>\s*vom\s*(\d{1,2})\.(\d{1,2})\.(\d{4})", re.S)
+EMPLOYMENT_KEYWORD_RX = re.compile(r"\b(Vollzeit|Teilzeit|Minijob)\b", re.I)
+# schema.org JobPosting as bare itemprop microdata, no JSON-LD at all (parse_job_page's JSON-LD
+# branch never sees it): TYPO3 ameosjobs detail pages carry <meta itemprop="datePosted"
+# content="YYYY-MM-DD"> the same way mein-check-in's own detail pages do (see MCI_ITEMPROP) --
+# confirmed live (karriere.ameos.eu): 0/766 rows had a date before this, despite every detail page
+# already publishing one.
+ITEMPROP_DATE_RX = re.compile(r'itemprop="datePosted"[^>]*content="([^"]+)"')
+
+
+def _enrich_wp_fallback_fields(rows, session=None):
+    """crawl_wp_jobs's own parser (owned by TASK-35) extracts no employmentType/datePosted --
+    backfill both here from data these WordPress boards already publish: Vollzeit/Teilzeit named in
+    the visible body (already sitting in payload.description, no extra fetch), the
+    article:modified_time / og:updated_time <meta> every WP SEO plugin (Yoast, RankMath) stamps on
+    each post, and a bare schema.org itemprop="datePosted" meta some TYPO3 boards use instead of
+    JSON-LD (one light re-fetch per row, since crawl_wp_jobs keeps only the body text, not <head>).
+    Verified stable, not request-time-generated, by refetching the same detail page twice."""
+    for r in rows:
+        p = r["payload"]
+        if not p.get("employmentType"):
+            m = EMPLOYMENT_KEYWORD_RX.search(p.get("description") or "")
+            if m:
+                p["employmentType"] = m.group(1).title()
+        if not p.get("datePosted"):
+            resp = get(p.get("url") or r["source_url"], session=session)
+            if resp and resp.ok:
+                dm = WP_META_DATE_RX.search(resp.text)
+                am = AUSSCHREIBUNG_DATE_RX.search(resp.text)
+                im = ITEMPROP_DATE_RX.search(resp.text)
+                if dm:
+                    p["datePosted"] = dm.group(1)[:10]
+                elif am:
+                    p["datePosted"] = "%s-%02d-%02d" % (am.group(3), int(am.group(2)), int(am.group(1)))
+                elif im:
+                    p["datePosted"] = im.group(1)[:10]
+            time.sleep(0.5)
+    return rows
 
 
 def crawl_oracle(c, session=None):
@@ -603,7 +858,8 @@ def crawl_oracle(c, session=None):
     sitemap for. Some tenants (softgarden-fronted, e.g. karriere.josef.de) also publish a public,
     unauthenticated schema.org DataFeed at <origin>/jobs.feed.json; prefer that when present, since
     it has full descriptions and needs no browser. Falls back to crawl_wp_jobs for tenants that
-    render job links server-side instead (Klinikum FFB)."""
+    render job links server-side instead (Klinikum FFB, Altmühlfranken); that fallback's own rows
+    carry no employmentType/datePosted, so _enrich_wp_fallback_fields backfills both."""
     cu = (c.get("careers_url") or "").strip()
     if cu:
         p = urlparse(cu)
@@ -619,11 +875,16 @@ def crawl_oracle(c, session=None):
                 jobs = parse_jobposting_feed(data, feed_url)
                 if jobs:
                     return [row(p.netloc, j["url"], j, "oracle") for j in jobs if j.get("title") and j.get("url")]
-    return crawl_wp_jobs(c, session=session)
+    return _enrich_wp_fallback_fields(crawl_wp_jobs(c, session=session), session=session)
 
 
 REXX_JOB_HREF = re.compile(r'href="([^"#]*-j\d+\.html[^"]*)"')
 REXX_TAG = re.compile(r'<span[^>]*class="[^"]*job_details_first[^"]*"[^>]*>(.*?)</span>', re.S)
+# parse_job_page's JSON-LD branch (shared by every family on this file) takes title/org/loc/dates/
+# description but not employmentType -- rexx's own JobPosting JSON-LD carries it plainly
+# ("FULL_TIME"/"PART_TIME"), already sitting in the detail page just fetched, so read it here
+# rather than widen a helper other adapters also depend on.
+REXX_EMPLOYMENT_TYPE_RX = re.compile(r'"employmentType"\s*:\s*"([^"]+)"')
 
 
 def _rexx_listing_jobs(htmltext):
@@ -642,20 +903,23 @@ def _rexx_listing_jobs(htmltext):
     return out
 
 
-def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+def crawl_rexx(c, session=None):
     """rexx systems: a server-rendered listing whose job links end in `-<lang>-j<id>.html`.
 
     No JSON/feed endpoint is exposed (api/, f=json both 404), but the listing needs no JavaScript,
     so a plain fetch + one request per detail page is enough. The `-j<id>` suffix is the stable
-    identifier; the rest of the slug is the (mutable) title, so dedupe on it.
+    identifier; the rest of the slug is the (mutable) title, so dedupe on it. No cap on job count --
+    the board's own end signal (a page with zero new ids) is the only stop (a real board measured at
+    330 postings used to be silently truncated to 300 by a VENDOR_MAX_JOBS default here).
     """
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
     # The listing shows 100 jobs at a time and pages with ?start=N (no visible pager on some skins),
-    # so a single fetch silently truncates the biggest boards at exactly 100. Page until no new ids.
+    # so a single fetch silently truncates the biggest boards at exactly 100. Page until no new ids --
+    # 1000 pages (100k jobs) is a loop-safety ceiling, not a board-size cap; no real board is near it.
     urls, tags, seen, base = [], {}, set(), None
-    for start in range(0, 1000, 100):
+    for start in range(0, 100000, 100):
         page_url = cu if start == 0 else cu + ("&" if "?" in cu else "?") + "start=%d" % start
         r = get(page_url, session=session)
         if not r or not r.ok:
@@ -673,24 +937,41 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
             if tag:
                 tags[u] = tag
             fresh += 1
-        if fresh == 0 or len(urls) >= max_jobs:
+        if fresh == 0:
             break
         time.sleep(0.2)
     if base is None:
         return []
+    # Every skin's own template links a plain, query-free /stellenangebote.html regardless of which
+    # variant (bare host, or a filtered ?search_mode=... query) `cu` itself is -- when `cu` isn't
+    # already that exact path, the client's page names it as a read path our own start=N walk above
+    # (which only ever varies `cu`'s own query) never visits. Same board, same jobs (verified: identical
+    # ids), so this costs one request and adds no new postings -- it only closes the coverage gap.
+    canonical = base + "/stellenangebote.html"
+    if cu.rstrip("/") != canonical:
+        r = get(canonical, session=session)
+        if r and r.ok:
+            for h, tag in _rexx_listing_jobs(r.text):
+                u = urljoin(r.url, _html.unescape(h))
+                jid = re.search(r"-j(\d+)\.html", u)
+                if not jid or jid.group(1) in seen:
+                    continue
+                seen.add(jid.group(1))
+                urls.append(u)
+                if tag:
+                    tags[u] = tag
 
     # Section-first (surveyed 2026-09, revised): the listing already tags every job with a
     # Fachbereich label (no extra request). This used to also HARD-FILTER which detail pages got
     # fetched at all -- but on a real board (Schön Klinik group, 296 postings) that dropped 30
     # genuine certified-nursing postings filed under a different Fachbereich than the one nursing
     # bucket ("OP Pfleger oder Operationstechnischer Assistent", "MFA/MTRA/Pflegefachkraft
-    # Herzkatheterlabor..."), a real, measured coverage loss. `urls` here is already capped at
-    # max_jobs during pagination above, so fetching every one of them costs no more requests than the
-    # cap already allowed -- fetch them all, and thread each job's own Fachbereich tag (already sitting
-    # in `tags`, no extra request) into the payload for classify.classify_role's
-    # nursing_section_confirmed signal downstream instead of using it as a fetch filter.
+    # Herzkatheterlabor..."), a real, measured coverage loss -- fetch every url, and thread each job's
+    # own Fachbereich tag (already sitting in `tags`, no extra request) into the payload for
+    # classify.classify_role's nursing_section_confirmed signal downstream instead of using it as a
+    # fetch filter.
     out = []
-    for u in urls[:max_jobs]:
+    for u in urls:
         d = get(u, session=session)
         if not d or not d.ok:
             continue
@@ -700,6 +981,9 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
         if not j["loc"][0]["city"] and c.get("town"):
             j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
         j["section_labels"] = [tags[u]] if tags.get(u) else []
+        em = REXX_EMPLOYMENT_TYPE_RX.search(d.text)
+        if em:
+            j["employmentType"] = em.group(1)
         out.append(row(urlparse(base).netloc, j["url"], j, "rexx"))
         time.sleep(0.2)
     return out
@@ -708,6 +992,17 @@ def crawl_rexx(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "
 # mein-check-in.de hosts one tenant per employer; the careers page just links into it.
 MCI_TENANT = re.compile(r"mein-check-in\.de/([a-z0-9][a-z0-9_-]*)/?", re.I)
 
+# Every detail page carries a schema.org JobPosting as microdata spans (not JSON-LD, so
+# parse_job_page's JSON-LD-only reader never sees it) -- datePosted/employmentType and the
+# per-job address live only here, one regex per itemprop.
+MCI_ITEMPROP = {name: re.compile(r'itemprop="%s"[^>]*>([^<]*)' % name)
+                 for name in ("datePosted", "employmentType", "addressLocality", "postalCode", "addressRegion")}
+
+
+def _mci_job_meta(html):
+    return {name: (rx.search(html).group(1).strip() or None) if rx.search(html) else None
+            for name, rx in MCI_ITEMPROP.items()}
+
 
 def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
     """mein-check-in: resolve the tenant slug, then read /<tenant>/overview.
@@ -715,7 +1010,8 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
     The clinic's own careers page is usually a thin wrapper that links to
     `mein-check-in.de/<tenant>/index`; the listing lives on that host and is server-rendered, with
     each vacancy as `position-<id>`. Titles are already in the listing anchors, so the detail fetch
-    is only needed for the description -- keeping the crawl to ~1 request per job.
+    is only needed for the description plus the JobPosting microdata (datePosted, employmentType,
+    per-job address) -- keeping the crawl to ~1 request per job.
     """
     cu = (c.get("careers_url") or "").strip()
     tenant = None
@@ -734,23 +1030,19 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
     if not listing or not listing.ok:
         return []
 
-    # Section-first: the overview page already groups every position under a sidebar heading
-    # (<li id="pg-<id>"><span>Pflegedienst</span><ul>...position-<id> links...</ul></li>) -- no
-    # extra request needed to read which ids belong to the nursing group.
+    # The overview page groups every position under a sidebar heading (<li id="pg-<id>">
+    # <span>Pflegedienst</span><ul>...position-<id> links...</ul></li>) -- read that label onto
+    # each position as data (section_labels below), no extra request needed.
     pid_group = {}
     groups = re.findall(r'<li id="pg-\d+"[^>]*>\s*<span[^>]*>(.*?)</span>(.*?)(?=<li id="pg-|\Z)', listing.text, re.S)
-    nursing_label = section.pick_nursing_category([_txt(label) for label, _ in groups]) if groups else None
-    if nursing_label:
-        for label, body in groups:
-            lbl = _txt(label)
-            for pid in re.findall(r'position-(\d+)', body):
-                pid_group.setdefault(pid, lbl)
+    for label, body in groups:
+        lbl = _txt(label)
+        for pid in re.findall(r'position-(\d+)', body):
+            pid_group.setdefault(pid, lbl)
 
     seen, out = set(), []
     for pid, inner in re.findall(r'<a[^>]+position-(\d+)[^>]*>(.*?)</a>', listing.text, re.S):
         if pid in seen:
-            continue
-        if not _section_keep(pid_group.get(pid), nursing_label):
             continue
         seen.add(pid)
         title = _txt(inner, 300)
@@ -766,6 +1058,12 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
             full = parse_job_page(d.text, u, c["name"])
             if full and full.get("description"):
                 j["description"] = full["description"]
+            meta = _mci_job_meta(d.text)
+            j["datePosted"] = (meta["datePosted"] or "")[:10] or None
+            j["employmentType"] = meta["employmentType"]
+            if meta["addressLocality"]:                   # source gives the real per-job branch
+                j["loc"] = [{"city": meta["addressLocality"], "plz": meta["postalCode"],
+                             "region": meta["addressRegion"] or "BAYERN"}]
         out.append(row(host, u, j, "mein-check-in"))
         if len(out) >= max_jobs:
             break
@@ -823,15 +1121,19 @@ def parse_dvinci(j, org, list_url):
     desc = _txt(" ".join(_html.unescape(p) for p in
                          (j.get("introduction"), j.get("tasks"), j.get("profile"), j.get("weOffer")) if p))
     url = j.get("jobPublicationURL") or list_url
+    employment_type = ", ".join(wt.get("name") for wt in (jo.get("workingTimes") or []) if wt.get("name")) or None
     return {"title": j.get("position"), "org": (jo.get("company") or {}).get("name") or org,
             "loc": [{"city": city, "plz": addr.get("zipCode"), "region": None}],
             "url": url, "page": url,
-            "datePosted": (j.get("startDate") or "")[:10] or None,
+            # createdDate (posting date) not startDate (Eintrittsdatum/job start date) -- startDate is
+            # null on most postings anyway, but the field itself is the wrong signal for "date posted".
+            "datePosted": (jo.get("createdDate") or "")[:10] or None,
+            "employmentType": employment_type,
             "department": jo.get("department"), "reference": jo.get("reference"),
             "description": desc}
 
 
-def crawl_dvinci(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS", "300"))):
+def crawl_dvinci(c, session=None):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
@@ -876,8 +1178,10 @@ def crawl_dvinci(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS",
         return [(cat.get("name") or cat.get("internalName") or "")
                 for cat in ((job.get("jobOpening") or {}).get("categories") or [])]
 
+    # list.json is one response with every posting -- no pagination exists to walk and no cap to
+    # respect; jobs[:max_jobs] used to silently truncate boards past 300 for no benefit.
     out = []
-    for j in jobs[:max_jobs]:
+    for j in jobs:
         p = parse_dvinci(j, c["name"], list_url)
         if not p.get("title"):
             continue
@@ -897,11 +1201,12 @@ def crawl_dvinci(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX_JOBS",
 GROUP_PORTALS = [
     {"match": r"^kbo-|kbo\.de|kbo-isk|kbo-heckscher|kbo-iak|kbo-lech-mangfall",
      "list": "https://kbo.de/karriere/jobboerse",
-     "page_param": "tx_solr%5Bpage%5D", "pages": 12,
+     # decoded on purpose: crawl_group_portal urlencodes it (pre-encoded value paged nothing, 10 vs 109 jobs)
+     "page_param": "tx_solr[page]",
      "job_rx": r"https://kbo\.de/karriere/jobs/[^\"'\s>]+", "host": "kbo.de"},
     # Barmherzige Brüder run one board for all their Bavarian houses.
     {"match": r"barmherzige", "list": "https://karriere.barmherzige.net/jobs/",
-     "page_param": "c_page", "pages": 12,
+     "page_param": "c_page",
      "job_rx": r"https://karriere\.barmherzige\.net/jobs/[a-z0-9][^\"'\s>?]+", "host": "karriere.barmherzige.net"},
 ]
 
@@ -914,7 +1219,7 @@ def group_portal_for(c):
     return None
 
 
-def crawl_group_portal(c, g, session=None, max_jobs=250):
+def crawl_group_portal(c, g, session=None, max_jobs=100_000):  # loop-safety ceiling, not a board-size cap
     """Page the group board, then read each job's JSON-LD. Shared across every site of the group.
 
     Some clinics carry their own pre-filtered querystring on the shared board (e.g.
@@ -928,7 +1233,7 @@ def crawl_group_portal(c, g, session=None, max_jobs=250):
     parts = urlsplit(base_list)
     base_qs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != g["page_param"]]
     urls, seen = [], set()
-    for i in range(1, g.get("pages", 8) + 1):
+    for i in range(1, g.get("pages", 100_000) + 1):  # 100_000: loop-safety ceiling, board's own empty page stops it
         qs = base_qs if i == 1 else base_qs + [(g["page_param"], str(i))]
         u = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(qs), ""))
         r = get(u, session=session)
@@ -968,6 +1273,14 @@ VENDORS = {
     "wp_jobs": crawl_wp_jobs,   # routing.py default for careers_url-but-no-vendor-label boards
     "self_hosted": crawl_wp_jobs,  # discovery found no vendor fingerprint; try the generic reader anyway
 }
+# beesite/hr4you have no registry label (TASK-40 AC#3: crawl_wp_jobs above probes and delegates to
+# them by capability) -- these two entries only matter if a future census run ever does fingerprint
+# either vendor by name; imported here, not at module top, since both modules are self-contained
+# (no import back into this one) and this keeps the plain vendor -> function table one lookup deep.
+from pflege_jobs.sources.beesite import crawl_beesite as _crawl_beesite  # noqa: E402
+from pflege_jobs.sources.hr4you import crawl_hr4you as _crawl_hr4you  # noqa: E402
+VENDORS["beesite"] = _crawl_beesite
+VENDORS["hr4you"] = _crawl_hr4you
 
 
 def load_clinics(vendors):

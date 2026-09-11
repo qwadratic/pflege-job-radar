@@ -67,13 +67,13 @@ def test_save_stop_reason_and_stopped(env):
 def test_api_campaign_owner_only(client):
     assert client.get("/api/campaign").status_code == 401
     assert client.post("/api/campaign", json={"safety_level": "greedy"}).status_code == 401
-    h = {"X-ExeDev-Email": OWNER}
+    h = {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
     r = client.post("/api/campaign", json={"snapshot": {"open_jobs": 1749}}, headers=h)
     assert r.status_code == 200 and len(r.json()["history"]) == 1
     assert client.get("/api/campaign", headers=h).json()["history"][0]["open_jobs"] == 1749
 
 
 def test_api_campaign_rejects_bad_body(client):
-    h = {"X-ExeDev-Email": OWNER}
+    h = {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
     r = client.post("/api/campaign", json={"safety_level": "yolo"}, headers=h)
     assert r.status_code == 422

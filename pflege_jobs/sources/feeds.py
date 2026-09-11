@@ -46,9 +46,7 @@ def personio(seed, towns, log=print):
         city = office if office and norm_text(office).split(",")[0] in towns else seed.get("town")
         o = _obs(url, title, seed["name"], city, None, None, desc, g("createdAt"), dept,
                  {"employment_types": emp_types, "parse": "personio_xml", "raw": {"id": g("id"), "office": office, "schedule": et, "seniority": g("seniority")}}, towns, seed)
-        if o["role_class"] == "nicht_pflege" or o["in_bavaria"] is False: continue
-        if o["in_bavaria"] is None and seed.get("bavaria_only_operator", True): o["in_bavaria"] = True
-        if o["in_bavaria"]: out.append(o)
+        out.append(o)
     log(f"{seed['name'][:34]:<34} personio {host} -> Pflege/BY {len(out)}")
     return out
 
@@ -62,9 +60,7 @@ def smartrecruiters(seed, towns, log=print, with_details=True):
         total = total or d.get("totalFound", 0); items = d.get("content", [])
         for p in items:
             loc = p.get("location") or {}; city = loc.get("city"); region = loc.get("region")
-            if region and region.upper() not in ("BY", "BAYERN", "BAVARIA") and city and in_bavaria(city, None, region, towns) is False: continue
             title = p.get("name") or ""
-            if classify_role(title, "")[0] == "nicht_pflege": continue
             emp = seed["name"]
             for rx, site in (seed.get("site_map") or {}).items():
                 if re.search(rx, city or "", re.I): emp = site.get("employer", emp); break
@@ -80,8 +76,6 @@ def smartrecruiters(seed, towns, log=print, with_details=True):
                       "employment_types": [{"Full-time": "vollzeit", "Part-time": "teilzeit"}.get((p.get("typeOfEmployment") or {}).get("label"), "")] if p.get("typeOfEmployment") else [],
                       "parse": "smartrecruiters_api", "raw": {"id": p["id"], "refNumber": p.get("refNumber"), "fullLocation": loc.get("fullLocation")}}, towns, seed)
             o["employment_types"] = [x for x in o["employment_types"] if x]
-            if o["in_bavaria"] is False: continue
-            if o["in_bavaria"] is None: continue          # nationwide operator: positive evidence only
             out.append(o)
         offset += len(items)
         if not items or offset >= total: break
@@ -99,7 +93,6 @@ def talention(seed, towns, log=print):
         res = d.get("results") or []; total = total or d.get("total") or d.get("totalCount") or len(res)
         for j in res:
             title = j.get("title") or ""
-            if classify_role(title, "")[0] == "nicht_pflege": continue
             from ..classify import norm_text
             loc = j.get("location") or ""
             m = re.match(r"(\d{5})\s+(.+)", loc); plz, city = (m.group(1), m.group(2)) if m else (None, None)
@@ -114,9 +107,7 @@ def talention(seed, towns, log=print):
             pub = "-".join(reversed(pub.split("."))) if pub and re.match(r"\d\d\.\d\d\.\d{4}", pub) else None
             o = _obs(j.get("url"), title, seed["name"], city, plz, None, None, pub, (props.get("bereich") or [None])[0] if isinstance(props.get("bereich"), list) else None,
                      {"parse": "talention_api", "raw": {"id": j.get("id"), "location": j.get("location"), "props": props}}, towns, seed)
-            if o["in_bavaria"] is False: continue
-            if o["in_bavaria"] is None and seed.get("bavaria_only_operator", False): o["in_bavaria"] = True
-            if o["in_bavaria"]: out.append(o)
+            out.append(o)
         off += len(res)
         if not res or off >= (total or 0) or off > 1000: break
     log(f"{seed['name'][:34]:<34} talention {host} total {total} -> Pflege/BY {len(out)}")

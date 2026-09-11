@@ -1,0 +1,39 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css><body><div class=wrap>
+<div class=top><b>Pflege-Stellen</b> <span class=muted>Bayern</span> <span class=muted>Hospitals</span> <span class=muted>Jobs</span> <b>Clawl</b> <span class=muted>Billing</span><span class=sp></span>
+<span>Firecrawl <span class=on>on</span></span><span class=muted>·</span><span><b>381</b> / 8 000 credits</span><span class=muted>·</span><span>3/5 free runs</span><span class=muted>·</span><span>PAYG <span class=on>armed</span></span></div>
+<h1>Clawl</h1><p class=expl>Fetch jobs from hospital career portals. Adapters read known ATS boards directly; the Firecrawl agent handles everything else and costs credits.</p>
+
+<div class=tabs style="margin-top:14px"><a class=on href=#>Run</a><a href=#>Coverage <span class=cnt>88 %</span></a><a href=#>Automation <span class=cnt>2</span></a><a href=#>History <span class=cnt>71</span></a></div>
+
+<div class="card hot"><div class=row>
+<div class=f style="min-width:230px"><span class=lbl>Target</span><div class=pick>Hospital · 5 selected<i></i></div></div>
+<div class=f><span class=lbl>Mode</span><div class=pick>adapter<i></i></div></div>
+<div class=f><span class=lbl>Cap</span><div class=num>40</div></div>
+<div class=f><span class=lbl>&nbsp;</span><button class="btn">Estimate</button></div>
+<div class=f><span class=lbl>&nbsp;</span><button class="btn n">Plan &amp; run →</button></div>
+<span class=sp></span>
+<div class=f style="min-width:210px"><span class=lbl>Budget for this run</span><span class=small>40 of <b>381</b> credits · est. <b>≈ 32</b> · reserve floor 50<div class=meter><i style="width:11%"></i></div></span></div>
+</div>
+<div class=row style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">
+<span class="tag sky">estimate: 5 hospitals · 118–140 postings · ≈32 credits · 1 unsure</span>
+<span class="tag">deep pages off</span><span class="tag">verify on</span>
+<a href=# class="small muted">advanced ▾</a></div></div>
+
+<div class=card><div class=row><h3>Running now · #74</h3><span class="tag neon"><span class="dot g"></span>3 of 5 hospitals</span><span class=sp></span><span class=small class=muted>started 00:31 · 2 min</span><button class="btn s">Log</button><button class="btn s">Cancel run</button></div>
+<div class=meter style="margin:10px 0 12px"><i style="width:60%"></i></div>
+<div class=kpi><div><span>Now fetching</span><b>Bezirkskrankenhaus Günzburg</b></div><div><span>Credits burned</span><b>77 / 120</b></div><div><span>Rows</span><b>14</b></div><div><span>New</span><b>11</b></div><div><span>$ / posting</span><b>$0.06</b></div></div></div>
+
+<div class=card><div class=row><h3>Last run · #69 · Oberpfalz · 28 hospitals</h3><span class="tag red"><span class="dot r"></span>refused / failed 28</span><span class=sp></span><button class="btn s">Full log</button></div>
+<p class=expl>Every hospital hit the same wall, so the run is one problem, not 28.</p>
+<table><tr><th>Reason</th><th class=n>Hospitals</th><th>What fixes it</th><th></th></tr>
+<tr><td><span class="dot r"></span>Cap 6 &lt; minimum 40 for the agent</td><td class=n>28</td><td class=muted>Raise the cap for this target</td><td class=n><button class="btn s">Re-run at 40 ▸</button></td></tr>
+<tr><td><span class="dot a"></span>Spend gate: adapter already covers it</td><td class=n>4</td><td class=muted>Adapter data is fresher than 24 h</td><td class=n><button class="btn s">Run anyway</button></td></tr>
+<tr><td><span class="dot a"></span>Adapter returned 0 rows, no error</td><td class=n>3</td><td class=muted>Compare against Firecrawl to see who is right</td><td class=n><button class="btn s">Compare ▸</button></td></tr></table></div>
+
+<div class=card><div class=row><h3>Coverage by adapter</h3><span class=muted class=small>88.0 % · 35 of 50 routable</span><span class=sp></span><a href=# class=small>open tab →</a></div>
+<table style="margin-top:8px"><tr><th>Adapter</th><th class=n>Hosp.</th><th class=n>With jobs</th><th class=n>Open</th><th class=n>Coverage</th><th>Last run</th><th></th></tr>
+<tr><td><span class="tag amber">Firecrawl</span></td><td class=n>15</td><td class=n>13</td><td class=n>190</td><td class=n>86.7 %</td><td class=muted>no run yet</td><td class=n><button class="btn s">Run vendor ▸</button></td></tr>
+<tr><td><span class="tag">umantis</span></td><td class=n>9</td><td class=n>6</td><td class=n>46</td><td class=n>66.7 %</td><td class=muted>no run yet</td><td class=n><button class="btn s">Run vendor ▸</button></td></tr>
+<tr><td><span class="tag">d.vinci</span></td><td class=n>4</td><td class=n>3</td><td class=n>35</td><td class=n>75.0 %</td><td class=muted>no run yet</td><td class=n><button class="btn s">Run vendor ▸</button></td></tr>
+<tr><td colspan=7 class=muted style="border:0;padding-top:8px">Sorted by gap. 11 hospitals have no careers_url, 0 are bot-walled.</td></tr></table></div>
+</div></body>

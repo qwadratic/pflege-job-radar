@@ -6,9 +6,11 @@
           https://<host>/de/vacancies (server-rendered) + https://<host>/sitemap.xml (job URLs), walked by
           career_crawl.Crawler's normal BFS + JSON-LD-per-page path.
 """
-import re, requests
+import json, re, time, requests
 from urllib.parse import urlparse
 from .career_crawl import UA
+
+JSONLD_RX = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S)
 
 SG_HOST = re.compile(r"https?://([a-z0-9\-\.]+\.(?:career\.softgarden\.de|softgarden\.io)|jobdb\.softgarden\.de/[a-z0-9\-]+)", re.I)
 SG_TENANT_HOST = re.compile(r"^[a-z0-9\-\.]+\.(?:career\.softgarden\.de|softgarden\.io)$", re.I)
@@ -16,7 +18,7 @@ SG_TENANT_HOST = re.compile(r"^[a-z0-9\-\.]+\.(?:career\.softgarden\.de|softgard
 # apply/click-tracking gateway (jobdb.softgarden.de/jobdb) and the shared asset CDN referenced from
 # og:image/twitter:image meta tags (app.softgarden.io). A page can link/reference these *before* its
 # real tenant host, so they must not win a first-match search.
-GENERIC_SG_HOSTS = {"jobdb.softgarden.de/jobdb", "app.softgarden.io"}
+GENERIC_SG_HOSTS = {"jobdb.softgarden.de/jobdb", "app.softgarden.io", "certificate.softgarden.io"}
 SHORT_SG = re.compile(r"https?://short\.sg/j/\d+", re.I)
 
 
@@ -37,8 +39,6 @@ def find_host(career_url, session=None):
     real = [h for h in candidates if h.rstrip("/").lower() not in GENERIC_SG_HOSTS]
     if real:
         return "https://" + real[0].rstrip("/"), "link:" + real[0]
-    if candidates:
-        return "https://" + candidates[0].rstrip("/"), "link:" + candidates[0]
     if re.search(r"softgarden", html, re.I) and re.search(r"/job/\d+/", html):
         p = urlparse(r.url); return f"{p.scheme}://{p.netloc}", "custom-domain"
     # Some pages only carry softgarden's own URL-shortener (short.sg/j/<id>) rather than a direct
@@ -72,6 +72,33 @@ def seed_for(facility, kez, town, session=None):
             "host": host, "feed_hosts": feed_hosts}
 
 
+def _backfill_valid_through(items, session=None, timeout=20):
+    """The feed's own JobPosting items never carry validThrough (checked live 2026-09-10: Klinikum
+    Bayreuth 116/116, main-klinik 22/22 missing it) even though every item's own detail page /jobs/
+    publishes it in its own JSON-LD -- one light fetch per item to backfill the field the feed drops.
+    Walks every item lacking it (no per-run cap, the item list is the board's own end)."""
+    s = session or requests.Session()
+    for it in items:
+        if it.get("validThrough") or not it.get("url"):
+            continue
+        try:
+            r = s.get(it["url"], headers={"User-Agent": UA}, timeout=timeout)
+        except requests.RequestException:
+            continue
+        if not r.ok:
+            continue
+        for m in JSONLD_RX.finditer(r.text):
+            try:
+                d = json.loads(m.group(1))
+            except ValueError:
+                continue
+            if "JobPosting" in str(d.get("@type") or "") and d.get("validThrough"):
+                it["validThrough"] = d["validThrough"]
+                break
+        time.sleep(0.5)
+    return items
+
+
 def fetch_feed(hosts, session=None, timeout=30):
     """Try https://<host>/jobs.feed.json for each host in order -> (items, host_used) for the first host
     that answers with a non-empty schema.org DataFeed (dataFeedElement[].item), or (None, None) if none do
@@ -98,5 +125,5 @@ def fetch_feed(hosts, session=None, timeout=30):
         elements = data.get("dataFeedElement") or []
         items = [e["item"] for e in elements if isinstance(e, dict) and isinstance(e.get("item"), dict)]
         if items:
-            return items, host
+            return _backfill_valid_through(items, session=s), host
     return None, None

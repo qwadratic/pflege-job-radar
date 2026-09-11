@@ -1,0 +1,60 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css>
+<style>
+body{display:flex;min-height:100vh}
+.side{width:190px;flex:none;border-right:1px solid var(--line);background:var(--surface);padding:16px 0;position:sticky;top:0;height:100vh}
+.side b.brand{display:block;padding:0 16px 14px;font-size:13px}
+.side a{display:flex;gap:10px;align-items:center;padding:9px 16px;color:var(--ink-2);text-decoration:none;font-size:12.5px;border-left:2px solid transparent}
+.side a.on{color:var(--ink);border-left-color:var(--neon);background:var(--surface-2)}
+.side a .c{margin-left:auto;color:var(--ink-3);font-size:11px}
+.side .grp{padding:16px 16px 6px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.side .foot{position:absolute;bottom:14px;left:0;right:0;padding:0 16px;font-size:11.5px;color:var(--ink-3)}
+.main{flex:1;min-width:0;padding:18px 22px 40px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:460px;background:var(--surface);border-left:1px solid var(--line);box-shadow:-18px 0 40px rgba(0,0,0,.45);padding:18px 20px;overflow:auto}
+.drawer h2{font-size:15px;margin:0 0 4px}
+.scrim{position:fixed;inset:0;background:rgba(11,13,18,.45)}
+.main{margin-right:0}
+</style>
+<body>
+<div class=side><b class=brand>Pflege-Stellen <span class=muted>Bayern</span></b>
+ <a href=#>Hospitals <span class=c>50</span></a><a href=#>Jobs <span class=c>683</span></a>
+ <a class=on href=#>Clawl <span class=c>#74</span></a><a href=#>Billing <span class=c>$3.75</span></a>
+ <div class=grp>Clawl</div>
+ <a href=#>Run</a><a href=#>Coverage <span class=c>88 %</span></a><a href=#>Automation <span class=c>2</span></a><a href=#>History <span class=c>71</span></a>
+ <div class=grp>System</div><a href=#>Docs</a><a href=#>Settings</a>
+ <div class=foot>381 credits · PAYG armed<div class=meter style="margin-top:6px"><i style="width:11%"></i></div></div></div>
+<div class=main>
+ <h1>Clawl</h1><p class=expl>Navigation lives on the left, so the page keeps its full width for two content columns — and the right drawer never fights the nav.</p>
+ <div class=two style="margin-top:14px">
+  <div>
+   <div class="card hot"><h3>New clawl</h3>
+    <div class=f><span class=lbl>Target</span><div class=row style="gap:0;border:1px solid var(--line);width:max-content;max-width:100%"><span class=btn style="border:0;border-right:1px solid var(--line)">all</span><span class=btn style="border:0;border-right:1px solid var(--line);background:var(--surface-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--neon)">Hospital</span><span class=btn style="border:0;border-right:1px solid var(--line)">District</span><span class=btn style="border:0;border-right:1px solid var(--line)">Town</span><span class=btn style=border:0>ATS</span></div></div>
+    <div style="margin-top:9px"><div class=pick style="width:100%">5 hospitals selected<i></i></div></div>
+    <div class=row style="margin-top:10px"><div class=f style="flex:1"><span class=lbl>Mode</span><div class=pick style="width:100%">adapter<i></i></div></div><div class=f><span class=lbl>Cap</span><div class=num>40</div></div></div>
+    <div class=row style="margin-top:11px"><span class="tag sky">≈32 credits</span><span class=sp></span><button class=btn>Estimate</button><button class="btn n">Plan &amp; run →</button></div></div>
+   <div class=card><div class=row><h3>Running · #74</h3><span class="tag neon">3 / 5</span><span class=sp></span><button class="btn s">Log ▸</button></div>
+    <div class=meter style="margin:9px 0 11px"><i style="width:60%"></i></div>
+    <div class=kpi><div><span>Now</span><b>BKH Günzburg</b></div><div><span>Credits</span><b>77/120</b></div><div><span>New</span><b>11</b></div></div></div>
+   <div class=card><div class=row><h3>Last run #69</h3><span class="tag red">28 refused</span></div>
+    <table style="margin-top:9px"><tr><td><span class="dot r"></span>cap 6 &lt; minimum 40</td><td class=n>28</td><td class=n><button class="btn s">Re-run 40 ▸</button></td></tr>
+    <tr><td><span class="dot a"></span>gate: adapter covers it</td><td class=n>4</td><td class=n><button class="btn s">Run anyway</button></td></tr></table></div>
+  </div>
+  <div>
+   <div class=card><h3>Budget</h3><div class=kpi style="margin-top:10px"><div><span>Credits</span><b>381</b></div><div><span>This run</span><b>≈32</b></div><div><span>Free runs</span><b>3/5</b></div></div></div>
+   <div class=card><div class=row><h3>Coverage</h3><span class=sp></span><span class="small muted">88.0 %</span></div>
+    <table style="margin-top:9px"><tr><td><span class="tag amber">Firecrawl</span></td><td class=n>15</td><td class=n>86.7 %</td><td class=n><button class="btn s">Run ▸</button></td></tr>
+    <tr><td><span class=tag>umantis</span></td><td class=n>9</td><td class=n>66.7 %</td><td class=n><button class="btn s">Run ▸</button></td></tr></table></div>
+   <div class=card><div class=row><h3>Automation</h3><span class=sp></span><a href=# class=small>open →</a></div><div class=small style="margin-top:8px"><span class="dot r"></span>Hunter stopped · <span class="dot g"></span>2 schedules · <span class="dot b"></span>inbox 7</div></div>
+  </div>
+ </div>
+</div>
+<div class=drawer><div class=row><h2>Plan · 5 hospitals · adapter</h2><span class=sp></span><button class="btn s">✕</button></div>
+ <p class=expl>Right drawer: long, scannable, page stays behind it. Nothing is spent until “Run now”.</p>
+ <div class=card style="margin-top:12px"><h3>What will happen</h3>
+  <table><tr><td>Hospitals in target</td><td class=n>5</td></tr><tr><td>Adapter can serve</td><td class=n>4</td></tr><tr><td>Needs Firecrawl agent</td><td class=n>1</td></tr><tr><td>Estimated postings</td><td class=n>118–140</td></tr><tr><td>Estimated credits</td><td class=n>≈32 of 381</td></tr></table></div>
+ <div class=card><h3>Gate</h3><div class=small><div><span class="dot g"></span>cap 40 ≥ minimum 40 — ok</div><div style="margin-top:6px"><span class="dot a"></span>1 hospital refused: adapter data is 4 h old <button class="btn s">include anyway</button></div></div></div>
+ <div class=card><h3>Per hospital</h3><table><tr><th>Hospital</th><th>Route</th><th class=n>Cap</th></tr>
+  <tr><td>BKH Günzburg</td><td><span class=tag>adapter</span></td><td class=n>–</td></tr>
+  <tr><td>Klinikum Passau</td><td><span class="tag amber">firecrawl</span></td><td class=n>40</td></tr>
+  <tr><td>Rotkreuzklinik Lindenberg</td><td><span class=tag>adapter</span></td><td class=n>–</td></tr></table></div>
+ <div class=row><button class=btn>Cancel</button><span class=sp></span><button class="btn n">Run now →</button></div></div>
+</body>

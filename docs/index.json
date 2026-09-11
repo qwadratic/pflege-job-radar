@@ -7,6 +7,13 @@
   }
  },
  {
+  "file": "graph",
+  "title": {
+   "de": "Ontologie-Graph",
+   "en": "Ontology graph"
+  }
+ },
+ {
   "file": "scraping.md",
   "title": {
    "de": "Scraping & ATS-Strategien",
@@ -14,10 +21,31 @@
   }
  },
  {
+  "file": "feature-matrix.md",
+  "title": {
+   "de": "Feature-Matrix – was jeder Adapter wirklich kann",
+   "en": "Feature matrix – what each adapter really does"
+  }
+ },
+ {
+  "file": "firecrawl.md",
+  "title": {
+   "de": "Firecrawl-Agent – Prompt, Budget, Kill-Switch",
+   "en": "Firecrawl agent – prompt, budget, kill switch"
+  }
+ },
+ {
   "file": "api.md",
   "title": {
    "de": "API",
    "en": "API"
+  }
+ },
+ {
+  "file": "errors.md",
+  "title": {
+   "de": "Fehler – RFC 9457 Problem Details",
+   "en": "Errors – RFC 9457 problem details"
   }
  },
  {

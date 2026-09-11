@@ -310,25 +310,18 @@ def _seed_obs(board, c, towns, log):
         seed = seed_for({"name": c["name"], "career": c["careers_url"]}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no softgarden host found on careers page"}
-        cr = Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log)
+        cr = Crawler(towns, sleep=0.2, log=log)  # BFS fallback walks to its own end -- see Crawler's ceiling note
         items, feed_host = fetch_feed(seed["feed_hosts"], session=cr.s)
         if items is None:
             log("softgarden: no jobs.feed.json on", " / ".join(seed["feed_hosts"]), "-- falling back to BFS")
             return cr.crawl(seed)
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": len(items), "heuristic_pages": 0,
-                  "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0,
-                  "job_links_found": len(items), "feed_items": len(items), "feed_host": feed_host}
+                  "job_links_found": len(items), "feed_items": len(items), "feed_host": feed_host, "truncated": False}
         out = []
         for jp in items:
             j = cr._from_jsonld(jp, jp.get("url") or seed["host"], seed)
-            if j["role_class"] == "nicht_pflege":
-                stats["dropped_not_pflege"] += 1; continue
-            if j["in_bavaria"] is False:
-                stats["dropped_non_bavaria"] += 1; continue
-            if j["in_bavaria"] is None and seed.get("bavaria_only_operator"):
+            if j["in_bavaria"] is None and seed.get("bavaria_only_operator"):  # label, not a filter: operator known bavaria-only
                 j["in_bavaria"] = True
-            if j["in_bavaria"] is None:
-                stats["dropped_unknown_loc"] += 1; continue
             out.append(j)
         return out, stats
     if vendor in ("bite", "bite_jobs"):
@@ -356,7 +349,7 @@ def _seed_obs(board, c, towns, log):
             return [], {"error": "no P&I seed for this clinic (data/registry/pi_seeds.json)"}
         rows, st = [], {}
         for s in mine:
-            r, x = pi_asp.crawl(s, towns, max_items=80, log=log)
+            r, x = pi_asp.crawl(s, towns, log=log)
             rows += r; st.update(x)
         return rows, st
     return [], {"error": f"no seeded runner for {vendor}"}
@@ -373,9 +366,14 @@ def _vendor_rows(board, c, session, log):
         if not fn:
             raise RuntimeError(f"no vendor adapter for {board['vendor']}")
         rows = fn(c, session=session)
-    for r in rows:                                   # registry town beats an empty one
+    ids = [x["clinic_id"] for x in board.get("clinics") or [c]]
+    for r in rows:
+        # which board this came from is provenance, not a guess -- it bounds the site the posting
+        # can belong to (74 boards are shared, covering 253 clinics)
+        r["payload"]["board_url"] = board.get("url") or c.get("careers_url")
+        r["payload"]["board_clinic_ids"] = ids
         locs = r["payload"].get("loc") or [{}]
-        if c.get("town") and not any((l or {}).get("city") for l in locs):
+        if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
             r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
     return rows
 
@@ -451,9 +449,9 @@ def _load_observations(obs, clinics_by_id, log):
     obs = [o for o in obs if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES and o.get("in_bavaria") is not False]
     if not obs:
         return {}, []
-    m = Matcher([dict(c) for c in D.registry_csv_rows()])
+    m = Matcher([dict(c) for c in (D.clinics() or D.registry_csv_rows())])
     for o in obs:
-        mt = m.match(o.get("employer_name"), o.get("city"))
+        mt = m.match(o.get("employer_name"), o.get("city"), board=o.get("_board"))
         o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
         o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
         if o["_kez"]:
@@ -551,8 +549,10 @@ def execute(run_id):
                         log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
                 else:
                     obs, st = _seed_obs(b, c, towns, log)
+                    for o in obs:
+                        o["_board"] = [x["clinic_id"] for x in b["clinics"]]
                     observations += obs
-                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
+                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
                     if st and st.get("error"):
                         errors += 1
                     elif not obs:

@@ -21,7 +21,6 @@ def SG_ST():
 
 OWNER = "owner@example.org"
 CUSTOMER = "clinic@example.org"
-OWNER_H = {"X-ExeDev-Email": OWNER}
 KEY = "sk_test_NEVERLOGTHIS123"
 WH = "whsec_testsecret"
 
@@ -97,6 +96,10 @@ def configured(monkeypatch, env):
     ST.save_feature_flags({"stripe": True})
 
 
+def _owner_cookie():
+    return {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
+
+
 def _customer_cookie(email=CUSTOMER, cus="cus_1"):
     AU.upsert_customer(email, cus)
     return {"Cookie": "pj_session=" + AU.create_session(email, "customer", cus)}
@@ -113,15 +116,22 @@ def _post_event(client, payload, secret=WH, t=None):
 
 # --- feature flag -----------------------------------------------------------------------------
 def test_status_unconfigured(client):
+    """Anonymous sees the setup booleans (POST /stripe/checkout is public, so "can I buy?" has to be), and
+    null for the two revenue counts. The owner sees the counts."""
     d = client.get("/api/stripe/status").json()
-    assert d == {**d, "configured": False, "price_id_set": False, "webhook_set": False, "customers": 0, "closed_this_period": 0}
+    assert d == {**d, "configured": False, "price_id_set": False, "webhook_set": False,
+                 "customers": None, "closed_this_period": None}
+    o = client.get("/api/stripe/status", headers=_owner_cookie()).json()
+    assert o == {**o, "configured": False, "customers": 0, "closed_this_period": 0}
 
 
 def test_503_paths_without_key(client, env):
+    # problem+json, the shape app/main.py:_problem() builds for every other error (docs/errors.md)
     r = client.post("/api/stripe/checkout", json={"email": CUSTOMER})
-    assert r.status_code == 503 and r.json() == {"error": "stripe not configured"}
+    assert r.status_code == 503 and r.headers["content-type"].startswith("application/problem+json")
+    assert r.json() == {**r.json(), "status": 503, "detail": "stripe not configured", "error": "stripe not configured"}
     r = client.post("/api/stripe/webhook", content=b"{}", headers={"Stripe-Signature": "t=1,v1=00"})
-    assert r.status_code == 503 and r.json() == {"error": "stripe not configured"}
+    assert r.status_code == 503 and r.json()["error"] == "stripe not configured"
     assert env.calls == []
 
 
@@ -134,17 +144,17 @@ def test_checkout_needs_price_id(client, monkeypatch):
 
 
 def test_closed_records_locally_without_stripe(client, env):
-    r = client.post("/api/postings/4711/closed", headers=OWNER_H)
+    r = client.post("/api/postings/4711/closed", headers=_owner_cookie())
     assert r.status_code == 200
     d = r.json()
     assert d["posting_id"] == 4711 and d["by_email"] == OWNER and d["already"] is False and d["billed"] is False and d["stripe_usage_id"] is None
-    r2 = client.post("/api/postings/4711/closed", headers=OWNER_H).json()           # idempotent
+    r2 = client.post("/api/postings/4711/closed", headers=_owner_cookie()).json()           # idempotent
     assert r2["already"] is True and r2["at"] == d["at"]
     with R._lock, R.db() as c:
         assert c.execute("select count(*) from closed_postings").fetchone()[0] == 1
-    assert client.get("/api/stripe/status").json()["closed_this_period"] == 1
-    assert client.get("/api/postings/4711/closed", headers=OWNER_H).json()["closed"] is True
-    assert client.get("/api/postings/4712/closed", headers=OWNER_H).json()["closed"] is False
+    assert client.get("/api/stripe/status", headers=_owner_cookie()).json()["closed_this_period"] == 1
+    assert client.get("/api/postings/4711/closed", headers=_owner_cookie()).json()["closed"] is True
+    assert client.get("/api/postings/4712/closed", headers=_owner_cookie()).json()["closed"] is False
     assert env.calls == []
 
 
@@ -160,8 +170,8 @@ def test_closed_requires_member(client):
     r = client.post("/api/postings/1/closed")
     assert r.status_code == 401 and r.json()["error"] == "sign in required" and r.json()["role"] == "anonymous"
     assert client.get("/api/postings/1/closed").status_code == 401
-    assert client.post("/api/postings/0/closed", headers=OWNER_H).status_code == 400
-    assert client.post("/api/postings/abc/closed", headers=OWNER_H).status_code == 422
+    assert client.post("/api/postings/0/closed", headers=_owner_cookie()).status_code == 400
+    assert client.post("/api/postings/abc/closed", headers=_owner_cookie()).status_code == 422
 
 
 # --- checkout ---------------------------------------------------------------------------------
@@ -209,6 +219,17 @@ def test_verify_signature_v1_scheme():
     assert not SG.verify_signature(payload + b" ", h, WH, now=t)
     assert not SG.verify_signature(payload, h, WH, now=t + SG.WEBHOOK_TOLERANCE_S + 1)  # stale
     assert not SG.verify_signature(payload, "", WH) and not SG.verify_signature(payload, "v1=abc", WH) and not SG.verify_signature(payload, "t=x,v1=abc", WH)
+    # non-ASCII: the header arrives latin-1-decoded and hmac.compare_digest refuses such a str (TypeError,
+    # i.e. a 500 echoing the exception on a public route). The check compares encoded bytes, so this is
+    # just a wrong signature. Same shape as app/firecrawl_hooks.py:96 and app/auth.py:_parse_cookie.
+    assert not SG.verify_signature(payload, f"t={t},v1=\xff", WH, now=t)
+
+
+def test_webhook_non_ascii_signature_is_a_400_not_a_500(client, configured):
+    payload = b'{"id":"evt_1","type":"invoice.paid","data":{"object":{}}}'
+    r = client.post("/api/stripe/webhook", content=payload,
+                    headers={"Stripe-Signature": b"t=1700000000,v1=\xff", "Content-Type": "application/json"})
+    assert r.status_code == 400 and r.json()["detail"] == "invalid signature"
 
 
 def test_webhook_checkout_completed_upserts_customer(client, env, configured):
@@ -217,11 +238,11 @@ def test_webhook_checkout_completed_upserts_customer(client, env, configured):
     assert r.status_code == 200 and r.json() == {**r.json(), "received": True, "handled": True, "customer": "new@clinic.org", "session_marked": False}
     assert SG.customer_for_email("new@clinic.org") == {**SG.customer_for_email("new@clinic.org"), "stripe_customer_id": "cus_42", "status": "active"}
     assert AU.customer_role("new@clinic.org") == "customer"
-    assert client.get("/api/stripe/status").json()["customers"] == 1
+    assert client.get("/api/stripe/status", headers=_owner_cookie()).json()["customers"] == 1
     # cancellation
     r = _post_event(client, _event("customer.subscription.deleted", {"id": "sub_1", "customer": "cus_42"}))
     assert r.status_code == 200 and r.json()["cancelled"] == 1
-    assert AU.customer_role("new@clinic.org") is None and client.get("/api/stripe/status").json()["customers"] == 0
+    assert AU.customer_role("new@clinic.org") is None and client.get("/api/stripe/status", headers=_owner_cookie()).json()["customers"] == 0
     # unknown events are acknowledged, not applied
     r = _post_event(client, _event("invoice.paid", {"id": "in_1"}))
     assert r.status_code == 200 and r.json()["handled"] is False
@@ -272,7 +293,7 @@ def test_closed_by_customer_writes_usage_record(client, env, configured):
     n = len(env.calls)
     d2 = client.post("/api/postings/555/closed", headers=h).json()                 # idempotent: no second usage record
     assert d2["already"] is True and d2["stripe_usage_id"] == "mbur_1" and len(env.calls) == n
-    assert client.get("/api/stripe/status").json()["closed_this_period"] == 1
+    assert client.get("/api/stripe/status", headers=_owner_cookie()).json()["closed_this_period"] == 1
 
 
 def test_closed_meter_event_path(client, env, configured, monkeypatch):
@@ -296,9 +317,9 @@ def test_closed_keeps_ledger_when_stripe_fails(client, env, configured):
 
 def test_owner_closes_on_behalf_of_customer(client, env, configured):
     AU.upsert_customer(CUSTOMER, "cus_1")
-    d = client.post("/api/postings/600/closed", headers=OWNER_H, json={"customer_email": CUSTOMER}).json()
+    d = client.post("/api/postings/600/closed", headers=_owner_cookie(), json={"customer_email": CUSTOMER}).json()
     assert d["by_email"] == CUSTOMER and d["billed"] is True
-    d = client.post("/api/postings/601/closed", headers=OWNER_H).json()              # owner alone: ledger only
+    d = client.post("/api/postings/601/closed", headers=_owner_cookie()).json()              # owner alone: ledger only
     assert d["by_email"] == OWNER and d["billed"] is False and d["stripe_error"] is None
     # a customer cannot re-attribute
     d = client.post("/api/postings/602/closed", headers=_customer_cookie("me@clinic.org", "cus_9"), json={"customer_email": CUSTOMER}).json()
@@ -321,3 +342,72 @@ def test_schema_is_self_sufficient(tmp_path, monkeypatch):
     with R._lock, R.db() as c:
         names = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
     assert {"closed_postings", "customers", "sessions"} <= names
+
+
+# --- a closed_postings row belongs to the customer that closed it (2026-09-11) -----------------
+# GET /api/postings/{id}/closed took no Request and no identity: it returned closed_row() verbatim, so ANY
+# signed-in member (auth.MEMBER_READ covers /api/postings) could walk posting ids and read every other
+# paying clinic's e-mail address, Stripe customer id, usage id and Stripe's own error string. The POST's
+# "already closed" branch handed back the same row.
+OTHER = "other-clinic@example.org"
+PRIVATE = ("by_email", "stripe_customer_id", "stripe_usage_id", "stripe_error")
+
+
+def _close_as(client, posting_id, email, cus):
+    """`email` closes `posting_id` as a paying customer. Returns that customer's cookie header."""
+    h = _customer_cookie(email, cus)
+    r = client.post(f"/api/postings/{posting_id}/closed", headers=h)
+    assert r.status_code == 200, r.text[:200]
+    assert r.json()["by_email"] == email, r.json()
+    return h
+
+
+def test_a_customer_cannot_read_another_customers_closed_row(client, configured):
+    """Two different paying customers, one closed posting. The stranger learns the posting is taken and
+    when; everything that identifies or bills the closer stays with the closer and the owner."""
+    mine = _close_as(client, 4242, CUSTOMER, "cus_a")
+    stranger = _customer_cookie(OTHER, "cus_b")
+
+    seen = client.get("/api/postings/4242/closed", headers=stranger)
+    assert seen.status_code == 200
+    body = seen.json()
+    assert body["closed"] is True and body["posting_id"] == 4242 and body["at"]
+    assert set(body) == {"posting_id", "closed", "at"}, body
+    for leak in PRIVATE:
+        assert leak not in body, (leak, body)
+    for secret in (CUSTOMER, "cus_a"):
+        assert secret not in seen.text, (secret, seen.text)
+
+    own = client.get("/api/postings/4242/closed", headers=mine).json()      # the closer still sees its own row
+    assert own["by_email"] == CUSTOMER and own["stripe_customer_id"] == "cus_a"
+    owner = client.get("/api/postings/4242/closed", headers=_owner_cookie()).json()
+    assert owner["by_email"] == CUSTOMER and all(k in owner for k in PRIVATE), owner
+
+
+def test_the_already_closed_answer_does_not_leak_the_other_customers_row(client, configured):
+    """The POST's idempotent branch returned the stored row too -- the same leak through the write door."""
+    _close_as(client, 4243, CUSTOMER, "cus_a")
+    again = client.post("/api/postings/4243/closed", headers=_customer_cookie(OTHER, "cus_b"))
+    assert again.status_code == 200
+    body = again.json()
+    assert body["already"] is True and body["posting_id"] == 4243
+    assert set(body) == {"posting_id", "at", "already"}, body
+    assert "billed" not in body, body                      # billing state belongs to whoever is billed
+    for secret in (CUSTOMER, "cus_a"):
+        assert secret not in again.text, (secret, again.text)
+    mine = client.post("/api/postings/4243/closed", headers=_customer_cookie(CUSTOMER, "cus_a")).json()
+    assert mine["already"] is True and mine["by_email"] == CUSTOMER and "billed" in mine
+
+
+def test_a_stripe_error_string_is_not_readable_by_a_stranger(client, env):
+    """stripe_error is Stripe's own message about someone else's account ("no stripe customer for this
+    address", a card decline, an API error). Without a key it is the unconfigured string; the point is that
+    the column never crosses to another member whatever it holds."""
+    _close_as(client, 4244, CUSTOMER, "cus_a")
+    assert client.get("/api/postings/4244/closed", headers=_customer_cookie(CUSTOMER, "cus_a")).json()["stripe_error"] == "stripe not configured"
+    assert "stripe_error" not in client.get("/api/postings/4244/closed", headers=_customer_cookie(OTHER, "cus_b")).json()
+
+
+def test_a_posting_nobody_closed_still_answers_the_same_shape(client, env):
+    for h in (_owner_cookie(), _customer_cookie(OTHER, "cus_b")):
+        assert client.get("/api/postings/4245/closed", headers=h).json() == {"posting_id": 4245, "closed": False}

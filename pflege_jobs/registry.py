@@ -79,6 +79,7 @@ def _pick_site(cands):
 class Matcher:
     def __init__(self, clinics):
         self.clinics = clinics
+        self.by_id = {str(c["clinic_id"]): c for c in clinics}
         self.by_name = defaultdict(list); self.by_op = defaultdict(list); self.by_town = defaultdict(list)
         for c in clinics:
             self.by_name[employer_norm(c["name"])].append(c)
@@ -87,9 +88,22 @@ class Matcher:
             tk = set(city_key(c.get("town")).split("-")) | toks(c.get("town"))
             c["_ntoks"] = toks(c["name"]) - tk; c["_otoks"] = toks(c.get("operator")) - tk; c["_kinds"] = kinds(c["name"]) | kinds(c.get("operator"))
 
-    def match(self, employer, city):
+    def match(self, employer, city, board=None, description=None):
+        """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
+        regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
+        can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
+        Board-first was tried and reverted: it forced a guess on shared boards that host non-Bavaria
+        entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched."""
+        r = self._match_content(employer, city, description)
+        if r: return r
+        if board:
+            en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
+            return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
+        return None
+
+    def _match_content(self, employer, city, description=None):
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
-        if not en: return None
+        if not en: return self._match_jd(description)
         c = self.by_name.get(en, [])
         if len(c) == 1: return c[0]["clinic_id"], "R1_exact", 1.0
         if len(c) > 1:
@@ -131,6 +145,30 @@ class Matcher:
         cands = [(overlap(et, x["_ntoks"] | x["_otoks"]), x) for x in same_town]
         best = [x for j, x in cands if j >= 0.5]
         if len(best) == 1 and len(same_town) == 1: return best[0]["clinic_id"], "R5_loose", 0.6
+        return self._match_jd(description)
+
+    def _match_jd(self, description):
+        """Last content-side check before falling back to board: does exactly one clinic's own name or
+        operator appear, verbatim as a token set, in the job description? Conservative on purpose --
+        a JD mentioning a clinic in passing ("Kooperation mit Klinikum X") is rare enough that requiring
+        a UNIQUE hit across the whole registry is safer than guessing among several mentions."""
+        if not description: return None
+        dt = toks(description[:2000])
+        hits = [c for c in self.clinics if (c["_ntoks"] and c["_ntoks"] <= dt) or (c["_otoks"] and c["_otoks"] <= dt)]
+        if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
+        return None
+
+    def _match_board(self, pool, en, et, ck):
+        """The board a posting was fetched from is provenance, not a guess: the site must be one of the
+        clinics sharing that board, so the candidate set is that board and nothing else. Undecidable
+        within the board stays unmatched rather than falling back to a repo-wide search."""
+        if not pool: return None
+        if len(pool) == 1: return pool[0]["clinic_id"], "R0_board", 0.9
+        for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en),
+                                 ("R0_board_town", 0.85, lambda x: city_key(x.get("town")) == ck and ck),
+                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6)):
+            hit = [x for x in pool if sel(x)]
+            if len(hit) == 1: return hit[0]["clinic_id"], rule, score
         return None
 
 

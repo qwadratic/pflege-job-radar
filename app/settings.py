@@ -64,8 +64,22 @@ def get_patterns():
     return {"version": 0, "note": "patterns.json not present yet"}
 
 
+REQUIRED_SECTIONS = ("employer", "role", "qualification", "department", "enrichment")   # pflege_jobs/config.py:validate
+
+
 def validate_patterns(obj):
-    """Every 're' (and every string under a key that looks like a regex) must compile. Returns list of errors."""
+    """Every 're' must compile AND the document must be one the classifier can actually load. Returns a list
+    of errors; empty means save_patterns() may write it.
+
+    The structural half is pflege_jobs/config.py:validate(), the very function reload() calls -- not a second
+    copy of the section list, so the two cannot drift. It is here and not only in save_patterns() because
+    POST /api/settings/patterns/validate is the dry run for this route and has to answer the same question.
+
+    Why it exists: until 2026-09-11 this checker only asked "do the regexes compile?", so a body with no
+    regexes in it passed. PUT /api/settings/patterns with an EMPTY body is `{}` (app/data.py:json_body
+    documents that on purpose) -- it validated, was written over pflege_jobs/patterns.json, and answered
+    200 {"reloaded": false}: 14,131 bytes and 9 sections replaced by 2 bytes, and every classifier then died
+    with ValueError: patterns: missing section 'employer'."""
     errs = []
 
     def walk(node, path):
@@ -90,6 +104,30 @@ def validate_patterns(obj):
     if not isinstance(obj, dict):
         return ["patterns must be a JSON object"]
     walk(obj, "$")
+    from pflege_jobs import config as C          # an ImportError here must fail loudly, not skip the check
+    stored = get_patterns()
+    if all(k in stored for k in REQUIRED_SECTIONS):          # not the "not present yet" placeholder
+        dropped = sorted(set(stored) - set(obj))
+        if dropped:
+            # The second half of the same incident. PUT replaces the whole document, and C.validate() only
+            # requires the five sections classify.py cannot start without -- so a body carrying just those
+            # five passes, writes, and silently drops the rest. Measured: `cv` (app/cv.py's CV regexes) gone,
+            # and `excluded_role_classes` gone took the INTAKE POLICY with it -- pflege_jobs/config.py:_apply
+            # falls back to a 3-entry default, so `pflegehelfer` postings would start passing
+            # sinks.only_pflege(). A section that disappears from the stored document is a loud 422; a caller
+            # that really means to empty one sends it with an empty value ("cv": {}, "excluded_role_classes":
+            # []), which _apply() accepts, so nothing is walled off -- only silence is.
+            errs.append("would drop section(s) " + ", ".join(dropped) + " that the stored document defines; "
+                        "PUT replaces the whole document, so send every section (an empty value clears one)")
+    try:
+        C.validate(obj)
+    except ValueError as e:
+        errs.append(str(e))
+    except (KeyError, TypeError, AttributeError, IndexError) as e:
+        # A section that is present but the wrong shape (employer as a list, role.rules as a string, an
+        # entry without "re"). validate() indexes into the document, so it raises these rather than
+        # ValueError -- a caller mistake either way, and a 422 rather than a 500.
+        errs.append(f"patterns: {type(e).__name__}: {e}")
     return errs
 
 
@@ -160,8 +198,9 @@ FEATURE_STATUS_NOTES = [
              "data, no real WhatsApp/e-mail/Meta integration wired. Code and API untouched, needs more work "
              "before it's worth exposing; not a runtime toggle -- re-enable in app/main.py:autopilot_page."},
     {"key": "tailnet_login", "label": "Tailnet login for /pro",
-     "note": "Code path exists (identity() checks 100.64.0.0/10) but is inert: env TAILNET_TRUST is unset and this "
-             "VM is not joined to a tailnet. Not a runtime toggle -- needs an auth key and a restart."},
+     "note": "Removed 2026-09-10, together with the exe.dev proxy-header door. identity() has no tailnet branch "
+             "any more and no code reads TAILNET_TRUST -- the service binds 0.0.0.0, so a source-IP check was a "
+             "forge hole rather than a login. Sign in with POST /api/auth/login or a magic link (docs/auth.md)."},
     {"key": "hunter", "label": "Firecrawl hunter (24/7 agent runner)",
      "note": "Caused a credit overrun on 2026-09-08 (a daemon restart mid-run orphaned 3 jobs; fixed since). "
              "Toggle from the Clawl page's Auto-Modus switch, not here."},
@@ -258,39 +297,78 @@ def save_firecrawl(obj):
     return public_firecrawl()
 
 
-# --- agent API key: a non-interactive door for app/auth.py's AGENT_WRITE_PREFIXES subset only. Only the
-# SHA-256 hash is ever persisted (settings key "agent_key"); the plaintext exists nowhere after the one
-# response that generates or rotates it -- not in the DB, not in any later GET. ---------------------------
+# --- agent API keys: non-interactive doors, each with a label and a scope set. A scope opens exactly the
+# routes app/auth.py's AGENT_ROUTES lists for it and nothing else; everything outside that table stays
+# owner-session-only whatever the key carries. Only SHA-256 hashes are ever persisted (settings key
+# "agent_keys", hash -> record); the plaintext exists nowhere after the one response that mints it.
+# The function names are the ones callers already use, so the single-key shape of GET /api/settings and
+# tools/mint_kindt_env.py keeps working. ------------------------------------------------------------------
 def _hash_key(raw):
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def get_agent_keys():
+    """{sha256: {label, scopes[], created_at, rotated_at}}. A pre-scope install still has the single
+    settings.agent_key record; it is read as one full-scope key so an already-issued key keeps working."""
+    keys = R.get_setting("agent_keys")
+    if keys is not None:
+        return keys
+    from . import auth as AU
+    old = R.get_setting("agent_key") or {}
+    if not old.get("hash"):
+        return {}
+    return {old["hash"]: {"label": "legacy", "scopes": list(AU.SCOPES),
+                          "created_at": old.get("created_at"), "rotated_at": old.get("rotated_at")}}
+
+
 def public_agent_key():
-    """Status only, safe for the owner-gated GET /api/settings -- never the key or its hash."""
-    cur = R.get_setting("agent_key") or {}
-    return {"configured": bool(cur.get("hash")), "created_at": cur.get("created_at"), "rotated_at": cur.get("rotated_at")}
+    """Status only, safe for the owner-gated GET /api/settings -- never a key or a hash. created_at is the
+    oldest key's, rotated_at the newest rotation, so the shape the pro page already reads still means what
+    it did; `keys` is the per-label detail the scope model adds."""
+    recs = sorted(get_agent_keys().values(), key=lambda r: r.get("created_at") or "")
+    return {"configured": bool(recs),
+            "created_at": recs[0].get("created_at") if recs else None,
+            "rotated_at": max((r.get("rotated_at") or "" for r in recs), default="") or None,
+            "keys": [{k: r.get(k) for k in ("label", "scopes", "created_at", "rotated_at")} for r in recs]}
 
 
-def set_agent_key(rotate=False):
-    """Generate a new key, store only its hash, return the plaintext once. `rotate` just labels the timestamp
-    field differently in the stored record (created_at is set once, rotated_at on every regeneration after)."""
-    cur = R.get_setting("agent_key") or {}
+def set_agent_key(rotate=False, label=None, scopes=None):
+    """Mint a key, store only its hash, return the plaintext once.
+
+    rotate=True revokes every existing key first (what the old single-key door did). Without it, a key
+    carrying the same label is replaced and keys with other labels stay valid. scopes=None means every
+    scope in auth.SCOPES -- the same reach the one old key had; pass a list to narrow it."""
+    from . import auth as AU
+    label = (label or "default").strip() or "default"
+    scopes = list(AU.SCOPES) if scopes is None else [s.strip() for s in scopes if s and s.strip()]
+    bad = [s for s in scopes if s not in AU.SCOPES]
+    if bad:
+        raise ValueError(f"unknown scope(s): {', '.join(bad)}; known: {', '.join(AU.SCOPES)}")
+    cur = get_agent_keys()
+    prev = [r for r in cur.values() if r.get("label") == label]
+    keys = {} if rotate else {h: r for h, r in cur.items() if r.get("label") != label}
     raw = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    record = {"hash": _hash_key(raw), "created_at": cur.get("created_at") or now}
-    if rotate or cur.get("hash"):
+    record = {"label": label, "scopes": scopes, "created_at": (prev[0].get("created_at") if prev else None) or now}
+    if rotate or prev:
         record["rotated_at"] = now
-    R.set_setting("agent_key", record)
+    keys[_hash_key(raw)] = record
+    R.set_setting("agent_keys", keys)
     return raw
 
 
-def clear_agent_key():
-    R.set_setting("agent_key", {})
+def clear_agent_key(label=None):
+    """No label: revoke every key. With one: revoke only that label's."""
+    keys = {} if label is None else {h: r for h, r in get_agent_keys().items() if r.get("label") != label}
+    R.set_setting("agent_keys", keys)
 
 
 def check_agent_key(candidate):
-    cur = R.get_setting("agent_key") or {}
-    stored = cur.get("hash")
-    if not stored or not candidate:
-        return False
-    return hmac.compare_digest(_hash_key(candidate), stored)
+    """The key's record ({label, scopes, ...}) or None. Only ever compares hashes."""
+    if not candidate:
+        return None
+    given = _hash_key(candidate)
+    for stored, record in get_agent_keys().items():
+        if hmac.compare_digest(given, stored):
+            return record
+    return None

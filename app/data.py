@@ -4,11 +4,14 @@ The snapshot is small (a few thousand rows), so filtering happens in Python — 
 for what to move into Postgres once DDL is possible."""
 import csv
 import json
+import re
 import threading
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
+
+from fastapi import HTTPException
 
 from . import config as A
 from . import runs as R
@@ -18,6 +21,161 @@ JOB_COLS = ("posting_id,title,role_class,role_label,department_hint,department_r
             "start_date,first_published,first_seen,last_seen,status,verify_status,verified_at,external_url,source_codes,n_observations,"
             "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,provenance")
 TTL = 600
+
+# Personal data, member-and-up only. enr_contact_emails is scraped off the job ad and is regularly a named
+# individual's work address (`stefan.wur-zer@kno.ag`), not a role mailbox -- GET /api/jobs is public and
+# unauthenticated, so until 2026-09-10 an anonymous caller could pull the lot in one page (431 addresses in
+# a single limit=2000 call, proven live). It is also exactly what a paying customer pays for, so it is
+# redacted below `member`, not removed.
+#
+# Nothing else in JOB_COLS is personal or secret: employer/clinic/city/plz/lat/lon describe the hospital,
+# external_url is the public ad, and clinic_match_rule / source_codes / n_observations / provenance /
+# verify_status describe how this row was derived -- pipeline internals the board publishes on purpose
+# (GET /api/ontology, /docs/api.md, skill/SKILL.md). The clinics select ("*") carries no contact-ish column
+# at all: name, town, operator, landkreis, website, careers_url, beds, ats_type, board, route_reason,
+# last_crawl_* -- public register data plus routing state, no e-mail, no phone, no person.
+MEMBER_ONLY_JOB_FIELDS = ("enr_contact_emails",)
+
+# Nulling the field alone did not redact anything: the same address is usually still in the ad body.
+# GET /api/jobs/{id} returns the `postings` row, which carries `description` plus enr_requirements /
+# enr_experience / enr_housing_evidence (docs/api.md:264) -- 569 of the 572 postings that have an address
+# in enr_contact_emails carry it in the description text too, so an anonymous caller read it there instead.
+# Below `member` every free-text value in the row therefore has e-mail-shaped substrings replaced.
+#
+# WHAT THIS CANNOT CATCH, and is not claimed to:
+#   * obfuscated spellings -- "vorname.name (at) klinik-x.de", "name[at]klinik[punkt]de", an address split
+#     across lines or written into an image;
+#   * phone and fax numbers, which are personal data on exactly the same footing and are left in the text;
+#   * a named individual plus a postal address in prose ("Bewerbungen an Frau Dr. Wurzer, Personalabteilung,
+#     Musterweg 3"), which identifies a person without an address at all;
+#   * anything the ad publishes on a linked page rather than in the body.
+# It is a pattern match on one shape, not a personal-data filter. The real fix is not scraping the body
+# into a public row; this only closes the hole that the redacted field left wide open.
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+EMAIL_MASK = "[e-mail redacted: sign in]"
+
+
+def _scrub_emails(v):
+    """Every string in a value (also inside lists/dicts, e.g. `observations` and `provenance`) with the
+    e-mail-shaped substrings masked. The `"@" in v` test is what keeps this cheap on a 2000-row page: only
+    a string that could possibly contain an address is handed to the regex."""
+    if isinstance(v, str):
+        return EMAIL_RE.sub(EMAIL_MASK, v) if "@" in v else v
+    if isinstance(v, list):
+        return [_scrub_emails(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _scrub_emails(x) for k, x in v.items()}
+    return v
+
+
+def redact(rows, role):
+    """Rows as `role` may see them: owner/customer unchanged, anyone else gets MEMBER_ONLY_JOB_FIELDS as
+    null and every other value scrubbed of e-mail addresses (see above). Copies every row -- these are the
+    shared snapshot objects, mutating them would redact the cache itself for the owner too. Null, not
+    dropped: the key stays part of the published row shape, so `fields=enr_contact_emails` is still a known
+    field rather than a 400. Clinic rows carry none of these fields, so GET /api/clinics passes through with
+    the scrub only (app/main.py:_list_response is shared)."""
+    if role in ("owner", "customer"):
+        return rows
+    return [{k: (None if k in MEMBER_ONLY_JOB_FIELDS else _scrub_emails(v)) for k, v in r.items()} for r in rows]
+
+
+INT64 = 2 ** 63
+# Not a cap on anything anyone asked for: it is the range a SQLite INTEGER can hold, and every id this parser
+# returns ends up bound into one. `?candidate_id=99999999999999999999` reached sqlite3 as a Python int and
+# raised `OverflowError: Python int too large to convert to SQLite INTEGER` -- a 500 on three autopilot
+# (route, parameter) pairs, measured 2026-09-11. A value outside the range cannot equal any stored row, so
+# the honest answer is a 400 naming the parameter, not an exception echoed back. A caller that means
+# "everything" writes ?limit=999999; the bound never truncates a result set, it rejects a value.
+
+
+def int_param(p, name, default=None):
+    """One place every numeric query parameter is read. `?limit=abc` used to reach a bare int() and answer
+    500 with the ValueError text echoed back to an anonymous caller -- 9 (route, param) pairs did, across
+    GET /api/jobs, /api/clinics and /api/plan. Absent or `?limit=` with nothing after it -> `default` (the
+    previous `int(x or 0)` semantics); anything else that is not an integer is a 400 naming the parameter and
+    the value. `?beds_min=%20` is in the second group, not the first: the callers test `p.get(name)` for
+    truthiness before calling, and " " is truthy, so returning `default` there put None into a comparison."""
+    v = p.get(name)
+    if v is None or v == "":
+        return default
+    try:
+        n = int(str(v).strip())
+    except ValueError:
+        raise HTTPException(400, f"{name} must be an integer, got {str(v)[:60]!r}")
+    if not -INT64 <= n < INT64:
+        raise HTTPException(400, f"{name} must fit in a 64-bit integer, got {str(v)[:60]!r}")
+    return n
+
+
+PAGING = {
+    "envelope": ["total", "limit", "offset", "next_offset", "rows"],
+    "max_page_size": None,
+    "routes": ["GET /api/jobs", "GET /api/clinics", "GET /api/plan", "GET /api/autopilot/*"],
+    "note": "`limit` is always the limit the caller asked for; there is no server maximum, so ?limit=999999 "
+            "returns every matching row. `next_offset` is the offset to ask for next, or null when this page "
+            "reached the end of the list -- that null is the only 'that was everything' signal, do not infer "
+            "it from len(rows) == limit. Until 2026-09-11 limit was silently clamped to 2000 and the clamp "
+            "was echoed back as if it were the request.",
+    "ndjson": "Accept: application/x-ndjson drops the envelope, so the same information is in the "
+              "Content-Range response header: `rows <offset>-<last>/<total>` (`rows */<total>` for an empty page).",
+    "stability": "offset paging over a snapshot that is rebuilt every 600s and after every crawl: rows can "
+                 "shift between two calls of one sweep, so a sweep can miss or repeat rows. GET /api/stats -> "
+                 "snapshot_at changes when the list underneath changed; compare it across the sweep.",
+}
+
+
+def page(rows, p, default_limit):
+    """One page of an already-materialised list, plus the envelope every paged route shares.
+
+    NO MAXIMUM PAGE SIZE. Until 2026-09-11 this was `min(limit, 2000)` and then reported `"limit": 2000` --
+    `GET /api/jobs?limit=999999` answered 2000 of 2725 open postings (measured live) and named the truncation
+    as if 2000 had been the request; the NDJSON path dropped the envelope entirely, so a streaming caller got
+    exactly 2000 lines and no signal at all. A cap reported as success is what CLAUDE.md forbids.
+
+    Why serve it rather than 400 on a maximum: the ceiling protected nothing. filter_jobs() / plan_rows() /
+    autopilot's db.rows() all build the whole list before this function sees it, so cutting it here saved no
+    query and no memory -- only the bytes the caller explicitly asked for. And `?limit=999999` is already how
+    this API spells "everything" (see int_param above). If a page size ever does need a ceiling, it belongs
+    here as a 400 naming the maximum, never as a smaller `limit` echoed back.
+
+    `next_offset` is the resume point, None once the page reached the end. It is the field a sweeping agent
+    tests; `len(rows) < limit` is not the same test (a filter whose total is an exact multiple of limit ends
+    on a full page). It is not a cursor -- see PAGING["stability"]."""
+    limit = int_param(p, "limit", default_limit)
+    offset = int_param(p, "offset", 0)
+    # Clamping these was the same lie in miniature: `?limit=0` returned one row called "limit": 1, and
+    # `?offset=-5` silently became page one. A nonsense value is the caller's mistake, said out loud.
+    if limit < 0:
+        raise HTTPException(400, f"limit must be >= 0, got {limit}")
+    if offset < 0:
+        raise HTTPException(400, f"offset must be >= 0, got {offset}")
+    out = rows[offset:offset + limit]
+    nxt = offset + len(out)
+    return {"total": len(rows), "limit": limit, "offset": offset,
+            "next_offset": nxt if nxt < len(rows) else None, "rows": out}
+
+
+async def json_body(request):
+    """One place every JSON request body is read, the sibling of int_param() above. `await request.json()`
+    raises on a body that is not JSON, and the `body.get(...)` that always follows raises on a JSON scalar or
+    list -- 41 (route, shape) pairs answered 500 with the Python exception echoed back on 2026-09-11, two of
+    them (POST /api/auth/login, POST /api/auth/agent) to anonymous callers at the front door.
+
+    An EMPTY body is `{}`, not a 400: several routes already documented it that way ("Body may carry
+    {reason}") and every field they read is optional. Anything else that is not a JSON object is a 400 saying
+    which shape arrived, so a caller sees its own mistake instead of a stack frame."""
+    raw = await request.body()
+    if not raw.strip():
+        return {}
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise HTTPException(400, "body must be JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, f"body must be a JSON object, got {type(body).__name__}")
+    return body
+
 
 _lock = threading.RLock()
 _ready = threading.Event()          # set once the first snapshot exists
@@ -254,9 +412,9 @@ def filter_clinics(p):
     if size:
         rows = [c for c in rows if c.get("size") in size]
     if p.get("beds_min"):
-        rows = [c for c in rows if (c.get("beds") or 0) >= int(p["beds_min"])]
+        rows = [c for c in rows if (c.get("beds") or 0) >= int_param(p, "beds_min")]
     if p.get("beds_max"):
-        rows = [c for c in rows if (c.get("beds") or 0) <= int(p["beds_max"])]
+        rows = [c for c in rows if (c.get("beds") or 0) <= int_param(p, "beds_max")]
     if p.get("has_jobs") in ("1", "true"):
         rows = [c for c in rows if c["jobs_open"] > 0]
     if p.get("routable") in ("1", "true"):
@@ -304,7 +462,11 @@ def filter_jobs(p):
         vs = set(_split(p["verify"]))
         rows = [j for j in rows if j.get("verify_status") in vs]
     if p.get("fresh_days"):
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=int(p["fresh_days"]))).strftime("%Y-%m-%d")
+        days = int_param(p, "fresh_days")
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        except (OverflowError, ValueError):     # timedelta's own range, e.g. fresh_days=99999999999999999999
+            raise HTTPException(400, f"fresh_days={days} is outside the range a date can express")
         rows = [j for j in rows if _fresh(j, cutoff)]
     if p.get("size"):
         sz = set(_split(p["size"]))

@@ -1,0 +1,985 @@
+<!doctype html>
+<!-- Deck, served at /deck by app/main.py (owner only: /deck is in app/auth.py OWNER_PAGES, so the
+     middleware 303s anonymous *and* customer visitors to /login and this file's body never reaches
+     them -- it is an internal briefing, not a customer page). Built by web/build.py from
+     web/deck.template.html. Tokens and the two font links are copied from web/index.template.html.
+
+     English only, on purpose: this is an internal briefing, not product UI. The board itself stays DE/EN.
+
+     To add a slide: append another <section class="slide"> inside <main id="deck">. The counter and the
+     arrow-key navigation read the DOM, there is no slide list to keep in sync. That is also why security
+     is three slides since 2026-09-11 (and Next two) rather than one long one each: the content grew past
+     an A4 page box and tests/test_web_deck.py::test_printing_gives_one_page_per_slide counts pages against
+     slides, so a slide that outgrows its page fails there instead of in someone's printer. Measured
+     headroom on the sixth round: the tallest page is slide 9 at 1034px against the 1047px box.
+
+     Every number and route on these slides was read from the running app or from the file it names on
+     2026-09-10. Where something is written but not yet served, the slide says so.
+
+     Re-read against the code on 2026-09-11, because three rounds of verification moved the facts under it.
+     Corrected then: the login door is throttled (slides 2, 13, 16), MEMBER_API grew /api/postings (2), the
+     manifest publishes public/session_only/redacted (6), POST /api/postings/{id}/closed is member and
+     /api/stripe* was never owner-gated (10), the security pass is six sentences and names the published
+     anon key as a second, un-redacted door (13), and five "next" items are closed (16). The board counts on
+     slide 1 are unchanged: they are the stated 18:25 snapshot, not a live read.
+
+     Re-read AGAIN after the fifth round (2026-09-11, morning), and it moved more than any round before it.
+     Corrected then, each against the file or the running port named:
+       * the login throttle was REVERTED -- slides 2, 15 (item 5, item 3 when that round wrote this), 17. One global bucket in front of one
+         shared credential is an anonymous lockout of the only door: app/auth.py:43-45 and docs/auth.md
+         "Rate limits" carry the measurement, tests/test_auth.py holds the revert.
+       * slide 7 is now a retraction: docs/ontology.json is still the 22-node / 40-edge file (HEAD included),
+         GET /api/ontology answers 22 and 40, no node carries entity/identity/dead, and
+         pytest tests/test_ontology.py is 4 failed / 6 passed. Slide 9 says the same about its table.
+       * GET /api/clinics/{clinic_id} used to hand its crawl-run rows to anonymous callers; closed at
+         app/main.py:255-274 (:249-268 when that round wrote this) and verified here (anonymous runs: [],
+         owner 5 rows) -- slide 6.
+       * the CSP that arrives with the restart blocks the clinic logo of 161 of 407 hospitals -- measured,
+         docs/errors.md "HANDOFF", and named on slides 13 and 15 because the restart turns it on.
+       * the box is STILL the 2026-09-10 18:02:42 process: app/data.py 05:55, app/auth.py 05:58 and
+         app/main.py 06:09 on 2026-09-11 are all newer, :8501 answers 404 for /api/agent/manifest and
+         /api/ingest/schemas, 200 anonymous for /api/schedules, and carries no security header at all.
+       * test counts re-collected: tests/test_auth.py 151 (was 128), tests/test_agent_api.py 60. Run #82
+         ran at 03:00 and is done; Firecrawl is at 3,916 of 8,000.
+
+     Re-read a SIXTH time on 2026-09-11 at 08:25 UTC, and it moved again. Corrected then, each against the
+     file or the port named:
+       * slide 1 is a live read again -- 3,203 open / 1,177 fresh / 222 hiring / 3,916 credits, +547
+         postings on the 18:25 snapshot it carried -- and it now FITS a 1280x900 viewport with the red
+         banner up. It measured 919px against 900 and `scroll-snap-type: y proximity` dragged a reader who
+         had stopped inside it back to the slide's end; .nums went from minmax(148px) to minmax(128px), so
+         the eight tiles are one row instead of two.
+       * security is three slides now, because two facts joined it. An empty PUT /api/settings/patterns
+         destroyed pflege_jobs/patterns.json today (14,131 bytes / 9 sections -> 2 bytes; restored from git,
+         and refused twice over since, app/settings.py:70-131), and GET /api/jobs silently capped every
+         answer at 2,000 rows while echoing the cap back as the request -- measured on :8501 at 08:25,
+         {"total": 3203, "limit": 2000} with 2,000 rows. The eight items now run 1-8 across slides 13-15,
+         and Next is 16 and 17.
+       * slide 7 is more than a retraction: the four failing cases of tests/test_ontology.py were rewritten
+         against the file that ships (10 passed, each mutation-checked on its own), and the count the
+         specification carried was wrong too -- 11 columns no producer fills, across six producers, not 15
+         across the three the old scan saw.
+       * the box is STILL the 2026-09-10 18:02:42 process, 14 h old at this reading, and app/auth.py 05:58,
+         app/data.py 08:00, app/main.py 08:04, app/settings.py 08:12 are all newer than it.
+       * four file:line references had drifted under the deck and were re-read: app/settings.py:200-201
+         (was 162-163), app/data.py:237 (was 189), app/auth.py:325 / :353 for the magic-link pair (was
+         355 / 383), app/main.py:255-274 for the clinic-runs fix (was 249-268).
+
+     SEVENTH round, 2026-09-11 at 09:33 UTC, and this one was forced by a change from outside this session:
+     a parallel security session committed f43a812, restarted the unit and rotated the box's passphrase.
+     Corrected here, each against the running port or the committed file:
+       * the box is NO LONGER the 18:02:42 process -- active since 2026-09-11 09:30:17 UTC (PID 631797),
+         newer than every file this deck describes. Everything six rounds called "written but not running"
+         is live: /api/agent/manifest 200, /api/ingest/schemas 200, /api/schedules 401 anonymous,
+         GET /api/jobs?limit=999999 -> 3,462 of 3,462 (NDJSON: 3,462 lines, content-range rows 0-3461/3462),
+         PUT /api/settings/patterns 401 without a session, and four security headers on GET /api/stats.
+         Slides 6, 13, 14, 16 all carried the "not running" sentence and no longer do.
+       * the login throttle is BACK, and it is the design round 5 asked for rather than the one it reverted:
+         LOGIN_FAIL_PER_HOUR = 10 per request.client.host in a login_failures table (app/auth.py:43-48).
+         Slides 2, 15 (item 5) and 17 (item 4) flipped. A live check from this box answered 429 on the
+         first attempt -- that bucket was already spent by the session that built it.
+       * the passphrase is rotated on the box: GET :8501/api/me -> "default_credentials": false. Slide 13
+         item 1 is no longer red, and the new pair is deliberately not on any slide.
+       * the CSP logo claim is withdrawn: img-src allows https: and httpsUrl() upgrades every logo host
+         before the <img> is built, so "161 of 407 blanked" describes a policy that never shipped.
+       * slide 1 re-read live: 3,462 open / 1,298 fresh / 222 hiring / 3,916 credits, board snapshot
+         09:30:37Z, +259 postings on the 08:25 read. Facets: 352 towns with jobs (was 347).
+       * two stale line refs re-anchored after the auth commit: app/auth.py:254 for the Secure cookie
+         (was 234) and :349 / :377 for the magic-link pair (was 325 / 353).
+     app/auth.py, docs/auth.md, docs/errors.md and tests/test_auth.py belong to that session; they were read
+     for this round, never edited. -->
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex">
+<title>Deck — Pflege-Stellen Bayern</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#FFFFFF;--surface:#F4F7F8;--ink:#23201E;--ink-2:#5B5855;--ink-3:#8C8985;--accent:#202D85;--sky:#C8F1FF;--neon:#9DE146;--red:#D82434;--line:#E1E6E9}
+*{box-sizing:border-box}
+/* proximity, not mandatory: a slide with a 16-row table is taller than the viewport, and mandatory
+   snapping makes the bottom of such a slide unreachable. The arrow keys scrollIntoView() either way. */
+html{scroll-snap-type:y proximity;scroll-behavior:smooth}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:3px} a:hover{background:var(--sky)}
+::selection{background:var(--neon);color:var(--ink)}
+h1,h2{font-family:"Archivo Black",system-ui,sans-serif;font-weight:400;letter-spacing:-.01em;line-height:1.1;margin:0}
+h1{font-size:clamp(30px,5vw,58px)} h2{font-size:clamp(20px,2.6vw,28px)}
+h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:22px 0 8px;font-weight:500}
+button{font:inherit;color:inherit;cursor:pointer}
+*{border-radius:0!important}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+/* Every slide is a full-viewport scroll stop: the arrow keys and plain scrolling reach the same
+   positions, because the arrow keys only call scrollIntoView() on the same elements. `safe center`
+   keeps a slide that outgrows the viewport from being clipped at the top under the fixed bar.
+   The top padding has to clear the bar, and the bar is not a fixed height: the red banner wraps to
+   three lines at 390px (bar 141px) and one at 1280px (bar 99px), so the 104px constant that used to
+   stand here left every eyebrow 37px under the bar on a phone. --bar is measured from the live bar in
+   the script below; max() keeps the original 104px of air whenever the bar is shorter than that. */
+.slide{min-height:100dvh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;justify-content:safe center;padding:max(104px,calc(var(--bar,0px) + 24px)) 24px 84px;max-width:1080px;margin:0 auto;border-bottom:1px solid var(--line)}
+.slide:last-child{border-bottom:0}
+.slide .lead{max-width:72ch;color:var(--ink-2);font-size:15px;margin:22px 0 0}
+.note{max-width:80ch;color:var(--ink-3);font-size:12px;margin:18px 0 0}
+.list{margin:18px 0 0;padding-left:20px;max-width:82ch} .list li{margin:7px 0}
+.list.tight li{margin:3px 0}
+code{background:var(--surface);padding:1px 5px;font-size:.92em}
+/* Code wraps rather than scrolls sideways. `overflow-x:auto` alone left three blocks 273-468px wider
+   than their box at 390px, cut mid-word, and a touch device draws no scrollbar to say so. `anywhere`
+   is what makes it wrap at all: the widest of the three is a CloudEvents envelope on one line with no
+   spaces in it, so pre-wrap by itself has nothing to break at. Nothing moves on a wide screen -- these
+   lines already fit there, and pre-wrap only breaks a line that does not. */
+pre{background:var(--surface);border-left:2px solid var(--accent);padding:12px 14px;margin:16px 0 0;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.55}
+pre b{font-weight:500;color:var(--accent)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px 34px;margin-top:6px}
+@media(max-width:860px){.two{grid-template-columns:1fr}}
+/* numbers grid: hairline cells, no card chrome */
+/* Borders on the cells, not a gap over a coloured backdrop: the last row is rarely full, and a backdrop
+   leaves grey filler where the missing tiles would be. */
+/* 128px, not the 148px this started at: the slide box is 1032px wide (1080 max-width less the padding),
+   so 148px auto-fit gave 6 columns and wrapped the 8 tiles onto a second row -- 90px that slide 1 does
+   not have. With the red default-credentials banner up the bar is 109px, the top padding clears it, and
+   the slide measured 919px against a 900px viewport; `scroll-snap-type: y proximity` then re-snapped a
+   reader who had stopped inside it to the slide's end. 128px fits all eight in one row (measured at 1280
+   with the banner up: 8 tiles of 129x107px, and slide 1's content 591px inside the 683px the viewport
+   leaves between the two paddings) and changes nothing below 860px, where the grid was wrapping anyway.
+   tests/test_web_deck.py::test_slide_one_fits_the_viewport_with_the_banner_up holds it. */
+.nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line);margin-top:26px}
+.nums div{padding:12px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.nums b{display:block;font-family:"Archivo Black",system-ui,sans-serif;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.nums span{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.t{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:20px}
+.t th{text-align:left;font-weight:500;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--ink);padding:0 12px 6px 0}
+.t td{border-bottom:1px solid var(--line);padding:7px 12px 7px 0;vertical-align:top}
+.t tr:last-child td{border-bottom:0}
+.t .mono{white-space:nowrap}
+/* A four-column table does not fit a phone. It scrolls sideways inside the slide rather than pushing
+   the whole page wider, which is what turns one wide row into a horizontal scrollbar on every slide.
+   The scroll is the fallback, not the plan: `overflow-wrap:anywhere` lowers each cell's min-content
+   width to one character, so the table fits the box instead of hanging 170px out of it with its last
+   column cut in half. Same rule as `code`, which already wraps this way. The 9ch floor is what keeps
+   that from being paid for in typography: a table column is otherwise handed width in proportion to
+   its longest line, which left the identifier column 5.8ch wide and broke "clinic" across two lines.
+   What 9ch does NOT buy, measured at 390x844 rather than eyeballed (re-measured 2026-09-11, sixth round,
+   on today's 17 slides): mid-word breaks are still the norm. `anywhere` breaks a word wherever the line
+   runs out, not only when the word is wider than its column, so 85 words break across 63 cells -- 28 of
+   them in the floored columns, none shorter than 9 characters. What the floor buys is the short end: take
+   it off (min-width:0) and the floored columns break 65 words instead of 28, down to `GET` (3), `PUT` (3),
+   `POST` (4), `idle` (4), `scope` (5), `clinic` (6), `adapter` (7), `employer` (8) -- which is the
+   assertion in test_web_deck.py::test_the_9ch_floor_keeps_short_names_whole, nothing shorter than 9 may
+   break there. 11ch is no longer the loss it was: on this copy it breaks 25 in the floored columns against
+   9ch's 28 and the same 85 across the table, where on the fifth round's copy it cost 6 more. Left at 9ch
+   because the floor is what is asserted, not the total, and that total moves with every slide. Nothing is
+   cut off at any of these: that is the separate, stronger guarantee (no table or pre wider than its box). */
+@media(max-width:860px){.t{display:block;overflow-x:auto}.t .mono{white-space:normal}
+  .t th,.t td{overflow-wrap:anywhere}.t th,.t td.mono{min-width:9ch}}
+code{overflow-wrap:anywhere}
+.red{color:var(--red)} .red b{font-weight:500}
+.tag{display:inline-block;background:var(--surface);border:1px solid var(--line);padding:0 6px;font-size:11px;color:var(--ink-2)}
+.tag.no{border-color:var(--red);color:var(--red)}
+.hit{background:var(--neon)}
+/* Fixed chrome: brand and slide nav in one fixed bar at the top. The nav used to be a pill fixed to the
+   bottom right, which is on top of the text on anything narrower than a laptop -- its own opaque
+   background hid body copy on 13 of the 14 slides at 390px and on 4 of them at 768px, because a slide
+   with a long list is taller than the viewport and keeps running underneath it. Inside the bar it cannot
+   cover anything: `.slide`'s top padding already clears the measured bar height (--bar).
+   Re-measured after the sixth round (2026-09-11, 17 slides, security split in three) by putting the pill
+   back as a mutation: 49 hidden runs on 16 slides at 390px, 20 on 10 slides at 768px, 0 at 1280px -- the
+   fifth round read 37/15, 14/7 and 2/1 on its own copy. As it ships: 0 at all three widths, which is
+   test_nothing_reads_underneath_the_slide_nav. */
+.bar{position:fixed;top:0;left:0;right:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.bar .in{display:flex;align-items:center;gap:22px;padding:14px 24px}
+.brand{display:flex;flex-direction:column;text-decoration:none;color:var(--ink);line-height:1.05} .brand:hover{background:none}
+.brand .w1{font-family:"Archivo Black",system-ui,sans-serif;font-size:16px} .brand .w2{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin-top:2px}
+.deck-t{margin-left:auto;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.nav{display:flex;align-items:center;gap:10px;border:1px solid var(--line);padding:6px 10px}
+/* At 390px the row is brand + nav and nothing else: the counter says what the "Deck" label says. */
+@media(max-width:480px){.deck-t{display:none}.nav{margin-left:auto}}
+.nav button{border:1px solid var(--line);background:#fff;color:var(--ink-2);padding:2px 10px;line-height:1.4}
+.nav button:hover{background:var(--sky)} .nav button[disabled]{opacity:.35;cursor:default;background:#fff}
+.count{font-variant-numeric:tabular-nums;font-size:12px;color:var(--ink-3);min-width:5ch;text-align:center}
+/* default-credentials banner: same one the login page shows, loud on purpose (docs/auth.md). It is the
+   bar's first row rather than a second fixed layer, so it can wrap without covering the brand. */
+.warn{background:var(--red);color:#fff;padding:10px 24px;font-size:13px;font-weight:500}
+.warn[hidden]{display:none}
+/* Print: one slide per page, no fixed chrome, no snapping. break-inside on the slide is what keeps the
+   count at one page per slide: without it slide 13 split after its <h2> and its table started a page of
+   its own, so 14 slides printed as 15 pages on default (1cm) margins. */
+@media print{
+  html{scroll-snap-type:none}
+  .bar,.nav{display:none!important}
+  .slide{min-height:0;break-inside:avoid;page-break-inside:avoid;break-after:page;page-break-after:always;border-bottom:0;padding:0 0 18px;max-width:none;display:block}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  pre,.t{break-inside:avoid;page-break-inside:avoid}
+  a{color:var(--ink);text-decoration:underline}
+  body{font-size:11px}
+  /* On screen the tables are 12.5px against 14px body copy; in print they were 12.5px against 11px, i.e.
+     larger than the prose around them. Matching the body size is what makes slide 13 fit: at 12.5px it
+     was 1063px tall against a 1047px A4 page box at 10mm margins, 16px too tall for break-inside to hold,
+     which is where the 15th page came from. */
+  .t{font-size:11px}
+  h1{font-size:28px} h2{font-size:18px}
+  .nums b{font-size:18px}
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="warn" id="warn" role="alert" hidden></div>
+  <div class="in">
+    <a class="brand" href="/"><span class="w1">Pflege-Stellen</span><span class="w2">Bayern</span></a>
+    <span class="deck-t">Deck</span>
+    <nav class="nav" aria-label="Slides">
+      <button type="button" id="prev" aria-label="Previous slide">←</button>
+      <span class="count" id="count" role="status" aria-live="polite"></span>
+      <button type="button" id="next" aria-label="Next slide">→</button>
+    </nav>
+  </div>
+</header>
+
+<main id="deck">
+
+  <!-- 1 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Pflege-Stellen Bayern · 10–11 September 2026 · English</p>
+    <h1>A nursing job board for Bavaria, crawled from the hospitals themselves.</h1>
+    <p class="lead">One register of Bavarian hospitals keyed by the 5-digit Kennziffer from the
+      Krankenhausplan, one adapter per ATS vendor, a FastAPI app and three single-file vanilla-JS pages.
+      No aggregator feeds: every posting comes off the hospital's own careers board, which is why the
+      board can say who is hiring rather than who is advertising.</p>
+    <div class="nums">
+      <div><b>3,462</b><span>open postings</span></div>
+      <div><b>1,298</b><span>fresh · last 7 days</span></div>
+      <div><b>407</b><span>hospitals · 399 active</span></div>
+      <div><b>222</b><span>hiring right now</span></div>
+      <div><b>293</b><span>with a known ATS</span></div>
+      <div><b>396</b><span>routable to a board</span></div>
+      <div><b>19</b><span>ATS vendors</span></div>
+      <div><b>3,916</b><span>Firecrawl credits left of 8,000</span></div>
+    </div>
+    <p class="note">Re-read from <code>GET /api/stats</code> + <code>GET /api/facets</code> on
+      <code>:8501</code> at <b>09:33 UTC, 2026-09-11</b> (board snapshot <code>09:30:37Z</code>), nothing
+      here typed from memory: run <b>#82</b> finished 03:12, and the port was restarted at
+      <b>09:30:17</b>, so the snapshot is minutes old — <b>+259</b> postings on the 08:25 read this slide
+      carried an hour ago. Facets: 214 hospital towns, 352 with jobs, 7 Regierungsbezirke,
+      104 Landkreise, 21 specialisations, 9 role classes, 17 department hints.
+      Keys: <code>←</code> <code>→</code> or Space, <code>Home</code>/<code>End</code>.</p>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 1 of 7</p>
+    <h2>A real passphrase gate, and two fake doors deleted</h2>
+    <p class="lead">Identity is now <code>AUTH_DISABLED</code> → <code>pj_session</code> cookie → anonymous,
+      and nothing else. The exe.dev proxy header (<code>X-ExeDev-Email</code>) and the tailnet branch are
+      gone from <code>app/auth.py</code>, not kept as a fallback: anything that reaches the port directly
+      could set that header itself, so it was a forge hole, not a login.</p>
+    <table class="t">
+      <tr><td class="mono">POST /api/auth/login</td><td>public. <code>{user, pass}</code> → 200
+        <code>{ok, default_credentials}</code> + session cookie; otherwise 401 problem+json.
+        <b>Throttled per source IP</b> since <code>f43a812</code>:
+        <code>LOGIN_FAIL_PER_HOUR = 10</code> wrong guesses per <code>request.client.host</code>. That is
+        the design round 5 asked for, not the global bucket it reverted — which answered
+        <b>429 to the correct pair</b> after ten wrong guesses from anyone. Slide 15, item 5</td></tr>
+      <tr><td class="mono">PUT /api/auth/password</td><td>owner session only — an agent key cannot reach it
+        (<code>OWNER_WRITE_PATHS</code>, exact path match). Clears the default flag</td></tr>
+      <tr><td class="mono">POST /api/auth/logout</td><td>clears the cookie</td></tr>
+      <tr><td class="mono">GET /api/me</td><td><code>{role, email, via, login_url, auth_disabled,
+        default_credentials}</code> — <code>via</code> is <code>disabled|session|none</code></td></tr>
+      <tr><td class="mono">GATED_PAGES</td><td><code>/pro</code>, <code>/autopilot</code> → <b>303</b> to
+        <code>/login?next=…</code> for anyone without a session. Pages stopped being advisory; that is the
+        only reason this deck can hold real content</td></tr>
+      <tr><td class="mono">OWNER_PAGES</td><td><code>/deck</code> — owner only since 2026-09-10. It was in
+        <code>GATED_PAGES</code>, which is the level a paying customer reaches through the magic link, so
+        every customer could read this briefing (<code>GET /deck</code> → 200 with a customer cookie).
+        Anonymous <b>and</b> customer now get the same <b>303</b> to <code>/login</code></td></tr>
+      <tr><td class="mono">MEMBER_API</td><td><code>("/api/cv", "/api/postings")</code> — writes that need
+        any session, owner or customer. <code>MEMBER_READ = ("/api/postings",)</code> is the read half:
+        <code>GET /api/postings/{id}/closed</code> names the address that closed a posting. Uploading a CV
+        needs a session, the page stays public, the anonymous CTA sends you to
+        <code>/login?next=/#/cv</code></td></tr>
+    </table>
+    <p class="note">Re-checked on <code>:8501</code> at <b>09:33 UTC</b>, which runs this code since the
+      09:30:17 restart. <code>GET /api/me</code> anonymous →
+      <code>{"role":"anonymous","via":"none","login_url":"/login?next=/pro","default_credentials":false}</code>
+      — <b>false</b>: the passphrase was rotated on the box, so the red banner is down there and up on a
+      fresh checkout, which is what <code>app/auth.py:165-172</code> says (no <code>settings.login</code>
+      row <b>is</b> the shipped pair). <code>app/auth.py</code>, <code>docs/auth.md</code> and
+      <code>tests/test_auth.py</code> (<b>151</b> cases green) belong to the parallel security session —
+      read for this round, not edited.</p>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 2 of 7</p>
+    <h2>A login page that is a page, not a proxy screen</h2>
+    <p class="lead">Click <a href="/login">/login</a>. It is public and must stay out of
+      <code>GATED_PAGES</code>, or the redirect loops. Built by <code>web/build.py</code> from
+      <code>web/login.template.html</code>, same tokens and same two font links as the rest of the app.</p>
+    <ul class="list">
+      <li>A real <code>&lt;form novalidate&gt;</code>: <code>&lt;label for&gt;</code>,
+        <code>autocomplete="username"</code> / <code>"current-password"</code>, Enter submits, errors land in
+        <code>&lt;p id="err" role="alert"&gt;</code>. DE/EN through the same flat <code>I18N</code>/<code>t()</code>
+        pattern as the other two pages.</li>
+      <li><code>?next=</code> is resolved with <code>new URL(raw, location.origin)</code>, and what is
+        checked is the <b>resolved</b> value — the exact string handed to <code>location.href</code> — never
+        the input: same origin, and a pathname that neither starts with <code>//</code> nor carries a
+        backslash. Otherwise <code>/pro</code>. Both earlier versions inspected the input and both were
+        bypassable: the regex <code>/^\/(?!\/)/</code> let <code>/\evil.example/</code> through (one leading
+        slash for the regex, a scheme-relative URL for the browser), and the version after it trusted
+        <code>u.pathname</code>, which WHATWG normalisation turns from <code>/..//evil.example/x</code> into
+        <code>//evil.example/x</code> — off-origin again, <code>/%2e%2e//</code> likewise.</li>
+      <li>The red default-credentials banner is fed by <code>GET /api/me</code>, not by the login response:
+        by the time the login answer lands, the page is already navigating away.</li>
+      <li>The "Mit exe.dev anmelden" alternative link was removed. That door is deleted; a link that looks
+        open and is not is worse than no link.</li>
+    </ul>
+    <p class="note">DOM contract used by <code>tests/test_web_login.py</code>: <code>form#f</code>,
+      <code>input#user</code>, <code>input#pass</code>, <code>button#go</code>,
+      <code>p#err[role=alert]</code>, <code>div#warn[role=alert][hidden]</code>.</p>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 3 of 7</p>
+    <h2>The map credit became a footnote — the legally required part stayed visible</h2>
+    <p class="lead">The whole credit could not move behind "Read more". dl-de/by-2-0 §2 (provider and licence
+      link) and §3 (change note), plus BKG's "deutlich sichtbarer Quellenvermerk", require a visible minimum
+      wherever the geometry is shown. So the visible tier shrank to the shortened form BKG itself sanctions
+      for maps, and only the dataset URI and the full deed unfold.</p>
+    <pre>© <b>BKG</b> (2026) <b>dl-de/by-2-0</b>, Daten verändert<b>¹</b>     ← always visible, both links live</pre>
+    <ul class="list tight">
+      <li>The marker is <code>&lt;a class="noteref" role="doc-noteref" aria-describedby="refs-h"&gt;</code>,
+        not a <code>&lt;sup&gt;</code>; superscript is CSS, and the hit box is 24×24 CSS px.</li>
+      <li>It is a <b>sibling</b> of the translated text, never a child: <code>applyLang()</code> overwrites
+        <code>textContent</code> on every <code>[data-i18n]</code> node and would eat it on every DE/EN switch.</li>
+      <li><code>#refs</code> (<code>role="doc-endnotes"</code>) sits before the footer, the note has
+        <code>tabindex="-1"</code> so the jump moves focus, <code>:target</code> highlights it, and the
+        backlink returns focus to the marker. <code>refJump()</code> force-opens the
+        <code>&lt;details&gt;</code>; the router now ignores non-route hashes, so clicking [1] no longer
+        re-renders the view into a 404.</li>
+      <li>The expanded note is <code>web/references.html</code>, inlined at build time through the
+        <code>&#95;_REFERENCES_GEO__</code> token — no route, no fetch, no failure state for a legal notice.
+        (The first underscore there is an entity on purpose: written plainly, web/build.py would substitute
+        the whole notice into this slide.)</li>
+      <li><b>Licence bug fixed while in there:</b> the credit was mounted only from <code>townMap()</code>.
+        When no town resolved, the map fell back to <code>townChips()</code> and the whole attribution
+        vanished with it. It now mounts in the fallback too.</li>
+    </ul>
+    <p class="note">Click it on the home page: the credit under the map, then <b>[1]</b>, then "Read more".
+      Guarded by <code>tests/test_web_map.py</code> (visible tier, marker round-trip, fallback mount).</p>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 4 of 7</p>
+    <h2>The hero teaches by revealing, not by explaining</h2>
+    <p class="lead">Five states on the home page. A control appears when its precondition holds and has an
+      explicit undo; nothing steals focus on reveal; every reveal is announced through <b>one</b>
+      <code>role="status"</code> line — for which <code>aria-live</code> came off <code>#view</code>, where it
+      used to announce every route re-render wholesale.</p>
+    <table class="t">
+      <tr><td class="mono">S0 idle</td><td>map, town picker, district chips</td></tr>
+      <tr><td class="mono">S1 towns</td><td>picking a town reveals the chip strip plus <code>+ Stadt</code>
+        and <code>Umkreis</code> in the <code>.go</code> bar; removing the last chip returns to S0</td></tr>
+      <tr><td class="mono">S2 radius</td><td><code>&lt;input type=range min=5 max=100 step=5&gt;</code> +
+        <code>&lt;output&gt;</code> + "Umkreis entfernen". Client-side haversine over the 2,243 town
+        coordinates the dots are drawn from — <code>/api/clinics</code> has no radius parameter and needs
+        none</td></tr>
+      <tr><td class="mono">S3 department</td><td>the specialisation chip row, on the <code>fach</code>
+        parameter <code>GET /api/clinics</code> already had</td></tr>
+      <tr><td class="mono">S4 explore</td><td>the existing hand-off to the clinic list / <code>#/jobs</code></td></tr>
+    </table>
+    <ul class="list tight">
+      <li>Dots outside the radius dim through <code>box.set(selection, total, near)</code> — the single
+        writer of <code>.on</code>/<code>.dim</code>. No translucent circle overlay, and no new interactive
+        element inside the SVG (<code>pointer-events:none</code> on coarse pointers would kill it).</li>
+      <li>The rotating hero flap stops on first S1 entry and becomes a live readout
+        ("<code>26 Stellen · München</code>"). The reduced-motion early return and the pointerdown settle stay.</li>
+      <li>All state lives on <code>F = {bez, city, fach, withJobs, radius}</code>, persisted to
+        <code>localStorage["pf.home"]</code>, so DE/EN (which rebuilds every tree) and a reload do not
+        re-teach a returning visitor. A test pins exactly that.</li>
+      <li>CV upload: anonymous now gets a link to
+        <code>/login?next=%2F%23%2Fcv</code> instead of a 401 wall.</li>
+    </ul>
+  </section>
+
+  <!-- 6 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 5 of 7</p>
+    <h2>An agentic API: 8 scopes, 25 published routes, one ingestion path</h2>
+    <p class="lead">The single agent key with a path-prefix bypass became
+      <code>settings.agent_keys = {sha256: {label, scopes[], created_at, rotated_at}}</code>. The scope check
+      runs in the ASGI middleware, before the route handler, so <code>POST /api/crawl</code>'s mode gating
+      cannot be bypassed by a handler bug. Detail on the next two slides.</p>
+    <ul class="list tight">
+      <li><code>GET /api/agent/manifest</code> and <code>GET /api/ingest/schemas</code> are public and
+        <b>generated from code</b> — the manifest from <code>app/auth.py:AGENT_ROUTES</code> <i>and</i>
+        <code>required_role()</code> (the same table and function the middleware enforces), the schemas from
+        <code>pflege_jobs/schema.py</code>. Every <code>/api</code> route lands in exactly one of
+        <code>routes</code> (a scope opens it), <code>public</code> (nothing gates it) and
+        <code>session_only</code> (no scope opens it — 401, not 403), so the published contract cannot drift
+        from the gate. It also carries a <code>redacted</code> block generated from
+        <code>app/data.py</code>: which fields an unauthenticated read gets as <code>null</code>, and where.</li>
+      <li><b>And it caught a leak in the route beside it.</b> <code>GET /api/clinics/{clinic_id}</code>
+        published the same crawl-run rows that <code>GET /api/crawl/runs</code> answers <b>401</b> for below
+        owner — per-run Firecrawl <code>credits_used</code>, the internal <code>error</code> string and the
+        last three <code>run_log</code> lines — to anonymous callers, because <code>jobs</code> on the line
+        above went through <code>D.redact()</code> and <code>runs</code> never did. Closed 2026-09-11
+        (<code>app/main.py:255-274</code>): the key stays in the shape and the value is <code>[]</code>
+        below owner. Verified on this machine: anonymous <code>runs: []</code>, owner <code>runs</code>
+        5 rows. What a public clinic page needs is already on the row —
+        <code>last_crawl_at/status/mode</code>.</li>
+      <li><code>POST /api/ingest</code>, <code>validate_only</code> dry runs, <code>Idempotency-Key</code>
+        (replay / 409 in flight / 422 different body), <code>fields=</code> sparse projection and
+        <code>Accept: application/x-ndjson</code> on the two list reads.</li>
+      <li>Errors are RFC 9457 <code>application/problem+json</code> everywhere the two global handlers see
+        them: <code>{type, title, status, detail, instance}</code> plus the legacy <code>error</code> key for
+        one release, because both SPAs read <code>b.error</code>. Nine problem types,
+        documented in <code>docs/errors.md</code>.</li>
+      <li><b>Served since 09:30:17 today.</b> <code>systemctl status pflege-web</code>: active since
+        <code>2026-09-11 09:30:17 UTC</code> (PID 631797), restarted by the parallel security session, so
+        everything the five rounds before this one described as written-but-not-running is now the copy on
+        <code>:8501</code>. Re-measured there at 09:33, not assumed:
+        <code>GET /api/agent/manifest</code> <b>200</b> (8 scopes),
+        <code>GET /api/ingest/schemas</code> <b>200</b>, <code>GET /api/schedules</code> <b>401</b> to an
+        anonymous caller where it answered 200 for six rounds, <code>GET /api/stats</code> carries
+        <code>content-security-policy</code>, <code>x-content-type-options</code>,
+        <code>x-frame-options: DENY</code> and <code>referrer-policy</code>, and
+        <code>PUT /api/settings/patterns</code> answers <b>401</b> without a session instead of accepting a
+        body.</li>
+    </ul>
+    <p class="note"><code>tests/test_agent_api.py</code>: 60 cases collected, 60 green on 2026-09-11 (this
+      slide said 113 — that number is not what pytest counts here); <code>docs/api.md</code> §Agentic API
+      and <code>skill/references/api.md</code> carry the same table for agents.</p>
+  </section>
+
+  <!-- 7 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 6 of 7 — <span class="red">withdrawn 2026-09-11</span></p>
+    <h2 class="red">The ontology rewrite is still not in the repo — what changed is that the tests stopped assuming it</h2>
+    <p class="lead">Re-read again on 2026-09-11 against the tree as it stands: <code>docs/ontology.json</code>
+      is <b>22 nodes / 40 edges</b> (plus a 9-step <code>process</code>), the same as at <code>HEAD</code>
+      — its only diff against <code>HEAD</code> is one field description — and <code>GET /api/ontology</code>
+      serves that file verbatim (<code>app/main.py:1066-1068</code>). <b>No</b> node carries
+      <code>entity</code>, <code>identity</code>, <code>dead</code> or <code>populated</code> — 0 of 22.
+      This slide once claimed 37 / 60 "verified live"; that was false, and the test written for the rewrite
+      said so by failing 4 of its 10 cases with <code>KeyError: 'career_profile'</code>. Those four were
+      <b>reconciled to the file, not deleted</b>, on 2026-09-11: <code>pytest tests/test_ontology.py</code>
+      → <b>10 passed</b> in 0.13 s, and each of the four still goes red for a real drift (mutation-checked
+      one by one: publish a column no producer fills, publish a name that is no column of the table, let
+      <code>excluded_role_classes</code> fall back to the 3-class default, land a row in
+      <code>career_profiles</code>). The rewrite itself is unshipped, and its intent stays here as the
+      specification it now is:</p>
+    <ul class="list tight">
+      <li><b>Five things that still have no published name</b> and agents keep re-deriving wrong:
+        <code>clinic_view</code>, <code>board</code>, <code>adapter</code>, <code>ingest_event</code>,
+        <code>coverage_cell</code>.</li>
+      <li><b>Two rename collisions declared on both sides:</b> <code>run</code> (SQLite) vs
+        <code>pg_crawl_run</code> (Postgres), and <code>firecrawl_campaign</code> vs <code>ad_campaign</code>
+        — both were simply called "campaign".</li>
+      <li><b>Honest flags, specified and absent:</b> <code>dead: true</code> on the
+        <code>posting_observations</code> columns no producer ever fills, and <code>populated: false</code>
+        on <code>career_profile</code>. The file carries <b>0</b> of the first and no node for the second.
+        <b>The specified count was wrong as well:</b> it said 15, from a scan that only saw the three
+        producers which <code>return</code> the row. There are <b>six</b>, all under <code>pflege_jobs/sources/</code> (<code>bite.py:182</code>,
+        <code>board_csv.py:70</code>, <code>career_crawl.py:284</code>, <code>feeds.py:17</code>,
+        <code>inbox.py:38</code>, <code>pi_asp.py:142</code>), and across all six it is <b>11</b> columns:
+        <code>lat</code>/<code>lon</code> come off the list because <code>bite.py</code> and
+        <code>feeds.py</code> fill them, <code>last_modified</code> and <code>salary_note</code> because
+        <code>bite.py</code> does (<code>modifiedOn</code>, <code>custom.umfang</code>). The rewritten test
+        derives the 11 from the AST instead of listing them, so the next producer moves the number.</li>
+      <li><code>vocab</code> vs field <code>enum</code> is a deliberate split: <code>vocab</code> promises
+        "resolvable at <code>/api/taxonomy</code>", <code>enum</code> means "spelled out here because it
+        exists only in code". Putting <code>parse_quality</code> or <code>run.status</code> in
+        <code>vocab</code> would have been a lie the drift test then had to be weakened to accept.</li>
+      <li>The one part that <b>did</b> land and still holds: <a href="/pro#/docs">/pro → Docs → Ontology
+        graph</a> is linked — <code>docs/index.json:10</code> carries the <code>{file: "graph"}</code>
+        entry and <code>GET /api/docs</code> returns it. The graph it draws is the 22-node one.</li>
+    </ul>
+    <p class="note"><code>tests/test_ontology.py</code> (10 cases, no network, 0.13 s) is the evidence, not
+      the endorsement. It now asserts the file that ships: every <code>vocab</code> id resolves at
+      <code>/api/taxonomy</code>, every <code>file:line</code> in the document still exists, every edge ends
+      on a published node, no observation field names a column the table does not have or one nothing
+      fills, and <code>career_profiles</code> stays empty for as long as no node publishes it. Restoring
+      the rewrite is the open item on slide 17, and with the suite no longer assuming it, it is a decision
+      about what <code>GET /api/ontology</code> should promise rather than a repair.</p>
+  </section>
+
+  <!-- 8 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">Shipped tonight · 7 of 7</p>
+    <h2>A feature matrix that admits it is empty</h2>
+    <p class="lead">Per-board, per-feature cells in <code>data/feature_cells.jsonl</code> (append-only, one
+      JSON object per line, last line per <code>(subject, feature_id)</code> wins), a weighted score computed
+      in <code>app/coverage.py</code>, and a <b>Feature score</b> column beside Coverage % in the Clawl table
+      on <a href="/pro#/clawl">/pro</a>.</p>
+    <p class="lead">Today that column reads <span class="tag no">not checked</span> for every adapter,
+      because the store is committed <b>empty</b>. It never reads 0 %: <code>feature_score</code> is
+      <code>null</code> when no cell carries a verdict, and the tooltip says
+      "No cell in <code>data/feature_cells.jsonl</code> — nobody looked. That is not the same as 0 %."</p>
+    <p class="note">That distinction is the whole point. <code>unknown</code> ("looked, could not tell") and
+      <code>not_checked</code> ("nobody looked") are never collapsed — they are excluded from both the
+      numerator and the denominator and surface as raw counts in <code>feature_verdicts</code>. Method and
+      current state on slide 12.</p>
+  </section>
+
+  <!-- 9 ------------------------------------------------------------------------------------------ -->
+  <section class="slide">
+    <p class="eyebrow">The ontology · act on this · <span class="red">names, not a published graph</span></p>
+    <h2>16 entities — the vocabulary the rewrite on the slide before was to publish</h2>
+    <table class="t">
+      <thead><tr><th>entity</th><th>identity</th><th>store</th><th>note</th></tr></thead>
+      <tbody>
+      <tr><td class="mono">clinic</td><td class="mono">clinic_id — 5-digit KeZ</td><td>clinics.csv + Postgres</td><td>17 columns, <code>CLINIC_SPEC</code></td></tr>
+      <tr><td class="mono">clinic_view</td><td class="mono">clinic_id</td><td>in-memory snapshot, TTL 600 s</td><td>derived; new name</td></tr>
+      <tr><td class="mono">board</td><td class="mono">careers_url (lowercased)</td><td>derived per call</td><td>not the host — two tenants share one host</td></tr>
+      <tr><td class="mono">adapter</td><td class="mono">vendor label</td><td>code, 19 labels</td><td>new name</td></tr>
+      <tr><td class="mono">employer</td><td class="mono">employer_id, name_norm</td><td>Postgres</td><td><code>employer_class</code> + <code>class_source</code></td></tr>
+      <tr><td class="mono">posting</td><td class="mono">posting_id, fuzzy_key</td><td>Postgres</td><td>golden fields, read via <code>v_postings</code></td></tr>
+      <tr><td class="mono">posting_observation</td><td class="mono">(source_id, source_ref)</td><td>Postgres</td><td>59 columns in the ingest spec, <b>11 no producer fills</b>, 0 published as dead</td></tr>
+      <tr><td class="mono">source</td><td class="mono">source_id</td><td>Postgres</td><td>live rows 10 / 20 / 25</td></tr>
+      <tr><td class="mono">ingest_event</td><td class="mono">(source, id) on the envelope</td><td><code>pflege_jobs.inbox</code></td><td>new name + new envelope field names</td></tr>
+      <tr><td class="mono">run</td><td class="mono">run_id</td><td><code>data/app.sqlite</code></td><td>collides with <code>pg_crawl_run</code></td></tr>
+      <tr><td class="mono">schedule</td><td class="mono">id</td><td><code>data/app.sqlite</code></td><td>presets weekly_staggered … custom</td></tr>
+      <tr><td class="mono">target</td><td class="mono">{scope, values}</td><td>request only</td><td>8 scopes</td></tr>
+      <tr><td class="mono">coverage_cell</td><td class="mono">(adapter, metric)</td><td>computed per request</td><td>the feature-matrix cell</td></tr>
+      <tr><td class="mono">career_profile</td><td class="mono">clinic_id</td><td><code>data/app.sqlite</code></td><td>0 rows, and no node publishes it — a test holds both together</td></tr>
+      <tr><td class="mono">cv_profile</td><td class="mono">none — never persisted</td><td>request only</td><td><code>cv_profile_mechanic</code> is a second, narrower one</td></tr>
+      <tr><td class="mono">session / agent_key</td><td class="mono">sid_hash / sha256(key)</td><td>settings in SQLite</td><td>role, and now scopes[]</td></tr>
+      </tbody>
+    </table>
+    <p class="note"><span class="red">Read this table as the specification, not as an API contract:</span>
+      the <code>entity</code> / <code>identity</code> / <code>store</code> columns are <b>not</b> in
+      <code>GET /api/ontology</code> — that route serves the 22-node graph, 0 nodes of which carry any of
+      them (slide 7). What does answer today: vocabulary <code>GET /api/taxonomy</code>, values with counts
+      <code>GET /api/facets</code>, routes and scopes <code>GET /api/agent/manifest</code> — 8 scopes and
+      <b>25</b> routes, counted on 2026-09-11 from <code>app/auth.py</code>'s own <code>SCOPES</code> and
+      <code>AGENT_ROUTES</code> in-process, because that route is still a <b>404</b> on :8501 (slide 6).
+      The five names marked "new" and the two rename collisions are claims about the code, and they are
+      checkable there; the graph simply does not publish them yet.</p>
+  </section>
+
+  <!-- 10 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Agentic API · scopes</p>
+    <h2>Eight scopes, and a list nothing can open</h2>
+    <table class="t">
+      <thead><tr><th>scope</th><th>unlocks</th><th>why it is its own scope</th></tr></thead>
+      <tbody>
+      <tr><td class="mono">read:board</td><td>stats, jobs, clinics, cities, facets, taxonomy, ontology, search, plan</td><td>already public — the scope is for quota and attribution, not for closing anything</td></tr>
+      <tr><td class="mono">read:ops</td><td><code>/api/crawl/runs</code>, <code>/plan</code>, <code>/estimate</code>, <code>/api/schedules*</code>, <code>/api/coverage</code>, <code>/api/inbox</code></td><td><code>estimate</code> walks the live board — labelled <code>network</code> in the manifest, not a free read</td></tr>
+      <tr><td class="mono">write:crawl</td><td><code>POST /api/crawl</code> <b>with mode adapter only</b>, run cancel, inbox drain, <code>crawl_run.finished</code></td><td>zero credits, serialised by the single worker with 1 s politeness</td></tr>
+      <tr><td class="mono">spend:firecrawl</td><td>lifts mode to <code>auto</code>/<code>firecrawl</code>, unlocks <code>refetch-career</code></td><td>firecrawl mode counts as manual and skips the throttle tier; refetch rewrites <code>ats_type</code>/<code>careers_url</code> in production with no rollback</td></tr>
+      <tr><td class="mono">write:ingest:posting</td><td><code>posting.observed</code>, <code>listing.observed</code>, <code>probe.ats_discovery</code></td><td>inbox rows, drained later — the cheapest thing to get wrong</td></tr>
+      <tr><td class="mono">write:ingest:clinic</td><td><code>clinic.upserted</code></td><td>a partial payload NULLs every omitted column, so it is refused with 422 naming them</td></tr>
+      <tr><td class="mono">write:ingest:link</td><td><code>clinic_link.asserted</code></td><td>same NULL-overwrite hazard on the link row</td></tr>
+      <tr><td class="mono">write:ingest:verify</td><td><code>posting.verified</code></td><td>flips a posting to gone/blocked — visible to customers</td></tr>
+      </tbody>
+    </table>
+    <h3>Never scopable, owner session only</h3>
+    <p class="lead" style="font-size:13px"><code>/api/settings*</code> · <code>/api/hunter*</code> ·
+      <code>/api/scheduler*</code> · <code>/api/autocrawl/tick</code> · <code>/api/campaign</code> ·
+      <code>/api/schedules</code> writes · <code>/api/mechanics/*/try|test</code> · <code>/api/billing*</code> ·
+      <code>/api/autopilot*</code> · <code>PUT /api/auth/password</code>. Each one either rewrites a rail
+      (kill switch, reserve credits), clears a stop, shells out, or bills someone. Anything absent from the
+      manifest is owner-only and answers <b>401</b>, not 403 — no scope would help.</p>
+    <p class="note">Two entries left this list on 2026-09-11, both re-read from
+      <code>required_role()</code>: <code>POST /api/postings/{id}/closed</code> is <b>member</b>, not owner
+      (it joined <code>MEMBER_API</code> with the CV upload — slide 2), and <code>/api/stripe*</code> was
+      never owner-gated at all: <code>GET /api/stripe/status</code>, <code>POST /api/stripe/checkout</code>
+      and <code>POST /api/stripe/webhook</code> all answer with no session, the webhook because it
+      authenticates with Stripe's own signature.</p>
+    <p class="note">Wrong scope → <b>403</b> <code>application/problem+json</code> with
+      <code>"type": "…#insufficient_scope"</code> and a <code>"scope"</code> extension naming what to ask for.
+      A key minted without <code>scopes=</code> carries every scope — the reach the single pre-scope key had.
+      That default is an open question on slide 17.</p>
+  </section>
+
+  <!-- 11 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Agentic API · envelope and calls</p>
+    <h2>One envelope for every entity, CloudEvents field names, no new table</h2>
+    <pre>{"specversion":"1.0","id":"sg-36201-88413","source":"vendor-softgarden-v1",
+ "type":"posting.observed","time":"2026-09-10T08:00:00Z","subject":"36201",
+ "data":{"source_url":"https://…/job/88413","payload":{ …the crawler row… }}}
+
+<b>type</b> → inbox.kind   <b>source</b> → collector   <b>subject</b> → payload.clinic_id
+<b>id</b> → payload.event_id   dedupe = (source, id) + the existing source_url dedupe
+posting/listing/probe → inbox rows;  clinic.upserted · clinic_link.asserted ·
+posting.verified · crawl_run.finished → straight to the edge ops, as sinks.py does</pre>
+    <pre>B=http://127.0.0.1:8501/api ; K=&lt;key&gt;   # mint: PUT $B/settings/agent-key?label=recon&amp;scopes=…
+
+<b>read:board</b>             curl -H "X-Api-Key: $K" "$B/jobs?fields=posting_id,title,city&amp;limit=500"
+<b>read:ops</b>               curl -H "X-Api-Key: $K" "$B/schedules/1/preview?day=2026-09-11"
+<b>write:crawl</b>            curl -H "X-Api-Key: $K" -H 'Idempotency-Key: 4f1c-…' \
+                        -d '{"mode":"adapter","scope":"clinic","values":["36201"]}' "$B/crawl"
+<b>spend:firecrawl</b>        curl -H "X-Api-Key: $K" -d '{"mode":"firecrawl","scope":"clinic",
+                        "values":["36201"],"max_credits":50}' "$B/crawl"
+<b>write:ingest:posting</b>   curl -H "X-Api-Key: $K" -d @events.json "$B/ingest"
+<b>write:ingest:clinic</b>    curl -H "X-Api-Key: $K" -d '{"id":"reg-36201","source":"registry-agent",
+                        "type":"clinic.upserted","subject":"36201","data":{ …all 17 columns… }}' "$B/ingest"
+<b>write:ingest:link</b>      … same call, "type":"clinic_link.asserted"
+<b>write:ingest:verify</b>    … same call, "type":"posting.verified"
+
+dry run  add "validate_only": true → full auth + validation + credit estimate, nothing written
+public   curl "$B/agent/manifest"   curl "$B/ingest/schemas"   (no key, generated from code)</pre>
+    <p class="note">Answer is <code>{accepted, total, validate_only, results:[{id, type, status,
+      inbox_id|problem}]}</code> — <b>202</b> when every item came out the same way, <b>207</b> when they did
+      not. <code>inbox_id</code> is <code>null</code> today: the inbox post is batched with
+      <code>Prefer: return=minimal</code>, so PostgREST hands back no ids and <code>status</code> is the
+      per-item answer. <code>Idempotency-Key</code> on crawl, drain and ingest: replay returns the stored
+      response, in flight is 409, same key with a different body is 422.</p>
+  </section>
+
+  <!-- 12 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Feature matrix · method and honest state</p>
+    <h2>Every cell still reads <code>not_checked</code> — and that is the correct thing to publish</h2>
+    <div class="two">
+      <div>
+        <h3>Method</h3>
+        <ol class="list tight" style="padding-left:18px">
+          <li><b>Freeze the rows first.</b> Five rows, because five checks already exist and each has a
+            mutation proving it can go red: <code>read_path_coverage</code> (3),
+            <code>declared_total_parity</code> (3), <code>field_completeness</code> (2),
+            <code>public_url</code> (2), <code>round_trip</code> (1). Weights in one line,
+            <code>FEATURE_WEIGHTS</code>.</li>
+          <li><b>One worker per column (board), never per row</b> — the expensive part is fetching the board,
+            not judging the feature.</li>
+          <li><b>Cells carry evidence, not prose</b>: path, quote, fetched_at.</li>
+          <li><b>Merge with a script.</b> <code>tools/cells_from_pytest.py</code> folds a pytest report into
+            cell JSONL; the store is append-only, so merging is <code>&gt;&gt;</code>.</li>
+          <li><b>Verify by re-deriving</b> from evidence alone; for the five pytest rows the stronger form
+            already exists — <code>pytest -m mutation</code>.</li>
+          <li><b>Score last</b>, as a computed column, so re-weighting costs zero crawls.</li>
+        </ol>
+      </div>
+      <div>
+        <h3>Where it actually stands</h3>
+        <ul class="list tight" style="padding-left:18px">
+          <li>5 rows × the <b>220 boards</b> the coverage table counted on 2026-09-10 = 1,100 cells,
+            <b>0 written</b>: <code>wc -l data/feature_cells.jsonl</code> → <b>0</b> on 2026-09-11. The
+            denominator is left at that read on purpose — <code>GET /api/coverage</code> answers <b>401</b>
+            without an owner session, and this deck does not log into the box to freshen a number.</li>
+          <li>Why: <code>pytest-json-report</code> is not installed and no new dependency was allowed, so no
+            report exists to fold; and the completeness suite is network-marked, so no live crawl was run to
+            produce one. Nothing was invented to fill the column.</li>
+          <li>A budget or cap stop is recorded as
+            <code>{"verdict":"not_checked","stop":"truncated"}</code> with the gate message as evidence —
+            never as a filled cell and never as <code>absent</code>.</li>
+          <li>The fold can never emit <code>partial</code>: a pytest assertion is binary.
+            <code>partial</code> can only come from a human or a swarm worker;
+            <code>app/coverage.py</code> already scores it at 0.5.</li>
+          <li>Six candidate rows from the brief (<code>pagination_followed</code>, <code>detail_fetch</code>,
+            <code>feed_available</code>, <code>robots_blocked</code>, <code>method_justification</code>,
+            <code>completeness_verdict</code>) are deliberately <b>not</b> in the vocabulary: nothing
+            produces them yet, so they would add a column of <code>not_checked</code> with no path to
+            filling it.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Store <code>data/feature_cells.jsonl</code> · method <code>docs/feature-matrix.md</code> ·
+      fold <code>tools/cells_from_pytest.py --selfcheck</code> (runs offline) · render
+      <code>/api/coverage</code> → <code>feature_score</code> + <code>feature_verdicts</code>, drawn on
+      <a href="/pro#/clawl">/pro</a>.</p>
+  </section>
+
+  <!-- 13 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Security · unhedged · 1 of 3</p>
+    <h2>Eight true sentences, in the order they should be fixed — these two are open doors</h2>
+    <table class="t">
+      <thead><tr><th style="width:52%">the fact</th><th>what to do</th></tr></thead>
+      <tbody>
+      <tr><td><b>1. Closed on 2026-09-11 at 09:30 — the box was restarted and the passphrase was
+        replaced.</b> This item was red for six rounds. <code>systemctl status pflege-web</code>: active
+        since <code>2026-09-11 09:30:17 UTC</code>, newer than every file this deck describes, and
+        <code>GET /api/me</code> on <code>:8501</code> answers
+        <code>"default_credentials": false</code> — a <code>settings.login</code> row exists, so the shipped
+        pair no longer opens the door. Both moves belong to the parallel security session, not to this one;
+        the new passphrase is not in this repo and is deliberately not on this slide, because an exported
+        PDF leaves the login gate. The CSP that arrived with the restart does <b>not</b> blank the clinic
+        marks after all: <code>img-src 'self' data: https:</code> plus <code>httpsUrl()</code>, which
+        rewrites every <code>http://</code> logo host to <code>https://</code> before the
+        <code>&lt;img&gt;</code> is built, so the 161-of-407 measurement from round 5 no longer
+        describes the shipped policy.</td>
+        <td>Two follow-ups, both small. Live sessions survive a passphrase change (they key on the cookie
+        HMAC), so delete the <code>sessions</code> rows or rotate <code>SESSION_SECRET</code> if anything
+        older should be kicked out. And the new pair is held by one session's transcript — put it where Ivan
+        keeps secrets before that transcript ages out.</td></tr>
+      <tr><td><b class="red">2. The anon Supabase key published in <code>/skill</code> reads every table in
+        the <code>pflege_jobs</code> schema — recruiter e-mail addresses included.</b>
+        <code>skill/SKILL.md:29</code> ships that key on purpose (bulk read for agents) and
+        <code>/skill/SKILL.md</code> is served to anyone. <code>sql/001_schema.sql:257</code> grants
+        <code>select on all tables</code> to <code>anon</code>, <code>:260</code> on future tables too, and
+        the RLS policies at <code>:253-254</code> are <code>using (true)</code>, so they narrow nothing.
+        Tonight's redaction — <code>enr_contact_emails</code> nulled below a member session plus every
+        e-mail-shaped substring masked in the free text (<code>app/data.py:37</code>, <code>:54-71</code>) —
+        is therefore <b>a control on the app door only</b>. PostgREST is a second, un-redacted door and the
+        published key opens it; <code>skill/scripts/query.py --email</code> walks through it.</td>
+        <td>Decide which door is meant to be open, because the two disagree. Either the bulk read stays
+        public and the redaction is published as what it is — a courtesy on one route, not a protection — or
+        the personal column leaves the world-readable table: revoke <code>select</code>, publish a view
+        without it, rotate the key. A decision plus a migration, not an app change. The migration is now
+        <b>written and not applied</b>: <code>sql/011_PENDING_anon_scope.sql</code>, replayed against a
+        throwaway Postgres 16 only, with its own "what it does not close" and the line it breaks first —
+        the app server itself authenticates to PostgREST with this same anon key and
+        <code>app/data.py:237</code> selects <code>JOB_COLS</code>, which contains
+        <code>enr_contact_emails</code> (<code>:19-22</code>), so applying it without another credential
+        takes the whole board dark, not just the column.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 14 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Security · unhedged · 2 of 3</p>
+    <h2>Two ways this box lost data today — both closed in the tree, and both running since 09:30</h2>
+    <table class="t">
+      <thead><tr><th style="width:52%">the fact</th><th>what to do</th></tr></thead>
+      <tbody>
+      <tr><td><b class="red">3. An empty <code>PUT</code> to the patterns endpoint destroyed a repo file
+        today.</b> <code>PUT /api/settings/patterns</code> (<code>app/main.py:970</code>) replaces the whole
+        document, and the checker in front of it only asked "do the regexes compile?" — a body with no
+        regexes in it has none that fail. A probe in this session sent an empty body, which is
+        <code>{}</code> (<code>app/data.py:json_body</code> documents that on purpose): it validated, was
+        written over <code>pflege_jobs/patterns.json</code>, and answered <b>200</b>
+        <code>{"reloaded": false}</code>. <b>14,131 bytes and 9 sections replaced by 2 bytes</b>, and every
+        classifier then died with <code>ValueError: patterns: missing section 'employer'</code>. Restored
+        from git the same hour; the file is byte-identical to <code>HEAD</code> again — 14,131 bytes,
+        9 sections, clean in <code>git status</code> as this was written.</td>
+        <td>Nothing to decide: the checker refuses it twice over now
+        (<code>app/settings.py:70-131</code>). <code>pflege_jobs/config.py:validate()</code> — the same
+        function <code>reload()</code> calls, not a second copy of the section list — runs against the body,
+        so a missing section is a <b>422</b>. And a section the stored document defines but the body omits
+        is its own 422 naming it, which is the quieter half of the same incident: a body carrying only the
+        five sections <code>classify.py</code> cannot start without passes <code>validate()</code> and
+        silently drops <code>cv</code> and <code>excluded_role_classes</code> — and dropping the latter
+        takes the intake policy with it, because <code>pflege_jobs/config.py:94</code> then falls back to a
+        3-class default and <code>pflegehelfer</code> postings start passing
+        <code>sinks.only_pflege()</code>. Both refusals are live: the unit restarted at <b>09:30:17
+        today</b>, later than the file that carries them, and <code>PUT /api/settings/patterns</code>
+        answers <b>401</b> to a body sent without a session at all.</td></tr>
+      <tr><td><b class="red">4. <code>GET /api/jobs</code> silently capped every answer at 2,000 rows and
+        reported the cap as the request.</b> <code>app/data.py:page()</code> — shared by
+        <code>/api/jobs</code>, <code>/api/clinics</code> and <code>/api/plan</code> — was
+        <code>min(limit, 2000)</code> and then echoed <code>"limit": 2000</code> back, so a caller asking
+        for everything was told it had asked for 2,000. Measured on :8501 at <b>08:25 today</b>, before
+        the restart: <code>GET /api/jobs?limit=999999</code> →
+        <code>{"total": 3203, "limit": 2000}</code> with <b>2,000</b> rows in it. The NDJSON path dropped
+        the envelope entirely, so a streaming caller got exactly 2,000 lines and <b>no signal at all</b>.
+        A cap reported as success is the one thing <code>CLAUDE.md</code> forbids by name.</td>
+        <td>Nothing to decide, and nothing left to wait for: there is no maximum page size
+        (<code>app/data.py:128-155</code>) and the fix is the copy running on <code>:8501</code> since
+        09:30:17. Measured there at 09:34: <code>GET /api/jobs?limit=999999</code> →
+        <code>{"total": 3462, "limit": 999999}</code> with all <b>3,462</b> rows, and the NDJSON form of the
+        same call streams 3,462 lines under <code>content-range: rows 0-3461/3462</code> — the envelope's
+        information in a header rather than dropped. A negative limit is a <b>400</b> naming the bound
+        rather than a quietly clamped 1; <code>?limit=0</code> stays a 200 with an empty page, because zero
+        rows is a thing a caller can mean. <code>GET /api/agent/manifest</code> publishes "there is no
+        server maximum" beside the envelope (<code>app/data.py:112-120</code>).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 15 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Security · unhedged · 3 of 3</p>
+    <h2>Four that stand — and the first of them is a deliberate absence, not an oversight</h2>
+    <table class="t">
+      <thead><tr><th style="width:52%">the fact</th><th>what to do</th></tr></thead>
+      <tbody>
+      <tr><td><b>5. The login throttle is back, keyed per source IP — the global bucket that shipped on
+        2026-09-10 stays reverted.</b> The first version counted <b>wrong</b> attempts in one bucket for
+        everyone and answered <b>429</b> to right guesses too: 60 wrong passphrases in 0.33 s →
+        <code>[401 ×10, 429 ×50]</code>, then the <b>correct</b> pair → 429 for the next hour, surviving a
+        restart because the counter was a <code>settings</code> row. Ten requests from a scanner locked Ivan
+        out. The replacement (<code>f43a812</code>, the parallel security session) is
+        <code>LOGIN_FAIL_PER_HOUR = 10</code> per <code>request.client.host</code> in a
+        <code>login_failures</code> table, so one address can no longer spend another address's
+        attempts.</td>
+        <td>Read it once before trusting it: the key is the raw TCP peer, which is the real caller only
+        while <code>:8501</code> is reached directly. Put any proxy in front of it and every caller becomes
+        one IP — the global bucket again, this time by accident. <code>app/auth.py:43-48</code> and
+        <code>docs/auth.md</code> "Rate limits" carry both designs and the measurement;
+        <code>tests/test_auth.py</code> (151 cases) pins the behaviour. Live check from this box at 09:34
+        came back <b>429</b> on the first attempt — the hour's bucket for <code>127.0.0.1</code> was already
+        spent by the session that built it, which is the throttle working and also the reason a locked-out
+        owner has no self-service door yet.</td></tr>
+      <tr><td><b>6. One shared login means no per-user identity and no audit trail.</b> Every action is "the
+        owner". There is no revocation short of changing the one secret, and nothing records who queued the
+        run that spent the credits — or, after item 3, who emptied the patterns file. It is also the reason
+        item 5 above could not be fixed with a counter: with one credential there is no "who" to
+        throttle.</td>
+        <td>Agent keys have labels and scopes — humans do not. If more than one person will ever log in, the
+        next step is a user table (or SSO), not a second passphrase. Until then: one key per agent,
+        labelled.</td></tr>
+      <tr><td><b>7. The port is reachable directly.</b>
+        <code>deploy/pflege-web.service:11</code> binds <code>0.0.0.0:8501</code>. The passphrase is the only
+        thing in front of the app, the session cookie is <code>Secure</code> (it needs real TLS to stick), and
+        <code>/api/openapi.json</code> is public by design — a passphrase hides data, not the API
+        surface.</td>
+        <td>Bind <code>127.0.0.1</code> and terminate TLS in front of it, or keep <code>0.0.0.0</code>
+        behind a firewall you can name. A deploy decision, not a code one.</td></tr>
+      <tr><td><b>8. CVs are personal data.</b> <code>POST /api/cv</code> takes a PDF from a stranger and
+        persists nothing: the only <code>open()</code> in <code>app/cv.py</code> is
+        <code>pdfplumber.open</code> on a <code>BytesIO</code> (<code>:65</code>) — bytes in RAM for one
+        request, profile returned, never stored.</td>
+        <td>Keep it that way and say so where people upload: one line stating that the file is parsed in
+        memory, not stored, and nothing is sent on. Session-gating it (<code>MEMBER_API</code>) shrinks the
+        audience, not the obligation. Before any feature that stores a CV: retention, deletion path, privacy
+        text — decided first, built second.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 16 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Next · 1 of 2</p>
+    <h2>One thing only you can do — the other two were done at 09:30 this morning</h2>
+    <ol class="list tight">
+      <li><s><b>Restart the service.</b></s> <b>Done 2026-09-11 09:30:17 UTC</b> by the parallel security
+        session. Re-read against the running port at 09:33, not assumed:
+        <code>GET :8501/api/agent/manifest</code> <b>200</b>, <code>/api/ingest/schemas</code> <b>200</b>,
+        <code>GET :8501/api/schedules</code> <b>401</b> where it answered 200 anonymously for six rounds,
+        <code>GET /api/jobs?limit=999999</code> <b>3,462 rows of 3,462</b>,
+        <code>PUT /api/settings/patterns</code> <b>401</b> without a session, and
+        <code>GET /api/stats</code> carrying four security headers. The CSP that came with it does not
+        blank the clinic marks: <code>img-src</code> allows <code>https:</code> and
+        <code>httpsUrl()</code> upgrades every logo host before the tag is built.</li>
+      <li><s><b>Change the seeded default login.</b></s> <b>Done in the same window:</b>
+        <code>GET :8501/api/me</code> answers <code>"default_credentials": false</code>, so a
+        <code>settings.login</code> row exists and <code>DEFAULT_LOGIN</code> no longer opens the board.
+        The new pair lives in that session's transcript — move it somewhere durable.</li>
+      <li><b>The published anon Supabase key.</b> Slide 13, item 2: it reads every table in
+        <code>pflege_jobs</code>, recruiter e-mails included, so the redaction that shipped tonight guards
+        the app door while PostgREST stays open beside it. Revoke-and-rotate, or publish the redaction as
+        cosmetic. The migration is written and <b>not applied</b> —
+        <code>sql/011_PENDING_anon_scope.sql</code>, tried on a throwaway Postgres only — because applying
+        it takes the app's own reads down with it (slide 13, item 2). The decision is still yours.</li>
+    </ol>
+    <p class="note">Everything else is a decision, not a repair — next slide. Only the Supabase key still
+      changes what is reachable on <code>:8501</code>; the other two closed at 09:30.</p>
+  </section>
+
+  <!-- 17 ----------------------------------------------------------------------------------------- -->
+  <section class="slide">
+    <p class="eyebrow">Next · 2 of 2</p>
+    <h2>Open decisions, and the ones that closed themselves since 2026-09-10</h2>
+    <ol class="list tight" start="4">
+      <li><s><b>Rate limiter: yes or no?</b></s> <b>Answered on 2026-09-11:</b> yes, per source IP
+        (<code>f43a812</code>, slide 15 item 5). The global bucket stays reverted. What is left is a deploy
+        constraint rather than a decision — the key is <code>request.client.host</code>, so putting any
+        proxy in front of <code>:8501</code> without <code>--proxy-headers
+        --forwarded-allow-ips=…</code> on <code>deploy/pflege-web.service:11</code> collapses every caller
+        into one bucket again.</li>
+      <li><b>Non-<code>Secure</code> cookie for local http?</b> Brief question 4. A login over plain
+        <code>http://localhost</code> silently does not stick (<code>app/auth.py:254</code>); the workaround
+        is <code>AUTH_DISABLED=1</code>. <code>secure = not auth_disabled()</code> needs your yes.</li>
+      <li><s><b>Magic link: doc and code disagree.</b></s> <b>Reconciled:</b> the issue/consume pair is
+        there (<code>app/auth.py:349</code> and <code>:377</code>) and <code>docs/auth.md</code> documents
+        that flow — brief question 3 is closed.</li>
+      <li><b>A key minted without <code>scopes=</code> gets every scope.</b> The brief never specified a
+        default. If it should be empty, that is one line in <code>app/settings.py: set_agent_key</code>.</li>
+      <li><b>Idempotency keys never expire</b> — one row per key seen in the <code>idem</code> table. No TTL
+        was specified and CLAUDE.md bans invented ceilings, so none was added. Name a retention and it gets
+        built.</li>
+      <li><s><b><code>POST /api/refresh-cache</code> is not gated at all.</b></s> <b>Closed 2026-09-10:</b>
+        an owner write now (<code>OWNER_WRITE_PREFIXES</code>), deliberately not scopable — anonymous
+        callers could force a full Supabase re-pull in a loop.
+        <code>data/repair_split_merged.py:236</code> is the one caller and needs an owner session.</li>
+      <li><b class="red">Redo the ontology rewrite — still not in the tree.</b> Slide 7: on 2026-09-11
+        the four failing cases of <code>tests/test_ontology.py</code> were rewritten against the file that
+        ships (10 passed), so nothing in the repo waits on the rewrite. A decision now, not a repair:
+        either <code>GET /api/ontology</code> grows <code>entity</code>/<code>dead</code>/<code>vocab</code>
+        and slide 9's table becomes the contract, or that table stays a briefing.</li>
+      <li><b><code>run.scope</code> can be <code>"inbox"</code></b>, written straight into the run row by
+        <code>POST /api/inbox/drain</code>, bypassing the 8 values of <code>targets.SCOPES</code>. Add it to
+        the vocabulary, or stop writing a scope that is not one.</li>
+      <li><b>Problem <code>type</code> URIs are relative</b> (<code>/docs/errors.md#slug</code>), served
+        as markdown, with a fragment that is a name and not a heading anchor. Absolute URI, a heading per
+        type, or leave it?</li>
+      <li><b>Fill the feature matrix.</b> Allow <code>pytest-json-report</code>, or teach
+        <code>tools/cells_from_pytest.py</code> the <code>--junit-xml</code> pytest already ships (~6 lines),
+        then run the completeness suite once against live boards. Until then: honest and empty
+        (<code>data/feature_cells.jsonl</code>, 0 lines).</li>
+      <li><b>Vocabularies that live only in code</b> — <code>parse_quality</code>,
+        <code>employer_class</code>, posting <code>status</code>, run <code>status/mode/scope</code>, schedule
+        <code>preset</code>, the 18 <code>ats_vendor</code> values, the 6 CV qualifications against
+        taxonomy's 4 — published as field enums with a <code>file:line</code>. Do they join
+        <code>data/registry/taxonomy.json</code>? That file is yours.</li>
+      <li><s><b>Two lists that disagree with the code, and three stale exe.dev doors.</b></s>
+        <b>All five closed since</b> — <code>docs/index.json:45</code>, <code>app/settings.py:200-201</code>,
+        <code>web/pro.template.html:1403</code>, <code>app/stripe_gate.py:112-115</code>,
+        <code>skill/references/api.md:6-7</code>.</li>
+    </ol>
+    <p class="note">From the run rows, re-read at 09:35 on 2026-09-11: #82 is still the last one —
+      <b>done</b> at 03:12:59 with "1 error(s), see log" — and the 09:30 restart cost no run, because
+      nothing was queued or running when it happened (<code>active_runs: 0</code>). #81 is the one a restart
+      did kill: <code>failed</code> at 18:02:43 yesterday. <b>3,916</b> Firecrawl credits of the 8,000 plan,
+      unchanged across both reads today; that is the account's own <code>remainingCredits</code>, while
+      <code>firecrawl_usage</code> has had no row since 2026-09-09 — nothing this box ran booked them.</p>
+  </section>
+
+</main>
+
+<script>
+// The board is wide open while the shipped credentials are in place; say so here too, not only on /login.
+fetch("/api/me",{headers:{accept:"application/json"}}).then(r=>r.json()).then(me=>{
+  if(me && me.default_credentials){ const w=document.getElementById("warn");
+    w.textContent="Warning: the board still runs on the shipped default credentials. Change them with PUT /api/auth/password.";
+    w.hidden=false; }
+});
+
+// The bar's height is data, not a constant: the banner above arrives from that fetch and then wraps to
+// one, two or three lines depending on the width. Publish the measured height as --bar so .slide's
+// top padding clears it at every width. ResizeObserver fires once on observe and again on every reflow
+// (banner arriving, rotation, font swap), which is exactly when the number changes.
+const bar=document.querySelector(".bar");
+new ResizeObserver(()=>document.documentElement.style.setProperty("--bar",bar.offsetHeight+"px")).observe(bar);
+
+const SLIDES=[...document.querySelectorAll("#deck .slide")];
+const count=document.getElementById("count"), prev=document.getElementById("prev"), next=document.getElementById("next");
+let at=0, target=null, timer;   // target = the slide a click/key is scrolling towards, null when idle
+
+function show(i){ at=Math.max(0,Math.min(SLIDES.length-1,i)); count.textContent=(at+1)+" / "+SLIDES.length; prev.disabled=at===0; next.disabled=at===SLIDES.length-1; }
+
+// Which slide the reader is on is a function of the scroll position and nothing else: the slide the
+// middle of the viewport is inside. Read fresh every time the counter is written, so a value that was
+// true one frame ago can never reach the counter. (Not a share of the slide: one with a long table is
+// taller than the viewport and would never reach a 50 % threshold.)
+const current=()=>SLIDES.findLastIndex(s=>s.offsetTop<=scrollY+innerHeight/2);
+
+// A smooth scroll takes ~400 ms, and while it runs the middle of the viewport is still over the slide
+// being *left*. Writing the position back during that window is what made 13 clicks 40 ms apart land on
+// slide 4 of 14, so from a click until its scroll comes to rest the click owns the counter (`target`).
+//
+// Rest is measured as "no scroll event for 140 ms", not taken from `scrollend`, which is not guaranteed
+// to arrive: when a hand interrupts a click-scroll that has only just started, Chromium cancels the
+// animation ~2px in and fires no scrollend at all. The counter then kept the clicked slide for good --
+// eval_out/g4-deck-1280/steps.json, "counter after the interruption=2 / 14" with slide 1 under the
+// middle of the screen, still 2 / 14 2.5 s later. However the scroll ends, this timer runs, the lock
+// comes off and the counter is recomputed for the slide the reader actually stopped on.
+function settle(){ clearTimeout(timer); timer=setTimeout(()=>{ target=null; show(current()); },140); }
+addEventListener("scroll",()=>{ if(target===null) show(current()); settle(); });
+
+function go(i){ if(i<0||i>=SLIDES.length) return; target=i; SLIDES[i].scrollIntoView({block:"start"}); show(i); settle(); }
+
+prev.addEventListener("click",()=>go(at-1));
+next.addEventListener("click",()=>go(at+1));
+addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey) return;
+  if(e.key==="ArrowRight"||e.key===" "||e.key==="PageDown"){ e.preventDefault(); go(at+1); }
+  else if(e.key==="ArrowLeft"||e.key==="PageUp"){ e.preventDefault(); go(at-1); }
+  else if(e.key==="Home"){ e.preventDefault(); go(0); }
+  else if(e.key==="End"){ e.preventDefault(); go(SLIDES.length-1); }
+});
+show(0);
+</script>
+</body>
+</html>

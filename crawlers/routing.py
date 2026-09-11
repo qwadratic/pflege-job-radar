@@ -61,19 +61,26 @@ ADAPTERS = {
     # largest self_hosted boards this session found 7 yield real postings at zero Firecrawl cost
     # (see backlog/decisions/decision-3).
     "self_hosted":     ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
+    # No board is labelled either of these in the registry yet -- crawl_wp_jobs itself probes and
+    # delegates by capability (TASK-40 AC#3, see pflege_jobs/sources/beesite.py and hr4you.py). Listed
+    # here so a future census run that DOES fingerprint one of them by name routes straight to it.
+    "beesite":         ("vendor", "pflege_jobs.sources.beesite:crawl_beesite"),
+    "hr4you":          ("vendor", "pflege_jobs.sources.hr4you:crawl_hr4you"),
     "bite":            ("seeded", "pflege_jobs.sources.bite:crawl"),
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),
     "softgarden":      ("seeded", "pflege_jobs.sources.softgarden:seed_for"),
-    # STALE: nothing imports crawlers.portals for this; ats_seeds.BUILDERS["umantis"] + the generic
-    # listing-first career_crawl.Crawler drive umantis in practice via _seed_obs. Left here only
-    # because ADAPTERS is keyed by ats_type and something may still look this entry up -- do not
-    # trust it as the live code path.
-    "umantis":         ("external", "crawlers.portals:parse_umantis"),
+    # app/crawl.py's _seed_obs dispatches on vendor == "umantis" directly (not through this table's
+    # module path) and drives it via ats_seeds.BUILDERS["umantis"] + the generic listing-first
+    # career_crawl.Crawler -- crawlers.portals:parse_umantis (the old entry here) is unused dead code.
+    "umantis":         ("seeded", "pflege_jobs.sources.ats_seeds:umantis"),
 }
 
 # Boards that reject datacenter traffic outright; a 0-row crawl here means "walled", not "no jobs".
 WALLED = re.compile(r"helios-gesundheit\.de|helios\.de", re.I)
+
+# "no fingerprint found" labels, weaker than any vendor a census run actually identified.
+FALLBACK_VENDORS = {"wp_jobs", "self_hosted"}
 
 
 def load(key=None):
@@ -132,8 +139,13 @@ def plan(clinics):
             continue
         b = boards[url.lower()]
         b["clinics"].append(c)
-        b["vendor"], b["url"] = vendor, url
-        b["kind"], b["adapter"] = ADAPTERS[vendor]
+        b["url"] = url
+        # A shared board's clinics can disagree on ats_type (confirmed live: klinikverbund-allgaeu.de/karriere
+        # groups 3 umantis clinics with 2 self_hosted ones) -- unconditionally overwriting on every clinic made
+        # the group's vendor whichever row the registry happened to return last, silently misrouting the whole
+        # board to the generic crawler about half the time. A real fingerprint always outranks a fallback label.
+        if b["vendor"] is None or (b["vendor"] in FALLBACK_VENDORS and vendor not in FALLBACK_VENDORS):
+            b["vendor"], b["kind"], b["adapter"] = vendor, *ADAPTERS[vendor]
         b["walled"] = bool(WALLED.search(url))
     return boards, unroutable
 

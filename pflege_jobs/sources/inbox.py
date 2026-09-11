@@ -49,5 +49,7 @@ def jobposting_to_obs(row, towns):
         "first_published": (p.get("datePosted") or "")[:10] or None, "last_modified": None, "valid_until": (p.get("validThrough") or "")[:10] or None,
         "external_url": url, "description": desc[:20000] or None, **enr, "details_fetched_at": now if desc else None, "details_error": None,
         "fuzzy_key": fuzzy_key(title, emp, l.get("city")), "content_hash": content_hash(title, emp, l.get("city"), desc[:200]),
+        # provenance: the board this row was fetched from bounds which registry site it can belong to
+        "_board": p.get("board_clinic_ids") or None,
         "payload": json.dumps({"inbox": {"inbox_id": row["inbox_id"], "collector": row.get("collector"), "page": p.get("page"), "host": host}, "crawl": {"seed": p.get("page"), "parse": "collector-jsonld"}}, ensure_ascii=False),
     }

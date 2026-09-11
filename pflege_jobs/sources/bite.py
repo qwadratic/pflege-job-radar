@@ -4,7 +4,9 @@ Recipe (decoded from static.b-ite.com/jobs-api/loader-v1 + api-v5):
   1. Detect on any career page: <script src="…static.b-ite.com/jobs-api/loader-v1/…"> (often wrapped by a consent manager as
      data-ccm-loader-src / type="text/x-ccm-loader") and/or an element with data-bite-jobs-api-listing="{customer}:{listing}".
   2. Fetch the customer listing bundle: https://cs-assets.b-ite.com/{customer}/jobs-api/{listing}.min.js — it embeds key:"<40 hex>".
-  3. POST https://jobs.b-ite.com/api/v1/postings/search  {"key": key, "locale": "de", "page": {"num": 1000}}  -> jobPostings[]
+  3. POST https://jobs.b-ite.com/api/v1/postings/search  {"key": key, "locale": "de", "page": {"num", "offset"}}
+     -> jobPostings[] + page:{offset, total} -- walk offset until len(jobPostings) reaches page.total (the
+     board's own end signal, see walk_all_postings), not a fixed page count.
      (title, url, applyUrl, startsOn/endsOn/createdOn/modifiedOn, address{city, postCode, latitude, longitude},
       employmentType[], custom.berufsgruppe[], custom.befristung, custom.umfang, custom.einstiegsdatum).
   4. Description: GET <url>/raw (HTML) — optional, needed for housing/tariff/requirements enrichment.
@@ -12,6 +14,7 @@ No consent, no browser, no HTML scraping of the clinic site itself.
 """
 import json
 import re
+import time
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 
@@ -25,6 +28,8 @@ from .career_crawl import _strip, in_bavaria
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 pflege-jobs-crawler"
+HEADERS = {"User-Agent": UA, "Accept-Language": "de-DE,de;q=0.9"}
+REQUEST_SLEEP = 0.5   # politeness floor between sequential same-host detail fetches (plain-HTTP-first rule)
 FINGERPRINT = re.compile(r"static\.b-ite\.com/jobs-api|data-bite-jobs-api-listing|jobs\.b-ite\.com|cs-assets\.b-ite\.com", re.I)
 LISTING_ATTR = re.compile(r'data-bite-jobs-api-listing=["\']([^"\':#]+):([^"\'#]+)', re.I)
 BERUF_AUSB = re.compile(r"ausbildung|studium|praktik", re.I)
@@ -109,7 +114,7 @@ def api_key(customer: str, listing: str, session=None):
     assistant mount like Artemed's 'niiid' listing, which ships createClient({key:""}))."""
     s = session or requests.Session()
     try:
-        r = s.get(f"https://cs-assets.b-ite.com/{customer}/jobs-api/{listing}.min.js", headers={"User-Agent": UA}, timeout=30)
+        r = s.get(f"https://cs-assets.b-ite.com/{customer}/jobs-api/{listing}.min.js", headers=HEADERS, timeout=30)
         r.raise_for_status()
     except requests.RequestException:
         return None
@@ -117,21 +122,46 @@ def api_key(customer: str, listing: str, session=None):
     return m.group(1) if m else None
 
 
-def search(key: str, session=None, locale="de", page_num=1000):
+def search(key: str, session=None, locale="de", page_num=1000, offset=0):
     s = session or requests.Session()
-    r = s.post("https://jobs.b-ite.com/api/v1/postings/search", headers={"User-Agent": UA, "Content-Type": "application/json"},
-               json={"key": key, "locale": locale, "page": {"num": page_num}}, timeout=60)
+    r = s.post("https://jobs.b-ite.com/api/v1/postings/search", headers={**HEADERS, "Content-Type": "application/json"},
+               json={"key": key, "locale": locale, "page": {"num": page_num, "offset": offset}}, timeout=60)
     r.raise_for_status()
     return r.json()
+
+
+def walk_all_postings(key: str, session=None, page_size=1000):
+    """-> (jobPostings, error) -- walks page.offset until page.total is reached (the board's own end
+    signal, not a fixed page count; a tenant whose first page already covers page.total, true for
+    every board surveyed so far, makes just the one call). error is None on success, or a message if
+    the search endpoint could not be reached at all -- distinguishes a genuinely empty board from one
+    the crawl never got to ask, the same way every other fetch in this module reports failure rather
+    than raising into the caller."""
+    try:
+        data = search(key, session, page_num=page_size)
+    except requests.RequestException as e:
+        return [], f"B-ITE postings search failed: {e}"
+    jps = list(data.get("jobPostings") or [])
+    total = (data.get("page") or {}).get("total")
+    while total is not None and len(jps) < total:
+        try:
+            nxt = search(key, session, page_num=page_size, offset=len(jps))
+        except requests.RequestException:
+            break   # partial results already fetched are still real postings -- keep them, stop walking
+        got = nxt.get("jobPostings") or []
+        if not got:
+            break   # board's own total overstates what it actually serves -- stop, don't spin
+        jps.extend(got)
+    return jps, None
 
 
 def posting_html(url: str, session=None):
     s = session or requests.Session()
     try:
-        r = s.get(url.rstrip("/") + "/raw", headers={"User-Agent": UA}, timeout=30)
+        r = s.get(url.rstrip("/") + "/raw", headers=HEADERS, timeout=30)
         if r.status_code == 200 and len(r.text) > 200:
             return r.text
-        r = s.get(url, headers={"User-Agent": UA}, timeout=30)
+        r = s.get(url, headers=HEADERS, timeout=30)
         return r.text if r.status_code == 200 else None
     except requests.RequestException:
         return None
@@ -202,6 +232,18 @@ def _jsonld_jobposting(html):
     return None
 
 
+_EMP_TYPE_TEXT_RX = re.compile(r"vollzeit|teilzeit|minijob", re.I)
+
+
+def _employment_types_from_text(*values):
+    """-> vendor-shaped employmentType codes found in free-text field values -- the json.jobs.php
+    fallback's custom_field1..5 slots carry no fixed employment-type field (unlike the standard API's
+    employmentType[]), just whichever slot a given tenant happens to put "Vollzeit / Teilzeit" in."""
+    blob = " ".join(str(v) for v in values if v)
+    found = {m.group(0).lower() for m in _EMP_TYPE_TEXT_RX.finditer(blob)}
+    return [{"vollzeit": "full_time", "teilzeit": "part_time", "minijob": "mini"}[f] for f in found]
+
+
 def _jp_from_json_jobs_php(ad):
     addr = ad.get("address") or {}
     city_raw = addr.get("city") or ""
@@ -211,7 +253,7 @@ def _jp_from_json_jobs_php(ad):
     custom = {k: v for k, v in ad.items() if k.startswith("custom_field") and v}
     return {"title": ad.get("title"), "url": href, "applyUrl": href,
             "address": {"city": city, "postCode": plz, "latitude": addr.get("latitude"), "longitude": addr.get("longitude")},
-            "employmentType": [], "custom": custom,
+            "employmentType": _employment_types_from_text(*custom.values()), "custom": custom,
             "activatedOn": ad.get("ctime") or None, "modifiedOn": ad.get("mtime") or None,
             "endsOn": ad.get("channel0EndDate") or None}
 
@@ -234,7 +276,7 @@ def _jp_from_jsonld(url, ld):
 
 def _fallback_json_jobs_php(career_url, session):
     try:
-        r = session.get(urljoin(career_url, "/_json.jobs.php"), headers={"User-Agent": UA}, timeout=30)
+        r = session.get(urljoin(career_url, "/_json.jobs.php"), headers=HEADERS, timeout=30)
         r.raise_for_status()
         data = r.json()
     except (requests.RequestException, ValueError):
@@ -244,12 +286,16 @@ def _fallback_json_jobs_php(career_url, session):
     return jps or None
 
 
-def _fallback_jobposting_links(html, session, limit=150):
-    links = list(dict.fromkeys(JOBPOSTING_LINK.findall(html or "")))[:limit]
+def _fallback_jobposting_links(html, session):
+    """Every jobposting detail link on the page -- no cap: the board's own link list is the end
+    signal, walked in full, one request at a time with a politeness sleep between them."""
+    links = list(dict.fromkeys(JOBPOSTING_LINK.findall(html or "")))
     jps = []
-    for u in links:
+    for i, u in enumerate(links):
+        if i:
+            time.sleep(REQUEST_SLEEP)
         try:
-            r = session.get(u, headers={"User-Agent": UA}, timeout=30)
+            r = session.get(u, headers=HEADERS, timeout=30)
             r.raise_for_status()
         except requests.RequestException:
             continue
@@ -266,30 +312,33 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
     candidates = [{"customer": cust, "listing": lst}] if cust else None
     r = None
     if candidates is None:
-        r = s.get(seed["career"], headers={"User-Agent": UA}, timeout=40)
+        r = s.get(seed["career"], headers=HEADERS, timeout=40)
         candidates = [d for d in detect(r.text) if d.get("customer")]
-    if candidates:
-        key = None
-        for d in candidates:
-            key = api_key(d["customer"], d["listing"], s)
-            if key:
-                cust, lst = d["customer"], d["listing"]
-                break
-        if not key:
-            return [], {"error": "no B-ITE listing bundle on page carried a usable API key "
-                                  f"(tried {len(candidates)}: {[(d['customer'], d['listing']) for d in candidates]})"}
-        data = search(key, s)
-        jps = data.get("jobPostings") or []
+    key = None
+    for d in candidates or []:
+        key = api_key(d["customer"], d["listing"], s)
+        if key:
+            cust, lst = d["customer"], d["listing"]
+            break
+    if key:
+        jps, walk_err = walk_all_postings(key, s)
+        if walk_err:
+            return [], {"error": walk_err}
     else:
-        # No jobs-api widget mount on the page at all -- some real B-ITE tenants render their career
-        # page a different way but still keep the standard jobposting detail-page host underneath.
+        # No usable jobs-api widget mount -- either none on the page at all, or only a non-listing
+        # bundle (e.g. Artemed's 'niiid' chatbot mount, which ships createClient({key:""})). Some real
+        # B-ITE tenants render their career page a different way but still keep the standard
+        # jobposting detail-page host underneath, so try both same-origin fallbacks before giving up.
         jps = _fallback_json_jobs_php(seed["career"], s)
         cust, lst = "same-origin", "json_jobs_php"
         if jps is None and r is not None:
             jps = _fallback_jobposting_links(r.text, s)
             lst = "jobposting_links"
         if jps is None:
-            return [], {"error": "no B-ITE listing attribute on page"}
+            reason = (f"no B-ITE listing bundle on page carried a usable API key "
+                      f"(tried {len(candidates)}: {[(d['customer'], d['listing']) for d in candidates]})"
+                      ) if candidates else "no B-ITE listing attribute on page"
+            return [], {"error": reason}
     tax_key, nursing_label = find_nursing_taxonomy(jps)
     # Section-first (surveyed 2026-09, revised): find_nursing_taxonomy()/`_has_label` used to also
     # hard-restrict which postings got processed AT ALL -- but on two real boards (Augustinum, DONAU-
@@ -301,24 +350,17 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
     # posting, and pass each one's own label match (reusing `_has_label`, not recomputing it) as
     # classify.classify_role's nursing_section_confirmed signal instead.
     matched = sum(1 for jp in jps if tax_key and _has_label(jp, tax_key, nursing_label)) if tax_key else None
-    out, stats = [], {"customer": cust, "listing": lst, "total": len(jps), "pflege": 0, "non_bavaria": 0,
+    out, stats = [], {"customer": cust, "listing": lst, "total": len(jps), "pflege": 0,
                        "section_field": tax_key, "section_label": nursing_label, "section_matched": matched}
-    for jp in jps:
+    for i, jp in enumerate(jps):
         section_confirmed = bool(tax_key) and _has_label(jp, tax_key, nursing_label)
         desc0 = jp.get("_desc_html")   # jobposting_links fallback already fetched the detail page's own JSON-LD
         o = to_observation(jp, seed, towns, desc0, section_confirmed=section_confirmed)  # cheap pass: classify + locate first
-        if o["role_class"] == "nicht_pflege":
-            continue
-        if o["in_bavaria"] is False:
-            stats["non_bavaria"] += 1; continue
-        if o["in_bavaria"] is None and seed.get("bavaria_only_operator", False):   # default: need positive Bavaria evidence
-            o["in_bavaria"] = True
-        if o["in_bavaria"] is None:
-            continue
         if with_descriptions and not desc0:                               # enrich survivors only (skip if already fetched above)
+            if i: time.sleep(REQUEST_SLEEP)
             html = posting_html(jp["url"], s)
-            if html: o = to_observation(jp, seed, towns, html, section_confirmed=section_confirmed); o["in_bavaria"] = True
+            if html: o = to_observation(jp, seed, towns, html, section_confirmed=section_confirmed)
         stats["pflege"] += 1; out.append(o)
     sec = f" section={tax_key}={nursing_label!r} matched={matched}/{len(jps)}" if tax_key else ""
-    log(f"{seed['name'][:36]:<36} B-ITE {cust}:{lst} total {len(jps)}{sec} -> Pflege/BY {len(out)} (non-BY {stats['non_bavaria']})")
+    log(f"{seed['name'][:36]:<36} B-ITE {cust}:{lst} total {len(jps)}{sec} -> Pflege/BY {len(out)}")
     return out, stats

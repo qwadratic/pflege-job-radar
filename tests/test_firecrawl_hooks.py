@@ -52,6 +52,11 @@ def test_webhook_rejects_missing_or_wrong_secret(client):
     r = client.post("/api/firecrawl/webhook", json={"type": "agent.started", "id": "job-1"},
                      headers={"X-Pflege-Webhook-Secret": "wrong"})
     assert r.status_code == 401
+    # non-ASCII: headers arrive latin-1-decoded and hmac.compare_digest refuses such a str (TypeError,
+    # i.e. 500). The check compares the encoded bytes, so a junk header is still a plain 401.
+    r = client.post("/api/firecrawl/webhook", json={"type": "agent.started", "id": "job-1"},
+                     headers={"X-Pflege-Webhook-Secret": b"\xff"})
+    assert r.status_code == 401
 
 
 def test_webhook_secret_is_generated_once_and_persisted(client):

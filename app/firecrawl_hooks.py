@@ -15,6 +15,7 @@ check, so the webhook is best-effort and the polling fallback in run_agent() is 
 We always answer 200 within a couple hundred ms; anything that could be slow (running the adapter probe,
 posting to Supabase) either isn't done here (spend_gate already ran before submission) or is cheap (posting
 already-converted rows straight to the inbox)."""
+import hmac
 import secrets
 
 from fastapi import APIRouter, Header, Request
@@ -87,7 +88,12 @@ def _handle_terminal_failure(event_type, payload, clinic_id, run_id, credits_use
 @router.post("/firecrawl/webhook")
 async def firecrawl_webhook(request: Request, x_pflege_webhook_secret: str = Header(default=None)):
     expected = get_webhook_secret()
-    if not x_pflege_webhook_secret or x_pflege_webhook_secret != expected:
+    # compare_digest, like every other secret check in app/auth.py: this route is public by design, so the
+    # only thing between an anonymous caller and writing inbox rows / usage is this string, and "!=" leaks
+    # the length of the shared prefix through its timing.
+    # .encode() on both sides, not the str overload: a header arrives latin-1-decoded, and compare_digest
+    # refuses a str with a non-ASCII character (TypeError -> 500 instead of 401 for "…-Secret: ÿ").
+    if not x_pflege_webhook_secret or not hmac.compare_digest(x_pflege_webhook_secret.encode(), expected.encode()):
         return JSONResponse({"error": "bad or missing X-Pflege-Webhook-Secret"}, status_code=401)
     try:
         payload = await request.json()

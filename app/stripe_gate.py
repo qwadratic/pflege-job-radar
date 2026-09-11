@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 
 import requests
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import auth as AU
@@ -45,7 +44,7 @@ router = APIRouter()
 
 DEFAULT_API_BASE = "https://api.stripe.com"
 WEBHOOK_TOLERANCE_S = 300
-NOT_CONFIGURED = {"error": "stripe not configured"}
+NOT_CONFIGURED = "stripe not configured"
 
 # customers / sessions are owned by app/runs.py SCHEMA (auth track); repeated here with the same DDL so this module
 # works whichever order the tracks land in. closed_postings is ours.
@@ -107,6 +106,13 @@ def _ensure():
             with R._lock, R.db() as c:
                 c.executescript(SCHEMA)
             _inited_path = path
+
+
+def _err(request, status, detail):
+    """Every error here answers in the one RFC 9457 shape app/main.py:_problem() builds (docs/errors.md) --
+    same tables, same `type` slugs, no second copy. Imported at call time: app.main imports this module."""
+    from .main import _problem
+    return _problem(request, status, detail)
 
 
 class StripeError(Exception):
@@ -180,11 +186,22 @@ def period_start():
 
 
 @router.get("/stripe/status")
-def stripe_status():
+def stripe_status(request: Request):
+    """Public, because POST /stripe/checkout is: a visitor who is not a customer yet has to be able to see
+    whether buying is switched on at all (`configured`, and the two booleans that say which half of the
+    setup is missing when it is not).
+
+    `customers` and `closed_this_period` are owner-only since 2026-09-10: they are revenue -- how many
+    people pay and how much was billable this month -- and no page or agent route reads them (grep: only
+    docs/stripe.md and this module's tests). docs/auth.md:119 recorded the leak and declined to narrow it
+    unilaterally; this is the decision it was waiting for. Null, not absent, so the shape is stable."""
     _ensure()
-    with R._lock, R.db() as c:
-        customers = c.execute("select count(*) from customers where coalesce(status,'active')='active'").fetchone()[0]
-        closed = c.execute("select count(*) from closed_postings where at>=?", (period_start(),)).fetchone()[0]
+    owner = AU.current(request)["role"] == "owner"
+    customers = closed = None
+    if owner:
+        with R._lock, R.db() as c:
+            customers = c.execute("select count(*) from customers where coalesce(status,'active')='active'").fetchone()[0]
+            closed = c.execute("select count(*) from closed_postings where at>=?", (period_start(),)).fetchone()[0]
     return {"configured": configured(), "price_id_set": bool(price_id()), "webhook_set": bool(webhook_secret()),
             "meter": bool(meter_event_name()), "customers": customers, "closed_this_period": closed,
             "period_start": period_start()}
@@ -213,19 +230,19 @@ def checkout_payload(email, sid_hash=None):
 @router.post("/stripe/checkout")
 def api_checkout(body: CheckoutIn, request: Request):
     if not configured():
-        return JSONResponse(NOT_CONFIGURED, status_code=503)
+        return _err(request, 503, NOT_CONFIGURED)
     if not price_id():
-        return JSONResponse({"error": "stripe price not configured"}, status_code=503)
+        return _err(request, 503, "stripe price not configured")
     email = (body.email or "").strip().lower()
     if not email or "@" not in email or len(email) > 254:
-        return JSONResponse({"error": "e-mail required"}, status_code=400)
+        return _err(request, 400, "e-mail required")
     sid_hash = _sid_hash_from_cookie(request.cookies.get(AU.COOKIE))
     try:
         sess = _stripe("POST", "/v1/checkout/sessions", checkout_payload(email, sid_hash))
     except StripeError as e:
-        return JSONResponse({"error": str(e)}, status_code=502)
+        return _err(request, 502, str(e))
     except requests.RequestException as e:
-        return JSONResponse({"error": "stripe unreachable: " + type(e).__name__}, status_code=502)
+        return _err(request, 502, "stripe unreachable: " + type(e).__name__)
     return {"url": sess.get("url"), "id": sess.get("id")}
 
 
@@ -244,7 +261,10 @@ def verify_signature(payload: bytes, header: str, secret: str, tolerance=WEBHOOK
     if not t or not sigs or not t.isdigit():
         return False
     expected = hmac.new(secret.encode(), (t + ".").encode() + payload, hashlib.sha256).hexdigest()
-    if not any(hmac.compare_digest(expected, s) for s in sigs):
+    # .encode() on both sides, not compare_digest's str overload: the header arrives latin-1-decoded and
+    # the str overload raises TypeError on a non-ASCII character -- "stripe-signature: t=1,v1=<0xff>" was a
+    # 500 echoing the exception on a public, anonymous route. Same shape as app/firecrawl_hooks.py:96.
+    if not any(hmac.compare_digest(expected.encode(), s.encode()) for s in sigs):
         return False
     return abs((now if now is not None else time.time()) - int(t)) <= tolerance
 
@@ -282,18 +302,18 @@ def handle_event(event):
 @router.post("/stripe/webhook")
 async def api_webhook(request: Request):
     if not configured():
-        return JSONResponse(NOT_CONFIGURED, status_code=503)
+        return _err(request, 503, NOT_CONFIGURED)
     if not webhook_secret():
-        return JSONResponse({"error": "stripe webhook secret not configured"}, status_code=503)
+        return _err(request, 503, "stripe webhook secret not configured")
     payload = await request.body()
     if not verify_signature(payload, request.headers.get("stripe-signature", ""), webhook_secret()):
-        return JSONResponse({"error": "invalid signature"}, status_code=400)
+        return _err(request, 400, "invalid signature")
     try:
         event = json.loads(payload.decode("utf-8"))
     except Exception:
-        return JSONResponse({"error": "invalid payload"}, status_code=400)
+        return _err(request, 400, "invalid payload")
     if not isinstance(event, dict):
-        return JSONResponse({"error": "invalid payload"}, status_code=400)
+        return _err(request, 400, "invalid payload")
     out = handle_event(event)
     return {"received": True, "type": event.get("type"), **out}
 
@@ -308,6 +328,25 @@ def closed_row(posting_id):
     with R._lock, R.db() as c:
         r = c.execute("select * from closed_postings where posting_id=?", (posting_id,)).fetchone()
     return dict(r) if r else None
+
+
+def _is_closer(row, ident):
+    """May `ident` see this closed_postings row in full? The owner may; a customer only its own close."""
+    email = (ident.get("email") or "").lower()
+    return ident["role"] == "owner" or (bool(email) and email == (row.get("by_email") or "").lower())
+
+
+def _visible(row, ident):
+    """A closed_postings row as `ident` may see it.
+
+    The row carries another customer's e-mail address, their Stripe customer id, the usage id and Stripe's
+    own error string, and until 2026-09-11 both routes below returned closed_row() verbatim to ANY signed-in
+    member (auth.MEMBER_READ covers /api/postings) -- so one paying clinic could read every other clinic's
+    billing state by walking posting ids. A foreign row now says only that the posting is taken, and when.
+    Nothing outside this module reads the redacted keys: grep for the route finds only docs and tests."""
+    if not row:
+        return None
+    return dict(row) if _is_closer(row, ident) else {"posting_id": row["posting_id"], "at": row["at"]}
 
 
 def _subscription_item(stripe_customer_id):
@@ -342,18 +381,22 @@ def record_usage(stripe_customer_id, posting_id, at):
 @router.post("/postings/{posting_id}/closed")
 def api_posting_closed(posting_id: int, request: Request, body: ClosedIn | None = None):
     """'Stelle besetzt': the customer (or the owner) marks a posting as filled. Local ledger row always; one Stripe usage
-    unit when configured and the closer maps to a Stripe customer. Idempotent: a second call answers the stored row."""
+    unit when configured and the closer maps to a Stripe customer. Idempotent: a second call answers the stored row.
+
+    Membership is enforced by the middleware (auth.MEMBER_API covers /api/postings), not here: required_role() is the
+    single source of the matrix, so this handler only ever sees an owner or a customer."""
     ident = AU.current(request)
-    if ident["role"] not in ("owner", "customer"):
-        return JSONResponse({"error": "sign in required", "role": ident["role"], "login_url": "/__exe.dev/login?redirect=/pro"}, status_code=401)
     if posting_id <= 0:
-        return JSONResponse({"error": "invalid posting id"}, status_code=400)
+        return _err(request, 400, "invalid posting id")
     email = (ident.get("email") or "").lower()
     if ident["role"] == "owner" and body and body.customer_email:
         email = body.customer_email.strip().lower()
     existing = closed_row(posting_id)
     if existing:
-        return {**existing, "already": True, "billed": bool(existing.get("stripe_usage_id"))}
+        out = {**_visible(existing, ident), "already": True}
+        if _is_closer(existing, ident):                 # `billed` is billing state and belongs to the closer
+            out["billed"] = bool(existing.get("stripe_usage_id"))
+        return out
     at = _now()
     cust = customer_for_email(email) if ident["role"] == "customer" or (body and body.customer_email) else None
     cus_id = (cust or {}).get("stripe_customer_id")
@@ -377,13 +420,13 @@ def api_posting_closed(posting_id: int, request: Request, body: ClosedIn | None 
     with R._lock, R.db() as c:
         c.execute("update closed_postings set stripe_usage_id=?, stripe_error=? where posting_id=?", (usage_id, err, posting_id))
     row = closed_row(posting_id)
-    return {**row, "already": False, "billed": bool(usage_id)}
+    return {**_visible(row, ident), "already": False, "billed": bool(usage_id)}
 
 
 @router.get("/postings/{posting_id}/closed")
 def api_posting_closed_get(posting_id: int, request: Request):
-    ident = AU.current(request)
-    if ident["role"] not in ("owner", "customer"):
-        return JSONResponse({"error": "sign in required", "role": ident["role"]}, status_code=401)
+    """Member-only through auth.MEMBER_READ, and scoped to the closer: the row names the address that closed
+    the posting plus its whole Stripe trail, so a customer sees its own close in full and someone else's
+    only as {closed: true, at}. The owner sees every row. See _visible()."""
     row = closed_row(posting_id)
-    return {"posting_id": posting_id, "closed": bool(row), **(row or {})}
+    return {"posting_id": posting_id, "closed": bool(row), **(_visible(row, AU.current(request)) or {})}

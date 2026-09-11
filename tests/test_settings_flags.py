@@ -51,7 +51,7 @@ def test_public_flags_endpoint_is_open_and_allowlisted(client):
 
 
 def test_public_flags_reflects_toggle_but_never_leaks_stripe(client):
-    h = {"X-ExeDev-Email": OWNER}
+    h = {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
     client.put("/api/settings/flags", json={"stripe": True, "chats_dock": True}, headers=h)
     r = client.get("/api/flags").json()
     assert r == {"chats_dock": True} and "stripe" not in r
@@ -77,13 +77,13 @@ def test_get_all_surfaces_flags_and_status_notes(env):
 
 def test_put_settings_flags_owner_only(client):
     assert client.put("/api/settings/flags", json={"stripe": True}).status_code == 401
-    h = {"X-ExeDev-Email": OWNER}
+    h = {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
     r = client.put("/api/settings/flags", json={"stripe": True}, headers=h)
     assert r.status_code == 200 and r.json() == {"stripe": True, "chats_dock": False}
     assert client.get("/api/settings", headers=h).json()["feature_flags"] == {"stripe": True, "chats_dock": False}
 
 
 def test_put_settings_flags_rejects_bad_body(client):
-    h = {"X-ExeDev-Email": OWNER}
+    h = {"Cookie": "pj_session=" + AU.create_session(OWNER, "owner")}
     r = client.put("/api/settings/flags", json="nope", headers=h)
     assert r.status_code == 422

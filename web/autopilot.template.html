@@ -21,6 +21,11 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font
 a{color:var(--sky);text-underline-offset:3px} a:hover{color:var(--neon)}
 button,input,select,textarea{font:inherit;color:inherit}
 input,select,textarea{background:var(--surface-2);border:1px solid var(--line);color:var(--ink);padding:6px 8px}
+.pick{position:relative;min-width:150px} .pick .pk-t{width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;font:inherit;font-size:13px;text-align:left;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:0;min-height:34px;padding:0 10px;cursor:pointer;-webkit-appearance:none}
+.pick .pk-t .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pick .pk-t .v.ph{color:var(--ink-3)} .pick .pk-t .cr{width:6px;height:6px;flex:none;border-right:1px solid var(--ink-3);border-bottom:1px solid var(--ink-3);transform:rotate(45deg) translateY(-2px)}
+.pick .pk-t:hover{border-color:var(--neon)} .pick .pk-t:focus,.pick .pk-t[aria-expanded=true]{outline:1px solid var(--neon);outline-offset:-1px;border-color:var(--neon)} .pick input.pk-t{cursor:text} .pick input.pk-t::placeholder{color:var(--ink-3)}
+.pick .dd{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;max-height:280px;overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.35)} .pick .dd[hidden]{display:none}
+.pick .o{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap} .pick .o small{color:var(--ink-3);font-variant-numeric:tabular-nums} .pick .o.on{color:var(--ink)} .pick .o:hover,.pick .o[aria-selected=true]{background:var(--surface-2);color:var(--ink)} .pick .o.empty{cursor:default;justify-content:center;color:var(--ink-3)}
 input::placeholder,textarea::placeholder{color:var(--ink-3)} select option{background:var(--surface-2)}
 :focus-visible{outline:2px solid var(--neon);outline-offset:2px}
 ::selection{background:var(--neon);color:#0B0D12}
@@ -216,7 +221,7 @@ const I18N={
   pill_reply:"Antwort nötig",pill_manager:"Manager",pill_paused:"Pausiert",pill_approvals:"Freigaben",pill_due:"Fällig",
   tt_1h:"+1 Std",tt_8h:"+8 Std",tt_1d:"+1 Tag",tt_done:"Zeit vorgespult: {m} Nachrichten raus, {i} rein, {a} Freigaben, {q} Warteschlange erledigt, {l} neue Leads",
   n_inbox:"Inbox",n_funnel:"Funnel",n_matching:"Matching",n_clinics:"Kliniken",n_approvals:"Freigaben",n_queue:"Warteschlange",n_campaigns:"Kampagnen",n_templates:"Vorlagen",n_accounts:"Konten & APIs",n_policy:"Regeln",
-  loading:"Lade …",err_load:"Laden fehlgeschlagen",empty:"Keine Einträge.",total:"gesamt",page:"Seite",of:"von",today:"heute",yesterday:"gestern",days_ago:"Tage",close:"Schließen",save:"Speichern",cancel_:"Abbrechen",all:"alle",reset:"Zurücksetzen",
+  loading:"Lade …",err_load:"Laden fehlgeschlagen",empty:"Keine Einträge.",total:"gesamt",page:"Seite",of:"von",today:"heute",yesterday:"gestern",days_ago:"Tage",close:"Schließen",save:"Speichern",cancel_:"Abbrechen",all:"alle",tp_none:"Nichts gefunden.",reset:"Zurücksetzen",
   tab_all:"Alle",tab_reply:"Antwort",tab_manager:"Manager",tab_paused:"Pausiert",tab_luna:"Luna aktiv",tab_clinics:"Kliniken",tab_overdue:"Überfällig",
   search_ph:"Name, Vorschau, Tag …",f_channel:"Kanal",f_next:"Wartet auf",f_lang:"Sprache",f_campaign:"Kampagne",f_stage:"Stufe",
   bulk_pause:"Pausieren",bulk_resume:"Fortsetzen",bulk_stop:"Stoppen",bulk_reason:"Grund für Pause/Stopp:",bulk_selected:"{n} ausgewählt",
@@ -247,7 +252,7 @@ const I18N={
   pill_reply:"Reply needed",pill_manager:"Manager",pill_paused:"Paused",pill_approvals:"Approvals",pill_due:"Due",
   tt_1h:"+1 h",tt_8h:"+8 h",tt_1d:"+1 day",tt_done:"Time advanced: {m} sent, {i} received, {a} approvals, {q} queue rows run, {l} new leads",
   n_inbox:"Inbox",n_funnel:"Funnel",n_matching:"Matching",n_clinics:"Clinics",n_approvals:"Approvals",n_queue:"Queue",n_campaigns:"Campaigns",n_templates:"Templates",n_accounts:"Accounts & APIs",n_policy:"Rules",
-  loading:"Loading …",err_load:"Failed to load",empty:"No entries.",total:"total",page:"Page",of:"of",today:"today",yesterday:"yesterday",days_ago:"days ago",close:"Close",save:"Save",cancel_:"Cancel",all:"all",reset:"Reset",
+  loading:"Loading …",err_load:"Failed to load",empty:"No entries.",total:"total",page:"Page",of:"of",today:"today",yesterday:"yesterday",days_ago:"days ago",close:"Close",save:"Save",cancel_:"Cancel",all:"all",tp_none:"Nothing found.",reset:"Reset",
   tab_all:"All",tab_reply:"Reply",tab_manager:"Manager",tab_paused:"Paused",tab_luna:"Luna active",tab_clinics:"Clinics",tab_overdue:"Overdue",
   search_ph:"Name, preview, tag …",f_channel:"Channel",f_next:"Waiting on",f_lang:"Language",f_campaign:"Campaign",f_stage:"Stage",
   bulk_pause:"Pause",bulk_resume:"Resume",bulk_stop:"Stop",bulk_reason:"Reason for pause/stop:",bulk_selected:"{n} selected",
@@ -374,6 +379,40 @@ window.addEventListener("hashchange",route);
 
 // ---- topbar: mode switch, pills, time travel, clock ---------------------------------------------------
 let OVERVIEW=null, POLICY=null;
+// Single-select dropdown, used everywhere instead of <select>: a native select renders as an OS sheet on
+// mobile and cannot carry our type/colour, so this keeps the native keyboard contract (↑/↓/Home/End/Enter/
+// Esc, type-ahead) and adds optional search for long lists. Drop-in: it exposes .value and fires "change".
+let PK_SEQ=0;
+function dropdown({options,value="",onchange,placeholder="",search=false,labelOf=null,allLabel=null,aria=null}){
+  const norm=s=>String(s).toLowerCase().replace(/ß/g,"ss").normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const lab=o=>o.label!=null?o.label:(labelOf?labelOf(o.v):o.v);
+  const opts=(allLabel!=null?[{v:"",label:allLabel}]:[]).concat(options||[]);
+  const id="pk"+(++PK_SEQ); let val=value==null?"":String(value),open=false,idx=-1,hits=opts,typed="",tt=0;
+  const dd=el("div",{class:"dd",id:id+"-l",role:"listbox",hidden:true}), face=el("span",{class:"v"});
+  const trg=search?el("input",{class:"pk-t",type:"text",role:"combobox",autocomplete:"off",spellcheck:"false",placeholder:placeholder,"aria-autocomplete":"list","aria-expanded":"false","aria-controls":id+"-l","aria-label":aria||placeholder})
+    :el("button",{class:"pk-t",type:"button",role:"combobox","aria-haspopup":"listbox","aria-expanded":"false","aria-controls":id+"-l","aria-label":aria||placeholder},face,el("i",{class:"cr","aria-hidden":"true"}));
+  const box=el("div",{class:"pick"+(search?" s":"")},trg,dd);
+  const cur=()=>opts.find(o=>o.v===val);
+  const paint=()=>{ const c=cur(); if(search){ if(document.activeElement!==trg) trg.value=c?lab(c):""; } else { face.textContent=c?lab(c):(placeholder||"…"); face.classList.toggle("ph",!c); } };
+  const close=()=>{ open=false; dd.hidden=true; idx=-1; trg.setAttribute("aria-expanded","false"); trg.removeAttribute("aria-activedescendant"); paint(); };
+  const mark=i=>{ idx=i; [...dd.children].forEach((n,k)=>n.setAttribute("aria-selected",String(k===i)));
+    if(dd.children[i]){ trg.setAttribute("aria-activedescendant",dd.children[i].id); dd.children[i].scrollIntoView({block:"nearest"}); } else trg.removeAttribute("aria-activedescendant"); };
+  const choose=o=>{ val=o.v; close(); trg.focus(); box.dispatchEvent(new Event("change")); onchange&&onchange(o.v,o); };
+  const draw=()=>{ const q=search?norm(trg.value.trim()):""; hits=q?opts.filter(o=>norm(lab(o)).includes(q)||norm(o.v).includes(q)):opts;
+    dd.replaceChildren(...(hits.length?hits.map((o,i)=>el("div",{class:"o"+(o.v===val?" on":""),id:id+"-o"+i,role:"option","aria-selected":"false",onmousedown:e=>{e.preventDefault();choose(o);}},el("span",{text:lab(o)}),o.n!=null?el("small",{text:num(o.n)}):null))
+      :[el("div",{class:"o empty",text:t("tp_none")})]));
+    open=true; dd.hidden=false; trg.setAttribute("aria-expanded","true"); mark(hits.findIndex(o=>o.v===val)); };
+  trg.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(!open){ draw(); return; } if(!hits.length) return; e.preventDefault(); mark(e.key==="ArrowDown"?(idx+1)%hits.length:(idx<=0?hits.length-1:idx-1)); return; }
+    if(open&&(e.key==="Home"||e.key==="End")){ e.preventDefault(); mark(e.key==="Home"?0:hits.length-1); return; }
+    if(e.key==="Enter"||(e.key===" "&&!search)){ if(!open){ e.preventDefault(); draw(); return; } const o=idx>=0?hits[idx]:(hits.length===1?hits[0]:null); if(o){ e.preventDefault(); choose(o); } return; }
+    if(e.key==="Escape"&&open){ e.preventDefault(); close(); return; }
+    if(!search&&e.key.length===1){ clearTimeout(tt); typed+=norm(e.key); tt=setTimeout(()=>typed="",700);   // type-ahead, like a native select
+      const i=(open?hits:opts).findIndex(o=>norm(lab(o)).startsWith(typed)); if(i>=0){ if(!open) draw(); mark(i); } } });
+  if(search){ trg.addEventListener("focus",draw); trg.addEventListener("input",draw); } else trg.addEventListener("click",()=>open?close():draw());
+  box.addEventListener("focusout",e=>{ if(!box.contains(e.relatedTarget)) close(); });
+  Object.defineProperty(box,"value",{get:()=>val,set:v=>{ val=v==null?"":String(v); paint(); }});
+  paint(); return box; }
 function renderTopbar(){
   const modes=["off","assist","auto"];
   $("#modeseg").replaceChildren(...modes.map(m=>el("button",{type:"button",class:m,"aria-pressed":String(POLICY?.mode===m),onclick:()=>setMode(m)},t("mode_"+m))));
@@ -410,14 +449,11 @@ async function pageInbox(params, id){
   rail.append(tabs2);
   const search=el("input",{type:"search",placeholder:t("search_ph"),"data-ph":"search_ph",id:"ib-search",value:st.q,oninput:debounce(e=>{st.q=e.target.value;st.keep=true;renderList();},250)});
   rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:"⌕"}),search));
-  const selChannel=el("select",{onchange:e=>{st.channel=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),el("option",{value:"whatsapp",text:"WhatsApp"}),el("option",{value:"email",text:"E-Mail"}));
-  selChannel.value=st.channel;
+  const selChannel=dropdown({options:[{v:"whatsapp",label:"WhatsApp"},{v:"email",label:"E-Mail"}],value:st.channel,allLabel:t("all"),aria:t("f_channel"),onchange:v=>{st.channel=v;st.keep=true;renderList();}});
   rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_channel")}),selChannel));
-  const selNext=el("select",{onchange:e=>{st.next_actor=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),el("option",{value:"us",text:"us"}),el("option",{value:"candidate",text:"candidate"}),el("option",{value:"clinic",text:"clinic"}),el("option",{value:"none",text:"none"}));
-  selNext.value=st.next_actor;
+  const selNext=dropdown({options:["us","candidate","clinic","none"].map(v=>({v,label:v})),value:st.next_actor,allLabel:t("all"),aria:t("f_next"),onchange:v=>{st.next_actor=v;st.keep=true;renderList();}});
   rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_next")}),selNext));
-  const selLang=el("select",{onchange:e=>{st.language=e.target.value;st.keep=true;renderList();}},el("option",{value:"",text:t("all")}),...["de","en","ro"].map(l=>el("option",{value:l,text:l})));
-  selLang.value=st.language;
+  const selLang=dropdown({options:["de","en","ro"].map(v=>({v,label:v})),value:st.language,allLabel:t("all"),onchange:v=>{st.language=v;st.keep=true;renderList();}});
   rail.append(el("div",{class:"f"},el("span",{class:"lbl",text:t("f_lang")}),selLang));
   root.append(rail);
 
@@ -478,8 +514,7 @@ async function renderThread(box, id, onchange){
   const cv=d.conversation, cand=d.candidate;
   const wrap=el("div",{class:"thread-wrap"});
   const thread=el("div",{class:"thread"});
-  const modeOptions=["luna","paused","human","manager","stopped"].map(m=>el("option",{value:m,selected:cv.mode===m,text:m}));
-  const modeSelect=el("select",{},...modeOptions);
+  const modeSelect=dropdown({options:["luna","paused","human","manager","stopped"].map(v=>({v,label:v})),value:cv.mode});
   modeSelect.addEventListener("change",async()=>{
     const mode=modeSelect.value; const reason=(mode==="paused"||mode==="stopped")?(prompt(t("mode_menu_reason"))||""):null;
     try{ await post(`/conversations/${id}/mode`,{mode,reason}); toast(t("saved")); renderThread(box,id,onchange); onchange&&onchange(); }
@@ -515,7 +550,7 @@ async function renderThread(box, id, onchange){
     thread.append(box2);
   }
   const ta=el("textarea",{placeholder:t("compose_ph")});
-  const asSel=el("select",{},el("option",{value:"operator",text:t("as_operator")}),el("option",{value:"luna",text:t("as_luna")}));
+  const asSel=dropdown({options:[{v:"operator",label:t("as_operator")},{v:"luna",label:t("as_luna")}],value:"operator"});
   const composer=el("div",{class:"composer"}, ta, asSel,
     el("button",{class:"btn",type:"button",title:t("suggest"),onclick:()=>{ if(d.suggestion&&d.suggestion.text) ta.value=d.suggestion.text; }},"✨ "+t("suggest")),
     el("button",{class:"btn n",type:"button",onclick:async()=>{
@@ -582,7 +617,7 @@ async function pageFunnel(params){
     el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPI"),el("span",{class:"t",text:eur(b.cost_per_interview)})),
     el("div",{},el("span",{style:"display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase"},"CPP"),el("span",{class:"t",text:eur(b.cost_per_placed)})))));
 
-  const groupSel=el("select",{onchange:e=>nav("/funnel",{by:e.target.value})},...[["source","g_campaign"],["language","g_lang"],["region","g_region"],["owner","g_owner"]].map(([v,k])=>el("option",{value:v,selected:v===by,text:t(k)})));
+  const groupSel=dropdown({options:[["source","g_campaign"],["language","g_lang"],["region","g_region"],["owner","g_owner"]].map(([v,k])=>({v,label:t(k)})),value:by,aria:t("group_by"),onchange:v=>nav("/funnel",{by:v})});
   const groupHead=el("thead",{},el("tr",{},el("th",{text:t("group_by")}),...data.stages.map(s=>el("th",{class:"num",text:stageLabel(s.stage)}))));
   const groupBody=el("tbody",{},...(data.groups||[]).map(g=>el("tr",{},el("td",{text:g.key||"–"}),...g.stages.map(s=>el("td",{class:"num",text:num(s.count)})))));
   const groupTable=el("div",{class:"tw",style:"margin-top:10px"},el("table",{},groupHead,groupBody));
@@ -626,9 +661,9 @@ async function pageMatching(params){
   // -- cohort builder --
   const right=el("div",{class:"card"},el("h3",{text:t("build_cohort")}));
   const crit={role_class:"pflegefachkraft",region:"",qualification:"",german_level_min:"",anerkennung:""};
-  const roleSel=el("select",{},...Object.keys(ROLE_LABEL).map(k=>el("option",{value:k,text:roleLabel(k)})));
+  const roleSel=dropdown({options:Object.keys(ROLE_LABEL).map(v=>({v,label:roleLabel(v)})),value:crit.role_class,aria:t("role_class")});
   const regionIn=el("input",{type:"text",placeholder:"z. B. Oberbayern"});
-  const glSel=el("select",{},el("option",{value:"",text:t("all")}),...["A1","A2","B1","B2","C1","C2"].map(l=>el("option",{value:l,text:l})));
+  const glSel=dropdown({options:["A1","A2","B1","B2","C1","C2"].map(v=>({v,label:v})),value:"",allLabel:t("all")});
   const form=el("div",{class:"grid"},
     el("div",{},el("span",{class:"lbl",style:"display:block"},t("role_class")),roleSel),
     el("div",{},el("span",{class:"lbl",style:"display:block"},t("region")),regionIn),
@@ -940,14 +975,14 @@ async function pageAccounts(){
 async function pagePolicy(){
   const root=el("div"); root.append(el("h1",{text:t("n_policy")}));
   let p; try{ p=await api("/policy"); }catch(e){ return errorCard(e); }
-  const modeSel=el("select",{},...["off","assist","auto"].map(m=>el("option",{value:m,selected:p.mode===m,text:t("mode_"+m)})));
+  const modeSel=dropdown({options:["off","assist","auto"].map(v=>({v,label:t("mode_"+v)})),value:p.mode});
   const qhStart=el("input",{type:"number",min:0,max:24,value:p.quiet_hours[0]}), qhEnd=el("input",{type:"number",min:0,max:24,value:p.quiet_hours[1]});
   const maxDay=el("input",{type:"number",min:1,style:"width:100%",value:p.max_msgs_per_candidate_per_day});
   const cadCand=el("input",{type:"text",style:"width:100%",value:(p.cadence_candidate_hours||[]).join(",")});
   const cadClinic=el("input",{type:"text",style:"width:100%",value:(p.cadence_clinic_business_days||[]).join(",")});
   const maxConc=el("input",{type:"number",min:1,style:"width:100%",value:p.max_concurrent_profiles_per_candidate});
   const maxWeek=el("input",{type:"number",min:1,style:"width:100%",value:p.max_profiles_per_clinic_per_week});
-  const riskSel=k=>el("select",{"data-risk":k},...["auto","approve"].map(v=>el("option",{value:v,selected:p.risk_rules[k]===v,text:v})));
+  const riskSel=k=>{ const d=dropdown({options:["auto","approve"].map(v=>({v,label:v})),value:p.risk_rules[k],aria:k}); d.setAttribute("data-risk",k); return d; };
   const riskLow=riskSel("low"), riskMed=riskSel("medium"), riskHigh=riskSel("high");
   const escList=el("textarea",{style:"width:100%;min-height:60px",value:(p.escalation_triggers||[]).join(", ")});
   const pauseList=el("textarea",{style:"width:100%;min-height:40px",value:(p.auto_pause_on||[]).join(", ")});

@@ -13,6 +13,8 @@ crawl_portals/
 crawl_ats2/
 crawl_vendors/
 crawl_vendors.log
+crawl_raw/
+crawl_snapshots/
 backups/
 data/export/
 
@@ -50,6 +52,10 @@ data/autopilot.sqlite*
 # judge runner state (queue/mr files are written by the scheduled routines, not committed)
 .judge/*
 !.judge/config.json
+
+# UI eval recordings (tools/uieval.py) -- regenerable, and deliberately outside web/ so they are
+# never served: web/skill/ is public and unauthenticated
+eval_out/
 
 # hunter single-instance lock + stop file
 data/hunter.lock

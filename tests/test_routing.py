@@ -25,6 +25,23 @@ def test_same_host_different_tenant_stays_separate():
     assert len(boards) == 2
 
 
+def test_mixed_vendor_board_prefers_the_real_fingerprint():
+    # klinikverbund-allgaeu.de/karriere groups clinics fingerprinted "umantis" with others left
+    # "self_hosted" (no fingerprint found) -- the real vendor must win regardless of row order,
+    # not whichever ats_type the registry happens to return last for that shared URL.
+    base = {"careers_url": "https://klinikverbund-allgaeu.de/karriere"}
+    fallback_last = [
+        {"clinic_id": "1", "name": "Klinik A", "ats_type": "umantis", **base},
+        {"clinic_id": "2", "name": "Klinik B", "ats_type": "self_hosted", **base},
+    ]
+    real_last = list(reversed(fallback_last))
+    for clinics in (fallback_last, real_last):
+        boards, _ = plan(clinics)
+        board = next(iter(boards.values()))
+        assert board["vendor"] == "umantis"
+        assert len(board["clinics"]) == 2
+
+
 def test_labelled_but_unsupported_vendor_is_reported_not_crashed():
     clinics = [{"clinic_id": "1", "name": "Some Clinic", "ats_type": "no-such-vendor",
                 "careers_url": "https://example.invalid/jobs"}]

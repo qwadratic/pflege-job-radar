@@ -1,6 +1,12 @@
 # API
 
-Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads) for the UI and agents; **PostgREST** (Supabase, read-only, anon key) for bulk/raw access.
+Two doors. **App API** (`/api`, same host as the board, JSON) for the UI and agents; **PostgREST** (Supabase,
+read-only, anon key) for bulk/raw access. Board reads are open, and so are the two self-describing reads
+(`/agent/manifest`, `/ingest/schemas`) and the rule catalogue `/mechanics`; the ops reads (`/crawl*`,
+`/schedules*`, `/coverage`, `/inbox`, `/billing*`, `/hunter*`, `/firecrawl/credits|prompts`, `/settings`,
+`/campaign`, `/autopilot*`) and every write need an owner session or a scoped agent key — see "Agentic API"
+below and docs/auth.md for the full matrix. `GET /api/agent/manifest` is that matrix as JSON, generated from
+the middleware's own route table and `required_role()`, so it cannot drift from what is enforced.
 
 ## App API (`https://pflege-board.exe.xyz/api`)
 
@@ -24,7 +30,8 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | POST | `/api/crawl/runs/{id}/cancel` | best-effort: a queued run never starts; a running one stops at the next board/Firecrawl-clinic boundary (no hard kill mid-request) → updated run row |
 | POST | `/api/clinics/{kez}/refetch-career` | Firecrawl discovery of the career portal |
 | GET/POST/PUT/DELETE | `/api/schedules[/{id}]`, `POST /api/schedules/{id}/run-now` | cron / preset schedules with target, mode, budget, enabled |
-| GET/POST | `/api/mechanics`, `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | the ten rule mechanics: explanation, source, patterns, try-it, run tests |
+| GET | `/api/mechanics`, `/api/mechanics/{id}` | the rule mechanics: explanation (de/en), rule source, patterns section, inputs, test file. **Public on purpose** — it is the documentation of how a row gets classified, and it is the same source the repo publishes |
+| POST | `/api/mechanics/{id}/try`, `/api/mechanics/{id}/test` | run one rule on your input / run its test file; owner-only, `test` shells out to pytest |
 | GET/PUT | `/api/settings`, `/api/settings/patterns` | patterns.json (every regex), Firecrawl default budget |
 | GET | `/api/billing` | spend report over a window: series (hour/day buckets), totals, by kind, runs, Firecrawl pools, Exa |
 | GET | `/api/coverage` | per-adapter coverage breakdown (routable, boards, open/fresh jobs, last run), owner-only |
@@ -32,8 +39,54 @@ Two doors. **App API** (`/api`, same host as the board, JSON, no auth for reads)
 | GET | `/api/firecrawl/prompts?clinic_id=` | the live jobs/career prompt templates + schemas, rendered for a real hospital when given one, else generic placeholder text; read-only, no credits, owner-only |
 | GET/POST | `/api/campaign` | reingest-campaign routine state: safety_level, stopped, history; owner-only |
 | GET | `/api/taxonomy`, `/api/ontology`, `/api/docs` | taxonomy.json, ontology.json, docs index |
+| POST | `/api/ingest` | the single ingestion path: one CloudEvents-shaped envelope, or `{"events":[…]}` |
+| GET | `/api/ingest/schemas` | JSON Schema per envelope type, generated from `pflege_jobs/schema.py`; public |
+| GET | `/api/agent/manifest` | scopes, the scoped routes with side effects and cost, plus `public` and `session_only`: every `/api` route the app serves, in exactly one of the three lists. Envelope types, `paging` (the read routes' page envelope and its end-of-list signal, generated from `app/data.py`), links; public |
+| GET | `/api/schedules/{id}/preview?day=` | what a schedule would do on that day (the stagger slice) without firing it |
 
-List responses: `{"total": N, "rows": [...]}`; `limit`/`offset` page; comma lists for multi-value filters.
+List responses: `{"total": N, "limit": L, "offset": O, "next_offset": O2|null, "rows": [...]}`; comma lists for
+multi-value filters. `GET /api/jobs` and `GET /api/clinics` also take `fields=a,b,c` (sparse projection; an
+unknown name is a 400) and answer `Accept: application/x-ndjson` with one JSON object per line instead of the
+envelope.
+
+### Paging
+
+Applies to `GET /api/jobs`, `GET /api/clinics`, `GET /api/plan` and every `GET /api/autopilot/*` list — one
+helper (`app/data.py:page`), one contract. `GET /api/agent/manifest` publishes it as `paging`, generated from
+that module.
+
+**There is no maximum page size.** `?limit=999999` returns every matching row (2725 open postings today).
+`limit` in the response is always the limit you asked for; the server never substitutes a smaller one.
+Until 2026-09-11 it did: `?limit=999999` served 2000 rows and reported `"limit": 2000`, so the truncation was
+indistinguishable from a caller that had asked for 2000 — and the NDJSON path, which drops the envelope,
+gave no signal at all. Default page size when `limit` is absent: 200 (`/api/jobs`), 500 (`/api/clinics`),
+1000 (`/api/plan`), 100 (autopilot).
+
+**`next_offset` is the end-of-list signal.** It is the offset to ask for next, or `null` when this page
+reached the end. Use it; do not infer the end from `len(rows) < limit` — a filter whose `total` is an exact
+multiple of `limit` ends on a full page. `limit=0` is legal (zero rows, just the `total`), a negative `limit`
+or `offset` is a 400 naming the parameter, and an `offset` past the end is an empty page with
+`next_offset: null`.
+
+With `Accept: application/x-ndjson` the same numbers come back in the `Content-Range` response header:
+`rows <offset>-<last>/<total>`, or `rows */<total>` for an empty page.
+
+```bash
+curl "$B/jobs?limit=999999" | jq '.total, .limit, (.rows|length), .next_offset'   # 2725 2725… no truncation
+O=0; while [ "$O" != null ]; do curl -s "$B/jobs?limit=500&offset=$O" > page.$O.json
+       O=$(jq -r .next_offset page.$O.json); done                                 # sweep, ends on null
+curl -sD- -H 'Accept: application/x-ndjson' "$B/jobs?limit=500" | grep -i content-range   # rows 0-499/2725
+```
+
+**`offset` is a position, not a cursor, and the list underneath moves.** `/api/jobs` and `/api/clinics` are
+served from an in-memory snapshot that is rebuilt when it is older than 600s and after every crawl, and the
+filter re-sorts on each call. So a sweep that spans a rebuild **can** skip rows or return one twice: if three
+rows are inserted ahead of your position, page two starts three rows later than page one ended. Nothing here
+detects that for you. What you can do: compare `GET /api/stats → snapshot_at` before and after the sweep (it
+changes exactly when the underlying list was rebuilt) and redo the sweep if it moved, or ask for everything in
+one call — there is no maximum page size precisely so that a whole-list read is one consistent answer.
+`/api/plan` reads the registry CSV and `/api/autopilot/*` read SQLite, so both have the same hazard against
+their own writers rather than against the snapshot clock.
 
 ### Query patterns
 ```bash
@@ -82,8 +135,9 @@ curl -H 'Content-Type: application/json' -d '{"target":{"scope":"clinic","values
 curl -H 'Content-Type: application/json' -d '{"target":{"scope":"ats_type","values":["softgarden"]},"mode":"adapter"}' "$B/crawl"
 curl "$B/crawl/runs?limit=20"; curl "$B/crawl/runs/12"
 
-# schedules: presets weekly_staggered | daily | weekdays | hourly | custom (cron)
-curl "$B/schedules"
+# schedules: presets weekly_staggered | daily | weekdays | hourly | custom (cron). Reads need read:ops,
+# writes are owner-only -- a mode=firecrawl schedule is recurring spend.
+curl -H "X-Api-Key: $K" "$B/schedules"
 curl -H 'Content-Type: application/json' -d '{"name":"Oberpfalz nightly","preset":"custom","cron":"15 2 * * *","target":{"scope":"regierungsbezirk","values":["Oberpfalz"]},"mode":"adapter","enabled":true}' "$B/schedules"
 curl -X PUT -H 'Content-Type: application/json' -d '{"enabled":false}' "$B/schedules/2"
 curl -X POST "$B/schedules/2/run-now"; curl -X DELETE "$B/schedules/2"
@@ -101,8 +155,102 @@ curl "$B/settings"
 curl -X PUT -H 'Content-Type: application/json' -d @patterns.json "$B/settings/patterns"
 ```
 
+### Agentic API — scoped keys, ingest, dry runs, idempotency
+
+Reads stay open. Everything owner-gated can also be opened by an **agent key** (`X-Api-Key`, minted with
+`PUT /api/settings/agent-key`, owner session only) that carries the right scope. `GET /api/agent/manifest`
+is the machine-readable version of this section, generated from `app/auth.py:AGENT_ROUTES` and
+`required_role()` — the same table and the same function the middleware enforces — and it partitions every
+`/api` route the app serves:
+
+| list | what it means |
+|---|---|
+| `routes` | a scope opens it. Each entry carries `scope`/`scopes`, `side_effects`, `cost`, and `public: true` when the middleware does not gate it today (the board reads: the scope is for attribution, it closes nothing) |
+| `public` | no session, no key, nothing — `/agent/manifest`, `/ingest/schemas`, `/mechanics*`, `/me`, `/flags`, `/docs`, the webhooks with their own secret |
+| `session_only` | gated with `role` (`owner`/`member`) and **no scope opens it** — a key gets 401 there, not 403, because no scope would help |
+
+HTML pages are gated too (`/pro`, `/deck`, `/autopilot`) but are not in the manifest; docs/auth.md has them.
+
+| scope | unlocks |
+|---|---|
+| `read:board` | jobs, clinics, cities, facets, taxonomy, ontology, search, plan, stats — already public; the scope exists for quota and attribution, not to close anything |
+| `read:ops` | `GET /api/crawl/runs`, `/api/crawl/plan`, `/api/crawl/estimate`, `/api/schedules*`, `/api/coverage`, `/api/inbox` |
+| `write:crawl` | `POST /api/crawl` **with `mode:"adapter"` only**, `POST /api/crawl/runs/{id}/cancel`, `POST /api/inbox/drain` |
+| `spend:firecrawl` | lifts `mode` to `auto`/`firecrawl`, unlocks `POST /api/clinics/{kez}/refetch-career` |
+| `write:ingest:{posting,clinic,link,verify}` | `POST /api/ingest`, one scope per envelope family |
+
+`mode:"auto"` needs `spend:firecrawl` too: auto routes every non-routable or walled clinic to Firecrawl.
+`GET /api/crawl/estimate` is labelled `network` in the manifest — it walks the clinic's live board.
+
+**Never scopable, owner session only, no exceptions:** `/api/settings*`, `/api/hunter*`, `/api/scheduler*`,
+`/api/autocrawl/tick`, `/api/campaign`, `/api/schedules` writes, `/api/mechanics/*/try|test`, `/api/billing*`,
+`/api/autopilot*`, `PUT /api/auth/password` — the manifest's `session_only` list is the
+generated, complete version of this line; read that, not this paragraph, when it matters.
+
+`/api/stripe*` is **not** scopable either, but it is not owner-gated: all three routes answer anonymously and
+sit in the manifest's `public` list — `GET /api/stripe/status`, `POST /api/stripe/checkout` and
+`POST /api/stripe/webhook` (which authenticates with Stripe's own signature). The gated one in
+`app/stripe_gate.py` is `/api/postings/{id}/closed`, `role: member` (GET and POST). docs/auth.md has the matrix.
+
+A key minted without `scopes=` carries every scope — the reach the single pre-scope key had. `label=` names a
+key so several agents can hold different ones; minting the same label again replaces only that key, `rotate=true`
+revokes all of them, `DELETE …/agent-key?label=` revokes one. A wrong scope is `403 application/problem+json`
+with `"type": "…#insufficient_scope"` and a `"scope"` extension naming what to ask for.
+
+```bash
+curl -X PUT "$B/settings/agent-key?label=recon&scopes=read:board,read:ops"   # owner session; key shown once
+curl -H "X-Api-Key: $K" "$B/agent/manifest"
+curl -H "X-Api-Key: $K" "$B/jobs?fields=posting_id,title,city&limit=500"
+curl -H "X-Api-Key: $K" -H 'Accept: application/x-ndjson' "$B/clinics?fields=clinic_id,name,careers_url"
+curl -H "X-Api-Key: $K" "$B/schedules/1/preview?day=2026-09-10"
+```
+
+#### `POST /api/ingest`
+
+One envelope shape for every ontology entity, CloudEvents field names, no new table:
+
+```json
+{"specversion":"1.0","id":"sg-36201-88413","source":"vendor-softgarden-v1","type":"posting.observed",
+ "time":"2026-09-10T08:00:00Z","subject":"36201","data":{"source_url":"…","payload":{…}}}
+```
+
+`type` → `kind`, `source` → `collector`, `subject` → `payload.clinic_id`, `id` → `payload.event_id`,
+`client_id` from the key's label. `posting.observed` / `listing.observed` / `probe.ats_discovery` become rows in
+`pflege_jobs.inbox` (`sql/010_inbox.sql`) and are drained by `cli inbox`; `clinic.upserted`, `clinic_link.asserted`,
+`posting.verified` and `crawl_run.finished` bypass the inbox and hit the edge ops directly, as `pflege_jobs/sinks.py`
+does. `clinic.upserted` must carry all 17 `CLINIC_SPEC` columns — the edge upsert assigns every column, so an
+omitted key writes NULL over what is stored; a partial payload is refused with 422 naming the missing columns
+(build the row with `pflege_jobs/registry.py: full_clinic_rows` / `merge_discovered`).
+
+Dedupe is `(source, id)` inside the request plus the existing `source_url` dedupe against rows already in the
+inbox (`app/crawl.py:_post_inbox`) — `inbox.source_url` is deliberately not unique. Response is
+`{accepted, total, validate_only, results:[{id, type, status, inbox_id|problem}]}` with **202** when every item
+came out the same way and **207** when they did not. `inbox_id` is null: the inbox post is batched with
+`Prefer: return=minimal`, so PostgREST hands back no ids — `status` is the per-item answer.
+
+```bash
+curl -H "X-Api-Key: $K" -H 'Content-Type: application/json' \
+     -H 'Idempotency-Key: 4f1c…' -d @events.json "$B/ingest"
+curl "$B/ingest/schemas"
+```
+
+#### Dry runs and idempotency
+
+`validate_only: true` on `POST /api/ingest` and `POST /api/crawl` (AIP-163) runs the full auth, validation and
+credit estimate and writes nothing: no inbox row, no run row, no server-generated ids. `POST /api/crawl` answers
+with the `GET /api/crawl/plan` payload plus `"validate_only": true, "queued": false`.
+
+`Idempotency-Key` on `POST /api/crawl`, `POST /api/inbox/drain` and `POST /api/ingest`: a replay after the first
+call finished returns the stored response, a copy still in flight is **409**, the same key with a different body is
+**422**. The key is stored in the local `idem` table (`app/runs.py`) with the request fingerprint. This is a spend
+fix — before it, a retried `POST /api/crawl` queued a second paying run. `validate_only` never claims a key.
+
+**Keys are per caller**, namespaced by the agent key's label (or the session e-mail): picking the same key
+string as another agent gets you your own row, never its stored response and never a 409/422 from its
+traffic. Only the caller that claimed a key can replay, conflict with, or release it.
+
 ### Billing (`GET /api/billing`)
-Spend / usage report from the local ledger (`crawl_runs` + `firecrawl_usage` in `data/app.sqlite`), the Firecrawl account (`FA.credits()`) and the Exa seed cache. No auth.
+Spend / usage report from the local ledger (`crawl_runs` + `firecrawl_usage` in `data/app.sqlite`), the Firecrawl account (`FA.credits()`) and the Exa seed cache. Owner session only — no scope opens it (it is in the manifest's `session_only`).
 
 Query: `window=today|24h|7d|30d|period|custom` (default `today`; `period` = the Firecrawl billing period, falls back to 30 d with `window.note` when the API is down), `from=ISO&to=ISO` for `custom` (date-only accepted, naive = UTC, `to` defaults to now), `granularity=auto|hour|day` (`auto`: hour up to 48 h, day beyond). Buckets are UTC, one per hour/day from floor(from) to floor(to) inclusive, empty buckets included. All numbers except `exa_*`, `pools` and `hist` are scoped to the window.
 
@@ -149,6 +297,16 @@ REST=https://klkxfvieaxpjlplloljn.supabase.co/rest/v1
 H='-H apikey:<anon key, see /skill/SKILL.md> -H Accept-Profile:pflege_jobs'
 ```
 
+**This door is not redacted.** The app API nulls `enr_contact_emails` and masks e-mail addresses in free text
+below a `member` session (app/data.py:37, :53-70). PostgREST does neither: the anon key is published at
+/skill/SKILL.md, sql/001_schema.sql:257 grants it `select on all tables in schema pflege_jobs` (:260 on future
+tables too, and the RLS policies at :253-254 are `using (true)`, so they narrow nothing), and `inbox` has no
+RLS at all (sql/010_inbox.sql:24-32) — raw crawler payloads, `collector` and `client_id` included. So
+`enr_contact_emails`, `postings.description` and `posting_observations.payload` are world-readable today.
+A grant fix is written and **not applied**: `sql/011_PENDING_anon_scope.sql` (revoke the blanket, column-level
+select without the personal-data columns, RLS on `inbox`, exact rollback in its footer). It takes the app off
+the anon key first (app/config.py:32), which is why applying it is Ivan's call, not a deploy step.
+
 | relation | use |
 |---|---|
 | `v_postings` | default: one row per posting with employer, role label, clinic columns, `source_codes`, `source_url` |
@@ -172,5 +330,7 @@ curl "$REST/postings?posting_id=eq.123&select=title,description,provenance,enr_h
 # count without rows
 curl -I "$REST/postings?select=posting_id&status=eq.open" $H -H 'Prefer: count=exact'
 ```
+
+Personal data: do not select `enr_contact_emails` here and do not mine `description` for the same addresses — `GET /api/jobs` with a session is the door that decides who may see them. `skill/scripts/query.py` dropped the column and its `--email` filter on 2026-09-11.
 
 Pitfalls: `v_postings.source_url`/`source_codes` are correlated subqueries — never combine `select=*` over thousands of rows with `count=exact` (statement timeout → 500); count on `postings`. Reads only; never write with the anon key; the ingest function needs `x-ingest-secret`.

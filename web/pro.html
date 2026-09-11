@@ -35,7 +35,7 @@ h2{font-size:18px;margin:0 0 8px}
 code,pre{font-family:var(--font)}
 /* topbar */
 .topbar{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line);background:rgba(11,13,18,.92);backdrop-filter:blur(8px)}
-.topbar .in{max-width:1560px;margin:0 auto;padding:8px 16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.topbar .in{max-width:1560px;margin:0 auto;padding:11px 20px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:6px;color:var(--ink);text-decoration:none;white-space:nowrap;margin-right:6px}
 .brand .w1{font-size:15px} .brand .w2{font-size:12px;color:var(--ink-3);font-weight:400}
 nav.main{display:flex;gap:2px;flex-wrap:wrap}
@@ -60,13 +60,13 @@ nav.main a .bd{font-size:10.5px;padding:0 5px;border-radius:0;background:var(--n
 .simple-l{font-size:11px;color:var(--ink-3);padding:5px 6px;text-decoration:none;white-space:nowrap} .simple-l:hover{color:var(--neon)}
 .gh{display:inline-flex;width:30px;height:30px;border:1px solid var(--line);border-radius:0;align-items:center;justify-content:center;color:var(--ink-2);background:var(--surface)} .gh:hover{color:var(--neon);border-color:var(--neon)} .gh svg{width:16px;height:16px;fill:currentColor}
 /* layout */
-.wrap{max-width:1560px;margin:0 auto;padding:16px 18px 48px}
-.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:0;padding:14px 16px;margin-bottom:14px}
+.wrap{max-width:1560px;margin:0 auto;padding:22px 26px 56px}
+.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:0;padding:18px 20px;margin-bottom:18px}
 .card.hud::before,.card.hud::after{content:"";position:absolute;width:10px;height:10px;pointer-events:none}
 .card.hud::before{left:-1px;top:-1px;border-top:2px solid var(--neon);border-left:2px solid var(--neon)} .card.hud::after{right:-1px;bottom:-1px;border-bottom:2px solid var(--neon);border-right:2px solid var(--neon)}
-.card h3{margin:0 0 8px;font-size:11.5px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
+.card h3{margin:0 0 12px;font-size:11.5px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .sp{flex:1}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 16px;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px 20px;font-size:13px}
 .grid>div>span:first-child,.grid>label>span:first-child{display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 .m{color:var(--ink-2);font-size:12.5px} .t{font-weight:500}
 /* filters */
@@ -105,11 +105,11 @@ input[type=checkbox]{accent-color:var(--neon)} input[type=radio]{accent-color:va
 .rg .vals{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);margin-top:6px} .rg .vals input{width:64px;padding:2px 5px;font-size:11.5px}
 /* table */
 .tbl{background:var(--surface);border:1px solid var(--line);border-radius:0;overflow:hidden}
-.tbl .top{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
+.tbl .top{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap}
 .tbl .top h3{margin:0;font-size:13px;font-weight:500}
 .tw{overflow:auto;max-height:75vh}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:7px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
 th{font-weight:500;color:var(--ink-3);background:var(--surface);position:sticky;top:0;white-space:nowrap;z-index:2;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 th[data-k]{cursor:pointer} th[data-k].on{color:var(--neon)} th[data-k].on::after{content:" ↓"} th[data-k].on.asc::after{content:" ↑"}
 tbody tr.lnk{cursor:pointer} tbody tr.lnk:hover{background:var(--surface-2)}
@@ -118,18 +118,19 @@ td .acts{display:flex;gap:4px;flex-wrap:nowrap}
 .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:8px 14px;color:var(--ink-2);font-size:12.5px}
 .empty{padding:36px;text-align:center;color:var(--ink-2)}
 .fresh{color:var(--neon);font-weight:500}
-.dotst{display:inline-block;width:8px;height:8px;border-radius:0;margin-right:5px;background:var(--ink-3)} .dotst.done{background:var(--neon);box-shadow:0 0 6px var(--neon)} .dotst.running{background:var(--sky);animation:pulse 1s infinite} .dotst.failed{background:var(--red)} .dotst.queued{background:var(--blue-2)}
+.nc{color:var(--ink-3);font-size:12px;border-bottom:1px dashed var(--ink-3);cursor:help}
+.dotst{display:inline-block;width:8px;height:8px;border-radius:0;margin-right:5px;background:var(--ink-3)} .dotst.done{background:var(--neon);box-shadow:0 0 6px var(--neon)} .dotst.running{background:var(--sky);animation:pulse 1s infinite} .dotst.failed{background:var(--red)} .dotst.queued{background:var(--blue-2)} .dotst.cancelled{background:var(--ink-3);box-shadow:inset 0 0 0 1px var(--ink-2)}
 @keyframes pulse{50%{opacity:.3}}
 /* detail */
 .hd{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px} .hd h1{margin-bottom:4px}
 .desc{white-space:pre-wrap;font-size:13px;background:var(--surface-2);border:1px solid var(--line);border-radius:0;padding:12px;max-height:420px;overflow:auto}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media (max-width:900px){.two{grid-template-columns:1fr}}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px} .two>*{min-width:0}   /* without this a long select label stretches the grid column past the viewport */ @media (max-width:900px){.two{grid-template-columns:1fr}}
 .three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px} @media (max-width:1000px){.three{grid-template-columns:1fr}}
 /* dialog / toast / tabs */
 dialog{border:1px solid var(--line);border-radius:0;padding:0;max-width:960px;width:calc(100% - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.6)} dialog::backdrop{background:rgba(0,0,0,.6)}
 .d{padding:20px 24px;max-height:85vh;overflow:auto}
 /* side panel: same <dialog>, flush right, full height -- progressive disclosure for the crawl plan gate */
-dialog.side{margin:0 0 0 auto;max-width:420px;width:420px;height:100vh;max-height:100vh;animation:slidein .15s ease-out}
+dialog.side{margin:0 0 0 auto;max-width:460px;width:460px;height:100vh;max-height:100vh;position:fixed;right:0;top:0;animation:slidein .15s ease-out;box-shadow:-18px 0 44px rgba(0,0,0,.5)} @media(max-width:560px){dialog.side{width:100%;max-width:100%}}
 @keyframes slidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
 .gaterow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed var(--line)} .gaterow span{color:var(--ink-3)} .gaterow b{color:var(--neon)}
 .gatewarn{padding:10px 12px;border:1px solid var(--warn,#e5484d);color:var(--warn,#e5484d);margin:10px 0;font-size:13px}
@@ -152,14 +153,36 @@ dialog.side{margin:0 0 0 auto;max-width:420px;width:420px;height:100vh;max-heigh
 .gctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0} .gctl .step{font-size:12px;color:var(--ink-3);margin-left:auto}
 .side{font-size:12.5px} .side ul{margin:4px 0;padding-left:16px} .side li{margin:2px 0} .side li code{color:var(--sky)} .side .stepbox{border:1px solid var(--line);border-radius:0;padding:8px 10px;margin-bottom:10px;background:var(--surface-2)}
 /* settings / mechanics */
-.pat{display:grid;grid-template-columns:170px 1fr auto auto;gap:6px;align-items:center;margin:4px 0} .pat input{padding:3px 7px;font-size:12px}
+.pat{display:grid;grid-template-columns:170px minmax(0,1fr) auto auto;gap:6px;align-items:center;margin:4px 0} @media(max-width:560px){.pat{grid-template-columns:minmax(0,1fr) auto auto}} .pat input{padding:3px 7px;font-size:12px}
 .pat .ok{color:var(--neon)} .pat .no{color:var(--ink-3)} .pat .bad{color:var(--red)}
 textarea.raw{width:100%;min-height:300px;font-size:12px;padding:10px}
-.log,.src{background:#07080B;color:var(--ink);border:1px solid var(--line);border-radius:0;padding:12px;overflow:auto;font-size:12px;line-height:1.5;max-height:50vh;white-space:pre-wrap}
+pre.log,.src{background:#07080B;color:var(--ink);border:1px solid var(--line);border-radius:0;padding:12px;overflow:auto;font-size:12px;line-height:1.5;max-height:50vh;white-space:pre-wrap}
 .src{max-height:360px;color:var(--ink-2)}
 .score{font-weight:500;color:var(--neon)}
 .mech{margin-bottom:14px} .mech .exp{color:var(--ink-2);white-space:pre-line;font-size:12.5px;margin:4px 0 10px;max-width:78ch}
 details>summary{cursor:pointer;color:var(--ink-2);font-size:12.5px;margin:6px 0} details>summary:hover{color:var(--neon)}
+.ph{width:56px;height:56px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto}
+.ph img{width:100%;height:100%;object-fit:contain;padding:5px}
+.ph span{font-family:"Archivo Black",system-ui,sans-serif;font-size:18px;color:var(--ink-3)}
+.ph.big{width:76px;height:76px} .ph.big span{font-size:24px}
+.seg{display:flex;flex-wrap:wrap;border:1px solid var(--line);width:max-content;max-width:100%} @media(max-width:560px){.seg{width:100%} .seg .sg{flex:1 1 auto;text-align:center}} .seg .sg{background:transparent;border:0;border-right:1px solid var(--line);color:var(--ink-2);min-height:32px;padding:0 13px;font:inherit;font-size:12.5px;cursor:pointer} .seg .sg:last-child{border-right:0} .seg .sg:hover{color:var(--ink)} .seg .sg[aria-pressed=true]{background:var(--surface-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--neon)} .seg .sg:focus-visible{outline:1px solid var(--neon);outline-offset:-1px}
+.lg{border:1px solid var(--line);background:var(--bg)} .lg-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:3}
+.lg-bar .lg-q{background:var(--surface-2);border:1px solid var(--line);color:var(--ink);min-height:30px;padding:0 10px;font:inherit;font-size:12.5px;min-width:200px;flex:1;max-width:340px} .lg-bar .pick{min-width:130px}
+ol.log{list-style:none;margin:0;padding:6px 0;max-height:min(56vh,540px);overflow:auto;font-size:12.5px;line-height:1.6}
+ol.log .ln{display:flex;gap:10px;padding:1px 12px;align-items:baseline} ol.log .ln:hover{background:var(--surface)}
+ol.log .no{color:var(--ink-3);text-align:right;min-width:34px;flex:none;font-variant-numeric:tabular-nums;-webkit-user-select:none;user-select:none}
+ol.log .ts{color:var(--ink-3);min-width:52px;flex:none;font-variant-numeric:tabular-nums}
+ol.log .tx{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink-2)}
+ol.log .err .tx{color:var(--red)} ol.log .warn .tx{color:#E1A33F} ol.log .ok .tx{color:var(--neon)} ol.log .cmd .tx{color:var(--sky)}
+.ell{background:var(--surface-2);border:1px solid var(--line);color:var(--ink-3);font:inherit;font-size:12px;padding:0 4px;cursor:pointer;line-height:1.3} .ell:hover{color:var(--ink);border-color:var(--neon)}
+.src.prompt{white-space:pre-wrap;max-height:none;font-size:12.5px;line-height:1.65;color:var(--ink-2)}
+details.sch{margin-top:10px} details.sch>summary{cursor:pointer;color:var(--ink-3);font-size:12px;letter-spacing:.06em;text-transform:uppercase;list-style:none} details.sch>summary::-webkit-details-marker{display:none} details.sch>summary::before{content:"▸ ";color:var(--neon)} details.sch[open]>summary::before{content:"▾ "} details.sch>summary:hover{color:var(--ink-2)} details.sch pre{margin-top:8px;max-height:340px}
+.estb{margin-top:12px;border-top:1px solid var(--line);padding-top:12px} .estb[hidden]{display:none}
+.subnav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:0 0 18px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.subnav .tb{background:none;border:0;border-bottom:2px solid transparent;color:var(--ink-3);font:inherit;font-size:13px;padding:10px 16px;cursor:pointer;white-space:nowrap;display:inline-flex;gap:7px;align-items:center}
+.subnav .tb:hover{color:var(--ink-2)} .subnav .tb.on{color:var(--ink);border-bottom-color:var(--neon)} .subnav .tb:focus-visible{outline:1px solid var(--neon);outline-offset:-3px}
+.subnav .tb .c{font-size:11px;color:var(--ink-3)} .subnav .tb.on .c{color:var(--neon)}
+@media(max-width:560px){.subnav .tb{padding:10px 12px;font-size:12.5px}}
 .radio{display:flex;gap:10px;flex-wrap:wrap} .radio label{display:inline-flex;gap:5px;align-items:center;cursor:pointer;font-size:13px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12.5px} .kv span:nth-child(odd){color:var(--ink-3)}
 .prev{display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;border:1px dashed var(--line);border-radius:0;background:var(--surface-2)} .prev div span{display:block;color:var(--ink-3);font-size:11px;text-transform:uppercase;letter-spacing:.05em} .prev b{font-size:16px;font-weight:500;color:var(--neon)}
@@ -189,18 +212,22 @@ details>summary{cursor:pointer;color:var(--ink-2);font-size:12.5px;margin:6px 0}
 tr.hl>td{background:rgba(157,225,70,.08);box-shadow:inset 3px 0 0 var(--neon)} tr.detail>td{background:#07080B;padding:0} tr.detail pre{margin:0;border:0;max-height:40vh}
 /* home city chips */
 .cities{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px} .cities a{text-decoration:none;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:0 12px;font-size:12.5px;min-height:34px;display:inline-flex;align-items:center;gap:6px;cursor:pointer} .cities a b{font-weight:500;color:var(--neon)} .cities a:hover{border-color:var(--neon);color:var(--ink)} .cities .eyebrow{margin:0 6px 0 0}
-.twn-box{position:relative;min-width:200px} .twn{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:0;min-height:34px;padding:0 10px;-webkit-appearance:none} .twn::placeholder{color:var(--ink-3)} .twn:focus{outline:1px solid var(--neon);outline-offset:-1px;border-color:var(--neon)}
-.twn-box .dd{position:absolute;z-index:30;top:calc(100% + 4px);left:0;right:0;max-height:280px;overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.5)} .twn-box .dd[hidden]{display:none}
-.twn-box .o{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 10px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap} .twn-box .o small{color:var(--ink-3);font-variant-numeric:tabular-nums} .twn-box .o:hover,.twn-box .o[aria-selected=true]{background:var(--surface-2);color:var(--ink)} .twn-box .o.empty{cursor:default;justify-content:center;color:var(--ink-3)}
-@media(max-width:560px){.twn-box{width:100%}}
+.pick{position:relative;min-width:170px;max-width:100%} .pick .pk-t{width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;font:inherit;font-size:12.5px;text-align:left;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:0;min-height:32px;padding:0 10px;cursor:pointer;-webkit-appearance:none}
+.pick .pk-t .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .pick .pk-t .v.ph{color:var(--ink-3)} .pick .pk-t .cr{width:6px;height:6px;flex:none;border-right:1px solid var(--ink-3);border-bottom:1px solid var(--ink-3);transform:rotate(45deg) translateY(-2px)}
+.pick .pk-t:hover{border-color:var(--neon)} .pick .pk-t:focus,.pick .pk-t[aria-expanded=true]{outline:1px solid var(--neon);outline-offset:-1px;border-color:var(--neon)} .pick input.pk-t{cursor:text} .pick input.pk-t::placeholder{color:var(--ink-3)}
+.pick .dd{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;max-height:280px;overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.5)} .pick .dd[hidden]{display:none}
+.pick .o{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 10px;font-size:13px;color:var(--ink-2);cursor:pointer;white-space:nowrap} .pick .o small{color:var(--ink-3);font-variant-numeric:tabular-nums} .pick .o.on{color:var(--ink)} .pick .o:hover,.pick .o[aria-selected=true]{background:var(--surface-2);color:var(--ink)} .pick .o.empty{cursor:default;justify-content:center;color:var(--ink-3)}
+.cities .pick{min-width:200px} .cities .pick .pk-t{min-height:34px} @media(max-width:560px){.cities .pick{width:100%}}
 /* gate (anonymous visitors) */
 .gate{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
 .gate .card{max-width:460px;width:100%;padding:24px 26px;margin:0} .gate h1{margin-bottom:8px} .gate .lead{max-width:none} .gate form{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px} .gate form input{flex:1 1 180px;min-height:40px} .gate form button{min-height:40px}
 .gate .or{display:flex;align-items:center;gap:10px;color:var(--ink-3);font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 10px} .gate .or::before,.gate .or::after{content:"";flex:1;border-top:1px solid var(--line)} .gate .msg{margin-top:10px;font-size:12.5px;color:var(--neon);min-height:18px} .gate .msg.err{color:var(--red)}
-.gate .btn.n{min-height:40px;width:100%;justify-content:center;font-size:13.5px} .gate .foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:8px;flex-wrap:wrap}
+.gate .btn.n{min-height:40px;width:100%;justify-content:center;font-size:13.5px} .gate .btn.p{min-height:34px;width:100%;justify-content:center;font-size:12px;opacity:.85} .gate .btn.p:hover{opacity:1}
+.gate form.pwd{flex-direction:column;gap:8px} .gate form.pwd input{flex:none;width:100%}
+.gate .foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:8px;flex-wrap:wrap}
 /* responsive cards */
 @media (max-width:720px){
-  .wrap{padding:12px 12px 40px} .topbar .in{padding:8px 12px;gap:6px} nav.main a{padding:4px 7px;font-size:12px}
+  .wrap{padding:16px 14px 44px} .topbar .in{padding:8px 12px;gap:6px} nav.main a{padding:4px 7px;font-size:12px}
   .hide-m{display:none!important} .search{order:10;min-width:100%;max-width:none}
   table.cards,table.cards tbody,table.cards tr,table.cards td{display:block} table.cards thead{display:none}
   table.cards tr{border-bottom:6px solid var(--bg);padding:8px 10px} table.cards td{border:0;padding:2px 0} table.cards td.num{text-align:left}
@@ -234,8 +261,16 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 <div id="toasts" aria-live="polite"></div>
 <div id="tip" hidden role="tooltip"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<!-- SRI: sha512 computed here from the exact bytes cdnjs serves for these two pinned versions (openssl dgst
+     -sha512 on the downloaded file), not copied from a page. crossorigin="anonymous" is required for the
+     browser to check the hash on a cross-origin script at all; without it the integrity attribute is inert.
+     Bump the version -> recompute both hashes, or the tag simply stops loading (which is the point). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"
+        integrity="sha512-xeUh+KxNyTufZOje++oQHstlMQ8/rpyzPuM+gjMFYK3z5ILJGE7l2NvYL+XfliKURMpBIKKp1XoPN/qswlSMFA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"
+        integrity="sha512-EY3U1MWdgKx0P1dqTE4inlKz2cpXtWpsR1YUyD855Hs6RL/A0cyvrKh60EpE8wDZ814cTe1KgRK+sG0Rn792vQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 // ====================================================================================================
 // Pflege-Stellen Bayern — single-file SPA. Backend: /api/* (FastAPI on this host). ?mock=1 = offline demo data (50 hospitals).
@@ -273,7 +308,7 @@ const I18N={
   j_desc:"Beschreibung",j_obs:"Beobachtungen (Quellen)",j_verify:"Web-Nachweis",j_role:"Rolle",j_dept:"Fachbereich",j_qual:"Qualifikation",j_contract:"Vertrag",j_emp:"Arbeitszeit",j_start:"Ab",j_pub:"Veröffentlicht",j_seen:"Zuletzt gesehen",j_tariff:"Tarif",j_grade:"Entgeltgruppe",j_contact:"Kontakt",j_req:"Anforderungen (Auszug)",j_exp:"Erfahrung",j_housing:"Wohnraum",j_yes:"ja",j_no:"nicht erwähnt",j_unknown:"unbekannt",j_employer_link:"Arbeitgeber-Link",
   t_started:"Clawl gestartet — Lauf #{id}",t_view_runs:"Läufe ansehen",t_err:"Fehler: {m}",t_saved:"Gespeichert",t_deleted:"Gelöscht",
   h_scrape:"Clawl",lead_scrape:"Stellen von Klinik-Karriereportalen abrufen: gezielt jetzt, oder nach Zeitplan. Adapter lesen bekannte ATS-Boards direkt; der Firecrawl-Agent übernimmt alles andere (kostet Credits).",
-  h_coverage:"Abdeckung nach Adapter",lead_coverage:"Die Firecrawl-Zeile ist jede Klinik ohne funktionierenden Adapter; ein Adapter, dessen Abdeckung % hinter den Nachbarn zurückbleibt, ist der nächste, den es zu reparieren gilt. Zeile anklicken öffnet die Kliniken mit diesem ATS.",cv_adapter:"Adapter",cv_clinics:"Kliniken",cv_routable:"routbar",cv_boards:"Boards",cv_withjobs:"mit Stellen",cv_open:"offen",cv_fresh:"frisch",cv_pct:"Abdeckung %",cv_lastrun:"letzter Lauf",cv_credits:"Firecrawl-Credits 7 T",cv_total:"gesamt",cv_unroutable:"nicht routbar",cv_norun:"noch kein Lauf",s_new:"Neuer Clawl",s_target:"Ziel",s_all:"alle Kliniken",s_bezirk:"Regierungsbezirk",s_city:"Ort",s_clinic:"Klinik",s_ats:"ATS-Anbieter",s_mode:"Modus",s_credits:"max. Firecrawl-Credits",s_details:"Detailseiten laden",s_preview:"Vorschau",
+  h_coverage:"Abdeckung nach Adapter",lead_coverage:"Die Firecrawl-Zeile ist jede Klinik ohne funktionierenden Adapter; ein Adapter, dessen Abdeckung % hinter den Nachbarn zurückbleibt, ist der nächste, den es zu reparieren gilt. Zeile anklicken öffnet die Kliniken mit diesem ATS.",cv_adapter:"Adapter",cv_clinics:"Kliniken",cv_routable:"routbar",cv_boards:"Boards",cv_withjobs:"mit Stellen",cv_open:"offen",cv_fresh:"frisch",cv_pct:"Abdeckung %",cv_score:"Feature-Score",cv_nc:"nicht geprüft",cv_nc_x:"Keine Zelle in data/feature_cells.jsonl — niemand hat es geprüft. Das ist nicht dasselbe wie 0 %.",cv_lastrun:"letzter Lauf",cv_credits:"Firecrawl-Credits 7 T",cv_total:"gesamt",cv_unroutable:"nicht routbar",cv_norun:"noch kein Lauf",s_new:"Neuer Clawl",s_target:"Ziel",s_all:"alle Kliniken",s_bezirk:"Regierungsbezirk",s_city:"Ort",s_clinic:"Klinik",s_ats:"ATS-Anbieter",s_mode:"Modus",s_credits:"max. Firecrawl-Credits",s_details:"Detailseiten laden",s_preview:"Vorschau",
   m_auto:"auto",m_auto_x:"Adapter wenn vorhanden, sonst Firecrawl-Agent",m_adapter:"nur Adapter",m_adapter_x:"nur Kliniken mit bekanntem ATS-Board, keine Credits",m_firecrawl:"Firecrawl-Agent",m_firecrawl_x:"LLM-Agent liest das Karriereportal, verbraucht Credits",
   pv_clinics:"Kliniken",pv_boards:"Boards",pv_adapter:"via Adapter",pv_firecrawl:"via Firecrawl",pv_walled:"Bot-Sperre",pv_credits:"geschätzte Credits",pv_skipped:"übersprungen",pv_credits_left:"Credits übrig diese Woche",
   s_plan:"Plan anzeigen",s_gates:"Plan & Gates",s_cancel:"Abbrechen",s_blocked_all_fc:"Firecrawl läuft nie für alle Kliniken auf einmal — engeres Ziel wählen (Bezirk, Ort, ATS) oder Modus „auto“ nutzen.",s_over_budget:"Schätzung übersteigt das verbleibende Wochenbudget.",
@@ -289,7 +324,7 @@ const I18N={
   a_title:"Für Agenten",a_hint:"Ein-Datei-Skill (Claude-Skill-Format): alles, was ein Agent braucht — API, Datenmodell, Pipeline.",
   size_S:"< 100 Betten",size_M:"100–299",size_L:"300–799",size_XL:"800+",unknown_ats:"kein ATS bekannt",live:"live",gone:"weg",blocked:"gesperrt",error:"Fehler",
   sr_filters:"Filter",
-  n_billing:"Kosten",h_towns:"Städte · offene Stellen",city_ph:"Ort …",tp_none:"Nichts gefunden.",
+  n_billing:"Kosten",h_towns:"Städte · offene Stellen",lv_stopping:"wird beendet …",lv_stopping_x:"Abbruch angefordert — stoppt nach dem laufenden Board",lv_cancel:"Abbrechen",lv_cancel_sure:"wirklich abbrechen?",lv_cancelled:"Lauf #{id} wird abgebrochen",lv_title:"Läuft gerade · #{id}",lv_elapsed:"Laufzeit",tr_title:"Letzter fehlgeschlagener Lauf #{id}",tr_lines:"Zeilen",tr_fix:"Abhilfe",tr_log:"Log",tr_aim:"Ziel übernehmen",tr_rerun:"neu mit {n}",tr_unknown:"Keine bekannte Ursache im Log erkannt — Log öffnen.",tr_cap:"Cap unter dem Minimum des Agenten",tr_cap_fix:"Cap anheben und erneut laufen",tr_gate:"Spend-Gate hat abgelehnt",tr_gate_fix:"Adapter deckt es ab — Ziel übernehmen, Modus prüfen",tr_thin:"Budget zu dünn für einen Versuch",tr_thin_fix:"Credits aufladen oder Cap anheben",tr_flag:"firecrawl.enabled ist aus",tr_flag_fix:"Feature-Flag in den Einstellungen",tr_zero:"Adapter lieferte 0 Zeilen ohne Fehler",tr_zero_fix:"gegen Firecrawl prüfen",tr_fetch:"Abruf fehlgeschlagen (Timeout, Block, HTTP-Fehler)",tr_fetch_fix:"Log lesen, dann erneut versuchen",cv_runvendor:"Vendor laufen",cv_runvendor_x:"Ziel auf alle Kliniken dieses ATS setzen",cv_aimed:"Ziel gesetzt: {a}",s_estimate:"Schätzen",s_estimate_x:"kostenlos: liest das Board vor dem Lauf",s_estimate_off:"nur für Ziel „Klinik“ (max. 8 auf einmal)",e_board:"Zeilen",e_definite:"sicher Pflege",e_amb:"unklar",e_conf:"Sicherheit",b_close:"schließen",tb_prompts:"Prompts",pr_title:"Firecrawl-Prompts",pr_missing:"Der Endpunkt GET /api/firecrawl/prompts fehlt noch — bis dahin stehen die Vorlagen nur in pflege_jobs/sources/firecrawl_agent.py.",pr_jobs:"Stellen-Prompt",pr_jobs_x:"pro Klinik, sucht offene Pflegestellen",pr_career:"Karriereseiten-Prompt",pr_career_x:"findet Karriereportal und ATS-Vendor",pr_schema:"Antwort-Schema (JSON)",pr_model:"Modell",pr_chars:"Zeichen",pr_for:"gerendert für",pr_sample:"Beispielklinik",pr_copied:"Prompt kopiert",tb_run:"Lauf",tb_coverage:"Abdeckung",tb_automation:"Automatik",tb_history:"Verlauf",cv_worst:"größte Lücken",lg_search:"Log durchsuchen …",lg_err:"Fehler",lg_warn:"Warnungen",lg_ok:"Erfolg",lg_level:"Stufe",lg_lines:"Zeilen",lg_copy:"Kopieren",lg_copied:"Log kopiert",none_short:"nichts",r_trigger:"Ausgelöst von",city_ph:"Ort …",tp_none:"Nichts gefunden.",
   b_h:"Firecrawl-Ausgaben",b_p:"Credits, Tokens und Läufe im gewählten Zeitraum. Preis in USD je Credit; Free-Runs kosten 0. Der Zeitraum gilt für alles auf dieser Seite.",
   w_today:"Heute",w_24:"24 h",w_7:"7 T",w_30:"30 T",w_period:"Abrechnungszeitraum",w_custom:"Benutzerdefiniert",w_from:"von",w_to:"bis",w_apply:"Anwenden",
   b_usd_in:"USD im Zeitraum",b_billable:"abrechenbare Credits",b_free:"Free-Run-Credits",b_table:"Tabelle",b_graph:"Grafik",b_bucket:"Abschnitt",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Läufe",b_usd:"USD",b_chart_aria:"Credits je Zeitabschnitt, abrechenbar und frei",
@@ -298,7 +333,7 @@ const I18N={
   bc_h:"Kosten je Klinik",bc_lead:"Top-Kliniken nach USD im Zeitraum: Credits, gewonnene Stellen und Kosten je Stelle; die Haarlinie ist die $0,50-Grenze des Hunters. Zeile anklicken → Klinik.",bc_clinic:"Klinik",bc_usd:"USD",bc_credits:"Credits",bc_runs:"Läufe",bc_new:"Stellen gewonnen",bc_cpp:"Kosten je Stelle",bc_open:"offen",bc_last:"letzter Lauf",bc_none:"Keine Kosten je Klinik im Zeitraum.",bc_top:"Top {n} von {m}",
   st_h:"Crawling",st_auto:"Auto-Modus",st_auto_x:"Hunter: ein Firecrawl-Lauf je Klinik und UTC-Tag",st_parser:"Parser",st_parser_x:"Zeitpläne: Adapter-Läufe nach Cron",st_on:"an",st_off:"aus",st_paused:"pausiert",st_free:"freie Läufe heute",st_spark:"Kosten 7 T je Klinik",st_nospark:"noch keine Kosten je Klinik",st_parser_on:"Zeitpläne laufen wieder",st_parser_off:"Zeitpläne pausiert",st_credits_err:"Firecrawl nicht erreichbar",
   r_cost:"Kosten",r_log:"Log",
-  g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit exe.dev anmelden oder einen Anmelde-Link per E-Mail anfordern.",g_login:"Mit exe.dev anmelden",g_or:"oder",g_email:"E-Mail",g_send:"Link senden",g_sending:"sende …",g_sent:"Link gesendet",g_invalid:"Bitte eine gültige E-Mail-Adresse eingeben.",g_simple:"Zur einfachen Ansicht →",
+  g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit Benutzername und Passwort anmelden.",g_user:"Benutzername",g_pass:"Passwort",g_signin:"Anmelden",g_signing:"melde an …",g_bad:"Ungültige Zugangsdaten.",g_login:"Zur Anmeldeseite",g_or:"oder",g_simple:"Zur einfachen Ansicht →",
   g_agent_toggle:"Ich bin ein Agent →",g_agent_lead:"Agent-Key eingeben, um die Skill-Doku statt des Dashboards zu öffnen.",g_agent_ph:"Agent-Key",g_agent_send:"Öffnen",g_agent_bad:"Ungültiger Agent-Key."},
  en:{search_ph:"Search hospital, job, town, ATS … or upload a CV",cv_btn:"CV ↑",k_credits:"credits",k_credits_low:"low — a run can fall below MIN_VIABLE_CAP",nav_agents:"For agents",nav_simple:"Simple →",
   n_clinics:"Hospitals",n_cities:"Cities",n_jobs:"Jobs",n_scrape:"Clawl",n_docs:"Docs",n_settings:"Settings",n_plan:"Hospital plan",
@@ -318,7 +353,7 @@ const I18N={
   j_desc:"Description",j_obs:"Observations (sources)",j_verify:"Web proof",j_role:"Role",j_dept:"Department",j_qual:"Qualification",j_contract:"Contract",j_emp:"Hours",j_start:"From",j_pub:"Published",j_seen:"Last seen",j_tariff:"Tariff",j_grade:"Pay grade",j_contact:"Contact",j_req:"Requirements (excerpt)",j_exp:"Experience",j_housing:"Housing",j_yes:"yes",j_no:"not mentioned",j_unknown:"unknown",j_employer_link:"Employer link",
   t_started:"Clawl started — run #{id}",t_view_runs:"view runs",t_err:"Error: {m}",t_saved:"Saved",t_deleted:"Deleted",
   h_scrape:"Clawl",lead_scrape:"Fetch jobs from hospital career portals: targeted now, or on a schedule. Adapters read known ATS boards directly; the Firecrawl agent handles everything else (costs credits).",
-  h_coverage:"Coverage by adapter",lead_coverage:"The Firecrawl row is every hospital without a working adapter; an adapter whose coverage % lags its neighbours is the next one to fix. Click a row to open the hospitals with that ATS.",cv_adapter:"Adapter",cv_clinics:"Hospitals",cv_routable:"routable",cv_boards:"Boards",cv_withjobs:"with jobs",cv_open:"open",cv_fresh:"fresh",cv_pct:"Coverage %",cv_lastrun:"last run",cv_credits:"Firecrawl credits 7 d",cv_total:"total",cv_unroutable:"not routable",cv_norun:"no run yet",s_new:"New Clawl",s_target:"Target",s_all:"all hospitals",s_bezirk:"District",s_city:"Town",s_clinic:"Hospital",s_ats:"ATS vendor",s_mode:"Mode",s_credits:"max Firecrawl credits",s_details:"fetch detail pages",s_preview:"Preview",
+  h_coverage:"Coverage by adapter",lead_coverage:"The Firecrawl row is every hospital without a working adapter; an adapter whose coverage % lags its neighbours is the next one to fix. Click a row to open the hospitals with that ATS.",cv_adapter:"Adapter",cv_clinics:"Hospitals",cv_routable:"routable",cv_boards:"Boards",cv_withjobs:"with jobs",cv_open:"open",cv_fresh:"fresh",cv_pct:"Coverage %",cv_score:"Feature score",cv_nc:"not checked",cv_nc_x:"No cell in data/feature_cells.jsonl — nobody looked. That is not the same as 0 %.",cv_lastrun:"last run",cv_credits:"Firecrawl credits 7 d",cv_total:"total",cv_unroutable:"not routable",cv_norun:"no run yet",s_new:"New Clawl",s_target:"Target",s_all:"all hospitals",s_bezirk:"District",s_city:"Town",s_clinic:"Hospital",s_ats:"ATS vendor",s_mode:"Mode",s_credits:"max Firecrawl credits",s_details:"fetch detail pages",s_preview:"Preview",
   m_auto:"auto",m_auto_x:"adapter where available, otherwise the Firecrawl agent",m_adapter:"adapter only",m_adapter_x:"only hospitals with a known ATS board, no credits",m_firecrawl:"Firecrawl agent",m_firecrawl_x:"an LLM agent reads the career portal, uses credits",
   pv_clinics:"hospitals",pv_boards:"boards",pv_adapter:"via adapter",pv_firecrawl:"via Firecrawl",pv_walled:"bot wall",pv_credits:"estimated credits",pv_skipped:"skipped",pv_credits_left:"credits left this week",
   s_plan:"Show plan",s_gates:"Plan & gates",s_cancel:"Cancel",s_blocked_all_fc:"Firecrawl never runs for every hospital at once — pick a narrower target (district, town, ATS) or switch to auto mode.",s_over_budget:"Estimate exceeds the remaining weekly budget.",
@@ -334,7 +369,7 @@ const I18N={
   a_title:"For agents",a_hint:"Single-file skill (Claude skill format): everything an agent needs — API, data model, pipeline.",
   size_S:"< 100 beds",size_M:"100–299",size_L:"300–799",size_XL:"800+",unknown_ats:"no ATS known",live:"live",gone:"gone",blocked:"blocked",error:"error",
   sr_filters:"Filters",
-  n_billing:"Billing",h_towns:"Towns · open jobs",city_ph:"Town …",tp_none:"Nothing found.",
+  n_billing:"Billing",h_towns:"Towns · open jobs",lv_stopping:"stopping …",lv_stopping_x:"cancel requested — stops after the board in flight",lv_cancel:"Cancel run",lv_cancel_sure:"cancel it?",lv_cancelled:"Run #{id} is being cancelled",lv_title:"Running now · #{id}",lv_elapsed:"Elapsed",tr_title:"Last failed run #{id}",tr_lines:"lines",tr_fix:"What fixes it",tr_log:"Log",tr_aim:"Aim the form",tr_rerun:"re-run at {n}",tr_unknown:"No known cause matched in the log — open it.",tr_cap:"Cap below the agent minimum",tr_cap_fix:"raise the cap and run again",tr_gate:"Spend gate refused it",tr_gate_fix:"adapter already covers it — aim the form, check the mode",tr_thin:"Budget too thin for one attempt",tr_thin_fix:"top up credits or raise the cap",tr_flag:"firecrawl.enabled is off",tr_flag_fix:"feature flag lives in Settings",tr_zero:"Adapter returned 0 rows, no error",tr_zero_fix:"check it against Firecrawl",tr_fetch:"Fetch failed (timeout, block, HTTP error)",tr_fetch_fix:"read the log, then retry",cv_runvendor:"Run vendor",cv_runvendor_x:"aim the run at every hospital on this ATS",cv_aimed:"Target set: {a}",s_estimate:"Estimate",s_estimate_x:"free: reads the board before the run",s_estimate_off:"hospital target only (max 8 at a time)",e_board:"Rows",e_definite:"definite Pflege",e_amb:"ambiguous",e_conf:"Confidence",b_close:"close",tb_prompts:"Prompts",pr_title:"Firecrawl prompts",pr_missing:"GET /api/firecrawl/prompts does not exist yet — until it does, the templates live only in pflege_jobs/sources/firecrawl_agent.py.",pr_jobs:"Jobs prompt",pr_jobs_x:"per hospital, hunts open nursing posts",pr_career:"Career-site prompt",pr_career_x:"finds the careers portal and ATS vendor",pr_schema:"Answer schema (JSON)",pr_model:"Model",pr_chars:"characters",pr_for:"rendered for",pr_sample:"sample hospital",pr_copied:"Prompt copied",tb_run:"Run",tb_coverage:"Coverage",tb_automation:"Automation",tb_history:"History",cv_worst:"biggest gaps",lg_search:"Search the log …",lg_err:"Errors",lg_warn:"Warnings",lg_ok:"Success",lg_level:"Level",lg_lines:"lines",lg_copy:"Copy",lg_copied:"Log copied",none_short:"nothing",r_trigger:"Triggered by",city_ph:"Town …",tp_none:"Nothing found.",
   b_h:"Firecrawl spend",b_p:"Credits, tokens and runs in the selected window. Price in USD per credit; free runs cost 0. The window scopes everything on this page.",
   w_today:"Today",w_24:"24 h",w_7:"7 d",w_30:"30 d",w_period:"Billing period",w_custom:"Custom",w_from:"from",w_to:"to",w_apply:"Apply",
   b_usd_in:"USD in window",b_billable:"billable credits",b_free:"free-run credits",b_table:"Table",b_graph:"Chart",b_bucket:"Bucket",b_credits:"Credits",b_tokens:"Tokens",b_runs:"Runs",b_usd:"USD",b_chart_aria:"Credits per bucket, billable and free",
@@ -343,7 +378,7 @@ const I18N={
   bc_h:"Cost per hospital",bc_lead:"Top hospitals by USD in the window: credits, postings gained and cost per posting; the hairline is the Hunter's $0.50 bar. Click a row → hospital.",bc_clinic:"Hospital",bc_usd:"USD",bc_credits:"Credits",bc_runs:"Runs",bc_new:"Postings gained",bc_cpp:"Cost per posting",bc_open:"open",bc_last:"last run",bc_none:"No cost per hospital in the window.",bc_top:"Top {n} of {m}",
   st_h:"Crawling",st_auto:"Auto mode",st_auto_x:"Hunter: one Firecrawl run per hospital per UTC day",st_parser:"Parser",st_parser_x:"Schedules: adapter runs by cron",st_on:"on",st_off:"off",st_paused:"paused",st_free:"free runs left today",st_spark:"Cost 7 d per hospital",st_nospark:"no cost per hospital yet",st_parser_on:"Schedules running again",st_parser_off:"Schedules paused",st_credits_err:"Firecrawl unreachable",
   r_cost:"Cost",r_log:"Log",
-  g_title:"Pro access",g_lead:"The Pro dashboard is for operators and customers. Sign in with exe.dev or request a sign-in link by e-mail.",g_login:"Sign in with exe.dev",g_or:"or",g_email:"E-mail",g_send:"Send link",g_sending:"sending …",g_sent:"Link sent",g_invalid:"Please enter a valid e-mail address.",g_simple:"Simple view →",
+  g_title:"Pro access",g_lead:"The Pro dashboard is for operators and customers. Sign in with a username and password.",g_user:"Username",g_pass:"Password",g_signin:"Sign in",g_signing:"signing in …",g_bad:"Invalid credentials.",g_login:"Go to the sign-in page",g_or:"or",g_simple:"Simple view →",
   g_agent_toggle:"I'm an agent →",g_agent_lead:"Enter the agent key to open the skill doc instead of the dashboard.",g_agent_ph:"Agent key",g_agent_send:"Open",g_agent_bad:"Invalid agent key."}};
 let LANG=localStorage.getItem("lang")||(navigator.language||"de").slice(0,2); if(!I18N[LANG]) LANG="de";
 const t=(k,v)=>{let s=(I18N[LANG]||I18N.de)[k]??I18N.de[k]??k; if(v) for(const[a,b] of Object.entries(v)) s=String(s).replace("{"+a+"}",b); return s;};
@@ -384,6 +419,10 @@ async function taxonomy(){ if(!TAX) TAX=await api("/api/taxonomy").catch(()=>({}
 const tx=(map,key)=>(LANG==="en"&&TAX?.[map+"_en"]?.[key])||TAX?.[map]?.[key]||key;
 const fachLabel=code=>tx("fachrichtungen",code);
 const gl=term=>{ const g=TAX?.glossary?.[term]; return g?L(g):null; };
+// Badge numbers stay one glance wide: 1 240 -> "1,2k". "999+" threw away the difference between a
+// thousand and thirty thousand, which is the only thing that number is read for. Exact value in the title.
+const compact=n=>{ n=Number(n)||0; if(n<1000) return num(n);
+  const k=n/1000, s=k<10?k.toFixed(1):Math.round(k)+""; return s.replace(".0","").replace(".",LANG==="de"?",":".")+"k"; };
 async function loadStats(){ try{ STATS=await api("/api/stats"); const fc=STATS.firecrawl||{};
     // 2026-09-08: balance sat near the reserve floor with no visible signal anywhere -- a run then burned
     // several doomed attempts before anyone noticed (fixed server-side, app/crawl.py MIN_VIABLE_CAP=40).
@@ -438,7 +477,7 @@ function chipGroup(dim,opts,selected,onchange,labelOf,tipOf){ const sel=new Set(
   opts.forEach(o=>{ const c=col(dim,o.v); const tip=tipOf?tipOf(o.v):null; const b=el("button",{type:"button",class:"chip","aria-pressed":String(sel.has(o.v)),"data-tip":tip||null,style:`color:${c};border-color:${tint(c,.45)};background:${tint(c,sel.has(o.v)?.22:.08)}`},labelOf?labelOf(o.v):(o.label||o.v||"–"),o.n!=null?el("span",{class:"c",text:num(o.n)}):null);
     b.addEventListener("click",()=>{sel.has(o.v)?sel.delete(o.v):sel.add(o.v);b.setAttribute("aria-pressed",String(sel.has(o.v)));b.style.background=tint(c,sel.has(o.v)?.22:.08);onchange([...sel]);}); wrap.append(b); });
   wrap.get=()=>[...sel]; return wrap; }
-function selectBox(opts,value,onchange,labelOf){ const s=el("select",{},el("option",{value:"",text:t("all")}),...opts.map(o=>el("option",{value:o.v,text:(labelOf?labelOf(o.v):(o.label||o.v))+(o.n!=null?` (${num(o.n)})`:"")}))); s.value=value||""; s.addEventListener("change",()=>onchange(s.value)); return s; }
+function selectBox(opts,value,onchange,labelOf){ return dropdown({options:opts||[],value,onchange,labelOf,allLabel:t("all"),search:(opts||[]).length>12}); }
 function field(label,node,cls=""){ return el("div",{class:"f "+cls},el("span",{class:"lbl",text:label}),node); }
 function pager(total,limit,offset,onpage){ const pages=Math.max(1,Math.ceil(total/limit)), cur=Math.floor(offset/limit)+1;
   return el("div",{class:"pager"},el("span",{text:`${num(total)} ${t("total")} · ${t("page")} ${cur} ${t("of")} ${pages}`}),el("button",{class:"btn s",type:"button",disabled:cur<=1,onclick:()=>onpage((cur-2)*limit),text:"‹"}),el("button",{class:"btn s",type:"button",disabled:cur>=pages,onclick:()=>onpage(cur*limit),text:"›"})); }
@@ -463,7 +502,7 @@ function parseHash(){ const h=location.hash.replace(/^#/,"")||"/"; const [p,q]=h
 function nav(path,params){ location.hash=path+qs(params||{}); }
 function setParams(params){ const {path}=parseHash(); history.replaceState(null,"","#"+path+qs(params)); }
 function renderNav(){ const {path}=parseHash(); const on=p=>p==="/"?(path==="/"||path.startsWith("/clinic")||path==="/plan"):p==="/jobs"?(path.startsWith("/job")||path==="/cv"):p==="/clawl"?(path==="/clawl"||path==="/scrape"||path==="/runs"):p==="/billing"?(path==="/billing"||path==="/kosten"):path.startsWith(p);
-  $("#nav").replaceChildren(...NAV.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":""},t(k),p==="/jobs"&&STATS?.fresh_jobs?el("span",{class:"bd",title:t("f_fresh")+" ≤ 7d",text:STATS.fresh_jobs>999?"999+":num(STATS.fresh_jobs)}):null,p==="/billing"&&BILL_TODAY!=null?el("span",{class:"bd",title:t("b_usd_in")+" · "+t("b_today"),text:usd(BILL_TODAY)}):null)));
+  $("#nav").replaceChildren(...NAV.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":""},t(k),p==="/jobs"&&STATS?.fresh_jobs?el("span",{class:"bd",title:t("f_fresh")+" ≤ 7d: "+num(STATS.fresh_jobs),text:compact(STATS.fresh_jobs)}):null,p==="/billing"&&BILL_TODAY!=null?el("span",{class:"bd",title:t("b_usd_in")+" · "+t("b_today"),text:usd(BILL_TODAY)}):null)));
   $("#nav2").replaceChildren(...NAV2.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":"",text:t(k)}))); }
 let ROUTE_TOKEN=0;
 async function route(){
@@ -550,28 +589,42 @@ function townChips(fc){ const src=(fc.job_cities?.length?fc.job_cities:fc.cities
     ...src.slice(0,TOP).map(c=>el("a",{href:"#/jobs?city="+encodeURIComponent(c.v)},c.v+" ·",el("b",{text:num(c.n)}))));
   if(src.length>TOP) row.append(townPicker(src));
   return row; }
-// Town combobox: type to filter (umlaut/ß-insensitive), ↑/↓ to walk, Enter picks, Esc closes; picking navigates to that town's jobs.
-// ARIA combobox + listbox, so screen readers and keyboards get the same thing the mouse does.
-function townPicker(src){ const MAX=200;
-  const norm=s=>String(s).toLowerCase().replace(/ß/g,"ss").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  const inp=el("input",{class:"twn",type:"text",role:"combobox",autocomplete:"off",spellcheck:"false","aria-autocomplete":"list","aria-expanded":"false","aria-controls":"twn-dd","aria-label":t("h_towns"),placeholder:t("city_ph")});
-  const dd=el("div",{class:"dd",id:"twn-dd",role:"listbox",hidden:true}); const box=el("div",{class:"twn-box"},inp,dd);
-  let hits=[],cur=-1;
-  const close=()=>{ dd.hidden=true; cur=-1; inp.setAttribute("aria-expanded","false"); inp.removeAttribute("aria-activedescendant"); };
-  const mark=i=>{ cur=i; [...dd.children].forEach((n,k)=>n.setAttribute("aria-selected",String(k===i)));
-    if(dd.children[i]){ inp.setAttribute("aria-activedescendant",dd.children[i].id); dd.children[i].scrollIntoView({block:"nearest"}); } else inp.removeAttribute("aria-activedescendant"); };
-  const pick=c=>{ close(); inp.value=""; inp.blur(); location.hash="#/jobs?city="+encodeURIComponent(c.v); };
-  const draw=()=>{ const q=norm(inp.value.trim()); hits=(q?src.filter(c=>norm(c.v).includes(q)):src).slice(0,MAX);
-    dd.replaceChildren(...(hits.length?hits.map((c,i)=>el("div",{class:"o",id:"twn-o"+i,role:"option","aria-selected":"false",onmousedown:e=>{e.preventDefault();pick(c);}},el("span",{text:c.v}),el("small",{text:num(c.n)})))
+// Town search: pick a town from the searchable dropdown -> that town's jobs.
+function townPicker(src){ return dropdown({options:src.map(c=>({v:c.v,label:c.v,n:c.n})),search:true,placeholder:t("city_ph"),aria:t("h_towns"),onchange:v=>{ location.hash="#/jobs?city="+encodeURIComponent(v); }}); }
+// Single-select dropdown, used everywhere instead of <select>: a native select renders as an OS sheet on
+// mobile and cannot carry our type/colour, so this keeps the native keyboard contract (↑/↓/Home/End/Enter/
+// Esc, type-ahead) and adds optional search for long lists. Drop-in: it exposes .value and fires "change".
+let PK_SEQ=0;
+function dropdown({options,value="",onchange,placeholder="",search=false,labelOf=null,allLabel=null,aria=null}){
+  const norm=s=>String(s).toLowerCase().replace(/ß/g,"ss").normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const lab=o=>o.label!=null?o.label:(labelOf?labelOf(o.v):o.v);
+  const opts=(allLabel!=null?[{v:"",label:allLabel}]:[]).concat(options||[]);
+  const id="pk"+(++PK_SEQ); let val=value==null?"":String(value),open=false,idx=-1,hits=opts,typed="",tt=0;
+  const dd=el("div",{class:"dd",id:id+"-l",role:"listbox",hidden:true}), face=el("span",{class:"v"});
+  const trg=search?el("input",{class:"pk-t",type:"text",role:"combobox",autocomplete:"off",spellcheck:"false",placeholder:placeholder,"aria-autocomplete":"list","aria-expanded":"false","aria-controls":id+"-l","aria-label":aria||placeholder})
+    :el("button",{class:"pk-t",type:"button",role:"combobox","aria-haspopup":"listbox","aria-expanded":"false","aria-controls":id+"-l","aria-label":aria||placeholder},face,el("i",{class:"cr","aria-hidden":"true"}));
+  const box=el("div",{class:"pick"+(search?" s":"")},trg,dd);
+  const cur=()=>opts.find(o=>o.v===val);
+  const paint=()=>{ const c=cur(); if(search){ if(document.activeElement!==trg) trg.value=c?lab(c):""; } else { face.textContent=c?lab(c):(placeholder||"…"); face.classList.toggle("ph",!c); } };
+  const close=()=>{ open=false; dd.hidden=true; idx=-1; trg.setAttribute("aria-expanded","false"); trg.removeAttribute("aria-activedescendant"); paint(); };
+  const mark=i=>{ idx=i; [...dd.children].forEach((n,k)=>n.setAttribute("aria-selected",String(k===i)));
+    if(dd.children[i]){ trg.setAttribute("aria-activedescendant",dd.children[i].id); dd.children[i].scrollIntoView({block:"nearest"}); } else trg.removeAttribute("aria-activedescendant"); };
+  const choose=o=>{ val=o.v; close(); trg.focus(); box.dispatchEvent(new Event("change")); onchange&&onchange(o.v,o); };
+  const draw=()=>{ const q=search?norm(trg.value.trim()):""; hits=q?opts.filter(o=>norm(lab(o)).includes(q)||norm(o.v).includes(q)):opts;
+    dd.replaceChildren(...(hits.length?hits.map((o,i)=>el("div",{class:"o"+(o.v===val?" on":""),id:id+"-o"+i,role:"option","aria-selected":"false",onmousedown:e=>{e.preventDefault();choose(o);}},el("span",{text:lab(o)}),o.n!=null?el("small",{text:num(o.n)}):null))
       :[el("div",{class:"o empty",text:t("tp_none")})]));
-    dd.hidden=false; inp.setAttribute("aria-expanded","true"); mark(-1); };
-  inp.addEventListener("focus",draw); inp.addEventListener("input",draw);
-  inp.addEventListener("keydown",e=>{
-    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(dd.hidden) draw(); if(!hits.length) return; e.preventDefault(); mark(e.key==="ArrowDown"?(cur+1)%hits.length:(cur<=0?hits.length-1:cur-1)); return; }
-    if(e.key==="Enter"){ const exact=hits.find(c=>norm(c.v)===norm(inp.value.trim())); const c=cur>=0?hits[cur]:exact||(hits.length===1?hits[0]:null); if(c){ e.preventDefault(); pick(c); } return; }
-    if(e.key==="Escape"&&!dd.hidden){ e.preventDefault(); close(); } });
+    open=true; dd.hidden=false; trg.setAttribute("aria-expanded","true"); mark(hits.findIndex(o=>o.v===val)); };
+  trg.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){ if(!open){ draw(); return; } if(!hits.length) return; e.preventDefault(); mark(e.key==="ArrowDown"?(idx+1)%hits.length:(idx<=0?hits.length-1:idx-1)); return; }
+    if(open&&(e.key==="Home"||e.key==="End")){ e.preventDefault(); mark(e.key==="Home"?0:hits.length-1); return; }
+    if(e.key==="Enter"||(e.key===" "&&!search)){ if(!open){ e.preventDefault(); draw(); return; } const o=idx>=0?hits[idx]:(hits.length===1?hits[0]:null); if(o){ e.preventDefault(); choose(o); } return; }
+    if(e.key==="Escape"&&open){ e.preventDefault(); close(); return; }
+    if(!search&&e.key.length===1){ clearTimeout(tt); typed+=norm(e.key); tt=setTimeout(()=>typed="",700);   // type-ahead, like a native select
+      const i=(open?hits:opts).findIndex(o=>norm(lab(o)).startsWith(typed)); if(i>=0){ if(!open) draw(); mark(i); } } });
+  if(search){ trg.addEventListener("focus",draw); trg.addEventListener("input",draw); } else trg.addEventListener("click",()=>open?close():draw());
   box.addEventListener("focusout",e=>{ if(!box.contains(e.relatedTarget)) close(); });
-  return box; }
+  Object.defineProperty(box,"value",{get:()=>val,set:v=>{ val=v==null?"":String(v); paint(); }});
+  paint(); return box; }
 
 // (the Cities page was cut: '#/cities' redirects to '#/'; the home page carries the town chips instead)
 
@@ -593,6 +646,27 @@ async function pagePlan(p){
 </script>
 <script>
 // ---- clinic detail ------------------------------------------------------------------------------
+// Clinic mark: the operator's own icon, taken from their own site (no third-party logo service), fitted
+// whole into the tile so a wide logo is never cropped -- the tile carries the page background, so a
+// transparent PNG reads on either theme. Initials when nothing loads; the API has no photo field yet.
+//
+// Every candidate is asked for over https, whatever the register stored. 161 of the 407 clinics carry an
+// `http://` website in data/registry/clinics.csv, and an http image candidate cannot paint here for two
+// independent reasons: the CSP this app sends (`img-src 'self' data: https:`, app/main.py:82) refuses it
+// before the request leaves -- measured against the real board, not ?mock=1: 0 of those 161 marks painted
+// and the console carried 322 violations -- and on https://pflege-board.exe.xyz it would be mixed content
+// as well. Rewriting the scheme costs one .map() and recovers the 83 of the 161 hosts that answer the same
+// icon over https (probed 2026-09-11; 78 of the rest serve no icon at either scheme, so they were always
+// initials, and exactly one, krankenhaus-schwabach.de, is http-only and stays initials). The stored value
+// is untouched: the outbound website link on this page still shows and opens what the register says.
+// docs/errors.md, "CSP img-src blocks 161 clinic logos", carries the same measurement for app/main.py.
+function clinicPhoto(c,big){ const box=el("div",{class:"ph"+(big?" big":""),"aria-hidden":"true"});
+  const ini=(c.name||"?").replace(/^(Bezirksklinikum|Bezirkskrankenhaus|Fachklinik|Klinikum|Kliniken|Klinik|Krankenhaus)\s+/i,"").trim().slice(0,2).toUpperCase();
+  const host=(c.website||c.careers_url||"").match(/^https?:\/\/[^/]+/);
+  const srcs=[c.photo_url,c.logo_url].filter(Boolean).concat(host?[host[0]+"/apple-touch-icon.png",host[0]+"/favicon.ico"]:[]).map(u=>u.replace(/^http:\/\//,"https://"));
+  let i=0; const next=()=>{ if(i>=srcs.length){ box.replaceChildren(el("span",{text:ini})); return; }
+    box.replaceChildren(el("img",{src:srcs[i++],alt:"",loading:"lazy",referrerpolicy:"no-referrer",onerror:next})); };
+  next(); return box; }
 async function pageClinic(id){
   const c=await api("/api/clinics/"+encodeURIComponent(id));
   const cell=(l,v)=>el("div",{},el("span",{text:l}),v==null||v===""?"–":v);
@@ -601,7 +675,7 @@ async function pageClinic(id){
   const refetch=el("button",{class:"btn",type:"button"},"🔍 "+t("b_refetch"));
   refetch.addEventListener("click",async()=>{ refetch.disabled=true; try{ const r=await post(`/api/clinics/${c.clinic_id}/refetch-career`,{max_credits:SET?.firecrawl?.default_max_credits||40}); toast(`${t("t_started",{id:r.run_id})} · <a href="#/clawl">${t("t_view_runs")}</a>`);}catch(e){toast(t("t_err",{m:esc(e.message)}));refetch.disabled=false;} });
   return [
-    el("div",{class:"hd"},el("div",{},el("h1",{text:c.name}),el("div",{class:"row"},chip("bezirk",c.regierungsbezirk),c.versorgungsstufe?vstChip(c.versorgungsstufe):null,traegerChip(c.traegerart),...[].concat(fetchChip(c)),sizeOf(c.beds)?chip("size",sizeOf(c.beds),`${num(c.beds)} ${t("c_beds")}`):null)),
+    el("div",{class:"hd"},clinicPhoto(c,true),el("div",{},el("h1",{text:c.name}),el("div",{class:"row"},chip("bezirk",c.regierungsbezirk),c.versorgungsstufe?vstChip(c.versorgungsstufe):null,traegerChip(c.traegerart),...[].concat(fetchChip(c)),sizeOf(c.beds)?chip("size",sizeOf(c.beds),`${num(c.beds)} ${t("c_beds")}`):null)),
       el("span",{class:"sp"}),el("div",{class:"row"},scrapeLink("clinic",[c.clinic_id],c.name,false),refetch)),
     el("div",{class:"two"},
       el("div",{class:"card hud"},el("h3",{text:t("d_meta")}),el("div",{class:"grid"},cell(t("d_kez"),term(c.clinic_id,"KeZ")),cell(t("d_operator"),c.operator),cell(t("d_landkreis"),c.landkreis),cell(t("d_plan"),statusTip(c.status)),cell(t("c_beds"),num(c.beds)),cell(t("d_dayplaces"),num(c.day_places)),cell(t("d_website"),link(c.website)),cell(t("d_careers"),link(c.careers_url)),cell(t("c_crawl"),c.last_crawl_at?`${fmtDT(c.last_crawl_at)} · ${c.last_crawl_status||""} · ${c.last_crawl_mode||""}`:"–")),
@@ -723,6 +797,7 @@ const PRESETS={weekly_staggered:{cron:"0 3 * * *",stagger:7},daily:{cron:"0 3 * 
 function cronHuman(cron,stagger){ const p=(cron||"").trim().split(/\s+/); if(p.length!==5) return cron||"–"; const [m,h,dom,mon,dow]=p; const hm=(h!=="*"&&/^\d+$/.test(h))?`${h.padStart(2,"0")}:${(m==="*"?"00":m).padStart(2,"0")} UTC`:null;
   const days={de:{"*":"täglich","1-5":"werktags","0":"So","1":"Mo","2":"Di","3":"Mi","4":"Do","5":"Fr","6":"Sa"},en:{"*":"daily","1-5":"weekdays","0":"Sun","1":"Mon","2":"Tue","3":"Wed","4":"Thu","5":"Fri","6":"Sat"}}[LANG]||{};
   let s=(dom==="*"&&mon==="*")?(days[dow]||("dow "+dow)):cron; if(h==="*") s=(LANG==="de"?"stündlich":"hourly")+(m!=="*"?` (:${m.padStart(2,"0")})`:""); else if(hm) s+=" "+hm; if(stagger>1) s+=` · ${t("s_stagger")}: ${stagger}`; return s; }
+function clinicName(id){ const c=(clinicOptions.C||[]).find(x=>x.v===String(id)); return c?(c.label||c.v):String(id); }
 async function clinicOptions(){ if(clinicOptions.C) return clinicOptions.C; const d=await api("/api/clinics?limit=1000&sort=name"); return clinicOptions.C=(d.rows||[]).map(c=>({v:c.clinic_id,label:`${c.name} · ${c.town||""}`})); }
 // target form: {scope, values}; returns {el, get(), set()}
 async function targetForm(init={}){
@@ -733,12 +808,20 @@ async function targetForm(init={}){
     clinic:()=>multiSelect({options:CO,selected:vals.clinic,onchange:v=>{vals.clinic=v;onch();},placeholder:"…"}),
     ats_type:()=>chipGroup("ats",(F.ats_type||[]).filter(o=>o.v).map(o=>({...o,label:atsLabel(o.v)})),vals.ats_type,v=>{vals.ats_type=v;onch();})};
   const slot=el("div",{style:"margin-top:8px;min-width:280px"});
-  const radios=el("div",{class:"radio"},...[["all",t("s_all")],["regierungsbezirk",t("s_bezirk")],["city",t("s_city")],["clinic",t("s_clinic")],["ats_type",t("s_ats")]].map(([v,l])=>{ const r=el("input",{type:"radio",name:"scope-"+Math.random().toString(36).slice(2,6),value:v}); r.checked=scope===v; r.addEventListener("change",()=>{scope=v;drawSlot();onch();}); return el("label",{},r,l); }));
+  // Scope picker as toggle buttons, not radios: a radio can be switched but never cleared, so clicking the
+  // active scope again drops back to "all hospitals" -- the neutral state -- instead of trapping the form.
+  const radios=el("div",{class:"seg",role:"group","aria-label":t("s_target")});
+  const paintSeg=()=>[...radios.children].forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===scope)));
+  [["all",t("s_all")],["regierungsbezirk",t("s_bezirk")],["city",t("s_city")],["clinic",t("s_clinic")],["ats_type",t("s_ats")]].forEach(([v,l])=>
+    radios.append(el("button",{type:"button",class:"sg","data-v":v,"aria-pressed":String(scope===v),onclick:()=>{ scope=(scope===v&&v!=="all")?"all":v; paintSeg(); drawSlot(); onch(); },text:l})));
   function drawSlot(){ slot.replaceChildren(widgets[scope]?widgets[scope]():""); }
   const root=el("div",{},radios,slot); drawSlot();
-  root.get=()=>({scope,values:scope==="all"?[]:vals[scope]}); return root;
+  root.get=()=>({scope,values:scope==="all"?[]:vals[scope]});
+  // Lets another part of the page aim the form -- "run this ATS vendor" from a coverage row, for instance.
+  root.set=v=>{ scope=v&&v.scope||"all"; if(vals[scope]) vals[scope]=[].concat(v.values||[]); paintSeg(); drawSlot(); onch(); };
+  return root;
 }
-function modeSelect(value){ const s=el("select",{},...MODES.map(m=>el("option",{value:m,text:`${t("m_"+m)} — ${t("m_"+m+"_x")}`}))); s.value=value||"auto"; return s; }
+function modeSelect(value){ return dropdown({options:MODES.map(m=>({v:m,label:`${t("m_"+m)} — ${t("m_"+m+"_x")}`})),value:value||"auto",aria:t("s_mode")}); }
 // The plan-gate panel: exactly what a run would do, with the one hard rule (Firecrawl refuses "all hospitals
 // at once") shown up front instead of as a surprise 400 after clicking run. Reuses the crawlers/routing.py +
 // spend_gate() logic already behind GET /api/crawl/plan and POST /api/crawl -- no new backend gate, just the
@@ -754,12 +837,20 @@ function showPlanGate(tg,mode,credits,fetchDetails,r){
   const cancel=el("button",{class:"btn",type:"button",text:t("s_cancel"),onclick:()=>$("#plan-dlg").close()});
   confirm.disabled=blocked||!r.clinics;
   confirm.addEventListener("click",async()=>{ confirm.disabled=true; try{ const res=await post("/api/crawl",{target:tg,scope:tg.scope,value:tg.values.join(","),mode,max_credits:credits,fetch_details:fetchDetails}); toast(t("t_started",{id:res.run_id})); $("#plan-dlg").close(); loadRuns(); }catch(e){ toast(t("t_err",{m:esc(e.message)})); confirm.disabled=false; } });
-  $("#plan-dlg-body").replaceChildren(el("h2",{text:t("s_gates")}),el("p",{class:"m",text:[t("s_"+tg.scope)||tg.scope,t("m_"+mode)].join(" · ")}),
+  // .filter(Boolean): replaceChildren is the native DOM call, not el() -- a null child is rendered as the
+  // literal text "null", which is what the drawer used to show whenever a gate warning was absent.
+  $("#plan-dlg-body").replaceChildren(...[el("h2",{text:t("s_gates")}),el("p",{class:"m",text:[t("s_"+tg.scope)||tg.scope,t("m_"+mode)].join(" · ")}),
     blocked?el("div",{class:"gatewarn",text:t("s_blocked_all_fc")}):null,
     !blocked&&overBudget?el("div",{class:"gatewarn",text:t("s_over_budget")}):null,
     ...rows,reasons.length?el("div",{style:"margin-top:8px"},...reasons):null,r.sample?.length?el("div",{class:"m",style:"margin-top:8px",text:r.sample.slice(0,6).join(" · ")+(r.sample.length>6?" …":"")}):null,
-    el("div",{class:"row",style:"margin-top:16px"},el("span",{class:"sp"}),cancel,confirm));
-  $("#plan-dlg").showModal();
+    el("div",{class:"row",style:"margin-top:16px"},el("span",{class:"sp"}),cancel,confirm)].filter(Boolean));
+  // Drawer, not a modal: the plan is read against the page it came from (the target you just picked stays
+  // visible behind it). Non-modal <dialog> gets no Esc and no backdrop for free, so both are wired by hand.
+  const dlg=$("#plan-dlg"); dlg.show();
+  const onKey=e=>{ if(e.key==="Escape"){ e.preventDefault(); dlg.close(); } };
+  const onOut=e=>{ if(dlg.open&&!dlg.contains(e.target)) dlg.close(); };
+  document.addEventListener("keydown",onKey); setTimeout(()=>document.addEventListener("mousedown",onOut),0);
+  dlg.addEventListener("close",()=>{ document.removeEventListener("keydown",onKey); document.removeEventListener("mousedown",onOut); },{once:true});
 }
 async function pageScrape(p){
   SET=SET||await api("/api/settings").catch(()=>({})); const defCred=SET?.firecrawl?.default_max_credits||40;
@@ -771,24 +862,169 @@ async function pageScrape(p){
   plan.addEventListener("click",async()=>{ plan.disabled=true; const tg=tf.get();
     try{ const r=await api("/api/crawl/plan"+qs({scope:tg.scope,values:tg.values,mode:mode.value,max_credits:+cred.value})); showPlanGate(tg,mode.value,+cred.value,det.checked,r); }
     catch(e){ toast(t("t_err",{m:esc(e.message)})); } plan.disabled=false; });
+  // Estimate (GET /api/crawl/estimate): a free, pre-parse read of one hospital's board -- how many titles
+  // look like Pflegedienst before any credit is spent. Per clinic by contract, so it only lights up for a
+  // hospital target; it answers "ambiguous" honestly rather than guessing, and that is shown as such.
+  const estBox=el("div",{class:"estb",hidden:true});
+  const est=el("button",{class:"btn",type:"button",text:t("s_estimate"),title:t("s_estimate_x")});
+  const estSync=()=>{ const tg=tf.get(); const ok=tg.scope==="clinic"&&(tg.values||[]).length>0; est.disabled=!ok; est.title=ok?t("s_estimate_x"):t("s_estimate_off"); };
+  tf.addEventListener("change",estSync); estSync();
+  est.addEventListener("click",async()=>{ const ids=(tf.get().values||[]).slice(0,8); est.disabled=true; estBox.hidden=false;
+    estBox.replaceChildren(el("span",{class:"m",text:t("loading")}));
+    const rows=[]; for(const id of ids){ try{ rows.push(await api("/api/crawl/estimate"+qs({clinic_id:id}))); }catch(e){ rows.push({clinic_id:id,confidence:"none",note:e.message}); } }
+    const conf=c=>c==="high"?"done":c==="low"?"queued":"failed";
+    estBox.replaceChildren(el("div",{class:"row"},el("span",{class:"lbl",style:"margin:0",text:t("s_estimate")}),el("span",{class:"m",text:t("s_estimate_x")}),el("span",{class:"sp"}),
+        el("button",{class:"btn s",type:"button",text:"×",title:t("b_close"),onclick:()=>{estBox.hidden=true;}})),
+      el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("hu_clinic")}),el("th",{class:"num",text:t("e_board")}),el("th",{class:"num",text:t("e_definite")}),el("th",{class:"num",text:t("e_amb")}),el("th",{text:t("e_conf")}))),
+        el("tbody",{},...rows.map(r=>el("tr",{},el("td",{},el("div",{class:"t",text:clinicName(r.clinic_id)}),r.note?el("div",{class:"m"},midTrunc(r.note,160)):null),
+          el("td",{class:"num","data-l":t("e_board"),text:r.board_rows==null?"–":num(r.board_rows)}),
+          el("td",{class:"num","data-l":t("e_definite")},el("b",{text:r.definite_pflege==null?"–":num(r.definite_pflege)})),
+          el("td",{class:"num","data-l":t("e_amb"),text:r.ambiguous==null?"–":num(r.ambiguous)}),
+          el("td",{"data-l":t("e_conf")},el("span",{class:"dotst "+conf(r.confidence)}),r.confidence||"none")))))));
+    est.disabled=false; estSync(); });
   const form=el("div",{class:"card hud"},el("h3",{text:t("s_new")}),el("div",{class:"two"},el("div",{},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_target")}),tf)),el("div",{},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_mode")}),mode),el("div",{class:"row",style:"margin-top:8px"},el("div",{class:"f"},el("span",{class:"lbl",text:t("s_credits")}),cred),el("label",{class:"toggle"},det,t("s_details"))))),
-    el("div",{class:"row",style:"margin-top:12px"},el("span",{class:"sp"}),plan));
+    estBox,
+    el("div",{class:"row",style:"margin-top:12px"},el("span",{class:"sp"}),est,plan));
+  // Layout: one sub-header of tabs (Run · Coverage · Automation · History); the Run tab is two columns --
+  // what you fire on the left, the state of the estate on the right. Nothing was dropped, only relocated:
+  // hunter, schedules and inbox now live together under Automation, which is what they are (docs TASK-3).
+  const TABS=[["run","tb_run"],["coverage","tb_coverage"],["automation","tb_automation"],["prompts","tb_prompts"],["history","tb_history"]];
+  let tab=TABS.some(([v])=>v===p.tab)?p.tab:"run";
+  const tabsBar=el("div",{class:"subnav",role:"tablist","aria-label":t("h_scrape")}), body=el("div");
+  const go=v=>{ tab=v; drawTabs(); drawBody(); history.replaceState(null,"","#/clawl"+(v==="run"?"":qs({tab:v}))); };
+  const drawTabs=()=>tabsBar.replaceChildren(...TABS.map(([v,k])=>el("button",{type:"button",class:"tb"+(tab===v?" on":""),role:"tab","aria-selected":String(tab===v),onclick:()=>go(v)},t(k),tabCount[v]?el("span",{class:"c",text:tabCount[v]}):null)));
+  const drawBody=()=>{ if(tab==="run") body.replaceChildren(el("div",{class:"two"},el("div",{},form,liveBox,triBox,runsBox),el("div",{},covSum,autoSum)));
+    else if(tab==="coverage") body.replaceChildren(covCard);
+    else if(tab==="automation") body.replaceChildren(inboxBox,hunCard,schCard);
+    else if(tab==="prompts"){ body.replaceChildren(prBox); loadPrompts(); }
+    else body.replaceChildren(runsBox); };
+  // Prompts tab: what the Firecrawl agent is actually told. The prompt used to exist only in
+  // pflege_jobs/sources/firecrawl_agent.py, so a run that came back thin could not be judged against its
+  // instructions without reading the source. Read-only here; GET /api/firecrawl/prompts renders the
+  // template (for a chosen hospital when one is picked) together with the schema the answer must match.
+  const prBox=el("div"); let prClinic="";
+  async function loadPrompts(){ prBox.replaceChildren(el("span",{class:"m",text:t("loading")}));
+    let d; try{ d=await api("/api/firecrawl/prompts"+(prClinic?qs({clinic_id:prClinic}):"")); }
+    catch(e){ prBox.replaceChildren(el("div",{class:"card"},el("h3",{text:t("pr_title")}),el("p",{class:"m",text:t("pr_missing")}),el("p",{class:"m",text:t("t_err",{m:esc(e.message)})}))); return; }
+    const block=(key,tpl)=>{ if(!tpl) return null;
+      const copy=el("button",{class:"btn s",type:"button",text:t("lg_copy"),onclick:()=>{ navigator.clipboard?.writeText(tpl.prompt||""); toast(t("pr_copied")); }});
+      const schema=el("details",{class:"sch"},el("summary",{},t("pr_schema")),el("pre",{class:"src",text:JSON.stringify(tpl.schema||{},null,2)}));
+      return el("div",{class:"card"},el("div",{class:"row"},el("h3",{style:"margin:0",text:t("pr_"+key)}),el("span",{class:"m",text:t("pr_"+key+"_x")}),el("span",{class:"sp"}),
+          tpl.prompt?el("span",{class:"m",text:num((tpl.prompt||"").length)+" "+t("pr_chars")}):null,copy),
+        el("pre",{class:"src prompt",text:tpl.prompt||"–"}),schema); };
+    const head=el("div",{class:"row"},el("span",{class:"tag",text:t("pr_model")+": "+(d.model||"–")}),el("span",{class:"tag",text:t("s_credits")+": "+(d.default_max_credits??"–")}),
+      el("span",{class:"sp"}),el("span",{class:"m",text:t("pr_for")}),
+      dropdown({options:(await clinicOptions().catch(()=>[])).slice(0,400),value:prClinic,allLabel:t("pr_sample"),search:true,placeholder:t("pr_sample"),aria:t("pr_for"),onchange:v=>{ prClinic=v; loadPrompts(); }}));
+    prBox.replaceChildren(el("div",{class:"card"},head),block("jobs",d.jobs),block("career",d.career)); }
+  // Cancel is two-click rather than a confirm dialog: work already done is kept (the worker stops between
+  // boards/clinics, POST /api/crawl/runs/{id}/cancel), so the cost of a misclick is a stopped run, not lost
+  // rows -- but it is still a click that spends nothing and undoes nothing, so it asks once.
+  const CANCELLING=new Set();
+  function cancelBtn(r){ if(r.cancel_requested||CANCELLING.has(r.run_id)) return el("button",{class:"btn s",type:"button",disabled:true,text:t("lv_stopping")});
+    let armed=false;
+    const b=el("button",{class:"btn s danger",type:"button",text:t("lv_cancel")});
+    b.addEventListener("click",async()=>{ if(!armed){ armed=true; b.textContent=t("lv_cancel_sure"); setTimeout(()=>{ if(armed){ armed=false; b.textContent=t("lv_cancel"); } },4000); return; }
+      b.disabled=true; try{ await post("/api/crawl/runs/"+r.run_id+"/cancel",{}); CANCELLING.add(r.run_id); toast(t("lv_cancelled",{id:r.run_id})); }
+      catch(e){ toast(t("t_err",{m:esc(e.message)})); b.disabled=false; armed=false; b.textContent=t("lv_cancel"); }
+      loadRuns().catch(()=>{}); });
+    return b; }
+  // Live run panel: while something is running the page used to say nothing but a table row that refreshes
+  // every 5 s. This shows the run that is in flight -- elapsed time, what it has produced so far, and the
+  // last lines it wrote -- so a long run can be watched without opening the log. (No cancel: the API has no
+  // endpoint for it; the hunter kill switch only stops the hunter.)
+  const liveBox=el("div",{hidden:true}); let liveTick=null;
+  function drawLive(runs){ const r=(runs||[]).find(x=>x.status==="running"||x.status==="queued");
+    clearInterval(liveTick); liveTick=null;
+    if(!r){ liveBox.hidden=true; liveBox.replaceChildren(); return; }
+    const tg=r.target||{scope:r.scope,values:r.value?[r.value]:[]};
+    const elapsed=el("b",{}); const paint=()=>{ const s=Math.max(0,Math.round((Date.now()-new Date(r.started_at||Date.now()))/1000));
+      elapsed.textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+    paint(); liveTick=everyWhile(paint,1000);
+    const tail=[].concat(r.log_tail||[]).slice(-3).map(l=>String(l).replace(/^\S+\s/,""));
+    liveBox.hidden=false;
+    liveBox.replaceChildren(el("div",{class:"card"},
+      el("div",{class:"row"},el("h3",{style:"margin:0",text:t("lv_title",{id:r.run_id})}),el("span",{class:"dotst "+r.status}),el("span",{class:"m",text:r.status}),
+        el("span",{class:"m",text:`· ${tg.scope||"all"} ${(tg.values||[]).slice(0,3).join(", ")}${(tg.values||[]).length>3?" …":""} · ${r.mode||""}`}),
+        (r.cancel_requested||CANCELLING.has(r.run_id))?el("span",{class:"tag",text:t("lv_stopping_x")}):null,
+        el("span",{class:"sp"}),el("button",{class:"btn s",type:"button",text:t("tr_log"),onclick:()=>openRun(r)}),cancelBtn(r)),
+      el("div",{class:"prev",style:"margin-top:10px"},el("div",{},el("span",{text:t("lv_elapsed")}),elapsed),
+        el("div",{},el("span",{text:t("r_rows")}),el("b",{text:num(r.n_rows)})),el("div",{},el("span",{text:t("r_new")}),el("b",{text:num(r.n_new)})),
+        el("div",{},el("span",{text:t("r_credits")}),el("b",{text:num(r.credits_used||0)})),
+        el("div",{},el("span",{text:t("r_start")}),el("b",{text:fmtDT(r.started_at)}))),
+      tail.length?el("ol",{class:"log",style:"max-height:none;border-top:1px solid var(--line);margin-top:10px"},...tail.map((l,i)=>el("li",{class:"ln "+logLevel(l)},el("span",{class:"ts",text:"…"}),el("span",{class:"tx"},midTrunc(l,200))))):null)); }
+  // Failure triage: a failed run's reason lives in the log body -- run #69 wrote 97 lines that all said the
+  // same thing (cap 6 below the agent's minimum). Group the lines by cause, count them, and offer the fix
+  // that the cause implies, so a bad run is read in one line instead of scrolled through.
+  const TRIAGE=[["cap",/max credits|agentfailed|reached max/i,"tr_cap","tr_cap_fix"],
+    ["gate",/spend gate|adapter covers|refused/i,"tr_gate","tr_gate_fix"],
+    ["thin",/budget too thin|need >=|reserve/i,"tr_thin","tr_thin_fix"],
+    ["flag",/firecrawl\.enabled is false|feature flag/i,"tr_flag","tr_flag_fix"],
+    ["zero",/0 rows with no error|no .* host found|empty board/i,"tr_zero","tr_zero_fix"],
+    ["fetch",/timeout|connection|http 4\d\d|http 5\d\d|blocked/i,"tr_fetch","tr_fetch_fix"]];
+  const triBox=el("div",{hidden:true});
+  async function loadTriage(runs){ const bad=(runs||[]).find(r=>r.status==="failed"||r.status==="error");
+    if(!bad){ triBox.hidden=true; triBox.replaceChildren(); return; }
+    if(loadTriage.shown===bad.run_id) return; loadTriage.shown=bad.run_id;
+    let full; try{ full=await api("/api/crawl/runs/"+bad.run_id); }catch(e){ return; }
+    const lines=(Array.isArray(full.log)?full.log:String(full.log||"").split("\n")).map(l=>l.replace(/^\S+\s/,""));
+    const groups=TRIAGE.map(([k,re,lbl,fix])=>({k,lbl,fix,n:lines.filter(l=>re.test(l)).length})).filter(g=>g.n>0);
+    const cap=+(full.params||{}).max_credits||0, tg=full.target||{scope:full.scope,values:full.value?[full.value]:[]};
+    const aim=newCap=>{ tf.set(tg); if(newCap) cred.value=String(newCap); go("run"); window.scrollTo({top:0,behavior:"smooth"}); toast(t("cv_aimed",{a:(tg.scope||"all")})); };
+    const act=g=>g.k==="cap"||g.k==="thin"?el("button",{class:"btn s",type:"button",text:t("tr_rerun",{n:Math.max(40,cap*3||40)}),onclick:()=>aim(Math.max(40,cap*3||40))})
+      :g.k==="flag"?el("a",{class:"btn s",href:"#/settings",text:t("n_settings")})
+      :g.k==="gate"?el("button",{class:"btn s",type:"button",text:t("tr_aim"),onclick:()=>aim(null)})
+      :el("button",{class:"btn s",type:"button",text:t("tr_log"),onclick:()=>openRun(full)});
+    triBox.hidden=false;
+    triBox.replaceChildren(el("div",{class:"card"},
+      el("div",{class:"row"},el("h3",{style:"margin:0",text:t("tr_title",{id:bad.run_id})}),el("span",{class:"dotst failed"}),
+        el("span",{class:"m",text:`${tg.scope||"all"} ${(tg.values||[]).slice(0,3).join(", ")}${(tg.values||[]).length>3?" …":""} · ${full.mode||""} · ${t("s_credits")} ${cap||"–"}`}),
+        el("span",{class:"sp"}),el("button",{class:"btn s",type:"button",text:t("tr_log"),onclick:()=>openRun(full)})),
+      groups.length?el("div",{class:"tw",style:"margin-top:10px"},el("table",{class:"cards"},el("tbody",{},...groups.map(g=>el("tr",{},
+        el("td",{},el("span",{class:"dotst "+(g.k==="zero"||g.k==="gate"?"queued":"failed")}),t(g.lbl)),
+        el("td",{class:"num","data-l":t("tr_lines"),text:num(g.n)}),
+        el("td",{class:"m","data-l":t("tr_fix"),text:t(g.fix)}),
+        el("td",{class:"num"},act(g))))))):el("p",{class:"m",style:"margin:8px 0 0",text:t("tr_unknown")}))); }
+  // Right column of the Run tab: the two questions asked while a run is being set up -- how covered is the
+  // estate, and what is already running on its own. Both are filled by the loaders that own the data.
+  const tabCount={}; const pct=v=>(v??0).toLocaleString(LANG==="de"?"de-DE":"en-GB",{minimumFractionDigits:1,maximumFractionDigits:1})+" %";
+  const covSum=el("div",{class:"card"},el("h3",{text:t("h_coverage")}),el("span",{class:"m",text:t("loading")}));
+  const autoSum=el("div",{class:"card"},el("h3",{text:t("tb_automation")}),el("span",{class:"m",text:t("loading")}));
+  const autoState={};
+  const drawAuto=()=>{ const a=autoState; autoSum.replaceChildren(el("h3",{text:t("tb_automation")}),
+    el("div",{class:"small"},el("div",{},el("span",{class:"dotst "+(a.hunter||"failed")}),el("b",{text:t(a.hunterKey||"hu_stopped")}),a.hunterNote?el("span",{class:"m",text:" · "+a.hunterNote}):null),
+      el("div",{style:"margin-top:6px"},el("span",{class:"dotst "+(a.schedules?"done":"queued")}),`${num(a.schedules||0)} ${t("h_schedules")}`,a.nextRun?el("span",{class:"m",text:" · "+t("s_next")+" "+a.nextRun}):null),
+      el("div",{style:"margin-top:6px"},el("span",{class:"dotst queued"}),`${t("h_inbox")}: ${num(a.inboxWaiting||0)} / ${num(a.inboxTotal||0)}`)),
+    el("div",{class:"row",style:"margin-top:10px"},el("span",{class:"sp"}),el("button",{class:"btn s",type:"button",text:t("tb_automation")+" →",onclick:()=>go("automation")}))); };
   // coverage by adapter (GET /api/coverage): which adapter covers how much; the Firecrawl row is the remainder
   const covBox=el("div",{},el("span",{class:"m",text:t("loading")}));
   const COV_COLS=[["clinics_labelled","cv_clinics"],["clinics_routable","cv_routable"],["boards","cv_boards"],["clinics_with_jobs","cv_withjobs"],["open_jobs","cv_open"],["fresh_jobs","cv_fresh"]];
   async function loadCoverage(){ let d; try{ d=await api("/api/coverage"); }catch(e){ covBox.replaceChildren(el("span",{class:"m",text:t("t_err",{m:e.message})})); return; }
     const lastRun=r=>r.last_run?el("span",{},el("span",{class:"dotst "+r.last_run.status}),`#${r.last_run.run_id} ${r.last_run.status} · ${t("r_rows")} ${num(r.last_run.rows)} · ${t("r_new")} ${num(r.last_run.new)} · ${num(r.last_run.errors)} ${LANG==="de"?"Fehler":"errors"}`,el("span",{class:"m",text:" · "+fmtDT(r.last_run.at)})):el("span",{class:"m",text:t("cv_norun")});
+    // GET /api/coverage feature_score: weighted over the cells in data/feature_cells.jsonl. null means no cell
+    // exists yet -- nobody looked, which the table must never show as 0 %.
+    const fscore=r=>r.feature_score==null?el("span",{class:"nc",text:t("cv_nc"),title:t("cv_nc_x")})
+      :el("b",{text:pct(r.feature_score),title:Object.entries(r.feature_verdicts||{}).map(([k,n])=>k+" × "+num(n)).join(" · ")});
     const row=(r,total)=>{ const isFc=r.adapter==="firecrawl"; const params=total?{}:isFc?{fetch:"firecrawl"}:{ats_type:r.adapter};
       const tr=el("tr",{class:total?"":"lnk",onclick:total?null:()=>nav("/",params)},
         el("td",{},total?el("b",{text:t("cv_total")}):isFc?chip("ats","firecrawl",t("fetch_firecrawl")):chip("ats",r.adapter,atsLabel(r.adapter))),
         ...COV_COLS.map(([k,l])=>el("td",{class:"num","data-l":t(l),text:num(r[k])})),
         el("td",{class:"num","data-l":t("cv_pct")},el("b",{text:(r.coverage_pct??0).toLocaleString(LANG==="de"?"de-DE":"en-GB",{minimumFractionDigits:1,maximumFractionDigits:1})+" %"})),
+        el("td",{class:"num","data-l":t("cv_score")},fscore(r)),
         el("td",{"data-l":t("cv_lastrun")},total?"":lastRun(r)),
-        el("td",{class:"num","data-l":t("cv_credits"),text:(isFc||total)&&r.credits_7d!=null?num(r.credits_7d):""}));
+        el("td",{class:"num","data-l":t("cv_credits"),text:(isFc||total)&&r.credits_7d!=null?num(r.credits_7d):""}),
+        el("td",{class:"num"},total||isFc?null:el("button",{class:"btn s",type:"button",text:t("cv_runvendor"),title:t("cv_runvendor_x"),
+          onclick:e=>{ e.stopPropagation(); tf.set({scope:"ats_type",values:[r.adapter]}); go("run"); window.scrollTo({top:0,behavior:"smooth"}); toast(t("cv_aimed",{a:atsLabel(r.adapter)})); }})));
       if(!total) tr.title=isFc?t("fetch_firecrawl"):atsLabel(r.adapter); return tr; };
     const tb=el("tbody",{},...(d.rows||[]).map(r=>row(r,false)),d.totals?row({...d.totals,adapter:"_total"},true):null);
     const unr=(d.unroutable||[]).length?el("p",{class:"m",style:"margin:8px 0 0",text:t("cv_unroutable")+": "+d.unroutable.map(u=>`${u.reason} × ${num(u.count)}`).join(" · ")}):null;
-    covBox.replaceChildren(el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("cv_adapter")}),...COV_COLS.map(([,l])=>el("th",{class:"num",text:t(l)})),el("th",{class:"num",text:t("cv_pct")}),el("th",{text:t("cv_lastrun")}),el("th",{class:"num",text:t("cv_credits")}))),tb)),unr); }
+    covBox.replaceChildren(el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("cv_adapter")}),...COV_COLS.map(([,l])=>el("th",{class:"num",text:t(l)})),el("th",{class:"num",text:t("cv_pct")}),el("th",{class:"num",text:t("cv_score")}),el("th",{text:t("cv_lastrun")}),el("th",{class:"num",text:t("cv_credits")}),el("th"))),tb)),unr);
+    const T=d.totals||{}; tabCount.coverage=pct(T.coverage_pct); drawTabs();
+    const gap=r=>(100-(r.coverage_pct??0))*(r.clinics_labelled||0); const worst=(d.rows||[]).filter(r=>(r.clinics_labelled||0)>0&&gap(r)>0).sort((a,b)=>gap(b)-gap(a)).slice(0,3);
+    covSum.replaceChildren(el("h3",{text:t("h_coverage")}),
+      el("div",{class:"prev"},el("div",{},el("span",{text:t("cv_pct")}),el("b",{text:pct(T.coverage_pct)})),el("div",{},el("span",{text:t("cv_routable")}),el("b",{text:num(T.clinics_routable)+" / "+num(T.clinics_labelled)})),el("div",{},el("span",{text:t("cv_open")}),el("b",{text:num(T.open_jobs)}))),
+      el("div",{class:"tw",style:"margin-top:10px"},el("table",{class:"cards"},el("tbody",{},...worst.map(r=>el("tr",{class:"lnk",onclick:()=>nav("/",r.adapter==="firecrawl"?{fetch:"firecrawl"}:{ats_type:r.adapter})},
+        el("td",{},r.adapter==="firecrawl"?chip("ats","firecrawl",t("fetch_firecrawl")):chip("ats",r.adapter,atsLabel(r.adapter))),el("td",{class:"num",text:num(r.clinics_labelled)}),el("td",{class:"num"},el("b",{text:pct(r.coverage_pct)}))))))),
+      el("div",{class:"row",style:"margin-top:10px"},el("span",{class:"m",text:t("cv_worst")}),el("span",{class:"sp"}),el("button",{class:"btn s",type:"button",text:t("tb_coverage")+" →",onclick:()=>go("coverage")}))); }
   const covCard=el("div",{class:"card"},el("h3",{style:"margin:0",text:t("h_coverage")}),el("p",{class:"m",style:"margin:4px 0 10px",text:t("lead_coverage")}),covBox);
   loadCoverage();
   // hunter (GET /api/hunter/status): the resilient Firecrawl runner -- its bar, today's numbers, today's hunt_state rows (app/hunter.py)
@@ -814,6 +1050,7 @@ async function pageScrape(p){
     if(!rows.length) tb.append(el("tr",{},el("td",{colspan:"7",class:"empty",text:t("hu_norows")})));
     hunBox.replaceChildren(el("div",{class:"row"},el("span",{class:"dotst "+(d.running?"running":d.enabled?"queued":"failed")}),el("b",{text:t(stateKey)}),el("span",{class:"m",text:` · ${d.day||""}`+(d.stop_reason?` · ${t("hu_stop_reason")}: ${d.stop_reason}`:"")}),el("span",{class:"sp"}),kostenLink(),bStart,bStop),grid,
       el("div",{class:"tw",style:"margin-top:10px"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("hu_clinic")}),el("th",{text:t("hu_status")}),el("th",{class:"num",text:t("hu_cap")}),el("th",{class:"num",text:t("k_credits")}),el("th",{class:"num",text:t("hu_rows")}),el("th",{class:"num",text:t("r_new")}),el("th",{text:t("hu_error")}))),tb)));
+    Object.assign(autoState,{hunter:d.running?"running":d.enabled?"queued":"failed",hunterKey:stateKey,hunterNote:`${num(tg.done)}/${num(tg.total)} · ${costTxt}`}); drawAuto();
     if(d.running||d.enabled) hunTimer=setTimeout(()=>{ if(hunBox.isConnected) loadHunter(); },20000); }
   const hunCard=el("div",{class:"card"},el("h3",{style:"margin:0",text:t("hu_title")}),el("p",{class:"m",style:"margin:4px 0 10px",text:t("hu_lead")}),hunBox);
   loadHunter();
@@ -840,6 +1077,7 @@ async function pageScrape(p){
         el("td",{"data-l":t("s_last"),text:fmtDT(s.last_run_at)}),
         el("td",{},el("div",{class:"acts"},runNow,edit,rm))));
     });
+    autoState.schedules=list.length; autoState.nextRun=fmtDT(list.map(x=>x.next_run_at).filter(Boolean).sort()[0]); tabCount.automation=String(list.length); drawTabs(); drawAuto();
     schBox.replaceChildren(el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("s_enabled")}),el("th",{text:t("s_name")}),el("th",{text:t("s_preset")}),el("th",{text:t("s_target")}),el("th",{text:t("s_mode")}),el("th",{text:t("s_next")}),el("th",{text:t("s_last")}),el("th"))),tb))); }
   const schCard=el("div",{class:"card"},el("div",{class:"row"},el("h3",{style:"margin:0",text:t("h_schedules")}),el("span",{class:"sp"}),el("button",{class:"btn s p",type:"button",text:"+ "+t("b_new"),onclick:()=>scheduleDialog(null,loadSchedules)})),schBox);
   loadSchedules();
@@ -848,19 +1086,21 @@ async function pageScrape(p){
   async function loadInbox(){ let s; try{ s=await api("/api/inbox?recent=0"); }catch(e){ inboxBox.replaceChildren(); return; }
     const drain=el("button",{class:"btn s",type:"button",text:t("b_drain")});
     drain.addEventListener("click",async()=>{ drain.disabled=true; try{ const r=await post("/api/inbox/drain",{}); toast(t("t_started",{id:r.run_id})); loadRuns(); }catch(e){ toast(t("t_err",{m:esc(e.message)})); } drain.disabled=false; loadInbox(); });
+    autoState.inboxWaiting=s.unprocessed; autoState.inboxTotal=s.total; drawAuto();
     inboxBox.replaceChildren(el("div",{class:"card"},el("div",{class:"row"},el("h3",{style:"margin:0",text:t("h_inbox")}),el("span",{class:"sp"}),
       el("span",{class:"m",text:`${t("i_waiting")}: ${num(s.unprocessed)} / ${num(s.total)}`}),drain))); }
   await loadInbox();
   // runs
   const runsBox=el("div");
-  async function loadRuns(){ const runs=await api("/api/crawl/runs?limit=100"); if(loadRuns.wasActive&&!runs.some(r=>r.status==="running"||r.status==="queued")) loadCoverage().catch(()=>{}); loadRuns.wasActive=runs.some(r=>r.status==="running"||r.status==="queued"); runsBox.replaceChildren(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:`${runs.length} ${t("h_runs")}`}),el("span",{class:"m",text:t("lead_runs")})),runsTable(runs,null,p.run))); if(runs.some(r=>r.status==="running"||r.status==="queued")){ if(!POLL) POLL=setInterval(()=>loadRuns().catch(()=>{}),5000); } else stopPolling(); }
+  async function loadRuns(){ const runs=await api("/api/crawl/runs?limit=100"); if(loadRuns.wasActive&&!runs.some(r=>r.status==="running"||r.status==="queued")) loadCoverage().catch(()=>{}); loadRuns.wasActive=runs.some(r=>r.status==="running"||r.status==="queued"); tabCount.history=String(runs.length); drawTabs(); drawLive(runs); loadTriage(runs).catch(()=>{}); runsBox.replaceChildren(el("div",{class:"tbl"},el("div",{class:"top"},el("h3",{text:`${runs.length} ${t("h_runs")}`}),el("span",{class:"m",text:t("lead_runs")})),runsTable(runs,null,p.run))); if(runs.some(r=>r.status==="running"||r.status==="queued")){ if(!POLL) POLL=setInterval(()=>loadRuns().catch(()=>{}),5000); } else stopPolling(); }
   await loadRuns();
-  return [el("h1",{text:t("h_scrape")}),el("p",{class:"lead",text:t("lead_scrape")}),strip,form,inboxBox,covCard,hunCard,schCard,runsBox];
+  drawTabs(); drawBody();
+  return [el("h1",{text:t("h_scrape")}),el("p",{class:"lead",text:t("lead_scrape")}),strip,tabsBar,body];
 }
 async function scheduleDialog(s,onsaved){
   s=s||{name:"",enabled:true,preset:"weekly_staggered",cron:"0 3 * * *",stagger_days:7,target:{scope:"all",values:[]},mode:"auto",max_credits:SET?.firecrawl?.default_max_credits||40,fetch_details:false};
   const name=el("input",{type:"text",value:s.name||"",style:"width:100%"}), en=el("input",{type:"checkbox"}); en.checked=!!s.enabled;
-  const preset=el("select",{},...["weekly_staggered","daily","weekdays","hourly","custom"].map(p=>el("option",{value:p,text:t("pr_"+p)}))); preset.value=s.preset||"custom";
+  const preset=dropdown({options:["weekly_staggered","daily","weekdays","hourly","custom"].map(p=>({v:p,label:t("pr_"+p)})),value:s.preset||"custom",aria:t("s_preset")});
   const cron=el("input",{type:"text",value:s.cron||"",placeholder:"m h dom mon dow",style:"width:160px"}), stag=el("input",{type:"number",min:"1",max:"30",value:String(s.stagger_days||1),style:"width:70px"}), human=el("span",{class:"m"});
   const tf=await targetForm(s.target||{}); const mode=modeSelect(s.mode), cred=el("input",{type:"number",min:"5",max:"400",value:String(s.max_credits||40),style:"width:90px"}), det=el("input",{type:"checkbox"}); det.checked=!!s.fetch_details;
   const syncPreset=()=>{ const p=PRESETS[preset.value]; if(p){cron.value=p.cron;stag.value=String(p.stagger);} cron.disabled=!!p; stag.disabled=!!p; human.textContent=cronHuman(cron.value,+stag.value); }; preset.addEventListener("change",syncPreset); cron.addEventListener("input",()=>human.textContent=cronHuman(cron.value,+stag.value)); stag.addEventListener("input",()=>human.textContent=cronHuman(cron.value,+stag.value)); syncPreset();
@@ -879,12 +1119,60 @@ function runsTable(runs,onopen,openId){ const tb=el("tbody"); if(!runs.length) t
     const tr=el("tr",{class:"lnk"},el("td",{class:"num",text:"#"+r.run_id}),el("td",{"data-l":t("r_start"),text:fmtDT(r.started_at)}),el("td",{"data-l":t("r_target")},el("b",{text:tg.scope||r.scope})," ",(tg.values||[]).slice(0,3).join(", "),r.clinic_ids?.length?el("span",{class:"m",text:` (${r.clinic_ids.length})`}):null),el("td",{"data-l":t("r_mode"),text:r.mode||""}),el("td",{"data-l":t("r_status")},el("span",{class:"dotst "+r.status}),r.status),el("td",{class:"num","data-l":t("r_rows"),text:num(r.n_rows)}),el("td",{class:"num","data-l":t("r_new"),text:num(r.n_new)}),el("td",{class:"num","data-l":t("r_credits"),text:r.credits_used?num(r.credits_used):""}),el("td",{"data-l":t("r_dur"),text:dur}),
       el("td",{},el("a",{class:"btn s",href:"#/billing?run="+encodeURIComponent(r.run_id),title:t("n_billing"),onclick:e=>e.stopPropagation()},"$ "+t("r_cost"))));
     tr.addEventListener("click",()=>(onopen||openRun)(r)); tb.append(tr);
-    if(openId&&+openId===+r.run_id){ tr.classList.add("hl"); const pre=el("pre",{class:"log",text:t("loading")}); tb.append(el("tr",{class:"detail"},el("td",{colspan:"10"},pre)));
-      api("/api/crawl/runs/"+r.run_id).then(f=>{ pre.textContent=(Array.isArray(f.log)?f.log.join("\n"):String(f.log||f.log_tail||""))||"–"; }).catch(e=>{ pre.textContent=t("t_err",{m:e.message}); });
+    if(openId&&+openId===+r.run_id){ tr.classList.add("hl"); const slot=el("div",{},el("span",{class:"m",text:t("loading")})); tb.append(el("tr",{class:"detail"},el("td",{colspan:"10"},slot)));
+      api("/api/crawl/runs/"+r.run_id).then(f=>{ slot.replaceChildren(runParams(f),logView(f)); }).catch(e=>{ slot.replaceChildren(el("span",{class:"m",text:t("t_err",{m:e.message})})); });
       if(runsTable.scrolled!==+openId){ runsTable.scrolled=+openId; setTimeout(()=>{ if(tr.isConnected) tr.scrollIntoView({block:"center",behavior:"smooth"}); },150); } } });
   return el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},el("th",{text:t("r_id")}),el("th",{text:t("r_start")}),el("th",{text:t("r_target")}),el("th",{text:t("r_mode")}),el("th",{text:t("r_status")}),el("th",{class:"num",text:t("r_rows")}),el("th",{class:"num",text:t("r_new")}),el("th",{class:"num",text:t("r_credits")}),el("th",{text:t("r_dur")}),el("th"))),tb)); }
+// Long text (log line, page title) gets cut in the middle, not the end -- the tail usually carries the
+// point (clinic id, error class). The ellipsis is a button: title shows everything, click expands in place.
+function midTrunc(s,max=220){ s=String(s??""); if(s.length<=max) return document.createTextNode(s);
+  const head=s.slice(0,Math.ceil(max*0.6)), tail=s.slice(-Math.floor(max*0.3));
+  const box=el("span",{}); const dots=el("button",{class:"ell",type:"button",title:s,"aria-label":s,text:" … "});
+  dots.addEventListener("click",e=>{ e.stopPropagation(); box.replaceChildren(document.createTextNode(s)); });
+  box.append(document.createTextNode(head),dots,document.createTextNode(tail)); return box; }
+// Severity colouring is pattern-based because the log is plain text: the run writer never tagged levels.
+const LOG_RE=[["err",/\b(error|errors|failed|failure|refused|denied|traceback|exception|agentfailed|no .*found|not routable)\b/i],
+  ["warn",/\b(skip|skipped|warn|warning|gate|budget|retry|retrying|thin|0 rows|unsure|manual)\b/i],
+  ["ok",/\b(done|finished: done|ok|success|inserted|drained|updated)\b/i],["cmd",/^\s*\$\s/]];
+const logLevel=s=>(LOG_RE.find(([,re])=>re.test(s))||["info"])[0];
+// Run log viewer: parameters first (so a log is readable without opening the run row), then the lines with
+// line numbers, elapsed time since the run started, colour by severity, plus a text filter and a level filter.
+function logView(full){
+  const raw=Array.isArray(full.log)?full.log:String(full.log||full.log_tail||"").split("\n");
+  const t0=full.started_at?new Date(full.started_at).getTime():null;
+  const parsed=raw.filter(l=>l!=="").map(l=>{ const m=/^(\d{4}-\d\d-\d\dT[\d:.+\-Z]+)\s(.*)$/s.exec(l);
+    const at=m?new Date(m[1]).getTime():null, text=m?m[2]:l;
+    let rel="";
+    if(at!=null&&t0!=null){ const s=Math.max(0,Math.round((at-t0)/1000)); rel="+"+Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+    return {text,rel,lvl:logLevel(text)}; });
+  const list=el("ol",{class:"log"}), q=el("input",{type:"search",class:"lg-q",placeholder:t("lg_search"),autocomplete:"off"});
+  const lvlPick=dropdown({options:[{v:"err",label:t("lg_err")},{v:"warn",label:t("lg_warn")},{v:"ok",label:t("lg_ok")}],value:"",allLabel:t("all"),aria:t("lg_level")});
+  const count=el("span",{class:"m"});
+  const draw=()=>{ const needle=q.value.trim().toLowerCase(), lv=lvlPick.value;
+    const rows=parsed.map((p,i)=>({...p,i})).filter(p=>(!needle||p.text.toLowerCase().includes(needle))&&(!lv||p.lvl===lv));
+    list.replaceChildren(...(rows.length?rows.map(p=>el("li",{class:"ln "+p.lvl},el("span",{class:"no",text:String(p.i+1)}),el("span",{class:"ts",text:p.rel}),el("span",{class:"tx"},midTrunc(p.text))))
+      :[el("li",{class:"ln info"},el("span",{class:"tx",text:t("none_short")}))]));
+    count.textContent=rows.length+" / "+parsed.length+" "+t("lg_lines"); };
+  q.addEventListener("input",draw); lvlPick.addEventListener("change",draw); draw();
+  const copy=el("button",{class:"btn s",type:"button",text:t("lg_copy"),onclick:()=>{ navigator.clipboard?.writeText(raw.join("\n")); toast(t("lg_copied")); }});
+  return el("div",{class:"lg"},el("div",{class:"lg-bar"},q,lvlPick,count,el("span",{class:"sp"}),copy),list); }
+// Everything the run was fired with, above the log: the answer to "what did I actually ask for?" without
+// digging into params JSON.
+function runParams(full){
+  const pr=full.params||{}, tg=full.target||pr.target||{scope:full.scope,values:full.value?[full.value]:[]};
+  const dur=full.finished_at&&full.started_at?Math.round((new Date(full.finished_at)-new Date(full.started_at))/1000)+" s":full.status==="running"?"…":"–";
+  const kv=(k,v)=>v==null||v===""?null:el("div",{},el("span",{text:k}),el("b",{text:String(v)}));
+  return el("div",{class:"prev"},
+    kv(t("r_target"),(tg.scope||"all")+((tg.values||[]).length?" · "+(tg.values||[]).slice(0,6).join(", ")+((tg.values||[]).length>6?" …":""):"")),
+    kv(t("r_mode"),full.mode||"auto"), kv(t("s_credits"),pr.max_credits??"–"), kv(t("s_details"),String(!!pr.deep)),
+    kv("verify",String(pr.verify!==false)), kv(t("r_trigger"),full.trigger||"api"),
+    kv(t("r_start"),fmtDT(full.started_at)), kv(t("r_dur"),dur),
+    kv(t("r_rows"),num(full.n_rows)), kv(t("r_new"),num(full.n_new)), kv(t("r_credits"),num(full.credits_used||0)),
+    full.error?kv(t("hu_error"),full.error):null); }
 async function openRun(r){ let full=r; try{ full=await api("/api/crawl/runs/"+r.run_id);}catch(e){}
-  dialog(el("h2",{text:`Run #${r.run_id} · ${(r.target||{}).scope||r.scope} ${((r.target||{}).values||[r.value||""]).join(", ")}`}),el("p",{class:"m"},el("span",{class:"dotst "+full.status}),`${full.status} · ${full.mode||""} · ${fmtDT(full.started_at)} → ${fmtDT(full.finished_at)} · ${t("r_rows")} ${num(full.n_rows)} · ${t("r_new")} ${num(full.n_new)} · ${t("r_credits")} ${num(full.credits_used||0)}`),el("pre",{class:"log",text:Array.isArray(full.log)?full.log.join("\n"):String(full.log||full.log_tail||"")})); }
+  dialog(el("h2",{text:`Run #${r.run_id} · ${(r.target||{}).scope||r.scope} ${((r.target||{}).values||[r.value||""]).join(", ")}`}),
+    el("p",{class:"m"},el("span",{class:"dotst "+full.status}),full.status),
+    runParams(full), logView(full)); }
 </script>
 <script>
 // ---- settings: mechanics (explanation · code · patterns · try · tests) --------------------------
@@ -1109,9 +1397,18 @@ function crawlStrip({onHunter}={}){
 // ---- gate: GET /api/me → owner | customer render the dashboard; anonymous gets the Pro-Zugang card -------------------
 const GATE={on:false,me:null};
 async function gate(){ let me; try{ me=await api("/api/me"); }catch(e){ me={role:"anonymous",error:e.message}; } GATE.me=me; const ok=me&&me.role==="owner"; /* customers: no dashboard view yet */ GATE.on=!ok; if(ok){ $("#gate")?.remove(); return true; } renderGate(me); return false; }
-function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gated"); document.getElementById("pj-dock")?.remove(); document.getElementById("pj-launcher")?.remove(); const email=el("input",{type:"email",required:"",autocomplete:"email",placeholder:"name@example.org","aria-label":t("g_email")}); const send=el("button",{type:"submit",class:"btn p",text:t("g_send")}); const msg=el("div",{class:"msg","aria-live":"polite"});
-  const form=el("form",{novalidate:""},email,send); form.addEventListener("submit",async e=>{ e.preventDefault(); const v=email.value.trim(); if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){ msg.className="msg err"; msg.textContent=t("g_invalid"); return; } send.disabled=true; msg.className="msg"; msg.textContent=t("g_sending"); try{ await post("/api/auth/magic",{email:v,redirect:"/pro"}); msg.textContent=t("g_sent"); }catch(err){ msg.className="msg err"; msg.textContent=t("t_err",{m:err.message}); } send.disabled=false; });
-  const login=el("a",{class:"btn n",href:"/__exe.dev/login?redirect=/pro",text:t("g_login")});
+function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gated"); document.getElementById("pj-dock")?.remove(); document.getElementById("pj-launcher")?.remove();
+  // Password login is the primary door (major: full-width neon button, stacked fields); the secondary
+  // button is the standalone /login page (same passphrase form, plus the magic link for customers).
+  // /__exe.dev/login is gone -- app/auth.py has no proxy-header branch to accept it any more.
+  const user=el("input",{type:"text",required:"",autocomplete:"username",placeholder:t("g_user"),"aria-label":t("g_user")});
+  const pass=el("input",{type:"password",required:"",autocomplete:"current-password",placeholder:t("g_pass"),"aria-label":t("g_pass")});
+  const signin=el("button",{type:"submit",class:"btn n",text:t("g_signin")}); const msg=el("div",{class:"msg","aria-live":"polite"});
+  const pwdForm=el("form",{class:"pwd",novalidate:""},user,pass,signin);
+  pwdForm.addEventListener("submit",async e=>{ e.preventDefault(); signin.disabled=true; msg.className="msg"; msg.textContent=t("g_signing");
+    try{ await post("/api/auth/login",{user:user.value,pass:pass.value}); location.reload(); }
+    catch(err){ msg.className="msg err"; msg.textContent=t("g_bad"); signin.disabled=false; } });
+  const login=el("a",{class:"btn p",href:"/login?next=/pro",text:t("g_login")});
   const lang=el("div",{class:"langsw",role:"group","aria-label":"Sprache / Language"},...["de","en"].map(l=>el("button",{type:"button","aria-pressed":String(l===LANG),onclick:()=>setLang(l),text:l.toUpperCase()})));
   // Agent door: a non-interactive agent has no e-mail and no exe.dev account, only its API key.
   // Success never lands on the dashboard -- it opens the skill doc, the only thing such an agent needs.
@@ -1124,7 +1421,7 @@ function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gate
     catch(err){ agentMsg.className="msg err"; agentMsg.textContent=t("g_agent_bad"); } agentSend.disabled=false; });
   const agentToggle=el("a",{class:"simple-l",href:"#",text:t("g_agent_toggle")});
   agentToggle.addEventListener("click",e=>{ e.preventDefault(); agentForm.hidden=!agentForm.hidden; if(!agentForm.hidden) agentKey.focus(); });
-  document.body.append(el("div",{class:"gate",id:"gate",role:"dialog","aria-modal":"true","aria-labelledby":"gate-h"},el("div",{class:"card hud"},el("h1",{id:"gate-h",text:t("g_title")}),el("p",{class:"lead",text:t("g_lead")}),login,el("div",{class:"or",text:t("g_or")}),form,msg,agentForm,el("div",{class:"foot"},el("a",{class:"simple-l",href:"/",text:t("g_simple")}),agentToggle,lang)))); }
+  document.body.append(el("div",{class:"gate",id:"gate",role:"dialog","aria-modal":"true","aria-labelledby":"gate-h"},el("div",{class:"card hud"},el("h1",{id:"gate-h",text:t("g_title")}),el("p",{class:"lead",text:t("g_lead")}),pwdForm,msg,el("div",{class:"or",text:t("g_or")}),login,agentForm,el("div",{class:"foot"},el("a",{class:"simple-l",href:"/",text:t("g_simple")}),agentToggle,lang)))); }
 </script>
 <script>
 // ---- mock (offline demo: ?mock=1) — 50 deterministic hospitals -----------------------------------
@@ -1138,7 +1435,12 @@ function mockApi(path,opt){
       clinics.push({clinic_id:String(10000+i*137%90000).padStart(5,"0"),name:`${kind} ${town}${i>20?" "+["Nord","Süd","Ost","West","Mitte"][i%5]:""}`,town,operator:pick(OPS),landkreis:(i%3?"Landkreis ":"Kreisfreie Stadt ")+town,regierungsbezirk:bez,versorgungsstufe:vst,traegerart:pick(["oeffentlich","oeffentlich","privat","freigemeinnuetzig"]),beds,day_places:Math.floor(rnd()*60),fachrichtungen:FACH.filter(()=>rnd()<.35),status:pick(["Plan-KH","Plan-KH","Plan-KH","Vertrags-KH","HS-Klinik"]),website:`https://www.${kind.toLowerCase()}-${town.toLowerCase().replace(/ü/g,"ue")}.de`,careers_url:ats?`https://www.${kind.toLowerCase()}-${town.toLowerCase().replace(/ü/g,"ue")}.de/karriere`:"",ats_type:ats,routable,fetch:routable&&!walled?"adapter":"firecrawl",route_reason:routable?"":(ats?"no adapter for "+ats:"no careers_url"),walled,jobs_open:n,jobs_fresh:Math.floor(n*rnd()*.4),jobs_live:n,last_crawl_at:rnd()<.6?new Date(Date.now()-rnd()*10*864e5).toISOString():null,last_crawl_status:pick(["done","done","failed","running"]),last_crawl_mode:routable?"adapter":"firecrawl",career_profile:i%9===0?{careers_url:"https://example.org/karriere",ats_vendor:ats||"unknown",listing_technology:"html",visible_job_count:40,nursing_job_count:12,filters:[{name:"Berufsgruppe",values:["Pflege","Ärzte","Therapie"]},{name:"Standort",values:[town]}],categories:["Pflege","Verwaltung"],fetched_at:new Date().toISOString()}:null}); }
     const TITLES=[["Pflegefachkraft (m/w/d) Intensivstation","fachpflege","Intensiv/IMC"],["Pflegefachkraft (m/w/d) Psychiatrie","pflegefachkraft","Psychiatrie"],["Stationsleitung (m/w/d) Chirurgie","leitung","Chirurgie/Orthopädie"],["OTA / Fachkraft OP (m/w/d)","ota_ata","OP"],["Praxisanleiter*in Pflege","praxisanleitung",null],["Hebamme (m/w/d) Kreißsaal","hebamme","Geburtshilfe"],["Pflegehelfer (m/w/d) Geriatrie","pflegehelfer","Geriatrie"],["Gesundheits- und Krankenpfleger (m/w/d) Notaufnahme","pflegefachkraft","Notaufnahme"]];
     const jobs=[]; let pid=1; clinics.forEach(c=>{ for(let k=0;k<Math.min(c.jobs_open,8);k++){ const [title,role,dept]=pick(TITLES); const d=Math.floor(rnd()*40); jobs.push({posting_id:pid++,title,role_class:role,role_label:null,department_hint:dept,qualification_hint:pick(["GuK","GKiK",null,"generalistisch"]),employer:c.name,clinic_id:c.clinic_id,clinic_name:c.name,regierungsbezirk:c.regierungsbezirk,city:c.town,plz:String(80000+Math.floor(rnd()*17000)),employment_types:pick([["vollzeit"],["vollzeit","teilzeit"],["teilzeit"]]),contract:pick(["UNBEFRISTET","UNBEFRISTET","BEFRISTET"]),first_published:new Date(Date.now()-d*864e5).toISOString().slice(0,10),first_seen:new Date(Date.now()-d*864e5).toISOString(),last_seen:new Date().toISOString(),status:"open",verify_status:pick(["live","live","live","blocked","error"]),verified_at:new Date().toISOString(),source_url:c.careers_url+"/job/"+pid,source_codes:[c.fetch==="adapter"?"employer_ats":"firecrawl_agent"],n_observations:1,enr_housing:rnd()<.3,enr_tariff:pick(["TVöD","TV-L","AVR Caritas",null]),enr_pay_grade:pick(["P7","P8","P9",null]),enr_contact_emails:rnd()<.4?["bewerbung@"+c.website.replace(/https?:\/\/www\./,"")]:[],enr_bonus:rnd()<.2,enr_childcare:rnd()<.3,description:"Wir suchen …\n\nIhre Aufgaben: …\n\nIhr Profil: abgeschlossene Ausbildung, Erfahrung …",observations:[{source_code:"employer_ats",source_url:c.careers_url+"/job/"+pid,observed_at:new Date().toISOString()}],provenance:{title:"employer_ats"}}); } });
-    const runs=[{run_id:12,started_at:new Date(Date.now()-3600e3).toISOString(),finished_at:new Date(Date.now()-3500e3).toISOString(),target:{scope:"clinic",values:[clinics[0].clinic_id]},scope:"clinic",value:clinics[0].clinic_id,mode:"adapter",status:"done",n_rows:14,n_new:1,credits_used:0,clinic_ids:[clinics[0].clinic_id],log:["fetch board","14 rows","inbox: 14 posted","link-clinics: 14","verify: 14 live"]},{run_id:13,started_at:new Date(Date.now()-60e3).toISOString(),finished_at:null,target:{scope:"regierungsbezirk",values:["Oberbayern"]},scope:"regierungsbezirk",value:"Oberbayern",mode:"auto",status:"running",n_rows:0,n_new:0,credits_used:0,clinic_ids:clinics.filter(c=>c.regierungsbezirk==="Oberbayern").map(c=>c.clinic_id),log:["fetch board …"]}];
+    const runs=[{run_id:11,started_at:new Date(Date.now()-7200e3).toISOString(),finished_at:new Date(Date.now()-7150e3).toISOString(),target:{scope:"regierungsbezirk",values:["Oberpfalz"]},scope:"regierungsbezirk",value:"Oberpfalz",mode:"firecrawl",status:"failed",n_rows:0,n_new:0,credits_used:0,clinic_ids:[],params:{max_credits:6,deep:false,verify:true},trigger:"api",error:"28 error(s), see log",
+      log:(t0=>["run started","scope regierungsbezirk='Oberpfalz': 28 clinics -> adapter 0, firecrawl 28, skipped 0",
+        "  clinic 77406: AgentFailed: Agent reached max credits (cap 6)","  clinic 77402: AgentFailed: Agent reached max credits (cap 6)","  clinic 56408: AgentFailed: Agent reached max credits (cap 6)",
+        "  clinic 26108: refused by spend gate — adapter covers it","  clinic 16212: adapter returned 0 rows with no error — check the adapter/URL",
+        "run finished: failed, rows 0, credits 0"].map((l,i)=>new Date(t0+i*4000).toISOString()+" "+l))(Date.now()-7200e3)},
+      {run_id:12,started_at:new Date(Date.now()-3600e3).toISOString(),finished_at:new Date(Date.now()-3500e3).toISOString(),target:{scope:"clinic",values:[clinics[0].clinic_id]},scope:"clinic",value:clinics[0].clinic_id,mode:"adapter",status:"done",n_rows:14,n_new:1,credits_used:0,clinic_ids:[clinics[0].clinic_id],log:(t0=>["run started","$ pflege_jobs.cli fetch --board umantis","  fetch board: 14 rows","  inbox: 14 posted, 0 skipped","  link-clinics: 14","  verify: 14 live, 0 blocked","  warning: 1 posting had no department, kept with department_hint=null; the title was 'Pflegefachkraft (m/w/d) für die interdisziplinäre operative Intensivstation und den Aufwachraum, Voll- oder Teilzeit, unbefristet, mit Einarbeitungskonzept' and the source row is kept verbatim so the middle-truncation and its tooltip are visible here","run finished: done, rows 14, credits 0"].map((l,i)=>new Date(t0+i*7000).toISOString()+" "+l))(Date.now()-3600e3)},{run_id:13,started_at:new Date(Date.now()-60e3).toISOString(),finished_at:null,target:{scope:"regierungsbezirk",values:["Oberbayern"]},scope:"regierungsbezirk",value:"Oberbayern",mode:"auto",status:"running",n_rows:0,n_new:0,credits_used:0,clinic_ids:clinics.filter(c=>c.regierungsbezirk==="Oberbayern").map(c=>c.clinic_id),log:["fetch board …"]}];
     const schedules=[{id:1,name:"Wochen-Autocrawl",enabled:true,preset:"weekly_staggered",cron:"0 3 * * *",stagger_days:7,target:{scope:"all",values:[]},mode:"auto",max_credits:40,fetch_details:false,last_run_at:new Date(Date.now()-864e5).toISOString(),next_run_at:new Date(Date.now()+5*3600e3).toISOString(),human:"täglich 03:00 UTC · 1/7 der Boards"},{id:2,name:"München täglich",enabled:false,preset:"daily",cron:"0 3 * * *",stagger_days:1,target:{scope:"city",values:["München"]},mode:"adapter",max_credits:0,fetch_details:true,last_run_at:null,next_run_at:null}];
     return {clinics,jobs,runs,schedules}; })());
   const u=new URL(path,location.origin); const p=u.pathname, g=Object.fromEntries(u.searchParams); const cnt=(arr,k)=>Object.entries(arr.reduce((m,r)=>{const v=r[k]??"";m[v]=(m[v]||0)+1;return m;},{})).map(([v,n])=>({v,n})).sort((a,b)=>b.n-a.n);
@@ -1174,7 +1476,21 @@ function mockApi(path,opt){
   if(p==="/api/coverage"){ const keys=["rexx","mein-check-in","personio","smartrecruiters","helix","concludis","typo3_jobs","talention","oracle","dvinci","wp_jobs","softgarden","bite","pi_asp","umantis"]; const agg=cs=>({clinics_labelled:cs.length,clinics_routable:cs.filter(c=>c.routable&&!c.walled).length,boards:new Set(cs.map(c=>c.careers_url).filter(Boolean)).size,clinics_with_jobs:cs.filter(c=>c.jobs_open>0).length,open_jobs:cs.reduce((a,c)=>a+c.jobs_open,0),fresh_jobs:cs.reduce((a,c)=>a+(c.jobs_fresh||0),0)}); const pct=a=>a.clinics_labelled?Math.round(1000*a.clinics_with_jobs/a.clinics_labelled)/10:0;
     const rows=keys.map(k=>{ const a=agg(M.clinics.filter(c=>c.ats_type===k)); return {adapter:k,...a,coverage_pct:pct(a),last_run:k==="typo3_jobs"?{run_id:12,at:M.runs[0].finished_at,status:"done",rows:14,new:1,errors:0}:null}; }); const fa=agg(M.clinics.filter(c=>c.fetch==="firecrawl"||!c.routable)); rows.push({adapter:"firecrawl",...fa,coverage_pct:pct(fa),last_run:null,credits_7d:37}); rows.sort((a,b)=>b.clinics_labelled-a.clinics_labelled); const tot=agg(M.clinics);
     return wrap({generated_at:new Date().toISOString(),rows,totals:{...tot,coverage_pct:pct(tot),credits_7d:37},unroutable:[{reason:"no careers_url",count:M.clinics.filter(c=>!c.careers_url).length},{reason:"walled host (bot wall)",count:M.clinics.filter(c=>c.walled).length}]}); }
-  if(p==="/api/crawl/runs") return wrap(M.runs.map(r=>({...r,log_tail:r.log.slice(-1)[0]})));
+  if(/^\/api\/crawl\/runs\/\d+\/cancel$/.test(p)&&opt.method==="POST"){ const id=+p.split("/")[4]; const r=M.runs.find(x=>x.run_id===id);
+    if(!r) return Promise.reject(new Error("unknown run")); if(r.status!=="running"&&r.status!=="queued") return Promise.reject(new Error("run already finished"));
+    r.cancel_requested=1;                                    // accepted at once; the worker stops between boards
+    setTimeout(()=>{ r.status="cancelled"; r.finished_at=new Date().toISOString(); },1200);
+    return wrap(r); }
+  if(p==="/api/crawl/estimate"){ const c=M.clinics.find(x=>x.clinic_id===g.clinic_id); if(!c) return wrap({clinic_id:g.clinic_id,confidence:"none",board_rows:null,note:"unknown clinic"});
+    const rows=Math.max(3,c.jobs_open||0), amb=Math.round(rows*0.12), exc=Math.round(rows*0.3);
+    return wrap({clinic_id:c.clinic_id,board_rows:rows,definite_pflege:rows-amb-exc,ambiguous:amb,definite_excluded:exc,confidence:amb/rows<0.15?"high":"low",note:null}); }
+  if(p==="/api/firecrawl/prompts"){ const c=M.clinics.find(x=>x.clinic_id===g.clinic_id)||{name:"Klinikum Musterstadt",town:"München",operator:"Landkreis"};
+    return wrap({model:"spark-2",default_max_credits:40,
+      jobs:{prompt:`GOAL: find MAX number of open Pflegedienst (nursing dept) jobs at ONE hospital: "${c.name}", ${c.town||"Bavaria"}, Bavaria, Germany (operator: ${c.operator||"unknown"}). Also capture seniority per job. Not a survey -- a full count. Missed job = failure.\nHARD RULES, no exceptions:\n1. ONE hospital/operator's OWN board. Start at the given URL(s).\n2. Paginate FULLY.\n3. INCLUDE only certified nursing staff.\n4. EXCLUDE Pflegehelfer, Ausbildung, Praktikum, physicians, therapists.\n5. Each job = own direct detail-page URL.\n6. Never invent a job; empty board -> jobs=[] plus blocked_reason.\nAnswer strictly in the schema.`,
+        schema:{type:"object",properties:{jobs:{type:"array",items:{type:"object",properties:{title:{type:"string"},url:{type:"string"},department:{type:"string"},seniority:{type:"string",enum:["leitung","fach","fachkraft","experte","unknown"]}},required:["title","url"]}},blocked_reason:{type:"string"}},required:["jobs"]}},
+      career:{prompt:`Find the careers portal of the hospital "${c.name}" in ${c.town||"Bavaria"}, Germany. Locate the careers page and the job board behind it, identify the ATS vendor, record every filter control with its values, how the list renders, and any login/bot wall. Answer strictly in the schema; use 'unknown' when you cannot tell.`,
+        schema:{type:"object",properties:{careers_url:{type:"string"},ats_vendor:{type:"string"},listing_technology:{type:"string"}},required:["careers_url","ats_vendor","listing_technology"]}}}); }
+  if(p==="/api/crawl/runs") return wrap(M.runs.map(r=>({...r,log_tail:r.log.slice(-3)})));   // list_runs() returns the last 3 lines as a list
   if(p==="/api/inbox") return wrap({total:412,unprocessed:7,by_kind:[{v:"jobposting",n:7}],waiting_by_collector:[{v:"vendor-wp_jobs-v1",n:7}],waiting_by_host:[{v:"jobs.ebel-kliniken.com",n:7,label:M.clinics[0].name}],oldest_unprocessed_at:new Date(Date.now()-3600e3).toISOString(),oldest_unprocessed_age_s:3600,recent:[]});
   if(p==="/api/inbox/drain"&&opt.method==="POST"){ M.runs.unshift({run_id:M.runs.length+20,started_at:new Date().toISOString(),finished_at:null,target:{scope:"inbox",values:[]},scope:"inbox",value:"",mode:"adapter",status:"queued",n_rows:0,n_new:0,credits_used:0,clinic_ids:[],log:["queued"]}); return wrap({run_id:M.runs[0].run_id}); }
   if((m=p.match(/^\/api\/crawl\/runs\/(\d+)$/))) return wrap(M.runs.find(r=>r.run_id===+m[1])||{});

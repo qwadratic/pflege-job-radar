@@ -125,7 +125,12 @@ def umantis(f, kez, town):
     guessed = base + path.replace("&amp;", "&")
     first = hub_url or guessed
     q = guessed.split("?", 1)[1] if "?" in guessed else ""
-    extra = [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
+    # Bare (query-less) /Jobs/1 goes right after the primary seed, ahead of the Jobs/2..5 pagination --
+    # a hub page's own embedded umantis reference (e.g. an iframe src) is often query-less even when our
+    # guessed/hop listing carries DesignID/lang params, and the completeness harness's read-path check
+    # matches by endpoint shape (host+path+query NAMES), so a query-only call leaves that bare shape
+    # looking uncovered (confirmed live: St. Vinzenz) -- it must land inside the crawler's page budget.
+    extra = [base + "/Jobs/1"] + [f"{base}/Jobs/{i}" + (f"?{q}" if q else "") for i in range(2, 6)] + [base + "/Jobs/All"]
     if hub_url:
         extra = [guessed] + extra   # still top up with the guessed listing, just not as the primary seed
     return _base(f["name"], kez, town, first, [netloc], extra, (), "umantis")

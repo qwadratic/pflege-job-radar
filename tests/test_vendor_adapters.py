@@ -1,6 +1,6 @@
-"""Section-first fetching in crawlers/vendor_adapters.py. Mocked HTTP (via the module's own `get`
-helper), no network. Each vendor gets one test proving it narrows to the nursing section when a
-signal is present, and one proving today's full-fetch behaviour survives when it isn't."""
+"""crawlers/vendor_adapters.py: every adapter fetches the whole board and tags each job with its
+own vendor-native label (department/category/section) as data -- it never narrows the fetch or
+drops a posting on that label. Mocked HTTP (via the module's own `get` helper), no network."""
 import os
 import sys
 
@@ -46,14 +46,17 @@ def _personio_xml(entries):
     return "<workzag-jobs>%s</workzag-jobs>" % body
 
 
-def test_personio_narrows_to_department_when_tenant_tags_it(monkeypatch):
+def test_personio_keeps_every_job_and_tags_each_ones_own_department(monkeypatch):
     xml = _personio_xml([
         ("1", "Pflegefachkraft (m/w/d)", "Pflege"),
         ("2", "Verwaltungsfachkraft (m/w/d)", "Verwaltung"),
     ])
     monkeypatch.setattr(va, "get", _router({"https://acme.jobs.personio.de/xml": _R(xml, ok=True)}))
     rows = va.crawl_personio({"name": "Acme Klinik", "careers_url": "https://acme.jobs.personio.de/"})
-    assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
+    assert {r["payload"]["title"] for r in rows} == {"Pflegefachkraft (m/w/d)", "Verwaltungsfachkraft (m/w/d)"}
+    by_title = {r["payload"]["title"]: r["payload"] for r in rows}
+    assert by_title["Pflegefachkraft (m/w/d)"]["section_labels"] == ["Pflege"]
+    assert by_title["Verwaltungsfachkraft (m/w/d)"]["section_labels"] == ["Verwaltung"]
 
 
 def test_personio_keeps_everything_when_no_department_is_nursing(monkeypatch):
@@ -64,6 +67,42 @@ def test_personio_keeps_everything_when_no_department_is_nursing(monkeypatch):
     monkeypatch.setattr(va, "get", _router({"https://acme.jobs.personio.de/xml": _R(xml, ok=True)}))
     rows = va.crawl_personio({"name": "Acme Klinik", "careers_url": "https://acme.jobs.personio.de/"})
     assert len(rows) == 2
+
+
+def test_personio_keeps_the_tenants_own_com_tld_instead_of_forcing_de(monkeypatch):
+    """A careers page can link only the .com form of its tenant (munich-airport-clinic.com does) --
+    the adapter must fetch and record that same host, not silently rewrite it to .de."""
+    xml = _personio_xml([("1", "Pflegefachkraft (m/w/d)", "Pflege")])
+    monkeypatch.setattr(va, "get", _router({"https://acme.jobs.personio.com/xml": _R(xml, ok=True)}))
+    rows = va.crawl_personio({"name": "Acme Klinik", "careers_url": "https://acme.jobs.personio.com/"})
+    assert rows and rows[0]["source_host"] == "acme.jobs.personio.com"
+    assert rows[0]["payload"]["url"].startswith("https://acme.jobs.personio.com/")
+
+
+def test_personio_falls_back_to_the_wordpress_plugin_rest_api(monkeypatch):
+    """Sites running the 'Personio Integration Light' WP plugin (ProSomno) have no
+    <slug>.jobs.personio.* tenant at all -- jobs live at wp-json/wp/v2/personioposition."""
+    careers_url = "https://prosomno.de/ueber-uns/jobs/"
+    posts = [{
+        "title": {"rendered": "Pflegefachkraft (m/w/d)"},
+        "excerpt": {"rendered": "<h3>Festangestellte • Vollzeit • München</h3>"},
+        "content": {"rendered": "<p>Aufgaben...</p>"},
+        "date": "2026-03-01T00:00:00",
+        "link": "https://prosomno.de/stelle/pflegefachkraft-mwd/",
+    }]
+    calls = []
+    monkeypatch.setattr(va, "get", _router({
+        careers_url: _R(ok=False),  # no <slug>.jobs.personio.* anywhere on the page
+        "https://prosomno.de/wp-json/wp/v2/personioposition?per_page=100": _R(ok=True, json_data=posts),
+    }, calls))
+    rows = va.crawl_personio({"name": "ProSomno", "careers_url": careers_url})
+    assert len(rows) == 1
+    p = rows[0]["payload"]
+    assert p["title"] == "Pflegefachkraft (m/w/d)"
+    assert p["loc"][0]["city"] == "München"
+    assert p["employmentType"] == "Festangestellte"
+    assert p["datePosted"] == "2026-03-01"
+    assert p["url"] == "https://prosomno.de/stelle/pflegefachkraft-mwd/"
 
 
 # ---------------------------------------------------------------------------
@@ -110,27 +149,54 @@ def test_smartrecruiters_keeps_full_walk_when_no_department_field(monkeypatch):
     assert not any("department=" in u for u in calls)
 
 
+def test_smartrecruiters_finds_tenant_from_company_code_on_the_listing_page_itself(monkeypatch):
+    # Klinik Vincentinum-shaped board: the careers_url IS the listing page (no smartrecruiters.com
+    # in the url, no category subpages to crawl) -- the tenant only shows up as the widget's own
+    # company_code JSON, never as a jobs.smartrecruiters.com/<tenant>/<id> link on that page.
+    listing_page = _R('<div data-widget=\'widget({"company_code": "ArtemedSE", "api_url": "x"})\'></div>',
+                       url="https://www.klinik-vincentinum.de/karriere/stellenangebote", ok=True)
+    page = _R(json_data={"totalFound": 1, "content": [_sr_posting("1", "Pflegefachkraft (m/w/d)", "1", "Pflege")]})
+    base = "https://api.smartrecruiters.com/v1/companies/ArtemedSE/postings"
+    mapping = {"https://www.klinik-vincentinum.de/karriere/stellenangebote": listing_page,
+               "%s?limit=100&offset=0" % base: page}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_smartrecruiters({"name": "Klinik Vincentinum",
+                                      "careers_url": "https://www.klinik-vincentinum.de/karriere/stellenangebote"})
+    assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
+
+
+def test_smartrecruiters_fetches_detail_for_description_and_the_slugged_url(monkeypatch):
+    page = _R(json_data={"totalFound": 1, "content": [_sr_posting("1", "Pflegefachkraft (m/w/d)", "1", "Pflege")]})
+    base = "https://api.smartrecruiters.com/v1/companies/ArtemedSE/postings"
+    detail = _R(json_data={"postingUrl": "https://jobs.smartrecruiters.com/ArtemedSE/1-pflegefachkraft-m-w-d-",
+                            "jobAd": {"sections": {"jobDescription": {"text": "<p>Wir suchen</p>"},
+                                                    "qualifications": {"text": "Examen"}}}})
+    calls = []
+    mapping = {"%s?limit=100&offset=0" % base: page, "%s/1" % base: detail}
+    monkeypatch.setattr(va, "get", _router(mapping, calls))
+    rows = va.crawl_smartrecruiters({"name": "Artemed", "careers_url": "https://www.smartrecruiters.com/ArtemedSE"})
+    assert "%s/1" % base in calls
+    assert rows[0]["payload"]["description"] == "Wir suchen Examen"
+    assert rows[0]["payload"]["url"] == "https://jobs.smartrecruiters.com/ArtemedSE/1-pflegefachkraft-m-w-d-"
+    assert rows[0]["source_url"] == "https://jobs.smartrecruiters.com/ArtemedSE/1-pflegefachkraft-m-w-d-"
+
+
 # ---------------------------------------------------------------------------
 # helix
 # ---------------------------------------------------------------------------
-def test_helix_narrows_via_the_berufsfeld_filter(monkeypatch):
+def test_helix_keeps_every_job_when_a_berufsfeld_fieldset_is_present(monkeypatch):
     listing = _R(
         '<label for="category_e99edf">Pflege (1 Treffer)</label>'
         '<label for="category_abc123">Küche (3 Treffer)</label>'
         '<a href="/okh/jobad?prj=A1">Pflegefachkraft (m/w/d)</a>'
         '<a href="/okh/jobad?prj=B2">Koch (m/w/d)</a>',
         url="https://tenant.helixjobs.com/okh/joblist", ok=True)
-    narrowed = _R('<a href="/okh/jobad?prj=A1">Pflegefachkraft (m/w/d)</a>',
-                  url="https://tenant.helixjobs.com/okh/joblist?category%5B%5D=e99edf", ok=True)
     calls = []
-    mapping = {
-        "https://tenant.helixjobs.com/okh/joblist": listing,
-        "https://tenant.helixjobs.com/okh/joblist?category%5B%5D=e99edf": narrowed,
-    }
+    mapping = {"https://tenant.helixjobs.com/okh/joblist": listing}
     monkeypatch.setattr(va, "get", _router(mapping, calls))
     rows = va.crawl_helix({"name": "X", "careers_url": "https://tenant.helixjobs.com/okh/joblist"})
-    assert len(rows) == 1 and "prj=A1" in rows[0]["payload"]["url"]
-    assert any("category%5B%5D=e99edf" in u for u in calls)
+    assert len(rows) == 2
+    assert not any("category%5B%5D" in u for u in calls)
 
 
 def test_helix_full_fetch_when_no_berufsfeld_fieldset(monkeypatch):
@@ -311,7 +377,7 @@ def test_rexx_fetches_every_detail_page_when_no_fachbereich_tag_is_rendered(monk
 # ---------------------------------------------------------------------------
 # mein-check-in
 # ---------------------------------------------------------------------------
-def test_mein_check_in_only_processes_positions_in_the_nursing_sidebar_group(monkeypatch):
+def test_mein_check_in_keeps_every_position_and_tags_each_ones_own_sidebar_group(monkeypatch):
     cu = "https://www.mein-check-in.de/kna-online/overview"
     listing = _R(
         '<li id="pg-12880"><span>Pflegedienst</span><ul>'
@@ -324,8 +390,12 @@ def test_mein_check_in_only_processes_positions_in_the_nursing_sidebar_group(mon
     calls = []
     monkeypatch.setattr(va, "get", _router({cu: listing}, calls))
     rows = va.crawl_mein_check_in({"name": "KNA", "careers_url": cu})
-    assert {r["payload"]["title"] for r in rows} == {"Pflegefachkraft Notaufnahme", "Gesundheits-/Krankenpfleger Intensivstation"}
-    assert not any("position-500000" in u for u in calls)
+    assert {r["payload"]["title"] for r in rows} == {
+        "Pflegefachkraft Notaufnahme", "Gesundheits-/Krankenpfleger Intensivstation", "Verwaltungsfachkraft"}
+    assert any("position-500000" in u for u in calls)
+    by_title = {r["payload"]["title"]: r["payload"] for r in rows}
+    assert by_title["Pflegefachkraft Notaufnahme"]["section_labels"] == ["Pflegedienst"]
+    assert by_title["Verwaltungsfachkraft"]["section_labels"] == ["Verwaltung"]
 
 
 def test_mein_check_in_keeps_every_position_when_the_listing_has_no_sidebar_groups(monkeypatch):
@@ -336,6 +406,29 @@ def test_mein_check_in_keeps_every_position_when_the_listing_has_no_sidebar_grou
     monkeypatch.setattr(va, "get", _router({cu: listing}))
     rows = va.crawl_mein_check_in({"name": "Flat Tenant", "careers_url": cu})
     assert len(rows) == 2
+
+
+def test_mein_check_in_reads_datePosted_employmentType_and_per_job_address_from_detail_microdata(monkeypatch):
+    # Real mein-check-in detail pages carry a schema.org JobPosting as microdata spans (never
+    # JSON-LD), tagging each job with its own branch address -- distinct from the clinic's town.
+    cu = "https://www.mein-check-in.de/kna-online/overview"
+    listing = _R('<a href="/kna-online/position-1">Pflegefachkraft</a>', ok=True)
+    detail = _R(
+        '<div itemscope itemtype="http://schema.org/JobPosting">'
+        '<span itemprop="datePosted">2026-03-31T07:44:25+02:00</span>'
+        '<span itemprop="employmentType">stellenangebote</span>'
+        '<span itemprop="jobLocation" itemscope itemtype="http://schema.org/Place">'
+        '<span itemprop="address" itemscope itemtype="http://schema.org/PostalAddress">'
+        '<span itemprop="addressLocality">Eichstätt</span>'
+        '<span itemprop="postalCode">85072</span>'
+        '<span itemprop="addressRegion">bavaria</span>'
+        '</span></span></div>', ok=True, url="https://www.mein-check-in.de/kna-online/position-1")
+    monkeypatch.setattr(va, "get", _router({cu: listing, "https://www.mein-check-in.de/kna-online/position-1": detail}))
+    rows = va.crawl_mein_check_in({"name": "KNA", "town": "Kösching", "careers_url": cu})
+    p = rows[0]["payload"]
+    assert p["datePosted"] == "2026-03-31"
+    assert p["employmentType"] == "stellenangebote"
+    assert p["loc"] == [{"city": "Eichstätt", "plz": "85072", "region": "bavaria"}]
 
 
 # ---------------------------------------------------------------------------
@@ -371,3 +464,32 @@ def test_dvinci_keeps_everything_when_no_category_is_nursing(monkeypatch):
     monkeypatch.setattr(va, "get", _router({"https://romed-jobs.de/jobPublication/list.json": _R(json_data=jobs, ok=True)}))
     rows = va.crawl_dvinci({"name": "RoMed", "careers_url": cu})
     assert len(rows) == 2
+
+
+# ---------------------------------------------------------------------------
+# oracle: prefer the tenant's own jobs.feed.json (softgarden-fronted, e.g. St. Josef), else fall
+# back to crawl_wp_jobs and backfill the fields that fallback's own parser never sets (TASK-31)
+# ---------------------------------------------------------------------------
+def test_oracle_prefers_the_jobs_feed_json_when_present(monkeypatch):
+    feed = {"dataFeedElement": [{"item": {
+        "@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)",
+        "url": "https://karriere.example.de/jobs/1/Pflegefachkraft/",
+        "datePosted": "2026-07-01", "employmentType": "FULL_TIME",
+    }}]}
+    monkeypatch.setattr(va, "get", _router({"https://karriere.example.de/jobs.feed.json": _R(json_data=feed, ok=True)}))
+    rows = va.crawl_oracle({"name": "St. Josef", "careers_url": "https://karriere.example.de/"})
+    assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
+    assert rows[0]["payload"]["datePosted"] == "2026-07-01"
+
+
+def test_oracle_falls_back_to_wp_jobs_and_backfills_missing_fields(monkeypatch):
+    # no jobs.feed.json on this tenant (404, e.g. Klinikum FFB/Altmühlfranken) -- falls through to
+    # the generic WordPress walk, whose own rows never carry employmentType/datePosted (parse_job_page
+    # has no such extraction, see crawl_wp_jobs's docstring); crawl_oracle must backfill both.
+    monkeypatch.setattr(va, "get", _router({}))  # feed probe 404s; any fallback GET the enrichment makes 404s too
+    fallback_rows = [va.row("klinikum.example.de", "https://klinikum.example.de/stellenangebote/a/",
+                             {"title": "Pflegefachkraft (m/w/d)", "url": "https://klinikum.example.de/stellenangebote/a/",
+                              "description": "Wir suchen Sie in Vollzeit."}, "wp_jobs")]
+    monkeypatch.setattr(va, "crawl_wp_jobs", lambda c, session=None: fallback_rows)
+    rows = va.crawl_oracle({"name": "Klinikum", "careers_url": "https://klinikum.example.de/stellenangebote/"})
+    assert rows[0]["payload"]["employmentType"] == "Vollzeit"

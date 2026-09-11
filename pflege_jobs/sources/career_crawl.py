@@ -4,8 +4,8 @@ Per clinic seed: BFS within the career host(s), depth <= 2, page budget; every f
 schema.org JobPosting JSON-LD (the de-facto standard emitted by softgarden, d.vinci, rexx, concludis, SmartRecruiters,
 Personio, mein-check-in...). Pages without JSON-LD but with a title + "Bewerben" are parsed heuristically
 (title = <h1>/<title>, location from text) and flagged `parse='heuristic'`.
-Bavaria filter: jobLocation.addressRegion in {Bayern, Bavaria} OR postal code in Bavarian ranges OR city in the
-Bavarian town list (registry + Arbeitsagentur). Non-Bavarian sites of chains are dropped (counted in stats).
+Bavaria detection: jobLocation.addressRegion in {Bayern, Bavaria} OR postal code in Bavarian ranges OR city in the
+Bavarian town list (registry + Arbeitsagentur) -- written onto each row as in_bavaria, not used to drop rows here.
 robots.txt is honoured (urllib.robotparser); throttle per host.
 """
 import json
@@ -29,7 +29,13 @@ LINK_OK = re.compile(r"job|stelle|vacanc|position|karriere|career|bewerb|angebot
 JOB_HREF = re.compile(r"/detail/|/detailansicht/|/job/|/jobad\?|/jobs?/[^/?]*\d|/karriere/jobs/|/stellenangebot|/stellenanzeige|/vacanc|/position/|jobid|job_id|jobdetail|/p/|[?&]id=\d|/de/jobs/\d|/jobs/\d", re.I)
 JOB_TEXT = re.compile(r"\((?:m|w|d|x|i|gn|a)\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a)(?:\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a))?\)|\b[mwd]/[mwd]/[mwdx]\b|\*in\b|:in\b", re.I)
 LIST_NAV = re.compile(r"weiter|nächste|next|mehr laden|alle stellen|page|seite|pflege|krankenpflege|medizin|berufsgruppe|fachbereich|kategorie|filter", re.I)
-LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#|login|logout|datenschutz|impressum|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print", re.I)
+LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#|login|logout|datenschutz|impressum|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print"
+                       # umantis: /Jobs/<n> is always its own paginated listing (never a posting) --
+                       # language-switcher anchors on that listing self-link to it in every UI language
+                       # ("Zum Hauptinhalt springen", "Erweiterte Suche", ...), and InitiativeApplication
+                       # is a generic "apply speculatively" CTA, not a posting either (confirmed live on
+                       # all 4 direct-host umantis boards: both otherwise pass JOB_HREF's /vacanc match).
+                       r"|/Jobs/\d+(?:[?&]|$)|InitiativeApplication", re.I)
 PAGINATE = re.compile(r"[?&](page|p|seite|start|offset|pageNo|pagenr)=\d+", re.I)
 # Bavarian PLZ ranges: 637xx-639xx (Aschaffenburg), 80xxx-87xxx, 881[3-7]xx (Lindau), 892xx-895xx (Neu-Ulm/Günzburg/Dillingen), 90xxx-97xxx.
 BAV_PLZ = re.compile(r"^(63[7-9]\d\d|8[0-7]\d{3}|881[3-7]\d|89[2-5]\d\d|9[0-7]\d{3})$")
@@ -101,7 +107,10 @@ def in_bavaria(city, plz, region, towns):
 
 
 class Crawler:
-    def __init__(self, towns, per_site_pages=120, list_pages=12, workers=1, sleep=0.25, log=print):
+    def __init__(self, towns, per_site_pages=5000, list_pages=500, workers=1, sleep=0.25, log=print):
+        # per_site_pages/list_pages are a runaway-loop safety ceiling, not a target: the walk's real
+        # stop condition is the board's own pagination/job-link queue draining (see _crawl_urls). A
+        # board big enough to hit the ceiling is recorded truncated=True, never silently as "done".
         self.towns, self.budget, self.list_budget, self.sleep, self.log = towns, per_site_pages, list_pages, sleep, log
         self.s = requests.Session(); self.s.headers.update({"User-Agent": UA, "Accept-Language": "de-DE,de;q=0.9"})
         self.robots = {}
@@ -190,7 +199,7 @@ class Crawler:
         prefetched = dict(prefetched or {})
         list_q = deque((u, 0) for u in start_urls)
         seen_lists, job_links = set(), {}
-        stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0, "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0}
+        stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0}
         while list_q and stats["list_pages"] < self.list_budget:
             url, depth = list_q.popleft()
             url = urldefrag(url)[0]
@@ -227,19 +236,16 @@ class Crawler:
             else:
                 h = self._heuristic(r.text, r.url, seed, anchor, section_confirmed=section_confirmed)
                 if h: jobs[r.url] = h; stats["heuristic_pages"] += 1
-        out = []
-        for j in jobs.values():
-            if j["role_class"] == "nicht_pflege": stats["dropped_not_pflege"] += 1; continue
-            if j["in_bavaria"] is False: stats["dropped_non_bavaria"] += 1; continue
-            if j["in_bavaria"] is None and seed.get("bavaria_only_operator"): j["in_bavaria"] = True
-            if j["in_bavaria"] is None: stats["dropped_unknown_loc"] += 1; continue
-            out.append(j)
+        out = list(jobs.values())
         stats["job_links_found"] = len(job_links)
+        # Truncated, never silently "done": either the list-page queue still had unfetched pages when
+        # the safety ceiling hit, or more job links were found than the detail-fetch ceiling allowed.
+        stats["truncated"] = bool(list_q) or len(job_links) > self.budget
         return out, stats
 
     def crawl(self, seed):
         """Listing-first: seed + extra seeds + pagination/filter pages -> job links -> details -> JSON-LD/heuristic.
-        seed: {name, kez, career, hosts?, extra_seeds?, bavaria_only_operator?}
+        seed: {name, kez, career, hosts?, extra_seeds?}
 
         Section-first: if the seed page itself links to a confident nursing section/category (see
         pflege_jobs.section.pick_nursing_link -- a "Pflegedienst" nav item, a Berufsgruppe/Fachbereich
@@ -331,7 +337,14 @@ class Crawler:
             if m and norm_text(m.group(1)).split()[0] in self.towns: city = m.group(1)
         m = re.search(r"\b(63[7-9]\d\d|8\d{4}|9[0-7]\d{3})\s+([A-ZÄÖÜ][a-zäöüß\-]+)", txt)
         if m and norm_text(m.group(2)) in self.towns: plz, city = m.group(1), m.group(2)
-        return self._base(url, seed, title, txt[:20000], city, plz, None, None, None, None, "heuristic", section_confirmed=section_confirmed)
+        # No JSON-LD here, but the source text often still states these directly (e.g. umantis detail
+        # pages: "Veröffentlichung ab 28.07.2026", "in Vollzeit (38,5 Std./Woche)") -- pick them up
+        # rather than leaving fields empty the source actually exposes, same fields _from_jsonld reads.
+        dm = re.search(r"Ver[öo]ffentlichung\s*(?:ab)?\s*[:\-]?\s*(\d{1,2})\.(\d{1,2})\.(\d{4})", txt, re.I)
+        published = "%s-%02d-%02d" % (dm.group(3), int(dm.group(2)), int(dm.group(1))) if dm else None
+        o = self._base(url, seed, title, txt[:20000], city, plz, None, published, None, None, "heuristic", section_confirmed=section_confirmed)
+        o["employment_types"] = [t for t, kw in (("vollzeit", "Vollzeit"), ("teilzeit", "Teilzeit"), ("minijob", "Minijob")) if re.search(r"\b" + kw + r"\b", txt, re.I)]
+        return o
 
 
 def crawl_all(seeds, towns, budget=120, log=print):
@@ -342,5 +355,5 @@ def crawl_all(seeds, towns, budget=120, log=print):
         rows, st = cr.crawl(s)
         st.update({"name": s["name"], "found": len(rows), "secs": round(time.time() - t)})
         report.append(st); all_rows += rows
-        log(f"{s['name'][:36]:<36} lists {st['list_pages']:>2} links {st['job_links_found']:>3} fetched {st['job_pages']:>3} jsonld {st['jobposting_pages']:>3} heur {st['heuristic_pages']:>3} -> {len(rows):>3} Pflege/BY (drop nonBY {st['dropped_non_bavaria']}, noloc {st['dropped_unknown_loc']}, nonpflege {st['dropped_not_pflege']}) {st['secs']}s")
+        log(f"{s['name'][:36]:<36} lists {st['list_pages']:>2} links {st['job_links_found']:>3} fetched {st['job_pages']:>3} jsonld {st['jobposting_pages']:>3} heur {st['heuristic_pages']:>3} -> {len(rows):>3} rows {st['secs']}s")
     return all_rows, report

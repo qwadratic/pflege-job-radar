@@ -71,7 +71,7 @@ class BrowserCrawler(Crawler):
 
     def crawl(self, seed):
         hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
-        stats = {"list_pages": 0, "job_links_found": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0, "dropped_non_bavaria": 0, "dropped_unknown_loc": 0, "dropped_not_pflege": 0, "xhr_json": 0}
+        stats = {"list_pages": 0, "job_links_found": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0, "xhr_json": 0}
         job_links = {}
         for url in [seed["career"]] + list(seed.get("extra_seeds", [])):
             html, links, xhr, final = self.render(url)
@@ -113,11 +113,5 @@ class BrowserCrawler(Crawler):
             else:
                 h = self._heuristic(html, final, seed, anchor)
                 if h: jobs[final] = h; stats["heuristic_pages"] += 1
-        out = []
-        for j in jobs.values():
-            if j["role_class"] == "nicht_pflege": stats["dropped_not_pflege"] += 1; continue
-            if j["in_bavaria"] is False: stats["dropped_non_bavaria"] += 1; continue
-            if j["in_bavaria"] is None and seed.get("bavaria_only_operator"): j["in_bavaria"] = True
-            if j["in_bavaria"] is None: stats["dropped_unknown_loc"] += 1; continue
-            out.append(j)
+        out = list(jobs.values())
         return out, stats
