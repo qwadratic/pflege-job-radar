@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from app import cv as CV
 from app import data as D
 from app.wa import api as WAPI
 from app.wa import config as C
@@ -112,3 +113,36 @@ def test_internal_trigger_keys_never_leak_into_the_api_response(wa, monkeypatch)
     out = WAPI.handle_payload(payload("Ja"), client=wa)
     assert "_newly_consented_phone" not in out["results"][0]
     assert "_card_at_consent" not in out["results"][0]
+
+
+def test_no_cv_text_on_the_card_skips_analyse_candidate_entirely(wa, monkeypatch):
+    """A candidate can consent without ever uploading anything -- must not call the CLI with
+    nothing to analyse (analyse_llm raises below ~20 chars)."""
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result(True))
+    analyse_calls = []
+    monkeypatch.setattr(CV, "analyse_candidate", lambda *a, **k: analyse_calls.append((a, k)) or {"profile": {}})
+    queue_calls = []
+    monkeypatch.setattr(Q, "build_queue_entry", lambda phone, card, cv_profile=None: queue_calls.append(cv_profile))
+
+    WAPI.handle_payload(payload("Ja"), client=wa)
+    assert analyse_calls == []
+    assert queue_calls == [None]
+
+
+def test_cv_text_on_the_card_feeds_analyse_candidate_into_the_queue_build(wa, monkeypatch):
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None:
+                        {**_fake_turn_result(True), "slots": {"anonymous_send_consent": True, "cv_text": "Gesundheits- und Krankenpflegerin, 5 Jahre Intensiv"}})
+    analyse_calls = []
+
+    def fake_analyse_candidate(phone, conn, cv_text=None, urkunde_text=None, **kw):
+        analyse_calls.append((phone, cv_text, urkunde_text))
+        return {"profile": {"roles": ["pflegefachkraft"]}, "matches": [], "used_llm": True, "chars": len(cv_text or "")}
+
+    monkeypatch.setattr(CV, "analyse_candidate", fake_analyse_candidate)
+    queue_calls = []
+    monkeypatch.setattr(Q, "build_queue_entry", lambda phone, card, cv_profile=None: queue_calls.append(cv_profile))
+
+    WAPI.handle_payload(payload("Ja"), client=wa)
+    assert len(analyse_calls) == 1
+    assert analyse_calls[0][1] == "Gesundheits- und Krankenpflegerin, 5 Jahre Intensiv"
+    assert queue_calls == [{"roles": ["pflegefachkraft"]}]

@@ -201,12 +201,25 @@ def handle_payload(payload, client=None):
             results.append(_handle_one(c, m, client=client))
     # Queue building (TASK-66) happens here, deliberately outside the lock just released above:
     # app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table
-    # read per ranked clinic, and doing that inside the per-message critical section would
-    # serialize every other inbound WhatsApp thread behind one candidate's match build.
+    # read per ranked clinic, and a CV/Urkunde reasoning pass (TASK-67) is a real claude CLI call --
+    # doing either inside the per-message critical section would serialize every other inbound
+    # WhatsApp thread behind one candidate's match build.
     for r in results:
         newly_consented_phone = r.pop("_newly_consented_phone", None)
-        if newly_consented_phone:
-            Q.build_queue_entry(newly_consented_phone, r.pop("_card_at_consent"))
+        if not newly_consented_phone:
+            continue
+        card = r.pop("_card_at_consent")
+        cv_profile = None
+        if card.get("cv_text") or card.get("urkunde_text"):
+            # "use all chat history + CV as matching input": analyse_candidate folds this thread's
+            # own history in alongside whatever was extracted from an upload (TASK-67). No CV/
+            # Urkunde text on the card at all -> skip the call rather than feed analyse_llm empty
+            # input (it raises ValueError below ~20 chars) -- a normal, common case, not an error.
+            with ST.db() as cv_conn:
+                cv_profile = CV.analyse_candidate(newly_consented_phone, cv_conn,
+                                                  cv_text=card.get("cv_text"),
+                                                  urkunde_text=card.get("urkunde_text"))["profile"]
+        Q.build_queue_entry(newly_consented_phone, card, cv_profile)
     return {"ok": True, "handled": len(results), "skipped": skipped, "results": results}
 
 
