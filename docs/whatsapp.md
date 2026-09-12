@@ -170,7 +170,10 @@ ruft `claude -p --restricted --output-format json --system-prompt "…"` auf (Sy
 volle Ersetzung, nicht Anhängsel; `--restricted` nimmt Bash/Code-Ausführung/WebFetch weg, die
 für eine Chat-Antwort ohnehin nichts zu tun hätten) und schickt die Nutzlast über stdin. Das
 nutzt die Claude-Code-Anmeldung, die auf dem Host schon existiert — kein separates
-`ANTHROPIC_API_KEY`. Ein fehlendes Binary, ein Timeout (`WA_LUNA_TIMEOUT_SEC`, Default 60s),
+`ANTHROPIC_API_KEY`. Ein fehlendes Binary, ein Timeout (`WA_LUNA_TIMEOUT_SEC`, Default 120s — auf
+120 von ursprünglich 60 angehoben, nachdem TASK-68s Ende-zu-Ende-Lauf real einen
+`subprocess.TimeoutExpired` bei 60s auf einem gewöhnlichen Zug produzierte: der Tool-Aufruf
+(TASK-62) plus `effort=high` brauchen zusammen manchmal mehr Zeit als die reine Antwort),
 ein Nicht-JSON-Ergebnis oder eine Antwort ohne Pflichtfelder werfen laut, statt eine Nachricht
 zu erfinden.
 
@@ -289,3 +292,33 @@ und das Modell hat einmal einen Dateizugriffsversuch als Fließtext vor die eige
 geschrieben. Der Aufruf läuft jetzt zusätzlich mit `--tools ""` (alle Tools aus), und das Parsen
 selbst (`app/wa/luna_brain.py:_parse_reply_json`) versucht zur Absicherung auch noch, das
 JSON-Objekt aus umgebendem Text herauszuschneiden, bevor es wirklich aufgibt.
+
+## Ende-zu-Ende-Trichtertest mit zwei lebenden Agenten (TASK-68)
+
+`tests/test_wa_luna_e2e_funnel.py` (Marker `llm`) geht einen Schritt weiter als die Persona-Tests
+oben: dort ist nur Valentina ein echter Modellaufruf, das Kandidaten-Skript ist absichtlich fest
+verdrahtet (stabil für Regressionstests). Hier spielt ein `_CandidateAgent` (eigene, resumierbare
+Claude-Code-Sitzung, `claude-haiku-4-5`, freier Text statt JSON-Schema) die Kandidatenseite frei
+nach einem kurzen Personenprofil — beide Seiten sind also echte, nichtdeterministische
+Modellaufrufe. Drei Personas (Urkunde/München, Defizitbescheid/Augsburg,
+Kenntnisprüfung-bestanden-Urkunde-ausstehend/Bayern-offen) laufen bis zur Einwilligung
+(`anonymous_send_consent`), mit einer geloggten Zugobergrenze statt einem stillen Erfolg, falls
+eine Persona nicht konvergiert. Jede erfolgreiche Persona läuft danach durch
+`app/wa/queue.py:build_queue_entry` (TASK-66) gegen ein kleines Fixture-Board mit einem
+vorab-gespeicherten Klinik-Kontakt.
+
+```bash
+.venv/bin/python -m pytest -q -m llm tests/test_wa_luna_e2e_funnel.py -s
+```
+
+Ergebnis eines echten Laufs: alle drei Personas erreichten die Einwilligung in 4–5 statt der
+erlaubten 12 Züge, die Ablauf-Sequenz (Anzahl → Shortlist → Kriterien-Recap → Einwilligungsfrage)
+lief sichtbar getrennt ab, und die Mailing-List-Ansicht zeigte 9 Zeilen (3 Kandidatinnen × 3
+Kliniken) — für die eine vorab bekannte Klinik korrekt mit Kontakt-E-Mail, für die anderen beiden
+ehrlich als „UNKNOWN" (kein erfundener Kontakt). Der volle Gesprächsverlauf wird bei jedem Lauf
+nach `tests/.artifacts/e2e_funnel_report.md` geschrieben (git-ignoriert, da synthetisch aber
+gesprächsförmig) und auf stdout ausgegeben.
+
+Ein Nebenfund dieses Laufs: `WA_LUNA_TIMEOUT_SEC` (60s) reichte nicht mehr aus, seit TASK-62 einen
+Tool-Aufruf plus `effort=high` in den Zug eingeführt hat — ein gewöhnlicher Zug lief einmal in
+einen echten `subprocess.TimeoutExpired`. Der Default ist deshalb auf 120s angehoben.

@@ -68,3 +68,6 @@ data/HUNTER_STOP
 
 # agent-tool isolated worktree checkouts (ephemeral, each on its own branch already)
 .claude/worktrees/
+
+# synthetic E2E funnel test report (tests/test_wa_luna_e2e_funnel.py) -- regenerated each real run
+tests/.artifacts/

@@ -49,7 +49,11 @@ LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "high").strip() or "high"
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if
 # `claude` is not the right one to invoke on PATH.
 LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "claude"
-LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "60") or "60")
+# 60s (this repo's original default) started timing out for real once TASK-62 added a tool
+# call in the loop and bumped effort to "high" -- both add real latency on top of the base
+# reply time, observed live during TASK-68's E2E run (subprocess.TimeoutExpired at 60s on an
+# otherwise-ordinary turn). 120s gives that room without hiding a genuinely stuck process forever.
+LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
 # Claude Code keys a resumable session by session id *and* the working directory it was started
 # in (session transcripts live under a path derived from cwd). Every luna turn for every phone
 # number must run from this exact directory, or `--resume <id>` from a later turn silently looks
