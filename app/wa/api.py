@@ -4,6 +4,10 @@ Order of business on an inbound POST, and the reason for each step:
 1. verify the signature over the raw bytes -- everything after this trusts the payload;
 2. check the phone-number id, so a webhook wired to a second WhatsApp number is ignored, not answered;
 3. insert by ``wamid``, which is UNIQUE -- a Meta redelivery is dropped here and answered once;
+3b. a document/image on a WA_BRAIN=luna thread is downloaded and its text extracted onto the
+    card (cv_text/urkunde_text, see ``_ingest_media``, TASK-67) before the brain ever runs, so it
+    reacts to what it just read; every other media kind, and every kind on the deterministic
+    brain, still gets the flat ``MEDIA_REPLY`` ack this always had;
 4. decide the reply -- app/wa/brain.py (deterministic, default) or app/wa/luna_brain.py
    (WA_BRAIN=luna, Claude-driven), picked once in config.py so this route does not care which;
 5. send it, and only then write the outbound rows.
@@ -11,9 +15,12 @@ Order of business on an inbound POST, and the reason for each step:
 Step 5 fails loudly: a Meta error propagates, the route answers 502 and the turn is *not* recorded as
 sent, so the redelivery Meta then makes finds no outbound row and the lead does get an answer.
 """
+import pathlib
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
+from .. import cv as CV
 from . import brain as B
 from . import config as C
 from . import meta as M
@@ -85,8 +92,12 @@ def _number_matches(value):
 def parse_message(m):
     """-> {wamid, phone, text, button_id, kind} or None for a type this harness does not answer.
 
-    Text and button/list replies are answered. Media arrives as a placeholder: the harness has no
-    document pipeline, so it says so rather than staying silent on a CV a lead just sent.
+    Text and button/list replies are answered. Media (document/image/audio/video) additionally
+    carries ``media_id``/``media_mime_type``/``media_filename`` -- Meta nests those under a field
+    keyed by the type name itself, e.g. ``{"image": {"id": "...", "mime_type": "..."}}`` -- so a
+    downstream step can fetch and read the actual bytes (app/wa/meta.py:Client.media_url/
+    download_media, TASK-67); by itself this function still only parses the payload, it does not
+    fetch anything.
     """
     wamid = str(m.get("id") or "").strip()
     phone = M.sender_e164(m.get("from"))
@@ -108,12 +119,76 @@ def parse_message(m):
             return None
         return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": bid or None, "text": title}
     if kind in ("document", "image", "audio", "video"):
-        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": None, "text": ""}
+        media = m.get(kind) or {}
+        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": None, "text": "",
+                "media_id": str(media.get("id") or "").strip() or None,
+                "media_mime_type": str(media.get("mime_type") or "").strip() or None,
+                "media_filename": str(media.get("filename") or "").strip() or None}
     return None
 
 
 MEDIA_REPLY = ("Danke, angekommen – Dateien kann ich hier noch nicht lesen. Ein Kollege schaut "
                "sie sich an.")
+
+# Media kinds this harness actually extracts text from today, WA_BRAIN=luna only (TASK-67).
+# audio/video still get the flat MEDIA_REPLY ack for both brains -- nothing here transcribes
+# audio/video, so treating them like "read" would be exactly the invented-safety-net kind of
+# silent pretending CLAUDE.md rules out.
+_EXTRACTABLE_KINDS = ("document", "image")
+
+# A PDF's extract_text() result this short (or shorter) is treated as "no real text layer" (a
+# scanned Urkunde saved as PDF) and falls through to the vision path -- the same "< 20 chars ==
+# no readable text" convention CV.analyse()/CV.analyse_llm() already use for a CV upload.
+_NEAR_EMPTY_CHARS = 20
+
+_MIME_SUFFIX = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+                "image/gif": ".gif", "application/pdf": ".pdf"}
+
+
+def _suffix_for(filename, mime_type):
+    """A file extension for the temp file CV.extract_text_vision writes -- from the WhatsApp
+    filename when Meta sent one, else guessed from the mime type, so the CLI's Read tool has a
+    hint about what kind of file it is opening."""
+    ext = pathlib.Path(filename or "").suffix
+    if ext:
+        return ext
+    return _MIME_SUFFIX.get((mime_type or "").split(";")[0].strip().lower(), ".bin")
+
+
+def _extract_media_text(kind, blob, filename, mime_type):
+    """-> (text, card_key). card_key is 'cv_text' for a document whose own text layer was read
+    directly (extract_text), or 'urkunde_text' for anything that needed the vision path -- a bare
+    image, or a scanned PDF with no text layer, treated the same as an image per this task's
+    design (see backlog TASK-67 notes): a photographed/scanned document is far more often the
+    Urkunde/certificate than the CV itself.
+    """
+    mt = (mime_type or "").split(";")[0].strip().lower()
+    is_pdf = (filename or "").lower().endswith(".pdf") or mt == "application/pdf" or blob[:5] == b"%PDF-"
+    if kind == "image" or (kind == "document" and mt.startswith("image/")):
+        return CV.extract_text_vision(blob, suffix=_suffix_for(filename, mime_type)), "urkunde_text"
+    text = CV.extract_text(filename, blob)
+    if is_pdf and len((text or "").strip()) < _NEAR_EMPTY_CHARS:
+        return CV.extract_text_vision(blob, suffix=".pdf"), "urkunde_text"
+    return text, "cv_text"
+
+
+def _ingest_media(c, t, m, client=None):
+    """Download this document/image (Meta's two-step media API, app/wa/meta.py:Client.media_url/
+    download_media) and merge its extracted text onto the Luna card as cv_text/urkunde_text, for
+    WA_BRAIN=luna threads only -- the caller (_handle_one) keeps the deterministic brain's flat
+    media ack completely separate from this path.
+
+    Raises loudly on any failure -- a bad media id, a network error, or a vision call that found
+    no readable text -- there is no silent 'treat it as an empty CV' fallback here (CLAUDE.md, "no
+    invented safety nets"); the caller lets that propagate the same way any other turn-processing
+    failure already does.
+    """
+    cl = client or M.Client()
+    info = cl.media_url(m["media_id"])
+    blob = cl.download_media(info["url"])
+    mime_type = m.get("media_mime_type") or info.get("mime_type")
+    text, card_key = _extract_media_text(m["kind"], blob, m.get("media_filename"), mime_type)
+    t["slots"][card_key] = text
 
 
 def handle_payload(payload, client=None):
@@ -142,9 +217,11 @@ def _handle_one(c, m, client=None):
         return {"wamid": m["wamid"], "status": "stopped"}
 
     if m["kind"] in ("document", "image", "audio", "video"):
-        sent = _send(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
-        ST.save_thread(c, t)
-        return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
+        if not (C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS):
+            sent = _send(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
+            ST.save_thread(c, t)
+            return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
+        _ingest_media(c, t, m, client=client)
 
     if C.BRAIN == "luna":
         from . import luna_brain as LB          # imported lazily: only touched when selected

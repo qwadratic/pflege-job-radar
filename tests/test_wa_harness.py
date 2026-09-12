@@ -185,6 +185,24 @@ def test_parse_reads_text_buttons_and_media(wa):
     assert WAPI.parse_message({"from": "49170", "type": "text", "text": {"body": "hi"}}) is None
 
 
+def test_parse_captures_media_id_mime_type_and_filename(wa):
+    """TASK-67: document/image/audio/video used to drop the media entirely (media_id/mime_type
+    both None, no filename) -- these are what app/wa/meta.py's media download needs, captured
+    straight from Meta's own `{"<type>": {"id":..., "mime_type":..., "filename":...}}` field."""
+    for kind in ("document", "image", "audio", "video"):
+        m = {"id": "wamid.m", "from": "491701234567", "type": kind,
+             kind: {"id": "media-42", "mime_type": "application/pdf", "filename": "lebenslauf.pdf"}}
+        parsed = WAPI.parse_message(m)
+        assert parsed["media_id"] == "media-42"
+        assert parsed["media_mime_type"] == "application/pdf"
+        assert parsed["media_filename"] == "lebenslauf.pdf"
+    # No filename (Meta does not always send one, e.g. for a photo): None, not a crash or "None" string.
+    m = {"id": "wamid.i", "from": "491701234567", "type": "image",
+         "image": {"id": "media-7", "mime_type": "image/jpeg"}}
+    parsed = WAPI.parse_message(m)
+    assert parsed["media_id"] == "media-7" and parsed["media_filename"] is None
+
+
 def test_a_status_only_payload_answers_nothing(wa):
     body = {"entry": [{"changes": [{"value": {"metadata": {"phone_number_id": PHONE_ID},
                                               "statuses": [{"id": "wamid.1", "status": "read"}]}}]}]}
@@ -405,6 +423,56 @@ def test_autosend_off_stores_drafts_and_sends_nothing(wa, monkeypatch):
     with ST.db() as c:
         kinds = [r["kind"] for r in ST.history(c, LEAD)]
     assert kinds.count("draft") == 2
+
+
+def test_media_url_fetches_the_lookup_json_with_a_bearer_token(wa):
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append({"method": method, "url": url, "headers": headers})
+        return {"url": "https://cdn.example/abc", "mime_type": "application/pdf", "id": "media-1"}
+
+    client = M.Client(transport=transport, access_token="tok", phone_number_id="p")
+    out = client.media_url("media-1")
+    assert out["url"] == "https://cdn.example/abc"
+    assert calls[0]["method"] == "GET" and calls[0]["url"].endswith("/media-1")
+    assert calls[0]["headers"]["Authorization"] == "Bearer tok"
+
+
+def test_media_url_raises_without_a_url_in_the_response(wa):
+    client = M.Client(transport=lambda **kw: {"mime_type": "application/pdf"}, access_token="tok", phone_number_id="p")
+    with pytest.raises(M.MetaError, match="no url"):
+        client.media_url("media-1")
+
+
+def test_media_url_raises_without_an_access_token(wa):
+    client = M.Client(transport=lambda **kw: {"url": "x"}, access_token="", phone_number_id="p")
+    with pytest.raises(M.MetaError, match="not set"):
+        client.media_url("media-1")
+
+
+def test_download_media_returns_raw_bytes_not_parsed_json(wa):
+    """The whole reason download_media needs its own transport: _default_transport always returns
+    a parsed dict (JSON) or text decoded with errors='replace', either of which would corrupt real
+    binary media. This asserts the exact bytes come back untouched, with the same bearer token."""
+    raw = b"\xff\xd8\xff\xe0not-really-a-jpeg-but-binary\x00\x01\x02"
+    calls = []
+
+    def media_transport(method, url, headers=None, timeout=None):
+        calls.append({"method": method, "url": url, "headers": headers})
+        return raw
+
+    client = M.Client(media_transport=media_transport, access_token="tok", phone_number_id="p")
+    out = client.download_media("https://cdn.example/abc")
+    assert out == raw
+    assert calls[0]["method"] == "GET" and calls[0]["url"] == "https://cdn.example/abc"
+    assert calls[0]["headers"]["Authorization"] == "Bearer tok"
+
+
+def test_download_media_raises_without_an_access_token(wa):
+    client = M.Client(media_transport=lambda **kw: b"x", access_token="", phone_number_id="p")
+    with pytest.raises(M.MetaError, match="not set"):
+        client.download_media("https://cdn.example/abc")
 
 
 def test_buttons_respect_meta_limits(wa):
