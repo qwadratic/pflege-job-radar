@@ -12,3 +12,4 @@ pdfplumber>=0.11
 python-docx>=1.1
 # app/wa/luna_brain.py (WA_BRAIN=luna) shells out to the `claude` CLI already authenticated on
 # the host -- no extra Python package, no separate ANTHROPIC_API_KEY (see app/wa/config.py).
+mcp>=1.0  # app/wa/luna/tools_server.py -- the MCP server the claude CLI shells out to as a tool provider

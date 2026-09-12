@@ -39,7 +39,11 @@ if BRAIN not in ("deterministic", "luna"):
 # gates already carry (qualification, region) holds up at that tier; raise back to Opus if a
 # quality regression shows up on ambiguous German instead.
 LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
-LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "medium").strip() or "medium"
+# "high" rather than "medium": once tools_server.py is wired in (--mcp-config), deciding whether a
+# turn needs a live lookup, which tool, and with what arguments is real planning work, not just
+# wording a reply -- accepted values are low/medium/high/xhigh/max (`claude -p --help`); "high" is
+# the deliberate middle ground between that and the added latency a WhatsApp reply can tolerate.
+LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "high").strip() or "high"
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if

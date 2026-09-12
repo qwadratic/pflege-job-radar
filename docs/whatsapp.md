@@ -177,16 +177,34 @@ zu erfinden.
 ```bash
 WA_BRAIN=luna                  # deterministic (Default) | luna
 WA_LUNA_MODEL=claude-sonnet-5  # jedes Modell, das `claude --model` akzeptiert (claude-haiku-4-5 = billiger/schneller)
-WA_LUNA_EFFORT=medium          # low|medium|high|xhigh|max
+WA_LUNA_EFFORT=high            # low|medium|high|xhigh|max -- "high" seit TASK-62: Tool-Einsatz planen ist echte Denkarbeit
 ```
 
-**Eigene Tools für das Modell:** noch nicht verdrahtet, aber die CLI unterstützt es —
-`--mcp-config <datei-oder-json>` lädt einen oder mehrere MCP-Server, `--strict-mcp-config`
-begrenzt die Sitzung auf genau die (keine anderen Projekt-/User-MCP-Konfigurationen), und
-`--allowedTools`/`--tools` entscheidet, welche Tool-Namen davon überhaupt freigeschaltet sind.
-Käme in Frage, falls Claude den Markt-Snapshot lieber selbst gezielt abfragen soll (z. B. eine
-`search_pflege_jobs`-Funktion über `app/data.py`) statt ihn als fertigen Block zu bekommen —
-bisher unnötig, weil der Snapshot pro Zug schon vollständig genug ist.
+**Eigene Tools für das Modell (TASK-62, verdrahtet):** `app/wa/luna/tools_server.py` ist ein
+kleiner stdio-MCP-Server mit vier read-only Tools -- `search_postings`, `get_posting`,
+`list_clinics`, `get_clinic_contact` -- die dieselben `D.filter_jobs`/`D.filter_clinics`-Funktionen
+aufrufen wie `app/wa/brain.py` und `GET /api/jobs`/`/api/clinics`. `Client._live_reply` startet ihn
+über `--mcp-config`/`--strict-mcp-config`/`--allowedTools` (auf genau diese vier Tool-Namen
+begrenzt, Form `mcp__pflege_board__<tool>` -- live verifiziert, nirgendwo offiziell dokumentiert).
+`market_snapshot`/`requirement_scoreboard` bleiben trotzdem in jeder Nutzlast: ein Tool-Aufruf ist
+eine Ergänzung, kein Ersatz, und ein Fehler dabei fällt nur auf das bestehende Snapshot-Reasoning
+zurück (kein Retry-Mechanismus -- bewusst verworfen, siehe unten). Der Prompt (`prompts.py`,
+TOOLS-Regel) verlangt proaktiven Einsatz: sobald der Kandidat einen Ort/Fachbereich/eine Klinik
+nennt, die der Snapshot nicht schon zeigt, muss ein echter Tool-Aufruf erfolgen, nie eine Vermutung.
+
+Zwei Stolperfallen, die live beim Aufbau auftraten und für jede künftige Änderung hier gelten:
+1. Das Modell hat "search_postings" anfangs als Wert für `action` ins JSON geschrieben, statt den
+   Tool wirklich aufzurufen -- die strikte "gib NUR ein JSON-Objekt zurück"-Anweisung wurde als
+   Verbot jeder Zwischenaktion missverstanden. Fix: `OUTPUT_INSTRUCTION` sagt jetzt ausdrücklich,
+   dass sich das nur auf den *finalen* Text nach etwaigen Tool-Aufrufen bezieht.
+2. Das per-Server `cwd`-Feld in `--mcp-config` wird von dieser CLI-Version beim stdio-Start nicht
+   beachtet -- der Server erbt das cwd des äußeren `claude`-Prozesses (`C.LUNA_SESSION_DIR`, nicht
+   das Repo-Root), und `python -m app.wa.luna.tools_server` scheitert dann mit
+   `ModuleNotFoundError: No module named 'app'`. Fix: `env.PYTHONPATH` im generierten Config-JSON
+   erzwingt die richtige Modulauflösung unabhängig vom tatsächlichen cwd. Aus demselben Grund
+   bekommt der Server auch `WA_SQLITE_PATH`/`WA_LUNA_SESSION_DIR` als env-Variablen durchgereicht --
+   er importiert `app.wa.config` frisch in seinem eigenen Prozess, sodass ein `monkeypatch` im
+   Testprozess ihn sonst nie erreicht.
 
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,

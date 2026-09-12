@@ -37,6 +37,7 @@ escalate -- is the model's call, per turn, from the state this module hands it.
 import json
 import pathlib
 import re
+import sys
 import uuid
 
 from . import brain as B
@@ -48,10 +49,49 @@ MAX_BUBBLES = 2
 MATCH_LIMIT = 3
 
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").read_text(encoding="utf-8")),
                                 ensure_ascii=False, indent=2)
 _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledge.json").read_text(encoding="utf-8")),
                                  ensure_ascii=False, indent=2)
+
+# The four tools tools_server.py exposes, as the CLI names an external MCP tool
+# (mcp__<server-name>__<tool-name> -- confirmed live, this is not documented anywhere formal).
+MCP_SERVER_NAME = "pflege_board"
+MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
+                       ("search_postings", "get_posting", "list_clinics", "get_clinic_contact"))
+
+
+def _mcp_config_path():
+    """Write (once per process) the --mcp-config file pointing the CLI at tools_server.py,
+    launched with the same interpreter this process runs under -- that interpreter is guaranteed
+    to have the `mcp` package installed, whereas a bare `python`/`python3` on PATH might be a
+    different, unrelated interpreter.
+
+    Every luna turn runs with ``cwd=C.LUNA_SESSION_DIR`` (a data directory, not the repo root --
+    required for Claude Code's own session-resume-by-cwd behavior, see the Client docstring), and
+    the per-server ``cwd`` field in this config was found NOT to be honored by the CLI's stdio MCP
+    launcher (verified live: the spawned server still inherited the outer process's cwd and failed
+    with ``ModuleNotFoundError: No module named 'app'``). ``env.PYTHONPATH`` is what actually makes
+    ``python -m app.wa.luna.tools_server`` resolve regardless of the server's real working
+    directory, so that -- not ``cwd`` -- is the field this depends on; ``cwd`` is left in too since
+    a future CLI version honoring it would only help, never hurt.
+
+    The server is also a fresh subprocess for config purposes: it does its own import of
+    app.wa.config, so a test's ``monkeypatch.setattr(config, "SQLITE_PATH"/"LUNA_SESSION_DIR", ...)``
+    on *this* process never reaches it on its own. WA_SQLITE_PATH/WA_LUNA_SESSION_DIR pass this
+    process's current values through explicitly so a test board and a test tool-call log are the
+    same one on both sides of the subprocess boundary (see tools_server.py's own handling)."""
+    C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    path = C.LUNA_SESSION_DIR / "mcp_config.json"
+    config = {"mcpServers": {MCP_SERVER_NAME: {"command": sys.executable,
+                                                "args": ["-m", "app.wa.luna.tools_server"],
+                                                "cwd": str(_REPO_ROOT),
+                                                "env": {"PYTHONPATH": str(_REPO_ROOT),
+                                                        "WA_SQLITE_PATH": str(C.SQLITE_PATH),
+                                                        "WA_LUNA_SESSION_DIR": str(C.LUNA_SESSION_DIR)}}}}
+    path.write_text(json.dumps(config), encoding="utf-8")
+    return path
 
 # Bundesländer this board has no data for. Named explicitly (not "everything but Bayern") so a
 # misspelled or unrelated word never accidentally triggers the out-of-scope reply.
@@ -219,11 +259,15 @@ class Client:
     ``--append-system-prompt``): the CLI's own default coding-agent persona and tool
     instructions must not leak into a WhatsApp reply. ``--restricted`` removes the
     command/code-execution/WebFetch tools; ``--tools ""`` goes further and disables every
-    built-in tool, including the file-reading ones ``--restricted`` leaves in place -- a
+    *built-in* tool, including the file-reading ones ``--restricted`` leaves in place -- a
     conversational turn has no use for any of them, and without them there is nothing for the
-    model to do but answer (observed without ``--tools ""``: a stray file-read attempt narrated
-    as prose ahead of the JSON, breaking the parse below). The user payload goes over stdin
-    rather than as a positional argument, so a long, growing message never risks an
+    model to do but answer with them (observed without ``--tools ""``: a stray file-read attempt
+    narrated as prose ahead of the JSON, breaking the parse below). ``--tools`` only ever governs
+    that built-in set, though: ``--mcp-config``/``--strict-mcp-config``/``--allowedTools`` (see
+    ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the four read-only
+    board-query tools in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn,
+    it just still cannot read a file, run a command or fetch a URL. The user payload goes over
+    stdin rather than as a positional argument, so a long, growing message never risks an
     argument-length limit and never shows up in a process listing.
 
     ``reply(system, user, session_id)`` -> ``(out, next_session_id)``. ``session_id=None`` means
@@ -248,6 +292,8 @@ class Client:
             proc = subprocess.run(
                 [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
                  "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
+                 "--mcp-config", str(_mcp_config_path()), "--strict-mcp-config",
+                 "--allowedTools", ",".join(MCP_TOOL_NAMES),
                  "--system-prompt", system_text, *session_flags],
                 input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
                 cwd=C.LUNA_SESSION_DIR,

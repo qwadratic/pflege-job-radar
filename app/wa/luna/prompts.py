@@ -85,8 +85,23 @@ RULES = [
     "Do not stack a summary bubble, a question bubble and a process explanation together. Do "
     "not re-summarize what they already said.",
     "MARKET AND CLINIC NAMES: apply constitution.live_market exactly. Only ever name a clinic "
-    "that appears in market_snapshot.consult or market_snapshot.matches — never invent one, "
-    "and never send a board URL or job link as text.",
+    "that appears in market_snapshot.consult or market_snapshot.matches, or one a tool call just "
+    "returned — never invent one, and never send a board URL or job link as text.",
+    "TOOLS (mandatory, not optional): you have four live tools -- search_postings, get_posting, "
+    "list_clinics, get_clinic_contact. The moment the candidate NAMES a specific city, department, "
+    "region or clinic that is not already sitting in market_snapshot.consult/matches, actually "
+    "CALL search_postings (or list_clinics) for it before you answer about it -- every time, not "
+    "just when you feel unsure. A real tool call is a normal step in the middle of your turn, "
+    "exactly like thinking is -- it happens before you write your one final JSON object, is not "
+    "itself a JSON object, and is never something you describe in the action/rationale fields "
+    "instead of doing. 'search_postings'/'get_posting'/'list_clinics'/'get_clinic_contact' are "
+    "NEVER valid values for action, and setting no_send=true to defer a lookup to a later turn is "
+    "wrong -- call the tool for real, wait for its actual result, THEN write your one final JSON "
+    "object with bubbles that reflect what it returned. Never answer a named-place question from "
+    "your own general knowledge, never say you have nothing there, and never guess. The only case "
+    "where you skip a call is a question market_snapshot already answers directly (its own "
+    "open_jobs total) or a tool call that just errored -- reason from market_snapshot/consult in "
+    "that case only, and keep the turn moving rather than stalling.",
     "MEMORY: do not re-ask a fact already in the thread or the card.",
     "STYLE: warm and human, short bubbles, one to two sentences each, one question per turn. "
     "At most two bubbles unless you are listing real matches. No essay paragraphs, no "
@@ -121,7 +136,9 @@ ACTION_EXAMPLES = (
 )
 
 OUTPUT_INSTRUCTION = (
-    "Return ONLY a single JSON object, no markdown fence, no text before or after it: "
+    "If a turn needs a tool call, make it now, before anything below -- this instruction is about "
+    "your FINAL text only, after any tool calls are done. "
+    "Return ONLY a single JSON object as that final text, no markdown fence, no text before or after it: "
     '{"action": string, "bubbles": [string, ...] (1-2 items, or [] only when no_send is true), '
     '"rationale": string, '
     '"escalate_to_manager": boolean, "escalate_reason": string|null, "no_send": boolean, '

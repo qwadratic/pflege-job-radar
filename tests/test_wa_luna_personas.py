@@ -14,6 +14,7 @@ full anonymized group report this was built from.
 Run explicitly: ``pytest -q -m llm tests/test_wa_luna_personas.py``. Skipped automatically if the
 `claude` CLI is not on PATH (nothing here can run without it).
 """
+import json
 import re
 import shutil
 import time
@@ -205,3 +206,42 @@ def test_yassine_found_another_job_ends_gracefully(board):
     final_bubbles = " ".join(results[-1]["bubbles"]).lower()
     assert not any(w in final_bubbles for w in ("lebenslauf", "wohnung", "welche stadt")), (
         "must not keep chasing the funnel once the candidate has withdrawn")
+
+
+# --- proactive tool use (TASK-62) ---------------------------------------------------------------
+# board's fixture cities are München/Augsburg/Würzburg/Regensburg/Bayreuth -- Coburg is
+# deliberately absent from it, so a question about Coburg cannot be answered from
+# market_snapshot/consult alone and can only be answered honestly via a live search_postings call.
+
+def _tool_calls(names_only=True):
+    path = C.LUNA_SESSION_DIR / "tool_calls.jsonl"
+    if not path.exists():
+        return []
+    lines = [json.loads(l) for l in path.read_text(encoding="utf-8").strip().splitlines() if l.strip()]
+    return [l["tool"] for l in lines] if names_only else lines
+
+
+def test_a_question_about_an_unlisted_city_actually_triggers_a_live_search(board):
+    """The defining proactive-tool-use case: a city outside the default snapshot must be looked
+    up for real, not answered with a guess or an honest-sounding 'I don't know' when a tool call
+    would settle it directly."""
+    results = _run([
+        "Hallo, ich habe die Urkunde schon, bin anerkannt.",
+        "Haben Sie auch etwas in Coburg?",
+    ])
+    calls = _tool_calls(names_only=False)
+    search_calls = [c for c in calls if c["tool"] == "search_postings"]
+    assert search_calls, f"expected a live search_postings call about Coburg, got calls: {calls!r}"
+    assert any("coburg" in json.dumps(c["args"], ensure_ascii=False).lower() for c in search_calls), (
+        f"a search_postings call happened but none mentioned Coburg: {search_calls!r}")
+    final_bubbles = " ".join(results[-1]["bubbles"])
+    assert final_bubbles.strip(), "the tool call must still be followed by an actual reply"
+
+
+def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_call(board):
+    """Proactive is not the same as trigger-happy: a question market_snapshot's own open_jobs
+    total already answers should not burn a tool call to re-derive the same number."""
+    results = _run(["Hallo, wie viele offene Stellen habt ihr insgesamt bei euch?"])
+    calls = _tool_calls()
+    assert "search_postings" not in calls, f"a question already answered by market_snapshot should not call search_postings, got: {calls!r}"
+    assert results[-1]["bubbles"], "a plain count question should still get an actual reply"
