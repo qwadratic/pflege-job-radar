@@ -361,6 +361,7 @@ PUBLIC_ROUTES = [
     ("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("POST", "/api/auth/magic"),
     ("GET", "/api/auth/magic/{token}"), ("POST", "/api/auth/agent"),
     ("POST", "/api/firecrawl/webhook"),                                   # authenticates with its own shared secret
+    ("GET", "/api/wa/health"),                                            # readiness booleans, no secret
     ("GET", "/api/stripe/status"), ("POST", "/api/stripe/checkout"),      # a visitor who is not a customer yet pays here
     ("POST", "/api/stripe/webhook"),                                      # authenticates with Stripe's signature
 ]
