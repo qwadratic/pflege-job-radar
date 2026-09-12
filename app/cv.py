@@ -6,10 +6,17 @@ analyse_llm() is a second, independent extraction path (TASK-65): the `claude` C
 (+ optional chat history) and reasons the profile directly, instead of regex. Same {profile, matches}
 output shape as analyse() -- both call the same deterministic match() once a profile exists, so the
 compared thing is extraction quality, not job-matching scoring. See evals/cv/run.py --path=llm and
-evals/cv/README.md for the measured comparison and which path is recommended."""
+evals/cv/README.md for the measured comparison and which path is recommended.
+
+extract_text_vision()/VisionClient (TASK-67) is a third extraction primitive, for images and
+scanned (text-layer-less) PDFs: the same `claude` CLI subprocess pattern, but asking the model to
+read a FILE via its own built-in Read tool instead of reasoning over text on stdin. analyse_candidate()
+(TASK-67) is the WhatsApp-harness entry point: analyse_llm() plus this candidate's own chat history
+(app.wa.store.history), for cv_text/urkunde_text the harness extracted from their uploads."""
 import io
 import json
 import os
+import pathlib
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -405,6 +412,120 @@ def analyse_llm(filename=None, blob=None, text=None, chat_history=None, limit=50
     return {"profile": prof, "matches": match(prof, limit), "used_llm": True, "chars": len(txt)}
 
 
+# --- vision text extraction: images, and scanned (text-layer-less) PDFs (TASK-67) ------------------
+#
+# extract_text() has no signal for "scanned PDF, no text layer" vs. "genuinely empty" -- pdfplumber
+# silently returns "" either way -- and has nothing at all for a bare image. This is the fallback for
+# both: instead of a second, separate model call format, it reuses the exact same `claude` CLI
+# subprocess pattern as LLMClient above, but asks the model to read a FILE via its own built-in Read
+# tool rather than reasoning over text handed to it on stdin.
+#
+# A small spike (documented in TASK-67's backlog notes, not repeated here) confirmed this works, with
+# two things that are NOT obvious from the CLI's own --help:
+#   1. `--tools ""` (used by LLMClient/luna_brain.Client to silence every built-in tool) also removes
+#      the Read tool -- with it, the model reports it has no way to open a local file at all. This
+#      path needs `--restricted` alone (drops command/code-execution/WebFetch, keeps Read/Glob/Grep).
+#   2. Even with Read available, it is confined to the CLI's cwd plus whatever `--add-dir` grants --
+#      an arbitrary absolute path outside both is refused. So the downloaded bytes are written to a
+#      throwaway, single-file temp directory and THAT directory (never a broader one) is `--add-dir`-
+#      granted, so the model can read the one file it was asked about and nothing else on this host.
+# Confirmed live: a plain PNG with rendered text, and the same content re-saved as a one-page PDF
+# with no text layer (a stand-in for a scanned Urkunde) were both read back correctly this way, and a
+# blank image correctly produced the NO_TEXT_FOUND sentinel below -- so the CLI-first path is used
+# here, per the user's stated CLI-first preference; the Anthropic SDK multimodal fallback the plan
+# allows for is not needed and is not implemented.
+_VISION_CLAUDE_BIN = os.environ.get("CV_VISION_CLAUDE_BIN", "").strip() or _LLM_CLAUDE_BIN
+_VISION_MODEL = os.environ.get("CV_VISION_MODEL", "").strip() or _LLM_MODEL
+_VISION_EFFORT = os.environ.get("CV_VISION_EFFORT", "").strip() or _LLM_EFFORT
+_VISION_TIMEOUT_SEC = int(os.environ.get("CV_VISION_TIMEOUT_SEC", "") or _LLM_TIMEOUT_SEC)
+
+_NO_TEXT_TOKEN = "NO_TEXT_FOUND"
+
+_VISION_SYSTEM_PROMPT = f"""You are given the path to a single image or PDF file: a nursing
+candidate's CV or Urkunde/qualification certificate sent over WhatsApp, possibly a photographed or
+scanned document. Use your file-reading tool to open the exact path named in the user message, then
+transcribe ALL text visible in it as plain text, in reading order -- names, qualification titles,
+dates, institutions, stamps, everything legible. Do not summarize, translate, describe the layout, or
+comment on it.
+
+If the file has no legible text at all (blank, too dark, illegible), reply with exactly the single
+token {_NO_TEXT_TOKEN} and nothing else.
+
+Output nothing but the transcription (or that one token) -- no preamble, no markdown fence, no
+commentary before or after it."""
+
+
+class VisionClient:
+    """Runs one image/scanned-document transcription through the `claude` CLI's non-interactive
+    print mode, using its own built-in Read tool to view the file (see the module-level note
+    above) -- not the Anthropic SDK: the CLI-first path was confirmed to work for this repo's
+    purposes. Fails loudly (raises) on any bad response, same convention as LLMClient; a
+    NO_TEXT_FOUND reply is validated by the caller (extract_text_vision), not here, since this
+    class also gets used directly in tests with a fake ``call``.
+
+    ``call=`` is swappable so tests never spawn a subprocess -- same seam as LLMClient/meta.Client.
+    """
+
+    def __init__(self, call=None):
+        self._call = call or self._live_call
+
+    def _live_call(self, file_path):
+        import subprocess
+
+        add_dir = str(pathlib.Path(file_path).resolve().parent)
+        prompt = f"Read the file at {file_path} and transcribe it as instructed."
+        try:
+            proc = subprocess.run(
+                [_VISION_CLAUDE_BIN, "-p", "--restricted", "--add-dir", add_dir,
+                 "--output-format", "json", "--model", _VISION_MODEL, "--effort", _VISION_EFFORT,
+                 "--system-prompt", _VISION_SYSTEM_PROMPT, prompt],
+                capture_output=True, text=True, timeout=_VISION_TIMEOUT_SEC,
+            )
+        except FileNotFoundError:
+            raise RuntimeError(f"{_VISION_CLAUDE_BIN!r} is not on PATH -- CV vision extraction "
+                              f"needs the Claude Code CLI installed and authenticated on this host")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"claude -p did not answer within {_VISION_TIMEOUT_SEC}s")
+        if proc.returncode != 0:
+            raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
+        try:
+            envelope = json.loads(proc.stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"claude -p did not return JSON on stdout: {exc}: {proc.stdout[:300]!r}")
+        if envelope.get("is_error"):
+            raise RuntimeError(f"claude -p reported an error: {envelope.get('result')!r}")
+        result = envelope.get("result")
+        if not isinstance(result, str) or not result.strip():
+            raise RuntimeError(f"claude -p returned no result text: {envelope!r}")
+        return result.strip()
+
+    def transcribe(self, file_path):
+        return self._call(file_path)
+
+
+def extract_text_vision(blob, suffix=".png", client=None):
+    """Image bytes (or a scanned, text-layer-less PDF's bytes) -> transcribed text, via
+    VisionClient. Writes ``blob`` to a throwaway, single-file temp directory (removed afterwards
+    either way) so the CLI's --add-dir grant never exposes more than this one file.
+
+    Raises loudly -- never returns silently-empty text -- when the model reports no readable text
+    (``NO_TEXT_FOUND``) or answers with nothing usable: a document that fails vision extraction is
+    not the same thing as an empty CV (CLAUDE.md, "no invented safety nets"); the caller decides
+    what a failed intake means for the conversation, this function never papers over it.
+    """
+    import tempfile
+
+    cl = client or VisionClient()
+    with tempfile.TemporaryDirectory(prefix="cv_vision_") as tmp:
+        path = pathlib.Path(tmp) / ("upload" + (suffix or ""))
+        path.write_bytes(blob)
+        text = cl.transcribe(str(path))
+    stripped = (text or "").strip()
+    if not stripped or stripped.upper() == _NO_TEXT_TOKEN:
+        raise RuntimeError("vision extraction found no readable text in the image/scanned document")
+    return text
+
+
 _ROLE_NEAR = {"pflegefachkraft": {"fachpflege": 0.6, "sonstige_pflege": 0.5, "praxisanleitung": 0.4, "pflegehelfer": 0.3},
               "fachpflege": {"pflegefachkraft": 0.7, "sonstige_pflege": 0.4, "apn_experte": 0.4},
               "pflegehelfer": {"pflegefachkraft": 0.3, "sonstige_pflege": 0.4},
@@ -467,3 +588,29 @@ def analyse(filename=None, blob=None, text=None, limit=50):
     prof = profile_from_text(txt)
     prof, used_llm = _llm_refine(txt, prof)
     return {"profile": prof, "matches": match(prof, limit), "used_llm": used_llm, "chars": len(txt)}
+
+
+def analyse_candidate(phone, conn, cv_text=None, urkunde_text=None, limit=50, chat_limit=50, client=None):
+    """CV/Urkunde intake for a WhatsApp candidate (TASK-67) -- the same analyse_llm() extraction
+    path TASK-65 measured as the winner over the deterministic regex path (evals/cv/README.md),
+    but folding in this thread's own chat history (app.wa.store.history) alongside whatever
+    cv_text/urkunde_text the harness has already extracted from their uploads (app/wa/api.py's
+    media intake merges those onto the Luna card), so the model reasons over everything the
+    candidate has told Valentina, not one document read in isolation.
+
+    ``conn`` is an already-open app.wa.store connection: the caller (inside app/wa/api.py's own
+    ``ST._lock``/``ST.db()`` block) already holds one, so this never opens or locks a second one.
+    The public ``/api/cv`` upload endpoint (app/main.py) has no phone and no history -- it calls
+    analyse_llm()/analyse() directly and is completely untouched by this function's existence.
+    """
+    from .wa import store as ST
+
+    parts = []
+    if (cv_text or "").strip():
+        parts.append("--- CV ---\n" + cv_text.strip())
+    if (urkunde_text or "").strip():
+        parts.append("--- Urkunde ---\n" + urkunde_text.strip())
+    text = "\n\n".join(parts)
+    history = ST.history(conn, phone, limit=chat_limit) if phone else []
+    chat_history = [{"direction": r["direction"], "text": r["body"]} for r in history if (r.get("body") or "").strip()]
+    return analyse_llm(text=text, chat_history=chat_history, limit=limit, client=client)

@@ -14,7 +14,7 @@ and infrastructure-specific material removed or replaced:
 | kept, same substance | genericized | dropped entirely |
 |---|---|---|
 | persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → no company named; assistant self-describes generically | interview scheduling (a second, later conversation the source calls "Game 2") |
-| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it |
+| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-67, see note below — no longer entirely dropped) |
 | "not placeable → explain once, then stop" | — | clinic-submission email + human-approval token flow (kept only as a state flag, see `constitution.json:handoff_principle`) |
 | primary-candidate-first (companion mentioned mid-chat) | — | manager WhatsApp call-permission form, WABA approved-template inventory |
 | housing principle (ask people-count, never rooms, never guarantee) | — | proactive re-engagement (soft nudges, quiet hours, promise reminders) — this harness only replies to inbound messages |
@@ -34,3 +34,11 @@ print mode (`claude -p --restricted --output-format json`) rather than the Anthr
 SDK, so it rides whatever Claude Code auth already exists on the host instead of needing a
 separate `ANTHROPIC_API_KEY` — the same "the model decides the action and writes the wording;
 the harness only supplies state" design, different provider and a different call path.
+
+**Update (TASK-67):** CV/Urkunde intake is no longer entirely dropped, but it is new
+infrastructure written for this repo, not a port of the source's own (unseen) reaction rules --
+nothing from the source was read for this. `app/wa/api.py` now downloads a document/image
+(`app/wa/meta.py:Client.media_url`/`download_media`), extracts its text (`app/cv.py:extract_text`,
+falling through to a Claude-vision path for images and scanned PDFs), and merges it onto the card
+as `cv_text`/`urkunde_text` before `LB.turn()` runs. `prompts.py:RULES` gained one line telling the
+model how to react to those two fields; everything else in this file's table above still holds.

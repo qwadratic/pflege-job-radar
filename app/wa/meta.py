@@ -94,11 +94,32 @@ def _default_transport(method, url, headers=None, data=None, timeout=C.HTTP_TIME
         return {"raw": body.decode("utf-8", errors="replace"), "status_code": status}
 
 
+def _default_binary_transport(method, url, headers=None, timeout=C.HTTP_TIMEOUT_SEC):
+    """Same shape as ``_default_transport``'s request side, but returns the response body as raw
+    bytes, never parsed -- ``_default_transport`` always hands back a parsed dict (JSON) or text
+    decoded with ``errors="replace"``, either of which would corrupt binary media content. Used
+    only by ``Client.download_media`` (the media-id lookup itself is plain JSON and still goes
+    through the regular ``transport``)."""
+    req = urllib.request.Request(url=url, method=method.upper())
+    for key, value in (headers or {}).items():
+        req.add_header(key, value)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        body = exc.read()
+        raise MetaError(f"Meta HTTP {exc.code}", status_code=exc.code,
+                        payload={"raw": body.decode("utf-8", errors="replace")[:500]}) from exc
+    except urllib.error.URLError as exc:
+        raise MetaError(f"Meta network error: {exc.reason}") from exc
+
+
 class Client:
     """Outbound half of the Cloud API. One instance per request; state lives in SQLite, not here."""
 
-    def __init__(self, transport=None, access_token=None, phone_number_id=None):
+    def __init__(self, transport=None, media_transport=None, access_token=None, phone_number_id=None):
         self.transport = transport or _default_transport
+        self.media_transport = media_transport or _default_binary_transport
         self.access_token = C.ACCESS_TOKEN if access_token is None else access_token
         self.phone_number_id = C.PHONE_NUMBER_ID if phone_number_id is None else phone_number_id
 
@@ -139,3 +160,27 @@ class Client:
                            "to": re.sub(r"\D", "", to_e164), "type": "interactive",
                            "interactive": {"type": "button", "body": {"text": body},
                                            "action": {"buttons": rows}}})
+
+    def media_url(self, media_id):
+        """Step 1 of Meta's two-step media download: ``GET /{media-id}`` -> a JSON object with a
+        temporary, token-gated CDN ``url`` (plus ``mime_type``/``sha256``/``file_size``/``id``).
+        That URL expires quickly -- the caller must fetch it with ``download_media`` right away
+        and never store it."""
+        if not self.access_token:
+            raise MetaError("META_WHATSAPP_ACCESS_TOKEN is not set")
+        url = f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/{media_id}"
+        headers = {"Authorization": "Bearer " + self.access_token}
+        out = self.transport(method="GET", url=url, headers=headers, data=None)
+        if not isinstance(out, dict) or not out.get("url"):
+            raise MetaError("Meta media lookup returned no url", payload=out)
+        return out
+
+    def download_media(self, url):
+        """Step 2: fetch the temporary CDN ``url`` from ``media_url()``. Still needs the SAME
+        bearer token -- the CDN link is not a public, unauthenticated URL despite looking like
+        one. Returns raw bytes via ``media_transport`` (never the JSON-parsing ``transport``,
+        which would corrupt binary content)."""
+        if not self.access_token:
+            raise MetaError("META_WHATSAPP_ACCESS_TOKEN is not set")
+        headers = {"Authorization": "Bearer " + self.access_token}
+        return self.media_transport(method="GET", url=url, headers=headers)
