@@ -314,7 +314,7 @@ def _check(bubbles):
     return bubbles
 
 
-GREETING = ("Hallo, hier ist Valentina von NDT Group – ich bin die digitale Assistentin und helfe bei "
+GREETING = ("Hallo, hier ist Valentina – ich bin die digitale Assistentin und helfe bei "
             "Pflegestellen in Bayern.")
 
 

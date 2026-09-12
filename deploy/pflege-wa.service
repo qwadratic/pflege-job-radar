@@ -10,6 +10,9 @@
 # Webhook in the Meta app: https://<host>/api/wa/webhook, field `messages`, the verify token below.
 # Nothing is handed to Meta until WA_AUTOSEND=1 is in the EnvironmentFile; without it every reply is
 # stored as a draft and can be read back with GET /api/wa/threads.
+# WA_BRAIN=luna (docs/whatsapp.md) shells out to the `claude` CLI: it must be on this unit's PATH
+# and already authenticated as the `User=` below (`claude auth status`) before enabling that mode --
+# systemd units do not inherit an interactive login session's credentials.
 [Unit]
 Description=Pflege-Board WhatsApp harness (app.wa.asgi)
 After=network-online.target

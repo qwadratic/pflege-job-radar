@@ -11,7 +11,7 @@ einen Menschen vor. Er schickt **nichts** an Kliniken, sammelt keine Dokumente, 
 
 Vorbild ist der Produktions-Bot auf `tasker-dispatcher-01`
 (`/opt/clinic-dispatcher/apps/connectors/`): dieselbe Meta-Cloud-API, dieselben Env-Namen, dieselbe
-Persona (intern „Luna", im Chat **Valentina von NDT Group**), dieselbe Stilregel (kurze Bubbles, eine
+Persona (intern „Luna", im Chat **Valentina**), dieselbe Stilregel (kurze Bubbles, eine
 Frage pro Zug), dieselbe Qualifikations-Hürde (Urkunde / Defizitbescheid / bestandene
 Kenntnisprüfung). Neu ist, dass die Fragen aus den Board-Daten kommen statt aus einem festen Skript,
 und dass der LLM-Aufruf entfällt: die Antwort ist deterministisch und damit testbar.
@@ -68,7 +68,7 @@ Ein Verlauf sieht damit so aus (echte Zahlen, gekürzt):
 
 ```
 << Hallo
->> Hallo, hier ist Valentina von NDT Group – ich bin die digitale Assistentin …
+>> Hallo, hier ist Valentina – ich bin die digitale Assistentin …
 >> Wo möchten Sie arbeiten? Am meisten offen ist gerade in München, Neuburg/Donau, Augsburg.   [München] [Neuburg/Donau] [Augsburg]
 << Intensivpflege
 >> 388 Stellen passen bisher.
@@ -124,10 +124,59 @@ Harness lokal ohne zweiten Prozess läuft. In Produktion zeigt nginx auf **eine*
 Prozess, damit ein Lead nicht hinter einem Crawl-Snapshot wartet. Beide schreiben `data/wa.sqlite`
 (WAL); schreiben tut nur die, die Webhooks bekommt.
 
+## Zweites Gehirn: dieselbe Persona, dieselben Regeln, Claude statt ChatGPT
+
+`WA_BRAIN=luna` schaltet auf `app/wa/luna_brain.py` um — dieselbe Transport-Schicht, dieselbe
+`data/wa.sqlite`, aber die Antwort kommt jetzt von Claude statt aus der Fragen-Leiter oben.
+Persona, Qualifikations-Gate, Regions-Grenze (nur Bayern) und die Live-Markt-Logik sind aus
+der Produktions-Implementierung übernommen — mit Firmenbezug entfernt, weil dieses Repo
+öffentlich ist und die Quelle privat/firmengebunden (`app/wa/luna/VENDORED.md` listet genau,
+was übernommen, was verallgemeinert und was weggelassen wurde). `docs/index.json`/README
+bleiben Deutsch; dieser Abschnitt auch.
+
+**Was in Code entschieden wird, nicht vom Modell:**
+
+- **STOP** erreicht das Modell nie — genau wie beim deterministischen Zweig.
+- **Nicht platzierbar** (Pflegehelfer, Ausbildung ohne Anerkennungspfad, durchgefallene
+  Kenntnisprüfung): die erste Ablehnung ist der feste deutsche Text
+  (`app/wa/luna/prompts.py:REJECT_BODY_DE`), nie die eigene Formulierung des Modells — genau
+  die "prozessgenaue Formulierung, die das Modell nicht umschreiben darf"-Regel aus der Quelle.
+- **Bundesland außerhalb Bayerns**: löst die feste Absage aus (`OUT_OF_SCOPE_REGION_DE`), weil
+  das Board keine Daten für andere Länder hat.
+
+Alles andere — Tonfall, welche Frage als nächste kommt, wie der Marktstand formuliert wird,
+wann eskaliert wird — entscheidet Claude, aus dem Zustand, den `app/wa/luna_brain.py` mitgibt:
+dem Thread, der Karte (`card`, das Äquivalent zu `card_patch` aus der Quelle), einem
+`requirement_scoreboard` (Zustand, kein Skript) und einem `market_snapshot` aus genau den
+Filtern, die auch `GET /api/jobs` nutzt (`app/wa/brain.py:jobs_for`) — kein zweiter Datenpfad.
+
+**Aufruf: die `claude`-CLI, nicht der Anthropic-SDK-Schlüssel.** `app/wa/luna_brain.py:Client`
+ruft `claude -p --restricted --output-format json --system-prompt "…"` auf (Systemprompt als
+volle Ersetzung, nicht Anhängsel; `--restricted` nimmt Bash/Code-Ausführung/WebFetch weg, die
+für eine Chat-Antwort ohnehin nichts zu tun hätten) und schickt die Nutzlast über stdin. Das
+nutzt die Claude-Code-Anmeldung, die auf dem Host schon existiert — kein separates
+`ANTHROPIC_API_KEY`. Ein fehlendes Binary, ein Timeout (`WA_LUNA_TIMEOUT_SEC`, Default 60s),
+ein Nicht-JSON-Ergebnis oder eine Antwort ohne Pflichtfelder werfen laut, statt eine Nachricht
+zu erfinden.
+
+```bash
+WA_BRAIN=luna                 # deterministic (Default) | luna
+WA_LUNA_MODEL=claude-opus-5   # jedes Modell, das `claude --model` akzeptiert
+WA_LUNA_EFFORT=medium         # low|medium|high|xhigh|max
+```
+
+**Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
+Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
+keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig
+(siehe unten), aus demselben Grund: die Infrastruktur dafür existiert in diesem Repo nicht.
+Eine Eskalation (`escalate_to_manager`) wird auf dem Thread vermerkt (`_escalated`,
+`_escalate_reason`, lesbar über `GET /api/wa/threads`), löst aber keinen Versand aus.
+
 ## Was hier absichtlich fehlt
 
-- **Kein LLM.** Der Produktions-Bot schreibt mit `gpt-5.6-luna`; hier ist die Antwort deterministisch,
-  damit jede Regel einen Test hat. `LLM_API_BASE` wird nicht gelesen.
+- **Kein LLM (Standard).** Die Fragen-Leiter oben ist deterministisch, damit jede Regel einen
+  Test hat. `WA_BRAIN=luna` (oben) schaltet auf Claude um, wenn die volle Persona/Konversation
+  gebraucht wird.
 - **Keine Klinik-Seite.** `handover_requested` wird im Thread vermerkt, verschickt aber nichts;
   ein Mensch übernimmt. Der Harness verspricht dem Lead genau das und nicht mehr.
 - **Keine proaktiven Nachrichten**, also auch keine Nachfass-Kadenz, keine Nachtruhe-Fenster und

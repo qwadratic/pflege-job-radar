@@ -4,7 +4,8 @@ Order of business on an inbound POST, and the reason for each step:
 1. verify the signature over the raw bytes -- everything after this trusts the payload;
 2. check the phone-number id, so a webhook wired to a second WhatsApp number is ignored, not answered;
 3. insert by ``wamid``, which is UNIQUE -- a Meta redelivery is dropped here and answered once;
-4. decide the reply (app/wa/brain.py), which touches no network and no store;
+4. decide the reply -- app/wa/brain.py (deterministic, default) or app/wa/luna_brain.py
+   (WA_BRAIN=luna, Claude-driven), picked once in config.py so this route does not care which;
 5. send it, and only then write the outbound rows.
 
 Step 5 fails loudly: a Meta error propagates, the route answers 502 and the turn is *not* recorded as
@@ -145,7 +146,12 @@ def _handle_one(c, m, client=None):
         ST.save_thread(c, t)
         return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
 
-    d = B.turn(m["text"], t, button_id=m["button_id"])
+    if C.BRAIN == "luna":
+        from . import luna_brain as LB          # imported lazily: only touched when selected
+        history = ST.history(c, m["phone"], limit=50)
+        d = LB.turn(m["text"], t, button_id=m["button_id"], history=history)
+    else:
+        d = B.turn(m["text"], t, button_id=m["button_id"])
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         t["stopped"], t["stopped_reason"] = True, ST.STOPPED
