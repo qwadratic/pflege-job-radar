@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-12 16:00'
-updated_date: '2026-09-12 17:09'
+updated_date: '2026-09-12 17:34'
 labels: []
 dependencies:
   - TASK-64
@@ -49,6 +49,8 @@ Built app/wa/queue.py (card_to_candidate, build_queue_entry, queue_rows, mailing
 Both new endpoints added to auth.py:OWNER_READ_PREFIXES (same PII class as /api/wa/threads) and to test_auth.py's DENIED table for real auth-gating coverage, rather than hand-rolling a login flow in this task's own test file.
 
 Bug found and fixed via testing, not assumed: build_queue_entry's contact lookup (CT.get_contact) failed with 'no such table: clinic_contacts' when queue.db()'s connection had never had contacts.py's own SCHEMA applied on it -- fixed by having queue.db() apply both schemas on the same connection (same bug class TASK-62 already hit once with the MCP tool's own get_clinic_contact).
+
+Follow-up integration after TASK-67 merged: handle_payload's post-consent step now calls app.cv.analyse_candidate(phone, conn, cv_text, urkunde_text) -- folding chat history in, per Ivan's original ask ('use all chat history + CV as matching input') -- and passes its profile into build_queue_entry as cv_profile, skipping the call entirely when the card has neither cv_text nor urkunde_text (a normal case: consenting without ever uploading anything), rather than feeding analyse_llm empty input. 2 new tests cover both branches.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
