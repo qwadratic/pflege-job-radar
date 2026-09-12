@@ -1,12 +1,12 @@
 ---
-id: TASK-58
+id: TASK-58a
 title: >-
   Re-run kbo IAK/ISK/Heckscher boards + Bamberg tie-break once Supabase is
   reachable
 status: To Do
 assignee: []
 created_date: '2026-09-11 15:10'
-updated_date: '2026-09-11 15:35'
+updated_date: '2026-09-11 16:06'
 labels: []
 dependencies:
   - TASK-57
@@ -43,4 +43,19 @@ Also found + fixed (code only, needs delivery): kbo-dak.de (clinic 16107, Zentru
 Also add: re-verify TASK-52's meinkrankenhaus2030.de/karriere/stellenboerse board (clinics 19001 Schongau + 19002 Weilheim) with description-aware Matcher.match() the same way as the other TASK-51 cases -- both currently-delivered postings resolved to 19001 only, unconfirmed whether that's correct for all of them or an org-name-defaulting artifact.
 
 Also add: re-deliver klinikverbund-allgaeu.de's umantis board (TASK-56, commit 0ee9828) -- verified live raw 9->102 rows, never delivered to prod due to the same outage.
+
+2026-09-11 (TASK-49 continued): 3 more registry careers_url fixes queued for delivery once
+Supabase is reachable (no code change needed, verified live via direct crawl_wp_jobs(c) calls):
+- www.waldkrankenhaus.de (290 beds) -> https://jobs.malteser.de (real board, confirmed real
+  nursing postings there).
+- www.kreiskrankenhaus-hoechstadt.de (80 beds) -> https://www.team-anna.de/stellenboerse/
+  (confirmed 12 real rows, several Pflegefachkraft postings).
+- www.st-irmingard.de (75 beds) -> https://karriere.gesundheitswelt.de/stellenangebote.html
+  (rexx-systems shared board, "Gesundheitswelt Chiemgau" group; confirmed 50 rows, 8 tagged
+  "Prien am Chiemsee" incl. a real Pflegefachkraft/Altenpfleger nursing posting).
+Also 3 code fixes committed+pushed (165b1eb) that only need their affected clinics' postings
+delivered once DB is back: clinic-dr-decker.de, klinik-am-birkenwald.de,
+fachklinikum-mainschleife.de (generic href-or-text OR fix), plus klinik-menterschwaige.de,
+klinik-bad-trissl.de, klinik-wirsberg.de (bespoke extractors). See TASK-49 final summary for
+full detail.
 <!-- SECTION:NOTES:END -->

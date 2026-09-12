@@ -282,7 +282,10 @@ class Crawler:
         return rows, stats
 
     def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False):
-        emp = employer or seed["name"]
+        # seed.get("operator") beats seed["name"]: a shared-hub seed (e.g. ats_seeds.umantis()'s
+        # hub_needs_own_host case) sets it precisely when the seed clinic's own name would be wrong
+        # for every OTHER site's postings on that same hub -- see ats_seeds.py's umantis() docstring.
+        emp = employer or seed.get("operator") or seed["name"]
         e_class, e_rule = classify_employer(emp)
         role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
@@ -300,7 +303,14 @@ class Crawler:
             **enr, "details_fetched_at": datetime.now(timezone.utc).isoformat() if desc else None, "details_error": None,
             "fuzzy_key": fuzzy_key(title, emp, city), "content_hash": content_hash(title, emp, city, desc[:200] if desc else None),
             "payload": json.dumps({"crawl": {"seed": seed["career"], "kez": seed.get("kez"), "parse": parse}}, ensure_ascii=False),
-            "_kez": seed.get("kez"),
+            # A shared-hub seed (seed.get("operator") set, see _base() in ats_seeds.py) genuinely
+            # covers several distinct real sites -- defaulting an unmatched row to the ONE seed
+            # clinic that happened to kick off the crawl is exactly the wrong-guess bug this operator
+            # fix exists to remove (confirmed live 2026-09-11: a Klinikverbund Allgäu posting in
+            # Memmingen, a town with no registered clinic in the group, silently landed on
+            # Immenstadt). Single-site seeds keep the old default -- there is no other candidate to
+            # confuse it with.
+            "_kez": None if seed.get("operator") else seed.get("kez"),
         }
 
     def _from_jsonld(self, jp, url, seed, section_confirmed=False):
