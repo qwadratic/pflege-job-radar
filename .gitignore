@@ -65,3 +65,6 @@ eval_out/
 # hunter single-instance lock + stop file
 data/hunter.lock
 data/HUNTER_STOP
+
+# agent-tool isolated worktree checkouts (ephemeral, each on its own branch already)
+.claude/worktrees/
