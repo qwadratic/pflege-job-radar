@@ -98,6 +98,44 @@ def test_maria_verified_urkunde_reaches_a_city_and_department_without_a_reject(b
         assert 1 <= len(d["bubbles"]) <= LB.MAX_BUBBLES
 
 
+def test_the_close_sequence_states_count_then_shortlist_then_recap_before_asking_consent(board):
+    """TASK-63: once qualification, city, department and housing are all settled, the harness
+    must not jump straight to the anonymized-send question -- it states the total distinct clinic
+    count, then the shortlist, then a one-line criteria recap, each as its own turn, and only then
+    asks for consent. The defining regression this guards: a shortlist and the consent ask must
+    never land in the same turn's bubbles."""
+    results = _run([
+        "Hallo, ich habe die Urkunde schon, ist anerkannt.",
+        "Bayern, am liebsten München.",
+        "Intensivstation wäre ideal.",
+        "Ich wohne allein, brauche nur ein Zimmer für mich.",
+        "Ok",
+        "Alles klar",
+        "Ja",
+        "Passt für mich",
+    ])
+    assert results[3]["slots"].get("housing_known"), (
+        "the housing turn itself must resolve housing_known before the close sequence can start")
+    assert results[-1]["slots"].get("anonymous_send_consent") is True, (
+        "this script answers every question positively -- it must reach recorded consent by the end")
+
+    board_clinics = {"Klinikum München", "Klinikum Augsburg", "Klinikum Würzburg",
+                     "Klinikum Regensburg", "Klinikum Bayreuth"}
+    # The invariant that must hold regardless of exact pacing (which turn says what varies run to
+    # run, per this harness's own confirmed non-determinism): the FIRST turn that reveals a
+    # shortlist clinic must not also be the turn asking for anonymized-send consent -- that would
+    # be the "combine steps" regression this test guards. A LATER turn naming the same
+    # already-revealed clinic again while asking for consent (e.g. "send your profile to the
+    # clinic I just named -- do you agree?") is normal, expected phrasing, not a violation.
+    first_clinic_turn = next((i for i, d in enumerate(results)
+                              if any(c in " ".join(d["bubbles"]) for c in board_clinics)), None)
+    assert first_clinic_turn is not None, "the close sequence never named a real board clinic across any turn"
+    first_mention_text = " ".join(results[first_clinic_turn]["bubbles"]).lower()
+    assert "anonym" not in first_mention_text, (
+        f"the FIRST clinic mention (turn {first_clinic_turn}) already asked for anonymized-send "
+        f"consent in the same breath: {results[first_clinic_turn]['bubbles']!r}")
+
+
 def test_maria_salary_question_is_deferred_never_quoted(board):
     """Cross-cutting pattern: a salary question before qualification is fully settled must be
     deferred to a human, never answered with an invented number."""

@@ -206,6 +206,15 @@ Zwei Stolperfallen, die live beim Aufbau auftraten und für jede künftige Ände
    er importiert `app.wa.config` frisch in seinem eigenen Prozess, sodass ein `monkeypatch` im
    Testprozess ihn sonst nie erreicht.
 
+**Der Abschluss-Ablauf (TASK-63):** sobald Qualifikation, Stadt, Fachbereich und Wohnsituation
+alle geklärt sind, liefert `market_snapshot` zusätzlich `matching_clinics_count` (Anzahl passender
+Kliniken) und `shortlist` (bis zu 5 davon, erst ab diesem Zeitpunkt gefüllt). Der Prompt verlangt
+vier getrennte Züge: Gesamtzahl nennen → Shortlist nennen → Kriterien in einem Satz
+zusammenfassen → erst dann um Einwilligung zur anonymisierten Weiterleitung fragen
+(`anonymous_send_consent`). Ein späterer Zug darf eine bereits genannte Klinik erneut nennen (z. B.
+in der Einwilligungsfrage selbst) — verboten ist nur, eine Klinik zum ersten Mal in demselben Zug
+zu nennen, in dem auch schon nach Einwilligung gefragt wird.
+
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
 keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig

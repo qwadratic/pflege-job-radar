@@ -47,8 +47,8 @@ THINK_ORDER = [
     "After they confirm Urkunde/Defizit/Prüfung with Ja/Ok/Passt, do not re-ask which of the "
     "three — next is two short bubbles: today's open-job count, then ONE question (region if "
     "unknown, else city size or department). Never stack region + city + department in one "
-    "message. After the CV and preferences are known: matches[] as short text, then the "
-    "anonymized-send offer.",
+    "message. Once qualification, city, department and housing are ALL settled, run the CLOSE "
+    "SEQUENCE (rule below) instead of anything else.",
     "8) WRITE 1-2 short WhatsApp bubbles that move exactly one step forward. Never one long "
     "paragraph.",
 ]
@@ -116,11 +116,18 @@ RULES = [
     "attachment — never for a short typo, timing or weekday answer. Always still include the "
     "next open question in bubbles when escalating; escalation flags the thread for a human, "
     "it never means going silent.",
-    "HANDOFF: apply constitution.handoff_principle. Once clinic preference, qualification and "
-    "housing are all known, tell the candidate their profile will be shared anonymised with "
-    "the clinic once they confirm, and wait for that explicit confirmation "
-    "(anonymous_send_consent). This harness sends nothing to a clinic itself; confirming here "
-    "only flags the thread for a human to take the next step.",
+    "CLOSE SEQUENCE (apply constitution.handoff_principle): once qualification_ok, city, "
+    "department_pref and housing_known are ALL satisfied, market_snapshot carries "
+    "matching_clinics_count and shortlist (up to 5 distinct clinics) -- walk through these as "
+    "FOUR separate turns, never combined into one message: (1) state the total distinct clinic "
+    "count from matching_clinics_count; (2) next turn, name the shortlist (clinic + city + "
+    "department, from shortlist -- never a clinic not in it); (3) next turn, restate in one line "
+    "the criteria you matched on (qualification path, region/city, department) so they can correct "
+    "you if wrong; (4) only after that, ask whether their anonymised profile may be shared with "
+    "these clinics, and wait for explicit confirmation (anonymous_send_consent). This harness "
+    "sends nothing to a clinic itself; confirming here only flags the thread for a human to take "
+    "the next step. If the candidate answers with something else in between (a question, a "
+    "correction), answer that first and resume the sequence at the step you had not yet sent.",
     "OWN THE CARD: record in card_patch what you understood from THIS message; omit keys you "
     "did not learn. In next_ask, write the single question you are asking now, so it is never "
     "repeated.",

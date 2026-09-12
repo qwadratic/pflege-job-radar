@@ -121,11 +121,18 @@ def named_non_bavaria_land(text):
 # The model writes the sentence; this only supplies what is true right now, from the same
 # filter app/wa/brain.py and GET /api/jobs use, so the harness and the API cannot drift.
 
+CLOSE_LIMIT = 5
+
+
 def market_snapshot(card):
-    """-> {open_jobs, cities, consult, matches}. consult[] is a handful of live examples once
-    role/region is known enough to be worth naming; matches[] is the narrower list once city
-    or department is also known -- the two-stage shape the rules expect (name examples early,
-    name matches once the CV/preferences narrow it down)."""
+    """-> {open_jobs, cities, consult, matches, matching_clinics_count, shortlist}. consult[] is a
+    handful of live examples once role/region is known enough to be worth naming; matches[] is the
+    narrower list once city or department is also known -- the two-stage shape the rules expect
+    (name examples early, name matches once the CV/preferences narrow it down). shortlist[] (up to
+    CLOSE_LIMIT distinct clinics) and matching_clinics_count only turn up once qualification,
+    city, department and housing are ALL settled -- the close sequence (prompts.py THINK_ORDER
+    step 7: count, then shortlist, then a criteria recap, then the consent ask, each its own turn)
+    has nothing to work from before then."""
     filters = {}
     if card.get("qualification_path") not in (None, "reject"):
         filters["role"] = "pflegefachkraft"
@@ -146,7 +153,25 @@ def market_snapshot(card):
                             "city": (r.get("city") or r.get("clinic_town") or "").strip(),
                             "title": r.get("title"), "department": r.get("department_hint"),
                             "source_url": r.get("source_url") or r.get("external_url")})
-    return {"open_jobs": len(all_rows), "cities": cities, "consult": consult, "matches": matches}
+
+    clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
+    shortlist = []
+    ready_to_close = bool(card.get("qualification_ok") and card.get("city")
+                          and card.get("department_pref") and card.get("housing_known"))
+    if ready_to_close:
+        seen = set()
+        for r in rows:
+            name = (r.get("clinic_name") or r.get("employer") or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            shortlist.append({"clinic": name, "city": (r.get("city") or r.get("clinic_town") or "").strip(),
+                              "department": r.get("department_hint")})
+            if len(shortlist) >= CLOSE_LIMIT:
+                break
+
+    return {"open_jobs": len(all_rows), "cities": cities, "consult": consult, "matches": matches,
+            "matching_clinics_count": len(clinic_names), "shortlist": shortlist}
 
 
 def requirement_scoreboard(card):
