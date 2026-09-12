@@ -17,6 +17,7 @@ from fastapi.responses import PlainTextResponse
 from . import brain as B
 from . import config as C
 from . import meta as M
+from . import queue as Q
 from . import store as ST
 
 router = APIRouter()
@@ -123,6 +124,14 @@ def handle_payload(payload, client=None):
     with ST._lock, ST.db() as c:
         for m in messages:
             results.append(_handle_one(c, m, client=client))
+    # Queue building (TASK-66) happens here, deliberately outside the lock just released above:
+    # app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table
+    # read per ranked clinic, and doing that inside the per-message critical section would
+    # serialize every other inbound WhatsApp thread behind one candidate's match build.
+    for r in results:
+        newly_consented_phone = r.pop("_newly_consented_phone", None)
+        if newly_consented_phone:
+            Q.build_queue_entry(newly_consented_phone, r.pop("_card_at_consent"))
     return {"ok": True, "handled": len(results), "skipped": skipped, "results": results}
 
 
@@ -146,6 +155,8 @@ def _handle_one(c, m, client=None):
         ST.save_thread(c, t)
         return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
 
+    was_consented = C.BRAIN == "luna" and bool((t.get("slots") or {}).get("anonymous_send_consent"))
+
     if C.BRAIN == "luna":
         from . import luna_brain as LB          # imported lazily: only touched when selected
         d = LB.turn(m["text"], t, button_id=m["button_id"])
@@ -160,9 +171,17 @@ def _handle_one(c, m, client=None):
         t["matches_sent_at"] = ST.now_iso()
     sent = _send(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
     ST.save_thread(c, t)
-    return {"wamid": m["wamid"], "status": sent, "action": d["action"],
-            "slots": {k: v for k, v in d["slots"].items() if v is not None},
-            "matches": [r.get("posting_id") for r in d["matches"]]}
+    result = {"wamid": m["wamid"], "status": sent, "action": d["action"],
+              "slots": {k: v for k, v in d["slots"].items() if v is not None},
+              "matches": [r.get("posting_id") for r in d["matches"]]}
+    # TASK-66: a consent flip is durably saved above before this is ever set, so the caller
+    # (handle_payload, once the per-message lock is released) can safely build the queue entry --
+    # see that function's own comment for why this doesn't happen right here instead.
+    now_consented = C.BRAIN == "luna" and bool(d["slots"].get("anonymous_send_consent"))
+    if now_consented and not was_consented:
+        result["_newly_consented_phone"] = m["phone"]
+        result["_card_at_consent"] = dict(d["slots"])
+    return result
 
 
 def _send(c, t, bubbles, buttons, client=None, action=None):

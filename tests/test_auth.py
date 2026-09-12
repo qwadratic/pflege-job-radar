@@ -250,7 +250,10 @@ DENIED = [("POST", "/api/crawl"), ("POST", "/api/schedules"), ("PUT", "/api/sche
           ("GET", "/api/schedules"), ("GET", "/api/schedules/presets"), ("POST", "/api/ingest"),
           # left the OPEN list on 2026-09-10: app/main.py:221 calls data.refresh() -> _build(), a full
           # Supabase re-pull with the service key, and it was anonymous.
-          ("POST", "/api/refresh-cache")]
+          ("POST", "/api/refresh-cache"),
+          # TASK-66: same PII class as GET /api/wa/threads -- a phone number plus what is known
+          # about the candidate and which clinics it matched.
+          ("GET", "/api/wa/queue"), ("GET", "/api/wa/queue/mailing-list")]
 OPEN = [("GET", "/api/me"), ("GET", "/api/stats"), ("GET", "/api/clinics"), ("GET", "/api/jobs"), ("GET", "/api/search?q=x"),
         ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"), ("GET", "/login"),
         ("GET", "/api/ingest/schemas"), ("GET", "/api/agent/manifest"), ("POST", "/api/auth/magic")]

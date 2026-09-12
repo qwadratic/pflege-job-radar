@@ -215,6 +215,19 @@ zusammenfassen → erst dann um Einwilligung zur anonymisierten Weiterleitung fr
 in der Einwilligungsfrage selbst) — verboten ist nur, eine Klinik zum ersten Mal in demselben Zug
 zu nennen, in dem auch schon nach Einwilligung gefragt wird.
 
+**Kandidaten-Queue nach Einwilligung (TASK-66):** sobald `anonymous_send_consent` in einem Zug neu
+auf `true` wechselt, baut `app/wa/api.py` — erst NACHDEM der Thread gespeichert ist und NACHDEM die
+Pro-Nachricht-Sperre (`ST._lock`) wieder freigegeben ist, damit ein Matching-Lauf nicht alle
+anderen Threads blockiert — über `app/wa/queue.py:build_queue_entry` einen echten Eintrag:
+`app.autopilot.matching.rank()` (dieselbe transparente Scoring-Engine, aber ohne echte
+Kandidaten-PII in `app/autopilot`s eigene, ausdrücklich synthetische Demo-Datenbank zu schreiben)
+rankt die Kandidatin gegen alle Kliniken des Live-Snapshots; ein bekannter Kontakt (TASK-64) wird
+mit aufgenommen. Zwei neue, eigene Tabellen (`wa_queue_candidates`, `wa_queue_matches`, gleiche
+sqlite-Datei wie `app/wa/store.py`) sind idempotent (Upsert), ein wiederholtes Einverständnis
+dupliziert also nichts. `GET /api/wa/queue` (Kandidaten × passende Kliniken) und `GET
+/api/wa/queue/mailing-list` (flache Vorschau: Kandidat × Klinik × Kontakt-E-Mail) sind owner-only
+wie `GET /api/wa/threads` — beide senden nichts, sie sind ein Report für einen Menschen.
+
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
 keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig
