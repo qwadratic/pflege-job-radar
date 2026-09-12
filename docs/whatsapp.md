@@ -146,9 +146,24 @@ bleiben Deutsch; dieser Abschnitt auch.
 
 Alles andere — Tonfall, welche Frage als nächste kommt, wie der Marktstand formuliert wird,
 wann eskaliert wird — entscheidet Claude, aus dem Zustand, den `app/wa/luna_brain.py` mitgibt:
-dem Thread, der Karte (`card`, das Äquivalent zu `card_patch` aus der Quelle), einem
-`requirement_scoreboard` (Zustand, kein Skript) und einem `market_snapshot` aus genau den
-Filtern, die auch `GET /api/jobs` nutzt (`app/wa/brain.py:jobs_for`) — kein zweiter Datenpfad.
+der Karte (`card`, das Äquivalent zu `card_patch` aus der Quelle), einem `requirement_scoreboard`
+(Zustand, kein Skript) und einem `market_snapshot` aus genau den Filtern, die auch
+`GET /api/jobs` nutzt (`app/wa/brain.py:jobs_for`) — kein zweiter Datenpfad. Den Thread selbst
+gibt es hier nicht mehr als Text zu übergeben: er lebt in der Sitzung (nächster Absatz).
+
+**Eine Claude-Code-Sitzung pro WhatsApp-Nummer, nicht ein zustandsloser Aufruf pro Zug.** Beim
+ersten Kontakt einer Nummer startet `app/wa/luna_brain.py:Client` `claude -p --session-id <uuid>`
+und merkt sich die UUID auf der Karte (`card._session_id`); jeder weitere Zug derselben Nummer
+ruft `claude -p --resume <dieselbe uuid>` auf. Die eingehende WhatsApp-Nachricht wird damit zur
+echten `user`-Nachricht dieser Sitzung, genau wie in einem interaktiven Chat — Claude sieht die
+bisherigen Züge aus der Sitzung selbst, nicht aus einem selbstgebauten Thread-Feld. Was pro Zug
+trotzdem frisch mitgeschickt wird, ist nur, was sich unabhängig vom Gespräch ändern kann: der
+aktuelle Kartenstand, der Requirement-Scoreboard und der Markt-Snapshot (neue Stellen erscheinen,
+alte schließen) — das kann sich Claude nicht "merken", das muss jeder Zug neu bekommen.
+`--resume`/`--session-id` finden eine Sitzung nur wieder, wenn `claude` **aus demselben
+Arbeitsverzeichnis** aufgerufen wird, in dem sie begonnen hat — deshalb läuft jeder Aufruf mit
+festem `cwd=WA_LUNA_SESSION_DIR` (`data/wa_luna_sessions/`, Default), unabhängig davon, aus
+welchem Verzeichnis der FastAPI-Prozess selbst gerade läuft.
 
 **Aufruf: die `claude`-CLI, nicht der Anthropic-SDK-Schlüssel.** `app/wa/luna_brain.py:Client`
 ruft `claude -p --restricted --output-format json --system-prompt "…"` auf (Systemprompt als
@@ -160,10 +175,18 @@ ein Nicht-JSON-Ergebnis oder eine Antwort ohne Pflichtfelder werfen laut, statt 
 zu erfinden.
 
 ```bash
-WA_BRAIN=luna                 # deterministic (Default) | luna
-WA_LUNA_MODEL=claude-opus-5   # jedes Modell, das `claude --model` akzeptiert
-WA_LUNA_EFFORT=medium         # low|medium|high|xhigh|max
+WA_BRAIN=luna                  # deterministic (Default) | luna
+WA_LUNA_MODEL=claude-sonnet-5  # jedes Modell, das `claude --model` akzeptiert (claude-haiku-4-5 = billiger/schneller)
+WA_LUNA_EFFORT=medium          # low|medium|high|xhigh|max
 ```
+
+**Eigene Tools für das Modell:** noch nicht verdrahtet, aber die CLI unterstützt es —
+`--mcp-config <datei-oder-json>` lädt einen oder mehrere MCP-Server, `--strict-mcp-config`
+begrenzt die Sitzung auf genau die (keine anderen Projekt-/User-MCP-Konfigurationen), und
+`--allowedTools`/`--tools` entscheidet, welche Tool-Namen davon überhaupt freigeschaltet sind.
+Käme in Frage, falls Claude den Markt-Snapshot lieber selbst gezielt abfragen soll (z. B. eine
+`search_pflege_jobs`-Funktion über `app/data.py`) statt ihn als fertigen Block zu bekommen —
+bisher unnötig, weil der Snapshot pro Zug schon vollständig genug ist.
 
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
@@ -190,3 +213,39 @@ Eine Abweichung von der Produktions-Vorlage ist bewusst: dort wird die Trefferli
 verschickt („sie ziehen Leute aus dem Chat"). Hier steht der `source_url` dabei, weil eine Liste, die
 eine Pflegekraft nicht nachprüfen kann, wertlos ist — und weil das Board ohnehin keinen anderen
 ausgehenden Link kennt.
+
+## Persona-Tests gegen die echte CLI
+
+`tests/test_wa_luna_personas.py` (Marker `llm`, ausgeschlossen mit `-m "not llm"` wie
+`network`/`completeness`/`mutation`, weil jeder Test wirklich `claude` aufruft, echtes Geld kostet
+und mehrere Sekunden pro Zug braucht) spielt sechs frei erfundene Personas durch den echten
+Claude-Aufruf. Die Personas selbst sind erfunden — Namen, Details, Dialogzeilen — aber die
+**Muster**, die sie durchspielen (Qualifikationspfad-Mix, Gesprächsform, typische Stolperfallen),
+kommen aus einer anonymisierten Auswertung von zwei Monaten echter WhatsApp-Historie der
+Referenzimplementierung: gelesen, zu Archetyp-Gruppen zusammengefasst, dann verworfen — kein
+echter Name, keine Telefonnummer, kein wörtliches Zitat landet in dieser Datei.
+
+```bash
+.venv/bin/python -m pytest -q -m llm tests/test_wa_luna_personas.py
+```
+
+Der erste echte Durchlauf fand zwei echte Bugs, die eine rein gefakte Test-Suite nicht hätte
+finden können:
+
+- **Gehaltsfrage beantwortet statt weitergereicht.** Ohne explizite Regel hat das Modell einmal
+  eine konkrete Gehaltsspanne genannt ("zwischen ca. 3.400 und 4.200 € brutto"), obwohl der
+  Harness dafür keine verlässliche Datenquelle hat. Behoben mit einer neuen Regel
+  (`app/wa/luna/prompts.py:RULES`, „SALARY"): nie eine Zahl nennen oder schätzen, immer auf eine
+  Bestätigung durch die Klinik verweisen.
+- **Abgesetzte Antwort ohne `no_send` ließ den Harness abstürzen.** Ein Modellzug kam mit leerem
+  `bubbles: []` zurück, aber ohne `no_send: true` gesetzt zu haben — `_check()` erwartete
+  mindestens eine Bubble und warf einen `AssertionError`. Behoben: ein leeres `bubbles`-Array
+  gilt jetzt für sich allein als „nichts zu sagen", unabhängig vom `no_send`-Flag
+  (`app/wa/luna_brain.py:turn`, Regressionstest in `tests/test_wa_luna_brain.py`).
+
+Eine dritte Sache stellte sich als Härtung heraus statt als Logikfehler: `--restricted` allein
+lässt weiterhin dateilesende Tools zu (nur Kommando-/Code-Ausführung und WebFetch fallen weg),
+und das Modell hat einmal einen Dateizugriffsversuch als Fließtext vor die eigentliche JSON-Antwort
+geschrieben. Der Aufruf läuft jetzt zusätzlich mit `--tools ""` (alle Tools aus), und das Parsen
+selbst (`app/wa/luna_brain.py:_parse_reply_json`) versucht zur Absicherung auch noch, das
+JSON-Objekt aus umgebendem Text herauszuschneiden, bevor es wirklich aufgibt.

@@ -33,10 +33,12 @@ BRAIN = os.environ.get("WA_BRAIN", "deterministic").strip().lower()
 if BRAIN not in ("deterministic", "luna"):
     raise RuntimeError(f"WA_BRAIN={BRAIN!r} is not 'deterministic' or 'luna'")
 
-# Claude model + reasoning effort for the luna brain. Chat-style turns don't need the highest
-# effort tier by default; raise via env if quality on hard turns (ambiguous German, edge-case
-# qualification) doesn't hold at this level.
-LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-opus-5").strip() or "claude-opus-5"
+# Claude model + reasoning effort for the luna brain. A per-turn WhatsApp reply is a chat-shaped
+# workload, not a hard reasoning one, so this defaults to Sonnet rather than Opus -- Haiku is the
+# cheaper/faster option (WA_LUNA_MODEL=claude-haiku-4-5) if quality on the turns this repo's own
+# gates already carry (qualification, region) holds up at that tier; raise back to Opus if a
+# quality regression shows up on ambiguous German instead.
+LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
 LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "medium").strip() or "medium"
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
@@ -44,6 +46,11 @@ LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "medium").strip() or "medium"
 # `claude` is not the right one to invoke on PATH.
 LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "claude"
 LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "60") or "60")
+# Claude Code keys a resumable session by session id *and* the working directory it was started
+# in (session transcripts live under a path derived from cwd). Every luna turn for every phone
+# number must run from this exact directory, or `--resume <id>` from a later turn silently looks
+# in the wrong place and starts a fresh, memory-less session instead of continuing the real one.
+LUNA_SESSION_DIR = A.DATA_DIR / "wa_luna_sessions"
 
 
 def readiness():

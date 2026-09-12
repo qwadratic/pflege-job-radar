@@ -1,11 +1,13 @@
 """The Claude-driven WhatsApp brain (app/wa/luna_brain.py, WA_BRAIN=luna): the code-enforced
-gates (opt-out, qualification reject, out-of-scope region), the CLI call contract, and the
-webhook wiring. No network and no `claude` subprocess: the model is a fake ``reply`` callable
-injected into ``luna_brain.Client``, same seam as ``app/wa/meta.py``'s fake transport.
+gates (opt-out, qualification reject, out-of-scope region), per-thread session persistence, the
+CLI call contract, and the webhook wiring. No network and no `claude` subprocess: the model is a
+fake ``reply`` callable injected into ``luna_brain.Client``, same seam as ``app/wa/meta.py``'s
+fake transport.
 """
 import json
 import subprocess
 import time
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,6 +44,7 @@ def luna(tmp_path, monkeypatch):
                     "taxonomy": {}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
     return {"slots": {}, "asked": []}
 
 
@@ -55,8 +58,13 @@ def _out(**kw):
 
 
 def fake_client(out_or_fn):
-    """A Client whose reply() returns a fixed dict, or calls a function of (system, user)."""
-    fn = out_or_fn if callable(out_or_fn) else (lambda system, user: out_or_fn)
+    """A Client whose reply() returns a fixed dict (session id echoed back unchanged, as a
+    no-op fake session would), or calls a function of (system, user, session_id) -> (dict,
+    session_id)."""
+    if callable(out_or_fn):
+        fn = out_or_fn
+    else:
+        fn = lambda system, user, session_id: (out_or_fn, session_id)
     return LB.Client(reply=fn)
 
 
@@ -64,13 +72,14 @@ def fake_client(out_or_fn):
 
 def test_stop_never_reaches_the_model(luna):
     calls = []
-    d = LB.turn("STOP", luna, client=fake_client(lambda s, u: calls.append(1) or _out()))
+    d = LB.turn("STOP", luna, client=fake_client(lambda s, u, sid: calls.append(1) or (_out(), sid)))
     assert d["stopped"] is True and d["bubbles"] == [] and calls == []
 
 
 def test_out_of_scope_region_never_reaches_the_model(luna):
     calls = []
-    d = LB.turn("ich suche in Berlin", luna, client=fake_client(lambda s, u: calls.append(1) or _out()))
+    d = LB.turn("ich suche in Berlin", luna,
+               client=fake_client(lambda s, u, sid: calls.append(1) or (_out(), sid)))
     assert calls == [], "a locked out-of-scope reply needs no model call"
     assert d["action"] == "out_of_scope_region"
     assert "Bayern" in d["bubbles"][0] and d["slots"]["region"] == "berlin"
@@ -129,6 +138,15 @@ def test_no_send_clears_the_bubbles_but_still_updates_the_card(luna):
     assert d["slots"]["region"] == "Bayern"
 
 
+def test_an_empty_bubbles_array_is_treated_as_silent_even_without_the_no_send_flag(luna):
+    """Regression: a real model turn came back with bubbles=[] but no_send left false/absent
+    (tests/test_wa_luna_personas.py surfaced this against the live CLI) -- the harness must not
+    crash on that combination. An empty array is unambiguous on its own."""
+    out = _out(bubbles=[], no_send=False)
+    d = LB.turn("ok danke", luna, client=fake_client(out))
+    assert d["bubbles"] == []
+
+
 def test_escalation_is_recorded_on_the_card_and_still_sends_the_next_ask(luna):
     out = _out(bubbles=["Gute Frage, das gebe ich weiter. Und wo suchen Sie?"],
                escalate_to_manager=True, escalate_reason="asked about visa specifics")
@@ -138,13 +156,15 @@ def test_escalation_is_recorded_on_the_card_and_still_sends_the_next_ask(luna):
     assert d["bubbles"] == out["bubbles"], "escalating must not mean going silent"
 
 
-def test_the_model_receives_the_market_snapshot_and_scoreboard(luna):
+def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history_replay(luna):
+    """The resumed Claude Code session already has every earlier turn -- this module must not
+    also serialize the thread into the payload, or every turn would pay for it twice."""
     seen = {}
 
-    def capture(system_text, user_text):
+    def capture(system_text, user_text, session_id):
         seen["system"] = system_text
         seen["user"] = json.loads(user_text)
-        return _out()
+        return _out(), session_id
 
     luna["slots"] = {"city": "München"}
     LB.turn("Intensivstation bitte", luna, client=fake_client(capture))
@@ -152,6 +172,7 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard(luna):
     assert any(c["city"] == "München" for c in seen["user"]["market_snapshot"]["consult"])
     assert seen["user"]["requirement_scoreboard"]["region"] == "open"
     assert seen["user"]["latest_inbound"] == "Intensivstation bitte"
+    assert "thread" not in seen["user"], "history now lives in the resumed session, not the payload"
     assert "Valentina" in seen["system"]
     assert "NDT" not in seen["system"], "the vendored prompt must not carry the source's company name"
 
@@ -168,6 +189,34 @@ def test_requirement_scoreboard_reflects_the_card():
     assert LB.requirement_scoreboard({"qualification_path": "urkunde"})["qualification"] == "satisfied"
     assert LB.requirement_scoreboard({"qualification_path": "reject"})["qualification"] == "blocked"
     assert LB.requirement_scoreboard({"region": "Bayern"})["region"] == "satisfied"
+
+
+# --- session persistence: one Claude Code session per WhatsApp thread -------------------------
+
+def test_a_brand_new_thread_has_no_session_id_and_one_comes_back_from_the_client(luna):
+    assert luna["slots"].get("_session_id") is None
+    d = LB.turn("Hallo", luna, client=fake_client(lambda s, u, sid: (_out(), "brand-new-session-id")))
+    assert d["slots"]["_session_id"] == "brand-new-session-id"
+
+
+def test_a_later_turn_passes_the_stored_session_id_back_to_the_client(luna):
+    luna["slots"]["_session_id"] = "already-open-session"
+    seen = []
+    d = LB.turn("und jetzt Würzburg", luna,
+               client=fake_client(lambda s, u, sid: seen.append(sid) or (_out(), sid)))
+    assert seen == ["already-open-session"], "the existing session id must be handed to the client, not discarded"
+    assert d["slots"]["_session_id"] == "already-open-session"
+
+
+def test_the_stop_and_out_of_scope_gates_never_touch_the_session_id(luna):
+    """These two gates return before the client is ever built -- the session id on the card,
+    whatever it is, must survive untouched."""
+    luna["slots"]["_session_id"] = "existing"
+    d = LB.turn("STOP", luna)
+    assert d["slots"]["_session_id"] == "existing"
+    luna2 = {"slots": {"_session_id": "existing"}, "asked": []}
+    d2 = LB.turn("ich bin in Hessen", luna2)
+    assert d2["slots"]["_session_id"] == "existing"
 
 
 # --- output validation: fail loudly, do not guess ---------------------------------------------
@@ -204,6 +253,21 @@ def test_strip_fence_removes_a_markdown_json_fence():
     assert LB._strip_fence('{"a": 1}') == '{"a": 1}'
 
 
+def test_parse_reply_json_handles_plain_fenced_and_stray_prose():
+    assert LB._parse_reply_json('{"a": 1}') == {"a": 1}
+    assert LB._parse_reply_json('```json\n{"a": 1}\n```') == {"a": 1}
+    # Observed against the live CLI even with every built-in tool disabled: a stray narration
+    # ahead of the actual answer.
+    prose = ('That was an erroneous file access on my part -- ignoring it. '
+            'Here is my answer to the candidate:\n{"a": 1}')
+    assert LB._parse_reply_json(prose) == {"a": 1}
+
+
+def test_parse_reply_json_still_raises_on_genuine_garbage():
+    with pytest.raises(json.JSONDecodeError):
+        LB._parse_reply_json("no JSON anywhere in this text")
+
+
 def test_validate_passes_through_a_well_formed_reply():
     out = _out()
     assert LB._validate(out) is out
@@ -216,73 +280,113 @@ class _FakeCompleted:
         self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
 
 
-def test_live_reply_builds_the_expected_command_and_parses_result(monkeypatch):
+def _ok_stdout(session_id="cli-assigned-session", **out_kw):
+    return json.dumps({"is_error": False, "result": json.dumps(_out(**out_kw)), "session_id": session_id})
+
+
+def test_live_reply_starts_a_fresh_session_with_session_id_flag(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     captured = {}
 
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None):
-        captured["cmd"], captured["input"], captured["timeout"] = cmd, input, timeout
-        return _FakeCompleted(stdout=json.dumps({"is_error": False, "result": json.dumps(_out())}))
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, cwd=None):
+        captured["cmd"], captured["input"], captured["timeout"], captured["cwd"] = cmd, input, timeout, cwd
+        return _FakeCompleted(stdout=_ok_stdout())
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     client = LB.Client()
-    out = client._live_reply("SYSTEM TEXT", "USER TEXT")
+    out, session_id = client._live_reply("SYSTEM TEXT", "USER TEXT", None)
     assert out["action"] == "reply_now_conversational"
+    assert session_id == "cli-assigned-session"
     cmd = captured["cmd"]
     assert cmd[0] == C.LUNA_CLAUDE_BIN and "-p" in cmd and "--restricted" in cmd
+    assert "--tools" in cmd and cmd[cmd.index("--tools") + 1] == "", (
+        "every built-in tool must be off -- --restricted alone still leaves file-reading tools "
+        "available, and a stray tool-use narration ahead of the JSON breaks the parse")
     assert "--system-prompt" in cmd and cmd[cmd.index("--system-prompt") + 1] == "SYSTEM TEXT"
+    assert "--session-id" in cmd, "a brand-new thread must start a named session, not an anonymous one"
+    assert "--resume" not in cmd
+    started_id = cmd[cmd.index("--session-id") + 1]
+    uuid.UUID(started_id)  # raises if this module did not generate a real UUID
     assert captured["input"] == "USER TEXT", "the user payload goes over stdin, not argv"
     assert captured["timeout"] == C.LUNA_TIMEOUT_SEC
+    assert captured["cwd"] == C.LUNA_SESSION_DIR, "resume only finds this session again from the same cwd"
 
 
-def test_live_reply_strips_a_markdown_fence_around_the_result(monkeypatch):
+def test_live_reply_resumes_an_existing_session_with_resume_flag(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        return _FakeCompleted(stdout=_ok_stdout(session_id="existing-thread-session"))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    out, session_id = LB.Client()._live_reply("s", "u", "existing-thread-session")
+    cmd = captured["cmd"]
+    assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "existing-thread-session"
+    assert "--session-id" not in cmd, "resuming must not also claim a fresh session id"
+    assert session_id == "existing-thread-session"
+
+
+def test_live_reply_strips_a_markdown_fence_around_the_result(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     fenced_result = "```json\n" + json.dumps(_out()) + "\n```"
     monkeypatch.setattr(subprocess, "run",
-                        lambda *a, **k: _FakeCompleted(stdout=json.dumps({"is_error": False, "result": fenced_result})))
-    out = LB.Client()._live_reply("s", "u")
+                        lambda *a, **k: _FakeCompleted(stdout=json.dumps(
+                            {"is_error": False, "result": fenced_result, "session_id": "s1"})))
+    out, session_id = LB.Client()._live_reply("s", "u", None)
     assert out["action"] == "reply_now_conversational"
 
 
-def test_live_reply_raises_when_the_cli_is_not_installed(monkeypatch):
+def test_live_reply_raises_when_the_cli_is_not_installed(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+
     def raise_not_found(*a, **k):
         raise FileNotFoundError()
 
     monkeypatch.setattr(subprocess, "run", raise_not_found)
     with pytest.raises(RuntimeError, match="not on PATH"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_on_timeout(monkeypatch):
+def test_live_reply_raises_on_timeout(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+
     def raise_timeout(*a, **k):
         raise subprocess.TimeoutExpired(cmd=["claude"], timeout=1)
 
     monkeypatch.setattr(subprocess, "run", raise_timeout)
     with pytest.raises(RuntimeError, match="did not answer within"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_on_nonzero_exit(monkeypatch):
+def test_live_reply_raises_on_nonzero_exit(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(returncode=1, stderr="boom"))
     with pytest.raises(RuntimeError, match="exited 1"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_stdout_is_not_json(monkeypatch):
+def test_live_reply_raises_when_stdout_is_not_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(stdout="not json"))
     with pytest.raises(RuntimeError, match="did not return JSON"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_the_cli_itself_reports_an_error(monkeypatch):
+def test_live_reply_raises_when_the_cli_itself_reports_an_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     monkeypatch.setattr(subprocess, "run",
                         lambda *a, **k: _FakeCompleted(stdout=json.dumps({"is_error": True, "result": "quota exceeded"})))
     with pytest.raises(RuntimeError, match="reported an error"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_result_is_missing(monkeypatch):
+def test_live_reply_raises_when_result_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(stdout=json.dumps({"is_error": False})))
     with pytest.raises(RuntimeError, match="no result text"):
-        LB.Client()._live_reply("s", "u")
+        LB.Client()._live_reply("s", "u", None)
 
 
 # --- wired into the webhook, end to end, brain selected by config -----------------------------
@@ -302,10 +406,10 @@ def test_webhook_uses_the_luna_brain_when_selected(luna, monkeypatch):
         def send_buttons(self, to_e164, body, buttons):
             return self.send_text(to_e164, body)
 
-    def fake_reply(system, user):
+    def fake_reply(system, user, session_id):
         calls.append(json.loads(user))
         return _out(bubbles=["Hallo, hier antwortet die Luna-Brain 🙂"],
-                    card_patch={"region": "Bayern"})
+                    card_patch={"region": "Bayern"}), session_id or "webhook-test-session"
 
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "ACCESS_TOKEN", "t")
@@ -326,7 +430,9 @@ def test_webhook_uses_the_luna_brain_when_selected(luna, monkeypatch):
     assert wa.sent == ["Hallo, hier antwortet die Luna-Brain 🙂"]
     assert calls, "the luna brain must have been the one consulted, not the deterministic ladder"
     with ST.db() as c:
-        assert ST.thread(c, LEAD)["slots"]["region"] == "Bayern"
+        t = ST.thread(c, LEAD)
+        assert t["slots"]["region"] == "Bayern"
+        assert t["slots"]["_session_id"] == "webhook-test-session"
 
 
 def test_webhook_default_config_still_uses_the_deterministic_brain(luna):

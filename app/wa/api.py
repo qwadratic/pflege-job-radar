@@ -148,8 +148,7 @@ def _handle_one(c, m, client=None):
 
     if C.BRAIN == "luna":
         from . import luna_brain as LB          # imported lazily: only touched when selected
-        history = ST.history(c, m["phone"], limit=50)
-        d = LB.turn(m["text"], t, button_id=m["button_id"], history=history)
+        d = LB.turn(m["text"], t, button_id=m["button_id"])
     else:
         d = B.turn(m["text"], t, button_id=m["button_id"])
     t["slots"], t["asked"] = d["slots"], d["asked"]

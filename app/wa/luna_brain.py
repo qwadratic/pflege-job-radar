@@ -6,6 +6,16 @@ and why). Selected by WA_BRAIN=luna (app/wa/config.py); app/wa/api.py calls whic
 configured through the same turn() contract, so the transport and the deterministic brain are
 untouched by this module's existence.
 
+Each WhatsApp thread is one persistent Claude Code session (``--session-id`` on first contact,
+``--resume`` on every later turn), not a stateless call replaying the whole thread as one blob
+each time. The conversation itself -- what was said, in what order -- lives in that session, the
+same way a human's memory of a chat does. What this module sends each turn is only what a human
+recruiter would have to re-check every time anyway: the candidate's latest message, and the
+current, possibly-just-changed ground truth (the state card, and a market snapshot from data that
+moves independently of the conversation -- new postings appear, old ones close). Session id is
+kept on the thread's own card (``_session_id``), so it survives a process restart the same way
+the rest of the card does.
+
 The model is not asked to invent facts it cannot know. Region/qualification/housing gates are
 enforced here in the harness (constitution.json, RULES) exactly like the reference this is
 adapted from: the model picks the action and writes the wording, but three things are decided
@@ -27,6 +37,7 @@ escalate -- is the model's call, per turn, from the state this module hands it.
 import json
 import pathlib
 import re
+import uuid
 
 from . import brain as B
 from . import config as C
@@ -126,7 +137,7 @@ OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "action": {"type": "string"},
-        "bubbles": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 2},
+        "bubbles": {"type": "array", "items": {"type": "string"}, "maxItems": 2},
         "rationale": {"type": "string"},
         "escalate_to_manager": {"type": "boolean"},
         "escalate_reason": {"type": ["string", "null"]},
@@ -170,6 +181,25 @@ def _strip_fence(text):
     return m.group(1).strip() if m else text.strip()
 
 
+def _parse_reply_json(text):
+    """Parse the model's reply text as the one JSON object it was told to return. Tried in order:
+    the text as-is; with a markdown fence stripped; the substring between the first ``{`` and the
+    last ``}`` (covers stray prose the model adds despite ``--tools ""`` -- e.g. narrating a tool
+    attempt before its actual answer, seen even with every built-in tool disabled). Each step is
+    normalization of a known formatting artifact, not a repair of malformed JSON: if none of them
+    parse, this still raises rather than guessing at a shape."""
+    stripped = _strip_fence(text)
+    for candidate in (text, stripped):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return json.loads(stripped[start:end + 1])
+    raise json.JSONDecodeError("no JSON object found", stripped, 0)
+
+
 def _validate(out):
     missing = [k for k in _REQUIRED_KEYS if k not in out]
     if missing:
@@ -188,24 +218,39 @@ class Client:
     The system prompt is passed with ``--system-prompt`` (a full replacement, not
     ``--append-system-prompt``): the CLI's own default coding-agent persona and tool
     instructions must not leak into a WhatsApp reply. ``--restricted`` removes the
-    command/code-execution/WebFetch tools -- a conversational turn has no use for them, and
-    without them there is nothing for the model to do but answer. The user payload goes over
-    stdin rather than as a positional argument, so a long, growing thread history never risks
-    an argument-length limit and never shows up in a process listing.
+    command/code-execution/WebFetch tools; ``--tools ""`` goes further and disables every
+    built-in tool, including the file-reading ones ``--restricted`` leaves in place -- a
+    conversational turn has no use for any of them, and without them there is nothing for the
+    model to do but answer (observed without ``--tools ""``: a stray file-read attempt narrated
+    as prose ahead of the JSON, breaking the parse below). The user payload goes over stdin
+    rather than as a positional argument, so a long, growing message never risks an
+    argument-length limit and never shows up in a process listing.
+
+    ``reply(system, user, session_id)`` -> ``(out, next_session_id)``. ``session_id=None`` means
+    "first contact with this thread": ``--session-id <a uuid this module generates>`` starts a
+    fresh, named session so it can be resumed later. Any other value means "continue this
+    session": ``--resume <session_id>``. Either way the id to persist comes back as
+    ``next_session_id`` (normally the same one that went in; if the CLI ever renames a session on
+    resume, this is where that would surface).
     """
 
     def __init__(self, reply=None):
         self._reply = reply or self._live_reply
 
-    def _live_reply(self, system_text, user_text):
+    def _live_reply(self, system_text, user_text, session_id):
         import subprocess
 
+        fresh = session_id is None
+        this_session_id = session_id or str(uuid.uuid4())
+        session_flags = (["--session-id", this_session_id] if fresh else ["--resume", this_session_id])
+        C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
         try:
             proc = subprocess.run(
-                [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--output-format", "json",
+                [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
                  "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
-                 "--system-prompt", system_text],
+                 "--system-prompt", system_text, *session_flags],
                 input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
+                cwd=C.LUNA_SESSION_DIR,
             )
         except FileNotFoundError:
             raise RuntimeError(f"{C.LUNA_CLAUDE_BIN!r} is not on PATH -- WA_BRAIN=luna needs the "
@@ -223,19 +268,28 @@ class Client:
         result = envelope.get("result")
         if not isinstance(result, str) or not result.strip():
             raise RuntimeError(f"claude -p returned no result text: {envelope!r}")
-        return json.loads(_strip_fence(result))
+        try:
+            out = _parse_reply_json(result)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"claude -p's result text was not the expected JSON object: {exc}: {result[:300]!r}")
+        return out, str(envelope.get("session_id") or this_session_id)
 
-    def reply(self, system_text, user_text):
-        return _validate(self._reply(system_text, user_text))
+    def reply(self, system_text, user_text, session_id=None):
+        out, next_session_id = self._reply(system_text, user_text, session_id)
+        return _validate(out), next_session_id
 
 
-def _user_payload(text, card, scoreboard, snapshot, history):
+def _user_payload(text, card, scoreboard, snapshot):
+    """This turn's ground truth, not the conversation itself -- the resumed session already has
+    every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
+    can change independently of anything either side said (new postings, a code-enforced card
+    correction from a prior turn), so it is resupplied fresh every time rather than trusted to
+    the model's memory of an earlier turn."""
     return json.dumps({
         "latest_inbound": text,
         "card": card,
         "requirement_scoreboard": scoreboard,
         "market_snapshot": snapshot,
-        "thread": history,
     }, ensure_ascii=False, sort_keys=True)
 
 
@@ -248,13 +302,14 @@ def _check(bubbles):
     return [str(b).strip() for b in bubbles]
 
 
-def turn(text, thread, button_id=None, client=None, history=None):
+def turn(text, thread, button_id=None, client=None):
     """Same contract as app/wa/brain.py:turn() -- {bubbles, buttons, slots, asked, stopped,
     matches, action} -- so app/wa/api.py can call either brain without knowing which one it got.
     ``slots`` here holds the Luna card (a different shape from the deterministic brain's slots;
-    app/wa/store.py persists whatever dict it is given). ``asked`` is unused by this brain (the
-    model tracks what it already asked via next_ask and the thread itself) and is passed through
-    unchanged so the store's schema does not need to know which brain wrote a thread.
+    app/wa/store.py persists whatever dict it is given), including ``_session_id`` -- the Claude
+    Code session this thread is resumed from, invisible to everything except this module.
+    ``asked`` is unused by this brain and passed through unchanged so the store's schema does not
+    need to know which brain wrote a thread.
     """
     card = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
@@ -272,29 +327,38 @@ def turn(text, thread, button_id=None, client=None, history=None):
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
-    user_text = _user_payload(text, card, scoreboard, snapshot, history or [])
+    user_text = _user_payload(text, card, scoreboard, snapshot)
 
     cl = client or Client()
-    out = cl.reply(system_text, user_text)
+    out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))
+    card["_session_id"] = session_id
 
     patch = dict(out.get("card_patch") or {})
     was_ok = card.get("qualification_ok")
     card.update(patch)
 
+    raw_bubbles = out.get("bubbles") or []
     if patch.get("qualification_ok") is False and was_ok is not False:
-        # The gate the model must not rephrase (prompts.py module docstring, point 2).
+        # The gate the model must not rephrase (prompts.py module docstring, point 2). This one
+        # gate overrides no_send too -- the very first decline must always be said out loud.
         bubbles = [P.REJECT_BODY_DE]
         action = "explain_not_placeable"
+    elif out.get("no_send") or not raw_bubbles:
+        # A legitimate "nothing new to say" turn (e.g. a duplicate reopen already answered, or a
+        # closed exchange with only acknowledgements since) -- zero bubbles is correct here, not
+        # a violation of the one-to-two-bubble style rule, which is about turns that DO speak.
+        # Trusting the empty array on its own (not only the no_send flag) matters in practice:
+        # a model that means to stay silent does not always also remember to set the flag, and an
+        # empty bubbles list is unambiguous regardless of what the flag says.
+        bubbles = []
+        action = str(out.get("action") or "no_send")
     else:
-        bubbles = _check(out.get("bubbles") or [])
+        bubbles = _check(raw_bubbles)
         action = str(out.get("action") or "reply_now_conversational")
 
     if out.get("escalate_to_manager"):
         card["_escalated"] = True
         card["_escalate_reason"] = out.get("escalate_reason")
-
-    if out.get("no_send"):
-        bubbles = []
 
     return {"bubbles": bubbles, "buttons": [], "slots": card, "asked": asked, "stopped": False,
             "matches": snapshot.get("matches") or [], "action": action}

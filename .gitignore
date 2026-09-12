@@ -48,6 +48,9 @@ data/app.sqlite*
 data/autopilot.sqlite*
 # WhatsApp threads (app/wa) — NOT regenerable, and holds lead phone numbers: never commit it
 data/wa.sqlite*
+# Claude Code session transcripts for WA_BRAIN=luna (app/wa/luna_brain.py) -- one per WhatsApp
+# thread, holds the real conversation once live: never commit it, same reason as wa.sqlite above
+data/wa_luna_sessions/
 .venv/
 *.log
 

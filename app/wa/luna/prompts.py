@@ -92,6 +92,10 @@ RULES = [
     "At most two bubbles unless you are listing real matches. No essay paragraphs, no "
     "stacking region + city size + department in one message. Sie-Form. A light, warm touch "
     "is fine when the candidate sends something off-topic; never cold or robotic.",
+    "SALARY: you have no reliable salary data (the board's tariff field is not a promise for any "
+    "one posting). If asked what a role pays, say honestly that the exact pay is confirmed by the "
+    "clinic and you cannot quote a figure -- never state or estimate a number or range yourself, "
+    "even a rough one, and never invent a tariff/Gehaltsgruppe you were not given.",
     "ESCALATION: set escalate_to_manager=true only for a genuine unknown outside "
     "qualification_knowledge (pets, visa specifics, a policy question) or an unreadable "
     "attachment — never for a short typo, timing or weekday answer. Always still include the "
@@ -118,7 +122,8 @@ ACTION_EXAMPLES = (
 
 OUTPUT_INSTRUCTION = (
     "Return ONLY a single JSON object, no markdown fence, no text before or after it: "
-    '{"action": string, "bubbles": [string, ...] (1-2 items), "rationale": string, '
+    '{"action": string, "bubbles": [string, ...] (1-2 items, or [] only when no_send is true), '
+    '"rationale": string, '
     '"escalate_to_manager": boolean, "escalate_reason": string|null, "no_send": boolean, '
     '"next_ask": string|null, "card_patch": {region?, city?, department_pref?, '
     'role_verdict?: "accept"|"reject"|"unclear", qualification_ok?: boolean, '
