@@ -68,6 +68,41 @@ def _no_real_sleep(monkeypatch):
     monkeypatch.setattr(CT.time, "sleep", lambda s: None)
 
 
+# --- source 0: optional external contact CRM (TASK-69) ------------------------------------------
+
+def test_external_crm_wins_and_skips_every_other_source(monkeypatch):
+    """A hit from the external CRM must short-circuit enr_contact_emails, the website fetch and
+    the description rescan -- ExplodingSession/enr_contact_emails prove none of them ever ran."""
+    import app.wa.luna.external_contacts as EC
+    monkeypatch.setattr(EC, "contact_for_clinic",
+                        lambda name, run=None: {"email": "pd@klinikum-beispielstadt.example",
+                                                 "source": "external_crm", "confidence": "high"})
+    postings = [_posting(enr_contact_emails=["someone-else@example.de"])]
+    clinic = _clinic(careers_url="https://klinikum-x.de/karriere")
+    hit = CT.discover_contact(clinic, postings, session=ExplodingSession())
+    assert hit == {"email": "pd@klinikum-beispielstadt.example", "source": "external_crm", "confidence": "high"}
+
+
+def test_external_crm_miss_falls_through_to_enr_contact_emails(monkeypatch):
+    import app.wa.luna.external_contacts as EC
+    monkeypatch.setattr(EC, "contact_for_clinic", lambda name, run=None: None)
+    postings = [_posting(enr_contact_emails=["pflegedirektion@klinikum-x.de"])]
+    hit = CT.discover_contact(_clinic(), postings, session=ExplodingSession())
+    assert hit["source"] == "enr_contact_emails"
+
+
+def test_external_crm_error_falls_through_rather_than_propagating(monkeypatch):
+    import app.wa.luna.external_contacts as EC
+
+    def boom(name, run=None):
+        raise RuntimeError("the external CRM is unreachable in this environment")
+
+    monkeypatch.setattr(EC, "contact_for_clinic", boom)
+    postings = [_posting(enr_contact_emails=["pflegedirektion@klinikum-x.de"])]
+    hit = CT.discover_contact(_clinic(), postings, session=ExplodingSession())
+    assert hit["source"] == "enr_contact_emails"
+
+
 # --- source 1: enr_contact_emails ---------------------------------------------------------------
 
 def test_enr_contact_emails_wins_and_skips_the_http_fetch():

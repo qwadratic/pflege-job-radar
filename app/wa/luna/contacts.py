@@ -1,15 +1,19 @@
-"""Best-effort clinic contact discovery (TASK-64, plan section 3). No external "sales brain" data
-source exists anywhere in this repo or in prior session notes -- confirmed and skipped, per Ivan.
-Instead a Pflegedirektion/HR contact is found from data the board already has, or can politely read
-for itself, tried in order of how much it costs to check:
+"""Best-effort clinic contact discovery (TASK-64, plan section 3; TASK-69 added a fourth, now
+first-tried source). A Pflegedirektion/HR contact is found from data the board already has, from an
+optional external contact CRM an operator may run, or by politely reading the clinic's own site,
+tried in order of how confident/cheap each one is:
 
+  0. app/wa/luna/external_contacts.py (TASK-69) -- an optional, operator-configured external
+     clinic-contact CRM (WA_EXTERNAL_CONTACT_DB env var; a no-op when unset). When configured with
+     a real, human/agent-collected contact database, a role-classified contact from it beats a
+     guessed website-scraped address, so it is tried first, not last.
   1. enr_contact_emails on this clinic's own postings -- already scraped off the job ad by the
      ingestion pipeline (pflege_jobs/classify.py:enrich_description) and already unredacted here.
      app.wa.brain.jobs_for() calls app.data.filter_jobs() directly, and app.data.redact() is only
      ever invoked from app/main.py's HTTP routes (GET /api/jobs, /api/jobs/{id}) -- never from
      filter_jobs()/filter_clinics() themselves (confirmed by reading both call chains). This
      in-process WA harness therefore already reads the same unredacted rows the app itself holds;
-     no separate unlock is needed to use this as the primary source.
+     no separate unlock is needed to use this as a source.
   2. One polite fetch (requests, short per-request timeout, one request per clinic) of the
      clinic's own careers page (falling back to its website when no careers_url is set --
      pflege_jobs/schema.py:CLINIC_SPEC has both columns), regex-scanning the visible page text for
@@ -102,6 +106,24 @@ def get_contact(c, clinic_id):
     return dict(row) if row else None
 
 
+# --- source 0: an optional, operator-configured external contact CRM (TASK-69) ------------------
+
+def _from_external_crm(clinic, external_crm_run=None):
+    """Best-confidence source when configured, tried first. Broadly caught on purpose, same
+    convention as _from_clinic_site below: this integration is opt-in and may run against a real
+    system on a real host, so it being unreachable (unconfigured, no read access, a deploy target
+    without it at all) is an ordinary "this optional extra source isn't available here" outcome,
+    not a hard failure -- the chain just falls through to the sources that are always available."""
+    try:
+        from . import external_contacts as EC
+    except ImportError:
+        return None
+    try:
+        return EC.contact_for_clinic(clinic.get("name") or "", run=external_crm_run)
+    except Exception:
+        return None
+
+
 # --- source 1: enr_contact_emails on this clinic's own postings --------------------------------
 
 def _from_enr_contact_emails(postings):
@@ -181,10 +203,11 @@ def _from_description_rescan(postings):
 
 # --- entry point ---------------------------------------------------------------------------------
 
-def discover_contact(clinic, postings, session=None):
-    """Best-effort {email, source, confidence} for one clinic, or None when none of the three
-    sources above found anything. `session` is only for tests (a fake with a `.get()`); production
-    callers leave it unset and get the real `requests` module."""
-    return (_from_enr_contact_emails(postings)
+def discover_contact(clinic, postings, session=None, external_crm_run=None):
+    """Best-effort {email, source, confidence} for one clinic, or None when none of the four
+    sources above found anything. `session` and `external_crm_run` are only for tests (fakes for
+    `requests`/`subprocess.run`); production callers leave both unset."""
+    return (_from_external_crm(clinic, external_crm_run=external_crm_run)
+            or _from_enr_contact_emails(postings)
             or _from_clinic_site(clinic, session=session)
             or _from_description_rescan(postings))

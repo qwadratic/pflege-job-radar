@@ -224,12 +224,24 @@ Pro-Nachricht-Sperre (`ST._lock`) wieder freigegeben ist, damit ein Matching-Lau
 anderen Threads blockiert — über `app/wa/queue.py:build_queue_entry` einen echten Eintrag:
 `app.autopilot.matching.rank()` (dieselbe transparente Scoring-Engine, aber ohne echte
 Kandidaten-PII in `app/autopilot`s eigene, ausdrücklich synthetische Demo-Datenbank zu schreiben)
-rankt die Kandidatin gegen alle Kliniken des Live-Snapshots; ein bekannter Kontakt (TASK-64) wird
+rankt die Kandidatin gegen alle Kliniken des Live-Snapshots; ein bekannter Kontakt (TASK-64/69) wird
 mit aufgenommen. Zwei neue, eigene Tabellen (`wa_queue_candidates`, `wa_queue_matches`, gleiche
 sqlite-Datei wie `app/wa/store.py`) sind idempotent (Upsert), ein wiederholtes Einverständnis
 dupliziert also nichts. `GET /api/wa/queue` (Kandidaten × passende Kliniken) und `GET
 /api/wa/queue/mailing-list` (flache Vorschau: Kandidat × Klinik × Kontakt-E-Mail) sind owner-only
 wie `GET /api/wa/threads` — beide senden nichts, sie sind ein Report für einen Menschen.
+
+**Optionale externe Kontakt-CRM-Quelle (TASK-69, Ergänzung zu TASK-64):** ein Betreiber kann eine
+eigene, separat gepflegte Klinik-Kontakt-CRM anschließen (menschlich/agentisch gepflegte Kontakte,
+idealerweise mit Quelle/Beleg pro Eintrag) — `app/wa/luna/external_contacts.py` ist ein No-op,
+solange `WA_EXTERNAL_CONTACT_DB` nicht gesetzt ist. Wenn konfiguriert, fragt es die angegebene
+sqlite-Datei read-only ab (Lesebefehl über `WA_EXTERNAL_CONTACT_READER`, Default `sudo sqlite3`, da
+so eine CRM-Datei oft restriktivere Rechte hat als dieser Prozess selbst), matcht den Kliniknamen
+unscharf (rapidfuzz, auf `bundesland='Bayern'` eingegrenzt) und bevorzugt eine Person mit
+`role_category` `pflege_leadership`/`hr_leadership`/`hr` (erwartetes Schema: `companies`/`people`/
+`contact_channels`, siehe das Modul für Details). `contacts.discover_contact` versucht diese Quelle
+zuerst, vor `enr_contact_emails`/Website/JD-Rescan, und fällt bei jedem Fehler (nicht konfiguriert,
+kein Lesezugriff, o. ä.) genauso großzügig durch wie die bestehende Website-Quelle schon immer.
 
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
