@@ -1,0 +1,12 @@
+{
+  "id": "pflegefachhelferin_qualification_trap",
+  "description": "messy/trap: Pflegefachhelferin is the 1-year HELPER qualification, not the 3-year Pflegefachkraft, despite the 'Fach' in its name (qualification_knowledge.json's own documented trap). The candidate's own sentence also names the Pflegefachkräfte she assists, which trips the deterministic per-line job-title classifier into wrongly crediting her with the pflegefachkraft role too. LLM won this one decisively, see evals/cv/README.md",
+  "cv_text": "Bewerbung\nPflegefachhelferin, 1 Jahr Berufserfahrung im Altenheim\nUnterstützung der Pflegefachkräfte bei der Grundpflege\nDeutsch Muttersprache\n",
+  "expected": {
+    "roles_any": ["pflegehelfer"],
+    "roles_none": ["pflegefachkraft"],
+    "qualifications_all": ["Pflegehelfer"],
+    "experience_years": 1,
+    "min_matches": 0
+  }
+}
