@@ -139,7 +139,11 @@ def get_clinic_contact(clinic_id: str) -> dict | None:
     _log_call("get_clinic_contact", {"clinic_id": clinic_id})
     if CT is None:
         return None
-    return CT.get_contact(str(clinic_id))
+    conn = CT.db()   # not app.wa.store.db() directly -- CT.db() also applies contacts.py's own SCHEMA
+    try:
+        return CT.get_contact(conn, str(clinic_id))
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

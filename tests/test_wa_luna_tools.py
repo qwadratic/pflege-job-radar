@@ -39,6 +39,7 @@ def board(tmp_path, monkeypatch):
                     "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
 
 
 def test_search_postings_filters_by_city_and_logs_the_call(tmp_path, monkeypatch):
@@ -81,11 +82,35 @@ def test_get_clinic_contact_returns_none_when_the_contacts_module_is_unavailable
     assert TS.get_clinic_contact(clinic_id="c1") is None
 
 
+def test_get_clinic_contact_reads_a_real_saved_contact_end_to_end(tmp_path, monkeypatch):
+    """No mocking of TASK-64's contacts module: a real save through app.wa.luna.contacts, read
+    back through the tool function's own app.wa.store.db() connection -- the actual round trip an
+    MCP tool call makes, not just the fake-delegate path below."""
+    board(tmp_path, monkeypatch)
+    from app.wa.luna import contacts as CT
+
+    conn = CT.db()
+    CT.save_contact(conn, "c1", "pd@klinikum-muenchen.example", "board", "high")
+    conn.close()
+
+    out = TS.get_clinic_contact(clinic_id="c1")
+    assert out["email"] == "pd@klinikum-muenchen.example"
+    assert out["source"] == "board"
+    assert TS.get_clinic_contact(clinic_id="c-unknown") is None
+
+
 def test_get_clinic_contact_delegates_to_the_contacts_module_when_present(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
 
+    class _FakeConn:
+        def close(self):
+            pass
+
     class _FakeContacts:
-        def get_contact(self, clinic_id):
+        def db(self):
+            return _FakeConn()
+
+        def get_contact(self, conn, clinic_id):
             return {"email": "pd@klinikum-muenchen.example", "source": "board", "confidence": "high"}
 
     monkeypatch.setattr(TS, "CT", _FakeContacts())
