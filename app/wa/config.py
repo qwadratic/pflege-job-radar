@@ -94,6 +94,14 @@ REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip
 # this repo, that is a separate, explicitly-confirmed production change.
 REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip()
 
+# Local-only internal webhook receiver (TASK-86, app/wa/router.py) -- for the alternative
+# architecture where the REAL system stays Meta's primary webhook and forwards a brand-new lead
+# to this harness over a same-host, loopback-only call instead of us receiving Meta directly.
+# Off by default: a fresh/misconfigured deployment must opt in explicitly, since this endpoint
+# accepts a payload with no Meta signature check at all (see _is_local_caller in router.py for
+# the network-trust boundary that replaces it).
+INTERNAL_WEBHOOK_ENABLED = os.environ.get("WA_INTERNAL_WEBHOOK_ENABLED", "").strip() in ("1", "true", "yes")
+
 # Proactive follow-up nudges (TASK-85, app/wa/luna/followups.py) -- a scaled-down version of the
 # real system's own tiered (15m/1h/4h) re-engagement. Fixed, reviewable text, not a model call --
 # an unprompted, system-initiated message is not what luna_brain.turn()'s "the candidate just

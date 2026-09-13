@@ -120,3 +120,45 @@ async def wa_route_webhook(request: Request):
         return route_webhook(raw, request.headers.get("X-Hub-Signature-256"))
     except PermissionError:
         raise HTTPException(403, "invalid signature")
+
+
+# --- local-only internal receiver (TASK-86): the real system stays Meta's primary webhook -------
+# An alternative to the split-and-forward design above: instead of THIS harness receiving Meta's
+# call directly and deciding ownership, the real system's OWN webhook handler gains a small check
+# ("is this phone already one of our candidates?") and forwards only a brand-new lead's payload to
+# this endpoint, over a same-host loopback call. This repo does not modify the real system's code
+# -- see docs/whatsapp.md for exactly what that side would need to add; this endpoint is only the
+# receiving half, built and tested here.
+#
+# No Meta signature to check here: the caller is the real system, not Meta, and the call never
+# crosses the public internet. The trust boundary is network origin (loopback only) plus an
+# explicit opt-in flag (WA_INTERNAL_WEBHOOK_ENABLED, default off) instead of a cryptographic check
+# -- dropping signature verification is a real access-control change, not a shortcut, so it needs
+# its own explicit gate rather than silently relying on "nobody will guess this path".
+
+_LOCAL_HOSTS = ("127.0.0.1", "::1")
+
+
+def _is_local_caller(request):
+    """True only for a direct loopback connection. Does not handle a reverse-proxied deployment
+    (X-Forwarded-For) -- this endpoint is meant to be called directly by a same-host process, not
+    through nginx; if that ever changes, this check needs revisiting rather than trusting a
+    spoofable header by default."""
+    host = request.client.host if request.client else None
+    return host in _LOCAL_HOSTS
+
+
+@router.post("/wa/internal-webhook", include_in_schema=False)
+async def wa_internal_webhook(request: Request, client=None):
+    """Receives a payload already vetted and forwarded by the real production system's own
+    webhook (see module docstring) -- not Meta directly, so there is nothing to verify here beyond
+    the access checks below."""
+    if not C.INTERNAL_WEBHOOK_ENABLED or not _is_local_caller(request):
+        raise HTTPException(403, "local calls only")
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "invalid json")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "invalid payload")
+    return API.handle_payload(payload, client=client)
