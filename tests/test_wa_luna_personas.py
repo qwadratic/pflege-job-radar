@@ -274,6 +274,8 @@ def test_a_question_about_an_unlisted_city_actually_triggers_a_live_search(board
         f"a search_postings call happened but none mentioned Coburg: {search_calls!r}")
     final_bubbles = " ".join(results[-1]["bubbles"])
     assert final_bubbles.strip(), "the tool call must still be followed by an actual reply"
+    assert "coburg" in final_bubbles.lower(), (
+        f"TASK-73: the reply should name what it checked (Coburg), not just answer generically: {final_bubbles!r}")
 
 
 def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_call(board):
