@@ -447,11 +447,12 @@ OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
 OWNER_WRITE_PATHS = ("/api/auth/password",)
 # "/api/crawl" (not just "/api/crawl/runs") also covers GET /api/crawl/plan -- it previews the same
 # credits_left / per-clinic routing decision the gated endpoints above protect (2026-09-08 API audit).
-# "/api/wa/threads" and "/api/wa/queue" (TASK-66: consenting candidates x matched clinics, same
-# PII class as a thread's own slots) and nothing wider: /api/wa/webhook authenticates with Meta's
-# own signature and /api/wa/health carries no secret, so both stay reachable (docs/whatsapp.md).
+# "/api/wa/threads", "/api/wa/queue" (TASK-66: consenting candidates x matched clinics, same PII
+# class as a thread's own slots) and "/api/wa/ownership" (TASK-75: a phone number is the same PII
+# class again) -- and nothing wider: /api/wa/webhook authenticates with Meta's own signature and
+# /api/wa/health carries no secret, so both stay reachable (docs/whatsapp.md).
 OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl", "/api/crawl", "/api/campaign",
-                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue")
+                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue", "/api/wa/ownership")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 # Pages a customer may not read either. /deck is the internal next-steps briefing: unfixed security facts,
 # deploy detail, the open decisions -- it was in GATED_PAGES, which is the level a paying customer reaches

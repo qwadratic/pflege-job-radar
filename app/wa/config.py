@@ -82,6 +82,12 @@ LUNA_MAX_CALLS_PER_HOUR = int(os.environ.get("WA_LUNA_MAX_CALLS_PER_HOUR", "20")
 # repo), just a durable, discoverable flag a human or the catch-up driver can act on.
 STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 
+# Conversation ownership (TASK-75, app/wa/routing.py): a plain, newline-delimited, operator-
+# produced export of phone numbers already known to the real production system -- unset means
+# routing a brand-new phone cannot be decided at all (see routing._is_known_to_real_system), not
+# that everything defaults one way or the other.
+REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip()
+
 
 def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""

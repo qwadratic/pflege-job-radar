@@ -567,6 +567,22 @@ def test_send_uses_the_reopen_template_when_the_window_is_closed(wa, monkeypatch
     assert wa.sent == [], "no free-form text call must reach Meta once the window is closed"
 
 
+def test_a_sent_reopen_template_flips_ownership_to_us(wa, monkeypatch):
+    """TASK-75: this harness reopening an old conversation with its own template is the one
+    explicit act that hands that phone's ownership to us, regardless of whatever it was before."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.wa import routing as R
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "WA_REOPEN_TEMPLATE_NAME", "candidate_reopen_v1")
+    stale = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    t = {"phone": LEAD, "last_inbound_at": stale}
+    with ST.db() as c:
+        WAPI._send(c, t, ["Text"], [], client=wa)
+    with R.db() as rc:
+        assert R.route_decision(rc, LEAD) == "us"
+
+
 def test_send_drafts_the_reopen_template_when_autosend_is_off(wa, monkeypatch):
     from datetime import datetime, timedelta, timezone
     monkeypatch.setattr(C, "AUTOSEND", False)

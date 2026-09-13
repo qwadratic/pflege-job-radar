@@ -124,6 +124,21 @@ Harness lokal ohne zweiten Prozess läuft. In Produktion zeigt nginx auf **eine*
 Prozess, damit ein Lead nicht hinter einem Crawl-Snapshot wartet. Beide schreiben `data/wa.sqlite`
 (WAL); schreiben tut nur die, die Webhooks bekommt.
 
+**Gesprächs-Ownership (TASK-75):** `app/wa/routing.py` — Idee: neue Leads an diesen Harness, alte
+an das echte Produktionssystem, außer wir öffnen ein altes Gespräch selbst mit unserem
+Reopen-Template wieder (TASK-70) — das eine, explizite Ereignis übernimmt die Ownership ab dann.
+`route_decision(conn, phone)` liefert `'us'`/`'them'`: schon entschieden bleibt es dauerhaft so
+(nur `flip_to_us_on_reopen()`, verkabelt in `app/wa/api.py:_send_reopen_template`, darf das je
+ändern); für eine noch unentschiedene Nummer prüft `_is_known_to_real_system()`, ob sie dem echten
+System schon bekannt ist — eine bewusst generische, per `WA_REAL_SYSTEM_PHONES_FILE` konfigurierte
+Textdatei-Prüfung (dieselbe Zurückhaltung wie `external_contacts.py`, TASK-69: kein konkretes
+System hier benannt). Unkonfiguriert wird nicht geraten, sondern laut gefehlert — ein Fehler in
+diese oder jene Richtung hat einen echten Preis. Lesbar über `GET /api/wa/ownership`
+(owner-only, gleiche PII-Klasse wie `/api/wa/threads`). **Was hier absichtlich fehlt:** ein
+tatsächlicher Router vor Metas Webhook, der diese Tabelle live konsultiert — das ist eine
+Produktions-Infrastruktur-Änderung, die eine eigene Abstimmung mit dem Team des echten Systems
+braucht, kein Teil dieser Aufgabe.
+
 ## Zweites Gehirn: dieselbe Persona, dieselben Regeln, Claude statt ChatGPT
 
 `WA_BRAIN=luna` schaltet auf `app/wa/luna_brain.py` um — dieselbe Transport-Schicht, dieselbe

@@ -399,6 +399,13 @@ def _send_reopen_template(c, t, client=None, action=None):
     ST.record_outbound(c, t["phone"], wamid, label, kind="template",
                        meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
     t["last_outbound_at"] = ST.now_iso()
+    # TASK-75: this harness just reopened a (possibly previously-real-system-owned) conversation
+    # with its own template -- that single act hands the conversation to us from now on. A fresh
+    # connection (routing.db() applies wa_ownership's own schema, same pattern as queue.py/
+    # contacts.py) rather than assuming ``c`` already has that table.
+    from . import routing as R
+    with R.db() as rc:
+        R.flip_to_us_on_reopen(rc, t["phone"])
     return "sent_template"
 
 
@@ -411,6 +418,21 @@ def _is_stuck(c, phone, last_inbound_at, stopped):
         return False
     age_hours = (datetime.now(timezone.utc) - datetime.fromisoformat(last_inbound_at)).total_seconds() / 3600
     return age_hours > C.STUCK_REPLY_HOURS
+
+
+@router.get("/wa/ownership")
+def wa_ownership(request: Request):
+    """Owner-only: which phones this harness currently owns vs. leaves to the real system
+    (app/wa/routing.py, TASK-75). Read-only -- never decides anything itself, only reports what
+    route_decision()/flip_to_us_on_reopen() already recorded."""
+    from . import routing as R
+    phone = request.query_params.get("phone")
+    with R.db() as c:
+        if phone:
+            row = c.execute("select * from wa_ownership where phone=?", (phone,)).fetchone()
+            return {"phone": phone, "ownership": dict(row) if row else None}
+        rows = c.execute("select * from wa_ownership order by since desc limit 500").fetchall()
+    return {"total": len(rows), "rows": [dict(r) for r in rows]}
 
 
 @router.get("/wa/threads")

@@ -253,7 +253,9 @@ DENIED = [("POST", "/api/crawl"), ("POST", "/api/schedules"), ("PUT", "/api/sche
           ("POST", "/api/refresh-cache"),
           # TASK-66: same PII class as GET /api/wa/threads -- a phone number plus what is known
           # about the candidate and which clinics it matched.
-          ("GET", "/api/wa/queue"), ("GET", "/api/wa/queue/mailing-list")]
+          ("GET", "/api/wa/queue"), ("GET", "/api/wa/queue/mailing-list"),
+          # TASK-75: a phone number again -- which system currently owns that conversation.
+          ("GET", "/api/wa/ownership")]
 OPEN = [("GET", "/api/me"), ("GET", "/api/stats"), ("GET", "/api/clinics"), ("GET", "/api/jobs"), ("GET", "/api/search?q=x"),
         ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"), ("GET", "/login"),
         ("GET", "/api/ingest/schemas"), ("GET", "/api/agent/manifest"), ("POST", "/api/auth/magic")]
