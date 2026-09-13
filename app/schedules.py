@@ -178,7 +178,8 @@ def fire(s, stagger=True, trigger="schedule"):
 
 
 def human(s, lang="de"):
-    """'täglich 03:00 UTC, Boards über 7 Tage verteilt · alle Kliniken · adapter'."""
+    """Human-readable schedule summary, e.g. (lang="de") 'täglich 03:00 UTC, Boards über 7 Tage
+    verteilt · alle Kliniken · adapter'."""
     de = lang == "de"
     cron = (s.get("cron") or "").split()
     txt = s.get("cron") or ""

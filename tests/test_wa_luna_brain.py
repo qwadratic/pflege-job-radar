@@ -257,6 +257,40 @@ def test_requirement_scoreboard_reflects_the_card():
     assert LB.requirement_scoreboard({"region": "Bayern"})["region"] == "satisfied"
 
 
+# --- TASK-82: market_snapshot's ready_to_close must agree with requirement_scoreboard's own
+# city_or_department gate -- a live e2e run found a candidate genuinely flexible on department
+# (a real, valid answer) saw the scoreboard say "satisfied" while the shortlist never actually
+# populated, since ready_to_close silently required BOTH city AND department_pref.
+
+def test_requirement_scoreboard_city_or_department_is_satisfied_by_either_alone():
+    assert LB.requirement_scoreboard({"city": "München"})["city_or_department"] == "satisfied"
+    assert LB.requirement_scoreboard({"department_pref": "Intensiv/IMC"})["city_or_department"] == "satisfied"
+    assert LB.requirement_scoreboard({})["city_or_department"] == "open"
+
+
+def test_shortlist_appears_with_only_department_known_no_city():
+    card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_known": True}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"], (
+        "a candidate flexible on city but with a stated department must still reach a shortlist, "
+        "matching requirement_scoreboard's own city_or_department == satisfied verdict")
+
+
+def test_shortlist_appears_with_only_city_known_no_department():
+    card = {"qualification_ok": True, "city": "München", "housing_known": True}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"], (
+        "a candidate flexible on department but with a stated city (a real, answered preference, "
+        "not a missing one) must still reach a shortlist -- this is the exact regression a live "
+        "e2e persona run surfaced (backlog TASK-82)")
+
+
+def test_shortlist_is_empty_with_neither_city_nor_department():
+    card = {"qualification_ok": True, "housing_known": True}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"] == []
+
+
 # --- session persistence: one Claude Code session per WhatsApp thread -------------------------
 
 def test_a_brand_new_thread_has_no_session_id_and_one_comes_back_from_the_client(luna):

@@ -1,70 +1,41 @@
-# WhatsApp — eingehende Pflege-Leads beantworten
+# WhatsApp — answering inbound Pflege leads
 
-**Was:** eine Pflegekraft schreibt aus einer Meta-Anzeige heraus auf WhatsApp; Valentina antwortet,
-stellt pro Nachricht **eine** Frage, und sobald die Suche eng genug ist, nennt sie echte offene
-Stellen aus genau den Daten, die `GET /api/jobs` ausliefert — mit Klinik, Ort und Link zur
-Originalanzeige.
-**Wo:** `app/wa/` (Router `/api/wa/*`), Zustand in `data/wa.sqlite`, Unit `deploy/pflege-wa.service`.
-**Status:** minimaler Harness. Er beantwortet eingehende Nachrichten und bereitet die Übergabe an
-einen Menschen vor. Er schickt **nichts** an Kliniken, sammelt keine Dokumente, und ohne
-`WA_AUTOSEND=1` geht überhaupt nichts an Meta — die Antworten landen als `draft` in der Datenbank.
+**What:** a candidate messages from a Meta ad on WhatsApp. Valentina replies, asks **one** question per message, and once the search is narrow enough names real open postings from exactly the data `GET /api/jobs` serves — clinic, city, link to the original ad.
+**Where:** `app/wa/` (router `/api/wa/*`), state in `data/wa.sqlite`, unit `deploy/pflege-wa.service`.
+**Status:** minimal harness. Answers inbound messages, prepares handoff to a human. Sends **nothing** to clinics, collects no documents, and without `WA_AUTOSEND=1` nothing reaches Meta at all — replies land as `draft` in the database.
 
-Vorbild ist der Produktions-Bot auf `tasker-dispatcher-01`
-(`/opt/clinic-dispatcher/apps/connectors/`): dieselbe Meta-Cloud-API, dieselben Env-Namen, dieselbe
-Persona (intern „Luna", im Chat **Valentina**), dieselbe Stilregel (kurze Bubbles, eine
-Frage pro Zug), dieselbe Qualifikations-Hürde (Urkunde / Defizitbescheid / bestandene
-Kenntnisprüfung). Neu ist, dass die Fragen aus den Board-Daten kommen statt aus einem festen Skript,
-und dass der LLM-Aufruf entfällt: die Antwort ist deterministisch und damit testbar.
+Modeled on the production bot at `tasker-dispatcher-01` (`/opt/clinic-dispatcher/apps/connectors/`): same Meta Cloud API, same env names, same persona (internally "Luna", in-chat **Valentina**), same style rule (short bubbles, one question per turn), same qualification bar (Urkunde / Defizitbescheid / passed Kenntnisprüfung). New here: questions come from live board data instead of a fixed script, and the deterministic branch below has no LLM call at all — testable, not just plausible.
 
-## Das Gespräch
+## The conversation
 
-Der Harness führt kein Skript, sondern füllt **Slots** — jeder Slot ist ein Board-Filter:
+No script — the harness fills **slots**, each slot a board filter:
 
-| Slot | Filter in `GET /api/jobs` | woraus gelesen |
+| Slot | Filter in `GET /api/jobs` | Read from |
 |---|---|---|
-| `role` | `role_class` | „examinierte Krankenschwester", „OTA", „Stationsleitung" |
-| `city` / `bezirk` | `city` / `regierungsbezirk` | Ortsnamen, die das Board wirklich kennt |
-| `department` | `department_hint` | „ITS", „OP", „Kreissaal" … (Alias-Liste des Produktions-Bots) |
-| `hours` | `employment_types` | „Vollzeit", „75%" |
-| `housing` | `housing=1` | „brauche eine Wohnung" |
-| `urkunde` | — | Urkunde, Defizitbescheid, Kenntnisprüfung; **kein** Filter, sondern die Hürde |
+| `role` | `role_class` | "examinierte Krankenschwester", "OTA", "Stationsleitung" |
+| `city` / `bezirk` | `city` / `regierungsbezirk` | town names the board actually knows |
+| `department` | `department_hint` | "ITS", "OP", "Kreissaal" … (production bot's alias list) |
+| `hours` | `employment_types` | "Vollzeit", "75%" |
+| `housing` | `housing=1` | "brauche eine Wohnung" |
+| `urkunde` | — | Urkunde, Defizitbescheid, Kenntnisprüfung; **not** a filter, the qualification bar itself |
 
-**Welche Frage als nächste kommt, entscheiden die Daten.** Für jeden offenen Slot rechnet
-`app/wa/brain.py:_gain` auf den noch passenden Stellen aus, wie stark eine Antwort die Liste
-zerlegen würde: Abdeckung × (1 − Anteil des häufigsten Werts). „Intensiv oder OP?" bringt nichts,
-wenn 90 % der restlichen Zeilen Intensiv sind — bei 40/35/25 halbiert es die Liste. Gefragt wird der
-Slot mit dem höchsten Wert; unter `MIN_GAIN` wird gar nicht gefragt, sondern geliefert.
+**Data decides the next question.** For every open slot, `app/wa/brain.py:_gain` scores how much an answer would narrow the remaining rows: coverage × (1 − share of the most common value). "Intensiv or OP?" is useless when 90% of rows are already Intensiv; at 40/35/25 it halves the list. Highest-gain slot gets asked; below `MIN_GAIN`, the harness stops asking and just delivers.
 
-Damit ist die Reihenfolge nicht festgelegt und passt sich dem Bestand an. Auf den echten Daten
-(3625 offene Stellen, Stand 2026-09-11) beginnt sie mit dem Ort — 406 der Stellen sind in München,
-also zerlegt der Ort die Liste am stärksten.
+So question order isn't fixed — it follows the live board. On real data (3625 open postings, 2026-09-11), city goes first: 406 postings are in München, so city narrows the most.
 
-Weitere Regeln, alle in `app/wa/brain.py`:
+More rules, all in `app/wa/brain.py`:
 
-- **Zwei Bubbles, eine Frage.** `_check()` wirft, wenn ein Zug mehr enthält — die Stilregel ist eine
-  Zusicherung, kein Ratschlag, und bricht im Test statt im Chat.
-- **Zahlen statt Floskeln.** Jede Frage trägt den Stand mit: „14 Stellen passen bisher."
-- **Buttons aus dem Bestand.** Die drei häufigsten Werte werden als Meta-Reply-Buttons angeboten
-  (max. 3, Titel ≤ 20 Zeichen); Freitext bleibt immer möglich, wer „Stroke Unit" schreibt, ist nicht
-  an die Vorschläge gebunden.
-- **Eine Nachricht darf mehrere Slots füllen.** „Intensiv in Würzburg, Teilzeit" füllt drei, und dann
-  werden diese drei nicht mehr gefragt.
-- **Die letzte Aussage gilt.** „eigentlich lieber Augsburg" korrigiert den Ort. Ein knappes „ja"
-  beantwortet nur die Frage, die gerade gestellt wurde — nie eine von vor vier Zügen.
-- **Nichts offen heißt nicht Schweigen.** Passt keine Stelle, wird der lockerste Wunsch fallen
-  gelassen (Wohnung → Vollzeit/Teilzeit → Bereich → Stadt) und **benannt**: „Für OP in Augsburg,
-  Vollzeit, mit Wohnung ist nichts offen – ohne Wohnungs-Wunsch: …". Gibt es auch dann nichts, sagt
-  der Harness das gerade heraus.
-- **Keine Zusage ohne Anerkennung.** Ohne Urkunde, Defizitbescheid oder bestandene Kenntnisprüfung
-  wird niemand vorgestellt (wie in der Produktions-Constitution). „Nicht bestanden" wird auch dann
-  gelesen, wenn niemand danach gefragt hat.
-- **STOP ist STOP.** „stop", „stopp", „abmelden", „löschen" → `wa_threads.stopped`, ab dann geht
-  nichts mehr raus; die eingehende Nachricht wird trotzdem gespeichert, sie ist die Willenserklärung.
-  Ganze Wörter, damit „Stopfen" und „Intensivstation" nichts auslösen.
-- **Dateien.** CV oder Urkunde als Anhang werden bestätigt („kann ich hier noch nicht lesen"), nicht
-  stillschweigend verschluckt — der Harness hat keine Dokumenten-Pipeline.
+- **Two bubbles, one question.** `_check()` raises if a turn has more — the style rule is an assertion, not a suggestion; it fails in tests, not in chat.
+- **Numbers, not filler.** Every question carries the current count: "14 Stellen passen bisher."
+- **Buttons from live data.** The three most common values become Meta reply buttons (max 3, titles ≤ 20 chars); free text always works too — typing "Stroke Unit" isn't limited to the suggestions.
+- **One message can fill several slots.** "Intensiv in Würzburg, Teilzeit" fills three at once; none of those three get asked again.
+- **Last statement wins.** "eigentlich lieber Augsburg" corrects the city. A bare "ja" answers only the question just asked — never one from four turns ago.
+- **Nothing open isn't silence.** No posting matches → drop the loosest preference (housing → full/part-time → department → city) and **say so**: "Für OP in Augsburg, Vollzeit, mit Wohnung ist nichts offen – ohne Wohnungs-Wunsch: …". Still nothing → the harness says that plainly too.
+- **No offer without recognition.** No Urkunde, Defizitbescheid, or passed Kenntnisprüfung → nobody gets introduced to a posting (same as the production constitution). "Not passed" is read even if nobody asked.
+- **STOP means STOP.** "stop"/"stopp"/"abmelden"/"löschen" → `wa_threads.stopped`; nothing goes out after. The inbound message itself is still stored — it's the opt-out's own record. Whole-word match only, so "Stopfen"/"Intensivstation" don't fire.
+- **Files.** A CV/Urkunde attachment gets acknowledged ("can't read this yet"), never silently swallowed — the deterministic branch has no document pipeline.
 
-Ein Verlauf sieht damit so aus (echte Zahlen, gekürzt):
+A real (trimmed) transcript:
 
 ```
 << Hallo
@@ -82,359 +53,127 @@ Ein Verlauf sieht damit so aus (echte Zahlen, gekürzt):
 
 ## Transport
 
-Meta WhatsApp Cloud API, Graph `v25.0`. Signatur- und Challenge-Prüfung sind aus dem
-Produktions-Client übernommen, weil sie die gesamte Vertrauensgrenze nach innen sind.
+Meta WhatsApp Cloud API, Graph `v25.0`. Signature and challenge checks are lifted from the production client — they're the whole trust boundary.
 
-| Route | Auth | was |
+| Route | Auth | What |
 |---|---|---|
-| `GET /api/wa/webhook` | Metas `hub.verify_token` | Handshake, echot `hub.challenge` |
-| `POST /api/wa/webhook` | `X-Hub-Signature-256` (HMAC-SHA256 über den Rohbody) | eingehende Nachrichten |
-| `GET /api/wa/health` | öffentlich | Bereitschaft ohne Secrets |
-| `GET /api/wa/threads` | Owner-Session | Threads mit Slots, `?phone=` mit Verlauf |
+| `GET /api/wa/webhook` | Meta's `hub.verify_token` | handshake, echoes `hub.challenge` |
+| `POST /api/wa/webhook` | `X-Hub-Signature-256` (HMAC-SHA256 over the raw body) | inbound messages |
+| `GET /api/wa/health` | public | readiness, no secrets |
+| `GET /api/wa/threads` | owner session | threads with slots, `?phone=` for history |
+| `GET /api/wa/ownership` | owner session | which system owns a phone's conversation (TASK-75) |
 
-Reihenfolge eines POST, jeder Schritt mit Grund: Signatur prüfen → `phone_number_id` vergleichen
-(ein Webhook für eine zweite Nummer wird ignoriert, nicht beantwortet) → `INSERT` auf
-`wa_messages.wamid` (UNIQUE, damit eine Meta-Wiederholung genau hier endet) → Antwort entscheiden
-(kein Netz, kein Schreiben) → senden → Ausgang speichern. Ein Meta-Fehler wird **nicht**
-verschluckt: die Route antwortet 502, es steht keine gesendete Nachricht in der Datenbank, und die
-Wiederholung von Meta liefert die Antwort dann wirklich aus.
+POST order, each step with its reason: verify signature → compare `phone_number_id` (a webhook for a second number is ignored, not answered) → `INSERT` on `wa_messages.wamid` (UNIQUE, so a Meta redelivery stops right here) → decide the reply (no network, no writes yet) → send → record the outbound. A Meta error is **not** swallowed: the route answers 502, no sent message lands in the database, and Meta's own redelivery actually gets an answer.
 
-`GET /api/wa/threads` ist owner-only (`app/auth.py:OWNER_READ_PREFIXES`) — Telefonnummer und was
-jemand über sich erzählt hat sind die persönlichsten Daten in diesem Repo.
+`GET /api/wa/threads`/`GET /api/wa/ownership` are owner-only (`app/auth.py:OWNER_READ_PREFIXES`) — a phone number and what someone said about themselves is the most personal data in this repo.
 
-## Betrieb
+## Operations
 
 ```bash
-# Env (Namen identisch zum Produktions-Bridge, damit eine Meta-App für beide reicht)
-META_WHATSAPP_APP_SECRET=…        # Pflicht: Webhook-Signatur
-META_WHATSAPP_VERIFY_TOKEN=…      # Pflicht: Handshake
-META_WHATSAPP_ACCESS_TOKEN=…      # Pflicht zum Senden
-META_WHATSAPP_PHONE_NUMBER_ID=…   # Pflicht zum Senden, und filtert fremde Webhooks
-WA_AUTOSEND=1                     # ohne das: alles wird nur als draft gespeichert
+# Env (same names as the production bridge, so one Meta app covers both)
+META_WHATSAPP_APP_SECRET=…        # required: webhook signature
+META_WHATSAPP_VERIFY_TOKEN=…      # required: handshake
+META_WHATSAPP_ACCESS_TOKEN=…      # required to send
+META_WHATSAPP_PHONE_NUMBER_ID=…   # required to send, also filters foreign webhooks
+WA_AUTOSEND=1                     # without this: everything is stored as draft only
 
-.venv/bin/uvicorn app.wa.asgi:app --port 8502      # eigener Prozess (deploy/pflege-wa.service)
+.venv/bin/uvicorn app.wa.asgi:app --port 8502      # own process (deploy/pflege-wa.service)
 curl -s localhost:8502/api/wa/health
 .venv/bin/python -m pytest -q tests/test_wa_harness.py
 ```
 
-Webhook bei Meta eintragen: `https://<host>/api/wa/webhook`, Feld `messages`, Verify-Token wie oben.
+Register the webhook with Meta: `https://<host>/api/wa/webhook`, field `messages`, verify token as above.
 
-Zwei Türen, eine Implementierung: `app/main.py` mountet denselben Router (Port 8501), damit der
-Harness lokal ohne zweiten Prozess läuft. In Produktion zeigt nginx auf **eine** davon — der eigene
-Prozess, damit ein Lead nicht hinter einem Crawl-Snapshot wartet. Beide schreiben `data/wa.sqlite`
-(WAL); schreiben tut nur die, die Webhooks bekommt.
+Two doors, one implementation: `app/main.py` mounts the same router (port 8501) so the harness runs locally without a second process. In production, nginx points at **one** of them — the dedicated process, so a lead doesn't wait behind a crawl snapshot. Both write `data/wa.sqlite` (WAL); only whichever one receives webhooks actually writes.
 
-**Gesprächs-Ownership (TASK-75):** `app/wa/routing.py` — Idee: neue Leads an diesen Harness, alte
-an das echte Produktionssystem, außer wir öffnen ein altes Gespräch selbst mit unserem
-Reopen-Template wieder (TASK-70) — das eine, explizite Ereignis übernimmt die Ownership ab dann.
-`route_decision(conn, phone)` liefert `'us'`/`'them'`: schon entschieden bleibt es dauerhaft so
-(nur `flip_to_us_on_reopen()`, verkabelt in `app/wa/api.py:_send_reopen_template`, darf das je
-ändern); für eine noch unentschiedene Nummer prüft `_is_known_to_real_system()`, ob sie dem echten
-System schon bekannt ist — eine bewusst generische, per `WA_REAL_SYSTEM_PHONES_FILE` konfigurierte
-Textdatei-Prüfung (dieselbe Zurückhaltung wie `external_contacts.py`, TASK-69: kein konkretes
-System hier benannt). Unkonfiguriert wird nicht geraten, sondern laut gefehlert — ein Fehler in
-diese oder jene Richtung hat einen echten Preis. Lesbar über `GET /api/wa/ownership`
-(owner-only, gleiche PII-Klasse wie `/api/wa/threads`). **Was hier absichtlich fehlt:** ein
-tatsächlicher Router vor Metas Webhook, der diese Tabelle live konsultiert — das ist eine
-Produktions-Infrastruktur-Änderung, die eine eigene Abstimmung mit dem Team des echten Systems
-braucht, kein Teil dieser Aufgabe.
+**Conversation ownership (TASK-75):** `app/wa/routing.py`. Idea: route new leads to this harness, leave existing ones with the real production system, except when we reopen an old conversation ourselves via our own reopen template (TASK-70) — that one explicit event hands ownership over from then on. `route_decision(conn, phone)` returns `'us'`/`'them'`: once decided, it stays that way permanently (only `flip_to_us_on_reopen()`, wired into `app/wa/api.py:_send_reopen_template`, may ever change it). For an undecided number, `_is_known_to_real_system()` checks whether the real system already knows it — a deliberately generic, `WA_REAL_SYSTEM_PHONES_FILE`-configured text-file check (same restraint as `external_contacts.py`, TASK-69: no concrete system named here). Unconfigured means a loud error, not a guess — being wrong in either direction has a real cost. Readable via `GET /api/wa/ownership` (owner-only, same PII class as `/api/wa/threads`). **Deliberately missing:** an actual router in front of Meta's webhook that consults this table live — that's a production-infrastructure change needing its own sign-off with the real system's team, not part of this task.
 
-## Zweites Gehirn: dieselbe Persona, dieselben Regeln, Claude statt ChatGPT
+## Second brain: same persona, same rules, Claude instead of ChatGPT
 
-`WA_BRAIN=luna` schaltet auf `app/wa/luna_brain.py` um — dieselbe Transport-Schicht, dieselbe
-`data/wa.sqlite`, aber die Antwort kommt jetzt von Claude statt aus der Fragen-Leiter oben.
-Persona, Qualifikations-Gate, Regions-Grenze (nur Bayern) und die Live-Markt-Logik sind aus
-der Produktions-Implementierung übernommen — mit Firmenbezug entfernt, weil dieses Repo
-öffentlich ist und die Quelle privat/firmengebunden (`app/wa/luna/VENDORED.md` listet genau,
-was übernommen, was verallgemeinert und was weggelassen wurde). `docs/index.json`/README
-bleiben Deutsch; dieser Abschnitt auch.
+`WA_BRAIN=luna` switches to `app/wa/luna_brain.py` — same transport layer, same `data/wa.sqlite`, but the reply now comes from Claude instead of the question ladder above. Persona, qualification gate, region boundary (Bavaria only), and live-market logic are lifted from the production implementation with company references stripped (this repo is public, the source is private/company-bound — `app/wa/luna/VENDORED.md` lists exactly what was kept, generalized, or dropped).
 
-**Was in Code entschieden wird, nicht vom Modell:**
+**Decided in code, never by the model:**
 
-- **STOP** erreicht das Modell nie — genau wie beim deterministischen Zweig.
-- **Nicht platzierbar** (Pflegehelfer, Ausbildung ohne Anerkennungspfad, durchgefallene
-  Kenntnisprüfung): die erste Ablehnung ist der feste deutsche Text
-  (`app/wa/luna/prompts.py:REJECT_BODY_DE`), nie die eigene Formulierung des Modells — genau
-  die "prozessgenaue Formulierung, die das Modell nicht umschreiben darf"-Regel aus der Quelle.
-- **Bundesland außerhalb Bayerns**: löst die feste Absage aus (`OUT_OF_SCOPE_REGION_DE`), weil
-  das Board keine Daten für andere Länder hat.
+- **STOP** never reaches the model — same as the deterministic branch.
+- **Not placeable** (Pflegehelfer, training with no recognition path, failed Kenntnisprüfung): the first decline is the locked German text (`app/wa/luna/prompts.py:REJECT_BODY_DE`), never the model's own phrasing — the source's own "process-exact wording the model must not rewrite" rule.
+- **A named Bundesland outside Bavaria** triggers the locked decline (`OUT_OF_SCOPE_REGION_DE`) — the board has no data for other states.
 
-Alles andere — Tonfall, welche Frage als nächste kommt, wie der Marktstand formuliert wird,
-wann eskaliert wird — entscheidet Claude, aus dem Zustand, den `app/wa/luna_brain.py` mitgibt:
-der Karte (`card`, das Äquivalent zu `card_patch` aus der Quelle), einem `requirement_scoreboard`
-(Zustand, kein Skript) und einem `market_snapshot` aus genau den Filtern, die auch
-`GET /api/jobs` nutzt (`app/wa/brain.py:jobs_for`) — kein zweiter Datenpfad. Den Thread selbst
-gibt es hier nicht mehr als Text zu übergeben: er lebt in der Sitzung (nächster Absatz).
+Everything else — tone, which question comes next, how the market snapshot is phrased, when to escalate — is Claude's call, from state `app/wa/luna_brain.py` hands it: the card (`card`, the equivalent of the source's `card_patch`), a `requirement_scoreboard` (state, not a script), and a `market_snapshot` from the exact filters `GET /api/jobs` also uses (`app/wa/brain.py:jobs_for`) — no second data path. The thread itself is never handed over as text anymore — it lives in the session (next section).
 
-**Eine Claude-Code-Sitzung pro WhatsApp-Nummer, nicht ein zustandsloser Aufruf pro Zug.** Beim
-ersten Kontakt einer Nummer startet `app/wa/luna_brain.py:Client` `claude -p --session-id <uuid>`
-und merkt sich die UUID auf der Karte (`card._session_id`); jeder weitere Zug derselben Nummer
-ruft `claude -p --resume <dieselbe uuid>` auf. Die eingehende WhatsApp-Nachricht wird damit zur
-echten `user`-Nachricht dieser Sitzung, genau wie in einem interaktiven Chat — Claude sieht die
-bisherigen Züge aus der Sitzung selbst, nicht aus einem selbstgebauten Thread-Feld. Was pro Zug
-trotzdem frisch mitgeschickt wird, ist nur, was sich unabhängig vom Gespräch ändern kann: der
-aktuelle Kartenstand, der Requirement-Scoreboard und der Markt-Snapshot (neue Stellen erscheinen,
-alte schließen) — das kann sich Claude nicht "merken", das muss jeder Zug neu bekommen.
-`--resume`/`--session-id` finden eine Sitzung nur wieder, wenn `claude` **aus demselben
-Arbeitsverzeichnis** aufgerufen wird, in dem sie begonnen hat — deshalb läuft jeder Aufruf mit
-festem `cwd=WA_LUNA_SESSION_DIR` (`data/wa_luna_sessions/`, Default), unabhängig davon, aus
-welchem Verzeichnis der FastAPI-Prozess selbst gerade läuft.
+**One Claude Code session per WhatsApp number, not a stateless call per turn.** On first contact, `app/wa/luna_brain.py:Client` starts `claude -p --session-id <uuid>` and keeps the UUID on the card (`card._session_id`); every later turn for that number calls `claude -p --resume <same uuid>`. The inbound WhatsApp message becomes the real `user` message of that session, exactly like an interactive chat — Claude sees prior turns from the session itself, not a hand-built thread field. What's still resent fresh every turn is only what can change independent of the conversation: current card state, the requirement scoreboard, and the market snapshot (new postings appear, old ones close) — Claude can't "remember" that, every turn needs it fresh. `--resume`/`--session-id` only find a session again if `claude` runs from the **same working directory** it started in — so every call runs with a fixed `cwd=WA_LUNA_SESSION_DIR` (`data/wa_luna_sessions/`, default), regardless of the FastAPI process's own cwd.
 
-**Aufruf: die `claude`-CLI, nicht der Anthropic-SDK-Schlüssel.** `app/wa/luna_brain.py:Client`
-ruft `claude -p --restricted --output-format json --system-prompt "…"` auf (Systemprompt als
-volle Ersetzung, nicht Anhängsel; `--restricted` nimmt Bash/Code-Ausführung/WebFetch weg, die
-für eine Chat-Antwort ohnehin nichts zu tun hätten) und schickt die Nutzlast über stdin. Das
-nutzt die Claude-Code-Anmeldung, die auf dem Host schon existiert — kein separates
-`ANTHROPIC_API_KEY`. Ein fehlendes Binary, ein Timeout (`WA_LUNA_TIMEOUT_SEC`, Default 120s — auf
-120 von ursprünglich 60 angehoben, nachdem TASK-68s Ende-zu-Ende-Lauf real einen
-`subprocess.TimeoutExpired` bei 60s auf einem gewöhnlichen Zug produzierte: der Tool-Aufruf
-(TASK-62) plus `effort=high` brauchen zusammen manchmal mehr Zeit als die reine Antwort),
-ein Nicht-JSON-Ergebnis oder eine Antwort ohne Pflichtfelder werfen laut, statt eine Nachricht
-zu erfinden.
+**Call shape: the `claude` CLI, not an Anthropic SDK key.** `app/wa/luna_brain.py:Client` runs `claude -p --restricted --output-format json --system-prompt "…"` (full-replacement system prompt, not appended; `--restricted` strips bash/code-execution/WebFetch, none of which a chat reply needs anyway) and sends the payload over stdin. Rides whatever Claude Code login already exists on the host — no separate `ANTHROPIC_API_KEY`. A missing binary, a timeout (`WA_LUNA_TIMEOUT_SEC`, default 120s — raised from 60 after TASK-68's end-to-end run produced a real `subprocess.TimeoutExpired` at 60s on an ordinary turn: the tool call (TASK-62) plus `effort=high` sometimes need more time than the reply alone), a non-JSON result, or a response missing required fields all raise loudly instead of inventing a message.
 
 ```bash
-WA_BRAIN=luna                  # deterministic (Default) | luna
-WA_LUNA_MODEL=claude-sonnet-5  # jedes Modell, das `claude --model` akzeptiert (claude-haiku-4-5 = billiger/schneller)
-WA_LUNA_EFFORT=high            # low|medium|high|xhigh|max -- "high" seit TASK-62: Tool-Einsatz planen ist echte Denkarbeit
+WA_BRAIN=luna                  # deterministic (default) | luna
+WA_LUNA_MODEL=claude-sonnet-5  # any model `claude --model` accepts (claude-haiku-4-5 = cheaper/faster)
+WA_LUNA_EFFORT=high            # low|medium|high|xhigh|max -- "high" since TASK-62: planning tool use is real reasoning work
 ```
 
-**Eigene Tools für das Modell (TASK-62, verdrahtet):** `app/wa/luna/tools_server.py` ist ein
-kleiner stdio-MCP-Server mit vier read-only Tools -- `search_postings`, `get_posting`,
-`list_clinics`, `get_clinic_contact` -- die dieselben `D.filter_jobs`/`D.filter_clinics`-Funktionen
-aufrufen wie `app/wa/brain.py` und `GET /api/jobs`/`/api/clinics`. `Client._live_reply` startet ihn
-über `--mcp-config`/`--strict-mcp-config`/`--allowedTools` (auf genau diese vier Tool-Namen
-begrenzt, Form `mcp__pflege_board__<tool>` -- live verifiziert, nirgendwo offiziell dokumentiert).
-`market_snapshot`/`requirement_scoreboard` bleiben trotzdem in jeder Nutzlast: ein Tool-Aufruf ist
-eine Ergänzung, kein Ersatz, und ein Fehler dabei fällt nur auf das bestehende Snapshot-Reasoning
-zurück (kein Retry-Mechanismus -- bewusst verworfen, siehe unten). Der Prompt (`prompts.py`,
-TOOLS-Regel) verlangt proaktiven Einsatz: sobald der Kandidat einen Ort/Fachbereich/eine Klinik
-nennt, die der Snapshot nicht schon zeigt, muss ein echter Tool-Aufruf erfolgen, nie eine Vermutung.
+**Model's own tools (TASK-62, wired in):** `app/wa/luna/tools_server.py` is a small stdio MCP server with four read-only tools — `search_postings`, `get_posting`, `list_clinics`, `get_clinic_contact` — calling the same `D.filter_jobs`/`D.filter_clinics` functions as `app/wa/brain.py` and `GET /api/jobs`/`/api/clinics`. `Client._live_reply` launches it via `--mcp-config`/`--strict-mcp-config`/`--allowedTools` (scoped to exactly these four names, form `mcp__pflege_board__<tool>` — confirmed live, undocumented anywhere official). `market_snapshot`/`requirement_scoreboard` still ride in every payload regardless: a tool call is an addition, not a replacement, and a failed call just falls back to existing snapshot reasoning (no retry mechanism — deliberately rejected, see below). The prompt (`prompts.py`, TOOLS rule) demands proactive use: the moment a candidate names a city/department/clinic the snapshot doesn't already show, a real tool call must happen — never a guess.
 
-Zwei Stolperfallen, die live beim Aufbau auftraten und für jede künftige Änderung hier gelten:
-1. Das Modell hat "search_postings" anfangs als Wert für `action` ins JSON geschrieben, statt den
-   Tool wirklich aufzurufen -- die strikte "gib NUR ein JSON-Objekt zurück"-Anweisung wurde als
-   Verbot jeder Zwischenaktion missverstanden. Fix: `OUTPUT_INSTRUCTION` sagt jetzt ausdrücklich,
-   dass sich das nur auf den *finalen* Text nach etwaigen Tool-Aufrufen bezieht.
-2. Das per-Server `cwd`-Feld in `--mcp-config` wird von dieser CLI-Version beim stdio-Start nicht
-   beachtet -- der Server erbt das cwd des äußeren `claude`-Prozesses (`C.LUNA_SESSION_DIR`, nicht
-   das Repo-Root), und `python -m app.wa.luna.tools_server` scheitert dann mit
-   `ModuleNotFoundError: No module named 'app'`. Fix: `env.PYTHONPATH` im generierten Config-JSON
-   erzwingt die richtige Modulauflösung unabhängig vom tatsächlichen cwd. Aus demselben Grund
-   bekommt der Server auch `WA_SQLITE_PATH`/`WA_LUNA_SESSION_DIR` als env-Variablen durchgereicht --
-   er importiert `app.wa.config` frisch in seinem eigenen Prozess, sodass ein `monkeypatch` im
-   Testprozess ihn sonst nie erreicht.
+Two gotchas hit live while building this, relevant to any future change here:
+1. The model initially wrote `"search_postings"` as the value of `action` in its JSON instead of actually calling the tool — the strict "return ONLY a JSON object" instruction got misread as banning any intermediate action. Fix: `OUTPUT_INSTRUCTION` now states explicitly that this only governs the *final* text, after any tool calls.
+2. `--mcp-config`'s per-server `cwd` field is not honored by this CLI version's stdio launcher — the server inherits the outer `claude` process's cwd (`C.LUNA_SESSION_DIR`, not repo root), so `python -m app.wa.luna.tools_server` fails with `ModuleNotFoundError: No module named 'app'`. Fix: `env.PYTHONPATH` in the generated config forces correct module resolution regardless of actual cwd. Same reason the server also gets `WA_SQLITE_PATH`/`WA_LUNA_SESSION_DIR` passed as env vars — it does a fresh `app.wa.config` import in its own process, so a test's `monkeypatch` in the parent process never reaches it otherwise.
 
-**Der Abschluss-Ablauf (TASK-63):** sobald Qualifikation, Stadt, Fachbereich und Wohnsituation
-alle geklärt sind, liefert `market_snapshot` zusätzlich `matching_clinics_count` (Anzahl passender
-Kliniken) und `shortlist` (bis zu 5 davon, erst ab diesem Zeitpunkt gefüllt). Der Prompt verlangt
-vier getrennte Züge: Gesamtzahl nennen → Shortlist nennen → Kriterien in einem Satz
-zusammenfassen → erst dann um Einwilligung zur anonymisierten Weiterleitung fragen
-(`anonymous_send_consent`). Ein späterer Zug darf eine bereits genannte Klinik erneut nennen (z. B.
-in der Einwilligungsfrage selbst) — verboten ist nur, eine Klinik zum ersten Mal in demselben Zug
-zu nennen, in dem auch schon nach Einwilligung gefragt wird.
+**Close sequence (TASK-63):** once qualification, and either city or department, and housing are all settled, `market_snapshot` also carries `matching_clinics_count` and `shortlist` (up to 5, populated only from that point). The prompt requires four separate turns: state the total count → name the shortlist → recap the criteria in one line → only then ask for anonymized-send consent (`anonymous_send_consent`). A later turn may re-mention an already-named clinic (e.g. inside the consent question itself) — only naming a clinic for the *first* time in the same turn that also asks for consent is forbidden.
 
-**Kandidaten-Queue nach Einwilligung (TASK-66):** sobald `anonymous_send_consent` in einem Zug neu
-auf `true` wechselt, baut `app/wa/api.py` — erst NACHDEM der Thread gespeichert ist und NACHDEM die
-Pro-Nachricht-Sperre (`ST._lock`) wieder freigegeben ist, damit ein Matching-Lauf nicht alle
-anderen Threads blockiert — über `app/wa/queue.py:build_queue_entry` einen echten Eintrag:
-`app.autopilot.matching.rank()` (dieselbe transparente Scoring-Engine, aber ohne echte
-Kandidaten-PII in `app/autopilot`s eigene, ausdrücklich synthetische Demo-Datenbank zu schreiben)
-rankt die Kandidatin gegen alle Kliniken des Live-Snapshots; ein bekannter Kontakt (TASK-64/69) wird
-mit aufgenommen. Zwei neue, eigene Tabellen (`wa_queue_candidates`, `wa_queue_matches`, gleiche
-sqlite-Datei wie `app/wa/store.py`) sind idempotent (Upsert), ein wiederholtes Einverständnis
-dupliziert also nichts. `GET /api/wa/queue` (Kandidaten × passende Kliniken) und `GET
-/api/wa/queue/mailing-list` (flache Vorschau: Kandidat × Klinik × Kontakt-E-Mail) sind owner-only
-wie `GET /api/wa/threads` — beide senden nichts, sie sind ein Report für einen Menschen.
+**Consent scope covers matching clinics generally, not one named clinic (TASK-83):** the shortlist can legitimately have just one entry (a narrow market), which used to make the consent question read as "may I forward your profile to Klinikum X" — but `build_queue_entry` always matches against the *whole* live clinic snapshot (up to 5 results), not just what got named out loud. The prompt now requires the consent question to be phrased generally ("an bayerische Kliniken, die zu Ihrem Profil passen" / "to Bavarian clinics matching your profile"), never tied to one clinic's name, so what the candidate agrees to actually matches what the system does next.
 
-**Optionale externe Kontakt-CRM-Quelle (TASK-69, Ergänzung zu TASK-64):** ein Betreiber kann eine
-eigene, separat gepflegte Klinik-Kontakt-CRM anschließen (menschlich/agentisch gepflegte Kontakte,
-idealerweise mit Quelle/Beleg pro Eintrag) — `app/wa/luna/external_contacts.py` ist ein No-op,
-solange `WA_EXTERNAL_CONTACT_DB` nicht gesetzt ist. Wenn konfiguriert, fragt es die angegebene
-sqlite-Datei read-only ab (Lesebefehl über `WA_EXTERNAL_CONTACT_READER`, Default `sudo sqlite3`, da
-so eine CRM-Datei oft restriktivere Rechte hat als dieser Prozess selbst), matcht den Kliniknamen
-unscharf (rapidfuzz, auf `bundesland='Bayern'` eingegrenzt) und bevorzugt eine Person mit
-`role_category` `pflege_leadership`/`hr_leadership`/`hr` (erwartetes Schema: `companies`/`people`/
-`contact_channels`, siehe das Modul für Details). `contacts.discover_contact` versucht diese Quelle
-zuerst, vor `enr_contact_emails`/Website/JD-Rescan, und fällt bei jedem Fehler (nicht konfiguriert,
-kein Lesezugriff, o. ä.) genauso großzügig durch wie die bestehende Website-Quelle schon immer.
+**Post-consent queue (TASK-66):** the moment `anonymous_send_consent` flips to `true` on a turn, `app/wa/api.py` — only AFTER the thread is saved and AFTER the per-message lock (`ST._lock`) is released, so a matching run never blocks every other thread — builds a real entry via `app/wa/queue.py:build_queue_entry`: `app.autopilot.matching.rank()` (same transparent scoring engine, without writing real candidate PII into `app/autopilot`'s own, explicitly-synthetic demo database) ranks the candidate against every clinic in the live snapshot; a known contact (TASK-64/69) is attached where available. Two new, dedicated tables (`wa_queue_candidates`, `wa_queue_matches`, same sqlite file as `app/wa/store.py`) are idempotent (upsert) — a repeat consent duplicates nothing. `GET /api/wa/queue` (candidates × matching clinics) and `GET /api/wa/queue/mailing-list` (flat preview: candidate × clinic × contact email) are owner-only like `GET /api/wa/threads` — both send nothing, they're a report for a human to act on.
 
-**24h-Fenster und Reopen-Template (TASK-70):** WhatsApps eigene Regel, nicht unsere: reiner Freitext
-geht nur innerhalb von `WA_FREEFORM_WINDOW_HOURS` (Default 24) nach der letzten Nachricht der
-Kandidatin raus; danach lehnt Meta Freitext ab. `app/wa/api.py:_send` prüft das in Code, nie das
-Modell: ist das Fenster zu, geht statt der Bubbles ein vorab bei Meta genehmigtes Template raus
-(`Client.send_template`, `WA_REOPEN_TEMPLATE_NAME`/`WA_REOPEN_TEMPLATE_LANG`). Ohne konfiguriertes
-Template wirft das laut einen Fehler, statt Freitext zu versuchen (den Meta ohnehin ablehnt) oder
-still gar nichts zu tun. In der aktuellen, rein Webhook-getriebenen Zustellung (`_handle_one`)
-ist das Fenster durch den frischen `last_inbound_at`-Zeitstempel praktisch immer offen — die Prüfung
-greift vor allem, sobald das Dry-Run-Werkzeug (`shadow_run.py`, TASK-72) einen älteren,
-unbeantworteten Thread erneut anfasst.
+**Optional external contact-CRM source (TASK-69, extends TASK-64):** an operator can plug in their own, separately-maintained clinic contact CRM (human- or agent-maintained contacts, ideally with a source/evidence per entry) — `app/wa/luna/external_contacts.py` is a no-op unless `WA_EXTERNAL_CONTACT_DB` is set. When configured, it queries the given sqlite file read-only (reader command via `WA_EXTERNAL_CONTACT_READER`, default `sudo sqlite3`, since such a CRM file often has tighter permissions than this process itself), fuzzy-matches the clinic name (rapidfuzz, scoped to `bundesland='Bayern'`), and prefers a person with `role_category` `pflege_leadership`/`hr_leadership`/`hr` (expected schema: `companies`/`people`/`contact_channels`, see the module for details). `contacts.discover_contact` tries this source first, before `enr_contact_emails`/website/JD-rescan, and falls through on any failure (not configured, no read access, etc.) exactly as forgivingly as the existing website source always has.
 
-**Stage/Ball-Reporting und Migration (TASK-71):** `app/wa/luna/reporting.py` liefert `stage_for(card)`
-(new_lead → qualifying → documents_in → ready → consented, oder not_placeable) und `ball_for(conn,
-phone)` (us/them/none, aus der letzten Zeile in `wa_messages`) — beides reine Ableitungen aus
-bereits vorhandenen Feldern, keine neuen Spalten, nur fürs Reporting (Dry-Run-Tool, Migration).
-`app/wa/luna/migrate_candidates.py` importiert echte Kandidaten idempotent in `wa_threads` — aus
-einem generischen JSON-Export (`--input`, nur `phone` Pflichtfeld), nicht direkt aus irgendeinem
-konkreten externen System (gleiche Zurückhaltung wie bei `external_contacts.py`, TASK-69). Eine
-Zeile ohne gültige Telefonnummer wird gemeldet, nie still übersprungen; ein zweiter Lauf ergänzt
-die Karte nur, statt sie zu überschreiben.
+**24h window and reopen template (TASK-70):** WhatsApp's own rule, not ours — plain free text only goes out within `WA_FREEFORM_WINDOW_HOURS` (default 24) of the candidate's last message; after that Meta rejects free text. `app/wa/api.py:_send` checks this in code, never the model: window closed → a pre-approved Meta template goes out instead of the bubbles (`Client.send_template`, `WA_REOPEN_TEMPLATE_NAME`/`WA_REOPEN_TEMPLATE_LANG`). No template configured → raises loudly, instead of attempting free text (which Meta would reject anyway) or silently doing nothing. In the current, purely webhook-driven delivery (`_handle_one`), the window is practically always open since `last_inbound_at` is always fresh — the check mostly matters once the dry-run tool (`shadow_run.py`, TASK-72) or the catch-up driver (TASK-78) reaches an older, unanswered thread.
 
-**Dry-Run-Werkzeug (TASK-72):** `python -m app.wa.luna.shadow_run` — dieselbe Absicherung, die das
-echte Produktionsteam für genau diesen Zweck schon einsetzt (`wa_shadow_run.py` auf
-tasker-dispatcher-01): "was würde die Antwort sein, ohne zu senden", immer gegen eine Kopie der
-Datenbank, nie gegen die echte. `shadow_run.db_copy()` öffnet die Quelle strikt lesend (SQLite-URI
-`mode=ro` — verweigert nicht nur jeden Schreibzugriff, sondern legt die Datei auch nicht erst an,
-falls sie fehlt) und sichert sie über SQLite's eigene Online-Backup-API in eine
-In-Memory-Kopie; alles Weitere liest und schreibt nur noch diese Kopie. Betrachtet werden alle
-Threads, bei denen `reporting.ball_for() == "us"` ist (die letzte Nachricht ist eingehend, eine
-Antwort steht noch aus) — in diesem Harness ein Zustand, der bei einem echten Webhook-Aufruf nur
-kurz auftritt (Antwort wird synchron berechnet und verschickt); bleibt ein Thread in der echten
-Datenbank so hängen, ist irgendwo mittendrin etwas fehlgeschlagen, und genau dafür ist ein
-gefahrloses Inspektionswerkzeug gedacht.
+**Stage/ball reporting and migration (TASK-71):** `app/wa/luna/reporting.py` provides `stage_for(card)` (new_lead → qualifying → documents_in → ready → consented, or not_placeable) and `ball_for(conn, phone)` (us/them/none, from the last row in `wa_messages`) — both pure derivations from fields that already exist, no new columns, purely for reporting (dry-run tool, migration). `app/wa/luna/migrate_candidates.py` idempotently imports real candidates into `wa_threads` from a generic JSON export (`--input`, only `phone` required), never directly from any specific external system (same restraint as `external_contacts.py`, TASK-69). A row with no valid phone number is reported, never silently skipped; a second run only fills in the card, never overwrites it.
 
-Eine Besonderheit bei `WA_BRAIN=luna`: die Karte trägt eine echte, fortsetzbare Claude-Code-Session-Id
-(`_session_id`). Ein Dry-Run, der diese Session mit `--resume` fortsetzen würde, hinterließe einen
-echten, dauerhaften Eintrag in genau der Session, die der nächste echte Webhook-Aufruf fortsetzt —
-ein nicht rückgängig zu machender Seiteneffekt auf geteilten externen Zustand, den ein reines
-Report-Werkzeug niemals riskieren darf. `shadow_turn()` entfernt `_session_id` deshalb immer, bevor
-das Gehirn aufgerufen wird, sodass jede Luna-Antwort hier aus einer frischen, folgenlosen Session
-kommt — die Karte selbst (was Gates und Matching tatsächlich steuert) ist unverändert echt, nur das
-Gesprächsgedächtnis der Session fehlt, wodurch der Wortlaut etwas kühler ausfallen kann als die
-echte Antwort. Das Ergebnis pro Thread nennt Stage, Aktion, Bubbles und das TASK-70-Gate
-(`freeform`/`reopen_template`/`reopen_template_missing`/`no_send`/`stopped`) — nie geschrieben,
-weder in die Kopie noch ins Original.
+**Dry-run tool (TASK-72):** `python -m app.wa.luna.shadow_run` — the same safeguard the real production team already runs for exactly this purpose (`wa_shadow_run.py` on tasker-dispatcher-01): "what would the reply be, without sending", always against a copy of the database, never the real one. `shadow_run.db_copy()` opens the source strictly read-only (SQLite URI `mode=ro` — refuses writes, and refuses to even create the file if missing) and backs it up via SQLite's own online-backup API into an in-memory copy; everything after that reads and writes only the copy. Looks at every thread where `reporting.ball_for() == "us"` (last message inbound, a reply still owed) — in this harness, a state that a real webhook call only occupies briefly (reply is computed and sent synchronously); a thread stuck there in the real database means something failed mid-flight, exactly what this safe inspection tool is for.
 
-**Rate-Limit, Dedup-Claim, Catch-up, Fehler-Sichtbarkeit (TASK-76/77/78/79):** ein Vergleich mit dem
-echten Produktionssystem fand vier konkrete Lücken, die dieser Abschnitt schließt.
-`app/wa/config.py:WA_LUNA_MAX_CALLS_PER_HOUR` (Default 20, 0 deaktiviert) deckelt Luna-Aufrufe pro
-Kandidat und Stunde — ein Backstop gegen eine durchgehende Schleife, keine Konversationsbremse; wer
-den Deckel trifft, verliert die Nachricht nicht, sondern wird beim nächsten Catch-up-Lauf
-nachgeholt. `app/wa/store.py:wa_reply_turn_claims` ist ein dauerhafter, prozessübergreifender
-Claim je (Telefonnummer, eingehende wamid) — nötig, sobald zwei Einstiegspunkte (Webhook und
-Catch-up) gleichzeitig dieselbe unbeantwortete Nachricht beantworten könnten; ein abgebrochener
-oder abgelehnter Claim ist erneut beanspruchbar, nur ein tatsächlich verschickter (`sent`) blockiert
-endgültig. `app/wa/api.py:process_owed_turn` bündelt Claim, Ratenlimit, Gehirn-Aufruf, Versand und
-Claim-Abschluss zu einer einzigen Pipeline, die sowohl `_handle_one` (Webhook) als auch
-`app/wa/luna/catchup.py` (neu, TASK-78 — das Live-Gegenstück zu `shadow_run.py`: dieselbe
-Owed-Reply-Abfrage, aber echter Versand, kein Dry-Run) benutzen. Ein Meta-Fehlschlag wird jetzt vor
-dem erneuten Auslösen der Exception dauerhaft vermerkt (`wa_send_failures`,
-`_send_and_record`) statt spurlos zu verschwinden, und `GET /api/wa/threads` zeigt pro Thread
-`stuck_reply` (Ball länger als `WA_STUCK_REPLY_HOURS`, Default 2h, bei uns) und `last_send_error` —
-kein Telegram/E-Mail-Kanal erfunden, den es hier nicht gibt, nur ein dauerhaftes, auffindbares
-Signal.
+One quirk specific to `WA_BRAIN=luna`: the card carries a real, resumable Claude Code session id (`_session_id`). A dry run that resumed that session with `--resume` would leave a real, permanent entry in the exact session the next real webhook call resumes from — an irreversible side effect on shared external state a report-only tool must never risk. `shadow_turn()` always strips `_session_id` before calling the brain, so every Luna reply here comes from a fresh, disposable session — the card itself (what actually drives gates and matching) stays fully real, only the session's own conversational memory is missing, so wording may read a bit colder than the real reply would. The per-thread result reports stage, action, bubbles, and the TASK-70 gate (`freeform`/`reopen_template`/`reopen_template_missing`/`no_send`/`stopped`) — never written, not to the copy, not to the original.
 
-**Button-bestätigte Einwilligung (TASK-80):** das echte Referenzsystem hat für seine eigene,
-härtere Klinik-Einreichungs-Freigabe schon einen echten Button-Tap, nie aus Freitext abgeleitet —
-dieselbe Strenge gilt jetzt für den einen Einwilligungspunkt, den dieser Harness hat.
-`anonymous_send_consent` wird nie mehr aus dem `card_patch` des Modells übernommen (dort auch aus
-`OUTPUT_SCHEMA`/`OUTPUT_INSTRUCTION` entfernt), sondern ausschließlich aus einem echten Tap auf
-einen von zwei Buttons (`consent:yes`/`consent:no`, `LB.CONSENT_BUTTONS`) gesetzt — exakt dasselbe
-"im Code entschieden, nicht vom Modell" wie beim Opt-out/Reject/Out-of-scope-Gate. Die Buttons
-hängen genau an dem Zug, in dem `anonymous_send_offered` neu auf `true` kippt; ein neues Feld
-`is_button_reply` im Modell-Payload lässt Valentina ehrlich unterscheiden, ob gerade wirklich
-getippt wurde oder nur etwas Zustimmendes getippt wurde — im zweiten Fall bittet sie freundlich um
-den Tap, statt Zustimmung zu behaupten, die es (noch) nicht gibt.
+**Rate limit, dedup claim, catch-up, failure visibility (TASK-76/77/78/79):** a comparison against the real production system found four concrete gaps, closed here. `app/wa/config.py:WA_LUNA_MAX_CALLS_PER_HOUR` (default 20, 0 disables) caps Luna calls per candidate per hour — a backstop against a runaway loop, not a conversation throttle; hitting the cap doesn't lose the message, it gets picked up on the next catch-up pass. `app/wa/store.py:wa_reply_turn_claims` is a durable, cross-process claim per (phone, inbound wamid) — needed once two entry points (webhook and catch-up) could both try to answer the same unanswered message at once; an aborted or rejected claim is reclaimable, only an actually-sent (`sent`) claim blocks for good. `app/wa/api.py:process_owed_turn` bundles claim, rate check, brain call, send, and claim completion into one pipeline used by both `_handle_one` (webhook) and `app/wa/luna/catchup.py` (new, TASK-78 — the live counterpart to `shadow_run.py`: same owed-reply query, but a real send, not a dry run). A Meta failure is now durably recorded (`wa_send_failures`, `_send_and_record`) before the exception is re-raised, instead of vanishing without a trace, and `GET /api/wa/threads` shows `stuck_reply` per thread (ball on us longer than `WA_STUCK_REPLY_HOURS`, default 2h) and `last_send_error` — no invented Telegram/email channel, just a durable, discoverable signal.
 
-**Dokumenten-Typ-Klassifikation (TASK-81):** `app/cv.py:classify_document()` ordnet ein
-hochgeladenes Dokument einem `document_type` zu (`urkunde`/`lebenslauf`/`defizitbescheid`/
-`aufenthaltstitel`/`dienstplan`/`other`, dieselbe Vokabel wie im Referenzsystem) und, bei einer
-Urkunde, einem `certificate_level` (`fachkraft`/`helfer`/`unknown`) — unterscheidet also explizit
-eine echte 3-jährige Fachkraft-Qualifikation von einer Pflegehelfer-/Pflegefachhelfer-/
-Pflegefachassistent-Bescheinigung (die trotz des Wortes "Fach" Helfer-Niveau ist). Wird direkt beim
-Medien-Intake aufgerufen (`_ingest_media`) und landet auf der Karte — keine separate
-Prompt-Verkabelung nötig, `luna_brain._user_payload` sendet ohnehin die ganze Karte; eine neue
-Regel in `prompts.py` sagt dem Modell nur, was das Feld bedeutet. Bewusst rein informativ: kippt
-`qualification_ok` nicht selbst im Code um, das war nicht Teil dieser Aufgabe.
+**Button-confirmed consent (TASK-80):** the real reference system already has a real button tap for its own harder clinic-submission gate, never inferred from free text — the same rigor now applies to the one consent point this harness has. `anonymous_send_consent` is never taken from the model's own `card_patch` anymore (also removed from `OUTPUT_SCHEMA`/`OUTPUT_INSTRUCTION`) — it's set exclusively from a real tap on one of two buttons (`consent:yes`/`consent:no`, `LB.CONSENT_BUTTONS`), the same "decided in code, not by the model" pattern as opt-out/reject/out-of-scope. Buttons attach exactly on the turn where `anonymous_send_offered` newly flips `true`; a new `is_button_reply` field in the model's payload lets Valentina honestly tell a real tap from typed text that merely sounds affirmative — in the second case she asks for the tap instead of claiming consent that doesn't exist yet.
 
-**Was hier zusätzlich fehlt, verglichen mit der Quelle:** keine Interview-Terminfindung, kein
-Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme, keine proaktiven
-Nachfass-Nachrichten (Catch-up TASK-78 holt nur eine bereits geschuldete Antwort nach, es meldet
-sich nie von sich aus bei einem stillen Thread) — dieselben Lücken wie beim deterministischen
-Zweig (siehe unten), aus demselben Grund: die Infrastruktur dafür existiert in diesem Repo nicht.
-Eine Eskalation (`escalate_to_manager`) wird auf dem Thread vermerkt (`_escalated`,
-`_escalate_reason`, lesbar über `GET /api/wa/threads`), löst aber keinen Versand aus.
+**Document-type classification (TASK-81):** `app/cv.py:classify_document()` assigns an uploaded document a `document_type` (`urkunde`/`lebenslauf`/`defizitbescheid`/`aufenthaltstitel`/`dienstplan`/`other`, same vocabulary as the reference system) and, for an Urkunde, a `certificate_level` (`fachkraft`/`helfer`/`unknown`) — explicitly distinguishing a real 3-year Fachkraft qualification from a Pflegehelfer/Pflegefachhelfer/Pflegefachassistent certificate (helper level despite the word "Fach"). Called directly at media intake (`_ingest_media`), lands on the card — no separate prompt wiring needed since `luna_brain._user_payload` already sends the whole card; a new rule in `prompts.py` just tells the model what the field means. Deliberately informational only: does not itself flip `qualification_ok` in code — out of this task's scope.
 
-## Was hier absichtlich fehlt
+**Still missing compared to the source:** no interview scheduling, no clinic-submission email flow, no manager-CRM handoff, no proactive re-engagement messages (catch-up TASK-78 only retries an already-owed reply, it never initiates contact on a silent thread) — same gaps as the deterministic branch (below), same reason: the infrastructure doesn't exist in this repo. An escalation (`escalate_to_manager`) is recorded on the thread (`_escalated`, `_escalate_reason`, readable via `GET /api/wa/threads`) but triggers no send of any kind.
 
-- **Kein LLM (Standard).** Die Fragen-Leiter oben ist deterministisch, damit jede Regel einen
-  Test hat. `WA_BRAIN=luna` (oben) schaltet auf Claude um, wenn die volle Persona/Konversation
-  gebraucht wird.
-- **Keine Klinik-Seite.** `handover_requested` wird im Thread vermerkt, verschickt aber nichts;
-  ein Mensch übernimmt. Der Harness verspricht dem Lead genau das und nicht mehr.
-- **Keine proaktiven Nachrichten**, also auch keine Nachfass-Kadenz, keine Nachtruhe-Fenster und
-  keine 24-Stunden-Template-Logik: der Harness antwortet nur, und eine Antwort innerhalb von 24
-  Stunden braucht kein Template.
-- **Keine Medien-Pipeline** (Download, STT, CV-Parsing) und keine Dedupe-Tabellen für Ausgänge, die
-  der Produktions-Draft/Preview/Confirm-Fluss dort braucht, wo Menschen und Bot dieselbe Nummer
-  bedienen.
+## Deliberately missing
 
-Eine Abweichung von der Produktions-Vorlage ist bewusst: dort wird die Trefferliste **ohne** Links
-verschickt („sie ziehen Leute aus dem Chat"). Hier steht der `source_url` dabei, weil eine Liste, die
-eine Pflegekraft nicht nachprüfen kann, wertlos ist — und weil das Board ohnehin keinen anderen
-ausgehenden Link kennt.
+- **No LLM by default.** The question ladder above is deterministic so every rule has a test. `WA_BRAIN=luna` (above) switches to Claude when the full persona/conversation is needed.
+- **No clinic-side action.** `handover_requested` is recorded on the thread but sends nothing; a human takes over. The harness promises the lead exactly that, nothing more.
+- **No proactive messages** — so also no follow-up cadence, no quiet-hours window, no 24-hour template logic for that purpose: the harness only ever replies, and a reply within 24h needs no template.
+- **No media pipeline** (download, STT, CV parsing) and no outbound dedupe tables of the kind the production draft/preview/confirm flow needs where a human and the bot share one number.
 
-## Persona-Tests gegen die echte CLI
+One deliberate deviation from the production template: there, the match list ships **without** links ("keeps people from leaving the chat"). Here, `source_url` is included, because a list a candidate can't verify is worthless — and the board has no other outbound link anyway.
 
-`tests/test_wa_luna_personas.py` (Marker `llm`, ausgeschlossen mit `-m "not llm"` wie
-`network`/`completeness`/`mutation`, weil jeder Test wirklich `claude` aufruft, echtes Geld kostet
-und mehrere Sekunden pro Zug braucht) spielt sechs frei erfundene Personas durch den echten
-Claude-Aufruf. Die Personas selbst sind erfunden — Namen, Details, Dialogzeilen — aber die
-**Muster**, die sie durchspielen (Qualifikationspfad-Mix, Gesprächsform, typische Stolperfallen),
-kommen aus einer anonymisierten Auswertung von zwei Monaten echter WhatsApp-Historie der
-Referenzimplementierung: gelesen, zu Archetyp-Gruppen zusammengefasst, dann verworfen — kein
-echter Name, keine Telefonnummer, kein wörtliches Zitat landet in dieser Datei.
+## Persona tests against the real CLI
+
+`tests/test_wa_luna_personas.py` (marker `llm`, excluded by `-m "not llm"` like `network`/`completeness`/`mutation` — every test really calls `claude`, costs real money, takes several seconds per turn) plays several fully-invented personas through the real Claude call. The personas themselves are invented — names, details, dialogue lines — but the **patterns** they exercise (qualification-path mix, conversation shape, typical edge cases) come from an anonymized read of two months of the reference implementation's real WhatsApp history: read, aggregated into archetype groups, then discarded — no real name, phone number, or verbatim quote appears in this file.
 
 ```bash
 .venv/bin/python -m pytest -q -m llm tests/test_wa_luna_personas.py
 ```
 
-Der erste echte Durchlauf fand zwei echte Bugs, die eine rein gefakte Test-Suite nicht hätte
-finden können:
+The first real run found two real bugs a fully-faked test suite couldn't have caught:
 
-- **Gehaltsfrage beantwortet statt weitergereicht.** Ohne explizite Regel hat das Modell einmal
-  eine konkrete Gehaltsspanne genannt ("zwischen ca. 3.400 und 4.200 € brutto"), obwohl der
-  Harness dafür keine verlässliche Datenquelle hat. Behoben mit einer neuen Regel
-  (`app/wa/luna/prompts.py:RULES`, „SALARY"): nie eine Zahl nennen oder schätzen, immer auf eine
-  Bestätigung durch die Klinik verweisen.
-- **Abgesetzte Antwort ohne `no_send` ließ den Harness abstürzen.** Ein Modellzug kam mit leerem
-  `bubbles: []` zurück, aber ohne `no_send: true` gesetzt zu haben — `_check()` erwartete
-  mindestens eine Bubble und warf einen `AssertionError`. Behoben: ein leeres `bubbles`-Array
-  gilt jetzt für sich allein als „nichts zu sagen", unabhängig vom `no_send`-Flag
-  (`app/wa/luna_brain.py:turn`, Regressionstest in `tests/test_wa_luna_brain.py`).
+- **Salary question answered instead of deferred.** With no explicit rule, the model once quoted a concrete salary range ("zwischen ca. 3.400 und 4.200 € brutto") despite the harness having no reliable data source for that. Fixed with a new rule (`app/wa/luna/prompts.py:RULES`, "SALARY"): never state or estimate a number, always defer to clinic confirmation.
+- **A silent turn without `no_send` crashed the harness.** A model turn came back with empty `bubbles: []` but without setting `no_send: true` — `_check()` expected at least one bubble and raised `AssertionError`. Fixed: an empty `bubbles` array now counts as "nothing to say" on its own, regardless of the `no_send` flag (`app/wa/luna_brain.py:turn`, regression test in `tests/test_wa_luna_brain.py`).
 
-Eine dritte Sache stellte sich als Härtung heraus statt als Logikfehler: `--restricted` allein
-lässt weiterhin dateilesende Tools zu (nur Kommando-/Code-Ausführung und WebFetch fallen weg),
-und das Modell hat einmal einen Dateizugriffsversuch als Fließtext vor die eigentliche JSON-Antwort
-geschrieben. Der Aufruf läuft jetzt zusätzlich mit `--tools ""` (alle Tools aus), und das Parsen
-selbst (`app/wa/luna_brain.py:_parse_reply_json`) versucht zur Absicherung auch noch, das
-JSON-Objekt aus umgebendem Text herauszuschneiden, bevor es wirklich aufgibt.
+A third finding was hardening, not a logic bug: `--restricted` alone still allows file-reading tools (only command/code-execution/WebFetch are dropped), and the model once wrote a file-access attempt as prose ahead of its actual JSON reply. The call now also runs with `--tools ""` (every tool off), and parsing itself (`app/wa/luna_brain.py:_parse_reply_json`) additionally tries to cut the JSON object out of surrounding text before finally giving up.
 
-## Ende-zu-Ende-Trichtertest mit zwei lebenden Agenten (TASK-68)
+## End-to-end funnel test with two live agents (TASK-68)
 
-`tests/test_wa_luna_e2e_funnel.py` (Marker `llm`) geht einen Schritt weiter als die Persona-Tests
-oben: dort ist nur Valentina ein echter Modellaufruf, das Kandidaten-Skript ist absichtlich fest
-verdrahtet (stabil für Regressionstests). Hier spielt ein `_CandidateAgent` (eigene, resumierbare
-Claude-Code-Sitzung, `claude-haiku-4-5`, freier Text statt JSON-Schema) die Kandidatenseite frei
-nach einem kurzen Personenprofil — beide Seiten sind also echte, nichtdeterministische
-Modellaufrufe. Drei Personas (Urkunde/München, Defizitbescheid/Augsburg,
-Kenntnisprüfung-bestanden-Urkunde-ausstehend/Bayern-offen) laufen bis zur Einwilligung
-(`anonymous_send_consent`), mit einer geloggten Zugobergrenze statt einem stillen Erfolg, falls
-eine Persona nicht konvergiert. Jede erfolgreiche Persona läuft danach durch
-`app/wa/queue.py:build_queue_entry` (TASK-66) gegen ein kleines Fixture-Board mit einem
-vorab-gespeicherten Klinik-Kontakt.
+`tests/test_wa_luna_e2e_funnel.py` (marker `llm`) goes one step further than the persona tests above: there, only Valentina is a real model call, the candidate script is deliberately fixed (stable for regression tests). Here, a `_CandidateAgent` (own resumable Claude Code session, `claude-haiku-4-5`, free text instead of a JSON schema) plays the candidate side freely from a short persona brief — both sides are real, non-deterministic model calls. Three personas (Urkunde/München, Defizitbescheid/Augsburg, passed-Kenntnisprüfung-Urkunde-pending/Bayern-open) run through to consent (`anonymous_send_consent`), with a logged turn cap instead of a silent success if a persona doesn't converge. Every persona that succeeds then runs through `app/wa/queue.py:build_queue_entry` (TASK-66) against a small fixture board with one pre-seeded clinic contact.
 
 ```bash
 .venv/bin/python -m pytest -q -m llm tests/test_wa_luna_e2e_funnel.py -s
 ```
 
-Ergebnis eines echten Laufs: alle drei Personas erreichten die Einwilligung in 4–5 statt der
-erlaubten 12 Züge, die Ablauf-Sequenz (Anzahl → Shortlist → Kriterien-Recap → Einwilligungsfrage)
-lief sichtbar getrennt ab, und die Mailing-List-Ansicht zeigte 9 Zeilen (3 Kandidatinnen × 3
-Kliniken) — für die eine vorab bekannte Klinik korrekt mit Kontakt-E-Mail, für die anderen beiden
-ehrlich als „UNKNOWN" (kein erfundener Kontakt). Der volle Gesprächsverlauf wird bei jedem Lauf
-nach `tests/.artifacts/e2e_funnel_report.md` geschrieben (git-ignoriert, da synthetisch aber
-gesprächsförmig) und auf stdout ausgegeben.
+A live run found a real bug (TASK-82), not a persona-style issue: `market_snapshot`'s `ready_to_close` required BOTH city AND department_pref, while `requirement_scoreboard` told the model the `city_or_department` gate was satisfied by EITHER one — a candidate genuinely flexible on department (a real, valid answer) saw "satisfied" but never got a shortlist to close with, stalling indefinitely. Fixed by sharing one predicate (`_city_or_department_satisfied`) between both functions.
 
-Ein Nebenfund dieses Laufs: `WA_LUNA_TIMEOUT_SEC` (60s) reichte nicht mehr aus, seit TASK-62 einen
-Tool-Aufruf plus `effort=high` in den Zug eingeführt hat — ein gewöhnlicher Zug lief einmal in
-einen echten `subprocess.TimeoutExpired`. Der Default ist deshalb auf 120s angehoben.
+Full transcripts are written to `tests/.artifacts/e2e_funnel_report.md` on every run (git-ignored — synthetic but conversation-shaped) and printed to stdout.
+
+A side finding from this suite: `WA_LUNA_TIMEOUT_SEC` (60s) stopped being enough once TASK-62 added a tool call plus `effort=high` to the turn — an ordinary turn once hit a real `subprocess.TimeoutExpired`. Default raised to 120s.

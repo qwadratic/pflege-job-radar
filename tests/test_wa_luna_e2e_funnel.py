@@ -51,8 +51,21 @@ class _CandidateAgent:
         fresh = self.session_id is None
         this_session_id = self.session_id or str(uuid.uuid4())
         session_flags = ["--session-id", this_session_id] if fresh else ["--resume", this_session_id]
-        user_text = ("\n".join(valentina_bubbles) if valentina_bubbles else
-                     "(Sie schreiben Valentina zum ersten Mal auf WhatsApp. Schreiben Sie Ihre Eröffnungsnachricht.)")
+        # TASK-82 follow-up: this used to key the opening-message prompt off `valentina_bubbles`
+        # being empty, which also fires on a legitimate mid-conversation no_send turn (Valentina
+        # has nothing new to say, e.g. while "waiting" on a promised upload) -- the candidate then
+        # got told it was writing to Valentina "for the first time" again and looped its own
+        # opening line verbatim (observed live: a persona that had already been chatting for 5
+        # turns re-introduced itself four times in a row instead of naturally continuing). `fresh`
+        # (an actual new session, never used before) is the correct signal, not bubble emptiness.
+        if fresh:
+            user_text = "(Sie schreiben Valentina zum ersten Mal auf WhatsApp. Schreiben Sie Ihre Eröffnungsnachricht.)"
+        elif valentina_bubbles:
+            user_text = "\n".join(valentina_bubbles)
+        else:
+            user_text = ("(Valentina hat gerade nichts Neues geschrieben, vielleicht wartet sie auf etwas von "
+                        "Ihnen. Schreiben Sie kurz weiter -- z.B. eine kurze Nachfrage oder ein kurzes Update "
+                        "-- schreiben Sie NICHT erneut Ihre Eröffnungsnachricht, das Gespräch läuft bereits.)")
         proc = subprocess.run(
             [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
              "--model", CANDIDATE_MODEL, "--effort", "low",
@@ -71,36 +84,56 @@ class _CandidateAgent:
         return text
 
 
+# TASK-74: rewritten after comparing these live-improvised personas against aggregate, non-
+# identifying stats from 701 real WhatsApp messages -- the original style here (a "Hallo
+# Valentina!" self-introduction, full sentences, warm sign-offs) read as an organized written
+# email, not a rushed WhatsApp text: real candidates were overwhelmingly short (median ~3 words,
+# ~90% under 10), answered with statements more than questions, and about a third of their inbound
+# messages were bare one-word acknowledgements. This shared style block is prepended to every
+# persona's own facts below instead of duplicating near-identical style boilerplate three times.
+_STYLE_GUIDE = (
+    "Schreiben Sie wie eine echte Person, die schnell auf dem Handy tippt -- nie wie eine "
+    "Assistentin oder ein Chatbot, und erwähnen Sie unter keinen Umständen, dass dies ein Test, "
+    "eine Simulation oder eine Übung ist, selbst wenn Valentina sich wiederholt oder das Gespräch "
+    "seltsam wirkt. Halten Sie jede Nachricht sehr kurz: meistens 3-10 Wörter, selten mehr als ein "
+    "kurzer Satz. Ein einziges Wort oder ein kurzer Halbsatz ('Ok', 'Ja klar', 'Passt', 'München "
+    "wäre gut') ist der Normalfall, keine Ausnahme -- nicht bei jeder Antwort ausführlich werden. "
+    "Antworten Sie meistens mit einer kurzen Aussage statt einer Frage; stellen Sie nur gelegentlich "
+    "selbst eine kurze Rückfrage. Keine Begrüßung oder Verabschiedung mitten im Gespräch (kein "
+    "erneutes 'Hallo' oder 'Viele Grüße', außer ganz in der ersten Nachricht), keine "
+    "Selbstvorstellung mit vollständigem Lebenslauf in einer einzigen Nachricht -- Fakten kommen "
+    "nach und nach heraus, wie Valentina sie erfragt, nicht alle auf einmal. Bleiben Sie beim "
+    "'Sie' -- wechseln Sie nie von sich aus zu 'du', auch wenn Valentina das täte. Gelegentlich "
+    "klein geschrieben oder ganz ohne Satzzeichen ist in Ordnung, wie beim schnellen Tippen."
+)
+
 PERSONAS = {
-    "anna_urkunde": (
-        "Sie sind Anna, 29, Gesundheits- und Krankenpflegerin aus Polen. Ihre deutsche "
+    "anna_urkunde": _STYLE_GUIDE + (
+        " Sie sind Anna, 29, Gesundheits- und Krankenpflegerin aus Polen. Ihre deutsche "
         "Berufsanerkennung (Urkunde) ist bereits erteilt. Sie wollen nach Bayern ziehen, am "
         "liebsten nach München, Fachbereich Intensivstation, und leben allein. Sie schreiben "
-        "Valentina, einer digitalen Recruiting-Assistentin, auf WhatsApp. Antworten Sie kurz und "
-        "natürlich auf Deutsch, wie eine echte Kandidatin es tun würde -- nie als Assistentin, "
-        "immer als Anna selbst. Seien Sie kooperativ: beantworten Sie jede Frage ehrlich anhand "
+        "Valentina, einer digitalen Recruiting-Assistentin, auf WhatsApp -- immer als Anna selbst, "
+        "nie als Assistentin. Seien Sie kooperativ: beantworten Sie jede Frage ehrlich anhand "
         "dieser Angaben, und stimmen Sie zu, wenn Valentina nach einer anonymisierten Weiterleitung "
         "Ihres Profils an passende Kliniken fragt."
     ),
-    "carlos_defizit": (
-        "Sie sind Carlos, 35, examinierter Krankenpfleger aus Kolumbien. Sie haben noch keine volle "
-        "Anerkennung, aber bereits einen Defizitbescheid erhalten. Sie suchen eine Stelle in "
+    "carlos_defizit": _STYLE_GUIDE + (
+        " Sie sind Carlos, 35, examinierter Krankenpfleger aus Kolumbien. Sie haben noch keine "
+        "volle Anerkennung, aber bereits einen Defizitbescheid erhalten. Sie suchen eine Stelle in "
         "Augsburg, Fachbereich Innere Medizin, und ziehen allein. Sie schreiben Valentina, einer "
-        "digitalen Recruiting-Assistentin, auf WhatsApp. Antworten Sie kurz und natürlich auf "
-        "Deutsch, wie ein echter Kandidat es tun würde -- nie als Assistentin, immer als Carlos "
-        "selbst. Seien Sie kooperativ: beantworten Sie jede Frage ehrlich anhand dieser Angaben, "
-        "und stimmen Sie zu, wenn Valentina nach einer anonymisierten Weiterleitung Ihres Profils "
-        "an passende Kliniken fragt."
+        "digitalen Recruiting-Assistentin, auf WhatsApp -- immer als Carlos selbst, nie als "
+        "Assistentin. Seien Sie kooperativ: beantworten Sie jede Frage ehrlich anhand dieser "
+        "Angaben, und stimmen Sie zu, wenn Valentina nach einer anonymisierten Weiterleitung Ihres "
+        "Profils an passende Kliniken fragt."
     ),
-    "mai_kenntnispruefung": (
-        "Sie sind Mai, 27, Pflegefachkraft aus Vietnam. Sie haben die Kenntnisprüfung bereits "
+    "mai_kenntnispruefung": _STYLE_GUIDE + (
+        " Sie sind Mai, 27, Pflegefachkraft aus Vietnam. Sie haben die Kenntnisprüfung bereits "
         "bestanden, die offizielle Urkunde ist noch beim Amt in Bearbeitung. Sie sind bei der "
         "Region flexibel, Hauptsache eine Klinik in Bayern, Fachbereich ist Ihnen nicht so wichtig. "
         "Sie ziehen allein. Sie schreiben Valentina, einer digitalen Recruiting-Assistentin, auf "
-        "WhatsApp. Antworten Sie kurz und natürlich auf Deutsch, wie eine echte Kandidatin es tun "
-        "würde -- nie als Assistentin, immer als Mai selbst. Seien Sie kooperativ: beantworten Sie "
-        "jede Frage ehrlich anhand dieser Angaben, und stimmen Sie zu, wenn Valentina nach einer "
-        "anonymisierten Weiterleitung Ihres Profils an passende Kliniken fragt."
+        "WhatsApp -- immer als Mai selbst, nie als Assistentin. Seien Sie kooperativ: beantworten "
+        "Sie jede Frage ehrlich anhand dieser Angaben, und stimmen Sie zu, wenn Valentina nach "
+        "einer anonymisierten Weiterleitung Ihres Profils an passende Kliniken fragt."
     ),
 }
 

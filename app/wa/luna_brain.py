@@ -133,15 +133,27 @@ def named_non_bavaria_land(text):
 CLOSE_LIMIT = 5
 
 
+def _city_or_department_satisfied(card):
+    """The one predicate for the 'city_or_department' gate -- shared by requirement_scoreboard()
+    and market_snapshot() so they cannot silently disagree about what counts as answered (a real
+    bug found live, TASK-82: market_snapshot's ready_to_close used to require BOTH city AND
+    department_pref while requirement_scoreboard told the model this gate was satisfied by EITHER
+    -- a candidate who is genuinely flexible on department (a real, valid answer, not a missing
+    one) then saw requirement_scoreboard say 'satisfied' while market_snapshot never actually
+    produced a shortlist to close with, stalling the conversation indefinitely)."""
+    return bool(card.get("city") or card.get("department_pref"))
+
+
 def market_snapshot(card):
     """-> {open_jobs, cities, consult, matches, matching_clinics_count, shortlist}. consult[] is a
     handful of live examples once role/region is known enough to be worth naming; matches[] is the
     narrower list once city or department is also known -- the two-stage shape the rules expect
     (name examples early, name matches once the CV/preferences narrow it down). shortlist[] (up to
     CLOSE_LIMIT distinct clinics) and matching_clinics_count only turn up once qualification,
-    city, department and housing are ALL settled -- the close sequence (prompts.py THINK_ORDER
-    step 7: count, then shortlist, then a criteria recap, then the consent ask, each its own turn)
-    has nothing to work from before then."""
+    EITHER city or department_pref (see _city_or_department_satisfied -- a candidate flexible on
+    department has still answered, not left it open), and housing are all settled -- the close
+    sequence (prompts.py THINK_ORDER step 7: count, then shortlist, then a criteria recap, then
+    the consent ask, each its own turn) has nothing to work from before then."""
     filters = {}
     if card.get("qualification_path") not in (None, "reject"):
         filters["role"] = "pflegefachkraft"
@@ -165,8 +177,8 @@ def market_snapshot(card):
 
     clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
     shortlist = []
-    ready_to_close = bool(card.get("qualification_ok") and card.get("city")
-                          and card.get("department_pref") and card.get("housing_known"))
+    ready_to_close = bool(card.get("qualification_ok") and _city_or_department_satisfied(card)
+                          and card.get("housing_known"))
     if ready_to_close:
         seen = set()
         for r in rows:
@@ -199,7 +211,7 @@ def requirement_scoreboard(card):
     return {
         "region": "satisfied" if card.get("region") else "open",
         "qualification": _q(),
-        "city_or_department": "satisfied" if (card.get("city") or card.get("department_pref")) else "open",
+        "city_or_department": "satisfied" if _city_or_department_satisfied(card) else "open",
         "housing": "satisfied" if card.get("housing_known") else "open",
         "handoff_consent": "satisfied" if card.get("anonymous_send_consent") else "open",
     }
