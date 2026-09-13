@@ -23,6 +23,18 @@ User=exedev
 WorkingDirectory=/home/exedev/repo
 EnvironmentFile=/home/exedev/repo/.env
 Environment=PYTHONUNBUFFERED=1
+# systemd's own default PATH does not include a user pip/npm install's bin dir -- shutil.which
+# ("claude") inside the service comes back None even though `claude` works fine interactively,
+# reporting luna_ready=false on GET /api/wa/health despite everything else being configured
+# correctly (found live during rollout, 2026-09-13). Adjust /home/exedev/.local/bin if `claude`
+# was installed somewhere else for this User= (`which claude` as that user to check).
+Environment=PATH=/home/exedev/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Same class of gap as PATH above, found live during the same rollout: the `claude` CLI needs a
+# writable per-user tmp dir and falls back to the bare OS /tmp if nothing tells it otherwise --
+# on a host where /tmp is locked down (not the usual world-writable sticky-bit /tmp), that fails
+# with EACCES on mkdir and the whole turn errors out. Point it at something this User= can
+# actually write to.
+Environment=TMPDIR=/home/exedev/.tmp
 ExecStart=/home/exedev/repo/.venv/bin/uvicorn app.wa.asgi:app --host 127.0.0.1 --port 8502 --workers 1 --timeout-keep-alive 30
 Restart=always
 RestartSec=3
