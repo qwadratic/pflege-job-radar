@@ -70,6 +70,18 @@ LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
 # in the wrong place and starts a fresh, memory-less session instead of continuing the real one.
 LUNA_SESSION_DIR = A.DATA_DIR / "wa_luna_sessions"
 
+# Backstop against a runaway/abusive loop burning real claude CLI cost, not a conversational
+# throttle (TASK-76, parity with the real system's CATCHUP_MODEL_RUNS_PER_HOUR): a normal
+# back-and-forth never gets near this. Hitting it skips the brain call for that turn without
+# losing the inbound message -- the catch-up driver (TASK-78) backfills the reply shortly after.
+# 0 disables the cap entirely.
+LUNA_MAX_CALLS_PER_HOUR = int(os.environ.get("WA_LUNA_MAX_CALLS_PER_HOUR", "20") or "20")
+
+# A thread whose ball has been on us longer than this is flagged "stuck_reply" on GET /wa/threads
+# (TASK-79) -- no invented notification channel (no email/Telegram integration exists in this
+# repo), just a durable, discoverable flag a human or the catch-up driver can act on.
+STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
+
 
 def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""

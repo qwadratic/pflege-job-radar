@@ -8,7 +8,7 @@ Slots are a JSON blob: they are the conversation's memory, and their vocabulary 
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import config as C
 
@@ -40,7 +40,31 @@ create table if not exists wa_messages (
   at text not null
 );
 create index if not exists idx_wa_messages_phone_at on wa_messages(phone, at);
+create table if not exists wa_reply_turn_claims (
+  phone text not null,
+  turn_key text not null,
+  state text not null default 'in_progress',
+  claimed_at text not null,
+  updated_at text not null,
+  primary key (phone, turn_key)
+);
+create table if not exists wa_luna_calls (
+  id integer primary key,
+  phone text not null,
+  at text not null
+);
+create index if not exists idx_wa_luna_calls_phone_at on wa_luna_calls(phone, at);
+create table if not exists wa_send_failures (
+  id integer primary key,
+  phone text not null,
+  error text not null,
+  at text not null
+);
 """
+
+# A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
+# owed reply forever -- generous vs. LUNA_TIMEOUT_SEC (120s) plus the time a real Meta send takes.
+STALE_CLAIM_SECONDS = 300
 
 
 def now_iso():
@@ -117,3 +141,75 @@ def threads(c, limit=200):
         t["stopped"] = bool(t["stopped"])
         out.append(t)
     return out
+
+
+# --- reply-turn claims (TASK-77): durable, cross-process dedup beyond wamid uniqueness ----------
+# The wamid UNIQUE constraint on wa_messages stops a Meta redelivery from being answered twice, but
+# it says nothing about two DIFFERENT entrypoints (the webhook, and the catch-up driver, TASK-78)
+# both deciding -- at the same moment, in separate processes -- to generate and send a reply for
+# the SAME already-recorded inbound message. turn_key is that message's own wamid; only one caller
+# may hold an active claim on a given (phone, turn_key) at a time.
+
+def claim_reply_turn(c, phone, turn_key):
+    """True if the caller may proceed to generate and send a reply for this exact inbound message;
+    False if another caller already holds an active claim, or already finished one with state
+    'sent' (a reply for this exact message genuinely went out already -- never reclaimable). Any
+    other terminal state (skipped_rate_cap / skipped_no_send / skipped_stopped / skipped_error), or
+    a stale in_progress claim from a crashed prior attempt, is reclaimable: those all mean no reply
+    actually left this system yet, so a later retry (catch-up) must still be allowed to try."""
+    now = now_iso()
+    try:
+        c.execute("insert into wa_reply_turn_claims (phone, turn_key, state, claimed_at, updated_at) "
+                  "values (?,?,?,?,?)", (phone, turn_key, "in_progress", now, now))
+        c.commit()
+        return True
+    except sqlite3.IntegrityError:
+        pass
+    row = c.execute("select state, claimed_at from wa_reply_turn_claims where phone=? and turn_key=?",
+                    (phone, turn_key)).fetchone()
+    if row is None:
+        return True  # vanished between the failed insert and this select -- fail open rather than
+                     # silently block an owed reply forever over something that should not happen
+    if row["state"] == "sent":
+        return False
+    if row["state"] == "in_progress":
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(row["claimed_at"])).total_seconds()
+        if age < STALE_CLAIM_SECONDS:
+            return False
+    c.execute("update wa_reply_turn_claims set state=?, claimed_at=?, updated_at=? where phone=? and turn_key=?",
+              ("in_progress", now, now, phone, turn_key))
+    c.commit()
+    return True
+
+
+def finish_reply_turn_claim(c, phone, turn_key, state):
+    c.execute("update wa_reply_turn_claims set state=?, updated_at=? where phone=? and turn_key=?",
+              (state, now_iso(), phone, turn_key))
+    c.commit()
+
+
+# --- per-candidate LLM call rate limit (TASK-76) ------------------------------------------------
+
+def record_luna_call(c, phone):
+    c.execute("insert into wa_luna_calls (phone, at) values (?,?)", (phone, now_iso()))
+    c.commit()
+
+
+def count_recent_luna_calls(c, phone, within_hours=1.0):
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).isoformat()
+    row = c.execute("select count(*) as n from wa_luna_calls where phone=? and at>=?",
+                    (phone, cutoff)).fetchone()
+    return row["n"]
+
+
+# --- send-failure visibility (TASK-79) -----------------------------------------------------------
+
+def record_send_failure(c, phone, error):
+    c.execute("insert into wa_send_failures (phone, error, at) values (?,?,?)", (phone, error, now_iso()))
+    c.commit()
+
+
+def recent_send_failure(c, phone):
+    row = c.execute("select error, at from wa_send_failures where phone=? order by id desc limit 1",
+                    (phone,)).fetchone()
+    return dict(row) if row else None

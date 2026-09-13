@@ -241,28 +241,69 @@ def _handle_one(c, m, client=None):
 
     if m["kind"] in ("document", "image", "audio", "video"):
         if not (C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS):
-            sent = _send(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
+            sent = _send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
             ST.save_thread(c, t)
             return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
         _ingest_media(c, t, m, client=client)
+
+    result = process_owed_turn(c, t, m["text"], m["button_id"], m["wamid"], client=client)
+    ST.save_thread(c, t)
+    result["wamid"] = m["wamid"]
+    return result
+
+
+def process_owed_turn(c, t, text, button_id, turn_key, client=None):
+    """The core decide-and-send pipeline: claim the reply, dispatch to whichever brain is
+    configured, send, and detect a fresh consent. Shared by ``_handle_one`` (the webhook path,
+    ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-78,
+    ``turn_key`` = the last inbound message a thread is still owed a reply for) -- both must reach
+    exactly one reply attempt per inbound message, never two, so both go through the same claim
+    (``ST.claim_reply_turn``, TASK-77) instead of duplicating this logic.
+
+    Does not touch ``t["last_inbound_at"]``/``t["turns"]`` or run media ingestion -- those are
+    "a new message just arrived" bookkeeping that only ``_handle_one`` owns; a catch-up retry is
+    not a new message. Does not call ``ST.save_thread`` either -- the caller does, once, after
+    this returns, exactly as before this function existed.
+
+    -> a result dict with at least ``{"status": ...}``. A claim miss or a rate-cap skip returns
+    immediately without calling the brain at all -- the caller treats that the same as any other
+    "not handled this pass" outcome.
+    """
+    if not ST.claim_reply_turn(c, t["phone"], turn_key):
+        return {"status": "claimed_elsewhere"}
+
+    if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
+            ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
+        # The message stays recorded and the claim is left in a reclaimable state (TASK-77) --
+        # the catch-up driver (TASK-78) is what actually answers it once the window rolls over.
+        ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
+        return {"status": "rate_limited"}
 
     was_consented = C.BRAIN == "luna" and bool((t.get("slots") or {}).get("anonymous_send_consent"))
 
     if C.BRAIN == "luna":
         from . import luna_brain as LB          # imported lazily: only touched when selected
-        d = LB.turn(m["text"], t, button_id=m["button_id"])
+        ST.record_luna_call(c, t["phone"])
+        d = LB.turn(text, t, button_id=button_id)
     else:
-        d = B.turn(m["text"], t, button_id=m["button_id"])
+        d = B.turn(text, t, button_id=button_id)
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         t["stopped"], t["stopped_reason"] = True, ST.STOPPED
-        ST.save_thread(c, t)
-        return {"wamid": m["wamid"], "status": "stopped", "action": "stopped"}
+        ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_stopped")
+        return {"status": "stopped", "action": "stopped"}
     if d["matches"]:
         t["matches_sent_at"] = ST.now_iso()
-    sent = _send(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
-    ST.save_thread(c, t)
-    result = {"wamid": m["wamid"], "status": sent, "action": d["action"],
+
+    try:
+        sent = _send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
+    except Exception:
+        ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_error")
+        raise
+    ST.finish_reply_turn_claim(c, t["phone"], turn_key,
+                               "skipped_no_send" if sent == "nothing_to_send" else "sent")
+
+    result = {"status": sent, "action": d["action"],
               "slots": {k: v for k, v in d["slots"].items() if v is not None},
               "matches": [r.get("posting_id") for r in d["matches"]]}
     # TASK-66: a consent flip is durably saved above before this is ever set, so the caller
@@ -270,7 +311,7 @@ def _handle_one(c, m, client=None):
     # see that function's own comment for why this doesn't happen right here instead.
     now_consented = C.BRAIN == "luna" and bool(d["slots"].get("anonymous_send_consent"))
     if now_consented and not was_consented:
-        result["_newly_consented_phone"] = m["phone"]
+        result["_newly_consented_phone"] = t["phone"]
         result["_card_at_consent"] = dict(d["slots"])
     return result
 
@@ -322,6 +363,18 @@ def _send(c, t, bubbles, buttons, client=None, action=None):
     return "sent"
 
 
+def _send_and_record(c, t, bubbles, buttons, client=None, action=None):
+    """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-79) -- the
+    loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
+    what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
+    GET /wa/threads) instead of vanishing along with the never-persisted thread state."""
+    try:
+        return _send(c, t, bubbles, buttons, client=client, action=action)
+    except Exception as exc:
+        ST.record_send_failure(c, t["phone"], str(exc))
+        raise
+
+
 def _send_reopen_template(c, t, client=None, action=None):
     if not C.WA_REOPEN_TEMPLATE_NAME:
         raise RuntimeError(
@@ -341,16 +394,34 @@ def _send_reopen_template(c, t, client=None, action=None):
     return "sent_template"
 
 
+def _is_stuck(c, phone, last_inbound_at, stopped):
+    """True once a thread's ball has been on us (TASK-79) longer than C.STUCK_REPLY_HOURS -- the
+    honest, available equivalent of the real system's watchdog: no email/Telegram integration
+    exists in this repo, so this is a durable, discoverable flag, not an invented notification."""
+    from .luna import reporting as REP   # imported lazily: touches luna_brain, only when read
+    if stopped or not last_inbound_at or REP.ball_for(c, phone) != "us":
+        return False
+    age_hours = (datetime.now(timezone.utc) - datetime.fromisoformat(last_inbound_at)).total_seconds() / 3600
+    return age_hours > C.STUCK_REPLY_HOURS
+
+
 @router.get("/wa/threads")
 def wa_threads(request: Request, limit: int = 50):
     """Owner-only: the threads with their slots, and one thread's messages with ?phone=.
 
     Gated in app/auth.py the same way /api/autopilot is -- a lead's phone number and what they told
-    us is the most personal data this repo holds.
+    us is the most personal data this repo holds. Each row also carries ``stuck_reply`` and, when
+    one exists, ``last_send_error`` (TASK-79) -- computed here, not stored on the row itself, so
+    they always reflect the current time and the latest failure rather than a stale snapshot.
     """
     with ST._lock, ST.db() as c:
         phone = request.query_params.get("phone")
         if phone:
             return {"phone": phone, "thread": ST.thread(c, phone), "messages": ST.history(c, phone)}
         rows = ST.threads(c, max(1, min(limit, 500)))
+        for row in rows:
+            row["stuck_reply"] = _is_stuck(c, row["phone"], row.get("last_inbound_at"), row.get("stopped"))
+            failure = ST.recent_send_failure(c, row["phone"])
+            if failure:
+                row["last_send_error"] = failure
     return {"total": len(rows), "rows": rows}
