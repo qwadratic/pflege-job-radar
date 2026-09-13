@@ -251,8 +251,8 @@ Modell: ist das Fenster zu, geht statt der Bubbles ein vorab bei Meta genehmigte
 Template wirft das laut einen Fehler, statt Freitext zu versuchen (den Meta ohnehin ablehnt) oder
 still gar nichts zu tun. In der aktuellen, rein Webhook-getriebenen Zustellung (`_handle_one`)
 ist das Fenster durch den frischen `last_inbound_at`-Zeitstempel praktisch immer offen — die Prüfung
-greift vor allem, sobald ein Catch-up/Dry-Run-Werkzeug (geplant) einen älteren, unbeantworteten
-Thread erneut anfasst.
+greift vor allem, sobald das Dry-Run-Werkzeug (`shadow_run.py`, TASK-72) einen älteren,
+unbeantworteten Thread erneut anfasst.
 
 **Stage/Ball-Reporting und Migration (TASK-71):** `app/wa/luna/reporting.py` liefert `stage_for(card)`
 (new_lead → qualifying → documents_in → ready → consented, oder not_placeable) und `ball_for(conn,
@@ -263,6 +263,31 @@ einem generischen JSON-Export (`--input`, nur `phone` Pflichtfeld), nicht direkt
 konkreten externen System (gleiche Zurückhaltung wie bei `external_contacts.py`, TASK-69). Eine
 Zeile ohne gültige Telefonnummer wird gemeldet, nie still übersprungen; ein zweiter Lauf ergänzt
 die Karte nur, statt sie zu überschreiben.
+
+**Dry-Run-Werkzeug (TASK-72):** `python -m app.wa.luna.shadow_run` — dieselbe Absicherung, die das
+echte Produktionsteam für genau diesen Zweck schon einsetzt (`wa_shadow_run.py` auf
+tasker-dispatcher-01): "was würde die Antwort sein, ohne zu senden", immer gegen eine Kopie der
+Datenbank, nie gegen die echte. `shadow_run.db_copy()` öffnet die Quelle strikt lesend (SQLite-URI
+`mode=ro` — verweigert nicht nur jeden Schreibzugriff, sondern legt die Datei auch nicht erst an,
+falls sie fehlt) und sichert sie über SQLite's eigene Online-Backup-API in eine
+In-Memory-Kopie; alles Weitere liest und schreibt nur noch diese Kopie. Betrachtet werden alle
+Threads, bei denen `reporting.ball_for() == "us"` ist (die letzte Nachricht ist eingehend, eine
+Antwort steht noch aus) — in diesem Harness ein Zustand, der bei einem echten Webhook-Aufruf nur
+kurz auftritt (Antwort wird synchron berechnet und verschickt); bleibt ein Thread in der echten
+Datenbank so hängen, ist irgendwo mittendrin etwas fehlgeschlagen, und genau dafür ist ein
+gefahrloses Inspektionswerkzeug gedacht.
+
+Eine Besonderheit bei `WA_BRAIN=luna`: die Karte trägt eine echte, fortsetzbare Claude-Code-Session-Id
+(`_session_id`). Ein Dry-Run, der diese Session mit `--resume` fortsetzen würde, hinterließe einen
+echten, dauerhaften Eintrag in genau der Session, die der nächste echte Webhook-Aufruf fortsetzt —
+ein nicht rückgängig zu machender Seiteneffekt auf geteilten externen Zustand, den ein reines
+Report-Werkzeug niemals riskieren darf. `shadow_turn()` entfernt `_session_id` deshalb immer, bevor
+das Gehirn aufgerufen wird, sodass jede Luna-Antwort hier aus einer frischen, folgenlosen Session
+kommt — die Karte selbst (was Gates und Matching tatsächlich steuert) ist unverändert echt, nur das
+Gesprächsgedächtnis der Session fehlt, wodurch der Wortlaut etwas kühler ausfallen kann als die
+echte Antwort. Das Ergebnis pro Thread nennt Stage, Aktion, Bubbles und das TASK-70-Gate
+(`freeform`/`reopen_template`/`reopen_template_missing`/`no_send`/`stopped`) — nie geschrieben,
+weder in die Kopie noch ins Original.
 
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
