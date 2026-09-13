@@ -274,7 +274,9 @@ def test_owner_only_denied_for_anonymous_and_customer(client, method, path):
 
 
 @pytest.mark.parametrize("method,path", DENIED)
-def test_owner_only_passes_after_login(client, method, path):
+def test_owner_only_passes_after_login(client, monkeypatch, method, path):
+    if path == "/api/inbox":
+        monkeypatch.setattr(D, "inbox_summary", lambda recent=25: {})   # inbox_summary() hits Supabase directly; this test only checks past-auth, not the payload
     _login(client)
     r = client.request(method, path, json={"user": "ivan", "pass": "new-pass"})
     assert r.status_code != 401, (path, r.text)

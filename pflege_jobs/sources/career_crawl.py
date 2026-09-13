@@ -274,8 +274,13 @@ class Crawler:
                 self.log(f"  {seed.get('name', '?')[:30]}: section-first subtree ({section_href}) empty")
         rows, stats = self._crawl_urls(seed, hosts, [seed_url] + list(seed.get("extra_seeds", [])), seed.get("sitemaps", []), depth_cap=None, prefetched=prefetched)
         if section_rows:
-            seen_urls = {r["external_url"] for r in rows}
-            rows = rows + [r for r in section_rows if r["external_url"] not in seen_urls]
+            # section_rows carry the confirmed nursing_section_confirmed classification signal (see
+            # _base()/classify_role above); prefer them over a duplicate the unscoped full walk also
+            # reached, or "topping up" would silently throw away that signal for every job the full
+            # walk re-finds on its own -- which is nearly always true, since the section link is itself
+            # reachable from the seed page the full walk starts from.
+            seen_urls = {r["external_url"] for r in section_rows}
+            rows = section_rows + [r for r in rows if r["external_url"] not in seen_urls]
             for k in ("list_pages", "job_pages", "jobposting_pages", "heuristic_pages"):
                 stats[k] = stats.get(k, 0) + section_stats.get(k, 0)
         stats["section_first"] = bool(section_href)
