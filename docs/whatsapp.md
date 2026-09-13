@@ -254,6 +254,16 @@ ist das Fenster durch den frischen `last_inbound_at`-Zeitstempel praktisch immer
 greift vor allem, sobald ein Catch-up/Dry-Run-Werkzeug (geplant) einen älteren, unbeantworteten
 Thread erneut anfasst.
 
+**Stage/Ball-Reporting und Migration (TASK-71):** `app/wa/luna/reporting.py` liefert `stage_for(card)`
+(new_lead → qualifying → documents_in → ready → consented, oder not_placeable) und `ball_for(conn,
+phone)` (us/them/none, aus der letzten Zeile in `wa_messages`) — beides reine Ableitungen aus
+bereits vorhandenen Feldern, keine neuen Spalten, nur fürs Reporting (Dry-Run-Tool, Migration).
+`app/wa/luna/migrate_candidates.py` importiert echte Kandidaten idempotent in `wa_threads` — aus
+einem generischen JSON-Export (`--input`, nur `phone` Pflichtfeld), nicht direkt aus irgendeinem
+konkreten externen System (gleiche Zurückhaltung wie bei `external_contacts.py`, TASK-69). Eine
+Zeile ohne gültige Telefonnummer wird gemeldet, nie still übersprungen; ein zweiter Lauf ergänzt
+die Karte nur, statt sie zu überschreiben.
+
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
 keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig
