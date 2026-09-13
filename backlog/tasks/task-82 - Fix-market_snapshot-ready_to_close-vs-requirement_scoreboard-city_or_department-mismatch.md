@@ -6,6 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-13 12:19'
+updated_date: '2026-09-13 13:13'
 labels: []
 dependencies: []
 ordinal: 82000
@@ -19,12 +20,12 @@ Live e2e persona run (TASK-74 follow-up) found a candidate genuinely flexible on
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 market_snapshot's ready_to_close and requirement_scoreboard's city_or_department share one predicate, cannot silently diverge again
-- [ ] #2 A candidate with only city known (no department preference) reaches a populated shortlist
-- [ ] #3 A candidate with only department known (no city preference) reaches a populated shortlist
-- [ ] #4 Regression tests cover both cases plus the neither-known case
-- [ ] #5 Full offline suite stays green
-- [ ] #6 Live e2e persona run confirms a flexible-on-department persona now converges
+- [x] #1 market_snapshot's ready_to_close and requirement_scoreboard's city_or_department share one predicate, cannot silently diverge again
+- [x] #2 A candidate with only city known (no department preference) reaches a populated shortlist
+- [x] #3 A candidate with only department known (no city preference) reaches a populated shortlist
+- [x] #4 Regression tests cover both cases plus the neither-known case
+- [x] #5 Full offline suite stays green
+- [x] #6 Live e2e persona run confirms a flexible-on-department persona now converges
 <!-- AC:END -->
 
 ## Implementation Notes
