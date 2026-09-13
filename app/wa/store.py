@@ -60,6 +60,13 @@ create table if not exists wa_send_failures (
   error text not null,
   at text not null
 );
+create table if not exists wa_followups_sent (
+  id integer primary key,
+  phone text not null,
+  tier integer not null,
+  sent_at text not null
+);
+create index if not exists idx_wa_followups_sent_phone_at on wa_followups_sent(phone, sent_at);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -213,3 +220,26 @@ def recent_send_failure(c, phone):
     row = c.execute("select error, at from wa_send_failures where phone=? order by id desc limit 1",
                     (phone,)).fetchone()
     return dict(row) if row else None
+
+
+# --- proactive follow-up nudges (TASK-85) --------------------------------------------------------
+
+def record_followup_sent(c, phone, tier):
+    c.execute("insert into wa_followups_sent (phone, tier, sent_at) values (?,?,?)", (phone, tier, now_iso()))
+    c.commit()
+
+
+def followup_tiers_sent_since(c, phone, since_iso):
+    """Tiers already nudged in the current streak -- since_iso is the candidate's own last
+    message (or an epoch sentinel if they have never written), so a reply naturally resets what
+    this returns without a separate counter column that could drift out of sync."""
+    rows = c.execute("select tier from wa_followups_sent where phone=? and sent_at>=? order by tier",
+                     (phone, since_iso)).fetchall()
+    return [r["tier"] for r in rows]
+
+
+def candidate_phones(c):
+    """Every phone with a thread, not stopped -- the pool app.wa.luna.followups/catchup-style
+    drivers scan."""
+    rows = c.execute("select phone from wa_threads where stopped=0").fetchall()
+    return [r["phone"] for r in rows]

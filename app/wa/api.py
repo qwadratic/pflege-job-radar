@@ -249,7 +249,7 @@ def _handle_one(c, m, client=None):
 
     if m["kind"] in ("document", "image", "audio", "video"):
         if not (C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS):
-            sent = _send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
+            sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
             ST.save_thread(c, t)
             return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
         _ingest_media(c, t, m, client=client)
@@ -304,7 +304,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
         t["matches_sent_at"] = ST.now_iso()
 
     try:
-        sent = _send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
+        sent = send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
     except Exception:
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_error")
         raise
@@ -371,7 +371,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None):
     return "sent"
 
 
-def _send_and_record(c, t, bubbles, buttons, client=None, action=None):
+def send_and_record(c, t, bubbles, buttons, client=None, action=None):
     """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-79) -- the
     loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via

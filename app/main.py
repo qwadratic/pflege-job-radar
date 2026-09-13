@@ -50,6 +50,8 @@ from .wa.api import router as _wa_router                          # /api/wa/* (i
 app.include_router(_wa_router, prefix="/api", tags=["whatsapp"])
 from .wa.queue_api import router as _wa_queue_router               # /api/wa/queue* (TASK-66: consenting candidates x matched clinics)
 app.include_router(_wa_queue_router, prefix="/api", tags=["whatsapp"])
+from .wa.router import router as _wa_router_router                 # POST /api/wa/route-webhook (TASK-84, not Meta's live URL yet)
+app.include_router(_wa_router_router, prefix="/api", tags=["whatsapp"])
 from .billing import router as _billing_router                     # GET /api/billing (spend report)
 app.include_router(_billing_router, prefix="/api", tags=["billing"])
 from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)

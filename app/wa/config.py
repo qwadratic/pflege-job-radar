@@ -88,6 +88,21 @@ STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 # that everything defaults one way or the other.
 REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip()
 
+# Webhook router (TASK-84, app/wa/router.py): where to forward a 'them'-owned message. Empty
+# means router.route_webhook() raises loudly on any 'them' message rather than silently dropping
+# a real candidate's reply -- this is not registered as Meta's actual webhook URL by anything in
+# this repo, that is a separate, explicitly-confirmed production change.
+REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip()
+
+# Proactive follow-up nudges (TASK-85, app/wa/luna/followups.py) -- a scaled-down version of the
+# real system's own tiered (15m/1h/4h) re-engagement. Fixed, reviewable text, not a model call --
+# an unprompted, system-initiated message is not what luna_brain.turn()'s "the candidate just
+# said X" contract was built for.
+FOLLOWUP_TIER_MINUTES = [int(x) for x in os.environ.get("WA_FOLLOWUP_TIERS_MINUTES", "15,60,240").split(",") if x.strip()]
+MAX_FOLLOWUPS_PER_STREAK = int(os.environ.get("WA_MAX_FOLLOWUPS_PER_STREAK", "4") or "4")
+FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
+    "Nur zur Sicherheit nachgefragt – sind Sie noch da? Ich helfe gerne weiter, sobald Sie Zeit haben 🙂")
+
 
 def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""

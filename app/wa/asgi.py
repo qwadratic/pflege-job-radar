@@ -8,9 +8,11 @@ whichever nginx points at -- both write data/wa.sqlite and only the one receivin
 from fastapi import FastAPI
 
 from .api import router
+from .router import router as router_router  # POST /wa/route-webhook (TASK-84, not Meta's live URL yet)
 
 app = FastAPI(title="pflege-board WhatsApp harness", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(router, prefix="/api", tags=["whatsapp"])
+app.include_router(router_router, prefix="/api", tags=["whatsapp"])
 
 
 @app.get("/healthz")
