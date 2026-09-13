@@ -380,6 +380,58 @@ class LLMClient:
         return _validate_llm_profile(self._call(system_text, user_text))
 
 
+# --- document-type classification (TASK-81) -----------------------------------------------------
+# A real, qualification-relevant gap the real reference system already closes
+# (candidate_document_vision.py's doc_type taxonomy + explicit Helfer/Fachkraft discrimination):
+# a Pflegehelfer/-fachhelfer/-fachassistent-level certificate must never read as satisfying a
+# Fachkraft qualification path. A separate, small, cheap classification call rather than folding
+# this into profile_from_text_llm -- that call reasons over merged CV+Urkunde text at consent time
+# (analyse_candidate), long after a single upload needs its own type known (app/wa/api.py's media
+# intake, TASK-67).
+
+DOC_TYPES = ("urkunde", "lebenslauf", "defizitbescheid", "aufenthaltstitel", "dienstplan", "other")
+CERTIFICATE_LEVELS = ("fachkraft", "helfer", "unknown")
+
+_CLASSIFY_SYSTEM_PROMPT = f"""You read the transcribed text of a single document a nursing/Pflege
+candidate sent over WhatsApp (a CV, a certificate, or something else) and classify it. Base the
+classification only on what the text actually says.
+
+Output nothing but a single JSON object -- no markdown fence, no commentary before or after it --
+with exactly these keys:
+{{
+  "document_type": one of {list(DOC_TYPES)},
+  "certificate_level": one of {list(CERTIFICATE_LEVELS)}
+}}
+
+document_type:
+- "urkunde": a foreign nursing qualification recognition certificate/Anerkennungsurkunde.
+- "lebenslauf": a CV/resume.
+- "defizitbescheid": an official notice of a recognition deficiency (Defizitbescheid).
+- "aufenthaltstitel": a residence permit/visa document.
+- "dienstplan": a shift schedule/roster.
+- "other": anything else, or if genuinely unclear.
+
+certificate_level (only meaningful when document_type is "urkunde"; "unknown" otherwise):
+- "fachkraft": a full 3-year Pflegefachkraft/Gesundheits- und Krankenpfleger(in)-level qualification
+  (GuK, Altenpflege, or an equivalent foreign nursing degree) -- the level this board needs.
+- "helfer": a HELPER-level certificate (Pflegehelfer, Pflegefachhelfer, Pflegefachassistent -- note
+  "Pflegefachhelfer" contains the word "Fach" but is still helper level, NOT Fachkraft).
+- "unknown": cannot tell from the text, or document_type is not "urkunde"."""
+
+
+def classify_document(text, client=None):
+    """-> {"document_type": ..., "certificate_level": ...} for one already-transcribed document.
+    Raises loudly on a bad response (missing binary, timeout, non-JSON, an out-of-vocabulary
+    value) -- same discipline as every other LLM call in this module, no silent "unknown" fallback
+    manufactured here that the caller could mistake for a real classification."""
+    cl = client or LLMClient()
+    out = cl._call(_CLASSIFY_SYSTEM_PROMPT, json.dumps({"document_text": text[:8000]}, ensure_ascii=False))
+    if not isinstance(out, dict) or out.get("document_type") not in DOC_TYPES \
+            or out.get("certificate_level") not in CERTIFICATE_LEVELS:
+        raise RuntimeError(f"claude -p's document classification was not the expected shape: {out!r}")
+    return {"document_type": out["document_type"], "certificate_level": out["certificate_level"]}
+
+
 def profile_from_text_llm(text, chat_history=None, client=None):
     """Same output shape as profile_from_text (roles/departments/qualifications/cities/
     experience_years/languages/skills/keywords/regierungsbezirke), but reasoning over the raw CV

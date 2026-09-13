@@ -48,6 +48,15 @@ from .luna import prompts as P
 MAX_BUBBLES = 2
 MATCH_LIMIT = 3
 
+# Explicit button-confirmed consent (TASK-80): the real reference system has this same rigor for
+# its own harder, named-clinic-submission gate (a tappable "Ja, ich bestätige"), never inferred
+# from free text. This harness has no named-submission step, but applies the same discipline to
+# the one consent point it does have -- anonymous_send_consent is set ONLY by a genuine tap on one
+# of these two buttons (see turn(), below), never trusted from the model's own card_patch.
+CONSENT_YES_ID = "consent:yes"
+CONSENT_NO_ID = "consent:no"
+CONSENT_BUTTONS = [{"id": CONSENT_YES_ID, "title": "Ja, gerne"}, {"id": CONSENT_NO_ID, "title": "Nein danke"}]
+
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").read_text(encoding="utf-8")),
@@ -223,7 +232,6 @@ OUTPUT_SCHEMA = {
                 "people_count": {"type": "integer"},
                 "pflege_matches_sent": {"type": "boolean"},
                 "anonymous_send_offered": {"type": "boolean"},
-                "anonymous_send_consent": {"type": "boolean"},
             },
             "additionalProperties": False,
         },
@@ -350,14 +358,20 @@ class Client:
         return _validate(out), next_session_id
 
 
-def _user_payload(text, card, scoreboard, snapshot):
+def _user_payload(text, card, scoreboard, snapshot, button_id=None):
     """This turn's ground truth, not the conversation itself -- the resumed session already has
     every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
     correction from a prior turn), so it is resupplied fresh every time rather than trusted to
-    the model's memory of an earlier turn."""
+    the model's memory of an earlier turn. is_button_reply (TASK-80) tells the model whether THIS
+    reply is an actual button tap or typed text -- it cannot otherwise tell the two apart from
+    latest_inbound alone, since a button's own title ("Ja, gerne") reads just like free text. This
+    is what lets the CLOSE SEQUENCE rule honestly distinguish "the candidate tapped Ja" (consent is
+    now recorded, in code, see turn()) from "the candidate typed something that looks like yes"
+    (not consent -- the model must ask them to tap one of the two buttons instead)."""
     return json.dumps({
         "latest_inbound": text,
+        "is_button_reply": bool(button_id),
         "card": card,
         "requirement_scoreboard": scoreboard,
         "market_snapshot": snapshot,
@@ -398,17 +412,34 @@ def turn(text, thread, button_id=None, client=None):
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
-    user_text = _user_payload(text, card, scoreboard, snapshot)
+    user_text = _user_payload(text, card, scoreboard, snapshot, button_id)
 
     cl = client or Client()
     out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))
     card["_session_id"] = session_id
 
     patch = dict(out.get("card_patch") or {})
+    # Never trust the model's own claim of consent, even if an older session or prompt drift still
+    # emits the field (OUTPUT_SCHEMA/OUTPUT_INSTRUCTION no longer describe it at all) -- only an
+    # actual button tap, below, may set anonymous_send_consent.
+    patch.pop("anonymous_send_consent", None)
+    was_offered = bool(card.get("anonymous_send_offered"))
     was_ok = card.get("qualification_ok")
     card.update(patch)
 
+    # TASK-80: anonymous_send_consent is never trusted from the model's own card_patch (already
+    # stripped from OUTPUT_SCHEMA/OUTPUT_INSTRUCTION, but stripped here too in case an older
+    # session or prompt drift still emits it) -- it is set ONLY by an actual tap on one of the two
+    # CONSENT_BUTTONS attached below, exactly the "decided in code, not by the model" pattern this
+    # module already uses for opt-out/reject/out-of-scope-region.
+    if button_id == CONSENT_YES_ID and card.get("anonymous_send_offered"):
+        card["anonymous_send_consent"] = True
+    elif button_id == CONSENT_NO_ID and card.get("anonymous_send_offered"):
+        card["anonymous_send_consent"] = False
+    just_offered = bool(card.get("anonymous_send_offered")) and not was_offered
+
     raw_bubbles = out.get("bubbles") or []
+    buttons = []
     if patch.get("qualification_ok") is False and was_ok is not False:
         # The gate the model must not rephrase (prompts.py module docstring, point 2). This one
         # gate overrides no_send too -- the very first decline must always be said out loud.
@@ -426,10 +457,14 @@ def turn(text, thread, button_id=None, client=None):
     else:
         bubbles = _check(raw_bubbles)
         action = str(out.get("action") or "reply_now_conversational")
+        if just_offered:
+            # The turn where the model just asked for the anonymized send: attach real, tappable
+            # buttons rather than leaving consent to however the candidate happens to phrase "yes".
+            buttons = list(CONSENT_BUTTONS)
 
     if out.get("escalate_to_manager"):
         card["_escalated"] = True
         card["_escalate_reason"] = out.get("escalate_reason")
 
-    return {"bubbles": bubbles, "buttons": [], "slots": card, "asked": asked, "stopped": False,
+    return {"bubbles": bubbles, "buttons": buttons, "slots": card, "asked": asked, "stopped": False,
             "matches": snapshot.get("matches") or [], "action": action}

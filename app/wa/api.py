@@ -191,6 +191,14 @@ def _ingest_media(c, t, m, client=None):
     mime_type = m.get("media_mime_type") or info.get("mime_type")
     text, card_key = _extract_media_text(m["kind"], blob, m.get("media_filename"), mime_type)
     t["slots"][card_key] = text
+    # TASK-81: classify what was actually just sent (urkunde/lebenslauf/defizitbescheid/
+    # aufenthaltstitel/dienstplan/other, plus fachkraft-vs-helfer for an urkunde) -- surfaced onto
+    # the card so the model sees it in its normal payload (luna_brain._user_payload's "card" is the
+    # whole slots dict, no separate wiring needed) and prompts.py's DOCUMENT TYPE rule tells it a
+    # helfer-level certificate must never read as satisfying a Fachkraft qualification path.
+    classification = CV.classify_document(text)
+    t["slots"]["document_type"] = classification["document_type"]
+    t["slots"]["certificate_level"] = classification["certificate_level"]
 
 
 def handle_payload(payload, client=None):

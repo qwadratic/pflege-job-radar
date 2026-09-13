@@ -120,6 +120,72 @@ def test_disqualification_is_only_overridden_once(luna):
     assert d["bubbles"] == out["bubbles"]
 
 
+# --- explicit button-confirmed consent (TASK-80): decided in code, never by the model ----------
+
+def test_offering_the_anonymized_send_attaches_real_buttons(luna):
+    out = _out(bubbles=["Darf ich Ihr Profil anonymisiert an diese Kliniken weiterleiten?"],
+               card_patch={"anonymous_send_offered": True})
+    d = LB.turn("Klingt gut", luna, client=fake_client(out))
+    assert d["buttons"] == LB.CONSENT_BUTTONS
+    assert d["slots"].get("anonymous_send_consent") is None, "offering is not the same as consenting"
+
+
+def test_buttons_are_only_attached_on_the_turn_offering_first_flips_true(luna):
+    luna["slots"]["anonymous_send_offered"] = True   # already offered on an earlier turn
+    out = _out(bubbles=["Wie besprochen, dürfte ich Ihr Profil weiterleiten?"],
+               card_patch={"anonymous_send_offered": True})
+    d = LB.turn("ok", luna, client=fake_client(out))
+    assert d["buttons"] == [], "re-stating an already-made offer must not re-attach the buttons"
+
+
+def test_a_free_text_yes_does_not_grant_consent(luna):
+    """Even if the model itself tries to claim consent from typed text, the harness must not
+    trust it -- only an actual button tap may set anonymous_send_consent."""
+    luna["slots"]["anonymous_send_offered"] = True
+    out = _out(bubbles=["Alles klar, ich leite es weiter!"],
+               card_patch={"anonymous_send_consent": True})
+    d = LB.turn("Ja, gerne", luna, client=fake_client(out))
+    assert d["slots"].get("anonymous_send_consent") is not True
+
+
+def test_tapping_the_yes_button_grants_consent_in_code(luna):
+    luna["slots"]["anonymous_send_offered"] = True
+    out = _out(bubbles=["Super, danke für dein Vertrauen!"], card_patch={})
+    d = LB.turn("Ja, gerne", luna, button_id=LB.CONSENT_YES_ID, client=fake_client(out))
+    assert d["slots"]["anonymous_send_consent"] is True
+
+
+def test_tapping_the_no_button_records_a_decline_in_code(luna):
+    luna["slots"]["anonymous_send_offered"] = True
+    out = _out(bubbles=["Kein Problem, melden Sie sich, wenn sich etwas ändert."], card_patch={})
+    d = LB.turn("Nein danke", luna, button_id=LB.CONSENT_NO_ID, client=fake_client(out))
+    assert d["slots"]["anonymous_send_consent"] is False
+
+
+def test_a_button_tap_before_any_offer_is_a_no_op_for_consent(luna):
+    """A stray/replayed button id on a card that never actually offered must not fabricate
+    consent out of nothing."""
+    out = _out(bubbles=["Hallo!"], card_patch={})
+    d = LB.turn("Ja, gerne", luna, button_id=LB.CONSENT_YES_ID, client=fake_client(out))
+    assert "anonymous_send_consent" not in d["slots"]
+
+
+def test_the_model_sees_is_button_reply_true_only_for_an_actual_tap(luna):
+    seen = {}
+
+    def fn(system, user, session_id):
+        seen["payload"] = json.loads(user)
+        return _out(), session_id
+
+    luna["slots"]["anonymous_send_offered"] = True
+    LB.turn("Ja, gerne", luna, button_id=LB.CONSENT_YES_ID, client=fake_client(fn))
+    assert seen["payload"]["is_button_reply"] is True
+
+    seen.clear()
+    LB.turn("Ja, gerne", luna, client=fake_client(fn))
+    assert seen["payload"]["is_button_reply"] is False
+
+
 # --- a normal turn: the model decides, the harness only supplies state -----------------------
 
 def test_a_normal_turn_updates_the_card_from_card_patch(luna):

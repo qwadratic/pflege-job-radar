@@ -147,12 +147,22 @@ def _run_persona(name, persona_prompt, session_root):
     agent = _CandidateAgent(persona_prompt, session_root / f"candidate_{name}")
     thread = {"slots": {}, "asked": []}
     valentina_bubbles = []
+    valentina_buttons = []
     transcript = []
     for turn in range(1, MAX_TURNS + 1):
-        candidate_text = agent.reply_to(valentina_bubbles)
-        d = LB.turn(candidate_text, thread)
+        if valentina_buttons:
+            # TASK-80: Valentina just offered the anonymized send and attached real Ja/Nein
+            # buttons -- a real WhatsApp UI renders those as taps, not free text, so simulate the
+            # tap a cooperative persona (every persona here is written to consent) would make,
+            # rather than asking the live candidate LLM to type something a button UI wouldn't.
+            yes = next(b for b in valentina_buttons if b["id"] == LB.CONSENT_YES_ID)
+            candidate_text, button_id = yes["title"], yes["id"]
+        else:
+            candidate_text, button_id = agent.reply_to(valentina_bubbles), None
+        d = LB.turn(candidate_text, thread, button_id=button_id)
         thread = {"slots": d["slots"], "asked": d["asked"]}
         valentina_bubbles = d["bubbles"]
+        valentina_buttons = d["buttons"]
         transcript.append({"turn": turn, "candidate": candidate_text, "valentina": valentina_bubbles})
         if thread["slots"].get("anonymous_send_consent"):
             return {"name": name, "converged": True, "turns": turn, "card": thread["slots"], "transcript": transcript}

@@ -102,6 +102,11 @@ def luna_wa(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "ACCESS_TOKEN", "test-token")
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "BRAIN", "luna")
+    # TASK-81: every _ingest_media call now also classifies the document -- a fixed, harmless
+    # default here (individual tests override it via monkeypatch when the classification itself
+    # is what they are checking).
+    monkeypatch.setattr(CV, "classify_document",
+                        lambda text, client=None: {"document_type": "lebenslauf", "certificate_level": "unknown"})
 
 
 @pytest.fixture()

@@ -64,13 +64,28 @@ def board(tmp_path, monkeypatch):
 
 def _run(script, thread=None):
     """Play a persona's script turn by turn through the real CLI, returning the full list of
-    per-turn results (each the dict app/wa/luna_brain.py:turn() returns)."""
+    per-turn results (each the dict app/wa/luna_brain.py:turn() returns).
+
+    TASK-80: the moment Valentina offers the anonymized send, she attaches real Ja/Nein buttons --
+    a real WhatsApp UI renders those as taps, not free text, and consent is only ever recorded from
+    an actual tap (typing "Ja" instead gets a "please tap" nudge, never silent consent). Every
+    script in this file is written to be cooperative through to consent, so the moment buttons show
+    up mid-script, this simulates the "yes" tap a real candidate would make and stops feeding the
+    rest of the script's free-text lines (which would otherwise just collect more "please tap"
+    nudges) -- callers that want to see a genuine decline still can, by inspecting each turn's own
+    ``buttons`` themselves instead of relying on this helper's default."""
     thread = thread or {"slots": {}, "asked": []}
     out = []
     for text in script:
         d = LB.turn(text, thread)
         out.append(d)
         thread = {"slots": d["slots"], "asked": d["asked"]}
+        if d["buttons"]:
+            yes = next(b for b in d["buttons"] if b["id"] == LB.CONSENT_YES_ID)
+            d = LB.turn(yes["title"], thread, button_id=yes["id"])
+            out.append(d)
+            thread = {"slots": d["slots"], "asked": d["asked"]}
+            break
     return out
 
 

@@ -289,10 +289,53 @@ echte Antwort. Das Ergebnis pro Thread nennt Stage, Aktion, Bubbles und das TASK
 (`freeform`/`reopen_template`/`reopen_template_missing`/`no_send`/`stopped`) — nie geschrieben,
 weder in die Kopie noch ins Original.
 
-**Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
-Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
-keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig
-(siehe unten), aus demselben Grund: die Infrastruktur dafür existiert in diesem Repo nicht.
+**Rate-Limit, Dedup-Claim, Catch-up, Fehler-Sichtbarkeit (TASK-76/77/78/79):** ein Vergleich mit dem
+echten Produktionssystem fand vier konkrete Lücken, die dieser Abschnitt schließt.
+`app/wa/config.py:WA_LUNA_MAX_CALLS_PER_HOUR` (Default 20, 0 deaktiviert) deckelt Luna-Aufrufe pro
+Kandidat und Stunde — ein Backstop gegen eine durchgehende Schleife, keine Konversationsbremse; wer
+den Deckel trifft, verliert die Nachricht nicht, sondern wird beim nächsten Catch-up-Lauf
+nachgeholt. `app/wa/store.py:wa_reply_turn_claims` ist ein dauerhafter, prozessübergreifender
+Claim je (Telefonnummer, eingehende wamid) — nötig, sobald zwei Einstiegspunkte (Webhook und
+Catch-up) gleichzeitig dieselbe unbeantwortete Nachricht beantworten könnten; ein abgebrochener
+oder abgelehnter Claim ist erneut beanspruchbar, nur ein tatsächlich verschickter (`sent`) blockiert
+endgültig. `app/wa/api.py:process_owed_turn` bündelt Claim, Ratenlimit, Gehirn-Aufruf, Versand und
+Claim-Abschluss zu einer einzigen Pipeline, die sowohl `_handle_one` (Webhook) als auch
+`app/wa/luna/catchup.py` (neu, TASK-78 — das Live-Gegenstück zu `shadow_run.py`: dieselbe
+Owed-Reply-Abfrage, aber echter Versand, kein Dry-Run) benutzen. Ein Meta-Fehlschlag wird jetzt vor
+dem erneuten Auslösen der Exception dauerhaft vermerkt (`wa_send_failures`,
+`_send_and_record`) statt spurlos zu verschwinden, und `GET /api/wa/threads` zeigt pro Thread
+`stuck_reply` (Ball länger als `WA_STUCK_REPLY_HOURS`, Default 2h, bei uns) und `last_send_error` —
+kein Telegram/E-Mail-Kanal erfunden, den es hier nicht gibt, nur ein dauerhaftes, auffindbares
+Signal.
+
+**Button-bestätigte Einwilligung (TASK-80):** das echte Referenzsystem hat für seine eigene,
+härtere Klinik-Einreichungs-Freigabe schon einen echten Button-Tap, nie aus Freitext abgeleitet —
+dieselbe Strenge gilt jetzt für den einen Einwilligungspunkt, den dieser Harness hat.
+`anonymous_send_consent` wird nie mehr aus dem `card_patch` des Modells übernommen (dort auch aus
+`OUTPUT_SCHEMA`/`OUTPUT_INSTRUCTION` entfernt), sondern ausschließlich aus einem echten Tap auf
+einen von zwei Buttons (`consent:yes`/`consent:no`, `LB.CONSENT_BUTTONS`) gesetzt — exakt dasselbe
+"im Code entschieden, nicht vom Modell" wie beim Opt-out/Reject/Out-of-scope-Gate. Die Buttons
+hängen genau an dem Zug, in dem `anonymous_send_offered` neu auf `true` kippt; ein neues Feld
+`is_button_reply` im Modell-Payload lässt Valentina ehrlich unterscheiden, ob gerade wirklich
+getippt wurde oder nur etwas Zustimmendes getippt wurde — im zweiten Fall bittet sie freundlich um
+den Tap, statt Zustimmung zu behaupten, die es (noch) nicht gibt.
+
+**Dokumenten-Typ-Klassifikation (TASK-81):** `app/cv.py:classify_document()` ordnet ein
+hochgeladenes Dokument einem `document_type` zu (`urkunde`/`lebenslauf`/`defizitbescheid`/
+`aufenthaltstitel`/`dienstplan`/`other`, dieselbe Vokabel wie im Referenzsystem) und, bei einer
+Urkunde, einem `certificate_level` (`fachkraft`/`helfer`/`unknown`) — unterscheidet also explizit
+eine echte 3-jährige Fachkraft-Qualifikation von einer Pflegehelfer-/Pflegefachhelfer-/
+Pflegefachassistent-Bescheinigung (die trotz des Wortes "Fach" Helfer-Niveau ist). Wird direkt beim
+Medien-Intake aufgerufen (`_ingest_media`) und landet auf der Karte — keine separate
+Prompt-Verkabelung nötig, `luna_brain._user_payload` sendet ohnehin die ganze Karte; eine neue
+Regel in `prompts.py` sagt dem Modell nur, was das Feld bedeutet. Bewusst rein informativ: kippt
+`qualification_ok` nicht selbst im Code um, das war nicht Teil dieser Aufgabe.
+
+**Was hier zusätzlich fehlt, verglichen mit der Quelle:** keine Interview-Terminfindung, kein
+Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme, keine proaktiven
+Nachfass-Nachrichten (Catch-up TASK-78 holt nur eine bereits geschuldete Antwort nach, es meldet
+sich nie von sich aus bei einem stillen Thread) — dieselben Lücken wie beim deterministischen
+Zweig (siehe unten), aus demselben Grund: die Infrastruktur dafür existiert in diesem Repo nicht.
 Eine Eskalation (`escalate_to_manager`) wird auf dem Thread vermerkt (`_escalated`,
 `_escalate_reason`, lesbar über `GET /api/wa/threads`), löst aber keinen Versand aus.
 
