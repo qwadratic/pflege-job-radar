@@ -1,0 +1,28 @@
+# Catch-up poller for the WhatsApp harness (app/wa/luna/catchup.py, TASK-78, docs/whatsapp.md
+# "Rate limit, dedup claim, catch-up, failure visibility (TASK-76/77/78/79)"): retries an owed
+# reply the webhook path never got to -- Meta delivery is not guaranteed, and a prior attempt can
+# fail before an outbound message is ever recorded. Runs as its own periodic oneshot job, driven
+# by deploy/pflege-wa-catchup.timer, rather than inside pflege-wa.service itself, so a slow or
+# stuck catch-up pass can never delay an inbound webhook reply, and a crash here never takes the
+# live webhook process down with it.
+#
+# Install (not done by the build -- a human decides when this catch-up cadence goes live):
+#   sudo cp deploy/pflege-wa-catchup.service deploy/pflege-wa-catchup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-catchup.timer
+#   journalctl -u pflege-wa-catchup -f
+# Runs against the REAL database (app/wa/luna/catchup.py, not shadow_run.py's read-only copy) and,
+# with WA_AUTOSEND=1 set in the EnvironmentFile, actually calls Meta -- same webhook secrets/tokens
+# as pflege-wa.service, same EnvironmentFile, so both units must be kept in sync by hand.
+[Unit]
+Description=Pflege-Board WhatsApp catch-up poller (app.wa.luna.catchup, TASK-78)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.wa.luna.catchup

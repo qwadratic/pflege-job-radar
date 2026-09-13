@@ -1,0 +1,21 @@
+# Drives deploy/pflege-wa-catchup.service (app.wa.luna.catchup, TASK-78) every 3 minutes --
+# mirroring the cadence of the real reference system's own --catchup poller (per that poller's
+# own --help text, webhook wake "may fail", so it treats this 3-minute pass as the resilient
+# primary path, not a backup); see docs/whatsapp.md's TASK-78 paragraph.
+#
+# Install (not done by the build -- a human decides when this catch-up cadence goes live):
+#   sudo cp deploy/pflege-wa-catchup.service deploy/pflege-wa-catchup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-catchup.timer
+#   journalctl -u pflege-wa-catchup -f
+[Unit]
+Description=Timer for Pflege-Board WhatsApp catch-up poller (TASK-78)
+
+[Timer]
+Unit=pflege-wa-catchup.service
+OnBootSec=2min
+OnUnitActiveSec=3min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

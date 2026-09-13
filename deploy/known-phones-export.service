@@ -1,0 +1,36 @@
+# Producer for WA_REAL_SYSTEM_PHONES_FILE (app/wa/luna/export_known_phones.py, TASK-87, follow-up
+# to TASK-75): periodically exports the phone numbers a real, external system already knows about
+# into the plain newline-delimited file app/wa/routing.py reads -- without it that file stays an
+# unmet promise and routing.py refuses to route anything at all (by design, see its own docstring).
+#
+# This template deliberately hardcodes nothing about the operator's real system: KNOWN_PHONES_SOURCE_DB
+# (path to the operator's own sqlite database, opened strictly read-only) and
+# KNOWN_PHONES_SOURCE_QUERY (the exact SQL to run against it, first column = phone-like value) are
+# NOT set here -- same discipline as app/wa/luna/external_contacts.py (TASK-69), this repo never
+# names or hardcodes a real external system's schema. The operator supplies both, plus
+# WA_REAL_SYSTEM_PHONES_FILE (the output path, already established by TASK-75), themselves in the
+# EnvironmentFile below -- a separate, git-ignored file (.env and .env.* are git-ignored in this
+# repo), never committed here.
+#
+# ExecStart quotes every ${VAR} below on purpose: systemd word-splits an unquoted ${VAR} on
+# whitespace before exec, and KNOWN_PHONES_SOURCE_QUERY is a SQL statement that will always
+# contain spaces -- without the quotes it silently breaks into multiple argv entries instead of
+# one --query value. Do not remove them.
+#
+# Install (not done by the build -- a human decides when a real KNOWN_PHONES_SOURCE_DB/QUERY exist):
+#   sudo cp deploy/known-phones-export.service deploy/known-phones-export.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now known-phones-export.timer
+#   journalctl -u known-phones-export -f
+[Unit]
+Description=Pflege-Board known-phones export (app.wa.luna.export_known_phones, TASK-87)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.wa.luna.export_known_phones --db "${KNOWN_PHONES_SOURCE_DB}" --query "${KNOWN_PHONES_SOURCE_QUERY}" --out "${WA_REAL_SYSTEM_PHONES_FILE}"

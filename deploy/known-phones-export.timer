@@ -1,0 +1,20 @@
+# Drives deploy/known-phones-export.service (app.wa.luna.export_known_phones, TASK-87) once per
+# hour -- a batch reconciliation job, not latency-sensitive: WA_REAL_SYSTEM_PHONES_FILE only needs
+# to be roughly current, not real-time, for routing.py's new-vs-existing-lead check to stay useful.
+#
+# Install (not done by the build -- a human decides when a real KNOWN_PHONES_SOURCE_DB/QUERY exist):
+#   sudo cp deploy/known-phones-export.service deploy/known-phones-export.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now known-phones-export.timer
+#   journalctl -u known-phones-export -f
+[Unit]
+Description=Timer for Pflege-Board known-phones export (TASK-87)
+
+[Timer]
+Unit=known-phones-export.service
+OnBootSec=10min
+OnUnitActiveSec=1h
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target
