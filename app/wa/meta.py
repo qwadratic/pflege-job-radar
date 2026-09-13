@@ -161,6 +161,21 @@ class Client:
                            "interactive": {"type": "button", "body": {"text": body},
                                            "action": {"buttons": rows}}})
 
+    def send_template(self, to_e164, template_name, language="de", params=None):
+        """A pre-approved template message: the only kind Meta accepts once the 24h customer-service
+        free-form window has closed (WhatsApp Cloud API policy -- see app/wa/api.py:_freeform_window_open).
+        ``params`` is an ordered list of body-variable strings for a parameterized template; omit for a
+        template with no variables. The template itself must already be approved in Meta Business
+        Manager -- this method cannot create or validate one, it only sends against an existing name."""
+        if not template_name:
+            raise MetaError("send_template needs a template_name")
+        template = {"name": template_name, "language": {"code": language}}
+        if params:
+            template["components"] = [{"type": "body",
+                                       "parameters": [{"type": "text", "text": str(p)} for p in params]}]
+        return self._post({"messaging_product": "whatsapp", "to": re.sub(r"\D", "", to_e164),
+                           "type": "template", "template": template})
+
     def media_url(self, media_id):
         """Step 1 of Meta's two-step media download: ``GET /{media-id}`` -> a JSON object with a
         temporary, token-gated CDN ``url`` (plus ``mime_type``/``sha256``/``file_size``/``id``).

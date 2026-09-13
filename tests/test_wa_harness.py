@@ -51,6 +51,7 @@ class FakeMeta:
 
     def __init__(self):
         self.sent = []
+        self.sent_templates = []
         self.n = 0
 
     def _next(self):
@@ -63,6 +64,10 @@ class FakeMeta:
 
     def send_buttons(self, to_e164, body, buttons):
         self.sent.append({"to": to_e164, "body": body, "buttons": buttons})
+        return self._next()
+
+    def send_template(self, to_e164, template_name, language="de", params=None):
+        self.sent_templates.append({"to": to_e164, "template": template_name, "language": language, "params": params})
         return self._next()
 
 
@@ -527,3 +532,85 @@ def test_health_reports_readiness_without_secrets(wa):
         body = client.get("/api/wa/health").json()
     assert body["webhook_ready"] and body["outbound_ready"] and body["autosend"] is True
     assert APP_SECRET not in json.dumps(body) and "test-token" not in json.dumps(body)
+
+
+# --- TASK-70: the 24h free-form window --------------------------------------------------------
+# _handle_one() always stamps last_inbound_at to "now" for a live inbound turn, so the window can
+# never be closed there by construction -- these test _send()/_freeform_window_open() directly,
+# the way a future catch-up/dry-run tool (operating on a possibly-stale stored thread) would.
+
+def test_window_is_open_for_a_thread_that_just_wrote(wa):
+    t = {"phone": LEAD, "last_inbound_at": ST.now_iso()}
+    assert WAPI._freeform_window_open(t) is True
+
+
+def test_window_is_open_when_last_inbound_at_was_never_set(wa):
+    assert WAPI._freeform_window_open({"phone": LEAD}) is True
+
+
+def test_window_is_closed_after_the_configured_hours(wa, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(C, "FREEFORM_WINDOW_HOURS", 24)
+    stale = (datetime.now(timezone.utc) - timedelta(hours=25)).replace(microsecond=0).isoformat()
+    assert WAPI._freeform_window_open({"phone": LEAD, "last_inbound_at": stale}) is False
+
+
+def test_send_uses_the_reopen_template_when_the_window_is_closed(wa, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "WA_REOPEN_TEMPLATE_NAME", "candidate_reopen_v1")
+    stale = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    t = {"phone": LEAD, "last_inbound_at": stale}
+    with ST.db() as c:
+        status = WAPI._send(c, t, ["Diese freie Nachricht darf es gar nicht bis zu Meta schaffen"], [], client=wa)
+    assert status == "sent_template"
+    assert wa.sent == [], "no free-form text call must reach Meta once the window is closed"
+
+
+def test_send_drafts_the_reopen_template_when_autosend_is_off(wa, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(C, "AUTOSEND", False)
+    monkeypatch.setattr(C, "WA_REOPEN_TEMPLATE_NAME", "candidate_reopen_v1")
+    stale = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    t = {"phone": LEAD, "last_inbound_at": stale}
+    with ST.db() as c:
+        status = WAPI._send(c, t, ["Text"], [], client=wa)
+        kinds = [r["kind"] for r in ST.history(c, LEAD)]
+    assert status == "draft_template"
+    assert "draft_template" in kinds
+
+
+def test_send_raises_loudly_when_window_closed_and_no_template_configured(wa, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    monkeypatch.setattr(C, "WA_REOPEN_TEMPLATE_NAME", "")
+    stale = (datetime.now(timezone.utc) - timedelta(hours=48)).replace(microsecond=0).isoformat()
+    t = {"phone": LEAD, "last_inbound_at": stale}
+    with ST.db() as c:
+        with pytest.raises(RuntimeError, match="no reopen template is configured"):
+            WAPI._send(c, t, ["Text"], [], client=wa)
+
+
+def test_send_template_calls_the_real_meta_shape(wa):
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append(json.loads(data))
+        return {"messages": [{"id": "wamid.tpl.1"}]}
+
+    cl = M.Client(transport=transport, access_token="t", phone_number_id="1")
+    wamid = cl.send_template(LEAD, "candidate_reopen_v1", "de")
+    assert wamid == "wamid.tpl.1"
+    assert calls[0]["type"] == "template"
+    assert calls[0]["template"] == {"name": "candidate_reopen_v1", "language": {"code": "de"}}
+
+
+def test_send_template_with_params_fills_body_components(wa):
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append(json.loads(data))
+        return {"messages": [{"id": "wamid.tpl.2"}]}
+
+    cl = M.Client(transport=transport, access_token="t", phone_number_id="1")
+    cl.send_template(LEAD, "candidate_reopen_v1", "de", params=["Ionel"])
+    assert calls[0]["template"]["components"] == [{"type": "body", "parameters": [{"type": "text", "text": "Ionel"}]}]

@@ -18,6 +18,16 @@ PHONE_NUMBER_ID = os.environ.get("META_WHATSAPP_PHONE_NUMBER_ID", "").strip()
 DEFAULT_COUNTRY_CODE = os.environ.get("META_WHATSAPP_DEFAULT_COUNTRY_CODE", "49").strip() or "49"
 HTTP_TIMEOUT_SEC = 30
 
+# WhatsApp Cloud API policy (not this repo's choice): free-form text is only allowed within this
+# many hours of the candidate's last message; outside it, only a pre-approved template message
+# goes through (TASK-70). 24 is Meta's actual rule -- overridable only for testing.
+FREEFORM_WINDOW_HOURS = float(os.environ.get("WA_FREEFORM_WINDOW_HOURS", "24") or "24")
+# Must already be approved in Meta Business Manager -- this repo cannot create one. Empty means
+# "not configured yet": a thread whose window has closed then fails loudly (app/wa/api.py) rather
+# than silently sending free-form text Meta would reject, or silently doing nothing.
+WA_REOPEN_TEMPLATE_NAME = os.environ.get("WA_REOPEN_TEMPLATE_NAME", "").strip()
+WA_REOPEN_TEMPLATE_LANG = os.environ.get("WA_REOPEN_TEMPLATE_LANG", "de").strip() or "de"
+
 # The harness keeps its own SQLite file: the board's app.sqlite is rebuilt by crawl/run bookkeeping,
 # and a conversation must outlive that.
 SQLITE_PATH = A.DATA_DIR / "wa.sqlite"

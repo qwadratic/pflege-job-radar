@@ -243,6 +243,17 @@ unscharf (rapidfuzz, auf `bundesland='Bayern'` eingegrenzt) und bevorzugt eine P
 zuerst, vor `enr_contact_emails`/Website/JD-Rescan, und fällt bei jedem Fehler (nicht konfiguriert,
 kein Lesezugriff, o. ä.) genauso großzügig durch wie die bestehende Website-Quelle schon immer.
 
+**24h-Fenster und Reopen-Template (TASK-70):** WhatsApps eigene Regel, nicht unsere: reiner Freitext
+geht nur innerhalb von `WA_FREEFORM_WINDOW_HOURS` (Default 24) nach der letzten Nachricht der
+Kandidatin raus; danach lehnt Meta Freitext ab. `app/wa/api.py:_send` prüft das in Code, nie das
+Modell: ist das Fenster zu, geht statt der Bubbles ein vorab bei Meta genehmigtes Template raus
+(`Client.send_template`, `WA_REOPEN_TEMPLATE_NAME`/`WA_REOPEN_TEMPLATE_LANG`). Ohne konfiguriertes
+Template wirft das laut einen Fehler, statt Freitext zu versuchen (den Meta ohnehin ablehnt) oder
+still gar nichts zu tun. In der aktuellen, rein Webhook-getriebenen Zustellung (`_handle_one`)
+ist das Fenster durch den frischen `last_inbound_at`-Zeitstempel praktisch immer offen — die Prüfung
+greift vor allem, sobald ein Catch-up/Dry-Run-Werkzeug (geplant) einen älteren, unbeantworteten
+Thread erneut anfasst.
+
 **Was hier zusätzlich fehlt, verglichen mit der Quelle:** kein Dokumenten-OCR, keine
 Interview-Terminfindung, kein Klinik-Einreichungs-E-Mail-Fluss, keine Manager-CRM-Übernahme,
 keine proaktiven Nachfass-Nachrichten — dieselben Lücken wie beim deterministischen Zweig

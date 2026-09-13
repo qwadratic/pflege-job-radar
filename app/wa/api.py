@@ -16,6 +16,7 @@ Step 5 fails loudly: a Meta error propagates, the route answers 502 and the turn
 sent, so the redelivery Meta then makes finds no outbound row and the lead does get an answer.
 """
 import pathlib
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -274,15 +275,35 @@ def _handle_one(c, m, client=None):
     return result
 
 
+def _freeform_window_open(t):
+    """Meta's own policy, not this repo's choice (TASK-70): free-form text is only deliverable
+    within C.FREEFORM_WINDOW_HOURS of the candidate's last message. A thread that has never heard
+    from anyone yet (last_inbound_at unset) is not a "reopen" case -- treat it as open."""
+    last_inbound = t.get("last_inbound_at")
+    if not last_inbound:
+        return True
+    age_hours = (datetime.now(timezone.utc) - datetime.fromisoformat(last_inbound)).total_seconds() / 3600
+    return age_hours < C.FREEFORM_WINDOW_HOURS
+
+
 def _send(c, t, bubbles, buttons, client=None, action=None):
     """Send the turn and record it. Buttons ride on the last bubble, which is the question.
 
     With WA_AUTOSEND unset nothing is handed to Meta and the bubbles are stored as 'draft' -- the
     same rows, marked for what they are, so a new deployment can be pointed at the live webhook and
     read back what it *would* have said.
+
+    The free-form-vs-template choice (TASK-70) is made here, in code, never by the brain: whichever
+    brain ran still decides *what* to say and produces bubbles normally, but if the 24h window has
+    closed since the candidate's last message, those bubbles are not deliverable at all -- Meta
+    rejects free-form text outside the window. This swaps in the configured reopen template
+    instead of the bubbles, or fails loudly if none is configured, rather than silently trying (and
+    having Meta reject it) or silently doing nothing.
     """
     if not bubbles:
         return "nothing_to_send"
+    if not _freeform_window_open(t):
+        return _send_reopen_template(c, t, client=client, action=action)
     if not C.AUTOSEND:
         for b in bubbles:
             ST.record_outbound(c, t["phone"], None, b, kind="draft", meta={"action": action})
@@ -299,6 +320,25 @@ def _send(c, t, bubbles, buttons, client=None, action=None):
             ST.record_outbound(c, t["phone"], wamid, b, kind="text", meta={"action": action})
     t["last_outbound_at"] = ST.now_iso()
     return "sent"
+
+
+def _send_reopen_template(c, t, client=None, action=None):
+    if not C.WA_REOPEN_TEMPLATE_NAME:
+        raise RuntimeError(
+            f"the WhatsApp free-form window closed for {t['phone']} (last inbound message is over "
+            f"{C.FREEFORM_WINDOW_HOURS}h old) and no reopen template is configured -- register a "
+            f"template with Meta and set WA_REOPEN_TEMPLATE_NAME before this thread can be reached again")
+    label = f"[template:{C.WA_REOPEN_TEMPLATE_NAME}]"
+    if not C.AUTOSEND:
+        ST.record_outbound(c, t["phone"], None, label, kind="draft_template",
+                           meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
+        return "draft_template"
+    cl = client or M.Client()
+    wamid = cl.send_template(t["phone"], C.WA_REOPEN_TEMPLATE_NAME, C.WA_REOPEN_TEMPLATE_LANG)
+    ST.record_outbound(c, t["phone"], wamid, label, kind="template",
+                       meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
+    t["last_outbound_at"] = ST.now_iso()
+    return "sent_template"
 
 
 @router.get("/wa/threads")
