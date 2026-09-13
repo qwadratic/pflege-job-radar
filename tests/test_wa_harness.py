@@ -630,3 +630,53 @@ def test_send_template_with_params_fills_body_components(wa):
     cl = M.Client(transport=transport, access_token="t", phone_number_id="1")
     cl.send_template(LEAD, "candidate_reopen_v1", "de", params=["Ionel"])
     assert calls[0]["template"]["components"] == [{"type": "body", "parameters": [{"type": "text", "text": "Ionel"}]}]
+
+
+# --- template discovery: what is already approved on this WABA (docs/whatsapp.md) --------------
+
+def test_phone_number_info_fetches_the_parent_waba_id(wa):
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append({"method": method, "url": url, "headers": headers})
+        return {"whatsapp_business_account": {"id": "waba-1"}, "display_phone_number": "+49 170 0000000"}
+
+    cl = M.Client(transport=transport, access_token="tok", phone_number_id="p1")
+    out = cl.phone_number_info()
+    assert out["whatsapp_business_account"]["id"] == "waba-1"
+    assert calls[0]["method"] == "GET" and "/p1?fields=" in calls[0]["url"]
+    assert calls[0]["headers"]["Authorization"] == "Bearer tok"
+
+
+def test_list_message_templates_returns_the_flat_list(wa):
+    def transport(method, url, headers=None, data=None, timeout=None):
+        return {"data": [{"name": "candidate_reopen_v1", "status": "APPROVED", "language": "de"},
+                         {"name": "candidate_reopen_v1", "status": "APPROVED", "language": "en"}]}
+
+    cl = M.Client(transport=transport, access_token="tok", phone_number_id="p1")
+    templates = cl.list_message_templates("waba-1")
+    assert len(templates) == 2
+    assert templates[0]["name"] == "candidate_reopen_v1"
+
+
+def test_list_message_templates_follows_pagination(wa):
+    pages = [
+        {"data": [{"name": "tpl_a"}], "paging": {"next": "https://graph.facebook.com/next-page"}},
+        {"data": [{"name": "tpl_b"}]},
+    ]
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append(url)
+        return pages.pop(0)
+
+    cl = M.Client(transport=transport, access_token="tok", phone_number_id="p1")
+    templates = cl.list_message_templates("waba-1")
+    assert [t["name"] for t in templates] == ["tpl_a", "tpl_b"]
+    assert len(calls) == 2 and calls[1] == "https://graph.facebook.com/next-page"
+
+
+def test_list_message_templates_raises_without_an_access_token(wa):
+    cl = M.Client(transport=lambda **kw: {"data": []}, access_token="", phone_number_id="p1")
+    with pytest.raises(M.MetaError, match="not set"):
+        cl.list_message_templates("waba-1")

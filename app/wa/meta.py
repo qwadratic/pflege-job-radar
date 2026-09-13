@@ -176,6 +176,35 @@ class Client:
         return self._post({"messaging_product": "whatsapp", "to": re.sub(r"\D", "", to_e164),
                            "type": "template", "template": template})
 
+    def phone_number_info(self, fields=("whatsapp_business_account", "display_phone_number", "verified_name")):
+        """``GET /{phone_number_id}?fields=...`` -- the parent WhatsApp Business Account id, needed
+        to list that account's approved message templates (``list_message_templates`` takes a WABA
+        id, a different Meta identifier from ``phone_number_id``). Meta returns the account as a
+        nested ``{"id": ...}`` object under the field name ``whatsapp_business_account`` -- there is
+        no flat ``whatsapp_business_account_id`` field despite the naming pattern of others."""
+        if not self.access_token or not self.phone_number_id:
+            raise MetaError("META_WHATSAPP_ACCESS_TOKEN / META_WHATSAPP_PHONE_NUMBER_ID are not set")
+        url = f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/{self.phone_number_id}?fields={','.join(fields)}"
+        headers = {"Authorization": "Bearer " + self.access_token}
+        return self.transport(method="GET", url=url, headers=headers, data=None)
+
+    def list_message_templates(self, waba_id, limit=100):
+        """``GET /{waba_id}/message_templates`` -- every template already submitted for this
+        WhatsApp Business Account (APPROVED/PENDING/REJECTED), paginated via ``paging.next``. A
+        template approved here is approved for the account/phone number itself, not for whichever
+        integration happened to submit it -- an APPROVED name found this way is immediately usable
+        via ``send_template()``, no separate registration needed."""
+        if not self.access_token:
+            raise MetaError("META_WHATSAPP_ACCESS_TOKEN is not set")
+        headers = {"Authorization": "Bearer " + self.access_token}
+        url = f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/{waba_id}/message_templates?limit={limit}"
+        templates = []
+        while url:
+            out = self.transport(method="GET", url=url, headers=headers, data=None)
+            templates.extend(out.get("data") or [])
+            url = (out.get("paging") or {}).get("next")
+        return templates
+
     def media_url(self, media_id):
         """Step 1 of Meta's two-step media download: ``GET /{media-id}`` -> a JSON object with a
         temporary, token-gated CDN ``url`` (plus ``mime_type``/``sha256``/``file_size``/``id``).
