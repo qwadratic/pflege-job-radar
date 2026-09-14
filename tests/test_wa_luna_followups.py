@@ -39,6 +39,13 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "FOLLOWUP_TIER_MINUTES", [15, 60, 240])
     monkeypatch.setattr(C, "MAX_FOLLOWUPS_PER_STREAK", 4)
+    # Quiet hours (TASK-92) default to 21->9 Europe/Berlin -- every test in this file below is
+    # about tier/streak logic, not quiet hours, and must not flake depending on the real wall-clock
+    # time the suite happens to run at. Disabled here (start==end, see _in_quiet_hours' own
+    # docstring for why that reads as 'disabled'); the dedicated quiet-hours tests below restore
+    # real values or monkeypatch FU._in_quiet_hours directly instead.
+    monkeypatch.setattr(C, "QUIET_HOURS_START", 0)
+    monkeypatch.setattr(C, "QUIET_HOURS_END", 0)
     conn = ST.db()
     yield conn
     conn.close()
@@ -176,3 +183,111 @@ def test_run_can_be_scoped_to_specific_phones(db):
     db.close()
     results = FU.run(client=FakeMeta(), phones=["+49222"])
     assert [r["phone"] for r in results] == ["+49222"]
+
+
+# --- quiet hours (TASK-92) -----------------------------------------------------------------------
+
+def _at(hour, tz="Europe/Berlin"):
+    """A UTC-aware datetime whose local hour in `tz` is exactly `hour` -- Berlin has no DST
+    transition at these dates, a fixed mid-year UTC offset (+2) keeps this simple and exact."""
+    from zoneinfo import ZoneInfo
+    return datetime(2026, 6, 15, hour, 0, tzinfo=ZoneInfo(tz)).astimezone(timezone.utc)
+
+
+def test_in_quiet_hours_simple_window(monkeypatch):
+    monkeypatch.setattr(C, "QUIET_HOURS_START", 9)
+    monkeypatch.setattr(C, "QUIET_HOURS_END", 17)
+    assert FU._in_quiet_hours(_at(9)) is True, "the start hour itself is inside the window"
+    assert FU._in_quiet_hours(_at(12)) is True
+    assert FU._in_quiet_hours(_at(16)) is True
+    assert FU._in_quiet_hours(_at(17)) is False, "the end hour itself is outside the window"
+    assert FU._in_quiet_hours(_at(8)) is False
+
+
+def test_in_quiet_hours_wraps_past_midnight():
+    """Default-shaped window (21 -> 9): quiet in the evening, through midnight, into the morning."""
+    assert FU._in_quiet_hours(_at(21)) is True
+    assert FU._in_quiet_hours(_at(23)) is True
+    assert FU._in_quiet_hours(_at(0)) is True
+    assert FU._in_quiet_hours(_at(8)) is True
+    assert FU._in_quiet_hours(_at(9)) is False, "the end hour itself is outside the window"
+    assert FU._in_quiet_hours(_at(20)) is False, "the hour just before start is still daytime"
+    assert FU._in_quiet_hours(_at(14)) is False, "mid-afternoon is never quiet in the default window"
+
+
+def test_in_quiet_hours_zero_width_window_is_disabled(monkeypatch):
+    monkeypatch.setattr(C, "QUIET_HOURS_START", 5)
+    monkeypatch.setattr(C, "QUIET_HOURS_END", 5)
+    assert FU._in_quiet_hours(_at(5)) is False
+    assert FU._in_quiet_hours(_at(0)) is False
+    assert FU._in_quiet_hours(_at(23)) is False
+
+
+def test_run_sends_nothing_during_quiet_hours_even_with_an_eligible_thread(db, monkeypatch):
+    _seed_them(db, "+49111", last_outbound_minutes_ago=20)
+    db.close()
+    monkeypatch.setattr(FU, "_in_quiet_hours", lambda now=None: True)
+    assert FU.run(client=FakeMeta()) == []
+
+
+# --- dedup claim (TASK-93) -----------------------------------------------------------------------
+
+def test_two_overlapping_runs_do_not_double_nudge_the_same_candidate(db):
+    """Simulates two separate processes racing on the same eligible thread (a second campaign
+    trigger, or an overlapping timer tick) -- ST._lock alone would not stop this across two real
+    processes, only the durable wa_nudge_claims table does."""
+    _seed_them(db, "+49111", last_outbound_minutes_ago=20)
+    db.close()
+    meta = FakeMeta()
+    with ST.db() as c1, ST.db() as c2:
+        t1, t2 = ST.thread(c1, "+49111"), ST.thread(c2, "+49111")
+        tier1 = FU._eligible_tier(c1, "+49111", t1.get("last_outbound_at"), t1.get("last_inbound_at"))
+        tier2 = FU._eligible_tier(c2, "+49111", t2.get("last_outbound_at"), t2.get("last_inbound_at"))
+        assert tier1 == tier2 == 0, "both racing callers must independently compute the same eligible tier"
+        since = FU._EPOCH
+        first = ST.claim_nudge(c1, "+49111", f"followup:0:{since}")
+        second = ST.claim_nudge(c2, "+49111", f"followup:0:{since}")
+    assert first is True and second is False, "only one of the two racing claims may win"
+
+
+def test_a_nudge_due_during_quiet_hours_is_not_lost_the_next_tick_sends_it(db, monkeypatch):
+    """No separate deferred-send queue: the tier is still eligible next tick since eligibility is
+    computed from elapsed time, not from whether an earlier check happened to run."""
+    _seed_them(db, "+49111", last_outbound_minutes_ago=20)
+    db.close()
+    meta = FakeMeta()
+    monkeypatch.setattr(FU, "_in_quiet_hours", lambda now=None: True)
+    assert FU.run(client=meta) == [], "quiet hours: the tick is skipped entirely"
+    monkeypatch.setattr(FU, "_in_quiet_hours", lambda now=None: False)
+    results = FU.run(client=meta)
+    assert len(results) == 1 and results[0]["tier"] == 0, (
+        "the same tier must still fire on the next tick once quiet hours end")
+
+
+@pytest.mark.parametrize("slots", [
+    {"qualification_path": "urkunde", "qualification_ok": True, "anonymous_send_consent": True},
+    {"qualification_path": "reject", "qualification_ok": False},
+], ids=["consented", "not_placeable"])
+def test_a_finished_thread_is_never_nudged_even_with_a_tier_due(db, slots):
+    """TASK-94: a consented or not-placeable thread ends with OUR message (ball=them) -- found live,
+    a consented candidate got 'sind Sie noch da?' twice the next morning."""
+    t = _seed_them(db, "+49111", last_outbound_minutes_ago=300, last_inbound_minutes_ago=301)
+    t["slots"] = slots
+    ST.save_thread(db, t)
+    db.close()
+    meta = FakeMeta()
+    assert FU.run(client=meta) == []
+    assert meta.sent == []
+
+
+def test_a_thread_waiting_on_a_requested_document_is_still_nudged(db):
+    """TASK-94: only terminal stages are skipped -- a qualified candidate we asked for a document
+    who went quiet is exactly who a nudge is for."""
+    t = _seed_them(db, "+49111", last_outbound_minutes_ago=20, last_inbound_minutes_ago=21)
+    t["slots"] = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
+                  "city": "Landshut", "housing_known": True}
+    ST.save_thread(db, t)
+    db.close()
+    meta = FakeMeta()
+    assert [r["tier"] for r in FU.run(client=meta)] == [0]
+    assert len(meta.sent) == 1

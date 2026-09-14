@@ -90,3 +90,23 @@ def test_record_send_failure_is_readable_and_keeps_the_latest(db):
     ST.record_send_failure(db, "+49111", "second error")
     failure = ST.recent_send_failure(db, "+49111")
     assert failure["error"] == "second error"
+
+
+# --- nudge dedup claim (TASK-93) -------------------------------------------------------------
+
+def test_first_claim_on_a_fingerprint_succeeds(db):
+    assert ST.claim_nudge(db, "+49111", "followup:0:epoch") is True
+
+
+def test_a_second_claim_on_the_same_phone_and_fingerprint_fails(db):
+    assert ST.claim_nudge(db, "+49111", "followup:0:epoch") is True
+    assert ST.claim_nudge(db, "+49111", "followup:0:epoch") is False
+
+
+def test_different_fingerprints_or_phones_do_not_interfere(db):
+    assert ST.claim_nudge(db, "+49111", "followup:0:epoch") is True
+    assert ST.claim_nudge(db, "+49111", "followup:1:epoch") is True, "a different tier is a different claim"
+    assert ST.claim_nudge(db, "+49111", "followup:0:2026-01-01T00:00:00+00:00") is True, (
+        "a different streak anchor is a different claim -- a later legitimate streak must not be "
+        "blocked by an earlier one that used the same tier index")
+    assert ST.claim_nudge(db, "+49222", "followup:0:epoch") is True, "a different phone is a different claim"

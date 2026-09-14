@@ -21,7 +21,10 @@ def stage_for(card):
     if card.get("anonymous_send_consent"):
         return "consented"
     board = requirement_scoreboard(card)
-    if all(v == "satisfied" for k, v in board.items() if k != "handoff_consent"):
+    # next_objective (TASK-91) is a computed hint string, not a per-gate satisfied|open|blocked
+    # status -- excluded here the same way handoff_consent already is (this function's own "ready"
+    # means "everything except consent," and next_objective is never a gate at all).
+    if all(v == "satisfied" for k, v in board.items() if k not in ("handoff_consent", "next_objective")):
         return "ready"
     if card.get("cv_text") or card.get("urkunde_text"):
         return "documents_in"

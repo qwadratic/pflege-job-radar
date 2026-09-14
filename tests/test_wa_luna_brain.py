@@ -235,19 +235,35 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
     luna["slots"] = {"city": "München"}
     LB.turn("Intensivstation bitte", luna, client=fake_client(capture))
     assert seen["user"]["market_snapshot"]["open_jobs"] == 2
-    assert any(c["city"] == "München" for c in seen["user"]["market_snapshot"]["consult"])
+    assert seen["user"]["market_snapshot"]["matches"] == [], (
+        "TASK-91: no per-city preview list anymore -- a live tool call answers city-specific "
+        "questions, market_snapshot only ever gets a shortlist once fully ready to close")
     assert seen["user"]["requirement_scoreboard"]["region"] == "open"
+    assert seen["user"]["requirement_scoreboard"]["next_objective"], (
+        "TASK-91: a computed next_objective hint must always be present")
     assert seen["user"]["latest_inbound"] == "Intensivstation bitte"
     assert "thread" not in seen["user"], "history now lives in the resumed session, not the payload"
     assert "Valentina" in seen["system"]
     assert "NDT" not in seen["system"], "the vendored prompt must not carry the source's company name"
 
 
-def test_market_snapshot_matches_only_once_city_and_role_or_department_are_known():
+def test_market_snapshot_matches_only_once_fully_ready_to_close():
+    """TASK-91: market_snapshot carries no early per-city/per-department preview anymore -- only
+    the aggregate open_jobs total always, and matches/shortlist once qualification, city-or-
+    department, housing AND documents are all satisfied. A candidate with city+qualification but
+    no document read yet must still see an empty matches list -- that is the new documents gate,
+    not a regression."""
     empty = LB.market_snapshot({})
-    assert empty["matches"] == [] and empty["consult"] != []
-    narrowed = LB.market_snapshot({"city": "München", "qualification_path": "urkunde"})
-    assert narrowed["matches"] and all(m["city"] == "München" for m in narrowed["matches"])
+    assert empty["matches"] == [] and empty["shortlist"] == []
+    assert empty["open_jobs"] == 2, "the one aggregate number stays present even on an empty card"
+    narrowed_no_docs = LB.market_snapshot({"city": "München", "qualification_path": "urkunde",
+                                           "qualification_ok": True, "housing_known": True})
+    assert narrowed_no_docs["matches"] == [], (
+        "qualification/city/housing alone must not populate matches without a document too")
+    ready = LB.market_snapshot({"city": "München", "qualification_path": "urkunde",
+                                "qualification_ok": True, "housing_known": True,
+                                "urkunde_text": "Urkunde ... Gesundheits- und Krankenpflegerin"})
+    assert ready["matches"] and all(m["city"] == "München" for m in ready["matches"])
 
 
 def test_requirement_scoreboard_reflects_the_card():
@@ -255,6 +271,23 @@ def test_requirement_scoreboard_reflects_the_card():
     assert LB.requirement_scoreboard({"qualification_path": "urkunde"})["qualification"] == "satisfied"
     assert LB.requirement_scoreboard({"qualification_path": "reject"})["qualification"] == "blocked"
     assert LB.requirement_scoreboard({"region": "Bayern"})["region"] == "satisfied"
+
+
+def test_requirement_scoreboard_documents_gate_and_next_objective():
+    """TASK-91: documents is open until a real document has been read onto the card (cv_text or
+    urkunde_text), and next_objective names the single highest-priority open gate."""
+    board = LB.requirement_scoreboard({})
+    assert board["documents"] == "open"
+    assert board["next_objective"] == "clarify region (Bayern vs. another Bundesland)"
+    with_docs = LB.requirement_scoreboard({"cv_text": "Lebenslauf ..."})
+    assert with_docs["documents"] == "satisfied"
+    ready_for_docs = LB.requirement_scoreboard({"region": "Bayern", "qualification_path": "urkunde",
+                                                "city": "München", "housing_known": True})
+    assert ready_for_docs["next_objective"].startswith("ask for a photo/PDF")
+    fully_ready = LB.requirement_scoreboard({"region": "Bayern", "qualification_path": "urkunde",
+                                             "city": "München", "housing_known": True,
+                                             "urkunde_text": "Urkunde ..."})
+    assert fully_ready["next_objective"].startswith("run the close sequence")
 
 
 # --- TASK-82: market_snapshot's ready_to_close must agree with requirement_scoreboard's own
@@ -268,8 +301,11 @@ def test_requirement_scoreboard_city_or_department_is_satisfied_by_either_alone(
     assert LB.requirement_scoreboard({})["city_or_department"] == "open"
 
 
+_DOC = {"urkunde_text": "Urkunde ... Gesundheits- und Krankenpflegerin ... volle Anerkennung"}
+
+
 def test_shortlist_appears_with_only_department_known_no_city():
-    card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_known": True}
+    card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_known": True, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
         "a candidate flexible on city but with a stated department must still reach a shortlist, "
@@ -277,7 +313,7 @@ def test_shortlist_appears_with_only_department_known_no_city():
 
 
 def test_shortlist_appears_with_only_city_known_no_department():
-    card = {"qualification_ok": True, "city": "München", "housing_known": True}
+    card = {"qualification_ok": True, "city": "München", "housing_known": True, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
         "a candidate flexible on department but with a stated city (a real, answered preference, "
@@ -286,7 +322,16 @@ def test_shortlist_appears_with_only_city_known_no_department():
 
 
 def test_shortlist_is_empty_with_neither_city_nor_department():
-    card = {"qualification_ok": True, "housing_known": True}
+    card = {"qualification_ok": True, "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"] == []
+
+
+def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_satisfied():
+    """TASK-91: qualification/city/housing alone are not enough -- a document must actually have
+    been read onto the card (cv_text or urkunde_text) before the shortlist/close sequence exists,
+    matching the real reference implementation's own document-verification gate (recon notes)."""
+    card = {"qualification_ok": True, "city": "München", "housing_known": True}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"] == []
 

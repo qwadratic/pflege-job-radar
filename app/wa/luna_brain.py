@@ -46,7 +46,6 @@ from . import slots as SL
 from .luna import prompts as P
 
 MAX_BUBBLES = 2
-MATCH_LIMIT = 3
 
 # Explicit button-confirmed consent (TASK-80): the real reference system has this same rigor for
 # its own harder, named-clinic-submission gate (a tappable "Ja, ich bestätige"), never inferred
@@ -64,11 +63,14 @@ _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").rea
 _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledge.json").read_text(encoding="utf-8")),
                                  ensure_ascii=False, indent=2)
 
-# The four tools tools_server.py exposes, as the CLI names an external MCP tool
+# The three tools Luna herself may call, as the CLI names an external MCP tool
 # (mcp__<server-name>__<tool-name> -- confirmed live, this is not documented anywhere formal).
+# tools_server.py also defines get_clinic_contact (with its own tests) -- deliberately NOT in this
+# tuple (TASK-91): contact details are for the human handoff after consent (app/wa/queue.py), never
+# something the candidate-facing conversation itself should be able to surface.
 MCP_SERVER_NAME = "pflege_board"
 MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
-                       ("search_postings", "get_posting", "list_clinics", "get_clinic_contact"))
+                       ("search_postings", "get_posting", "list_clinics"))
 
 
 def _mcp_config_path():
@@ -144,16 +146,36 @@ def _city_or_department_satisfied(card):
     return bool(card.get("city") or card.get("department_pref"))
 
 
+def _documents_satisfied(card):
+    """TASK-91: has the harness actually downloaded and read a document from this candidate
+    (app/wa/api.py:_ingest_media sets cv_text or urkunde_text onto the card, TASK-67) -- a
+    conversational 'ja, ich habe die Urkunde' alone does not satisfy this. Modeled on the real
+    reference implementation's own document-ask gate (recon, TASK-91 notes): confirmed there that
+    role+qualification+city+housing are prerequisites for the document ask, and the actual
+    hand-off only fires once a document has been read, not merely claimed."""
+    return bool(card.get("cv_text") or card.get("urkunde_text"))
+
+
 def market_snapshot(card):
-    """-> {open_jobs, cities, consult, matches, matching_clinics_count, shortlist}. consult[] is a
-    handful of live examples once role/region is known enough to be worth naming; matches[] is the
-    narrower list once city or department is also known -- the two-stage shape the rules expect
-    (name examples early, name matches once the CV/preferences narrow it down). shortlist[] (up to
-    CLOSE_LIMIT distinct clinics) and matching_clinics_count only turn up once qualification,
-    EITHER city or department_pref (see _city_or_department_satisfied -- a candidate flexible on
-    department has still answered, not left it open), and housing are all settled -- the close
-    sequence (prompts.py THINK_ORDER step 7: count, then shortlist, then a criteria recap, then
-    the consent ask, each its own turn) has nothing to work from before then."""
+    """-> {open_jobs, cities, matching_clinics_count, shortlist, matches}. Deliberately thin
+    (TASK-91, after reading how the real reference implementation actually works): open_jobs is
+    the one aggregate number always present -- safe for a first-turn greeting, and the one
+    question RULES lets the model answer without a live tool call. There is no per-city/
+    per-department preview list here anymore; recon on the real system found it does not use live
+    tool calls at all (it eagerly pre-fetches everything into one payload) and that pflege-board's
+    own actual tool-calling (TASK-62 search_postings/list_clinics/get_posting) is already a step
+    beyond that, not something to downgrade to match it -- so a candidate naming any specific
+    city, department, region or clinic is answered by a real tool call (RULES: TOOLS), never by a
+    precomputed guess here that could go stale or duplicate what a tool would say more precisely.
+    shortlist[] (up to CLOSE_LIMIT distinct clinics) and matching_clinics_count still turn up here,
+    deterministically, once qualification, EITHER city or department_pref (see
+    _city_or_department_satisfied), housing, AND documents (_documents_satisfied) are all settled:
+    naming the exact clinics a candidate's anonymized profile may reach is compliance-sensitive
+    enough (never invent a clinic name) that it stays harness-computed, not left to the model's
+    recall of an earlier tool result several turns back."""
+    all_rows = B.jobs_for({})
+    cities = B.known_cities()[:8]
+
     filters = {}
     if card.get("qualification_path") not in (None, "reject"):
         filters["role"] = "pflegefachkraft"
@@ -162,23 +184,11 @@ def market_snapshot(card):
     if card.get("department_pref"):
         filters["department"] = card["department_pref"]
     rows = B.jobs_for(filters)
-    all_rows = B.jobs_for({})
-    cities = B.known_cities()[:8]
-    consult = [{"clinic": (r.get("clinic_name") or r.get("employer") or "").strip(),
-                "city": (r.get("city") or r.get("clinic_town") or "").strip(),
-                "department": r.get("department_hint")} for r in rows[:MATCH_LIMIT]]
-    matches = []
-    if card.get("city") and (card.get("department_pref") or card.get("qualification_path")):
-        for r in rows[:MATCH_LIMIT]:
-            matches.append({"clinic": (r.get("clinic_name") or r.get("employer") or "").strip(),
-                            "city": (r.get("city") or r.get("clinic_town") or "").strip(),
-                            "title": r.get("title"), "department": r.get("department_hint"),
-                            "source_url": r.get("source_url") or r.get("external_url")})
-
     clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
+
     shortlist = []
     ready_to_close = bool(card.get("qualification_ok") and _city_or_department_satisfied(card)
-                          and card.get("housing_known"))
+                          and card.get("housing_known") and _documents_satisfied(card))
     if ready_to_close:
         seen = set()
         for r in rows:
@@ -191,14 +201,32 @@ def market_snapshot(card):
             if len(shortlist) >= CLOSE_LIMIT:
                 break
 
-    return {"open_jobs": len(all_rows), "cities": cities, "consult": consult, "matches": matches,
-            "matching_clinics_count": len(clinic_names), "shortlist": shortlist}
+    return {"open_jobs": len(all_rows), "cities": cities, "matching_clinics_count": len(clinic_names),
+            "shortlist": shortlist, "matches": list(shortlist)}
+
+
+# Gate-priority order for requirement_scoreboard()'s next_objective (TASK-91): a single computed
+# hint naming the ONE gate still open, so the model does not have to infer priority purely from
+# THINK_ORDER prose -- modeled on the real reference implementation's own code-computed per-turn
+# objective (recon: a plain rule tells its model that objective is "the ONLY placement question
+# for this turn," state only, same "the model writes the wording" split pflege-board already
+# uses elsewhere). Never shown to the candidate verbatim.
+_OBJECTIVE_ORDER = (
+    ("region", "clarify region (Bayern vs. another Bundesland)"),
+    ("qualification", "clarify the qualification path (Urkunde/Defizitbescheid/Kenntnisprüfung)"),
+    ("city_or_department", "narrow down a city or department preference"),
+    ("housing", "ask how many people need housing"),
+    ("documents", "ask for a photo/PDF of the CV and/or Urkunde (or Defizitbescheid) to confirm what was said"),
+    ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
+)
 
 
 def requirement_scoreboard(card):
     """State only, never a script (RULES: 'the requirement scoreboard is state only'). One of
     satisfied | open | blocked per gate, so the model can see what is left without being told
-    what to ask next."""
+    what to ask next -- except next_objective (TASK-91), a single computed string naming the one
+    gate still open in priority order, purely a hint the model may act on or override (a candidate
+    answering something else first is still fine, per the CLOSE SEQUENCE/ONE FORWARD STEP rules)."""
 
     def _q():
         path = card.get("qualification_path")
@@ -208,13 +236,18 @@ def requirement_scoreboard(card):
             return "blocked"
         return "open"
 
-    return {
+    board = {
         "region": "satisfied" if card.get("region") else "open",
         "qualification": _q(),
         "city_or_department": "satisfied" if _city_or_department_satisfied(card) else "open",
         "housing": "satisfied" if card.get("housing_known") else "open",
+        "documents": "satisfied" if _documents_satisfied(card) else "open",
         "handoff_consent": "satisfied" if card.get("anonymous_send_consent") else "open",
     }
+    board["next_objective"] = next(
+        (label for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
+        "nothing open -- respond naturally, no open placement item left")
+    return board
 
 
 # --- the Claude call -------------------------------------------------------------------------
@@ -309,8 +342,8 @@ class Client:
     model to do but answer with them (observed without ``--tools ""``: a stray file-read attempt
     narrated as prose ahead of the JSON, breaking the parse below). ``--tools`` only ever governs
     that built-in set, though: ``--mcp-config``/``--strict-mcp-config``/``--allowedTools`` (see
-    ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the four read-only
-    board-query tools in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn,
+    ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the three read-only
+    board-query tools Luna may call in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn,
     it just still cannot read a file, run a command or fetch a URL. The user payload goes over
     stdin rather than as a positional argument, so a long, growing message never risks an
     argument-length limit and never shows up in a process listing.

@@ -15,6 +15,12 @@ ACCESS_TOKEN = os.environ.get("META_WHATSAPP_ACCESS_TOKEN", "").strip()
 APP_SECRET = os.environ.get("META_WHATSAPP_APP_SECRET", "").strip()
 VERIFY_TOKEN = os.environ.get("META_WHATSAPP_VERIFY_TOKEN", "").strip()
 PHONE_NUMBER_ID = os.environ.get("META_WHATSAPP_PHONE_NUMBER_ID", "").strip()
+# WhatsApp Business Account id -- needed to list/manage templates (Client.list_message_templates),
+# a different Meta identifier from PHONE_NUMBER_ID. Not derivable via the phone-number lookup with
+# every access token (observed live: Graph API rejects the whatsapp_business_account field as
+# "nonexisting" for a messaging-scoped token) -- the real reference bridge configures this
+# directly as its own env var (META_WHATSAPP_WABA_ID) rather than looking it up, so this does too.
+WABA_ID = os.environ.get("META_WHATSAPP_WABA_ID", "").strip()
 DEFAULT_COUNTRY_CODE = os.environ.get("META_WHATSAPP_DEFAULT_COUNTRY_CODE", "49").strip() or "49"
 HTTP_TIMEOUT_SEC = 30
 
@@ -110,6 +116,17 @@ FOLLOWUP_TIER_MINUTES = [int(x) for x in os.environ.get("WA_FOLLOWUP_TIERS_MINUT
 MAX_FOLLOWUPS_PER_STREAK = int(os.environ.get("WA_MAX_FOLLOWUPS_PER_STREAK", "4") or "4")
 FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
     "Nur zur Sicherheit nachgefragt – sind Sie noch da? Ich helfe gerne weiter, sobald Sie Zeit haben 🙂")
+
+# Quiet hours for follow-up nudges only (TASK-92): the real reference system never sends its own
+# proactive nudge during a candidate's likely sleep window -- this scaled-down version lacked that
+# entirely until now. One fixed local-time window in one timezone, not per-candidate, since this
+# board has no per-candidate timezone data (it is Bavaria-only, same reasoning as the rest of this
+# harness). Hours are 0-23; START > END means the window wraps past midnight (default 21 -> 9).
+# Deliberately NOT applied to catchup.py (TASK-78) -- a reply owed to something the candidate
+# already said is never proactive, so it is never delayed by this.
+QUIET_HOURS_START = int(os.environ.get("WA_QUIET_HOURS_START", "21") or "21")
+QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "9") or "9")
+QUIET_HOURS_TZ = os.environ.get("WA_QUIET_HOURS_TZ", "Europe/Berlin").strip() or "Europe/Berlin"
 
 
 def readiness():

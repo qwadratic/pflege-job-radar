@@ -32,9 +32,12 @@ Environment=PATH=/home/exedev/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbi
 # Same class of gap as PATH above, found live during the same rollout: the `claude` CLI needs a
 # writable per-user tmp dir and falls back to the bare OS /tmp if nothing tells it otherwise --
 # on a host where /tmp is locked down (not the usual world-writable sticky-bit /tmp), that fails
-# with EACCES on mkdir and the whole turn errors out. Point it at something this User= can
-# actually write to.
-Environment=TMPDIR=/home/exedev/.tmp
+# with EACCES on mkdir and the whole turn errors out. Deliberately placed under
+# /home/exedev/repo/... (not a sibling like /home/exedev/.tmp) so the install script's existing
+# `s#/home/exedev/repo#...#g` substitution rewrites this path too, automatically -- a literal
+# /home/exedev/.tmp would need its own separate substitution rule and silently stay wrong
+# (still literally "exedev") on a fresh install otherwise.
+Environment=TMPDIR=/home/exedev/repo/.tmp
 ExecStart=/home/exedev/repo/.venv/bin/uvicorn app.wa.asgi:app --host 127.0.0.1 --port 8502 --workers 1 --timeout-keep-alive 30
 Restart=always
 RestartSec=3

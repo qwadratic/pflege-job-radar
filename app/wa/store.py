@@ -67,6 +67,12 @@ create table if not exists wa_followups_sent (
   sent_at text not null
 );
 create index if not exists idx_wa_followups_sent_phone_at on wa_followups_sent(phone, sent_at);
+create table if not exists wa_nudge_claims (
+  phone text not null,
+  fingerprint text not null,
+  claimed_at text not null,
+  primary key (phone, fingerprint)
+);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -236,6 +242,31 @@ def followup_tiers_sent_since(c, phone, since_iso):
     rows = c.execute("select tier from wa_followups_sent where phone=? and sent_at>=? order by tier",
                      (phone, since_iso)).fetchall()
     return [r["tier"] for r in rows]
+
+
+def claim_nudge(c, phone, fingerprint):
+    """True if this exact (phone, fingerprint) has not been claimed before; False if another
+    caller already claimed it (TASK-93). A durable, cross-process dedup primitive for any
+    unprompted, system-initiated send -- today's tiered follow-up nudge (app/wa/luna/followups.py)
+    and any future template-driven campaign alike -- so two independent trigger paths (a second
+    overlapping run of the same job, or two different campaign types) deciding to message the
+    same candidate at nearly the same moment cannot both go through. ST._lock only serializes
+    within one process; this table is what makes the guarantee hold across separate processes too.
+
+    Deliberately simpler than claim_reply_turn (TASK-77): nothing here is ever reclaimable. A
+    reply-turn claim protects an inbound message that is owed a reply and must eventually get one
+    (so a crashed attempt has to be retryable); a nudge is never owed the way a reply is -- a claim
+    that never results in an actual send is simply a nudge that did not go out this round, not a
+    lost message anything needs to recover. The caller picks the fingerprint (e.g. a tier index
+    plus the current streak's anchor timestamp, so a later legitimate streak is not falsely
+    blocked by an earlier one that reused the same tier number)."""
+    try:
+        c.execute("insert into wa_nudge_claims (phone, fingerprint, claimed_at) values (?,?,?)",
+                  (phone, fingerprint, now_iso()))
+        c.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
 
 
 def candidate_phones(c):

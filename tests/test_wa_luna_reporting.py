@@ -32,9 +32,19 @@ def test_stage_documents_in_once_cv_text_present():
 
 
 def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
+    """TASK-91: 'every non-consent requirement' now includes documents -- a real document must
+    have been read (cv_text/urkunde_text), not just a verbal qualification claim."""
+    card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
+            "housing_known": True, "urkunde_text": "Urkunde ... volle Anerkennung"}
+    assert REP.stage_for(card) == "ready"
+
+
+def test_stage_qualifying_not_ready_without_a_document():
+    """The same card as above, minus a document -- TASK-91's documents gate means this must not
+    report 'ready' (it would understate that nothing has actually been verified yet)."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
             "housing_known": True}
-    assert REP.stage_for(card) == "ready"
+    assert REP.stage_for(card) == "qualifying"
 
 
 def test_stage_consented_once_consent_is_true():

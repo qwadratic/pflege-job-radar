@@ -89,6 +89,17 @@ def _run(script, thread=None):
     return out
 
 
+def _send_document(thread, **fields):
+    """Simulate app/wa/api.py:_ingest_media's effect on the card before the next turn runs
+    (TASK-91) -- tests call LB.turn() directly and never go through the webhook's own media-
+    download/classification path, so a script that needs 'a document just arrived' (the new
+    documents gate the CLOSE SEQUENCE requires) must set cv_text/urkunde_text (+ document_type/
+    certificate_level) itself, the same fields _ingest_media would have written."""
+    slots = dict(thread.get("slots") or {})
+    slots.update(fields)
+    return {"slots": slots, "asked": thread.get("asked") or []}
+
+
 def _all_bubbles(results):
     return [b for d in results for b in d["bubbles"]]
 
@@ -113,26 +124,40 @@ def test_maria_verified_urkunde_reaches_a_city_and_department_without_a_reject(b
         assert 1 <= len(d["bubbles"]) <= LB.MAX_BUBBLES
 
 
-def test_the_close_sequence_states_count_then_shortlist_then_recap_before_asking_consent(board):
-    """TASK-63: once qualification, city, department and housing are all settled, the harness
-    must not jump straight to the anonymized-send question -- it states the total distinct clinic
-    count, then the shortlist, then a one-line criteria recap, each as its own turn, and only then
-    asks for consent. The defining regression this guards: a shortlist and the consent ask must
-    never land in the same turn's bubbles."""
+def test_the_close_sequence_states_matches_before_recap_and_consent_together(board):
+    """TASK-63, tightened by TASK-90 and TASK-91: once qualification, city, department and
+    housing are all settled, the harness must not jump straight to the anonymized-send question in
+    the very same turn that first names a clinic -- it states the distinct clinic count and
+    shortlist together as one info-only turn, THEN (a later turn) restates the matched criteria and
+    asks for consent together. TASK-90 found the original four-turn spread (count, then shortlist,
+    then recap, each its own turn) read as broken on a real WhatsApp test -- three turns in a row
+    with no question at all, so the candidate had to guess they should send a filler reply to keep
+    it moving. TASK-91 additionally requires an actual document (not just a verbal 'ja, ich habe
+    die Urkunde') before the close sequence can start at all -- this script simulates that arriving
+    via _send_document (the persona scripts are pure text; a real document download/classification
+    is TASK-67's own separately-tested path). The defining regression this guards is narrower than
+    "every step its own turn": a shortlist and the consent ask must never land in the same turn as
+    the FIRST clinic mention."""
     results = _run([
         "Hallo, ich habe die Urkunde schon, ist anerkannt.",
         "Bayern, am liebsten München.",
         "Intensivstation wäre ideal.",
         "Ich wohne allein, brauche nur ein Zimmer für mich.",
-        "Ok",
-        "Alles klar",
-        "Ja",
-        "Passt für mich",
     ])
     assert results[3]["slots"].get("housing_known"), (
-        "the housing turn itself must resolve housing_known before the close sequence can start")
+        "the housing turn itself must resolve housing_known before the document ask can start")
+    assert LB.market_snapshot(results[3]["slots"])["shortlist"] == [], (
+        "no document has been read yet -- the close sequence must not be reachable")
+
+    thread = _send_document(
+        {"slots": results[-1]["slots"], "asked": results[-1]["asked"]},
+        urkunde_text="Urkunde ... Gesundheits- und Krankenpflegerin ... volle Anerkennung",
+        document_type="urkunde", certificate_level="fachkraft")
+    results += _run(["Hier ist meine Urkunde 📄", "Ok", "Alles klar", "Ja", "Passt für mich"], thread)
+
     assert results[-1]["slots"].get("anonymous_send_consent") is True, (
-        "this script answers every question positively -- it must reach recorded consent by the end")
+        "this script answers every question positively and provides a document -- it must reach "
+        "recorded consent by the end")
 
     board_clinics = {"Klinikum München", "Klinikum Augsburg", "Klinikum Würzburg",
                      "Klinikum Regensburg", "Klinikum Bayreuth"}
