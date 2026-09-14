@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-11 14:41'
-updated_date: '2026-09-11 15:08'
+updated_date: '2026-09-14 15:00'
 labels: []
 dependencies:
   - TASK-51
@@ -34,4 +34,34 @@ Surfaced 2026-09-11 doing a board-aware re-verification of TASK-51's fuzzy-match
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-11: implemented decision-4's mechanism in pflege_jobs/registry.py's R3/R4 token-overlap loop -- when multiple candidates tie and exactly one has real bed capacity (beds truthy), prefer it over beds-less near-duplicates regardless of operator match (generalizes beyond same-operator R6, since the Bamberg case actually has a THIRD candidate under a different operator -- a beds-less KJP day-clinic sharing the building name -- contaminating the same-operator tie-break). Verified locally with a 3-way-tie fixture reproducing the exact live shape; regression test added (test_mech_clinic_link.py::test_prefers_real_site_over_beds_less_duplicate). NOT yet delivered live -- Supabase (both the read proxy and the direct write host) has been timing out since ~15:00 UTC this session, unrelated to this change. Kbo.de AC #1 (title-city extraction) is also implemented and verified against ONE live sub-board (kbo-lmk.de: 15/36 matched) before the outage started; the other 3 kbo sub-boards (IAK/ISK/Heckscher) still need a delivery run once the DB is reachable again.
+
+2026-09-14: TASK-58a (this task's dependent) is now Done -- summarizing what actually got resolved
+here vs. what remains open, so this task's status reflects reality rather than staying vague.
+
+AC#2 (Bamberg duplicate): confirmed resolved live via decision-4's real-capacity tie-break, not a
+registry merge -- 46101 (911 real beds) and 46170 (0-bed Vertrags-KH twin) are legitimately distinct
+regulatory rows for the same building, not a data error. Postings 5906-5910 all confirmed at
+clinic_id=46101. Stays checked.
+
+AC#1 (kbo.de per-job city): only PARTIALLY addressed. crawl_group_portal gained a best-effort
+title_city_rx regex (crawlers/vendor_adapters.py) that extracts a city from the posting TITLE text
+when the title happens to name one ("... in Garmisch-Partenkirchen") -- this is NOT "reading each
+posting's real per-job city" as AC#1 was originally worded; kbo.de's own JSON-LD genuinely never
+carries a real per-site jobLocation (confirmed, it's always the group HQ address), so there is no
+structured field to read. Live result: 34 of 111 raw rows get a real city this way; the other 77
+still default to München HQ and correctly stay unmatched (Matcher declines to guess among 8+
+München-town candidates) rather than being force-matched. Leaving AC#1 unchecked -- the honest
+state is "best-effort mitigation shipped, full fix would need a different signal (e.g. per-posting
+page content beyond the title, or an upstream kbo.de API this crawler doesn't have access to)".
+
+AC#3: Bamberg's 5 postings confirmed re-matched (see AC#2). The original "9 kbo.de postings"
+reference (ids only ever saved to a since-lost /tmp file) was not individually re-traced; the
+current live kbo.de group state (13 open postings across 30 clinics, all via _match_content
+disambiguation, none via a forced board guess) is the best available evidence that no currently-
+open kbo.de posting is wrongly matched. Leaving unchecked since the specific original 9 ids were
+never re-verified by id.
+
+Not moving to Done: AC#1's underlying limitation (best-effort title regex, not a structural fix) is
+real and would need its own follow-up if the 77-of-111 unmatched-due-to-no-city rate is worth
+chasing further -- not attempted here, scope stayed to what TASK-58a's delivery pass covered.
 <!-- SECTION:NOTES:END -->
