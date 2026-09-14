@@ -95,7 +95,7 @@ Send a WhatsApp test message to the real number and watch:
 
 ```bash
 journalctl -u pflege-wa -f
-curl -s "http://127.0.0.1:8502/api/wa/threads?phone=<the+test+number>"   # owner session needed via browser; journalctl is faster
+curl -s "http://127.0.0.1:8502/api/wa/threads?phone=<the+test+number>"   # no session needed on 8502 (local-only)
 ```
 
 **Rollback (fast, one command, no data loss either side):** remove the `location =

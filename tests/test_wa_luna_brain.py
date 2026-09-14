@@ -5,6 +5,7 @@ fake ``reply`` callable injected into ``luna_brain.Client``, same seam as ``app/
 fake transport.
 """
 import json
+import re
 import subprocess
 import time
 import uuid
@@ -260,9 +261,7 @@ def test_market_snapshot_matches_only_once_fully_ready_to_close():
                                            "qualification_ok": True, "housing_known": True})
     assert narrowed_no_docs["matches"] == [], (
         "qualification/city/housing alone must not populate matches without a document too")
-    ready = LB.market_snapshot({"city": "München", "qualification_path": "urkunde",
-                                "qualification_ok": True, "housing_known": True,
-                                "urkunde_text": "Urkunde ... Gesundheits- und Krankenpflegerin"})
+    ready = LB.market_snapshot({"city": "München", "qualification_ok": True, "housing_known": True, **_DOC})
     assert ready["matches"] and all(m["city"] == "München" for m in ready["matches"])
 
 
@@ -274,20 +273,265 @@ def test_requirement_scoreboard_reflects_the_card():
 
 
 def test_requirement_scoreboard_documents_gate_and_next_objective():
-    """TASK-91: documents is open until a real document has been read onto the card (cv_text or
-    urkunde_text), and next_objective names the single highest-priority open gate."""
+    """TASK-91/TASK-96: documents is open until both documents have arrived (card.documents), and
+    next_objective names the single highest-priority open gate."""
     board = LB.requirement_scoreboard({})
     assert board["documents"] == "open"
-    assert board["next_objective"] == "clarify region (Bayern vs. another Bundesland)"
-    with_docs = LB.requirement_scoreboard({"cv_text": "Lebenslauf ..."})
-    assert with_docs["documents"] == "satisfied"
-    ready_for_docs = LB.requirement_scoreboard({"region": "Bayern", "qualification_path": "urkunde",
-                                                "city": "München", "housing_known": True})
-    assert ready_for_docs["next_objective"].startswith("ask for a photo/PDF")
-    fully_ready = LB.requirement_scoreboard({"region": "Bayern", "qualification_path": "urkunde",
-                                             "city": "München", "housing_known": True,
-                                             "urkunde_text": "Urkunde ..."})
+    assert board["next_objective"] == "ask as a plain yes/no whether they are looking for a job in Bayern"
+    ready_for_docs = LB.requirement_scoreboard(_ALL_BUT_DOCUMENTS)
+    assert ready_for_docs["next_objective"].startswith("ask for BOTH the CV (Lebenslauf) AND the German Urkunde")
+    fully_ready = LB.requirement_scoreboard({**_ALL_BUT_DOCUMENTS, "documents": [_CV, _URKUNDE]})
     assert fully_ready["next_objective"].startswith("run the close sequence")
+
+
+# --- TASK-96: both the CV and the qualification document for the path, or the close stays shut ---
+# (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the close.)
+
+_CV = {"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"}
+_URKUNDE = {"id": 2, "document_type": "urkunde", "certificate_level": "fachkraft"}
+_URKUNDE_UNKNOWN_LEVEL = {"id": 3, "document_type": "urkunde", "certificate_level": "unknown"}
+_URKUNDE_HELFER = {"id": 4, "document_type": "urkunde", "certificate_level": "helfer"}
+_DEFIZITBESCHEID = {"id": 5, "document_type": "defizitbescheid", "certificate_level": "unknown"}
+_AUFENTHALTSTITEL = {"id": 6, "document_type": "aufenthaltstitel", "certificate_level": "unknown"}
+_DIENSTPLAN = {"id": 7, "document_type": "dienstplan", "certificate_level": "unknown"}
+_OTHER = {"id": 8, "document_type": "other", "certificate_level": "unknown"}
+_FOREIGN_DIPLOMA = {"id": 9, "document_type": "auslaendisches_diplom", "certificate_level": "unknown"}
+_ALL_BUT_DOCUMENTS = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
+                      "city": "München", "housing_known": True}
+
+_BOTH = ("ask for BOTH the CV (Lebenslauf) AND the German Urkunde (not a home-country diploma) as photos/PDFs, "
+         "together in one ask -- ")
+_URKUNDE_MISSING = ("ask for the still-missing German Urkunde as a photo/PDF (not a home-country diploma; the CV is "
+                    "already in) -- ")
+_CV_MISSING = "ask for the still-missing CV (Lebenslauf) as a photo/PDF (the qualification document is already in) -- "
+_DEFIZIT_BOTH = ("ask for BOTH the CV (Lebenslauf) AND the Defizitbescheid (an already-issued German Fachkraft "
+                 "Urkunde counts too) as photos/PDFs, together in one ask -- ")
+_DEFIZIT_MISSING = ("ask for the still-missing Defizitbescheid as a photo/PDF (an already-issued German Fachkraft "
+                    "Urkunde counts too; the CV is already in) -- ")
+
+# (id, qualification_path, extra card keys, cv_document, qualification_document, next_objective prefix)
+_GATE_CASES = [
+    ("nothing", "urkunde", {}, "open", "open", _BOTH),
+    ("cv_only", "urkunde", {"documents": [_CV]}, "satisfied", "open", _URKUNDE_MISSING),
+    ("urkunde_only", "urkunde", {"documents": [_URKUNDE]}, "open", "satisfied", _CV_MISSING),
+    ("cv_urkunde_fachkraft", "urkunde", {"documents": [_CV, _URKUNDE]}, "satisfied", "satisfied", None),
+    ("urkunde_fachkraft_then_cv", "urkunde", {"documents": [_URKUNDE, _CV]}, "satisfied", "satisfied", None),
+    ("cv_urkunde_unknown_level", "urkunde", {"documents": [_CV, _URKUNDE_UNKNOWN_LEVEL]}, "satisfied",
+     "satisfied", None),
+    ("cv_urkunde_helfer", "urkunde", {"documents": [_CV, _URKUNDE_HELFER]}, "satisfied", "open", _URKUNDE_MISSING),
+    ("cv_defizitbescheid_defizit_path", "defizit", {"documents": [_CV, _DEFIZITBESCHEID]}, "satisfied",
+     "satisfied", None),
+    ("cv_defizitbescheid_kenntnispruefung_path", "kenntnispruefung", {"documents": [_CV, _DEFIZITBESCHEID]},
+     "satisfied", "satisfied", None),
+    ("cv_urkunde_fachkraft_defizit_path", "defizit", {"documents": [_CV, _URKUNDE]}, "satisfied", "satisfied",
+     None),
+    ("cv_urkunde_helfer_defizit_path", "defizit", {"documents": [_CV, _URKUNDE_HELFER]}, "satisfied", "open",
+     _DEFIZIT_MISSING),
+    ("defizit_path_nothing", "defizit", {}, "open", "open", _DEFIZIT_BOTH),
+    ("cv_defizitbescheid_urkunde_path", "urkunde", {"documents": [_CV, _DEFIZITBESCHEID]}, "satisfied", "open",
+     _URKUNDE_MISSING),
+    ("cv_aufenthaltstitel", "urkunde", {"documents": [_CV, _AUFENTHALTSTITEL]}, "satisfied", "open",
+     _URKUNDE_MISSING),
+    ("cv_dienstplan", "urkunde", {"documents": [_CV, _DIENSTPLAN]}, "satisfied", "open", _URKUNDE_MISSING),
+    ("cv_other", "urkunde", {"documents": [_CV, _OTHER]}, "satisfied", "open", _URKUNDE_MISSING),
+    ("aufenthaltstitel_only", "urkunde", {"documents": [_AUFENTHALTSTITEL]}, "open", "open", _BOTH),
+    # TASK-96 review: a home-country diploma is not the German Urkunde, and not a Defizitbescheid either.
+    ("cv_foreign_diploma", "urkunde", {"documents": [_CV, _FOREIGN_DIPLOMA]}, "satisfied", "open", _URKUNDE_MISSING),
+    ("cv_foreign_diploma_defizit_path", "defizit", {"documents": [_CV, _FOREIGN_DIPLOMA]}, "satisfied", "open",
+     _DEFIZIT_MISSING),
+    ("cv_foreign_diploma_kenntnispruefung_path", "kenntnispruefung", {"documents": [_CV, _FOREIGN_DIPLOMA]},
+     "satisfied", "open", _DEFIZIT_MISSING),
+    ("foreign_diploma_then_urkunde", "urkunde", {"documents": [_FOREIGN_DIPLOMA, _CV, _URKUNDE]}, "satisfied",
+     "satisfied", None),
+    ("legacy_text_keys_no_documents_list", "urkunde",
+     {"cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ... volle Anerkennung",
+      "document_type": "urkunde", "certificate_level": "fachkraft"}, "open", "open", _BOTH),
+]
+
+
+@pytest.mark.parametrize("path, extra, cv_document, qualification_document, objective",
+                         [c[1:] for c in _GATE_CASES], ids=[c[0] for c in _GATE_CASES])
+def test_documents_gate_needs_the_cv_and_the_qualification_document_for_the_path(
+        path, extra, cv_document, qualification_document, objective):
+    card = {**_ALL_BUT_DOCUMENTS, "qualification_path": path, **extra}
+    board = LB.requirement_scoreboard(card)
+    assert (board["cv_document"], board["qualification_document"]) == (cv_document, qualification_document)
+    both = cv_document == qualification_document == "satisfied"
+    assert board["documents"] == ("satisfied" if both else "open")
+    assert LB._documents_satisfied(card) is both
+    if both:
+        assert board["next_objective"].startswith("run the close sequence")
+    else:
+        assert board["next_objective"].startswith(objective), board["next_objective"]
+        assert "every turn until it arrives" in board["next_objective"]
+    assert "and/or" not in board["next_objective"]
+
+
+@pytest.mark.parametrize("path, extra, cv_document, qualification_document, objective",
+                         [c[1:] for c in _GATE_CASES], ids=[c[0] for c in _GATE_CASES])
+def test_shortlist_stays_empty_until_both_documents_are_in(path, extra, cv_document, qualification_document,
+                                                           objective):
+    snap = LB.market_snapshot({**_ALL_BUT_DOCUMENTS, "qualification_path": path, **extra})
+    assert bool(snap["shortlist"]) is (cv_document == qualification_document == "satisfied")
+    assert snap["matches"] == snap["shortlist"]
+
+
+def test_the_photo_pdf_hint_sits_on_the_document_being_asked_for():
+    """TASK-96 review: the template read 'ask for the still-missing Urkunde -- the CV is already in as a
+    photo/PDF', putting the format hint on the document that had already arrived."""
+    for card in ({**_ALL_BUT_DOCUMENTS, "documents": [_CV]}, {**_ALL_BUT_DOCUMENTS, "documents": [_URKUNDE]},
+                 {**_ALL_BUT_DOCUMENTS, "qualification_path": "defizit", "documents": [_CV]}):
+        objective = LB.requirement_scoreboard(card)["next_objective"]
+        assert "already in as a photo/PDF" not in objective, objective
+        missing = objective.split(" as a photo/PDF", 1)[0]
+        assert missing.startswith("ask for the still-missing ") and "already in" not in missing, objective
+
+
+_REJECTED = {"region": "Bayern", "qualification_path": "reject", "qualification_ok": False}
+
+
+@pytest.mark.parametrize("extra", [{}, {"region": None}, {"city": "München", "housing_known": True},
+                                   {"city": "München", "housing_known": True, "documents": [_CV]}],
+                         ids=["nothing_else", "no_region", "city_and_housing", "city_housing_and_cv"])
+def test_a_rejected_candidate_gets_the_not_placeable_objective_never_a_document_ask(extra):
+    """TASK-96 review: next_objective skipped the blocked qualification and fell through to 'ask for BOTH the
+    CV AND the qualification document ... every turn until it arrives' -- against NOT PLACEABLE."""
+    board = LB.requirement_scoreboard({**_REJECTED, **extra})
+    assert board["qualification"] == "blocked"
+    assert board["next_objective"] == LB._NOT_PLACEABLE_OBJECTIVE
+    assert "document" not in board["next_objective"].split(":", 1)[0]
+
+
+@pytest.mark.parametrize("path", [None, "unknown", "reject"])
+def test_no_document_counts_as_the_qualification_document_without_an_accepted_path(path):
+    card = {"qualification_path": path, "documents": [_CV, _URKUNDE, _DEFIZITBESCHEID]}
+    board = LB.requirement_scoreboard(card)
+    assert (board["cv_document"], board["qualification_document"], board["documents"]) == \
+        ("satisfied", "open", "open")
+
+
+def test_documents_just_received_reaches_the_model_once_and_is_never_saved_back(luna):
+    seen = []
+
+    def capture(system, user, session_id):
+        seen.append(json.loads(user))
+        return _out(), session_id
+
+    luna["slots"] = {"documents": [_CV, _AUFENTHALTSTITEL], "_documents_just_received": [_AUFENTHALTSTITEL]}
+    d = LB.turn("", luna, client=fake_client(capture))
+    assert seen[0]["documents_just_received"] == [_AUFENTHALTSTITEL]
+    assert "_documents_just_received" not in seen[0]["card"]
+    assert seen[0]["card"]["documents"] == [_CV, _AUFENTHALTSTITEL]
+    assert "_documents_just_received" not in d["slots"]
+
+    LB.turn("ok", {"slots": d["slots"], "asked": d["asked"]}, client=fake_client(capture))
+    assert seen[1]["documents_just_received"] == []
+
+
+def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_turn():
+    ask = _rule("DOCUMENT ASK (TASK-96)")
+    assert "the CV (Lebenslauf) AND the qualification document for their path" in ask
+    assert "on the urkunde path the Urkunde; on the defizit or kenntnispruefung path the Defizitbescheid" in ask
+    assert "ask for BOTH by name in one request" in ask
+    assert "Never \"und/oder\", never \"oder\" between the two" in ask
+    assert "UNTIL BOTH ARE IN: every one of your turns names the document(s) still missing" in ask
+    for case in ("one document just arrived", "the wrong type arrived", "will send it later"):
+        assert case in ask
+    assert "a Ja/Ok to your ask is a promise to send, the document is still missing" in ask
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "do not repeat the ask every turn" not in system
+    assert "CV and/or Urkunde" not in system
+    assert "Asking again for a document that has not arrived is not re-asking a fact" in _rule("LANGUAGE")
+    assert "A document still missing per requirement_scoreboard is not such a fact" in _rule("MEMORY")
+    assert "documents_just_received" in _rule("CV/URKUNDE TEXT")
+    assert "\"other\" means the file is neither a CV nor a qualification document" in _rule("DOCUMENT TYPE")
+    # TASK-96 review: a home-country diploma is classified apart from the German Urkunde and never counts.
+    assert "document_type=\"auslaendisches_diplom\" is a nursing diploma" in _rule("DOCUMENT TYPE")
+    assert "NOT the Urkunde, even when the candidate calls it that" in _rule("DOCUMENT TYPE")
+    assert "a home-country nursing diploma (auslaendisches_diplom) is not it, on any path" in ask
+    close = _rule("CLOSE SEQUENCE")
+    assert "never a document the candidate only said they have" in close
+    think7 = next(s for s in LB.P.THINK_ORDER if s.startswith("7) CONVERGE"))
+    assert "on every turn until both have arrived" in think7
+
+
+# --- TASK-97: no either/or question a bare "ja" answers (Ivan's manual test 2026-09-13: "Urkunde
+# schon, oder noch im Anerkennungsverfahren (Defizitbescheid/Kenntnisprüfung)?" got "ja" twice).
+
+def _rule(prefix):
+    return next(r for r in LB.P.RULES if r.startswith(prefix))
+
+
+def test_next_objective_for_qualification_is_a_yes_no_urkunde_ask_not_three_options():
+    label = LB.requirement_scoreboard({"region": "Bayern"})["next_objective"]
+    assert label.startswith("clarify qualification: first a plain yes/no whether the German Urkunde")
+    assert "only on no" in label
+    assert "Urkunde/Defizitbescheid/Kenntnisprüfung" not in label, "the old label invited one three-way question"
+
+
+def test_prompt_reads_a_bare_ja_as_yes_only_after_a_yes_no_question():
+    think4 = next(s for s in LB.P.THINK_ORDER if s.startswith("4) INTERPRET"))
+    assert "after YOUR yes/no question = yes" in think4
+    assert "either/or question" in think4 and "ambiguous" in think4
+    assert "the very next re-ask is a strict yes/no" in think4 and "never another compound question" in think4
+    assert "either/or ask closes nothing" in _rule("CHAT OVER CARD")
+    assert "a bare Ja/Ok to an either/or question always is" in _rule("GUESS FREELY")
+
+
+def test_prompt_forbids_either_or_questions_and_orders_the_qualification_ask():
+    yes_no = _rule("YES/NO QUESTIONS (TASK-97)")
+    assert "never ask an either/or question" in yes_no and "for any gate" in yes_no
+    assert "ONE option as a plain yes/no question" in yes_no and "only after a Nein" in yes_no
+    qual = _rule("QUALIFICATION:")
+    assert "first whether they already hold the German Urkunde" in qual
+    assert "qualification_path=urkunde; only after a Nein" in qual
+    assert "Never bundle Urkunde, Anerkennungsverfahren, Defizitbescheid and Kenntnisprüfung" in qual
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert yes_no in system and qual in system
+
+
+def test_the_frozen_system_prompt_carries_no_either_or_example_question():
+    """The constitution is injected verbatim; its old examples ('Suchen Sie eher in Bayern, oder in
+    einem anderen Bundesland?', 'Pflege-Urkunde oder einen Defizitbescheid?') and its 'confirm with
+    Ja/Ok/Passt, do NOT re-ask which of the three' line taught the model the either/or ask."""
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    either_or = re.findall(r'[^.!?"\n]*\boder\b[^.!?"\n]*\?', system)
+    assert either_or and all("X oder Y?" in q for q in either_or), (
+        f"only the rule's own 'X oder Y?' placeholder may appear: {either_or!r}")
+    assert "which of the three" not in system
+
+
+def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_options():
+    """TASK-97 review (live, 3/3 runs each): 'Gibt es eine Stadt ..., z. B. München ... oder Würzburg?',
+    '... Stadt im Blick ... oder ist Ihnen der Fachbereich wichtiger?', 'Ziehen Sie allein um, oder ...?'.
+    Sources: the city label 'narrow down a city or department preference', constitution live_market
+    'ONE question (city size, department, or a named city)' and housing_principle.ask 'allein vs Familie'."""
+    labels = dict(LB._OBJECTIVE_ORDER)
+    assert labels["region"] == "ask as a plain yes/no whether they are looking for a job in Bayern"
+    assert labels["city_or_department"].startswith("ask which city in Bayern they want to work in, as an open question")
+    assert "no yes/no frame around a list of cities" in labels["city_or_department"]
+    assert labels["housing"] == "ask how many people would live in the flat, as an open question"
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    for gone in ("allein vs Familie", "city size, department, or a named city", "Bayern vs. another Bundesland",
+                 "narrow down a city or department preference"):
+        assert gone not in system and gone not in json.dumps(LB._OBJECTIVE_ORDER), gone
+    assert "one open question: how many people would live in the flat" in LB._CONSTITUTION_TEXT
+    assert "never a yes/no frame around a list of cities" in LB._CONSTITUTION_TEXT
+    yes_no = _rule("YES/NO QUESTIONS (TASK-97)")
+    assert "A yes/no frame around options is the same mistake" in yes_no
+    assert "sets a city against a department" in yes_no and "against moving with family" in yes_no
+
+
+def test_the_constitution_media_rule_no_longer_stops_the_document_ask():
+    """TASK-96 review: media_unreadable_rule said 'this assistant cannot read attachments yet' and 'do not
+    re-ask for a document they already sent' -- the opposite of DOCUMENT ASK for an unusable file."""
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "cannot read attachments yet" not in system
+    assert "re-ask for a document they already sent" not in system
+    rule = json.loads((LB._LUNA_DIR / "constitution.json").read_text(encoding="utf-8"))["media_unreadable_rule"]
+    assert "ask for that document again" in rule["behavior"] and "DOCUMENT ASK" in rule["behavior"]
+    think6 = next(s for s in LB.P.THINK_ORDER if s.startswith("6) UNREADABLE MEDIA"))
+    assert "ask for that document again (DOCUMENT ASK)" in think6
 
 
 # --- TASK-82: market_snapshot's ready_to_close must agree with requirement_scoreboard's own
@@ -301,7 +545,7 @@ def test_requirement_scoreboard_city_or_department_is_satisfied_by_either_alone(
     assert LB.requirement_scoreboard({})["city_or_department"] == "open"
 
 
-_DOC = {"urkunde_text": "Urkunde ... Gesundheits- und Krankenpflegerin ... volle Anerkennung"}
+_DOC = {"qualification_path": "urkunde", "documents": [_CV, _URKUNDE]}   # TASK-96: both documents in
 
 
 def test_shortlist_appears_with_only_department_known_no_city():
@@ -321,6 +565,24 @@ def test_shortlist_appears_with_only_city_known_no_department():
         "e2e persona run surfaced (backlog TASK-82)")
 
 
+@pytest.mark.parametrize("department_pref", ["Intensivstation", "ITS", "Intensivpflege", "intensiv", "Intensiv/IMC"])
+def test_shortlist_reads_the_candidates_department_word_in_board_vocabulary(luna, department_pref):
+    """TASK-96 review: the live close persona test wrote 'Intensivstation wäre ideal.', the model stored
+    department_pref='Intensivstation', and the exact board filter ('Intensiv/IMC') left the shortlist empty
+    with both documents in -- consent was then asked with no clinic ever named."""
+    card = {"qualification_ok": True, "city": "München", "department_pref": department_pref,
+            "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Nord"]
+    assert snap["matching_clinics_count"] == 1
+
+
+def test_shortlist_department_word_still_filters_to_its_own_department(luna):
+    card = {"qualification_ok": True, "department_pref": "Operationssaal", "housing_known": True, **_DOC}
+    assert [s["clinic"] for s in LB.market_snapshot(card)["shortlist"]] == ["Klinikum Würzburg"]
+    assert LB.market_snapshot({**card, "city": "München"})["shortlist"] == []
+
+
 def test_shortlist_is_empty_with_neither_city_nor_department():
     card = {"qualification_ok": True, "housing_known": True, **_DOC}
     snap = LB.market_snapshot(card)
@@ -328,10 +590,11 @@ def test_shortlist_is_empty_with_neither_city_nor_department():
 
 
 def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_satisfied():
-    """TASK-91: qualification/city/housing alone are not enough -- a document must actually have
-    been read onto the card (cv_text or urkunde_text) before the shortlist/close sequence exists,
-    matching the real reference implementation's own document-verification gate (recon notes)."""
-    card = {"qualification_ok": True, "city": "München", "housing_known": True}
+    """TASK-91: qualification/city/housing alone are not enough -- documents must actually have
+    arrived (TASK-96: the CV and the qualification document, card.documents) before the
+    shortlist/close sequence exists, matching the real reference implementation's own
+    document-verification gate (recon notes)."""
+    card = {"qualification_ok": True, "qualification_path": "urkunde", "city": "München", "housing_known": True}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"] == []
 

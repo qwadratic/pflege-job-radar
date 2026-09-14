@@ -35,17 +35,24 @@ from . import shadow_run as SR
 
 def _last_inbound(conn, phone):
     row = conn.execute(
-        "select body, wamid, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
+        "select body, wamid, kind, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
         (phone,)).fetchone()
     if row is None:
         return None
-    return {"text": row["body"], "wamid": row["wamid"], "button_id": json.loads(row["meta"] or "{}").get("button_id")}
+    return {"text": row["body"], "wamid": row["wamid"], "kind": row["kind"],
+            "button_id": json.loads(row["meta"] or "{}").get("button_id")}
 
 
 def run(client=None, phones=None):
     """Attempts a real reply for every thread owed one (or just ``phones``, when given). ->
     a list of {"phone": ..., **process_owed_turn() result}. Runs against the real, configured
-    database -- there is no dry-run mode here, that is shadow_run.py's job."""
+    database -- there is no dry-run mode here, that is shadow_run.py's job.
+
+    A luna document/image turn whose file is not on the saved card yet (API.media_turn_ingested) is
+    reported as ``media_not_ingested`` and not answered: the webhook is still reading it (it answers
+    itself), or its ingest raised (the thread stays owed and shows as stuck_reply). The thread is saved
+    only when the turn ran (API.TURN_NOT_RUN), so a skipped pass never writes an old copy over the
+    webhook's."""
     results = []
     with ST._lock, ST.db() as c:
         targets = phones if phones is not None else SR.phones_owed_a_reply(c)
@@ -56,9 +63,13 @@ def run(client=None, phones=None):
             t = ST.thread(c, phone)
             if t["stopped"]:
                 continue
+            if not API.media_turn_ingested(c, t, inbound["kind"], inbound["wamid"]):
+                results.append({"phone": phone, "status": "media_not_ingested"})
+                continue
             result = API.process_owed_turn(c, t, inbound["text"], inbound["button_id"],
                                            inbound["wamid"], client=client)
-            ST.save_thread(c, t)
+            if result["status"] not in API.TURN_NOT_RUN:
+                ST.save_thread(c, t)
             results.append({"phone": phone, **result})
     return results
 

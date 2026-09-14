@@ -4,6 +4,10 @@ Why a second process at all: the board process rebuilds a multi-thousand-row sna
 crawls, and a lead waiting on WhatsApp should not queue behind that. The routes are the same module
 the board mounts, so there is one implementation and one set of tests; run one door or the other,
 whichever nginx points at -- both write data/wa.sqlite and only the one receiving webhooks writes at all.
+
+No app.auth middleware here, on purpose (Ivan, 2026-09-14): this process binds 127.0.0.1 only, nginx
+forwards just the webhook path to it, and it mounts no login route -- an owner-session gate would
+lock the operator out of GET /api/wa/threads on the harness host. Local reads stay open.
 """
 from fastapi import FastAPI
 

@@ -110,6 +110,7 @@ def test_vision_client_uses_restricted_not_tools_empty_and_grants_add_dir(monkey
 
     def fake_run(cmd, **kw):
         captured["cmd"] = cmd
+        captured["kw"] = kw
 
         class P:
             returncode = 0
@@ -130,6 +131,10 @@ def test_vision_client_uses_restricted_not_tools_empty_and_grants_add_dir(monkey
     assert "--add-dir" in cmd
     add_dir = cmd[cmd.index("--add-dir") + 1]
     assert add_dir == "/tmp/some/dir"
+    # TASK-95 review: Read/Glob/Grep also reach the cwd -- the service's cwd is the repo root, which holds
+    # data/wa_documents/ and data/wa.sqlite. The cwd is the single-file temp dir, and no transcript is kept.
+    assert captured["kw"]["cwd"] == add_dir
+    assert "--no-session-persistence" in cmd
 
 
 # --- analyse_candidate: chat history + cv_text/urkunde_text, TASK-65's winning extraction path ------

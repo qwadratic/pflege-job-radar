@@ -51,6 +51,9 @@ data/wa.sqlite*
 # Claude Code session transcripts for WA_BRAIN=luna (app/wa/luna_brain.py) -- one per WhatsApp
 # thread, holds the real conversation once live: never commit it, same reason as wa.sqlite above
 data/wa_luna_sessions/
+# Original files candidates send over WhatsApp (CV, Urkunde, photos; app/wa/api.py:_store_original,
+# TASK-95) -- real candidate PII: never commit it
+data/wa_documents/
 .venv/
 *.log
 

@@ -389,7 +389,11 @@ class LLMClient:
 # (analyse_candidate), long after a single upload needs its own type known (app/wa/api.py's media
 # intake, TASK-67).
 
-DOC_TYPES = ("urkunde", "lebenslauf", "defizitbescheid", "aufenthaltstitel", "dienstplan", "other")
+# auslaendisches_diplom (TASK-96 review 2026-09-14): a home-country nursing diploma used to come back as
+# urkunde/fachkraft (live: Ukrainian "Nurse, Junior Specialist", Philippine BSN, Indian GNM), and the
+# documents gate (app/wa/luna_brain.py:_is_qualification_document) counted it as the German Urkunde.
+DOC_TYPES = ("urkunde", "auslaendisches_diplom", "lebenslauf", "defizitbescheid", "aufenthaltstitel", "dienstplan",
+             "other")
 CERTIFICATE_LEVELS = ("fachkraft", "helfer", "unknown")
 
 _CLASSIFY_SYSTEM_PROMPT = f"""You read the transcribed text of a single document a nursing/Pflege
@@ -404,7 +408,13 @@ with exactly these keys:
 }}
 
 document_type:
-- "urkunde": a foreign nursing qualification recognition certificate/Anerkennungsurkunde.
+- "urkunde": a GERMAN nursing licence issued by a German authority -- the "Urkunde über die Erlaubnis zum
+  Führen der Berufsbezeichnung" (Pflegefachfrau/Pflegefachmann, Gesundheits- und (Kinder-)Krankenpfleger(in),
+  Altenpfleger(in)), whether the nurse trained in Germany or had a foreign qualification recognised there --
+  or a German certificate for a helper-level title (see certificate_level).
+- "auslaendisches_diplom": a nursing diploma, degree, licence or registration issued OUTSIDE Germany (a
+  home-country nursing diploma, a Bachelor of Nursing, a nursing-council registration), in any language or as a
+  translation, even when it calls itself a certificate or Urkunde. It is not a German recognition document.
 - "lebenslauf": a CV/resume.
 - "defizitbescheid": an official notice of a recognition deficiency (Defizitbescheid).
 - "aufenthaltstitel": a residence permit/visa document.
@@ -412,8 +422,8 @@ document_type:
 - "other": anything else, or if genuinely unclear.
 
 certificate_level (only meaningful when document_type is "urkunde"; "unknown" otherwise):
-- "fachkraft": a full 3-year Pflegefachkraft/Gesundheits- und Krankenpfleger(in)-level qualification
-  (GuK, Altenpflege, or an equivalent foreign nursing degree) -- the level this board needs.
+- "fachkraft": a full 3-year Pflegefachkraft-level title (Pflegefachfrau/Pflegefachmann, Gesundheits- und
+  (Kinder-)Krankenpfleger(in), Altenpfleger(in)) -- the level this board needs.
 - "helfer": a HELPER-level certificate (Pflegehelfer, Pflegefachhelfer, Pflegefachassistent -- note
   "Pflegefachhelfer" contains the word "Fach" but is still helper level, NOT Fachkraft).
 - "unknown": cannot tell from the text, or document_type is not "urkunde"."""
@@ -479,8 +489,11 @@ def analyse_llm(filename=None, blob=None, text=None, chat_history=None, limit=50
 #      path needs `--restricted` alone (drops command/code-execution/WebFetch, keeps Read/Glob/Grep).
 #   2. Even with Read available, it is confined to the CLI's cwd plus whatever `--add-dir` grants --
 #      an arbitrary absolute path outside both is refused. So the downloaded bytes are written to a
-#      throwaway, single-file temp directory and THAT directory (never a broader one) is `--add-dir`-
-#      granted, so the model can read the one file it was asked about and nothing else on this host.
+#      throwaway, single-file temp directory, and THAT directory is both the `--add-dir` grant and the
+#      subprocess cwd. The cwd matters as much as the grant (TASK-95 review 2026-09-14): with the
+#      service's cwd (the repo root) inherited, a probe Read a stored original under data/wa_documents/
+#      (data/wa.sqlite and .env sit in the same tree). `--no-session-persistence` keeps the CLI from writing a
+#      session transcript (the document's text) under ~/.claude/projects/<that temp dir>/ per call.
 # Confirmed live: a plain PNG with rendered text, and the same content re-saved as a one-page PDF
 # with no text layer (a stand-in for a scanned Urkunde) were both read back correctly this way, and a
 # blank image correctly produced the NO_TEXT_FOUND sentinel below -- so the CLI-first path is used
@@ -528,10 +541,10 @@ class VisionClient:
         prompt = f"Read the file at {file_path} and transcribe it as instructed."
         try:
             proc = subprocess.run(
-                [_VISION_CLAUDE_BIN, "-p", "--restricted", "--add-dir", add_dir,
+                [_VISION_CLAUDE_BIN, "-p", "--restricted", "--add-dir", add_dir, "--no-session-persistence",
                  "--output-format", "json", "--model", _VISION_MODEL, "--effort", _VISION_EFFORT,
                  "--system-prompt", _VISION_SYSTEM_PROMPT, prompt],
-                capture_output=True, text=True, timeout=_VISION_TIMEOUT_SEC,
+                capture_output=True, text=True, timeout=_VISION_TIMEOUT_SEC, cwd=add_dir,
             )
         except FileNotFoundError:
             raise RuntimeError(f"{_VISION_CLAUDE_BIN!r} is not on PATH -- CV vision extraction "
@@ -558,7 +571,7 @@ class VisionClient:
 def extract_text_vision(blob, suffix=".png", client=None):
     """Image bytes (or a scanned, text-layer-less PDF's bytes) -> transcribed text, via
     VisionClient. Writes ``blob`` to a throwaway, single-file temp directory (removed afterwards
-    either way) so the CLI's --add-dir grant never exposes more than this one file.
+    either way) so the CLI's --add-dir grant and cwd never expose more than this one file.
 
     Raises loudly -- never returns silently-empty text -- when the model reports no readable text
     (``NO_TEXT_FOUND``) or answers with nothing usable: a document that fails vision extraction is

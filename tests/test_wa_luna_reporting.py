@@ -31,12 +31,27 @@ def test_stage_documents_in_once_cv_text_present():
     assert REP.stage_for({"qualification_path": "urkunde", "cv_text": "..."}) == "documents_in"
 
 
+_CV = {"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"}
+_URKUNDE = {"id": 2, "document_type": "urkunde", "certificate_level": "fachkraft"}
+
+
 def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
-    """TASK-91: 'every non-consent requirement' now includes documents -- a real document must
-    have been read (cv_text/urkunde_text), not just a verbal qualification claim."""
+    """TASK-91: 'every non-consent requirement' now includes documents -- TASK-96: the CV and the
+    qualification document both received (card.documents), not just a verbal qualification claim."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
-            "housing_known": True, "urkunde_text": "Urkunde ... volle Anerkennung"}
+            "housing_known": True, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ... volle Anerkennung",
+            "documents": [_CV, _URKUNDE]}
     assert REP.stage_for(card) == "ready"
+
+
+@pytest.mark.parametrize("documents", [[_CV], [_URKUNDE], None], ids=["cv_only", "urkunde_only", "legacy_no_list"])
+def test_stage_documents_in_not_ready_until_both_documents_are_in(documents):
+    """TASK-96: one document, or a legacy card with both text keys but no documents list, is not ready."""
+    card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
+            "housing_known": True, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ..."}
+    if documents is not None:
+        card["documents"] = documents
+    assert REP.stage_for(card) == "documents_in"
 
 
 def test_stage_qualifying_not_ready_without_a_document():

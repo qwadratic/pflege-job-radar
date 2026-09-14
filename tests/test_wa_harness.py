@@ -70,6 +70,13 @@ class FakeMeta:
         self.sent_templates.append({"to": to_e164, "template": template_name, "language": language, "params": params})
         return self._next()
 
+    def media_url(self, media_id):
+        """Every inbound media original is downloaded and stored (TASK-95), whichever brain answers."""
+        return {"url": f"https://cdn.example/{media_id}", "mime_type": "application/pdf"}
+
+    def download_media(self, url):
+        return b"%PDF-1.4 fake bytes for " + url.encode()
+
 
 class FailingMeta(FakeMeta):
     def send_text(self, to_e164, body):
@@ -84,6 +91,7 @@ def wa(tmp_path, monkeypatch):
                     "taxonomy": {}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     monkeypatch.setattr(C, "APP_SECRET", APP_SECRET)
     monkeypatch.setattr(C, "VERIFY_TOKEN", VERIFY_TOKEN)
     monkeypatch.setattr(C, "PHONE_NUMBER_ID", PHONE_ID)
@@ -227,6 +235,8 @@ def test_media_is_acknowledged_not_silently_dropped(wa):
     out = WAPI.handle_payload(payload(kind="document", wamid="wamid.pdf"), client=wa)
     assert out["results"][0]["action"] == "media_ack"
     assert wa.sent[-1]["body"] == WAPI.MEDIA_REPLY
+    with ST.db() as c:
+        assert [d["wamid"] for d in ST.documents_for(c, LEAD)] == ["wamid.pdf"], "TASK-95: original kept"
 
 
 # --- the conversation ----------------------------------------------------------------------------

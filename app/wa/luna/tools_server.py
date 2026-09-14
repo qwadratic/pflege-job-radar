@@ -28,6 +28,7 @@ from mcp.server.mcpserver import MCPServer
 
 from ... import data as D
 from .. import config as C
+from .. import slots as SL
 
 # This process is a fresh subprocess the CLI spawns -- a test's monkeypatch on the *parent*
 # process's config.SQLITE_PATH/LUNA_SESSION_DIR never reaches this import. luna_brain.py's
@@ -90,7 +91,9 @@ def search_postings(city: str = "", department: str = "", role_class: str = "", 
     if city:
         filters["city"] = city
     if department:
-        filters["department_hint"] = department
+        # TASK-96 review: the model passes the candidate's word (live tool log: department="Intensivstation",
+        # 0 rows, "keine passende offene Stelle"); same alias read as luna_brain.market_snapshot.
+        filters["department_hint"] = SL.read_department(department) or department
     if role_class:
         filters["role_class"] = role_class
     if regierungsbezirk:

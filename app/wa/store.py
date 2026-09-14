@@ -73,6 +73,24 @@ create table if not exists wa_nudge_claims (
   claimed_at text not null,
   primary key (phone, fingerprint)
 );
+create table if not exists wa_documents (
+  id integer primary key,
+  phone text not null,
+  wamid text unique,
+  media_id text,
+  kind text not null,
+  mime_type text,
+  original_filename text,
+  path text not null,
+  sha256 text not null,
+  size_bytes integer not null,
+  received_at text not null,
+  text text,
+  text_key text,
+  document_type text,
+  certificate_level text
+);
+create index if not exists idx_wa_documents_phone on wa_documents(phone);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -274,3 +292,46 @@ def candidate_phones(c):
     drivers scan."""
     rows = c.execute("select phone from wa_threads where stopped=0").fetchall()
     return [r["phone"] for r in rows]
+
+
+# --- inbound media originals (TASK-95) -----------------------------------------------------------
+# One row per stored original file (app/wa/api.py:_store_original writes the file first, then this
+# row). wamid is the inbound message the file came with: record_inbound's UNIQUE wa_messages.wamid
+# already drops a redelivery before ingest, so a first delivery never finds its wamid taken here.
+
+def record_document(c, phone, wamid, media_id, kind, mime_type, original_filename, path, sha256,
+                    size_bytes):
+    """-> the new row id. Committed at once, so a later extraction failure in the same turn cannot
+    roll back the link to a file that is already on disk."""
+    cur = c.execute("""insert into wa_documents (phone, wamid, media_id, kind, mime_type, original_filename,
+                       path, sha256, size_bytes, received_at) values (?,?,?,?,?,?,?,?,?,?)""",
+                    (phone, wamid, media_id, kind, mime_type, original_filename, path, sha256, size_bytes,
+                     now_iso()))
+    c.commit()
+    return cur.lastrowid
+
+
+def set_document_text(c, doc_id, text):
+    """Extracted text, stored before classification so a failed classification still keeps it."""
+    c.execute("update wa_documents set text=? where id=?", (text, doc_id))
+    c.commit()
+
+
+def set_document_classification(c, doc_id, document_type, certificate_level, text_key):
+    """app/cv.py:classify_document() result (TASK-81) for this one file, and the card key its text
+    went to -- chosen by document_type (cv_text/urkunde_text, None for any other type, TASK-96)."""
+    c.execute("update wa_documents set document_type=?, certificate_level=?, text_key=? where id=?",
+              (document_type, certificate_level, text_key, doc_id))
+    c.commit()
+
+
+def documents_for(c, phone):
+    """Every stored original for this phone, oldest first, all columns (text included)."""
+    rows = c.execute("select * from wa_documents where phone=? order by id", (phone,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def document_for_wamid(c, wamid):
+    """The stored original that came with this inbound message, all columns, or None."""
+    row = c.execute("select * from wa_documents where wamid=?", (wamid,)).fetchone()
+    return dict(row) if row else None

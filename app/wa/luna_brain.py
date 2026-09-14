@@ -146,14 +146,34 @@ def _city_or_department_satisfied(card):
     return bool(card.get("city") or card.get("department_pref"))
 
 
+def _cv_document_received(card):
+    """TASK-96: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
+    return any(d["document_type"] == "lebenslauf" for d in card.get("documents", []))
+
+
+def _is_qualification_document(doc, path):
+    """TASK-96: urkunde path -> a non-helfer urkunde; defizit/kenntnispruefung path -> a non-helfer
+    urkunde or a defizitbescheid; any other path (none yet, unknown, reject) -> nothing counts.
+    'urkunde' is the German licence only: a home-country diploma is classified auslaendisches_diplom
+    (app/cv.py:DOC_TYPES) and never counts, on any path."""
+    if doc["document_type"] == "urkunde":
+        return path in ("urkunde", "defizit", "kenntnispruefung") and doc["certificate_level"] != "helfer"
+    if doc["document_type"] == "defizitbescheid":
+        return path in ("defizit", "kenntnispruefung")
+    return False
+
+
+def _qualification_document_received(card):
+    return any(_is_qualification_document(d, card.get("qualification_path")) for d in card.get("documents", []))
+
+
 def _documents_satisfied(card):
-    """TASK-91: has the harness actually downloaded and read a document from this candidate
-    (app/wa/api.py:_ingest_media sets cv_text or urkunde_text onto the card, TASK-67) -- a
-    conversational 'ja, ich habe die Urkunde' alone does not satisfy this. Modeled on the real
-    reference implementation's own document-ask gate (recon, TASK-91 notes): confirmed there that
-    role+qualification+city+housing are prerequisites for the document ask, and the actual
-    hand-off only fires once a document has been read, not merely claimed."""
-    return bool(card.get("cv_text") or card.get("urkunde_text"))
+    """TASK-91, tightened by TASK-96 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent
+    Lebenslauf unlocked the close): BOTH a CV and the qualification document for the candidate's path
+    have actually arrived and been classified -- a conversational 'ja, ich habe die Urkunde' never
+    counts. Reads only card["documents"]: a legacy/migrated card with cv_text/urkunde_text but no
+    documents list stays open (no fallback to the text keys), so the model asks for both again."""
+    return _cv_document_received(card) and _qualification_document_received(card)
 
 
 def market_snapshot(card):
@@ -169,7 +189,8 @@ def market_snapshot(card):
     precomputed guess here that could go stale or duplicate what a tool would say more precisely.
     shortlist[] (up to CLOSE_LIMIT distinct clinics) and matching_clinics_count still turn up here,
     deterministically, once qualification, EITHER city or department_pref (see
-    _city_or_department_satisfied), housing, AND documents (_documents_satisfied) are all settled:
+    _city_or_department_satisfied), housing, AND documents (_documents_satisfied: CV and qualification
+    document both received, TASK-96) are all settled:
     naming the exact clinics a candidate's anonymized profile may reach is compliance-sensitive
     enough (never invent a clinic name) that it stays harness-computed, not left to the model's
     recall of an earlier tool result several turns back."""
@@ -182,7 +203,11 @@ def market_snapshot(card):
     if card.get("city"):
         filters["city"] = card["city"]
     if card.get("department_pref"):
-        filters["department"] = card["department_pref"]
+        # TASK-96 review: department_pref is the candidate's word ("Intensivstation", "ITS"); the board filter
+        # is an exact match on its own vocabulary ("Intensiv/IMC"), so the live close test got an empty
+        # shortlist. Read it with the alias list app/wa/brain.py uses; a word the list does not know filters
+        # as written.
+        filters["department"] = SL.read_department(card["department_pref"]) or card["department_pref"]
     rows = B.jobs_for(filters)
     clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
 
@@ -212,13 +237,44 @@ def market_snapshot(card):
 # for this turn," state only, same "the model writes the wording" split pflege-board already
 # uses elsewhere). Never shown to the candidate verbatim.
 _OBJECTIVE_ORDER = (
-    ("region", "clarify region (Bayern vs. another Bundesland)"),
-    ("qualification", "clarify the qualification path (Urkunde/Defizitbescheid/Kenntnisprüfung)"),
-    ("city_or_department", "narrow down a city or department preference"),
-    ("housing", "ask how many people need housing"),
-    ("documents", "ask for a photo/PDF of the CV and/or Urkunde (or Defizitbescheid) to confirm what was said"),
+    # TASK-97 review: every label names an open or a plain yes/no question, never options joined by "oder"
+    # (live: "Gibt es eine Stadt ..., z. B. München ... oder Würzburg?" and "allein, oder ...?" got a bare Ja).
+    ("region", "ask as a plain yes/no whether they are looking for a job in Bayern"),
+    ("qualification", "clarify qualification: first a plain yes/no whether the German Urkunde is "   # TASK-97
+                      "already in hand; only on no, the recognition step, again one yes/no at a time"),
+    ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
+                           "they name instead settles this too) -- no yes/no frame around a list of cities"),
+    ("housing", "ask how many people would live in the flat, as an open question"),
+    ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-96
+                  "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
 )
+
+# TASK-96 review: a rejected qualification ends the checklist -- falling through to the next open gate told
+# the model to ask a not-placeable candidate for documents every turn (prompts.py NOT PLACEABLE says stop).
+_NOT_PLACEABLE_OBJECTIVE = ("not placeable -- no placement item open: no region, city, housing or document ask "
+                            "(NOT PLACEABLE)")
+
+
+def _qualification_document_name(path):
+    """(name, note) for the qualification document the candidate's path needs, as next_objective says it
+    (TASK-96)."""
+    if path == "urkunde":
+        return "the German Urkunde", "not a home-country diploma"
+    if path in ("defizit", "kenntnispruefung"):
+        return "the Defizitbescheid", "an already-issued German Fachkraft Urkunde counts too"
+    return "the qualification document", "German Urkunde; Defizitbescheid on the recognition path"
+
+
+def _missing_documents(card, cv_in, qualification_in):
+    """The {missing} part of the documents objective: both by name, or the one still missing -- the
+    photo/PDF hint on the document(s) being asked for, the already-received one last."""
+    name, note = _qualification_document_name(card.get("qualification_path"))
+    if not (cv_in or qualification_in):
+        return f"BOTH the CV (Lebenslauf) AND {name} ({note}) as photos/PDFs, together in one ask"
+    if qualification_in:
+        return "the still-missing CV (Lebenslauf) as a photo/PDF (the qualification document is already in)"
+    return f"the still-missing {name.removeprefix('the ')} as a photo/PDF ({note}; the CV is already in)"
 
 
 def requirement_scoreboard(card):
@@ -226,7 +282,11 @@ def requirement_scoreboard(card):
     satisfied | open | blocked per gate, so the model can see what is left without being told
     what to ask next -- except next_objective (TASK-91), a single computed string naming the one
     gate still open in priority order, purely a hint the model may act on or override (a candidate
-    answering something else first is still fine, per the CLOSE SEQUENCE/ONE FORWARD STEP rules)."""
+    answering something else first is still fine, per the CLOSE SEQUENCE/ONE FORWARD STEP rules).
+
+    TASK-96: cv_document and qualification_document are the two halves of documents (satisfied only
+    when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
+    next_objective the not-placeable hint, whatever else is open."""
 
     def _q():
         path = card.get("qualification_path")
@@ -236,17 +296,24 @@ def requirement_scoreboard(card):
             return "blocked"
         return "open"
 
+    cv_in, qualification_in = _cv_document_received(card), _qualification_document_received(card)
     board = {
         "region": "satisfied" if card.get("region") else "open",
         "qualification": _q(),
         "city_or_department": "satisfied" if _city_or_department_satisfied(card) else "open",
         "housing": "satisfied" if card.get("housing_known") else "open",
-        "documents": "satisfied" if _documents_satisfied(card) else "open",
+        "cv_document": "satisfied" if cv_in else "open",
+        "qualification_document": "satisfied" if qualification_in else "open",
+        "documents": "satisfied" if cv_in and qualification_in else "open",
         "handoff_consent": "satisfied" if card.get("anonymous_send_consent") else "open",
     }
-    board["next_objective"] = next(
-        (label for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
-        "nothing open -- respond naturally, no open placement item left")
+    missing = _missing_documents(card, cv_in, qualification_in)
+    if board["qualification"] == "blocked":
+        board["next_objective"] = _NOT_PLACEABLE_OBJECTIVE
+    else:
+        board["next_objective"] = next(
+            (label.format(missing=missing) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
+            "nothing open -- respond naturally, no open placement item left")
     return board
 
 
@@ -403,7 +470,7 @@ class Client:
         return _validate(out), next_session_id
 
 
-def _user_payload(text, card, scoreboard, snapshot, button_id=None):
+def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_just_received=()):
     """This turn's ground truth, not the conversation itself -- the resumed session already has
     every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
@@ -413,10 +480,15 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None):
     latest_inbound alone, since a button's own title ("Ja, gerne") reads just like free text. This
     is what lets the CLOSE SEQUENCE rule honestly distinguish "the candidate tapped Ja" (consent is
     now recorded, in code, see turn()) from "the candidate typed something that looks like yes"
-    (not consent -- the model must ask them to tap one of the two buttons instead)."""
+    (not consent -- the model must ask them to tap one of the two buttons instead).
+    documents_just_received (TASK-96) lists the files that arrived since the last reply
+    ({id, document_type, certificate_level}, empty on every other turn): a media message has an empty
+    latest_inbound, and card.documents alone does not say which entry is new -- this does, wrong
+    document types included."""
     return json.dumps({
         "latest_inbound": text,
         "is_button_reply": bool(button_id),
+        "documents_just_received": list(documents_just_received),
         "card": card,
         "requirement_scoreboard": scoreboard,
         "market_snapshot": snapshot,
@@ -443,6 +515,8 @@ def turn(text, thread, button_id=None, client=None):
     """
     card = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
+    # TASK-96: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
+    documents_just_received = card.pop("_documents_just_received", [])
 
     if SL.is_stop(text):
         return {"bubbles": [], "buttons": [], "slots": card, "asked": asked, "stopped": True,
@@ -457,7 +531,7 @@ def turn(text, thread, button_id=None, client=None):
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
-    user_text = _user_payload(text, card, scoreboard, snapshot, button_id)
+    user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received)
 
     cl = client or Client()
     out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))

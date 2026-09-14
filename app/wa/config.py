@@ -6,6 +6,7 @@ Nothing here has a default that could pass for a configured value: an unset toke
 the send path raises rather than pretend (CLAUDE.md, "No safety nets").
 """
 import os
+import pathlib
 import shutil
 
 from .. import config as A
@@ -37,6 +38,10 @@ WA_REOPEN_TEMPLATE_LANG = os.environ.get("WA_REOPEN_TEMPLATE_LANG", "de").strip(
 # The harness keeps its own SQLite file: the board's app.sqlite is rebuilt by crawl/run bookkeeping,
 # and a conversation must outlive that.
 SQLITE_PATH = A.DATA_DIR / "wa.sqlite"
+# Inbound media originals (TASK-95, app/wa/api.py:_store_original): one owner-only subdirectory
+# per phone, one file per inbound media message, each linked by a wa_documents row. Candidate PII:
+# gitignored, never commit it.
+DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A.DATA_DIR / "wa_documents")
 
 # Off by default. With WA_AUTOSEND unset the harness still parses, stores and decides -- it just does
 # not hand anything to Meta, so a webhook can be pointed at a fresh deployment without messaging anyone.

@@ -5,11 +5,16 @@ candidate from a short persona brief and improvises its own replies, while `app.
 plays Valentina exactly as in production. This is the harness's answer to "prove it is not just a
 fixed script" for the funnel as a whole, run end-to-end through to a real queue entry.
 
+The candidate agent only types. TASK-96 review: once Valentina asks for the documents with every other
+pre-close gate settled, the persona's next message is the upload of its CV and qualification document
+(PERSONA_DOCUMENTS, written onto the card like app/wa/api.py:_ingest_media) instead of an agent reply.
+
 Marked ``llm``: every turn on both sides spawns the real `claude` CLI. Run explicitly:
 ``pytest -q -m llm tests/test_wa_luna_e2e_funnel.py -s`` (the ``-s`` shows the report as it runs).
 Skipped automatically if the `claude` CLI is not on PATH.
 """
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -23,6 +28,8 @@ from app.wa import config as C
 from app.wa import luna_brain as LB
 from app.wa import queue as Q
 from app.wa.luna import contacts as CT
+from tests.luna_fixture_tools_server import use_fixture_board
+from tests.test_wa_luna_personas import _send_document
 
 pytestmark = [
     pytest.mark.llm,
@@ -138,6 +145,32 @@ PERSONAS = {
 }
 
 
+# TASK-96 review: the close needs a CV and the qualification document for the path in card.documents, and the
+# candidate agent can only type. Each persona's files as (document_type, text, certificate_level): the
+# kenntnispruefung path asks for the Defizitbescheid too (prompts.py DOCUMENT ASK).
+PERSONA_DOCUMENTS = {
+    "anna_urkunde": [("lebenslauf", "Lebenslauf Anna, Gesundheits- und Krankenpflegerin, 6 Jahre Intensivstation",
+                      "unknown"),
+                     ("urkunde", "Urkunde über die Erlaubnis zum Führen der Berufsbezeichnung Pflegefachfrau",
+                      "fachkraft")],
+    "carlos_defizit": [("lebenslauf", "Lebenslauf Carlos, Krankenpfleger, Innere Medizin", "unknown"),
+                       ("defizitbescheid", "Bescheid über die Gleichwertigkeitsprüfung: wesentliche Unterschiede",
+                        "unknown")],
+    "mai_kenntnispruefung": [("lebenslauf", "Lebenslauf Mai, Pflegefachkraft", "unknown"),
+                             ("defizitbescheid", "Bescheid über die Gleichwertigkeitsprüfung: Kenntnisprüfung",
+                              "unknown")],
+}
+_DOCUMENT_NAME_RE = re.compile(r"lebenslauf|urkunde|defizitbescheid", re.I)
+
+
+def _documents_asked(slots, valentina_bubbles):
+    """Valentina's last turn was the document ask: documents is the one gate before the close still open,
+    and her bubbles name a document."""
+    board = LB.requirement_scoreboard(slots)
+    settled = all(board[k] == "satisfied" for k in ("qualification", "city_or_department", "housing"))
+    return settled and board["documents"] == "open" and bool(_DOCUMENT_NAME_RE.search(" ".join(valentina_bubbles)))
+
+
 def _fixture_board():
     rows = []
     plan = [("München", "Oberbayern", "Intensiv/IMC", "c1", "Klinikum München"),
@@ -168,6 +201,7 @@ def board(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    use_fixture_board(monkeypatch, tmp_path)
     # Seed one known contact -- deliberately only one of the three clinics, so the report also
     # shows the honest "contact unknown" case rather than a suspiciously perfect 3/3.
     conn = CT.db()
@@ -182,6 +216,7 @@ def _run_persona(name, persona_prompt, session_root):
     valentina_bubbles = []
     valentina_buttons = []
     transcript = []
+    uploaded = False
     for turn in range(1, MAX_TURNS + 1):
         if valentina_buttons:
             # TASK-80: Valentina just offered the anonymized send and attached real Ja/Nein
@@ -189,14 +224,23 @@ def _run_persona(name, persona_prompt, session_root):
             # tap a cooperative persona (every persona here is written to consent) would make,
             # rather than asking the live candidate LLM to type something a button UI wouldn't.
             yes = next(b for b in valentina_buttons if b["id"] == LB.CONSENT_YES_ID)
-            candidate_text, button_id = yes["title"], yes["id"]
+            candidate_text, button_id, logged = yes["title"], yes["id"], yes["title"]
+        elif not uploaded and _documents_asked(thread["slots"], valentina_bubbles):
+            # TASK-96 review: the reply to the document ask is the upload -- both files land on the card the way
+            # app/wa/api.py:_ingest_media writes them, then the turn runs with empty text, as a media message does.
+            for document_type, text, certificate_level in PERSONA_DOCUMENTS[name]:
+                thread = _send_document(thread, document_type, text, certificate_level)
+            uploaded = True
+            candidate_text, button_id = "", None
+            logged = " ".join(f"[{t}]" for t, _, _ in PERSONA_DOCUMENTS[name])
         else:
-            candidate_text, button_id = agent.reply_to(valentina_bubbles), None
+            candidate_text = logged = agent.reply_to(valentina_bubbles)
+            button_id = None
         d = LB.turn(candidate_text, thread, button_id=button_id)
         thread = {"slots": d["slots"], "asked": d["asked"]}
         valentina_bubbles = d["bubbles"]
         valentina_buttons = d["buttons"]
-        transcript.append({"turn": turn, "candidate": candidate_text, "valentina": valentina_bubbles})
+        transcript.append({"turn": turn, "candidate": logged, "valentina": valentina_bubbles})
         if thread["slots"].get("anonymous_send_consent"):
             return {"name": name, "converged": True, "turns": turn, "card": thread["slots"], "transcript": transcript}
     return {"name": name, "converged": False, "turns": MAX_TURNS, "card": thread["slots"], "transcript": transcript}

@@ -123,3 +123,57 @@ def test_run_can_be_scoped_to_specific_phones(db, monkeypatch):
 def test_run_never_touches_a_phone_with_no_thread_at_all(db):
     results = CU.run(client=FakeMeta(), phones=["+49999"])
     assert results == []
+
+
+# --- TASK-96 review 2026-09-14: whoever lost the claim does not write its older thread copy back --------
+
+def test_catch_up_that_loses_the_claim_does_not_overwrite_the_webhook_save(db, monkeypatch):
+    """The webhook saves the ingest result (card.documents) before claiming. A catch-up pass that loaded the
+    thread just before that save and then lost the claim used to save its older copy over it."""
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
+    _seed_owed(db, "+49111", wamid="wamid.1")
+    db.close()
+    real_claim = ST.claim_reply_turn
+
+    def webhook_saves_and_claims_first(c, phone, turn_key):
+        with ST.db() as webhook:
+            t = ST.thread(webhook, phone)
+            t["slots"]["documents"] = [{"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"}]
+            ST.save_thread(webhook, t)
+            assert real_claim(webhook, phone, turn_key) is True
+        return real_claim(c, phone, turn_key)
+
+    monkeypatch.setattr(ST, "claim_reply_turn", webhook_saves_and_claims_first)
+    assert CU.run(client=FakeMeta()) == [{"phone": "+49111", "status": "claimed_elsewhere"}]
+    with ST.db() as c:
+        assert ST.thread(c, "+49111")["slots"]["documents"][0]["document_type"] == "lebenslauf"
+
+
+def test_a_webhook_that_loses_the_claim_does_not_overwrite_the_catch_up_save(db, monkeypatch):
+    """The review's replay, other side: catch-up claimed and answered the turn, saved last_outbound_at and the
+    session id, then the webhook's claimed_elsewhere path saved its older copy (last_outbound_at back to None)."""
+    from app.wa import api as WAPI
+    monkeypatch.setattr(C, "PHONE_NUMBER_ID", "111222333")
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: {
+        **_fake_turn_result(), "slots": {**thread["slots"], "_session_id": "catch-up-session"}})
+    db.close()
+    real_claim = ST.claim_reply_turn
+    catch_up = []
+
+    def catch_up_answers_first(c, phone, turn_key):
+        monkeypatch.setattr(ST, "claim_reply_turn", real_claim)
+        catch_up.append(CU.run(client=FakeMeta()))
+        return real_claim(c, phone, turn_key)
+
+    monkeypatch.setattr(ST, "claim_reply_turn", catch_up_answers_first)
+    body = {"object": "whatsapp_business_account", "entry": [{"id": "waba", "changes": [{"field": "messages",
+            "value": {"messaging_product": "whatsapp", "metadata": {"phone_number_id": "111222333"},
+                      "messages": [{"id": "wamid.1", "from": "49111", "type": "text", "text": {"body": "Hallo"}}]}}]}]}
+    out = WAPI.handle_payload(body, client=FakeMeta())
+    assert catch_up == [[{"phone": "+49111", "status": "sent", "action": "reply_now_conversational",
+                          "slots": {"_session_id": "catch-up-session"}, "matches": []}]]
+    assert out["results"][0]["status"] == "claimed_elsewhere"
+    with ST.db() as c:
+        t = ST.thread(c, "+49111")
+    assert t["last_outbound_at"] and t["slots"]["_session_id"] == "catch-up-session"
+    assert t["turns"] == 1 and t["last_inbound_at"], "the webhook's arrival bookkeeping was saved before the claim"

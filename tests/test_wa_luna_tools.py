@@ -58,6 +58,18 @@ def test_search_postings_filters_by_department_and_role(tmp_path, monkeypatch):
     assert len(out) == 1 and out[0]["city"] == "Coburg"
 
 
+def test_search_postings_reads_the_candidates_department_word_in_board_vocabulary(tmp_path, monkeypatch):
+    """TASK-96 review: a live persona run called search_postings(city='München', department='Intensivstation'),
+    got 0 rows from the exact board filter ('Intensiv/IMC') and told the candidate nothing was open."""
+    board(tmp_path, monkeypatch)
+    for word in ("Intensivstation", "ITS", "Intensiv/IMC"):
+        out = TS.search_postings(city="München", department=word)
+        assert [(r["posting_id"], r["department"]) for r in out] == [(1, "Intensiv/IMC")], word
+    assert TS.search_postings(city="Augsburg", department="Intensivstation") == []
+    log = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert json.loads(log[0])["args"]["department"] == "Intensivstation", "the call log keeps the model's own word"
+
+
 def test_search_postings_respects_limit_and_caps_it(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
     assert len(TS.search_postings(limit=1)) == 1
