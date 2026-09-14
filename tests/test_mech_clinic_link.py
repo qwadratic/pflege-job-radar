@@ -58,6 +58,27 @@ def test_prefers_real_site_over_beds_less_duplicate():
     assert r[0] == "46101" and r[1].endswith("_realsite")
 
 
+def test_board_name_match_rejects_disagreeing_city():
+    # TASK-59a: a crawler's own org-defaulting bug can make employer_name IDENTICAL for every
+    # posting on a shared multi-site board regardless of the real site (found live 2026-09-11:
+    # karriere.ameos.eu's crawl_wp_jobs sets every row's employer_name to whichever clinic seeded
+    # the crawl -- R0_board_name then silently matched postings for towns nowhere near Bavaria to
+    # that one seed clinic just because they shared its board pool). The employer name here is
+    # deliberately ambiguous GLOBALLY (two same-named AMEOS sites, one in Bavaria, one not) so
+    # _match_content's own R1_exact can't resolve it -- only board-pool R0_board_name can, and it
+    # must not do so when the posting's own city disagrees with every pool candidate's town.
+    ameos = [{"clinic_id": "A1", "name": "AMEOS Klinikum Neuburg", "town": "Neuburg", "operator": "AMEOS Gruppe"},
+             {"clinic_id": "A2", "name": "AMEOS Klinikum Neuburg", "town": "Halberstadt", "operator": "AMEOS Gruppe"},
+             {"clinic_id": "A3", "name": "AMEOS Klinikum Inntal", "town": "Haag in Oberbayern", "operator": "AMEOS Gruppe"}]
+    m = Matcher(ameos)
+    assert m.match("AMEOS Klinikum Neuburg", "Haldensleben", board=["A1", "A3"]) is None
+    # Same board, a city that DOES agree with the seed candidate still resolves correctly -- via
+    # _match_content's own R1_exact_town before board fallback is even reached.
+    assert m.match("AMEOS Klinikum Neuburg", "Neuburg", board=["A1", "A3"]) == ("A1", "R1_exact_town", 0.98)
+    # No known city at all (ck falsy) -- the new guard only rejects a city that actively disagrees.
+    assert m.match("AMEOS Klinikum Neuburg", None, board=["A1", "A3"]) == ("A1", "R0_board_name", 0.9)
+
+
 def test_uni_aliases():
     m = Matcher([{"clinic_id": "56290", "name": "Klinikum der Friedrich-Alexander-Universität Erlangen-Nürnberg", "town": "Erlangen", "operator": "Freistaat Bayern", "beds": 1400},
                  {"clinic_id": "16290", "name": "Klinikum der Ludwig-Maximilians-Universität München", "town": "München", "operator": "Freistaat Bayern", "beds": 2000},

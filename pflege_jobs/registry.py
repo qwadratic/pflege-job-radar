@@ -181,9 +181,18 @@ class Matcher:
         within the board stays unmatched rather than falling back to a repo-wide search."""
         if not pool: return None
         if len(pool) == 1: return pool[0]["clinic_id"], "R0_board", 0.9
-        for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en),
+        # R0_board_name/_tokens match on employer text alone, which a crawler's own org-defaulting
+        # bug can make IDENTICAL for every posting on a shared multi-site board regardless of the
+        # real site (confirmed live 2026-09-11: karriere.ameos.eu's crawl_wp_jobs sets every row's
+        # employer_name to whichever clinic seeded the crawl, so R0_board_name silently matched
+        # postings for Haldensleben/Oberhausen/Hameln -- nowhere near Bavaria -- to AMEOS Klinikum
+        # Neuburg just because they shared that board pool). When the posting's own city IS known,
+        # require it to agree with the candidate's town before trusting name/token overlap; an
+        # unknown city (ck falsy) still falls through unchanged, same as before.
+        same_town_only = lambda x: not ck or city_key(x.get("town")) == ck
+        for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en and same_town_only(x)),
                                  ("R0_board_town", 0.85, lambda x: city_key(x.get("town")) == ck and ck),
-                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6)):
+                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x))):
             hit = [x for x in pool if sel(x)]
             if len(hit) == 1: return hit[0]["clinic_id"], rule, score
         return None
