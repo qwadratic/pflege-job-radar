@@ -1,0 +1,12 @@
+{
+  "id": "ota_ata_op_anaesthesia",
+  "description": "synthetic: OTA/ATA (3-year examined, Fachkraft-equivalent despite 'Assistentin' in the name), OP + anaesthesia experience, Regensburg -- clean case for the ota_ata role/skill vocabulary",
+  "cv_text": "Lebenslauf\nOTA (Operationstechnische Assistentin), 4 Jahre im OP-Bereich\nZusätzlich 1 Jahr Erfahrung als ATA in der Anästhesie / Aufwachraum, Regensburg\nSprachen: Deutsch C1\n",
+  "expected": {
+    "roles_any": ["ota_ata"],
+    "departments_any": ["OP", "Anästhesie"],
+    "languages_all": ["Deutsch C1"],
+    "cities_any": ["Regensburg"],
+    "min_matches": 1
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "kenntnispruefung_passed_urkunde_pending",
+  "description": "messy: English-language CV with German recognition-path vocabulary, foreign-trained nurse, Kenntnisprüfung passed, Urkunde pending, 'general medicine ward' phrased in English (the department regex is German-oriented) -- LLM won this one, see evals/cv/README.md",
+  "cv_text": "Resume\nTrained as a nurse abroad, Kenntnisprüfung bestanden, Urkunde noch ausstehend\n4 years of experience on a general medicine ward, currently based in Landshut\nGerman B2, English C1\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft"],
+    "qualifications_all": ["Anerkennung"],
+    "departments_any": ["Innere Medizin"],
+    "experience_years": 4,
+    "languages_all": ["Deutsch B2", "Englisch C1"],
+    "cities_any": ["Landshut"],
+    "min_matches": 1
+  }
+}

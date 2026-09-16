@@ -191,13 +191,14 @@ def test_ui_routes(client):
 # --- error shape: RFC 9457 problem details (docs/errors.md) ----------------------------------
 
 
-def test_problem_json_404(client):
+def test_problem_json_404(client, monkeypatch):
     r = client.get("/api/clinics/99999")
     assert r.status_code == 404 and r.headers["content-type"].startswith("application/problem+json")
     b = r.json()
     assert b["type"] == "/docs/errors.md#unknown-clinic" and b["title"] == "Unknown clinic"
     assert b["status"] == 404 and b["detail"] == "unknown clinic" and b["instance"] == "/api/clinics/99999"
     assert b["error"] == b["detail"]        # legacy key; web/index.template.html:237 and pro:397 read it
+    monkeypatch.setattr(D, "job_detail", lambda pid: None)   # job_detail() hits Supabase directly (no snapshot); stub it, this file is no-network
     assert client.get("/api/jobs/424242").json()["type"] == "/docs/errors.md#unknown-posting"
 
 

@@ -1,0 +1,13 @@
+{
+  "id": "messy_mixed_language_date_range_experience",
+  "description": "messy/trap: mixed German/English, an abbreviation (ITS = Intensivstation) instead of the full word, and experience given as a date range (03/2018-09/2023, ~5.5y) rather than 'X Jahre' -- plus a birth year ('geboren 1990') as a distractor. The deterministic path's date-range fallback (max year minus min year, when no explicit 'X Jahre' phrase is found) has no way to tell a birth year from a career-start year, so it grabs the birth year too and computes 2023-1990=33 (capped at 30) instead of ~5. LLM won this one decisively, see evals/cv/README.md",
+  "cv_text": "CV / Lebenslauf\ngeboren 1990\nNurse (examinierte Pflegefachkraft), worked 03/2018 - 09/2023 on the ITS (Intensivstation) in Würzburg\nalso some Notaufnahme / ER shifts covered during weekends\nlanguages: German C1, Eng B2\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft"],
+    "departments_any": ["Intensiv/IMC", "Notaufnahme"],
+    "languages_all": ["Deutsch C1", "Englisch B2"],
+    "cities_any": ["Würzburg"],
+    "experience_years": 5,
+    "min_matches": 1
+  }
+}

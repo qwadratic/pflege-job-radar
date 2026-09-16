@@ -1,0 +1,121 @@
+{
+  "id": "pflege_qualification_knowledge_v1",
+  "version": 1,
+  "owner_note": "Base competence about German nursing qualifications and the foreign-recognition (Anerkennung) path. Compact facts so the model understands what a candidate means and asks the right clarifying question. Refresh/extend from official sources (BA, anerkennung-in-deutschland.de, Bundesland Anerkennungsstellen) when web access is available.",
+  "how_to_use": "Injected as reference competence. Use it to (a) classify placeability, (b) understand half-tones and near-identical terms, (c) ask ONE precise clarifying question instead of guessing or hard-closing. Never lecture the candidate with these definitions; use them to reason.",
+  "qualification_levels": {
+    "pflegefachkraft": {
+      "aliases": ["Pflegefachfrau", "Pflegefachmann", "Pflegefachperson", "examinierte Pflegekraft", "generalistische Pflege"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "Since 2020 the generalist 3-year examined nurse. Placeable for clinic roles."
+    },
+    "gesundheits_und_krankenpfleger": {
+      "aliases": ["GKP", "GuK", "Gesundheits- und Krankenpflegerin", "Krankenschwester", "Krankenpfleger"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "Older 3-year hospital nurse title; equivalent to Pflegefachkraft. Placeable."
+    },
+    "altenpfleger": {
+      "aliases": ["Altenpflegerin", "Altenpflege examiniert"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "Older 3-year elderly-care nurse; Fachkraft. Placeable."
+    },
+    "kinderkrankenpfleger": {
+      "aliases": ["GKKP", "Gesundheits- und Kinderkrankenpfleger", "Kinderkrankenschwester"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "3-year pediatric nurse; Fachkraft. Placeable."
+    },
+    "ota": {
+      "aliases": ["Operationstechnische Assistentin", "Operationstechnischer Assistent", "OP-Assistenz OTA"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "TRAP: name contains 'Assistent' but OTA is a 3-year examined professional. Placeable (OR/surgery)."
+    },
+    "ata": {
+      "aliases": ["Anästhesietechnische Assistentin", "Anästhesietechnischer Assistent"],
+      "training_years": 3,
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "TRAP: 'Assistent' in name but 3-year examined professional. Placeable (anesthesia)."
+    },
+    "op_pflege": {
+      "aliases": ["OP-Pflege", "OP-Schwester", "Fachkrankenpflege OP"],
+      "level": "fachkraft",
+      "placeable": true,
+      "note": "Surgical nursing specialty on a Fachkraft. Placeable."
+    },
+    "pflegefachhelfer": {
+      "aliases": ["Pflegefachhelferin", "Pflegefachassistent", "Pflegefachassistenz", "Krankenpflegehelfer", "Altenpflegehelfer", "Kranken­pflegehilfe"],
+      "training_years": 1,
+      "level": "helfer",
+      "placeable": false,
+      "note": "TRAP: sounds almost like Pflegefachkraft but is a 1-year (sometimes 1–2 year) HELPER qualification. NOT placeable for Fachkraft roles. Distinct from Pflegefachkraft."
+    },
+    "pflegehelfer": {
+      "aliases": ["Pflegehelferin", "Pflegeassistent", "Pflegeassistentin", "Betreuungskraft", "Alltagsbegleiter", "Alltagshelfer"],
+      "training_years": 0,
+      "level": "helfer",
+      "placeable": false,
+      "note": "Short course or untrained assistant. NOT placeable."
+    },
+    "arzt": {
+      "aliases": ["Ärztin", "Arzt", "Doctor", "Mediziner", "MFA (medizinische Fachangestellte)"],
+      "level": "other",
+      "placeable": false,
+      "note": "Doctors and MFA are out of scope — UNLESS the person explicitly wants to work as a Pflegekraft AND is on the Anerkennungspfad (has/seeks Defizitbescheid). Then clarify Defizit, do not hard-close."
+    }
+  },
+  "recognition_path": {
+    "summary": "Nurses trained abroad need Anerkennung (recognition) that their qualification equals a German Pflegefachkraft. The Anerkennungsstelle of the Bundesland decides.",
+    "terms": {
+      "anerkennung": "Official recognition of a foreign nursing qualification as equal to German Pflegefachkraft. When fully granted → Urkunde.",
+      "gleichwertigkeitspruefung": "The authority compares the foreign training to the German standard.",
+      "defizitbescheid": "Official notice listing the 'wesentliche Unterschiede' (gaps) between the foreign qualification and the German Fachkraft standard, and what is still required. Holding a RECEIVED Defizitbescheid = on the recognition path and PLACEABLE. Waiting for one (process started, Bescheid not yet issued) = NOT placeable yet — warm close + ~1 month checkback, NOT a terminal close.",
+      "anpassungslehrgang": "Adaptation course (practical + theory) at a clinic to close the deficit; ends with an assessment/Gespräch. One way to full recognition.",
+      "kenntnispruefung": "Knowledge exam (theory + practical) covering the German standard. Passing → full recognition and Urkunde. The other way to close the deficit.",
+      "kenntnispruefung_bestanden": "Passed → waiting for the Urkunde. PLACEABLE (Urkunde pending is fine; do NOT demand the Urkunde file yet).",
+      "kenntnispruefung_durchgefallen": "Failed (especially the practical, especially twice) → usually NOT (yet) placeable; clarify whether a retry is possible before closing.",
+      "urkunde": "Final certificate granting the right to use the protected title (Pflegefachfrau/-mann / GKP). Full recognition. PLACEABLE.",
+      "berufserlaubnis": "Temporary permission to work as a nurse while completing recognition; sometimes issued with the Defizitbescheid. PLACEABLE.",
+      "sprachzertifikat_b2": "Language requirement (usually B2, sometimes plus Fachsprachprüfung) for recognition/registration. Helpful but not a qualification by itself."
+    }
+  },
+  "placeability_rules": {
+    "accept": [
+      "Urkunde / full Anerkennung present",
+      "Kenntnisprüfung passed, Urkunde pending",
+      "Defizitbescheid RECEIVED / in hand (Anerkennungspfad) — card slot defizitbescheid_received=true",
+      "Anpassungslehrgang in progress (with Bescheid received)",
+      "3-year examined GKP / Altenpfleger / Kinderkrankenpfleger / Pflegefachkraft / OTA / ATA / OP-Pflege"
+    ],
+    "reject": [
+      "Pflegehelfer / Pflegefachhelfer / Pflegeassistent (helper level)",
+      "Arzt/Ärztin/MFA with no Pflegekraft intent",
+      "Plain Ausbildungsplatz / FSJ / BFD search without Prüfung or Defizit",
+      "Kenntnisprüfung failed (esp. twice/practical) with no remaining path"
+    ],
+    "warm_close_checkback_not_terminal": [
+      "Defizit path but Bescheid not yet received (defizitbescheid_received=false) → warm close once + ~1 month checkback; NOT a terminal close; no clinics / Lebenslauf / housing questions"
+    ],
+    "clarify_do_not_close": [
+      "Says 'im Anerkennungsprozess' but Defizit received status unknown → ask exactly once: Haben Sie den Defizitbescheid schon erhalten?",
+      "Says 'Prüfung bestanden' but unclear which → confirm it is the Kenntnisprüfung and whether the Urkunde is pending",
+      "Doctor who wants to work as Pflegekraft → ask about the Defizitbescheid",
+      "Defizit 'noch nicht' / Bescheid not received → warm close + checkback (not hard reject); only ask filing timing if Bescheid is already received and the FILE is still pending"
+    ]
+  },
+  "common_confusions": [
+    "Pflegefachhelfer / Pflegefachassistent (1-year HELPER) is NOT Pflegefachkraft (3-year). This is the most common trap.",
+    "OTA / ATA are called 'Assistent' but ARE 3-year Fachkraft-level and placeable.",
+    "'Prüfung bestanden' from a candidate abroad usually means the Kenntnisprüfung (recognition exam), not a German Ausbildung final exam.",
+    "'Anerkennung läuft' does not mean rejected — it means on the path; find out the Defizitbescheid status."
+  ]
+}

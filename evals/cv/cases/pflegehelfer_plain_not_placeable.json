@@ -1,0 +1,11 @@
+{
+  "id": "pflegehelfer_plain_not_placeable",
+  "description": "synthetic: plain Pflegehelfer (short course, no exam) -- the reject persona per qualification_knowledge.json's placeability_rules, clean baseline case for the helper vocabulary",
+  "cv_text": "Lebenslauf\nPflegehelfer, kurzer Vorbereitungskurs, kein Examen\n2 Jahre Erfahrung im Seniorenheim, Unterstützung bei der Grundpflege\nDeutsch Muttersprache\n",
+  "expected": {
+    "roles_any": ["pflegehelfer"],
+    "qualifications_all": ["Pflegehelfer"],
+    "experience_years": 2,
+    "min_matches": 0
+  }
+}

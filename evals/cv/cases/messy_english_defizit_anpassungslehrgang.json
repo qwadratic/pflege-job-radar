@@ -1,0 +1,13 @@
+{
+  "id": "messy_english_defizit_anpassungslehrgang",
+  "description": "messy: mostly-English CV describing a foreign nurse mid-recognition (Defizitbescheid received, Anpassungslehrgang in progress) working an interim helper job -- genuinely ambiguous whether 'roles' should be the target qualification (pflegefachkraft) or the current interim job (pflegehelfer); both extractors picked a defensible answer here, so this case checks the unambiguous fields only (recognition status, experience, city)",
+  "cv_text": "CV\nCurrently in the German nursing recognition process (Anerkennungsverfahren) for Pflegefachkraft.\nReceived the Defizitbescheid last month, now doing the Anpassungslehrgang at a hospital in Regensburg.\nWorking temporarily as a care assistant (Pflegehelfer) in a nursing home while completing it.\n3 years of nursing experience back home before moving to Germany.\nDeutsch B1, English native\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft", "pflegehelfer"],
+    "qualifications_all": ["Anerkennung"],
+    "languages_all": ["Deutsch B1"],
+    "experience_years": 3,
+    "cities_any": ["Regensburg"],
+    "min_matches": 0
+  }
+}

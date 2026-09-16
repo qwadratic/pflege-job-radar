@@ -1,0 +1,13 @@
+{
+  "id": "leitung_praxisanleitung_generalist",
+  "description": "synthetic: senior GuK nurse, ward leadership (Stationsleitung) plus a clinical-instructor role (Praxisanleitung), Bayreuth -- clean case for the leitung/praxisanleitung roles",
+  "cv_text": "Lebenslauf\nGesundheits- und Krankenpflegerin, 12 Jahre Berufserfahrung Innere Medizin und Chirurgie\nSeit 2021 Stationsleitung Chirurgie, Bayreuth\nZusätzlich Praxisanleiterin für neue Teammitglieder auf der Station\nDeutsch Muttersprache\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft", "leitung", "praxisanleitung"],
+    "qualifications_all": ["GuK"],
+    "departments_any": ["Chirurgie/Orthopädie"],
+    "experience_years": 12,
+    "cities_any": ["Bayreuth"],
+    "min_matches": 1
+  }
+}

@@ -250,7 +250,12 @@ DENIED = [("POST", "/api/crawl"), ("POST", "/api/schedules"), ("PUT", "/api/sche
           ("GET", "/api/schedules"), ("GET", "/api/schedules/presets"), ("POST", "/api/ingest"),
           # left the OPEN list on 2026-09-10: app/main.py:221 calls data.refresh() -> _build(), a full
           # Supabase re-pull with the service key, and it was anonymous.
-          ("POST", "/api/refresh-cache")]
+          ("POST", "/api/refresh-cache"),
+          # TASK-66: same PII class as GET /api/wa/threads -- a phone number plus what is known
+          # about the candidate and which clinics it matched.
+          ("GET", "/api/wa/queue"), ("GET", "/api/wa/queue/mailing-list"),
+          # TASK-75: a phone number again -- which system currently owns that conversation.
+          ("GET", "/api/wa/ownership")]
 OPEN = [("GET", "/api/me"), ("GET", "/api/stats"), ("GET", "/api/clinics"), ("GET", "/api/jobs"), ("GET", "/api/search?q=x"),
         ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"), ("GET", "/login"),
         ("GET", "/api/ingest/schemas"), ("GET", "/api/agent/manifest"), ("POST", "/api/auth/magic")]
@@ -269,7 +274,9 @@ def test_owner_only_denied_for_anonymous_and_customer(client, method, path):
 
 
 @pytest.mark.parametrize("method,path", DENIED)
-def test_owner_only_passes_after_login(client, method, path):
+def test_owner_only_passes_after_login(client, monkeypatch, method, path):
+    if path == "/api/inbox":
+        monkeypatch.setattr(D, "inbox_summary", lambda recent=25: {})   # inbox_summary() hits Supabase directly; this test only checks past-auth, not the payload
     _login(client)
     r = client.request(method, path, json={"user": "ivan", "pass": "new-pass"})
     assert r.status_code != 401, (path, r.text)
@@ -361,6 +368,7 @@ PUBLIC_ROUTES = [
     ("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("POST", "/api/auth/magic"),
     ("GET", "/api/auth/magic/{token}"), ("POST", "/api/auth/agent"),
     ("POST", "/api/firecrawl/webhook"),                                   # authenticates with its own shared secret
+    ("GET", "/api/wa/health"),                                            # readiness booleans, no secret
     ("GET", "/api/stripe/status"), ("POST", "/api/stripe/checkout"),      # a visitor who is not a customer yet pays here
     ("POST", "/api/stripe/webhook"),                                      # authenticates with Stripe's signature
 ]

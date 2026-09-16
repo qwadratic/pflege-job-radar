@@ -1,0 +1,92 @@
+---
+id: TASK-96
+title: >-
+  Require both CV and qualification document before the close; re-ask the
+  missing one until it arrives
+status: Done
+assignee: []
+created_date: '2026-09-14 09:44'
+updated_date: '2026-09-14 13:28'
+labels: []
+dependencies:
+  - TASK-95
+type: feature
+ordinal: 96000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Found in Ivan manual test 2026-09-13 (the manual test number): candidate claimed the Urkunde, sent only a Lebenslauf, and app/wa/luna_brain.py:_documents_satisfied (any cv_text/urkunde_text) unlocked the close sequence; the recap then asserted "Sie haben Ihre Pflege-Urkunde" from the verbal claim alone. Ivan decided 2026-09-14: BOTH the CV and the Urkunde are required and both are asked for; whichever is still missing is asked for again until it is sent. The document ask currently says "CV and/or Urkunde", which invites sending one. Text keys are also chosen by extraction method (image => urkunde_text) instead of by what the document is, and a second upload overwrites the first.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 the documents gate is satisfied only when a CV (document_type lebenslauf) AND a qualification document for the candidate path have both been received and classified; qualification document = urkunde (not certificate_level helfer) on the urkunde path, urkunde or defizitbescheid on the defizit and kenntnispruefung paths; any other combination (CV only, Urkunde only, helfer certificate, aufenthaltstitel/dienstplan/other) keeps it open
+- [x] #2 requirement_scoreboard / next_objective name the specific missing document(s), and the close sequence and shortlist never start while either is missing
+- [x] #3 the first document ask requests both documents; every later Luna turn while one is still missing asks for that specific missing document again (no "and/or" wording, no stop-asking clause), including after the candidate sends the wrong document type
+- [x] #4 cv_text is set from a document classified as lebenslauf and urkunde_text from urkunde/defizitbescheid, independent of image vs PDF; receiving the second document does not erase the first
+- [x] #5 offline tests cover every gate combination above and the ingest key assignment; an llm-marked persona test (real claude CLI) shows CV-only => Urkunde re-asked => Urkunde sent => close; docs/whatsapp.md updated
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. app/wa/api.py: _extract_media_text returns text only (method still by file type); _ingest_media picks the card key from classify_document(): lebenslauf->cv_text, urkunde/defizitbescheid->urkunde_text, anything else -> no text key touched. Top-level document_type/certificate_level stay = latest file. Append card['documents'] += {id, document_type, certificate_level} (no text/path). Set transient card['_document_just_received'] (same summary) so the model can tell a file arrived this turn even when it is the wrong type. wa_documents.text_key moves to the classification update (store.set_document_text(c,id,text) / set_document_classification(c,id,type,level,text_key)).
+2. app/wa/luna_brain.py: replace _documents_satisfied with a check over card['documents'] per path (urkunde: urkunde not helfer; defizit/kenntnispruefung: urkunde not helfer or defizitbescheid; other path: open). No fallback to cv_text/urkunde_text (legacy cards stay open). requirement_scoreboard adds cv_document / qualification_document (satisfied|open), keeps documents (= both), next_objective names the missing document(s). market_snapshot uses the same predicate. turn() pops _document_just_received into a payload field document_just_received.
+3. app/wa/luna/prompts.py: rewrite DOCUMENT ASK (both named in the first ask, no und/oder; every turn re-asks the missing one incl. wrong type / 'schicke ich spaeter' / bare ja; no stop-asking clause); resolve CV/URKUNDE TEXT, DOCUMENT TYPE, CLOSE SEQUENCE (recap = documents actually received), LANGUAGE/MEMORY (re-asking a missing document is not re-asking an answered fact), THINK_ORDER 7.
+4. Tests: offline gate matrix, next_objective per case, shortlist empty until satisfied, ingest key by classification, documents list grows, second upload keeps first; update old any-document tests (brain, media intake, reporting, personas close test). New llm persona test CV-only -> Urkunde re-asked -> 'schicke ich spaeter' -> Urkunde -> close; run live >= 2x.
+5. docs/whatsapp.md: documents gate + ingest key rule. Full offline suite.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented (not finalized):
+- app/wa/api.py: _extract_media_text returns text only (method still by file type). _CARD_TEXT_KEY maps classify_document() document_type -> card key (lebenslauf->cv_text, urkunde/defizitbescheid->urkunde_text, others none). _ingest_media appends {id, document_type, certificate_level} to card.documents and to transient card._documents_just_received; top-level document_type/certificate_level stay = latest file.
+- app/wa/store.py: set_document_text(c,id,text); set_document_classification(c,id,type,level,text_key) -- text_key is only known after classification now; a failed classification leaves text_key null.
+- app/wa/luna_brain.py: _documents_satisfied = _cv_document_received and _qualification_document_received over card.documents only (legacy cards with text keys but no list stay open). requirement_scoreboard adds cv_document/qualification_document; documents = both. next_objective documents label is a template naming both / the missing one per path. turn() pops _documents_just_received into payload field documents_just_received (media turns have empty latest_inbound). Survives a rate-limited turn on the saved card, so the catch-up reply still sees it.
+- app/wa/luna/prompts.py: DOCUMENT ASK rewritten (TASK-96): both named in the first ask, no und/oder, every turn re-asks the missing one incl. just-arrived/wrong type/later/bare ja; old 'do not repeat the ask every turn' removed. CV/URKUNDE TEXT keyed on documents_just_received; DOCUMENT TYPE covers card.documents and 'other'; LANGUAGE/MEMORY: missing document is not an answered fact; CLOSE SEQUENCE recap names only received documents; THINK_ORDER 7 updated. Kenntnispruefung/defizit path asks for the Defizitbescheid (resolves constitution urkunde_pending_rule without editing constitution.json).
+- reporting.stage_for unchanged: documents_in still means any cv_text/urkunde_text; ready now needs both documents via the scoreboard.
+- Tests: gate matrix + shortlist matrix + payload + prompt checks (test_wa_luna_brain.py), ingest key by classification / list growth / just-received / rate limit (test_wa_media_intake.py), reporting, personas helper + new llm test test_svetlana_sends_only_her_cv_and_is_asked_for_the_urkunde_until_it_arrives.
+- docs/whatsapp.md: documents gate paragraph, card-field key rule, table text_key, stage_for line.
+- Found (not fixed, out of scope): a free-text department_pref such as 'egal' or 'Intensivstation' filters market_snapshot's shortlist to nothing (exact match on board department vocabulary); first live run of the new llm test hit it and the opener was changed to name no department.
+
+Verification: offline suite 1243 passed, 126 skipped, 19 deselected. Live llm test_svetlana_sends_only_her_cv_and_is_asked_for_the_urkunde_until_it_arrives: 1st run failed only at the final shortlist assert (opener said 'Station ist mir egal' -> department_pref filtered the fixture shortlist to 0; the document flow itself was correct), opener fixed, then 3/3 passed. Updated test_the_close_sequence_states_matches_before_recap_and_consent_together: 1 live run failed at 'never named a board clinic'; diagnosed with a tmp-path replay: both documents asked together, recap said 'Lebenslauf und Urkunde liegen mir vor', consent reached, but department_pref='Intensivstation' gives market_snapshot 0 matches (pre-existing exact-match filter, not TASK-96).
+
+Review fixes 2026-09-14 (fixer):
+- foreign-diploma-satisfies-urkunde-gate: app/cv.py taxonomy split. urkunde = German licence (Urkunde über die Erlaubnis zum Führen der Berufsbezeichnung, German helfer titles included). New DOC_TYPES auslaendisches_diplom = nursing diploma/degree/registration issued outside Germany. fachkraft no longer says 'equivalent foreign nursing degree'. Gate code unchanged: auslaendisches_diplom counts on no path, and _CARD_TEXT_KEY does not map it. prompts.py DOCUMENT TYPE/ASK name it; next_objective says 'German Urkunde (not a home-country diploma)'. Tests: gate-matrix cases on the urkunde/defizit/kenntnispruefung paths, intake test, offline taxonomy test. llm tests/test_cv_classify_document.py (3 synthetic foreign diplomas -> auslaendisches_diplom; Pflegefachfrau -> urkunde/fachkraft; Pflegefachhelferin -> urkunde/helfer): 2 live runs, 5/5 each. The same llm test on the HEAD prompt: Ukrainian and Philippine -> urkunde/fachkraft, Indian -> other.
+- card-documents-lost-on-brain-or-send-failure: api._handle_one saves the thread right after ingest, before process_owed_turn. The final save is skipped for api.TURN_NOT_RUN (claimed_elsewhere, rate_limited). Test (brain raises / Meta send raises): saved card keeps documents, _documents_just_received and cv_text; the catch-up payload has the file and cv_document=satisfied.
+- catchup-races-ingest-and-answers-blind: new api.media_turn_ingested + store.document_for_wamid. catchup.run skips a luna document/image turn whose row is missing or not in the saved card.documents (status media_not_ingested), and saves only when the turn ran. Tests: catch-up inside the download and inside vision -> media_not_ingested both times, webhook answers with the file, last_outbound_at/_session_id kept; ingest raised (vision / classification) -> catch-up does not answer; losing the claim on either side does not overwrite the other side's save. Not done: re-ingest from the stored original after a failed ingest (question for Ivan).
+- same-text-key-overwritten: _ingest_media appends to cv_text/urkunde_text (blank line between files), never replaces. Test: Defizitbescheid + helfer certificate + CV as 2 page photos keeps all texts.
+- next-objective for a rejected candidate (both findings): requirement_scoreboard returns _NOT_PLACEABLE_OBJECTIVE whenever qualification is blocked. 4 reject-card tests.
+- next-objective-garbled-template: 'as a photo/PDF' now follows the document being asked for; the already-in clause comes last. Test added.
+- constitution media_unreadable_rule: re-asks the unusable document (DOCUMENT ASK). 'cannot read attachments yet' and 're-ask for a document they already sent' removed; THINK_ORDER 6 aligned. String test added.
+- docs-stale-close-and-e2e: docs close sequence = two turns; e2e funnel paragraph marked stale (no document step).
+Each new offline test was checked against a throwaway copy with its fix reverted: it failed there. Live persona re-run after the prompt edits: svetlana, olena natural, luis not-placeable 3/3 passed. Offline suite: 1270 passed, 126 skipped, 26 deselected.
+
+Repair round 1 (2026-09-14, verifier findings):
+- close-test-red-empty-shortlist: test_the_close_sequence_states_matches_before_recap_and_consent_together failed 2/2 live because the model stored department_pref='Intensivstation' and market_snapshot filtered department_hint by exact match ('Intensiv/IMC') -> empty shortlist, consent still asked with no clinic named. Fix: luna_brain.market_snapshot reads department_pref with slots.read_department (the deterministic brain's alias list; idempotent on all 17 board department values), a word it does not know filters as written. Same defect in tools_server.search_postings (live tool log of the repaired run 1: department='Intensivstation' -> 0 rows, Luna said 'keine passende offene Stelle'); same read applied there, the call log keeps the model's word. Tests: test_shortlist_reads_the_candidates_department_word_in_board_vocabulary (5 words), test_shortlist_department_word_still_filters_to_its_own_department, test_search_postings_reads_the_candidates_department_word_in_board_vocabulary; each fails with read_department disabled. The close persona test now prints the transcript and puts transcript/shortlist/card into its failure messages. Live after the fix: 2/2 passed (73.8s, 87.9s); both runs named 'Klinikum München, Bereich Intensiv/IMC' in the turn after both documents, recap + consent the turn after.
+- e2e-funnel-stale: tests/test_wa_luna_e2e_funnel.py gets a document step: once Valentina's bubbles name a document with qualification/city_or_department/housing satisfied and documents open, the persona's next message is the upload of PERSONA_DOCUMENTS (CV + Urkunde; CV + Defizitbescheid on defizit/kenntnispruefung) via personas._send_document, turn text empty. Live 1 run: 3/3 consented (anna 6, carlos 6, mai 7 turns). mai's close named no clinic (empty shortlist). docs 'Stale since TASK-96' replaced.
+- docs/whatsapp.md: Close sequence paragraph (department read), Model's own tools paragraph, e2e paragraph.
+- Not changed (open questions for Ivan): consent buttons/recording are not code-gated on _documents_satisfied (prompt only); a close with an empty shortlist still offers consent (department_pref 'egal'/'flexibel' still filters to nothing); the MCP tool subprocess sees no fixture board in llm tests (Supabase 401 without .env) so transcripts say 'für München keine offene Stelle'; legacy cards without card.documents are asked for both documents again after the restart.
+Offline suite: 1279 passed, 126 skipped, 26 deselected, exit 0.
+
+Repair round 2 (2026-09-14, final-verifier findings):
+- llm-tools-see-no-fixture-board: the CLI spawns app/wa/luna/tools_server.py as a fresh process, so the test D._snap never reached it (Supabase 401 without the service env -> search_postings/list_clinics empty -> 'Für München ... keine offene Stelle' two turns before the shortlist named Klinikum München). New tests/luna_fixture_tools_server.py: use_fixture_board(monkeypatch, tmp_path) dumps the fixture board to JSON and swaps the generated --mcp-config server to python -m tests.luna_fixture_tools_server (loads the JSON into D._snap, pins D.refresh, runs the real tools_server). Used by the persona and e2e board fixtures; the persona board also gets one clinic row per city (list_clinics). Plumbing checked with a real MCP stdio client: fixture config -> München search 2 rows, list_clinics 1 row; pre-repair config (board unreachable) -> [] for all three. No production code changed.
+- New assertion _assert_no_munich_opening_denied (bubble names München + 'keine <0-2 words> Stelle/Job/Angebot') in the close, Svetlana and city/housing gate tests. Red check with the fixture swap disabled (throwaway pytest plugin): housing_gate failed on 'München notiere ich mir gerne – aktuell sehe ich dort im Live-Check aber keine offene Stelle direkt gelistet'.
+- Close test: with tools seeing the board, Luna names Klinikum München before the upload (live: 'in München habe ich aktuell zwei offene Stellen am Klinikum München'), which made the first-clinic-mention check pass trivially. It now searches from the first turn after the upload, and every pre-upload turn must pass _no_close (no matches/buttons/anonymous_send_offered).
+- wrong-type re-ask coverage (AC3): new llm test test_svetlana_wrong_document_types_get_the_missing_documents_named_again (Dienstplan -> both named again; CV -> Urkunde named; auslaendisches_diplom -> German Urkunde named; no close at any step). Live 2/2 passed: 'das sieht aber nach einem Dienstplan aus, nicht nach Lebenslauf oder Urkunde' + both asked; 'das ist aber Ihr ausländisches Diplom, nicht die deutsche Urkunde' + German Urkunde asked.
+- Live after the changes: close 2/2 (shortlist turn 'das Klinikum München, Bereich Intensiv/IMC', recap + consent next turn), Svetlana 1/1, wrong-type 2/2, city/housing gates 2/2 each, all 12 other persona tests 1/1.
+- Not changed (open questions for Ivan): consent buttons/recording still not code-gated on _documents_satisfied (prompt only; 0 violations in all runs); Luna now visibly names board clinics from tool results before the documents arrive (production tools always saw the real board; the harness shortlist stays gated); legacy cards without card.documents get both documents asked again after the restart; pflege-wa.service still runs pre-TASK-95/96/97 code until restarted.
+
+Round 2 e2e: tests/test_wa_luna_e2e_funnel.py (board fixture now uses use_fixture_board) live 1 run: 3/3 consented (anna 6, carlos 6, mai 7 turns); mai's close named 3 clinics (round 1: none). Offline suite after all round-2 changes: 1281 passed, 126 skipped, 27 deselected, exit 0. docs/whatsapp.md: 'Fixture board for the tools too' paragraph under Persona tests.
+
+Validation 2026-09-14: full offline suite 1281 passed (gate + shortlist matrices incl. helfer, auslaendisches_diplom, defizit paths, legacy card). Live llm personas: CV-only -> Urkunde re-asked -> 'später' -> still named -> Urkunde -> shortlist, 2/2 + 3/3 earlier; wrong document types re-ask 2/2; close-sequence test 1/1. Live smoke: after CV only next_objective asks for the German Urkunde; after both, close. Review additions kept: classifier type auslaendisches_diplom (home-country diploma no longer counts as Urkunde), department alias read in market_snapshot and search_postings, catch-up skips luna media turns not yet ingested (media_not_ingested), card saved before the brain call. Caveat on AC2: shortlist is code-gated; the consent ask/buttons are prompt-gated only (0 violations live) -- code gate is an open question for Ivan (No safety nets). Legacy cards without card.documents (e.g. the manual test number) will be asked for both documents again.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The close now requires both a CV and the path's qualification document (non-helfer German Urkunde; Urkunde or Defizitbescheid on defizit/kenntnispruefung paths), read from a per-document list on the card; next_objective names what is missing and Luna asks for both first, then re-asks the missing one every turn until it arrives. Text keys follow the classification, and a second upload no longer erases the first. Verified with gate/ingest offline tests, live llm persona runs of the CV-only and wrong-type flows, a live ingest smoke test, and the full offline suite (1281 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

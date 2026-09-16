@@ -379,6 +379,15 @@ def towns():
 
 
 # --- filtering ------------------------------------------------------------------------------
+def offers_housing(job):
+    """The board's housing mark on a posting (enr_housing, 483 of 3905 postings on 2026-09-16).
+
+    The single definition of "this posting comes with a flat": filter_jobs(housing=1) below, the WhatsApp
+    shortlist (app/wa/luna_brain.py:market_snapshot) and the post-consent queue (app/wa/queue.py) all read it
+    here, so what Luna promises a candidate and what the human handoff gets can never drift (TASK-108)."""
+    return bool(job.get("enr_housing"))
+
+
 def _split(v):
     return [x.strip() for x in (v or "").split(",") if x.strip()]
 
@@ -457,7 +466,7 @@ def filter_jobs(p):
     if et:
         rows = [j for j in rows if et & set(j.get("employment_types") or [])]
     if p.get("housing") in ("1", "true"):
-        rows = [j for j in rows if j.get("enr_housing")]
+        rows = [j for j in rows if offers_housing(j)]
     if p.get("verify"):
         vs = set(_split(p["verify"]))
         rows = [j for j in rows if j.get("verify_status") in vs]
