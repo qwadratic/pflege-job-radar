@@ -402,8 +402,15 @@ def _post_inbox(rows, log):
     # driver -- bigger than any one-off probe traffic.
     existing = set()
     urls = [r["source_url"] for r in uniq]
-    for i in range(0, len(urls), 200):
-        batch = urls[i:i + 200]
+    # 200 real job-posting URLs in one in.() filter regularly built a >20KB query string and the
+    # gateway in front of PostgREST 400'd the whole request (confirmed live 2026-09-16: 200 real
+    # AMEOS URLs at ~22KB failed, the same 150 at ~16KB succeeded) -- every such failure fell into
+    # the except below and posted its batch unchecked, duplicate-inserting rows already in the
+    # inbox from a prior day's run, which is what was actually driving the recurring "inbox: daily
+    # limit reached for this client" run failures, not genuinely new volume. 50 matches the chunk
+    # size pflege_jobs/cli.py's lookup_posting_ids already uses for the identical class of problem.
+    for i in range(0, len(urls), 50):
+        batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
         try:
             for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
