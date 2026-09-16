@@ -1011,6 +1011,11 @@ def wa_threads(request: Request, limit: int = 50):
     metadata only -- no file bytes, and no extracted ``text`` (what the brain uses is on the card in
     ``thread.slots``; the per-file text stays in the table).
 
+    TASK-109: every row carries ``is_test`` (and ``test_marked_at``) -- a number an operator tests the live
+    harness with, marked with ``python -m app.wa.luna.test_threads``; ``test_threads`` counts them among the
+    returned rows, so a count of real candidates is ``total - test_threads``. They stay listed on purpose:
+    this is where an operator checks which numbers are flagged.
+
     TASK-99: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
     and ``stuck_reply`` is also true once the oldest is older than C.STUCK_REPLY_HOURS. ``?phone=`` adds
     ``pending_inbound``, ``message_statuses`` (latest delivery status per wamid, Meta errors included) and
@@ -1038,7 +1043,7 @@ def wa_threads(request: Request, limit: int = 50):
             failure = ST.recent_send_failure(c, row["phone"])
             if failure:
                 row["last_send_error"] = failure
-    return {"total": len(rows), "rows": rows}
+    return {"total": len(rows), "test_threads": sum(1 for row in rows if row["is_test"]), "rows": rows}
 
 
 def _hours_since(iso):

@@ -15,6 +15,7 @@ import json
 
 from .. import data as D
 from ..autopilot import matching as MATCH
+from . import luna_brain as LB
 from . import store as ST
 from .luna import contacts as CT
 
@@ -74,7 +75,15 @@ def _german_level(cv_profile):
 def card_to_candidate(card, cv_profile=None):
     """Maps a Luna card (+ optional CV profile from app.cv.analyse_llm/analyse) into the
     candidate-dict shape app.autopilot.matching.score/rank expect: role_class, city, region,
-    qualification, departments, german_level, anerkennung_status.
+    qualification, departments, german_level, anerkennung_status -- plus needs_housing/people_count
+    (TASK-108), which matching.score does not read but build_queue_entry and the human who picks the
+    queue up do.
+
+    needs_housing is luna_brain.housing_needed(card), the same predicate the shortlist Luna named in
+    the chat was built from, so the handoff cannot offer a clinic the conversation ruled out.
+    housing_flexible (luna_brain.housing_flexible) is the separate "would also take a clinic without a flat"
+    answer: it widens the matching below, and it leaves needs_housing standing, so the human reads "wanted a
+    flat for 2, accepts one without" instead of "needs none" (review 2026-09-16).
 
     ``region`` here must be a Bavarian Regierungsbezirk (matching.score compares it against a
     clinic's own regierungsbezirk), derived from the card's city -- NOT card.get("region"), which
@@ -114,6 +123,9 @@ def card_to_candidate(card, cv_profile=None):
         "departments": departments,
         "german_level": _german_level(cv_profile),
         "anerkennung_status": _ANERKENNUNG_STATUS.get(path, "none"),
+        "needs_housing": LB.housing_needed(card),
+        "housing_flexible": LB.housing_flexible(card),
+        "people_count": card.get("people_count"),
     }
 
 
@@ -123,10 +135,21 @@ def build_queue_entry(phone, card, cv_profile=None):
     ranked clinic's contact via TASK-64's clinic_contacts table, and upserts both the candidate and
     its matches into this module's own tables. Idempotent: re-running for the same phone (e.g. a
     later CV upload, or a repeat consent) replaces the candidate row and upserts matches on the
-    (phone, clinic_id, posting_id) unique key rather than duplicating rows."""
+    (phone, clinic_id, posting_id) unique key rather than duplicating rows.
+
+    TASK-108: a candidate who needs a flat is ranked only against the postings the board marks with housing
+    (app.data.offers_housing -- the same criterion market_snapshot's shortlist uses) and the clinics those
+    postings belong to, so the human handoff gets the clinics Luna was allowed to name, not a wider list. Once
+    they said a clinic without a flat is also an option (housing_flexible), the filter drops here exactly as it
+    does in the shortlist -- the same rule on both sides, again."""
     candidate = card_to_candidate(card, cv_profile)
     snap = D.snapshot()
-    ranked = MATCH.rank(candidate, snap["clinics"], snap["jobs"], n=MATCH_TOP_N)
+    jobs, clinics = snap["jobs"], snap["clinics"]
+    if candidate["needs_housing"] and candidate["housing_flexible"] is not True:
+        jobs = [j for j in jobs if D.offers_housing(j)]
+        with_housing = {str(j["clinic_id"]) for j in jobs if j.get("clinic_id")}
+        clinics = [c for c in clinics if str(c["clinic_id"]) in with_housing]
+    ranked = MATCH.rank(candidate, clinics, jobs, n=MATCH_TOP_N)
 
     conn = db()
     try:
@@ -156,9 +179,14 @@ def build_queue_entry(phone, card, cv_profile=None):
 
 def queue_rows(conn):
     """(candidates, clinics-subset) view for GET /api/wa/queue: every queued candidate with the
-    clinics they matched, contact included where known."""
+    clinics they matched, contact included where known. A phone marked as a test number (TASK-109,
+    wa_threads.is_test) is left out: this list is the handoff a human works from, and an operator's
+    own test consent is not a candidate. The entry itself is still written when a test thread
+    consents -- the whole path stays exercised end to end -- and purge_test_history.py deletes it."""
     cands = [dict(r) for r in conn.execute(
-        "select phone, consented_at, profile_json, status from wa_queue_candidates order by consented_at desc").fetchall()]
+        "select q.phone, q.consented_at, q.profile_json, q.status from wa_queue_candidates q "
+        "left join wa_threads t on t.phone = q.phone where coalesce(t.is_test, 0) = 0 "
+        "order by q.consented_at desc").fetchall()]
     out = []
     for c in cands:
         c["profile"] = json.loads(c.pop("profile_json"))
@@ -174,9 +202,13 @@ def queue_rows(conn):
 
 def mailing_list_rows(conn):
     """Flattened candidate x clinic x contact-email preview -- the report shape TASK-68's
-    end-to-end test asserts against. Never sends anything; this is a read-only preview."""
+    end-to-end test asserts against. Never sends anything; this is a read-only preview. Test
+    numbers (TASK-109) are left out, like in queue_rows: nobody should be preparing an email to a
+    clinic about an operator's test persona."""
     rows = conn.execute(
         """select m.phone, m.clinic_id, m.posting_id, m.score, m.contact_email, m.contact_source
            from wa_queue_matches m
+           left join wa_threads t on t.phone = m.phone
+           where coalesce(t.is_test, 0) = 0
            order by m.clinic_id, m.score desc""").fetchall()
     return [dict(r) for r in rows]

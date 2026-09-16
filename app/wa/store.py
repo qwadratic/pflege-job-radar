@@ -31,7 +31,9 @@ create table if not exists wa_threads (
   turns integer not null default 0,
   opened_at text not null,
   last_inbound_at text,
-  last_outbound_at text
+  last_outbound_at text,
+  is_test integer not null default 0,
+  test_marked_at text
 );
 create table if not exists wa_messages (
   id integer primary key,
@@ -171,7 +173,8 @@ def db():
 # file, so an existing wa.sqlite gets them by 'alter table add column' (same as app/runs.py).
 MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "import_ref", "text"),
               ("wa_documents", "import_meta", "text"), ("wa_documents", "reuse_state", "text"),
-              ("wa_documents", "reuse_decided_at", "text"))
+              ("wa_documents", "reuse_decided_at", "text"),
+              ("wa_threads", "is_test", "integer not null default 0"), ("wa_threads", "test_marked_at", "text"))
 
 
 def _migrate(c):
@@ -197,10 +200,15 @@ def thread(c, phone):
         c.execute("insert into wa_threads (phone, opened_at) values (?,?)", (phone, now_iso()))
         c.commit()
         row = c.execute("select * from wa_threads where phone=?", (phone,)).fetchone()
+    return _thread_row(row)
+
+
+def _thread_row(row):
     t = dict(row)
     t["slots"] = json.loads(t["slots"] or "{}")
     t["asked"] = json.loads(t["asked"] or "[]")
     t["stopped"] = bool(t["stopped"])
+    t["is_test"] = bool(t["is_test"])
     return t
 
 
@@ -246,14 +254,37 @@ def history(c, phone, limit=50):
 def threads(c, limit=200):
     rows = c.execute("select * from wa_threads order by coalesce(last_inbound_at, opened_at) desc limit ?",
                      (limit,)).fetchall()
-    out = []
-    for r in rows:
-        t = dict(r)
-        t["slots"] = json.loads(t["slots"] or "{}")
-        t["asked"] = json.loads(t["asked"] or "[]")
-        t["stopped"] = bool(t["stopped"])
-        out.append(t)
-    return out
+    return [_thread_row(r) for r in rows]
+
+
+# --- test numbers (TASK-109) ---------------------------------------------------------------------
+# A phone an operator uses to test the live harness by hand (Ivan's own number first). The flag is a
+# wa_threads column, so it survives a restart and every reader sees it: the campaign sender never sends
+# to it (campaign.decide -> skip_test_number), candidate reports and the consent queue leave it out, and
+# app/wa/luna/purge_test_history.py wipes its history so the next manual test starts from nothing. The
+# conversation itself is untouched -- a test thread answers exactly like a real lead. Only the CLI
+# app/wa/luna/test_threads.py writes this flag; _update_thread does not, so no card save can flip it.
+
+def mark_test_thread(c, phone, is_test):
+    """Mark/unmark this phone as a test number, creating the thread when it has none (marking a number
+    before its first message is the point: the first test conversation is then already excluded).
+    -> the thread row."""
+    thread(c, phone)
+    c.execute("update wa_threads set is_test=?, test_marked_at=? where phone=?",
+              (int(bool(is_test)), now_iso() if is_test else None, phone))
+    c.commit()
+    return thread(c, phone)
+
+
+def is_test_thread(c, phone):
+    row = c.execute("select is_test from wa_threads where phone=?", (phone,)).fetchone()
+    return bool(row["is_test"]) if row else False
+
+
+def test_phones(c):
+    """Every phone marked as a test number, oldest thread first."""
+    rows = c.execute("select phone from wa_threads where is_test=1 order by opened_at, phone").fetchall()
+    return [r["phone"] for r in rows]
 
 
 # --- reply-turn claims (TASK-77): durable, cross-process dedup beyond wamid uniqueness ----------

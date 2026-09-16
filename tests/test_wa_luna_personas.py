@@ -26,6 +26,7 @@ from app import data as D
 from app.wa import api as WAPI
 from app.wa import config as C
 from app.wa import luna_brain as LB
+from app.wa.luna import tools_server as TS      # the allowlist itself, for the fallback test (TASK-110)
 from tests.luna_fixture_tools_server import use_fixture_board
 
 pytestmark = [
@@ -50,13 +51,20 @@ def _clinic_id(city):
 
 def _jobs():
     """A small, varied board: three cities, three departments, both city sizes, some housing --
-    enough for the market snapshot to have real examples without needing the full live board."""
+    enough for the market snapshot to have real examples without needing the full live board.
+
+    ``contract`` (TASK-110): a filter GET /api/jobs takes and no Luna tool presets, so a question about it
+    can only be answered through the board_api_get fallback. It carries the live board's own sparsity
+    (review 2026-09-16: 16 of 2624 live-verified postings have any contract value, all BEFRISTET,
+    UNBEFRISTET does not exist) -- one row here, so `contract=UNBEFRISTET` answers 0 the way it does live
+    and a test cannot pass on a filter the board does not populate."""
     rows = []
     for i, (city, bezirk, dept, housing) in enumerate(_PLAN):
         rows.append({"posting_id": i + 1, "title": f"Pflegefachkraft {dept}", "role_class": "pflegefachkraft",
                      "department_hint": dept, "city": city, "clinic_town": city, "regierungsbezirk": bezirk,
                      "clinic_id": _clinic_id(city), "clinic_name": f"Klinikum {city}", "employer": f"Klinikum {city}",
                      "employment_types": ["vollzeit"], "enr_housing": housing, "verify_status": "live",
+                     "contract": "BEFRISTET" if i == 5 else None,
                      "status": "open", "first_published": "2026-09-01", "fresh": True,
                      "source_url": f"https://example.org/job/{i + 1}"})
     return rows
@@ -66,7 +74,7 @@ def _clinics():
     """One clinic per fixture city, so list_clinics answers from the same board (TASK-96 repair round 2)."""
     open_by_city = Counter((city, bezirk) for city, bezirk, _, _ in _PLAN)
     return [{"clinic_id": _clinic_id(city), "name": f"Klinikum {city}", "town": city, "regierungsbezirk": bezirk,
-             "beds": 500, "jobs_open": n, "fachrichtungen": []} for (city, bezirk), n in open_by_city.items()]
+             "beds": 500, "jobs_open": n, "jobs_fresh": n, "jobs_live": n, "fachrichtungen": []} for (city, bezirk), n in open_by_city.items()]
 
 
 @pytest.fixture()
@@ -182,8 +190,9 @@ def test_the_close_sequence_states_matches_before_recap_and_consent_together(boa
         "Intensivstation wäre ideal.",
         "Ich wohne allein, brauche nur ein Zimmer für mich.",
     ])
-    assert results[3]["slots"].get("housing_known"), (
-        "the housing turn itself must resolve housing_known before the document ask can start")
+    assert LB.requirement_scoreboard(results[3]["slots"])["housing"] == "satisfied", (
+        "the housing turn itself must settle the housing gate before the document ask can start "
+        f"(card: {results[3]['slots']!r})")
     assert LB.market_snapshot(results[3]["slots"])["shortlist"] == [], (
         "no document has arrived yet -- the close sequence must not be reachable")
 
@@ -452,7 +461,8 @@ def _yes_no_frames_around_options(bubbles):
 
 @pytest.mark.parametrize("card, inbound, topic_re", [
     (_OLENA_CARD, "Ja, die deutsche Urkunde habe ich.", r"stadt|ort|region"),
-    ({**_OLENA_CARD, "city": "München"}, "München wäre gut.", r"person|wohn|allein|familie"),
+    # TASK-108: the housing gate opens with the plain yes/no, so the topic word is the flat itself.
+    ({**_OLENA_CARD, "city": "München"}, "München wäre gut.", r"wohnung|unterkunft"),
 ], ids=["city_gate", "housing_gate"])
 def test_olena_city_and_housing_questions_are_not_yes_no_frames_around_options(board, card, inbound, topic_re):
     d = LB.turn(inbound, {"slots": dict(card), "asked": []})
@@ -461,6 +471,70 @@ def test_olena_city_and_housing_questions_are_not_yes_no_frames_around_options(b
     assert re.search(topic_re, " ".join(d["bubbles"]), re.I), f"the gate question was not asked: {transcript!r}"
     assert _yes_no_frames_around_options(d["bubbles"]) == [], transcript
     _assert_no_munich_opening_denied(d["bubbles"], transcript)
+
+
+# --- TASK-108: housing is asked as a yes/no, and only ever stated from the board -----------------
+# Live board 2026-09-16: 483 of 3905 postings carry enr_housing. The gate used to ask only how many people
+# would live in a flat nobody had confirmed was wanted, the shortlist ignored the board's housing mark, and
+# the constitution told Luna "Most clinics offer a small apartment" (a live run said exactly that).
+
+_HEADCOUNT_RE = re.compile(r"wie viele|wie vielen|anzahl der personen", re.I)
+_HOUSING_WORD_RE = re.compile(r"wohnung|unterkunft|appartement|apartment", re.I)
+_NEGATION_RE = re.compile(r"kein|nicht|leider|ohne", re.I)
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?\n]+")
+
+
+def test_olena_housing_is_a_plain_yes_no_first_and_the_headcount_only_after_a_yes(board):
+    """The gate's two steps, in order: nobody is asked how many people would live in a flat before they have
+    said they need one at all, and the yes is what lands on the card."""
+    opener = "München wäre gut."
+    first = LB.turn(opener, {"slots": {**_OLENA_CARD, "city": "München"}, "asked": []})
+    transcript = [("candidate", opener), ("luna", first["bubbles"])]
+    said = " ".join(first["bubbles"])
+    assert _HOUSING_WORD_RE.search(said), f"the housing question was not asked: {transcript!r}"
+    assert not _HEADCOUNT_RE.search(said), f"the headcount was asked before the yes/no: {transcript!r}"
+    assert _yes_no_frames_around_options(first["bubbles"]) == [], transcript
+
+    answer = "Ja, eine Unterkunft bräuchte ich."
+    second = LB.turn(answer, {"slots": first["slots"], "asked": first["asked"]})
+    transcript += [("candidate", answer), ("luna", second["bubbles"])]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    assert second["slots"].get("housing_needed") is True, f"the yes was not recorded: {transcript!r}"
+    assert second["slots"].get("housing_known") is True, f"the harness flag did not follow: {transcript!r}"
+    assert _HEADCOUNT_RE.search(" ".join(second["bubbles"])), (
+        f"after the yes, the headcount is the next step: {transcript!r}")
+
+
+def test_svetlana_a_city_without_a_single_housing_posting_gets_an_honest_answer(board):
+    """Fictional persona: Svetlana, Urkunde in hand, both documents sent, wants Würzburg and needs a flat for
+    two. The fixture board's Würzburg posting carries no housing mark, so there is nothing to offer there --
+    Luna must say that plainly (or name a city the snapshot actually lists) instead of presenting the
+    Würzburg clinic as if it came with a flat."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "role_verdict": "accept",
+            "city": "Würzburg", "housing_needed": True, "people_count": 2,
+            "documents": [{"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"},
+                          {"id": 2, "document_type": "urkunde", "certificate_level": "fachkraft"}]}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"] == [] and snap["housing"]["clinics_with_housing"] == 0
+    assert snap["housing"]["clinics_ignoring_housing"] == 1, "Würzburg is open, it just has no flat"
+
+    inbound = "Gibt es in Würzburg eine Klinik mit Wohnung für uns zwei?"
+    d = LB.turn(inbound, {"slots": dict(card), "asked": []})
+    transcript = [("candidate", inbound), ("luna", d["bubbles"])]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    said = " ".join(d["bubbles"])
+    sentences = _SENTENCE_SPLIT_RE.split(said)
+    claimed = [s for s in sentences
+               if re.search(r"würzburg", s, re.I) and _HOUSING_WORD_RE.search(s) and not _NEGATION_RE.search(s)]
+    assert claimed == [], f"a flat claimed for Würzburg, which the board does not mark: {transcript!r}"
+    honest_no = any(_HOUSING_WORD_RE.search(s) and _NEGATION_RE.search(s) for s in sentences)
+    named = [c["city"] for c in snap["housing"]["cities_with_housing"] if c["city"] in said]
+    assert honest_no or named, (
+        f"neither said there is no flat in Würzburg nor named a city the board marks: {transcript!r}")
+    # TASK-97 still holds here (live 2026-09-16, 2 of the first 3 runs: "Käme für Sie auch eine Klinik ohne
+    # Wohnung in Würzburg infrage, oder wäre alternativ eine Stadt mit Wohnung wie Regensburg interessant?" --
+    # a bare Ja answers neither): the follow-up is one plain yes/no, not the two ways out joined by "oder".
+    assert _yes_no_frames_around_options(d["bubbles"]) == [], transcript
 
 
 # --- Group 3: Defizitbescheid recognition-gap path ---------------------------------------------
@@ -596,8 +670,91 @@ def test_a_question_about_an_unlisted_city_actually_triggers_a_live_search(board
 
 def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_call(board):
     """Proactive is not the same as trigger-happy: a question market_snapshot's own open_jobs
-    total already answers should not burn a tool call to re-derive the same number."""
+    total already answers should not burn a tool call to re-derive the same number.
+
+    Asserted against every tool that answers from the board, not one tool name (TASK-110 review): the
+    guard used to name search_postings only, so it stayed green while the same needless lookup happened
+    through count_postings() with every filter empty -- ~2s of the turn, and nine tools now to do it with.
+    read_board_docs is deliberately outside the set: it is static documentation, not a board number, and
+    live runs on 2026-09-16 show the model reading it on a first turn whatever the prompt and its own
+    description say about not checking numbers with it (2-4 reads). That costs seconds; it cannot produce
+    a board claim, which is what this test is about. A count_postings call with every filter empty is
+    refused by the tool itself and logged as refused -- the attempt happens across runs, the re-derivation
+    does not."""
     results = _run(["Hallo, wie viele offene Stellen habt ihr insgesamt bei euch?"])
-    calls = _tool_calls()
-    assert "search_postings" not in calls, f"a question already answered by market_snapshot should not call search_postings, got: {calls!r}"
+    answered = [c for c in _tool_calls(names_only=False)
+                if c["tool"] != "read_board_docs" and not c["args"].get("refused")]
+    assert answered == [], (
+        f"a number market_snapshot.open_jobs already carries must not be re-derived from the board: "
+        f"{_tool_calls(names_only=False)!r}")
     assert results[-1]["bubbles"], "a plain count question should still get an actual reply"
+
+
+# --- TASK-110: the stated need is in the call, and the fallback covers the rest ------------------
+# Ivan 2026-09-16: the housing filter had existed for a whole task and the model had never once used it --
+# the prompt named three tools and no filter at all. The tools now come with the filter preset
+# (search_postings_with_housing, list_clinics_with_housing, list_cities_with_postings, count_postings) and
+# their descriptions carry the board's own values; these two runs check that it reaches the actual call.
+
+def _housing_calls(calls):
+    """Every logged call that actually searched with the housing filter on -- the preset tools, or the
+    general ones with housing=true."""
+    return [c for c in calls
+            if c["tool"] in ("search_postings_with_housing", "list_clinics_with_housing")
+            or c["args"].get("housing") is True]
+
+
+def test_a_candidate_who_needs_a_flat_is_answered_from_a_housing_filtered_call(board):
+    """Fictional persona: Kateryna, Urkunde in hand, needs a flat, asks about Würzburg -- whose only
+    fixture posting carries no housing mark. The stated need must be IN the call (housing preset), and
+    the answer must come from what that call returned, not from an unfiltered search that would have
+    offered the Würzburg clinic as if it came with a flat."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
+            "role_verdict": "accept", "housing_needed": True, "people_count": 2}
+    inbound = "Wir brauchen auf jeden Fall eine Wohnung – haben Sie etwas in Würzburg?"
+    d = LB.turn(inbound, {"slots": dict(card), "asked": []})
+    calls = _tool_calls(names_only=False)
+    transcript = [("candidate", inbound), ("luna", d["bubbles"]), ("calls", calls)]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+
+    housing_calls = _housing_calls(calls)
+    assert housing_calls, f"a stated housing need was not in any call: {calls!r}"
+    assert any("würzburg" in json.dumps(c["args"], ensure_ascii=False).lower() for c in housing_calls), (
+        f"the housing-filtered call did not ask about Würzburg: {housing_calls!r}")
+    said = " ".join(d["bubbles"])
+    assert "würzburg" in said.lower(), f"the reply must name what it checked: {transcript!r}"
+    claimed = [s for s in _SENTENCE_SPLIT_RE.split(said)
+               if re.search(r"würzburg", s, re.I) and _HOUSING_WORD_RE.search(s) and not _NEGATION_RE.search(s)]
+    assert claimed == [], f"a flat claimed for Würzburg, which the board does not mark: {transcript!r}"
+
+
+def test_a_question_the_preset_tools_do_not_cover_is_answered_through_the_fallback(board):
+    """befristet/unbefristet is a real GET /api/jobs filter (`contract`) that none of Luna's tools preset
+    and none of them takes as a parameter -- exactly the case the fallback exists for: one read-only GET
+    on an allowlisted public board path, documented by read_board_docs.
+
+    The fixture board carries the live sparsity (one posting with a contract value, none UNBEFRISTET), so
+    the honest answer is that the board does not record it -- not "we have no permanent positions", which
+    is what the fallback door produced before its description said which columns the board barely fills
+    (TASK-110 review)."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "role_verdict": "accept"}
+    inbound = "Eine Frage vorab: wie viele Ihrer offenen Stellen sind unbefristet?"
+    d = LB.turn(inbound, {"slots": dict(card), "asked": []})
+    calls = _tool_calls(names_only=False)
+    transcript = [("candidate", inbound), ("luna", d["bubbles"]), ("calls", calls)]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+
+    fallback = [c for c in calls if c["tool"] in ("board_api_get", "read_board_docs")]
+    assert fallback, f"the question the preset tools do not cover did not reach the fallback: {calls!r}"
+    api_calls = [c for c in calls if c["tool"] == "board_api_get"]
+    assert api_calls, f"only the docs were read, the number itself was never looked up: {calls!r}"
+    for call in api_calls:
+        assert call["args"]["path"] in TS.BOARD_API_PATHS or call["args"]["path"].startswith(
+            TS.BOARD_API_CLINIC_PREFIX), f"a call off the allowlist reached the tool: {call!r}"
+    said = " ".join(d["bubbles"])
+    assert said.strip(), "the fallback call must still be followed by an actual reply"
+    assert re.search(r"unbefristet|befristet|Vertrag", said, re.I), (
+        f"the reply does not answer what was asked: {transcript!r}")
+    assert not re.search(r"(kein[e]?n?|null|0)\b[^.!?]{0,40}\bunbefristete", said, re.I), (
+        f"0 rows from a column the board barely fills was turned into 'we have none': {transcript!r}")
+    assert not re.search(r"alle[^.!?]{0,30}\bbefristet", said, re.I), transcript

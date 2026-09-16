@@ -55,8 +55,10 @@ def ball_for(conn, phone):
 
 
 def report_row(conn, phone):
-    """{phone, stage, ball, requirement_scoreboard} for one thread -- the shape a dry-run report or
-    a migration sanity check reads. None if no thread exists for this phone yet -- checked before
+    """{phone, stage, ball, requirement_scoreboard, stopped, test} for one thread -- the shape a dry-run
+    report or a migration sanity check reads. ``test`` is the TASK-109 flag: a number an operator tests
+    the live harness with, never a candidate, so any count built from these rows can leave it out.
+    None if no thread exists for this phone yet -- checked before
     calling ST.thread(), which would otherwise create one (by design, for a real inbound message;
     not appropriate for a read-only report that must not create rows just by looking)."""
     row = conn.execute("select 1 from wa_threads where phone=?", (phone,)).fetchone()
@@ -64,4 +66,5 @@ def report_row(conn, phone):
         return None
     t = ST.thread(conn, phone)
     return {"phone": phone, "stage": stage_for(t["slots"]), "ball": ball_for(conn, phone),
-            "requirement_scoreboard": requirement_scoreboard(t["slots"]), "stopped": t["stopped"]}
+            "requirement_scoreboard": requirement_scoreboard(t["slots"]), "stopped": t["stopped"],
+            "test": t["is_test"]}

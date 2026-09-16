@@ -54,7 +54,8 @@ first); one that did go out (a status for a wamid we never recorded, with the te
 it in the same campaign as the next attempt, except to a phone that was stopped, declined, opted out or wrote to us
 since the campaign first claimed it (skip_replied). Once any attempt went out (sent, delivered or not), every later
 resend (retry_failed, --retry-uncertain) makes the same skip_replied check. Stopped, declined and opted-out phones
-are never sent.
+are never sent. A phone marked as a test number (TASK-109, app/wa/luna/test_threads.py) is skip_test_number before
+any other action, in the dry run and in --send: a campaign template never lands in an operator's manual test.
 
 PACING. At most --batch-size claims of this campaign within any --batch-interval-min (counted from claimed_at in
 the database, so a restart keeps the pace), only inside --window local hours of --tz. Outside the window the run
@@ -430,6 +431,7 @@ def phone_state(c, campaign_id, phone):
         t = ST.thread(c, phone)
         card = t["slots"]
         thread = {"stage": REP.stage_for(card), "ball": REP.ball_for(c, phone), "stopped": t["stopped"],
+                  "is_test": t["is_test"], "test_marked_at": t["test_marked_at"],
                   "stopped_reason": t["stopped_reason"], "declined": bool(card.get("declined")),
                   "declined_at": card.get("declined_at"), "declined_reason": card.get("declined_reason"),
                   "prior_opt_outs": card.get("prior_opt_outs", []), "already_placed": bool(card.get("already_placed")),
@@ -457,6 +459,11 @@ def phone_state(c, campaign_id, phone):
 def decide(state, retry):
     """-> (action, reason) for a phone with a valid lead, from its latest attempt in this campaign."""
     this, thread = state["this_campaign"], state["thread"] or {}
+    if thread.get("is_test"):
+        # TASK-109: an operator's own number, marked with app/wa/luna/test_threads.py. Checked before every
+        # other action, so no --retry-* path can post a campaign template into a manual test either.
+        return "skip_test_number", (f"test number (marked {thread['test_marked_at']}): campaigns never send to it "
+                                    f"(python -m app.wa.luna.test_threads --unmark to make it an ordinary thread)")
     undelivered = bool(this) and this["state"] == "sent" and (this.get("delivery") or {}).get("status") == "failed"
     if undelivered:
         # Meta accepted the POST, then reported it undelivered (e.g. 131049 marketing limit, 131026, 131042). Resent in
@@ -996,7 +1003,8 @@ def _print_plan(leads):
             _say(f"    phone rewritten from {lead['raw_phone']!r}")
         _say(f"    owner {owner_text}" + (f" [{owner['known_phones_error']}]" if owner.get("known_phones_error") else "")
              + (f"; thread {thread['stage']}/{thread['ball']}" + (" stopped" if thread["stopped"] else "")
-                + (" declined" if thread["declined"] else "") if thread else "; no thread")
+                + (" declined" if thread["declined"] else "") + (" test number" if thread["is_test"] else "")
+                if thread else "; no thread")
              + (f"; this campaign attempt {state['this_campaign']['attempt']} {state['this_campaign']['state']}"
                 if state.get("this_campaign") else "")
              + (f"; other campaigns {[o['campaign_id'] + ':' + o['state'] for o in state['other_campaigns']]}"

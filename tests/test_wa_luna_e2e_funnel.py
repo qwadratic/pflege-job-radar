@@ -184,11 +184,11 @@ def _fixture_board():
                      "status": "open", "first_published": "2026-09-01", "fresh": True,
                      "source_url": f"https://example.org/job/{i + 1}"})
     clinics = [{"clinic_id": "c1", "name": "Klinikum München", "town": "München", "regierungsbezirk": "Oberbayern",
-               "beds": 800, "jobs_open": 1, "fachrichtungen": []},
+               "beds": 800, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1, "fachrichtungen": []},
               {"clinic_id": "c2", "name": "Klinikum Augsburg", "town": "Augsburg", "regierungsbezirk": "Schwaben",
-               "beds": 500, "jobs_open": 1, "fachrichtungen": []},
+               "beds": 500, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1, "fachrichtungen": []},
               {"clinic_id": "c3", "name": "Klinikum Bayreuth", "town": "Bayreuth", "regierungsbezirk": "Oberfranken",
-               "beds": 400, "jobs_open": 1, "fachrichtungen": []}]
+               "beds": 400, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1, "fachrichtungen": []}]
     return rows, clinics
 
 

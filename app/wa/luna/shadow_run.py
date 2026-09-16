@@ -62,16 +62,25 @@ def _last_inbound(conn, phone):
     return row["wamid"], row["body"], json.loads(row["meta"] or "{}").get("button_id")
 
 
-def phones_owed_a_reply(conn):
+def phones_owed_a_reply(conn, include_test=False):
     """Every phone whose most recent message (by id, across the whole thread) is inbound and has no
     recorded no_send (ST.NO_SEND_STATE, TASK-101) -- one query, not N -- the same condition
-    reporting.ball_for() == "us" checks per-phone."""
-    rows = conn.execute("""
+    reporting.ball_for() == "us" checks per-phone.
+
+    ``include_test`` decides what a test number (TASK-109) counts as here, because this query has two
+    kinds of caller. As a REPORT (this module) it leaves them out: a list of candidates waiting for an
+    answer must not count an operator's own manual test; asking for one by name (``--phones``) still
+    reports it. As a DRIVER (app/wa/luna/catchup.py, the 3-minute timer's owed pass) it must include
+    them -- a test thread is answered exactly like a real lead, and dropping it there left the
+    operator's own message unanswered forever whenever the webhook did not finish the turn."""
+    rows = conn.execute(f"""
         select m.phone from wa_messages m
         join (select phone, max(id) as last_id from wa_messages group by phone) latest
           on m.phone = latest.phone and m.id = latest.last_id
         left join wa_reply_turn_claims k on k.phone = m.phone and k.turn_key = m.wamid
+        left join wa_threads t on t.phone = m.phone
         where m.direction = 'in' and (k.state is null or k.state != ?)
+          {"" if include_test else "and coalesce(t.is_test, 0) = 0"}
     """, (ST.NO_SEND_STATE,)).fetchall()
     return [r["phone"] for r in rows]
 
@@ -85,7 +94,7 @@ def shadow_turn(conn, phone, client=None):
         return None
     t = ST.thread(conn, phone)
     if t["stopped"]:
-        return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": "stopped",
+        return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": "stopped", "test": t["is_test"],
                 "bubbles": [], "buttons": [], "would_stop": True, "window_open": None, "gate": "stopped"}
 
     wamid, text, button_id = _last_inbound(conn, phone)
@@ -109,7 +118,7 @@ def shadow_turn(conn, phone, client=None):
     else:
         gate = "freeform"
 
-    return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": d["action"],
+    return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": d["action"], "test": t["is_test"],
             "bubbles": d["bubbles"], "buttons": d["buttons"], "would_stop": d["stopped"],
             "window_open": window_open, "gate": gate}
 

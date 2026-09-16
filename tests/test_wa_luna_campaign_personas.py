@@ -374,15 +374,18 @@ def _full_funnel_to_the_shortlist(chat, city_or_department_answer):
     chat.campaign()
     bubbles, _ = chat.say("Ja")
     _assert_campaign_yes_answer(chat, bubbles)
+    # TASK-108: housing is two gate steps -- the yes/no first, the headcount only after a yes.
     answers = {"region": "Ja, Bayern.", "qualification": "Ja, ich habe die deutsche Urkunde, volle Anerkennung.",
-               "city_or_department": city_or_department_answer, "housing": "Nur ich, eine Person."}
+               "city_or_department": city_or_department_answer, "housing": "Ja, eine Unterkunft brauche ich."}
     for _ in range(12):
         board_state = LB.requirement_scoreboard(chat.card())
         if any(c in _text(bubbles) for c in _BOARD_CLINICS) and LB.market_snapshot(chat.card())["shortlist"]:
             break
         gate = next((g for g in ("region", "qualification", "city_or_department", "housing") if board_state[g] == "open"),
                     None)
-        if gate:
+        if gate == "housing" and LB.housing_needed(chat.card()):
+            bubbles, _ = chat.say("Nur ich, eine Person.")
+        elif gate:
             bubbles, _ = chat.say(answers[gate])
         elif board_state["cv_document"] == "open":
             bubbles, _ = chat.upload("lebenslauf", "unknown", "Lebenslauf Anna Kowalska, Pflegefachfrau, 2012-2026 "
@@ -488,7 +491,7 @@ def test_consent_no_tap_is_not_a_decline(chat, run):
     chat.campaign()
     chat.say("Ja")
     chat.set_facts(region="Bayern", qualification_path="urkunde", qualification_ok=True, urkunde_status="yes",
-                   city="München", housing_known=True, people_count=1)
+                   city="München", housing_known=True, housing_needed=True, people_count=1)
     chat.upload("lebenslauf", "unknown", "Lebenslauf Anna Kowalska, Pflegefachfrau, 2012-2026 Innere Medizin (fiktiv)")
     bubbles, _ = chat.upload("urkunde", "fachkraft", "Urkunde über die Erlaubnis zum Führen der Berufsbezeichnung "
                                                     "Pflegefachfrau (fiktiv)")

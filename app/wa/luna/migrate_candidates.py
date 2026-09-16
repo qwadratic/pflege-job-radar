@@ -11,7 +11,7 @@ Expected input: a JSON array of objects, only "phone" required:
     {"phone": "+491701234567",
      "qualification_path": "urkunde"|"defizit"|"kenntnispruefung"|null,
      "city": "München"|null, "department_pref": "Intensiv/IMC"|null,
-     "housing_known": true|false, "people_count": 1,
+     "housing_known": true|false, "housing_needed": true|false, "people_count": 1,
      "anonymous_send_consent": false,
      "cv_text": "..."|null, "urkunde_text": "..."|null}
 
@@ -26,7 +26,8 @@ import json
 from .. import meta as M
 from .. import store as ST
 
-CARD_FIELDS = ("qualification_path", "city", "department_pref", "housing_known", "people_count",
+# housing_needed (TASK-108) is the answer to "do you need a flat?"; housing_known only says it was asked.
+CARD_FIELDS = ("qualification_path", "city", "department_pref", "housing_known", "housing_needed", "people_count",
                "anonymous_send_consent", "cv_text", "urkunde_text")
 
 

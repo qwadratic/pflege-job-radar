@@ -80,6 +80,13 @@ LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
 # number must run from this exact directory, or `--resume <id>` from a later turn silently looks
 # in the wrong place and starts a fresh, memory-less session instead of continuing the real one.
 LUNA_SESSION_DIR = A.DATA_DIR / "wa_luna_sessions"
+# Where the Claude Code CLI keeps those sessions' transcripts: <store>/<a directory name derived from the
+# cwd>/<session id>.jsonl. Not ours to write -- app/wa/luna/purge_test_history.py (TASK-109) only needs to
+# find and delete a test number's transcript, which holds the whole conversation in plain text. Default and
+# env var are the CLI's own (CLAUDE_CONFIG_DIR, else ~/.claude); it must be the one the service user runs
+# with, or the purge finds nothing to delete and says so.
+LUNA_SESSION_STORE = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+                                  or pathlib.Path.home() / ".claude") / "projects"
 
 # Backstop against a runaway/abusive loop burning real claude CLI cost, not a conversational
 # throttle (TASK-76, parity with the real system's CATCHUP_MODEL_RUNS_PER_HOUR): a normal

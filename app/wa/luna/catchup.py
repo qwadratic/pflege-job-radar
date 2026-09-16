@@ -12,7 +12,8 @@ Two passes, one pipeline: app.wa.api.finish_inbound, the same the webhook's back
    or a still-running earlier pass, is on it) is reported ``claimed_elsewhere`` and left to that process --
    the ``media:<wamid>`` claim covers a running download/ingest, so this never replies to a file it has not
    read.
-2. owed: every other thread whose last message is inbound (shadow_run.phones_owed_a_reply, the same
+2. owed: every other thread whose last message is inbound (shadow_run.phones_owed_a_reply with
+   include_test=True -- only the report leaves a test number out, TASK-109 -- the same
    reporting.ball_for() == "us" rule, or just ``--phones``) and not stopped: its last inbound message goes
    through finish_inbound once. Covers messages recorded before wa_inbound_pending existed.
 
@@ -57,7 +58,8 @@ def run(client=None, phones=None):
 
     owed = []
     with ST._lock, ST.db() as c:
-        targets = phones if phones is not None else SR.phones_owed_a_reply(c)
+        # include_test: a test number (TASK-109) is answered like every other thread -- only reports leave it out.
+        targets = phones if phones is not None else SR.phones_owed_a_reply(c, include_test=True)
         for phone in targets:
             if phone in pending or ST.pending_inbound(c, phone):
                 continue

@@ -39,7 +39,7 @@ def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
     """TASK-91: 'every non-consent requirement' now includes documents -- TASK-96: the CV and the
     qualification document both received (card.documents), not just a verbal qualification claim."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
-            "housing_known": True, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ... volle Anerkennung",
+            "housing_needed": False, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ... volle Anerkennung",
             "documents": [_CV, _URKUNDE]}
     assert REP.stage_for(card) == "ready"
 
@@ -48,7 +48,7 @@ def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
 def test_stage_documents_in_not_ready_until_both_documents_are_in(documents):
     """TASK-96: one document, or a legacy card with both text keys but no documents list, is not ready."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
-            "housing_known": True, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ..."}
+            "housing_needed": False, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ..."}
     if documents is not None:
         card["documents"] = documents
     assert REP.stage_for(card) == "documents_in"
@@ -58,13 +58,13 @@ def test_stage_qualifying_not_ready_without_a_document():
     """The same card as above, minus a document -- TASK-91's documents gate means this must not
     report 'ready' (it would understate that nothing has actually been verified yet)."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
-            "housing_known": True}
+            "housing_needed": False}
     assert REP.stage_for(card) == "qualifying"
 
 
 def test_stage_consented_once_consent_is_true():
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
-            "housing_known": True, "anonymous_send_consent": True}
+            "housing_needed": False, "anonymous_send_consent": True}
     assert REP.stage_for(card) == "consented"
 
 

@@ -5,6 +5,7 @@ fake ``reply`` callable injected into ``luna_brain.Client``, same seam as ``app/
 fake transport.
 """
 import json
+import pathlib
 import re
 import subprocess
 import time
@@ -260,10 +261,10 @@ def test_market_snapshot_matches_only_once_fully_ready_to_close():
     assert empty["matches"] == [] and empty["shortlist"] == []
     assert empty["open_jobs"] == 2, "the one aggregate number stays present even on an empty card"
     narrowed_no_docs = LB.market_snapshot({"city": "München", "qualification_path": "urkunde",
-                                           "qualification_ok": True, "housing_known": True})
+                                           "qualification_ok": True, "housing_needed": False})
     assert narrowed_no_docs["matches"] == [], (
         "qualification/city/housing alone must not populate matches without a document too")
-    ready = LB.market_snapshot({"city": "München", "qualification_ok": True, "housing_known": True, **_DOC})
+    ready = LB.market_snapshot({"city": "München", "qualification_ok": True, "housing_needed": False, **_DOC})
     assert ready["matches"] and all(m["city"] == "München" for m in ready["matches"])
 
 
@@ -299,7 +300,7 @@ _DIENSTPLAN = {"id": 7, "document_type": "dienstplan", "certificate_level": "unk
 _OTHER = {"id": 8, "document_type": "other", "certificate_level": "unknown"}
 _FOREIGN_DIPLOMA = {"id": 9, "document_type": "auslaendisches_diplom", "certificate_level": "unknown"}
 _ALL_BUT_DOCUMENTS = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
-                      "city": "München", "housing_known": True}
+                      "city": "München", "housing_needed": False}
 
 _BOTH = ("ask for BOTH the CV (Lebenslauf) AND the German Urkunde (not a home-country diploma) as photos/PDFs, "
          "together in one ask -- ")
@@ -392,8 +393,8 @@ def test_the_photo_pdf_hint_sits_on_the_document_being_asked_for():
 _REJECTED = {"region": "Bayern", "qualification_path": "reject", "qualification_ok": False}
 
 
-@pytest.mark.parametrize("extra", [{}, {"region": None}, {"city": "München", "housing_known": True},
-                                   {"city": "München", "housing_known": True, "documents": [_CV]}],
+@pytest.mark.parametrize("extra", [{}, {"region": None}, {"city": "München", "housing_needed": False},
+                                   {"city": "München", "housing_needed": False, "documents": [_CV]}],
                          ids=["nothing_else", "no_region", "city_and_housing", "city_housing_and_cv"])
 def test_a_rejected_candidate_gets_the_not_placeable_objective_never_a_document_ask(extra):
     """TASK-96 review: next_objective skipped the blocked qualification and fell through to 'ask for BOTH the
@@ -512,12 +513,16 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
     assert labels["region"] == "ask as a plain yes/no whether they are looking for a job in Bayern"
     assert labels["city_or_department"].startswith("ask which city in Bayern they want to work in, as an open question")
     assert "no yes/no frame around a list of cities" in labels["city_or_department"]
-    assert labels["housing"] == "ask how many people would live in the flat, as an open question"
+    # TASK-108 split the housing gate in two; both halves keep the TASK-97 shape (a plain yes/no, then an open
+    # question), and neither offers options joined by "oder".
+    assert labels["housing"] == "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"
+    assert "ask how many people would live in it, as an open question" in LB._HOUSING_HEADCOUNT_OBJECTIVE
+    assert "never as alone-or-with-family options" in LB._HOUSING_HEADCOUNT_OBJECTIVE
     system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
     for gone in ("allein vs Familie", "city size, department, or a named city", "Bayern vs. another Bundesland",
                  "narrow down a city or department preference"):
         assert gone not in system and gone not in json.dumps(LB._OBJECTIVE_ORDER), gone
-    assert "one open question: how many people would live in the flat" in LB._CONSTITUTION_TEXT
+    assert "the open question how many people would live in it" in LB._CONSTITUTION_TEXT
     assert "never a yes/no frame around a list of cities" in LB._CONSTITUTION_TEXT
     yes_no = _rule("YES/NO QUESTIONS (TASK-97)")
     assert "A yes/no frame around options is the same mistake" in yes_no
@@ -551,7 +556,7 @@ _DOC = {"qualification_path": "urkunde", "documents": [_CV, _URKUNDE]}   # TASK-
 
 
 def test_shortlist_appears_with_only_department_known_no_city():
-    card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
         "a candidate flexible on city but with a stated department must still reach a shortlist, "
@@ -559,7 +564,7 @@ def test_shortlist_appears_with_only_department_known_no_city():
 
 
 def test_shortlist_appears_with_only_city_known_no_department():
-    card = {"qualification_ok": True, "city": "München", "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "city": "München", "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
         "a candidate flexible on department but with a stated city (a real, answered preference, "
@@ -573,14 +578,14 @@ def test_shortlist_reads_the_candidates_department_word_in_board_vocabulary(luna
     department_pref='Intensivstation', and the exact board filter ('Intensiv/IMC') left the shortlist empty
     with both documents in -- consent was then asked with no clinic ever named."""
     card = {"qualification_ok": True, "city": "München", "department_pref": department_pref,
-            "housing_known": True, **_DOC}
+            "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Nord"]
     assert snap["matching_clinics_count"] == 1
 
 
 def test_shortlist_department_word_still_filters_to_its_own_department(luna):
-    card = {"qualification_ok": True, "department_pref": "Operationssaal", "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "department_pref": "Operationssaal", "housing_needed": False, **_DOC}
     assert [s["clinic"] for s in LB.market_snapshot(card)["shortlist"]] == ["Klinikum Würzburg"]
     assert LB.market_snapshot({**card, "city": "München"})["shortlist"] == []
 
@@ -593,7 +598,7 @@ def test_shortlist_department_word_still_filters_to_its_own_department(luna):
                                   "Keine Vorliebe", "überall", "ist mir gleich", "nicht wichtig", "keine Ahnung",
                                   "weiß ich noch nicht"])
 def test_flexible_department_answer_settles_the_gate_and_filters_nothing(luna, word):
-    card = {"qualification_ok": True, "department_pref": word, "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "department_pref": word, "housing_needed": False, **_DOC}
     assert LB.requirement_scoreboard(card)["city_or_department"] == "satisfied"
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum Würzburg", "Klinikum München Nord"]
@@ -605,7 +610,7 @@ def test_flexible_department_answer_settles_the_gate_and_filters_nothing(luna, w
 
 def test_the_prompts_flexible_marker_is_read_as_flexible(luna):
     card = {"qualification_ok": True, "department_pref": SL.DEPARTMENT_FLEXIBLE, "city": "München",
-            "housing_known": True, **_DOC}
+            "housing_needed": False, **_DOC}
     assert LB.market_snapshot(card)["department_filter"]["status"] == "flexible"
     assert f"department_pref='{SL.DEPARTMENT_FLEXIBLE}'" in LB.P.system_prompt("{}", "{}")
 
@@ -614,7 +619,7 @@ def test_the_prompts_flexible_marker_is_read_as_flexible(luna):
 def test_unknown_department_word_filters_nothing_and_the_snapshot_says_so(luna, word):
     """The board has no department_hint for these words (its postings carry null), so a filter on them could only
     ever return nothing, whatever is open."""
-    card = {"qualification_ok": True, "city": "München", "department_pref": word, "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "city": "München", "department_pref": word, "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Nord"]
     assert snap["department_filter"] == {"requested": word, "status": "unmatched", "departments": []}
@@ -645,7 +650,7 @@ def test_alias_word_filters_the_shortlist_to_its_board_department(luna):
                             "department_hint": "Onkologie", "clinic_name": "Klinikum München Süd",
                             "employer": "Klinikum München Süd"})
     card = {"qualification_ok": True, "city": "München", "department_pref": "Palliativstation",
-            "housing_known": True, **_DOC}
+            "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Süd"]
     assert snap["department_filter"] == {"requested": "Palliativstation", "status": "applied",
@@ -677,7 +682,7 @@ def test_several_departments_filter_the_shortlist_to_any_of_them(luna):
     Augsburg has an Innere Medizin posting."""
     _innere_in_augsburg()
     card = {"qualification_ok": True, "city": "Augsburg", "department_pref": "Innere oder Intensiv",
-            "housing_known": True, **_DOC}
+            "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [(s["clinic"], s["department"]) for s in snap["shortlist"]] == [("Klinikum Augsburg", "Innere Medizin")]
     assert snap["department_filter"] == {"requested": "Innere oder Intensiv", "status": "applied",
@@ -691,7 +696,7 @@ def test_several_departments_filter_the_shortlist_to_any_of_them(luna):
 def test_a_department_with_a_flexible_word_or_a_negation_filters_nothing_and_the_snapshot_says_so(luna, word):
     """Review 2026-09-15 repro: 'egal, wo gerade gesucht wird' filtered to Psychiatrie (the classifier reads 'sucht'
     in 'gesucht'), 'alles außer OP' and 'kein OP' to OP; each emptied the shortlist."""
-    card = {"qualification_ok": True, "department_pref": word, "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "department_pref": word, "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum Würzburg", "Klinikum München Nord"]
     assert snap["department_filter"] == {"requested": word, "status": "ambiguous", "departments": []}
@@ -723,7 +728,7 @@ def test_department_prompt_rule_keeps_department_pref_to_the_candidates_own_word
 
 
 def test_shortlist_is_empty_with_neither_city_nor_department():
-    card = {"qualification_ok": True, "housing_known": True, **_DOC}
+    card = {"qualification_ok": True, "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"] == []
 
@@ -733,9 +738,223 @@ def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_sati
     arrived (TASK-96: the CV and the qualification document, card.documents) before the
     shortlist/close sequence exists, matching the real reference implementation's own
     document-verification gate (recon notes)."""
-    card = {"qualification_ok": True, "qualification_path": "urkunde", "city": "München", "housing_known": True}
+    card = {"qualification_ok": True, "qualification_path": "urkunde", "city": "München", "housing_needed": False}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"] == []
+
+
+# --- TASK-108: housing is a criterion, not a note ---------------------------------------------
+# Live board 2026-09-16: 483 of 3905 postings and 69 of 298 clinics carry enr_housing. The gate used to
+# record only that housing had been discussed (housing_known), the shortlist ignored the board's mark
+# entirely -- so a candidate who needs a flat was offered clinics that advertise none -- and the
+# constitution told Luna "Most clinics offer a small apartment", which 12 percent does not support.
+
+def test_the_housing_gate_asks_a_yes_no_before_any_headcount():
+    card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "city": "München"}
+    board = LB.requirement_scoreboard(card)
+    assert board["housing"] == "open"
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+                                       "-- no headcount in it yet")
+    after_yes = LB.requirement_scoreboard({**card, "housing_needed": True})
+    assert after_yes["housing"] == "open", "a yes alone does not settle housing -- the headcount is still open"
+    assert after_yes["next_objective"] == LB._HOUSING_HEADCOUNT_OBJECTIVE
+    settled = LB.requirement_scoreboard({**card, "housing_needed": True, "people_count": 3})
+    assert settled["housing"] == "satisfied"
+    assert settled["next_objective"].startswith("ask for BOTH the CV")
+
+
+def test_no_housing_needed_settles_the_gate_without_a_headcount():
+    card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "city": "München",
+            "housing_needed": False}
+    board = LB.requirement_scoreboard(card)
+    assert board["housing"] == "satisfied"
+    assert board["next_objective"].startswith("ask for BOTH the CV"), (
+        "a candidate who needs no flat is never asked how many people would live in it")
+
+
+def test_housing_needed_filters_the_shortlist_and_reports_both_counts(luna):
+    card = {"qualification_ok": True, "department_pref": "egal", "housing_needed": True, "people_count": 2, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [(s["clinic"], s["housing"]) for s in snap["shortlist"]] == [("Klinikum München Nord", True)]
+    assert snap["matching_clinics_count"] == 1, "the count Luna states must be the housing-filtered one"
+    assert snap["housing"] == {"needed": True, "flexible": None, "people_count": 2, "filtered": True,
+                               "clinics_with_housing": 1,
+                               "clinics_ignoring_housing": 2, "city_regierungsbezirk": None,
+                               # alternatives are for the empty case only -- there is a flat here
+                               "cities_with_housing": []}
+
+
+def test_housing_wanted_but_no_clinic_in_that_city_offers_one(luna):
+    """The honest-answer case: Würzburg has an open posting, the board marks no flat on it. The shortlist
+    stays empty rather than naming a clinic Luna would have to invent a flat for, and both counts plus a
+    real alternative city are in the snapshot so she can say exactly that."""
+    card = {"qualification_ok": True, "city": "Würzburg", "housing_needed": True, "people_count": 1, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"] == [] and snap["matching_clinics_count"] == 0
+    assert snap["housing"]["clinics_with_housing"] == 0
+    assert snap["housing"]["clinics_ignoring_housing"] == 1
+    assert snap["housing"]["city_regierungsbezirk"] == "Unterfranken"
+    assert snap["housing"]["cities_with_housing"] == [{"city": "München", "regierungsbezirk": "Oberbayern",
+                                                       "clinics": 1}]
+
+
+def test_the_alternative_cities_put_the_candidates_own_regierungsbezirk_first(luna):
+    """Nearby is read off the board (same Regierungsbezirk), never guessed: a single housing clinic in the
+    candidate's own Bezirk outranks two in another one."""
+    base = _jobs()[0]
+    D._snap["jobs"].extend([
+        {**base, "posting_id": 3, "city": "Aschaffenburg", "clinic_town": "Aschaffenburg",
+         "regierungsbezirk": "Unterfranken", "clinic_name": "Klinikum Aschaffenburg",
+         "employer": "Klinikum Aschaffenburg", "enr_housing": True},
+        {**base, "posting_id": 4, "city": "Regensburg", "clinic_town": "Regensburg",
+         "regierungsbezirk": "Oberpfalz", "clinic_name": "Klinikum Regensburg",
+         "employer": "Klinikum Regensburg", "enr_housing": True},
+        {**base, "posting_id": 5, "city": "Regensburg", "clinic_town": "Regensburg",
+         "regierungsbezirk": "Oberpfalz", "clinic_name": "Krankenhaus Regensburg Süd",
+         "employer": "Krankenhaus Regensburg Süd", "enr_housing": True}])
+    card = {"qualification_ok": True, "city": "Würzburg", "housing_needed": True, "people_count": 1, **_DOC}
+    cities = LB.market_snapshot(card)["housing"]["cities_with_housing"]
+    assert [(c["city"], c["clinics"]) for c in cities] == [("Aschaffenburg", 1), ("Regensburg", 2), ("München", 1)]
+
+
+def test_every_shortlist_entry_says_whether_the_board_marks_housing(luna):
+    """Also on a card that needs none: Luna may only assert a flat for an entry the board marks."""
+    card = {"qualification_ok": True, "department_pref": "egal", "housing_needed": False, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [(s["clinic"], s["housing"]) for s in snap["shortlist"]] == [("Klinikum Würzburg", False),
+                                                                        ("Klinikum München Nord", True)]
+    assert snap["matching_clinics_count"] == 2, "nothing is filtered away when no flat is wanted"
+    assert snap["housing"]["needed"] is False and snap["housing"]["cities_with_housing"] == []
+
+
+def test_the_model_records_the_housing_answer_and_the_harness_owns_the_flag(luna):
+    d = LB.turn("Ja, eine Wohnung bräuchte ich.", luna,
+                client=fake_client(_out(card_patch={"housing_needed": True})))
+    assert d["slots"]["housing_needed"] is True
+    assert d["slots"]["housing_known"] is True, "the flag follows the answer, in code"
+
+    headcount = LB.turn("Wir sind zu dritt.", {"slots": {}, "asked": []},
+                        client=fake_client(_out(card_patch={"people_count": 3})))
+    assert headcount["slots"]["housing_known"] is True, (
+        "a headcount is only ever asked about a flat -- it answers the housing question too")
+
+    flag_only = LB.turn("Passt", {"slots": {}, "asked": []},
+                        client=fake_client(_out(card_patch={"housing_known": True})))
+    assert "housing_known" not in flag_only["slots"], (
+        "housing_known is code-owned (TASK-108): a model that claims the gate is answered without the "
+        "housing_needed fact the shortlist filters on must not close it")
+    assert LB.requirement_scoreboard(flag_only["slots"])["housing"] == "open"
+    assert "housing_needed" in LB.OUTPUT_SCHEMA["properties"]["card_patch"]["properties"]
+    assert "housing_known" not in LB.OUTPUT_SCHEMA["properties"]["card_patch"]["properties"]
+
+
+def test_an_imported_card_with_only_the_flag_is_asked_the_housing_question_once(luna):
+    """TASK-102 import / older cards: housing_known says the question was answered once, never what the
+    answer was. A headcount on the card does say a flat is wanted and settles the gate. The flag ALONE does
+    not (review 2026-09-16): it used to, which closed the gate on an answer that never existed and then ran
+    the shortlist AND the handoff unfiltered -- the exact bug TASK-108 was filed for, for the population the
+    campaigns target. The yes/no is put to them once instead."""
+    with_headcount = {"qualification_ok": True, "city": "München", "housing_known": True, "people_count": 1, **_DOC}
+    assert LB.requirement_scoreboard(with_headcount)["housing"] == "satisfied"
+    assert LB.market_snapshot(with_headcount)["housing"]["needed"] is True
+
+    flag_only = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
+                 "city": "Würzburg", "housing_known": True, **_DOC}
+    board = LB.requirement_scoreboard(flag_only)
+    assert board["housing"] == "open"
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+                                       "-- no headcount in it yet")
+    snap = LB.market_snapshot(flag_only)
+    assert snap["housing"]["needed"] is None, "null is 'never answered', distinguishable from an answered no"
+    assert snap["shortlist"] == [], "no clinic is named while the housing question is still open"
+
+
+def test_a_yes_without_the_headcount_never_reads_as_close_ready(luna):
+    """Review 2026-09-16: turn() sets the harness flag housing_known as soon as the yes/no lands, one step
+    before the gate closes. Everything the prompt rules read must still say "open" until the headcount is in
+    -- otherwise the close sequence fires and reads the (still empty) shortlist as "no clinic has a flat"
+    while the same payload reports clinics that do."""
+    card = {"region": "Bayern", "qualification_ok": True, "qualification_path": "urkunde", "city": "München",
+            "housing_needed": True, **_DOC}
+    assert card.get("people_count") is None
+    board = LB.requirement_scoreboard(card)
+    assert board["housing"] == "open" and board["next_objective"] == LB._HOUSING_HEADCOUNT_OBJECTIVE
+    snap = LB.market_snapshot(card)
+    assert snap["shortlist"] == [] and snap["matches"] == []
+    assert snap["housing"]["clinics_with_housing"] == 1, (
+        "the empty shortlist here means 'gate still open', not 'no flat' -- the no-flat sentence in the "
+        "prompt reads clinics_with_housing, which says a flat does exist")
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "market_snapshot.housing.clinics_with_housing = 0 is the honest no-flat answer" in system
+    assert "housing_known are all satisfied" not in system, "the prompt reads the computed gate, not the flag"
+    assert "it open), requirement_scoreboard.housing, AND requirement_scoreboard.documents" in system
+
+
+def test_wanting_a_flat_and_accepting_one_without_is_recorded_without_unsaying_the_need(luna):
+    """Review 2026-09-16: the HOUSING follow-up ("would a clinic without a flat also work?") had no field for
+    its answer, so the only way to record a Ja was flipping housing_needed to false -- which told the human
+    handoff the family of two needs no flat. housing_flexible records it next to the need."""
+    card = {"qualification_ok": True, "city": "Würzburg", "housing_needed": True, "people_count": 2, **_DOC}
+    assert LB.market_snapshot(card)["shortlist"] == []
+
+    flexible = {**card, "housing_flexible": True}
+    snap = LB.market_snapshot(flexible)
+    assert [(s["clinic"], s["housing"]) for s in snap["shortlist"]] == [("Klinikum Würzburg", False)]
+    assert snap["matching_clinics_count"] == 1
+    assert snap["housing"]["needed"] is True and snap["housing"]["flexible"] is True
+    assert snap["housing"]["filtered"] is False, "the filter is off, the need is still on the card"
+
+    d = LB.turn("Ja, ohne Wohnung wäre auch in Ordnung.", {"slots": dict(card), "asked": []},
+                client=fake_client(_out(card_patch={"housing_flexible": True})))
+    assert d["slots"]["housing_flexible"] is True and d["slots"]["housing_needed"] is True
+    assert "housing_flexible" in LB.OUTPUT_SCHEMA["properties"]["card_patch"]["properties"]
+    assert "card_patch.housing_flexible true|false" in _rule("HOUSING (TASK-108)")
+
+
+def test_an_alternative_city_without_a_regierungsbezirk_does_not_lead_the_list(luna):
+    """Review 2026-09-16: city_regierungsbezirk was read off the role/department-filtered rows, which are
+    empty in exactly this branch (nothing matches in the wanted city), and the sort key then compared every
+    city against None -- so a posting the board states no Bezirk for sorted to the FRONT, ahead of the
+    candidate's own region. The model reads this list top-down."""
+    base = _jobs()[0]
+    D._snap["jobs"].extend([
+        {**base, "posting_id": 3, "city": "Aschaffenburg", "clinic_town": "Aschaffenburg",
+         "regierungsbezirk": "Unterfranken", "clinic_name": "Klinikum Aschaffenburg",
+         "employer": "Klinikum Aschaffenburg", "enr_housing": True},
+        {**base, "posting_id": 4, "city": "Irgendwo", "clinic_town": "Irgendwo", "regierungsbezirk": None,
+         "clinic_name": "Klinik Irgendwo", "employer": "Klinik Irgendwo", "enr_housing": True}])
+    # Würzburg has an OP posting only: with Intensiv/IMC wanted, the filtered set for the city is empty.
+    card = {"qualification_ok": True, "city": "Würzburg", "department_pref": "Intensivstation",
+            "housing_needed": True, "people_count": 1, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert snap["housing"]["city_regierungsbezirk"] == "Unterfranken", (
+        "the Bezirk comes from the city's own postings, whatever department is filtered")
+    assert [(c["city"], c["regierungsbezirk"]) for c in snap["housing"]["cities_with_housing"]] == [
+        ("Aschaffenburg", "Unterfranken"), ("Irgendwo", None), ("München", "Oberbayern")]
+
+
+def test_the_prompt_and_constitution_stop_claiming_clinics_generally_provide_a_flat():
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "Most clinics offer a small apartment" not in system, (
+        "a live run produced exactly this unbacked claim -- 12 percent of postings carry enr_housing")
+    rule = _rule("HOUSING (TASK-108)")
+    for phrase in ("first ONE plain yes/no whether they need a flat (Unterkunft) at all",
+                   "card_patch.housing_needed", "only after a yes, the open question how many people",
+                   "A no settles housing: never ask a headcount then",
+                   "a market_snapshot.shortlist entry with housing true",
+                   "the clinic confirms the terms",
+                   "Never say that clinics generally, mostly or usually provide a flat",
+                   "clinics_with_housing", "clinics_ignoring_housing", "cities_with_housing"):
+        assert phrase in rule, phrase
+    principle = json.loads((LB._LUNA_DIR / "constitution.json").read_text(encoding="utf-8"))["housing_principle"]
+    assert "a plain yes/no whether they need a flat at all" in principle["ask"]
+    assert "the live board marks as offering one" in principle["say"]
+    assert any("marks it on a minority of postings" in n for n in principle["never"])
+    # TASK-110 review: the share itself is generated into the housing tools' descriptions off the live
+    # board (16% of the verify=live rows on 2026-09-16). A second, hardcoded one here ("about one posting
+    # in eight", 483 of 3905 open postings) put two answers to "how common is a flat" in the same context.
+    assert "one posting in eight" not in system, "the housing share belongs in the generated tool description"
+    assert "the only current share is the one in the housing tools" in system
 
 
 # --- session persistence: one Claude Code session per WhatsApp thread -------------------------
@@ -831,15 +1050,33 @@ def _ok_stdout(session_id="cli-assigned-session", **out_kw):
     return json.dumps({"is_error": False, "result": json.dumps(_out(**out_kw)), "session_id": session_id})
 
 
-def test_live_reply_starts_a_fresh_session_with_session_id_flag(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+def _server_env(cmd):
+    config = json.loads(pathlib.Path(cmd[cmd.index("--mcp-config") + 1]).read_text(encoding="utf-8"))
+    return config["mcpServers"][LB.MCP_SERVER_NAME]["env"]
+
+
+def _fake_cli(stdout="", returncode=0, stderr="", captured=None, tools_start=True):
+    """Stands in for `claude -p` -- including the part of it that matters here: the CLI spawns the stdio
+    MCP server named in --mcp-config, and that server stamps WA_LUNA_TOOLS_READY once its tools are
+    registered (tools_server._stamp_ready). ``tools_start=False`` is that server dying at start or being
+    dropped for missing the CLI's connect deadline: the CLI itself still exits 0 with a normal reply."""
+    def run(cmd, input=None, capture_output=None, text=None, timeout=None, cwd=None):
+        if captured is not None:
+            captured.update({"cmd": cmd, "input": input, "timeout": timeout, "cwd": cwd})
+        if tools_start:
+            env = _server_env(cmd)
+            ready = pathlib.Path(env["WA_LUNA_TOOLS_READY"])
+            ready.parent.mkdir(parents=True, exist_ok=True)
+            ready.write_text(json.dumps({"at": time.time(), "pid": 4242, "tools": ["search_postings"]}),
+                             encoding="utf-8")
+        return _FakeCompleted(returncode=returncode, stdout=stdout, stderr=stderr)
+
+    return run
+
+
+def test_live_reply_starts_a_fresh_session_with_session_id_flag(luna, monkeypatch, tmp_path):
     captured = {}
-
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, cwd=None):
-        captured["cmd"], captured["input"], captured["timeout"], captured["cwd"] = cmd, input, timeout, cwd
-        return _FakeCompleted(stdout=_ok_stdout())
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), captured=captured))
     client = LB.Client()
     out, session_id = client._live_reply("SYSTEM TEXT", "USER TEXT", None)
     assert out["action"] == "reply_now_conversational"
@@ -859,15 +1096,10 @@ def test_live_reply_starts_a_fresh_session_with_session_id_flag(monkeypatch, tmp
     assert captured["cwd"] == C.LUNA_SESSION_DIR, "resume only finds this session again from the same cwd"
 
 
-def test_live_reply_resumes_an_existing_session_with_resume_flag(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+def test_live_reply_resumes_an_existing_session_with_resume_flag(luna, monkeypatch, tmp_path):
     captured = {}
-
-    def fake_run(cmd, **kw):
-        captured["cmd"] = cmd
-        return _FakeCompleted(stdout=_ok_stdout(session_id="existing-thread-session"))
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run",
+                        _fake_cli(stdout=_ok_stdout(session_id="existing-thread-session"), captured=captured))
     out, session_id = LB.Client()._live_reply("s", "u", "existing-thread-session")
     cmd = captured["cmd"]
     assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "existing-thread-session"
@@ -875,19 +1107,15 @@ def test_live_reply_resumes_an_existing_session_with_resume_flag(monkeypatch, tm
     assert session_id == "existing-thread-session"
 
 
-def test_live_reply_strips_a_markdown_fence_around_the_result(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+def test_live_reply_strips_a_markdown_fence_around_the_result(luna, monkeypatch, tmp_path):
     fenced_result = "```json\n" + json.dumps(_out()) + "\n```"
-    monkeypatch.setattr(subprocess, "run",
-                        lambda *a, **k: _FakeCompleted(stdout=json.dumps(
-                            {"is_error": False, "result": fenced_result, "session_id": "s1"})))
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=json.dumps(
+        {"is_error": False, "result": fenced_result, "session_id": "s1"})))
     out, session_id = LB.Client()._live_reply("s", "u", None)
     assert out["action"] == "reply_now_conversational"
 
 
-def test_live_reply_raises_when_the_cli_is_not_installed(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
-
+def test_live_reply_raises_when_the_cli_is_not_installed(luna, monkeypatch, tmp_path):
     def raise_not_found(*a, **k):
         raise FileNotFoundError()
 
@@ -896,9 +1124,7 @@ def test_live_reply_raises_when_the_cli_is_not_installed(monkeypatch, tmp_path):
         LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_on_timeout(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
-
+def test_live_reply_raises_on_timeout(luna, monkeypatch, tmp_path):
     def raise_timeout(*a, **k):
         raise subprocess.TimeoutExpired(cmd=["claude"], timeout=1)
 
@@ -907,32 +1133,83 @@ def test_live_reply_raises_on_timeout(monkeypatch, tmp_path):
         LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_on_nonzero_exit(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(returncode=1, stderr="boom"))
+def test_live_reply_raises_on_nonzero_exit(luna, monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", _fake_cli(returncode=1, stderr="boom"))
     with pytest.raises(RuntimeError, match="exited 1"):
         LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_stdout_is_not_json(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(stdout="not json"))
+def test_live_reply_raises_when_stdout_is_not_json(luna, monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout="not json"))
     with pytest.raises(RuntimeError, match="did not return JSON"):
         LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_the_cli_itself_reports_an_error(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
+def test_live_reply_raises_when_the_cli_itself_reports_an_error(luna, monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run",
-                        lambda *a, **k: _FakeCompleted(stdout=json.dumps({"is_error": True, "result": "quota exceeded"})))
+                        _fake_cli(stdout=json.dumps({"is_error": True, "result": "quota exceeded"})))
     with pytest.raises(RuntimeError, match="reported an error"):
         LB.Client()._live_reply("s", "u", None)
 
 
-def test_live_reply_raises_when_result_is_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "sessions")
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeCompleted(stdout=json.dumps({"is_error": False})))
+def test_live_reply_raises_when_result_is_missing(luna, monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=json.dumps({"is_error": False})))
     with pytest.raises(RuntimeError, match="no result text"):
+        LB.Client()._live_reply("s", "u", None)
+
+
+# --- TASK-110 review: a turn without the board tools is a failure, not a quiet answer -----------
+# The tools server is a fresh subprocess per turn. When it dies at start (a board hiccup) or the CLI
+# drops it for missing its connect deadline, `claude -p` still exits 0 with is_error false, empty
+# stderr and a normal-looking reply -- and the result envelope carries no MCP server status at all
+# (probed against CLI 2.1.270). The turn then runs against a system prompt that says "TOOLS
+# (mandatory, not optional)", names nine tools that are not there, and answers about the board from
+# nothing: an unverified claim indistinguishable from a verified one, the exact failure class
+# (TASK-96) these tools exist to remove.
+
+def test_a_turn_whose_tools_server_never_started_fails_loudly_instead_of_answering(luna, monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), tools_start=False))
+    with pytest.raises(RuntimeError) as raised:
+        LB.Client()._live_reply("s", "u", None)
+    assert "board tools server never started" in str(raised.value)
+    assert "app.wa.luna.tools_server" in str(raised.value), "the error says how to see why"
+
+
+def test_the_readiness_stamp_of_one_turn_is_gone_before_the_next(luna, monkeypatch, tmp_path):
+    """One file per turn, removed when the turn is done: a stamp left behind would tell the next turn
+    that a server it never had was up."""
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(pathlib.Path(_server_env(cmd)["WA_LUNA_TOOLS_READY"]))
+        return _fake_cli(stdout=_ok_stdout())(cmd, **kw)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    LB.Client()._live_reply("s", "u", None)
+    LB.Client()._live_reply("s", "u", "session-2")
+    assert len(set(seen)) == 2 and not any(p.exists() for p in seen)
+
+
+def test_the_tools_server_is_handed_the_vocabulary_this_process_counted(luna, monkeypatch, tmp_path):
+    """TASK-110 review: counting the board inside the spawned server was a cold Supabase build (8-17s
+    measured) on the critical path of every turn, under the CLI's 30s connect deadline. This process
+    already holds the snapshot market_snapshot is built from in the same turn."""
+    captured = {}
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), captured=captured))
+    LB.Client()._live_reply("s", "u", None)
+
+    env = _server_env(captured["cmd"])
+    lines = json.loads(pathlib.Path(env["WA_LUNA_BOARD_VOCABULARY"]).read_text(encoding="utf-8"))
+    assert "BOARD NOW: 2 live-verified of 2 open postings at 2 clinics in 2 cities" in lines["board"]
+    assert "1 of 2 postings (50%)" in lines["housing"], lines["housing"]
+    assert "Intensiv/IMC 1" in lines["department"] and "Oberbayern 1" in lines["regierungsbezirk"]
+    assert env["WA_LUNA_TOOLS_READY"] and env["PYTHONPATH"]
+
+
+def test_a_board_with_no_live_posting_fails_the_turn_instead_of_serving_empty_tools(luna, monkeypatch, tmp_path):
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout()))
+    D._snap.update(jobs=[])
+    with pytest.raises(RuntimeError, match="no live-verified open posting"):
         LB.Client()._live_reply("s", "u", None)
 
 

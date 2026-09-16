@@ -1,11 +1,11 @@
 ---
 id: TASK-107
 title: Transcribe candidate voice notes so Luna answers what they said
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 22:15'
-updated_date: '2026-09-15 01:31'
+updated_date: '2026-09-16 14:36'
 labels: []
 dependencies: []
 type: feature
@@ -23,7 +23,7 @@ Today a WhatsApp voice note (audio) is stored (TASK-95) but not read: the candid
 - [x] #1 an inbound audio message on a WA_BRAIN=luna thread is transcribed (OpenAI transcription, model configurable, key from env) from the stored original and the transcript is what Luna answers, marked as a voice note in the payload; the transcript is stored on the wa_documents row and the inbound message
 - [x] #2 failures (no key, API error, empty transcript) fail loudly and are recorded; the thread shows as stuck and catch-up retries from the stored original, no silent flat reply; /api/wa/health reports whether transcription is configured
 - [x] #3 audio sent as a document is handled the same way; video keeps the current handling
-- [ ] #4 offline tests with a fake transcription client cover success, failure, retry and the payload marker; one live transcription of a synthetic German voice note succeeds when a key is configured; docs updated
+- [x] #4 offline tests with a fake transcription client cover success, failure, retry and the payload marker; one live transcription of a synthetic German voice note succeeds when a key is configured; docs updated
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -52,4 +52,12 @@ Live transcription: skipped, no OPENAI_API_KEY in env or .env; tests/test_wa_stt
 Full offline suite (single process): 1547 passed, 126 skipped, 66 deselected, 141 s.
 
 Final verification 2026-09-15 (~01:20 UTC, after review + adversarial verify + fixer): offline suite 1571 passed, 126 skipped, 0 failed. Live llm, one at a time: campaign full funnel 3/3 non-empty shortlist, flexible funnel 1/1 (5 clinics), imported opt-out silence then re-engagement 1/1, voice-note reply from transcript 1/1 (fake STT), misheard town asked back 1/1. Follow-up fix 01:30 UTC: the unmatched-department ToolError no longer carries candidate-facing English (a run had copied it into a bubble and broken JSON); tests/test_wa_luna_tools.py 15 passed, Urologie funnel llm 2/2. Not yet deployed: pflege-wa.service restart pending Ivan's go. AC4 live part open: OPENAI_API_KEY is not in .env yet; tests/test_wa_stt_live.py (espeak-ng + ffmpeg synthetic German voice note) skips. Until the key exists and pflege-wa is restarted on this tree, Luna voice notes stay pending (recorded, no reply) and catch-up answers them once the key is present.
+
+Live transcription verified 2026-09-16 14:20-14:25 UTC after Ivan added OPENAI_API_KEY and restarted pflege-wa (health stt_ready=true, stt_model=whisper-1). tests/test_wa_stt_live.py (espeak-ng speech -> ffmpeg ogg/opus, webhook path, fake Meta, fake brain, real OpenAI endpoint) passed with the service EnvironmentFile: whisper-1 returned 'Hallo, ich bin Pflegefachfrau und möchte gern in München arbeiten.' verbatim in 2.9s for 13657 bytes. Model comparison on the same sample: gpt-4o-transcribe 0.8s and gpt-4o-mini-transcribe 1.3s, both with identical text. Default left at whisper-1 (old-system parity); switching needs only WA_STT_MODEL in the EnvironmentFile plus a restart. One clean synthetic sample is not evidence about noisy real voice notes -- flagged to Ivan.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+WhatsApp voice notes are transcribed (OpenAI, whisper-1 by default, WA_STT_MODEL) from the stored original inside the background worker, and Luna answers what was said instead of the flat media reply; failures are loud, recorded and retried by catch-up from the stored file, and /api/wa/health reports stt_ready. Verified by offline tests with a fake transport (success, three failure kinds, catch-up retry, payload marker), live llm runs (voice-note reply, misheard town asked back) and a live OpenAI transcription of a synthetic German voice note through the webhook path.
+<!-- SECTION:FINAL_SUMMARY:END -->

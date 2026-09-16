@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 14:24'
-updated_date: '2026-09-16 14:13'
+updated_date: '2026-09-16 14:51'
 labels: []
 dependencies:
   - TASK-98
@@ -74,6 +74,8 @@ Fixer 2026-09-14 (review F3 old-system opt-outs): with --import-history-*, a pho
 Repair round 1 2026-09-14: (1) exit code -- main() now returns 3 whenever a --no-wait run stopped before the list was done and no send of this run failed/was uncertain/import error; problem leads of the plan (invalid_phone, variables_error, conflicting_duplicate, uncertain, delivery_failed) still print and are reported every run and give 1 once the list is done or in a dry-run. Before: one such lead (e.g. any delivery_failed after 131049) made every stop exit 1, so a run could not tell whether the list was done. Test test_a_problem_lead_does_not_hide_that_a_no_wait_run_stopped_before_the_list_was_done (3 then 1); module docstring EXIT and docs/whatsapp.md Report updated. (2) .gitignore: data/known-real-system-phones.txt (hourly TASK-87 export of real-system phones, untracked and not ignored -> PII commit risk). data/wa_test_docs/ is TASK-95's synthetic generator output, left alone.
 
 Final verification 2026-09-14 20:45-20:57 UTC (after 4-lens review, adversarial verify, fixer + 2 repair rounds): offline suite 1474 passed, 126 skipped, 0 failed. pflege-wa.service restarted 21:22 UTC on this tree; health webhook_ready/outbound_ready/luna_ready true, threads 200. Nothing sent; campaign not run.
+
+Ivan confirmed 2026-09-16: the campaign template is id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, POSITIONAL ({{1}} = candidate name), quick replies "Ja, ich habe Interesse" / "Nein, kein Interesse". Still blocked on Meta billing (131042) and the lead list.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

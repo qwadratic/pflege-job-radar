@@ -231,6 +231,37 @@ set -a && . ./.env && set +a
 
 The live test sends only synthetic espeak-ng speech to OpenAI; nothing goes to Meta.
 
+## 9. Test numbers: mark the operator's number, install the nightly wipe (TASK-109)
+
+The number the live harness is tested from by hand (Ivan's, ends 8778) must be marked, or it is counted in reports
+like a candidate, can receive a campaign template mid-test, and starts every test from yesterday's card.
+Details: `docs/whatsapp.md`, "Test numbers (TASK-109)".
+
+```bash
+cd /home/claude/repo/pflege-board
+set -a && . ./.env && set +a
+.venv/bin/python -m app.wa.luna.test_threads --mark +49XXXXXXX8778
+.venv/bin/python -m app.wa.luna.test_threads --list
+curl -s http://127.0.0.1:8502/api/wa/threads | jq '.test_threads, (.rows[] | select(.is_test) | .phone)'
+```
+
+The wipe is a separate job. Read a dry run before the first `--apply` -- it prints every row, file and session
+transcript it would delete, per phone, and writes nothing:
+
+```bash
+.venv/bin/python -m app.wa.luna.purge_test_history --json | jq .      # dry run
+.venv/bin/python -m app.wa.luna.purge_test_history --apply            # full wipe, now
+sudo cp deploy/pflege-wa-purge-test.service deploy/pflege-wa-purge-test.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now pflege-wa-purge-test.timer
+systemctl list-timers pflege-wa-purge-test.timer     # expect the next 03:00 Europe/Berlin
+journalctl -u pflege-wa-purge-test -n 50
+```
+
+Schedule (timer `OnCalendar`) and retention (`--older-than-hours` in the service, 0 = full wipe) live in the unit
+files, not in the code. The unit runs as `User=exedev`: its `CLAUDE_CONFIG_DIR` (default `~/.claude`) must be the
+config the `claude` CLI uses for the Luna turns, otherwise the report shows `0 session transcript(s)` for a thread
+that has a session id -- the conversation would stay readable on disk. The job never calls Meta.
+
 ## Known gaps going into this rollout (not blockers, but real)
 
 - No Meta-approved reopen template registered (`WA_REOPEN_TEMPLATE_NAME` unset) -- a thread that

@@ -41,10 +41,12 @@ import re
 import sys
 import uuid
 
+from .. import data as D
 from . import brain as B
 from . import config as C
 from . import slots as SL
 from . import store as ST
+from .luna import board_vocabulary as BV
 from .luna import prompts as P
 
 MAX_BUBBLES = 2
@@ -68,8 +70,12 @@ _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").rea
 _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledge.json").read_text(encoding="utf-8")),
                                  ensure_ascii=False, indent=2)
 
-# The three tools Luna herself may call, as the CLI names an external MCP tool
+# The tools Luna herself may call, as the CLI names an external MCP tool
 # (mcp__<server-name>__<tool-name> -- confirmed live, this is not documented anywhere formal).
+# Three general board queries, four with the filter already preset for a common candidate need
+# (TASK-110: a filter the model has to assemble out of bare parameter names goes unused -- the housing
+# one did, for a whole task), and the two fallbacks for what the presets do not cover: this repo's own
+# agent docs and an allowlist of public board GET paths. Every one of them is read-only.
 # tools_server.py also defines get_clinic_contact (with its own tests) -- deliberately NOT in this
 # tuple (TASK-91): contact details are for the human handoff after consent (app/wa/queue.py), never
 # something the candidate-facing conversation itself should be able to surface.
@@ -77,11 +83,38 @@ _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledg
 # repeat to a candidate (TASK-100: asked who we are, Luna named the repo).
 MCP_SERVER_NAME = "jobs"
 MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
-                       ("search_postings", "get_posting", "list_clinics"))
+                       ("search_postings", "get_posting", "list_clinics",
+                        "search_postings_with_housing", "list_clinics_with_housing",
+                        "list_cities_with_postings", "count_postings",
+                        "read_board_docs", "board_api_get"))
 
 
-def _mcp_config_path():
-    """Write (once per process) the --mcp-config file pointing the CLI at tools_server.py,
+def _write_atomic(path, text):
+    """Two turns can run at once (the webhook worker, catch-up, a campaign send); a half-written file
+    read by a spawned server would be a parse error inside somebody else's turn."""
+    tmp = path.with_suffix(path.suffix + f".{uuid.uuid4().hex}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _board_vocabulary_path():
+    """Count the board's filter vocabulary HERE, in the process that already holds a warm snapshot, and
+    write it next to the mcp config for the tools server to pick up (TASK-110 review).
+
+    The tools server is spawned fresh for every single turn. Counting the vocabulary there meant a cold,
+    synchronous Supabase build -- 8-17s measured -- between the CLI starting that process and the MCP
+    handshake, under the CLI's 30s connect deadline (MCP_TIMEOUT), on every turn including the ones that
+    never call a tool; and a board hiccup there raised, killed the server, and left this process none the
+    wiser. This process refreshes its snapshot in the background and keeps serving the cached board while
+    a refresh fails (app/data.py:refresh), so the lines are built from the same rows market_snapshot is
+    built from in this very turn."""
+    path = C.LUNA_SESSION_DIR / "board_vocabulary.json"
+    _write_atomic(path, json.dumps(BV.vocabulary_lines(), ensure_ascii=False))
+    return path
+
+
+def _mcp_config_path(ready_path):
+    """Write (once per turn) the --mcp-config file pointing the CLI at tools_server.py,
     launched with the same interpreter this process runs under -- that interpreter is guaranteed
     to have the `mcp` package installed, whereas a bare `python`/`python3` on PATH might be a
     different, unrelated interpreter.
@@ -99,7 +132,12 @@ def _mcp_config_path():
     app.wa.config, so a test's ``monkeypatch.setattr(config, "SQLITE_PATH"/"LUNA_SESSION_DIR", ...)``
     on *this* process never reaches it on its own. WA_SQLITE_PATH/WA_LUNA_SESSION_DIR pass this
     process's current values through explicitly so a test board and a test tool-call log are the
-    same one on both sides of the subprocess boundary (see tools_server.py's own handling)."""
+    same one on both sides of the subprocess boundary (see tools_server.py's own handling).
+
+    WA_LUNA_BOARD_VOCABULARY carries the tool descriptions' vocabulary counted here
+    (_board_vocabulary_path), WA_LUNA_TOOLS_READY the file that server stamps once its tools are
+    registered -- ``_live_reply`` raises when that stamp is missing after the run, because a tools
+    server that never started is otherwise indistinguishable from a turn that just did not call one."""
     C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
     path = C.LUNA_SESSION_DIR / "mcp_config.json"
     config = {"mcpServers": {MCP_SERVER_NAME: {"command": sys.executable,
@@ -107,8 +145,10 @@ def _mcp_config_path():
                                                 "cwd": str(_REPO_ROOT),
                                                 "env": {"PYTHONPATH": str(_REPO_ROOT),
                                                         "WA_SQLITE_PATH": str(C.SQLITE_PATH),
-                                                        "WA_LUNA_SESSION_DIR": str(C.LUNA_SESSION_DIR)}}}}
-    path.write_text(json.dumps(config), encoding="utf-8")
+                                                        "WA_LUNA_SESSION_DIR": str(C.LUNA_SESSION_DIR),
+                                                        "WA_LUNA_BOARD_VOCABULARY": str(_board_vocabulary_path()),
+                                                        "WA_LUNA_TOOLS_READY": str(ready_path)}}}}
+    _write_atomic(path, json.dumps(config))
     return path
 
 # Bundesländer this board has no data for. Named explicitly (not "everything but Bayern") so a
@@ -151,6 +191,53 @@ def _city_or_department_satisfied(card):
     one) then saw requirement_scoreboard say 'satisfied' while market_snapshot never actually
     produced a shortlist to close with, stalling the conversation indefinitely)."""
     return bool(card.get("city") or card.get("department_pref"))
+
+
+def housing_needed(card):
+    """TASK-108: does this candidate need a flat? True/False as they answered it, None when the card does not say.
+
+    ``card["housing_needed"]`` is the answer to the plain yes/no gate question; ``people_count`` is only ever
+    recorded as "how many people would live in the flat" (the question is asked only after a yes, here and in the
+    history import's own contract, docs/whatsapp.md), so a card that carries a headcount states a flat is wanted
+    even when it predates this field. ``housing_known`` alone does NOT: it says the housing question was answered
+    at some point (an imported card, app/wa/luna/import_history.py), never what the answer was -- guessing "needs
+    one" from it would be inventing the fact this whole gate exists to know.
+
+    The one criterion both the shortlist (market_snapshot) and the post-consent handoff
+    (app/wa/queue.py:card_to_candidate) read, so they cannot promise different clinics."""
+    if isinstance(card.get("housing_needed"), bool):
+        return card["housing_needed"]
+    if card.get("people_count"):
+        return True
+    return None
+
+
+def _housing_satisfied(card):
+    """The housing gate: a No settles it on its own, a Yes needs the headcount too (TASK-108).
+
+    A card carrying only ``housing_known`` -- what import_history/migrate_candidates produce for an old-system
+    candidate whose facts row says the topic was covered but not what was said -- is NOT settled (review
+    2026-09-16). It used to be, and that closed the gate on the answer never existing: the yes/no was never
+    asked, while the shortlist and the post-consent handoff both ran unfiltered (housing_needed None), i.e.
+    the exact bug TASK-108 was filed for, for exactly the population the campaigns target. This is not
+    re-asking an answered question either: the old system asked its own, coarser one and kept no answer we
+    can read, so a single plain yes/no here is the first time this gate's question is put to them."""
+    needed = housing_needed(card)
+    if needed is True:
+        return bool(card.get("people_count"))
+    return needed is False
+
+
+def housing_flexible(card):
+    """TASK-108 review: "wanted a flat, a clinic without one is also an option" -- the answer to the HOUSING
+    rule's follow-up when no matching clinic offers one. True/False as they answered it, None while they did
+    not. It never rewrites housing_needed: without a field of its own the only way to record the Ja was
+    flipping housing_needed to false, which erased the stated need from the human handoff (queue.py:
+    ``needs_housing``) for a family that had explicitly asked for a flat. Read by market_snapshot and
+    queue.build_queue_entry: a flexible candidate is matched against every posting again, a candidate who
+    still needs a flat only against the ones the board marks with housing."""
+    v = card.get("housing_flexible")
+    return v if isinstance(v, bool) else None
 
 
 def _counts_for_gate(doc):
@@ -199,8 +286,39 @@ def _documents_satisfied(card):
     return _cv_document_received(card) and _qualification_document_received(card)
 
 
+def _clinic_name(row):
+    return (row.get("clinic_name") or row.get("employer") or "").strip()
+
+
+def _clinic_names(rows):
+    return {_clinic_name(r) for r in rows} - {""}
+
+
+def _housing_cities(rows, wanted_city, home_bezirk):
+    """TASK-108: the other cities whose postings the board marks with housing, under the same role/department
+    filters -- [{city, regierungsbezirk, clinics}], the candidate's own Regierungsbezirk first, then by clinic
+    count. Board rows only: this is what lets Luna answer "no flat in your city" with a real alternative instead
+    of naming a town she made up, and it stays empty when the data has none.
+
+    Own-Bezirk-first applies only when we actually know the candidate's Bezirk: comparing ``!= None`` sorted
+    every city whose postings carry no regierungsbezirk to the FRONT, ahead of larger, genuinely nearby ones
+    (review 2026-09-16), and the model reads this list top-down."""
+    by_city = {}
+    for r in rows:
+        city, name = (r.get("city") or r.get("clinic_town") or "").strip(), _clinic_name(r)
+        if not city or not name or city.casefold() == (wanted_city or "").casefold():
+            continue
+        entry = by_city.setdefault(city, {"regierungsbezirk": r.get("regierungsbezirk"), "clinics": set()})
+        entry["clinics"].add(name)
+    out = [{"city": city, "regierungsbezirk": e["regierungsbezirk"], "clinics": len(e["clinics"])}
+           for city, e in by_city.items()]
+    out.sort(key=lambda e: (0 if home_bezirk and e["regierungsbezirk"] == home_bezirk else 1,
+                            -e["clinics"], e["city"]))
+    return out[:CLOSE_LIMIT]
+
+
 def market_snapshot(card):
-    """-> {open_jobs, cities, matching_clinics_count, shortlist, matches, department_filter}. department_filter
+    """-> {open_jobs, cities, matching_clinics_count, shortlist, matches, department_filter, housing}. department_filter
     (TASK-104) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
     filters by department (any of its departments); ambiguous, flexible and unmatched build the shortlist from the
     other criteria. Deliberately thin
@@ -219,7 +337,20 @@ def market_snapshot(card):
     document both received, TASK-96) are all settled:
     naming the exact clinics a candidate's anonymized profile may reach is compliance-sensitive
     enough (never invent a clinic name) that it stays harness-computed, not left to the model's
-    recall of an earlier tool result several turns back."""
+    recall of an earlier tool result several turns back.
+
+    housing (TASK-108): {needed, flexible, people_count, filtered, clinics_with_housing,
+    clinics_ignoring_housing, city_regierungsbezirk, cities_with_housing}. Once ``housing_needed`` says a flat
+    is wanted, the shortlist and matching_clinics_count come from the postings the board marks with housing
+    (app/data.py:offers_housing, the ``housing=1`` filter GET /api/jobs takes) -- only 12 percent of them, so an
+    unfiltered shortlist was a promise the board does not back. ``needed`` null means the yes/no was never
+    answered (the gate is open then, so there is no shortlist either); ``flexible`` true is "wanted a flat, a
+    clinic without one is also an option" and opens the search again while the need stays recorded; ``filtered``
+    says which of the two the shortlist in this payload was built with. Both counts are reported, so Luna can
+    say plainly that a city has open postings but none of them with a flat, and cities_with_housing -- filled
+    only when the housing-filtered search found no flat at all -- gives the real alternatives from the same
+    board instead of an invented one. Every shortlist entry carries its own ``housing`` flag, on every card:
+    housing may only be asserted for a posting the board marks."""
     all_rows = B.jobs_for({})
     cities = B.known_cities()[:8]
 
@@ -239,25 +370,50 @@ def market_snapshot(card):
         if department_filter["status"] == "applied":
             filters["department"] = ",".join(department_filter["departments"])
     rows = B.jobs_for(filters)
-    clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
+    needed, flexible = housing_needed(card), housing_flexible(card)
+    rows_with_housing = [r for r in rows if D.offers_housing(r)]
+    # A candidate who needs a flat is matched against the postings that offer one, nothing else (TASK-108) --
+    # until they say a clinic without one is also an option (housing_flexible), which opens the search again
+    # without unsaying the need itself.
+    filter_housing = needed is True and flexible is not True
+    matching = rows_with_housing if filter_housing else rows
+
+    # The wanted city's own Regierungsbezirk, from that city's own postings whatever role/department is
+    # filtered -- what makes an alternative city a neighbour rather than the other end of Bavaria. Read off
+    # the filtered rows it was empty in exactly the branch below that needs it (no matching posting in the
+    # city at all, review 2026-09-16). None without a city on the card, and None for a city the board has no
+    # posting in at all: a Bezirk is read off the board here, never guessed.
+    city_bezirk = next((r.get("regierungsbezirk") for r in B.jobs_for({"city": filters["city"]})
+                        if r.get("regierungsbezirk")), None) if filters.get("city") else None
+    # Alternatives only when the filtered search itself found nothing: with a flat available where they asked,
+    # naming other cities is noise the model could turn into a menu question (TASK-97).
+    housing_cities = []
+    if filter_housing and not rows_with_housing:
+        wider = B.jobs_for({k: v for k, v in filters.items() if k != "city"}) if filters.get("city") else rows
+        housing_cities = _housing_cities([r for r in wider if D.offers_housing(r)], card.get("city"), city_bezirk)
 
     shortlist = []
     ready_to_close = bool(card.get("qualification_ok") and _city_or_department_satisfied(card)
-                          and card.get("housing_known") and _documents_satisfied(card))
+                          and _housing_satisfied(card) and _documents_satisfied(card))
     if ready_to_close:
         seen = set()
-        for r in rows:
-            name = (r.get("clinic_name") or r.get("employer") or "").strip()
+        for r in matching:
+            name = _clinic_name(r)
             if not name or name in seen:
                 continue
             seen.add(name)
             shortlist.append({"clinic": name, "city": (r.get("city") or r.get("clinic_town") or "").strip(),
-                              "department": r.get("department_hint")})
+                              "department": r.get("department_hint"), "housing": D.offers_housing(r)})
             if len(shortlist) >= CLOSE_LIMIT:
                 break
 
-    return {"open_jobs": len(all_rows), "cities": cities, "matching_clinics_count": len(clinic_names),
-            "shortlist": shortlist, "matches": list(shortlist), "department_filter": department_filter}
+    return {"open_jobs": len(all_rows), "cities": cities, "matching_clinics_count": len(_clinic_names(matching)),
+            "shortlist": shortlist, "matches": list(shortlist), "department_filter": department_filter,
+            "housing": {"needed": needed, "flexible": flexible, "people_count": card.get("people_count"),
+                        "filtered": filter_housing,
+                        "clinics_with_housing": len(_clinic_names(rows_with_housing)),
+                        "clinics_ignoring_housing": len(_clinic_names(rows)),
+                        "city_regierungsbezirk": city_bezirk, "cities_with_housing": housing_cities}}
 
 
 # Gate-priority order for requirement_scoreboard()'s next_objective (TASK-91): a single computed
@@ -274,7 +430,8 @@ _OBJECTIVE_ORDER = (
                       "already in hand; only on no, the recognition step, again one yes/no at a time"),
     ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
-    ("housing", "ask how many people would live in the flat, as an open question"),
+    # TASK-108: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
+    ("housing", "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"),
     ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-96
                   "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
@@ -284,6 +441,10 @@ _OBJECTIVE_ORDER = (
 # the model to ask a not-placeable candidate for documents every turn (prompts.py NOT PLACEABLE says stop).
 _NOT_PLACEABLE_OBJECTIVE = ("not placeable -- no placement item open: no region, city, housing or document ask "
                             "(NOT PLACEABLE)")
+
+# TASK-108: the second housing step, once the candidate said they do need a flat (card.housing_needed true).
+_HOUSING_HEADCOUNT_OBJECTIVE = ("they need a flat: ask how many people would live in it, as an open question "
+                                "(people_count) -- never as alone-or-with-family options")
 
 
 def _qualification_document_name(path):
@@ -341,7 +502,10 @@ def requirement_scoreboard(card):
     when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
     next_objective the not-placeable hint, whatever else is open. TASK-102: an imported document counts only once
     reuse is confirmed; while one that would settle an open half is pending, the documents objective is the reuse
-    yes/no (_reuse_objective)."""
+    yes/no (_reuse_objective). TASK-108: housing is satisfied by a plain No on its own, or by a Yes plus the
+    headcount (_housing_satisfied); between the two steps the objective is the headcount, never the yes/no
+    again. This ``housing`` value, not card.housing_known, is the gate the prompt rules read: the flag follows
+    the yes/no one step earlier, so between the Ja and the headcount the two disagree (review 2026-09-16)."""
 
     def _q():
         path = card.get("qualification_path")
@@ -356,7 +520,7 @@ def requirement_scoreboard(card):
         "region": "satisfied" if card.get("region") else "open",
         "qualification": _q(),
         "city_or_department": "satisfied" if _city_or_department_satisfied(card) else "open",
-        "housing": "satisfied" if card.get("housing_known") else "open",
+        "housing": "satisfied" if _housing_satisfied(card) else "open",
         "cv_document": "satisfied" if cv_in else "open",
         "qualification_document": "satisfied" if qualification_in else "open",
         "documents": "satisfied" if cv_in and qualification_in else "open",
@@ -364,12 +528,19 @@ def requirement_scoreboard(card):
     }
     missing = _missing_documents(card, cv_in, qualification_in)
     pending = _reuse_pending(card, cv_in, qualification_in)
+
+    def _objective(key, label):
+        if key == "documents" and pending:
+            return _reuse_objective(card, pending, cv_in, qualification_in)
+        if key == "housing" and housing_needed(card) is True:
+            return _HOUSING_HEADCOUNT_OBJECTIVE
+        return label.format(missing=missing)
+
     if board["qualification"] == "blocked":
         board["next_objective"] = _NOT_PLACEABLE_OBJECTIVE
     else:
         board["next_objective"] = next(
-            ((_reuse_objective(card, pending, cv_in, qualification_in) if key == "documents" and pending
-              else label.format(missing=missing)) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
+            (_objective(key, label) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
             "nothing open -- respond naturally, no open placement item left")
     return board
 
@@ -410,7 +581,13 @@ OUTPUT_SCHEMA = {
                 "qualification_path": {"type": "string",
                                        "enum": ["urkunde", "defizit", "kenntnispruefung", "reject", "unknown"]},
                 "urkunde_status": {"type": "string"},
-                "housing_known": {"type": "boolean"},
+                # TASK-108: the yes/no answer itself. housing_known (the flag that it was answered) is the
+                # harness's own, derived from this in turn() -- see CODE_OWNED_CARD_KEYS.
+                "housing_needed": {"type": "boolean"},
+                # TASK-108 review: "a clinic without a flat is also an option" -- the answer to the HOUSING
+                # follow-up when nothing in their city offers one. It stands NEXT TO housing_needed; the need
+                # itself is never unsaid, so the human handoff still reads "wanted a flat, accepts without".
+                "housing_flexible": {"type": "boolean"},
                 "people_count": {"type": "integer"},
                 "pflege_matches_sent": {"type": "boolean"},
                 "anonymous_send_offered": {"type": "boolean"},
@@ -479,9 +656,12 @@ class Client:
     model to do but answer with them (observed without ``--tools ""``: a stray file-read attempt
     narrated as prose ahead of the JSON, breaking the parse below). ``--tools`` only ever governs
     that built-in set, though: ``--mcp-config``/``--strict-mcp-config``/``--allowedTools`` (see
-    ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the three read-only
-    board-query tools Luna may call in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn,
-    it just still cannot read a file, run a command or fetch a URL. The user payload goes over
+    ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the read-only board tools Luna
+    may call in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn, and since
+    TASK-110 it can also read this repo's own board docs and one allowlisted public board API path
+    through that same server; it just still cannot read a file, run a command or fetch a URL (the docs
+    tool serves four fixed documents, the API tool an allowlist of GET paths, and neither reaches
+    anything but the public board). The user payload goes over
     stdin rather than as a positional argument, so a long, growing message never risks an
     argument-length limit and never shows up in a process listing.
 
@@ -503,23 +683,41 @@ class Client:
         this_session_id = session_id or str(uuid.uuid4())
         session_flags = (["--session-id", this_session_id] if fresh else ["--resume", this_session_id])
         C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
+        # Stamped by the tools server once its tools are registered; one file per turn, so two turns
+        # running at once cannot read each other's.
+        ready_path = C.LUNA_SESSION_DIR / "tools_ready" / f"{uuid.uuid4()}.json"
         try:
-            proc = subprocess.run(
-                [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
-                 "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
-                 "--mcp-config", str(_mcp_config_path()), "--strict-mcp-config",
-                 "--allowedTools", ",".join(MCP_TOOL_NAMES),
-                 "--system-prompt", system_text, *session_flags],
-                input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
-                cwd=C.LUNA_SESSION_DIR,
-            )
-        except FileNotFoundError:
-            raise RuntimeError(f"{C.LUNA_CLAUDE_BIN!r} is not on PATH -- WA_BRAIN=luna needs the "
-                              f"Claude Code CLI installed and authenticated on this host")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"claude -p did not answer within {C.LUNA_TIMEOUT_SEC}s")
-        if proc.returncode != 0:
-            raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
+            try:
+                proc = subprocess.run(
+                    [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
+                     "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
+                     "--mcp-config", str(_mcp_config_path(ready_path)), "--strict-mcp-config",
+                     "--allowedTools", ",".join(MCP_TOOL_NAMES),
+                     "--system-prompt", system_text, *session_flags],
+                    input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
+                    cwd=C.LUNA_SESSION_DIR,
+                )
+            except FileNotFoundError:
+                raise RuntimeError(f"{C.LUNA_CLAUDE_BIN!r} is not on PATH -- WA_BRAIN=luna needs the "
+                                  f"Claude Code CLI installed and authenticated on this host")
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f"claude -p did not answer within {C.LUNA_TIMEOUT_SEC}s")
+            if proc.returncode != 0:
+                raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
+            # A board tool server that died at start, or that the CLI dropped for missing its connect
+            # deadline, leaves no trace anywhere else: claude -p exits 0, is_error is false, stderr is
+            # empty, the result envelope carries no MCP status (probed, CLI 2.1.270), and the turn
+            # answers about the board with no board under it -- worse than any error, because it reads
+            # like a checked answer. Same loud failure as a missing CLI: nothing is sent, the pending row
+            # keeps the error and catch-up retries (TASK-99).
+            if not ready_path.exists():
+                raise RuntimeError("the board tools server never started for this turn (no readiness stamp "
+                                   f"at {ready_path}): claude -p ran without {len(MCP_TOOL_NAMES)} board "
+                                   f"tools the system prompt says are mandatory, so nothing it said about "
+                                   f"the board was looked up. Run "
+                                   f"`{sys.executable} -m app.wa.luna.tools_server` to see why it failed.")
+        finally:
+            ready_path.unlink(missing_ok=True)
         try:
             envelope = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:
@@ -553,7 +751,11 @@ CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason",
                         # TASK-102: the documents gate list (reuse state included) and the imported history
                         "documents", "prior_contact", "prior_placement",
                         # TASK-105: opt-outs, declines and chat Stopps the earlier system recorded
-                        "prior_opt_outs")
+                        "prior_opt_outs",
+                        # TASK-108: the housing gate's own flag, derived from housing_needed in turn(). The model
+                        # writes the answer (housing_needed), never the flag -- a turn that set housing_known
+                        # alone used to close the gate without the fact the shortlist filters on.
+                        "housing_known")
 # Outbound meta.action values no model turn writes; only used to find the last model-turn row on a card from
 # before LAST_TURN_KEY existed.
 NOT_MODEL_ACTIONS = ("followup", "media_ack", "decline_ack", "campaign")
@@ -769,6 +971,10 @@ def turn(text, thread, button_id=None, client=None):
     was_ok = card.get("qualification_ok")
     was_declined = bool(card.get("declined"))
     card.update(patch)
+    # TASK-108: the housing question counts as answered the moment the answer itself is on the card (the yes/no,
+    # or a headcount that states a flat is wanted) -- housing_known follows the fact, never stands in for it.
+    if housing_needed(card) is not None:
+        card["housing_known"] = True
     if was_declined and out.get("re_engaged"):
         card["declined"] = False
         card["re_engaged_at"] = turn_at

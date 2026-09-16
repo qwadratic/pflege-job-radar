@@ -633,7 +633,7 @@ def _ready_for_documents(phone):
     with ST.db() as c:
         t = ST.thread(c, phone)
         t["slots"].update(region="Bayern", qualification_path="urkunde", qualification_ok=True, city="München",
-                          housing_known=True)
+                          housing_needed=False)
         ST.save_thread(c, t)
 
 
@@ -805,7 +805,7 @@ def test_the_threads_endpoint_lists_the_imported_history(env):
 
 def test_the_reuse_question_names_the_document_we_hold_not_the_one_the_path_asks_for(env):
     card = {"region": "Bayern", "qualification_path": "defizit", "qualification_ok": True, "city": "München",
-            "housing_known": True,
+            "housing_needed": False,
             "documents": [{"id": 7, "document_type": "urkunde", "certificate_level": "fachkraft", "imported": True,
                            "reuse": "pending", "sent_at": None}]}
     objective = LB.requirement_scoreboard(card)["next_objective"]

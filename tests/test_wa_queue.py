@@ -23,10 +23,19 @@ def _clinics():
 
 
 def _jobs():
+    """Board rows complete enough for both readers of this snapshot: app.autopilot.matching (via
+    build_queue_entry) and app/wa/luna_brain.py:market_snapshot, which is what lets the housing agreement
+    test below compare the shortlist Luna names with the queue the human gets. Only c1 offers housing."""
     return [{"posting_id": 1, "clinic_id": "c1", "role_class": "pflegefachkraft",
-             "department_hint": "Intensiv/IMC", "qualification_hint": None, "title": "Pflegefachkraft Intensiv"},
+             "department_hint": "Intensiv/IMC", "qualification_hint": None, "title": "Pflegefachkraft Intensiv",
+             "clinic_name": "Klinikum München", "employer": "Klinikum München", "city": "München",
+             "clinic_town": "München", "regierungsbezirk": "Oberbayern", "employment_types": ["vollzeit"],
+             "enr_housing": True, "status": "open", "verify_status": "live", "first_published": "2026-09-01"},
             {"posting_id": 2, "clinic_id": "c2", "role_class": "pflegefachkraft",
-             "department_hint": "Innere Medizin", "qualification_hint": None, "title": "Pflegefachkraft Innere"}]
+             "department_hint": "Innere Medizin", "qualification_hint": None, "title": "Pflegefachkraft Innere",
+             "clinic_name": "Klinikum Augsburg", "employer": "Klinikum Augsburg", "city": "Augsburg",
+             "clinic_town": "Augsburg", "regierungsbezirk": "Schwaben", "employment_types": ["vollzeit"],
+             "enr_housing": False, "status": "open", "verify_status": "live", "first_published": "2026-09-02"}]
 
 
 @pytest.fixture()
@@ -107,6 +116,67 @@ def test_build_queue_entry_resolves_a_known_contact(board):
         assert row["contact_email"] == "pd@klinikum-muenchen.example"
     finally:
         conn.close()
+
+
+# --- TASK-108: the handoff uses the same housing criterion as the shortlist Luna named -------------
+
+_READY_CARD = {"qualification_path": "urkunde", "qualification_ok": True, "department_pref": "egal",
+               "documents": [{"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"},
+                             {"id": 2, "document_type": "urkunde", "certificate_level": "fachkraft"}]}
+
+
+def test_card_to_candidate_carries_the_housing_answer(board):
+    cand = Q.card_to_candidate({"qualification_path": "urkunde", "housing_needed": True, "people_count": 3})
+    assert cand["needs_housing"] is True and cand["people_count"] == 3
+    assert Q.card_to_candidate({"housing_needed": False})["needs_housing"] is False
+    assert Q.card_to_candidate({})["needs_housing"] is None, "an unanswered gate is not a no"
+
+
+def test_a_candidate_who_needs_a_flat_is_ranked_only_against_clinics_the_board_marks(board):
+    out = Q.build_queue_entry("+491234500001", {**_READY_CARD, "housing_needed": True, "people_count": 2})
+    assert [m["clinic_id"] for m in out["matches"]] == ["c1"], (
+        "c2 has an open posting but no housing mark -- the human handoff must not get it for a candidate "
+        "who was told the search is restricted to clinics with a flat")
+
+
+def test_without_a_housing_need_every_clinic_still_ranks(board):
+    out = Q.build_queue_entry("+491234500002", {**_READY_CARD, "housing_needed": False})
+    assert sorted(m["clinic_id"] for m in out["matches"]) == ["c1", "c2"]
+
+
+def test_the_shortlist_luna_names_and_the_queue_the_human_gets_agree_on_housing(board):
+    """The promise and the handoff come from one criterion (app.data.offers_housing): every clinic in the
+    close-sequence shortlist is in the queue, and the queue holds nothing the shortlist ruled out."""
+    from app.wa import luna_brain as LB
+
+    card = {**_READY_CARD, "housing_needed": True, "people_count": 2}
+    shortlist = LB.market_snapshot(card)["shortlist"]
+    assert [(s["clinic"], s["housing"]) for s in shortlist] == [("Klinikum München", True)]
+    out = Q.build_queue_entry("+491234500003", card)
+    assert {s["clinic"] for s in shortlist} == {m["name"] for m in out["matches"]}
+
+
+def test_a_candidate_who_accepts_a_clinic_without_a_flat_is_ranked_wider_and_still_reads_as_needing_one(board):
+    """Review 2026-09-16: "wanted a flat, would also take a clinic without one" had no field of its own, so
+    the only way to record it was flipping housing_needed to false -- and the human working the queue then
+    read "needs no flat" for a family of two who asked for one. housing_flexible widens the ranking (the same
+    rule the shortlist uses) while needs_housing/people_count keep saying what was asked for."""
+    card = {**_READY_CARD, "housing_needed": True, "people_count": 2, "housing_flexible": True}
+    cand = Q.card_to_candidate(card)
+    assert (cand["needs_housing"], cand["housing_flexible"], cand["people_count"]) == (True, True, 2)
+
+    out = Q.build_queue_entry("+491234500004", card)
+    assert sorted(m["clinic_id"] for m in out["matches"]) == ["c1", "c2"]
+    from app.wa import luna_brain as LB
+    assert {s["clinic"] for s in LB.market_snapshot(card)["shortlist"]} == {m["name"] for m in out["matches"]}
+    assert out["candidate"]["needs_housing"] is True, "the stored profile the human reads keeps the need"
+
+
+def test_an_imported_card_with_only_the_housing_flag_is_not_matched_as_if_it_answered(board):
+    """housing_known alone (the import shape) is not an answer: needs_housing stays null, and the gate that
+    would have to be settled before a queue entry exists is still open (tests/test_wa_luna_brain.py)."""
+    cand = Q.card_to_candidate({**_READY_CARD, "housing_known": True})
+    assert cand["needs_housing"] is None and cand["housing_flexible"] is None
 
 
 # --- endpoints -----------------------------------------------------------------------------------

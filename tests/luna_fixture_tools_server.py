@@ -29,8 +29,8 @@ def use_fixture_board(monkeypatch, tmp_path):
     board_json.write_text(json.dumps({k: D._snap[k] for k in _BOARD_KEYS}, ensure_ascii=False), encoding="utf-8")
     real_config_path = LB._mcp_config_path
 
-    def fixture_config_path():
-        path = real_config_path()
+    def fixture_config_path(*args, **kw):
+        path = real_config_path(*args, **kw)
         config = json.loads(path.read_text(encoding="utf-8"))
         server = config["mcpServers"][LB.MCP_SERVER_NAME]
         server["args"] = ["-m", _MODULE]
@@ -46,4 +46,7 @@ if __name__ == "__main__":
                    at=time.time(), loading=False, error=None)
     D.refresh = lambda: D._snap
     from app.wa.luna import tools_server as TS
-    TS.mcp.run(transport="stdio")
+    # TS.serve(), not mcp.run(): it applies the tool descriptions the model reads (built by the parent
+    # from this same fixture board and passed in WA_LUNA_BOARD_VOCABULARY, TASK-110) and stamps the
+    # readiness file _live_reply checks, so an llm run exercises both sides exactly as production does.
+    TS.serve()

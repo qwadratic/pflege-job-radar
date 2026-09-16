@@ -606,7 +606,7 @@ def test_the_model_sees_which_file_just_arrived_and_the_gate_opens_only_with_bot
     with ST.db() as c:
         t = ST.thread(c, LEAD)
         t["slots"] = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
-                      "city": "München", "housing_known": True}
+                      "city": "München", "housing_needed": False}
         ST.save_thread(c, t)
     payloads = []
     _, docs, _ = _luna_ingest(monkeypatch,
@@ -639,7 +639,7 @@ def test_a_rate_limited_media_turn_keeps_documents_just_received_for_the_catch_u
 # --- TASK-96 review 2026-09-14: the ingest result survives a failed reply; catch-up never answers blind --
 
 _READY_BUT_DOCUMENTS = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
-                        "city": "München", "housing_known": True}
+                        "city": "München", "housing_needed": False}
 
 
 def _seed_card(slots):
