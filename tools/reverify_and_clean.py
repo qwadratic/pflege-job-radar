@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pflege_jobs.classify import norm_text  # noqa: E402
 from pflege_jobs.sources.career_crawl import in_bavaria  # noqa: E402
-from pflege_jobs.verify import VERIFY_FIELDS, verify_all, verify_one  # noqa: E402
+from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, verify_all, verify_one  # noqa: E402
 
 STATE = Path(os.environ.get("REVERIFY_STATE", "/tmp/reverify"))
 SUPA = os.environ["SUPABASE_URL"]
@@ -116,6 +116,12 @@ def cmd_firecrawl(a):
     todo = [p for p in done.values() if p["verify_status"] in ("blocked", "error")]
     if a.host:
         todo = [p for p in todo if a.host in (post[p["posting_id"]]["external_url"] or "")]
+    if a.keep_only and (STATE / "plan.json").exists():
+        # a credit spent on a posting that is about to be deleted as non-Bavarian buys nothing:
+        # 430 of the 558 walled rows are already non-Bavarian by their stored city
+        plan = _load("plan.json")
+        wanted = {r["posting_id"] for r in plan["keep"]} | {r["posting_id"] for r in plan["unknown_bavaria"]}
+        todo = [p for p in todo if p["posting_id"] in wanted]
     todo = todo[: a.max]
     print(f"firecrawl rung on {len(todo)} rows (~1 credit each)")
     s = requests.Session()
@@ -135,16 +141,31 @@ def cmd_firecrawl(a):
 
 
 def _decide_bavaria(p, v, tw):
-    """(in_bavaria, basis). Page-derived location wins; the stored one is only a fallback, and is
-    recorded as such so a deletion is never made on a crawler's guess alone."""
+    """(in_bavaria, basis). Deletion is permanent, so only evidence that actually STATES the job's
+    location may decide it:
+      * page:jsonld / page:einsatzort -- the page says where the job is. Decides on its own.
+      * stored -- the crawler's value. Decides on its own for the obvious non-Bavarian cities
+        (Berlin, Hamburg, ...), because no Bavaria-only registry seed can produce those by accident.
+      * page:plz_ort -- the first '12345 Ort' anywhere on the page. NOT a statement about the job:
+        it is regularly the operator's head office (Viechtach postings carry Ulm's 89077 in the
+        footer, 2026-09-16). Used only to CONFIRM a stored non-Bavarian verdict, never to create one.
+    Anything else stays unknown and is kept."""
+    src = (v or {}).get("loc_source")
     pc, pp = (v or {}).get("city"), (v or {}).get("plz")
-    if pp or pc:
+    if src in TRUSTED_LOC and (pc or pp):
         b = in_bavaria(pc, pp, None, tw)
         if b is not None:
-            return b, f"page:{(v or {}).get('loc_source')}"
-    b = in_bavaria(p.get("city"), p.get("plz"), None, tw)
-    if b is not None:
-        return b, "stored"
+            return b, f"page:{src}"
+    stored = in_bavaria(p.get("city"), p.get("plz"), None, tw)
+    if stored is False and src == "plz_ort" and in_bavaria(pc, pp, None, tw) is False:
+        return False, "stored+page:plz_ort"
+    if stored is not None:
+        return stored, "stored"
+    if p.get("in_bavaria") is False:
+        # last fallback: the flag the intake pipeline computed, which saw fields (addressRegion) that
+        # are no longer on the row. Recomputing from city/plz alone left 11 Henstedt-Ulzburg /
+        # Bad Elster / Langenhagen rows undecidable although the flag had them right.
+        return False, "stored_flag"
     return None, "unknown"
 
 
@@ -172,8 +193,8 @@ def cmd_report(a):
         else:
             plan["keep"].append(rec)
             pc = (v or {}).get("city")
-            if pc and norm_text(pc) != norm_text(p.get("city") or ""):
-                plan["city_fix"].append(rec)
+            if pc and (v or {}).get("loc_source") in TRUSTED_LOC and norm_text(pc) != norm_text(p.get("city") or ""):
+                plan["city_fix"].append(rec)      # only a stated location may overwrite a stored city
     print(f"postings           : {len(post)}")
     print(f"  verified this run: {len(ver)}")
     print(f"  keep (Bavaria)   : {len(plan['keep'])}")
@@ -185,6 +206,60 @@ def cmd_report(a):
     for h, d in sorted(host_fail.items(), key=lambda kv: -kv[1]["n"])[:15]:
         print(f"  {d['n']:5d}  {h:45s} {d['notes'].most_common(1)[0][0]}")
     _save("plan.json", plan)
+
+
+def cmd_relink(a):
+    """Re-run the registry Matcher with the city the PAGE stated, and report every posting whose
+    stored clinic_id disagrees. A clinic link derived from a wrong city is wrong by construction --
+    same failure as TASK-59a, one layer down.
+
+    Only a TRUSTED_LOC city counts here, and the proposed clinic must sit in that same town. Without
+    both guards the untrusted plz_ort fallback moved a Noerdlingen posting to Donauwoerth and wanted
+    to unlink a Muenchen one because the page footer carried an Ulm address (2026-09-16)."""
+    from pflege_jobs.registry import Matcher
+    post = {r["posting_id"]: r for r in _load("postings.json")}
+    ver = {r["posting_id"]: r for r in _load("verified.json")}
+    plan = _load("plan.json")
+    keep = {r["posting_id"] for r in plan["keep"]}
+    emp = {}
+    ids = [str(i) for i in keep]
+    for i in range(0, len(ids), 200):
+        q = ",".join(ids[i:i + 200])
+        for x in requests.get(f"{SUPA}/rest/v1/v_postings", params={"select": "posting_id,employer,clinic_id,city", "posting_id": f"in.({q})"},
+                              headers=_h(), timeout=120).json():
+            emp[x["posting_id"]] = x
+    clinics = requests.get(f"{SUPA}/rest/v1/clinics", params={"select": "clinic_id,name,town,operator,beds"}, headers=_h(), timeout=120).json()
+    m = Matcher([dict(c) for c in clinics])
+    by_town = {c["clinic_id"]: c.get("town") for c in clinics}
+    changes, cleared = [], []
+    for pid in keep:
+        v, e = ver.get(pid), emp.get(pid)
+        if not e:
+            continue
+        page_city = (v or {}).get("city") if (v or {}).get("loc_source") in TRUSTED_LOC else None
+        if not page_city:
+            continue                                   # no stated location -> no evidence to relink on
+        res = m.match(e.get("employer"), page_city)
+        new = res[0] if res else None
+        old = e.get("clinic_id")
+        if new and new != old and norm_text(by_town.get(new) or "") == norm_text(page_city):
+            changes.append({"posting_id": pid, "old": old, "new": new, "rule": res[1], "city": page_city,
+                            "old_town": by_town.get(old), "new_town": by_town.get(new)})
+        elif not new and old and norm_text(by_town.get(old) or "") != norm_text(page_city):
+            cleared.append({"posting_id": pid, "old": old, "city": page_city, "old_town": by_town.get(old)})
+    print(f"relink: {len(changes)} posting(s) point at the wrong clinic, {len(cleared)} linked to a clinic in another town with no better match")
+    for c in changes[:15]:
+        print(f"  {c['posting_id']:6d} {c['old']}({c['old_town']}) -> {c['new']}({c['new_town']}) via {c['rule']} | page city {c['city']!r}")
+    _save("relink.json", {"changes": changes, "cleared": cleared})
+    if a.write:
+        from pflege_jobs.sinks import EdgeSink
+        sink = EdgeSink(batch=400)
+        links = [{"posting_id": c["posting_id"], "clinic_id": c["new"], "clinic_match_rule": c["rule"] + "|page_city", "clinic_match_score": 0.9} for c in changes]
+        links += [{"posting_id": c["posting_id"], "clinic_id": None, "clinic_match_rule": None, "clinic_match_score": None} for c in cleared]
+        n = 0
+        for i in range(0, len(links), 400):
+            n += sink._post({"clinic_links": links[i:i + 400]}).get("clinic_links", 0)
+        print(f"  wrote {n} link(s)")
 
 
 def cmd_apply(a):
@@ -241,8 +316,9 @@ def main(argv=None):
     sp.add_parser("fetch").set_defaults(fn=cmd_fetch)
     v = sp.add_parser("verify"); v.add_argument("--limit", type=int, default=0); v.add_argument("--workers", type=int, default=10)
     v.add_argument("--no-render", action="store_true"); v.add_argument("--restart", action="store_true"); v.set_defaults(fn=cmd_verify)
-    f = sp.add_parser("firecrawl"); f.add_argument("--max", type=int, default=50); f.add_argument("--host", default=""); f.set_defaults(fn=cmd_firecrawl)
+    f = sp.add_parser("firecrawl"); f.add_argument("--max", type=int, default=50); f.add_argument("--host", default=""); f.add_argument("--keep-only", action="store_true"); f.set_defaults(fn=cmd_firecrawl)
     sp.add_parser("report").set_defaults(fn=cmd_report)
+    rl = sp.add_parser("relink"); rl.add_argument("--write", action="store_true"); rl.set_defaults(fn=cmd_relink)
     ap = sp.add_parser("apply")
     ap.add_argument("--write-verify", action="store_true"); ap.add_argument("--write-city", action="store_true")
     ap.add_argument("--delete-non-bavaria", action="store_true"); ap.set_defaults(fn=cmd_apply)

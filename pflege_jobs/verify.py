@@ -133,12 +133,25 @@ def _clean_city(s):
         if i and (_CITY_STOP.match(w) or (w[:1].islower() and w.lower() not in _CITY_CONNECT)):
             break
         out.append(w)
-    return " ".join(out) or None
+    city = " ".join(out) or None
+    if city and city.lower() in _CITY_JUNK:
+        return None
+    return city
+
+
+# Only these two sources SAY what the job's location is. A bare '12345 Ort' found anywhere on the page
+# is just the first address on it -- regularly the operator's head office in the footer, a sister site
+# in a group listing, or plain prose. Trusting it produced "Viechtach -> Ulm (89077)" and cities called
+# 'Ich' and 'Klinik' (2026-09-16), so plz_ort is returned but is only ever CONFIRMING evidence.
+TRUSTED_LOC = ("jsonld", "einsatzort")
+_CITY_JUNK = {"ich", "wir", "sie", "die", "der", "das", "klinik", "kliniken", "klinikum", "krankenhaus",
+              "unser", "unsere", "haus", "team", "stelle", "pflege", "bewerbung", "kontakt", "adresse"}
 
 
 def extract_location(html):
     """(city, plz, source) straight off the posting page. JSON-LD first (a real JobPosting field),
-    then a '12345 Ort' pair, then an 'Einsatzort:' label. (None, None, None) when the page says nothing."""
+    then an 'Einsatzort:' label, then a bare '12345 Ort' pair -- see TRUSTED_LOC for which of those a
+    caller may act on. (None, None, None) when the page says nothing."""
     if not html:
         return None, None, None
     for m in _LD_BLOCK.finditer(html):
@@ -155,12 +168,14 @@ def extract_location(html):
                 return _clean_city(city), plz or None, "jsonld"
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text)
+    m = _EINSATZORT.search(text)
+    if m:
+        c = _clean_city(m.group(1))
+        if c:
+            return c, None, "einsatzort"
     m = _PLZ_ORT.search(text)
     if m:
         return _clean_city(m.group(2)), m.group(1), "plz_ort"
-    m = _EINSATZORT.search(text)
-    if m:
-        return _clean_city(m.group(1)), None, "einsatzort"
     return None, None, None
 
 
@@ -169,6 +184,7 @@ def extract_location(html):
 # the bare list page instead of the posting. A plain in-page anchor ("#content") carries no id and is
 # left on the HTTP rung.
 FRAGMENT_URL = re.compile(r"#/\w|#[\w\-]+=|#[\w\-=/]*\d")
+IS_PDF = re.compile(r"\.pdf(?:[?#]|$)", re.I)
 
 
 def render(url, wait_ms=4500, timeout_ms=30000):
@@ -212,7 +228,13 @@ def firecrawl_fetch(url):
     if r.status_code != 200:
         return None, None
     d = (r.json() or {}).get("data") or {}
-    return 200, d.get("html") or d.get("rawHtml")
+    # 200 from the Firecrawl API only means Firecrawl's own call succeeded -- metadata.statusCode is
+    # the ORIGIN's status. Reporting the API's 200 made a dead posting look live: dongku.de's PDF is a
+    # 404, WordPress answered with its 404 page, and that page carried enough of the job title for
+    # decide() to call it live (confirmed live 2026-09-16).
+    md = d.get("metadata") or {}
+    code = md.get("statusCode")
+    return (int(code) if isinstance(code, (int, str)) and str(code).isdigit() else 200), d.get("html") or d.get("rawHtml")
 
 
 def verify_one(session, url, title, rungs=("http", "render")):
@@ -231,11 +253,19 @@ def verify_one(session, url, title, rungs=("http", "render")):
         try:
             r = session.get(url, headers={"User-Agent": UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"},
                             timeout=40, allow_redirects=True)
-            code, html, out["final_url"] = r.status_code, r.text, r.url
-            st, http, note = decide(code, html, title)
+            code, out["final_url"] = r.status_code, r.url
+            if IS_PDF.search(url or "") or "application/pdf" in (r.headers.get("content-type") or "").lower():
+                # A posting that IS a PDF (Klinikum Passau, stadtklinik-diako, augenklinik-muenchen,
+                # dongku) has no HTML title to match and no DOM to render -- the file answering 200 is
+                # the whole liveness question. Escalating it to a browser only produced "render failed".
+                html = ""
+                st, http, note = ("live", code, "pdf reachable") if code == 200 else decide(code, "", title)
+            else:
+                html = r.text
+                st, http, note = decide(code, html, title)
         except requests.RequestException as e:
             st, http, note = decide(None, None, title, exc_name=type(e).__name__)
-        if st == "live" or (st == "gone" and http in (404, 410)):
+        if st == "live" or (st == "gone" and http in (404, 410)) or IS_PDF.search(url or ""):
             out.update(verify_status=st, verify_http=http, verify_note=note, method="http")
             out["city"], out["plz"], out["loc_source"] = extract_location(html)
             return out

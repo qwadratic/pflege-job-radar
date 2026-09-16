@@ -40,7 +40,11 @@ PAGINATE = re.compile(r"[?&](page|p|seite|start|offset|pageNo|pagenr)=\d+", re.I
 # Bavarian PLZ ranges: 637xx-639xx (Aschaffenburg), 80xxx-87xxx, 881[3-7]xx (Lindau), 892xx-895xx (Neu-Ulm/Günzburg/Dillingen), 90xxx-97xxx.
 BAV_PLZ = re.compile(r"^(63[7-9]\d\d|8[0-7]\d{3}|881[3-7]\d|89[2-5]\d\d|9[0-7]\d{3})$")
 NON_BAV_CITIES = {"frankfurt", "frankfurt (oder)", "gießen", "marburg", "bad berka", "leipzig", "berlin", "hamburg", "stuttgart", "ulm", "köln",
-                  "düsseldorf", "hannover", "dresden", "erfurt", "kassel", "wiesbaden", "mainz", "heidelberg", "mannheim", "karlsruhe", "freiburg"}
+                  "düsseldorf", "hannover", "dresden", "erfurt", "kassel", "wiesbaden", "mainz", "heidelberg", "mannheim", "karlsruhe", "freiburg",
+                  # seen live 2026-09-16 on postings that reached the board with no PLZ to decide on
+                  "düren", "rendsburg", "eckernförde", "bochum", "duisburg", "schwerin", "bad saarow", "ludwigshafen", "haldensleben",
+                  "oberhausen", "hameln", "warendorf", "hildesheim", "aschersleben", "bernburg", "halberstadt", "bremerhaven", "bremen",
+                  "goslar", "holzminden", "preetz", "ratzeburg", "eutin", "anklam", "stolzenau", "heiligenhafen", "geestland", "schönebeck"}
 
 
 def _jsonld_jobpostings(html):
@@ -95,14 +99,26 @@ def in_bavaria(city, plz, region, towns):
     if isinstance(region, list): region = region[0] if region else None
     if region and re.search(r"bayern|bavaria|^by$", str(region).strip(), re.I): return True
     if region and re.search(r"hessen|thüringen|sachsen|brandenburg|baden|württemberg|nordrhein|niedersachsen|berlin|hamburg|rheinland|saarland|schleswig|mecklenburg|bremen|^(nw|he|bw|th|sn|ni|rp|sh|mv|bb|hh|hb|be|sl|st)$", str(region).strip(), re.I): return False
+    c = norm_text(city or "")
+    # a malformed PLZ decides nothing and must not block the city string's own one (seen live:
+    # plz='345387' with city='34537 Bad Wildungen', which kept a Hessen posting undecidable)
+    if plz and not re.match(r"^\d{5}$", str(plz).strip()):
+        plz = None
+    # a city string that carries its own PLZ ("34537 Bad Wildungen") is still a PLZ statement
+    if not plz and c:
+        m = re.match(r"^(\d{5})\b", c)
+        if m: plz = m.group(1)
     if plz and BAV_PLZ.match(plz): return True
     if plz and re.match(r"^\d{5}$", plz): return False
-    c = norm_text(city or "")
     if not c: return None
     if c in NON_BAV_CITIES: return False
     if c.split(",")[0].strip() in towns: return True
     first = c.split()[0]
     if first not in GENERIC_PREFIX and first in towns: return True
+    # "Freiburg im Breisgau" / "Frankfurt am Main" are the same places as the bare names in
+    # NON_BAV_CITIES; checked only AFTER `towns`, so a real Bavarian site of the same first word
+    # still wins on its own registry entry
+    if first in NON_BAV_CITIES: return False
     return None
 
 
@@ -274,8 +290,13 @@ class Crawler:
                 self.log(f"  {seed.get('name', '?')[:30]}: section-first subtree ({section_href}) empty")
         rows, stats = self._crawl_urls(seed, hosts, [seed_url] + list(seed.get("extra_seeds", [])), seed.get("sitemaps", []), depth_cap=None, prefetched=prefetched)
         if section_rows:
-            seen_urls = {r["external_url"] for r in rows}
-            rows = rows + [r for r in section_rows if r["external_url"] not in seen_urls]
+            # The section row WINS a duplicate: it is the same posting plus the knowledge that it was
+            # reached through a confirmed nursing section, which is what classify_role needs for a
+            # title that does not say "Pflege" on its own ("Advanced Practice Nurses (m/w/d)"). Merging
+            # the other way round dropped that signal whenever the full walk also reached the URL, and
+            # the posting then classified as nicht_pflege and left the board entirely.
+            sec_urls = {r["external_url"] for r in section_rows}
+            rows = section_rows + [r for r in rows if r["external_url"] not in sec_urls]
             for k in ("list_pages", "job_pages", "jobposting_pages", "heuristic_pages"):
                 stats[k] = stats.get(k, 0) + section_stats.get(k, 0)
         stats["section_first"] = bool(section_href)

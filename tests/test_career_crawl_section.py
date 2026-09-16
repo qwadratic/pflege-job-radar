@@ -103,12 +103,13 @@ def test_section_first_scopes_walk_to_the_nursing_subtree():
     rows, stats = cr.crawl(seed)
 
     assert stats["section_first"] is True
-    assert len(rows) == 1
+    # Since 0ee9828 the nursing section is fetched FIRST but no longer ends the crawl: stopping there
+    # silently dropped 2 real nursing postings on Klinikum Nuernberg that were filed under another
+    # "Jobwelt". Both the section job and the rest of the board are expected now...
+    assert {r["title"] for r in rows} == {"Pflegefachkraft (m/w/d) Station 3", "Facharzt (m/w/d) Gefaesschirurgie"}
+    assert other_board_url in cr.calls
+    # ...and the section row still wins the merge, so its confirmed-nursing signal survives.
     assert rows[0]["title"] == "Pflegefachkraft (m/w/d) Station 3"
-    # the full-board section (and its non-nursing job) must never have been touched
-    assert other_board_url not in cr.calls
-    assert other_job_url not in cr.calls
-    assert not any(r["title"].startswith("Facharzt") for r in rows)
 
 
 def test_section_first_falls_back_to_full_walk_when_subtree_is_empty():
@@ -133,7 +134,9 @@ def test_section_first_falls_back_to_full_walk_when_subtree_is_empty():
     seed = {"name": "Example Klinik", "kez": "1", "career": seed_url, "town": "Muenchen"}
     rows, stats = cr.crawl(seed)
 
-    assert stats["section_first"] is False
+    # the flag records that a nursing section WAS found and tried; the empty subtree simply
+    # contributed nothing and the full walk supplied the posting
+    assert stats["section_first"] is True
     assert len(rows) == 1
     assert rows[0]["title"] == "Pflegefachkraft (m/w/d) Anaesthesie"
 
