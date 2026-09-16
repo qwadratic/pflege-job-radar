@@ -538,7 +538,34 @@ def execute(run_id):
 
     cancelled = False
 
+    def _fetch_board(url, b):
+        """One board fetch attempt. Returns (inbox_rows, observations, error_or_None)."""
+        c = b["clinics"][0]
+        names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
+        t0 = time.time()
+        try:
+            if b["kind"] == "vendor":
+                rows = _vendor_rows(b, c, session, log)
+                log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
+                if not rows:
+                    log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
+                return rows, [], None
+            obs, st = _seed_obs(b, c, towns, log)
+            for o in obs:
+                o["_board"] = [x["clinic_id"] for x in b["clinics"]]
+            log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
+            if st and st.get("error"):
+                return [], obs, st["error"]
+            if not obs:
+                log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
+            return [], obs, None
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:160]}"
+            log(f"  {b['vendor']:<14} {url[:60]} FAILED {err}")
+            return [], [], err
+
     # adapters, grouped by board
+    board_issues = {}   # url -> {"b": board, "error": str} -- only boards still failing, updated as retries run
     if plan["adapter"] and not cancelled:
         boards = _boards(plan["adapter"])
         log(f"{len(boards)} board(s) to fetch")
@@ -547,30 +574,42 @@ def execute(run_id):
                 cancelled = True
                 log(f"cancelled by operator ({len(boards)} board(s) planned, stopping before the rest)")
                 break
-            c = b["clinics"][0]
-            names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
-            t0 = time.time()
-            try:
-                if b["kind"] == "vendor":
-                    rows = _vendor_rows(b, c, session, log)
-                    inbox_rows += rows
-                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
-                    if not rows:
-                        log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
-                else:
-                    obs, st = _seed_obs(b, c, towns, log)
-                    for o in obs:
-                        o["_board"] = [x["clinic_id"] for x in b["clinics"]]
-                    observations += obs
-                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
-                    if st and st.get("error"):
-                        errors += 1
-                    elif not obs:
-                        log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
-            except Exception as e:
-                errors += 1
-                log(f"  {b['vendor']:<14} {url[:60]} FAILED {type(e).__name__}: {str(e)[:160]}")
+            rows, obs, err = _fetch_board(url, b)
+            inbox_rows += rows; observations += obs
+            if err:
+                board_issues[url] = {"b": b, "error": err}
             time.sleep(POLITE_SLEEP)
+
+        # Same-run retries: some board failures are transient (a site hiccup, a momentary gateway
+        # error) and clear up within minutes on their own -- retry a few times right now instead of
+        # waiting for tomorrow's run (2026-09-16, Ivan: some errors just need a restart to clear).
+        # Whatever is STILL failing after 3 total attempts (1 + 2 retries) is not retried again
+        # tonight -- it goes into crawl_issues for the daily report instead.
+        attempt = 1
+        while board_issues and attempt < 3 and not cancelled:
+            attempt += 1
+            log(f"retry pass {attempt}/3 for {len(board_issues)} still-failing board(s)")
+            time.sleep(20)
+            for url in list(board_issues):
+                if R.get_run(run_id, with_log=False).get("cancel_requested"):
+                    cancelled = True
+                    break
+                rows, obs, err = _fetch_board(url, board_issues[url]["b"])
+                inbox_rows += rows; observations += obs
+                if err:
+                    board_issues[url]["error"] = err
+                else:
+                    log(f"  {url[:60]} recovered on retry {attempt}")
+                    del board_issues[url]
+                time.sleep(POLITE_SLEEP)
+
+        errors += len(board_issues)
+        if board_issues:
+            day = R.now()[:10]
+            for url, info in board_issues.items():
+                b = info["b"]
+                R.record_crawl_issue(url, day, b["kind"], b.get("vendor"), [x["clinic_id"] for x in b["clinics"]], info["error"], run_id)
+            log(f"{len(board_issues)} board(s) still failing after 3 attempts -- recorded in crawl_issues for the daily report")
 
     # firecrawl agent
     if plan["firecrawl"] and not cancelled:

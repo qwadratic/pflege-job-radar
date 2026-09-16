@@ -43,6 +43,10 @@ create table if not exists hunt_state (
   last_error text, updated_at text, primary key(clinic_id, day));
 create index if not exists hunt_state_day on hunt_state(day);
 create table if not exists hunt_meta (key text primary key, value text);
+create table if not exists crawl_issues (
+  board_url text, day text, kind text, vendor text, clinic_ids text default '[]',
+  error text, run_id integer, created_at text, primary key(board_url, day));
+create index if not exists crawl_issues_day on crawl_issues(day);
 create table if not exists magic_links (
   id integer primary key autoincrement, email text, token_hash text, role text, created_at text, expires_at text, used_at text);
 create index if not exists magic_links_email on magic_links(email, created_at);
@@ -98,6 +102,34 @@ def set_setting(key, value):
     with _lock, db() as c:
         c.execute("insert into settings(key,value) values(?,?) on conflict(key) do update set value=excluded.value",
                   (key, json.dumps(value, ensure_ascii=False)))
+
+
+# --- crawl_issues: boards still failing after execute()'s same-run retries ------------------
+def record_crawl_issue(board_url, day, kind, vendor, clinic_ids, error, run_id):
+    with _lock, db() as c:
+        c.execute("""insert into crawl_issues(board_url,day,kind,vendor,clinic_ids,error,run_id,created_at)
+                     values(?,?,?,?,?,?,?,?)
+                     on conflict(board_url,day) do update set error=excluded.error, run_id=excluded.run_id""",
+                  (board_url, day, kind, vendor, json.dumps(clinic_ids, ensure_ascii=False), error, run_id, now()))
+
+
+def list_crawl_issues(day=None, since=None):
+    with _lock, db() as c:
+        if day:
+            rows = c.execute("select * from crawl_issues where day=? order by board_url", (day,)).fetchall()
+        elif since:
+            rows = c.execute("select * from crawl_issues where day>=? order by day desc, board_url", (since,)).fetchall()
+        else:
+            rows = c.execute("select * from crawl_issues order by day desc, board_url").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["clinic_ids"] = json.loads(d.get("clinic_ids") or "[]")
+        except Exception:
+            pass
+        out.append(d)
+    return out
 
 
 # --- runs ------------------------------------------------------------------------------------
