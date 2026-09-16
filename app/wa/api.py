@@ -1,32 +1,43 @@
 """The webhook: Meta's two routes, plus a small owner-only read of what the harness has been saying.
 
-Order of business on an inbound POST, and the reason for each step:
+Order of business on an inbound POST (TASK-99), and the reason for each step:
 1. verify the signature over the raw bytes -- everything after this trusts the payload;
-2. check the phone-number id, so a webhook wired to a second WhatsApp number is ignored, not answered;
-3. insert by ``wamid``, which is UNIQUE -- a Meta redelivery is dropped here and answered once;
-3b. every media message (document/image/audio/video, both brains, stopped threads too) is
-    downloaded and its original stored under C.DOCUMENTS_DIR with a wa_documents row
-    (``_store_original``, TASK-95) before anything reads it; a document/image on a WA_BRAIN=luna
-    thread then has its text extracted and classified onto the card (cv_text/urkunde_text by
-    document type, plus the ``documents`` list, see ``_ingest_media``, TASK-67/TASK-96) before the
-    brain ever runs, so it reacts to what it just read; every other media kind,
-    and every kind on the deterministic brain, still gets the flat ``MEDIA_REPLY`` ack this always had;
-4. decide the reply -- app/wa/brain.py (deterministic, default) or app/wa/luna_brain.py
-   (WA_BRAIN=luna, Claude-driven), picked once in config.py so this route does not care which;
-5. send it, and only then write the outbound rows.
+2. check the phone-number id: a change for a second WhatsApp number is stored raw, not answered;
+3. record, inside the request (``accept_payload``): each message by ``wamid`` (UNIQUE, a Meta redelivery
+   stops here) plus its ``wa_inbound_pending`` row; each delivery status per (wamid, status, timestamp),
+   a ``failed`` one also as a send failure; every other object raw in ``wa_webhook_events``. No download,
+   no brain, no send;
+4. hand the phones to the one background worker thread and answer 200. The route only reads the body
+   on the event loop; steps 1-4 run in the threadpool, so a slow turn never stalls /wa/health or a
+   concurrent webhook;
+5. the worker (``drain_pending`` -> ``finish_inbound``) takes each phone's pending messages oldest first:
+   arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-95,
+   both brains, stopped threads too); a WA_BRAIN=luna document/image is read and classified onto the card
+   before the brain runs (``_ingest_media``, TASK-67/TASK-96); other media kinds, and every kind on the
+   deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the reply (app/wa/brain.py or
+   app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows; delete the pending row.
 
-Step 5 fails loudly: a Meta error propagates, the route answers 502 and the turn is *not* recorded as
-sent, so the redelivery Meta then makes finds no outbound row and the lead does get an answer.
+A step-5 failure never reaches Meta (it has its 200 already): it is logged, kept on the pending row and in
+wa_send_failures (GET /wa/threads), and app/wa/luna/catchup.py finishes the message later through the same
+``finish_inbound`` -- re-downloading a media original from the media_id kept in wa_messages.meta, or
+re-reading a stored original that never reached the card. A crash or restart mid-turn leaves the pending
+row for catch-up too. ``handle_payload`` runs steps 3 and 5 in the caller's thread and re-raises (tests,
+scripts).
 """
 import hashlib
+import json
+import logging
 import os
 import pathlib
 import re
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 
 from .. import cv as CV
 from . import brain as B
@@ -36,6 +47,7 @@ from . import queue as Q
 from . import store as ST
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.get("/wa/health")
@@ -55,17 +67,28 @@ def wa_verify(request: Request):
 
 
 @router.post("/wa/webhook", include_in_schema=False)
-async def wa_webhook(request: Request, client=None):
+async def wa_webhook(request: Request):
     raw = await request.body()
-    if not M.validate_webhook_signature(raw, request.headers.get("X-Hub-Signature-256"), C.APP_SECRET):
+    return await run_in_threadpool(receive_webhook, raw, request.headers.get("X-Hub-Signature-256"))
+
+
+def receive_webhook(raw, signature):
+    """POST /wa/webhook off the event loop: verify, record (``accept_payload``), submit, answer."""
+    if not M.validate_webhook_signature(raw, signature, C.APP_SECRET):
         raise HTTPException(403, "invalid signature")
+    accepted = accept_payload(parse_webhook_body(raw))
+    submit_accepted(accepted)
+    return accepted_summary(accepted)
+
+
+def parse_webhook_body(raw):
     try:
-        payload = await request.json()
+        payload = json.loads(raw)
     except ValueError:
         raise HTTPException(400, "invalid json")
     if not isinstance(payload, dict):
         raise HTTPException(400, "invalid payload")
-    return handle_payload(payload, client=client)
+    return payload
 
 
 def inbound_messages(payload):
@@ -98,11 +121,21 @@ def _number_matches(value):
     return str((value.get("metadata") or {}).get("phone_number_id") or "") == C.PHONE_NUMBER_ID
 
 
-def parse_message(m):
-    """-> {wamid, phone, text, button_id, kind} or None for a type this harness does not answer.
+# A template quick-reply tap's button_id is this prefix + Meta's payload (TASK-100), so it can never equal
+# an interactive button id this harness sends itself (luna_brain.CONSENT_BUTTONS 'consent:yes', 'dept:OP').
+TEMPLATE_BUTTON_PREFIX = "tpl:"
 
-    Text and button/list replies are answered. Media (document/image/audio/video) additionally
-    carries ``media_id``/``media_mime_type``/``media_filename`` -- Meta nests those under a field
+
+def parse_message(m):
+    """-> {wamid, phone, text, button_id, kind} (+ reply_to_wamid, context) or None for a type this harness
+    does not answer.
+
+    Text and button/list replies are answered, so are reactions, stickers, locations, contact cards and messages
+    WhatsApp marks unsupported, from a text summary (``SUMMARIZED_KINDS``). A template quick-reply tap (type ``button``) keeps Meta's
+    payload as button_id ``tpl:<payload>`` (None when Meta sent none) and the label as text. A message
+    with a ``context`` object, any kind, keeps it raw (forwarded flags included) plus the message it
+    replies to (``context.id``) as ``reply_to_wamid`` (TASK-100). Media (document/image/audio/video)
+    additionally carries ``media_id``/``media_mime_type``/``media_filename`` -- Meta nests those under a field
     keyed by the type name itself, e.g. ``{"image": {"id": "...", "mime_type": "..."}}`` -- so a
     downstream step can fetch and read the actual bytes (app/wa/meta.py:Client.media_url/
     download_media, TASK-67); by itself this function still only parses the payload, it does not
@@ -113,12 +146,16 @@ def parse_message(m):
     kind = str(m.get("type") or "")
     if not wamid or not phone:
         return None
+    base = {"wamid": wamid, "phone": phone, "kind": kind}
+    context = m.get("context")
+    if isinstance(context, dict):
+        base.update(reply_to_wamid=str(context.get("id") or "").strip() or None, context=context)
     if kind == "text":
-        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": None,
-                "text": str((m.get("text") or {}).get("body") or "")}
+        return {**base, "button_id": None, "text": str((m.get("text") or {}).get("body") or "")}
     if kind == "button":                                    # template quick-reply tap
         b = m.get("button") or {}
-        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": None,
+        payload = str(b.get("payload") or "").strip()
+        return {**base, "button_id": TEMPLATE_BUTTON_PREFIX + payload if payload else None,
                 "text": str(b.get("text") or b.get("payload") or "")}
     if kind == "interactive":
         i = m.get("interactive") or {}
@@ -126,14 +163,48 @@ def parse_message(m):
         bid, title = str(reply.get("id") or "").strip(), str(reply.get("title") or "").strip()
         if not bid and not title:
             return None
-        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": bid or None, "text": title}
+        return {**base, "button_id": bid or None, "text": title}
     if kind in ("document", "image", "audio", "video"):
         media = m.get(kind) or {}
-        return {"wamid": wamid, "phone": phone, "kind": kind, "button_id": None, "text": "",
+        return {**base, "button_id": None, "text": "",
                 "media_id": str(media.get("id") or "").strip() or None,
                 "media_mime_type": str(media.get("mime_type") or "").strip() or None,
                 "media_filename": str(media.get("filename") or "").strip() or None}
+    if kind in SUMMARIZED_KINDS:
+        return {**base, "button_id": None, **_summarized(kind, m)}
     return None
+
+
+# Message kinds answered from a text summary (review 2026-09-14: a thumbs-up on the campaign template was stored raw
+# only -- no turn, reported as no reply, the candidate counted as a non-responder). The raw object stays in meta.
+SUMMARIZED_KINDS = ("reaction", "sticker", "location", "contacts", "unsupported", "unknown")
+
+
+def _summarized(kind, m):
+    """-> {text, reply_to_wamid?, <kind>: raw} for a SUMMARIZED_KINDS message. A reaction replies to the message it
+    is on (reaction.message_id); its text is the emoji, '[reaction removed]' when the emoji is empty."""
+    raw = m.get(kind)
+    if kind == "reaction":
+        r = raw if isinstance(raw, dict) else {}
+        target = str(r.get("message_id") or "").strip() or None
+        return {"text": str(r.get("emoji") or "") or "[reaction removed]", "reply_to_wamid": target, kind: raw}
+    if kind == "sticker":
+        s = raw if isinstance(raw, dict) else {}
+        return {"text": "[sticker]", "media_id": str(s.get("id") or "").strip() or None,
+                "media_mime_type": str(s.get("mime_type") or "").strip() or None, kind: raw}
+    if kind == "location":
+        loc = raw if isinstance(raw, dict) else {}
+        place = ", ".join(str(loc[k]) for k in ("name", "address") if loc.get(k))
+        coords = f"{loc.get('latitude')}, {loc.get('longitude')}"
+        return {"text": f"[location: {place + ' ' if place else ''}({coords})]", kind: raw}
+    if kind == "contacts":
+        cards = []
+        for card in raw if isinstance(raw, list) else []:
+            name = str(((card or {}).get("name") or {}).get("formatted_name") or "").strip()
+            phones = [str(p.get("phone") or p.get("wa_id") or "") for p in (card or {}).get("phones") or []]
+            cards.append(" ".join(filter(None, [name, *phones])) or "?")
+        return {"text": f"[contact card: {'; '.join(cards)}]", kind: raw}
+    return {"text": "[unsupported message]", "errors": m.get("errors")}
 
 
 MEDIA_REPLY = ("Danke, angekommen – Dateien kann ich hier noch nicht lesen. Ein Kollege schaut "
@@ -253,6 +324,31 @@ def _extract_media_text(kind, blob, filename, mime_type):
 # handle_payload feeds only these card keys to CV.analyse_candidate at consent).
 _CARD_TEXT_KEY = {"lebenslauf": "cv_text", "urkunde": "urkunde_text", "defizitbescheid": "urkunde_text"}
 
+# document_type of a file the vision model read and found no legible text in (CV.NoReadableText): a final result,
+# counts for no gate; the reply turn runs and the model asks for a clearer file (prompts DOCUMENT TYPE).
+UNREADABLE = "unreadable"
+
+
+def read_and_classify(c, doc_id, kind, blob, filename, mime_type):
+    """The row half of ``_ingest_media``, shared with app/wa/luna/import_history.py (TASK-102): extract the text
+    (``_extract_media_text``), store it on wa_documents row ``doc_id``, classify it (TASK-81: urkunde/lebenslauf/
+    defizitbescheid/..., fachkraft-vs-helfer for an urkunde) and store the classification with the card key it
+    maps to. -> (text, document_type, certificate_level, text_key). No readable text (CV.NoReadableText) is stored
+    as document_type UNREADABLE -> (None, UNREADABLE, None, None): reading it again gives the same answer (review
+    2026-09-14: a selfie was re-read by the vision model on every 3-minute catch-up pass and never answered). Raises
+    on every other failure (CLI, network, classification), which catch-up retries."""
+    try:
+        text = _extract_media_text(kind, blob, filename, mime_type)
+    except CV.NoReadableText:
+        ST.set_document_classification(c, doc_id, UNREADABLE, None, None)
+        return None, UNREADABLE, None, None
+    ST.set_document_text(c, doc_id, text)
+    classification = CV.classify_document(text)
+    document_type, certificate_level = classification["document_type"], classification["certificate_level"]
+    text_key = _CARD_TEXT_KEY.get(document_type)
+    ST.set_document_classification(c, doc_id, document_type, certificate_level, text_key)
+    return text, document_type, certificate_level, text_key
+
 
 def _ingest_media(c, t, m, doc):
     """Read and classify an already-stored document/image (``doc`` from ``_store_original``) onto the
@@ -267,19 +363,14 @@ def _ingest_media(c, t, m, doc):
     even when it is the wrong type. The wa_documents row gets the text, then the classification and
     text_key (TASK-95).
 
-    Raises loudly on any failure -- a vision call that found no readable text, a failed
+    A file with no readable text lands as document_type UNREADABLE (no text key, counts for no gate), so the
+    reply turn tells the candidate. Raises loudly on any other failure -- a failed vision call, a failed
     classification -- there is no silent 'treat it as an empty CV' fallback here (CLAUDE.md, "no
     invented safety nets"); the caller lets that propagate the same way any other turn-processing
     failure already does. The original stays stored and linked either way.
     """
-    text = _extract_media_text(m["kind"], doc["blob"], m.get("media_filename"), doc["mime_type"])
-    ST.set_document_text(c, doc["id"], text)
-    # TASK-81: classify what was actually just sent (urkunde/lebenslauf/defizitbescheid/
-    # aufenthaltstitel/dienstplan/other, plus fachkraft-vs-helfer for an urkunde).
-    classification = CV.classify_document(text)
-    document_type, certificate_level = classification["document_type"], classification["certificate_level"]
-    text_key = _CARD_TEXT_KEY.get(document_type)
-    ST.set_document_classification(c, doc["id"], document_type, certificate_level, text_key)
+    text, document_type, certificate_level, text_key = read_and_classify(
+        c, doc["id"], m["kind"], doc["blob"], m.get("media_filename"), doc["mime_type"])
     slots = t["slots"]
     if text_key:
         slots[text_key] = "\n\n".join(filter(None, (slots.get(text_key), text)))
@@ -290,95 +381,393 @@ def _ingest_media(c, t, m, doc):
     slots["_documents_just_received"] = [*slots.get("_documents_just_received", []), summary]
 
 
+# --- webhook intake (TASK-99): record in the request, finish in the background -------------------------
+
+_ENVELOPE_KEYS = ("messaging_product", "metadata")
+
+
+def _call_counterpart(call):
+    """The candidate side of a call event: ``from`` on a user-initiated call, ``to`` on a business-initiated one."""
+    return {"USER_INITIATED": call.get("from"), "BUSINESS_INITIATED": call.get("to")}.get(call.get("direction"))
+
+
+# change.value keys whose items each belong to one candidate: the item's phone field. app/wa/router.py splits
+# a payload by these; accept_payload keeps what it does not act on raw, with that phone.
+PHONE_OF_ITEM = {
+    "messages": lambda m: m.get("from"),
+    "statuses": lambda s: s.get("recipient_id"),
+    "calls": _call_counterpart,
+    "contacts": lambda c: c.get("wa_id"),
+    "user_preferences": lambda p: p.get("wa_id"),
+    "message_echoes": lambda e: e.get("to"),
+    "smb_message_echoes": lambda e: e.get("to"),
+}
+
+
+def item_phone(key, item):
+    """+E.164 of the candidate one ``PHONE_OF_ITEM`` item belongs to, '' when it names none."""
+    return M.sender_e164(PHONE_OF_ITEM[key](item)) if isinstance(item, dict) else ""
+
+
+def is_call_object(key, item):
+    """A WhatsApp Calling object: a call event (``calls``), a call lifecycle status (``statuses`` with type=call,
+    id = the call id) or a call-permission reply (interactive ``call_permission_reply``). This harness places and
+    answers no calls; app/wa/router.py sends these to the real system whatever the owner."""
+    if not isinstance(item, dict):
+        return False
+    if key == "calls":
+        return True
+    if key == "statuses":
+        return str(item.get("type") or "").strip().lower() == "call"
+    if key == "messages":
+        return item.get("type") == "interactive" and \
+            str((item.get("interactive") or {}).get("type") or "") == "call_permission_reply"
+    return False
+
+
+def inbound_meta(m):
+    """wa_messages.meta of a parsed inbound message: every parse_message field beyond the row's own columns
+    (button_id, media_id/mime type/filename, ...), so ``message_from_row`` rebuilds the same message later."""
+    return {k: v for k, v in m.items() if k not in ("wamid", "phone", "kind", "text")}
+
+
+def message_from_row(row):
+    """The parse_message-shaped dict of a stored inbound wa_messages row."""
+    return {"button_id": None, **json.loads(row["meta"] or "{}"), "wamid": row["wamid"], "phone": row["phone"],
+            "kind": row["kind"], "text": row["body"]}
+
+
+def accept_payload(payload):
+    """Steps 2-3 of the module docstring for one payload: record, answer nothing. -> {"results": [{wamid,
+    status: accepted|duplicate}], "phones": phones with a message, in order, "skipped", "statuses", "events"}.
+
+    Messages parse_message does not answer (reactions, stickers, ...), statuses without id/status/recipient,
+    calls, contacts, every other value key, and changes for another phone_number_id go to wa_webhook_events
+    raw -- nothing in a signed payload is dropped."""
+    out = {"results": [], "phones": [], "skipped": 0, "statuses": 0, "events": 0}
+    with ST.db() as c:
+        for key, value in payload.items():
+            if key not in ("object", "entry"):
+                out["events"] += ST.record_webhook_event(c, None, None, key, value)
+        entries = payload.get("entry") or []
+        if not isinstance(entries, list):
+            out["events"] += ST.record_webhook_event(c, None, None, "entry", entries)
+            entries = []
+        for entry in entries:
+            changes = entry.get("changes") if isinstance(entry, dict) else None
+            if not isinstance(changes, list):
+                out["events"] += ST.record_webhook_event(c, None, None, "entry", entry)
+                continue
+            for change in changes:
+                _accept_change(c, change, out)
+    return out
+
+
+def _accept_change(c, change, out):
+    field = change.get("field") if isinstance(change, dict) else None
+    value = change.get("value") if isinstance(change, dict) else None
+    if not isinstance(value, dict):
+        out["events"] += ST.record_webhook_event(c, None, field, "change", change)
+        return
+    if not _number_matches(value):
+        # another WhatsApp number's change, or one without a number at all (template/account updates)
+        foreign = bool((value.get("metadata") or {}).get("phone_number_id"))
+        out["skipped"] += len(value.get("messages") or [])
+        out["events"] += ST.record_webhook_event(c, None, field, "foreign_phone_number_id" if foreign
+                                                 else (field or "change"), change)
+        return
+    for key, items in value.items():
+        if key in _ENVELOPE_KEYS:
+            continue
+        if key not in PHONE_OF_ITEM or not isinstance(items, list):
+            out["events"] += ST.record_webhook_event(c, None, field, key, items)
+            continue
+        for item in items:
+            phone = item_phone(key, item)
+            if key == "messages":
+                parsed = parse_message(item) if isinstance(item, dict) else None
+                if parsed is not None:
+                    fresh = ST.record_inbound_pending(c, parsed["phone"], parsed["wamid"], parsed["text"],
+                                                      kind=parsed["kind"], meta=inbound_meta(parsed))
+                    out["results"].append({"wamid": parsed["wamid"], "status": "accepted" if fresh else "duplicate"})
+                    if parsed["phone"] not in out["phones"]:
+                        out["phones"].append(parsed["phone"])
+                    continue
+                out["skipped"] += 1
+            elif key == "statuses" and phone and item.get("id") and item.get("status") and \
+                    not is_call_object(key, item):   # a call status is no message delivery status
+                out["statuses"] += ST.record_message_status(c, phone, item)
+                continue
+            out["events"] += ST.record_webhook_event(c, phone or None, field, key, item)
+
+
+def accepted_summary(accepted):
+    """The route's 200 body. No phone numbers: Meta reads nothing from it."""
+    return {"ok": True, "handled": len(accepted["results"]), "skipped": accepted["skipped"],
+            "statuses": accepted["statuses"], "events": accepted["events"], "results": accepted["results"]}
+
+
 def handle_payload(payload, client=None):
-    """Every message in one webhook call. -> a per-message result list, which is also the route's body."""
-    messages, skipped = inbound_messages(payload)
+    """accept_payload, then finish every phone it named in the caller's thread; the first failure is recorded
+    and re-raised. -> the per-message results (a finished message's own result). Tests and scripts; the
+    webhook routes use accept_payload + submit_accepted."""
+    accepted = accept_payload(payload)
+    finished = {r["wamid"]: r for r in process_phones(accepted["phones"], client=client)}
+    results = [finished.get(r["wamid"], r) for r in accepted["results"]]
+    return {"ok": True, "handled": len(results), "skipped": accepted["skipped"], "results": results}
+
+
+# One worker thread: turns stay serialized in this process (ST._lock), and nothing slow runs on the event loop
+# or holds up the 200. Created on first use, so a process that never receives a webhook starts no thread. At
+# interpreter exit the executor still runs every queued job; a killed process leaves pending rows for catch-up.
+_background = None
+_background_guard = threading.Lock()
+
+
+def submit_accepted(accepted, client=None):
+    """Queue accept_payload's phones for the background worker. -> the Future, or None with no message. The
+    Meta client is built here, in the request, and handed to the job."""
+    global _background
+    if not accepted["phones"]:
+        return None
+    client = client or M.Client()
+    with _background_guard:
+        if _background is None:
+            _background = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wa-inbound")
+        return _background.submit(_process_in_background, list(accepted["phones"]), client)
+
+
+def _process_in_background(phones, client):
+    try:
+        return process_phones(phones, client=client, raise_errors=False)
+    except Exception:
+        log.exception("background processing of %d phone(s) stopped; their pending rows stay for catch-up",
+                      len(phones))
+        raise
+
+
+def wait_for_background(timeout=None):
+    """Block until every job submitted so far ran (tests, before their monkeypatches are undone)."""
+    with _background_guard:
+        executor = _background
+    if executor is not None:
+        executor.submit(lambda: None).result(timeout)
+
+
+def process_phones(phones, client=None, raise_errors=True):
+    """``drain_pending`` for each phone under ST._lock, then its consent queue builds outside the lock. ->
+    every result. Shared by handle_payload, the background worker and catch-up."""
     results = []
-    with ST._lock, ST.db() as c:
-        for m in messages:
-            results.append(_handle_one(c, m, client=client))
-    # Queue building (TASK-66) happens here, deliberately outside the lock just released above:
-    # app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table
-    # read per ranked clinic, and a CV/Urkunde reasoning pass (TASK-67) is a real claude CLI call --
-    # doing either inside the per-message critical section would serialize every other inbound
-    # WhatsApp thread behind one candidate's match build.
+    for phone in phones:
+        with ST._lock, ST.db() as c:
+            done = drain_pending(c, phone, client=client, raise_errors=raise_errors)
+        build_consent_queues(done, raise_errors=raise_errors)
+        results.extend(done)
+    return results
+
+
+def build_consent_queues(results, raise_errors=True):
+    """TASK-66 queue build for every result that flipped consent, popping the internal keys. Called outside
+    ST._lock: app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table read
+    per ranked clinic, and a CV/Urkunde reasoning pass (TASK-67) is a real claude CLI call -- inside the lock
+    every other thread would wait behind one candidate's match build. A failure is logged and recorded as a
+    send failure (raise_errors re-raises it)."""
     for r in results:
         newly_consented_phone = r.pop("_newly_consented_phone", None)
         if not newly_consented_phone:
             continue
         card = r.pop("_card_at_consent")
-        cv_profile = None
-        if card.get("cv_text") or card.get("urkunde_text"):
-            # "use all chat history + CV as matching input": analyse_candidate folds this thread's
-            # own history in alongside whatever was extracted from an upload (TASK-67). No CV/
-            # Urkunde text on the card at all -> skip the call rather than feed analyse_llm empty
-            # input (it raises ValueError below ~20 chars) -- a normal, common case, not an error.
-            with ST.db() as cv_conn:
-                cv_profile = CV.analyse_candidate(newly_consented_phone, cv_conn,
-                                                  cv_text=card.get("cv_text"),
-                                                  urkunde_text=card.get("urkunde_text"))["profile"]
-        Q.build_queue_entry(newly_consented_phone, card, cv_profile)
-    return {"ok": True, "handled": len(results), "skipped": skipped, "results": results}
+        try:
+            cv_profile = None
+            if card.get("cv_text") or card.get("urkunde_text"):
+                # "use all chat history + CV as matching input": analyse_candidate folds this thread's
+                # own history in alongside whatever was extracted from an upload (TASK-67). No CV/
+                # Urkunde text on the card at all -> skip the call rather than feed analyse_llm empty
+                # input (it raises ValueError below ~20 chars) -- a normal, common case, not an error.
+                with ST.db() as cv_conn:
+                    cv_profile = CV.analyse_candidate(newly_consented_phone, cv_conn,
+                                                      cv_text=card.get("cv_text"),
+                                                      urkunde_text=card.get("urkunde_text"))["profile"]
+            Q.build_queue_entry(newly_consented_phone, card, cv_profile)
+        except Exception as exc:
+            error = f"queue build after consent failed: {type(exc).__name__}: {exc}"
+            log.exception(error)
+            with ST.db() as c:
+                ST.record_send_failure(c, newly_consented_phone, error)
+            if raise_errors:
+                raise
 
 
-def _handle_one(c, m, client=None):
+def drain_pending(c, phone, client=None, raise_errors=True):
+    """Finish this phone's pending inbound messages, oldest first. -> one result per message looked at.
+
+    Stops at the first message while any claim of the phone is in flight (``ST.claim_in_flight``: the other
+    process -- webhook worker or catch-up -- is working on this phone and continues in order), so two
+    processes never run turns for one phone at once. A message is done, and its pending row deleted, unless
+    its status is in KEEP_PENDING; claimed_elsewhere with the reply claim already 'sent' is done too. A
+    failure is logged, kept on the pending row, recorded in wa_send_failures once per distinct error, and
+    re-raised with ``raise_errors``; otherwise the next message runs and the failed one waits for catch-up."""
+    results = []
+    for row in ST.pending_inbound(c, phone):
+        wamid = row["wamid"]
+        if ST.claim_in_flight(c, phone):
+            results.append({"wamid": wamid, "status": "claimed_elsewhere"})
+            break
+        if not ST.inbound_is_pending(c, wamid):
+            continue   # the other process finished it after this list was read
+        try:
+            result = finish_inbound(c, message_from_row(row), client=client)
+        except Exception as exc:
+            error = f"inbound {wamid} not finished: {type(exc).__name__}: {exc}"
+            log.exception(error)
+            if ST.record_pending_attempt(c, wamid, error) != error:
+                ST.record_send_failure(c, phone, error)
+            if raise_errors:
+                raise
+            results.append({"wamid": wamid, "status": "error", "error": error})
+            continue
+        results.append(result)
+        answered = ST.reply_turn_claim_state(c, phone, wamid) == "sent"
+        if result["status"] not in KEEP_PENDING or answered:
+            ST.finish_pending_inbound(c, wamid)
+        elif result["status"] == "claimed_elsewhere":
+            break
+    return results
+
+
+MEDIA_CLAIM_PREFIX = "media:"   # wa_reply_turn_claims.turn_key held while one process stores/reads a media message
+
+
+def finish_inbound(c, m, client=None):
+    """Everything after the webhook recorded one inbound message (``m`` as parse_message/message_from_row
+    returns it). Shared by the background worker and catch-up, and safe to repeat:
+
+    - arrival bookkeeping is derived from the message row (``_note_arrival``), never incremented twice;
+    - media runs under the claim ``media:<wamid>``: no wa_documents row yet -> download with the media_id
+      kept in meta and store the original (TASK-95); a WA_BRAIN=luna document/image not on the saved card
+      yet -> read and classify it (from the bytes just downloaded, or the stored original re-read and
+      checked against its sha256) and save the card before the claim is released;
+    - the flat media ack and the reply turn run under the reply claim ``<wamid>`` (process_owed_turn).
+
+    -> the result dict with ``wamid``. Raises on any failure; a brain failure releases the reply claim
+    ('skipped_error') so the next attempt need not wait STALE_CLAIM_SECONDS."""
+    phone, wamid = m["phone"], m["wamid"]
+    t = ST.thread(c, phone)
+    dirty = _note_arrival(c, t, wamid)
     is_media = m["kind"] in _MEDIA_KINDS
-    meta = {"button_id": m["button_id"]}
+    reads = is_media and C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS
     if is_media:
-        # TASK-95: also on the message row, so a download that fails below stays re-fetchable.
-        meta.update(media_id=m["media_id"], media_mime_type=m["media_mime_type"],
-                    media_filename=m["media_filename"])
-    fresh = ST.record_inbound(c, m["phone"], m["wamid"], m["text"], kind=m["kind"], meta=meta)
-    if not fresh:
-        return {"wamid": m["wamid"], "status": "duplicate"}
+        media_key = MEDIA_CLAIM_PREFIX + wamid
+        if not ST.claim_reply_turn(c, phone, media_key):
+            return {"wamid": wamid, "status": "claimed_elsewhere"}
+        try:
+            if _store_and_read(c, t, m, reads, client):
+                ST.save_thread(c, t)
+                dirty = False
+        except Exception:
+            ST.finish_reply_turn_claim(c, phone, media_key, "media_error")
+            raise
+        ST.finish_reply_turn_claim(c, phone, media_key, "media_done")
 
-    t = ST.thread(c, m["phone"])
-    t["last_inbound_at"] = ST.now_iso()
-    t["turns"] = int(t.get("turns") or 0) + 1
-
-    # TASK-95: the original is stored before anything reads or answers it -- both brains, every media
-    # kind, stopped threads too (the file is the lead's own message, like the row above).
-    doc = _store_original(c, m, client=client) if is_media else None
-
-    if t["stopped"]:
-        # Opted out earlier. The message is stored (it is the lead's own word) and nothing goes out.
+    if dirty:
+        # TASK-96 review: bookkeeping and ingest are saved before the reply attempt, so a brain or Meta
+        # failure below does not lose them; the retry starts from this card.
         ST.save_thread(c, t)
-        return {"wamid": m["wamid"], "status": "stopped"}
-
-    if is_media:
-        if not (C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS):
-            sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
-            ST.save_thread(c, t)
-            return {"wamid": m["wamid"], "status": sent, "action": "media_ack"}
-        _ingest_media(c, t, m, doc)
-
-    # TASK-96 review: the arrival bookkeeping and the ingest result are saved before the reply attempt. A
-    # brain or Meta failure raises before the save below; catch-up then retries from this card, not from
-    # one without the file (which re-asked for a CV that was stored and classified).
-    ST.save_thread(c, t)
-    result = process_owed_turn(c, t, m["text"], m["button_id"], m["wamid"], client=client)
+    if t["stopped"]:
+        # Opted out earlier. The message (and a media original) is stored and nothing goes out.
+        return {"wamid": wamid, "status": "stopped"}
+    if is_media and not reads:
+        return _media_ack(c, t, m, client)
+    try:
+        result = process_owed_turn(c, t, m["text"], m["button_id"], wamid, client=client)
+    except Exception:
+        if ST.reply_turn_claim_state(c, phone, wamid) == "in_progress":
+            ST.finish_reply_turn_claim(c, phone, wamid, "skipped_error")
+        raise
     if result["status"] not in TURN_NOT_RUN:
         ST.save_thread(c, t)
-    result["wamid"] = m["wamid"]
+    result["wamid"] = wamid
     return result
+
+
+def _note_arrival(c, t, wamid):
+    """"A message arrived" bookkeeping for ``wamid``: last_inbound_at is its recorded time (never moved back),
+    turns the number of inbound messages up to it (never lowered). -> True when ``t`` changed."""
+    at, position = ST.inbound_position(c, wamid)
+    last_inbound_at = max(t.get("last_inbound_at") or "", at)
+    turns = max(int(t.get("turns") or 0), position)
+    changed = (last_inbound_at, turns) != (t.get("last_inbound_at"), t.get("turns"))
+    t["last_inbound_at"], t["turns"] = last_inbound_at, turns
+    return changed
+
+
+def _store_and_read(c, t, m, reads, client):
+    """The media half of ``finish_inbound``, caller holds ``media:<wamid>``. -> True when the card changed."""
+    doc = ST.document_for_wamid(c, m["wamid"])
+    if doc is None:
+        if not m.get("media_id"):
+            raise RuntimeError(f"inbound {m['kind']} {m['wamid']} has no stored original and no media_id to "
+                               f"download it with")
+        stored = _store_original(c, m, client=client)
+    elif reads and not t["stopped"] and not any(d["id"] == doc["id"] for d in t["slots"].get("documents", [])):
+        stored = {"id": doc["id"], "blob": _read_original(doc), "mime_type": doc["mime_type"]}
+    else:
+        return False
+    if not reads or t["stopped"]:
+        return False
+    _ingest_media(c, t, m, stored)
+    return True
+
+
+def _read_original(doc):
+    """A stored original's bytes; raises when the file is gone or no longer matches its sha256."""
+    blob = pathlib.Path(doc["path"]).read_bytes()
+    if hashlib.sha256(blob).hexdigest() != doc["sha256"]:
+        raise RuntimeError(f"stored original {doc['path']} no longer matches its sha256")
+    return blob
+
+
+UNREAD_MEDIA_KEY = "_unread_media"   # card: [{wamid, kind, document_id, received_at}] media nobody here reads
+
+
+def _media_ack(c, t, m, client):
+    """Media nothing reads (audio/video; every kind on the deterministic brain), under the reply claim like any other
+    reply. MEDIA_REPLY promises that a colleague looks at it, so the card records it for a human first
+    (UNREAD_MEDIA_KEY, ``_escalated``; GET /wa/threads ``unread_media``, campaign --status). A declined Luna card
+    gets no MEDIA_REPLY: the message is stored, the silence recorded (ST.NO_SEND_STATE) like a model no_send
+    (TASK-101; review 2026-09-14: a voice note after the decline ack got MEDIA_REPLY and nobody was flagged)."""
+    wamid = m["wamid"]
+    if not ST.claim_reply_turn(c, t["phone"], wamid):
+        return {"wamid": wamid, "status": "claimed_elsewhere"}
+    slots = t["slots"]
+    if not any(u["wamid"] == wamid for u in slots.get(UNREAD_MEDIA_KEY, [])):
+        doc = ST.document_for_wamid(c, wamid)
+        received_at, _ = ST.inbound_position(c, wamid)
+        slots[UNREAD_MEDIA_KEY] = [*slots.get(UNREAD_MEDIA_KEY, []), {
+            "wamid": wamid, "kind": m["kind"], "document_id": doc["id"] if doc else None, "received_at": received_at}]
+    slots["_escalated"] = True
+    slots.setdefault("_escalate_reason", f"unread {m['kind']} from the candidate: a colleague must look at it")
+    if C.BRAIN == "luna" and slots.get("declined"):
+        ST.finish_reply_turn_claim(c, t["phone"], wamid, ST.NO_SEND_STATE)
+        ST.save_thread(c, t)
+        return {"wamid": wamid, "status": "nothing_to_send", "action": "declined_no_send"}
+    try:
+        sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
+    except Exception:
+        ST.finish_reply_turn_claim(c, t["phone"], wamid, "skipped_error")
+        raise
+    ST.finish_reply_turn_claim(c, t["phone"], wamid, "sent")
+    ST.save_thread(c, t)
+    return {"wamid": wamid, "status": sent, "action": "media_ack"}
 
 
 # process_owed_turn statuses that leave ``t`` untouched. The caller skips its save: on claimed_elsewhere
 # the other process (webhook or catch-up) saves its own copy, and an earlier copy written over it lost
 # last_outbound_at and _session_id (TASK-96 review).
 TURN_NOT_RUN = ("claimed_elsewhere", "rate_limited")
-
-
-def media_turn_ingested(c, t, kind, wamid):
-    """False for a WA_BRAIN=luna document/image message whose file is not on the saved card yet (no
-    wa_documents row, or its id not in card.documents): the webhook is still downloading, reading or
-    classifying it, or that ingest raised. app/wa/luna/catchup.py skips such a turn -- answering it would
-    reply without the file (TASK-96 review: a catch-up pass inside the webhook's vision call replied blind
-    and asked for both documents seconds after the CV was sent). True for every other message."""
-    if not (C.BRAIN == "luna" and kind in _EXTRACTABLE_KINDS):
-        return True
-    doc = ST.document_for_wamid(c, wamid)
-    return doc is not None and any(d["id"] == doc["id"] for d in t["slots"].get("documents", []))
+# finish_inbound statuses after which the message still owes work: another process holds it, or the rate
+# cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-99).
+KEEP_PENDING = ("claimed_elsewhere", "rate_limited")
 
 
 def process_owed_turn(c, t, text, button_id, turn_key, client=None):
@@ -396,8 +785,15 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
 
     -> a result dict with at least ``{"status": ...}``. A claim miss or a rate-cap skip returns
     immediately without calling the brain at all -- the caller treats that the same as any other
-    "not handled this pass" outcome.
+    "not handled this pass" outcome. An inbound message whose silence is already recorded
+    (ST.NO_SEND_STATE, TASK-101) returns ``no_send_recorded``: answered, no claim, no brain call.
+
+    WA_BRAIN=luna (TASK-100): the brain gets ``luna_brain.turn_context`` for ``turn_key`` on
+    ``t["turn_context"]`` (removed again afterwards), and after the send the card's LAST_TURN_KEY marker
+    records which outbound rows the model itself wrote. A no_send ends the claim in ST.NO_SEND_STATE.
     """
+    if ST.reply_turn_claim_state(c, t["phone"], turn_key) == ST.NO_SEND_STATE:
+        return {"status": "no_send_recorded"}
     if not ST.claim_reply_turn(c, t["phone"], turn_key):
         return {"status": "claimed_elsewhere"}
 
@@ -412,10 +808,17 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
 
     if C.BRAIN == "luna":
         from . import luna_brain as LB          # imported lazily: only touched when selected
+        t["turn_context"] = LB.turn_context(c, t, turn_key)
         ST.record_luna_call(c, t["phone"])
-        d = LB.turn(text, t, button_id=button_id)
+        try:
+            d = LB.turn(text, t, button_id=button_id)
+        finally:
+            t.pop("turn_context", None)
     else:
-        d = B.turn(text, t, button_id=button_id)
+        # The deterministic brain knows only its own button ids; a template tap is read as its label, as
+        # before TASK-100.
+        is_template_tap = str(button_id or "").startswith(TEMPLATE_BUTTON_PREFIX)
+        d = B.turn(text, t, button_id=None if is_template_tap else button_id)
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         t["stopped"], t["stopped_reason"] = True, ST.STOPPED
@@ -430,7 +833,11 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_error")
         raise
     ST.finish_reply_turn_claim(c, t["phone"], turn_key,
-                               "skipped_no_send" if sent == "nothing_to_send" else "sent")
+                               ST.NO_SEND_STATE if sent == "nothing_to_send" else "sent")
+    if d.get("luna_turn"):   # after the claim is final: a failure here must not make the sent reply retryable
+        t["slots"][LB.LAST_TURN_KEY] = LB.turn_marker(c, t["phone"], d["luna_turn"], d["action"])
+    if d.get("document_reuse"):   # TASK-102: the candidate's answer on imported documents -> wa_documents, card text
+        LB.apply_document_reuse(c, t, d["document_reuse"])
 
     result = {"status": sent, "action": d["action"],
               "slots": {k: v for k, v in d["slots"].items() if v is not None},
@@ -447,11 +854,13 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
 
 def _freeform_window_open(t):
     """Meta's own policy, not this repo's choice (TASK-70): free-form text is only deliverable
-    within C.FREEFORM_WINDOW_HOURS of the candidate's last message. A thread that has never heard
-    from anyone yet (last_inbound_at unset) is not a "reopen" case -- treat it as open."""
+    within C.FREEFORM_WINDOW_HOURS of the candidate's last message. No message from the candidate
+    ever (last_inbound_at unset, e.g. a campaign recipient who never replied) means no window at all
+    (TASK-101): Meta does not deliver free text there. Every reply path sets last_inbound_at before it
+    sends (finish_inbound -> _note_arrival)."""
     last_inbound = t.get("last_inbound_at")
     if not last_inbound:
-        return True
+        return False
     age_hours = (datetime.now(timezone.utc) - datetime.fromisoformat(last_inbound)).total_seconds() / 3600
     return age_hours < C.FREEFORM_WINDOW_HOURS
 
@@ -568,17 +977,36 @@ def wa_threads(request: Request, limit: int = 50):
     ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-95): wa_documents
     metadata only -- no file bytes, and no extracted ``text`` (what the brain uses is on the card in
     ``thread.slots``; the per-file text stays in the table).
+
+    TASK-99: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
+    and ``stuck_reply`` is also true once the oldest is older than C.STUCK_REPLY_HOURS. ``?phone=`` adds
+    ``pending_inbound``, ``message_statuses`` (latest delivery status per wamid, Meta errors included) and
+    ``webhook_events`` (the raw objects nothing here acts on: calls, contacts, reactions, ...).
     """
     with ST._lock, ST.db() as c:
         phone = request.query_params.get("phone")
         if phone:
             documents = [{k: v for k, v in d.items() if k != "text"} for d in ST.documents_for(c, phone)]
             return {"phone": phone, "thread": ST.thread(c, phone), "messages": ST.history(c, phone),
-                    "documents": documents}
+                    "documents": documents, "imported_messages": ST.imported_messages_for(c, phone),
+                    "pending_inbound": ST.pending_inbound_summary(c, phone),
+                    "message_statuses": ST.latest_message_statuses_for(c, phone),
+                    "webhook_events": ST.webhook_events_for(c, phone)}
         rows = ST.threads(c, max(1, min(limit, 500)))
         for row in rows:
-            row["stuck_reply"] = _is_stuck(c, row["phone"], row.get("last_inbound_at"), row.get("stopped"))
+            pending = ST.pending_inbound_summary(c, row["phone"])
+            stuck = _is_stuck(c, row["phone"], row.get("last_inbound_at"), row.get("stopped"))
+            oldest = pending["oldest_recorded_at"] if pending else None
+            row["stuck_reply"] = stuck or bool(oldest and _hours_since(oldest) > C.STUCK_REPLY_HOURS)
+            if pending:
+                row["pending_inbound"] = pending
+            if row["slots"].get(UNREAD_MEDIA_KEY):
+                row["unread_media"] = row["slots"][UNREAD_MEDIA_KEY]   # a colleague was promised to look at these
             failure = ST.recent_send_failure(c, row["phone"])
             if failure:
                 row["last_send_error"] = failure
     return {"total": len(rows), "rows": rows}
+
+
+def _hours_since(iso):
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(iso)).total_seconds() / 3600

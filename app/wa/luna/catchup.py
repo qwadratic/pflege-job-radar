@@ -1,77 +1,92 @@
-"""Catch-up driver (TASK-78): retries an owed reply the webhook never got to -- either because no
-webhook call ever arrived (Meta delivery is not guaranteed) or because a prior attempt failed
-before an outbound message was recorded. This harness was purely synchronous before this task
-(one webhook call in, one reply attempt out, nothing revisits a thread afterward) -- unlike the
-real production system's own 3-minute --catchup poller, whose own --help text says webhook wake
-"may fail" and treats the poller as the resilient primary path, not a backup.
+"""Catch-up driver (TASK-78, TASK-99): finishes inbound messages the webhook did not. Meta delivery is not
+guaranteed, the webhook's background worker can fail or be killed mid-turn, and a rate-capped turn waits
+for the next hour -- this is the resilient second path, like the real production system's own 3-minute
+--catchup poller.
 
-Unlike app/wa/luna/shadow_run.py (TASK-72: always a read-only copy, never sends), this is the live
-counterpart: it runs against the REAL database and, with WA_AUTOSEND on, actually calls Meta. Both
-tools intentionally share phones_owed_a_reply() (reporting.ball_for() == "us") -- one owed-reply
-definition, not two.
+Two passes, one pipeline: app.wa.api.finish_inbound, the same the webhook's background worker runs.
+1. pending: every phone with wa_inbound_pending rows (recorded by a webhook, not finished yet) is drained
+   oldest first (API.process_phones). Media included: a message with no stored original is downloaded again
+   with the media_id kept in wa_messages.meta, a stored original that never reached a luna card is re-read
+   and classified, media nothing reads gets its flat ack. A phone with a claim in flight (the webhook worker,
+   or a still-running earlier pass, is on it) is reported ``claimed_elsewhere`` and left to that process --
+   the ``media:<wamid>`` claim covers a running download/ingest, so this never replies to a file it has not
+   read.
+2. owed: every other thread whose last message is inbound (shadow_run.phones_owed_a_reply, the same
+   reporting.ball_for() == "us" rule, or just ``--phones``) and not stopped: its last inbound message goes
+   through finish_inbound once. Covers messages recorded before wa_inbound_pending existed.
 
-Goes through the exact same app.wa.api.process_owed_turn() the webhook path uses, keyed on the
-same turn_key (the owed message's own wamid) -- so a race between a webhook call and a catch-up
-pass for the same thread is resolved by TASK-77's reply-turn claim, never a double reply, and the
-same TASK-76 rate cap and TASK-79 failure recording apply here too, not a second, divergent set of
-rules.
+Same reply-turn claims (TASK-77), rate cap (TASK-76) and failure recording (TASK-79) as the webhook, and a
+consent reached here builds its queue entry the same way (API.build_consent_queues). A failing message is
+logged, recorded (pending row, wa_send_failures once per distinct error), reported as status ``error``, and
+the pass goes on; main() exits 1 when any message failed.
 
-Known scope limit, named rather than silently patched over: this only retries the BRAIN-decided
-reply path. A stuck flat media acknowledgment (MEDIA_REPLY, sent outside process_owed_turn for
-audio/video or a non-luna thread) is not retried here -- a real but narrow gap for a later task,
-not something this one invents a second send path to cover.
-
-Usage: ``python -m app.wa.luna.catchup [--phones p1,p2,...]``. No systemd timer is installed as
-part of this task -- when and how often to run this is an operational decision for whoever
-deploys this harness for real, not something to hardcode here.
+Runs against the REAL database and, with WA_AUTOSEND on, really calls Meta -- shadow_run.py is the dry run.
+Usage: ``python -m app.wa.luna.catchup [--phones p1,p2,...]``; deploy/pflege-wa-catchup.timer runs it every
+3 minutes.
 """
 import argparse
-import json
+import logging
 
 from .. import api as API
 from .. import store as ST
 from . import shadow_run as SR
 
+log = logging.getLogger(__name__)
+
 
 def _last_inbound(conn, phone):
-    row = conn.execute(
-        "select body, wamid, kind, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
-        (phone,)).fetchone()
-    if row is None:
-        return None
-    return {"text": row["body"], "wamid": row["wamid"], "kind": row["kind"],
-            "button_id": json.loads(row["meta"] or "{}").get("button_id")}
+    return conn.execute("select * from wa_messages where phone=? and direction='in' order by id desc limit 1",
+                        (phone,)).fetchone()
 
 
 def run(client=None, phones=None):
-    """Attempts a real reply for every thread owed one (or just ``phones``, when given). ->
-    a list of {"phone": ..., **process_owed_turn() result}. Runs against the real, configured
-    database -- there is no dry-run mode here, that is shadow_run.py's job.
-
-    A luna document/image turn whose file is not on the saved card yet (API.media_turn_ingested) is
-    reported as ``media_not_ingested`` and not answered: the webhook is still reading it (it answers
-    itself), or its ingest raised (the thread stays owed and shows as stuck_reply). The thread is saved
-    only when the turn ran (API.TURN_NOT_RUN), so a skipped pass never writes an old copy over the
-    webhook's."""
+    """Finishes every pending inbound message, then every owed thread's last inbound message (or only those of
+    ``phones``). -> a list of {"phone", "wamid", "status", ...} -- finish_inbound's result, or ``error``.
+    The thread is saved only when a turn ran (API.TURN_NOT_RUN), so a skipped pass never writes an old copy
+    over the webhook's."""
     results = []
+    with ST.db() as c:
+        pending = [p for p in ST.phones_with_pending_inbound(c) if phones is None or p in phones]
+    for phone in pending:
+        try:
+            results.extend({"phone": phone, **r}
+                           for r in API.process_phones([phone], client=client, raise_errors=False))
+        except Exception as exc:
+            results.append({"phone": phone, **_failed(phone, None, exc)})
+
+    owed = []
     with ST._lock, ST.db() as c:
         targets = phones if phones is not None else SR.phones_owed_a_reply(c)
         for phone in targets:
-            inbound = _last_inbound(c, phone)
-            if inbound is None:
+            if phone in pending or ST.pending_inbound(c, phone):
                 continue
-            t = ST.thread(c, phone)
-            if t["stopped"]:
+            row = _last_inbound(c, phone)
+            if row is None or ST.thread(c, phone)["stopped"]:
                 continue
-            if not API.media_turn_ingested(c, t, inbound["kind"], inbound["wamid"]):
-                results.append({"phone": phone, "status": "media_not_ingested"})
-                continue
-            result = API.process_owed_turn(c, t, inbound["text"], inbound["button_id"],
-                                           inbound["wamid"], client=client)
-            if result["status"] not in API.TURN_NOT_RUN:
-                ST.save_thread(c, t)
-            results.append({"phone": phone, **result})
-    return results
+            try:
+                owed.append({"phone": phone, **API.finish_inbound(c, API.message_from_row(row), client=client)})
+            except Exception as exc:
+                owed.append({"phone": phone, **_failed(phone, row["wamid"], exc, c)})
+    API.build_consent_queues(owed, raise_errors=False)
+    return results + owed
+
+
+def _failed(phone, wamid, exc, c=None):
+    """Log and record one failure (once per distinct error). -> the result fields."""
+    error = f"catch-up {wamid or phone} not finished: {type(exc).__name__}: {exc}"
+    log.error(error, exc_info=exc)
+    if c is None:
+        with ST.db() as conn:
+            _record_once(conn, phone, error)
+    else:
+        _record_once(c, phone, error)
+    return {"wamid": wamid, "status": "error", "error": error}
+
+
+def _record_once(c, phone, error):
+    latest = ST.recent_send_failure(c, phone)
+    if not latest or latest["error"] != error:
+        ST.record_send_failure(c, phone, error)
 
 
 def main(argv=None):
@@ -81,10 +96,10 @@ def main(argv=None):
 
     phones = [p.strip() for p in args.phones.split(",") if p.strip()] if args.phones else None
     results = run(phones=phones)
-    print(f"{len(results)} thread(s) attempted")
+    print(f"{len(results)} message(s) attempted")
     for r in results:
-        print(f"  {r['phone']}: {r['status']}")
-    return 0
+        print(f"  {r['phone']} {r.get('wamid')}: {r['status']}" + (f" -- {r['error']}" if r.get("error") else ""))
+    return 1 if any(r["status"] == "error" for r in results) else 0
 
 
 if __name__ == "__main__":

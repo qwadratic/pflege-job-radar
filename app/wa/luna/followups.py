@@ -9,7 +9,10 @@ quiet-hours window (TASK-92) and a durable cross-process dedup claim (TASK-93, S
 ported, though: see _in_quiet_hours and run() below.
 
 A thread is eligible once: not stopped, not finished (reporting.stage_for() not in TERMINAL_STAGES --
-TASK-94), reporting.ball_for()=='them' (we already answered, no reply since), and enough time has passed since our last outbound message to cross a tier it has
+TASK-94, TASK-101), reporting.ball_for()=='them' (we already answered, no reply since; a recorded no_send
+is 'silent', not 'them'), the candidate wrote at least once (TASK-101) and after the latest campaign template
+on the card (TASK-103), their last message is not unread media (card._unread_media: a voice note got the
+MEDIA_REPLY promise that a colleague looks at it), and enough time has passed since our last outbound message to cross a tier it has
 not already gotten a nudge for in this streak. A streak resets the moment the candidate replies --
 derived from how many nudges have been sent since their own last message, not a separate counter
 column that could drift out of sync with reality.
@@ -34,8 +37,9 @@ _EPOCH = "0001-01-01T00:00:00+00:00"
 # TASK-94: stages where the conversation is over from the candidate's side -- consent given (a
 # human takes it from here) or told they are not placeable. Such a thread always ends with our own
 # message, so ball_for()=='them' alone would nudge it; found live on a consented thread that got
-# "sind Sie noch da?" twice the next morning.
-TERMINAL_STAGES = ("consented", "not_placeable")
+# "sind Sie noch da?" twice the next morning. TASK-101: declined (after the one fixed ack) and
+# already placed without new interest (Ivan 2026-09-14: silence after a decline).
+TERMINAL_STAGES = ("consented", "not_placeable", "declined", "already_placed")
 
 
 def _in_quiet_hours(now=None):
@@ -95,6 +99,20 @@ def run(client=None, phones=None):
             if REP.stage_for(t["slots"]) in TERMINAL_STAGES:
                 continue
             if REP.ball_for(c, phone) != "them":
+                continue
+            if not ST.has_inbound(c, phone):
+                # TASK-101: never wrote (a campaign recipient who did not reply) -- no free text, nothing
+                # further (Ivan 2026-09-14).
+                continue
+            campaign = t["slots"].get("campaign") or {}
+            if campaign.get("sent_at") and (t.get("last_inbound_at") or "") < campaign["sent_at"]:
+                # TASK-103: no reply since our campaign template (the candidate wrote only before it) -- a
+                # non-responder, nothing further.
+                continue
+            last_in = ST.last_inbound(c, phone)
+            if any(u["wamid"] == last_in["wamid"] for u in t["slots"].get(API.UNREAD_MEDIA_KEY, [])):
+                # Their last message is a voice note/video nobody here can read; MEDIA_REPLY promised a colleague
+                # looks at it. Not silence: no nudge (review 2026-09-14).
                 continue
             tier = _eligible_tier(c, phone, t.get("last_outbound_at"), t.get("last_inbound_at"))
             if tier is None:

@@ -1,4 +1,4 @@
-"""A stdio MCP server exposing the pflege-board read API to Luna as real tools, so a turn can look
+"""A stdio MCP server exposing the board read API to Luna as real tools, so a turn can look
 something up mid-conversation instead of only ever reasoning from the pre-computed
 ``market_snapshot``/``requirement_scoreboard`` (app/wa/luna_brain.py). Started by the ``claude`` CLI
 itself via ``--mcp-config`` (see ``luna_brain.py:Client._live_reply``, which generates the config
@@ -44,7 +44,7 @@ try:
 except ImportError:
     CT = None
 
-mcp = MCPServer("pflege_board")
+mcp = MCPServer("jobs")   # same name as luna_brain.MCP_SERVER_NAME; model-visible, no brand
 
 
 def _session_dir():

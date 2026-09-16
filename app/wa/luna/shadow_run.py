@@ -55,22 +55,24 @@ def db_copy(db_path=None):
 
 def _last_inbound(conn, phone):
     row = conn.execute(
-        "select body, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
+        "select wamid, body, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
         (phone,)).fetchone()
     if row is None:
-        return "", None
-    return row["body"], json.loads(row["meta"] or "{}").get("button_id")
+        return None, "", None
+    return row["wamid"], row["body"], json.loads(row["meta"] or "{}").get("button_id")
 
 
 def phones_owed_a_reply(conn):
-    """Every phone whose most recent message (by id, across the whole thread) is inbound -- one
-    query, not N -- the same condition reporting.ball_for() checks per-phone."""
+    """Every phone whose most recent message (by id, across the whole thread) is inbound and has no
+    recorded no_send (ST.NO_SEND_STATE, TASK-101) -- one query, not N -- the same condition
+    reporting.ball_for() == "us" checks per-phone."""
     rows = conn.execute("""
         select m.phone from wa_messages m
         join (select phone, max(id) as last_id from wa_messages group by phone) latest
           on m.phone = latest.phone and m.id = latest.last_id
-        where m.direction = 'in'
-    """).fetchall()
+        left join wa_reply_turn_claims k on k.phone = m.phone and k.turn_key = m.wamid
+        where m.direction = 'in' and (k.state is null or k.state != ?)
+    """, (ST.NO_SEND_STATE,)).fetchall()
     return [r["phone"] for r in rows]
 
 
@@ -86,15 +88,17 @@ def shadow_turn(conn, phone, client=None):
         return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": "stopped",
                 "bubbles": [], "buttons": [], "would_stop": True, "window_open": None, "gate": "stopped"}
 
-    text, button_id = _last_inbound(conn, phone)
-    t["slots"] = {k: v for k, v in t["slots"].items() if k != "_session_id"}
-
+    wamid, text, button_id = _last_inbound(conn, phone)
     if C.BRAIN == "luna":
         from .. import luna_brain as LB
+        if wamid:
+            t["turn_context"] = LB.turn_context(conn, t, wamid)   # TASK-100, before the session id is stripped
+        t["slots"] = {k: v for k, v in t["slots"].items() if k != "_session_id"}
         d = LB.turn(text, t, button_id=button_id, client=client)
     else:
         from .. import brain as B
-        d = B.turn(text, t, button_id=button_id)
+        from ..api import TEMPLATE_BUTTON_PREFIX   # a template tap is read as its label, as api.process_owed_turn
+        d = B.turn(text, t, button_id=None if str(button_id or "").startswith(TEMPLATE_BUTTON_PREFIX) else button_id)
 
     from .. import api as API           # imported lazily: only needed for the window gate check
     window_open = API._freeform_window_open(t)

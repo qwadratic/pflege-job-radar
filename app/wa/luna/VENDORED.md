@@ -13,7 +13,7 @@ and infrastructure-specific material removed or replaced:
 
 | kept, same substance | genericized | dropped entirely |
 |---|---|---|
-| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → no company named; assistant self-describes generically | interview scheduling (a second, later conversation the source calls "Game 2") |
+| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-100 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der NDT Group" | interview scheduling (a second, later conversation the source calls "Game 2") |
 | qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-67, see note below — no longer entirely dropped) |
 | "not placeable → explain once, then stop" | — | clinic-submission email + human-approval token flow (kept only as a state flag, see `constitution.json:handoff_principle`) |
 | primary-candidate-first (companion mentioned mid-chat) | — | manager WhatsApp call-permission form, WABA approved-template inventory |
@@ -42,3 +42,8 @@ nothing from the source was read for this. `app/wa/api.py` now downloads a docum
 falling through to a Claude-vision path for images and scanned PDFs), and merges it onto the card
 as `cv_text`/`urkunde_text` before `LB.turn()` runs. `prompts.py:RULES` gained one line telling the
 model how to react to those two fields; everything else in this file's table above still holds.
+
+**Update (TASK-100/101, Ivan 2026-09-14):** identity follows the source again: "Ich bin Valentina von der NDT
+Group." and "ein digitaler Assistent der NDT Group" (source: first-touch copy and `HONEST_AI_IDENTITY_DE`).
+The decline acknowledgement is the source's `DECLINE_ACK_DE` verbatim. Proactive messages exist now as fixed
+texts sent by code (follow-up nudges, campaign template); the model sees them afterwards in the payload.

@@ -245,7 +245,8 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
     assert seen["user"]["latest_inbound"] == "Intensivstation bitte"
     assert "thread" not in seen["user"], "history now lives in the resumed session, not the payload"
     assert "Valentina" in seen["system"]
-    assert "NDT" not in seen["system"], "the vendored prompt must not carry the source's company name"
+    # TASK-100 (Ivan 2026-09-14): Luna introduces herself as the old bot did, "Valentina von der NDT Group".
+    assert "Ich bin Valentina von der NDT Group." in seen["system"]
 
 
 def test_market_snapshot_matches_only_once_fully_ready_to_close():

@@ -136,8 +136,10 @@ def _route(wa, raw, sig):
         real = mod.M.Client
         mod.M.Client = lambda *a, **k: wa
         try:
-            return client.post("/api/wa/webhook", content=raw,
-                               headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"})
+            response = client.post("/api/wa/webhook", content=raw,
+                                   headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"})
+            mod.wait_for_background(timeout=60)   # TASK-99: the turn runs in the background worker
+            return response
         finally:
             mod.M.Client = real
 
@@ -194,7 +196,7 @@ def test_parse_reads_text_buttons_and_media(wa):
     assert msgs[0]["button_id"] == "dept:OP" and msgs[0]["text"] == "OP"
     msgs, _ = WAPI.inbound_messages(payload(kind="document"))
     assert msgs[0]["kind"] == "document" and msgs[0]["text"] == ""
-    assert WAPI.parse_message({"id": "x", "from": "49170", "type": "reaction"}) is None
+    assert WAPI.parse_message({"id": "x", "from": "49170", "type": "system", "system": {"type": "user_changed_number"}}) is None
     assert WAPI.parse_message({"from": "49170", "type": "text", "text": {"body": "hi"}}) is None
 
 
@@ -554,8 +556,9 @@ def test_window_is_open_for_a_thread_that_just_wrote(wa):
     assert WAPI._freeform_window_open(t) is True
 
 
-def test_window_is_open_when_last_inbound_at_was_never_set(wa):
-    assert WAPI._freeform_window_open({"phone": LEAD}) is True
+def test_window_is_closed_when_the_candidate_never_wrote(wa):
+    """TASK-101: no inbound ever (a campaign recipient who did not reply) means no free-form window."""
+    assert WAPI._freeform_window_open({"phone": LEAD}) is False
 
 
 def test_window_is_closed_after_the_configured_hours(wa, monkeypatch):
@@ -644,18 +647,22 @@ def test_send_template_with_params_fills_body_components(wa):
 
 # --- template discovery: what is already approved on this WABA (docs/whatsapp.md) --------------
 
-def test_phone_number_info_fetches_the_parent_waba_id(wa):
+def test_phone_number_info_asks_only_for_fields_the_phone_number_node_answers(wa):
+    # Live 2026-09-14 (TASK-98): the old default's whatsapp_business_account failed the whole GET with #100.
     calls = []
 
     def transport(method, url, headers=None, data=None, timeout=None):
-        calls.append({"method": method, "url": url, "headers": headers})
-        return {"whatsapp_business_account": {"id": "waba-1"}, "display_phone_number": "+49 170 0000000"}
+        calls.append({"method": method, "url": url, "headers": headers, "data": data})
+        return {"display_phone_number": "+49 170 0000000", "verified_name": "Test NDT", "id": "p1"}
 
     cl = M.Client(transport=transport, access_token="tok", phone_number_id="p1")
-    out = cl.phone_number_info()
-    assert out["whatsapp_business_account"]["id"] == "waba-1"
-    assert calls[0]["method"] == "GET" and "/p1?fields=" in calls[0]["url"]
-    assert calls[0]["headers"]["Authorization"] == "Bearer tok"
+    assert cl.phone_number_info() == {"display_phone_number": "+49 170 0000000", "verified_name": "Test NDT",
+                                      "id": "p1"}
+    assert calls[0] == {"method": "GET", "headers": {"Authorization": "Bearer tok"}, "data": None,
+                        "url": f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/p1"
+                               "?fields=display_phone_number,verified_name"}
+    cl.phone_number_info(fields=("quality_rating",))
+    assert calls[1]["url"] == f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/p1?fields=quality_rating"
 
 
 def test_list_message_templates_returns_the_flat_list(wa):

@@ -37,7 +37,14 @@ def test_a_terminal_sent_claim_is_never_reclaimable(db):
     assert ST.claim_reply_turn(db, "+49111", "wamid.1") is False
 
 
-@pytest.mark.parametrize("state", ["skipped_rate_cap", "skipped_no_send", "skipped_stopped", "skipped_error"])
+def test_a_recorded_no_send_claim_is_never_reclaimable(db):
+    """TASK-101: the brain chose silence for this message; catch-up must not re-run the model on it."""
+    ST.claim_reply_turn(db, "+49111", "wamid.1")
+    ST.finish_reply_turn_claim(db, "+49111", "wamid.1", ST.NO_SEND_STATE)
+    assert ST.claim_reply_turn(db, "+49111", "wamid.1") is False
+
+
+@pytest.mark.parametrize("state", ["skipped_rate_cap", "skipped_stopped", "skipped_error"])
 def test_a_non_terminal_skipped_claim_is_reclaimable(db, state):
     ST.claim_reply_turn(db, "+49111", "wamid.1")
     ST.finish_reply_turn_claim(db, "+49111", "wamid.1", state)

@@ -88,7 +88,7 @@ def test_shadow_turn_reports_a_stopped_thread_without_calling_any_brain(db):
 
 
 def test_shadow_turn_deterministic_brain_reflects_the_real_turn_decision(db):
-    _seed_thread(db, "+49111")
+    _seed_thread(db, "+49111", last_inbound_at=ST.now_iso())   # set on arrival (api._note_arrival)
     ST.record_inbound(db, "+49111", "wamid.1", "Ich suche eine Stelle als Pflegefachkraft")
 
     row = SR.shadow_turn(db, "+49111")
@@ -118,7 +118,7 @@ def test_shadow_turn_luna_brain_never_resumes_the_live_session(db, monkeypatch):
 
 def test_shadow_turn_luna_brain_reports_the_gate_and_stage(db, monkeypatch):
     monkeypatch.setattr(C, "BRAIN", "luna")
-    _seed_thread(db, "+49111", slots={"qualification_path": "urkunde"})
+    _seed_thread(db, "+49111", slots={"qualification_path": "urkunde"}, last_inbound_at=ST.now_iso())
     ST.record_inbound(db, "+49111", "wamid.1", "Hallo")
 
     row = SR.shadow_turn(db, "+49111", client=fake_client(_out(bubbles=["Erzähl mir mehr."])))

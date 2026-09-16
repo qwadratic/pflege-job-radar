@@ -12,7 +12,7 @@ lock the operator out of GET /api/wa/threads on the harness host. Local reads st
 from fastapi import FastAPI
 
 from .api import router
-from .router import router as router_router  # POST /wa/route-webhook (TASK-84, not Meta's live URL yet)
+from .router import router as router_router  # POST /wa/route-webhook (TASK-84): Meta's live webhook via nginx
 
 app = FastAPI(title="pflege-board WhatsApp harness", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(router, prefix="/api", tags=["whatsapp"])

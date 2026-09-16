@@ -55,8 +55,11 @@ def _ago(minutes):
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
 
 
-def _seed_them(conn, phone, last_outbound_minutes_ago, last_inbound_minutes_ago=None):
-    """A thread where WE answered last (ball='them') -- the candidate has gone quiet."""
+def _seed_them(conn, phone, last_outbound_minutes_ago, last_inbound_minutes_ago="just before our reply"):
+    """A thread where WE answered last (ball='them') -- the candidate has gone quiet. The candidate wrote
+    first, a minute before our reply, unless last_inbound_minutes_ago=None (never wrote, TASK-101)."""
+    if last_inbound_minutes_ago == "just before our reply":
+        last_inbound_minutes_ago = last_outbound_minutes_ago + 1
     t = ST.thread(conn, phone)
     if last_inbound_minutes_ago is not None:
         ST.record_inbound(conn, phone, f"wamid.in.{phone}", "Hallo")

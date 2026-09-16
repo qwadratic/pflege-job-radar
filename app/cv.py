@@ -506,6 +506,11 @@ _VISION_TIMEOUT_SEC = int(os.environ.get("CV_VISION_TIMEOUT_SEC", "") or _LLM_TI
 
 _NO_TEXT_TOKEN = "NO_TEXT_FOUND"
 
+
+class NoReadableText(RuntimeError):
+    """The model read the file and reported no legible text (``NO_TEXT_FOUND``: blank, too dark, blurry, a photo
+    without text). A final result for that file, not a transient failure: reading it again gives the same answer."""
+
 _VISION_SYSTEM_PROMPT = f"""You are given the path to a single image or PDF file: a nursing
 candidate's CV or Urkunde/qualification certificate sent over WhatsApp, possibly a photographed or
 scanned document. Use your file-reading tool to open the exact path named in the user message, then
@@ -586,8 +591,10 @@ def extract_text_vision(blob, suffix=".png", client=None):
         path.write_bytes(blob)
         text = cl.transcribe(str(path))
     stripped = (text or "").strip()
-    if not stripped or stripped.upper() == _NO_TEXT_TOKEN:
-        raise RuntimeError("vision extraction found no readable text in the image/scanned document")
+    if stripped.upper() == _NO_TEXT_TOKEN:
+        raise NoReadableText("vision extraction found no readable text in the image/scanned document")
+    if not stripped:
+        raise RuntimeError("vision extraction found no readable text in the image/scanned document (empty reply)")
     return text
 
 

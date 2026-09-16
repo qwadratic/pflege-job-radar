@@ -58,6 +58,16 @@ def wa(tmp_path, monkeypatch):
     return FakeMeta()
 
 
+def _arrived(c, *wamids):
+    """The thread after these inbound messages arrived, as finish_inbound hands it over: rows recorded and
+    last_inbound_at set (TASK-100 reads the inbound row; TASK-101: no inbound means no free-form window)."""
+    for i, wamid in enumerate(wamids):
+        ST.record_inbound(c, LEAD, wamid, f"msg {i}")
+    t = ST.thread(c, LEAD)
+    t["last_inbound_at"] = ST.now_iso()
+    return t
+
+
 def _fake_turn_result(bubbles=("ok",), action="reply_now_conversational"):
     return {"bubbles": list(bubbles), "buttons": [], "slots": {}, "asked": [],
             "stopped": False, "matches": [], "action": action}
@@ -82,7 +92,7 @@ def test_a_turn_key_already_claimed_is_not_answered_again(wa, monkeypatch):
 def test_two_calls_with_different_turn_keys_both_proceed(wa, monkeypatch):
     monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
     with ST.db() as c:
-        t = ST.thread(c, LEAD)
+        t = _arrived(c, "wamid.1", "wamid.2")
         r1 = WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=wa)
         r2 = WAPI.process_owed_turn(c, t, "Und?", None, "wamid.2", client=wa)
     assert r1["status"] == "sent" and r2["status"] == "sent"
@@ -97,7 +107,7 @@ def test_hitting_the_rate_cap_skips_the_brain_without_losing_the_message(wa, mon
                         calls.append(1) or _fake_turn_result())
 
     with ST.db() as c:
-        t = ST.thread(c, LEAD)
+        t = _arrived(c, "wamid.1", "wamid.2")
         r1 = WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=wa)
         r2 = WAPI.process_owed_turn(c, t, "Zweite Nachricht", None, "wamid.2", client=wa)
 
@@ -110,7 +120,7 @@ def test_rate_limit_of_zero_disables_the_cap(wa, monkeypatch):
     monkeypatch.setattr(C, "LUNA_MAX_CALLS_PER_HOUR", 0)
     monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
     with ST.db() as c:
-        t = ST.thread(c, LEAD)
+        t = _arrived(c, *(f"wamid.{i}" for i in range(5)))
         for i in range(5):
             r = WAPI.process_owed_turn(c, t, f"msg {i}", None, f"wamid.{i}", client=wa)
             assert r["status"] == "sent"
@@ -119,7 +129,7 @@ def test_rate_limit_of_zero_disables_the_cap(wa, monkeypatch):
 def test_a_rate_limited_turn_is_reclaimable_by_a_later_catch_up_pass(wa, monkeypatch):
     monkeypatch.setattr(C, "LUNA_MAX_CALLS_PER_HOUR", 0)
     with ST.db() as c:
-        t = ST.thread(c, LEAD)
+        t = _arrived(c, "wamid.1")
         assert ST.claim_reply_turn(c, LEAD, "wamid.1") is True
         ST.finish_reply_turn_claim(c, LEAD, "wamid.1", "skipped_rate_cap")
         monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())

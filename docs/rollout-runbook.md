@@ -109,6 +109,85 @@ Meta traffic goes back to hitting `candidate-connector-bridge.service` directly,
 step 4 -- that service was never stopped or touched. To also stop our own service from doing
 anything further: `sudo systemctl stop pflege-wa.service pflege-wa-catchup.timer pflege-wa-followups.timer`.
 
+## 6. Campaign recipients: import the old system's history (TASK-102)
+
+Run before the campaign sends (TASK-103 calls the same function per phone). Reads the old system read-only, writes
+only our `data/wa.sqlite` and `data/wa_documents/`. Details: docs/whatsapp.md, "Campaign recipients".
+
+**Read grants (applied by Ivan 2026-09-14 on this host, verified with getfacl).** The importer runs as `claude`,
+never sudo. `sales_brain.sqlite` is world-readable; the file stores are not:
+
+```bash
+sudo setfacl -m u:claude:--x /opt/clinic-dispatcher/data/private
+sudo setfacl -m u:claude:--x /opt/clinic-dispatcher-v2-bridge /opt/clinic-dispatcher-v2-bridge/data \
+  /opt/clinic-dispatcher-v2-bridge/data/private
+sudo setfacl -R -m u:claude:rX,d:u:claude:rX /opt/clinic-dispatcher/data/private/candidate_whatsapp_media \
+  /opt/clinic-dispatcher/data/private/manager_crm_lebenslauf \
+  /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media
+```
+
+Revert:
+
+```bash
+MEDIA="/opt/clinic-dispatcher/data/private/candidate_whatsapp_media /opt/clinic-dispatcher/data/private/manager_crm_lebenslauf /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media"
+sudo setfacl -R -x u:claude $MEDIA
+sudo find $MEDIA -type d -exec setfacl -x d:u:claude {} +
+sudo setfacl -x u:claude /opt/clinic-dispatcher/data/private /opt/clinic-dispatcher-v2-bridge \
+  /opt/clinic-dispatcher-v2-bridge/data /opt/clinic-dispatcher-v2-bridge/data/private
+```
+
+A missing grant fails the run with `SourceAccessError` naming the path (exit 2).
+
+**Dry-run, then apply:**
+
+```bash
+cd /home/claude/repo/pflege-board
+.venv/bin/python -m app.wa.luna.import_history --db /opt/clinic-dispatcher/var/sales_brain.sqlite \
+  --queries deploy/import-history.example.sql --source clinic-dispatcher \
+  --media-root /opt/clinic-dispatcher/data/private/candidate_whatsapp_media \
+  --media-root /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media \
+  --phones-file <campaign phone list, one +E.164 per line>
+# read the report: facts, placement, documents by old class and action; then the same with --apply
+```
+
+Load `.env` first (`set -a; . ./.env; set +a`): the same `WA_DOCUMENTS_DIR`/data paths as the service, and
+`META_WHATSAPP_ACCESS_TOKEN`, which `--apply` needs to download a missing WhatsApp original again by `media_id`. Exit 1 = some document is not recoverable (listed per phone); the
+rest is imported. Re-running is safe.
+
+## 7. Campaign: send the template ourselves (TASK-103)
+
+Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-103)". Deploy state it needs:
+
+- **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-99..103:
+  it drops status webhooks (no delivery tracking, a 131042 payment failure stays invisible), parses a template
+  tap without its payload and reply context, and counts imported documents without the reuse answer. The
+  catch-up and follow-up timers already run the current tree (new process per run).
+- No new unit, timer or env var. The sender is run by hand from the repo root with `.env` loaded; `--send`
+  refuses without `WA_AUTOSEND=1`.
+- Its table `wa_campaign_sends` is created in `data/wa.sqlite` by the first `--send` (not by the service).
+  Dry-run and `--status` open the database read-only.
+- Reports (phone numbers, names) go to `~/pflege-campaign-reports/` (0700/0600), outside the repo.
+
+```bash
+cd /home/claude/repo/pflege-board && set -a && . ./.env && set +a
+# probe: operator number only, own campaign id; wait for "delivery delivered" in --status
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --template-id <ID> --leads probe.csv --send
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --status
+# real list: dry-run, read the plan, then send (in tmux; it waits for the window and between batches)
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv --send
+```
+
+With the history import, add `--import-history-db /opt/clinic-dispatcher/var/sales_brain.sqlite
+--import-history-queries deploy/import-history.example.sql --import-history-source clinic-dispatcher
+--import-history-media-root ...` (step 6 grants first); the dry-run previews it, `--send` applies it per phone
+right before that phone's claim.
+
+Rollback of a campaign: stop the run (Ctrl-C). Already flipped phones stay with us (`wa_ownership` reason
+`campaign:<id>`); there is no hand-back tool. Calls to and from those phones (and call statuses, call-permission
+replies) still reach the old system's call bridge; a template that went out during an uncertain POST is recorded
+with `--mark-sent PHONE=WAMID` (`docs/whatsapp.md` runbook).
+
 ## Known gaps going into this rollout (not blockers, but real)
 
 - No Meta-approved reopen template registered (`WA_REOPEN_TEMPLATE_NAME` unset) -- a thread that

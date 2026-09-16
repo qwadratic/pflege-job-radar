@@ -54,6 +54,9 @@ data/wa_luna_sessions/
 # Original files candidates send over WhatsApp (CV, Urkunde, photos; app/wa/api.py:_store_original,
 # TASK-95) -- real candidate PII: never commit it
 data/wa_documents/
+# Phones known to the old system (export_known_phones.py, rewritten hourly by known-phones-export.timer,
+# docs/rollout-runbook.md) -- real phone numbers: never commit it
+data/known-real-system-phones.txt
 .venv/
 *.log
 

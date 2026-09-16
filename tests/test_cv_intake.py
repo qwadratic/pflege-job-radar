@@ -89,14 +89,16 @@ def test_extract_text_vision_happy_path_writes_and_cleans_up_a_temp_file():
 
 def test_extract_text_vision_raises_loudly_on_no_text_found():
     client = CV.VisionClient(call=lambda path: "NO_TEXT_FOUND")
-    with pytest.raises(RuntimeError, match="no readable text"):
+    with pytest.raises(CV.NoReadableText, match="no readable text"):
         CV.extract_text_vision(b"blank-image", client=client)
 
 
 def test_extract_text_vision_raises_loudly_on_an_empty_reply():
+    """An empty reply is no answer, not the model's final NO_TEXT_FOUND: an ordinary (retryable) failure."""
     client = CV.VisionClient(call=lambda path: "   ")
-    with pytest.raises(RuntimeError, match="no readable text"):
+    with pytest.raises(RuntimeError, match="no readable text") as raised:
         CV.extract_text_vision(b"blank-image", client=client)
+    assert not isinstance(raised.value, CV.NoReadableText)
 
 
 def test_vision_client_uses_restricted_not_tools_empty_and_grants_add_dir(monkeypatch):

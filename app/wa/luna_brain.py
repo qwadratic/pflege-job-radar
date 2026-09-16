@@ -29,7 +29,8 @@ unrecoverable false promise:
    "process-exact wording, the model must not rephrase" rule for this exact gate.
 3. A named region outside Bavaria gets the locked out-of-scope bubble
    (prompts.OUT_OF_SCOPE_REGION_DE), because this board has no data for anywhere else and a
-   model-authored answer could imply otherwise.
+   model-authored answer could imply otherwise. Typed text on a thread without card.campaign or
+   card.declined only (``_region_shortcut_applies``).
 
 Everything else -- tone, which question to ask, how to phrase the market snapshot, when to
 escalate -- is the model's call, per turn, from the state this module hands it.
@@ -43,6 +44,7 @@ import uuid
 from . import brain as B
 from . import config as C
 from . import slots as SL
+from . import store as ST
 from .luna import prompts as P
 
 MAX_BUBBLES = 2
@@ -56,6 +58,9 @@ CONSENT_YES_ID = "consent:yes"
 CONSENT_NO_ID = "consent:no"
 CONSENT_BUTTONS = [{"id": CONSENT_YES_ID, "title": "Ja, gerne"}, {"id": CONSENT_NO_ID, "title": "Nein danke"}]
 
+# card.documents[].reuse of a document imported from the candidate's earlier contact (TASK-102).
+REUSE_PENDING, REUSE_CONFIRMED, REUSE_DECLINED = ST.REUSE_PENDING, ST.REUSE_CONFIRMED, ST.REUSE_DECLINED
+
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").read_text(encoding="utf-8")),
@@ -68,7 +73,9 @@ _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledg
 # tools_server.py also defines get_clinic_contact (with its own tests) -- deliberately NOT in this
 # tuple (TASK-91): contact details are for the human handoff after consent (app/wa/queue.py), never
 # something the candidate-facing conversation itself should be able to surface.
-MCP_SERVER_NAME = "pflege_board"
+# Model-visible (tool names are mcp__<server>__<tool>): a neutral word, never a brand the model could
+# repeat to a candidate (TASK-100: asked who we are, Luna named the repo).
+MCP_SERVER_NAME = "jobs"
 MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                        ("search_postings", "get_posting", "list_clinics"))
 
@@ -146,9 +153,15 @@ def _city_or_department_satisfied(card):
     return bool(card.get("city") or card.get("department_pref"))
 
 
+def _counts_for_gate(doc):
+    """TASK-102: a document imported from the candidate's earlier contact (app/wa/luna/import_history.py) counts
+    only once the candidate confirmed it may be reused; everything received on WhatsApp counts as before."""
+    return not doc.get("imported") or doc.get("reuse") == REUSE_CONFIRMED
+
+
 def _cv_document_received(card):
     """TASK-96: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
-    return any(d["document_type"] == "lebenslauf" for d in card.get("documents", []))
+    return any(d["document_type"] == "lebenslauf" and _counts_for_gate(d) for d in card.get("documents", []))
 
 
 def _is_qualification_document(doc, path):
@@ -164,7 +177,17 @@ def _is_qualification_document(doc, path):
 
 
 def _qualification_document_received(card):
-    return any(_is_qualification_document(d, card.get("qualification_path")) for d in card.get("documents", []))
+    return any(_is_qualification_document(d, card.get("qualification_path")) and _counts_for_gate(d)
+               for d in card.get("documents", []))
+
+
+def _reuse_pending(card, cv_in, qualification_in):
+    """TASK-102: imported documents still waiting for the candidate's reuse answer that would settle a documents
+    half still open -- a CV while no CV counts, a qualification document for the path while none counts."""
+    path = card.get("qualification_path")
+    return [d for d in card.get("documents", []) if d.get("imported") and d.get("reuse") == REUSE_PENDING and
+            ((not cv_in and d["document_type"] == "lebenslauf") or
+             (not qualification_in and _is_qualification_document(d, path)))]
 
 
 def _documents_satisfied(card):
@@ -277,6 +300,29 @@ def _missing_documents(card, cv_in, qualification_in):
     return f"the still-missing {name.removeprefix('the ')} as a photo/PDF ({note}; the CV is already in)"
 
 
+_HELD_NAMES = {"lebenslauf": "the CV (Lebenslauf)", "urkunde": "the German Urkunde",
+               "defizitbescheid": "the Defizitbescheid"}
+
+
+def _reuse_objective(card, pending, cv_in, qualification_in):
+    """TASK-102 documents objective while imported documents wait for the reuse answer: one yes/no naming what we
+    hold, plus the document we do not hold (if any) by name."""
+    name, note = _qualification_document_name(card.get("qualification_path"))
+    held_cv = any(d["document_type"] == "lebenslauf" for d in pending)
+    held_qualification = any(d["document_type"] != "lebenslauf" for d in pending)
+    held = " AND ".join(dict.fromkeys(_HELD_NAMES[d["document_type"]] for d in pending))
+    ids = ", ".join(str(d["id"]) for d in pending)
+    label = (f"ask ONE plain yes/no whether we may use {held} they sent us earlier (card.documents ids {ids}, "
+             f"imported, reuse pending), adding that they can simply send newer ones here instead; record the "
+             f"answer in document_reuse (EARLIER DOCUMENTS)")
+    still_missing = [n for n, missing in (("the CV (Lebenslauf)", not cv_in and not held_cv),
+                                          (f"{name} ({note})", not qualification_in and not held_qualification))
+                     if missing]
+    if still_missing:
+        label += f" -- we do not hold {' or '.join(still_missing)}: name it as still needed as a photo/PDF"
+    return label
+
+
 def requirement_scoreboard(card):
     """State only, never a script (RULES: 'the requirement scoreboard is state only'). One of
     satisfied | open | blocked per gate, so the model can see what is left without being told
@@ -286,7 +332,9 @@ def requirement_scoreboard(card):
 
     TASK-96: cv_document and qualification_document are the two halves of documents (satisfied only
     when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
-    next_objective the not-placeable hint, whatever else is open."""
+    next_objective the not-placeable hint, whatever else is open. TASK-102: an imported document counts only once
+    reuse is confirmed; while one that would settle an open half is pending, the documents objective is the reuse
+    yes/no (_reuse_objective)."""
 
     def _q():
         path = card.get("qualification_path")
@@ -308,11 +356,13 @@ def requirement_scoreboard(card):
         "handoff_consent": "satisfied" if card.get("anonymous_send_consent") else "open",
     }
     missing = _missing_documents(card, cv_in, qualification_in)
+    pending = _reuse_pending(card, cv_in, qualification_in)
     if board["qualification"] == "blocked":
         board["next_objective"] = _NOT_PLACEABLE_OBJECTIVE
     else:
         board["next_objective"] = next(
-            (label.format(missing=missing) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
+            ((_reuse_objective(card, pending, cv_in, qualification_in) if key == "documents" and pending
+              else label.format(missing=missing)) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
             "nothing open -- respond naturally, no open placement item left")
     return board
 
@@ -329,9 +379,22 @@ OUTPUT_SCHEMA = {
         "escalate_reason": {"type": ["string", "null"]},
         "no_send": {"type": "boolean"},
         "next_ask": {"type": ["string", "null"]},
+        # TASK-101: the model flags; the harness sends the fixed ack and owns card.declined (turn()).
+        "decline": {"type": "boolean"},
+        "decline_reason": {"type": ["string", "null"]},
+        "re_engaged": {"type": "boolean"},
+        # TASK-102: the candidate's answer on imported documents (card.documents ids); the harness records it.
+        "document_reuse": {
+            "type": "object",
+            "properties": {"confirmed_ids": {"type": "array", "items": {"type": "integer"}},
+                           "declined_ids": {"type": "array", "items": {"type": "integer"}}},
+            "additionalProperties": False,
+        },
         "card_patch": {
             "type": "object",
             "properties": {
+                "already_placed": {"type": "boolean"},          # TASK-100
+                "open_to_new_position": {"type": "boolean"},
                 "region": {"type": "string"},
                 "city": {"type": "string"},
                 "department_pref": {"type": "string"},
@@ -470,7 +533,120 @@ class Client:
         return _validate(out), next_session_id
 
 
-def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_just_received=()):
+# --- what reached the candidate outside this session (TASK-100) ---------------------------------------
+# The session only knows what the model itself wrote. Everything else sent to the number since its last
+# turn -- a campaign template, a follow-up nudge, the decline ack, a locked reject/out-of-scope text, a
+# reopen template sent instead of its bubbles, a manual send -- goes into the next payload, so a "Ja" is
+# read against the message the candidate actually saw last.
+
+LAST_TURN_KEY = "_luna_last_turn"   # card: {at, seen_through_id, own_message_ids}, written by api.process_owed_turn
+# Card keys only code writes; stripped from the model's card_patch.
+CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason", "declined_at", "re_engaged_at",
+                        "campaign", LAST_TURN_KEY, "_session_id", "_unread_media",
+                        # TASK-102: the documents gate list (reuse state included) and the imported history
+                        "documents", "prior_contact", "prior_placement")
+# Outbound meta.action values no model turn writes; only used to find the last model-turn row on a card from
+# before LAST_TURN_KEY existed.
+NOT_MODEL_ACTIONS = ("followup", "media_ack", "decline_ack", "campaign")
+
+
+def _legacy_seen_through(c, phone):
+    """A session started before LAST_TURN_KEY: the id of the last outbound text/buttons/draft row a turn
+    wrote (meta.action not in NOT_MODEL_ACTIONS), 0 when there is none."""
+    rows = [r for r in ST.messages_for(c, phone, direction="out")
+            if r["kind"] in ("text", "buttons", "draft") and r["meta"].get("action") not in NOT_MODEL_ACTIONS]
+    return rows[-1]["id"] if rows else 0
+
+
+def _delivery(c, wamid):
+    """The latest Meta delivery status of an outbound message (wa_message_statuses), or None without one."""
+    latest = ST.latest_message_status(c, wamid) if wamid else None
+    if latest is None:
+        return None
+    return {"status": latest["status"], "error_codes": [e.get("code") for e in latest["errors"] or []]}
+
+
+def _message_view(row, delivery=None):
+    return {"wamid": row["wamid"], "kind": row["kind"], "text": row["body"], "at": row["at"],
+            "action": row["meta"].get("action"), "template": row["meta"].get("template"), "delivery": delivery}
+
+
+# The old bot's "already greeted" check (apps/connectors/candidate_reply_council.py _has_valentina_freeform_greeting):
+# a free-form outbound message that names Valentina or NDT Group, or opens with 'Hallo Frau/Herr'. Templates excluded.
+_GREETING_RE = re.compile(r"ich bin valentina|ndt group", re.I)
+_SALUTATION_RE = re.compile(r"^hallo\s+(frau|herr)\b", re.I)
+_FREEFORM_KINDS = ("text", "buttons", "draft")
+
+
+def introduced(c, phone):
+    """True once a free-form message to this number introduced Valentina like the old bot checks it. Replaces
+    fresh_session for the CAMPAIGN self-introduction (review 2026-09-14: the decline turn started a session whose
+    bubbles were replaced by the fixed ack, so a re-engaged candidate never learned who writes)."""
+    return any(_GREETING_RE.search(r["body"] or "") or _SALUTATION_RE.search(r["body"] or "")
+               for r in ST.messages_for(c, phone, direction="out") if r["kind"] in _FREEFORM_KINDS)
+
+
+def turn_context(c, t, turn_key):
+    """-> {outbound_since_last_turn, last_turn_at, reply_context, seen_through_id} for the Luna turn
+    answering inbound ``turn_key``. The caller (api.process_owed_turn, shadow_run) puts it on the thread as
+    ``turn_context``; turn() moves it into the payload.
+
+    outbound_since_last_turn: outbound rows after the card's LAST_TURN_KEY.seen_through_id that are not in
+    its own_message_ids, oldest first, each with its latest ``delivery`` status; without a marker, every outbound
+    row when there is no session yet (a campaign-opened thread sees its template), else rows after
+    ``_legacy_seen_through``. A row whose latest status is failed is left out, and ``campaign_delivery_failed``
+    makes turn() leave card.campaign out of the payload. ``introduced``: see ``introduced()``.
+    reply_context: the inbound's kind, whether it is a template quick-reply tap and its payload, when it
+    arrived, and the stored message it replies to (context.id) or ``found: false`` for one we do not hold.
+    Raises when ``turn_key`` is not a stored inbound message."""
+    phone, card = t["phone"], t.get("slots") or {}
+    inbound = ST.message_by_wamid(c, turn_key)
+    if inbound is None or inbound["direction"] != "in" or inbound["phone"] != phone:
+        raise RuntimeError(f"turn_context: {turn_key!r} is not a stored inbound message of {phone}")
+    marker = card.get(LAST_TURN_KEY)
+    if marker:
+        after_id, own = marker["seen_through_id"], set(marker["own_message_ids"])
+    else:
+        after_id, own = (_legacy_seen_through(c, phone) if card.get("_session_id") else 0), set()
+    # A message Meta reported undelivered (latest status failed) never reached the candidate: not in the payload
+    # (review 2026-09-14: a template failed with 131049, weeks later a spontaneous message was read as its answer).
+    outbound = [view for view in (_message_view(r, _delivery(c, r["wamid"]))
+                                  for r in ST.messages_for(c, phone, after_id=after_id, direction="out")
+                                  if r["id"] not in own)
+                if (view["delivery"] or {}).get("status") != "failed"]
+    campaign = card.get("campaign") or {}
+    campaign_delivery_failed = bool(campaign) and (_delivery(c, campaign.get("wamid")) or {}).get("status") == "failed"
+    meta = inbound["meta"]
+    replies_to = None
+    if meta.get("reply_to_wamid"):
+        target = ST.message_by_wamid(c, meta["reply_to_wamid"])
+        replies_to = ({"wamid": meta["reply_to_wamid"], "found": False} if target is None else
+                      {**_message_view(target, _delivery(c, target["wamid"]) if target["direction"] == "out" else None),
+                       "direction": target["direction"], "found": True})
+    from .api import TEMPLATE_BUTTON_PREFIX
+    button_id = meta.get("button_id") or ""
+    is_template_button = inbound["kind"] == "button"
+    reply_context = {"kind": inbound["kind"], "received_at": inbound["at"], "is_template_button": is_template_button,
+                     "template_button_payload": (button_id.removeprefix(TEMPLATE_BUTTON_PREFIX) or None)
+                     if is_template_button else None,
+                     "replies_to": replies_to}
+    return {"outbound_since_last_turn": outbound, "last_turn_at": (marker or {}).get("at"),
+            "reply_context": reply_context, "introduced": introduced(c, phone),
+            "campaign_delivery_failed": campaign_delivery_failed, "seen_through_id": ST.last_message_id(c, phone)}
+
+
+def turn_marker(c, phone, luna_turn, action):
+    """The LAST_TURN_KEY value after a model turn was sent: its own rows are the outbound rows after
+    seen_through_id whose body is one of the model's bubbles and whose meta.action is the turn's action
+    (a locked text, the decline ack or a reopen template sent instead is not the model's and shows up in
+    the next payload)."""
+    bubbles = set(luna_turn["model_bubbles"])
+    own = [r["id"] for r in ST.messages_for(c, phone, after_id=luna_turn["seen_through_id"], direction="out")
+           if r["body"] in bubbles and r["meta"].get("action") == action]
+    return {"at": luna_turn["at"], "seen_through_id": luna_turn["seen_through_id"], "own_message_ids": own}
+
+
+def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_just_received=(), context=None):
     """This turn's ground truth, not the conversation itself -- the resumed session already has
     every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
@@ -484,15 +660,37 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     documents_just_received (TASK-96) lists the files that arrived since the last reply
     ({id, document_type, certificate_level}, empty on every other turn): a media message has an empty
     latest_inbound, and card.documents alone does not say which entry is new -- this does, wrong
-    document types included."""
+    document types included.
+    TASK-100: outbound_since_last_turn, last_turn_at, reply_context and introduced come from ``turn_context`` ([],
+    None, None, None when the caller supplied none, e.g. a test calling turn() directly); fresh_session is true when
+    no session exists yet, so the model has no memory of any earlier Valentina message. The card goes without
+    LAST_TURN_KEY (bookkeeping, not a fact), and without campaign when Meta reported that template undelivered."""
+    from .api import TEMPLATE_BUTTON_PREFIX
+    context = context or {}
+    hidden = {LAST_TURN_KEY} | ({"campaign"} if context.get("campaign_delivery_failed") else set())
     return json.dumps({
         "latest_inbound": text,
-        "is_button_reply": bool(button_id),
+        # A template quick-reply tap is reply_context.is_template_button, never a consent-style button reply.
+        "is_button_reply": bool(button_id) and not button_id.startswith(TEMPLATE_BUTTON_PREFIX),
+        "reply_context": context.get("reply_context"),
+        "outbound_since_last_turn": context.get("outbound_since_last_turn", []),
+        "last_turn_at": context.get("last_turn_at"),
+        "fresh_session": card.get("_session_id") is None,
+        "introduced": context.get("introduced"),
         "documents_just_received": list(documents_just_received),
-        "card": card,
+        "card": {k: v for k, v in card.items() if k not in hidden},
         "requirement_scoreboard": scoreboard,
         "market_snapshot": snapshot,
     }, ensure_ascii=False, sort_keys=True)
+
+
+def _region_shortcut_applies(card, context):
+    """The locked out-of-scope reply answers a Bundesland the candidate typed on an ordinary thread. Not on a thread
+    opened by our template (card.campaign) or a declined one: there a named Land is often a decline ('habe schon eine
+    Stelle in Hessen'), silence after a decline, or a yes from someone living elsewhere, and the model decides
+    (DECLINE, CAMPAIGN). Not for a location pin or a contact card either (their summary text names places)."""
+    kind = (context.get("reply_context") or {}).get("kind")
+    return not card.get("campaign") and not card.get("declined") and kind in (None, "text")
 
 
 def _check(bubbles):
@@ -512,18 +710,26 @@ def turn(text, thread, button_id=None, client=None):
     Code session this thread is resumed from, invisible to everything except this module.
     ``asked`` is unused by this brain and passed through unchanged so the store's schema does not
     need to know which brain wrote a thread.
+
+    ``thread["turn_context"]`` (``turn_context()``, set by api.process_owed_turn) feeds the payload; when
+    the model ran with it, the result carries ``luna_turn`` {at, seen_through_id, model_bubbles} for
+    ``turn_marker``. TASK-101: a first ``decline`` from the model sends P.DECLINE_ACK_DE and sets
+    card.declined/declined_reason/declined_at; a declined card stays silent until the model flags
+    ``re_engaged`` (declined cleared, re_engaged_at set, the model's reply goes out).
     """
     card = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
     # TASK-96: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
     documents_just_received = card.pop("_documents_just_received", [])
+    context = dict(thread.get("turn_context") or {})
+    seen_through_id = context.pop("seen_through_id", None)
 
     if SL.is_stop(text):
         return {"bubbles": [], "buttons": [], "slots": card, "asked": asked, "stopped": True,
                 "matches": [], "action": "stopped"}
 
     land = named_non_bavaria_land(text)
-    if land and not card.get("region"):
+    if land and not card.get("region") and _region_shortcut_applies(card, context):
         card["region"] = land
         return {"bubbles": [P.OUT_OF_SCOPE_REGION_DE], "buttons": [], "slots": card, "asked": asked,
                 "stopped": False, "matches": [], "action": "out_of_scope_region"}
@@ -531,20 +737,28 @@ def turn(text, thread, button_id=None, client=None):
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
-    user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received)
+    user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
 
     cl = client or Client()
+    turn_at = ST.now_iso()
     out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))
     card["_session_id"] = session_id
 
     patch = dict(out.get("card_patch") or {})
     # Never trust the model's own claim of consent, even if an older session or prompt drift still
     # emits the field (OUTPUT_SCHEMA/OUTPUT_INSTRUCTION no longer describe it at all) -- only an
-    # actual button tap, below, may set anonymous_send_consent.
-    patch.pop("anonymous_send_consent", None)
+    # actual button tap, below, may set anonymous_send_consent. The decline, campaign and turn-marker
+    # keys are code-owned the same way (TASK-100/101).
+    for key in CODE_OWNED_CARD_KEYS:
+        patch.pop(key, None)
     was_offered = bool(card.get("anonymous_send_offered"))
     was_ok = card.get("qualification_ok")
+    was_declined = bool(card.get("declined"))
     card.update(patch)
+    if was_declined and out.get("re_engaged"):
+        card["declined"] = False
+        card["re_engaged_at"] = turn_at
+    document_reuse = _decide_document_reuse(card, out.get("document_reuse"), turn_at)
 
     # TASK-80: anonymous_send_consent is never trusted from the model's own card_patch (already
     # stripped from OUTPUT_SCHEMA/OUTPUT_INSTRUCTION, but stripped here too in case an older
@@ -556,10 +770,22 @@ def turn(text, thread, button_id=None, client=None):
     elif button_id == CONSENT_NO_ID and card.get("anonymous_send_offered"):
         card["anonymous_send_consent"] = False
     just_offered = bool(card.get("anonymous_send_offered")) and not was_offered
+    # A tap on the consent 'Nein danke' turns down the profile share, never the contact: no decline ack, no silence
+    # (prompts DECLINE; live 2/2 the tap became a terminal decline, review 2026-09-14).
+    consent_no_tap = button_id == CONSENT_NO_ID and bool(card.get("anonymous_send_offered"))
 
     raw_bubbles = out.get("bubbles") or []
     buttons = []
-    if patch.get("qualification_ok") is False and was_ok is not False:
+    model_bubbles = []
+    if out.get("decline") and not was_declined and not consent_no_tap:
+        # TASK-101: one fixed acknowledgement (Ivan 2026-09-14, the old bot's wording), then silence.
+        card.update(declined=True, declined_reason=out.get("decline_reason"), declined_at=turn_at)
+        bubbles = [P.DECLINE_ACK_DE]
+        action = "decline_ack"
+    elif card.get("declined"):
+        bubbles = []
+        action = "declined_no_send"
+    elif patch.get("qualification_ok") is False and was_ok is not False:
         # The gate the model must not rephrase (prompts.py module docstring, point 2). This one
         # gate overrides no_send too -- the very first decline must always be said out loud.
         bubbles = [P.REJECT_BODY_DE]
@@ -574,7 +800,7 @@ def turn(text, thread, button_id=None, client=None):
         bubbles = []
         action = str(out.get("action") or "no_send")
     else:
-        bubbles = _check(raw_bubbles)
+        bubbles = model_bubbles = _check(raw_bubbles)
         action = str(out.get("action") or "reply_now_conversational")
         if just_offered:
             # The turn where the model just asked for the anonymized send: attach real, tappable
@@ -585,5 +811,76 @@ def turn(text, thread, button_id=None, client=None):
         card["_escalated"] = True
         card["_escalate_reason"] = out.get("escalate_reason")
 
-    return {"bubbles": bubbles, "buttons": buttons, "slots": card, "asked": asked, "stopped": False,
-            "matches": snapshot.get("matches") or [], "action": action}
+    result = {"bubbles": bubbles, "buttons": buttons, "slots": card, "asked": asked, "stopped": False,
+              "matches": snapshot.get("matches") or [], "action": action}
+    if seen_through_id is not None:
+        result["luna_turn"] = {"at": turn_at, "seen_through_id": seen_through_id, "model_bubbles": model_bubbles}
+    if document_reuse:
+        result["document_reuse"] = document_reuse
+    return result
+
+
+# --- reuse of documents imported from the earlier contact (TASK-102) ------------------------------------
+
+def _decide_document_reuse(card, reuse, at):
+    """Apply the model's ``document_reuse`` {confirmed_ids, declined_ids} to the imported entries of
+    card["documents"] (a new list, entries copied). -> the changes [{id, state, previous, at}] for
+    ``apply_document_reuse``. Naming an id twice is a no-op; an id that is not an imported document on this card,
+    or in both lists, raises."""
+    if not reuse:
+        return []
+    if not isinstance(reuse, dict):
+        raise RuntimeError(f"document_reuse must be an object, got {reuse!r}")
+    confirmed, declined = list(reuse.get("confirmed_ids") or []), list(reuse.get("declined_ids") or [])
+    both = set(confirmed) & set(declined)
+    if both:
+        raise RuntimeError(f"document_reuse names ids {sorted(both)} as both confirmed and declined")
+    card["documents"] = [dict(d) for d in card.get("documents", [])]
+    imported = {d["id"]: d for d in card["documents"] if d.get("imported")}
+    unknown = [i for i in confirmed + declined if i not in imported]
+    if unknown:
+        raise RuntimeError(f"document_reuse names ids {unknown} that are not imported documents on the card "
+                           f"(imported: {sorted(imported)})")
+    changes = []
+    for state, ids in ((REUSE_CONFIRMED, confirmed), (REUSE_DECLINED, declined)):
+        for doc_id in dict.fromkeys(ids):
+            entry = imported[doc_id]
+            if entry.get("reuse") == state:
+                continue
+            changes.append({"id": doc_id, "state": state, "previous": entry.get("reuse"), "at": at})
+            entry.update(reuse=state, reuse_decided_at=at)
+    return changes
+
+
+def _remove_segment(value, text):
+    """``value`` without the one ``text`` segment an earlier "\\n\\n".join appended; raises when it is not there."""
+    index = (value or "").find(text)
+    if index < 0:
+        raise RuntimeError("the confirmed document's text is no longer on the card")
+    before, after = value[:index], value[index + len(text):]
+    if before.endswith("\n\n"):
+        before = before[:-2]
+    elif after.startswith("\n\n"):
+        after = after[2:]
+    return before + after
+
+
+def apply_document_reuse(c, t, changes):
+    """Record ``_decide_document_reuse``'s changes on the wa_documents rows (reuse_state, reuse_decided_at) and on
+    the card text keys: a confirmed document's stored text is appended to its text_key (cv_text/urkunde_text, the
+    TASK-96 key), a confirmation withdrawn removes it again. Called by api.process_owed_turn after the send."""
+    for change in changes:
+        row = ST.document_by_id(c, change["id"])
+        if row is None or row["phone"] != t["phone"]:
+            raise RuntimeError(f"wa_documents {change['id']} is not a document of {t['phone']}")
+        ST.set_document_reuse(c, change["id"], change["state"], change["at"])
+        key, text = row["text_key"], row["text"]
+        if not (key and text):
+            continue
+        slots = t["slots"]
+        if change["state"] == REUSE_CONFIRMED:
+            slots[key] = "\n\n".join(filter(None, (slots.get(key), text)))
+        elif change["previous"] == REUSE_CONFIRMED:
+            slots[key] = _remove_segment(slots.get(key), text)
+            if not slots[key]:
+                del slots[key]

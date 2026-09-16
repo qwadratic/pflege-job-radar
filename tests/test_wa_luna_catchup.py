@@ -92,7 +92,7 @@ def test_a_thread_already_claimed_by_a_concurrent_webhook_is_skipped(db, monkeyp
     db.close()
 
     results = CU.run(client=FakeMeta())
-    assert results == [{"phone": "+49111", "status": "claimed_elsewhere"}]
+    assert results == [{"phone": "+49111", "wamid": "wamid.1", "status": "claimed_elsewhere"}]
     assert calls == [], "the brain must not be called once the turn is already claimed"
 
 
@@ -106,7 +106,7 @@ def test_a_rate_capped_thread_stays_owed_for_the_next_run(db, monkeypatch):
     db.close()
 
     results = CU.run(client=FakeMeta())
-    assert results == [{"phone": "+49111", "status": "rate_limited"}]
+    assert results == [{"phone": "+49111", "wamid": "wamid.+49111", "status": "rate_limited"}]
     assert calls == []
 
 
@@ -144,7 +144,7 @@ def test_catch_up_that_loses_the_claim_does_not_overwrite_the_webhook_save(db, m
         return real_claim(c, phone, turn_key)
 
     monkeypatch.setattr(ST, "claim_reply_turn", webhook_saves_and_claims_first)
-    assert CU.run(client=FakeMeta()) == [{"phone": "+49111", "status": "claimed_elsewhere"}]
+    assert CU.run(client=FakeMeta()) == [{"phone": "+49111", "wamid": "wamid.1", "status": "claimed_elsewhere"}]
     with ST.db() as c:
         assert ST.thread(c, "+49111")["slots"]["documents"][0]["document_type"] == "lebenslauf"
 
@@ -171,7 +171,7 @@ def test_a_webhook_that_loses_the_claim_does_not_overwrite_the_catch_up_save(db,
                       "messages": [{"id": "wamid.1", "from": "49111", "type": "text", "text": {"body": "Hallo"}}]}}]}]}
     out = WAPI.handle_payload(body, client=FakeMeta())
     assert catch_up == [[{"phone": "+49111", "status": "sent", "action": "reply_now_conversational",
-                          "slots": {"_session_id": "catch-up-session"}, "matches": []}]]
+                          "slots": {"_session_id": "catch-up-session"}, "matches": [], "wamid": "wamid.1"}]]
     assert out["results"][0]["status"] == "claimed_elsewhere"
     with ST.db() as c:
         t = ST.thread(c, "+49111")

@@ -229,18 +229,18 @@ def test_scanned_pdf_with_no_text_layer_falls_through_to_vision(luna_wa, monkeyp
 
 
 def test_vision_extraction_failure_propagates_not_swallowed(luna_wa, monkeypatch):
-    """CLAUDE.md, 'no invented safety nets': a document that fails vision extraction must raise,
+    """CLAUDE.md, 'no invented safety nets': a document whose vision call fails must raise,
     never be silently treated as an empty CV."""
     meta = FakeMetaMedia(media_by_id={"m4": {"url": "https://cdn.example/m4", "mime_type": "image/png"}},
                          url_bytes={"https://cdn.example/m4": b"blank-image-bytes"})
 
     def raising_vision(blob, suffix=".png", client=None):
-        raise RuntimeError("vision extraction found no readable text in the image/scanned document")
+        raise RuntimeError("claude -p exited 1: vision call failed")
 
     monkeypatch.setattr(CV, "extract_text_vision", raising_vision)
 
     body = payload("image", media_id="m4", mime_type="image/png", wamid="wamid.4")
-    with pytest.raises(RuntimeError, match="no readable text"):
+    with pytest.raises(RuntimeError, match="vision call failed"):
         WAPI.handle_payload(body, client=meta)
     with ST.db() as c:
         rows = ST.history(c, LEAD)
@@ -744,8 +744,8 @@ def test_a_catch_up_pass_during_the_webhook_ingest_leaves_the_turn_to_the_webhoo
     monkeypatch.setattr(LB, "Client", lambda *a, **k: _PayloadLog(payloads))
     out = WAPI.handle_payload(payload("image", media_id="cv1", mime_type="image/jpeg", wamid="wamid.cv"), client=meta)
 
-    skipped = [{"phone": LEAD, "status": "media_not_ingested"}]
-    assert catch_up_results == [skipped, skipped], "no row yet during the download, no card entry during vision"
+    skipped = [{"phone": LEAD, "wamid": "wamid.cv", "status": "claimed_elsewhere"}]
+    assert catch_up_results == [skipped, skipped], "the webhook holds media:wamid.cv through download and vision"
     assert catch_up_meta.sent == []
     assert out["results"][0]["status"] == "sent"
     t, messages, (doc,) = _saved_thread()
@@ -759,9 +759,10 @@ def test_a_catch_up_pass_during_the_webhook_ingest_leaves_the_turn_to_the_webhoo
 
 
 @pytest.mark.parametrize("failing_step", ["vision", "classification"])
-def test_catch_up_does_not_answer_a_media_turn_whose_ingest_raised(luna_wa, monkeypatch, failing_step):
-    """The file never reached the card, so a reply would not know it arrived. The turn stays owed (stuck_reply)
-    and each pass reports it."""
+def test_catch_up_rereads_the_stored_original_of_a_media_turn_whose_ingest_raised(luna_wa, monkeypatch, failing_step):
+    """TASK-99: the file never reached the card, so no reply goes out while reading fails; each catch-up pass
+    re-reads the stored original (no second download) and records the failure once. Once reading works, the
+    file lands on the card and the reply knows it arrived."""
     from app.wa.luna import catchup as CU
     _seed_card(_READY_BUT_DOCUMENTS)
 
@@ -778,11 +779,59 @@ def test_catch_up_does_not_answer_a_media_turn_whose_ingest_raised(luna_wa, monk
     with pytest.raises(RuntimeError, match=f"{failing_step} failed"):
         WAPI.handle_payload(payload("image", media_id="cv1", mime_type="image/jpeg", wamid="wamid.cv"), client=meta)
 
-    catch_up_meta = FakeMetaMedia()
-    assert CU.run(client=catch_up_meta) == [{"phone": LEAD, "status": "media_not_ingested"}]
-    assert catch_up_meta.sent == []
+    catch_up_meta = FakeMetaMedia()   # serves no media: a second download would raise "unknown test media id"
+    error = f"inbound wamid.cv not finished: RuntimeError: {failing_step} failed"
+    for _ in range(2):
+        assert CU.run(client=catch_up_meta) == [{"phone": LEAD, "wamid": "wamid.cv", "status": "error", "error": error}]
+    assert catch_up_meta.sent == [] and catch_up_meta.download_calls == []
     t, messages, _ = _saved_thread()
     assert [m["direction"] for m in messages] == ["in"] and "documents" not in t["slots"]
+    with ST.db() as c:
+        assert [f["error"] for f in c.execute("select error from wa_send_failures")] == [error]
+        assert ST.pending_inbound_summary(c, LEAD)["last_error"] == error
+
+    monkeypatch.setattr(CV, "extract_text_vision", lambda blob, suffix=".png", client=None: blob.decode("latin-1"))
+    _classify_by_text(monkeypatch)
+    payloads = []
+    monkeypatch.setattr(LB, "Client", lambda *a, **k: _PayloadLog(payloads))
+    (result,) = CU.run(client=catch_up_meta)
+    assert (result["wamid"], result["status"]) == ("wamid.cv", "sent")
+    t, messages, (doc,) = _saved_thread()
+    summary = {"id": doc["id"], "document_type": "lebenslauf", "certificate_level": "unknown"}
+    assert t["slots"]["documents"] == [summary] and payloads[0]["documents_just_received"] == [summary]
+    assert catch_up_meta.download_calls == [] and [m["direction"] for m in messages] == ["in", "out"]
+    with ST.db() as c:
+        assert ST.pending_inbound_summary(c, LEAD) is None
+
+
+def test_a_photo_with_no_readable_text_is_answered_once_and_never_read_again(luna_wa, monkeypatch):
+    """Review 2026-09-14: NO_TEXT_FOUND (a selfie, a blurry Urkunde) raised, the turn never ran, and catch-up re-read
+    the stored original with a new vision call every 3 minutes. Now it is the file's final classification."""
+    from app.wa.luna import catchup as CU
+    _seed_card(_READY_BUT_DOCUMENTS)
+    vision_calls, real_vision = [], CV.extract_text_vision
+
+    def no_text(blob, suffix=".png", client=None):   # the real extraction, the model answering NO_TEXT_FOUND
+        vision_calls.append(suffix)
+        return real_vision(blob, suffix=suffix, client=CV.VisionClient(call=lambda path: "NO_TEXT_FOUND"))
+
+    monkeypatch.setattr(CV, "extract_text_vision", no_text)
+    monkeypatch.setattr(CV, "classify_document", lambda text, client=None: pytest.fail("nothing to classify"))
+    payloads = []
+    monkeypatch.setattr(LB, "Client", lambda *a, **k: _PayloadLog(payloads))
+    meta = _meta_with(("selfie", "image/jpeg", b"a photo without text"))
+    (result,) = WAPI.handle_payload(payload("image", media_id="selfie", mime_type="image/jpeg", wamid="wamid.selfie"),
+                                    client=meta)["results"]
+    assert result["status"] == "sent" and len(meta.sent) == 1 and vision_calls == [".jpg"]
+    t, messages, (doc,) = _saved_thread()
+    summary = {"id": doc["id"], "document_type": "unreadable", "certificate_level": None}
+    assert payloads[0]["documents_just_received"] == [summary] and t["slots"]["documents"] == [summary]
+    assert (doc["document_type"], doc["text"], doc["text_key"]) == ("unreadable", None, None)
+    assert "cv_text" not in t["slots"] and "urkunde_text" not in t["slots"]
+    assert LB.requirement_scoreboard(t["slots"])["documents"] == "open"
+    with ST.db() as c:
+        assert ST.pending_inbound(c, LEAD) == [] and ST.recent_send_failure(c, LEAD) is None
+    assert CU.run(client=meta) == [] and vision_calls == [".jpg"], "no second vision call"
 
 
 def test_files_with_the_same_card_key_append_their_text_never_replace_it(luna_wa, monkeypatch):
