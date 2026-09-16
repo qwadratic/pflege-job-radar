@@ -188,7 +188,7 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""),
         "department_hint": department_hint(f"{title} {(jp.get('custom') or {}).get('untertitel') or ''}"),
         "department_raw": (jp.get("custom") or {}).get("untertitel") or None,
-        "city": a.get("city"), "plz": a.get("postCode"), "region": "BAYERN", "lat": a.get("latitude"), "lon": a.get("longitude"),
+        "city": a.get("city"), "plz": a.get("postCode"), "region": a.get("region") or a.get("state"), "lat": a.get("latitude"), "lon": a.get("longitude"),
         "in_bavaria": in_bavaria(a.get("city"), a.get("postCode"), None, towns),
         "n_locations": 1, "locations": json.dumps([{"adresse": {"ort": a.get("city"), "plz": a.get("postCode")}}], ensure_ascii=False),
         "employment_types": [t for t, k in (("vollzeit", "full_time"), ("teilzeit", "part_time"), ("minijob", "mini")) if k in et],

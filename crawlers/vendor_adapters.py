@@ -408,7 +408,7 @@ def crawl_helix(c, session=None):
             if detail["loc"][0]["city"]:
                 j["loc"] = detail["loc"]
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
         time.sleep(0.5)                              # <=2 concurrent per host, 0.5s between requests
         out.append(row(host, j["url"], j, "helix"))
     return out
@@ -606,7 +606,7 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
         if not j or not j.get("title"):
             continue
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
         j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
@@ -1196,7 +1196,7 @@ def crawl_rexx(c, session=None):
         if not j or not j.get("title"):
             continue
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
         j["section_labels"] = [tags[u]] if tags.get(u) else []
         em = REXX_EMPLOYMENT_TYPE_RX.search(d.text)
         if em:
@@ -1267,7 +1267,7 @@ def crawl_mein_check_in(c, session=None, max_jobs=int(os.environ.get("VENDOR_MAX
             continue
         u = "https://%s/%s/position-%s" % (host, tenant, pid)
         j = {"title": title, "org": c["name"],
-             "loc": [{"city": c.get("town"), "plz": None, "region": "BAYERN"}],
+             "loc": [{"city": c.get("town"), "plz": None, "region": None}],
              "url": u, "page": u, "description": None,
              "section_labels": [pid_group[pid]] if pid_group.get(pid) else []}
         d = get(u, session=session)
@@ -1403,7 +1403,7 @@ def crawl_dvinci(c, session=None):
         if not p.get("title"):
             continue
         if not p["loc"][0]["city"] and c.get("town"):
-            p["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            p["loc"] = [{"city": c["town"], "plz": None, "region": None}]
         p["section_labels"] = _cat_names(j)
         out.append(row(host, p["url"], p, "dvinci"))
     return out
@@ -1595,7 +1595,7 @@ def main():
         for r in rows:                                # registry town beats an empty/vendor-specific one
             locs = r["payload"].get("loc") or [{}]
             if c.get("town") and not any((l or {}).get("city") for l in locs):
-                r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+                r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
         n = save(rows, "vendor_" + c["ats_type"])
         total += n
         print("  %-44s %-16s jobs %3d" % (c["name"][:44], c["ats_type"], n))

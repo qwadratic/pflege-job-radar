@@ -115,7 +115,7 @@ def crawl_hr4you(c, session=None):
             if not j or not j.get("title"):
                 continue
             if not j["loc"][0]["city"] and c.get("town"):
-                j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+                j["loc"] = [{"city": c["town"], "plz": None, "region": None}]  # seed town is a hint, not a region claim
             out.append({"kind": "jobposting", "source_host": host, "source_url": j["url"],
                         "payload": j, "collector": "vendor-hr4you-v1", "client_id": "vendor-adapters-hr4you"})
     return out

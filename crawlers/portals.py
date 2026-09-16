@@ -276,7 +276,7 @@ def crawl_js_portal(name, cfg):
             continue
         locs = j.get("loc") or [{}]
         if town and not any((l or {}).get("city") for l in locs):
-            j["loc"] = [{"city": town, "plz": plz, "region": "BAYERN"}]
+            j["loc"] = [{"city": town, "plz": plz, "region": None}]
         rows.append({"kind": "jobposting", "source_host": host, "source_url": j["url"],
                      "payload": j, "collector": "playwright-%s-v1" % name, "client_id": CID})
     return rows

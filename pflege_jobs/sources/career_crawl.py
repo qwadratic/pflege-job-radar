@@ -89,6 +89,11 @@ def _location(jp):
 
 GENERIC_PREFIX = {"bad", "sankt", "st", "st.", "markt", "neu", "ober", "unter", "gross", "groß", "klein"}
 
+# the 16 Bundeslaender, for reading a region out of a "Ort, Land, Deutschland" city string
+LAND_RX = re.compile(r"bayern|bavaria|baden-württemberg|baden-wuerttemberg|hessen|thüringen|thueringen|sachsen|"
+                     r"sachsen-anhalt|brandenburg|nordrhein-westfalen|niedersachsen|berlin|hamburg|bremen|"
+                     r"rheinland-pfalz|saarland|schleswig-holstein|mecklenburg-vorpommern", re.I)
+
 
 def in_bavaria(city, plz, region, towns):
     # A malformed upstream row can carry a one-item list instead of a scalar (seen live 2026-09-09,
@@ -97,6 +102,16 @@ def in_bavaria(city, plz, region, towns):
     if isinstance(plz, list): plz = plz[0] if plz else None
     if isinstance(city, list): city = city[0] if city else None
     if isinstance(region, list): region = region[0] if region else None
+    # Some sources put the Bundesland in the city string instead of its own field ("Coburg, Bayern,
+    # Deutschland" -- every row of the P&I LOGA regiomed board). That is the source stating the region,
+    # so read it rather than throw it away; matched per comma-part, never as a substring, so a town
+    # like "Bad Bayersoien" cannot pass for "Bayern".
+    if not region and city and "," in str(city):
+        for part in str(city).split(",")[1:]:
+            p = norm_text(part)
+            if re.fullmatch(r"bayern|bavaria|by", p) or LAND_RX.fullmatch(p):
+                region = part.strip()
+                break
     if region and re.search(r"bayern|bavaria|^by$", str(region).strip(), re.I): return True
     if region and re.search(r"hessen|thüringen|sachsen|brandenburg|baden|württemberg|nordrhein|niedersachsen|berlin|hamburg|rheinland|saarland|schleswig|mecklenburg|bremen|^(nw|he|bw|th|sn|ni|rp|sh|mv|bb|hh|hb|be|sl|st)$", str(region).strip(), re.I): return False
     c = norm_text(city or "")
@@ -316,7 +331,7 @@ class Crawler:
             "employer_class": "clinic" if e_class != "clinic" else e_class, "employer_class_rule": e_rule if e_class == "clinic" else f"registry_seed|{e_rule}",
             "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
             "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(f"{title} {dept or ''}"),
-            "department_raw": dept, "city": city, "plz": plz, "region": "BAYERN", "lat": None, "lon": None, "in_bavaria": in_bavaria(city, plz, region, self.towns),
+            "department_raw": dept, "city": city, "plz": plz, "region": region, "lat": None, "lon": None, "in_bavaria": in_bavaria(city, plz, region, self.towns),
             "n_locations": 1, "locations": json.dumps([{"adresse": {"ort": city, "plz": plz, "region": region}}], ensure_ascii=False),
             "employment_types": [], "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None, "contract": None, "fixed_term_months": None,
             "start_date": None, "salary_min": None, "salary_max": None, "salary_unit": None, "salary_note": None,

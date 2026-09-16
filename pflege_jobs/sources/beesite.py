@@ -116,7 +116,7 @@ def crawl_beesite(c, session=None):
         if not j or not j.get("title"):
             continue
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]  # seed town is a hint, not a region claim
         out.append({"kind": "jobposting", "source_host": p.netloc, "source_url": j["url"],
                     "payload": j, "collector": "vendor-beesite-v1", "client_id": "vendor-adapters-beesite"})
     return out

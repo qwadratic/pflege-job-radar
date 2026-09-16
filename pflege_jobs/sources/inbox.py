@@ -40,7 +40,7 @@ def jobposting_to_obs(row, towns):
         "title": title, "employer_name": emp, "employer_name_norm": employer_norm(emp), "employer_class": e_class, "employer_class_rule": e_rule,
         "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
         "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(title), "department_raw": None,
-        "city": l.get("city"), "plz": l.get("plz"), "region": "BAYERN", "lat": None, "lon": None,
+        "city": l.get("city"), "plz": l.get("plz"), "region": l.get("region"), "lat": None, "lon": None,
         "in_bavaria": in_bavaria(l.get("city"), l.get("plz"), l.get("region"), towns), "n_locations": len(locs) or 1,
         "locations": json.dumps([{"adresse": {"ort": x.get("city"), "plz": x.get("plz")}} for x in locs], ensure_ascii=False),
         "employment_types": [t for t, k in (("vollzeit", "FULL_TIME"), ("teilzeit", "PART_TIME")) if k in et.upper()],

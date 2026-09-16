@@ -428,7 +428,7 @@ def jobs_to_inbox_rows(data, clinic):
                       ("Kontakt: " + j["contact_email"]) if j.get("contact_email") else None]
         pub = (j.get("published") or "")[:10]
         seniority = (j.get("seniority") or "unknown").strip().lower()
-        payload = {"title": title, "org": clinic.get("name"), "loc": [{"city": city, "plz": plz, "region": "BAYERN"}], "url": url,
+        payload = {"title": title, "org": clinic.get("name"), "loc": [{"city": city, "plz": plz, "region": None}], "url": url,
                    "page": (data or {}).get("portal_url") or clinic.get("careers_url"),
                    "description": " ".join(p for p in desc_parts if p)[:20000], "department": j.get("department") or None,
                    "seniority": seniority if seniority in SENIORITY else "unknown",

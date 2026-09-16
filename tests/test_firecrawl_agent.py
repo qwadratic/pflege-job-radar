@@ -39,7 +39,9 @@ def test_jobs_to_inbox_rows():
     assert r["kind"] == "jobposting" and r["collector"] == "firecrawl-agent" and r["client_id"] == "firecrawl-agent-16104"
     assert r["source_host"] == "kbo-heckscher-klinikum.de" and r["source_url"] == "https://kbo-heckscher-klinikum.de/jobs/123"
     p = r["payload"]
-    assert p["org"] == CLINIC["name"] and p["loc"] == [{"city": "Ingolstadt", "plz": "85049", "region": "BAYERN"}]
+    # region stays None: the agent read a city and a PLZ, not a Bundesland, and asserting "BAYERN"
+    # here used to short-circuit in_bavaria()'s first check (see tests/test_no_fabricated_region.py)
+    assert p["org"] == CLINIC["name"] and p["loc"] == [{"city": "Ingolstadt", "plz": "85049", "region": None}]
     assert p["datePosted"] == "2026-09-01" and "FULL_TIME" in p["employmentType"] and "PART_TIME" in p["employmentType"]
     assert "Anforderungen: examinierte" in p["description"] and "TVöD P8" in p["description"]
     assert p["department"] == "KJP Station 3" and p["page"] == ANSWER["portal_url"]

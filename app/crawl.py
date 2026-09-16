@@ -377,7 +377,7 @@ def _vendor_rows(board, c, session, log):
         r["payload"]["board_clinic_ids"] = ids
         locs = r["payload"].get("loc") or [{}]
         if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
-            r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
     return rows
 
 
