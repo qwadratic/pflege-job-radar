@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from ... import data as D
 from .. import config as C
@@ -83,7 +84,10 @@ def search_postings(city: str = "", department: str = "", role_class: str = "", 
                      housing: bool = False, employment_type: str = "", q: str = "", limit: int = 10) -> list[dict]:
     """Search open Pflege postings on the board. Same filters as GET /api/jobs. Call this whenever
     the candidate names a city, department or region that market_snapshot did not already cover --
-    do not guess or say you have no data when a live search would answer it directly."""
+    do not guess or say you have no data when a live search would answer it directly. department takes the
+    candidate's word, several departments ('Innere oder Intensiv') find postings in any of them; a flexible word
+    (egal, flexibel) filters nothing; a word the board has no department for, or a department with a negation or a
+    flexible word ('alles außer OP'), is an error saying why."""
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
             "housing": housing, "employment_type": employment_type, "q": q, "limit": limit}
     _log_call("search_postings", args)
@@ -92,8 +96,23 @@ def search_postings(city: str = "", department: str = "", role_class: str = "", 
         filters["city"] = city
     if department:
         # TASK-96 review: the model passes the candidate's word (live tool log: department="Intensivstation",
-        # 0 rows, "keine passende offene Stelle"); same alias read as luna_brain.market_snapshot.
-        filters["department_hint"] = SL.read_department(department) or department
+        # 0 rows, "keine passende offene Stelle"). TASK-104: the same reading as luna_brain.market_snapshot; a
+        # flexible word filters nothing, a word the board has no department for raises instead of returning [].
+        # ToolError: the model reads its text (any other exception reaches it as a bare "Error executing tool").
+        reading = SL.read_department_pref(department)
+        if reading["status"] == "unmatched":
+            # Live llm run 2026-09-15: an instruction phrased as candidate-facing English ("tell the candidate that
+            # area cannot be filtered") was copied verbatim into a German bubble. State the fact only; the prompt's
+            # DEPARTMENT and LANGUAGE rules say how to tell the candidate.
+            raise ToolError(f"department {department!r} is not a board department; no department filter was "
+                             f"applied (board departments: {', '.join(SL.board_departments())}). Search again "
+                             f"without department. Internal tool note, never quote it to the candidate.")
+        if reading["status"] == "ambiguous":
+            raise ToolError(f"department {department!r} names a department together with a flexible word or a "
+                             f"negation, so postings are not filtered by it; search with only the departments the "
+                             f"candidate wants, or without department")
+        if reading["status"] == "applied":
+            filters["department_hint"] = ",".join(reading["departments"])
     if role_class:
         filters["role_class"] = role_class
     if regierungsbezirk:

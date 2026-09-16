@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import pathlib
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ from app.wa import store as ST
 from app.wa.luna import campaign as CAMP
 from app.wa.luna import followups as FU
 from app.wa.luna import import_history as IH
+from tests.test_wa_luna_import_history import OLD_SCHEMA, QUERIES as OLD_QUERIES
 
 REAL_REPORT_DIR = CAMP.DEFAULT_REPORT_DIR
 
@@ -142,12 +144,17 @@ def _lead(phone, name="Frau Beispiel"):
 _runs = []
 
 
+NO_SOURCE = "--override-no-history-source"   # tests that are not about the history source (TASK-105)
+
+
 def _run(tmp, graph, leads, *extra, clock=None, window="00-24"):
+    """One CLI run. Without --import-history-* in ``extra`` the run gets NO_SOURCE."""
     clock = clock or Clock(datetime.now(timezone.utc))
     report = tmp / f"report-{len(_runs)}-{time.monotonic_ns()}.json"
     _runs.append(report)
+    source = [] if "--import-history-db" in extra or NO_SOURCE in extra else [NO_SOURCE]
     argv = ["--campaign-id", CAMPAIGN, "--template-id", TEMPLATE_ID, "--leads", str(leads), "--report", str(report),
-            "--window", window, *extra]
+            "--window", window, *extra, *source]
     code = CAMP.main(argv, client=graph.client(), clock=clock, sleep=clock.sleep)
     return code, json.loads(report.read_text())
 
@@ -192,6 +199,11 @@ def _seed_thread(phone, stopped=False, **slots):
 def _claim(phone):
     with CAMP.live_db() as c:
         return ST.campaign_send(c, CAMPAIGN, phone)
+
+
+def _attempts(phone):
+    with CAMP.live_db() as c:
+        return ST.campaign_attempts(c, CAMPAIGN, phone)
 
 
 def _messages(phone):
@@ -306,7 +318,7 @@ def test_one_campaign_id_is_one_template(wa):
     _run(wa, Graph(), _leads(wa, [_lead(LEAD_A)]), "--send")
     other = Graph({**TEMPLATE, "id": "1030000000000002"})
     argv = ["--campaign-id", CAMPAIGN, "--template-id", "1030000000000002", "--leads", str(wa / "leads.csv"),
-            "--report", str(wa / "other.json"), "--window", "00-24"]
+            "--report", str(wa / "other.json"), "--window", "00-24", NO_SOURCE]
     assert CAMP.main(argv, client=other.client(), clock=Clock(datetime.now(timezone.utc))) == CAMP.EXIT_CONFIG
     assert "one campaign id is one template" in json.loads((wa / "other.json").read_text())["error"]
     assert other.posts == []
@@ -324,7 +336,7 @@ def test_send_flips_ownership_posts_and_records_the_thread_row_card_and_claim(wa
     [post] = graph.posts
     wamid = f"wamid.camp.{KNOWN[1:]}.1"
     claim = _claim(KNOWN)
-    assert (claim["state"], claim["attempts"], claim["wamid"], claim["template_id"]) == ("sent", 1, wamid, TEMPLATE_ID)
+    assert (claim["state"], claim["attempt"], claim["wamid"], claim["template_id"]) == ("sent", 1, wamid, TEMPLATE_ID)
     assert (claim["prior_owner"], claim["prior_reason"], claim["prior_since"]) == ("them", "known_to_real_system",
                                                                                     before["since"])
     assert claim["variables"] == {"body": {"1": "Frau Bekannt"}}
@@ -366,19 +378,47 @@ def test_a_phone_is_claimed_once_per_campaign(wa):
         c.commit()
         with pytest.raises(RuntimeError, match="in_progress, not claimable"):
             claim()
-        ST.finish_campaign_send(c, "c1", LEAD_A, "failed", ST.now_iso(), error="HTTP 400")
+        ST.finish_campaign_send(c, "c1", LEAD_A, 1, "failed", ST.now_iso(), error="HTTP 400")
         assert claim() == 2
-        ST.finish_campaign_send(c, "c1", LEAD_A, "uncertain", ST.now_iso(), error="timeout")
+        ST.finish_campaign_send(c, "c1", LEAD_A, 2, "uncertain", ST.now_iso(), error="timeout")
         with pytest.raises(RuntimeError, match="uncertain, not claimable"):
             claim()
         assert claim(retry_uncertain=True) == 3
-        ST.finish_campaign_send(c, "c1", LEAD_A, "sent", ST.now_iso(), wamid="wamid.x")
+        with pytest.raises(RuntimeError, match="attempt 2: no in_progress claim"):
+            ST.finish_campaign_send(c, "c1", LEAD_A, 2, "sent", ST.now_iso(), wamid="wamid.x")
+        ST.finish_campaign_send(c, "c1", LEAD_A, 3, "sent", ST.now_iso(), wamid="wamid.x")
         with pytest.raises(RuntimeError, match="sent, not claimable"):
-            claim(retry_uncertain=True)
+            claim(retry_uncertain=True, retry_delivery_failed=True)   # no failed status for wamid.x
         with pytest.raises(RuntimeError, match="no in_progress claim"):
-            ST.finish_campaign_send(c, "c1", LEAD_A, "sent", ST.now_iso(), wamid="wamid.y")
+            ST.finish_campaign_send(c, "c1", LEAD_A, 3, "sent", ST.now_iso(), wamid="wamid.y")
+        ST.record_message_status(c, LEAD_A, {"id": "wamid.x", "status": "failed", "timestamp": "1789400003",
+                                             "errors": [{"code": 131042}]})
+        with pytest.raises(RuntimeError, match=r"attempt 3 is sent \(delivery failed\), not claimable"):
+            claim(retry_uncertain=True)
+        assert claim(retry_delivery_failed=True) == 4
         assert claim("c2") == 1
         c.commit()
+        assert [(a["attempt"], a["state"], a["wamid"], a["error"]) for a in ST.campaign_attempts(c, "c1", LEAD_A)] == [
+            (1, "failed", None, "HTTP 400"), (2, "uncertain", None, "timeout"), (3, "sent", "wamid.x", None),
+            (4, "in_progress", None, None)]
+        assert ST.campaign_send(c, "c1", LEAD_A)["attempt"] == 4
+        assert [r[0] for r in c.execute("select fingerprint from wa_nudge_claims where phone=? order by fingerprint",
+                                        (LEAD_A,)).fetchall()] == ["campaign:c1:1", "campaign:c1:2", "campaign:c1:3",
+                                                                   "campaign:c1:4", "campaign:c2:1"]
+
+
+def test_a_crashed_attempt_superseded_by_a_retry_is_finished_as_uncertain(wa):
+    with CAMP.live_db() as c:
+        claim = lambda **kw: ST.claim_campaign_send(c, "c1", LEAD_A, TEMPLATE, {"body": ["X"]}, "text", None,
+                                                    "2026-09-15T08:00:00+00:00", **kw)
+        claim()
+        assert claim(retry_uncertain=True) == 2
+        c.commit()
+        [first, second] = ST.campaign_attempts(c, "c1", LEAD_A)
+        assert (first["state"], first["error"], first["finished_at"]) == (
+            "uncertain", "no POST result recorded (the sending run stopped); superseded by attempt 2",
+            "2026-09-15T08:00:00+00:00")
+        assert second["state"] == "in_progress"
 
 
 def test_a_meta_rejection_restores_the_prior_owner_and_a_rerun_retries_only_it(wa):
@@ -412,7 +452,10 @@ def test_a_meta_rejection_restores_the_prior_owner_and_a_rerun_retries_only_it(w
     rows = _by_phone(report)
     assert (rows[KNOWN]["action"], rows[LEAD_A]["action"]) == ("retry_failed", "already_sent")
     claim = _claim(KNOWN)
-    assert (claim["state"], claim["attempts"], claim["prior_owner"]) == ("sent", 2, "them")
+    assert (claim["state"], claim["attempt"], claim["prior_owner"]) == ("sent", 2, "them")
+    first = _attempts(KNOWN)[0]   # TASK-106: the rejected attempt keeps its own error
+    assert (first["attempt"], first["state"], first["error_code"], first["error_payload"], first["wamid"]) == \
+        (1, "failed", "131026", payload, None)
 
 
 @pytest.mark.parametrize("error", [M.MetaError("Meta network error: timed out"),
@@ -436,7 +479,10 @@ def test_an_unknown_send_outcome_is_uncertain_keeps_ownership_and_is_never_resen
     code, report = _run(wa, graph, leads, "--send", "--retry-uncertain")
     assert code == CAMP.EXIT_OK and report["phones"][0]["result"]["status"] == "sent"
     claim = _claim(KNOWN)
-    assert (claim["attempts"], claim["prior_owner"], claim["prior_reason"]) == (2, "them", "known_to_real_system")
+    assert (claim["attempt"], claim["prior_owner"], claim["prior_reason"]) == (2, "them", "known_to_real_system")
+    first = _attempts(KNOWN)[0]
+    assert (first["state"], first["wamid"]) == ("uncertain", None) and first["error"].startswith(
+        f"campaign {CAMPAIGN} template {TEMPLATE['name']} uncertain")
 
 
 def test_a_crash_between_flip_and_post_result_is_reported_uncertain_and_waits_for_its_own_claim(wa):
@@ -511,7 +557,7 @@ def test_an_uncertain_send_that_went_out_is_marked_sent_and_the_reply_gets_the_c
     assert "no status of wamid.nothing" in report["results"][1]["reason"]
     code, report = _mark_sent(wa, graph, f"{LEAD_A}={real}")
     assert code == CAMP.EXIT_OK and report["results"] == [
-        {"phone": LEAD_A, "wamid": real, "status": "marked_sent", "sent_at": "2026-09-14T15:33:20+00:00"}]
+        {"phone": LEAD_A, "wamid": real, "status": "marked_sent", "attempt": 1, "sent_at": "2026-09-14T15:33:20+00:00"}]
     claim = _claim(LEAD_A)
     assert (claim["state"], claim["wamid"], claim["sent_at"]) == ("sent", real, "2026-09-14T15:33:20+00:00")
     [out] = _messages(LEAD_A)
@@ -694,7 +740,7 @@ def test_an_interrupted_run_resumes_without_resending_and_keeps_the_pace(wa):
 
     report_path = wa / "interrupted.json"
     argv = ["--campaign-id", CAMPAIGN, "--template-id", TEMPLATE_ID, "--leads", str(leads), "--report",
-            str(report_path), "--send"]
+            str(report_path), "--send", NO_SOURCE]
     assert CAMP.main(argv, client=graph.client(), clock=clock, sleep=interrupt) == CAMP.EXIT_INTERRUPTED
     assert json.loads(report_path.read_text())["interrupted"] is True and len(graph.posts) == 10
 
@@ -703,6 +749,13 @@ def test_an_interrupted_run_resumes_without_resending_and_keeps_the_pace(wa):
     assert code == CAMP.EXIT_OK and later.sleeps == [660.0]
     assert len(graph.posts) == 12 and len({p["body"]["to"] for p in graph.posts}) == 12
     assert report["plan_totals"] == {"already_sent": 10, "send": 2}
+
+
+def _fake_import_report(phone, source, apply, found=False, **keys):
+    """The shape import_history.import_phone returns (a fake source's answer)."""
+    return {"phone": phone, "source": source.label, "applied": apply, "found": found, "facts": {}, "placement": [],
+            "messages": {"found": 0}, "stop_messages": [], "opt_outs": [], "decline_import": None, "documents": [],
+            "not_recoverable": 0, **keys}
 
 
 def _slow_import(monkeypatch, clock, minutes, calls):
@@ -719,8 +772,7 @@ def _slow_import(monkeypatch, clock, minutes, calls):
         calls.append((CAMP._iso(clock.now), apply))
         if apply:
             clock.now += timedelta(minutes=minutes)
-        return {"phone": phone, "source": source.label, "applied": apply, "found": False, "facts": {},
-                "placement": [], "messages": {"found": 0}, "documents": [], "not_recoverable": 0}
+        return _fake_import_report(phone, source, apply)
 
     monkeypatch.setattr(IH, "import_phone", import_phone)
     return ["--import-history-db", "/synthetic/old.sqlite", "--import-history-queries", "q.sql",
@@ -884,7 +936,8 @@ def test_a_thumbs_up_on_the_template_is_a_reply_luna_answers(wa, monkeypatch):
 
 
 def test_a_template_meta_reports_undelivered_is_reported_not_resent_and_goes_out_under_a_new_campaign(wa):
-    """Review 2026-09-14: a later failed status (131049) left the claim 'sent', so re-runs planned already_sent."""
+    """Review 2026-09-14: a later failed status (131049) left the claim 'sent', so re-runs planned already_sent. Without
+    --retry-delivery-failed (TASK-106) it stays delivery_failed."""
     graph = Graph()
     _run(wa, graph, _leads(wa, [_lead(LEAD_A), _lead(LEAD_B)]), "--send")
     wamid_a = _claim(LEAD_A)["wamid"]
@@ -895,35 +948,313 @@ def test_a_template_meta_reports_undelivered_is_reported_not_resent_and_goes_out
     rows = _by_phone(report)
     assert code == CAMP.EXIT_ATTENTION and len(graph.posts) == 2
     assert (rows[LEAD_A]["action"], rows[LEAD_B]["action"]) == ("delivery_failed", "already_sent")
-    assert "131049" in rows[LEAD_A]["reason"] and "new --campaign-id" in rows[LEAD_A]["reason"]
+    assert rows[LEAD_A]["reason"] == (f"attempt 1 sent {_claim(LEAD_A)['sent_at']} wamid {wamid_a}, Meta reported it "
+                                      f"undelivered (131049); --retry-delivery-failed resends it in this campaign")
 
     retry = wa / "retry.json"
     argv = ["--campaign-id", CAMPAIGN + "-retry", "--template-id", TEMPLATE_ID, "--leads",
-            str(_leads(wa, [_lead(LEAD_A)], name="retry.csv")), "--report", str(retry), "--window", "00-24", "--send"]
+            str(_leads(wa, [_lead(LEAD_A)], name="retry.csv")), "--report", str(retry), "--window", "00-24", "--send",
+            NO_SOURCE]
     assert CAMP.main(argv, client=graph.client(), clock=Clock(datetime.now(timezone.utc)), sleep=lambda s: None) == \
         CAMP.EXIT_OK
     assert [p["body"]["to"] for p in graph.posts] == [LEAD_A[1:], LEAD_B[1:], LEAD_A[1:]]
     assert _thread_slots(LEAD_A)["campaign"]["campaign_id"] == CAMPAIGN + "-retry"
 
 
+# --- retry of an undelivered template in the same campaign (TASK-106) -----------------------------------------------
+
+RETRY = "--retry-delivery-failed"
+
+
+def _failed_status(phone, wamid, code, timestamp="1789400003"):
+    _route({"statuses": [{"id": wamid, "status": "sent", "timestamp": str(int(timestamp) - 3), "recipient_id": phone[1:]},
+                         {"id": wamid, "status": "failed", "timestamp": timestamp, "recipient_id": phone[1:],
+                          "errors": [{"code": code, "title": f"synthetic {code}"}]}]})
+
+
+def _attempt_rows(phone):
+    return [(a["attempt"], a["state"], a["wamid"], a["error_code"]) for a in _attempts(phone)]
+
+
+def test_an_undelivered_template_is_retried_in_the_same_campaign_and_the_reply_meets_the_delivered_attempt(
+        wa, monkeypatch):
+    """Live 2026-09-14: Meta accepted the template, then reported it failed with 131042 (unsettled payments). After the
+    billing fix the same campaign resends it as attempt 2; attempt 1 keeps its wamid and failed status."""
+    _own(KNOWN, "them", "known_to_real_system", since="2026-02-02T00:00:00+00:00")
+    graph, leads = Graph(), _leads(wa, [_lead(KNOWN, "Frau Bekannt")])
+    assert _run(wa, graph, leads, "--send")[0] == CAMP.EXIT_OK
+    wamid_1 = _claim(KNOWN)["wamid"]
+    _failed_status(KNOWN, wamid_1, 131042)
+
+    code, report = _run(wa, graph, leads, "--send")               # without the flag: unchanged
+    assert code == CAMP.EXIT_ATTENTION and report["phones"][0]["action"] == "delivery_failed" and len(graph.posts) == 1
+    code, report = _run(wa, graph, leads, RETRY)                  # dry-run
+    [row] = report["phones"]
+    assert code == CAMP.EXIT_OK and len(graph.posts) == 1 and report["settings"]["retry_delivery_failed"] is True
+    assert (row["action"], row["reason"]) == ("retry_delivery_failed", (
+        f"--retry-delivery-failed: attempt 1 sent {_claim(KNOWN)['sent_at']} wamid {wamid_1}, Meta reported it "
+        f"undelivered (131042)"))
+
+    code, report = _run(wa, graph, leads, "--send", RETRY)
+    [row] = report["phones"]
+    wamid_2 = f"wamid.camp.{KNOWN[1:]}.2"
+    assert code == CAMP.EXIT_OK and [p["body"]["to"] for p in graph.posts] == [KNOWN[1:], KNOWN[1:]]
+    assert (row["result"]["status"], row["result"]["attempt"], row["result"]["wamid"]) == ("sent", 2, wamid_2)
+    assert _attempt_rows(KNOWN) == [(1, "sent", wamid_1, None), (2, "sent", wamid_2, None)]
+    assert {(a["prior_owner"], a["prior_reason"], a["prior_since"]) for a in _attempts(KNOWN)} == {
+        ("them", "known_to_real_system", "2026-02-02T00:00:00+00:00")}
+    assert _ownership(KNOWN)["reason"] == f"campaign:{CAMPAIGN}"
+    second = _claim(KNOWN)
+    assert [(m["wamid"], m["kind"], m["at"]) for m in _messages(KNOWN)] == [
+        (wamid_1, "template", _attempts(KNOWN)[0]["sent_at"]), (wamid_2, "template", second["sent_at"])]
+    assert (_thread_slots(KNOWN)["campaign"]["wamid"], _thread_slots(KNOWN)["campaign"]["sent_at"]) == \
+        (wamid_2, second["sent_at"])
+    c = ST.db()
+    assert [r[0] for r in c.execute("select fingerprint from wa_nudge_claims where phone=? order by fingerprint",
+                                    (KNOWN,)).fetchall()] == [f"campaign:{CAMPAIGN}:1", f"campaign:{CAMPAIGN}:2"]
+    assert ST.reply_turn_claim_state(c, KNOWN, f"campaign:{CAMPAIGN}") == "campaign_sent"
+    c.close()
+    _route({"statuses": [{"id": wamid_2, "status": "delivered", "timestamp": "1789500005", "recipient_id": KNOWN[1:]}]})
+    code, report = _run(wa, graph, leads, "--send", RETRY)
+    assert report["phones"][0]["action"] == "already_sent" and len(graph.posts) == 2
+
+    model = Model(monkeypatch, _out(card_patch={"region": "Bayern"}), _out(bubbles=["Gern!"]))
+    replies = FakeText()
+    _route({"messages": [{"id": "wamid.in.yes", "from": KNOWN[1:], "type": "button", "context": {"id": wamid_2},
+                          "button": {"text": "Ja, ich habe Interesse", "payload": "Ja, ich habe Interesse"}}]},
+           meta_client=replies)
+    _route({"messages": [{"id": "wamid.in.text", "from": KNOWN[1:], "type": "text", "text": {"body": "Wo genau?"}}]},
+           meta_client=replies)
+    assert [body for _to, body in replies.sent] == ["Schön! Haben Sie die deutsche Urkunde schon?", "Gern!"]
+    first_payload = model.payloads[0]
+    assert first_payload["card"]["campaign"]["wamid"] == wamid_2
+    assert [o["wamid"] for o in first_payload["outbound_since_last_turn"]] == [wamid_2]   # attempt 1 never arrived
+    assert (first_payload["reply_context"]["replies_to"]["wamid"],
+            first_payload["reply_context"]["replies_to"]["delivery"]["status"]) == (wamid_2, "delivered")
+
+    status = _status(wa)
+    [row] = status["phones"]
+    assert (row["attempt"], row["state"], row["wamid"], row["delivery"]["status"]) == (2, "sent", wamid_2, "delivered")
+    assert [(a["attempt"], a["wamid"], a["delivery"]["status"], [e["code"] for e in a["delivery"]["errors"]],
+             a["replies"]) for a in row["attempts"]] == [
+        (1, wamid_1, "failed", [131042], {"count": 0, "by_context": 0}),
+        (2, wamid_2, "delivered", [], {"count": 2, "by_context": 1})]
+    assert [(m["wamid"], m["attempt"], m["matched_by"]) for m in row["replies"]["matched"]] == [
+        ("wamid.in.yes", 2, "context"), ("wamid.in.text", 2, "time")]
+    assert row["replies"]["button_taps"][0]["attempt"] == 2 and row["replies"]["to_the_template"] is True
+    assert (status["totals"]["phones"], status["totals"]["attempts"], status["totals"]["retried"]) == (1, 2, 1)
+    assert status["totals"]["delivery"] == {"delivered": 1} and status["totals"]["error_codes"] == {"delivery 131042": 1}
+
+
+def test_a_template_undelivered_twice_keeps_every_attempt_and_a_rejected_retry_restores_the_owner(wa):
+    _own(KNOWN, "them", "known_to_real_system", since="2026-02-02T00:00:00+00:00")
+    graph, leads = Graph(), _leads(wa, [_lead(KNOWN)])
+    _run(wa, graph, leads, "--send")
+    wamid_1 = _claim(KNOWN)["wamid"]
+    _failed_status(KNOWN, wamid_1, 131042)
+    _run(wa, graph, leads, "--send", RETRY)
+    wamid_2 = _claim(KNOWN)["wamid"]
+    _failed_status(KNOWN, wamid_2, 131049, timestamp="1789500003")
+
+    code, report = _run(wa, graph, leads, "--send")
+    assert code == CAMP.EXIT_ATTENTION and len(graph.posts) == 2
+    assert report["phones"][0]["action"] == "delivery_failed"
+    assert report["phones"][0]["reason"].startswith(f"attempt 2 sent {_claim(KNOWN)['sent_at']} wamid {wamid_2}, "
+                                                    f"Meta reported it undelivered (131049)")
+    status = _status(wa)
+    [row] = status["phones"]
+    assert [(a["attempt"], a["state"], a["wamid"], a["delivery"]["status"], a["delivery"]["errors"][0]["code"])
+            for a in row["attempts"]] == [(1, "sent", wamid_1, "failed", 131042), (2, "sent", wamid_2, "failed", 131049)]
+    assert status["totals"]["error_codes"] == {"delivery 131042": 1, "delivery 131049": 1}
+    assert status["totals"]["delivery"] == {"failed": 1}
+
+    payload = {"error": {"message": "(#131026) Message undeliverable", "code": 131026}}
+    graph.fail[KNOWN[1:]] = M.MetaError("Meta HTTP 400", status_code=400, payload=payload)
+    code, report = _run(wa, graph, leads, "--send", RETRY)
+    assert code == CAMP.EXIT_ATTENTION and report["phones"][0]["result"]["ownership_restore"] == "restored"
+    assert _ownership(KNOWN) == {"phone": KNOWN, "owner": "them", "reason": "known_to_real_system",
+                                 "since": "2026-02-02T00:00:00+00:00"}   # nothing ever reached the candidate
+    assert _attempt_rows(KNOWN) == [(1, "sent", wamid_1, None), (2, "sent", wamid_2, None), (3, "failed", None, "131026")]
+    assert _thread_slots(KNOWN)["campaign"]["wamid"] == wamid_2
+
+    graph.fail.clear()
+    code, report = _run(wa, graph, leads, "--send")                # a rejected attempt is claimed again, as in TASK-103
+    assert code == CAMP.EXIT_OK and report["phones"][0]["action"] == "retry_failed"
+    wamid_4 = f"wamid.camp.{KNOWN[1:]}.4"
+    assert _attempt_rows(KNOWN)[3] == (4, "sent", wamid_4, None)
+    assert (_claim(KNOWN)["prior_owner"], _ownership(KNOWN)["reason"]) == ("them", f"campaign:{CAMPAIGN}")
+    assert _thread_slots(KNOWN)["campaign"]["wamid"] == wamid_4
+    status = _status(wa)
+    assert status["totals"]["attempts"] == 4
+    assert status["totals"]["error_codes"] == {"delivery 131042": 1, "delivery 131049": 1, "send 131026": 1}
+
+
+def test_a_candidate_who_wrote_after_the_first_attempt_is_not_resent_and_the_reply_is_matched_to_it(wa, monkeypatch):
+    graph, leads = Graph(), _leads(wa, [_lead(LEAD_A), _lead(LEAD_B)])
+    _run(wa, graph, leads, "--send")
+    for phone in (LEAD_A, LEAD_B):
+        _failed_status(phone, _claim(phone)["wamid"], 131042)
+    model = Model(monkeypatch, _out(bubbles=["Hallo! Ich bin Valentina von der NDT Group."]))
+    _route({"messages": [{"id": "wamid.in.hallo", "from": LEAD_A[1:], "type": "text", "text": {"body": "Hallo, wer ist da?"}}]})
+    assert model.payloads[0]["outbound_since_last_turn"] == [] and "campaign" not in model.payloads[0]["card"]
+
+    code, report = _run(wa, graph, leads, "--send", RETRY)
+    rows = _by_phone(report)
+    in_at = _messages(LEAD_A)[1]["at"]
+    assert code == CAMP.EXIT_OK and [p["body"]["to"] for p in graph.posts] == [LEAD_A[1:], LEAD_B[1:], LEAD_B[1:]]
+    assert rows[LEAD_A]["action"] == "skip_replied"
+    assert rows[LEAD_A]["reason"] == (
+        f"attempt 1 sent {_attempts(LEAD_A)[0]['sent_at']} wamid {_attempts(LEAD_A)[0]['wamid']}, Meta reported it "
+        f"undelivered (131042); the candidate wrote 1 message(s) since this campaign first claimed the phone at "
+        f"{_attempts(LEAD_A)[0]['claimed_at']} (first {in_at}, last {in_at}): not resent")
+    assert rows[LEAD_B]["result"]["status"] == "sent" and len(_attempts(LEAD_A)) == 1
+
+    status = _status(wa)
+    [row_a, row_b] = status["phones"]
+    # review 2026-09-15: attempt 1 never reached the candidate, so the message answers no attempt
+    assert row_a["phone"] == LEAD_A and row_a["replies"]["matched"] == [] and row_a["replies"]["count"] == 0
+    assert row_a["attempts"][0]["replies"] == {"count": 0, "by_context": 0}
+    assert row_a["not_answering_an_attempt"] == {"count": 1, "first_at": in_at, "last_at": in_at}
+    assert row_b["replies"]["count"] == 0 and len(row_b["attempts"]) == 2
+    assert row_b["not_answering_an_attempt"] == {"count": 0, "first_at": None, "last_at": None}
+    assert (status["totals"]["replied"], status["totals"]["wrote_not_answering_an_attempt"]) == (0, 1)
+
+
+def test_a_candidate_who_wrote_after_a_rejected_or_uncertain_retry_is_not_resent(wa, monkeypatch):
+    """Review 2026-09-15 repro: attempt 1 undelivered (131042), the flagged retry rejected with HTTP 400 (billing still
+    unfixed), the candidate wrote and Luna answered; the next run planned retry_failed and posted the template again.
+    The same for a retry whose outcome is unknown (uncertain) and --retry-uncertain."""
+    graph, leads = Graph(), _leads(wa, [_lead(LEAD_A), _lead(LEAD_B)])
+    _run(wa, graph, leads, "--send")
+    for phone in (LEAD_A, LEAD_B):
+        _failed_status(phone, _claim(phone)["wamid"], 131042)
+    graph.fail[LEAD_A[1:]] = M.MetaError("Meta HTTP 400", status_code=400,
+                                         payload={"error": {"code": 131042, "message": "unsettled payments"}})
+    graph.fail[LEAD_B[1:]] = M.MetaError("Meta network error: timed out")
+    _run(wa, graph, leads, "--send", RETRY)
+    assert [(a["attempt"], a["state"]) for a in _attempts(LEAD_A)] == [(1, "sent"), (2, "failed")]
+    assert [(a["attempt"], a["state"]) for a in _attempts(LEAD_B)] == [(1, "sent"), (2, "uncertain")]
+    graph.fail.clear()
+    model = Model(monkeypatch, _out(bubbles=["Hallo! Ich bin Valentina."]), _out(bubbles=["Hallo! Ich bin Valentina."]))
+    replies = FakeText()
+    for phone in (LEAD_A, LEAD_B):
+        _route({"messages": [{"id": f"wamid.in.{phone[1:]}", "from": phone[1:], "type": "text",
+                              "text": {"body": "Hallo, wer ist da?"}}]}, meta_client=replies)
+    assert len(model.payloads) == 2 and [to for to, _body in replies.sent] == [LEAD_A, LEAD_B]
+    posts = len(graph.posts)
+
+    code, report = _run(wa, graph, leads, "--send")               # no flags: the uncertain attempt still needs a look
+    rows = _by_phone(report)
+    assert (rows[LEAD_A]["action"], rows[LEAD_B]["action"]) == ("skip_replied", "uncertain")
+    assert code == CAMP.EXIT_ATTENTION and len(graph.posts) == posts
+    for extra in ((RETRY, "--retry-uncertain"), ("--send", RETRY, "--retry-uncertain")):
+        code, report = _run(wa, graph, leads, *extra)
+        rows = _by_phone(report)
+        assert (rows[LEAD_A]["action"], rows[LEAD_B]["action"]) == ("skip_replied", "skip_replied"), extra
+        assert code == CAMP.EXIT_OK and len(graph.posts) == posts, extra
+    first = _attempts(LEAD_A)[0]
+    [in_at] = [m["at"] for m in _messages(LEAD_A) if m["direction"] == "in"]
+    assert rows[LEAD_A]["reason"] == (
+        f"attempt 2 failed after attempt 1 sent {first['sent_at']} wamid {first['wamid']}; the candidate wrote 1 "
+        f"message(s) since this campaign first claimed the phone at {first['claimed_at']} (first {in_at}, last "
+        f"{in_at}): not resent")
+    assert [len(_attempts(p)) for p in (LEAD_A, LEAD_B)] == [2, 2]
+
+
+
+def test_a_phone_stopped_declined_or_opted_out_after_an_undelivered_attempt_is_not_resent(wa):
+    graph, leads = Graph(), _leads(wa, [_lead(p) for p in (LEAD_A, LEAD_B, LEAD_C)])
+    _run(wa, graph, leads, "--send")
+    for phone, code in ((LEAD_A, 131042), (LEAD_B, 131042), (LEAD_C, 131050)):
+        _failed_status(phone, _claim(phone)["wamid"], code)
+    _seed_thread(LEAD_A, stopped=True)
+    _seed_thread(LEAD_B, declined=True, declined_at="2026-09-15T10:00:00+00:00", declined_reason="kein Interesse")
+    code, report = _run(wa, graph, leads, "--send", RETRY)
+    rows = _by_phone(report)
+    assert code == CAMP.EXIT_OK and len(graph.posts) == 3
+    assert [rows[p]["action"] for p in (LEAD_A, LEAD_B, LEAD_C)] == ["skip_stopped", "skip_declined", "skip_opted_out"]
+    assert [len(_attempts(p)) for p in (LEAD_A, LEAD_B, LEAD_C)] == [1, 1, 1]
+
+
+TASK103_CAMPAIGN_SCHEMA = """
+create table wa_campaign_sends (
+  campaign_id text not null, phone text not null,
+  state text not null check (state in ('in_progress', 'sent', 'failed', 'uncertain')),
+  attempts integer not null, template_id text not null, template_name text not null, template_language text not null,
+  variables text not null, rendered_text text not null, prior_owner text, prior_reason text, prior_since text,
+  ownership_restore text, wamid text unique, error text, error_code text, error_payload text, claimed_at text not null,
+  sent_at text, finished_at text, primary key (campaign_id, phone));
+create index if not exists idx_wa_campaign_sends_phone on wa_campaign_sends(phone);
+"""
+
+
+def test_a_task_103_campaign_table_is_rebuilt_into_attempt_rows_once(wa):
+    rendered = M.render_template(TEMPLATE, {"body": {"1": "Frau Beispiel"}})
+    c = R.db()
+    c.executescript(TASK103_CAMPAIGN_SCHEMA)
+    for phone, state, attempts, wamid, code in ((LEAD_A, "sent", 1, "wamid.old.a", None),
+                                                (LEAD_B, "failed", 2, None, "131026")):
+        c.execute("""insert into wa_campaign_sends (campaign_id, phone, state, attempts, template_id, template_name,
+                     template_language, variables, rendered_text, prior_owner, prior_reason, prior_since, wamid, error,
+                     error_code, error_payload, claimed_at, sent_at, finished_at)
+                     values (?,?,?,?,?,?,'de',?,?,null,null,null,?,?,?,?,'2026-09-14T08:00:00+00:00',?,
+                     '2026-09-14T08:00:01+00:00')""",
+                  (CAMPAIGN, phone, state, attempts, TEMPLATE_ID, TEMPLATE["name"],
+                   json.dumps({"body": {"1": "Frau Beispiel"}}), rendered["text"], wamid,
+                   "HTTP 400" if code else None, code, json.dumps({"error": {"code": 131026}}) if code else None,
+                   "2026-09-14T08:00:01+00:00" if wamid else None))
+        for n in range(1, attempts + 1):
+            c.execute("insert into wa_nudge_claims (phone, fingerprint, claimed_at) values (?,?,?)",
+                      (phone, f"campaign:{CAMPAIGN}:{n}", "2026-09-14T08:00:00+00:00"))
+    c.commit()
+    c.close()
+    c = ST.db()
+    ST.record_campaign_send(c, LEAD_A, "wamid.old.a", rendered, CAMPAIGN, sent_at="2026-09-14T08:00:01+00:00")
+    c.close()
+    before = _db_files(wa)
+
+    status = _status(wa)                                           # read-only: the copy is rebuilt, not the file
+    assert _db_files(wa) == before
+    assert [(r["phone"], r["attempt"], r["state"], r["error_code"]) for r in status["phones"]] == [
+        (LEAD_A, 1, "sent", None), (LEAD_B, 2, "failed", "131026")]
+
+    for _ in range(2):
+        with CAMP.live_db() as c:
+            columns = [r[1] for r in c.execute("pragma table_info(wa_campaign_sends)").fetchall()]
+            indexes = {r[1] for r in c.execute("pragma index_list(wa_campaign_sends)").fetchall()}
+    assert "attempts" not in columns and columns[:3] == ["campaign_id", "phone", "attempt"]
+    assert "idx_wa_campaign_sends_phone" in indexes
+    assert _attempt_rows(LEAD_A) == [(1, "sent", "wamid.old.a", None)]
+    assert _attempt_rows(LEAD_B) == [(2, "failed", None, "131026")]
+    assert _attempts(LEAD_B)[0]["error_payload"] == {"error": {"code": 131026}}
+
+    graph = Graph()
+    code, report = _run(wa, graph, _leads(wa, [_lead(LEAD_A), _lead(LEAD_B)]), "--send")
+    rows = _by_phone(report)
+    assert code == CAMP.EXIT_OK and (rows[LEAD_A]["action"], rows[LEAD_B]["action"]) == ("already_sent", "retry_failed")
+    assert [p["body"]["to"] for p in graph.posts] == [LEAD_B[1:]]
+    assert _attempt_rows(LEAD_B) == [(2, "failed", None, "131026"), (3, "sent", f"wamid.camp.{LEAD_B[1:]}.1", None)]
+
+
 class MediaText(FakeText):
     def media_url(self, media_id):
-        return {"url": f"https://media.example/{media_id}", "mime_type": "audio/ogg"}
+        return {"url": f"https://media.example/{media_id}", "mime_type": "video/mp4"}
 
     def download_media(self, url):
-        return b"OggS synthetic voice note"
+        return b"synthetic video"
 
 
-def test_a_voice_note_reply_shows_as_unread_media_in_status(wa):
+def test_a_video_reply_shows_as_unread_media_in_status(wa):
+    """A voice note is transcribed and answered since TASK-107; a video still waits for a colleague."""
     graph = Graph()
     _run(wa, graph, _leads(wa, [_lead(LEAD_A)]), "--send")
     replies = MediaText()
-    _route({"messages": [{"id": "wamid.in.voice", "from": LEAD_A[1:], "type": "audio",
-                          "audio": {"id": "media-voice", "mime_type": "audio/ogg"}}]}, meta_client=replies)
+    _route({"messages": [{"id": "wamid.in.video", "from": LEAD_A[1:], "type": "video",
+                          "video": {"id": "media-video", "mime_type": "video/mp4"}}]}, meta_client=replies)
     assert replies.sent == [(LEAD_A, WAPI.MEDIA_REPLY)]
     report = _status(wa)
     [row] = report["phones"]
-    assert [(u["wamid"], u["kind"]) for u in row["unread_media"]] == [("wamid.in.voice", "audio")]
+    assert [(u["wamid"], u["kind"]) for u in row["unread_media"]] == [("wamid.in.video", "video")]
     assert row["replies"]["count"] == 1 and report["totals"]["unread_media"] == 1
 
 
@@ -978,11 +1309,10 @@ def test_history_import_is_previewed_in_the_dry_run_and_applied_before_the_claim
             with CAMP.live_db() as c:
                 claim = ST.campaign_send(c, CAMPAIGN, phone)
         calls.append(("import", phone, apply, claim, len(graph.posts), client is not None))
-        return {"phone": phone, "source": source.label, "applied": apply, "found": True,
-                "facts": {"known": {"region": "Bayern"}, "conflicting": {}, "absent": [], "imported": {"region": "Bayern"},
-                          "kept": {}},
-                "placement": [], "messages": {"found": 3}, "documents": [{"action": "would_import"}],
-                "not_recoverable": 0}
+        return _fake_import_report(phone, source, apply, found=True, messages={"found": 3},
+                                   facts={"known": {"region": "Bayern"}, "conflicting": {}, "absent": [],
+                                          "imported": {"region": "Bayern"}, "kept": {}},
+                                   documents=[{"action": "would_import"}])
 
     monkeypatch.setattr(IH, "import_phone", import_phone)
     history = ["--import-history-db", "/synthetic/old.sqlite", "--import-history-queries", "q.sql",
@@ -1012,8 +1342,7 @@ def test_a_stop_during_the_history_import_is_honoured_in_the_claim_transaction(w
     def import_phone(source, phone, apply=False, client=None):
         if apply:
             _seed_thread(phone, stopped=True)      # the candidate wrote Stopp while the import ran
-        return {"phone": phone, "source": source.label, "applied": apply, "found": False, "facts": {},
-                "placement": [], "messages": {"found": 0}, "documents": [], "not_recoverable": 0}
+        return _fake_import_report(phone, source, apply)
 
     monkeypatch.setattr(IH, "import_phone", import_phone)
     graph = Graph()
@@ -1037,9 +1366,8 @@ def test_a_stopp_in_the_old_systems_history_is_never_sent(wa, monkeypatch):
 
     def import_phone(source, phone, apply=False, client=None):
         applied.append(apply)
-        return {"phone": phone, "source": source.label, "applied": apply, "found": True, "facts": {},
-                "placement": [], "messages": {"found": 4}, "stop_messages": stop if phone == LEAD_A else [],
-                "documents": [], "not_recoverable": 0}
+        return _fake_import_report(phone, source, apply, found=True, messages={"found": 4},
+                                   stop_messages=stop if phone == LEAD_A else [])
 
     monkeypatch.setattr(IH, "import_phone", import_phone)
     history = ["--import-history-db", "/synthetic/old.sqlite", "--import-history-queries", "q.sql",
@@ -1048,7 +1376,8 @@ def test_a_stopp_in_the_old_systems_history_is_never_sent(wa, monkeypatch):
     code, report = _run(wa, graph, leads, *history)
     rows = _by_phone(report)
     assert (rows[LEAD_A]["action"], rows[LEAD_B]["action"]) == ("skip_opted_out", "send")
-    assert rows[LEAD_A]["reason"] == "Stopp in the imported history (old-system): 2026-08-01T10:00:00+00:00 'Stopp'"
+    assert rows[LEAD_A]["reason"] == ("recorded by the history source old-system: stop_message "
+                                      "2026-08-01T10:00:00+00:00 Stopp in the chat: 'Stopp' [msg:9]")
     code, report = _run(wa, graph, leads, *history, "--send")
     rows = _by_phone(report)
     assert (rows[LEAD_A]["result"]["status"], rows[LEAD_B]["result"]["status"]) == ("skip_opted_out", "sent")
@@ -1067,6 +1396,104 @@ def test_an_unreadable_history_source_stops_the_run(wa, monkeypatch):
     assert code == CAMP.EXIT_CONFIG and "cannot read source database" in report["error"] and graph.posts == []
 
 
+# --- the old system's opt-out and decline records (TASK-105) -----------------------------------------------------
+
+CLEAN = "+4915550103004"
+
+
+def _old_system(tmp):
+    """A synthetic old-system database with the tables deploy/import-history.example.sql reads: LEAD_A closed by the
+    lifecycle as declined_opt_out, LEAD_B answered No to the Job+Wohnung blast, LEAD_C wrote Stopp to the old bot,
+    CLEAN only told the old bot she looks in Bayern. -> the --import-history-* arguments for the example queries."""
+    db = tmp / "old" / "sales_brain.sqlite"
+    db.parent.mkdir(parents=True)
+    c = sqlite3.connect(db)
+    c.executescript(OLD_SCHEMA)
+    lifecycle = {"status": "closed", "reason": "declined_opt_out", "closed_at": "2026-07-01T08:00:00+00:00",
+                 "reopen_after": None, "source": "sync_portfolio_lifecycle"}
+    for cid, meta in ((1, {"phone": LEAD_A, "lifecycle": lifecycle}), (3, {"phone": LEAD_C}),
+                      (4, {"phone": CLEAN, "wa_agent": {"slots": {"region": "Bayern"}}})):
+        c.execute("insert into candidates (id, workspace_id, metadata_json, updated_at) values (?, 1, ?, "
+                  "'2026-07-20T00:00:00')", (cid, json.dumps(meta)))
+    for cid, phone, wamid, body, at in ((3, LEAD_C, "wamid.old.c1", "Hallo", "2026-07-30T10:00:00+00:00"),
+                                        (3, LEAD_C, "wamid.old.c2", "Stopp bitte", "2026-08-01T10:00:00+00:00"),
+                                        (4, CLEAN, "wamid.old.d1", "Hallo, ich suche in Bayern",
+                                         "2026-07-15T10:00:00+00:00")):
+        c.execute("insert into candidate_whatsapp_messages (workspace_id, candidate_id, phone_e164, wamid, direction, "
+                  "message_type, body, occurred_at) values (1, ?, ?, ?, 'inbound', 'text', ?, ?)",
+                  (cid, phone, wamid, body, at))
+    c.execute("insert into job_wohnung_outreach (workspace_id, phone_e164, phone_key, status, template_name, replied_at) "
+              "values (1, ?, ?, 'declined', 'synthetic_job_wohnung_de', '2026-07-03T10:00:00+00:00')",
+              (LEAD_B, LEAD_B[1:]))
+    c.commit()
+    c.close()
+    return ["--import-history-db", str(db), "--import-history-queries", str(OLD_QUERIES),
+            "--import-history-source", "old-system"]
+
+
+def test_the_old_systems_opt_outs_declines_and_stopps_are_never_sent(wa):
+    history = _old_system(wa)
+    phones = (LEAD_A, LEAD_B, LEAD_C, CLEAN)
+    graph, leads = Graph(), _leads(wa, [_lead(p) for p in phones])
+    code, report = _run(wa, graph, leads, *history)
+    rows = _by_phone(report)
+    assert code == CAMP.EXIT_OK and graph.posts == [] and not (wa / "db").exists()
+    assert [rows[p]["action"] for p in phones] == ["skip_opted_out", "skip_declined", "skip_opted_out", "send"]
+    prefix = "recorded by the history source old-system: "
+    assert rows[LEAD_A]["reason"] == prefix + ("opt_out 2026-07-01T08:00:00+00:00 lifecycle closed declined_opt_out "
+                                               "(source sync_portfolio_lifecycle) [candidates:1:lifecycle]")
+    assert rows[LEAD_B]["reason"] == prefix + ("decline 2026-07-03T10:00:00+00:00 job_wohnung_outreach declined "
+                                               "(synthetic_job_wohnung_de) [job_wohnung_outreach:1]")
+    assert rows[LEAD_C]["reason"] == prefix + ("stop_message 2026-08-01T10:00:00+00:00 Stopp in the chat: 'Stopp bitte' "
+                                               "[candidate_whatsapp_messages:wamid.old.c2]")
+    assert rows[LEAD_B]["history_import"]["decline_import"]["marked"] is True
+    assert rows[LEAD_A]["history_import"]["opt_outs"][0]["phone"] == LEAD_A, "linked by the metadata phone"
+    assert report["history_source"] == {"override": False, "label": "old-system", "db": history[1],
+                                        "queries": str(OLD_QUERIES)}
+
+    code, report = _run(wa, graph, leads, *history, "--send")
+    rows = _by_phone(report)
+    assert code == CAMP.EXIT_OK and [p["body"]["to"] for p in graph.posts] == [CLEAN[1:]]
+    assert [rows[p]["result"]["status"] for p in phones] == ["skip_opted_out", "skip_declined", "skip_opted_out", "sent"]
+    for phone, declined_at in ((LEAD_A, "2026-07-01T08:00:00+00:00"), (LEAD_B, "2026-07-03T10:00:00+00:00"),
+                               (LEAD_C, "2026-08-01T10:00:00+00:00")):
+        slots = _thread_slots(phone)
+        assert (slots["declined"], slots["declined_at"]) == (True, declined_at), phone
+        assert _claim(phone) is None and _ownership(phone) is None and _messages(phone) == []
+    assert "declined" not in _thread_slots(CLEAN) and _thread_slots(CLEAN)["campaign"]["campaign_id"] == CAMPAIGN
+
+    code, report = _run(wa, graph, leads, "--send")   # a later run without the source: the cards carry the decline
+    rows = _by_phone(report)
+    assert [rows[p]["action"] for p in phones] == ["skip_declined", "skip_declined", "skip_declined", "already_sent"]
+    assert rows[LEAD_B]["reason"] == ("declined 2026-07-03T10:00:00+00:00 (decline recorded by the earlier system "
+                                      "old-system on 2026-07-03: job_wohnung_outreach declined "
+                                      "(synthetic_job_wohnung_de))")
+    assert [e["source_ref"] for e in rows[LEAD_B]["state"]["thread"]["prior_opt_outs"]] == ["job_wohnung_outreach:1"]
+    assert len(graph.posts) == 1
+
+
+def test_without_the_history_source_nothing_runs_unless_the_logged_override_is_given(wa, capsys):
+    graph, leads = Graph(), _leads(wa, [_lead(LEAD_A)])
+    for extra in ((), ("--send",)):
+        path = wa / f"no-source-{len(extra)}.json"
+        argv = ["--campaign-id", CAMPAIGN, "--template-id", TEMPLATE_ID, "--leads", str(leads), "--report", str(path),
+                "--window", "00-24", *extra]
+        assert CAMP.main(argv, client=graph.client(), clock=Clock(datetime.now(timezone.utc))) == CAMP.EXIT_CONFIG
+        assert "or --override-no-history-source to run without them" in json.loads(path.read_text())["error"]
+    assert graph.calls == [] and not (wa / "db").exists()
+    code, report = _run(wa, graph, leads, NO_SOURCE, "--import-history-db", "/synthetic/old.sqlite",
+                        "--import-history-queries", "q.sql", "--import-history-source", "old-system")
+    assert code == CAMP.EXIT_CONFIG and "goes without --import-history-*" in report["error"] and graph.calls == []
+
+    capsys.readouterr()
+    code, report = _run(wa, graph, leads, "--send")
+    assert code == CAMP.EXIT_OK and [p["body"]["to"] for p in graph.posts] == [LEAD_A[1:]]
+    assert report["history_source"] == {"override": True, "detail": CAMP.OVERRIDE_DETAIL}
+    out = capsys.readouterr()
+    assert f"WARNING: --override-no-history-source: {CAMP.OVERRIDE_DETAIL}" in out.err
+    assert f"WARNING: --override-no-history-source: {CAMP.OVERRIDE_DETAIL}" in out.out
+
+
 def test_the_routing_restore_leaves_a_changed_record_alone(wa):
     c = R.db()
     prior = R.flip_to_us_for_campaign(c, LEAD_A, CAMPAIGN, "2026-09-15T08:00:00+00:00")
@@ -1079,7 +1506,7 @@ def test_the_routing_restore_leaves_a_changed_record_alone(wa):
 
 def test_the_default_report_lives_outside_the_repo_and_is_private(wa, monkeypatch):
     code = CAMP.main(["--campaign-id", CAMPAIGN, "--template-id", TEMPLATE_ID, "--leads",
-                      str(_leads(wa, [_lead(LEAD_A)])), "--window", "00-24"], client=Graph().client())
+                      str(_leads(wa, [_lead(LEAD_A)])), "--window", "00-24", NO_SOURCE], client=Graph().client())
     assert code == CAMP.EXIT_OK
     [path] = list((wa / "reports").glob(f"{CAMPAIGN}-dry-run-*.json"))
     assert oct(path.stat().st_mode & 0o777) == "0o600" and oct(path.parent.stat().st_mode & 0o777) == "0o700"

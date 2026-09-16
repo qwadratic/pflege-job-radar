@@ -9,5 +9,11 @@
   },
   "enabledPlugins": {
     "caveman@caveman": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(sudo sqlite3 /opt/clinic-dispatcher/var/sales_brain.sqlite:*)",
+      "Bash(/home/claude/repo/pflege-board/.venv/bin/python:*)"
+    ]
   }
 }

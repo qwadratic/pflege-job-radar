@@ -1,6 +1,7 @@
 """TASK-100/101 through the real claude CLI: replies to our campaign template, identity, declines, already
-placed, and a "Ja" after a template or a follow-up nudge on a stalled session. Marked ``llm`` (real model,
-real cost, several seconds per turn); every test runs twice (``run``).
+placed, and a "Ja" after a template or a follow-up nudge on a stalled session; TASK-105: a decline imported from the
+old system; TASK-107: a campaign reply spoken as a voice note (fake transcription transport). Marked ``llm`` (real
+model, real cost, several seconds per turn); every test runs twice (``run``).
 
 Each message goes the production way: a signed-shape webhook payload into ``api.handle_payload`` with
 WA_BRAIN=luna, WA_AUTOSEND=1 and a fake Meta client (nothing leaves the process), a tmp_path SQLite, and the
@@ -81,6 +82,12 @@ class FakeMeta:
     def send_buttons(self, to_e164, body, buttons):
         return self.send_text(to_e164, body)
 
+    def media_url(self, media_id):
+        return {"url": f"https://media.example/{media_id}", "mime_type": "audio/ogg"}
+
+    def download_media(self, url):
+        return b"OggS synthetic voice note " + url.encode()
+
 
 class Chat:
     """One candidate's WhatsApp thread, driven through the webhook pipeline. ``transcript`` keeps who said what."""
@@ -118,6 +125,15 @@ class Chat:
     def react(self, emoji):
         return self._deliver({"type": "reaction", "reaction": {"message_id": self.campaign_wamid, "emoji": emoji}},
                              f"[reaction {emoji} on the template]")
+
+    def voice(self, transcript, monkeypatch):
+        """A voice note (TASK-107): the real webhook path downloads and transcribes it; the transcription transport
+        answers ``transcript`` (tests/test_wa_voice_notes.py:use_openai)."""
+        from tests.test_wa_voice_notes import use_openai
+        use_openai(monkeypatch, {"text": transcript})
+        return self._deliver({"type": "audio", "audio": {"id": f"media-voice-{self.n + 1}",
+                                                         "mime_type": "audio/ogg; codecs=opus"}},
+                             f"[voice note: {transcript}]")
 
     def consent_tap(self, button_id, label):
         return self._deliver({"type": "interactive", "interactive": {"type": "button_reply",
@@ -261,6 +277,44 @@ def test_re_engagement_after_a_decline_resumes_the_funnel(chat, run):
     assert INTRO_RE.search(_text(second)), f"no self-introduction after the decline ack: {dump}"
 
 
+def _import_old_opt_out(tmp_path):
+    """TASK-105: the old system closed this candidate as declined_opt_out months ago; the history import (example
+    queries, synthetic old-system database) declines the card. No campaign: the sender skips such a phone."""
+    import sqlite3
+    from app.wa.luna import import_history as IH
+    from tests.test_wa_luna_import_history import OLD_SCHEMA, QUERIES
+
+    db = tmp_path / "old" / "sales_brain.sqlite"
+    db.parent.mkdir(parents=True)
+    c = sqlite3.connect(db)
+    c.executescript(OLD_SCHEMA)
+    meta = {"phone": LEAD, "lifecycle": {"status": "closed", "reason": "declined_opt_out",
+                                         "closed_at": "2026-06-02T10:00:00+00:00", "source": "sync_portfolio_lifecycle"}}
+    c.execute("insert into candidates (id, workspace_id, metadata_json) values (1, 1, ?)", (json.dumps(meta),))
+    c.execute("insert into candidate_whatsapp_messages (workspace_id, candidate_id, phone_e164, wamid, direction, "
+              "message_type, body, occurred_at) values (1, 1, ?, 'wamid.old.1', 'inbound', 'text', "
+              "'Nein danke, kein Interesse mehr', '2026-06-02T09:58:00+00:00')", (LEAD,))
+    c.commit()
+    c.close()
+    with IH.Source.open(db, QUERIES, "old-system-persona") as source:
+        return IH.import_phone(source, LEAD, apply=True)
+
+
+@RUNS
+def test_an_imported_old_system_opt_out_stays_silent_until_the_candidate_re_engages(chat, run, tmp_path):
+    report = _import_old_opt_out(tmp_path)
+    assert report["decline_import"]["marked"] is True and chat.card().get("declined") is True, report
+    first, result = chat.say("Ok, danke.")
+    second, _ = chat.say("Hallo, ich habe es mir anders überlegt: ich suche jetzt doch eine Stelle als "
+                         "Pflegefachfrau in Bayern.")
+    dump = chat.dump()
+    assert first == [] and result["status"] == "nothing_to_send", f"a reply after an imported opt-out: {dump}"
+    assert second and second != [LB.P.DECLINE_ACK_DE], f"no reply to a clear re-engagement: {dump}"
+    card = chat.card()
+    assert card.get("declined") is False and card.get("re_engaged_at"), dump
+    assert not BRANDS_RE.search(_text(second)), dump
+
+
 @RUNS
 def test_already_placed_is_congratulated_and_asked_one_yes_no(chat, run):
     chat.campaign()
@@ -314,15 +368,14 @@ _BOARD_CLINICS = ("Klinikum München", "Klinikum Augsburg", "Klinikum Würzburg"
                   "Klinikum Bayreuth")
 
 
-@RUNS
-def test_full_funnel_after_campaign_ja_reaches_the_shortlist(chat, run):
+def _full_funnel_to_the_shortlist(chat, city_or_department_answer):
     """Answers whatever gate the scoreboard has open, uploads CV and Urkunde when documents are open, until a
     shortlist clinic is named. 12 candidate turns are the test's own budget, reported with the transcript."""
     chat.campaign()
     bubbles, _ = chat.say("Ja")
     _assert_campaign_yes_answer(chat, bubbles)
     answers = {"region": "Ja, Bayern.", "qualification": "Ja, ich habe die deutsche Urkunde, volle Anerkennung.",
-               "city_or_department": "Am liebsten München.", "housing": "Nur ich, eine Person."}
+               "city_or_department": city_or_department_answer, "housing": "Nur ich, eine Person."}
     for _ in range(12):
         board_state = LB.requirement_scoreboard(chat.card())
         if any(c in _text(bubbles) for c in _BOARD_CLINICS) and LB.market_snapshot(chat.card())["shortlist"]:
@@ -344,6 +397,37 @@ def test_full_funnel_after_campaign_ja_reaches_the_shortlist(chat, run):
     assert any(c in _text(bubbles) for c in _BOARD_CLINICS), f"the shortlist was not named: {dump}"
     luna = " ".join(b for who, said in chat.transcript if who == "luna" for b in said)
     assert len(BAYERN_QUESTION_RE.findall(luna)) == 0, f"Bayern asked after the campaign yes: {dump}"
+    return dump
+
+
+@RUNS
+def test_full_funnel_after_campaign_ja_reaches_the_shortlist(chat, run):
+    dump = _full_funnel_to_the_shortlist(chat, "Am liebsten München.")
+    # TASK-104: the candidate never names a department (live: department_pref "flexibel" emptied the shortlist; the
+    # CV's "Innere Medizin" or a tool result's department must not become one either).
+    assert chat.card().get("department_pref") is None, f"department_pref the candidate never named: {dump}"
+
+
+@RUNS
+def test_full_funnel_flexible_on_city_and_department_reaches_the_shortlist(chat, run):
+    """TASK-104: a flexible answer settles the city/department gate and filters nothing."""
+    dump = _full_funnel_to_the_shortlist(chat, "Das ist mir egal, ich bin da ganz flexibel.")
+    department_filter = LB.market_snapshot(chat.card())["department_filter"]
+    assert department_filter and department_filter["status"] == "flexible", dump
+
+
+@RUNS
+def test_full_funnel_unknown_department_reaches_the_shortlist(chat, run):
+    """TASK-104: a department the board has no department for (Urologie) filters nothing; the snapshot says so."""
+    dump = _full_funnel_to_the_shortlist(chat, "Am liebsten in München, auf der Urologie.")
+    department_filter = LB.market_snapshot(chat.card())["department_filter"]
+    assert department_filter and department_filter["status"] == "unmatched", dump
+    # Honest: told at least once that the search cannot be narrowed to Urologie, and no sentence presents a Urologie
+    # match (live 3/3 told it at the city answer; 1 of 3 repeated it at the shortlist).
+    luna = " ".join(b for who, said in chat.transcript if who == "luna" for b in said)
+    urologie = [s for s in re.split(r"[.!?]", luna) if re.search(r"urolog", s, re.I)]
+    assert urologie, f"never said the search is not narrowed to Urologie: {dump}"
+    assert all(re.search(r"\b(?:nicht|kein\w*)\b", s, re.I) for s in urologie), f"a Urologie match claimed: {dump}"
 
 
 @RUNS
@@ -352,6 +436,48 @@ def test_campaign_thumbs_up_reaction_continues_with_the_urkunde_question(chat, r
     chat.campaign()
     bubbles, _ = chat.react("👍")
     _assert_campaign_yes_answer(chat, bubbles)
+
+
+# TASK-107: never a claim that voice messages cannot be heard, never a request to type it instead.
+CANNOT_LISTEN_RE = re.compile(r"(?:sprachnachricht|audio|voice)\w*[^.!?]*\b(?:nicht|kein\w*)\b[^.!?]*"
+                              r"(?:anhören|abspielen|hören|öffnen|lesen)|(?:schreiben|tippen) sie[^.!?]*"
+                              r"(?:als text|schriftlich|kurz auf)|schriftlich", re.I)
+
+
+@RUNS
+def test_campaign_reply_as_a_voice_note_is_answered_from_its_transcript(chat, run, monkeypatch, tmp_path):
+    """TASK-107: a campaign yes spoken as a voice note used to get the flat MEDIA_REPLY and stall. The transcript
+    carries three facts; Luna records them and asks the next open gate, never the Urkunde or the city again."""
+    monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
+    chat.campaign()
+    bubbles, result = chat.voice("Ja hallo, ich habe Interesse. Ich habe die deutsche Urkunde als Pflegefachfrau "
+                                 "schon und würde gern in Augsburg arbeiten.", monkeypatch)
+    said, card, dump = _text(bubbles), chat.card(), chat.dump()
+    assert result["status"] == "sent" and bubbles and WAPI.MEDIA_REPLY not in bubbles, dump
+    assert card.get("region") == "Bayern" and card.get("city") == "Augsburg", dump
+    assert card.get("qualification_path") == "urkunde", dump
+    assert "_unread_media" not in card and not card.get("_escalated"), dump
+    assert not CANNOT_LISTEN_RE.search(said), f"claimed it cannot hear the voice note: {dump}"
+    assert not re.search(r"urkunde[^.!?]*\?", said, re.I), f"the Urkunde asked again: {dump}"
+    assert not re.search(r"(?:welche|in welcher) stadt|wo möchten sie", said, re.I), f"the city asked again: {dump}"
+    assert INTRO_RE.search(said), f"no self-introduction in the first reply after the template: {dump}"
+    assert not NEW_LEAD_OPENER_RE.search(said), f"new-lead opener after our template: {dump}"
+
+
+@RUNS
+def test_a_misheard_town_in_a_voice_note_is_asked_back_not_recorded(chat, run, monkeypatch, tmp_path):
+    """TASK-107 prompt VOICE NOTE: a transcript can mishear a town ('Augsbuch'); the city filter is an exact match, so a
+    misheard town recorded as city would empty the shortlist. Luna asks back instead of recording it."""
+    monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
+    chat.campaign()
+    chat.say("Ja")
+    chat.set_facts(region="Bayern", qualification_path="urkunde", qualification_ok=True, urkunde_status="present")
+    bubbles, _ = chat.voice("Also ich würde am liebsten in Augsbuch arbeiten.", monkeypatch)
+    said, card, dump = _text(bubbles), chat.card(), chat.dump()
+    assert card.get("city") in (None, "Augsburg"), f"a misheard town recorded as city: {dump}"
+    if card.get("city") is None:
+        assert re.search(r"augsburg[^.!?]*\?|\?[^?]*augsburg", said, re.I), f"not asked back about Augsburg: {dump}"
+    assert not CANNOT_LISTEN_RE.search(said), f"claimed it cannot hear the voice note: {dump}"
 
 
 @RUNS

@@ -9,6 +9,9 @@ person at all, so it is asked before the handover is offered.
 import re
 import unicodedata
 
+from pflege_jobs import classify as K
+from pflege_jobs import config as PC
+
 # slot -> the GET /api/jobs parameter it fills. `urkunde` is absent on purpose (see module docstring).
 FILTER_PARAM = {"role": "role_class", "city": "city", "bezirk": "regierungsbezirk",
                 "department": "department_hint", "hours": "employment_types", "housing": "housing"}
@@ -124,6 +127,63 @@ def read_role(text):
 
 def read_department(text):
     return _first_match(text, DEPT_WORDS)
+
+
+# TASK-104: a Luna card's department_pref is read here, and only here (market_snapshot, search_postings).
+DEPARTMENT_FLEXIBLE = "flexibel"    # the value Luna writes for a flexible answer (prompts.py DEPARTMENT)
+FLEXIBLE_WORDS = ("egal", "flexibel", "flexible", "alles", "alle", "jede", "jeder", "jedes", "offen", "open",
+                  "beliebig", "überall", "unwichtig", "any", "keine präferenz", "keine präferenzen",
+                  "keine vorliebe", "keine vorlieben", "ganz gleich", "gleich welche", "spielt keine rolle",
+                  "no preference", "mir gleich", "nicht wichtig", "keine ahnung", "weiß nicht", "weiß noch nicht",
+                  "weiß ich nicht", "weiß ich noch nicht", "wurscht")
+NEGATION_WORDS = ("nicht", "kein", "keine", "keinen", "keiner", "keinem", "außer", "ohne", "not", "no", "except")
+# where one named department ends and the next begins: list punctuation, or a list word ('Innere oder Intensiv'),
+# except after an ellipsis hyphen ('Kinder- und Jugendpsychiatrie' is one department)
+_DEPARTMENT_LIST = re.compile(r"[,;/|&+]|(?<![-\s])\s+(?:und|oder|bzw\.?|beziehungsweise|sowie|aber|or|and)\s+",
+                              re.IGNORECASE)
+
+
+def board_departments():
+    """The board's department vocabulary: every value postings.department_hint can take."""
+    return [name for name, _ in PC.DEPARTMENT_HINT]
+
+
+def named_departments(value):
+    """Every board department the value names, in order: each list part ('Innere oder Intensiv') read on its own,
+    the board's title classifier first (pflege_jobs.classify.department_hint, the rules that set
+    postings.department_hint: 'Stroke Unit', 'Kreißsaal', 'Neurochirurgie' land where the board put such
+    postings), then the production alias list (read_department: 'Narkose', 'Kinder', 'Kreissaal')."""
+    found = []
+    for part in _DEPARTMENT_LIST.split(str(value or "")):
+        department = K.department_hint(part) or read_department(part)
+        if department and department not in found:
+            found.append(department)
+    return found
+
+
+def read_department_pref(value):
+    """department_pref -> {requested, status, departments}; ``departments`` = the board departments to filter on,
+    empty unless applied.
+
+    applied: the value names one or more board departments (named_departments), no flexible word, no negation: filter
+    on any of them (a word next to them the board has no department for, 'Urologie oder Intensiv', filters nothing).
+    ambiguous: it names a department together with a flexible word or a negation ('Intensiv, sonst egal', 'alles
+    außer OP', 'kein OP'; also 'egal, wo gerade gesucht wird', where the classifier's Psychiatrie rule reads 'sucht'):
+    no department filter, the caller reports it. Which department is wanted or ruled out is not read (open for Ivan).
+    flexible: no department named, a flexible word (FLEXIBLE_WORDS, DEPARTMENT_FLEXIBLE): no department filter.
+    unmatched: neither. The board has no department for the word (its postings carry department_hint null, e.g.
+    Urologie), so a filter on it could only return nothing: no department filter, the caller reports it."""
+    named = named_departments(value)
+    flexible = any(_contains(value, w) for w in FLEXIBLE_WORDS)
+    if named and (flexible or any(_contains(value, w) for w in NEGATION_WORDS)):
+        status = "ambiguous"
+    elif named:
+        status = "applied"
+    elif flexible:
+        status = "flexible"
+    else:
+        status = "unmatched"
+    return {"requested": value, "status": status, "departments": named if status == "applied" else []}
 
 
 FAILED_WORDS = ("nicht bestanden", "durchgefallen", "nicht geschafft")

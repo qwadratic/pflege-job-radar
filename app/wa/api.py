@@ -13,15 +13,17 @@ Order of business on an inbound POST (TASK-99), and the reason for each step:
 5. the worker (``drain_pending`` -> ``finish_inbound``) takes each phone's pending messages oldest first:
    arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-95,
    both brains, stopped threads too); a WA_BRAIN=luna document/image is read and classified onto the card
-   before the brain runs (``_ingest_media``, TASK-67/TASK-96); other media kinds, and every kind on the
-   deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the reply (app/wa/brain.py or
-   app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows; delete the pending row.
+   before the brain runs (``_ingest_media``, TASK-67/TASK-96); a WA_BRAIN=luna voice note (audio, or a document
+   with an audio mime type) is transcribed and the transcript is the turn's text (``_transcribe_voice_note``,
+   TASK-107); video, and every kind on the deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the
+   reply (app/wa/brain.py or app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows;
+   delete the pending row.
 
 A step-5 failure never reaches Meta (it has its 200 already): it is logged, kept on the pending row and in
 wa_send_failures (GET /wa/threads), and app/wa/luna/catchup.py finishes the message later through the same
 ``finish_inbound`` -- re-downloading a media original from the media_id kept in wa_messages.meta, or
-re-reading a stored original that never reached the card. A crash or restart mid-turn leaves the pending
-row for catch-up too. ``handle_payload`` runs steps 3 and 5 in the caller's thread and re-raises (tests,
+re-reading a stored original that never reached the card or was never transcribed. A crash or restart mid-turn
+leaves the pending row for catch-up too. ``handle_payload`` runs steps 3 and 5 in the caller's thread and re-raises (tests,
 scripts).
 """
 import hashlib
@@ -45,6 +47,7 @@ from . import config as C
 from . import meta as M
 from . import queue as Q
 from . import store as ST
+from . import stt as STT
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -210,11 +213,16 @@ def _summarized(kind, m):
 MEDIA_REPLY = ("Danke, angekommen – Dateien kann ich hier noch nicht lesen. Ein Kollege schaut "
                "sie sich an.")
 
-# Media kinds this harness actually extracts text from today, WA_BRAIN=luna only (TASK-67).
-# audio/video still get the flat MEDIA_REPLY ack for both brains -- nothing here transcribes
-# audio/video, so treating them like "read" would be exactly the invented-safety-net kind of
+# Media kinds this harness reads, WA_BRAIN=luna only: document/image text (TASK-67), audio transcribed (TASK-107; a
+# document with an audio mime type too, ``is_voice_note``). Video still gets the flat MEDIA_REPLY ack for both brains,
+# and so does every kind on the deterministic brain -- treating an unread file like "read" would be exactly the
 # silent pretending CLAUDE.md rules out.
-_EXTRACTABLE_KINDS = ("document", "image")
+_READ_KINDS = ("document", "image", "audio")
+
+
+def is_voice_note(kind, mime_type):
+    """TASK-107: an audio message, or audio sent as a document (the mime type of the stored original)."""
+    return kind == "audio" or (kind == "document" and (mime_type or "").strip().lower().startswith("audio/"))
 
 # A PDF's extract_text() result this short (or shorter) is treated as "no real text layer" (a
 # scanned Urkunde saved as PDF) and falls through to the vision path -- the same "< 20 chars ==
@@ -646,8 +654,11 @@ def finish_inbound(c, m, client=None):
     - media runs under the claim ``media:<wamid>``: no wa_documents row yet -> download with the media_id
       kept in meta and store the original (TASK-95); a WA_BRAIN=luna document/image not on the saved card
       yet -> read and classify it (from the bytes just downloaded, or the stored original re-read and
-      checked against its sha256) and save the card before the claim is released;
-    - the flat media ack and the reply turn run under the reply claim ``<wamid>`` (process_owed_turn).
+      checked against its sha256) and save the card before the claim is released; a WA_BRAIN=luna voice
+      note not transcribed yet -> transcribe it the same way (TASK-107), the transcript stored on its
+      wa_documents row and message before the claim is released;
+    - the flat media ack and the reply turn run under the reply claim ``<wamid>`` (process_owed_turn); a
+      voice note's turn text is its transcript.
 
     -> the result dict with ``wamid``. Raises on any failure; a brain failure releases the reply claim
     ('skipped_error') so the next attempt need not wait STALE_CLAIM_SECONDS."""
@@ -655,13 +666,15 @@ def finish_inbound(c, m, client=None):
     t = ST.thread(c, phone)
     dirty = _note_arrival(c, t, wamid)
     is_media = m["kind"] in _MEDIA_KINDS
-    reads = is_media and C.BRAIN == "luna" and m["kind"] in _EXTRACTABLE_KINDS
+    reads = is_media and C.BRAIN == "luna" and m["kind"] in _READ_KINDS
+    transcript = None
     if is_media:
         media_key = MEDIA_CLAIM_PREFIX + wamid
         if not ST.claim_reply_turn(c, phone, media_key):
             return {"wamid": wamid, "status": "claimed_elsewhere"}
         try:
-            if _store_and_read(c, t, m, reads, client):
+            card_changed, transcript = _store_and_read(c, t, m, reads, client)
+            if card_changed:
                 ST.save_thread(c, t)
                 dirty = False
         except Exception:
@@ -679,7 +692,8 @@ def finish_inbound(c, m, client=None):
     if is_media and not reads:
         return _media_ack(c, t, m, client)
     try:
-        result = process_owed_turn(c, t, m["text"], m["button_id"], wamid, client=client)
+        result = process_owed_turn(c, t, m["text"] if transcript is None else transcript, m["button_id"], wamid,
+                                   client=client)
     except Exception:
         if ST.reply_turn_claim_state(c, phone, wamid) == "in_progress":
             ST.finish_reply_turn_claim(c, phone, wamid, "skipped_error")
@@ -702,21 +716,40 @@ def _note_arrival(c, t, wamid):
 
 
 def _store_and_read(c, t, m, reads, client):
-    """The media half of ``finish_inbound``, caller holds ``media:<wamid>``. -> True when the card changed."""
+    """The media half of ``finish_inbound``, caller holds ``media:<wamid>``. -> (card changed, transcript): the
+    voice note's transcript (TASK-107: made now, or the one an earlier attempt stored), None for any other message.
+    Nothing is read on a stopped thread or for a kind that is not read (``reads``)."""
     doc = ST.document_for_wamid(c, m["wamid"])
     if doc is None:
         if not m.get("media_id"):
             raise RuntimeError(f"inbound {m['kind']} {m['wamid']} has no stored original and no media_id to "
                                f"download it with")
         stored = _store_original(c, m, client=client)
-    elif reads and not t["stopped"] and not any(d["id"] == doc["id"] for d in t["slots"].get("documents", [])):
-        stored = {"id": doc["id"], "blob": _read_original(doc), "mime_type": doc["mime_type"]}
     else:
-        return False
+        stored = {"id": doc["id"], "blob": None, "mime_type": doc["mime_type"]}
     if not reads or t["stopped"]:
-        return False
+        return False, None
+    if doc is not None:   # stored on an earlier attempt: re-read only when it still has to be read
+        if is_voice_note(m["kind"], doc["mime_type"]) and doc["text_key"] == ST.VOICE_TRANSCRIPT_KEY:
+            return False, doc["text"]   # transcribed on an earlier attempt: no second call
+        if any(d["id"] == doc["id"] for d in t["slots"].get("documents", [])):
+            return False, None
+        stored["blob"] = _read_original(doc)
+    if is_voice_note(m["kind"], stored["mime_type"]):
+        return False, _transcribe_voice_note(c, m, stored["id"], stored["blob"], stored["mime_type"])
     _ingest_media(c, t, m, stored)
-    return True
+    return True, None
+
+
+def _transcribe_voice_note(c, m, doc_id, blob, mime_type):
+    """TASK-107: transcribe a voice note's original (``stt.Client``, OpenAI, C.STT_MODEL) and store the transcript on
+    its wa_documents row and inbound message (``ST.set_voice_transcript``). -> the transcript. The card is not
+    touched: no documents entry, no UNREAD_MEDIA_KEY. Raises on every failure (no OPENAI_API_KEY, API error, empty
+    transcript): finish_inbound's caller records it on the pending row and in wa_send_failures, nothing is sent,
+    and catch-up transcribes the stored original again."""
+    out = STT.Client().transcribe(blob, filename=m.get("media_filename"), mime_type=mime_type)
+    ST.set_voice_transcript(c, doc_id, m["wamid"], out["text"], out["model"])
+    return out["text"]
 
 
 def _read_original(doc):
@@ -731,7 +764,7 @@ UNREAD_MEDIA_KEY = "_unread_media"   # card: [{wamid, kind, document_id, receive
 
 
 def _media_ack(c, t, m, client):
-    """Media nothing reads (audio/video; every kind on the deterministic brain), under the reply claim like any other
+    """Media nothing reads (video; every kind on the deterministic brain), under the reply claim like any other
     reply. MEDIA_REPLY promises that a colleague looks at it, so the card records it for a human first
     (UNREAD_MEDIA_KEY, ``_escalated``; GET /wa/threads ``unread_media``, campaign --status). A declined Luna card
     gets no MEDIA_REPLY: the message is stored, the silence recorded (ST.NO_SEND_STATE) like a model no_send

@@ -7,7 +7,8 @@ Two passes, one pipeline: app.wa.api.finish_inbound, the same the webhook's back
 1. pending: every phone with wa_inbound_pending rows (recorded by a webhook, not finished yet) is drained
    oldest first (API.process_phones). Media included: a message with no stored original is downloaded again
    with the media_id kept in wa_messages.meta, a stored original that never reached a luna card is re-read
-   and classified, media nothing reads gets its flat ack. A phone with a claim in flight (the webhook worker,
+   and classified, a luna voice note without a transcript is transcribed from its stored original (TASK-107),
+   media nothing reads gets its flat ack. A phone with a claim in flight (the webhook worker,
    or a still-running earlier pass, is on it) is reported ``claimed_elsewhere`` and left to that process --
    the ``media:<wamid>`` claim covers a running download/ingest, so this never replies to a file it has not
    read.

@@ -14,7 +14,7 @@ Dry-run by default: reads the source (files included, sha256 checked) and our da
 calls no LLM and no Meta. ``--apply`` writes. Campaign sender (TASK-103): ``Source.open(...)`` once, then
 ``import_phone(source, phone, apply=True)`` per phone.
 
-QUERIES FILE: four queries, each after a line ``-- query: <name>``. Each runs with the named parameters ``:phone``
+QUERIES FILE: five queries, each after a line ``-- query: <name>``. Each runs with the named parameters ``:phone``
 (+E.164) and ``:phone_digits`` (digits only) and returns columns with exactly these names (NULL = unknown). A
 missing required column, an unknown column or a value outside its contract raises.
 
@@ -24,18 +24,28 @@ missing required column, an unknown column or a value outside its contract raise
              values is reported as conflicting and not imported.
   placement  source_ref (required); clinic, status, stage, contract_start_date, updated_at, submitted (0/1),
              placed (0/1).
-  messages   source_ref (required, unique per message), direction ('in'|'out', required), at (required); kind, body.
+  messages   source_ref (required, unique per message), direction ('in'|'out', required), at (required, ISO 8601:
+             a Stopp's is compared with our card, contact_blocks); kind, body.
   documents  source_ref (required, unique per file), origin (required): candidate = a file the candidate sent,
              forwarded = a file someone forwarded for them, derived_cv = a CV the source generated from theirs,
              skip = not a candidate document (reported only); path (required unless skip): absolute, or relative
              to one of --media-root (tried in order; '..' raises); original_filename, mime_type, sha256 (the
              source's; verified), sent_at, old_class, old_type (the source's classification, kept as metadata),
              media_id (Meta media id: a file missing on disk is downloaded again on --apply), source_system.
+  opt_outs   source_ref (required, unique per record), kind (required: opt_out = no messages wanted: stop,
+             unsubscribe, do-not-contact; decline = turned the offer or the contact down), at (required, ISO 8601;
+             without an offset it is UTC), reason (required, the source's own words); phone (the phone value the
+             record carries, evidence of the match). Records the source keeps outside the chat text (TASK-105);
+             a source without such records returns no rows, the query is still required.
 
 WHAT --apply WRITES (data/wa.sqlite, C.DOCUMENTS_DIR):
 - card facts: only keys the card does not have yet (a card value is kept and reported);
 - card.prior_contact: deterministic summary {source, imported_at, first/last contact, message counts,
   facts_imported, documents_not_recoverable, summary}; card.prior_placement {records, submitted, placed};
+- card.prior_opt_outs: every opt_outs record and every Stopp in the imported chat (stop_messages), once per
+  source label + source_ref. A new one marks the card declined (TASK-101: declined, declined_reason, declined_at =
+  the latest new record; no acknowledgement is sent, follow-ups stop, Luna stays silent until re-engagement), unless
+  the card is already declined or the candidate wrote here (last_inbound_at) or re-engaged (re_engaged_at) after it;
 - wa_imported_messages: one row per source message (never wa_messages: ball, follow-ups and the Luna payload
   would read them as this chat);
 - documents: candidate/forwarded files first, then derived CVs (only when no lebenslauf is held for the phone).
@@ -63,13 +73,14 @@ import re
 import sqlite3
 import stat
 import sys
+from datetime import datetime, timezone
 
 from .. import config as C
 from .. import meta as M
 from .. import slots as SL
 from .. import store as ST
 
-QUERY_NAMES = ("facts", "placement", "messages", "documents")
+QUERY_NAMES = ("facts", "placement", "messages", "documents", "opt_outs")
 COLUMNS = {
     "facts": (("source_ref",), ("region", "city", "department_pref", "qualification_path", "qualification_ok",
                                 "urkunde_status", "housing_known", "people_count")),
@@ -78,10 +89,13 @@ COLUMNS = {
     "messages": (("source_ref", "direction", "at"), ("kind", "body")),
     "documents": (("source_ref", "origin"), ("path", "original_filename", "mime_type", "sha256", "sent_at",
                                              "old_class", "old_type", "media_id", "source_system")),
+    "opt_outs": (("source_ref", "kind", "at", "reason"), ("phone",)),
 }
 FACT_KEYS = COLUMNS["facts"][1]
 QUALIFICATION_PATHS = ("urkunde", "defizit", "kenntnispruefung", "reject", "unknown")
 ORIGINS = ("candidate", "forwarded", "derived_cv", "skip")
+OPT_OUT_KINDS = ("opt_out", "decline")
+STOP_MESSAGE_KIND = "stop_message"   # a Stopp in the imported chat (stop_messages) as a contact block
 EXTRACTABLE_KINDS = ("document", "image")
 IMPORT_CLAIM_PREFIX = "import:"   # wa_reply_turn_claims.turn_key while the card merge runs
 MIN_PHONE_DIGITS = 8              # as migrate_candidates.py: canonicalize_phone("garbage") -> "+49"
@@ -102,7 +116,7 @@ def _access_error(path, what, exc):
 
 
 def load_queries(path):
-    """{name: sql} from a queries file; raises unless it holds exactly the four QUERY_NAMES, each non-empty."""
+    """{name: sql} from a queries file; raises unless it holds exactly the QUERY_NAMES, each non-empty."""
     text = pathlib.Path(path).read_text(encoding="utf-8")
     headers = list(_QUERY_HEADER.finditer(text))
     names = [h.group(1) for h in headers]
@@ -129,7 +143,7 @@ def canonical_phone(raw):
 
 
 class Source:
-    """One source system: read-only database connection, the four queries, a label, media roots."""
+    """One source system: read-only database connection, the queries, a label, media roots."""
 
     def __init__(self, conn, queries, label, media_roots):
         self.conn, self.queries, self.label, self.media_roots = conn, queries, label, media_roots
@@ -280,6 +294,27 @@ def _placement_row(row):
             "placed": bool(_flag("placed", row.get("placed")))}
 
 
+def _instant(name, value):
+    """-> aware datetime of an ISO 8601 value; without an offset it is UTC (SQLite CURRENT_TIMESTAMP)."""
+    try:
+        dt = datetime.fromisoformat(str(value).strip())
+    except ValueError:
+        raise ValueError(f"{name} must be an ISO 8601 timestamp, got {value!r}")
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _utc_iso(name, value):
+    return _instant(name, value).astimezone(timezone.utc).isoformat()
+
+
+def _opt_out_row(row):
+    kind = _text(row["kind"])
+    if kind not in OPT_OUT_KINDS:
+        raise ValueError(f"opt_outs kind must be one of {OPT_OUT_KINDS}, got {row['kind']!r} ({row['source_ref']})")
+    return {"source_ref": str(row["source_ref"]), "kind": kind, "at": _utc_iso("opt_outs at", row["at"]),
+            "reason": _text(row["reason"]), "phone": _text(row.get("phone"))}
+
+
 # --- files ------------------------------------------------------------------------------------------------
 
 def resolve_path(value, roots):
@@ -319,18 +354,19 @@ def _read(path):
 # --- our side, read-only (dry-run) ------------------------------------------------------------------------
 
 def _our_view(phone, source_label):
-    """(card or None, {source_ref: doc id} imported from this source, {sha256: doc id}, {source_ref} messages
-    imported) from C.SQLITE_PATH opened read-only; empty when the file does not exist yet."""
+    """(card or None, last_inbound_at or None, {source_ref: doc id} imported from this source, {sha256: doc id},
+    {source_ref} messages imported) from C.SQLITE_PATH opened read-only; empty when the file does not exist yet."""
     if not pathlib.Path(C.SQLITE_PATH).exists():
-        return None, {}, {}, set()
+        return None, None, {}, {}, set()
     c = sqlite3.connect(pathlib.Path(C.SQLITE_PATH).absolute().as_uri() + "?mode=ro", uri=True, timeout=30)
     c.row_factory = sqlite3.Row
     try:
         tables = {r["name"] for r in c.execute("select name from sqlite_master where type='table'")}
-        card = None
+        card = last_inbound_at = None
         if "wa_threads" in tables:
-            row = c.execute("select slots from wa_threads where phone=?", (phone,)).fetchone()
+            row = c.execute("select slots, last_inbound_at from wa_threads where phone=?", (phone,)).fetchone()
             card = json.loads(row["slots"] or "{}") if row else None
+            last_inbound_at = row["last_inbound_at"] if row else None
         refs, shas, messages = {}, {}, set()
         if "wa_documents" in tables:
             columns = {r[1] for r in c.execute("pragma table_info(wa_documents)")}
@@ -341,7 +377,7 @@ def _our_view(phone, source_label):
         if "wa_imported_messages" in tables:
             messages = {r["import_ref"] for r in c.execute(
                 "select import_ref from wa_imported_messages where phone=? and import_source=?", (phone, source_label))}
-        return card, refs, shas, messages
+        return card, last_inbound_at, refs, shas, messages
     finally:
         c.close()
 
@@ -357,7 +393,8 @@ def import_phone(source, phone, apply=False, client=None):
 
         {phone, source, applied, found, facts: {known, conflicting, absent, imported, kept}, placement: [...],
          messages: {found, already_imported, imported}, stop_messages: [{source_ref, at, body}] (stop_messages()),
-         documents: [{source_ref, origin, old_class, old_type,
+         opt_outs: [{source_ref, kind, at, reason, phone}] (oldest first), decline_import (decline_decision();
+         dry-run: what --apply would do), documents: [{source_ref, origin, old_class, old_type,
          action, reason?, doc_id?, document_type?, certificate_level?}], not_recoverable: n, card_documents_added}
 
     Document actions -- dry-run: would_import, would_download_from_meta, already_imported, same_bytes_held,
@@ -369,14 +406,16 @@ def import_phone(source, phone, apply=False, client=None):
     placement = [_placement_row(r) for r in source.rows("placement", phone)]
     messages = [_message_row(r) for r in source.rows("messages", phone)]
     documents = sorted((_document_row(r) for r in source.rows("documents", phone)), key=_document_order)
+    opt_outs = sorted((_opt_out_row(r) for r in source.rows("opt_outs", phone)),
+                      key=lambda r: (r["at"], r["source_ref"]))
     known, conflicting = resolve_facts(facts_rows)
     report = {"phone": phone, "source": source.label, "applied": bool(apply),
-              "found": bool(facts_rows or placement or messages or documents),
+              "found": bool(facts_rows or placement or messages or documents or opt_outs),
               "facts": {"known": known, "conflicting": conflicting,
                         "absent": [k for k in FACT_KEYS if k not in known and k not in conflicting]},
               "placement": placement,
-              "messages": {"found": len(messages)}, "stop_messages": stop_messages(messages), "documents": [],
-              "not_recoverable": 0}
+              "messages": {"found": len(messages)}, "stop_messages": stop_messages(messages), "opt_outs": opt_outs,
+              "decline_import": None, "documents": [], "not_recoverable": 0}
     if not report["found"]:   # the source does not know this phone: no thread, no prior_contact
         return report
     if apply:
@@ -396,6 +435,42 @@ def stop_messages(messages):
             for m in messages if m["direction"] == "in" and SL.is_stop(m["body"] or "")]
 
 
+def contact_blocks(report):
+    """Everything in an import report that forbids contacting the phone, oldest first: the source's opt_outs records
+    and the candidate's Stopp messages (kind stop_message) as {source_ref, kind, at, reason, phone}. The campaign
+    sender skips a phone with any (TASK-105); --apply records them on card.prior_opt_outs."""
+    stops = [{"source_ref": m["source_ref"], "kind": STOP_MESSAGE_KIND, "at": _utc_iso("messages at", m["at"]),
+              "reason": f"Stopp in the chat: {m['body']!r}", "phone": None} for m in report["stop_messages"]]
+    return sorted(report["opt_outs"] + stops, key=lambda r: (r["at"], r["source_ref"]))
+
+
+def decline_decision(card, last_inbound_at, label, blocks):
+    """What an import does to the card with the phone's contact blocks (TASK-105, TASK-101 semantics). -> {new:
+    blocks not yet on card.prior_opt_outs (with source), marked: bool, declined_at, declined_reason, not_marked}.
+    The latest new block marks the card declined, unless the card is already declined, or the candidate wrote here
+    (last_inbound_at) or re-engaged (re_engaged_at) after it: a later word from the candidate wins over an older
+    record. A block already on the card never marks it again (re-engagement after an import stays)."""
+    on_card = {(e["source"], e["source_ref"]) for e in card.get("prior_opt_outs", [])}
+    new = [{**b, "source": label} for b in blocks if (label, b["source_ref"]) not in on_card]
+    out = {"new": new, "marked": False, "declined_at": None, "declined_reason": None, "not_marked": None}
+    if not new:
+        return out
+    latest = max(new, key=lambda b: (b["at"], b["source_ref"]))
+    later = [(key, value) for key, value in (("re_engaged_at", card.get("re_engaged_at")),
+                                             ("last_inbound_at", last_inbound_at))
+             if value and _instant(key, value) > _instant("at", latest["at"])]
+    if card.get("declined"):
+        out["not_marked"] = f"the card is already declined (declined_at {card.get('declined_at')})"
+    elif later:
+        out["not_marked"] = "the candidate wrote here after the latest record: " + ", ".join(
+            f"{key} {value}" for key, value in later)
+    else:
+        out.update(marked=True, declined_at=latest["at"],
+                   declined_reason=f"{latest['kind']} recorded by the earlier system {label} on "
+                                   f"{latest['at'][:10]}: {latest['reason']}")
+    return out
+
+
 def _document_entry(doc, action, **extra):
     return {"source_ref": doc["source_ref"], "origin": doc["origin"], "source_system": doc["source_system"],
             "old_class": doc["old_class"], "old_type": doc["old_type"], "sent_at": doc["sent_at"], "action": action,
@@ -403,8 +478,9 @@ def _document_entry(doc, action, **extra):
 
 
 def _dry_run(source, phone, known, messages, documents, report):
-    card, refs, shas, imported_messages = _our_view(phone, source.label)
+    card, last_inbound_at, refs, shas, imported_messages = _our_view(phone, source.label)
     card = card or {}
+    report["decline_import"] = decline_decision(card, last_inbound_at, source.label, contact_blocks(report))
     report["facts"]["imported"] = {k: v for k, v in known.items() if card.get(k) is None}
     report["facts"]["kept"] = {k: {"card": card[k], "source": v} for k, v in known.items()
                                if card.get(k) is not None}
@@ -533,9 +609,10 @@ def _complete_existing(c, WAPI, doc, row):
 
 def _merge_card(c, source, phone, known, placement, messages, report):
     """The card half, short and under a phone claim (the webhook worker and catch-up stop at an in-flight claim):
-    facts into empty keys, prior_contact, prior_placement, card entries for classified imported documents.
-    -> {imported, kept}."""
+    facts into empty keys, prior_contact, prior_placement, card entries for classified imported documents,
+    prior_opt_outs and the decline (decline_decision). -> {imported, kept}."""
     key = IMPORT_CLAIM_PREFIX + source.label
+    blocks = contact_blocks(report)
     with ST._lock:
         if ST.claim_in_flight(c, phone) or not ST.claim_reply_turn(c, phone, key):
             raise RuntimeError(f"{phone} has a turn or import in flight; run the import again once it finished")
@@ -545,6 +622,12 @@ def _merge_card(c, source, phone, known, placement, messages, report):
             imported = {k: v for k, v in known.items() if card.get(k) is None}
             kept = {k: {"card": card[k], "source": v} for k, v in known.items() if card.get(k) is not None}
             card.update(imported)
+            decision = decline_decision(card, t["last_inbound_at"], source.label, blocks)
+            if decision["new"]:
+                card["prior_opt_outs"] = [*card.get("prior_opt_outs", []), *decision["new"]]
+            if decision["marked"]:
+                card.update(declined=True, declined_reason=decision["declined_reason"],
+                            declined_at=decision["declined_at"])
             on_card = {d["id"] for d in card.get("documents", [])}
             rows = [r for r in ST.documents_for(c, phone)
                     if r["import_source"] == source.label and r["document_type"] is not None]
@@ -558,7 +641,7 @@ def _merge_card(c, source, phone, known, placement, messages, report):
             card["prior_contact"] = prior_contact(source.label, previous.get("imported_at") or ST.now_iso(),
                                                   messages, known, facts_imported, card.get("documents", []),
                                                   [d for d in report["documents"] if d["action"] == "not_recoverable"],
-                                                  placement)
+                                                  placement, blocks)
             if placement:
                 card["prior_placement"] = {"records": placement, "submitted": any(p["submitted"] for p in placement),
                                            "placed": any(p["placed"] for p in placement)}
@@ -568,9 +651,11 @@ def _merge_card(c, source, phone, known, placement, messages, report):
             raise
         ST.finish_reply_turn_claim(c, phone, key, "import_done")
     report["card_documents_added"] = [d["id"] for d in added]
+    report["decline_import"] = decision
     return {"imported": imported, "kept": kept}
 
 
+_BLOCK_WORDS = {"opt_out": "opted out", "decline": "declined", STOP_MESSAGE_KIND: "wrote Stopp"}
 _FACT_WORDS = {"region": "region {}", "city": "city {}", "department_pref": "department {}",
                "qualification_path": "qualification path {}", "urkunde_status": "Urkunde status {}",
                "people_count": "{} people for the flat"}
@@ -584,8 +669,10 @@ def _fact_phrase(key, value):
     return _FACT_WORDS[key].format(value)
 
 
-def prior_contact(label, imported_at, messages, known, facts_imported, card_documents, not_recoverable, placement):
-    """The deterministic card.prior_contact for the model: dates, counts, facts, documents, clinic record."""
+def prior_contact(label, imported_at, messages, known, facts_imported, card_documents, not_recoverable, placement,
+                  blocks):
+    """The deterministic card.prior_contact for the model: dates, counts, facts, documents, clinic record, and the
+    opt-outs, declines and chat Stopps recorded then (contact_blocks)."""
     ins = sorted(m["at"] for m in messages if m["direction"] == "in")
     outs = sorted(m["at"] for m in messages if m["direction"] == "out")
     every = sorted(ins + outs)
@@ -616,6 +703,9 @@ def prior_contact(label, imported_at, messages, known, facts_imported, card_docu
                                    f"stage {p['stage']}" if p["stage"] else None,
                                    f"updated {p['updated_at'][:10]}" if p["updated_at"] else None)))
             for p in placement) + f"; placed: {'yes' if any(p['placed'] for p in placement) else 'no'}.")
+    if blocks:
+        parts.append("Recorded then, no contact wanted: " + "; ".join(
+            f"{_BLOCK_WORDS[b['kind']]} on {b['at'][:10]} ({b['reason']})" for b in blocks) + ".")
     out["summary"] = " ".join(parts)
     return out
 
@@ -635,6 +725,14 @@ def _print_report(r):
           + (f" (submitted: {any(p['submitted'] for p in r['placement'])}, "
              f"placed: {any(p['placed'] for p in r['placement'])})" if r["placement"] else ""))
     print(f"  messages: {r['messages']}")
+    for b in contact_blocks(r):
+        print(f"  no contact wanted: {b['kind']} {b['at']} {b['reason']} [{b['source_ref']}]"
+              + (f" (phone {b['phone']})" if b["phone"] else ""))
+    decision = r["decline_import"]
+    if decision["marked"]:
+        print(f"  card declined {'now' if r['applied'] else 'by --apply'}: {decision['declined_reason']}")
+    elif decision["not_marked"]:
+        print(f"  card not declined: {decision['not_marked']}")
     by_class = {}
     for d in r["documents"]:
         counts = by_class.setdefault(d["old_class"] or "-", {})

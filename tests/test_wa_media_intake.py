@@ -280,23 +280,20 @@ def _no_extraction(monkeypatch):
     monkeypatch.setattr(CV, "classify_document", boom)
 
 
-def test_audio_and_video_under_luna_still_get_the_flat_ack(luna_wa, monkeypatch, tmp_path):
-    """Nothing in this task transcribes audio/video -- treating them like 'read' would be exactly
-    the invented-safety-net kind of silent pretending CLAUDE.md rules out. TASK-95: the original is
-    still stored, named with the mime type's extension."""
+def test_video_under_luna_still_gets_the_flat_ack(luna_wa, monkeypatch, tmp_path):
+    """Nothing reads a video -- treating it like 'read' would be exactly the invented-safety-net kind of silent
+    pretending CLAUDE.md rules out. TASK-95: the original is still stored, named with the mime type's extension.
+    Audio is transcribed since TASK-107 (tests/test_wa_voice_notes.py)."""
     _no_extraction(monkeypatch)
-    # one instance across both kinds: its wamid.out.N counter must not collide
-    meta = _meta_with(("a1", "audio/ogg", b"OggS voice"), ("v1", "video/mp4", b"\x00\x00\x00 ftypmp4"))
-    for kind, media_id, mime_type, ext in (("audio", "a1", "audio/ogg", ".ogg"), ("video", "v1", "video/mp4", ".mp4")):
-        body = payload(kind, media_id=media_id, mime_type=mime_type, wamid=f"wamid.{kind}")
-        out = WAPI.handle_payload(body, client=meta)
-        assert out["results"][0]["action"] == "media_ack"
-        assert meta.sent[-1]["body"] == WAPI.MEDIA_REPLY
-        with ST.db() as c:
-            doc = ST.documents_for(c, LEAD)[-1]
-        assert (doc["wamid"], doc["kind"], doc["mime_type"]) == (f"wamid.{kind}", kind, mime_type)
-        assert doc["path"].endswith(f"-{media_id}{ext}") and doc["text"] is None
-    assert meta.download_calls == ["https://cdn.example/a1", "https://cdn.example/v1"]
+    meta = _meta_with(("v1", "video/mp4", b"\x00\x00\x00 ftypmp4"))
+    out = WAPI.handle_payload(payload("video", media_id="v1", mime_type="video/mp4", wamid="wamid.video"), client=meta)
+    assert out["results"][0]["action"] == "media_ack"
+    assert meta.sent[-1]["body"] == WAPI.MEDIA_REPLY
+    with ST.db() as c:
+        (doc,) = ST.documents_for(c, LEAD)
+    assert (doc["wamid"], doc["kind"], doc["mime_type"]) == ("wamid.video", "video", "video/mp4")
+    assert doc["path"].endswith("-v1.mp4") and doc["text"] is None
+    assert meta.download_calls == ["https://cdn.example/v1"]
 
 
 # --- the deterministic brain: still only the flat ack, but the original is stored (TASK-95) ------

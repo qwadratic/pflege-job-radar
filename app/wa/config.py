@@ -133,15 +133,24 @@ QUIET_HOURS_START = int(os.environ.get("WA_QUIET_HOURS_START", "21") or "21")
 QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "9") or "9")
 QUIET_HOURS_TZ = os.environ.get("WA_QUIET_HOURS_TZ", "Europe/Berlin").strip() or "Europe/Berlin"
 
+# Voice-note transcription (TASK-107, app/wa/stt.py), WA_BRAIN=luna only. The old system's setup
+# (apps/connectors/candidate_audio_stt.py): OpenAI's transcription endpoint, model whisper-1, key from
+# OPENAI_API_KEY. Unset key: every voice note fails loudly and waits for catch-up, never a flat reply.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+STT_MODEL = os.environ.get("WA_STT_MODEL", "whisper-1").strip() or "whisper-1"
+STT_TIMEOUT_SEC = int(os.environ.get("WA_STT_TIMEOUT_SEC", "120") or "120")
+
 
 def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""
     checks = {"access_token": bool(ACCESS_TOKEN), "app_secret": bool(APP_SECRET),
-              "verify_token": bool(VERIFY_TOKEN), "phone_number_id": bool(PHONE_NUMBER_ID)}
+              "verify_token": bool(VERIFY_TOKEN), "phone_number_id": bool(PHONE_NUMBER_ID),
+              "openai_api_key": bool(OPENAI_API_KEY)}
     out = {"checks": checks,
            "webhook_ready": checks["app_secret"] and checks["verify_token"],
            "outbound_ready": checks["access_token"] and checks["phone_number_id"],
-           "autosend": AUTOSEND, "graph_api_version": GRAPH_API_VERSION, "brain": BRAIN}
+           "autosend": AUTOSEND, "graph_api_version": GRAPH_API_VERSION, "brain": BRAIN,
+           "stt_ready": checks["openai_api_key"], "stt_model": STT_MODEL}
     if BRAIN == "luna":
         out["luna_model"] = LUNA_MODEL
         out["luna_ready"] = bool(shutil.which(LUNA_CLAUDE_BIN))

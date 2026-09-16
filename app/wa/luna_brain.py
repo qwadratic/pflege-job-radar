@@ -200,7 +200,10 @@ def _documents_satisfied(card):
 
 
 def market_snapshot(card):
-    """-> {open_jobs, cities, matching_clinics_count, shortlist, matches}. Deliberately thin
+    """-> {open_jobs, cities, matching_clinics_count, shortlist, matches, department_filter}. department_filter
+    (TASK-104) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
+    filters by department (any of its departments); ambiguous, flexible and unmatched build the shortlist from the
+    other criteria. Deliberately thin
     (TASK-91, after reading how the real reference implementation actually works): open_jobs is
     the one aggregate number always present -- safe for a first-turn greeting, and the one
     question RULES lets the model answer without a live tool call. There is no per-city/
@@ -225,12 +228,16 @@ def market_snapshot(card):
         filters["role"] = "pflegefachkraft"
     if card.get("city"):
         filters["city"] = card["city"]
+    department_filter = None
     if card.get("department_pref"):
-        # TASK-96 review: department_pref is the candidate's word ("Intensivstation", "ITS"); the board filter
-        # is an exact match on its own vocabulary ("Intensiv/IMC"), so the live close test got an empty
-        # shortlist. Read it with the alias list app/wa/brain.py uses; a word the list does not know filters
-        # as written.
-        filters["department"] = SL.read_department(card["department_pref"]) or card["department_pref"]
+        # TASK-96 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
+        # match on its own vocabulary ("Intensiv/IMC"). TASK-104: a flexible word ("egal", "flexibel") or a word
+        # the board has no department for filtered as written and emptied the shortlist (live, consent asked
+        # with no clinic named); only board departments filter now, and department_filter says which. Review
+        # 2026-09-15: 'Innere oder Intensiv' filtered on Intensiv alone and emptied the Augsburg shortlist.
+        department_filter = SL.read_department_pref(card["department_pref"])
+        if department_filter["status"] == "applied":
+            filters["department"] = ",".join(department_filter["departments"])
     rows = B.jobs_for(filters)
     clinic_names = {(r.get("clinic_name") or r.get("employer") or "").strip() for r in rows} - {""}
 
@@ -250,7 +257,7 @@ def market_snapshot(card):
                 break
 
     return {"open_jobs": len(all_rows), "cities": cities, "matching_clinics_count": len(clinic_names),
-            "shortlist": shortlist, "matches": list(shortlist)}
+            "shortlist": shortlist, "matches": list(shortlist), "department_filter": department_filter}
 
 
 # Gate-priority order for requirement_scoreboard()'s next_objective (TASK-91): a single computed
@@ -544,7 +551,9 @@ LAST_TURN_KEY = "_luna_last_turn"   # card: {at, seen_through_id, own_message_id
 CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason", "declined_at", "re_engaged_at",
                         "campaign", LAST_TURN_KEY, "_session_id", "_unread_media",
                         # TASK-102: the documents gate list (reuse state included) and the imported history
-                        "documents", "prior_contact", "prior_placement")
+                        "documents", "prior_contact", "prior_placement",
+                        # TASK-105: opt-outs, declines and chat Stopps the earlier system recorded
+                        "prior_opt_outs")
 # Outbound meta.action values no model turn writes; only used to find the last model-turn row on a card from
 # before LAST_TURN_KEY existed.
 NOT_MODEL_ACTIONS = ("followup", "media_ack", "decline_ack", "campaign")
@@ -598,7 +607,8 @@ def turn_context(c, t, turn_key):
     makes turn() leave card.campaign out of the payload. ``introduced``: see ``introduced()``.
     reply_context: the inbound's kind, whether it is a template quick-reply tap and its payload, when it
     arrived, and the stored message it replies to (context.id) or ``found: false`` for one we do not hold.
-    Raises when ``turn_key`` is not a stored inbound message."""
+    voice_note (TASK-107): the inbound message carries a transcript (api._transcribe_voice_note), which the caller
+    passes to turn() as the text. Raises when ``turn_key`` is not a stored inbound message."""
     phone, card = t["phone"], t.get("slots") or {}
     inbound = ST.message_by_wamid(c, turn_key)
     if inbound is None or inbound["direction"] != "in" or inbound["phone"] != phone:
@@ -631,7 +641,7 @@ def turn_context(c, t, turn_key):
                      if is_template_button else None,
                      "replies_to": replies_to}
     return {"outbound_since_last_turn": outbound, "last_turn_at": (marker or {}).get("at"),
-            "reply_context": reply_context, "introduced": introduced(c, phone),
+            "reply_context": reply_context, "introduced": introduced(c, phone), "voice_note": "transcript" in meta,
             "campaign_delivery_failed": campaign_delivery_failed, "seen_through_id": ST.last_message_id(c, phone)}
 
 
@@ -664,7 +674,8 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     TASK-100: outbound_since_last_turn, last_turn_at, reply_context and introduced come from ``turn_context`` ([],
     None, None, None when the caller supplied none, e.g. a test calling turn() directly); fresh_session is true when
     no session exists yet, so the model has no memory of any earlier Valentina message. The card goes without
-    LAST_TURN_KEY (bookkeeping, not a fact), and without campaign when Meta reported that template undelivered."""
+    LAST_TURN_KEY (bookkeeping, not a fact), and without campaign when Meta reported that template undelivered.
+    voice_note (TASK-107): latest_inbound is the transcript of a voice note the candidate sent (prompts VOICE NOTE)."""
     from .api import TEMPLATE_BUTTON_PREFIX
     context = context or {}
     hidden = {LAST_TURN_KEY} | ({"campaign"} if context.get("campaign_delivery_failed") else set())
@@ -677,6 +688,7 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
         "last_turn_at": context.get("last_turn_at"),
         "fresh_session": card.get("_session_id") is None,
         "introduced": context.get("introduced"),
+        "voice_note": bool(context.get("voice_note")),
         "documents_just_received": list(documents_just_received),
         "card": {k: v for k, v in card.items() if k not in hidden},
         "requirement_scoreboard": scoreboard,
@@ -685,12 +697,14 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
 
 
 def _region_shortcut_applies(card, context):
-    """The locked out-of-scope reply answers a Bundesland the candidate typed on an ordinary thread. Not on a thread
-    opened by our template (card.campaign) or a declined one: there a named Land is often a decline ('habe schon eine
-    Stelle in Hessen'), silence after a decline, or a yes from someone living elsewhere, and the model decides
-    (DECLINE, CAMPAIGN). Not for a location pin or a contact card either (their summary text names places)."""
+    """The locked out-of-scope reply answers a Bundesland the candidate typed, or said in a voice note (TASK-107: the
+    transcript is their words, as STOP reads it), on an ordinary thread. Not on a thread opened by our template
+    (card.campaign) or a declined one: there a named Land is often a decline ('habe schon eine Stelle in Hessen'),
+    silence after a decline, or a yes from someone living elsewhere, and the model decides (DECLINE, CAMPAIGN). Not for
+    a location pin or a contact card either (their summary text names places)."""
     kind = (context.get("reply_context") or {}).get("kind")
-    return not card.get("campaign") and not card.get("declined") and kind in (None, "text")
+    spoken_or_typed = kind in (None, "text") or bool(context.get("voice_note"))
+    return not card.get("campaign") and not card.get("declined") and spoken_or_typed
 
 
 def _check(bubbles):

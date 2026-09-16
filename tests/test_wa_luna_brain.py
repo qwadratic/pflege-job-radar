@@ -17,6 +17,7 @@ from app import data as D
 from app.wa import api as WAPI
 from app.wa import config as C
 from app.wa import luna_brain as LB
+from app.wa import slots as SL
 from app.wa import store as ST
 
 LEAD = "+491701234567"
@@ -582,6 +583,143 @@ def test_shortlist_department_word_still_filters_to_its_own_department(luna):
     card = {"qualification_ok": True, "department_pref": "Operationssaal", "housing_known": True, **_DOC}
     assert [s["clinic"] for s in LB.market_snapshot(card)["shortlist"]] == ["Klinikum Würzburg"]
     assert LB.market_snapshot({**card, "city": "München"})["shortlist"] == []
+
+
+# --- TASK-104: a flexible or unknown department answer must not empty the shortlist ---------------------------
+# Live 2026-09-14 (campaign full funnel, 1 of 4): the model wrote department_pref="flexibel", the snapshot filtered
+# the board on that word, the shortlist came back empty and consent was asked with no clinic named.
+
+@pytest.mark.parametrize("word", ["egal", "flexibel", "alles", "offen", "keine Präferenz", "Ist mir egal",
+                                  "Keine Vorliebe", "überall", "ist mir gleich", "nicht wichtig", "keine Ahnung",
+                                  "weiß ich noch nicht"])
+def test_flexible_department_answer_settles_the_gate_and_filters_nothing(luna, word):
+    card = {"qualification_ok": True, "department_pref": word, "housing_known": True, **_DOC}
+    assert LB.requirement_scoreboard(card)["city_or_department"] == "satisfied"
+    snap = LB.market_snapshot(card)
+    assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum Würzburg", "Klinikum München Nord"]
+    assert snap["department_filter"] == {"requested": word, "status": "flexible", "departments": []}
+    in_munich = LB.market_snapshot({**card, "city": "München"})
+    assert [s["clinic"] for s in in_munich["shortlist"]] == ["Klinikum München Nord"]
+    assert in_munich["matching_clinics_count"] == 1
+
+
+def test_the_prompts_flexible_marker_is_read_as_flexible(luna):
+    card = {"qualification_ok": True, "department_pref": SL.DEPARTMENT_FLEXIBLE, "city": "München",
+            "housing_known": True, **_DOC}
+    assert LB.market_snapshot(card)["department_filter"]["status"] == "flexible"
+    assert f"department_pref='{SL.DEPARTMENT_FLEXIBLE}'" in LB.P.system_prompt("{}", "{}")
+
+
+@pytest.mark.parametrize("word", ["Urologie", "Normalstation", "Hospiz"])
+def test_unknown_department_word_filters_nothing_and_the_snapshot_says_so(luna, word):
+    """The board has no department_hint for these words (its postings carry null), so a filter on them could only
+    ever return nothing, whatever is open."""
+    card = {"qualification_ok": True, "city": "München", "department_pref": word, "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Nord"]
+    assert snap["department_filter"] == {"requested": word, "status": "unmatched", "departments": []}
+
+
+@pytest.mark.parametrize("word, department", [
+    ("Intensivstation", "Intensiv/IMC"), ("ITS", "Intensiv/IMC"), ("Stroke Unit", "Neurologie"),
+    ("Palliativstation", "Onkologie"), ("Kreißsaal", "Geburtshilfe"), ("Kreissaal", "Geburtshilfe"),
+    ("Narkose", "Anästhesie"), ("Kinder", "Pädiatrie/Neonatologie"), ("Neurochirurgie", "Neurologie"),
+    ("Endoskopie", "Ambulanz/Tagesklinik"), ("Kinder- und Jugendpsychiatrie", "Psychiatrie"),
+    ("Chest Pain Unit", "Kardiologie")])
+def test_department_word_is_read_as_the_board_department(word, department):
+    """The board's own title classifier first (where the board put 'Neurochirurgie' postings), then the production
+    alias list ('Narkose', 'Kinder', 'Kreissaal'). An ellipsis hyphen ('Kinder- und') is one department."""
+    assert SL.read_department_pref(word) == {"requested": word, "status": "applied", "departments": [department]}
+
+
+def test_every_board_department_reads_as_itself():
+    departments = SL.board_departments()
+    assert "Intensiv/IMC" in departments and "Ambulanz/Tagesklinik" in departments
+    for department in departments:
+        assert SL.read_department_pref(department) == {"requested": department, "status": "applied",
+                                                        "departments": [department]}
+
+
+def test_alias_word_filters_the_shortlist_to_its_board_department(luna):
+    D._snap["jobs"].append({**_jobs()[0], "posting_id": 3, "title": "Pflegefachkraft Palliativstation",
+                            "department_hint": "Onkologie", "clinic_name": "Klinikum München Süd",
+                            "employer": "Klinikum München Süd"})
+    card = {"qualification_ok": True, "city": "München", "department_pref": "Palliativstation",
+            "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum München Süd"]
+    assert snap["department_filter"] == {"requested": "Palliativstation", "status": "applied",
+                                         "departments": ["Onkologie"]}
+
+
+def _innere_in_augsburg():
+    D._snap["jobs"].append({**_jobs()[0], "posting_id": 3, "title": "Pflegefachkraft Innere Medizin",
+                            "department_hint": "Innere Medizin", "city": "Augsburg", "clinic_town": "Augsburg",
+                            "regierungsbezirk": "Schwaben", "clinic_name": "Klinikum Augsburg",
+                            "employer": "Klinikum Augsburg"})
+
+
+@pytest.mark.parametrize("word, departments", [
+    ("Innere oder Intensiv", ["Innere Medizin", "Intensiv/IMC"]),
+    ("Intensiv und Innere", ["Intensiv/IMC", "Innere Medizin"]),
+    ("am liebsten Innere, aber auch Intensiv", ["Innere Medizin", "Intensiv/IMC"]),
+    ("Innere Medizin oder Kardiologie", ["Innere Medizin", "Kardiologie"]),
+    ("Anästhesie/Intensiv", ["Anästhesie", "Intensiv/IMC"]), ("Notaufnahme bzw. OP", ["Notaufnahme", "OP"]),
+    ("Intensivstation oder ITS", ["Intensiv/IMC"]), ("Urologie oder Intensiv", ["Intensiv/IMC"])])
+def test_every_department_named_is_read(word, departments):
+    """Review 2026-09-15: only the first department rule that matched the whole value was kept ('Innere oder
+    Intensiv' read as Intensiv/IMC)."""
+    assert SL.read_department_pref(word) == {"requested": word, "status": "applied", "departments": departments}
+
+
+def test_several_departments_filter_the_shortlist_to_any_of_them(luna):
+    """Review 2026-09-15 repro: 'Innere oder Intensiv' in Augsburg filtered on Intensiv alone, shortlist [] although
+    Augsburg has an Innere Medizin posting."""
+    _innere_in_augsburg()
+    card = {"qualification_ok": True, "city": "Augsburg", "department_pref": "Innere oder Intensiv",
+            "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [(s["clinic"], s["department"]) for s in snap["shortlist"]] == [("Klinikum Augsburg", "Innere Medizin")]
+    assert snap["department_filter"] == {"requested": "Innere oder Intensiv", "status": "applied",
+                                         "departments": ["Innere Medizin", "Intensiv/IMC"]}
+    del card["city"]
+    assert [s["clinic"] for s in LB.market_snapshot(card)["shortlist"]] == ["Klinikum München Nord", "Klinikum Augsburg"]
+
+
+@pytest.mark.parametrize("word", ["egal, wo gerade gesucht wird", "ich bin offen, wo Personal gesucht wird",
+                                  "Intensiv, sonst egal", "alles außer OP", "kein OP", "bloß nicht Intensiv"])
+def test_a_department_with_a_flexible_word_or_a_negation_filters_nothing_and_the_snapshot_says_so(luna, word):
+    """Review 2026-09-15 repro: 'egal, wo gerade gesucht wird' filtered to Psychiatrie (the classifier reads 'sucht'
+    in 'gesucht'), 'alles außer OP' and 'kein OP' to OP; each emptied the shortlist."""
+    card = {"qualification_ok": True, "department_pref": word, "housing_known": True, **_DOC}
+    snap = LB.market_snapshot(card)
+    assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum Würzburg", "Klinikum München Nord"]
+    assert snap["department_filter"] == {"requested": word, "status": "ambiguous", "departments": []}
+
+
+def test_the_model_receives_the_department_filter(luna):
+    seen = {}
+
+    def capture(system_text, user_text, session_id):
+        seen["user"] = json.loads(user_text)
+        return _out(), session_id
+
+    luna["slots"] = {"city": "München", "department_pref": "egal"}
+    LB.turn("egal", luna, client=fake_client(capture))
+    assert seen["user"]["market_snapshot"]["department_filter"] == {"requested": "egal", "status": "flexible",
+                                                                    "departments": []}
+
+
+def test_department_prompt_rule_keeps_department_pref_to_the_candidates_own_words():
+    system = LB.P.system_prompt("{}", "{}")
+    rule = next(r for r in LB.P.RULES if r.startswith("DEPARTMENT (TASK-104)"))
+    for phrase in ("only a department the candidate names in their own message", "Never from a tool result",
+                   "a department you mentioned or gave as an example", "the work history in card.cv_text",
+                   "a candidate who names only a city gets no department_pref",
+                   "market_snapshot.department_filter", "unmatched", "ambiguous", "is not filtered: say so"):
+        assert phrase in rule, phrase
+    assert "a department in the CV is work history, never department_pref" in system
+    assert "(qualification, city, department, experience)" not in system
 
 
 def test_shortlist_is_empty_with_neither_city_nor_department():

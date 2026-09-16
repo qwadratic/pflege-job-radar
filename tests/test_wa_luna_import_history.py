@@ -53,6 +53,16 @@ create table candidate_recruitment_state (id integer primary key autoincrement, 
   candidate_id integer not null, placement_stage text not null, waiting_for text not null default 'none',
   next_action text, due_at text, scheduled_event_at text, cv_ready integer, contact_state text,
   source_kind text not null default 'manual', updated_at text);
+create table job_wohnung_outreach (id integer primary key autoincrement, workspace_id integer not null,
+  phone_e164 text not null, phone_key text not null unique, honorific text, full_name text, gender text,
+  zoho_record_id text, land text, region text, lead_status text, source text, status text not null default 'queued',
+  candidate_id integer, template_name text, wamid text, last_error text, metadata_json text,
+  created_at text not null default current_timestamp, updated_at text not null default current_timestamp,
+  sent_at text, replied_at text, decline_ack_sent_at text);
+create table suppression_list (id integer primary key autoincrement, workspace_id integer,
+  scope text not null check(scope in ('workspace','global')), channel_type text not null, value text not null,
+  reason text not null, source_system text, raw_text text, raw_payload_json text,
+  created_at text not null default current_timestamp, unique(workspace_id, scope, channel_type, value));
 """
 
 CV_TEXT = "Lebenslauf Anna Beispiel, Pflegefachfrau, Intensivstation 2015-2026"
@@ -250,7 +260,7 @@ def _tree(path):
 
 def test_the_example_queries_file_is_the_documented_contract():
     queries = IH.load_queries(QUERIES)
-    assert list(queries) == list(IH.QUERY_NAMES)
+    assert list(queries) == list(IH.QUERY_NAMES) == ["facts", "placement", "messages", "documents", "opt_outs"]
 
 
 def test_dry_run_reports_what_would_be_imported_and_writes_nothing(env):
@@ -274,6 +284,7 @@ def test_dry_run_reports_what_would_be_imported_and_writes_nothing(env):
     assert report["not_recoverable"] == 1
     assert {p["source_ref"]: (p["submitted"], p["placed"]) for p in report["placement"]} == {
         "candidate_clinic_cases:1": (True, False), "candidate_recruitment_state:1": (True, False)}
+    assert report["opt_outs"] == [] and report["decline_import"]["new"] == []
 
 
 def test_a_stopp_in_the_imported_history_is_reported_in_dry_run_and_apply(env):
@@ -292,6 +303,12 @@ def test_a_stopp_in_the_imported_history_is_reported_in_dry_run_and_apply(env):
                  "body": "Bitte STOPP, keine Nachrichten mehr"}]
     assert _dry(env)["stop_messages"] == expected
     assert _apply(env)["stop_messages"] == expected
+    card = _card()   # TASK-105: a Stopp to the old bot marks the card declined like a recorded opt-out
+    assert (card["declined"], card["declined_at"]) == (True, "2026-07-10T08:00:00+00:00")
+    assert card["declined_reason"] == ("stop_message recorded by the earlier system old-system-test on 2026-07-10: "
+                                       "Stopp in the chat: 'Bitte STOPP, keine Nachrichten mehr'")
+    assert [(e["kind"], e["source_ref"]) for e in card["prior_opt_outs"]] == [
+        ("stop_message", "candidate_whatsapp_messages:wamid.old.stop")]
 
 
 def test_dry_run_against_an_existing_database_leaves_it_untouched(env):
@@ -802,3 +819,175 @@ def test_a_phone_the_source_does_not_know_writes_nothing(env):
     with ST.db() as c:
         assert c.execute("select count(*) from wa_threads").fetchone()[0] == 0
     assert _dry(env, LEAD)["found"] is True
+
+
+# --- opt-outs and declines the source recorded (TASK-105) -----------------------------------------------------------
+
+OUTREACH_ONLY = "+4915550007001"   # only in the Job+Wohnung blast table (no candidate card there)
+SUPPRESSED = "+4915550007002"      # only on the suppression list, stored there as a national number
+REOPENED = "+4915550007003"        # a lifecycle opt-out whose reopen_after has passed
+LIFECYCLE_REASON = ('lifecycle closed declined_opt_out (source sync_portfolio_lifecycle); evidence '
+                    '["correspondence_decline_or_polite_close"]')
+
+
+def _old_sql(env, sql, *params):
+    c = sqlite3.connect(env.db)
+    c.execute(sql, params)
+    c.commit()
+    c.close()
+
+
+def _old_meta(env, candidate_id, **keys):
+    c = sqlite3.connect(env.db)
+    meta = json.loads(c.execute("select metadata_json from candidates where id=?", (candidate_id,)).fetchone()[0])
+    meta.update(keys)
+    c.execute("update candidates set metadata_json=?, updated_at='2026-07-20T00:00:00' where id=?",
+              (json.dumps(meta), candidate_id))
+    c.commit()
+    c.close()
+
+
+def _record_opt_outs(env):
+    """What the old system's code writes (candidate_lifecycle, candidate_bayern_housing_offer, placement stages,
+    candidate_job_wohnung_outreach, suppression_list), plus rows that must not match."""
+    _old_meta(env, 1, lifecycle={"status": "closed", "reason": "declined_opt_out",
+                                 "closed_at": "2026-07-01T08:00:00+00:00", "reopen_after": None,
+                                 "evidence": ["correspondence_decline_or_polite_close"],
+                                 "source": "sync_portfolio_lifecycle", "updated_at": "2026-07-01T08:00:00+00:00"})
+    _old_meta(env, 2, bayern_housing_offer={"status": "declined", "declined": True, "treat_as_ad_lead": False,
+                                            "template_name": "synthetic_job_wohnung_de",
+                                            "replied_at": "2026-07-02T09:00:00+00:00"})
+    _old_sql(env, "insert into candidate_recruitment_state (workspace_id, candidate_id, placement_stage, next_action, "
+                  "updated_at) values (1, 2, 'withdrawn', 'archive_candidate', '2026-07-05T12:00:00')")
+    _old_sql(env, "insert into job_wohnung_outreach (workspace_id, phone_e164, phone_key, status, template_name, "
+                  "replied_at) values (1, ?, ?, 'declined', 'synthetic_job_wohnung_de', '2026-07-03 10:00:00')",
+             OUTREACH_ONLY, OUTREACH_ONLY[1:])
+    _old_sql(env, "insert into job_wohnung_outreach (workspace_id, phone_e164, phone_key, status) "
+                  "values (1, '+4915550007009', '4915550007009', 'sent')")
+    _old_sql(env, "insert into suppression_list (workspace_id, scope, channel_type, value, reason, source_system, "
+                  "raw_payload_json, created_at) values (1, 'workspace', 'phone', '0155-50007002', "
+                  "'do_not_contact_request', 'clinic_connector', ?, '2026-07-04 11:00:00')",
+             json.dumps({"channels": "phone"}))
+    _old_sql(env, "insert into suppression_list (workspace_id, scope, channel_type, value, reason, source_system, "
+                  "raw_payload_json, created_at) values (1, 'workspace', 'email', '015550007002', 'unsubscribed', "
+                  "'snov', ?, '2026-07-04 11:00:00')", json.dumps({"channels": "email"}))
+    _old_sql(env, "insert into suppression_list (scope, channel_type, value, reason, created_at) "
+                  "values ('global', 'all', '+49 155 5000 9999', 'legal_block', '2026-07-04 11:00:00')")
+    _old_sql(env, "insert into candidates (id, workspace_id, metadata_json) values (5, 1, ?)", json.dumps(
+        {"phone": REOPENED, "wa_agent": {"slots": {"region": "Bayern"}},
+         "lifecycle": {"status": "closed", "reason": "declined_opt_out", "closed_at": "2026-01-01T00:00:00+00:00",
+                       "reopen_after": "2026-02-01T00:00:00+00:00"}}))
+
+
+def test_opt_out_and_decline_records_are_reported_per_phone_with_what_and_when(env, capsys):
+    _record_opt_outs(env)
+    assert _dry(env)["opt_outs"] == [
+        {"source_ref": "candidates:1:lifecycle", "kind": "opt_out", "at": "2026-07-01T08:00:00+00:00",
+         "reason": LIFECYCLE_REASON, "phone": LEAD}]
+    assert _dry(env, CV_ONLY)["opt_outs"] == [
+        {"source_ref": "candidates:2:bayern_housing_offer", "kind": "decline", "at": "2026-07-02T09:00:00+00:00",
+         "reason": "Job+Wohnung template answered No (synthetic_job_wohnung_de)", "phone": CV_ONLY},
+        {"source_ref": "candidate_recruitment_state:2:withdrawn", "kind": "decline", "at": "2026-07-05T12:00:00+00:00",
+         "reason": "placement stage withdrawn (next action archive_candidate)", "phone": CV_ONLY}]
+    outreach = _dry(env, OUTREACH_ONLY)
+    assert outreach["found"] is True and outreach["messages"] == {"found": 0, "already_imported": 0}
+    assert outreach["opt_outs"] == [
+        {"source_ref": "job_wohnung_outreach:1", "kind": "decline", "at": "2026-07-03T10:00:00+00:00",
+         "reason": "job_wohnung_outreach declined (synthetic_job_wohnung_de)", "phone": OUTREACH_ONLY}]
+    assert _dry(env, SUPPRESSED)["opt_outs"] == [
+        {"source_ref": "suppression_list:1", "kind": "opt_out", "at": "2026-07-04T11:00:00+00:00",
+         "reason": "suppression do_not_contact_request (clinic_connector)", "phone": "0155-50007002"}]
+    reopened = _dry(env, REOPENED)
+    assert reopened["found"] is True and reopened["opt_outs"] == []
+    assert _dry(env, "+4915550007009")["found"] is False, "a sent blast row is not a decline"
+    assert not C.SQLITE_PATH.exists()
+    capsys.readouterr()
+    assert IH.main(["--db", str(env.db), "--queries", str(QUERIES), "--source", SOURCE, "--phone", SUPPRESSED]) == 0
+    out = capsys.readouterr().out
+    assert ("  no contact wanted: opt_out 2026-07-04T11:00:00+00:00 suppression do_not_contact_request "
+            "(clinic_connector) [suppression_list:1] (phone 0155-50007002)") in out
+    assert ("  card declined by --apply: opt_out recorded by the earlier system old-system-test on 2026-07-04: "
+            "suppression do_not_contact_request (clinic_connector)") in out
+
+
+def test_an_imported_opt_out_marks_the_card_declined_and_luna_stays_silent_until_re_engagement(env, monkeypatch):
+    _record_opt_outs(env)
+    preview = _dry(env)["decline_import"]
+    assert (preview["marked"], preview["declined_at"]) == (True, "2026-07-01T08:00:00+00:00")
+    report = _apply(env)
+    assert report["decline_import"]["marked"] is True
+    card = _card()
+    assert (card["declined"], card["declined_at"]) == (True, "2026-07-01T08:00:00+00:00")
+    assert card["declined_reason"] == ("opt_out recorded by the earlier system old-system-test on 2026-07-01: "
+                                       + LIFECYCLE_REASON)
+    assert card["prior_opt_outs"] == [{"source_ref": "candidates:1:lifecycle", "kind": "opt_out",
+                                       "at": "2026-07-01T08:00:00+00:00", "reason": LIFECYCLE_REASON, "phone": LEAD,
+                                       "source": SOURCE}]
+    assert card["prior_contact"]["summary"].endswith(
+        "Recorded then, no contact wanted: opted out on 2026-07-01 (" + LIFECYCLE_REASON + ").")
+    assert REP.stage_for(card) == "declined"
+
+    model = Model(monkeypatch, _out(bubbles=[], no_send=True),
+                  _out(re_engaged=True, bubbles=["Schön, von Ihnen zu hören! In welcher Stadt möchten Sie arbeiten?"]))
+    result = _say(env, LEAD, "wamid.in.1", "Danke")
+    assert env.meta.sent == [] and result["action"] == "declined_no_send"
+    assert model.payloads[0]["card"]["declined"] is True and model.payloads[0]["card"]["prior_opt_outs"]
+    with ST.db() as c:
+        assert REP.ball_for(c, LEAD) == "silent"
+    monkeypatch.setattr(C, "QUIET_HOURS_START", 0)
+    monkeypatch.setattr(C, "QUIET_HOURS_END", 0)
+    monkeypatch.setattr(C, "FOLLOWUP_TIER_MINUTES", [0])
+    from app.wa.luna import followups as FU
+    assert FU.run(client=env.meta) == [] and env.meta.sent == []
+
+    _say(env, LEAD, "wamid.in.2", "Doch, ich suche jetzt eine Stelle in München")
+    assert env.meta.sent == ["Schön, von Ihnen zu hören! In welcher Stadt möchten Sie arbeiten?"]
+    card = _card()
+    assert card["declined"] is False and card["re_engaged_at"]
+
+    again = _apply(env)
+    assert again["decline_import"]["new"] == [] and again["decline_import"]["marked"] is False
+    assert _card()["declined"] is False, "a record already imported never undoes the re-engagement"
+    assert len(_card()["prior_opt_outs"]) == 1
+
+
+def test_a_decline_older_than_the_candidates_last_message_here_is_recorded_but_does_not_silence_them(env):
+    with ST.db() as c:
+        ST.record_inbound(c, OUTREACH_ONLY, "wamid.in.early", "Hallo, ich suche eine Stelle")
+        t = ST.thread(c, OUTREACH_ONLY)
+        t["last_inbound_at"] = "2026-08-01T09:00:00+00:00"
+        ST.save_thread(c, t)
+    _record_opt_outs(env)
+    expected = "the candidate wrote here after the latest record: last_inbound_at 2026-08-01T09:00:00+00:00"
+    assert _dry(env, OUTREACH_ONLY)["decline_import"]["not_marked"] == expected
+    report = _apply(env, OUTREACH_ONLY)
+    assert (report["decline_import"]["marked"], report["decline_import"]["not_marked"]) == (False, expected)
+    card = _card(OUTREACH_ONLY)
+    assert "declined" not in card and [e["source_ref"] for e in card["prior_opt_outs"]] == ["job_wohnung_outreach:1"]
+
+
+def test_a_card_declined_here_keeps_its_own_decline(env):
+    with ST.db() as c:
+        t = ST.thread(c, SUPPRESSED)
+        t["slots"].update(declined=True, declined_reason="kein Interesse", declined_at="2026-09-01T10:00:00+00:00")
+        ST.save_thread(c, t)
+    _record_opt_outs(env)
+    report = _apply(env, SUPPRESSED)
+    assert report["decline_import"]["not_marked"] == "the card is already declined (declined_at 2026-09-01T10:00:00+00:00)"
+    card = _card(SUPPRESSED)
+    assert (card["declined_reason"], card["declined_at"]) == ("kein Interesse", "2026-09-01T10:00:00+00:00")
+    assert card["prior_opt_outs"][0]["source_ref"] == "suppression_list:1"
+
+
+def test_opt_outs_contract_violations_fail_loudly(env, tmp_path):
+    text = QUERIES.read_text()
+    base = text[:text.index("-- query: opt_outs")]
+    for select, error in (
+            ("select 'r:1' as source_ref, 'maybe' as kind, '2026-07-01' as at, 'x' as reason", "kind must be one of"),
+            ("select 'r:1' as source_ref, 'decline' as kind, 'yesterday' as at, 'x' as reason", "ISO 8601"),
+            ("select 'r:1' as source_ref, 'decline' as kind, '2026-07-01' as at, null as reason", "without reason"),
+            ("select 'r:1' as source_ref, 'decline' as kind, '2026-07-01' as at", "missing \\['reason'\\]")):
+        path = tmp_path / "opt_outs.sql"
+        path.write_text(base + "-- query: opt_outs\n" + select + "\n")
+        with IH.Source.open(env.db, path, SOURCE, [env.root_a]) as source, pytest.raises(ValueError, match=error):
+            IH.import_phone(source, CV_ONLY)

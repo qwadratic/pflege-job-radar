@@ -5,8 +5,12 @@ callability, so these are ordinary function calls against a fixture board snapsh
 Proactive-tool-use (does the model actually call one, and only when it should) is covered
 separately in tests/test_wa_luna_personas.py, marked ``llm`` since it needs the real CLI.
 """
+import asyncio
 import json
 import time
+
+import pytest
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 
 from app import data as D
 from app.wa import config as C
@@ -68,6 +72,42 @@ def test_search_postings_reads_the_candidates_department_word_in_board_vocabular
     assert TS.search_postings(city="Augsburg", department="Intensivstation") == []
     log = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(log[0])["args"]["department"] == "Intensivstation", "the call log keeps the model's own word"
+
+
+def test_search_postings_reads_department_like_market_snapshot(tmp_path, monkeypatch):
+    """TASK-104: one reading for both (slots.read_department_pref): a flexible word filters nothing, a word only the
+    board's title classifier knows filters to that board department."""
+    board(tmp_path, monkeypatch)
+    for word in ("egal", "flexibel", "keine Präferenz"):
+        assert [r["posting_id"] for r in TS.search_postings(city="München", department=word)] == [1, 2], word
+    assert [r["posting_id"] for r in TS.search_postings(department="Zentrale Notaufnahme")] == [4]
+    assert TS.search_postings(city="München", department="Stroke Unit") == []
+    # review 2026-09-15: every department named, not only the first rule that matched
+    assert sorted(r["posting_id"] for r in TS.search_postings(department="Innere oder Intensiv")) == [1, 3]
+    assert [r["posting_id"] for r in TS.search_postings(city="Augsburg", department="Intensiv oder Innere")] == [3]
+
+
+@pytest.mark.parametrize("word", ["alles außer OP", "kein OP", "Intensiv, sonst egal"])
+def test_search_postings_with_a_negated_or_flexible_department_is_an_error_the_model_reads(tmp_path, monkeypatch,
+                                                                                         word):
+    """Review 2026-09-15: 'alles außer OP' and 'kein OP' filtered to OP."""
+    board(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings", {"department": word}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert f"department {word!r} names a department together with a flexible word or a negation" in str(raised.value)
+
+
+def test_search_postings_with_an_unknown_department_is_an_error_the_model_reads(tmp_path, monkeypatch):
+    """TASK-104: a word the board has no department for returned [] and read as 'nothing open there'."""
+    board(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings", {"city": "München", "department": "Urologie"}))
+    assert not isinstance(raised.value, UnexpectedToolError), "any other exception reaches the model without its text"
+    assert "department 'Urologie' is not a board department" in str(raised.value)
+    assert "Intensiv/IMC" in str(raised.value)
+    log = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert json.loads(log[-1])["args"]["department"] == "Urologie"
 
 
 def test_search_postings_respects_limit_and_caps_it(tmp_path, monkeypatch):

@@ -111,8 +111,9 @@ anything further: `sudo systemctl stop pflege-wa.service pflege-wa-catchup.timer
 
 ## 6. Campaign recipients: import the old system's history (TASK-102)
 
-Run before the campaign sends (TASK-103 calls the same function per phone). Reads the old system read-only, writes
-only our `data/wa.sqlite` and `data/wa_documents/`. Details: docs/whatsapp.md, "Campaign recipients".
+Run before the campaign sends (TASK-103 calls the same function per phone, and since TASK-105 every campaign
+dry-run and send needs it). Reads the old system read-only, writes only our `data/wa.sqlite` and
+`data/wa_documents/`. Details: docs/whatsapp.md, "Campaign recipients".
 
 **Read grants (applied by Ivan 2026-09-14 on this host, verified with getfacl).** The importer runs as `claude`,
 never sudo. `sales_brain.sqlite` is world-readable; the file stores are not:
@@ -147,12 +148,19 @@ cd /home/claude/repo/pflege-board
   --media-root /opt/clinic-dispatcher/data/private/candidate_whatsapp_media \
   --media-root /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media \
   --phones-file <campaign phone list, one +E.164 per line>
-# read the report: facts, placement, documents by old class and action; then the same with --apply
+# read the report: facts, placement, documents by old class and action, "no contact wanted" lines (opt-out and
+# decline records, chat Stopps) and whether the card gets declined; then the same with --apply
 ```
 
 Load `.env` first (`set -a; . ./.env; set +a`): the same `WA_DOCUMENTS_DIR`/data paths as the service, and
 `META_WHATSAPP_ACCESS_TOKEN`, which `--apply` needs to download a missing WhatsApp original again by `media_id`. Exit 1 = some document is not recoverable (listed per phone); the
 rest is imported. Re-running is safe.
+
+The `opt_outs` query (TASK-105) reads `candidates`, `job_wohnung_outreach`, `candidate_recruitment_state` and
+`suppression_list` of `sales_brain.sqlite`, written from code only. A table the live database lacks fails every
+phone loudly (`no such table`, `import_error` in the campaign): fix the query, never drop it. `--apply` marks the
+card of a phone with such a record, or a Stopp in the old chat, declined (Luna stays silent unless the candidate
+re-engages; no follow-ups).
 
 ## 7. Campaign: send the template ourselves (TASK-103)
 
@@ -160,33 +168,68 @@ Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-103)". Deploy state it 
 
 - **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-99..103:
   it drops status webhooks (no delivery tracking, a 131042 payment failure stays invisible), parses a template
-  tap without its payload and reply context, and counts imported documents without the reuse answer. The
+  tap without its payload and reply context, counts imported documents without the reuse answer, and does not
+  know an imported decline (TASK-101 silence, TASK-105 prompt and code-owned `prior_opt_outs`). The
   catch-up and follow-up timers already run the current tree (new process per run).
 - No new unit, timer or env var. The sender is run by hand from the repo root with `.env` loaded; `--send`
   refuses without `WA_AUTOSEND=1`.
-- Its table `wa_campaign_sends` is created in `data/wa.sqlite` by the first `--send` (not by the service).
-  Dry-run and `--status` open the database read-only.
+- Its table `wa_campaign_sends` is created in `data/wa.sqlite` by the first `--send` (not by the service), one
+  row per attempt (TASK-106). A table from the TASK-103 layout (one row per campaign and phone) is rebuilt into
+  attempt rows by the first `--send` from this tree, in one transaction; the live database had no such table on
+  2026-09-14. Dry-run and `--status` open the database read-only.
 - Reports (phone numbers, names) go to `~/pflege-campaign-reports/` (0700/0600), outside the repo.
 
 ```bash
 cd /home/claude/repo/pflege-board && set -a && . ./.env && set +a
+# history source (TASK-105, step 6 grants first): every dry-run and send needs it, --status does not
+H="--import-history-db /opt/clinic-dispatcher/var/sales_brain.sqlite --import-history-queries deploy/import-history.example.sql --import-history-source clinic-dispatcher --import-history-media-root /opt/clinic-dispatcher/data/private/candidate_whatsapp_media --import-history-media-root /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media"
 # probe: operator number only, own campaign id; wait for "delivery delivered" in --status
-.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --template-id <ID> --leads probe.csv --send
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --template-id <ID> --leads probe.csv $H --send
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --status
 # real list: dry-run, read the plan, then send (in tmux; it waits for the window and between batches)
-.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv
-.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv --send
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --send
+# Meta reported templates failed after the send (delivery_failed, e.g. 131042 unsettled payments): fix the cause,
+# then resend them in the same campaign (TASK-106): dry-run, send, status until the new attempt is delivered
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --retry-delivery-failed
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --send --retry-delivery-failed
+.venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --status
 ```
 
-With the history import, add `--import-history-db /opt/clinic-dispatcher/var/sales_brain.sqlite
---import-history-queries deploy/import-history.example.sql --import-history-source clinic-dispatcher
---import-history-media-root ...` (step 6 grants first); the dry-run previews it, `--send` applies it per phone
-right before that phone's claim.
+`--retry-delivery-failed` resends only phones whose latest attempt Meta reported `failed`, as a new attempt of the same
+campaign; each attempt keeps its own wamid, error and delivery status (`--status` lists every attempt). A phone that
+was stopped, declined or opted out, or wrote to us since the campaign first claimed it, is not resent
+(`skip_replied` names the messages); once any attempt went out, the same holds for a later `retry_failed` or
+`--retry-uncertain` resend. A retry Meta rejects (HTTP 4xx) restores the owner from before the campaign.
+
+`$H` is the history source. Without it the sender exits 2; the dry-run
+previews the import, `--send` applies it per phone right before that phone's claim, and a phone the old system
+recorded as opted out or declined, or that wrote Stopp there, is skipped with the record named. Only
+`--override-no-history-source` runs without the source; it is printed as a WARNING and recorded in the report
+(`history_source`). Do not use it for the real list.
 
 Rollback of a campaign: stop the run (Ctrl-C). Already flipped phones stay with us (`wa_ownership` reason
 `campaign:<id>`); there is no hand-back tool. Calls to and from those phones (and call statuses, call-permission
 replies) still reach the old system's call bridge; a template that went out during an uncertain POST is recorded
 with `--mark-sent PHONE=WAMID` (`docs/whatsapp.md` runbook).
+
+## 8. Voice notes (TASK-107)
+
+`WA_BRAIN=luna` transcribes voice notes with OpenAI (`docs/whatsapp.md`, "Voice notes (TASK-107)"). Needs
+`OPENAI_API_KEY` in `.env` (absent on 2026-09-15); optional `WA_STT_MODEL` (default `whisper-1`). Without the key, a
+service restarted on this tree answers no voice note: each stays pending with `TranscriptionError: OPENAI_API_KEY is
+not set` (`GET /api/wa/threads`: `pending_inbound`, `stuck_reply`) and catch-up retries it every 3 minutes. Add the key
+before that restart, or accept the stall.
+
+```bash
+cd /home/claude/repo/pflege-board
+sudo systemctl restart pflege-wa.service            # reads .env again
+curl -s http://127.0.0.1:8502/api/wa/health         # expect "stt_ready": true, "stt_model": "whisper-1"
+set -a && . ./.env && set +a
+.venv/bin/python -m pytest -q -m network tests/test_wa_stt_live.py -s   # synthetic German voice note, real endpoint
+```
+
+The live test sends only synthetic espeak-ng speech to OpenAI; nothing goes to Meta.
 
 ## Known gaps going into this rollout (not blockers, but real)
 

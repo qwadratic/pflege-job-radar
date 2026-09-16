@@ -460,46 +460,76 @@ def test_a_land_typed_on_an_ordinary_thread_still_gets_the_locked_text(wa, monke
 
 
 class MediaMeta(FakeMeta):
-    """FakeMeta plus Meta's two-step media download."""
+    """FakeMeta plus Meta's two-step media download, every media id served as ``mime_type``."""
+
+    def __init__(self, mime_type="video/mp4"):
+        super().__init__()
+        self.mime_type = mime_type
 
     def media_url(self, media_id):
-        return {"url": f"https://media.example/{media_id}", "mime_type": "audio/ogg"}
+        return {"url": f"https://media.example/{media_id}", "mime_type": self.mime_type}
 
     def download_media(self, url):
-        return b"OggS synthetic voice note"
+        return b"synthetic media " + url.encode()
 
 
-def _voice_note(wamid):
-    return {"id": wamid, "from": LEAD_DIGITS, "type": "audio", "audio": {"id": f"media-{wamid}", "mime_type": "audio/ogg"}}
+def _media(wamid, kind="video", mime_type="video/mp4"):
+    return {"id": wamid, "from": LEAD_DIGITS, "type": kind, kind: {"id": f"media-{wamid}", "mime_type": mime_type}}
 
 
-def test_a_voice_note_on_a_declined_thread_gets_no_reply_and_is_flagged_for_a_human(wa, monkeypatch, tmp_path):
+def test_a_video_on_a_declined_thread_gets_no_reply_and_is_flagged_for_a_human(wa, monkeypatch, tmp_path):
     """Review 2026-09-14: after the decline ack a voice note got MEDIA_REPLY ('Ein Kollege schaut sie sich an.'),
-    breaking the silence, and nothing flagged it."""
+    breaking the silence, and nothing flagged it. Since TASK-107 a voice note is transcribed (next test); a video still
+    goes this way."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     _campaign()
     model = Model(monkeypatch, _out(decline=True, bubbles=[]))
     meta = MediaMeta()
     _deliver(meta, _message("wamid.in.1", text="Nein, kein Interesse"))
-    [r] = _deliver(meta, _voice_note("wamid.in.voice"))
+    [r] = _deliver(meta, _media("wamid.in.video"))
     assert (r["status"], r["action"]) == ("nothing_to_send", "declined_no_send")
     assert meta.sent == [LB.P.DECLINE_ACK_DE] and len(model.payloads) == 1
     card = _thread()["slots"]
     [unread] = card["_unread_media"]
-    assert (unread["wamid"], unread["kind"]) == ("wamid.in.voice", "audio") and unread["document_id"]
+    assert (unread["wamid"], unread["kind"]) == ("wamid.in.video", "video") and unread["document_id"]
     assert card["_escalated"] is True and card["declined"] is True
     with ST.db() as c:
-        assert ST.reply_turn_claim_state(c, LEAD, "wamid.in.voice") == ST.NO_SEND_STATE
+        assert ST.reply_turn_claim_state(c, LEAD, "wamid.in.video") == ST.NO_SEND_STATE
         assert REP.ball_for(c, LEAD) == "silent" and ST.pending_inbound(c, LEAD) == []
 
 
-def test_a_voice_note_reply_to_the_campaign_is_flagged_for_a_human_and_never_nudged(wa, monkeypatch, tmp_path):
-    """Review 2026-09-14: MEDIA_REPLY promised a colleague, nobody was flagged, and 20 minutes later the follow-up
-    timer asked 'sind Sie noch da?'."""
+def test_a_voice_note_on_a_declined_thread_is_a_model_turn_on_its_transcript_silent_unless_it_re_engages(
+        wa, monkeypatch, tmp_path):
+    """TASK-107: the transcript is read like typed text on a declined card (DECLINE): silence, or a re-engagement."""
+    from tests.test_wa_voice_notes import use_openai
+    monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
+    openai = use_openai(monkeypatch, {"text": "Okay, danke."}, {"text": "Ich suche jetzt doch eine Stelle in Bayern."})
+    _campaign()
+    model = Model(monkeypatch, _out(decline=True, bubbles=[]), _out(bubbles=[], no_send=True),
+                  _out(re_engaged=True, bubbles=["Schön, dass Sie sich melden! Haben Sie die deutsche Urkunde schon?"]))
+    meta = MediaMeta("audio/ogg")
+    _deliver(meta, _message("wamid.in.1", text="Nein, kein Interesse"))
+    [silent] = _deliver(meta, _media("wamid.in.voice1", "audio", "audio/ogg"))
+    [back] = _deliver(meta, _media("wamid.in.voice2", "audio", "audio/ogg"))
+    assert (silent["status"], silent["action"]) == ("nothing_to_send", "declined_no_send")
+    assert back["status"] == "sent" and len(openai.requests) == 2
+    assert meta.sent == [LB.P.DECLINE_ACK_DE, "Schön, dass Sie sich melden! Haben Sie die deutsche Urkunde schon?"]
+    assert [(p["latest_inbound"], p["voice_note"]) for p in model.payloads[1:]] == \
+        [("Okay, danke.", True), ("Ich suche jetzt doch eine Stelle in Bayern.", True)]
+    card = _thread()["slots"]
+    assert card["declined"] is False and card["re_engaged_at"] and "_unread_media" not in card
+    assert "_escalated" not in card
+    with ST.db() as c:
+        assert ST.reply_turn_claim_state(c, LEAD, "wamid.in.voice1") == ST.NO_SEND_STATE
+
+
+def test_a_video_reply_to_the_campaign_is_flagged_for_a_human_and_never_nudged(wa, monkeypatch, tmp_path):
+    """Review 2026-09-14 (then a voice note): MEDIA_REPLY promised a colleague, nobody was flagged, and 20 minutes later
+    the follow-up timer asked 'sind Sie noch da?'."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     _campaign()
     meta = MediaMeta()
-    [r] = _deliver(meta, _voice_note("wamid.in.voice"))
+    [r] = _deliver(meta, _media("wamid.in.video"))
     assert r["action"] == "media_ack" and meta.sent == [WAPI.MEDIA_REPLY]
     with ST.db() as c:
         t = ST.thread(c, LEAD)
@@ -508,15 +538,38 @@ def test_a_voice_note_reply_to_the_campaign_is_flagged_for_a_human_and_never_nud
     assert FU.run(client=meta) == [] and meta.sent == [WAPI.MEDIA_REPLY]
     with TestClient(asgi.app) as client:
         (row,) = client.get("/api/wa/threads").json()["rows"]
-    assert [u["wamid"] for u in row["unread_media"]] == ["wamid.in.voice"] and row["slots"]["_escalated"] is True
+    assert [u["wamid"] for u in row["unread_media"]] == ["wamid.in.video"] and row["slots"]["_escalated"] is True
 
     Model(monkeypatch, _out())
-    _deliver(meta, _message("wamid.in.2", text="Haben Sie meine Sprachnachricht bekommen?"))
+    _deliver(meta, _message("wamid.in.2", text="Haben Sie mein Video bekommen?"))
     with ST.db() as c:
         t = ST.thread(c, LEAD)
         t["last_outbound_at"] = _ago(20)
         ST.save_thread(c, t)
     assert [n["tier"] for n in FU.run(client=meta)] == [0], "a typed message after it is an ordinary reply again"
+
+
+def test_a_voice_note_reply_to_the_campaign_is_answered_from_its_transcript(wa, monkeypatch, tmp_path):
+    """TASK-107: a campaign reply spoken as a voice note no longer stalls on MEDIA_REPLY: Luna answers the transcript
+    against the template, and the thread is an ordinary conversation after it (a follow-up may nudge)."""
+    from tests.test_wa_voice_notes import use_openai
+    monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
+    use_openai(monkeypatch, {"text": "Ja, ich habe Interesse an Bayern."})
+    _campaign()
+    model = Model(monkeypatch, _out(card_patch={"region": "Bayern"}))
+    meta = MediaMeta("audio/ogg")
+    [r] = _deliver(meta, _media("wamid.in.voice", "audio", "audio/ogg"))
+    assert r["status"] == "sent" and meta.sent == ["Danke! Haben Sie die deutsche Urkunde schon?"]
+    (payload,) = model.payloads
+    assert (payload["latest_inbound"], payload["voice_note"]) == ("Ja, ich habe Interesse an Bayern.", True)
+    assert [o["action"] for o in payload["outbound_since_last_turn"]] == ["campaign"]
+    card = _thread()["slots"]
+    assert card["region"] == "Bayern" and "_unread_media" not in card and "_escalated" not in card
+    with ST.db() as c:
+        t = ST.thread(c, LEAD)
+        t["last_outbound_at"] = _ago(20)
+        ST.save_thread(c, t)
+    assert [n["tier"] for n in FU.run(client=meta)] == [0]
 
 
 def test_stop_on_a_declined_thread_stops_without_any_ack(wa, monkeypatch):

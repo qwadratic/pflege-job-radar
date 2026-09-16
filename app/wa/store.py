@@ -408,6 +408,27 @@ def set_document_classification(c, doc_id, document_type, certificate_level, tex
     c.commit()
 
 
+# wa_documents.text_key of a voice note's transcript (TASK-107). Names no card key: the transcript is the turn's text.
+VOICE_TRANSCRIPT_KEY = "voice_transcript"
+
+
+def set_voice_transcript(c, doc_id, wamid, text, model):
+    """A voice note's transcript, in one commit: wa_documents row ``doc_id`` (text, text_key VOICE_TRANSCRIPT_KEY) and
+    the inbound message: body (was empty; the old system's body = COALESCE(body, transcript), so every reader of the
+    message -- thread history, consent CV analysis, campaign --status, replies_to, the dry run -- sees what was said)
+    and meta (transcript, transcript_model, transcribed_at: marks the body as a voice note's transcript). Raises when
+    ``wamid`` is not a stored inbound message."""
+    row = c.execute("select meta from wa_messages where wamid=? and direction='in'", (wamid,)).fetchone()
+    if row is None:
+        raise RuntimeError(f"no inbound wa_messages row for {wamid}")
+    meta = {**json.loads(row["meta"] or "{}"), "transcript": text, "transcript_model": model,
+            "transcribed_at": now_iso()}
+    c.execute("update wa_documents set text=?, text_key=? where id=?", (text, VOICE_TRANSCRIPT_KEY, doc_id))
+    c.execute("update wa_messages set body=?, meta=? where wamid=?",
+              (text, json.dumps(meta, ensure_ascii=False), wamid))
+    c.commit()
+
+
 def documents_for(c, phone):
     """Every stored original for this phone, oldest first, all columns (text included)."""
     rows = c.execute("select * from wa_documents where phone=? order by id", (phone,)).fetchall()
@@ -697,7 +718,7 @@ def record_campaign_send(c, phone, wamid, rendered, campaign_id, sent_at=None, k
     and parameters sent. In one commit: the thread (created when missing), the outbound row (body = rendered
     text, meta = {action: 'campaign', campaign_id, template_id, template, language, variables, buttons}),
     ``last_outbound_at`` (never last_inbound_at), and the card contract Luna reads, replacing an earlier
-    campaign on the card (every send stays a row):
+    campaign or an earlier attempt of the same campaign on the card (TASK-106; every send stays a row):
 
         card.campaign = {campaign_id, template_name, language, rendered_text, buttons, sent_at, wamid}
 
@@ -731,21 +752,22 @@ def message_statuses_for(c, phone, status=None):
     return [_status_row(r) for r in c.execute(sql + " order by id", args).fetchall()]
 
 
-# --- campaign sends (TASK-103, app/wa/luna/campaign.py) -------------------------------------------------------
-# One row per (campaign, phone): the durable send claim. state: in_progress = claimed, the POST result not recorded
-# (after a crash: uncertain); sent = Meta returned the wamid, recorded in the same commit as the outbound row and
-# card.campaign; failed = Meta answered with an HTTP 4xx error, nothing went out, ownership restored; uncertain =
-# network error, timeout, HTTP 5xx or a 2xx without wamid: it may have gone out. Delivery is not copied here:
-# wa_message_statuses by wamid is the one record. Not in SCHEMA: only the sender's connection creates the table.
-# While a claim is in_progress the phone also holds the reply-turn claim 'campaign:<id>', so the webhook worker and
-# catch-up leave the card alone until the send is recorded (ST.claim_in_flight).
+# --- campaign sends (TASK-103, app/wa/luna/campaign.py; attempts TASK-106) ------------------------------------------
+# One row per attempt (campaign, phone, attempt 1..n): the durable send claim, never overwritten by a later attempt.
+# state: in_progress = claimed, the POST result not recorded (after a crash: uncertain); sent = Meta returned the wamid,
+# recorded in the same commit as the outbound row and card.campaign; failed = Meta answered with an HTTP 4xx error,
+# nothing went out, ownership restored; uncertain = network error, timeout, HTTP 5xx or a 2xx without wamid: it may
+# have gone out. The phone's claim in a campaign is its latest attempt. Delivery is not copied here:
+# wa_message_statuses by wamid is the one record, per attempt. Not in SCHEMA: only the sender's connection creates the
+# table (ensure_campaign_schema). While an attempt is in_progress the phone also holds the reply-turn claim
+# 'campaign:<id>', so the webhook worker and catch-up leave the card alone until the send is recorded
+# (ST.claim_in_flight).
 
-CAMPAIGN_SCHEMA = """
-create table if not exists wa_campaign_sends (
+_CAMPAIGN_TABLE = """create table {name} (
   campaign_id text not null,
   phone text not null,
+  attempt integer not null,
   state text not null check (state in ('in_progress', 'sent', 'failed', 'uncertain')),
-  attempts integer not null,
   template_id text not null,
   template_name text not null,
   template_language text not null,
@@ -762,11 +784,42 @@ create table if not exists wa_campaign_sends (
   claimed_at text not null,
   sent_at text,
   finished_at text,
-  primary key (campaign_id, phone)
-);
-create index if not exists idx_wa_campaign_sends_phone on wa_campaign_sends(phone);
-"""
+  primary key (campaign_id, phone, attempt)
+)"""
+CAMPAIGN_SCHEMA = (_CAMPAIGN_TABLE.format(name="if not exists wa_campaign_sends") + ";\n"
+                   "create index if not exists idx_wa_campaign_sends_phone on wa_campaign_sends(phone);\n")
 CAMPAIGN_CLAIM_PREFIX = "campaign:"   # wa_reply_turn_claims.turn_key 'campaign:<id>', wa_nudge_claims 'campaign:<id>:<n>'
+# Columns of the TASK-103 layout (one row per campaign and phone, ``attempts`` overwritten by every re-claim).
+_TASK103_COLUMNS = ("campaign_id", "phone", "state", "template_id", "template_name", "template_language", "variables",
+                    "rendered_text", "prior_owner", "prior_reason", "prior_since", "ownership_restore", "wamid", "error",
+                    "error_code", "error_payload", "claimed_at", "sent_at", "finished_at")
+
+
+def _campaign_table_is_task103(c):
+    return "attempts" in {r[1] for r in c.execute("pragma table_info(wa_campaign_sends)").fetchall()}
+
+
+def ensure_campaign_schema(c):
+    """Create wa_campaign_sends, or rebuild a TASK-103 table (pk campaign_id+phone, column ``attempts``) into one row
+    per attempt: each row becomes attempt = its ``attempts`` value (the earlier attempts of such a row were
+    overwritten then and are not recoverable). One BEGIN IMMEDIATE transaction, the layout checked again under the
+    write lock (another sender may have rebuilt it meanwhile); a crash rolls it back. Idempotent."""
+    if _campaign_table_is_task103(c):
+        c.commit()
+        c.execute("begin immediate")
+        try:
+            if _campaign_table_is_task103(c):
+                cols = ", ".join(_TASK103_COLUMNS)
+                c.execute(_CAMPAIGN_TABLE.format(name="wa_campaign_sends_task106"))
+                c.execute(f"insert into wa_campaign_sends_task106 (attempt, {cols}) "
+                          f"select attempts, {cols} from wa_campaign_sends")
+                c.execute("drop table wa_campaign_sends")
+                c.execute("alter table wa_campaign_sends_task106 rename to wa_campaign_sends")
+            c.commit()
+        except BaseException:
+            c.rollback()
+            raise
+    c.executescript(CAMPAIGN_SCHEMA)
 
 
 def _campaign_row(row):
@@ -777,54 +830,81 @@ def _campaign_row(row):
 
 
 def campaign_send(c, campaign_id, phone):
-    row = c.execute("select * from wa_campaign_sends where campaign_id=? and phone=?", (campaign_id, phone)).fetchone()
+    """The phone's claim in one campaign: its latest attempt, or None."""
+    row = c.execute("select * from wa_campaign_sends where campaign_id=? and phone=? order by attempt desc limit 1",
+                    (campaign_id, phone)).fetchone()
     return _campaign_row(row) if row else None
 
 
-def campaign_sends(c, campaign_id):
-    """Every claim of one campaign, in claim order."""
-    rows = c.execute("select * from wa_campaign_sends where campaign_id=? order by claimed_at, rowid",
-                     (campaign_id,)).fetchall()
+def campaign_attempts(c, campaign_id, phone=None):
+    """Every attempt of one campaign in claim order; of one phone when given, by attempt number."""
+    if phone is None:
+        rows = c.execute("select * from wa_campaign_sends where campaign_id=? order by claimed_at, attempt",
+                         (campaign_id,)).fetchall()
+    else:
+        rows = c.execute("select * from wa_campaign_sends where campaign_id=? and phone=? order by attempt",
+                         (campaign_id, phone)).fetchall()
     return [_campaign_row(r) for r in rows]
+
+
+def _latest_per(rows, key):
+    latest = {}
+    for r in rows:   # claim order: a key keeps its first position, the value becomes its highest attempt
+        if key(r) not in latest or r["attempt"] > latest[key(r)]["attempt"]:
+            latest[key(r)] = r
+    return list(latest.values())
+
+
+def campaign_sends(c, campaign_id):
+    """The latest attempt of every phone of one campaign, in first-claim order."""
+    return _latest_per(campaign_attempts(c, campaign_id), key=lambda r: r["phone"])
 
 
 def campaign_sends_for_phone(c, phone):
-    rows = c.execute("select * from wa_campaign_sends where phone=? order by claimed_at, rowid", (phone,)).fetchall()
-    return [_campaign_row(r) for r in rows]
+    """The latest attempt of this phone in every campaign, in first-claim order."""
+    rows = c.execute("select * from wa_campaign_sends where phone=? order by claimed_at, attempt", (phone,)).fetchall()
+    return _latest_per([_campaign_row(r) for r in rows], key=lambda r: r["campaign_id"])
 
 
 def campaign_claims_after(c, campaign_id, after_iso):
-    """claimed_at of this campaign's claims later than ``after_iso`` (same UTC ISO format), oldest first."""
+    """claimed_at of this campaign's attempts later than ``after_iso`` (same UTC ISO format), oldest first. Every
+    attempt counts: each is a claim and a POST."""
     rows = c.execute("select claimed_at from wa_campaign_sends where campaign_id=? and claimed_at>? order by claimed_at",
                      (campaign_id, after_iso)).fetchall()
     return [r["claimed_at"] for r in rows]
 
 
 def claim_campaign_send(c, campaign_id, phone, template, variables, rendered_text, prior, claimed_at,
-                        retry_uncertain=False):
-    """Claim one campaign send. No commit: the caller commits it with the ownership flip (routing.
-    flip_to_us_for_campaign) in one transaction. A first claim inserts; a ``failed`` one is claimed again; an
-    ``in_progress``/``uncertain`` one only with ``retry_uncertain``; a ``sent`` one raises. Also writes the
-    nudge claim 'campaign:<id>:<attempt>' and the reply-turn claim 'campaign:<id>' (in_progress). -> attempt number."""
+                        retry_uncertain=False, retry_delivery_failed=False):
+    """Claim the phone's next attempt (a new row; earlier attempts keep their wamid, error and statuses). No commit:
+    the caller commits it with the ownership flip (routing.flip_to_us_for_campaign) in one transaction. Attempt 1
+    when the phone has none; after a ``failed`` latest attempt always; after ``in_progress``/``uncertain`` only with
+    ``retry_uncertain`` (an ``in_progress`` one, whose POST result was never recorded, is finished as uncertain);
+    after ``sent`` only with ``retry_delivery_failed`` while the latest Meta status of its wamid is ``failed``
+    (TASK-106). Anything else raises. Also writes the nudge claim 'campaign:<id>:<attempt>' and the reply-turn claim
+    'campaign:<id>' (in_progress). -> attempt number."""
     existing = campaign_send(c, campaign_id, phone)
-    if existing is not None and not (existing["state"] == "failed" or
-                                     (retry_uncertain and existing["state"] in ("in_progress", "uncertain"))):
-        raise RuntimeError(f"campaign {campaign_id} {phone} is {existing['state']}, not claimable")
-    attempt = 1 if existing is None else existing["attempts"] + 1
+    if existing is not None:
+        state = existing["state"]
+        delivery = latest_message_status(c, existing["wamid"]) if state == "sent" else None
+        undelivered = delivery is not None and delivery["status"] == "failed"
+        if not (state == "failed" or (retry_uncertain and state in ("in_progress", "uncertain"))
+                or (retry_delivery_failed and undelivered)):
+            raise RuntimeError(f"campaign {campaign_id} {phone} attempt {existing['attempt']} is {state}"
+                               f"{' (delivery failed)' if undelivered else ''}, not claimable")
+    attempt = 1 if existing is None else existing["attempt"] + 1
+    if existing is not None and existing["state"] == "in_progress":
+        c.execute("update wa_campaign_sends set state='uncertain', error=?, finished_at=? where campaign_id=? and "
+                  "phone=? and attempt=? and state='in_progress'",
+                  (f"no POST result recorded (the sending run stopped); superseded by attempt {attempt}", claimed_at,
+                   campaign_id, phone, existing["attempt"]))
     prior = prior or {}
-    values = (attempt, str(template["id"]), template["name"], template["language"],
-              json.dumps(variables, ensure_ascii=False), rendered_text, prior.get("owner"), prior.get("reason"),
-              prior.get("since"), claimed_at)
-    if existing is None:
-        c.execute("""insert into wa_campaign_sends (state, attempts, template_id, template_name, template_language,
-                     variables, rendered_text, prior_owner, prior_reason, prior_since, claimed_at, campaign_id, phone)
-                     values ('in_progress',?,?,?,?,?,?,?,?,?,?,?,?)""", values + (campaign_id, phone))
-    else:
-        c.execute("""update wa_campaign_sends set state='in_progress', attempts=?, template_id=?, template_name=?,
-                     template_language=?, variables=?, rendered_text=?, prior_owner=?, prior_reason=?, prior_since=?,
-                     claimed_at=?, ownership_restore=null, wamid=null, error=null, error_code=null,
-                     error_payload=null, sent_at=null, finished_at=null
-                     where campaign_id=? and phone=?""", values + (campaign_id, phone))
+    c.execute("""insert into wa_campaign_sends (campaign_id, phone, attempt, state, template_id, template_name,
+                 template_language, variables, rendered_text, prior_owner, prior_reason, prior_since, claimed_at)
+                 values (?,?,?,'in_progress',?,?,?,?,?,?,?,?,?)""",
+              (campaign_id, phone, attempt, str(template["id"]), template["name"], template["language"],
+               json.dumps(variables, ensure_ascii=False), rendered_text, prior.get("owner"), prior.get("reason"),
+               prior.get("since"), claimed_at))
     c.execute("insert into wa_nudge_claims (phone, fingerprint, claimed_at) values (?,?,?)",
               (phone, f"{CAMPAIGN_CLAIM_PREFIX}{campaign_id}:{attempt}", claimed_at))
     now = now_iso()
@@ -835,33 +915,35 @@ def claim_campaign_send(c, campaign_id, phone, template, variables, rendered_tex
     return attempt
 
 
-def finish_campaign_send(c, campaign_id, phone, state, at, wamid=None, error=None, error_code=None,
+def finish_campaign_send(c, campaign_id, phone, attempt, state, at, wamid=None, error=None, error_code=None,
                          error_payload=None, ownership_restore=None):
-    """in_progress -> sent (with ``wamid``) / failed / uncertain, and the reply-turn claim 'campaign:<id>' ->
-    'campaign_<state>'. No commit. Raises unless the claim is in_progress."""
+    """Attempt ``attempt`` in_progress -> sent (with ``wamid``) / failed / uncertain, and the reply-turn claim
+    'campaign:<id>' -> 'campaign_<state>'. No commit. Raises unless that attempt is in_progress."""
     if state not in ("sent", "failed", "uncertain"):
         raise ValueError(f"not a final campaign send state: {state!r}")
     cur = c.execute("""update wa_campaign_sends set state=?, wamid=?, error=?, error_code=?, error_payload=?,
-                       ownership_restore=?, sent_at=?, finished_at=? where campaign_id=? and phone=? and
-                       state='in_progress'""",
+                       ownership_restore=?, sent_at=?, finished_at=? where campaign_id=? and phone=? and attempt=?
+                       and state='in_progress'""",
                     (state, wamid, error, None if error_code is None else str(error_code),
                      _json_or_none(error_payload), ownership_restore, at if state == "sent" else None, at,
-                     campaign_id, phone))
+                     campaign_id, phone, attempt))
     if cur.rowcount != 1:
-        raise RuntimeError(f"campaign {campaign_id} {phone}: no in_progress claim to finish as {state}")
+        raise RuntimeError(f"campaign {campaign_id} {phone} attempt {attempt}: no in_progress claim to finish as {state}")
     c.execute("update wa_reply_turn_claims set state=?, updated_at=? where phone=? and turn_key=?",
               ("campaign_" + state, now_iso(), phone, CAMPAIGN_CLAIM_PREFIX + campaign_id))
 
 
-def reconcile_campaign_send(c, campaign_id, phone, wamid, sent_at):
-    """An in_progress/uncertain claim whose template did go out (operator evidence: a status webhook for ``wamid``,
+def reconcile_campaign_send(c, campaign_id, phone, attempt, wamid, sent_at):
+    """An in_progress/uncertain attempt whose template did go out (operator evidence: a status webhook for ``wamid``,
     app/wa/luna/campaign.py --mark-sent) -> sent with that wamid and sent_at; the earlier error stays as history.
-    The reply-turn claim 'campaign:<id>' -> 'campaign_sent'. No commit. Raises unless the claim is in_progress or
-    uncertain."""
+    The reply-turn claim 'campaign:<id>' -> 'campaign_sent'. No commit. Raises unless that attempt is in_progress
+    or uncertain."""
     now = now_iso()
     cur = c.execute("""update wa_campaign_sends set state='sent', wamid=?, sent_at=?, finished_at=? where campaign_id=?
-                       and phone=? and state in ('in_progress', 'uncertain')""", (wamid, sent_at, now, campaign_id, phone))
+                       and phone=? and attempt=? and state in ('in_progress', 'uncertain')""",
+                    (wamid, sent_at, now, campaign_id, phone, attempt))
     if cur.rowcount != 1:
-        raise RuntimeError(f"campaign {campaign_id} {phone}: no in_progress/uncertain claim to mark sent")
+        raise RuntimeError(f"campaign {campaign_id} {phone} attempt {attempt}: no in_progress/uncertain claim to mark "
+                           f"sent")
     c.execute("update wa_reply_turn_claims set state='campaign_sent', updated_at=? where phone=? and turn_key=?",
               (now, phone, CAMPAIGN_CLAIM_PREFIX + campaign_id))
