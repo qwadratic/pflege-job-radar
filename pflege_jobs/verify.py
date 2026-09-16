@@ -237,6 +237,59 @@ def firecrawl_fetch(url):
     return (int(code) if isinstance(code, (int, str)) and str(code).isdigit() else 200), d.get("html") or d.get("rawHtml")
 
 
+# P&I LOGA "bewerber-web" (GWT) boards have NO per-posting page at all: every posting's URL is the
+# same list URL plus a '#title=' fragment the app ignores on load, and clicking a row on the regiomed
+# wildcard board does nothing (see pflege_jobs/sources/pi_asp.py's docstring). Fetching such a URL can
+# therefore never show "the posting" -- the only honest liveness question is whether the board still
+# lists that title. The list only renders under networkidle + scrolling, which is why a plain render()
+# saw an empty 7KB GWT shell and left 38 rows stuck on 'error' (2026-09-16).
+PI_LOGA = re.compile(r"/bewerber-web/", re.I)
+_BOARD_TITLES = {}
+
+
+def board_titles(url):
+    """Titles the P&I LOGA board at `url` currently lists. Cached per process: one render answers
+    every posting on that board."""
+    base = url.split("#", 1)[0]
+    if base in _BOARD_TITLES:
+        return _BOARD_TITLES[base]
+    from playwright.sync_api import sync_playwright
+    from .sources.pi_asp import _list_rows
+    titles = set()
+    try:
+        with sync_playwright() as p:
+            b = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            ctx = b.new_context(user_agent=UA, ignore_https_errors=True, locale="de-DE", viewport={"width": 1280, "height": 2400})
+            pg = ctx.new_page()
+            pg.goto(base, wait_until="networkidle", timeout=60000)
+            pg.wait_for_timeout(3000)
+            for _ in range(5):
+                pg.mouse.wheel(0, 4000)
+                pg.wait_for_timeout(500)
+            titles = {norm_text(r["title"]) for r in _list_rows(pg) if r.get("title")}
+            b.close()
+    except Exception:
+        titles = set()
+    _BOARD_TITLES[base] = titles
+    return titles
+
+
+def _slug(u):
+    p = [x for x in (u or "").split("?")[0].split("#")[0].rstrip("/").split("/") if x]
+    return p[-1].lower() if p else ""
+
+
+def _bounced_to_list(url, final_url, st):
+    """A posting that quietly redirects to the board's job LIST is gone, even though it answers 200 and
+    carries no "nicht mehr verfügbar" text (confirmed live 2026-09-16: LMU's referral portal sends
+    /stellenanzeigen/<slug> to /jobs). Only counts when the title was NOT found and the slug is gone
+    from the final URL, so an ordinary canonical/locale redirect is not mistaken for a dead posting."""
+    if st == "live" or not final_url or final_url == url:
+        return False
+    s = _slug(url)
+    return bool(s) and len(s) > 8 and s not in (final_url or "").lower()
+
+
 def verify_one(session, url, title, rungs=("http", "render")):
     """Escalate through `rungs` until one of them can actually see the posting. Returns
     dict(verify_status, verify_http, verify_note, method, city, plz, loc_source, final_url).
@@ -265,18 +318,31 @@ def verify_one(session, url, title, rungs=("http", "render")):
                 st, http, note = decide(code, html, title)
         except requests.RequestException as e:
             st, http, note = decide(None, None, title, exc_name=type(e).__name__)
-        if st == "live" or (st == "gone" and http in (404, 410)) or IS_PDF.search(url or ""):
+        if _bounced_to_list(url, out["final_url"], st):
+            st, http, note = "gone", code, f"redirected to {out['final_url'][:80]} (posting path gone)"
+        if st == "live" or (st == "gone" and http in (404, 410)) or st == "gone" and "redirected" in (note or "") or IS_PDF.search(url or ""):
             out.update(verify_status=st, verify_http=http, verify_note=note, method="http")
             out["city"], out["plz"], out["loc_source"] = extract_location(html)
             return out
     elif forced:
         st, http, note = "error", None, "url carries its id in the fragment -- HTTP cannot see it"
 
+    if allow_render and PI_LOGA.search(url or ""):
+        titles = board_titles(url)
+        if titles:
+            hit = norm_text(title or "") in titles
+            out.update(verify_status="live" if hit else "gone", verify_http=200, method="board_list",
+                       verify_note=("still listed on the board" if hit else "no longer listed on the board")
+                       + " (P&I LOGA: the list IS the posting, there is no detail page)")
+            return out
+
     if allow_render:
         try:
             code, html, out["final_url"] = render(url)
             rst, rhttp, rnote = decide(code, html, title)
             method = "playwright"
+            if _bounced_to_list(url, out["final_url"], rst):
+                rst, rhttp, rnote = "gone", code, f"redirected to {out['final_url'][:80]} (posting path gone)"
             if rst == "live" or rst == "gone":
                 out.update(verify_status=rst, verify_http=rhttp, verify_note=f"{rnote} [rendered]", method=method)
                 out["city"], out["plz"], out["loc_source"] = extract_location(html)
