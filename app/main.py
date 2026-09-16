@@ -337,7 +337,7 @@ async def api_cv(request: Request, file: Optional[UploadFile] = File(None), limi
 
 # --- crawl ----------------------------------------------------------------------------------
 SCOPES = T.SCOPES
-MODES = ("auto", "adapter", "firecrawl")
+MODES = ("auto", "adapter", "firecrawl", "verify")
 
 
 def _target_from_query(request: Request):

@@ -478,6 +478,61 @@ def _load_observations(obs, clinics_by_id, log):
     return ids, obs
 
 
+def _run_verify(run_id, clinics, params, log):
+    """mode='verify': re-check this scope's postings against their own pages. No crawling.
+
+    Ivan 2026-09-16: a status is only usable as the single filter while it is FRESH and while it came
+    from a real request, so the whole board is re-checked on a schedule instead of only the postings a
+    crawl happened to touch. The page also states the posting's own city, which is the only city worth
+    trusting (a crawler with no per-posting location falls back to the seed clinic's town, TASK-59a) --
+    a mismatch is recorded in crawl_issues rather than patched here, because this process only holds
+    the anon key and the ingest function has no op to move a posting's city. tools/reverify_and_clean.py
+    (secret key) applies those corrections and the permanent non-Bavarian deletions.
+    """
+    from pflege_jobs.verify import VERIFY_FIELDS, verify_all
+    from pflege_jobs.sinks import EdgeSink
+    from pflege_jobs.classify import norm_text
+    ids = {c["clinic_id"] for c in clinics}
+    rows = [j for j in D.jobs() if j.get("status") == "open" and (not ids or j.get("clinic_id") in ids)]
+    if not rows:
+        log("verify: no open postings in scope")
+        R.update_run(run_id, status="done", finished_at=R.now(), n_rows=0)
+        return
+    log(f"verify: {len(rows)} open posting(s) in scope")
+    res = verify_all([{"posting_id": j["posting_id"], "external_url": j.get("external_url"), "source_url": j.get("source_url"),
+                       "title": j.get("title")} for j in rows], workers=int(params.get("workers") or 8), log=log,
+                     render=not params.get("no_render"), firecrawl=bool(params.get("firecrawl")))
+    sink, pushed = EdgeSink(batch=400), 0
+    payload = [{k: v for k, v in r.items() if k in VERIFY_FIELDS} for r in res]
+    for i in range(0, len(payload), 400):
+        pushed += sink._post({"verify": payload[i:i + 400]}).get("verify", 0)
+    from collections import Counter
+    counts = dict(Counter(r["verify_status"] for r in res))
+    log(f"verify: pushed {pushed}, {counts}")
+
+    by_id = {j["posting_id"]: j for j in rows}
+    day = R.now()[:10]
+    stale, unseen = 0, 0
+    for r in res:
+        j = by_id.get(r["posting_id"]) or {}
+        if r["verify_status"] in ("blocked", "error"):
+            unseen += 1
+            R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "posting",
+                                 r.get("method"), [j.get("clinic_id")], f"{r['verify_status']}: {r['verify_note']}", run_id)
+        elif r.get("city") and norm_text(r["city"]) != norm_text(j.get("city") or ""):
+            stale += 1
+            R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "city",
+                                 r.get("loc_source"), [j.get("clinic_id")],
+                                 f"page says {r['city']!r} ({r.get('plz')}), stored {j.get('city')!r}", run_id)
+    log(f"verify: {unseen} posting(s) nothing could see, {stale} city mismatch(es) recorded for review")
+    R.update_run(run_id, status="done", finished_at=R.now(), n_rows=len(res),
+                 error=(f"{unseen} unverifiable, {stale} city mismatch" if unseen or stale else None))
+    try:
+        D.refresh()
+    except Exception as e:
+        log(f"cache refresh failed: {e}")
+
+
 def _verify_ids(posting_ids, log):
     if not posting_ids:
         return {}
@@ -535,6 +590,10 @@ def execute(run_id):
             log(f"posting {value} re-checked: {st} ({code}) {note or ''}")
         except Exception as e:
             log(f"posting re-check failed: {str(e)[:120]}")
+
+    if mode == "verify":
+        _run_verify(run_id, clinics, params, log)
+        return
 
     cancelled = False
 

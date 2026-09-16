@@ -61,3 +61,30 @@ def test_board_still_failing_after_3_attempts_is_recorded(fresh, monkeypatch):
     assert issues[0]["clinic_ids"] == ["1"]
     assert "boom" in issues[0]["error"]
     assert issues[0]["run_id"] == rid
+
+
+def test_verify_mode_pushes_verdicts_and_records_city_mismatch(fresh, monkeypatch):
+    """mode='verify' re-checks postings instead of crawling; a page that names a different city than
+    the stored one is recorded for review (this process cannot patch a posting's city itself)."""
+    from app import data as D
+    import pflege_jobs.verify as V
+
+    D._snap["jobs"] = [{"posting_id": 7, "title": "Pflegefachkraft", "clinic_id": "1", "city": "Neuburg",
+                        "status": "open", "external_url": "https://x.example/job/7"}]
+    monkeypatch.setattr(D, "jobs", lambda: D._snap["jobs"])
+    monkeypatch.setattr(V, "verify_all", lambda rows, **kw: [
+        {"posting_id": 7, "verify_status": "live", "verify_http": 200, "verified_at": "2026-09-16T00:00:00+00:00",
+         "verify_note": "title tokens 2/2", "method": "http", "city": "Oberhausen", "plz": "46045",
+         "loc_source": "jsonld", "final_url": "https://x.example/job/7"}])
+    pushed = {}
+    monkeypatch.setattr("pflege_jobs.sinks.EdgeSink._post", lambda self, body: pushed.update(body) or {"verify": 1})
+
+    rid = R.create_run("clinic", "1", "verify")
+    CR.execute(rid)
+
+    assert [r["posting_id"] for r in pushed["verify"]] == [7]
+    assert set(pushed["verify"][0]) == set(V.VERIFY_FIELDS)      # extras stripped before the ingest op
+    issues = R.list_crawl_issues()
+    assert len(issues) == 1 and issues[0]["kind"] == "city"
+    assert "Oberhausen" in issues[0]["error"] and "Neuburg" in issues[0]["error"]
+    assert R.get_run(rid, with_log=False)["status"] == "done"
