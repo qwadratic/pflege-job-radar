@@ -523,9 +523,19 @@ def _run_verify(run_id, clinics, params, log):
         R.update_run(run_id, status="done", finished_at=R.now(), n_rows=0)
         return
     log(f"verify: {len(rows)} open posting(s) in scope")
+    # The Firecrawl rung is the only thing that sees a bot-walled board (every www.helios-gesundheit.de
+    # posting is an Akamai refusal to both plain HTTP and headless Chromium), and a posting stuck on
+    # 'blocked' is hidden by the "only live" filter even though it is alive. Gate it on the same switch
+    # every other Firecrawl call uses -- firecrawl.enabled, the 24h kill switch, the campaign stop --
+    # rather than on a flag of its own, and it only ever runs on rows the first two rungs could not see.
+    fc_ok, fc_why = kill_switch(run_mode=None, trigger="verify", log=log)
+    if params.get("firecrawl") is not None:
+        fc_ok = bool(params.get("firecrawl"))
+    elif not fc_ok:
+        log(f"verify: firecrawl rung unavailable -- {fc_why}")
     res = verify_all([{"posting_id": j["posting_id"], "external_url": j.get("external_url"), "source_url": j.get("source_url"),
                        "title": j.get("title")} for j in rows], workers=int(params.get("workers") or 8), log=log,
-                     render=not params.get("no_render"), firecrawl=bool(params.get("firecrawl")), towns=towns)
+                     render=not params.get("no_render"), firecrawl=fc_ok, towns=towns)
     sink, pushed = EdgeSink(batch=400), 0
     payload = [{k: v for k, v in r.items() if k in VERIFY_FIELDS} for r in res]
     for i in range(0, len(payload), 400):
