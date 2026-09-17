@@ -88,3 +88,20 @@ def test_verify_mode_pushes_verdicts_and_records_city_mismatch(fresh, monkeypatc
     assert len(issues) == 1 and issues[0]["kind"] == "city"
     assert "Oberhausen" in issues[0]["error"] and "Neuburg" in issues[0]["error"]
     assert R.get_run(rid, with_log=False)["status"] == "done"
+
+
+def test_post_inbox_drops_non_nursing_before_the_insert(monkeypatch):   # no `fresh`: it stubs _post_inbox itself
+    """A board is mostly not nursing, and intake throws those rows away one step after the insert --
+    1666 of 2010 rows on 2026-09-17, i.e. 83% of the inbox's daily write budget, which is what pushed
+    the run into "inbox: daily limit reached for this client"."""
+    from app import config as A
+    posted = []
+    monkeypatch.setattr(A, "rest_post", lambda path, body, **kw: posted.extend(body))
+    monkeypatch.setattr(A, "rest_get", lambda *a, **kw: [])
+    rows = [{"kind": "jobposting", "source_url": f"https://x/{i}", "payload": {"title": t}} for i, t in enumerate([
+        "Pflegefachkraft (m/w/d) Intensiv", "Oberarzt (m/w/d) Kardiologie", "Küchenhilfe (m/w/d)",
+        "Ausbildung zur Pflegefachfrau (m/w/d)", "Gesundheits- und Krankenpfleger (m/w/d)"])]
+
+    CR._post_inbox(rows, lambda *_: None)
+
+    assert [p["source_url"] for p in posted] == ["https://x/0", "https://x/4"]

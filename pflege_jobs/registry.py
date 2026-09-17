@@ -88,28 +88,36 @@ class Matcher:
             tk = set(city_key(c.get("town")).split("-")) | toks(c.get("town"))
             c["_ntoks"] = toks(c["name"]) - tk; c["_otoks"] = toks(c.get("operator")) - tk; c["_kinds"] = kinds(c["name"]) | kinds(c.get("operator"))
 
-    def match(self, employer, city, board=None, description=None):
+    def match(self, employer, city, board=None, description=None, employer_inherited=False):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
         Board-first was tried and reverted: it forced a guess on shared boards that host non-Bavaria
-        entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched."""
-        r = self._match_content(employer, city, description)
+        entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched.
+
+        employer_inherited=True means the crawler did not read that employer off the posting -- it
+        substituted the seed clinic's own registry name (pflege_jobs/sources/inbox.py records this as
+        employer_source='seed'). Matching a clinic against the name we copied FROM that clinic is
+        circular: it always succeeds, on every posting of a nationwide board, which is how every AMEOS
+        posting in Germany attached to Neuburg (decision-5 left this open as a crawler-layer problem;
+        with the marker it can finally be enforced here). Such a row must earn its clinic from the
+        city/tokens/board instead."""
+        r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
         if r: return r
         if board:
             en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
             return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
         return None
 
-    def _match_content(self, employer, city, description=None):
+    def _match_content(self, employer, city, description=None, employer_inherited=False):
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
         if not en: return self._match_jd(description)
-        c = self.by_name.get(en, [])
+        c = [] if employer_inherited else self.by_name.get(en, [])
         if len(c) == 1: return c[0]["clinic_id"], "R1_exact", 1.0
         if len(c) > 1:
             t = [x for x in c if city_key(x.get("town")) == ck]
             if len(t) == 1: return t[0]["clinic_id"], "R1_exact_town", 0.98
-        c = self.by_op.get(en, [])
+        c = [] if employer_inherited else self.by_op.get(en, [])
         if len(c) == 1: return c[0]["clinic_id"], "R2_operator", 0.95
         if len(c) > 1:
             t = [x for x in c if city_key(x.get("town")) == ck]

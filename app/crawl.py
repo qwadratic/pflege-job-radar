@@ -378,6 +378,7 @@ def _vendor_rows(board, c, session, log):
         locs = r["payload"].get("loc") or [{}]
         if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
             r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+            r["payload"]["city_source"] = "seed"
     return rows
 
 
@@ -392,6 +393,28 @@ def _write_jsonl(run_id, rows):
 
 
 def _post_inbox(rows, log):
+    # Classify the role BEFORE the insert, with the same function and the same inputs intake uses.
+    # A board is mostly not nursing -- doctors, kitchen, IT, admin -- and posting all of it meant
+    # 1666 of 2010 rows on 2026-09-17 were written to the inbox only to be acked as nicht_pflege one
+    # step later. That is 83% of the table's daily write budget spent on rows nobody keeps, and it is
+    # what pushed the run into "inbox: daily limit reached for this client" once the schedule went
+    # from a 1/7 slice to the whole registry every day. Nothing is lost: _write_jsonl() has already
+    # saved every raw row of this run for forensics.
+    from pflege_jobs import config as PC, section
+    from pflege_jobs.classify import classify_role
+    kept, dropped = [], 0
+    for r in rows:
+        p = r.get("payload") or {}
+        role, _ = classify_role((p.get("title") or "").strip(), "",
+                                nursing_section_confirmed=section.job_confirmed_nursing(p.get("section_labels")))
+        if r.get("kind") == "jobposting" and role in PC.EXCLUDED_ROLE_CLASSES:
+            dropped += 1
+        else:
+            kept.append(r)
+    if dropped:
+        log(f"  {dropped} row(s) are not an experienced nursing role -- not written to the inbox")
+    rows = kept
+
     seen, uniq = set(), []
     for r in rows:
         if r.get("source_url") and r["source_url"] not in seen:
@@ -461,7 +484,7 @@ def _load_observations(obs, clinics_by_id, log):
         return {}, []
     m = Matcher([dict(c) for c in (D.clinics() or D.registry_csv_rows())])
     for o in obs:
-        mt = m.match(o.get("employer_name"), o.get("city"), board=o.get("_board"))
+        mt = m.match(o.get("employer_name"), o.get("city"), board=o.get("_board"), employer_inherited=o.get("_emp_inherited", False))
         o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
         o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
         if o["_kez"]:

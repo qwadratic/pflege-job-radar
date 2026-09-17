@@ -95,6 +95,43 @@ LAND_RX = re.compile(r"bayern|bavaria|baden-württemberg|baden-wuerttemberg|hess
                      r"rheinland-pfalz|saarland|schleswig-holstein|mecklenburg-vorpommern", re.I)
 
 
+# Job URLs regularly end in the city the job is actually in
+# (".../10240-pflegefachkraft-neurologie-fruehrehabilitation-in-oberhausen"). That is the SOURCE
+# naming the location, so it outranks a city the crawler substituted from the seed clinic -- which is
+# the only thing that catches the AMEOS shape, where the page states no location anywhere and 22 of 26
+# new rows a night carry the seed clinic's Bavarian town while their own URL says Oberhausen,
+# Haldensleben, Eutin (measured 2026-09-17).
+_URL_CITY = re.compile(r"-in-([a-zäöüß][a-zäöüß0-9\-]{3,})(?:\.html?)?/?$", re.I)
+_URL_PCT = {"%c3%bc": "ü", "%c3%a4": "ä", "%c3%b6": "ö", "%c3%9f": "ß", "%c3%9c": "ü", "%c3%84": "ä", "%c3%96": "ö"}
+
+
+def city_from_url(url, towns):
+    """The city a job URL names in its own slug, but only when it is a place we can actually place:
+    in_bavaria() must return True or False for it. That rejects the slugs that are not cities at all
+    ("-in-teilzeit", "-in-vollzeit") without needing a list of them."""
+    u = (url or "").split("?")[0].split("#")[0]
+    for k, v in _URL_PCT.items():
+        u = u.replace(k, v).replace(k.upper(), v)
+    m = _URL_CITY.search(u)
+    if not m:
+        return None
+    city = m.group(1).replace("-", " ").strip()
+    if in_bavaria(city, None, None, towns) is not None:
+        return city
+    # the registry writes some towns in a form a slug never uses ("Neuburg/Donau" vs
+    # "neuburg-an-der-donau", "Garmisch-Partenkirchen" vs "garmisch-partenkirchen"), so compare on a
+    # form where the separators and the connector words are gone before giving up
+    return city if _canon_town(city) in {_canon_town(t) for t in towns} else None
+
+
+_TOWN_CONNECT = re.compile(r"\b(an|am|im|bei|der|die|ob|vor|auf|a|i|d)\b")
+
+
+def _canon_town(s):
+    s = re.sub(r"[\-/,.()]+", " ", norm_text(s or ""))
+    return " ".join(_TOWN_CONNECT.sub(" ", s).split())
+
+
 def in_bavaria(city, plz, region, towns):
     # A malformed upstream row can carry a one-item list instead of a scalar (seen live 2026-09-09,
     # inbox_id 13576: {"plz": ["97318"], "city": ["Kitzingen"]}) -- one bad row must never crash the

@@ -408,7 +408,7 @@ def crawl_helix(c, session=None):
             if detail["loc"][0]["city"]:
                 j["loc"] = detail["loc"]
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         time.sleep(0.5)                              # <=2 concurrent per host, 0.5s between requests
         out.append(row(host, j["url"], j, "helix"))
     return out
@@ -578,6 +578,7 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
             if not title:
                 continue
             j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
                  "url": u, "page": u, "description": None, "employmentType": None}
             j["section_labels"] = list(section_labels) if section_labels else []
             out.append(row(host, u, j, "wp_jobs"))
@@ -606,7 +607,7 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
         if not j or not j.get("title"):
             continue
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
@@ -871,6 +872,7 @@ def _inline_heading_job_rows(cu_resp, c, host):
             continue
         url = urljoin(base, _html.unescape(lm.group(1)))
         j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
              "url": url, "page": url, "description": _txt(chunk[:lm.start()]), "employmentType": None}
         out.append(row(host, url, j, "wp_jobs"))
     return out
@@ -895,6 +897,7 @@ def _title_only_job_rows(cu_resp, c, host):
             continue
         seen.add(title)
         j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
              "url": cu_resp.url, "page": cu_resp.url, "description": None, "employmentType": None}
         out.append(row(host, cu_resp.url, j, "wp_jobs"))
     return out
@@ -921,6 +924,7 @@ def _bootstrap_panel_job_rows(cu_resp, c, host):
             continue
         bm = PANEL_BODY_RX.search(tail)
         j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
              "url": cu_resp.url, "page": cu_resp.url, "description": _txt(bm.group(1)) if bm else None,
              "employmentType": None}
         out.append(row(host, cu_resp.url, j, "wp_jobs"))
@@ -1196,7 +1200,7 @@ def crawl_rexx(c, session=None):
         if not j or not j.get("title"):
             continue
         if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = [tags[u]] if tags.get(u) else []
         em = REXX_EMPLOYMENT_TYPE_RX.search(d.text)
         if em:

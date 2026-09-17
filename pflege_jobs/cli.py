@@ -307,11 +307,14 @@ def _drain_once(a, url, H, m, towns):
     obs, ack, probes = [], [], []
     for r in rows:
         if r["kind"] == "jobposting":
+            from .sources.inbox import NON_PROD_HOST
+            if NON_PROD_HOST.search(urlparse(r.get("source_url") or "").netloc):
+                ack.append({"inbox_id": r["inbox_id"], "note": "skipped: non-production host (staging/preview)"}); continue
             o = jobposting_to_obs(r, towns)
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None))
+            mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})

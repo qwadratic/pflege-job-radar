@@ -7,10 +7,18 @@ from urllib.parse import urlparse
 from .. import config as C
 from .. import section
 from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm, enrich_description, fuzzy_key, qualification_hint, norm_text)
-from .career_crawl import in_bavaria, _strip
+from .career_crawl import _canon_town, city_from_url, in_bavaria, _strip
 
 def _source_id(collector):
     return C.SOURCES["firecrawl_agent"]["source_id"] if (collector or "").lower().startswith("firecrawl") else C.SOURCES["employer_ats"]["source_id"]
+
+
+# A staging/preview/test deployment is not a place real vacancies live: its postings are copies that
+# 404 or drift independently of the real portal. LMU Klinikum's registry careers_url pointed at
+# referral-portal-staging.lmu-klinikum.de (and at a single posting rather than a listing), which put
+# 77 rows in the table and was still feeding 5 a night on 2026-09-17 -- the registry entry is fixed,
+# this keeps any other one from entering the same way.
+NON_PROD_HOST = re.compile(r"(^|[.\-])(staging|preview|testing|sandbox|dev|qa)([.\-]|$)", re.I)
 
 
 def jobposting_to_obs(row, towns):
@@ -27,6 +35,19 @@ def jobposting_to_obs(row, towns):
         return (v[0] if v else None) if isinstance(v, list) else v
     locs = [{**x, "city": _scalar(x.get("city")), "plz": _scalar(x.get("plz")), "region": _scalar(x.get("region"))} for x in (p.get("loc") or [])]
     l = next((x for x in locs if in_bavaria(x.get("city"), x.get("plz"), x.get("region"), towns)), locs[0] if locs else {})
+    # The URL is the source naming the job's location, and it outranks a city the crawler inherited
+    # from the seed clinic -- the only signal that catches the AMEOS shape, where the page states no
+    # location at all and the row arrives carrying the seed clinic's Bavarian town while its own URL
+    # says Oberhausen/Haldensleben/Eutin (22 of 26 new rows in one night, measured 2026-09-17).
+    # A slug that is not a placeable city ("-in-teilzeit") is ignored by city_from_url itself.
+    url_city = city_from_url(url, towns)
+    city_src = "page"
+    if url_city and _canon_town(url_city) != _canon_town(l.get("city")):
+        if p.get("city_source") == "seed" or in_bavaria(url_city, None, None, towns) is False:
+            l = {**l, "city": url_city, "plz": None, "region": None}
+            city_src = "url"
+    elif p.get("city_source") == "seed":
+        city_src = "seed"
     # Structural signal from the vendor's own category/department taxonomy, set by
     # crawlers/vendor_adapters.py's section-aware crawl_* functions when the job's own label is
     # known (personio/smartrecruiters/dvinci/rexx/mein-check-in/wp_jobs) -- see pflege_jobs/section.py.
@@ -51,5 +72,10 @@ def jobposting_to_obs(row, towns):
         "fuzzy_key": fuzzy_key(title, emp, l.get("city")), "content_hash": content_hash(title, emp, l.get("city"), desc[:200]),
         # provenance: the board this row was fetched from bounds which registry site it can belong to
         "_board": p.get("board_clinic_ids") or None,
-        "payload": json.dumps({"inbox": {"inbox_id": row["inbox_id"], "collector": row.get("collector"), "page": p.get("page"), "host": host}, "crawl": {"seed": p.get("page"), "parse": "collector-jsonld"}}, ensure_ascii=False),
+        # ...and whether the employer was read off the posting or copied from the seed clinic, which
+        # decides whether the Matcher may use it for an exact-identity match at all
+        "_emp_inherited": p.get("org_source") == "seed",
+        "payload": json.dumps({"inbox": {"inbox_id": row["inbox_id"], "collector": row.get("collector"), "page": p.get("page"), "host": host},
+                               "crawl": {"seed": p.get("page"), "parse": "collector-jsonld"},
+                               "city_source": city_src, "employer_source": p.get("org_source") or "page"}, ensure_ascii=False),
     }
