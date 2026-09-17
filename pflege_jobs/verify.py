@@ -148,10 +148,23 @@ _CITY_JUNK = {"ich", "wir", "sie", "die", "der", "das", "klinik", "kliniken", "k
               "unser", "unsere", "haus", "team", "stelle", "pflege", "bewerbung", "kontakt", "adresse"}
 
 
-def extract_location(html):
+def _placeable(city, plz, towns):
+    """Is this string a place we can actually place? Same self-validating trick city_from_url uses:
+    in_bavaria() must reach a verdict on it. Rejects what the label regexes pick up off page furniture
+    -- 'Campus Großhadern', 'Box', 'Karte', 'Klinikum Freising' -- without needing a list of them
+    (2026-09-17: 535 of the day's 855 reported city mismatches came from an 'Einsatzort:' label, and
+    most of them were not cities at all)."""
+    if towns is None:
+        return True
+    from .sources.career_crawl import in_bavaria
+    return in_bavaria(city, plz, None, towns) is not None
+
+
+def extract_location(html, towns=None):
     """(city, plz, source) straight off the posting page. JSON-LD first (a real JobPosting field),
     then an 'Einsatzort:' label, then a bare '12345 Ort' pair -- see TRUSTED_LOC for which of those a
-    caller may act on. (None, None, None) when the page says nothing."""
+    caller may act on. Pass `towns` to have the two label-scraped sources validated as real places;
+    without it they are returned unchecked. (None, None, None) when the page says nothing."""
     if not html:
         return None, None, None
     for m in _LD_BLOCK.finditer(html):
@@ -171,11 +184,13 @@ def extract_location(html):
     m = _EINSATZORT.search(text)
     if m:
         c = _clean_city(m.group(1))
-        if c:
+        if c and _placeable(c, None, towns):
             return c, None, "einsatzort"
     m = _PLZ_ORT.search(text)
     if m:
-        return _clean_city(m.group(2)), m.group(1), "plz_ort"
+        c = _clean_city(m.group(2))
+        if _placeable(c, m.group(1), towns):
+            return c, m.group(1), "plz_ort"
     return None, None, None
 
 
@@ -290,7 +305,7 @@ def _bounced_to_list(url, final_url, st):
     return bool(s) and len(s) > 8 and s not in (final_url or "").lower()
 
 
-def verify_one(session, url, title, rungs=("http", "render")):
+def verify_one(session, url, title, rungs=("http", "render"), towns=None):
     """Escalate through `rungs` until one of them can actually see the posting. Returns
     dict(verify_status, verify_http, verify_note, method, city, plz, loc_source, final_url).
     `method` names the rung that produced the verdict, so a caller can always tell a real check from
@@ -322,7 +337,7 @@ def verify_one(session, url, title, rungs=("http", "render")):
             st, http, note = "gone", code, f"redirected to {out['final_url'][:80]} (posting path gone)"
         if st == "live" or (st == "gone" and http in (404, 410)) or st == "gone" and "redirected" in (note or "") or IS_PDF.search(url or ""):
             out.update(verify_status=st, verify_http=http, verify_note=note, method="http")
-            out["city"], out["plz"], out["loc_source"] = extract_location(html)
+            out["city"], out["plz"], out["loc_source"] = extract_location(html, towns)
             return out
     elif forced:
         st, http, note = "error", None, "url carries its id in the fragment -- HTTP cannot see it"
@@ -345,7 +360,7 @@ def verify_one(session, url, title, rungs=("http", "render")):
                 rst, rhttp, rnote = "gone", code, f"redirected to {out['final_url'][:80]} (posting path gone)"
             if rst == "live" or rst == "gone":
                 out.update(verify_status=rst, verify_http=rhttp, verify_note=f"{rnote} [rendered]", method=method)
-                out["city"], out["plz"], out["loc_source"] = extract_location(html)
+                out["city"], out["plz"], out["loc_source"] = extract_location(html, towns)
                 return out
             st, http, note = rst, rhttp, rnote
         except Exception as e:
@@ -357,14 +372,14 @@ def verify_one(session, url, title, rungs=("http", "render")):
             if html:
                 fst, fhttp, fnote = decide(code, html, title)
                 out.update(verify_status=fst, verify_http=fhttp, verify_note=f"{fnote} [firecrawl]", method="firecrawl")
-                out["city"], out["plz"], out["loc_source"] = extract_location(html)
+                out["city"], out["plz"], out["loc_source"] = extract_location(html, towns)
                 return out
         except Exception as e:
             note = f"{note}; firecrawl failed: {type(e).__name__}"
 
     out.update(verify_status=st, verify_http=http, verify_note=note, method=method)
     if html:
-        out["city"], out["plz"], out["loc_source"] = extract_location(html)
+        out["city"], out["plz"], out["loc_source"] = extract_location(html, towns)
     return out
 
 
@@ -377,7 +392,7 @@ def _vrow(r, res):
             "city": res["city"], "plz": res["plz"], "loc_source": res["loc_source"], "final_url": res["final_url"]}
 
 
-def verify_all(rows, workers=6, log=print, render=True, firecrawl=False):
+def verify_all(rows, workers=6, log=print, render=True, firecrawl=False, towns=None):
     """rows: dicts with posting_id, source_url, external_url, title.
 
     Two passes on purpose: the HTTP rung is threaded, the Playwright rung is not -- crawlers.portals
@@ -390,7 +405,7 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False):
 
     def http_one(r):
         url = r.get("external_url") or r.get("source_url")
-        return r, verify_one(s, url, r["title"], rungs=("http",))
+        return r, verify_one(s, url, r["title"], rungs=("http",), towns=towns)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for f in as_completed([ex.submit(http_one, r) for r in rows]):
@@ -409,7 +424,7 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False):
         for i, (r, res0) in enumerate(todo, 1):
             url = r.get("external_url") or r.get("source_url")
             try:
-                res = verify_one(s, url, r["title"], rungs=("render",))
+                res = verify_one(s, url, r["title"], rungs=("render",), towns=towns)
             except Exception as e:
                 res = {**res0, "verify_note": f"{res0.get('verify_note')}; render crashed {type(e).__name__}"}
             if res["verify_status"] in ("live", "gone"):
@@ -431,7 +446,7 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False):
         for r, res0 in todo:
             url = r.get("external_url") or r.get("source_url")
             try:
-                res = verify_one(s, url, r["title"], rungs=("firecrawl",))
+                res = verify_one(s, url, r["title"], rungs=("firecrawl",), towns=towns)
             except Exception as e:
                 res = {**res0, "verify_note": f"{res0.get('verify_note')}; firecrawl crashed {type(e).__name__}"}
             if res["verify_status"] in ("live", "gone"):

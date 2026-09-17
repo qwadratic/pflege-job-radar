@@ -594,6 +594,12 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
             # second distinct posting.
             continue
         seen.add(final_key)
+        # The two shapes that answer 200 but are not the posting, decided by the same helpers the
+        # verifier uses so a row cannot enter here and be expired hours later by the verify pass:
+        # a bot wall's own refusal page, and a slug that redirected to the board's list.
+        from pflege_jobs.verify import WALL_MARKERS, _bounced_to_list
+        if WALL_MARKERS.search(r.text[:4000]) or _bounced_to_list(u, r.url, None):
+            continue
         m = ALLJOBS_RX.search(r.text)
         if m:
             try:

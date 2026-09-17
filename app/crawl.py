@@ -512,10 +512,11 @@ def _run_verify(run_id, clinics, params, log):
     the anon key and the ingest function has no op to move a posting's city. tools/reverify_and_clean.py
     (secret key) applies those corrections and the permanent non-Bavarian deletions.
     """
-    from pflege_jobs.verify import VERIFY_FIELDS, verify_all
+    from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, verify_all
     from pflege_jobs.sinks import EdgeSink
     from pflege_jobs.classify import norm_text
     ids = {c["clinic_id"] for c in clinics}
+    towns = D.towns()          # lets extract_location() reject a label that is not a real place
     rows = [j for j in D.jobs() if j.get("status") == "open" and (not ids or j.get("clinic_id") in ids)]
     if not rows:
         log("verify: no open postings in scope")
@@ -524,7 +525,7 @@ def _run_verify(run_id, clinics, params, log):
     log(f"verify: {len(rows)} open posting(s) in scope")
     res = verify_all([{"posting_id": j["posting_id"], "external_url": j.get("external_url"), "source_url": j.get("source_url"),
                        "title": j.get("title")} for j in rows], workers=int(params.get("workers") or 8), log=log,
-                     render=not params.get("no_render"), firecrawl=bool(params.get("firecrawl")))
+                     render=not params.get("no_render"), firecrawl=bool(params.get("firecrawl")), towns=towns)
     sink, pushed = EdgeSink(batch=400), 0
     payload = [{k: v for k, v in r.items() if k in VERIFY_FIELDS} for r in res]
     for i in range(0, len(payload), 400):
@@ -542,7 +543,8 @@ def _run_verify(run_id, clinics, params, log):
             unseen += 1
             R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "posting",
                                  r.get("method"), [j.get("clinic_id")], f"{r['verify_status']}: {r['verify_note']}", run_id)
-        elif r.get("city") and norm_text(r["city"]) != norm_text(j.get("city") or ""):
+        elif (r.get("city") and r.get("loc_source") in TRUSTED_LOC
+              and norm_text(r["city"]) != norm_text(j.get("city") or "")):
             stale += 1
             R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "city",
                                  r.get("loc_source"), [j.get("clinic_id")],
