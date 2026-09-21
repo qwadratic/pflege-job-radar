@@ -199,24 +199,30 @@ def test_section_link_ignores_individual_job_postings_that_merely_mention_pflege
     assert len(rows) == 1
 
 
-def test_crawl_urls_flags_truncated_when_the_queue_size_ceiling_drops_a_pagination_candidate():
-    """TASK-72 AC#2: a pagination candidate dropped by the len(seen_lists)+len(list_q) >=
-    list_budget*2 queue-size ceiling used to leave no trace at all when the (small) surviving queue
-    still drained naturally afterwards -- bool(list_q) alone never caught it."""
+def test_crawl_urls_still_reads_pagination_the_page_budget_can_afford_after_dead_list_urls():
+    """TASK-14: the `len(seen_lists) + len(list_q) >= list_budget * 2` queue ceiling dropped
+    candidate list pages for good. seen_lists counts every url POPPED, including ones whose fetch
+    failed -- and a failed fetch never raises list_pages. So a board with dead list urls filled the
+    queue ceiling while list_pages was still far under list_budget, and lost pagination it had the
+    budget to read (live: ANregiomed, list_pages 102 of 500, truncated=True with nothing else able
+    to set it). Here: 5 dead list urls + one real page 2 carrying the only job on the board."""
     seed_url = "https://example-klinik.de/karriere/"
-    next_url = "https://example-klinik.de/karriere/?page=2"
-    # 6 identical "next page" links on the one seed page: with list_budget=3 (cap = list_budget*2 =
-    # 6), the first 5 occurrences queue fine and drain for free once the real url is deduped; the
-    # 6th is silently dropped by the size cap alone, with the page-count ceiling never engaged.
-    seed_html = "".join('<a href="/karriere/?page=2">weiter</a>' for _ in range(6))
-    dead_end_html = "<html><body>keine weiteren Seiten</body></html>"
-    fetch_map = {seed_url: R(seed_html, seed_url), next_url: R(dead_end_html, next_url)}
+    page2_url = "https://example-klinik.de/karriere/?page=2"
+    job_url = "https://example-klinik.de/karriere/job/1"
+    # list_pages=3 -> the old ceiling was 6, reached at seed + 5 queued, so ?page=2 (emitted last)
+    # was dropped. Only 1 of the 3 affordable list-page fetches had actually been spent by then.
+    dead = "".join('<a href="/karriere/tot-%d?seite=1">weitere Seite</a>' % i for i in range(5))
+    seed_html = dead + '<a href="/karriere/?page=2">weiter</a>'
+    page2_html = '<a href="/karriere/job/1">Pflegefachkraft (m/w/d) Station A</a>'
+    fetch_map = {seed_url: R(seed_html, seed_url), page2_url: R(page2_html, page2_url),
+                 job_url: R(JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station A"), job_url)}
     cr = _crawler(fetch_map, list_pages=3)
 
     rows, stats = cr._crawl_urls({"name": "X", "kez": "1", "career": seed_url}, {"example-klinik.de"}, [seed_url], [])
 
-    assert stats["list_pages"] < cr.list_budget   # drained naturally, well under the page-count ceiling
-    assert stats["truncated"] is True             # ...yet a real candidate was dropped by the size cap
+    assert page2_url in cr.calls                  # the dropped candidate is fetched now
+    assert len(rows) == 1                         # ...and its job reaches the result
+    assert stats["truncated"] is False            # nothing was left unread
 
 
 def test_section_first_merge_keeps_the_sub_walks_truncated_flag():
@@ -300,3 +306,59 @@ def test_sitemap_job_urls_visits_every_child_of_an_unnamed_sitemap_index(monkeyp
     found = cr.sitemap_job_urls(index_url)
 
     assert set(found) == set(job_urls)
+
+
+# --- TASK-79: same-board host gate must not degenerate to a bare TLD ----------------------------
+
+def test_page_hosts_ok_rejects_an_unrelated_domain_for_a_bare_apex_seed_host():
+    """A seed host with no subdomain ('kbo-iak.de') used to lose its whole name to the one-label
+    strip, leaving the bare TLD 'de' as the suffix every candidate was compared against -- so any
+    .de host whose netloc merely contained 'job'/'karriere'/'softgarden'/'dvinci' passed as "the
+    same board"."""
+    cr = _crawler({})
+
+    assert cr._page_hosts_ok("https://irrelevantsite-jobs.de/x", {"kbo-iak.de"}) is False
+    assert cr._page_hosts_ok("https://karriere.fremde-klinik.de/stelle", {"kbo-iak.de"}) is False
+    assert cr._page_hosts_ok("https://someone.softgarden.io/job/1", {"kbo-iak.de"}) is False
+    # ...and the same for a two-label host that is not a .de domain at all.
+    assert cr._page_hosts_ok("https://jobs.fremde.com/x", {"example.com"}) is False
+
+
+def test_page_hosts_ok_still_allows_a_subdomain_hop_inside_the_same_registrable_domain():
+    cr = _crawler({})
+
+    assert cr._page_hosts_ok("https://karriere.example.de/stelle/1", {"www.example.de"}) is True
+    assert cr._page_hosts_ok("https://jobs.example.de/1", {"karriere.example.de"}) is True
+    assert cr._page_hosts_ok("https://tenant.softgarden.io/job/1", {"other.softgarden.io"}) is True
+    assert cr._page_hosts_ok("https://tenant.dvinci-hr.com/de/jobs/10862/pflegehilfskraft", {"x.dvinci-hr.com"}) is True
+    # the exact host is always in, keyword or not
+    assert cr._page_hosts_ok("https://kbo-iak.de/kbo-karriere/x", {"kbo-iak.de"}) is True
+    # ...and the apex of a registered www host is the same board too
+    assert cr._page_hosts_ok("https://karriere.anregiomed.de/x", {"www.anregiomed.de"}) is True
+
+
+def test_browser_crawler_link_gate_rejects_an_unrelated_domain_for_a_bare_apex_seed_host():
+    """BrowserCrawler.crawl carried its own copy of the same widening, and without even the leading
+    dot -- so 'notkbo-iak.de' passed too. Called unbound: __init__ would launch chromium."""
+    from pflege_jobs.sources.career_browser import BrowserCrawler
+
+    seed_url = "https://kbo-iak.de/karriere"
+    links = [("https://irrelevantsite-jobs.de/stelle-1", "Pflegefachkraft (m/w/d)"),
+             ("https://notkbo-iak.de/stelle-2", "Pflegefachkraft (m/w/d)"),
+             ("https://karriere.kbo-iak.de/stelle-3", "Pflegefachkraft (m/w/d)")]
+
+    fetched = []
+
+    class _Stub:
+        budget = 50
+        def render(self, url, interact=True):
+            return ("<html></html>" if interact else "", links, [], url)
+        def fetch(self, url):
+            fetched.append(url)
+            return None
+
+    rows, stats = BrowserCrawler.crawl(_Stub(), {"name": "kbo", "kez": "16251", "career": seed_url})
+
+    assert rows == []
+    assert stats["job_links_found"] == 1
+    assert fetched == ["https://karriere.kbo-iak.de/stelle-3"]

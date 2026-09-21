@@ -134,3 +134,21 @@ def test_mechanic_try_uses_real_registry():
     r = get("clinic_link").run({"employer": "Klinikum Fürth Personalabteilung", "city": "Fürth"})
     assert r["result"]["clinic_id"] and r["rule"].startswith("R")
     assert get("clinic_link").run({"employer": "AWO Seniorenzentrum", "city": "Fürth"})["result"]["clinic_id"] is None
+
+
+def test_operator_tie_prefers_the_site_the_employer_text_actually_names():
+    """TASK-57: kbo.de's per-posting Einsatzort block says "kbo-Kinderzentrum München" -- 16211's
+    own name. But the Krankenhausplan lists that same gGmbH as the OPERATOR of both 16211 and
+    16212, so the operator rung tied and _pick_site handed all 13 of those postings to 16212
+    (kbo-Heckscher-Klinikum München) on bed count alone, which is blind to what the posting says."""
+    cl = [{"clinic_id": "16211", "name": "kbo-Kinderzentrum München, Fachklinik für Sozialpädiatrie",
+           "town": "München", "operator": "kbo-Kinderzentrum München gGmbH", "beds": 60},
+          {"clinic_id": "16212", "name": "kbo-Heckscher-Klinikum München", "town": "München",
+           "operator": "kbo-Kinderzentrum München gGmbH", "beds": 78}]
+    m = Matcher(cl)
+    r = m.match("kbo-Kinderzentrum München", "München")
+    assert r[0] == "16211" and r[1] == "R2_operator_town_bestj"
+    # the sister site is still reachable when the posting names IT
+    assert m.match("kbo-Heckscher-Klinikum München", "München")[0] == "16212"
+    # A genuine tie -- an operator name that names neither site any better than the other -- still
+    # falls through to _pick_site/R6 (test_rules_r1_r2_r6 pins that path on München Klinik gGmbH).

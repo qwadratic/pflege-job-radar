@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 
 import requests
@@ -43,27 +44,48 @@ CID = "playwright-portals-" + os.environ.get("CRAWL_CLIENT", "default")
 # ---------------------------------------------------------------------------
 _browser = None
 _pw = None
+_lock = threading.Lock()
+_owner = None       # the thread that launched the shared browser; None while there is none
+
+
+def _require_owner():
+    """Playwright's SYNC api binds a browser connection to the thread that started it: touching that
+    browser from another thread raises greenlet.error mid-call and takes the connection down for the
+    owner too (reproduced live 2026-09-20). So the shared browser has one owner thread and anyone
+    else is refused here, before Playwright is touched, instead of crashing inside it."""
+    me = threading.current_thread()
+    if _owner is not None and _owner is not me:
+        raise RuntimeError(
+            "crawlers.portals' shared Playwright browser belongs to thread %r and the sync API cannot "
+            "be used from another thread; %r must render in the owning thread (see verify_all's "
+            "sequential render pass) or run in its own process." % (_owner.name, me.name))
 
 
 def _get_browser():
-    global _browser, _pw
-    if _browser is None:
-        from playwright.sync_api import sync_playwright
-        _pw = sync_playwright().start()
-        _browser = _pw.chromium.launch(headless=True, args=["--no-sandbox"])
+    global _browser, _pw, _owner
+    with _lock:
+        _require_owner()
+        if _browser is None:
+            from playwright.sync_api import sync_playwright
+            _pw = sync_playwright().start()
+            _browser = _pw.chromium.launch(headless=True, args=["--no-sandbox"])
+            _owner = threading.current_thread()
     return _browser
 
 
 def _close_browser():
-    global _browser, _pw
-    if _browser:
-        try: _browser.close()
-        except Exception: pass
-        _browser = None
-    if _pw:
-        try: _pw.stop()
-        except Exception: pass
-        _pw = None
+    global _browser, _pw, _owner
+    with _lock:
+        _require_owner()
+        if _browser:
+            try: _browser.close()
+            except Exception: pass
+            _browser = None
+        if _pw:
+            try: _pw.stop()
+            except Exception: pass
+            _pw = None
+        _owner = None
 
 
 def fetch_page(url, wait_ms=5000, timeout_ms=30000):

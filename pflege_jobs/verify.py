@@ -108,6 +108,15 @@ _EINSATZORT = re.compile(r"(?:Einsatzort|Arbeitsort|Standort|Dienstort)\s*[:\-â€
 _EINSATZORT_IDIOM = re.compile(r"\b(?:zum|zur|unsere|weitere|alle|andere)\s+$", re.I)
 
 
+def _scalar(v):
+    """A JSON-LD PostalAddress field that arrives as a one-item list instead of a string (confirmed
+    live 2026-09-21: www.komm-ins-klinikland.de ships {"postalCode": ["97318"], "addressLocality":
+    ["Kitzingen"]}). Unwrapped here rather than defended against downstream: a list inside the
+    (city, plz) tuple below is unhashable, and the TypeError took down the WHOLE daily verify run --
+    5 pages aborted the re-check of all 2560 open postings (run 109, 2026-09-21)."""
+    return (v[0] if v else None) if isinstance(v, list) else v
+
+
 def _walk_jsonld(node, out):
     """Collect one (city, plz) per JobPosting jobLocation in a JSON-LD document (dict, list or
     @graph) -- (None, None) when that JobPosting's own jobLocation is a list of more than one
@@ -128,7 +137,7 @@ def _walk_jsonld(node, out):
         for pl in (loc if isinstance(loc, list) else [loc]):
             addr = (pl or {}).get("address") if isinstance(pl, dict) else None
             if isinstance(addr, dict):
-                addrs.append((addr.get("addressLocality"), addr.get("postalCode")))
+                addrs.append((_scalar(addr.get("addressLocality")), _scalar(addr.get("postalCode"))))
         # Pick the one non-blank address, not addrs[0] -- a blank placeholder entry (empty address
         # object) ahead of the real one in the list must not itself count as "ambiguous" or win by
         # position; distinctness (and which address survives) is computed only over non-blank entries.
@@ -376,6 +385,29 @@ def verify_one(session, url, title, rungs=("http", "render"), towns=None):
     allow_render, allow_firecrawl = "render" in rungs, "firecrawl" in rungs
     forced = bool(FRAGMENT_URL.search(url or ""))
 
+    if PI_LOGA.search(url or ""):
+        # There is no detail page on these boards, so every OTHER rung fetches the board LIST -- which
+        # contains every title, including the removed ones, so decide() finds the posting's own tokens
+        # on it and answers "live" forever (confirmed live 2026-09-18: 51 Helios rows carry
+        # "title tokens 3/3 [rendered]" from exactly that fall-through). The board list is the only
+        # rung allowed to answer here; when it cannot, the honest answer is "undecided".
+        if not allow_render:
+            out.update(verify_status="error", verify_http=None, method="board_list",
+                       verify_note="P&I LOGA: only the rendered board list can see this posting")
+            return out
+        titles = board_titles(url)
+        if titles:
+            hit = norm_text(title or "") in titles
+            out.update(verify_status="live" if hit else "gone", verify_http=200, method="board_list",
+                       verify_note=("still listed on the board" if hit else "no longer listed on the board")
+                       + " (P&I LOGA: the list IS the posting, there is no detail page)")
+        else:
+            # Drift alarm: the whole board goes to crawl_issues under method 'board_list' on the next
+            # mode=verify run, instead of one unreadable render quietly expiring or reviving 91 rows.
+            out.update(verify_status="error", verify_http=None, method="board_list",
+                       verify_note="P&I LOGA board listed no titles -- board empty or the list rung broke")
+        return out
+
     if "http" in rungs and not forced:
         method = "http"
         try:
@@ -401,15 +433,6 @@ def verify_one(session, url, title, rungs=("http", "render"), towns=None):
             return out
     elif forced:
         st, http, note = "error", None, "url carries its id in the fragment -- HTTP cannot see it"
-
-    if allow_render and PI_LOGA.search(url or ""):
-        titles = board_titles(url)
-        if titles:
-            hit = norm_text(title or "") in titles
-            out.update(verify_status="live" if hit else "gone", verify_http=200, method="board_list",
-                       verify_note=("still listed on the board" if hit else "no longer listed on the board")
-                       + " (P&I LOGA: the list IS the posting, there is no detail page)")
-            return out
 
     if allow_render:
         try:
@@ -466,7 +489,17 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False, towns=N
 
     def http_one(r):
         url = r.get("external_url") or r.get("source_url")
-        return r, verify_one(s, url, r["title"], rungs=("http",), towns=towns)
+        try:
+            return r, verify_one(s, url, r["title"], rungs=("http",), towns=towns)
+        except Exception as e:
+            # One unparseable page must not end the pass. as_completed().result() re-raises into the
+            # caller, so a single malformed JSON-LD address aborted the whole daily re-verification
+            # and left every open posting on its old verdict for three days (run 109, 2026-09-21).
+            # The row is escalated carrying the crash, so it is still re-checked and still reaches
+            # crawl_issues if the browser cannot see it either -- never absorbed as a verdict.
+            return r, {"verify_status": "error", "verify_http": None, "method": "http",
+                       "verify_note": f"http rung crashed: {type(e).__name__}: {str(e)[:120]}",
+                       "city": None, "plz": None, "loc_source": None, "final_url": url}
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for f in as_completed([ex.submit(http_one, r) for r in rows]):

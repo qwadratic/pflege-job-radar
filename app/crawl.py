@@ -354,11 +354,11 @@ def _seed_obs(board, c, towns, log):
         seed = BUILDERS["umantis"]({"name": c["name"], "career": c["careers_url"], "operator": c.get("operator")}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no umantis instance found on careers page"}
-        # list_pages used to be pinned to 6 here, below the seed's own 7-8 start URLs -- every
-        # umantis board hit the ceiling before its own start pages were even all fetched once,
-        # permanently reporting truncated=True (TASK-72 AC#2). Crawler's own default (500) is
-        # already documented as a loop-safety ceiling, not a target -- use that instead.
-        return Crawler(towns, per_site_pages=150, sleep=0.2, log=log).crawl(seed)
+        # No per-board ceiling override here: list_pages was pinned to 6 (below the seed's own 7-8
+        # start URLs, so every umantis board reported truncated before its start pages were even
+        # fetched once) and per_site_pages to 150 (a detail-fetch ceiling on a free board). Crawler's
+        # own defaults are documented loop-safety ceilings, not targets -- use those.
+        return Crawler(towns, sleep=0.2, log=log).crawl(seed)
     if vendor == "klinikum_passau":
         from pflege_jobs.sources.klinikum_passau import crawl as crawl_klinikum_passau
         return crawl_klinikum_passau(c, towns, log=log)
@@ -468,15 +468,19 @@ def _post_inbox(rows, log):
     # inbox from a prior day's run, which is what was actually driving the recurring "inbox: daily
     # limit reached for this client" run failures, not genuinely new volume. 50 matches the chunk
     # size pflege_jobs/cli.py's lookup_posting_ids already uses for the identical class of problem.
+    #
+    # The lookup failure is raised, not swallowed (matching _unseen_source_urls above). Posting an
+    # unchecked batch treats every URL as unseen, so it re-inserts rows already in the inbox -- which
+    # burns the very daily write quota whose exhaustion is the most likely reason the lookup 400'd in
+    # the first place (run 105, 2026-09-20: 17 lookups failed inside 10s, then the insert failed with
+    # "inbox: daily limit reached for this client"). Swallowing it turned one tripped quota into a
+    # guaranteed duplicate flood, and left the run reported as done.
     for i in range(0, len(urls), 50):
         batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
-        try:
-            for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
-                if x.get("source_url"):
-                    existing.add(x["source_url"])
-        except Exception as e:
-            log(f"  inbox dedupe lookup failed ({e}); posting this batch unchecked")
+        for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
+            if x.get("source_url"):
+                existing.add(x["source_url"])
     new = [r for r in uniq if r["source_url"] not in existing]
     for i in range(0, len(new), 200):
         A.rest_post("inbox", new[i:i + 200])
@@ -512,10 +516,20 @@ def _posting_ids_for_refs(refs):
 
 def _load_observations(obs, clinics_by_id, log):
     """Seeded-adapter observations -> EdgeSink + clinic links (mirrors cli inbox's post-load steps)."""
+    from urllib.parse import urlparse
     from pflege_jobs.registry import Matcher
     from pflege_jobs.sinks import EdgeSink
+    from pflege_jobs.sources.inbox import NON_PROD_HOST
     from pflege_jobs import config as C
-    obs = [o for o in obs if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES and o.get("in_bavaria") is not False]
+    # The inbox path gates staging/preview hosts (cli.py _drain_once); this path writes straight to
+    # EdgeSink and did not, which is how referral-portal-staging.lmu-klinikum.de put 70 rows that are
+    # still open in the table (TASK-61 AC#2). Same regex, both doors.
+    nonprod = [o for o in obs if NON_PROD_HOST.search(urlparse(o.get("source_url") or "").netloc)]
+    if nonprod:
+        log(f"  {len(nonprod)} row(s) from a non-production host (staging/preview) -- not loaded: "
+            f"{sorted({urlparse(o.get('source_url') or '').netloc for o in nonprod})}")
+    obs = [o for o in obs if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES and o.get("in_bavaria") is not False
+           and not NON_PROD_HOST.search(urlparse(o.get("source_url") or "").netloc)]
     if not obs:
         return {}, []
     m = Matcher([dict(c) for c in (D.clinics() or D.registry_csv_rows())])
@@ -722,6 +736,15 @@ def execute(run_id):
             log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
             if st and st.get("error"):
                 return [], obs, st["error"]
+            if st and st.get("truncated"):
+                # TASK-14 AC#2: the walk's own safety ceiling stopped it before the board's end
+                # signal did, so this board was NOT read in full. The flag existed but only ever
+                # reached the log line above, where a board silently short by an unknown number of
+                # postings is indistinguishable from a complete one on every later read.
+                R.record_crawl_issue(url, day, "truncated", b.get("vendor"), ids,
+                                     f"read stopped by a safety ceiling, not by the board's own end of pagination "
+                                     f"({json.dumps({k: v for k, v in st.items() if k in ('job_links_found', 'list_pages', 'job_pages')}, ensure_ascii=False)})", run_id)
+                log(f"  WARNING: truncated read for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=truncated")
             if not obs:
                 R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
                                      f"0 observations, no error ({json.dumps({k: v for k, v in (st or {}).items() if k in ('job_links_found', 'list_pages', 'truncated')}, ensure_ascii=False)})", run_id)

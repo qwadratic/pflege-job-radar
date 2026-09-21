@@ -214,3 +214,128 @@ def test_reset_board_titles_cache_clears_between_runs(monkeypatch):
     V._BOARD_TITLES["https://x.example/bewerber-web/"] = {"stale title"}
     V.reset_board_titles_cache()
     assert V._BOARD_TITLES == {}
+
+
+# --- the P&I LOGA board is the ONLY rung allowed to answer for a /bewerber-web/ URL -------------
+# These boards have no detail page, so every other rung fetches the board LIST -- which still
+# carries every title, removed ones included. Falling through to it answers "live" forever
+# (confirmed live 2026-09-18: 51 Helios rows in the table carry "title tokens 3/3 [rendered]").
+
+_PI_URL = "https://helios-gesundheit.pi-asp.de/bewerber-web/?companyEid=1134#position,id=4760199aa1c2d3e4f5a6"
+_PI_TITLE = "Pflegerische Bereichsleitung Neurologie (m/w/d)"
+
+
+class _BoardListSession:
+    """Any GET answers with the rendered board LIST: it contains the posting's own title tokens,
+    so decide() reads it as 'live' -- which is exactly the wrong verdict for a removed posting."""
+    def get(self, url, headers=None, timeout=None, allow_redirects=None):
+        return _FakeResp2(url, "<html><body>Stellenmarkt: Pflegerische Bereichsleitung Neurologie (m/w/d)</body></html>")
+
+
+class _FakeResp2:
+    def __init__(self, url, text):
+        self.status_code, self.url, self.text, self.headers = 200, url, text, {}
+
+
+def test_pi_loga_title_still_listed_is_live_via_the_board_list_rung(monkeypatch):
+    import pflege_jobs.verify as V
+    monkeypatch.setattr(V, "board_titles", lambda url: {"pflegerische bereichsleitung neurologie (m/w/d)", "apotheker (m/w/d)"})
+    out = V.verify_one(_BoardListSession(), _PI_URL, _PI_TITLE, rungs=("http", "render"))
+    assert out["verify_status"] == "live" and out["method"] == "board_list"
+
+
+def test_pi_loga_title_no_longer_listed_is_gone_not_live_off_the_list_page(monkeypatch):
+    import pflege_jobs.verify as V
+    monkeypatch.setattr(V, "board_titles", lambda url: {"apotheker (m/w/d)"})
+    out = V.verify_one(_BoardListSession(), _PI_URL, _PI_TITLE, rungs=("http", "render"))
+    assert out["verify_status"] == "gone" and out["method"] == "board_list"
+
+
+def test_pi_loga_unreadable_board_is_undecided_never_live_off_the_board_list(monkeypatch):
+    """The drift case: the vendor changes the list markup, _list_rows matches nothing. The whole
+    board must go to crawl_issues as 'error', not read 'live' off the page the rungs below fetch."""
+    import pflege_jobs.verify as V
+    monkeypatch.setattr(V, "board_titles", lambda url: set())
+
+    def _no_render(*a, **kw):
+        raise AssertionError("render() must not judge a P&I LOGA board list as if it were the posting")
+    monkeypatch.setattr(V, "render", _no_render)
+
+    def _no_firecrawl(*a, **kw):
+        raise AssertionError("firecrawl must not judge a P&I LOGA board list either -- and must not be billed for it")
+    monkeypatch.setattr(V, "firecrawl_fetch", _no_firecrawl)
+
+    out = V.verify_one(_BoardListSession(), _PI_URL, _PI_TITLE, rungs=("http", "render", "firecrawl"))
+    assert out["verify_status"] == "error" and out["method"] == "board_list"
+    assert "listed no titles" in out["verify_note"]
+
+
+def test_pi_loga_on_a_rung_set_without_render_is_undecided_and_does_no_http_get(monkeypatch):
+    """verify_all's threaded http pass and its firecrawl pass both call verify_one without the
+    render rung -- neither may fetch the board list and answer off it."""
+    import pflege_jobs.verify as V
+
+    class _NoGet:
+        def get(self, *a, **kw):
+            raise AssertionError("no rung below board_list may fetch a P&I LOGA URL")
+
+    for rungs in (("http",), ("firecrawl",)):
+        out = V.verify_one(_NoGet(), _PI_URL, _PI_TITLE, rungs=rungs)
+        assert out["verify_status"] == "error" and out["method"] == "board_list", rungs
+
+
+def test_a_non_pi_url_is_unaffected_and_still_uses_the_http_rung():
+    import pflege_jobs.verify as V
+    out = V.verify_one(_BoardListSession(), "https://x.example/stellen/pflegerische-bereichsleitung-neurologie",
+                       _PI_TITLE, rungs=("http",))
+    assert out["verify_status"] == "live" and out["method"] == "http"
+
+
+# --- a JSON-LD address field that arrives as a one-item list ----------------------------------
+# www.komm-ins-klinikland.de ships {"postalCode": ["97318"], "addressLocality": ["Kitzingen"]}.
+# The list landed inside the (city, plz) tuple _walk_jsonld hashes, and the TypeError propagated
+# out of as_completed().result() and killed the whole pass: run 109 (2026-09-21) re-checked none of
+# the 2560 open postings, and every verdict in the table stayed three days old.
+
+_LIST_VALUED_JSONLD = """<html><head><script type="application/ld+json">
+{"@type": "JobPosting", "title": "Pflegefachkraft", "jobLocation": {"@type": "Place",
+ "address": {"@type": "PostalAddress", "streetAddress": ["Keltenstra\\u00dfe 67"],
+             "postalCode": ["97318"], "addressLocality": ["Kitzingen"]}}}
+</script></head><body>OP-Schwester OTA Kitzingen</body></html>"""
+
+
+def test_extract_location_reads_a_list_valued_jsonld_address_instead_of_crashing():
+    from pflege_jobs.verify import extract_location
+    assert extract_location(_LIST_VALUED_JSONLD) == ("Kitzingen", "97318", "jsonld")
+
+
+def test_verify_one_survives_the_list_valued_jsonld_page_on_the_http_rung():
+    class _S:
+        def get(self, url, headers=None, timeout=None, allow_redirects=None):
+            return _FakeResp2(url, _LIST_VALUED_JSONLD)
+
+    out = verify_one(_S(), "https://www.komm-ins-klinikland.de/stelle/op-schwester-pfleger-oder-ota-m-w-d/",
+                     "OP-Schwester / -Pfleger oder OTA (m/w/d)", rungs=("http",))
+    assert out["verify_status"] == "live" and out["city"] == "Kitzingen" and out["plz"] == "97318"
+
+
+def test_verify_all_records_a_crashed_http_row_instead_of_ending_the_whole_pass(monkeypatch):
+    """One row raising must not take the other 2559 down with it."""
+    import pflege_jobs.verify as V
+
+    def _boom_on_one(session, url, title, rungs=(), towns=None):
+        if "boom" in url:
+            raise TypeError("unhashable type: 'list'")
+        return {"verify_status": "live", "verify_http": 200, "verify_note": "ok", "method": "http",
+                "city": None, "plz": None, "loc_source": None, "final_url": url}
+
+    monkeypatch.setattr(V, "verify_one", _boom_on_one)
+    monkeypatch.setattr(V, "requests", type("R", (), {"Session": lambda: object()}))
+    rows = [{"posting_id": i, "external_url": f"https://x.example/{'boom' if i == 1 else 'ok'}/{i}",
+             "source_url": None, "title": "Pflegefachkraft Intensivstation Nürnberg"} for i in range(4)]
+
+    res = V.verify_all(rows, workers=2, log=lambda *a, **k: None, render=False, firecrawl=False)
+    by_id = {r["posting_id"]: r for r in res}
+    assert len(res) == 4, "every row must come back, crashed one included"
+    assert by_id[1]["verify_status"] == "error" and "http rung crashed: TypeError" in by_id[1]["verify_note"]
+    assert all(by_id[i]["verify_status"] == "live" for i in (0, 2, 3))

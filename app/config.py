@@ -52,7 +52,13 @@ def rest_get(path, params=None, timeout=120, retries=2):
         if r.status_code < 500 or i == retries:
             break
         time.sleep(2 * (i + 1))
-    r.raise_for_status()
+    if r.status_code >= 300:
+        # Same shape rest_post already raises: raise_for_status() reports only the status and the
+        # request URL and throws the response body away, so the server's own explanation was lost.
+        # A 400 that actually said "inbox: daily limit reached for this client" was logged as a bare
+        # "400 Bad Request for url: <25KB of in.() filter>" and read for four days as a URL-length
+        # problem (TASK-60) -- two unrelated failures that only the body tells apart.
+        raise RuntimeError(f"PostgREST {r.status_code}: {r.text[:300]}")
     d = r.json()
     if isinstance(d, dict) and d.get("message"):
         raise RuntimeError(f"PostgREST: {d.get('message')}")

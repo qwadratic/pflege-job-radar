@@ -640,3 +640,95 @@ def test_widget_endpoint_job_links_drops_off_board_links(monkeypatch):
     monkeypatch.setattr(va, "get", _router({"https://psychiatrie-werneck.de/ajax/joblist": widget}))
     out = va._widget_endpoint_job_links(cu_resp)
     assert out == ["https://psychiatrie-werneck.de/karriere/stellenangebote/1"]
+
+
+# --- TASK-55: the widget config lives inside an HTML attribute, so it is entity-escaped ----------
+
+def _feldafing_sample():
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples",
+                     "klinik_feldafing_stellenangebote_sample.html")
+    with open(p, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_smartrecruiters_finds_tenant_when_the_widget_config_is_html_escaped(monkeypatch):
+    """Benedictus Krankenhaus Feldafing (18813) and its two Artemed siblings (16228, 16235) put the
+    same widget JSON in a data-widget ATTRIBUTE, so every quote arrives as &quot; and the plain
+    company_code regex saw nothing. The only other b-ite/SmartRecruiters marker on the page is a
+    b-ite loader mount for 'artemed-8:niiid' -- the BITE recruiting-assistant chatbot, which ships
+    createClient({key:""}) and has no postings API at all, so nothing else can rescue the board."""
+    cu = "https://www.klinik-feldafing.de/karriere/stellenangebote"
+    base = "https://api.smartrecruiters.com/v1/companies/ArtemedSE/postings"
+    page = _R(json_data={"totalFound": 1, "content": [_sr_posting("1", "Pflegefachkraft (m/w/d)", "1", "Pflegedienst")]})
+    mapping = {cu: _R(_feldafing_sample(), url=cu, ok=True), "%s?limit=100&offset=0" % base: page}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_smartrecruiters({"name": "Benedictus Krankenhaus Feldafing", "careers_url": cu})
+    assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
+
+
+def test_smartrecruiters_ident_reads_the_escaped_and_the_plain_form():
+    assert va._smartrecruiters_ident(_feldafing_sample()) == "ArtemedSE"
+    assert va._smartrecruiters_ident('<div data-widget=\'widget({"company_code": "X1"})\'>') == "X1"
+    assert va._smartrecruiters_ident("<p>no widget here</p>") is None
+
+
+def test_smartrecruiters_pages_past_the_old_1000_offset_ceiling(monkeypatch):
+    """TASK-14: crawl_smartrecruiters carried `ceiling = 1000` and looped `while offset < ceiling`,
+    so a tenant past 1000 postings stopped on that constant and reported the partial board as a
+    normal success. The board's own totalFound (or a short page) is the only stop now."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)   # 1204 detail fetches * the real politeness delay
+    base = "https://api.smartrecruiters.com/v1/companies/ArtemedSE/postings"
+    total = 1204
+    posts = [_sr_posting(str(i), "Pflegefachkraft (m/w/d) %d" % i, "3484565", "Pflegedienst") for i in range(total)]
+    mapping = {"%s?limit=100&offset=%d" % (base, off): _R(json_data={"totalFound": total, "content": posts[off:off + 100]})
+               for off in range(0, total, 100)}
+    for p in posts:                                  # per-posting detail fetch (description + real postingUrl)
+        mapping["%s/%s" % (base, p["id"])] = _R(json_data={"postingUrl": p["ref"], "jobAd": {"sections": {}}})
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_smartrecruiters({"name": "Big Tenant", "careers_url": "https://jobs.smartrecruiters.com/ArtemedSE"})
+    assert len(rows) == total
+
+
+def test_paginated_job_links_walks_past_the_old_200_page_ceiling(monkeypatch):
+    """TASK-14: _paginated_job_links carried max_pages=200 that no caller ever set. A board with
+    more pages than someone's guess was read short and returned as a complete list -- the site's own
+    "no next page" link is the only stop."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    pages = 260
+    mapping = {}
+    for i in range(pages):
+        nxt = '<a rel="next" href="/list?p=%d">weiter</a>' % (i + 1) if i + 1 < pages else ""
+        mapping["https://x.example/list?p=%d" % i] = _R(
+            '<a href="/stellenangebote/job-%d">Pflegefachkraft (m/w/d) %d</a>%s' % (i, i, nxt),
+            url="https://x.example/list?p=%d" % i, ok=True)
+    monkeypatch.setattr(va, "get", _router(mapping))
+    urls = va._paginated_job_links("https://x.example/list?p=0")
+    assert len(urls) == pages
+
+
+def test_group_portal_and_wp_jobs_take_no_item_ceiling_argument():
+    """TASK-14 AC#1/#2: crawl_group_portal and crawl_wp_jobs both carried a max_jobs=100_000 item
+    ceiling that broke the walk and sliced the result with no truncated signal anywhere. No caller
+    ever passed it, so the only thing it could do was silently shorten a board."""
+    import inspect
+    for fn in (va.crawl_group_portal, va.crawl_wp_jobs, va._wp_job_rows, va._paginated_job_links):
+        assert "max_jobs" not in inspect.signature(fn).parameters, fn.__name__
+        assert "max_pages" not in inspect.signature(fn).parameters, fn.__name__
+
+
+def test_txt_handles_the_non_string_json_ld_shapes_that_aborted_whole_board_walks():
+    """Live 2026-09-21, scheduled run 108: muenchen-klinik.de emits "postalCode":81545 as a JSON
+    number and komm-ins-klinikland.de emits a field as an array. Both raised TypeError inside
+    _txt's re.sub on the FIRST posting page, which aborted the entire board walk -- three retry
+    passes, three identical failures, both Munich clinics left holding zero real vacancies.
+
+    JSON-LD permits all three shapes (bare scalar, array, typed {"@value": ...}), so reading them
+    is correct parsing, not a defensive guard."""
+    assert va._txt(81545) == "81545"                            # the live int crash
+    assert va._txt(["Vollzeit", "Teilzeit"]) == "Vollzeit, Teilzeit"   # the live list crash
+    assert va._txt({"@value": "München"}) == "München"
+    assert va._txt({"@type": "Thing"}) is None                  # an object is not text
+    assert va._txt([]) is None
+    assert va._txt(None) is None
+    assert va._txt("<b>Pflege</b>&nbsp;kraft") == "Pflege kraft"  # unchanged for the normal case
+    assert va._txt(0) == "0"                                    # falsy but real

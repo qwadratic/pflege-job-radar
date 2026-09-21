@@ -326,3 +326,63 @@ def test_post_inbox_never_sends_a_rest_get_dedupe_batch_over_50_urls(monkeypatch
     assert batch_sizes == [50, 50, 20]
     assert all(n <= 50 for n in batch_sizes), batch_sizes
     assert len(posted) == 120   # every row still gets inserted -- only the dedupe lookup is chunked
+
+
+def test_post_inbox_raises_instead_of_posting_an_unchecked_batch(monkeypatch):
+    """TASK-60, the half of the bug the chunk=50 fix did not cover. The dedupe GET can also fail for
+    a reason no batch size changes -- the server-side inbox write quota, which 400s every request
+    from that client for the rest of the day (run 105, 2026-09-20: 17 lookups failed inside 10s,
+    then the insert failed with "inbox: daily limit reached for this client"). Swallowing that made
+    every URL look unseen, so the whole run was re-inserted as new: a tripped quota turned straight
+    into a duplicate flood, and the run still reported done. It must raise, like its sibling
+    _unseen_source_urls already does."""
+    from app import config as A
+    posted = []
+
+    def quota_tripped(path, params=None, **kw):
+        raise RuntimeError('PostgREST 400: {"message":"inbox: daily limit reached for this client"}')
+
+    monkeypatch.setattr(A, "rest_post", lambda path, body, **kw: posted.extend(body))
+    monkeypatch.setattr(A, "rest_get", quota_tripped)
+    rows = [{"kind": "jobposting", "source_url": f"https://x.example/job/{i}",
+             "payload": {"title": "Pflegefachkraft (m/w/d)"}} for i in range(60)]
+
+    with pytest.raises(RuntimeError, match="daily limit reached"):
+        CR._post_inbox(rows, lambda *_: None)
+    assert posted == []   # nothing written unchecked
+
+
+def test_a_truncated_seeded_read_is_recorded_as_crawl_issue_kind_truncated(fresh, monkeypatch):
+    """TASK-14 AC#2: a walk stopped by its own safety ceiling rather than by the board's end of
+    pagination has NOT read the board in full. stats["truncated"] existed but only reached the run
+    log, where a board short by an unknown number of postings looked exactly like a complete one on
+    every later read."""
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        obs, {"truncated": True, "job_links_found": 180, "list_pages": 500, "job_pages": 150}))
+    monkeypatch.setattr(CR, "_load_observations", lambda o, by_id, log: ({}, []))
+
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "truncated"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "180" in issues[0]["error"]   # the count reached, not just the fact of the stop
+
+
+def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
+    """The other side of the same check: a board that stopped at its own end of pagination must not
+    be reported as truncated, or the flag means nothing."""
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        obs, {"truncated": False, "job_links_found": 12, "list_pages": 2, "job_pages": 12}))
+    monkeypatch.setattr(CR, "_load_observations", lambda o, by_id, log: ({}, []))
+
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "truncated"] == []

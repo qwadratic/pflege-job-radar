@@ -93,7 +93,7 @@ def test_wp_job_rows_does_not_collapse_two_postings_distinguished_only_by_query_
     p1 = _R(_jsonld_job("Pflegefachkraft Station A (m/w/d)"), url=u1, ok=True)
     p2 = _R(_jsonld_job("Pflegefachkraft Station B (m/w/d)"), url=u2, ok=True)
     monkeypatch.setattr(va, "get", _router({u1: p1, u2: p2}))
-    rows = va._wp_job_rows([u1, u2], {"name": "Klinik", "town": "X"}, "x.example", 10, None)
+    rows = va._wp_job_rows([u1, u2], {"name": "Klinik", "town": "X"}, "x.example", None)
     titles = sorted(r["payload"]["title"] for r in rows)
     assert titles == ["Pflegefachkraft Station A (m/w/d)", "Pflegefachkraft Station B (m/w/d)"]
 
@@ -229,3 +229,69 @@ def test_enrich_reads_ausschreibung_vom_date_when_no_wp_seo_meta_exists(monkeypa
     monkeypatch.setattr(va, "get", _router({detail: page}))
     out = va._enrich_wp_fallback_fields(rows)
     assert out[0]["payload"]["datePosted"] == "2026-08-26"
+
+
+# --- title: a heading styled with a Bootstrap h1/h2/h3 class is still a heading ------------------
+
+def test_parse_job_page_reads_a_class_styled_heading_when_no_real_h_tag_exists():
+    """karriere.klinikverbund-allgaeu.de (TASK-49, 1048 beds across 6 clinics) renders every detail
+    page's real title as <strong class="h1 ..."> and has no <h1>/<h2>/<h3> at all -- so the board's
+    own generic page <title> became the title of all 82 of its postings, one indistinguishable
+    non-title for the whole board."""
+    html = ("<html><head><title> Karriere Detail - Klinikverbund Allgäu</title></head><body>"
+            '<div class="tx-sd-jobs-haufe">'
+            '<strong class="h1 font-weight-bolder mt-5">SAPV Pflegefachkraft in Teilzeit (m/w/d)</strong>'
+            "</div></body></html>")
+    j = va.parse_job_page(html, "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Kempten/x/2596",
+                          "Klinikverbund Allgäu")
+    assert j["title"] == "SAPV Pflegefachkraft in Teilzeit (m/w/d)"
+
+
+def test_parse_job_page_still_prefers_a_real_heading_over_a_class_styled_one():
+    html = ("<html><head><title>Board</title></head><body>"
+            "<h2>Pflegefachkraft (m/w/d) Intensiv</h2>"
+            '<p class="h3">Praxisanleiter (m/w/d)</p></body></html>')
+    j = va.parse_job_page(html, "https://x/stellen/a", "Klinikum")
+    assert j["title"] == "Pflegefachkraft (m/w/d) Intensiv"
+
+
+# --- title: HubSpot "Stellenanzeige | <real title>" -- generic label FIRST (TASK-52) -------------
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples")
+
+
+def _mkh_sample():
+    with open(os.path.join(FIXTURES, "meinkrankenhaus2030_stellenanzeige_sample.html"), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_hubspot_board_title_is_the_pipe_segment_that_carries_the_gender_marker():
+    """meinkrankenhaus2030.de (Krankenhaus Weilheim 19002 / Schongau 19001, shared board, 17 live
+    postings): no JSON-LD, no heading tag of any level, so the page <title> is the only title there
+    is -- and this HubSpot template writes it as "Stellenanzeige | <real title>", the generic label
+    in segment 0. Taking segment 0 gave every one of the 17 postings the literal title
+    "Stellenanzeige", which classify_role then correctly rejected as non-nursing: 0 rows kept."""
+    j = va.parse_job_page(_mkh_sample(),
+                          "https://www.meinkrankenhaus2030.de/stellenanzeige-operations-technischen-assistent-w/m/d-in-vollzeit",
+                          "Krankenhaus Schongau")
+    assert j["title"] == "Operations-Technischen-Assistent / OP-Pflegefachkräfte (w/m/d) in Vollzeit/Teilzeit"
+    from pflege_jobs.classify import classify_role
+    assert classify_role(j["title"], "", "")[0] == "pflegefachkraft"
+
+
+def test_hubspot_board_yields_its_nursing_posting_end_to_end(monkeypatch):
+    cu = "https://www.meinkrankenhaus2030.de/karriere/stellenboerse"
+    detail = "https://www.meinkrankenhaus2030.de/stellenanzeige-operations-technischen-assistent-w/m/d-in-vollzeit"
+    mapping = {cu: _R('<a href="%s?hsLang=de-de">Stellenanzeige</a>' % detail, url=cu, ok=True),
+               detail + "?hsLang=de-de": _R(_mkh_sample(), url=detail, ok=True)}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_wp_jobs({"name": "Krankenhaus Schongau", "town": "Schongau", "careers_url": cu})
+    assert [r["payload"]["title"] for r in rows] == \
+        ["Operations-Technischen-Assistent / OP-Pflegefachkräfte (w/m/d) in Vollzeit/Teilzeit"]
+
+
+def test_pipe_title_without_any_gender_marker_still_takes_segment_zero():
+    """The segment preference must not become "always take the last segment": the ordinary
+    "<real title> | SiteName" convention is still the common case."""
+    html = "<html><head><title>Pflegedienstleitung | Klinikum Musterstadt</title></head><body></body></html>"
+    assert va.parse_job_page(html, "https://x/stellen/a", "Klinikum")["title"] == "Pflegedienstleitung"

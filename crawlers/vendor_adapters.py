@@ -42,6 +42,7 @@ How each vendor is reached (probed 2026-09-06):
 """
 import argparse
 import html as _html
+import itertools
 import json
 import os
 import re
@@ -89,6 +90,17 @@ def get(u, timeout=30, session=None):
 
 
 def _txt(s, limit=20000):
+    # JSON-LD values are not always strings: the spec allows a bare number ("postalCode":81545 on
+    # muenchen-klinik.de), an array of values, and a typed literal {"@value": ...}. Each of those
+    # used to raise TypeError inside re.sub and abort the whole board walk on its first posting page.
+    if isinstance(s, (list, tuple)):
+        s = ", ".join(p for p in (_txt(v, limit) for v in s) if p)
+    elif isinstance(s, dict):
+        s = s.get("@value")
+        if isinstance(s, (list, tuple, dict)):
+            s = _txt(s, limit)
+    if s is not None and not isinstance(s, str):
+        s = str(s)
     return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", s or ""))).strip()[:limit] or None
 
 
@@ -260,11 +272,18 @@ def _smartrecruiters_ident(html):
     """The tenant identifier the widget itself uses -- present directly as company_code on the
     page's own data-widget JSON (e.g. Klinik Vincentinum's /karriere/stellenangebote, which IS the
     listing page). Falls back to a jobs.smartrecruiters.com/<tenant>/<id> link, for boards that embed
-    the widget on a category subpage instead (Artemed's own /karriere hub)."""
-    m = re.search(r'"company_code"\s*:\s*"([A-Za-z0-9\-_]+)"', html or "")
+    the widget on a category subpage instead (Artemed's own /karriere hub).
+
+    Entity-decode first: a TYPO3-style page carries that same widget JSON inside an HTML *attribute*
+    (data-widget="widget({&quot;company_code&quot;: &quot;ArtemedSE&quot;, ...})"), so the literal
+    double quotes the config uses only exist after unescaping -- confirmed live 2026-09-21 on all
+    three Artemed career pages (klinik-feldafing.de, artemed-muenchen-sued.de, artemedmuenchen.de),
+    every one of which returned None here and fell through to a yield-0 crawl_wp_jobs walk."""
+    text = _html.unescape(html or "")
+    m = re.search(r'"company_code"\s*:\s*"([A-Za-z0-9\-_]+)"', text)
     if m:
         return m.group(1)
-    m = re.search(r"jobs\.smartrecruiters\.com/(?:ni/)?([A-Za-z0-9\-_]+)/[0-9a-f-]{8,}", html or "")
+    m = re.search(r"jobs\.smartrecruiters\.com/(?:ni/)?([A-Za-z0-9\-_]+)/[0-9a-f-]{8,}", text)
     return m.group(1) if m else None
 
 
@@ -552,6 +571,21 @@ def find_job_urls(base, session=None, max_maps=500):  # loop-safety ceiling, not
     return found
 
 
+# A heading styled with Bootstrap's h1/h2/h3 utility class on a non-heading tag is still the
+# posting's headline: karriere.klinikverbund-allgaeu.de renders every detail page's real title as
+# <strong class="h1 font-weight-bolder"> and has no <h1>/<h2>/<h3> anywhere, so before this the
+# board's own generic page <title> ("Karriere Detail - Klinikverbund Allgäu") became the title of
+# all 82 of its postings -- one indistinguishable non-title for the whole board.
+BOOTSTRAP_HEADING_RX = re.compile(r'<(strong|b|span|div|p)[^>]+class="[^"]*\bh[1-3]\b[^"]*"[^>]*>(.*?)</\1>',
+                                  re.S | re.I)
+
+
+def _headinglike(htmltext):
+    """Sub-headings of a page, real tags first, then class-styled stand-ins."""
+    return ([m.group(1) for m in re.finditer(r"<h[23][^>]*>(.*?)</h[23]>", htmltext or "", re.S)]
+            + [m.group(2) for m in BOOTSTRAP_HEADING_RX.finditer(htmltext or "")])
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -586,10 +620,16 @@ def parse_job_page(htmltext, url, org):
                     is_root = (urlparse(n_url).path or "/") in ("", "/")
                     if not same_host or is_root:
                         n_url = None
-                return {"title": n.get("title"), "org": ho_name or org,
+                # Entity-decode the short JSON-LD strings, same as _txt already does for the
+                # description: a board can HTML-escape inside the JSON string itself (confirmed
+                # live 2026-09-21, jobs.bezirkskliniken-schwaben.de: addressLocality
+                # "G&#252;nzburg"), and an escaped city never matches a registry town, so every
+                # posting on such a board loses its location.
+                return {"title": _txt(n.get("title"), 300), "org": _txt(ho_name, 300) or org,
                         "org_source": None if ho_name else "seed",
-                        "loc": [{"city": a.get("addressLocality"), "plz": a.get("postalCode"),
-                                 "region": a.get("addressRegion")}],
+                        "loc": [{"city": _txt(a.get("addressLocality"), 200),
+                                 "plz": _txt(a.get("postalCode"), 40),
+                                 "region": _txt(a.get("addressRegion"), 200)}],
                         "url": n_url or url, "page": url,
                         "datePosted": _sane_date(n.get("datePosted")),
                         "employmentType": n.get("employmentType"),
@@ -623,8 +663,8 @@ def parse_job_page(htmltext, url, org):
         # Neither h1 nor <title> carries a gender marker (bespoke CMS keeps the real title in a
         # plain <h2>/<h3> instead, e.g. KWM) -- take the first heading that does, else give up
         # rather than return a fake title (a11y h1 above, or a generic <title>).
-        for hm in re.finditer(r"<h[23][^>]*>(.*?)</h[23]>", htmltext or "", re.S):
-            cand = _txt(hm.group(1), 300)
+        for raw in _headinglike(htmltext):
+            cand = _txt(raw, 300)
             if cand and GENDER.search(cand):
                 title = cand
                 break
@@ -650,7 +690,7 @@ def parse_job_page(htmltext, url, org):
             "employmentType": facts.get("schedule")}
 
 
-def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=None, titles=None):
+def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=None):
     """Fetch each url and turn it into a row -- except a klinikum-jobs widget page (ALLJOBS_RX),
     whose own title is never a job (see the regex's docstring): walk its embedded postings' own
     `link`s instead of accepting the division page itself as one fake row. `titles` (url -> anchor
@@ -661,7 +701,7 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
     out = []
     for u in urls:
         key = _fetch_dedupe_key(u)
-        if len(out) >= max_jobs or key in seen:
+        if key in seen:
             continue
         seen.add(key)
         if PDF_LINK_RX.search(u):
@@ -698,7 +738,7 @@ def _wp_job_rows(urls, c, host, max_jobs, session, section_labels=None, seen=Non
             except Exception:
                 entries = []
             widget_urls = [urljoin(r.url, e["link"]) for e in entries if e.get("link")]
-            out += _wp_job_rows(widget_urls, c, host, max_jobs - len(out), session, section_labels, seen)
+            out += _wp_job_rows(widget_urls, c, host, session, section_labels, seen)
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if not j or not j.get("title"):
@@ -813,15 +853,19 @@ def _next_page_url(html, base):
     return None
 
 
-def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, max_pages=200, titles=None):
+def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, titles=None):
     """Job-looking links across a server-rendered listing's own pagination, walking its "next page"
     link (NEXT_PAGE_RX) until none remains or a page adds nothing new. `first_resp` reuses an
-    already-fetched page 1 (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. 200 pages
-    is a loop-safety ceiling, not a board-size cap -- no real board is near it. `titles`, if given, is
-    filled in-place with each link's own anchor text (url -> text) -- the only real title a PDF-linked
-    posting has, see PDF_LINK_RX."""
+    already-fetched page 1 (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. `titles`,
+    if given, is filled in-place with each link's own anchor text (url -> text) -- the only real
+    title a PDF-linked posting has, see PDF_LINK_RX.
+
+    The walk's only stop conditions are the listing's own: no next-page link, a page that adds
+    nothing new, a page already visited, or a failed fetch. The `max_pages=200` ceiling this used to
+    carry (TASK-14) was no caller's choice -- nothing ever passed it -- and it could only ever turn a
+    board bigger than someone's guess into a short read reported as a complete one."""
     out, visited, url, resp = [], set(), start_url, first_resp
-    for _ in range(max_pages):
+    while True:
         if not url or url in visited:
             break
         visited.add(url)
@@ -1078,7 +1122,7 @@ def _bootstrap_panel_job_rows(cu_resp, c, host):
     return out
 
 
-def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, not a board-size cap
+def crawl_wp_jobs(c, session=None):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
@@ -1115,6 +1159,15 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
         from pflege_jobs.sources.beesite import is_beesite, crawl_beesite
         if is_beesite(cu_resp):
             return crawl_beesite(c, session=session)
+        # Same probe-and-delegate contract as beesite: three more engines whose listing exists only
+        # in a place the generic sitemap/anchor walk cannot see -- a same-origin JSON search API
+        # (asklepios), the page's own embedded job JSON behind a handlebars template (eRecruiter),
+        # and a widget loader that names its tenant board (concludis). All three are fingerprinted
+        # on the response already fetched above, so the probe itself costs no extra request.
+        for delegate in (crawl_asklepios, crawl_erecruiter, crawl_concludis_widget):
+            rows = delegate(c, session=session, cu_resp=cu_resp)
+            if rows:
+                return rows
         # Merged into the normal walk below, not returned early: these shapes have no per-job
         # detail link for the sitemap/career-page walk to find on its own, but a career page can
         # ALSO carry real, separately-discoverable postings alongside them -- returning early here
@@ -1143,16 +1196,15 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
                         if _listing_page_key(u) not in not_a_job]
         if section_urls:
             # += / |=, not = -- out/fetched may already carry the FAQ-shape rows merged in above.
-            new = _wp_job_rows(section_urls, c, host, max(max_jobs - len(out), 0), session,
+            new = _wp_job_rows(section_urls, c, host, session,
                                section_labels=[section_label] if section_label else None, seen=seen, titles=titles)
             out += new
             fetched |= {j["payload"]["url"] for j in new}
 
     urls = [u for u in find_job_urls(base, session=session) if _listing_page_key(u) not in not_a_job]
-    remaining = max(max_jobs - len(out), 0)
-    if urls and remaining:
+    if urls:
         more_urls = [u for u in urls if u not in fetched]
-        new = _wp_job_rows(more_urls, c, host, remaining, session, seen=seen, titles=titles)
+        new = _wp_job_rows(more_urls, c, host, session, seen=seen, titles=titles)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
@@ -1166,9 +1218,8 @@ def crawl_wp_jobs(c, session=None, max_jobs=100_000):  # loop-safety ceiling, no
     page_urls = _paginated_job_links(cu, session=session, first_resp=cu_resp, titles=titles) if cu_resp and cu_resp.ok else []
     page_urls += _widget_endpoint_job_links(cu_resp, session=session)
     page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job and u not in fetched]
-    remaining = max(max_jobs - len(out), 0)
-    if page_urls and remaining:
-        new = _wp_job_rows(page_urls, c, host, remaining, session, seen=seen, titles=titles)
+    if page_urls:
+        new = _wp_job_rows(page_urls, c, host, session, seen=seen, titles=titles)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
@@ -1457,6 +1508,214 @@ def crawl_mein_check_in(c, session=None):
 
 
 # ---------------------------------------------------------------------------
+# asklepios: Next.js career portal, own POST /api/search
+# ---------------------------------------------------------------------------
+# www.asklepios.com/karriere/jobs renders zero job markup server-side, but the search its own client
+# runs is a plain JSON POST to same-origin /api/search, and the per-tenant search id it posts sits in
+# the careers page's own HTML ("restEndpoint"). Probed live 2026-09-21: 1398 postings, 90 of them at
+# the 7 Bavarian Asklepios sites. The list response already carries every field a row needs (title,
+# company, location, plz, workarea, working time, publication date, public jobLink on
+# karriere.asklepios.com) -- unlike SmartRecruiters there is no separate per-posting detail endpoint
+# to fetch, so the whole board costs one POST per page.
+ASKL_ENDPOINT_RX = re.compile(r'"restEndpoint"\s*:\s*"(/\.rest/search/job/[^"]+)"')
+# The portal clamps its own page size: an l=200 request answers with 60 items (confirmed live), so
+# paging is driven by the server's `count` and by ids running out, never by a ceiling of ours.
+ASKL_PAGE = 60
+ASKL_DATE_RX = re.compile(r"^(\d{2})\.(\d{2})\.(\d{2})")
+
+
+def post_json(u, payload, timeout=30, session=None):
+    """POST sibling of get() -- same session attempt/ok tally (TASK-72 AC#1)."""
+    if session is not None:
+        session._attempts = getattr(session, "_attempts", 0) + 1
+    try:
+        r = (session or requests).post(u, json=payload, headers=dict(H, **{"Content-Type": "application/json"}),
+                                       timeout=timeout)
+    except Exception:
+        return None
+    if session is not None and r.ok:
+        session._ok = getattr(session, "_ok", 0) + 1
+    return r
+
+
+def _askl_date(raw):
+    """publicationDate is German short-form "18.09.26, 00:00", not ISO."""
+    m = ASKL_DATE_RX.match((raw or "").strip())
+    return _sane_date("20%s-%s-%s" % (m.group(3), m.group(2), m.group(1))) if m else None
+
+
+def crawl_asklepios(c, session=None, cu_resp=None):
+    cu = (c.get("careers_url") or "").strip()
+    r = cu_resp if (cu_resp is not None and cu_resp.ok) else (get(cu, session=session) if cu else None)
+    m = ASKL_ENDPOINT_RX.search(r.text) if r and r.ok else None
+    if not m:
+        return []
+    p = urlparse(r.url)
+    api = "%s://%s/api/search" % (p.scheme, p.netloc)
+    out, seen, offset = [], set(), 0
+    while True:
+        resp = post_json(api, {"searchEndpoint": m.group(1), "q": "", "o": offset,
+                               "l": ASKL_PAGE, "f": False, "filter": {}}, session=session)
+        if not resp or not resp.ok:
+            break
+        try:
+            data = resp.json()
+        except ValueError:
+            break
+        items = data.get("items") or []
+        # The board's own end: either its stated count is reached, or a page brings no id we have
+        # not already read. No offset ceiling.
+        fresh = [it for it in items if str(it.get("id")) not in seen]
+        if not fresh:
+            break
+        seen.update(str(it.get("id")) for it in fresh)
+        for it in fresh:
+            title, url = _txt(it.get("title"), 300), it.get("jobLink")
+            if not (title and url):
+                continue
+            out.append(row(p.netloc, url,
+                           {"title": title, "org": it.get("company") or c["name"],
+                            "org_source": None if it.get("company") else "seed",
+                            "loc": [{"city": it.get("location"), "plz": it.get("plz"), "region": None}],
+                            "url": url, "page": r.url,
+                            "description": _txt(it.get("qualifications")),
+                            "datePosted": _askl_date(it.get("publicationDate")),
+                            "employmentType": it.get("workingTime"),
+                            "section_labels": list(it.get("workareas") or [])},
+                           "asklepios"))
+        offset += len(items)
+        count = data.get("count")
+        if count is not None and offset >= count:
+            break
+        time.sleep(0.5)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# eRecruiter: <jobs-subdomain>/Jobs, full job list embedded in the page
+# ---------------------------------------------------------------------------
+# The listing looks client-side -- the markup around it is a handlebars template whose plain-HTML
+# form still carries the literal "/Job/{{Id}}" placeholder, so no anchor matches JOB_PATH -- but the
+# data the template renders is already in the page: `window.jobList = new JobList($list, $template,
+# {...})`, whose third argument is the whole board as JSON. No render, no AJAX. Confirmed live
+# 2026-09-21 on jobs.bezirkskliniken-schwaben.de (57) and jobs.klinikum-ab-alz.de (62); on both,
+# TotalJobsCount equalled the embedded list length and a ?page=2 request returned the identical
+# list, i.e. the engine ships the whole board at once and has no server-side page to walk.
+ERECRUITER_LIST_RX = re.compile(r"new\s+JobList\s*\(.*?,\s*(?=\{)", re.S)
+
+
+def _erecruiter_jobs(htmltext):
+    m = ERECRUITER_LIST_RX.search(htmltext or "")
+    if not m:
+        return []
+    try:
+        data, _ = json.JSONDecoder().raw_decode(htmltext, m.end())
+    except ValueError:
+        return []
+    return [j for j in (data.get("Jobs") or []) if isinstance(j, dict)]
+
+
+def crawl_erecruiter(c, session=None, cu_resp=None):
+    cu = (c.get("careers_url") or "").strip()
+    r = cu_resp if (cu_resp is not None and cu_resp.ok) else (get(cu, session=session) if cu else None)
+    if not (r and r.ok):
+        return []
+    p = urlparse(r.url)
+    base = "%s://%s" % (p.scheme, p.netloc)
+    out = []
+    for j in _erecruiter_jobs(r.text):
+        jid = j.get("Id")
+        title = _txt(j.get("Title"), 300)
+        if jid is None or not title:
+            continue
+        u = "%s/Job/%s" % (base, jid)
+        d = get(u, session=session)
+        # The detail page carries a full schema.org JobPosting; the embedded list row is still the
+        # better title (the JSON-LD repeats it) and the only source for Location/SubTitle, so the
+        # detail is used for description/dates and the list row for identity.
+        full = parse_job_page(d.text, d.url, c["name"]) if d and d.ok else None
+        loc = (full or {}).get("loc") or [{}]
+        city = loc[0].get("city") or _txt(j.get("Location"), 200)
+        # This engine puts its own internal contract code ("1", "2") in schema.org's employmentType
+        # slot -- meaningless outside its database, so drop it and let _enrich_wp_fallback_fields
+        # read the real Voll-/Teilzeit wording out of the text the board does publish.
+        et = (full or {}).get("employmentType")
+        out.append(row(p.netloc, u,
+                       {"title": title, "org": (full or {}).get("org") or c["name"],
+                        "org_source": (full or {}).get("org_source", "seed"),
+                        "loc": [{"city": city, "plz": loc[0].get("plz"), "region": loc[0].get("region")}],
+                        "url": u, "page": r.url,
+                        "description": " ".join(x for x in (_txt(j.get("SubTitle")), (full or {}).get("description")) if x) or None,
+                        "datePosted": (full or {}).get("datePosted") or _erecruiter_date(j.get("Date")),
+                        "employmentType": None if (et or "").strip().isdigit() else et},
+                       "erecruiter"))
+        time.sleep(0.5)
+    return _enrich_wp_fallback_fields(out, session=session)
+
+
+ERECRUITER_DATE_RX = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})")
+
+
+def _erecruiter_date(raw):
+    m = ERECRUITER_DATE_RX.match((raw or "").strip())
+    return _sane_date("%s-%s-%s" % (m.group(3), m.group(2), m.group(1))) if m else None
+
+
+# ---------------------------------------------------------------------------
+# concludis job-board widget: <tenant>.concludis.de/prj/lst/?b=<board>
+# ---------------------------------------------------------------------------
+# The "concludis" census label mostly sits on WordPress career sites (handled by crawl_wp_jobs), but
+# a real tenant embeds concludis' own widget instead: the clinic's page ships an empty container and
+# a loader script that names the tenant host and board id, then pulls the list over AJAX. Those two
+# values are the only tenant-specific facts needed -- /prj/lst/?b=<board>&jsinclude=1 answers the
+# complete list to a plain GET (confirmed live 2026-09-21 on swmbrk.concludis.de board 36: 18 of 18
+# postings, the same count the widget's own "18 Stellen gefunden" header states, and ?page=2 returns
+# the identical list). Each posting's own detail page carries a schema.org JobPosting once asked for
+# the jsinclude fragment; without that parameter it 302s away.
+CONCLUDIS_WIDGET_HOST = re.compile(r"\(\s*window\s*,\s*document\s*,\s*'script'\s*,\s*'concludis'\s*,\s*'([a-z0-9.\-]+)'\s*\)", re.I)
+CONCLUDIS_BOARD = re.compile(r"concludis\(\s*'setJobBoard'\s*,\s*'([^']+)'\s*\)", re.I)
+CONCLUDIS_JOB = re.compile(r"cJobboard\.openJob\('([^']+)'\).*?<span class=\"headerlink stellenlink\">(.*?)</span>", re.S)
+
+
+def concludis_widget(careers_html):
+    """-> (tenant_host, board_id) named by the clinic page's own loader script, or (None, None)."""
+    h, b = CONCLUDIS_WIDGET_HOST.search(careers_html or ""), CONCLUDIS_BOARD.search(careers_html or "")
+    return (h.group(1), b.group(1)) if h and b else (None, None)
+
+
+def crawl_concludis_widget(c, session=None, cu_resp=None):
+    cu = (c.get("careers_url") or "").strip()
+    r = cu_resp if (cu_resp is not None and cu_resp.ok) else (get(cu, session=session) if cu else None)
+    host, board = concludis_widget(r.text) if r and r.ok else (None, None)
+    if not host:
+        return []
+    lst = get("https://%s/prj/lst/?b=%s&lang=de_DE&jsinclude=1" % (host, board), session=session)
+    if not (lst and lst.ok):
+        return []
+    out = []
+    for href, inner in CONCLUDIS_JOB.findall(lst.text):
+        title = _txt(inner, 300)
+        u = urljoin(lst.url, _html.unescape(href))
+        if not title:
+            continue
+        sep = "&" if "?" in u else "?"
+        d = get(u + sep + "jsinclude=1", session=session)
+        full = parse_job_page(d.text, u, c["name"]) if d and d.ok else None
+        loc = (full or {}).get("loc") or [{}]
+        out.append(row(host, u,
+                       {"title": (full or {}).get("title") or title, "org": (full or {}).get("org") or c["name"],
+                        "org_source": (full or {}).get("org_source", "seed"),
+                        "loc": [{"city": loc[0].get("city"), "plz": loc[0].get("plz"), "region": loc[0].get("region")}],
+                        "url": u, "page": r.url,
+                        "description": (full or {}).get("description"),
+                        "datePosted": (full or {}).get("datePosted"),
+                        "employmentType": (full or {}).get("employmentType")},
+                       "concludis-widget"))
+        time.sleep(0.5)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # d.vinci: <host>/jobPublication/list.json
 # ---------------------------------------------------------------------------
 # careers_url on the census is often the clinic's own wrapper page, not the d.vinci tenant itself
@@ -1603,6 +1862,14 @@ GROUP_PORTALS = [
      # address every time; still true 2026-09-18). crawl_group_portal must never carry that address
      # through as the posting's own location -- see hq_location_untrusted below.
      "hq_location_untrusted": True,
+     # ...but each detail page DOES carry a structured "Einsatzort" block naming the real kbo site
+     # and its street address (confirmed live 2026-09-21: present on all 108 job pages on the
+     # board). That block is the posting's own site of work -- both its city/postcode and the site
+     # NAME, which is the one kbo signal that tells two same-town sister sites apart (Lech-Mangfall
+     # vs Heckscher in Landsberg am Lech, both on this board, both in the registry). Group 1 is the
+     # site name, group 2 its address block.
+     "site_block_rx": re.compile(r"job__related-site-header.*?<h2[^>]*>(.*?)</h2>"
+                                 r".*?job__related-site-description[^>]*>(.*?)</p>", re.S),
      # The real site is only named in the title's own trailing "in <Ort>" / "am Standort <Ort>" /
      # "des Standorts <Ort>" text, when present at all -- best-effort, not every posting names one
      # (e.g. a bare "Pflegefachhelfer (m/w/d)" carries no location clue anywhere). The capture is
@@ -1652,7 +1919,7 @@ def _group_list_url(c, g):
     return cu if g["host"] in cu else g["list"]
 
 
-def crawl_group_portal(c, g, session=None, max_jobs=100_000, towns=None):  # loop-safety ceiling, not a board-size cap
+def crawl_group_portal(c, g, session=None, towns=None):
     """Page the group board, then read each job's JSON-LD. Shared across every site of the group.
 
     Some clinics carry their own pre-filtered querystring on the shared board (e.g.
@@ -1669,7 +1936,7 @@ def crawl_group_portal(c, g, session=None, max_jobs=100_000, towns=None):  # loo
     parts = urlsplit(base_list)
     base_qs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != g["page_param"]]
     urls, seen = [], set()
-    for i in range(1, g.get("pages", 100_000) + 1):  # 100_000: loop-safety ceiling, board's own empty page stops it
+    for i in itertools.count(1):  # only the board's own end signal stops this: a bad response or a page with no fresh job link
         qs = base_qs if i == 1 else base_qs + [(g["page_param"], str(i))]
         u = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(qs), ""))
         r = get(u, session=session)
@@ -1680,20 +1947,34 @@ def crawl_group_portal(c, g, session=None, max_jobs=100_000, towns=None):  # loo
         if not fresh:
             break
         seen.update(fresh); urls += fresh
-        if len(urls) >= max_jobs:
-            break
         time.sleep(0.2)
     out = []
-    for u in urls[:max_jobs]:
+    for u in urls:
         r = get(u, session=session)
         if not r or not r.ok:
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if j and j.get("title"):
             from pflege_jobs.verify import _EINSATZORT, _PLZ_ORT, _clean_city, _placeable
+            site_city = site_plz = None
+            site_block_rx = g.get("site_block_rx")
+            if site_block_rx:
+                mb = site_block_rx.search(r.text)
+                if mb:
+                    # The block states the site of work, so its name is the posting's real employer
+                    # site -- more specific than the group name the JSON-LD hiringOrganization
+                    # carries on every posting of the board, and the only field that separates two
+                    # registry sister sites sharing a town.
+                    site_name = _txt(mb.group(1), 300)
+                    if site_name:
+                        j["org"], j["org_source"] = site_name, None
+                    pm = _PLZ_ORT.search(_txt(mb.group(2)) or "")
+                    if pm:
+                        cand = _clean_city(pm.group(2))
+                        if cand and _placeable(cand, pm.group(1), towns):
+                            site_city, site_plz = cand, pm.group(1)
             title_city_rx = g.get("title_city_rx")
-            site_city = None
-            if title_city_rx:
+            if not site_city and title_city_rx:
                 m = title_city_rx.search(j["title"].strip())
                 if m:
                     cand = _clean_city(m.group(1))
@@ -1702,11 +1983,12 @@ def crawl_group_portal(c, g, session=None, max_jobs=100_000, towns=None):  # loo
             if g.get("hq_location_untrusted"):
                 # The group's own JSON-LD jobLocation is the group HQ, never the real work site
                 # (see GROUP_PORTALS' hq_location_untrusted comment) -- it must not survive into
-                # the row at all. A title-named site wins; failing that, read the page's own
-                # Einsatzort/PLZ-Ort text (the same extraction pflege_jobs.verify uses); failing
-                # that, leave city/plz/region None -- an honest "unknown" beats the wrong HQ.
+                # the row at all. The site block's own address wins, then a title-named site;
+                # failing both, read the page's own Einsatzort/PLZ-Ort text (the same extraction
+                # pflege_jobs.verify uses); failing that, leave city/plz/region None -- an honest
+                # "unknown" beats the wrong HQ.
                 if site_city:
-                    j["loc"] = [{"city": site_city, "plz": None, "region": None}]
+                    j["loc"] = [{"city": site_city, "plz": site_plz, "region": None}]
                 else:
                     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
                     city = plz = None
@@ -1723,7 +2005,8 @@ def crawl_group_portal(c, g, session=None, max_jobs=100_000, towns=None):  # loo
                                 city, plz = cand, pm.group(1)
                     j["loc"] = [{"city": city, "plz": plz, "region": None}]
             elif site_city:
-                j["loc"] = [{"city": site_city, "plz": j["loc"][0].get("plz"), "region": j["loc"][0].get("region")}]
+                j["loc"] = [{"city": site_city, "plz": site_plz or j["loc"][0].get("plz"),
+                             "region": j["loc"][0].get("region")}]
             out.append(row(g["host"], j["url"], j, "group"))
         time.sleep(0.15)
     return out
@@ -1740,6 +2023,9 @@ VENDORS = {
     "talention": crawl_wp_jobs,
     "oracle": crawl_oracle,
     "dvinci": crawl_dvinci,
+    "asklepios": crawl_asklepios,
+    "erecruiter": crawl_erecruiter,
+    "concludis_widget": crawl_concludis_widget,
     "wp_jobs": crawl_wp_jobs,   # routing.py default for careers_url-but-no-vendor-label boards
     "self_hosted": crawl_wp_jobs,  # discovery found no vendor fingerprint; try the generic reader anyway
 }

@@ -66,6 +66,12 @@ ADAPTERS = {
     # here so a future census run that DOES fingerprint one of them by name routes straight to it.
     "beesite":         ("vendor", "pflege_jobs.sources.beesite:crawl_beesite"),
     "hr4you":          ("vendor", "pflege_jobs.sources.hr4you:crawl_hr4you"),
+    # Same story for these three (TASK-49/50/77): crawl_wp_jobs fingerprints each on the careers
+    # page it has already fetched and delegates. Listed so a census run that does name one routes
+    # straight to it.
+    "asklepios":       ("vendor", "crawlers.vendor_adapters:crawl_asklepios"),
+    "erecruiter":      ("vendor", "crawlers.vendor_adapters:crawl_erecruiter"),
+    "concludis_widget": ("vendor", "crawlers.vendor_adapters:crawl_concludis_widget"),
     "bite":            ("seeded", "pflege_jobs.sources.bite:crawl"),
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),

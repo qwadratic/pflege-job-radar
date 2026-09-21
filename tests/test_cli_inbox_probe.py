@@ -242,11 +242,15 @@ def test_load_observations_pins_the_non_prod_host_and_in_bavaria_false_drop_gate
     monkeypatch.setattr(sinks_mod, "EdgeSink", _FakeSink2)
     monkeypatch.setattr(A, "rest_get", lambda *a, **k: [])   # _posting_ids_for_refs: no network
 
-    def make(source_ref, in_bavaria, role_class="pflegefachkraft"):
-        return {"source_ref": source_ref, "employer_name": "Klinikum X", "city": "X",
+    def make(source_ref, in_bavaria, role_class="pflegefachkraft", source_url="https://www.klinikum-x.de/stelle/1"):
+        return {"source_ref": source_ref, "employer_name": "Klinikum X", "city": "X", "source_url": source_url,
                 "role_class": role_class, "in_bavaria": in_bavaria, "employer_class_rule": "r"}
 
-    obs = [make("bav-1", True), make("non-bav-2", False), make("unknown-3", None)]
+    obs = [make("bav-1", True), make("non-bav-2", False), make("unknown-3", None),
+           # a seeded adapter reaches EdgeSink without ever passing through cli.py's inbox, so the
+           # staging gate has to exist here too -- 70 referral-portal-staging.lmu-klinikum.de rows
+           # are still open in the table because it did not (TASK-61 AC#2).
+           make("staging-4", True, source_url="https://referral-portal-staging.lmu-klinikum.de/stellenanzeigen/4")]
     ids, kept = CR._load_observations(obs, {}, log=lambda *_: None)
 
     # the gate is specifically "in_bavaria is False", not "is not True" -- an unplaceable/unknown

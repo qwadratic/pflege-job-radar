@@ -632,3 +632,24 @@ def test_a_validating_document_cannot_silently_drop_a_section(client, patterns_t
     assert client.put("/api/settings/patterns", json=emptied).status_code == 200
     assert json.loads(patterns_tmp.read_text(encoding="utf-8")) == emptied
     client.put("/api/settings/patterns", json=good)                 # leave the loaded document as it was
+
+
+def test_rest_get_error_carries_the_servers_own_message_not_just_the_status(monkeypatch):
+    """TASK-60: raise_for_status() reports the status and the request URL and throws the response
+    body away. A 400 whose body said "inbox: daily limit reached for this client" was logged as a
+    bare "400 Bad Request for url: <25KB of in.() filter>" and read for four days as a URL-length
+    problem -- two unrelated failures only the body tells apart. rest_post already raises with the
+    body; rest_get must too."""
+    from app import config as A
+
+    class R400:
+        status_code = 400
+        text = '{"code":"P0001","message":"inbox: daily limit reached for this client"}'
+        url = "https://db.example/rest/v1/inbox?source_url=in.%28%22https%3A%2F%2Fx%22%29"
+
+        def json(self):
+            return {"code": "P0001", "message": "inbox: daily limit reached for this client"}
+
+    monkeypatch.setattr(A.requests, "get", lambda *a, **kw: R400())
+    with pytest.raises(RuntimeError, match="daily limit reached for this client"):
+        A.rest_get("inbox", {"select": "source_url"})

@@ -134,6 +134,10 @@ def test_group_list_url_keys_a_filtered_member_separately_from_the_bare_group_li
 def test_group_portal_paginates_past_the_old_page_cap_to_the_boards_own_end(monkeypatch):
     g = {"match": "barmherzige", "list": "https://karriere.barmherzige.net/jobs/",
          "page_param": "c_page",
+         # TASK-14: crawl_group_portal read a per-board page ceiling off this dict
+         # (`range(1, g.get("pages", 100_000) + 1)`). No registry entry sets it, but the code path
+         # was still live -- a registry edit could re-cap a free board with no truncated flag.
+         "pages": 3,
          "job_rx": r"https://karriere\.barmherzige\.net/jobs/[a-z0-9][^\"'\s>?]+", "host": "karriere.barmherzige.net"}
     c = {"name": "St. Barbara Krankenhaus Schwandorf",
          "careers_url": "https://www.barmherzige-bieten-zukunft.de/stellenmarkt/stellenboerse"}
@@ -150,3 +154,72 @@ def test_group_portal_paginates_past_the_old_page_cap_to_the_boards_own_end(monk
     monkeypatch.setattr(va, "get", _router(mapping))
     rows = va.crawl_group_portal(c, g)
     assert len(rows) == 15
+
+
+def _kbo_detail_with_site_block(title, site_name, street, plz_city):
+    """A real kbo.de detail page: group-wide hiringOrganization + group HQ jobLocation in the
+    JSON-LD, and the page's own "Einsatzort" block naming the actual site and its address."""
+    jsonld = ('<script type="application/ld+json">{"@type":"JobPosting","title":"%s",'
+              '"hiringOrganization":{"name":"Kliniken des Bezirks Oberbayern \\u2013 Kommunalunternehmen"},'
+              '"jobLocation":{"address":{"addressLocality":"M\\u00fcnchen","postalCode":"80538"}}}</script>'
+              % title)
+    block = ('<div class="job__related-site"><header class="job__related-site-header"><h3>Einsatzort'
+             '<h2 class="list-teaser__item-text-headline">%s</h2></h3></header>'
+             '<p class="job__related-site-description">%s<br />%s</p></div>' % (site_name, street, plz_city))
+    return jsonld + "<h1>%s</h1>%s" % (title, block)
+
+
+def test_kbo_takes_site_name_and_address_from_the_pages_own_einsatzort_block(monkeypatch):
+    """TASK-57 AC#1: kbo.de's JSON-LD names the group on every posting (hiringOrganization = the
+    Kommunalunternehmen, jobLocation = the Munich HQ), so nothing in it tells two registry sister
+    sites in the SAME town apart -- Lech-Mangfall and Heckscher both run a Landsberg am Lech site
+    on this board. The detail page's own "Einsatzort" block does: it states the site by name and
+    gives its street address. Confirmed live 2026-09-21 on all 108 job pages of the board."""
+    list_url = va.GROUP_PORTALS[0]["list"]
+    pages = {
+        "https://kbo.de/karriere/jobs/1": _kbo_detail_with_site_block(
+            "Pflegefachkraft (m/w/d) Psychiatrie", "kbo-Lech-Mangfall-Klinik Landsberg am Lech",
+            "Bürgermeister-Dr.-Hartmann-Straße 50 - 52", "86899 Landsberg am Lech"),
+        "https://kbo.de/karriere/jobs/2": _kbo_detail_with_site_block(
+            "Gesundheits- und Kinderkrankenpfleger (m/w/d)", "kbo-Heckscher-Klinikum Landsberg am Lech",
+            "Bürgermeister-Dr.-Hartmann-Straße 52", "86899 Landsberg am Lech"),
+        # The title names Munich, the block names Haar: the block is the site of work and wins.
+        "https://kbo.de/karriere/jobs/3": _kbo_detail_with_site_block(
+            "Pflegefachhelfer (m/w/d) in München", "kbo-Isar-Amper-Klinikum | Haar, Pflegedirektion",
+            "Vockestraße 72", "85540 Haar"),
+    }
+    mapping = {list_url: _R("".join('<a href="%s"></a>' % u for u in pages), url=list_url, ok=True)}
+    mapping.update({u: _R(h, url=u, ok=True) for u, h in pages.items()})
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_group_portal({"name": "kbo-Heckscher-Klinikum", "careers_url": "https://kbo-heckscher-klinikum.de"},
+                                  va.GROUP_PORTALS[0], towns={"landsberg am lech", "haar", "münchen"})
+    by_url = {r["payload"]["url"]: r["payload"] for r in rows}
+    assert len(by_url) == 3
+    a = by_url["https://kbo.de/karriere/jobs/1"]
+    b = by_url["https://kbo.de/karriere/jobs/2"]
+    c = by_url["https://kbo.de/karriere/jobs/3"]
+    # the two same-town sister sites are told apart by name, not collapsed onto the group's
+    assert a["org"] == "kbo-Lech-Mangfall-Klinik Landsberg am Lech"
+    assert b["org"] == "kbo-Heckscher-Klinikum Landsberg am Lech"
+    assert a["org_source"] is None and b["org_source"] is None     # read off the page, not inherited
+    assert a["loc"] == [{"city": "Landsberg am Lech", "plz": "86899", "region": None}]
+    assert b["loc"] == [{"city": "Landsberg am Lech", "plz": "86899", "region": None}]
+    assert c["org"] == "kbo-Isar-Amper-Klinikum | Haar, Pflegedirektion"
+    assert c["loc"] == [{"city": "Haar", "plz": "85540", "region": None}]   # block beats the title
+    for p in (a, b, c):
+        assert p["loc"][0]["plz"] != "80538"
+
+
+def test_kbo_site_name_resolves_two_same_town_sister_sites_to_different_registry_rows():
+    """The point of reading the site name: Matcher.match() can now name the right one of the two
+    Landsberg am Lech kbo sites from content alone, with no board-pool guess."""
+    from pflege_jobs.registry import Matcher
+    clinics = [{"clinic_id": "18103", "name": "kbo-Lech-Mangfall-Klinik Landsberg am Lech",
+                "town": "Landsberg am Lech", "operator": "kbo-Lech-Mangfall-Kliniken gGmbH", "beds": 92},
+               {"clinic_id": "18104", "name": "kbo-Heckscher-Klinikum Landsberg am Lech",
+                "town": "Landsberg am Lech", "operator": "kbo-Heckscher-Klinikum gGmbH", "beds": 0}]
+    m = Matcher(clinics)
+    assert m.match("kbo-Lech-Mangfall-Klinik Landsberg am Lech", "Landsberg am Lech")[0] == "18103"
+    assert m.match("kbo-Heckscher-Klinikum Landsberg am Lech", "Landsberg am Lech")[0] == "18104"
+    # the group name alone, which is what every posting's JSON-LD carries, still decides nothing
+    assert m.match("Kliniken des Bezirks Oberbayern – Kommunalunternehmen", "Landsberg am Lech") is None

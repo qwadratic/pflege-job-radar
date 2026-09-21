@@ -1,10 +1,11 @@
 ---
 id: TASK-49
 title: Zero-yield boards with no static job links -- likely JS-rendered widgets
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-09-11 10:49'
-updated_date: '2026-09-11 18:43'
+updated_date: '2026-09-21 03:16'
 labels: []
 dependencies: []
 ordinal: 49000
@@ -22,6 +23,15 @@ Same 2026-09-11 recon as TASK-48, but this bucket (20 boards) has ZERO JOB_PATH-
 - [x] #2 boards + beds from recon: klinikverbund-allgaeu.de(1048) klinikum-ab-alz.de(831) www.frg-kliniken.de(365) www.kliniken-nea.de(316) www.waldkrankenhaus.de(290) kbo-dak.de(275) www.kh-nuernberger-land.de(257) wertachkliniken.de(256) www.reisach-kliniken.de(251, 2 distinct board urls both zero) www.klinik-vincentinum.de(200, NOT a bug -- real jobs already covered via the shared Artemed smartrecruiters board, this is a decoy SmartRecruiters JS widget on the clinic's own page, see registry board ['18872','18105','18802','18808','76108']) hire.klinikum-fuenfseenland.de(130) www.klinik-bad-trissl.de(120) www.artemed-muenchen-sued.de(110) www.kreiskrankenhaus-hoechstadt.de(80) www.st-irmingard.de(75) klinik-menterschwaige.de(62) klinik-wirsberg.de(50) www.clinic-dr-decker.de(45) www.klinik-am-birkenwald.de(40) www.fachklinikum-mainschleife.de(40)
 - [x] #3 www.klinik-vincentinum.de excluded from further action -- confirmed not a bug, its board already covered elsewhere
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Re-triage the two high-value boards left open on this task.
+2. klinikverbund-allgaeu.de (1048 beds, 6 clinics): the registered careers_url /karriere carries zero job links today and the umantis board recruitingapp-5556 publishes only 10 vacancies; the real, current board is karriere.klinikverbund-allgaeu.de with 82 server-rendered /karriere-detail/ postings. Verify crawl_wp_jobs reads it, then fix careers_url (+ ats_type off umantis).
+3. klinikum-ab-alz.de (831 beds): careers page links its own jobs subdomain jobs.klinikum-ab-alz.de/Jobs -- the same eRecruiter engine as bezirkskliniken-schwaben (TASK-77), full job list embedded as JSON in plain HTML. Covered by the eRecruiter adapter written for TASK-77 + a careers_url fix.
+4. Quantify postings recovered per board and record the registry writes needed.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
@@ -149,26 +159,31 @@ All 9 of AC#2's "4th category" boards are now individually classified with live 
 has been unreachable (hard timeout / intermittent 504) continuously since ~15:00 UTC this session --
 confirmed again just now, still down -- so none of this is delivered live yet: the 3 registry-url
 fixes, plus posting corrections/registry writes for every other item already queued in TASK-58a.
+
+2026-09-21, the two high-value boards this task left open:
+
+klinikverbund-allgaeu.de (6 clinics, 1048 beds) -- two separate problems, both now fixed.
+(a) Wrong board. The registered careers_url https://klinikverbund-allgaeu.de/karriere carries zero job links of any kind today (confirmed live, plain fetch AND full Playwright render + scroll: 309 anchors, not one job link, no XHR). The umantis instance the registry routes 3 of the 6 clinics to (recruitingapp-5556.de.umantis.com/Jobs/1) publishes only 10 vacancies. The real, current board is https://karriere.klinikverbund-allgaeu.de/ -- 82 server-rendered /karriere-detail/ postings, plain HTTP, no render needed. That also answers TASK-56's old 'is list_pages=6 under-walking?' question: it was not pagination, it was the wrong host.
+(b) Every detail page on that board returned the SAME title. The board renders its real headline as <strong class="h1 font-weight-bolder"> and has no <h1>/<h2>/<h3> anywhere, so parse_job_page fell through to the generic page <title> and gave all 82 postings the title 'Karriere Detail - Klinikverbund Allgaeu'. parse_job_page now also accepts a Bootstrap h1/h2/h3 utility class on a non-heading tag as a heading. Verified live: 93 rows, 82 distinct real titles (was 3), 19 experienced-nursing class.
+Known remaining gap, NOT fixed (out of this task's ACs): the board names each posting's site as a URL path segment (/karriere-detail/Immenstadt/..., /karriere-detail/Mindelheim-Ottobeuren/...), but career_crawl.city_from_url only recognises the trailing '-in-<city>' shape, so 48 of the 82 postings will carry the seed clinic's town (Kempten) with city_source='seed' rather than their own. Widening city_from_url to any placeable path segment would change attribution on every board that uses it, so it is flagged here rather than done silently.
+
+klinikum-ab-alz.de (2 clinics, 831 beds) -- not JS-templated after all. The {{PortalUrl}}/{{Id}} placeholders the 2026-09-11 recon saw are the handlebars TEMPLATE of the same eRecruiter engine bezirkskliniken-schwaben runs (TASK-77); the board itself lives on the clinic's own jobs subdomain, https://jobs.klinikum-ab-alz.de/Jobs, which the careers page links, and ships its whole job list as JSON in the plain HTML. Covered with no extra code by the crawl_erecruiter adapter written for TASK-77. Verified live: crawl_wp_jobs on that URL returns 62 rows via vendor-erecruiter-v1, 19 experienced-nursing class, with per-posting city and PLZ.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: @claude
+created: 2026-09-21 03:11
+---
+Registry writes still pending (no production DB write permitted this session); applied in data/registry/clinics.csv only. Needed against pflege_jobs.clinics:
+  careers_url='https://karriere.klinikverbund-allgaeu.de/' AND ats_type='' for clinic_id in (76301, 77801, 77802, 78001, 78002, 78003) -- ats_type MUST be cleared off the three 'umantis' rows, otherwise routing's vendor precedence keeps the whole shared board on the umantis seeded runner, which finds no instance on the new host.
+  careers_url='https://jobs.klinikum-ab-alz.de/Jobs' for clinic_id in (66101, 67101)
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-All 20 zero-yield TASK-49 boards individually classified with live evidence (AC#1, AC#2, AC#3 all
-satisfied). Breakdown: klinikverbund-allgaeu.de partially fixed (TASK-56); klinikum-ab-alz.de
-genuinely JS-templated, no fix without Playwright; kh-nuernberger-land.de/kbo-dak.de/
-reisach-kliniken.de resolved earlier this session; klinik-vincentinum.de confirmed a harmless
-decoy widget, its real board already covered elsewhere; frg-kliniken.de and wertachkliniken.de
-fixed (JOB_PATH hyphen widening + rexx board respectively); kliniken-nea.de partially diagnosed,
-needs a further no-filter-on-confirmed-listing-page strategy, not closed. The final 9 "real text,
-no href" boards are now all resolved: 6 via code (3 for free from the generic href-or-text OR fix,
-3 via new bespoke per-site extractors -- klinik-menterschwaige.de, klinik-bad-trissl.de,
-klinik-wirsberg.de) and 3 via a wrong-careers_url finding with no code change needed
-(waldkrankenhaus.de -> jobs.malteser.de, kreiskrankenhaus-hoechstadt.de -> team-anna.de/
-stellenboerse/, st-irmingard.de -> karriere.gesundheitswelt.de/stellenangebote.html). All code
-changes committed and pushed (165b1eb, on top of the earlier 59c71bf/8d0d7eb this task also
-produced); regression suite green (50 passed, 1 skipped). Left in To Do, not Done: Supabase has
-been unreachable since ~15:00 UTC this session, so none of the registry-url fixes or posting
-deliveries for this task's findings have actually been written to the live DB yet -- queued
-alongside TASK-58a's existing delivery backlog for whenever the outage clears.
+2026-09-21 addendum to the 2026-09-11 close-out: the two high-value boards this task had left open are now both read in full. klinikverbund-allgaeu.de (1048 beds) had two stacked faults -- the registered careers_url and the umantis instance are both stale (0 and 10 postings respectively; the real board is karriere.klinikverbund-allgaeu.de with 82), and every detail page on that real board returned the same title because it renders its headline as <strong class='h1'> with no h-tag anywhere, which parse_job_page now handles. Live: 93 rows, 82 distinct titles (was 3), 19 experienced-nursing class. klinikum-ab-alz.de (831 beds) is not JS-templated -- the {{PortalUrl}}/{{Id}} placeholders are the handlebars template of the same eRecruiter engine as bezirkskliniken-schwaben, and the real board jobs.klinikum-ab-alz.de/Jobs ships its whole list as JSON in plain HTML; covered free by the crawl_erecruiter adapter written on TASK-77 (62 rows, 19 nursing-class, was 0). Offline suite 1228 passed, 1 skipped, 0 failed. Left In Progress: both fixes need a careers_url write to the production registry (plus clearing ats_type='umantis' on the three Allgaeu rows), which this session may not do -- exact UPDATEs in the task comment, applied to data/registry/clinics.csv.
 <!-- SECTION:FINAL_SUMMARY:END -->

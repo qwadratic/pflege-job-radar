@@ -87,6 +87,20 @@ def _strip(html):
     return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", txt)).strip()
 
 
+def _registrable_domain(netloc):
+    """Naive eTLD+1 (last two dot-separated labels, port stripped), same notion as
+    crawlers.vendor_adapters._registrable_domain -- this crawler only ever visits .de/.com/.io
+    hospital and ATS domains, so a public-suffix-list dependency buys nothing here.
+
+    The same-board checks below used to strip exactly ONE leading label (h.split('.', 1)[-1]),
+    which is only the registrable domain when h actually has a subdomain: for a bare two-label
+    apex host ('kbo-iak.de') it degenerated to the bare TLD 'de', so every .de host in the world
+    passed the suffix compare (TASK-79).
+    """
+    host = (netloc or "").split(":")[0].lower()
+    return ".".join(host.split(".")[-2:])
+
+
 def _location(jp):
     locs = jp.get("jobLocation") or []
     if isinstance(locs, dict): locs = [locs]
@@ -283,7 +297,7 @@ class Crawler:
     def _page_hosts_ok(self, u, hosts):
         p = urlparse(u)
         if p.scheme not in ("http", "https") or LINK_BAD.search(u): return False
-        return p.netloc in hosts or any(p.netloc.endswith("." + h.split(".", 1)[-1]) and ("job" in p.netloc or "karriere" in p.netloc or "softgarden" in p.netloc or "dvinci" in p.netloc) for h in hosts)
+        return p.netloc in hosts or any(_registrable_domain(p.netloc) == _registrable_domain(h) and ("job" in p.netloc or "karriere" in p.netloc or "softgarden" in p.netloc or "dvinci" in p.netloc) for h in hosts)
 
     def _section_link(self, r0, hosts):
         """Look at the already-fetched seed page for a confident nursing-section nav/category link
@@ -316,7 +330,6 @@ class Crawler:
         list_q = deque((u, 0) for u in start_urls)
         seen_lists, job_links = set(), {}
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0}
-        queue_capped = False
         while list_q and stats["list_pages"] < self.list_budget:
             url, depth = list_q.popleft()
             url = urldefrag(url)[0]
@@ -335,14 +348,13 @@ class Crawler:
                 if is_job and inner and len(inner) > 6 and not re.search(r"^(mehr|details?|zur stelle|jetzt bewerben|weiterlesen|ansehen)$", inner.strip(), re.I) or (is_job and JOB_HREF.search(u) and not inner):
                     job_links[u] = inner
                 elif PAGINATE.search(u) or LIST_NAV.search(inner) or LIST_NAV.search(u):
-                    if len(seen_lists) + len(list_q) >= self.list_budget * 2:
-                        # A candidate list/pagination page dropped for good here, never fetched --
-                        # distinct from list_pages hitting self.list_budget below, which still lets
-                        # every page already queued finish (TASK-72 AC#2: this ceiling used to drop
-                        # candidates silently, with the queue often draining empty right after, so
-                        # `bool(list_q)` alone never caught it).
-                        queue_capped = True
-                    elif depth_cap is None or depth < depth_cap:
+                    # No queue-size ceiling here: `len(seen_lists) + len(list_q) >= list_budget * 2`
+                    # used to drop candidate list pages for good, and seen_lists counts every url
+                    # POPPED -- including the ones whose fetch failed, which never raise list_pages.
+                    # A board with many dead list urls therefore exhausted the queue ceiling with
+                    # list_pages still far under list_budget, and lost real pagination it had the
+                    # budget to read (confirmed live 2026-09-21: ANregiomed, list_pages 102/500).
+                    if depth_cap is None or depth < depth_cap:
                         list_q.append((u, depth + 1))
         for sm in sitemaps:
             for u in self.sitemap_job_urls(sm):
@@ -363,9 +375,8 @@ class Crawler:
         out = list(jobs.values())
         stats["job_links_found"] = len(job_links)
         # Truncated, never silently "done": either the list-page queue still had unfetched pages when
-        # the safety ceiling hit, more job links were found than the detail-fetch ceiling allowed, or
-        # a candidate list page was dropped by the queue-size ceiling above.
-        stats["truncated"] = bool(list_q) or len(job_links) > self.budget or queue_capped
+        # the safety ceiling hit, or more job links were found than the detail-fetch ceiling allowed.
+        stats["truncated"] = bool(list_q) or len(job_links) > self.budget
         return out, stats
 
     def crawl(self, seed):

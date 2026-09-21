@@ -149,6 +149,16 @@ class Matcher:
             t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R2_operator_town", 0.9
             if len(t) > 1:
+                # An operator tie is not necessarily a name tie: the employer text can still name
+                # one of the sites far better than the others, and that beats _pick_site's bed
+                # count, which is blind to what the posting actually says (confirmed live
+                # 2026-09-21: kbo.de's per-posting Einsatzort block says "kbo-Kinderzentrum
+                # München" -- 16211's own name -- but 16211 and 16212 share that operator, so the
+                # bed count filed 13 postings under 16212 kbo-Heckscher-Klinikum München instead).
+                # Same best-Jaccard idiom R3/R4 already use one rung below.
+                js = sorted(((jaccard(et, x["_ntoks"]), x) for x in t), key=lambda kv: -kv[0])
+                if js[0][0] - js[1][0] >= 0.1:
+                    return js[0][1]["clinic_id"], "R2_operator_town_bestj", 0.85
                 top = _pick_site(t)
                 return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in t)), 0.5
         same_town = self._by_town(ck)
