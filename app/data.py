@@ -545,19 +545,45 @@ def inbox_summary(recent=25):
 
 # --- cities / plan ----------------------------------------------------------------------------
 def cities(q=None):
-    """One row per registry town: hospitals, open + fresh jobs (via clinic_id), how many have a known ATS."""
-    by = {}
+    """One row per town: hospitals/beds/ATS coverage from the registry (via clinic_id), open + fresh
+    jobs counted straight off the postings -- on the SAME own-city-OR-clinic-town key filter_jobs'
+    city filter uses (:455), not the clinic-registry jobs_open/jobs_fresh aggregate. That aggregate
+    only ever counted a posting under its clinic's registry town and skipped it outright when it had
+    no clinic_id at all, so GET /api/cities silently disagreed with GET /api/jobs?city= (TASK-73
+    AC8; measured live 2026-09-18: 198 clinic_id-less postings in no city row, Augsburg showing 57
+    vs 148 postings that actually name it)."""
+    by, by_lower = {}, {}
+
+    def _row(t):
+        r = by_lower.get(t.lower())
+        if r is None:
+            r = by[t] = {"city": t, "regierungsbezirk": None, "landkreis": None,
+                        "clinics": 0, "jobs_open": 0, "jobs_fresh": 0, "ats_known": 0, "beds": 0}
+            by_lower[t.lower()] = r
+        return r
+
     for c in clinics():
         t = (c.get("town") or "").strip()
         if not t:
             continue
-        r = by.setdefault(t, {"city": t, "regierungsbezirk": c.get("regierungsbezirk"), "landkreis": c.get("landkreis"),
-                              "clinics": 0, "jobs_open": 0, "jobs_fresh": 0, "ats_known": 0, "beds": 0})
+        r = _row(t)
+        r["regierungsbezirk"] = r["regierungsbezirk"] or c.get("regierungsbezirk")
+        r["landkreis"] = r["landkreis"] or c.get("landkreis")
         r["clinics"] += 1
-        r["jobs_open"] += c["jobs_open"]
-        r["jobs_fresh"] += c["jobs_fresh"]
         r["ats_known"] += int(bool(c.get("ats_type")))
         r["beds"] += c.get("beds") or 0
+    for j in jobs():
+        # A dict keyed by row identity, not by the raw town string: a posting whose own city and
+        # clinic_town are the same real town spelled/cased differently ("München" vs "münchen")
+        # must count once, not twice -- _row() already folds both onto the one row via by_lower.
+        rows_for_job = {}
+        for raw in ((j.get("city") or "").strip(), (j.get("clinic_town") or "").strip()):
+            if raw:
+                r = _row(raw)
+                rows_for_job[id(r)] = r
+        for r in rows_for_job.values():
+            r["jobs_open"] += 1
+            r["jobs_fresh"] += int(bool(j.get("fresh")))
     rows = sorted(by.values(), key=lambda r: (-r["jobs_open"], -r["clinics"], r["city"]))
     if q:
         rows = [r for r in rows if _q_match(q, r["city"], r["regierungsbezirk"], r["landkreis"])]

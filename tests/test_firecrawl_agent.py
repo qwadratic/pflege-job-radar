@@ -46,10 +46,16 @@ def test_jobs_to_inbox_rows():
     assert "Anforderungen: examinierte" in p["description"] and "TVöD P8" in p["description"]
     assert p["department"] == "KJP Station 3" and p["page"] == ANSWER["portal_url"]
     assert p["seniority"] == "fachkraft"
+    # section_labels mirrors department -- app/crawl.py's pre-inbox role filter and
+    # pflege_jobs/sources/inbox.py's intake gate both read section_labels only, never department,
+    # so a nursing posting whose title alone carries no pflege token was silently dropped before
+    # this was wired through (2026-09-18 crawler review).
+    assert p["section_labels"] == ["KJP Station 3"]
     r2 = rows[1]["payload"]
     assert r2["loc"][0]["city"] == "Ingolstadt" and r2["loc"][0]["plz"] is None      # falls back to the registry town
     assert r2["datePosted"] is None and "TEMPORARY" in r2["employmentType"]
     assert r2["seniority"] == "unknown"                     # job had no seniority field at all
+    assert r2["section_labels"] is None                     # this job had no department field at all
     json.dumps(rows)                                        # serialisable for the inbox POST
 
 

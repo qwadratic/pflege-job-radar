@@ -54,6 +54,16 @@ def test_missing_entry_point_is_reported():
     assert boards == {} and "entry point" in unroutable[0][1]
 
 
+def test_unlabelled_vendor_with_a_careers_url_defaults_to_wp_jobs():
+    # 101 clinics (28% of open postings) carry a careers_url but no ats_type fingerprint -- routing
+    # must still fetch them with the generic crawler rather than dropping the board as unroutable.
+    clinics = [{"clinic_id": "1", "name": "Some Clinic", "ats_type": "", "careers_url": "https://example.invalid/jobs"}]
+    boards, unroutable = plan(clinics)
+    assert unroutable == []
+    board = next(iter(boards.values()))
+    assert board["vendor"] == "wp_jobs" and board["clinics"][0]["ats_type"] == "wp_jobs"
+
+
 def test_every_advertised_adapter_is_importable():
     """A vendor label with a dead adapter reference is worse than no label: the scheduler would keep
     handing it work that silently returns nothing. This pins every entry to a real callable."""

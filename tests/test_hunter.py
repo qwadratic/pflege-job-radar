@@ -11,22 +11,32 @@ from app import settings as ST
 from tests.test_app_api import CLINICS, client  # noqa: F401  (fixture: stubbed snapshot, temp sqlite)
 
 
-def clinic(cid, name, beds, url, status="Plan-KH", fetch="firecrawl"):
-    return {"clinic_id": cid, "name": name, "beds": beds, "careers_url": url, "website": "", "status": status, "fetch": fetch}
+def clinic(cid, name, beds, url, status="Plan-KH", fetch="firecrawl", town=None):
+    return {"clinic_id": cid, "name": name, "beds": beds, "careers_url": url, "website": "", "status": status, "fetch": fetch, "town": town}
 
 
-def res(cid, run_id=1, rows=0, new=0, credits=0, error=None, max_credits_hit=False, tokens_delta=None, disagree=False):
+def res(cid, run_id=1, rows=0, new=0, credits=0, error=None, max_credits_hit=False, tokens_delta=None, disagree=False, blocked_reason=""):
     return {"clinic_id": cid, "name": cid, "run_id": run_id, "status": "failed" if error else "done", "rows": rows, "new": new, "credits": credits,
             "tokens_delta": tokens_delta, "error": error, "disagree": disagree, "gate": "", "notes": "", "secs": 1, "max_credits_hit": max_credits_hit,
-            "fail_text": f"FAILED {error}" if error else ""}
+            "fail_text": f"FAILED {error}" if error else "", "blocked_reason": blocked_reason}
 
 
 @pytest.fixture()
 def hdb(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "SQLITE_PATH", tmp_path / "app.sqlite")
     monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(A, "CRAWL_OUT", tmp_path / "crawl_output")   # isolate from the real repo's crawl_output/
     R.init()
     return tmp_path
+
+
+def write_run_jsonl(run_id, rows):
+    """rows: list of (title, city). Mirrors what app/crawl.py._write_jsonl actually writes."""
+    import json
+    A.CRAWL_OUT.mkdir(parents=True, exist_ok=True)
+    with open(A.CRAWL_OUT / f"run_{run_id}.jsonl", "w", encoding="utf-8") as f:
+        for title, city in rows:
+            f.write(json.dumps({"payload": {"title": title, "loc": [{"city": city}]}}) + "\n")
 
 
 class Runner:
@@ -54,23 +64,43 @@ def rows_by_id(day):
 
 # --- target selection ---------------------------------------------------------------------------
 def test_targets_done_today_sibling_host_and_precheck_skip(hdb):
+    """2026-09-18 crawler review: a per-hospital agent prompt harvests only the ONE clinic it was
+    submitted for -- a sibling sharing the same host is only skipped when that run's own rows
+    demonstrably cover the sibling's site (its town shows up in a returned row); otherwise it must
+    still be submitted, not silently left with zero coverage."""
     day = H.today()
-    cl = [clinic("A", "A", 900, "https://www.a.de/jobs"), clinic("B", "B", 500, "https://b.de/karriere"), clinic("C", "C", 300, "https://www.b.de/x"),
+    cl = [clinic("A", "A", 900, "https://www.a.de/jobs"), clinic("B", "B", 500, "https://b.de/karriere", town="Bstadt"),
+          clinic("C", "C", 300, "https://www.b.de/x", town="Cstadt"),   # shares host b.de with B, but B's run never mentions Cstadt
           clinic("D", "D", 200, "https://d.de/jobs"), clinic("E", "E", 100, "https://e.de", status="nicht_mehr_im_plan"), clinic("F", "F", 50, "https://f.de", fetch="adapter")]
     H.state_set("A", day, status="done", run_id=7, rows=3, new=1, credits=0, name="A", host="a.de")
-    run = Runner({"B": [res("B", 8, rows=5, new=5, credits=47)]})
+    run = Runner({"B": [res("B", 8, rows=5, new=5, credits=47)], "C": [res("C", 9, rows=1, new=1, credits=10)]})
     h = mk(cl, run, precheck=lambda c: ("skip", "careers page says there are no openings right now") if c["clinic_id"] == "D" else ("run", "ok"))
     assert [c["clinic_id"] for c in h.candidates()] == ["A", "B", "C", "D"]          # beds desc; E (retired) and F (adapter) out
+    write_run_jsonl(8, [("Pflegefachkraft (m/w/d)", "Bstadt")])                      # B's own run never names Cstadt
     reason = h.run_once(day)
     assert reason.startswith("all_updated")
-    assert run.calls == [("B", 120)]                                                  # A done today: never re-run
+    assert run.calls == [("B", 120), ("C", 120)]                                     # A done today: never re-run; C submitted anyway
     st = rows_by_id(day)
     assert st["A"]["run_id"] == 7 and st["A"]["status"] == "done"
     assert st["B"]["status"] == "done" and st["B"]["rows"] == 5 and st["B"]["credits"] == 47 and st["B"]["host"] == "b.de"
-    assert st["C"]["status"] == "skipped" and "sibling board" in st["C"]["last_error"]
+    assert st["C"]["status"] == "done" and st["C"]["rows"] == 1                      # NOT skipped -- B's run did not cover it
     assert st["D"]["status"] == "skipped" and "no openings" in st["D"]["last_error"]
     assert "E" not in st and "F" not in st
-    assert H.day_get(day, "credits_spent") == 47 and H.day_get(day, "new_postings") == 6 and H.day_get(day, "runs") == 1
+    assert H.day_get(day, "credits_spent") == 57 and H.day_get(day, "new_postings") == 7 and H.day_get(day, "runs") == 2
+
+
+def test_sibling_is_skipped_when_the_harvested_run_actually_covers_its_town(hdb):
+    day = H.today()
+    cl = [clinic("B", "B", 500, "https://b.de/karriere", town="Bstadt"), clinic("C", "C", 300, "https://www.b.de/x", town="Cstadt")]
+    H.state_set("B", day, status="done", run_id=8, rows=2, new=2, credits=47, name="B", host="b.de")
+    write_run_jsonl(8, [("Pflegefachkraft (m/w/d)", "Bstadt"), ("Pflegehelfer (m/w/d)", "Cstadt")])   # covers both towns
+    run = Runner({})
+    h = mk(cl, run)
+    reason = h.run_once(day)
+    assert reason.startswith("all_updated")
+    assert run.calls == []                                                           # C never submitted
+    st = rows_by_id(day)
+    assert st["C"]["status"] == "skipped" and "already covered this site" in st["C"]["last_error"]
 
 
 def test_sibling_host_only_after_rows(hdb):
@@ -191,15 +221,47 @@ def test_combined_bar_is_an_and(hdb):
     assert H.day_get(day, "stop_reason").startswith("combined_bar")
 
 
+def test_zero_streak_only_counts_a_billable_zero_row_run_with_a_blocked_reason(hdb):
+    """2026-09-18 crawler review: a billable 0-row run is the normal, healthy result for a board
+    with no open nursing vacancy right now -- it must not count toward the halt streak unless the
+    agent itself flagged a reason it could not do its job."""
+    day = H.today()
+    cl = [clinic("A", "A", 900, "https://a.de/jobs")]
+    h = mk(cl)
+    for _ in range(5):
+        h.on_result(day, cl[0], res("A", 1, rows=0, credits=10), 120)   # healthy empty run, no blocked_reason
+    assert h.zero_streak == 0
+    h.on_result(day, cl[0], res("A", 1, rows=0, credits=10, blocked_reason="page requires JS"), 120)
+    assert h.zero_streak == 1
+    h.on_result(day, cl[0], res("A", 1, rows=3, credits=10), 120)       # a real row resets the streak
+    assert h.zero_streak == 0
+
+
+def test_operator_stop_takes_effect_mid_pass_and_is_not_overwritten(hdb):
+    """2026-09-18 crawler review: POST /api/hunter/stop used to have no effect on an already-running
+    pass (self.stop_reason only reflects THIS Hunter instance's own rule evaluation) and, once a
+    later check happened to also compute a reason, overwrote the operator's request with it."""
+    day = H.today()
+    cl = _pending() + [clinic("B", "B", 100, "https://b.de/jobs")]
+    H.day_set(day, "operator_stop", "kill_switch: stopped via POST /api/hunter/stop")
+    h = mk(cl)
+    assert h.check_stop(day) == "kill_switch: stopped via POST /api/hunter/stop"
+    assert H.day_get(day, "stop_reason") == "kill_switch: stopped via POST /api/hunter/stop"
+    # a second, fresh Hunter instance (e.g. a new run_once() call) still honours it
+    assert mk(cl).check_stop(day) == "kill_switch: stopped via POST /api/hunter/stop"
+
+
 def test_suspicious_rules(hdb):
     day = H.today()
     cl = _pending() + [clinic("B", "B", 100, "https://b.de/jobs")]
     assert mk(cl).check_stop(day, res=res("A", 1, rows=1, credits=160)).startswith("suspicious: run 1 charged 160 credits (> 150)")
     assert mk(cl).check_stop(day, res=res("A", 1, rows=1, credits=50, tokens_delta=3000)).startswith("suspicious: run 1 token delta 3000")
-    assert mk(cl).check_stop(day, res=res("A", 1, rows=70, credits=50)).startswith("suspicious: run 1 returned 70 rows")
+    # 2026-09-18 crawler review: the row-count ceiling was a self-invented cap that never fired in
+    # production (max observed was 19) -- dropped; a run returning many real rows is not suspicious.
+    assert mk(cl).check_stop(day, res=res("A", 1, rows=70, credits=50)) is None
     assert mk(cl).check_stop(day, res=res("A", 1, rows=1, credits=50, disagree=True)).startswith("suspicious: run 1: API creditsUsed and balance delta disagree")
     h = mk(cl); h.zero_streak = 3
-    assert h.check_stop(day, res=res("A", 1, rows=0, credits=27)) == "suspicious: three billable runs in a row returned nothing"
+    assert h.check_stop(day, res=res("A", 1, rows=0, credits=27)) == "suspicious: three billable runs in a row returned nothing AND reported a blocked_reason"
     h = mk(cl); h.consecutive_failures = 3
     assert h.check_stop(day) == "suspicious: 3 failures in a row"
     H.state_set("B", day, status="done", credits=700, attempts=1)                     # 700 credits within the last hour

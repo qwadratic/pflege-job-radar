@@ -45,7 +45,7 @@ create index if not exists hunt_state_day on hunt_state(day);
 create table if not exists hunt_meta (key text primary key, value text);
 create table if not exists crawl_issues (
   board_url text, day text, kind text, vendor text, clinic_ids text default '[]',
-  error text, run_id integer, created_at text, primary key(board_url, day));
+  error text, run_id integer, created_at text, primary key(kind, board_url, day));
 create index if not exists crawl_issues_day on crawl_issues(day);
 create table if not exists magic_links (
   id integer primary key autoincrement, email text, token_hash text, role text, created_at text, expires_at text, used_at text);
@@ -83,6 +83,22 @@ def _migrate(c):
         cols = {r[1] for r in c.execute(f"pragma table_info({table})").fetchall()}
         if cols and col not in cols:
             c.execute(f"alter table {table} add column {col} {typ}")
+    # crawl_issues shipped with primary key (board_url, day): a board failure and a same-day
+    # per-posting verify/city issue for that same url collided on that key, and the later write
+    # erased the earlier one's kind/vendor/clinic_ids (confirmed live 2026-09-17: 883 of the day's
+    # rows, TASK-72 AC#5). SQLite has no ALTER TABLE for a primary key change -- recreate once,
+    # keeping every existing row (a board_url+day collision across kinds picks one arbitrarily,
+    # same loss as before this migration, but only ever once).
+    info = c.execute("pragma table_info(crawl_issues)").fetchall()
+    if info and not any(r[1] == "kind" and r[5] for r in info):     # r[5]: pk order, 0 = not part of the key
+        c.execute("alter table crawl_issues rename to crawl_issues_pre_task72")
+        c.execute("""create table crawl_issues (
+              board_url text, day text, kind text, vendor text, clinic_ids text default '[]',
+              error text, run_id integer, created_at text, primary key(kind, board_url, day))""")
+        c.execute("""insert or ignore into crawl_issues(board_url,day,kind,vendor,clinic_ids,error,run_id,created_at)
+                     select board_url,day,kind,vendor,clinic_ids,error,run_id,created_at from crawl_issues_pre_task72""")
+        c.execute("drop table crawl_issues_pre_task72")
+        c.execute("create index if not exists crawl_issues_day on crawl_issues(day)")
 
 
 def init():
@@ -109,7 +125,7 @@ def record_crawl_issue(board_url, day, kind, vendor, clinic_ids, error, run_id):
     with _lock, db() as c:
         c.execute("""insert into crawl_issues(board_url,day,kind,vendor,clinic_ids,error,run_id,created_at)
                      values(?,?,?,?,?,?,?,?)
-                     on conflict(board_url,day) do update set error=excluded.error, run_id=excluded.run_id""",
+                     on conflict(kind,board_url,day) do update set error=excluded.error, run_id=excluded.run_id""",
                   (board_url, day, kind, vendor, json.dumps(clinic_ids, ensure_ascii=False), error, run_id, now()))
 
 

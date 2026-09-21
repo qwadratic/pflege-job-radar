@@ -38,6 +38,31 @@ def test_json_jobs_php_employment_type_empty_when_no_field_mentions_it():
     assert jp["employmentType"] == []
 
 
+# --- TASK-73 AC11: job_site (per-ad) must win over address (tenant HQ, identical on every ad) ---
+
+def test_json_jobs_php_prefers_job_site_over_tenant_hq_address():
+    # klinikum-gap.de-shaped: every ad carries the Garmisch-Partenkirchen HQ address, but this one
+    # is actually a Murnau posting -- job_site names that.
+    ad = {"title": "Pflegefachkraft (m/w/d)", "url": {"href": "https://jobs.klinikum-gap.de/jobposting/xyz"},
+          "address": {"city": "82467 Garmisch-Partenkirchen"}, "job_site": "Murnau"}
+    jp = bite._jp_from_json_jobs_php(ad)
+    assert jp["address"]["city"] == "Murnau"
+
+
+def test_json_jobs_php_falls_back_to_tenant_address_when_no_job_site():
+    ad = {"title": "Pflegefachkraft (m/w/d)", "url": {"href": "https://jobs.klinikum-gap.de/jobposting/abc"},
+          "address": {"city": "82467 Garmisch-Partenkirchen"}}
+    jp = bite._jp_from_json_jobs_php(ad)
+    assert jp["address"]["city"] == "Garmisch-Partenkirchen" and jp["address"]["postCode"] == "82467"
+
+
+def test_json_jobs_php_splits_a_plz_prefixed_job_site_too():
+    ad = {"title": "Pflegefachkraft (m/w/d)", "url": {"href": "https://jobs.klinikum-gap.de/jobposting/qrs"},
+          "address": {"city": "82467 Garmisch-Partenkirchen"}, "job_site": "82418 Murnau"}
+    jp = bite._jp_from_json_jobs_php(ad)
+    assert jp["address"]["city"] == "Murnau" and jp["address"]["postCode"] == "82418"
+
+
 # --- pagination: walk_all_postings walks the board's own total, not a fixed page ----------------
 
 class _PagedFakeSession:

@@ -1,4 +1,4 @@
-from pflege_jobs.registry import Matcher, city_key
+from pflege_jobs.registry import Matcher, _town_match, city_key
 from pflege_jobs.mechanics import get
 
 CL = [{"clinic_id": "16101", "name": "Klinikum Ingolstadt", "town": "Ingolstadt", "operator": "Klinikum Ingolstadt GmbH"},
@@ -7,6 +7,27 @@ CL = [{"clinic_id": "16101", "name": "Klinikum Ingolstadt", "town": "Ingolstadt"
       {"clinic_id": "58101", "name": "Klinikum Fürth", "town": "Fürth", "operator": "Klinikum Fürth"},
       {"clinic_id": "18701", "name": "Kliniken Südostbayern Klinikum Traunstein", "town": "Traunstein", "operator": "Kliniken Südostbayern AG"},
       {"clinic_id": "18702", "name": "Kliniken Südostbayern Kreisklinik Bad Reichenhall", "town": "Bad Reichenhall", "operator": "Kliniken Südostbayern AG"}]
+
+
+def test_r2_operator_town_no_longer_collapses_bad_towns():
+    """2026-09-18 crawler review: city_key's old .split()[0] fallback collapsed every "Bad *" town
+    into one bucket, so a Heiligenfeld-shaped operator with sites in two different "Bad *" towns
+    matched the wrong one via R2_operator_town."""
+    cl = [{"clinic_id": "67208", "name": "Fachklinik Heiligenfeld", "town": "Bad Kissingen", "operator": "Heiligenfeld Kliniken GmbH"},
+          {"clinic_id": "18601", "name": "Klinik Waldmuenster", "town": "Bad Woerishofen", "operator": "Heiligenfeld Kliniken GmbH"}]
+    m = Matcher(cl)
+    r = m.match("Heiligenfeld Kliniken GmbH", "Bad Woerishofen")
+    assert r == ("18601", "R2_operator_town", 0.9)   # not the Bad Kissingen clinic
+
+
+def test_r0_board_single_clinic_pool_refuses_a_disagreeing_known_city():
+    """2026-09-18 crawler review: a single-clinic board pool used to win with no city check at all
+    -- decision-5's "no match beats a wrong match" now applies to R0_board too."""
+    cl = [{"clinic_id": "18105", "name": "Psychosomatische Klinik Kloster Diessen", "town": "Dießen am Ammersee", "operator": None}]
+    m = Matcher(cl)
+    assert m.match("Some Other Org GmbH", "Dießen am Ammersee", board=["18105"]) == ("18105", "R0_board", 0.9)
+    assert m.match("Some Other Org GmbH", "Tutzing", board=["18105"]) is None   # known, disagreeing city -> refused
+    assert m.match("Some Other Org GmbH", None, board=["18105"]) == ("18105", "R0_board", 0.9)   # unknown city -> unchanged
 
 
 def test_rules_r1_r2_r6():
@@ -90,8 +111,23 @@ def test_uni_aliases():
 
 
 def test_city_key():
-    assert city_key("82467 Garmisch-Partenkirchen") == "garmisch-partenkirchen"
-    assert city_key("Landshut, Isar") == "landshut" and city_key("Neuburg an der Donau") == "neuburg" and city_key("Muenchen") == "münchen"
+    # Full canonical town, not truncated to one word (2026-09-18): a registry town keeps its
+    # geographic qualifier as a real disambiguating token (city_key.__doc__), so "Bad Kissingen"
+    # and "Bad Wörishofen" -- or "Neuburg an der Donau" and any other "Neuburg *" -- no longer
+    # collapse onto the same bare stem. _town_match's prefix rule still lets a posting that just
+    # says "Neuburg" earn the qualified registry town.
+    assert city_key("82467 Garmisch-Partenkirchen") == "garmisch partenkirchen"
+    assert city_key("Landshut, Isar") == "landshut" and city_key("Neuburg an der Donau") == "neuburg donau" and city_key("Muenchen") == "münchen"
+    assert city_key("Bad Kissingen") != city_key("Bad Wörishofen")
+
+
+def test_town_match_is_prefix_aware_but_not_over_permissive():
+    assert _town_match("neuburg donau", "neuburg")           # bare posting city still earns the qualified registry town
+    assert _town_match("neuburg", "neuburg donau")            # symmetric
+    assert _town_match("bad kissingen", "bad kissingen")
+    assert not _town_match("bad kissingen", "bad wörishofen")  # distinct towns, both start with "bad" -- must not match
+    assert not _town_match("neuburg donau", "neu")             # not a whitespace-delimited prefix
+    assert not _town_match("", "neuburg") and not _town_match("neuburg", "")
 
 
 def test_mechanic_try_uses_real_registry():

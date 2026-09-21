@@ -27,7 +27,12 @@ from .classify import norm_text
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 GONE_MARKERS = re.compile(r"nicht mehr verfügbar|nicht mehr online|nicht gefunden|stelle wurde bereits besetzt|"
-                          r"job is no longer|no longer available|position has been filled|page not found|404", re.I)
+                          r"job is no longer|no longer available|position has been filled|page not found|"
+                          # A bare "404" alone matches a DOM id, CSS class, asset hash or phone number
+                          # on almost any page (confirmed live 2026-09-18: 361/2938 postings, 12%, sit
+                          # on a host where a stray "404" is present on nearly every page) -- only a
+                          # real "error 404"/"404 ... not found/Fehler/Seite" phrase counts.
+                          r"error\s*404\b|404\s*(?:[-–:]\s*)?(?:not\s*found|fehler|seite)", re.I)
 # A bot wall answers 200 with its own refusal page. Without this it lands in the 'error: 200 but title
 # not found' bucket and reads like a broken adapter, when the honest verdict is "we were refused"
 # (confirmed live 2026-09-16: every www.helios-gesundheit.de posting -- 556 rows, the biggest single
@@ -63,10 +68,17 @@ def decide(status_code, body, title, exc_name=None):
     if WALL_MARKERS.search(body[:4000]):
         return "blocked", 200, "bot wall (200 with a refusal page)"
     toks = _title_tokens(title)
+    if not toks:
+        # Zero evidence, not confirmation: the two commonest nursing titles ("Pflegefachkraft
+        # (m/w/d)", "Gesundheits- und Krankenpfleger (m/w/d)") lose every token here, so a 200
+        # response -- including an explicit "nicht mehr verfügbar" page or a bounce to the job
+        # list -- used to be read as "live" outright and skip the render/firecrawl escalation
+        # entirely (confirmed live 2026-09-18: 134/3911 rows, 3.4%, decided this way, all "live").
+        return "error", 200, "title has no matchable token"
     hit = sum(1 for t in toks if t in body)
-    if toks and hit == 0 and GONE_MARKERS.search(body):
+    if hit == 0 and GONE_MARKERS.search(body):
         return "gone", 200, "200 but title missing + gone marker"
-    if toks and hit == 0:
+    if hit == 0:
         return "error", 200, "200 but title not found (JS-rendered or list page)"
     return "live", 200, f"title tokens {hit}/{len(toks)}"
 
@@ -88,10 +100,20 @@ def verify_url(session, url, title):
 _LD_BLOCK = re.compile(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.S | re.I)
 _PLZ_ORT = re.compile(r"\b(\d{5})\s+([A-ZÄÖÜ][\wäöüß.\-]+(?:\s+[A-ZÄÖÜa-zäöüß.\-]+){0,2})")
 _EINSATZORT = re.compile(r"(?:Einsatzort|Arbeitsort|Standort|Dienstort)\s*[:\-–]?\s*([A-ZÄÖÜ][\wäöüß.\-]+(?:\s+[A-ZÄÖÜa-zäöüß.\-]+){0,2})")
+# A site-directory idiom ("Besuchen Sie zum Standort Bremen", "unsere/weitere/alle/andere Standort...")
+# names a DIFFERENT site than the one this page is actually about -- _EINSATZORT's bare (no colon/
+# dash) form cannot tell that shape from a genuine "Standort: Bremen" label by punctuation alone, and
+# it was the single biggest source of the ~110/day false city mismatches this rung produced
+# (confirmed live 2026-09-18: "zum Standort Bremen" read as the posting's own location).
+_EINSATZORT_IDIOM = re.compile(r"\b(?:zum|zur|unsere|weitere|alle|andere)\s+$", re.I)
 
 
 def _walk_jsonld(node, out):
-    """Collect every JobPosting jobLocation address in a JSON-LD document (dict, list or @graph)."""
+    """Collect one (city, plz) per JobPosting jobLocation in a JSON-LD document (dict, list or
+    @graph) -- (None, None) when that JobPosting's own jobLocation is a list of more than one
+    DISTINCT address (a real posting open at several sites at once, e.g. karriere.ge-passau.de)
+    rather than guessing by taking the list's first entry, which attributed the wrong site's city to
+    a posting that names a different one."""
     if isinstance(node, list):
         for x in node:
             _walk_jsonld(x, out)
@@ -102,10 +124,16 @@ def _walk_jsonld(node, out):
         _walk_jsonld(node["@graph"], out)
     loc = node.get("jobLocation")
     if loc:
+        addrs = []
         for pl in (loc if isinstance(loc, list) else [loc]):
             addr = (pl or {}).get("address") if isinstance(pl, dict) else None
             if isinstance(addr, dict):
-                out.append((addr.get("addressLocality"), addr.get("postalCode")))
+                addrs.append((addr.get("addressLocality"), addr.get("postalCode")))
+        # Pick the one non-blank address, not addrs[0] -- a blank placeholder entry (empty address
+        # object) ahead of the real one in the list must not itself count as "ambiguous" or win by
+        # position; distinctness (and which address survives) is computed only over non-blank entries.
+        distinct = {a for a in addrs if a[0] or a[1]}
+        out.append(next(iter(distinct)) if len(distinct) == 1 else (None, None))
     for v in node.values():
         if isinstance(v, (dict, list)):
             _walk_jsonld(v, out)
@@ -125,8 +153,15 @@ _CITY_CONNECT = {"an", "der", "am", "im", "bei", "ob", "vor", "auf", "in", "a.d.
 def _clean_city(s):
     if not s:
         return None
+    s = str(s).replace("\xa0", " ")
+    # A JSON-LD addressLocality sometimes carries "PLZ City" as one field instead of splitting it
+    # across addressLocality/postalCode (confirmed live 2026-09-18: jobs.klinikum-gap.de) -- left
+    # in, the PLZ token satisfies none of the stop checks below (a bare digit run is not
+    # _CITY_STOP and not lowercase) and rides along as if it were part of the place name, which
+    # then never matches the plain city name stored on the posting and inverts every mismatch check.
+    s = re.sub(r"^\d{5}\s+", "", s)
     out = []
-    for i, p in enumerate(str(s).replace("\xa0", " ").split()):
+    for i, p in enumerate(s.split()):
         w = p.strip(",.;:|–-")
         if not w:
             break
@@ -181,7 +216,8 @@ def extract_location(html, towns=None):
                 return _clean_city(city), plz or None, "jsonld"
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text)
-    m = _EINSATZORT.search(text)
+    m = next((x for x in _EINSATZORT.finditer(text)
+              if not _EINSATZORT_IDIOM.search(text[max(0, x.start() - 20):x.start()])), None)
     if m:
         c = _clean_city(m.group(1))
         if c and _placeable(c, None, towns):
@@ -198,7 +234,11 @@ def extract_location(html, towns=None):
 # ".../jobs#/detail/123", ".../stellen#jobid=88": the id never reaches the server, so HTTP would judge
 # the bare list page instead of the posting. A plain in-page anchor ("#content") carries no id and is
 # left on the HTTP rung.
-FRAGMENT_URL = re.compile(r"#/\w|#[\w\-]+=|#[\w\-=/]*\d")
+# Comma joins two key=value pairs in pi_asp.py's own fragment shape ("#position,id=<pid>") -- the
+# id-bearing alternatives below need it in their character class or that exact shape falls through
+# unforced onto the http rung, which then judges the bare board root instead of the posting
+# (confirmed live 2026-09-18: the 3 Helios P&I boards, 51 open rows).
+FRAGMENT_URL = re.compile(r"#/\w|#[\w\-,]+=|#[\w\-=/,]*\d")
 IS_PDF = re.compile(r"\.pdf(?:[?#]|$)", re.I)
 
 
@@ -263,30 +303,45 @@ _BOARD_TITLES = {}
 
 
 def board_titles(url):
-    """Titles the P&I LOGA board at `url` currently lists. Cached per process: one render answers
-    every posting on that board."""
+    """Titles the P&I LOGA board at `url` currently lists. Cached per verify_all() run (cleared
+    there, see reset_board_titles_cache): one render answers every posting on that board."""
     base = url.split("#", 1)[0]
     if base in _BOARD_TITLES:
         return _BOARD_TITLES[base]
-    from playwright.sync_api import sync_playwright
+    from crawlers.portals import fetch_page
     from .sources.pi_asp import _list_rows
-    titles = set()
+    page = ctx = None
     try:
-        with sync_playwright() as p:
-            b = p.chromium.launch(headless=True, args=["--no-sandbox"])
-            ctx = b.new_context(user_agent=UA, ignore_https_errors=True, locale="de-DE", viewport={"width": 1280, "height": 2400})
-            pg = ctx.new_page()
-            pg.goto(base, wait_until="networkidle", timeout=60000)
-            pg.wait_for_timeout(3000)
-            for _ in range(5):
-                pg.mouse.wheel(0, 4000)
-                pg.wait_for_timeout(500)
-            titles = {norm_text(r["title"]) for r in _list_rows(pg) if r.get("title")}
-            b.close()
+        # Reuses crawlers.portals' single shared browser (render() above does the same) --
+        # opening a SECOND sync_playwright() in the same thread that already holds it used to
+        # raise on every call after the first, silently disabling this rung for the rest of the
+        # process (confirmed live 2026-09-18: the regiomed P&I LOGA board, 40 postings).
+        page, ctx = fetch_page(base, wait_ms=0, timeout_ms=60000)
+        page.wait_for_load_state("networkidle", timeout=60000)
+        page.wait_for_timeout(3000)
+        for _ in range(5):
+            page.mouse.wheel(0, 4000)
+            page.wait_for_timeout(500)
+        titles = {norm_text(r["title"]) for r in _list_rows(page) if r.get("title")}
     except Exception:
-        titles = set()
+        # Do not cache a result a caught exception produced -- an empty set here used to look
+        # exactly like "the board really has no postings" and silently disable this rung for
+        # every later call in the same process.
+        return set()
+    finally:
+        for x in (page, ctx):
+            try:
+                if x: x.close()
+            except Exception:
+                pass
     _BOARD_TITLES[base] = titles
     return titles
+
+
+def reset_board_titles_cache():
+    """Clear the per-process board_titles() cache -- called once per verify_all() run so a stale
+    snapshot from an earlier run cannot mark a newly-added posting gone or a removed one live."""
+    _BOARD_TITLES.clear()
 
 
 def _slug(u):
@@ -294,12 +349,17 @@ def _slug(u):
     return p[-1].lower() if p else ""
 
 
-def _bounced_to_list(url, final_url, st):
+def _bounced_to_list(url, final_url, st=None):
     """A posting that quietly redirects to the board's job LIST is gone, even though it answers 200 and
     carries no "nicht mehr verfügbar" text (confirmed live 2026-09-16: LMU's referral portal sends
-    /stellenanzeigen/<slug> to /jobs). Only counts when the title was NOT found and the slug is gone
-    from the final URL, so an ordinary canonical/locale redirect is not mistaken for a dead posting."""
-    if st == "live" or not final_url or final_url == url:
+    /stellenanzeigen/<slug> to /jobs). Decided from the URL shape alone -- the redirect target is
+    almost always a job-list page, which contains one of the posting's own three title tokens often
+    enough that a caller-supplied st=="live" used to veto this check outright, permanently freezing
+    a dead posting as live (confirmed live 2026-09-18: 5 medbo.de + 3 lmu-klinikum.de postings stuck
+    this way). `st` is accepted only so existing callers do not need updating; it is never consulted.
+    An ordinary canonical/locale redirect is not mistaken for a dead posting because the slug is
+    still a substring of the (unchanged) final URL, not because the title happened to match."""
+    if not final_url or final_url == url:
         return False
     s = _slug(url)
     return bool(s) and len(s) > 8 and s not in (final_url or "").lower()
@@ -400,6 +460,7 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False, towns=N
     everything HTTP could not decide is collected first and rendered in a single sequential pass.
     Returns the five `verify` op fields plus method/city/plz/loc_source (strip with VERIFY_FIELDS
     before pushing to the ingest function)."""
+    reset_board_titles_cache()
     s = requests.Session()
     out, todo, done = [], [], 0
 
@@ -411,7 +472,13 @@ def verify_all(rows, workers=6, log=print, render=True, firecrawl=False, towns=N
         for f in as_completed([ex.submit(http_one, r) for r in rows]):
             r, res = f.result()
             done += 1
-            if res["verify_status"] == "live" or (res["verify_status"] == "gone" and res["verify_http"] in (404, 410)):
+            # Any "gone" the http rung already settled on -- a real 404/410, an explicit gone
+            # marker, or a redirect-to-list bounce -- is final; only escalating the narrower
+            # (404, 410) subset used to hand a genuinely-decided gone verdict to the render rung,
+            # which then flipped it back to "live" as soon as the rendered page carried one title
+            # token (confirmed live 2026-09-18: the redirect-bounce and gone-marker shapes both did
+            # this in run 90's escalated rows).
+            if res["verify_status"] in ("live", "gone"):
                 out.append(_vrow(r, res))
             else:
                 todo.append((r, res))

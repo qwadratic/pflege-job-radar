@@ -5,7 +5,7 @@
 #  2. cmd_inbox's re-read of the just-written observations interpolated refs into the URL; a ref with
 #     `&` split the PostgREST filter (400 PGRST100) and the whole batch lost its clinic links / verify
 #     marks (Firecrawl postings 10201-10204 left clinic_id NULL despite 'loaded -> 56202').
-from pflege_jobs.cli import canonical_ref, same_source_variant_pairs, lookup_posting_ids
+from pflege_jobs.cli import canonical_ref, same_source_variant_pairs, lookup_posting_ids, collapse_merge_chains
 
 # Real source_refs from the collapsed postings -- each line is a DISTINCT job on its board.
 DISTINCT_JOBS = [
@@ -60,6 +60,58 @@ def test_same_source_pairs_never_fold_query_ids_and_merge_all_into_min():
            {"posting_id": 3, "source_id": 25, "source_ref": "https://x.de/job/1"},
            {"posting_id": None, "source_id": 20, "source_ref": "https://x.de/job/1"}]
     assert same_source_variant_pairs(obs) == [{"src": 8, "dst": 7}, {"src": 9, "dst": 7}]
+
+
+# TASK-73 AC4: a softgarden vanity CNAME and its *.softgarden.io twin share the platform's own numeric
+# job id -- canonical_ref keeps them apart (different netloc, by design), so this second grouping
+# folds them when a fuzzy_key also matches.
+def test_same_source_pairs_fold_softgarden_vanity_domain_into_canonical_host():
+    obs = [{"posting_id": 41, "source_id": 20, "source_ref": "https://karriere.klinikum-bayreuth.de/job/66872540/pflegefachkraft", "fuzzy_key": "fk-a"},
+           {"posting_id": 40, "source_id": 20, "source_ref": "https://klinikum-bayreuth.softgarden.io/job/66872540/pflegefachkraft?l=de", "fuzzy_key": "fk-a"},
+           # same numeric id, different fuzzy_key (different job) -- must not fold
+           {"posting_id": 50, "source_id": 20, "source_ref": "https://other.softgarden.io/job/66872540/other-role", "fuzzy_key": "fk-b"}]
+    assert same_source_variant_pairs(obs) == [{"src": 41, "dst": 40}]
+
+
+def test_same_source_pairs_fold_personio_de_com_twin():
+    obs = [{"posting_id": 61, "source_id": 20, "source_ref": "https://klinik-x.jobs.personio.com/job/1234567", "fuzzy_key": "fk-c"},
+           {"posting_id": 60, "source_id": 20, "source_ref": "https://klinik-x.jobs.personio.de/job/1234567", "fuzzy_key": "fk-c"}]
+    assert same_source_variant_pairs(obs) == [{"src": 61, "dst": 60}]
+
+
+def test_same_source_pairs_fold_smartrecruiters_jobs_vs_api_subdomain_twin():
+    obs = [{"posting_id": 71, "source_id": 20, "source_ref": "https://api.smartrecruiters.com/ArtemedSE/744000143844579", "fuzzy_key": "fk-d"},
+           {"posting_id": 70, "source_id": 20, "source_ref": "https://jobs.smartrecruiters.com/ArtemedSE/744000143844579", "fuzzy_key": "fk-d"}]
+    assert same_source_variant_pairs(obs) == [{"src": 71, "dst": 70}]
+
+
+def test_same_source_pairs_union_two_groups_that_disagree_on_one_postings_dst():
+    # posting 5 is a non-min member of TWO groups at once: its canonical-URL group with posting 2
+    # (literally the same URL, different fuzzy_key -- a re-crawl drifted the title enough to mint a
+    # new posting_id) picks dst=2, and its ats-job-id+fuzzy_key group with posting 3 (a vanity-host
+    # alias) picks dst=3. Resolving each group independently produces two {src:5,...} pairs that
+    # disagree; building {src: dst} from that list (as collapse_merge_chains does) silently keeps
+    # only the last one and drops the other -- a real duplicate posting (2, or 3) never merges.
+    obs = [{"posting_id": 5, "source_id": 1, "source_ref": "https://x.de/jobs/999999", "fuzzy_key": "fk-A"},
+           {"posting_id": 2, "source_id": 1, "source_ref": "https://x.de/jobs/999999", "fuzzy_key": "fk-B"},
+           {"posting_id": 3, "source_id": 1, "source_ref": "https://y.de/jobs/999999", "fuzzy_key": "fk-A"}]
+    assert same_source_variant_pairs(obs) == [{"src": 3, "dst": 2}, {"src": 5, "dst": 2}]
+
+
+def test_collapse_merge_chains_rewrites_dst_to_its_own_final_dst():
+    # Q -> P -> R: posting the whole chain in one merges call must never delete P after also asking
+    # to move Q's observations onto it.
+    assert collapse_merge_chains([{"src": "Q", "dst": "P"}, {"src": "P", "dst": "R"}]) == \
+        [{"src": "P", "dst": "R"}, {"src": "Q", "dst": "R"}]
+
+
+def test_collapse_merge_chains_drops_a_genuine_cycle():
+    assert collapse_merge_chains([{"src": "A", "dst": "B"}, {"src": "B", "dst": "A"}]) == []
+
+
+def test_collapse_merge_chains_leaves_a_flat_star_unchanged():
+    pairs = [{"src": 8, "dst": 7}, {"src": 9, "dst": 7}]
+    assert collapse_merge_chains(pairs) == pairs
 
 
 class _Resp:

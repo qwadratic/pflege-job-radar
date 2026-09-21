@@ -43,7 +43,11 @@ from . import settings as ST
 from pflege_jobs.sources import firecrawl_agent as FA
 
 UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
-NO_JOBS = re.compile(r"(leider\s+)?(sind\s+)?(derzeit|aktuell|momentan|zur\s*zeit)\s+(sind\s+)?(in\s+diesem\s+bereich\s+)?keine\s+(offenen\s+)?stellen|keine\s+stellenangebote\s+(vorhanden|verf)", re.I)
+# No "(in diesem Bereich )?" alternative on purpose: a department-scoped "no openings in THIS area"
+# box is a common German careers-page idiom on a board that groups vacancies per department --
+# matching it skipped the whole clinic for the day even when other departments had live nursing
+# vacancies (confirmed live 2026-09-18: Kreiskrankenhaus Grafenau, 12 postings on the board, skipped).
+NO_JOBS = re.compile(r"(leider\s+)?(sind\s+)?(derzeit|aktuell|momentan|zur\s*zeit)\s+(sind\s+)?keine\s+(offenen\s+)?stellen|keine\s+stellenangebote\s+(vorhanden|verf)", re.I)
 MAX_CREDITS_RE = re.compile(r"agent reached max credits", re.I)
 BACKOFF = (30, 60, 120, 300, 600)                       # seconds between retries of a failing Firecrawl API call
 API_ERRORS_TO_STOP = 5
@@ -85,10 +89,13 @@ def run_one(c, cap, trigger="hunter"):
     log = run.get("log") or []
     charged = next((l for l in log if "charging" in l or "credits charged" in l), "")
     tok = re.search(r"tokens delta (-?\d+|None)", charged)
+    blocked_line = next((l for l in log if "blocked_reason:" in l), "")
     return {"clinic_id": c["clinic_id"], "name": c.get("name"), "run_id": rid, "status": run.get("status"), "rows": run.get("n_rows"), "new": run.get("n_new"),
             "credits": run.get("credits_used"), "tokens_delta": (tok.group(1) if tok else None), "error": run.get("error"),
             "disagree": any("DISAGREE" in l for l in log), "gate": next((l for l in log if "spend gate" in l or "refused" in l or "skipped" in l), ""),
-            "notes": next((l[l.find("notes:"):][:160] for l in log if "notes:" in l), ""), "secs": round(time.time() - t0),
+            "notes": next((l[l.find("notes:"):][:160] for l in log if "notes:" in l), ""),
+            "blocked_reason": blocked_line[blocked_line.find("blocked_reason:"):][:200] if blocked_line else "",
+            "secs": round(time.time() - t0),
             "max_credits_hit": any(MAX_CREDITS_RE.search(l) for l in log),
             "fail_text": " | ".join(l for l in log if "FAILED" in l or "refused" in l)[:400]}
 
@@ -106,10 +113,8 @@ def suspicious(res, a, zero_streak):
             return f"run {res['run_id']} token delta {res['tokens_delta']} (> {a.max_tokens})"
     except ValueError:
         pass
-    if (res["rows"] or 0) > 60:
-        return f"run {res['run_id']} returned {res['rows']} rows from one clinic"
     if zero_streak >= 3:
-        return "three billable runs in a row returned nothing"
+        return "three billable runs in a row returned nothing AND reported a blocked_reason"
     return None
 
 
@@ -124,6 +129,33 @@ def host_of(url):
     except ValueError:
         return None
     return h[4:] if h.startswith("www.") else (h or None)
+
+
+def _run_mentions_town(run_id, town):
+    """Does crawl_output/run_<run_id>.jsonl (the rows that run actually collected) mention `town`
+    in a row's title or city? Read-only, best-effort: a missing/unreadable file means "cannot
+    confirm coverage", which the caller treats as "submit the sibling anyway" -- the safe default
+    when unsure is one redundant agent run, not a silently uncovered board."""
+    town = (town or "").strip().lower()
+    if not town or not run_id:
+        return False
+    path = A.CRAWL_OUT / f"run_{run_id}.jsonl"
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                p = row.get("payload") or {}
+                loc = p.get("loc") or [{}]
+                city = (loc[0] or {}).get("city") if isinstance(loc, list) and loc else None
+                text = " ".join(str(x) for x in (p.get("title"), city) if x).lower()
+                if town in text:
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 def meta_get(key, default=None):
@@ -253,9 +285,13 @@ class Hunter:
 
     def next_target(self, day, in_flight=()):
         """The next clinic to submit, or None. Sibling boards: a host that already produced rows today under another
-        clinic is recorded as skipped; a host that is in flight right now is deferred, not skipped."""
+        clinic is recorded as skipped ONLY when that run's own rows actually mention this clinic's site; a host
+        that is in flight right now is deferred, not skipped."""
         rows = {r["clinic_id"]: r for r in state_rows(day)}
-        harvested = {r["host"] for r in rows.values() if r.get("host") and (r.get("rows") or 0) > 0}
+        harvested_runs = {}  # host -> [run_id, ...] of today's runs that returned rows on that host
+        for r in rows.values():
+            if r.get("host") and (r.get("rows") or 0) > 0 and r.get("run_id"):
+                harvested_runs.setdefault(r["host"], []).append(r["run_id"])
         busy = {host_of(c.get("careers_url")) for c in in_flight} - {None}
         busy |= {r["host"] for r in rows.values() if r.get("host") and r["status"] == "running"}
         for c in self.candidates():
@@ -264,10 +300,17 @@ class Hunter:
             if r and r["status"] != "pending":
                 continue
             h = host_of(c.get("careers_url"))
-            if h and h in harvested:
-                self.log(f"skip {cid} {c.get('name', '')[:40]}: sibling board {h} already harvested today")
-                state_set(cid, day, status="skipped", last_error="sibling board already harvested today", **self._row_for(c, day))
-                continue
+            if h and h in harvested_runs:
+                # A per-hospital agent prompt harvests only the ONE clinic it was submitted for --
+                # it cannot stand in for a sibling's own board just because they share a host
+                # (confirmed live 2026-09-18: 2 Helios clinics skipped this way got zero coverage
+                # from any path, since the adapter pass had already walled them off too). Only
+                # skip when the harvested run's own rows demonstrably cover this sibling's site.
+                if any(_run_mentions_town(rid, c.get("town")) for rid in harvested_runs[h]):
+                    self.log(f"skip {cid} {c.get('name', '')[:40]}: sibling board {h} already covered this site today")
+                    state_set(cid, day, status="skipped", last_error="sibling board already covered this site today", **self._row_for(c, day))
+                    continue
+                self.log(f"{cid} {c.get('name', '')[:40]}: sibling board {h} harvested today but did not cover this site -- submitting anyway")
             if h and h in busy:
                 continue
             return c
@@ -346,9 +389,23 @@ class Hunter:
 
     # -- stop rules
     def check_stop(self, day, in_flight=0, res=None):
-        """First matching rule wins; sets and returns self.stop_reason (a string 'name: numbers')."""
+        """First matching rule wins; sets and returns self.stop_reason (a string 'name: numbers').
+
+        day's "operator_stop" key (set only by POST /api/hunter/stop, a distinct key from
+        "stop_reason" so this check can never see its own earlier verdict) is read BEFORE this
+        method's own rule evaluation and, once found, is never replaced -- checking self.stop_reason
+        only was not enough to notice an operator stop mid-pass (self.stop_reason starts unset
+        every run_once() call, so a fresh Hunter instance never saw a stop the operator asked for
+        while a DIFFERENT pass was already in flight), and without this early return the rule
+        evaluation below would go on to compute its own reason (commonly 'all_updated') and
+        overwrite the operator's request with it via day_set("stop_reason", ...)."""
         if self.stop_reason:
             return self.stop_reason
+        operator_stop = day_get(day, "operator_stop")
+        if operator_stop:
+            self.stop_reason = operator_stop
+            day_set(day, "stop_reason", operator_stop)
+            return operator_stop
         cfg = self.cfg
         reason = None
         if in_flight == 0 and not self.candidates():
@@ -394,6 +451,11 @@ class Hunter:
     def _kill_switch(self):
         if stop_file().exists():
             return f"kill_switch: {stop_file()} exists"
+        # is_enabled() is deliberately NOT re-checked here: the daemon loop (main()) already gates
+        # entry into run_once() on it, and POST /api/hunter/stop always sets day's stop_reason in
+        # the same call as set_enabled(False) -- check_stop()'s own persisted-stop_reason read
+        # (above) is what makes a mid-pass stop take effect immediately, without making run_once()
+        # depend on being launched through the daemon's outer gate (the test suite calls it directly).
         # Kept as its own check (not just relying on CR.kill_switch(), which now also checks this): tests
         # stub kill_switch_fn to isolate hunter's other stop rules, and this stays effective even then.
         if ST.get_firecrawl().get("enabled", True) is False:
@@ -447,7 +509,12 @@ class Hunter:
                 state_set(cid, day, status="needs_manual", last_error=err, **common)
             return "needs_manual"
         self.consecutive_failures = 0
-        self.zero_streak = self.zero_streak + 1 if billable and not res.get("rows") else (0 if res.get("rows") else self.zero_streak)
+        # A billable 0-row run is the normal, healthy result for a board with no open nursing
+        # vacancy right now -- only count it toward the halt streak when the agent itself flagged
+        # a reason it could not do its job (blocked_reason), not merely "found nothing" (confirmed
+        # live 2026-09-18: 3 healthy empty runs in a row halted the hunter for the rest of the day).
+        zero_and_blocked = billable and not res.get("rows") and res.get("blocked_reason")
+        self.zero_streak = self.zero_streak + 1 if zero_and_blocked else (0 if res.get("rows") else self.zero_streak)
         state_set(cid, day, status="done", last_error=None, **common)
         self.log(json.dumps({k: res.get(k) for k in ("clinic_id", "run_id", "status", "rows", "new", "credits", "tokens_delta", "secs")}))
         return "done"

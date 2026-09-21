@@ -34,6 +34,29 @@ def _router(mapping, calls=None):
 
 
 # ---------------------------------------------------------------------------
+# get(): the shared session attempt/ok tally app/crawl.py's _fetch_board reads (TASK-72 AC#1)
+# ---------------------------------------------------------------------------
+class _FakeSession:
+    def __init__(self, answers):
+        self._answers = list(answers)
+
+    def get(self, u, **kw):
+        item = self._answers.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def test_get_tallies_attempts_and_oks_on_the_shared_session():
+    s = _FakeSession([_R(ok=True), _R(ok=False), RuntimeError("boom")])
+    r1 = va.get("https://x/1", session=s)
+    r2 = va.get("https://x/2", session=s)
+    r3 = va.get("https://x/3", session=s)
+    assert r1.ok and not r2.ok and r3 is None
+    assert s._attempts == 3 and s._ok == 1
+
+
+# ---------------------------------------------------------------------------
 # personio
 # ---------------------------------------------------------------------------
 def _personio_xml(entries):
@@ -324,6 +347,24 @@ def test_wp_jobs_falls_back_to_the_sitemap_walk_when_no_nursing_nav_exists(monke
     assert {r["payload"]["title"] for r in rows} == {"Pflegefachkraft (m/w/d)", "Koch (m/w/d)"}
 
 
+def test_find_job_urls_visits_every_unnamed_sitemap_index_child_not_just_the_first_3(monkeypatch):
+    """TASK-72 AC#2: locs[:3] used to permanently drop children 4+ of a sitemap index whose own
+    names carry no job-ish word at all (confirmed live: klinikum-ab-alz.de's wp-sitemap.xml)."""
+    base = "https://example.de"
+    index = _R("<sitemapindex>" + "".join(
+        "<sitemap><loc>%s/wp-sitemap-posts-page-%d.xml</loc></sitemap>" % (base, i) for i in range(1, 6))
+        + "</sitemapindex>", url=base + "/sitemap.xml", ok=True)
+    mapping = {base + "/robots.txt": _R(ok=False), base + "/sitemap.xml": index}
+    job_urls = set()
+    for i in range(1, 6):
+        u = "%s/wp-sitemap-posts-page-%d.xml" % (base, i)
+        job_url = "%s/stellen/job-%d" % (base, i)
+        job_urls.add(job_url)
+        mapping[u] = _R("<urlset><url><loc>%s</loc></url></urlset>" % job_url, url=u, ok=True)
+    monkeypatch.setattr(va, "get", _router(mapping))
+    assert set(va.find_job_urls(base)) == job_urls
+
+
 # ---------------------------------------------------------------------------
 # rexx
 # ---------------------------------------------------------------------------
@@ -431,6 +472,17 @@ def test_mein_check_in_reads_datePosted_employmentType_and_per_job_address_from_
     assert p["loc"] == [{"city": "Eichstätt", "plz": "85072", "region": "bavaria"}]
 
 
+def test_mein_check_in_has_no_max_jobs_cap(monkeypatch):
+    """TASK-72 AC#2: VENDOR_MAX_JOBS=300 used to silently truncate any board past 300 positions --
+    removed (crawl_rexx already dropped its own copy after it lost 30 real postings the same way)."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)   # 305 rows * the real 0.2s politeness delay would be slow
+    cu = "https://www.mein-check-in.de/big-tenant/overview"
+    listing = _R("".join('<a href="/big-tenant/position-%d">Pflegefachkraft %d</a>' % (i, i) for i in range(305)), ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: listing}))
+    rows = va.crawl_mein_check_in({"name": "Big Tenant", "careers_url": cu})
+    assert len(rows) == 305
+
+
 # ---------------------------------------------------------------------------
 # dvinci
 # ---------------------------------------------------------------------------
@@ -493,3 +545,98 @@ def test_oracle_falls_back_to_wp_jobs_and_backfills_missing_fields(monkeypatch):
     monkeypatch.setattr(va, "crawl_wp_jobs", lambda c, session=None: fallback_rows)
     rows = va.crawl_oracle({"name": "Klinikum", "careers_url": "https://klinikum.example.de/stellenangebote/"})
     assert rows[0]["payload"]["employmentType"] == "Vollzeit"
+
+
+# ---------------------------------------------------------------------------
+# _sane_date / parse_job_page: a JSON-LD epoch placeholder must not freeze a posting as ancient
+# forever (TASK-73 AC7). Confirmed live 2026-09-18: 9 kbo.de + 2 frg-kliniken.de open postings.
+# ---------------------------------------------------------------------------
+def test_sane_date_rejects_the_unix_epoch_placeholder():
+    assert va._sane_date("1970-01-01T00:00:00Z") is None
+    assert va._sane_date("1969-12-31") is None
+
+
+def test_sane_date_keeps_a_real_date():
+    assert va._sane_date("2026-07-01T08:00:00+02:00") == "2026-07-01"
+
+
+def test_sane_date_keeps_absent_and_malformed_values_as_before():
+    assert va._sane_date(None) is None
+    assert va._sane_date("") is None
+    assert va._sane_date("not-a-date") == "not-a-date"   # unchanged from the pre-fix slice-only behaviour
+
+
+def test_parse_job_page_drops_an_epoch_placeholder_datepostet_instead_of_freezing_freshness():
+    html = ('<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)",'
+            '"datePosted": "1970-01-01T00:00:00.000Z", "description": "Wir suchen."}</script>')
+    j = va.parse_job_page(html, "https://kbo.de/karriere/jobs/1", "kbo")
+    assert j["datePosted"] is None
+
+
+def test_parse_job_page_keeps_a_real_dateposted():
+    html = ('<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)",'
+            '"datePosted": "2026-05-04", "description": "Wir suchen."}</script>')
+    j = va.parse_job_page(html, "https://klinik.example.de/jobs/1", "Klinik")
+    assert j["datePosted"] == "2026-05-04"
+
+
+# ---------------------------------------------------------------------------
+# NOT_JOB_PATH: a TYPO3 news/press/blog/event single-record view uses the exact same bare
+# /detail/<id> shape as a job posting (TASK-73 AC9). Confirmed live 2026-09-18:
+# klinikum-memmingen.de's /aktuelles/detail/ news archive, 31 fake nursing postings.
+# ---------------------------------------------------------------------------
+def test_not_job_path_excludes_typo3_news_press_blog_event_detail_pages():
+    for path in ["/aktuelles/detail/1234-jubilaeum.html", "/presse/detail/99-pressemitteilung",
+                 "/blog/detail/5-ratgeber", "/veranstaltungen/detail/7-tag-der-offenen-tuer",
+                 "/termine/detail/3", "/news/detail/42"]:
+        assert va.JOB_PATH.search(path), f"should still look job-shaped by URL alone: {path}"
+        assert va.NOT_JOB_PATH.search(path), f"should be excluded as a non-job detail page: {path}"
+
+
+def test_not_job_path_still_allows_real_karriere_detail_pages():
+    for path in ["/karriere-detail/Ottobeuren/Pflegefachkraft-mwd/2612", "/karriere/detail/42-pflegefachkraft",
+                 "/stellenangebote/detail/7"]:
+        assert va.JOB_PATH.search(path) and not va.NOT_JOB_PATH.search(path), path
+
+
+def test_find_job_urls_drops_typo3_news_detail_pages_confirmed_klinikum_memmingen(monkeypatch):
+    base = "https://www.klinikum-memmingen.de"
+    sitemap = _R(
+        "<urlset>"
+        "<url><loc>https://www.klinikum-memmingen.de/karriere/stellenangebote/detail/1-pflegefachkraft</loc></url>"
+        "<url><loc>https://www.klinikum-memmingen.de/aktuelles/detail/99-neubau-eroeffnet</loc></url>"
+        "</urlset>", ok=True)
+    monkeypatch.setattr(va, "get", _router({base + "/robots.txt": _R(ok=False),
+                                            base + "/sitemap.xml": sitemap}))
+    found = va.find_job_urls(base)
+    assert found == ["https://www.klinikum-memmingen.de/karriere/stellenangebote/detail/1-pflegefachkraft"]
+
+
+# ---------------------------------------------------------------------------
+# _job_link_pairs / _widget_endpoint_job_links: a job-looking link embedded in one board's own HTML
+# must not be followed onto an unrelated site (TASK-73 AC10). Confirmed live 2026-09-18:
+# psychiatrie-werneck.de's own career page linking 8 koenig-ludwig-haus.de rows.
+# ---------------------------------------------------------------------------
+def test_job_link_pairs_drops_a_link_to_an_unrelated_site():
+    html = ('<a href="https://psychiatrie-werneck.de/karriere/stellenangebote/1">Pflegefachkraft (m/w/d) bei uns</a>'
+            '<a href="https://koenig-ludwig-haus.de/karriere/stellenangebote/9">Pflegefachkraft (m/w/d) dort</a>')
+    pairs = va._job_link_pairs(html, "https://psychiatrie-werneck.de/karriere/")
+    assert list(pairs) == ["https://psychiatrie-werneck.de/karriere/stellenangebote/1"]
+
+
+def test_job_link_pairs_keeps_a_link_reached_via_the_boards_own_redirect():
+    # base already reflects the post-redirect host (e.g. a vanity domain that 302s onto the ATS'
+    # own host) -- a same-host link found there is not "off-board".
+    html = '<a href="https://tenant.softgarden.io/job/1">Pflegefachkraft (m/w/d)</a>'
+    pairs = va._job_link_pairs(html, "https://tenant.softgarden.io/de/vacancies")
+    assert list(pairs) == ["https://tenant.softgarden.io/job/1"]
+
+
+def test_widget_endpoint_job_links_drops_off_board_links(monkeypatch):
+    cu_resp = _R('<div data-url="/ajax/joblist">x</div>', url="https://psychiatrie-werneck.de/karriere/", ok=True)
+    widget = _R('<a href="https://psychiatrie-werneck.de/karriere/stellenangebote/1">a</a>'
+                '<a href="https://koenig-ludwig-haus.de/karriere/stellenangebote/9">b</a>',
+                url="https://psychiatrie-werneck.de/ajax/joblist", ok=True)
+    monkeypatch.setattr(va, "get", _router({"https://psychiatrie-werneck.de/ajax/joblist": widget}))
+    out = va._widget_endpoint_job_links(cu_resp)
+    assert out == ["https://psychiatrie-werneck.de/karriere/stellenangebote/1"]

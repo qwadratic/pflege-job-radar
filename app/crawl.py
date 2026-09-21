@@ -114,27 +114,26 @@ def kill_switch(run_mode=None, trigger=None, log=print):
 # --- spend gate --------------------------------------------------------------------------------
 def _unseen_source_urls(urls):
     """Which of these URLs are NOT already sitting in the inbox or already an observed posting.
-    Mirrors _post_inbox's dedupe, plus a posting_observations lookup for rows the seeded adapters
-    already pushed straight through (those never pass through the inbox table)."""
+    Mirrors _post_inbox's dedupe -- the same 50-URL batch size, since a batch of 200 real URLs
+    regularly built a >20KB query string the gateway 400'd -- plus a posting_observations lookup
+    for rows the seeded adapters already pushed straight through (those never pass through the
+    inbox table). Raises on a failed lookup batch rather than swallowing it: silently treating an
+    unchecked URL as "definitely unseen" made the spend_gate "adapter already covers it" refusal
+    unable to ever fire once a lookup started failing (confirmed live 2026-09-18: 11 boards over
+    ~170 rows each, 4908 of 9142 daily rows, were affected every time this failed)."""
     urls = [u for u in dict.fromkeys(u for u in urls if u)]
     if not urls:
         return []
     existing = set()
-    for i in range(0, len(urls), 200):
-        batch = urls[i:i + 200]
+    for i in range(0, len(urls), 50):
+        batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
-        try:
-            for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
-                if x.get("source_url"):
-                    existing.add(x["source_url"])
-        except Exception:
-            pass
-        try:
-            for x in A.rest_get("posting_observations", {"select": "source_ref", "source_ref": f"in.({q})"}):
-                if x.get("source_ref"):
-                    existing.add(x["source_ref"])
-        except Exception:
-            pass
+        for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
+            if x.get("source_url"):
+                existing.add(x["source_url"])
+        for x in A.rest_get("posting_observations", {"select": "source_ref", "source_ref": f"in.({q})"}):
+            if x.get("source_ref"):
+                existing.add(x["source_ref"])
     return [u for u in urls if u not in existing]
 
 
@@ -149,7 +148,7 @@ def raw_board_rows(clinic):
     out = []
     for _url, b in boards.items():
         if b["kind"] == "vendor":
-            for r in _vendor_rows(b, clinic, session, lambda *_: None):
+            for r in _vendor_rows(b, clinic, session, lambda *_: None, towns=D.towns()):
                 pl = r.get("payload") or {}
                 out.append({"title": pl.get("title"), "url": r.get("source_url")})
         else:
@@ -239,7 +238,13 @@ def spend_gate(clinic, max_credits, probe_adapter=None, log=print):
             urls = probe_adapter(clinic)
         except Exception as e:
             return {"allowed": False, "cap": 0, "reason": f"adapter probe failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None, **extra}
-        unseen = _unseen_source_urls(urls)
+        try:
+            unseen = _unseen_source_urls(urls)
+        except Exception as e:
+            # A failed dedupe lookup must refuse the spend, not proceed as if every url were
+            # unseen -- see _unseen_source_urls' own docstring for why the opposite default
+            # silently defeated the "adapter already covers it" refusal below.
+            return {"allowed": False, "cap": 0, "reason": f"unseen-url lookup failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None, **extra}
         if urls and not unseen:
             return {"allowed": False, "cap": 0, "reason": "adapter covers it", "unseen": 0, **extra}
         cap = min(int(max_credits or 0), max(0, budget_cap))
@@ -327,6 +332,19 @@ def _seed_obs(board, c, towns, log):
     if vendor in ("bite", "bite_jobs"):
         from pflege_jobs.sources import bite
         seed = {"name": c["name"], "kez": c["clinic_id"], "career": c["careers_url"], "bavaria_only_operator": True, "town": c.get("town")}
+        # data/registry/bite_seeds.json records the hand-verified tenant (customer/listing) for
+        # boards whose careers_url does not mount the standard jobs-api widget detectably on its
+        # own -- without it, bite.crawl() falls back to scraping that one page's own links, which
+        # silently degrades a real 43-posting tenant listing to whatever the page happens to link
+        # (confirmed live 2026-09-18: kreiskliniken-bogen-mallersdorf.de's careers_url is an
+        # Ausbildung/trainee page, so the un-seeded fallback returns only 14 trainee-only rows).
+        try:
+            bite_seeds = json.load(open(A.DATA_DIR / "registry" / "bite_seeds.json", encoding="utf-8"))
+        except (OSError, ValueError):
+            bite_seeds = []
+        seeded = next((s for s in bite_seeds if str(s.get("kez")) == str(c["clinic_id"])), None)
+        if seeded and seeded.get("customer"):
+            seed["customer"], seed["listing"] = seeded["customer"], seeded.get("listing")
         rows, st = bite.crawl(seed, towns, log=log)
         for r in rows:
             r.setdefault("_kez", None)
@@ -336,7 +354,11 @@ def _seed_obs(board, c, towns, log):
         seed = BUILDERS["umantis"]({"name": c["name"], "career": c["careers_url"], "operator": c.get("operator")}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no umantis instance found on careers page"}
-        return Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log).crawl(seed)
+        # list_pages used to be pinned to 6 here, below the seed's own 7-8 start URLs -- every
+        # umantis board hit the ceiling before its own start pages were even all fetched once,
+        # permanently reporting truncated=True (TASK-72 AC#2). Crawler's own default (500) is
+        # already documented as a loop-safety ceiling, not a target -- use that instead.
+        return Crawler(towns, per_site_pages=150, sleep=0.2, log=log).crawl(seed)
     if vendor == "klinikum_passau":
         from pflege_jobs.sources.klinikum_passau import crawl as crawl_klinikum_passau
         return crawl_klinikum_passau(c, towns, log=log)
@@ -358,12 +380,26 @@ def _seed_obs(board, c, towns, log):
     return [], {"error": f"no seeded runner for {vendor}"}
 
 
-def _vendor_rows(board, c, session, log):
-    """Vendor adapters return inbox-shaped rows."""
+def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
+    """Vendor adapters return inbox-shaped rows.
+
+    group_cache (dict, shared across one execute() run) dedupes a shared group-portal fetch: several
+    registry boards can independently route to the same group listing (e.g. 5 distinct kbo-branded
+    satellite domains all falling back to kbo.de's bare, unfiltered list) -- without a cache the same
+    paginated group listing was refetched once per such board every run. Keyed by the URL
+    crawl_group_portal will actually page (VA._group_list_url), not the group's bare list, since a
+    clinic with its own pre-filtered querystring on the shared board must still be fetched on its
+    own and never skipped as "already done" by an unfiltered sibling fetch."""
     from crawlers import vendor_adapters as VA
     g = VA.group_portal_for(c)
     if g:
-        rows = VA.crawl_group_portal(c, g, session=session)
+        key = VA._group_list_url(c, g)
+        if group_cache is not None and key in group_cache:
+            log(f"  {board.get('vendor', 'group'):<14} {key[:60]} -> shared group board, already fetched this run")
+            return []
+        rows = VA.crawl_group_portal(c, g, session=session, towns=towns)
+        if group_cache is not None:
+            group_cache[key] = True
     else:
         fn = VA.VENDORS.get(board["vendor"])
         if not fn:
@@ -501,7 +537,7 @@ def _load_observations(obs, clinics_by_id, log):
     return ids, obs
 
 
-def _run_verify(run_id, clinics, params, log):
+def _run_verify(run_id, clinics, params, log, scope=None):
     """mode='verify': re-check this scope's postings against their own pages. No crawling.
 
     Ivan 2026-09-16: a status is only usable as the single filter while it is FRESH and while it came
@@ -517,7 +553,13 @@ def _run_verify(run_id, clinics, params, log):
     from pflege_jobs.classify import norm_text
     ids = {c["clinic_id"] for c in clinics}
     towns = D.towns()          # lets extract_location() reject a label that is not a real place
-    rows = [j for j in D.jobs() if j.get("status") == "open" and (not ids or j.get("clinic_id") in ids)]
+    # A posting the registry Matcher left unattributed (clinic_id null) is not in `ids` on ANY
+    # scope-to-clinics parse, so it was excluded from every scheduled re-verification including
+    # the daily all-postings run and kept its last status/city forever (confirmed live 2026-09-18:
+    # 198 of 2676 open postings, 7.4%). Scope "all" must still reach them.
+    target_is_all = scope == "all"
+    rows = [j for j in D.jobs() if j.get("status") == "open"
+           and (not ids or j.get("clinic_id") in ids or (target_is_all and not j.get("clinic_id")))]
     if not rows:
         log("verify: no open postings in scope")
         R.update_run(run_id, status="done", finished_at=R.now(), n_rows=0)
@@ -627,22 +669,52 @@ def execute(run_id):
             log(f"posting re-check failed: {str(e)[:120]}")
 
     if mode == "verify":
-        _run_verify(run_id, clinics, params, log)
+        _run_verify(run_id, clinics, params, log, scope=scope)
         return
 
     cancelled = False
+    # Shared across every board this run: several registry boards can independently route to the
+    # same group-portal listing (crawlers.vendor_adapters.group_portal_for) -- without this cache
+    # the same paginated group listing was refetched once per such board every run (confirmed live
+    # 2026-09-18: kbo.de's group listing was refetchable once per each of its 5+ kbo-branded
+    # satellite-domain boards).
+    group_cache = {}
 
     def _fetch_board(url, b):
-        """One board fetch attempt. Returns (inbox_rows, observations, error_or_None)."""
+        """One board fetch attempt. Returns (inbox_rows, observations, error_or_None).
+
+        TASK-72 AC#1: 0 rows/observations with no exception used to always mean err=None -- a board
+        genuinely down for the night (every request failing transport-side) looked identical to one
+        that was fetched fine and simply has nothing on it right now, so the real failure skipped the
+        3-attempt retry ladder and never reached crawl_issues. crawlers.vendor_adapters.get() (and the
+        beesite/hr4you copies of it) tally attempts/oks onto the shared `session` for exactly this:
+        0 successes despite 1+ attempts is a real transport failure (returned as an error, same path
+        as a raised exception); 0 rows with 1+ successes (or a board that never even attempted a
+        request, e.g. no careers_url) is a board genuinely read and found empty, recorded directly as
+        its own crawl_issue kind='empty' instead of a log-only WARNING nobody sees again."""
         c = b["clinics"][0]
         names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
         t0 = time.time()
+        day = R.now()[:10]
+        ids = [x["clinic_id"] for x in b["clinics"]]
         try:
             if b["kind"] == "vendor":
-                rows = _vendor_rows(b, c, session, log)
+                from crawlers import vendor_adapters as VA
+                g = VA.group_portal_for(c)
+                # Checked BEFORE the fetch: _vendor_rows marks the group cache the instant it runs
+                # the real fetch, so checking after (the old code) was always true right after a
+                # board's own FIRST real fetch too, and the empty/failure checks below could never
+                # fire for a shared group board (kbo.de, karriere.barmherzige.net) at all.
+                already_fetched = bool(g) and VA._group_list_url(c, g) in group_cache
+                session._attempts = session._ok = 0
+                rows = _vendor_rows(b, c, session, log, group_cache=group_cache, towns=towns)
                 log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
-                if not rows:
-                    log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
+                if not rows and not already_fetched:
+                    if session._attempts and not session._ok:
+                        return [], [], f"transport failure: 0/{session._attempts} request(s) to this board succeeded"
+                    R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
+                                         f"0 rows, no transport error ({session._attempts} request(s), {session._ok} ok) -- board returned nothing", run_id)
+                    log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=empty")
                 return rows, [], None
             obs, st = _seed_obs(b, c, towns, log)
             for o in obs:
@@ -651,7 +723,9 @@ def execute(run_id):
             if st and st.get("error"):
                 return [], obs, st["error"]
             if not obs:
-                log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
+                R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
+                                     f"0 observations, no error ({json.dumps({k: v for k, v in (st or {}).items() if k in ('job_links_found', 'list_pages', 'truncated')}, ensure_ascii=False)})", run_id)
+                log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=empty")
             return [], obs, None
         except Exception as e:
             err = f"{type(e).__name__}: {str(e)[:160]}"
@@ -739,6 +813,20 @@ def execute(run_id):
                 inbox_rows += res["rows"]
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits charged "
                     f"(API {res.get('credits_api')}, credits delta {res.get('credits_delta')}, tokens delta {res.get('tokens_delta')}, cap {gate['cap']})")
+                # A completed agent run whose OWN answer flags blocked_reason, or that plainly
+                # succeeded but read zero jobs, used to be stored as a plain successful run with
+                # no crawl_issue at all -- the only trace was a 200-char slice buried in the run
+                # log (confirmed live: Helios Frankenwaldklinik Kronach dropping 7 -> 4 postings
+                # between runs with the agent explicitly saying its job-search endpoint returned no
+                # parsable result list, invisible anywhere but here).
+                agent_data = res.get("data") or {}
+                blocked_reason = (agent_data.get("blocked_reason") or "").strip() if isinstance(agent_data, dict) else ""
+                if blocked_reason or not res["rows"]:
+                    notes = (agent_data.get("notes") or "").strip() if isinstance(agent_data, dict) else ""
+                    detail = " | ".join(x for x in (f"blocked_reason: {blocked_reason}" if blocked_reason else "", f"notes: {notes}" if notes else "") if x) \
+                        or "0 jobs, no blocked_reason or notes from the agent"
+                    R.record_crawl_issue(c.get("careers_url") or c.get("website") or c["clinic_id"], R.now()[:10], "firecrawl",
+                                         "firecrawl_agent", [c["clinic_id"]], detail, run_id)
             except FA.AgentFailed as e:
                 errors += 1
                 credits_used += e.credits_used
@@ -746,7 +834,16 @@ def execute(run_id):
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
             except Exception as e:
                 errors += 1
-                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
+                # Unlike FA.AgentFailed above, a bare exception here (e.g. a crash converting the
+                # agent's own answer) carries no measured cost -- charging nothing left the run
+                # invisible to the 24h kill switch and the weekly budget even when Firecrawl had
+                # already billed real credits before the crash (confirmed live: 3 historical
+                # firecrawl-mode runs left no ledger row at all). Charge the approved cap as the
+                # safe upper-bound estimate; on_submit already logged whatever job_id (if any) was
+                # obtained before the crash.
+                credits_used += gate["cap"]
+                R.add_usage("jobs", c["clinic_id"], gate["cap"], run_id)
+                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]} -- charged cap {gate['cap']} (unmeasured)")
             R.update_run(run_id, credits_used=credits_used)
 
     n_rows = len(inbox_rows) + len(observations)
@@ -757,25 +854,39 @@ def execute(run_id):
     try:
         if inbox_rows:
             refs += _post_inbox(inbox_rows, log)
-        _cli(["inbox"], log)          # drain the queue every run, not only when this run added rows --
+        rc = _cli(["inbox"], log)     # drain the queue every run, not only when this run added rows --
                                        # a run with only observations (e.g. seeded adapters) must not
                                        # leave an earlier run's backlog stranded
+        if rc:
+            # TASK-72 AC#4: this return code used to be discarded outright -- a failed drain (queue
+            # left stranded) was invisible both to this run's own status and to crawl_issues.
+            errors += 1
+            R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
         if observations:
             ids, obs = _load_observations(observations, by_id, log)
             refs += [o["source_ref"] for o in obs]
         if refs:
-            _cli(["link-cross"], log)
+            rc = _cli(["link-cross"], log)
+            if rc:
+                errors += 1
+                R.record_crawl_issue("pflege_jobs.cli link-cross", R.now()[:10], "intake", "link-cross", [], f"cli link-cross exited {rc}", run_id)
             ids = _posting_ids_for_refs(refs)
             new_ids = [pid for pid in set(ids.values()) if pid not in before_ids]
             log(f"{len(ids)} postings touched, {len(new_ids)} new")
             if params.get("verify", True):
-                _verify_ids(new_ids or list(set(ids.values()))[:200], log)
+                # No cap on how many touched-but-not-new postings get re-verified -- [:200] used
+                # to silently drop the rest of an arbitrary set() ordering with no truncated flag
+                # anywhere (TASK-72 AC#2); _verify_ids already chunks its own REST lookups by 200.
+                _verify_ids(new_ids or list(set(ids.values())), log)
             R.update_run(run_id, n_new=len(new_ids))
     except Exception as e:
         errors += 1
         log(f"intake FAILED {type(e).__name__}: {str(e)[:300]}")
-    status = "cancelled" if cancelled else ("done" if not errors or n_rows else "failed")
-    if errors and status == "done":
+    # Any error fails the run -- n_rows>0 used to mask errors as status="done" even when the whole
+    # intake block (inbox post/drain/link-cross/verify) blew up right after real rows were fetched
+    # (TASK-72 AC#4; confirmed live: 6 historical runs showed n_new=0 with status=done this way).
+    status = "cancelled" if cancelled else ("failed" if errors else "done")
+    if errors and status == "failed":
         log(f"finished with {errors} error(s)")
     R.update_run(run_id, status=status, finished_at=R.now(), error=(f"{errors} error(s), see log" if errors else None))
     try:
@@ -813,7 +924,11 @@ def refetch_career(run_id):
         R.add_usage("career", cid, e.credits_used, run_id, job_id=getattr(e, "job_id", None), tokens=getattr(e, "tokens_delta", None))
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     except Exception as e:
-        R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
+        # Same reasoning as execute()'s firecrawl branch: a bare exception carries no measured
+        # cost, so charge the approved cap rather than leave this run invisible to the ledger.
+        R.add_usage("career", cid, gate["cap"], run_id)
+        R.update_run(run_id, status="failed", finished_at=R.now(), credits_used=gate["cap"],
+                     error=f"{str(e)[:280]} -- charged cap {gate['cap']} (unmeasured)"); log(f"FAILED {e}"); return
     prof = res["profile"]
     R.add_usage("career", cid, res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
     R.save_career_profile(cid, prof, res["credits_used"], run_id)

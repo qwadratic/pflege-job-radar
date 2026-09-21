@@ -34,11 +34,12 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pflege_jobs.classify import norm_text  # noqa: E402
+from pflege_jobs.classify import employer_norm, norm_text  # noqa: E402
 from pflege_jobs.sources.career_crawl import in_bavaria  # noqa: E402
-from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, verify_all, verify_one  # noqa: E402
+from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, _placeable, verify_all, verify_one  # noqa: E402
 
 STATE = Path(os.environ.get("REVERIFY_STATE", "/tmp/reverify"))
+BACKUPS = Path(__file__).resolve().parent.parent / "backups"  # durable -- /tmp/reverify (STATE's default) is tmpfs, a reboot erases it
 SUPA = os.environ["SUPABASE_URL"]
 ANON = os.environ["SUPABASE_ANON_KEY"]
 SECRET = os.environ.get("SUPABASE_SECRET_KEY")
@@ -99,7 +100,7 @@ def cmd_verify(a):
         print(f"resuming: {len(done)} already verified, {len(rows)} left")
     t0 = time.time()
     res = verify_all([{"posting_id": r["posting_id"], "external_url": r["external_url"], "source_url": None, "title": r["title"]}
-                      for r in rows], workers=a.workers, render=not a.no_render, firecrawl=False)
+                      for r in rows], workers=a.workers, render=not a.no_render, firecrawl=False, towns=towns())
     for x in res:
         done[x["posting_id"]] = x
     out = list(done.values())
@@ -114,6 +115,15 @@ def cmd_firecrawl(a):
     post = {r["posting_id"]: r for r in _load("postings.json")}
     done = {r["posting_id"]: r for r in _load("verified.json")}
     todo = [p for p in done.values() if p["verify_status"] in ("blocked", "error")]
+    # verified.json can outlive the postings.json it was built from (a delete/refetch generation
+    # in between) -- indexing `post` below on every id in `todo` used to raise KeyError mid-run,
+    # discarding every Firecrawl verdict already paid for in that call (documented 2026-09-16: died
+    # at row 41/50 after 40 credits spent). Drop stale ids here, once, so nothing after this line
+    # ever indexes `post` on an id it might not have.
+    stale = [p for p in todo if p["posting_id"] not in post]
+    if stale:
+        todo = [p for p in todo if p["posting_id"] in post]
+        print(f"  dropping {len(stale)} stale id(s) not in postings.json: {[p['posting_id'] for p in stale][:10]}")
     if a.host:
         todo = [p for p in todo if a.host in (post[p["posting_id"]]["external_url"] or "")]
     if a.keep_only and (STATE / "plan.json").exists():
@@ -125,10 +135,11 @@ def cmd_firecrawl(a):
     todo = todo[: a.max]
     print(f"firecrawl rung on {len(todo)} rows (~1 credit each)")
     s = requests.Session()
+    tw = towns()
     for i, p in enumerate(todo, 1):
         r = post[p["posting_id"]]
         try:
-            res = verify_one(s, r["external_url"], r["title"], rungs=("firecrawl",))
+            res = verify_one(s, r["external_url"], r["title"], rungs=("firecrawl",), towns=tw)
         except Exception as e:
             res = {**p, "verify_note": f"{p.get('verify_note')}; firecrawl crashed {type(e).__name__}"}
         if res.get("verify_status") in ("live", "gone"):
@@ -213,13 +224,29 @@ def cmd_relink(a):
     stored clinic_id disagrees. A clinic link derived from a wrong city is wrong by construction --
     same failure as TASK-59a, one layer down.
 
-    Only a TRUSTED_LOC city counts here, and the proposed clinic must sit in that same town. Without
-    both guards the untrusted plz_ort fallback moved a Noerdlingen posting to Donauwoerth and wanted
-    to unlink a Muenchen one because the page footer carried an Ulm address (2026-09-16)."""
-    from pflege_jobs.registry import Matcher
+    Decisions are made BY Matcher.match itself (board=[old_clinic_id], employer_inherited), the same
+    ladder app/crawl.py uses at crawl time, not by a bespoke city-string comparison:
+      * board=[old] lets R0_board re-confirm the EXISTING link on its own canonical town rule
+        (_town_match) -- a disagreement is only ever the ladder's own verdict.
+      * employer_inherited is set when the posting's employer text is just an echo of the clinic it
+        is already linked to (R1/R2 cannot tell that from a real employer-name match, see
+        registry.Matcher.match's docstring) so that echo cannot rubber-stamp a link the page's own
+        city contradicts -- this is exactly the group-board shape (kbo.de's every posting carrying
+        the operator HQ address) that nulled 13 of 29 CORRECT links on the 2026-09-16 22:24 run.
+    A disagreement clears the link only when the registry has NO clinic anywhere in that town;
+    otherwise a real candidate exists that the ladder just couldn't pick with confidence, and it is
+    reported but the existing link is left alone rather than destroyed on a guess (11 of the 29
+    postings that run wrongly unlinked fall in exactly this bucket).
+
+    Only a TRUSTED_LOC city that is itself placeable (in_bavaria() reaches a verdict on it) counts as
+    evidence -- 2026-09-16: the untrusted plz_ort fallback moved a Noerdlingen posting to Donauwoerth
+    off an Ulm footer address, and before AC#1's towns= fix an unplaceable label ("Karte") could pass
+    as a page city here too."""
+    from pflege_jobs.registry import Matcher, _town_match, city_key
     post = {r["posting_id"]: r for r in _load("postings.json")}
     ver = {r["posting_id"]: r for r in _load("verified.json")}
     plan = _load("plan.json")
+    tw = towns()
     keep = {r["posting_id"] for r in plan["keep"]}
     emp = {}
     ids = [str(i) for i in keep]
@@ -231,26 +258,40 @@ def cmd_relink(a):
     clinics = requests.get(f"{SUPA}/rest/v1/clinics", params={"select": "clinic_id,name,town,operator,beds"}, headers=_h(), timeout=120).json()
     m = Matcher([dict(c) for c in clinics])
     by_town = {c["clinic_id"]: c.get("town") for c in clinics}
-    changes, cleared = [], []
+    changes, cleared, disagreements = [], [], []
     for pid in keep:
         v, e = ver.get(pid), emp.get(pid)
         if not e:
             continue
-        page_city = (v or {}).get("city") if (v or {}).get("loc_source") in TRUSTED_LOC else None
-        if not page_city:
-            continue                                   # no stated location -> no evidence to relink on
-        res = m.match(e.get("employer"), page_city)
-        new = res[0] if res else None
+        page_city, page_plz = ((v or {}).get("city"), (v or {}).get("plz")) if (v or {}).get("loc_source") in TRUSTED_LOC else (None, None)
+        if not page_city or not _placeable(page_city, page_plz, tw):
+            continue                                   # no stated, placeable location -> no evidence to relink on
         old = e.get("clinic_id")
-        if new and new != old and norm_text(by_town.get(new) or "") == norm_text(page_city):
+        old_clinic = m.by_id.get(str(old)) if old else None
+        en = employer_norm(e.get("employer") or "")
+        # The employer text is circular evidence, not independent confirmation, when it is just the
+        # OLD clinic's own name/operator copied onto the posting (registry.Matcher.match's docstring)
+        # -- R1/R2 would then "confirm" old on every posting of a shared board regardless of what the
+        # page itself says, which is the exact kbo.de shape this fix exists for.
+        inherited = bool(en) and bool(old_clinic) and en in (employer_norm(old_clinic.get("name") or ""), employer_norm(old_clinic.get("operator") or ""))
+        res = m.match(e.get("employer"), page_city, board=[old] if old else None, employer_inherited=inherited)
+        new = res[0] if res else None
+        if new and new != old and _town_match(city_key(by_town.get(new) or ""), city_key(page_city)):
             changes.append({"posting_id": pid, "old": old, "new": new, "rule": res[1], "city": page_city,
                             "old_town": by_town.get(old), "new_town": by_town.get(new)})
-        elif not new and old and norm_text(by_town.get(old) or "") != norm_text(page_city):
-            cleared.append({"posting_id": pid, "old": old, "city": page_city, "old_town": by_town.get(old)})
-    print(f"relink: {len(changes)} posting(s) point at the wrong clinic, {len(cleared)} linked to a clinic in another town with no better match")
+        elif not new and old:
+            rec = {"posting_id": pid, "old": old, "city": page_city, "old_town": by_town.get(old)}
+            if m._by_town(city_key(page_city)):
+                disagreements.append(rec)              # a clinic exists in that town; the ladder just could not pick it -- leave old linked
+            else:
+                cleared.append(rec)                    # no clinic anywhere in that town -- safe to unlink
+    print(f"relink: {len(changes)} posting(s) point at the wrong clinic, {len(cleared)} unlinked (no clinic in the page's town), "
+          f"{len(disagreements)} left linked despite disagreeing (a clinic exists in that town but the ladder could not pick it -- needs a human)")
     for c in changes[:15]:
         print(f"  {c['posting_id']:6d} {c['old']}({c['old_town']}) -> {c['new']}({c['new_town']}) via {c['rule']} | page city {c['city']!r}")
-    _save("relink.json", {"changes": changes, "cleared": cleared})
+    for c in disagreements[:15]:
+        print(f"  DISAGREE {c['posting_id']:6d} {c['old']}({c['old_town']}) vs page city {c['city']!r} -- left linked")
+    _save("relink.json", {"changes": changes, "cleared": cleared, "disagreements": disagreements})
     if a.write:
         from pflege_jobs.sinks import EdgeSink
         sink = EdgeSink(batch=400)
@@ -263,7 +304,6 @@ def cmd_relink(a):
 
 
 def cmd_apply(a):
-    post = {r["posting_id"]: r for r in _load("postings.json")}
     plan = _load("plan.json")
     ver = {r["posting_id"]: r for r in _load("verified.json")}
 
@@ -279,9 +319,16 @@ def cmd_apply(a):
         fixes = [r for r in plan["city_fix"] if r.get("city_page")]
         print(f"city fixes: {len(fixes)}")
         for i, r in enumerate(fixes, 1):
-            body = {"city": r["city_page"]}
+            # city/plz alone do not survive the next crawl: resolve_postings() recomputes both of
+            # them from posting_observations on every run with nothing to check first (sql/001_schema
+            # .sql), so a plain PATCH here was silently undone by the next ingest (TASK-74 AC3,
+            # confirmed live 2026-09-16). *_override sits outside that recompute -- only this tool
+            # ever writes it -- so it is what actually makes the correction durable; city/plz are
+            # still set too so the fix is visible immediately, not just after the next crawl.
+            body = {"city": r["city_page"], "city_override": r["city_page"]}
             if r.get("plz_page"):
                 body["plz"] = r["plz_page"]
+                body["plz_override"] = r["plz_page"]
             resp = requests.patch(f"{DIRECT}/rest/v1/postings", params={"posting_id": f"eq.{r['posting_id']}"},
                                   headers=_h(write=True), json=body, timeout=30)
             if resp.status_code >= 300:
@@ -294,10 +341,33 @@ def cmd_apply(a):
         if not ids:
             print("nothing to delete")
             return
-        full = [post[i] for i in ids if i in post]
-        dump = STATE / f"deleted_{time.strftime('%Y%m%dT%H%M%S')}.json"
-        dump.write_text(json.dumps({"plan": plan["delete"], "rows": full}, ensure_ascii=False))
-        print(f"deleting {len(ids)} postings permanently; dump at {dump}")
+        # Full rows (select=*), for BOTH tables, dumped BEFORE anything is deleted -- same pattern as
+        # data/purge_retired_sources.py. The old dump used postings.json's own 15-column COLS slice
+        # and never touched posting_observations at all: 2026-09-16's run deleted 973 postings + all
+        # of their observations with only a partial backup for 30 of them and none of the
+        # observations anywhere (TASK-74 AC4). BACKUPS (not STATE) because /tmp/reverify is tmpfs --
+        # the same durable location data/purge_retired_sources.py and data/backup_postings.py use.
+        bk = BACKUPS
+        bk.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y%m%dT%H%M%S")
+        full_posts, full_obs = [], []
+        for i in range(0, len(ids), 100):
+            q = ",".join(str(x) for x in ids[i:i + 100])
+            ps = requests.get(f"{SUPA}/rest/v1/postings", params={"select": "*", "posting_id": f"in.({q})"}, headers=_h(), timeout=120).json()
+            os_ = requests.get(f"{SUPA}/rest/v1/posting_observations", params={"select": "*", "posting_id": f"in.({q})"}, headers=_h(), timeout=120).json()
+            if not isinstance(ps, list) or not isinstance(os_, list):
+                raise SystemExit(f"backup fetch failed, deleting nothing: postings={ps!r} observations={os_!r}")
+            full_posts += ps
+            full_obs += os_
+        dump_posts, dump_obs = bk / f"reverify_delete_postings_{ts}.jsonl", bk / f"reverify_delete_observations_{ts}.jsonl"
+        dump_posts.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in full_posts))
+        dump_obs.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in full_obs))
+        if len(full_posts) < len(ids):
+            # Loud, not absorbed into the count below: a posting missing from the backup fetch (already
+            # gone, or a transient read-proxy gap) must not be silently deleted with no recovery copy.
+            print(f"  WARNING: backed up {len(full_posts)}/{len(ids)} postings rows -- {len(ids) - len(full_posts)} would delete with NO backup")
+        print(f"deleting {len(ids)} postings permanently; backup: {len(full_posts)} posting row(s) -> {dump_posts}, "
+              f"{len(full_obs)} observation row(s) -> {dump_obs}")
         for i in range(0, len(ids), 100):
             chunk = ids[i:i + 100]
             q = ",".join(str(x) for x in chunk)

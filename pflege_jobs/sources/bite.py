@@ -169,7 +169,12 @@ def posting_html(url: str, session=None):
 
 def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirmed=False) -> dict:
     a = jp.get("address") or {}
-    emp = (jp.get("employer") or {}).get("name") or seed.get("name") or ""   # API employer first: listings can span many facilities
+    api_emp = (jp.get("employer") or {}).get("name") or None
+    # The two same-origin fallback shapes (_jp_from_json_jobs_php, _jp_from_jsonld) never produce an
+    # "employer" key at all -- emp then falls to the seed clinic's own registry name, which is a
+    # guess on any board shared by more than one clinic. Mark it so registry.Matcher.match's
+    # employer_inherited guard can skip the circular R1/R2 exact-name match for this row.
+    emp = api_emp or seed.get("name") or ""   # API employer first: listings can span many facilities
     e_class, e_rule = classify_employer(emp)
     title = jp.get("title") or ""
     bg = (jp.get("custom") or {}).get("berufsgruppe") or []
@@ -203,6 +208,8 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         "fuzzy_key": fuzzy_key(title, emp, a.get("city")), "content_hash": content_hash(title, emp, a.get("city"), jp.get("modifiedOn")),
         "payload": json.dumps({"bite": {k: v for k, v in jp.items() if k not in ("custom",)}, "bite_custom": {k: v for k, v in (jp.get("custom") or {}).items() if k != "keyfacts_renderer"},
                                "crawl": {"seed": seed.get("career"), "kez": seed.get("kez"), "parse": "bite_api"}}, ensure_ascii=False),
+        # consumed by app/crawl.py _load_observations -> Matcher.match(employer_inherited=...)
+        "_emp_inherited": api_emp is None,
     }
     return obs
 
@@ -246,7 +253,11 @@ def _employment_types_from_text(*values):
 
 def _jp_from_json_jobs_php(ad):
     addr = ad.get("address") or {}
-    city_raw = addr.get("city") or ""
+    # `address` is the tenant's own HQ address, identical on every ad regardless of which site the
+    # posting is actually for (confirmed live 2026-09-18: klinikum-gap.de's ads all carry "82467
+    # Garmisch-Partenkirchen" here even for its Murnau site) -- `job_site` is the per-ad field that
+    # actually names where THIS posting is, so it wins over the tenant-wide address when present.
+    city_raw = ad.get("job_site") or addr.get("city") or ""
     m = re.match(r"(\d{5})\s+(.*)", city_raw)
     plz, city = (m.group(1), m.group(2)) if m else (None, city_raw or None)
     href = (ad.get("url") or {}).get("href")

@@ -75,6 +75,45 @@ def test_op_fachkraft_is_nursing_neighbours_are_not():
         assert classify_role(t)[0] in EXCLUDED_ROLE_CLASSES, t
 
 
+# 2026-09-18 crawler review: pflege_gate missing tokens its own kept rules matched on, dropping
+# real nursing postings before they ever reached the _ROLES loop.
+def test_pflege_gate_recognises_the_previously_missing_tokens():
+    cases = [("Hygienefachkraft (m/w/d)", "apn_experte"),
+             ("Hygienebeauftragte (m/w/d) Pflege", "apn_experte"),
+             ("Dauernachtwache (m/w/d)", "pflegefachkraft"),
+             ("Nachtwache (m/w/d) gesucht", "pflegefachkraft"),
+             ("Advanced Practice Nurse (m/w/d) Onkologie", "apn_experte"),
+             ("Betreuungskräfte (m/w/d) gesucht", "sonstige_pflege"),
+             ("Fachkraft mit Fachweiterbildung Intensivpflege (m/w/d)", "fachpflege")]
+    for title, want in cases:
+        assert classify_role(title, "")[0] == want, title
+
+
+# 2026-09-18 crawler review: patterns.json's first-match-wins rules had pflegehelfer before
+# pflegefachkraft, so a title naming both qualifications was excluded as a helper.
+def test_a_title_offering_both_qualifications_is_classified_by_the_higher_one():
+    cases = ["Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d)",
+             "Gesundheits- und Krankenpfleger/in oder Pflegehelfer/in (m/w/d)",
+             "Pflegefachkraft / Pflegehelfer (m/w/d) für die Station"]
+    for title in cases:
+        assert classify_role(title, "")[0] == "pflegefachkraft", title
+    # a title naming ONLY the helper qualification is still classified as a helper
+    assert classify_role("Pflegehelfer (m/w/d)", "")[0] == "pflegehelfer"
+
+
+# 2026-09-18 crawler review: strong_pflege led with the bare substring "pfleg", so a facility name
+# containing "Pflege" (not a role) vetoed the whole nicht_pflege list for any title at that site.
+def test_strong_pflege_no_longer_overrides_on_a_facility_name_alone():
+    cases = ["Hauswirtschaftshilfe für das Pflegezentrum Bürgerheim Nördlingen (m/w/d)",
+             "Reinigungskraft (m/w/d) im Pflegeheim",
+             "Referent Pflegebuchhaltung (m/w/d)",
+             "Teamleitung Controlling im Pflegebereich (m/w/d)"]
+    for title in cases:
+        assert classify_role(title, "")[0] == "nicht_pflege", title
+    # the override itself still fires for a real dual-qualification title
+    assert classify_role("MFA oder Pflegefachkraft (m/w/d) für die Ambulanz", "")[0] == "pflegefachkraft"
+
+
 def test_mechanic_try_flags_excluded():
     r = get("role_class").run({"title": "MFA (m/w/d)", "hauptberuf": "", "offer_kind": ""})
     assert r["result"] == {"role_class": "nicht_pflege", "excluded": True}

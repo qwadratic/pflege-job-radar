@@ -46,11 +46,17 @@ def is_klinikum_passau(resp):
 def _parse(html, page_url):
     """-> list of {jobid, title, description, department, url, valid_from}."""
     groups = [(m.start(), _txt(m.group(1))) for m in GROUP_RX.finditer(html)]
+    matches = list(JOB_START_RX.finditer(html))
     jobs = []
-    for m in JOB_START_RX.finditer(html):
+    for i, m in enumerate(matches):
         jobid, start = m.group(1), m.start()
         dept = next((g for pos, g in reversed(groups) if pos <= start), None)
-        block = html[start:start + 8000]  # one posting's own markup never runs longer than this
+        # Bounded by the next posting's own <li class="job_...> (or end of page), not a fixed byte
+        # window -- a window truncates description/enr_* fields, or bleeds into the next posting's
+        # own markup, once a real posting grows past it (confirmed live 2026-09-18: 3 of 17 live
+        # postings already exceed 8000 chars).
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(html)
+        block = html[start:end]
         hm = HEADER_RX.search(block)
         if not hm:
             continue

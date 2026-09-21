@@ -17,12 +17,30 @@ SRC = [p for p in (list(pathlib.Path("crawlers").rglob("*.py")) + list(pathlib.P
 TOWNS = {"münchen", "coburg", "passau", "neuburg"}
 
 
+# Widening this guard to the value position (below) surfaced exactly one pre-existing, already-
+# reviewed exception: app/crawl.py's softgarden branch sets j["in_bavaria"] = True ONLY when the
+# value was still undecided (None) AND the feed's own operator is a known Bavaria-only operator --
+# a documented label derived from a real domain fact (see the line's own "label, not a filter"
+# comment), not a guess fabricated with no evidence. Any OTHER hit here is the real bug this test
+# exists to catch; nothing else may be added to this set without the same level of justification.
+_ALLOWED = {("app/crawl.py", 'j["in_bavaria"] = True')}
+
+
 def test_no_source_hardcodes_a_bavarian_region_or_flag():
+    # Widened to the VALUE position, not just the dict-literal shape "region": "BAYERN" -- a
+    # fallback written at runtime ('region': meta.get(...) or "BAYERN") has the literal string
+    # sitting well past the key, which the narrower key:literal pattern missed entirely (confirmed
+    # live 2026-09-18: crawl_mein_check_in's "or 'BAYERN'" fallback survived the 2026-09-16
+    # cleanup this way). Matching the bare string "BAYERN" anywhere catches any such fallback,
+    # wherever it sits in the expression.
     offenders = []
     for p in SRC:
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
-            if re.search(r'"region"\s*:\s*"BAYERN"', line) or re.search(r'"in_bavaria"\s*:\s*True\b', line):
-                offenders.append(f"{p}:{i}: {line.strip()[:90]}")
+            if re.search(r'"BAYERN"', line) or re.search(r'\["in_bavaria"\]\s*=\s*True\b', line) or re.search(r'"in_bavaria"\s*:\s*True\b', line):
+                stripped = line.strip()
+                if (str(p), stripped) in _ALLOWED:
+                    continue
+                offenders.append(f"{p}:{i}: {stripped[:90]}")
     assert not offenders, "a region/in_bavaria may only come from the source:\n" + "\n".join(offenders)
 
 

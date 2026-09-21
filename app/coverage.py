@@ -123,9 +123,19 @@ def _firecrawl_account():
     return out
 
 
+FETCH_MODES = {"adapter", "firecrawl", "auto"}   # 'verify' re-checks existing postings; it never fetches a board
+
+
 def _last_run(runs, key, members):
-    """Most recent run that targeted this adapter (scope ats_type) or touched one of its clinics."""
+    """Most recent run that FETCHED this adapter (scope ats_type, or touched one of its clinics).
+    mode='verify' is excluded even when it touches the same clinics: it only re-checks a posting's
+    own page and never re-fetches the board, so a nightly all-clinic verify run must not be reported
+    as this adapter's own last crawl (confirmed live 2026-09-18, TASK-72 AC#6: it won for every one
+    of 18 zero-yield adapter rows on GET /api/coverage, showing its run-wide totals identically
+    across all of them and hiding the per-board failure)."""
     for r in runs:                                    # list_runs() is newest first
+        if r.get("mode") not in FETCH_MODES:
+            continue
         ids = r.get("clinic_ids") or []
         hit = (r.get("scope") == "ats_type" and key in [v.strip() for v in (r.get("value") or "").split(",")]) \
             or (members and any(cid in members for cid in ids))

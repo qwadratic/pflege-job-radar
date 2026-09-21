@@ -40,10 +40,18 @@ H1 = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S)
 def _get(u, session=None):
     # single tenant host for every call this adapter makes -- 0.5s politeness spacing (project rule).
     time.sleep(0.5)
+    # Tally attempts/oks on the shared session, same as crawlers.vendor_adapters.get() (TASK-72
+    # AC#1) -- app/crawl.py's _fetch_board reads it to tell a real transport failure from a board
+    # genuinely read and found empty.
+    if session is not None:
+        session._attempts = getattr(session, "_attempts", 0) + 1
     try:
-        return (session or requests).get(u, headers=H, timeout=30, allow_redirects=True)
+        r = (session or requests).get(u, headers=H, timeout=30, allow_redirects=True)
     except Exception:
         return None
+    if session is not None and r.ok:
+        session._ok = getattr(session, "_ok", 0) + 1
+    return r
 
 
 def _txt(s, limit=20000):

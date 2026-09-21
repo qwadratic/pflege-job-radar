@@ -177,24 +177,92 @@ def canonical_ref(url):
     return urlunsplit((p.scheme.lower(), p.netloc.lower(), re.sub(r"/+$", "", p.path).lower(), urlencode(q), frag))   # path case-folded (asklepios emits both), query/fragment kept verbatim
 
 
+# These ATS platforms are frequently white-labelled behind the clinic's own vanity domain (a CNAME
+# keeps the SaaS's own path shape, just under a different host -- pflege_jobs/sources/softgarden.py:
+# find_host tries the clinic's own domain and the *.softgarden.io/*.career.softgarden.de one), or split
+# across a TLD (personio <slug>.jobs.personio.de vs .com) or subdomain (jobs. vs api.smartrecruiters.com)
+# -- canonical_ref (conservative by design, above) correctly treats the two as different pages since
+# the netloc differs, so the same job opens two postings. Matched host-agnostically (except personio,
+# where the alias IS the host) and folded on the platform's own numeric job id in same_source_variant_pairs.
+_ATS_JOB_ID_RX = [
+    re.compile(r"/jobs?/(\d{6,})(?:[/?#]|$)", re.I),                # softgarden: canonical host or vanity CNAME
+    re.compile(r"\.jobs\.personio\.(?:de|com)/job/(\d+)", re.I),    # personio: .de/.com twin of the same tenant
+    re.compile(r"smartrecruiters\.com/[^/]+/(\d{9,})", re.I),       # smartrecruiters: jobs./api. subdomain twin
+]
+
+
+def _ats_job_id(url):
+    for rx in _ATS_JOB_ID_RX:
+        m = rx.search(url or "")
+        if m:
+            return m.group(1)
+    return None
+
+
+def collapse_merge_chains(pairs):
+    """Rewrite a pairs dst that is itself later merged away to its own final dst (dropping a genuine
+    cycle rather than looping) -- one `merges` call must never ask the edge function to move
+    observations onto, then delete, a posting that is also some other pair's destination: its single
+    CTE hit a posting_observations FK violation doing exactly that (concrete case: clinic 77402,
+    Klinik Krumbach/Kreiskliniken Guenzburg-Krumbach). Pure: [{src,dst}] in, same shape out.
+    """
+    dst_of = {p["src"]: p["dst"] for p in pairs}
+    resolved = {}
+    for src, dst in dst_of.items():
+        seen, d = {src}, dst
+        while d in dst_of and d not in seen:
+            seen.add(d); d = dst_of[d]
+        if d != src:
+            resolved[src] = d
+    return sorted(({"src": s, "dst": d} for s, d in resolved.items()), key=lambda x: (x["src"], x["dst"]))
+
+
 def same_source_variant_pairs(observations):
     """Merge pairs for postings that hold URL variants of one job within one source.
 
     Groups by (source_id, canonical_ref(source_ref)); every posting in a multi-posting group is merged
-    into the group's lowest posting_id (all of them, not just the highest -- so one run converges).
-    Pure: takes rows with posting_id/source_id/source_ref, returns [{src, dst}] sorted by src.
+    into the group's lowest posting_id (all of them, not just the highest -- so one run converges). A
+    second grouping by (source_id, ats-platform numeric job id, fuzzy_key) folds a vanity-domain alias
+    into its ATS-host twin (see _ats_job_id above); gated on fuzzy_key (already employer+city+title-
+    specific) so two unrelated boards never fold just because a numeric id coincides.
+
+    One posting_id can land in both groups at once (its own URL-variant group AND an ats-job-id group
+    -- e.g. its fuzzy_key drifted across re-crawls of the same URL), each with a different min -- so
+    every group is folded through one shared union-find rather than resolved independently: resolving
+    independently built two {src: dst} pairs for that one posting_id, and collapse_merge_chains'
+    dst_of dict silently kept only the last one, dropping a real duplicate-posting merge instead of
+    erroring on it. Union-find makes every posting_id in a connected component agree on one final
+    (lowest) destination no matter how many groups tie it to that component.
+    Pure: takes rows with posting_id/source_id/source_ref(/fuzzy_key), returns [{src, dst}] sorted by src.
     """
     from collections import defaultdict
     groups = defaultdict(set)
     for o in observations:
-        if o.get("posting_id"):
-            groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
-    pairs = []
+        if not o.get("posting_id"):
+            continue
+        groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
+        jid = _ats_job_id(o.get("source_ref"))
+        if jid and o.get("fuzzy_key"):
+            groups[(o["source_id"], "ats:" + jid, o["fuzzy_key"])].add(o["posting_id"])
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
     for ps in groups.values():
-        if len(ps) > 1:
-            dst = min(ps)
-            pairs += [{"src": src, "dst": dst} for src in sorted(ps) if src != dst]
-    return sorted(pairs, key=lambda x: (x["src"], x["dst"]))
+        ps = sorted(ps)
+        for p in ps[1:]:
+            union(ps[0], p)
+    pairs = [{"src": pid, "dst": find(pid)} for pid in parent if find(pid) != pid]
+    return collapse_merge_chains(sorted(pairs, key=lambda x: (x["src"], x["dst"])))
 
 
 def cmd_link_cross(a):
@@ -210,7 +278,7 @@ def cmd_link_cross(a):
     # (1) same-source URL variants
     obs, off = [], 0
     while True:
-        q = f"{url}/rest/v1/posting_observations?select=posting_id,source_id,source_ref&order=observation_id&limit=1000&offset={off}"
+        q = f"{url}/rest/v1/posting_observations?select=posting_id,source_id,source_ref,fuzzy_key&order=observation_id&limit=1000&offset={off}"
         ch = _rows(rq.get(q, headers=H, timeout=120), "observations"); obs += ch; off += len(ch)
         if len(ch) < 1000: break
     pairs = same_source_variant_pairs(obs)
@@ -246,6 +314,10 @@ def cmd_link_cross(a):
                 j = len(tx & ty) / len(tx | ty); o = len(tx & ty) / min(len(tx), len(ty))
                 if j >= 0.6 or (o >= 0.9 and len(tx & ty) >= 3):
                     used.add(x["posting_id"]); pairs.append({"src": x["posting_id"], "dst": y["posting_id"]})
+    # `used` above only ever guards the src side, so a posting already chosen as a *destination* for
+    # one pair can still be picked as the *source* of another (y iterates every posting in the group,
+    # unfiltered) -- collapse the resulting chain before it reaches one `merges` call (AC3 above).
+    pairs = collapse_merge_chains(pairs)
     print(f"cross-source pairs {len(pairs)}")
     if a.dry_run: json.dump(pairs, open(a.out, "w")); return
     n = 0
@@ -322,7 +394,23 @@ def _drain_once(a, url, H, m, towns):
             pl = r["payload"]; cid = pl.get("clinic_id")
             if not cid and pl.get("employer"):
                 mt = m.match(pl["employer"], None); cid = mt[0] if mt else None
-            cl = _rows(rq.get(f"{url}/rest/v1/clinics?select=*&clinic_id=eq.{cid}", headers=H, timeout=60), "clinics") if cid else []
+            cl, err = [], None
+            if cid:
+                # clinic_id is payload data (crawler/agent supplied), not a literal -- params= lets
+                # requests URL-encode it, same as lookup_posting_ids. String-interpolating it into the
+                # query broke PostgREST's filter parser on any clinic_id containing "&", and _rows()
+                # turned that 400 into a SystemExit right here inside the row loop, before any ack --
+                # one poison row then wedged every later drain forever (same row re-read, re-died).
+                try:
+                    resp = rq.get(f"{url}/rest/v1/clinics", params={"select": "*", "clinic_id": f"eq.{cid}"}, headers=H, timeout=60)
+                    cl = resp.json()
+                except Exception as e:
+                    err = str(e)
+                if err is None and not isinstance(cl, list):
+                    err = str(cl)[:200]
+                if err is not None:
+                    ack.append({"inbox_id": r["inbox_id"], "note": f"probe: clinic lookup for clinic_id={cid!r} failed: {err[:200]}"})
+                    continue
             if cl and (pl.get("ats") or pl.get("careers_url")) and (not cl[0].get("ats_type") or pl.get("ats") and pl.get("ats") != cl[0].get("ats_type")):
                 from .schema import CLINIC_SPEC
                 row = {k: cl[0].get(k) for k, _ in CLINIC_SPEC}; row["ats_type"] = pl.get("ats") or row.get("ats_type")
@@ -342,13 +430,17 @@ def _drain_once(a, url, H, m, towns):
         ids = lookup_posting_ids(rq.get, url, H, obs)
         key = lambda o: (o["source_id"], o["source_ref"])
         links = [{"posting_id": ids[key(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9} for o in obs if key(o) in ids and o.get("_kez")]
-        ver = [{"posting_id": ids[key(o)], "verify_status": "live", "verify_http": 200, "verified_at": o["observed_at"], "verify_note": "collected in a user's browser"} for o in obs if key(o) in ids]
         if len(ids) < len(obs):
-            print(f"  warning: {len(obs) - len(ids)} of {len(obs)} written observations not found on re-read; their clinic links/verify marks are skipped")
+            print(f"  warning: {len(obs) - len(ids)} of {len(obs)} written observations not found on re-read; their clinic links are skipped")
         for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
-        for i in range(0, len(ver), 400): sink._post({"verify": ver[i:i + 400]})
+        # No collector writing to this inbox is an actual browser that fetched *this* URL and got 200 --
+        # every one is a crawler/adapter/agent (vendor-*, playwright-*, firecrawl-agent, ats-discover2,
+        # career-discover-exa). Stamping verify_status=live/200 here was fabricated (248 rows in the
+        # 2026-09-17 03:00 run alone). Real verification happens downstream: app/crawl.py's _verify_ids
+        # right after this same drain when called from a crawl run, or the next `cli verify` full sweep
+        # otherwise -- both leave verify_status NULL until then, which is honest.
     if probes:
-        print("clinics ats updated:", sink._post({"clinics": probes}).get("clinics"))
+        print("clinics ats updated:", sink.write_clinics(probes, log=lambda *_: None))
     if ack and not a.no_ack:
         acked = 0
         for i in range(0, len(ack), 400): acked += sink._post({"inbox_ack": ack[i:i + 400]}).get("inbox_ack", 0)
@@ -379,6 +471,13 @@ def cmd_inbox(a):
         total += n
         if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
             break
+    else:
+        # max_batches is a loop-safety ceiling now, not a real queue-size cap (raised well past any
+        # observed queue) -- if it's ever actually reached, the drain stopped with rows still
+        # waiting and that must be loud, not a silent "inbox drained N rows" indistinguishable from
+        # a real full drain (TASK-72 AC#2).
+        print(f"TRUNCATED: max_batches={a.max_batches} reached with the queue still returning full "
+              f"batches -- the drain is incomplete", file=sys.stderr)
     print(f"inbox drained {total} rows")
 
 
@@ -410,7 +509,7 @@ def main(argv=None):
     lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
     ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true")
-    ib.add_argument("--max-batches", type=int, default=20); ib.set_defaults(fn=cmd_inbox)
+    ib.add_argument("--max-batches", type=int, default=100_000); ib.set_defaults(fn=cmd_inbox)  # loop-safety ceiling, not a queue-size cap
     a = p.parse_args(argv)
     a.fn(a)
 

@@ -176,6 +176,17 @@ class EdgeSink:
         only the intended fields changed -- the edge function's upsert does `col=excluded.col` for every
         column except ats_type/careers_url (coalesce(nullif(excluded.col,''), stored)), so a partial dict
         nulls the rest. Returns the number of rows the server reports as upserted."""
+        # Deduplicate by clinic_id -- last wins -- same as write()'s observations dedupe above: the
+        # edge function's insert is one multi-row `on conflict (clinic_id) do update`, and Postgres
+        # raises "ON CONFLICT DO UPDATE command cannot affect row a second time" if the same clinic_id
+        # appears twice within one batch (two ats-discovery probes for the same clinic in one inbox
+        # page, or two career_discover_exa write-back rows for the same clinic). Uncaught, that
+        # exception reaches the caller before any of its own bookkeeping (e.g. cli.py's inbox ack) --
+        # exactly the "one bad batch wedges the whole call" failure TASK-73 AC2 exists to close.
+        seen = {}
+        for r in rows:
+            seen[r.get("clinic_id")] = r
+        rows = list(seen.values())
         n = 0
         for i in range(0, len(rows), self.batch):
             batch = rows[i:i + self.batch]

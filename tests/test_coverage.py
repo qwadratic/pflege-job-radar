@@ -47,6 +47,19 @@ def test_coverage_last_run_and_credits(client):
     assert _row(d, "rexx")["last_run"] is None
 
 
+def test_coverage_last_run_ignores_a_verify_mode_run_touching_the_same_clinics(client):
+    """TASK-72 AC#6: a nightly all-clinic verify run touches every adapter's clinics but never
+    re-fetches any board -- it must not win _last_run over that adapter's own real crawl, hiding a
+    per-board zero-yield problem behind the verify run's own run-wide totals."""
+    rid = R.create_run("ats_type", "typo3_jobs", "adapter", clinic_ids=["36201"])
+    R.update_run(rid, status="failed", started_at=R.now(), finished_at=R.now(), n_rows=0, n_new=0, error="1 error(s), see log")
+    rid2 = R.create_run("all", "", "verify", clinic_ids=["36201", "16104", "36202"])
+    R.update_run(rid2, status="done", started_at=R.now(), finished_at=R.now(), n_rows=399, n_new=0)
+
+    lr = _row(client.get("/api/coverage").json(), "typo3_jobs")["last_run"]
+    assert lr["run_id"] == rid and lr["status"] == "failed" and lr["rows"] == 0
+
+
 def test_coverage_firecrawl_row_shows_both_pools_and_free_runs(client, monkeypatch):
     from pflege_jobs.sources import firecrawl_agent as FA
     monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 379, "plan": 8000, "tokens_remaining": 5685, "tokens_plan": 120000,

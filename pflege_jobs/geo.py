@@ -267,14 +267,16 @@ def resolve(city=None, plz=None, region=None, *, text=None) -> Geo:
 
     WARNING for any future caller: `region` is checked FIRST and wins over PLZ/city whenever it
     decodes (see branch 1 below) -- correct only when `region` is a real, per-listing signal.
-    Measured live 2026-09-09 against pflege_jobs.posting_observations: the stored `region` column is
-    a hardcoded literal "BAYERN" written unconditionally by every one of its ~10 writer paths
-    (feeds.py, inbox.py, career_crawl.py, bite.py, pi_asp.py, board_csv.py, firecrawl_agent.py,
-    vendor_adapters.py, portals.py, app/crawl.py) -- it is NOT derived from the posting's real
-    location. Passing that column's value as `resolve(..., region=...)` would make branch 1 fire on
-    100% of rows and silently override every correct PLZ/city answer underneath it. Do not wire
-    `posting_observations.region` into this parameter without first fixing (or bypassing) those
-    writer paths -- that decision belongs to whoever wires this module in, not to this docstring."""
+    Measured live 2026-09-09 against pflege_jobs.posting_observations: the stored `region` column
+    was a single fabricated Bavaria-region value written unconditionally by every one of its ~10
+    writer paths (feeds.py, inbox.py, career_crawl.py, bite.py, pi_asp.py, board_csv.py,
+    firecrawl_agent.py, vendor_adapters.py, portals.py, app/crawl.py) -- not derived from the
+    posting's real location. Those writer paths were fixed 2026-09-16/18 (see
+    tests/test_no_fabricated_region.py), but before wiring `posting_observations.region` into this
+    parameter, re-verify none of them (or a new one) still fabricates it -- passing a fabricated
+    value here would make branch 1 fire on every row and silently override every correct PLZ/city
+    answer underneath it. That verification belongs to whoever wires this module in, not to this
+    docstring."""
     city, plz, region = _scalar(city), _clean_plz(plz), _scalar(region)
     region = (region or "").strip() or None
     city = (city or "").strip() or None

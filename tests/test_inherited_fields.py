@@ -10,9 +10,10 @@ import csv
 
 import pytest
 
+from crawlers.vendor_adapters import parse_job_page
 from pflege_jobs.classify import norm_text
 from pflege_jobs.registry import Matcher
-from pflege_jobs.sources.career_crawl import city_from_url
+from pflege_jobs.sources.career_crawl import Crawler, city_from_url
 from pflege_jobs.sources.inbox import NON_PROD_HOST, jobposting_to_obs
 
 TOWNS = {norm_text(r["town"]) for r in csv.DictReader(open("data/registry/clinics.csv", encoding="utf-8")) if r.get("town")}
@@ -65,6 +66,86 @@ def test_matcher_refuses_a_clinic_matched_by_its_own_inherited_name():
     assert m.match(name, "Oberhausen")[1] == "R1_exact"                  # read off the page: still trusted
     assert m.match(name, "Oberhausen", employer_inherited=True) is None  # circular: refused
     assert m.match(name, "Neuburg/Donau", employer_inherited=True)[0] == "18501"   # earns it from the city
+
+
+def test_parse_job_page_marks_org_source_seed_only_when_the_page_states_no_employer():
+    # No hiringOrganization anywhere on the page -> the caller's seed clinic name is a guess.
+    html_no_org = '<h1>Pflegefachkraft (m/w/d)</h1><span class="fact">Musterstadt</span>'
+    j = parse_job_page(html_no_org, "https://x/1", "Seed Klinik GmbH")
+    assert j["org"] == "Seed Klinik GmbH" and j.get("org_source") == "seed"
+    # A real hiringOrganization on the page must win over the seed guess and NOT be marked inherited.
+    html_with_org = ('<script type="application/ld+json">{"@type":"JobPosting","title":"Pflegefachkraft (m/w/d)",'
+                      '"hiringOrganization":{"name":"Sibling Klinik Penzberg"},'
+                      '"jobLocation":{"address":{"addressLocality":"Penzberg"}}}</script>')
+    j2 = parse_job_page(html_with_org, "https://x/2", "Seed Klinik GmbH")
+    assert j2["org"] == "Sibling Klinik Penzberg" and j2.get("org_source") is None
+
+
+def test_real_producer_output_drives_matcher_to_the_sibling_not_the_seed():
+    """End to end, no hand-set flags: crawlers.vendor_adapters.parse_job_page's own org_source ->
+    pflege_jobs.sources.inbox.jobposting_to_obs's _emp_inherited -> Matcher.match refuses the seed
+    clinic and lets the posting's own city earn it the sibling clinic instead, on a board shared by
+    both (mirrors the Starnberger/Heiligenfeld shared-softgarden-board shape from the 2026-09-18
+    crawler review)."""
+    cl = [{"clinic_id": "19001", "name": "Klinikum Seedstadt", "town": "Seedstadt", "operator": None, "beds": 200},
+          {"clinic_id": "19003", "name": "Klinik Penzberg", "town": "Penzberg", "operator": None, "beds": 80}]
+    m = Matcher(cl)
+    html_with_org = ('<script type="application/ld+json">{"@type":"JobPosting","title":"Pflegefachkraft (m/w/d)",'
+                      '"hiringOrganization":{"name":"Klinik Penzberg"},'
+                      '"jobLocation":{"address":{"addressLocality":"Penzberg"}}}</script>')
+    j = parse_job_page(html_with_org, "https://board.example/job/1", "Klinikum Seedstadt")
+    payload = {"title": j["title"], "org": j["org"], "org_source": j.get("org_source"), "url": j["url"],
+               "description": "", "loc": j["loc"], "board_clinic_ids": ["19001", "19003"]}
+    o = jobposting_to_obs({"inbox_id": 1, "source_host": "board.example", "source_url": j["url"],
+                           "collector": "vendor-wp_jobs-v1", "payload": payload}, TOWNS | {"seedstadt", "penzberg"})
+    assert o["_emp_inherited"] is False   # the page named a real employer, not the seed clinic
+    mt = m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=o["_emp_inherited"])
+    assert mt[0] == "19003"   # Klinik Penzberg, not the seed board clinic 19001
+
+
+def test_employer_inherited_from_real_pipeline_suppresses_r1_r2_on_a_shared_board():
+    """Same real pipeline as the sibling test above (crawlers.vendor_adapters.parse_job_page ->
+    pflege_jobs.sources.inbox.jobposting_to_obs -> Matcher.match, no hand-set flag), but for the
+    mirror case: the page states NO hiringOrganization at all, so org falls back to the seed
+    clinic's own registry name -- exactly the AMEOS shape (every posting on a shared board gets the
+    seed clinic's name verbatim). Without employer_inherited suppressing R1/R2, that inherited name
+    trivially R1-exact-matches the seed clinic on every posting regardless of the posting's own
+    city; with it, the posting must instead earn its clinic from the board+city (R0_board_town)."""
+    cl = [{"clinic_id": "19001", "name": "Klinikum Seedstadt", "town": "Seedstadt", "operator": None, "beds": 200},
+          {"clinic_id": "19003", "name": "Klinik Penzberg", "town": "Penzberg", "operator": None, "beds": 80}]
+    m = Matcher(cl)
+    html_no_org = ('<script type="application/ld+json">{"@type":"JobPosting","title":"Pflegefachkraft (m/w/d)",'
+                   '"jobLocation":{"address":{"addressLocality":"Penzberg"}}}</script>')
+    j = parse_job_page(html_no_org, "https://board.example/job/9", "Klinikum Seedstadt")
+    assert j["org"] == "Klinikum Seedstadt" and j["org_source"] == "seed"   # the seed guess, unlabelled
+    payload = {"title": j["title"], "org": j["org"], "org_source": j.get("org_source"), "url": j["url"],
+               "description": "", "loc": j["loc"], "board_clinic_ids": ["19001", "19003"]}
+    o = jobposting_to_obs({"inbox_id": 1, "source_host": "board.example", "source_url": j["url"],
+                           "collector": "vendor-wp_jobs-v1", "payload": payload}, TOWNS | {"seedstadt", "penzberg"})
+    assert o["_emp_inherited"] is True and o["employer_name"] == "Klinikum Seedstadt"
+
+    mt = m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=o["_emp_inherited"])
+    assert mt is not None and mt[0] == "19003" and mt[1] == "R0_board_town"   # earned via city, not name
+
+    # Sanity check on the same fixture: without the marker, the inherited name WOULD R1-exact-match
+    # the seed clinic outright, city ignored -- confirming this test actually exercises the gate.
+    assert m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=False) == ("19001", "R1_exact", 1.0)
+
+
+def test_career_crawl_from_jsonld_trusts_the_posting_own_hiring_organization():
+    """Same shape, on the career_crawl (softgarden/umantis) seeded-adapter path, which skips
+    inbox.py entirely and hands observations straight to app.crawl._load_observations."""
+    towns = TOWNS | {"seedstadt", "penzberg"}
+    cr = Crawler(towns)
+    seed = {"name": "Klinikum Seedstadt", "kez": "19001", "town": "Seedstadt", "career": "https://board.example/de/vacancies"}
+    jp_with_org = {"title": "Pflegefachkraft (m/w/d)", "hiringOrganization": {"name": "Klinik Penzberg"},
+                   "jobLocation": {"address": {"addressLocality": "Penzberg"}}}
+    o = cr._from_jsonld(jp_with_org, "https://board.example/job/1", seed)
+    assert o["employer_name"] == "Klinik Penzberg" and o["_emp_inherited"] is False
+
+    jp_no_org = {"title": "Pflegefachkraft (m/w/d)", "jobLocation": {"address": {"addressLocality": "Penzberg"}}}
+    o2 = cr._from_jsonld(jp_no_org, "https://board.example/job/2", seed)
+    assert o2["employer_name"] == "Klinikum Seedstadt" and o2["_emp_inherited"] is True
 
 
 @pytest.mark.parametrize("host, blocked", [
