@@ -4,6 +4,7 @@ import time
 import pytest
 
 from app import config as A, data as D, runs as R
+from pflege_jobs import inbox_db as IB
 import app.crawl as CR
 
 CLINIC = {"clinic_id": "1", "name": "Test Clinic", "town": "X", "status": "Plan-KH", "routable": True, "walled": False}
@@ -20,7 +21,7 @@ def fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "jobs", lambda: [])
     monkeypatch.setattr(D, "towns", lambda: set())
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
-    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: [])
+    monkeypatch.setattr(IB, "PATH", str(tmp_path / "inbox.sqlite"))
     monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 0)
     monkeypatch.setattr(R, "mirror_to_supabase", lambda run: None)
     monkeypatch.setattr(CR, "plan_for", lambda *a, **k: {
@@ -38,7 +39,7 @@ def test_board_recovers_within_3_attempts_no_issue_recorded(fresh, monkeypatch):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("boom")
-        return [{"payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
+        return [{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
 
     monkeypatch.setattr(CR, "_vendor_rows", flaky)
     rid = R.create_run("clinic", "1", "adapter")
@@ -154,7 +155,7 @@ def test_cli_inbox_nonzero_exit_is_recorded_and_fails_the_run(fresh, monkeypatch
     """TASK-72 AC#4: _cli(["inbox"])'s return code used to be discarded outright -- a failed drain
     left the queue stranded with no trace in either crawl_issues or the run's own status."""
     monkeypatch.setattr(CR, "_vendor_rows", lambda b, c, session, log, **kw: [
-        {"payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+        {"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
     monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 1 if args == ["inbox"] else 0)
     rid = R.create_run("clinic", "1", "adapter")
     CR.execute(rid)
@@ -172,7 +173,7 @@ def test_status_is_failed_when_a_board_errors_even_though_rows_came_in(fresh, mo
     def one_board_ok_one_board_dead(b, c, session, log, **kw):
         calls["n"] += 1
         if calls["n"] == 1:
-            return [{"payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
+            return [{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
         raise RuntimeError("dead board")
 
     board_ok = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [CLINIC]}
@@ -192,8 +193,8 @@ def test_verify_ids_receives_every_touched_posting_not_capped_at_200(fresh, monk
     posting_ids = {ref: i for i, ref in enumerate(refs)}
     monkeypatch.setattr(D, "jobs", lambda: [{"posting_id": i} for i in range(250)])   # all "already existed"
     monkeypatch.setattr(CR, "_vendor_rows", lambda b, c, session, log, **kw: [
-        {"payload": {"url": "https://x.example/dummy"}, "source_url": "https://x.example/dummy"}])
-    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: list(refs))
+        {"kind": "jobposting", "payload": {"url": "https://x.example/dummy"}, "source_url": "https://x.example/dummy"}])
+    monkeypatch.setattr(IB, "loaded_refs", lambda run_id, path=None: list(refs))
     monkeypatch.setattr(CR, "_posting_ids_for_refs", lambda rs: dict(posting_ids))
     seen = {}
     monkeypatch.setattr(CR, "_verify_ids", lambda ids_, log: seen.setdefault("ids", set(ids_)))
@@ -279,10 +280,11 @@ def test_verify_scope_clinic_still_excludes_postings_with_no_clinic_id(fresh, mo
     assert seen["ids"] == {7}
 
 
-def test_post_inbox_drops_non_nursing_before_the_insert(monkeypatch):   # no `fresh`: it stubs _post_inbox itself
-    """A board is mostly not nursing, and intake throws those rows away one step after the insert --
-    1666 of 2010 rows on 2026-09-17, i.e. 83% of the inbox's daily write budget, which is what pushed
-    the run into "inbox: daily limit reached for this client"."""
+def test_post_inbox_stores_every_row_it_is_given(monkeypatch):   # no `fresh`: it stubs the REST calls itself
+    """TASK-95: _post_inbox used to run classify_role before the insert and drop everything that was
+    not an experienced nursing role. That filter existed only to survive the server-side write cap,
+    and it decided at crawl time what is worth keeping. Nothing filters at the queue any more --
+    what is kept is decided when the queue is processed."""
     from app import config as A
     posted = []
     monkeypatch.setattr(A, "rest_post", lambda path, body, **kw: posted.extend(body))
@@ -293,7 +295,7 @@ def test_post_inbox_drops_non_nursing_before_the_insert(monkeypatch):   # no `fr
 
     CR._post_inbox(rows, lambda *_: None)
 
-    assert [p["source_url"] for p in posted] == ["https://x/0", "https://x/4"]
+    assert [p["source_url"] for p in posted] == [f"https://x/{i}" for i in range(5)]
 
 
 def test_post_inbox_never_sends_a_rest_get_dedupe_batch_over_50_urls(monkeypatch):

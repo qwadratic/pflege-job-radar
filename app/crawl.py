@@ -7,8 +7,11 @@
              those and only applies the EUR cap to runs past the allowance (docs/firecrawl.md §5, docs/coverage-plan.md §2).
   auto       adapter where routable and not walled, else firecrawl while the weekly credit budget allows.
 
-Rows flow through the same intake as every other crawler: inbox rows -> pflege_jobs.inbox -> `cli inbox`;
-observations (seeded adapters produce those directly) -> EdgeSink + clinic_links. New postings are verified by URL.
+Rows flow through the same intake as every other crawler, but the queue is local: every raw row a board serves
+-> pflege_jobs.inbox_db (SQLite, unfiltered) -> `cli inbox`, which is where filtering/matching/conversion happen
+and which writes only the finished observations to Postgres. pflege_jobs.inbox (Postgres) stays for the producers
+that hold only the anon key and is drained by the same command. Observations (seeded adapters produce those
+directly) -> EdgeSink + clinic_links. New postings are verified by URL.
 """
 import hashlib
 import json
@@ -19,6 +22,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 import requests
+
+from pflege_jobs import inbox_db as IB
 
 from . import config as A
 from . import data as D
@@ -124,7 +129,11 @@ def _unseen_source_urls(urls):
     urls = [u for u in dict.fromkeys(u for u in urls if u)]
     if not urls:
         return []
-    existing = set()
+    # The crawler's own rows live in the local queue now (TASK-95), so the Postgres lookups below
+    # no longer see them at all -- without this the "adapter covers it" refusal could never fire
+    # again for a row the adapter found but intake has not loaded yet, and Firecrawl would be paid
+    # to re-find it.
+    existing = set(IB.known_urls(urls))
     for i in range(0, len(urls), 50):
         batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
@@ -428,29 +437,25 @@ def _write_jsonl(run_id, rows):
     return p
 
 
-def _post_inbox(rows, log):
-    # Classify the role BEFORE the insert, with the same function and the same inputs intake uses.
-    # A board is mostly not nursing -- doctors, kitchen, IT, admin -- and posting all of it meant
-    # 1666 of 2010 rows on 2026-09-17 were written to the inbox only to be acked as nicht_pflege one
-    # step later. That is 83% of the table's daily write budget spent on rows nobody keeps, and it is
-    # what pushed the run into "inbox: daily limit reached for this client" once the schedule went
-    # from a 1/7 slice to the whole registry every day. Nothing is lost: _write_jsonl() has already
-    # saved every raw row of this run for forensics.
-    from pflege_jobs import config as PC, section
-    from pflege_jobs.classify import classify_role
-    kept, dropped = [], 0
-    for r in rows:
-        p = r.get("payload") or {}
-        role, _ = classify_role((p.get("title") or "").strip(), "",
-                                nursing_section_confirmed=section.job_confirmed_nursing(p.get("section_labels")))
-        if r.get("kind") == "jobposting" and role in PC.EXCLUDED_ROLE_CLASSES:
-            dropped += 1
-        else:
-            kept.append(r)
-    if dropped:
-        log(f"  {dropped} row(s) are not an experienced nursing role -- not written to the inbox")
-    rows = kept
+def _enqueue_local(rows, run_id, log):
+    """Every row this run found -> the local raw queue, unfiltered and undeduped (TASK-95).
+    Filtering, matching and conversion happen when the queue is processed, so a row a rule drops
+    today is still on disk when the rule changes."""
+    n = IB.enqueue(rows, run_id=run_id)
+    log(f"queued {n} raw rows in {IB.PATH}")
+    return n
 
+
+def _post_inbox(rows, log):
+    """Postgres inbox, for the producers that hold only the anon key: POST /api/ingest and the
+    Firecrawl webhook. The crawler's own rows go to the local queue (_enqueue_local) instead.
+
+    This used to run classify_role before the insert and drop everything that was not an
+    experienced nursing role (5,976 of 12,251 rows on run 108). That filter existed only to survive
+    the server-side 2000-rows-per-rolling-24h write rule, and it decided what is worth keeping at
+    crawl time, which is exactly what TASK-11 and TASK-14 say not to do. With the crawler off this
+    table, the remaining producers are tens of rows a day and every row they send is stored as sent;
+    what is kept is decided in the processing step (pflege_jobs.cli cmd_inbox)."""
     seen, uniq = set(), []
     for r in rows:
         if r.get("source_url") and r["source_url"] not in seen:
@@ -876,8 +881,8 @@ def execute(run_id):
     refs = []
     try:
         if inbox_rows:
-            refs += _post_inbox(inbox_rows, log)
-        rc = _cli(["inbox"], log)     # drain the queue every run, not only when this run added rows --
+            _enqueue_local(inbox_rows, run_id, log)
+        rc = _cli(["inbox"], log)     # drain both queues every run, not only when this run added rows --
                                        # a run with only observations (e.g. seeded adapters) must not
                                        # leave an earlier run's backlog stranded
         if rc:
@@ -885,6 +890,10 @@ def execute(run_id):
             # left stranded) was invisible both to this run's own status and to crawl_issues.
             errors += 1
             R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
+        if inbox_rows:
+            # what the drain actually turned into an observation -- the rows that reached Postgres,
+            # which is what link-cross and verify have anything to say about
+            refs += IB.loaded_refs(run_id)
         if observations:
             ids, obs = _load_observations(observations, by_id, log)
             refs += [o["source_ref"] for o in obs]
@@ -905,6 +914,9 @@ def execute(run_id):
     except Exception as e:
         errors += 1
         log(f"intake FAILED {type(e).__name__}: {str(e)[:300]}")
+        # TASK-92 AC#5: run 108's intake failure existed only as this log line, so three days of
+        # runs crawled thousands of rows and stored none while nothing outside run_log said so.
+        R.record_crawl_issue("app.crawl intake", R.now()[:10], "intake", "intake", [], f"{type(e).__name__}: {str(e)[:300]}", run_id)
     # Any error fails the run -- n_rows>0 used to mask errors as status="done" even when the whole
     # intake block (inbox post/drain/link-cross/verify) blew up right after real rows were fetched
     # (TASK-72 AC#4; confirmed live: 6 historical runs showed n_new=0 with status=done this way).

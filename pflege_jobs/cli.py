@@ -15,6 +15,7 @@ import sys
 import time
 
 from . import config as C
+from . import inbox_db as IB
 from .sinks import CsvSink, SqlSink, EdgeSink
 
 
@@ -371,11 +372,35 @@ def lookup_posting_ids(get, url, H, observations, chunk=50, log=print):
 
 
 def _drain_once(a, url, H, m, towns):
-    """Fetch and process one page (<=1000 rows) of the inbox queue. Returns the number of rows read."""
+    """Fetch and process one page (<=1000 rows) of the Postgres inbox queue -- the queue for
+    producers that hold only the anon key (web/collect.html, POST /api/ingest, the Firecrawl
+    webhook). The crawler's own rows go through the local queue below. Returns rows read."""
+    import requests as rq
+    rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
+    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres")
+
+
+def _drain_local_once(a, url, H, m, towns):
+    """Same processing over one page of the local SQLite queue (pflege_jobs.inbox_db), where the
+    crawler now puts every row it finds, unfiltered. Returns rows read."""
+    rows = IB.pending(1000, path=a.inbox_db)
+    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite")
+
+
+def _ack_postgres(acks):
+    sink, acked = EdgeSink(batch=200), 0
+    for i in range(0, len(acks), 400):
+        acked += sink._post({"inbox_ack": acks[i:i + 400]}).get("inbox_ack", 0)
+    return acked
+
+
+def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres"):
+    """One page of queued rows -> observations in Postgres. This is where filtering, matching and
+    conversion happen for every queue: the crawler stores raw rows and nothing else decides what is
+    kept, so a rule change can be replayed over the stored rows (inbox_db.reset)."""
     import requests as rq
     from urllib.parse import urlparse
     from .sources.inbox import jobposting_to_obs
-    rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
     obs, ack, probes = [], [], []
     for r in rows:
         if r["kind"] == "jobposting":
@@ -423,7 +448,7 @@ def _drain_once(a, url, H, m, towns):
                 ack.append({"inbox_id": r["inbox_id"], "note": "probe: nothing to update"})
         else:
             ack.append({"inbox_id": r["inbox_id"], "note": f"{r['kind']}: {len((r['payload'] or {}).get('links', []))} links recorded (detail pages needed)"})
-    print(f"inbox rows {len(rows)}: observations {len(obs)}, kez-linked {sum(1 for o in obs if o.get('_kez'))}")
+    print(f"{queue} inbox rows {len(rows)}: observations {len(obs)}, kez-linked {sum(1 for o in obs if o.get('_kez'))}")
     sink = EdgeSink(batch=200)
     if obs:
         print("load:", sink.write(obs, resolve=True, log=lambda *_: None))
@@ -442,14 +467,16 @@ def _drain_once(a, url, H, m, towns):
     if probes:
         print("clinics ats updated:", sink.write_clinics(probes, log=lambda *_: None))
     if ack and not a.no_ack:
-        acked = 0
-        for i in range(0, len(ack), 400): acked += sink._post({"inbox_ack": ack[i:i + 400]}).get("inbox_ack", 0)
-        print("acked", acked)
+        print("acked", ack_fn(ack))
     return len(rows)
 
 
 def cmd_inbox(a):
-    """Process browser-collector inbox rows -> observations (+ registry link), then ack them.
+    """Process queued raw rows -> observations (+ registry link), then ack them.
+
+    Two queues, one processor: the local SQLite queue the crawler writes (pflege_jobs.inbox_db --
+    every row it found, unfiltered) and the Postgres inbox, which stays for the producers holding
+    only the anon key (web/collect.html, POST /api/ingest, the Firecrawl webhook).
 
     Pages through the whole queue (not just one 1000-row page): PostgREST hard-caps a single
     response at 1000 rows regardless of the limit param, so a batch of exactly 1000 means more
@@ -465,19 +492,24 @@ def cmd_inbox(a):
     towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
     for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
     m = Matcher([dict(c) for c in clinics])
+    if a.reprocess_all or a.reprocess_run is not None:
+        n = IB.reset(run_id=a.reprocess_run, path=a.inbox_db) if not a.reprocess_all else IB.reset(path=a.inbox_db)
+        print(f"reprocess: {n} local row(s) unmarked"
+              + (f" (run {a.reprocess_run})" if a.reprocess_run is not None else " (whole history)"))
     total = 0
-    for _ in range(a.max_batches):
-        n = _drain_once(a, url, H, m, towns)
-        total += n
-        if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
-            break
-    else:
-        # max_batches is a loop-safety ceiling now, not a real queue-size cap (raised well past any
-        # observed queue) -- if it's ever actually reached, the drain stopped with rows still
-        # waiting and that must be loud, not a silent "inbox drained N rows" indistinguishable from
-        # a real full drain (TASK-72 AC#2).
-        print(f"TRUNCATED: max_batches={a.max_batches} reached with the queue still returning full "
-              f"batches -- the drain is incomplete", file=sys.stderr)
+    for drain in (_drain_local_once, _drain_once):
+        for _ in range(a.max_batches):
+            n = drain(a, url, H, m, towns)
+            total += n
+            if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
+                break
+        else:
+            # max_batches is a loop-safety ceiling now, not a real queue-size cap (raised well past any
+            # observed queue) -- if it's ever actually reached, the drain stopped with rows still
+            # waiting and that must be loud, not a silent "inbox drained N rows" indistinguishable from
+            # a real full drain (TASK-72 AC#2).
+            print(f"TRUNCATED: max_batches={a.max_batches} reached with the queue still returning full "
+                  f"batches -- the drain is incomplete", file=sys.stderr)
     print(f"inbox drained {total} rows")
 
 
@@ -509,7 +541,13 @@ def main(argv=None):
     lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
     ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true")
-    ib.add_argument("--max-batches", type=int, default=100_000); ib.set_defaults(fn=cmd_inbox)  # loop-safety ceiling, not a queue-size cap
+    ib.add_argument("--max-batches", type=int, default=100_000)  # loop-safety ceiling, not a queue-size cap
+    ib.add_argument("--inbox-db", default=None, help="local raw queue (default pflege_jobs/inbox_db.PATH)")
+    # Replay: the raw rows are kept, so a classifier or matcher change can be re-run over them
+    # instead of re-crawling the boards. --reprocess-all is the whole table, on purpose and never a default.
+    ib.add_argument("--reprocess-run", type=int, default=None, help="unmark this crawl run's local rows and process them again")
+    ib.add_argument("--reprocess-all", action="store_true", help="unmark every local row and process the whole history again")
+    ib.set_defaults(fn=cmd_inbox)
     a = p.parse_args(argv)
     a.fn(a)
 

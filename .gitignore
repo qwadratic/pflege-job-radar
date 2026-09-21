@@ -46,6 +46,8 @@ data/cross_merge_pairs.json
 # app state (SQLite) — regenerable
 data/app.sqlite*
 data/autopilot.sqlite*
+# the raw crawler queue (TASK-95): local, large, and the only copy of rows nobody re-crawls
+data/inbox.sqlite*
 .venv/
 *.log
 

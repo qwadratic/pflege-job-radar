@@ -75,7 +75,9 @@ def jobposting_to_obs(row, towns):
         # ...and whether the employer was read off the posting or copied from the seed clinic, which
         # decides whether the Matcher may use it for an exact-identity match at all
         "_emp_inherited": p.get("org_source") == "seed",
-        "payload": json.dumps({"inbox": {"inbox_id": row["inbox_id"], "collector": row.get("collector"), "page": p.get("page"), "host": host},
+        # inbox_id is only unique within its own queue, so the queue is part of the provenance
+        "payload": json.dumps({"inbox": {"inbox_id": row["inbox_id"], "queue": row.get("queue", "postgres"),
+                                         "collector": row.get("collector"), "page": p.get("page"), "host": host},
                                "crawl": {"seed": p.get("page"), "parse": "collector-jsonld"},
                                "city_source": city_src, "employer_source": p.get("org_source") or "page"}, ensure_ascii=False),
     }

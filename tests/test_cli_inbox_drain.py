@@ -22,8 +22,16 @@ def _env(monkeypatch):
     monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
 
 
+@pytest.fixture(autouse=True)
+def _local_queue(tmp_path, monkeypatch):
+    """cmd_inbox drains the local SQLite queue as well as the Postgres one -- point it at an empty
+    temp file so these tests only measure the Postgres loop they stub."""
+    monkeypatch.setattr("pflege_jobs.inbox_db.PATH", str(tmp_path / "inbox.sqlite"))
+
+
 def _args(clinics_csv, max_batches, no_ack=False):
-    return argparse.Namespace(clinics=clinics_csv, no_ack=no_ack, max_batches=max_batches)
+    return argparse.Namespace(clinics=clinics_csv, no_ack=no_ack, max_batches=max_batches,
+                              inbox_db=None, reprocess_run=None, reprocess_all=False)
 
 
 def test_max_batches_reached_prints_truncated_to_stderr(clinics_csv, monkeypatch, capsys):

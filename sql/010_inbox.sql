@@ -1,5 +1,23 @@
 -- 010: pflege_jobs.inbox, documented for the record.
 --
+-- SCOPE, since 2026-09-21 (TASK-95): this table is the queue for producers that hold only the anon
+-- key -- web/collect.html, POST /api/ingest, the Firecrawl webhook -- and nothing else. Tens of
+-- rows a day. The crawler's own rows go to a local SQLite queue (pflege_jobs/inbox_db.py); both are
+-- drained by `python -m pflege_jobs.cli inbox`.
+--
+-- WHY: there is a server-side write rule on this table that no file in sql/ creates and that cannot
+-- be read without SQL access this environment does not have. Measured from the live table's
+-- received_at/client_id plus data/app.sqlite run_log, for client 'vendor-adapters-default':
+--   09-19 06:21 run 100   600 rows land (3 x the caller's 200-row chunk), next chunk -> 500 57014
+--   09-19 09:37 run 101   400 rows land,                                  next chunk -> 500 57014
+--   09-20 06:23 run 104   600 rows land,                                  next chunk -> 500 57014
+--   09-20 09:37 run 105  1400 rows land; 600+1400 = 2000 in window,       next chunk -> 400 P0001
+--   09-21 05:53 run 108     0 rows land -- 09-20's 2000 are still inside 24h, so the FIRST chunk is
+--                           refused, which a calendar-day counter could not do
+-- => 2000 rows per client_id over a ROLLING 24h window, counting landed rows. A nightly crawl of
+-- the whole registry offers ~2137 distinct urls (run 108, measured), so it could not enqueue its own
+-- output at all: intake failed on every full scheduled run from 09-19 on.
+--
 -- This table already exists live and has been receiving rows since before this file was written --
 -- none of sql/001, 002, 008 or 009 create it (009:30-31 is the only prior mention, a DELETE against
 -- rows from retired sources). This is a reconstruction from the live table (columns, cardinality,

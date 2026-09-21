@@ -538,7 +538,11 @@ def inbox_summary(recent=25):
     n = max(0, min(int(recent or 0), 200))
     recent_rows = A.rest_get("inbox", {"select": "inbox_id,kind,collector,source_host,source_url,received_at,processed_at,process_note",
                                        "order": "inbox_id.desc", "limit": n}) if n else []
-    return {"total": total, "unprocessed": len(waiting), "by_kind": _count(waiting, "kind"),
+    # The crawler's rows are in the local queue (TASK-95), so the Postgres numbers above are only
+    # the anon-key producers' backlog -- reporting them alone would show an empty queue while a
+    # night's crawl sits unprocessed on disk.
+    from pflege_jobs import inbox_db as IB
+    return {"total": total, "unprocessed": len(waiting), "local": IB.counts(), "by_kind": _count(waiting, "kind"),
             "waiting_by_collector": _count(waiting, "collector"), "waiting_by_host": _count(waiting, "source_host", label=host_clinic),
             "oldest_unprocessed_at": oldest_at, "oldest_unprocessed_age_s": oldest_age_s, "recent": recent_rows}
 
