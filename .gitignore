@@ -60,3 +60,4 @@ eval_out/
 # hunter single-instance lock + stop file
 data/hunter.lock
 data/HUNTER_STOP
+supabase/.temp/
