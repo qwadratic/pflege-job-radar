@@ -19,6 +19,7 @@ import pytest
 from app import data as D
 from app.wa import config as C
 from app.wa import luna_brain as LB
+from app.wa.luna import escalation as ESC
 from app.wa.luna import grounding as GR
 from app.wa.luna import offer as OF
 from app.wa.luna import prompts as P
@@ -491,10 +492,11 @@ def test_escalation_defaults_to_attempting_an_answer_not_calling_a_human():
     assert "the default is to ATTEMPT an answer" in rule
     assert "ASK A CLARIFYING QUESTION" in rule
     assert "never as a substitute for trying" in rule
-    # still names the genuine-unknown cases escalation IS for, unchanged in substance
-    assert "pets, visa specifics, a policy question" in rule
-    assert "unreadable" in rule and "attachment" in rule
-    assert "never for a short typo, timing or weekday answer" in rule
+    # a closed, named list (2026-09-22, "предсказуемый список ситуаций" round) -- every one of the
+    # six codes literally named, never the old open-ended "pets, visa specifics, a policy question"
+    for code in ESC.MODEL_CODES:
+        assert repr(code) in rule or f"'{code}'" in rule, f"{code!r} not named in the ESCALATION rule"
+    assert "for a short typo, timing or weekday answer" in rule
 
 
 def test_tools_rule_allows_several_calls_in_one_turn_merged_by_the_model():
@@ -1735,10 +1737,12 @@ def test_alle_bei_x_is_flagged_not_blocked_when_a_second_clinic_genuinely_matche
 
 
 def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(hundred):
-    """The app/wa/luna_brain.py wiring (TASK-154): a flagged (not blocked) exhaustive claim still
-    reaches the candidate exactly as the model wrote it -- no corrective retry, no holding message --
-    and the thread is marked the same way an escalation is recorded today (card._escalated /
-    card._escalate_reason), so a human sees the thread and the suspected sentence."""
+    """The app/wa/luna_brain.py wiring (TASK-154, retiered 2026-09-22): a flagged (not blocked)
+    exhaustive claim still reaches the candidate exactly as the model wrote it -- no corrective
+    retry, no holding message -- and the thread is marked on the FLAG tier (card._flags /
+    card._flag_codes), so a human can still find the suspected sentence on review, without this
+    alone pulling anyone in (Ivan's predictable-escalation-list round: nothing is actually broken
+    here, so it must never read as card._escalated)."""
     thread = {"slots": dict(READY), "asked": []}
     offer = LB.market_snapshot(READY)["offer"]
     named = [p["clinic"] for p in offer["positions"]]
@@ -1748,27 +1752,31 @@ def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(h
     d = LB.turn("was gibt es?", thread, client=fake_client(_out(bubbles=[body])))
     assert d["bubbles"] == [body], "the reply is sent as written -- flagging never touches the text"
     assert d["action"] != "reply_blocked_escalated"
-    assert d["slots"]["_escalated"] is True
-    assert "exhaustive-claim" in d["slots"]["_escalate_reason"]
+    assert not d["slots"].get("_escalated"), "an exhaustive-claim suspicion alone must not escalate"
+    assert d["slots"]["_flag_codes"] == [ESC.EXHAUSTIVE_CLAIM_SUSPECTED]
+    assert "remainder" in d["slots"]["_flags"]
 
 
-def test_a_flagged_reply_that_is_also_model_escalated_keeps_both_reasons(hundred):
-    """TASK-156 (F1): the demoted exhaustive-claim flag and the model's own escalate_to_manager
-    describe two different real facts about the SAME turn, and card._escalate_reason is one string
-    field (app/wa/api.py's own use for unread media is the same field) -- an unconditional overwrite
-    used to drop whichever fact was recorded first. Both must survive."""
+def test_a_flagged_reply_that_is_also_model_escalated_keeps_both_facts_on_their_own_tier(hundred):
+    """TASK-156 (F1), retiered 2026-09-22: the demoted exhaustive-claim flag and the model's own
+    valid escalation describe two different real facts about the SAME turn -- both must survive, now
+    each on its own field (flags never merge into the escalation reason, or the reverse) rather than
+    one shared string an unconditional overwrite used to drop whichever fact was recorded first."""
     thread = {"slots": dict(READY), "asked": []}
     offer = LB.market_snapshot(READY)["offer"]
     named = [p["clinic"] for p in offer["positions"]]
     body = ("Es gibt nur diese 5 Kliniken in Bayern: " + ", ".join(named) +
             f". Es gibt {offer['remaining_clinics']} weitere. "
             "Wollen Sie eingrenzen, oder soll ich Sie allen passenden Kliniken vorschlagen?")
-    out = _out(bubbles=[body], escalate_to_manager=True, escalate_reason="candidate asked about a visa")
+    out = _out(bubbles=[body], escalate_to_manager=True, escalate_reason_code=ESC.VISA_OR_IMMIGRATION_SPECIFICS,
+              escalate_reason="candidate asked about a visa")
     d = LB.turn("was gibt es?", thread, client=fake_client(out))
     assert d["slots"]["_escalated"] is True
-    reason = d["slots"]["_escalate_reason"]
-    assert "exhaustive-claim" in reason, "the demoted flag's own reason must survive"
-    assert "candidate asked about a visa" in reason, "the model's own escalation reason must survive too"
+    assert d["slots"]["_escalation_codes"] == [ESC.VISA_OR_IMMIGRATION_SPECIFICS]
+    assert "candidate asked about a visa" in d["slots"]["_escalate_reason"], (
+        "the model's own escalation reason must survive")
+    assert d["slots"]["_flag_codes"] == [ESC.EXHAUSTIVE_CLAIM_SUSPECTED]
+    assert "remainder" in d["slots"]["_flags"], "the demoted flag's own note must survive, on its own tier"
 
 
 # --- the four guards this round leaves BLOCKING and untouched (TASK-154): each already has broader

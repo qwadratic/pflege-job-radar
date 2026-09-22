@@ -19,6 +19,7 @@ import pytest
 from app import data as D
 from app.wa import config as C
 from app.wa import luna_brain as LB
+from app.wa.luna import escalation as ESC
 from app.wa.luna import refusal as R
 
 
@@ -182,15 +183,19 @@ def test_a_soft_answer_with_decline_true_keeps_the_conversation_alive_and_record
     """A model that raises decline=true on a soft/deferred answer is not enough on its own -- Ivan's
     rule ends a conversation only on an unambiguous refusal. The classifier disagreeing keeps the
     thread open (the model's own bubbles go out, card.declined stays unset) and the fact that a
-    decline was refused this way is recorded on the card, so a human can see it happened."""
+    decline was refused this way is recorded on the card, so a human can see it happened -- as a
+    FLAG (2026-09-22, predictable-escalation-list round), never as an escalation: a disagreement
+    between two automated judges on a thread that is talking normally is not a reason to pull a
+    human in, it is only worth a look."""
     monkeypatch.setattr(R, "_live_transport", lambda text: json.dumps({"unambiguous_refusal": False}))
     out = _out(decline=True, decline_reason="model misread a maybe as a no",
                bubbles=["Kein Problem, lassen Sie sich Zeit."])
     d = LB.turn("vielleicht, mal sehen", luna, client=fake_client(out))
     assert d["action"] != "decline_ack" and d["bubbles"] == out["bubbles"]
     assert d["slots"].get("declined") is not True
-    assert d["slots"]["_escalated"] is True
-    assert "classifier disagreed" in d["slots"]["_escalate_reason"]
+    assert not d["slots"].get("_escalated"), "a classifier disagreement is a flag, not an escalation"
+    assert d["slots"]["_flag_codes"] == [ESC.DECLINE_CLASSIFIER_DISAGREEMENT]
+    assert "classifier disagreed" in d["slots"]["_flags"]
 
 
 def test_an_unambiguous_refusal_still_ends_the_conversation(luna, monkeypatch):
@@ -211,8 +216,9 @@ def test_a_classifier_failure_on_the_decline_path_also_keeps_talking_and_is_reco
     out = _out(decline=True, bubbles=["Ok, danke fuer die Rueckmeldung."])
     d = LB.turn("kommt drauf an", luna, client=fake_client(out))
     assert d["slots"].get("declined") is not True
-    assert d["slots"]["_escalated"] is True
-    assert "transport failed" in d["slots"]["_escalate_reason"]
+    assert not d["slots"].get("_escalated"), "a classifier outage is a flag, not an escalation"
+    assert d["slots"]["_flag_codes"] == [ESC.DECLINE_CLASSIFIER_DISAGREEMENT]
+    assert "transport failed" in d["slots"]["_flags"]
 
 
 def test_the_classifier_runs_only_on_the_decline_path_never_on_every_message(luna, monkeypatch):

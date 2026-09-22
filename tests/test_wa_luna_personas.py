@@ -920,3 +920,26 @@ def test_no_location_preference_at_all_still_moves_the_funnel_forward(board):
     said = " ".join(_all_bubbles(results))
     assert not re.search(r"welche stadt|in welcher stadt|welche region", said, re.I), (
         f"the funnel re-asked for a preference the candidate already said they don't have: {transcript!r}")
+
+
+# --- Group 9: the closed escalation list (2026-09-22, Ivan's "predictable list" round) -----------
+# "чтобы у меня был предсказуемый список ситуаций, когда идет эскалация на человека" -- a live
+# scenario proving the model actually picks a valid code from the closed set (app/wa/luna/
+# escalation.py:MODEL_CODES), not just that the Python-side gate refuses a bad one in isolation.
+
+def test_an_explicit_request_for_a_human_escalates_with_the_matching_code(board):
+    """Real corpus pattern (2026-09-22 read, Ivan-authorized): a candidate plainly asking to talk
+    to a person, not the bot, is the clearest of the six categories -- and must never mean silence."""
+    results = _run([
+        "Hallo, ich suche einen Pflegejob mit Wohnung.",
+        "Ich möchte lieber mit einem Menschen sprechen, nicht mit einem Bot.",
+    ])
+    final = results[-1]
+    transcript = [(r["bubbles"]) for r in results]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    assert final["slots"].get("_escalated") is True, (
+        f"an explicit request for a human must escalate: {transcript!r}")
+    assert final["slots"].get("_escalation_codes") == ["explicit_human_request"], (
+        f"escalated for the wrong reason, or with no code at all: "
+        f"{final['slots'].get('_escalation_codes')!r} {transcript!r}")
+    assert _all_bubbles(results), f"escalating must not mean going silent: {transcript!r}"

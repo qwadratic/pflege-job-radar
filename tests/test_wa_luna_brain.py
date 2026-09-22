@@ -20,6 +20,7 @@ from app.wa import config as C
 from app.wa import luna_brain as LB
 from app.wa import slots as SL
 from app.wa import store as ST
+from app.wa.luna import escalation as ESC
 
 LEAD = "+491701234567"
 
@@ -232,11 +233,26 @@ def test_an_empty_bubbles_array_is_treated_as_silent_even_without_the_no_send_fl
 
 def test_escalation_is_recorded_on_the_card_and_still_sends_the_next_ask(luna):
     out = _out(bubbles=["Gute Frage, das gebe ich weiter. Und wo suchen Sie?"],
-               escalate_to_manager=True, escalate_reason="asked about visa specifics")
+               escalate_to_manager=True, escalate_reason_code=ESC.VISA_OR_IMMIGRATION_SPECIFICS,
+               escalate_reason="asked about visa specifics")
     d = LB.turn("wie ist das mit dem Visum?", luna, client=fake_client(out))
     assert d["slots"]["_escalated"] is True
-    assert d["slots"]["_escalate_reason"] == "asked about visa specifics"
+    assert d["slots"]["_escalation_codes"] == [ESC.VISA_OR_IMMIGRATION_SPECIFICS]
+    assert "asked about visa specifics" in d["slots"]["_escalate_reason"]
     assert d["bubbles"] == out["bubbles"], "escalating must not mean going silent"
+
+
+def test_an_unrecognized_escalation_code_is_not_honoured_but_the_reply_still_sends(luna):
+    """Ivan, 2026-09-22: a predictable, closed list -- the model cannot invent a seventh reason and
+    have it register as a real escalation. The turn is not blocked either way: the candidate's own
+    reply still goes out, only the escalation itself is refused."""
+    out = _out(bubbles=["Das kann ich Ihnen leider nicht sagen."],
+               escalate_to_manager=True, escalate_reason_code="something_i_made_up",
+               escalate_reason="the model's own free text")
+    d = LB.turn("eine ganz andere Frage", luna, client=fake_client(out))
+    assert not d["slots"].get("_escalated"), "an unlisted code must never register as a real escalation"
+    assert d["slots"]["_flag_codes"] == [ESC.UNRECOGNIZED_ESCALATION_ATTEMPT]
+    assert d["bubbles"] == out["bubbles"]
 
 
 def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history_replay(luna):

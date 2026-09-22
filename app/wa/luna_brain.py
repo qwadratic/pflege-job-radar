@@ -47,6 +47,7 @@ from . import config as C
 from . import slots as SL
 from . import store as ST
 from .luna import board_vocabulary as BV
+from .luna import escalation as ESC
 from .luna import grounding as GR
 from .luna import offer as OF
 from .luna import prompts as P
@@ -679,6 +680,11 @@ OUTPUT_SCHEMA = {
         "bubbles": {"type": "array", "items": {"type": "string"}, "maxItems": 2},
         "rationale": {"type": "string"},
         "escalate_to_manager": {"type": "boolean"},
+        # escalate_reason_code is the closed set (app/wa/luna/escalation.py:MODEL_CODES) -- the ONE
+        # thing that decides whether escalate_to_manager is actually honoured. escalate_reason stays
+        # free text: the human-readable detail next to whichever code applies, never a substitute
+        # for it (a code outside MODEL_CODES makes the escalation a no-op -- see record_model_escalation).
+        "escalate_reason_code": {"type": ["string", "null"], "enum": [*ESC.MODEL_CODES, None]},
         "escalate_reason": {"type": ["string", "null"]},
         "no_send": {"type": "boolean"},
         "next_ask": {"type": ["string", "null"]},
@@ -1296,17 +1302,6 @@ def turn(text, thread, button_id=None, client=None):
     raw_bubbles = out.get("bubbles") or []
     buttons = []
     model_bubbles = []
-    # TASK-156 (F1): more than one fact about THIS turn can need recording for a human to review, and
-    # card._escalated/_escalate_reason (app/wa/api.py's own use for unread media is the same pattern)
-    # is one string field, not a list -- so notes from this turn are appended, never silently
-    # overwritten by whichever check runs last. Never mixes in a reason a PRIOR turn already left on
-    # the card: this list starts empty every call.
-    _escalation_notes = []
-
-    def note_escalation(reason):
-        card["_escalated"] = True
-        _escalation_notes.append(str(reason))
-        card["_escalate_reason"] = "; ".join(_escalation_notes)
 
     decline_candidate = bool(out.get("decline")) and not was_declined and not consent_no_tap
     decline_now = False
@@ -1332,7 +1327,12 @@ def turn(text, thread, button_id=None, client=None):
         if verdict.is_refusal:
             decline_now = True
         else:
-            note_escalation(f"model flagged decline=true but the refusal classifier disagreed "
+            # FLAG, not escalate (2026-09-22, Ivan's predictable-escalation-list round): a
+            # disagreement between two automated judges, on a thread that is still talking
+            # normally, is not a reason to pull a human in -- but it is worth a look, so it is
+            # still recorded, just under the tier that never sets _escalated.
+            ESC.record_flag(card, ESC.DECLINE_CLASSIFIER_DISAGREEMENT,
+                            f"model flagged decline=true but the refusal classifier disagreed "
                             f"({verdict.reason}) -- conversation continued")
     if decline_now:
         # TASK-101: one fixed acknowledgement (Ivan 2026-09-14, the old bot's wording), then silence.
@@ -1388,14 +1388,17 @@ def turn(text, thread, button_id=None, client=None):
                 card[GROUNDED_POSTINGS_KEY] = sorted({*(card.get(GROUNDED_POSTINGS_KEY) or []),
                                                       *grounded_postings})
         if checked["escalate_reason"]:
-            note_escalation(checked["escalate_reason"])
+            # The code-level two-strikes safety net: a harness limitation (the model could not
+            # produce a compliant reply twice running), never a topic the candidate raised --
+            # its own fixed code, distinct from anything the model itself may ask to escalate for.
+            ESC.record_escalation(card, ESC.GROUNDING_RULE_VIOLATED_TWICE, checked["escalate_reason"])
         elif checked["flagged"]:
             # ROUND 5 (grounding.py's module docstring): the exhaustive-claim check suspected one of
             # these sentences but did not block -- the reply above already went to the candidate.
-            # Recorded the same way an escalation is (card._escalated/_escalate_reason, app/wa/api.py
-            # reads the same pair for unread media) so a human sees the thread and the sentence.
-            note_escalation("exhaustive-claim check suspected the reply may not disclose the full "
-                            "remainder (reply already sent): "
+            # FLAG, not escalate (2026-09-22 round): a suspicion on a reply that already went out
+            # is worth a look, not a reason to pull a human into a conversation that is fine.
+            ESC.record_flag(card, ESC.EXHAUSTIVE_CLAIM_SUSPECTED,
+                            "reply may not disclose the full remainder (reply already sent): "
                             + "; ".join(repr(s) for s in checked["flagged"]))
         # TASK-150: on a test thread only, offer the original ad of what this message named.
         sources = SRC.sources_for(named, checked["evidence"]["postings"]) if thread.get("is_test") else []
@@ -1420,10 +1423,13 @@ def turn(text, thread, button_id=None, client=None):
             buttons = list(CONSENT_BUTTONS)
 
     if out.get("escalate_to_manager"):
-        # TASK-156 (F1): via note_escalation, not a bare assignment -- a fact this same turn already
-        # recorded above (a refused decline, a demoted exhaustive-claim flag, a two-strikes blocked
-        # reply) must survive next to the model's own reason, not be silently replaced by it.
-        note_escalation(out.get("escalate_reason"))
+        # 2026-09-22 (Ivan's predictable-escalation-list round): the model names WHICH of the
+        # closed codes applies (escalate_reason_code) -- a code outside that set is never honoured
+        # as a real escalation, so the model cannot invent its own reason to pull a human in. Either
+        # way this is additive, via record_escalation/record_flag (TASK-156 F1's own discipline): a
+        # fact this same turn already recorded above (a refused decline, a demoted exhaustive-claim
+        # flag, a two-strikes blocked reply) survives next to whatever this call adds.
+        ESC.record_model_escalation(card, out.get("escalate_reason_code"), out.get("escalate_reason"))
 
     # TASK-150/151: the candidate asked for the original ads, so they go out NEXT TO whatever the
     # turn already had to say -- appended in code, from board rows, re-resolved against the live

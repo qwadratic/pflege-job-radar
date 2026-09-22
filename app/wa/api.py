@@ -45,6 +45,7 @@ from .. import cv as CV
 from . import brain as B
 from . import config as C
 from .luna import choices as CH
+from .luna import escalation as ESC
 from . import meta as M
 from . import queue as Q
 from . import store as ST
@@ -822,8 +823,10 @@ def _media_ack(c, t, m, client):
         received_at, _ = ST.inbound_position(c, wamid)
         slots[UNREAD_MEDIA_KEY] = [*slots.get(UNREAD_MEDIA_KEY, []), {
             "wamid": wamid, "kind": m["kind"], "document_id": doc["id"] if doc else None, "received_at": received_at}]
-    slots["_escalated"] = True
-    slots.setdefault("_escalate_reason", f"unread {m['kind']} from the candidate: a colleague must look at it")
+        # One closed-set code (app/wa/luna/escalation.py), same as luna_brain.py's own escalations --
+        # only on a genuinely new item, matching the guard above: a wamid already recorded here does
+        # not need a second note saying the same thing.
+        ESC.record_escalation(slots, ESC.UNREAD_MEDIA, f"unread {m['kind']} from the candidate")
     if C.BRAIN == "luna" and slots.get("declined"):
         ST.finish_reply_turn_claim(c, t["phone"], wamid, ST.NO_SEND_STATE)
         ST.save_thread(c, t)
@@ -1151,6 +1154,11 @@ def wa_threads(request: Request, limit: int = 50):
                 row["pending_inbound"] = pending
             if row["slots"].get(UNREAD_MEDIA_KEY):
                 row["unread_media"] = row["slots"][UNREAD_MEDIA_KEY]   # a colleague was promised to look at these
+            # Ivan, 2026-09-22: a predictable, closed list of WHY a thread is escalated (never free
+            # text the model invented) -- app/wa/luna/escalation.py. Hoisted the same way unread_media
+            # is, so an operator view can filter/count by code instead of parsing _escalate_reason.
+            if row["slots"].get("_escalated"):
+                row["escalation_codes"] = row["slots"].get("_escalation_codes") or []
             failure = ST.recent_send_failure(c, row["phone"])
             if failure:
                 row["last_send_error"] = failure

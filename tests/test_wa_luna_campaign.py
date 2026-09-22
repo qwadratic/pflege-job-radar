@@ -18,6 +18,7 @@ from app.wa import luna_brain as LB
 from app.wa import meta as M
 from app.wa import store as ST
 from app.wa.luna import catchup as CU
+from app.wa.luna import escalation as ESC
 from app.wa.luna import followups as FU
 from app.wa.luna import refusal as RF
 from app.wa.luna import reporting as REP
@@ -559,6 +560,9 @@ def test_a_video_reply_to_the_campaign_is_flagged_for_a_human_and_never_nudged(w
     with TestClient(asgi.app) as client:
         (row,) = client.get("/api/wa/threads").json()["rows"]
     assert [u["wamid"] for u in row["unread_media"]] == ["wamid.in.video"] and row["slots"]["_escalated"] is True
+    # 2026-09-22: a predictable, closed escalation code on the operator row itself, not just buried
+    # in the free-text _escalate_reason string -- app/wa/luna/escalation.py.
+    assert row["escalation_codes"] == [ESC.UNREAD_MEDIA]
 
     Model(monkeypatch, _out())
     _deliver(meta, _message("wamid.in.2", text="Haben Sie mein Video bekommen?"))
