@@ -38,6 +38,7 @@ Accepting work we cannot pace would be the same lie as reporting an unverified s
 """
 from __future__ import annotations
 
+import dataclasses
 import hmac
 import json
 import os
@@ -291,6 +292,31 @@ def stamped(msg):  # pragma: no cover - journald gets the line, not a test
     print(f"[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] {msg}", flush=True)
 
 
+def active_hours_override(raw):
+    """-> a widened ``(lo, hi)`` for ``bridge/governor.py::MINI_FLOOR.active_hours``, or ``None`` to
+    leave the built-in 9-20 fuse untouched -- the caller's default when ``raw`` (from
+    ``WA_BRIDGE_ACTIVE_HOURS_OVERRIDE``) is unset. TASK-131 UAT, Ivan 2026-09-22: 'расширь окно...
+    это рассылка тестовая' -- one explicit, env-only, opt-in override for a single test night, never
+    a change to the fuse's own default (governor.py's own docstring: 'the last thing between a bug
+    and a real person'). Unset -> behaviour is bit-for-bit what it always was."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    lo_s, sep, hi_s = raw.partition("-")
+    if not sep:
+        raise RuntimeError(
+            f"WA_BRIDGE_ACTIVE_HOURS_OVERRIDE={raw!r} must be 'LO-HI' hours, e.g. '9-23'")
+    try:
+        lo, hi = int(lo_s), int(hi_s)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"WA_BRIDGE_ACTIVE_HOURS_OVERRIDE={raw!r} must be 'LO-HI' hours, e.g. '9-23'") from exc
+    if not (0 <= lo < hi <= 24):
+        raise RuntimeError(
+            f"WA_BRIDGE_ACTIVE_HOURS_OVERRIDE={raw!r} must satisfy 0 <= LO < HI <= 24")
+    return (lo, hi)
+
+
 def main():  # pragma: no cover - the entry point on the mini, not exercised offline
     token = os.environ.get("WA_BRIDGE_TOKEN", "")
     cap = os.environ.get("WA_BRIDGE_PER_NUMBER_DAILY_CAP")
@@ -302,7 +328,13 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     os.makedirs(root, exist_ok=True)
     ledger = L.Ledger(os.path.join(root, "ledger.sqlite"))
     driver = AD.AdbDriver(shots_dir=os.path.join(root, "shots"), log=stamped)
-    governor = G.Governor(ledger, per_number_daily_cap=int(cap))
+    hours = active_hours_override(os.environ.get("WA_BRIDGE_ACTIVE_HOURS_OVERRIDE"))
+    pacing = G.MINI_FLOOR if hours is None else dataclasses.replace(G.MINI_FLOOR, active_hours=hours)
+    if hours is not None:
+        stamped(f"WA_BRIDGE_ACTIVE_HOURS_OVERRIDE is set: active hours widened from the built-in "
+               f"{G.MINI_FLOOR.active_hours} to {hours}. This is a fuse override for one test run -- "
+               f"unset it in bridge.env and restart once the test is done.")
+    governor = G.Governor(ledger, per_number_daily_cap=int(cap), pacing=pacing)
     executor = X.Executor(ledger=ledger, governor=governor, driver=driver,
                           rail_number=os.environ.get("WA_BRIDGE_RAIL_NUMBER") or None)
     stop = threading.Event()

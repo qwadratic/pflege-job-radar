@@ -893,9 +893,45 @@ def test_the_six_legacy_rows_from_before_the_queue_columns_existed_are_reachable
         assert queue["wab.m.legacy1"]["kind"] == "audio"
         assert queue["wab.m.legacy1"]["mtime"] == 1785858224, "the real stat mtime, not invented"
         assert queue["wab.m.legacy2"]["kind"] == "image"
+        assert queue["wab.m.legacy1"]["legacy"] == 1 and queue["wab.m.legacy2"]["legacy"] == 1
+        assert ledger.media_queue(auto_only=True) == []
         # reachable end to end: the human escape hatch (and, by the same call, an automatic match)
         # can attach either one now that it carries a kind.
         ledger.attach_media(queue["wab.m.legacy1"]["queue_id"], PHONE, now=berlin(2026, 9, 22, 10))
+    finally:
+        ledger.close()
+
+
+def test_a_database_already_migrated_by_round_6_alone_still_gets_its_rows_flagged_legacy(tmp_path):
+    """Reproduces the EXACT live state found on the mini 2026-09-22 (TASK-131 round 7 fix): round 6
+    already ran once and backfilled queue_id/kind/source_dir for the six pre-round-5 rows -- so by
+    the time round 7's ``legacy`` column ships, ``where queue_id is null`` (the only signal the
+    original backfill had) finds nothing, and the six rows would silently stay legacy=0, exactly as
+    they did live before this fix. The very first migration that ever adds the ``legacy`` column at
+    all must catch them anyway."""
+    import sqlite3
+
+    path = tmp_path / "round6_only.sqlite"
+    raw = sqlite3.connect(str(path))
+    # The round-6 schema: every queue column round 6 shipped, but not `legacy` (round 7's own
+    # addition) -- and queue_id already backfilled, the same as this mini's own database.
+    raw.execute("create table media_seen (source_rel text primary key, media_id text not null, "
+               "size integer not null, mtime integer not null, seen_at text not null, "
+               "queue_id text, kind text, source_dir text, attached_at text, "
+               "attached_inbound_id text, attached_phone text, link_strength text, link_reason text)")
+    raw.execute("insert into media_seen(source_rel, media_id, size, mtime, seen_at, queue_id, kind, "
+               "source_dir) values (?,?,?,?,?,?,?,?)",
+               ("WhatsApp Images/Private/IMG-20260805-WA0000.jpg", "wab.m.r6only", 122272,
+                1785928218, "2026-09-22T08:02:05.680Z", "wab.q.already-backfilled", "image",
+                "WhatsApp Images/Private"))
+    raw.commit()
+    raw.close()
+
+    ledger = L.Ledger(str(path))
+    try:
+        [row] = ledger.media_queue()
+        assert row["legacy"] == 1, "queue_id was already set by round 6 -- must still be caught"
+        assert ledger.media_queue(auto_only=True) == []
     finally:
         ledger.close()
 
@@ -1075,6 +1111,26 @@ def test_an_unreadable_candidate_thread_does_not_block_a_readable_one(rig):
 
     result = rig.executor.auto_match_media()
     assert result["attached"] == 1  # weak tie-break: neither candidate's evidence was readable
+
+
+# --- active-hours override for a single test run (TASK-131 UAT, Ivan 2026-09-22) -------------------
+def test_active_hours_override_is_none_when_unset_or_blank():
+    """The default path -- what every deploy without the env var set gets -- must be bit-for-bit
+    unchanged: None, so main() keeps G.MINI_FLOOR exactly as built."""
+    assert S.active_hours_override(None) is None
+    assert S.active_hours_override("") is None
+    assert S.active_hours_override("   ") is None
+
+
+def test_active_hours_override_parses_lo_hi():
+    assert S.active_hours_override("9-23") == (9, 23)
+    assert S.active_hours_override("0-24") == (0, 24)
+
+
+def test_active_hours_override_rejects_garbage_and_out_of_range():
+    for bad in ("garbage", "9", "23-9", "9-9", "-1-23", "9-25"):
+        with pytest.raises(RuntimeError):
+            S.active_hours_override(bad)
 
 
 def test_health_says_the_msisdn_is_unverified(rig):

@@ -285,6 +285,15 @@ class Ledger:
         (``bridge/media.py::kind_for_path`` -- exact, not a guess) -- so both are backfilled from
         facts already on the row, not invented.
         """
+        # A real, named migrations table (TASK-131 round 7, second attempt -- the first attempt
+        # tried to infer "has this database ever seen the legacy column before" from the column's
+        # own presence, which broke the moment this code itself was deployed twice in one day: the
+        # first deploy's ALTER already added the column with its own DEFAULT applied to every
+        # existing row, erasing the very distinction the second deploy needed to read. A migration
+        # that must run exactly once needs its own durable marker, not an inference from unrelated
+        # schema state that other code changes can shift out from under it.
+        self._db.execute(
+            "create table if not exists schema_migrations (name text primary key, applied_at text not null)")
         cols = {r["name"] for r in self._db.execute("pragma table_info(media_seen)").fetchall()}
         for name, decl in (("queue_id", "text"), ("kind", "text"), ("source_dir", "text"),
                           ("attached_at", "text"), ("attached_inbound_id", "text"),
@@ -314,6 +323,26 @@ class Ledger:
                 "update media_seen set queue_id=?, kind=?, source_dir=?, legacy=1 where source_rel=?",
                 (_queue_id(row["source_rel"]), MD.kind_for_path(row["source_rel"]),
                  MD.source_dir_for_path(row["source_rel"]), row["source_rel"]))
+        # One-time reconciliation for a database that already lived through the OTHER migration
+        # (round 6, same day, shipped before the legacy column existed): on such a database every
+        # row above this line already has queue_id set, so the branch just above finds none of them
+        # -- the six files are still exactly as unattributable as ever, just no longer reachable by
+        # the WHERE clause that used to find them. Guarded by ``schema_migrations`` (above), not by
+        # column presence: the moment this specific reconciliation has EVER run on THIS database is
+        # the one thing safe to check, because nothing pulled by a live MediaWatcher cycle had a
+        # chance to exist yet the first time it runs (round 6 and round 7 shipped hours apart with no
+        # live traffic recorded in between -- this mini's own health counters confirmed it:
+        # pulled_total was 0 going into this deploy) -- so every row still sitting unattached at that
+        # moment IS one of the pre-round-5 six. Runs exactly once per database, ever, regardless of
+        # how many more times this file gets redeployed today: any row inserted after this migration
+        # already carries its own explicit legacy=0.
+        migration_name = "task131_round7_legacy_backfill"
+        if not self._db.execute("select 1 from schema_migrations where name=?",
+                                (migration_name,)).fetchone():
+            self._db.execute("update media_seen set legacy=1 where attached_at is null and legacy=0")
+            self._db.execute(
+                "insert into schema_migrations(name, applied_at) values(?,?)",
+                (migration_name, datetime.now(timezone.utc).isoformat(timespec="milliseconds")))
         # A pre-round-5 automatic link (rare in the acceptance run, but not assumed impossible):
         # carry it over as an attachment rather than stranding it back in the queue. Only when
         # exactly one still-unattached media_seen row shares that media_id -- an ambiguous case (two
