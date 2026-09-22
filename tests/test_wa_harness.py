@@ -42,7 +42,7 @@ def _jobs():
                      "employment_types": ["vollzeit"] if i % 2 else ["teilzeit"],
                      "enr_housing": bool(i % 4 == 0), "verify_status": "live", "status": "open",
                      "first_published": "2026-09-0%d" % (i % 9 + 1), "fresh": True,
-                     "source_url": f"https://example.org/job/{i + 1}"})
+                     "external_url": f"https://example.org/job/{i + 1}"})
     return rows
 
 
@@ -315,7 +315,12 @@ def test_a_bare_yes_answers_the_question_just_asked_and_not_an_older_one(wa):
     assert found == {"handover": True}
 
 
-def test_matches_name_real_postings_with_clinic_town_and_link(wa):
+def test_matches_name_real_postings_with_clinic_town_and_no_link(wa):
+    """TASK-151: the list names the houses; it does NOT carry the ad URL.
+
+    It used to, on every thread. WA_BRAIN defaults to ``deterministic`` (app/wa/config.py), so an
+    entry point started without the env var sent real candidates board links -- the one thing Ivan's
+    standing rule forbids, and the thing app/wa/luna/offer.py keeps structural on the other brain."""
     wa.sent.clear()
     out = WAPI.handle_payload(payload("Intensiv in München", wamid="wamid.match"), client=wa)
     ids = out["results"][0]["matches"]
@@ -324,8 +329,18 @@ def test_matches_name_real_postings_with_clinic_town_and_link(wa):
     assert ids == [r["posting_id"] for r in expected]
     bubble = wa.sent[0]["body"]
     for r in expected:
-        assert r["clinic_name"][:20] in bubble and r["source_url"] in bubble
+        assert r["clinic_name"][:20] in bubble
     assert "München" in bubble
+    assert "http" not in bubble
+
+
+def test_the_deterministic_brain_shows_the_ad_url_only_on_a_test_thread():
+    """TASK-150 AC#6: both brains read the SAME flag, so they cannot disagree about what a test
+    thread is shown (app/wa/luna/source_link.py is the other half)."""
+    rows = B.jobs_for({"department": "Intensiv/IMC", "city": "München"})[:1]
+    slots = {"department": "Intensiv/IMC", "city": "München"}
+    assert "http" not in B.match_bubble(rows, slots)
+    assert rows[0]["external_url"] in B.match_bubble(rows, slots, is_test=True)
 
 
 def test_the_filters_are_the_ones_the_jobs_api_takes(wa):

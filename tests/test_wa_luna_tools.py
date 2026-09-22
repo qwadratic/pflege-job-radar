@@ -19,16 +19,22 @@ from app.wa.luna import tools_server as TS
 
 
 def _jobs():
+    """enr_housing_evidence is on every snapshot row (app/data.py:_build reads it off the postings table,
+    the v_postings view has no such column) -- it is what housing_kind reads, so the fixture carries the
+    board's own commonest wording."""
     rows = []
-    plan = [("München", "Oberbayern", "Intensiv/IMC", True, "c1"), ("München", "Oberbayern", "OP", False, "c1"),
-            ("Augsburg", "Schwaben", "Innere Medizin", True, "c2"), ("Coburg", "Oberfranken", "Notaufnahme", False, "c3")]
-    for i, (city, bezirk, dept, housing, clinic_id) in enumerate(plan):
+    plan = [("München", "Oberbayern", "Intensiv/IMC", "personalwohnraum (soweit verfügbar)", "c1"),
+            ("München", "Oberbayern", "OP", None, "c1"),
+            ("Augsburg", "Schwaben", "Innere Medizin", "mitarbeiterwohn", "c2"),
+            ("Coburg", "Oberfranken", "Notaufnahme", None, "c3")]
+    for i, (city, bezirk, dept, evidence, clinic_id) in enumerate(plan):
         rows.append({"posting_id": i + 1, "title": f"Pflegefachkraft {dept}", "role_class": "pflegefachkraft",
                      "department_hint": dept, "city": city, "clinic_town": city, "regierungsbezirk": bezirk,
                      "clinic_id": clinic_id, "clinic_name": f"Klinikum {city}", "employer": f"Klinikum {city}",
-                     "employment_types": ["vollzeit"], "enr_housing": housing, "verify_status": "live",
+                     "employment_types": ["vollzeit"], "enr_housing": bool(evidence),
+                     "enr_housing_evidence": evidence, "enr_childcare": i == 0, "verify_status": "live",
                      "status": "open", "first_published": "2026-09-01", "fresh": True,
-                     "source_url": f"https://example.org/job/{i + 1}"})
+                     "external_url": f"https://example.org/job/{i + 1}"})
     return rows
 
 
@@ -52,8 +58,8 @@ def board(tmp_path, monkeypatch):
 def test_search_postings_filters_by_city_and_logs_the_call(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
     out = TS.search_postings(city="München")
-    assert {r["city"] for r in out} == {"München"}
-    assert len(out) == 2
+    assert {r["city"] for r in out["shown"]} == {"München"}
+    assert (len(out["shown"]), out["total"]) == (2, 2)
     log = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(log[-1])["tool"] == "search_postings"
     assert json.loads(log[-1])["args"]["city"] == "München"
@@ -62,7 +68,7 @@ def test_search_postings_filters_by_city_and_logs_the_call(tmp_path, monkeypatch
 def test_search_postings_filters_by_department_and_role(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
     out = TS.search_postings(department="Notaufnahme")
-    assert len(out) == 1 and out[0]["city"] == "Coburg"
+    assert out["total"] == 1 and out["shown"][0]["city"] == "Coburg"
 
 
 def test_search_postings_reads_the_candidates_department_word_in_board_vocabulary(tmp_path, monkeypatch):
@@ -71,8 +77,9 @@ def test_search_postings_reads_the_candidates_department_word_in_board_vocabular
     board(tmp_path, monkeypatch)
     for word in ("Intensivstation", "ITS", "Intensiv/IMC"):
         out = TS.search_postings(city="München", department=word)
-        assert [(r["posting_id"], r["department"]) for r in out] == [(1, "Intensiv/IMC")], word
-    assert TS.search_postings(city="Augsburg", department="Intensivstation") == []
+        assert [(r["posting_id"], r["department"]) for r in out["shown"]] == [(1, "Intensiv/IMC")], word
+    empty = TS.search_postings(city="Augsburg", department="Intensivstation")
+    assert (empty["shown"], empty["total"]) == ([], 0)
     log = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(log[0])["args"]["department"] == "Intensivstation", "the call log keeps the model's own word"
 
@@ -82,12 +89,13 @@ def test_search_postings_reads_department_like_market_snapshot(tmp_path, monkeyp
     board's title classifier knows filters to that board department."""
     board(tmp_path, monkeypatch)
     for word in ("egal", "flexibel", "keine Präferenz"):
-        assert [r["posting_id"] for r in TS.search_postings(city="München", department=word)] == [1, 2], word
-    assert [r["posting_id"] for r in TS.search_postings(department="Zentrale Notaufnahme")] == [4]
-    assert TS.search_postings(city="München", department="Stroke Unit") == []
+        assert [r["posting_id"] for r in TS.search_postings(city="München", department=word)["shown"]] == [1, 2], word
+    assert [r["posting_id"] for r in TS.search_postings(department="Zentrale Notaufnahme")["shown"]] == [4]
+    none_here = TS.search_postings(city="München", department="Stroke Unit")
+    assert (none_here["shown"], none_here["total"]) == ([], 0)
     # review 2026-09-15: every department named, not only the first rule that matched
-    assert sorted(r["posting_id"] for r in TS.search_postings(department="Innere oder Intensiv")) == [1, 3]
-    assert [r["posting_id"] for r in TS.search_postings(city="Augsburg", department="Intensiv oder Innere")] == [3]
+    assert sorted(r["posting_id"] for r in TS.search_postings(department="Innere oder Intensiv")["shown"]) == [1, 3]
+    assert [r["posting_id"] for r in TS.search_postings(city="Augsburg", department="Intensiv oder Innere")["shown"]] == [3]
 
 
 @pytest.mark.parametrize("word", ["alles außer OP", "kein OP", "Intensiv, sonst egal"])
@@ -113,16 +121,86 @@ def test_search_postings_with_an_unknown_department_is_an_error_the_model_reads(
     assert json.loads(log[-1])["args"]["department"] == "Urologie"
 
 
-def test_search_postings_respects_limit_and_caps_it(tmp_path, monkeypatch):
-    board(tmp_path, monkeypatch)
-    assert len(TS.search_postings(limit=1)) == 1
-    assert len(TS.search_postings(limit=999)) <= 50
+# --- TASK-145: at most five positions per listing turn, and the true number next to them ---------
+# Ivan 2026-09-21, from the first real phone-rail conversation: a candidate must never get a wall of
+# vacancies. The cap is in the result set, not in the prompt, and the count that did match travels with
+# the short list so "und 95 weitere" is sayable.
+
+def _many(n, **row):
+    D._snap["jobs"].extend({**D._snap["jobs"][0], "posting_id": 1000 + i, **row} for i in range(n))
 
 
-def test_get_posting_returns_the_row_or_none(tmp_path, monkeypatch):
+def test_a_hundred_matching_postings_hand_over_five_rows_and_the_full_count(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
-    assert TS.get_posting(posting_id=1)["city"] == "München"
-    assert TS.get_posting(posting_id=999) is None
+    _many(98, city="München", clinic_town="München")               # 2 München rows already on the board
+    out = TS.search_postings(city="München")
+    assert len(out["shown"]) == TS.LISTING_LIMIT == 5
+    assert out["total"] == 100, "the count is what matched, never what was handed over"
+    assert {r["city"] for r in out["shown"]} == {"München"}
+    with_flat = TS.search_postings_with_housing(city="München")
+    assert len(with_flat["shown"]) == 5 and with_flat["total"] == 99
+
+
+def test_no_argument_can_raise_the_five(tmp_path, monkeypatch):
+    """The cap is not a default the model can talk past: there is no limit parameter to pass any more, and
+    asking for one anyway (the CLI drops an argument the schema does not name) still yields five."""
+    board(tmp_path, monkeypatch)
+    _many(98, city="München", clinic_town="München")
+    for tool in ("search_postings", "search_postings_with_housing"):
+        assert "limit" not in TS.mcp._tool_manager.get_tool(tool).parameters["properties"], tool
+        result = asyncio.run(TS.mcp.call_tool(tool, {"city": "München", "limit": 50}))
+        assert not result.is_error, result
+        answered = json.loads(result.content[0].text)
+        assert len(answered["shown"]) == 5 and answered["total"] >= 99, answered["total"]
+
+
+def test_the_listing_tools_say_how_many_more_there_are_in_their_own_description(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    TS.apply_board_vocabulary()
+    said = TS.mcp._tool_manager.get_tool("search_postings").description
+    assert "at most 5 postings" in said and "how many matched in all" in said, said
+    assert "never a board link" in said, said
+
+
+# --- TASK-145: one posting, in full -------------------------------------------------------------
+# The model could read a posting's clinic, city and department and nothing else, so everything a
+# candidate actually asks ("was muss ich mitbringen", "welcher Tarif", "wie ist die Wohnung") was either
+# unanswerable or invented. app/data.py:JOB_COLS does not carry the ad text at all; job_detail does.
+
+def _detail_row(posting_id):
+    """What app/data.py:job_detail reads off the postings row itself (select=*), the columns
+    sql/001_schema.sql + pflege_jobs/schema.py define and JOB_COLS leaves out."""
+    return {"posting_id": posting_id, "description": "Wir suchen ... Bewerbung an pd@klinikum.example",
+            "enr_requirements": "Examen, Berufserlaubnis", "enr_experience": "2 Jahre Intensiv",
+            "enr_language_req": "B2", "enr_tariff": "TVöD", "enr_pay_grade": "P8",
+            "enr_housing_evidence": "Personalwohnung nach Verfügbarkeit", "shift_night_weekend": None,
+            "start_date": "2026-11-01", "contract": "UNBEFRISTET", "qualification_hint": "examiniert",
+            "enr_contact_emails": ["pd@klinikum.example"]}
+
+
+def test_get_posting_returns_the_whole_ad_not_a_search_row(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(D, "job_detail", _detail_row)
+    out = TS.get_posting(posting_id=1)
+    assert out["city"] == "München" and out["clinic_name"] == "Klinikum München"
+    assert all(k in out for k in TS.POSTING_DETAIL_FIELDS), TS.POSTING_DETAIL_FIELDS
+    assert (out["enr_requirements"], out["enr_language_req"], out["enr_tariff"], out["enr_pay_grade"]) == \
+        ("Examen, Berufserlaubnis", "B2", "TVöD", "P8")
+    assert out["enr_housing_evidence"] == "Personalwohnung nach Verfügbarkeit"
+    assert out["start_date"] == "2026-11-01"
+    # the fields the description promises are the fields it returns, and nothing personal comes with them
+    for field in ("description", "enr_requirements", "enr_experience", "enr_language_req",
+                  "enr_tariff", "enr_pay_grade", "enr_housing_evidence"):
+        assert field in TS.mcp._tool_manager.get_tool("get_posting").description, field
+    assert "pd@klinikum.example" not in json.dumps(out, ensure_ascii=False)
+    assert D.EMAIL_MASK in out["description"], "the ad text is scrubbed like every other door here"
+    assert "enr_contact_emails" not in out
+
+
+def test_get_posting_is_null_only_for_a_posting_that_does_not_exist(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(D, "job_detail", _detail_row)
+    assert TS.get_posting(posting_id=4242) is None
 
 
 def test_list_clinics_filters_by_region(tmp_path, monkeypatch):
@@ -175,14 +253,14 @@ def test_get_clinic_contact_delegates_to_the_contacts_module_when_present(tmp_pa
 
 def test_every_call_is_logged_even_when_the_result_is_empty(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
-    TS.search_postings(city="Nowhereville")
-    TS.list_clinics(city="Nowhereville")
+    TS.search_postings(city="Coburg", department="Intensiv")   # a town the board has, nothing matching in it
+    TS.list_clinics(city="Coburg", regierungsbezirk="Schwaben")
     TS.get_posting(posting_id=42)
-    TS.search_postings_with_housing(city="Nowhereville")
-    TS.list_clinics_with_housing(city="Nowhereville")
+    TS.search_postings_with_housing(city="Coburg")
+    TS.list_clinics_with_housing(city="Coburg")
     TS.list_cities_with_postings(regierungsbezirk="Nirgendwo")
-    TS.count_postings(city="Nowhereville")
-    TS.board_api_get(path="/api/jobs", query="city=Nowhereville")
+    TS.count_postings(city="Coburg", housing=True)
+    TS.board_api_get(path="/api/jobs", query="city=Coburg&housing=1")
     TS.read_board_docs(topic="skill")
     lines = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()
     tools_called = [json.loads(l)["tool"] for l in lines]
@@ -279,11 +357,12 @@ def test_a_failed_refresh_over_a_cached_board_still_serves_that_boards_vocabular
 def test_search_postings_with_housing_returns_only_postings_the_board_marks(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
     out = TS.search_postings_with_housing()
-    assert sorted(r["posting_id"] for r in out) == [1, 3]
-    assert all(r["housing"] is True for r in out)
-    assert [r["posting_id"] for r in TS.search_postings_with_housing(city="München")] == [1]
-    assert TS.search_postings_with_housing(city="Coburg") == [], "Coburg's posting carries no housing mark"
-    assert [r["posting_id"] for r in TS.search_postings_with_housing(regierungsbezirk="Schwaben")] == [3]
+    assert sorted(r["posting_id"] for r in out["shown"]) == [1, 3] and out["total"] == 2
+    assert all(r["housing"] is True for r in out["shown"])
+    assert [r["posting_id"] for r in TS.search_postings_with_housing(city="München")["shown"]] == [1]
+    coburg = TS.search_postings_with_housing(city="Coburg")
+    assert (coburg["shown"], coburg["total"]) == ([], 0), "Coburg's posting carries no housing mark"
+    assert [r["posting_id"] for r in TS.search_postings_with_housing(regierungsbezirk="Schwaben")["shown"]] == [3]
     logged = [json.loads(l) for l in
               (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").strip().splitlines()]
     assert {l["tool"] for l in logged} == {"search_postings_with_housing"}
@@ -291,7 +370,7 @@ def test_search_postings_with_housing_returns_only_postings_the_board_marks(tmp_
 
 def test_search_postings_with_housing_reads_the_candidates_department_word(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
-    assert [r["posting_id"] for r in TS.search_postings_with_housing(department="Intensivstation")] == [1]
+    assert [r["posting_id"] for r in TS.search_postings_with_housing(department="Intensivstation")["shown"]] == [1]
     with pytest.raises(ToolError) as raised:
         asyncio.run(TS.mcp.call_tool("search_postings_with_housing", {"department": "Urologie"}))
     assert not isinstance(raised.value, UnexpectedToolError)
@@ -321,9 +400,12 @@ def test_list_cities_with_postings_ranks_cities_and_takes_the_presets(tmp_path, 
 
 def test_count_postings_counts_rows_clinics_cities_and_the_ones_with_a_flat(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
-    assert TS.count_postings(city="München") == {"postings": 2, "clinics": 1, "cities": 1, "with_housing": 1,
-                                                  "filters": {"city": "München"}}
+    assert TS.count_postings(city="München") == {
+        "postings": 2, "clinics": 1, "cities": 1, "with_housing": 1, "with_accommodation": 1,
+        "with_relocation_support": 0, "filters": {},
+        "town": {"asked": "München", "board_spellings": ["München"], "matched_as": "town"}}
     assert TS.count_postings(housing=True) == {"postings": 2, "clinics": 2, "cities": 2, "with_housing": 2,
+                                               "with_accommodation": 2, "with_relocation_support": 0,
                                                "filters": {"housing": "1"}}
     counted = TS.count_postings(city="Coburg")
     assert (counted["postings"], counted["with_housing"]) == (1, 0), "open in Coburg, none of it with a flat"
@@ -469,6 +551,10 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
             "count_postings", "read_board_docs", "board_api_get"} <= allowed
     # TASK-91: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
+    # TASK-145: this one IS for the conversation. It is registered here; the CLI reaches it only once
+    # luna_brain.MCP_TOOL_NAMES names it and _mcp_config_path passes WA_LUNA_PHONE (that file is another
+    # lane's -- until it does, the tool is served and never called).
+    assert "match_cv_to_postings" in TS.mcp._tool_manager._tools
 
 
 # --- TASK-110 review: the vocabulary is counted in the parent, the server only applies it --------
@@ -560,18 +646,25 @@ def test_clinics_with_a_flat_are_counted_the_same_way_in_the_schema_and_in_every
 
 def test_board_api_get_serves_the_same_re_verified_rows_as_every_other_tool(tmp_path, monkeypatch):
     """TASK-110 review: this door served every open posting while the tools served the re-verified ones
-    -- live, that was Coburg 2 vs 39 and München 369 vs 499 in one conversation."""
+    -- live, that was Coburg 2 vs 39 and München 369 vs 499 in one conversation. TASK-145 (Ivan,
+    2026-09-21) removed the deliberate way past that base: a posting whose liveness is not confirmed may
+    not reach a candidate-facing model at all, and one escape hatch is the whole guarantee gone."""
     board(tmp_path, monkeypatch)
     D._snap["jobs"].append({**D._snap["jobs"][3], "posting_id": 20, "verify_status": "gone"})
     assert TS.count_postings(city="Coburg")["postings"] == 1
-    assert TS.board_api_get(path="/api/jobs", query="city=Coburg")["total"] == 1, (
-        "the same base as the tools: a posting the verifier last found gone is not named as open")
-    assert TS.board_api_get(path="/api/jobs", query="city=Coburg&verify=gone")["total"] == 1, (
-        "an explicit verify= still decides -- asking past the re-verified rows stays possible on purpose")
-    assert TS.board_api_get(path="/api/jobs", query="city=Coburg&verify=live,gone")["total"] == 2
+    out = TS.board_api_get(path="/api/jobs", query="city=Coburg")
+    assert out["total"] == 1, "a posting the verifier last found gone is not named as open"
+    assert out["withheld_not_live"] == 1, "and the one it kept back is said, not silently dropped"
+    assert [j["posting_id"] for j in out["rows"]] == [4]
+    for query in ("city=Coburg&verify=gone", "city=Coburg&verify=live,gone", "verify=live"):
+        with pytest.raises(ToolError) as raised:
+            asyncio.run(TS.mcp.call_tool("board_api_get", {"path": "/api/jobs", "query": query}))
+        assert not isinstance(raised.value, UnexpectedToolError)
+        assert "is not yours to set" in str(raised.value), query
     detail = TS.board_api_get(path="/api/clinics/c3")
     assert [j["posting_id"] for j in detail["jobs"]] == [4] and detail["jobs_total"] == 1, (
         "the clinic detail's own job list starts from that base too")
+    assert detail["jobs_withheld_not_live"] == 1
 
 
 def test_board_api_get_asks_for_a_page_it_can_actually_hand_over(tmp_path, monkeypatch):
@@ -622,3 +715,422 @@ def test_the_fallback_door_says_which_columns_the_board_barely_fills(tmp_path, m
     assert "never turn such a 0 into 'we have none'" in said, said
     assert TS.board_api_get(path="/api/jobs", query="contract=UNBEFRISTET")["total"] == 0, (
         "the value the docs list is a legal one the board simply does not carry")
+
+
+# --- TASK-145: the candidate's own word for a town ----------------------------------------------
+# Ivan 2026-09-21: app/data.py:filter_jobs compares the city lowercased and exactly, so 'Nuernberg',
+# 'Wuerzburg' and a Landkreis each matched nothing and the turn said there was nothing open there --
+# the failure TASK-104 removed for the department word, on the slot candidates lead with.
+
+@pytest.mark.parametrize("word", ["Nuernberg", "Nurnberg", "NÜRNBERG", "Landkreis Nürnberg", "nürnberg"])
+def test_a_city_spelt_the_candidates_way_reaches_the_boards_own_town(tmp_path, monkeypatch, word):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 30, "city": "Nürnberg",
+                            "clinic_town": "Nürnberg", "regierungsbezirk": "Mittelfranken"})
+    assert [r["posting_id"] for r in TS.search_postings(city=word)["shown"]] == [30], word
+    assert TS.count_postings(city=word)["postings"] == 1
+
+
+def test_a_town_the_board_does_not_know_is_an_error_naming_the_near_ones_not_an_empty_list(tmp_path, monkeypatch):
+    """The whole point: [] and "never heard of that town" are the same value to the model, and only one
+    of them may be told to the candidate."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 30, "city": "Nürnberg",
+                            "clinic_town": "Nürnberg", "regierungsbezirk": "Mittelfranken"})
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings", {"city": "Nuremberg"}))
+    assert not isinstance(raised.value, UnexpectedToolError), "the model must read why it got nothing"
+    said = str(raised.value)
+    assert "'Nuremberg' is not a town this board has open postings in" in said
+    assert "Nürnberg" in said and "a DIFFERENT town" in said, said
+    assert "list_cities_with_postings" in said
+    assert json.loads((C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8").splitlines()[-1]) \
+        ["args"]["city"] == "Nuremberg", "the refused call keeps the model's own word"
+
+
+def test_a_town_nothing_on_the_board_resembles_says_so_instead_of_offering_another(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings_with_housing", {"city": "Kyiv"}))
+    assert "No board town resembles it" in str(raised.value) and "Bavaria only" in str(raised.value)
+
+
+def test_every_door_that_takes_a_town_reads_it_the_same_way(tmp_path, monkeypatch):
+    """Including the raw API door: it would otherwise be the way around the reading, with 'city=Nuernberg'
+    answering total=0 again."""
+    board(tmp_path, monkeypatch)
+    assert [c["clinic_id"] for c in TS.list_clinics(city="Muenchen")] == ["c1"]
+    assert [c["clinic_id"] for c in TS.list_clinics_with_housing(city="Muenchen")] == ["c1"]
+    assert TS.board_api_get(path="/api/jobs", query="city=Muenchen")["total"] == 2
+    assert [c["clinic_id"] for c in TS.board_api_get(path="/api/clinics", query="city=Muenchen")["rows"]] == ["c1"]
+    for tool, args in (("list_clinics", {"city": "Nuremberg"}),
+                       ("list_clinics_with_housing", {"city": "Nuremberg"}),
+                       ("count_postings", {"city": "Nuremberg"}),
+                       ("board_api_get", {"path": "/api/jobs", "query": "city=Nuremberg"}),
+                       ("board_api_get", {"path": "/api/clinics", "query": "city=Nuremberg"})):
+        with pytest.raises(ToolError) as raised:
+            asyncio.run(TS.mcp.call_tool(tool, args))
+        assert not isinstance(raised.value, UnexpectedToolError)
+        assert "is not a town this board has" in str(raised.value), (tool, args)
+
+
+def test_the_tool_descriptions_say_how_a_town_word_is_read(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    TS.apply_board_vocabulary()
+    said = TS.mcp._tool_manager.get_tool("search_postings").description
+    assert "city: pass the candidate's own word" in said and "3 cities that carry postings" in said, said
+    assert "never means an unrecognised city" in said, said
+    assert "city:" not in TS.mcp._tool_manager.get_tool("list_cities_with_postings").description, \
+        "a tool with no city parameter does not spend a line on one"
+
+
+# --- TASK-145: a posting whose liveness is not confirmed reaches nothing -------------------------
+
+def test_no_tool_hands_over_a_posting_the_verifier_no_longer_confirms(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(D, "job_detail", _detail_row)
+    gone = {**D._snap["jobs"][0], "posting_id": 50, "city": "Coburg", "clinic_town": "Coburg",
+            "clinic_id": "c3", "clinic_name": "Klinikum Coburg", "employer": "Klinikum Coburg",
+            "regierungsbezirk": "Oberfranken", "verify_status": "gone"}
+    D._snap["jobs"].append(gone)
+    found = [TS.search_postings(city="Coburg")["shown"], TS.search_postings_with_housing(city="Coburg")["shown"],
+             TS.list_clinics_with_housing(city="Coburg"), TS.board_api_get(path="/api/jobs", query="city=Coburg")["rows"]]
+    assert all(50 not in [r.get("posting_id") for r in rows] for rows in found), found
+    assert TS.count_postings(city="Coburg")["postings"] == 1
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("get_posting", {"posting_id": 50}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "is withheld" in str(raised.value) and "no longer confirms it is live" in str(raised.value)
+    assert TS.get_posting(posting_id=4242) is None, "withheld and non-existent are different answers"
+
+
+# --- TASK-145: the candidate's own CV, ranked against what is open right now ---------------------
+# app/cv.py:match() has ranked postings against a CV since TASK-65, but only after consent, on the
+# handover path -- so the conversation itself could never answer "welche davon passt zu meinem Lebenslauf".
+
+_CV_PHONE = "491700000000"        # a test number, never a candidate's
+_CV_TEXT = ("Lebenslauf\nGesundheits- und Krankenpflegerin\n2018-2026 Intensivstation, München\n"
+            "Deutsch B2\nFachweiterbildung Intensivpflege")
+
+
+def _with_stored_cv(monkeypatch, text=_CV_TEXT, phone=_CV_PHONE):
+    from app.wa import store as ST
+
+    conn = ST.db()
+    conn.execute("insert into wa_threads (phone, opened_at, slots) values (?,?,?)",
+                 (phone, "2026-09-21T08:00:00Z", json.dumps({"cv_text": text}, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+    monkeypatch.setenv("WA_LUNA_PHONE", phone)
+
+
+def test_match_cv_to_postings_ranks_the_stored_cv_against_the_live_board(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv(monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 60, "verify_status": "gone"})
+
+    out = TS.match_cv_to_postings()
+    assert [r["posting_id"] for r in out["shown"]][0] == 1, "Intensiv in München, the CV's own ward and town"
+    assert all(r["score"] > 0 and r["why"] for r in out["shown"]), out["shown"]
+    assert out["total"] == len(out["shown"]) <= TS.LISTING_LIMIT
+    assert out["withheld_not_live"] == 1, "the gone posting ranked and was kept back, and that is said"
+    assert out["profile"]["qualifications"] == ["GuK", "Fachweiterbildung"], out["profile"]
+    assert out["profile"]["departments"] == ["Intensiv/IMC"]
+    assert out["profile"]["cities"] == ["München"] and out["profile"]["languages"] == ["Deutsch B2"]
+
+
+def test_match_cv_to_postings_sends_nothing_and_never_logs_the_number(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv(monkeypatch)
+    TS.match_cv_to_postings()
+
+    from app.wa import store as ST
+    conn = ST.db()
+    try:
+        assert conn.execute("select count(*) from wa_messages").fetchone()[0] == 0, "a read-only tool sends nothing"
+        assert json.loads(conn.execute("select slots from wa_threads where phone=?",
+                                       (_CV_PHONE,)).fetchone()["slots"])["cv_text"] == _CV_TEXT
+    finally:
+        conn.close()
+    logged = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8")
+    assert json.loads(logged.splitlines()[-1]) == {"tool": "match_cv_to_postings", "args": {},
+                                                   "at": pytest.approx(time.time(), abs=60)}
+    assert _CV_PHONE not in logged, "PII: the number is the turn's own context, never an argument or a log line"
+
+
+def test_match_cv_to_postings_caps_the_listing_at_five_with_the_true_count(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv(monkeypatch)
+    _many(40, city="München", clinic_town="München", department_hint="Intensiv/IMC")
+    out = TS.match_cv_to_postings()
+    # every live row on this board scores over app/cv.py:match's own threshold for this CV: 41 Intensiv
+    # rows in München plus the three other fixture postings -- and five of them may be named.
+    assert out["total"] == 44 == len(D.filter_jobs(dict(TS.LIVE_BASE))), out["total"]
+    assert len(out["shown"]) == 5
+
+
+def test_match_cv_to_postings_without_a_stored_cv_says_so_instead_of_ranking_nothing(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv(monkeypatch, text="")
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("match_cv_to_postings", {}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "no CV text stored yet" in str(raised.value) and "Ask them for the Lebenslauf" in str(raised.value)
+
+
+def test_match_cv_to_postings_on_a_server_started_without_the_turns_number_fails_loudly(tmp_path, monkeypatch):
+    """The number is passed to this subprocess the way the database path is (luna_brain._mcp_config_path).
+    Without it there is no way to tell whose CV this is -- which must not read as "no CV"."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.delenv("WA_LUNA_PHONE", raising=False)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("match_cv_to_postings", {}))
+    assert "WA_LUNA_PHONE" in str(raised.value)
+
+
+# --- requirements audit 2026-09-21: a real Bavarian town with live postings is never refused -----
+# The audit broke TASK-145's city resolution with four correctly spelled towns that have live
+# postings -- 'Weißenburg' (3), 'Lohr am Main' (12), 'Neumarkt' (11), 'Landkreis Miesbach' (8) all
+# answered "not a town this board has open postings in" -- and with 'Neuburg an der Donau', which
+# found 1 posting while 50 sat in the same town under the board's other spelling 'Neuburg/Donau'.
+# One class behind all five: the board's town names carry an administrative qualifier the candidate
+# does not type, abbreviated or spelled out, and the resolver only asked whether the BOARD's spelling
+# occurs inside the CANDIDATE's word.
+
+_AUDIT_TOWNS = [
+    # board spelling(s), regierungsbezirk, clinic_id
+    (["Weißenburg i.Bay."], "Mittelfranken", "c4"),
+    (["Lohr a. Main"], "Unterfranken", "c5"),
+    (["Neumarkt i.d.OPf.", "Neumarkt in der Oberpfalz"], "Oberpfalz", "c6"),
+    (["Neuburg an der Donau", "Neuburg/Donau"], "Oberbayern", "c7"),
+    (["Neustadt an der Aisch", "Neustadt bei Coburg"], "Mittelfranken", "c8"),
+    (["Hausham"], "Oberbayern", "c9"),
+]
+
+
+def _audit_board(tmp_path, monkeypatch):
+    """The board's own awkward spellings, one live posting per spelling, plus the registry row that
+    makes 'Landkreis Miesbach' answerable at all (the board files a clinic under a Landkreis, never a
+    posting, and it has no town of that name)."""
+    board(tmp_path, monkeypatch)
+    posting_id = 200
+    for spellings, bezirk, clinic_id in _AUDIT_TOWNS:
+        for spelling in spellings:
+            posting_id += 1
+            D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": posting_id, "city": spelling,
+                                    "clinic_town": spellings[0], "regierungsbezirk": bezirk,
+                                    "clinic_id": clinic_id, "clinic_name": f"Klinik {spellings[0]}",
+                                    "employer": f"Klinik {spellings[0]}"})
+    D._snap["clinics"].append({"clinic_id": "c9", "name": "Klinik Hausham", "town": "Hausham",
+                               "landkreis": "Landkreis Miesbach", "regierungsbezirk": "Oberbayern",
+                               "beds": 300, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1})
+    D._snap["by_clinic"] = {c["clinic_id"]: c for c in D._snap["clinics"]}
+
+
+@pytest.mark.parametrize("asked, board_spellings", [
+    ("Weissenburg", ["Weißenburg i.Bay."]),                      # the umlaut written away entirely
+    ("Weißenburg", ["Weißenburg i.Bay."]),                       # correct German, no board qualifier
+    ("Weissenburg i. Bay.", ["Weißenburg i.Bay."]),              # the qualifier, spaced differently
+    ("Lohr am Main", ["Lohr a. Main"]),                          # spelled out vs the board's 'a.'
+    ("Lohr a. Main", ["Lohr a. Main"]),
+    ("Lohr", ["Lohr a. Main"]),                                  # the bare town name
+    ("Neumarkt", ["Neumarkt i.d.OPf.", "Neumarkt in der Oberpfalz"]),
+    ("Neumarkt in der Oberpfalz", ["Neumarkt i.d.OPf.", "Neumarkt in der Oberpfalz"]),
+    ("Neumarkt i.d.OPf.", ["Neumarkt i.d.OPf.", "Neumarkt in der Oberpfalz"]),
+    ("Neuburg an der Donau", ["Neuburg an der Donau", "Neuburg/Donau"]),
+    ("Neuburg/Donau", ["Neuburg an der Donau", "Neuburg/Donau"]),
+    ("Neuburg a.d. Donau", ["Neuburg an der Donau", "Neuburg/Donau"]),
+    ("Neuburg", ["Neuburg an der Donau", "Neuburg/Donau"]),
+])
+def test_a_correctly_spelt_town_with_live_postings_is_never_refused(tmp_path, monkeypatch, asked,
+                                                                    board_spellings):
+    _audit_board(tmp_path, monkeypatch)
+    out = TS.search_postings(city=asked)
+    assert out["town"] == {"asked": asked, "board_spellings": board_spellings, "matched_as": "town"}
+    assert out["total"] == len(board_spellings), "every board spelling of the town, not just the one typed"
+    assert {r["city"] for r in out["shown"]} == set(board_spellings)
+    assert TS.count_postings(city=asked)["postings"] == len(board_spellings)
+
+
+def test_a_district_the_board_has_no_town_for_reaches_the_town_its_clinic_is_in(tmp_path, monkeypatch):
+    """'Landkreis Miesbach' has live postings and no board town of that name -- the audit's fourth
+    refusal. The registry files the clinic under the Landkreis; the posting is in Hausham."""
+    _audit_board(tmp_path, monkeypatch)
+    for asked in ("Landkreis Miesbach", "Miesbach", "Lkr. Miesbach"):
+        out = TS.search_postings(city=asked)
+        assert out["town"] == {"asked": asked, "board_spellings": ["Hausham"], "matched_as": "landkreis"}, asked
+        assert [r["city"] for r in out["shown"]] == ["Hausham"], asked
+
+
+def test_a_word_that_names_several_real_towns_asks_which_instead_of_picking_one(tmp_path, monkeypatch):
+    """A bare 'Neustadt' is two different towns on this board. Answering about either would be a
+    position in a town the candidate did not ask about, so the tool refuses and names both."""
+    _audit_board(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings", {"city": "Neustadt"}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    said = str(raised.value)
+    assert "'Neustadt' names 2 different towns" in said, said
+    assert "Neustadt an der Aisch" in said and "Neustadt bei Coburg" in said, said
+    assert "do not pick one" in said, said
+    # naming which one is meant answers normally
+    assert [r["city"] for r in TS.search_postings(city="Neustadt an der Aisch")["shown"]] == \
+        ["Neustadt an der Aisch"]
+
+
+def test_a_posting_is_never_offered_for_a_town_other_than_the_one_its_own_ad_names(tmp_path, monkeypatch):
+    """Live 2026-09-21: 53 of the 116 postings a search for Ansbach returned were in Bruckberg,
+    Himmelkron, Obernzenn or Erlangen -- filed under a clinic whose registry town is Ansbach. Rule (a):
+    positions are in the place the bot states."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 40, "city": "Bruckberg",
+                            "clinic_town": "Ansbach", "regierungsbezirk": "Mittelfranken",
+                            "clinic_id": "c4", "clinic_name": "Rangauklinik Ansbach",
+                            "employer": "Rangauklinik Ansbach"})
+    D._snap["clinics"].append({"clinic_id": "c4", "name": "Rangauklinik Ansbach", "town": "Ansbach",
+                               "regierungsbezirk": "Mittelfranken", "beds": 200, "jobs_open": 1,
+                               "jobs_fresh": 1, "jobs_live": 1})
+    D._snap["by_clinic"] = {c["clinic_id"]: c for c in D._snap["clinics"]}
+    ansbach = TS.search_postings(city="Ansbach")
+    assert (ansbach["shown"], ansbach["total"]) == ([], 0), "the ad says Bruckberg, so it is not an Ansbach job"
+    assert TS.count_postings(city="Ansbach")["postings"] == 0
+    assert TS.board_api_get(path="/api/jobs", query="city=Ansbach")["total"] == 0
+    bruckberg = TS.search_postings(city="Bruckberg")
+    assert [r["posting_id"] for r in bruckberg["shown"]] == [40]
+    assert bruckberg["shown"][0]["city"] == "Bruckberg"
+
+
+def test_a_posting_with_no_city_of_its_own_still_counts_for_its_clinics_town(tmp_path, monkeypatch):
+    """4 of 2462 live rows carry no city at all. The clinic's registry town is then the only thing
+    that says where the job is, and dropping the row would hide a real position."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 41, "city": "", "clinic_town": "Coburg",
+                            "clinic_id": "c3", "regierungsbezirk": "Oberfranken"})
+    assert 41 in [r["posting_id"] for r in TS.search_postings(city="Coburg")["shown"]]
+
+
+def test_every_door_says_which_town_it_answered_about(tmp_path, monkeypatch):
+    _audit_board(tmp_path, monkeypatch)
+    assert TS.search_postings_with_housing(city="Lohr am Main")["town"]["board_spellings"] == ["Lohr a. Main"]
+    assert TS.board_api_get(path="/api/jobs", query="city=Lohr am Main")["town"]["board_spellings"] == \
+        ["Lohr a. Main"]
+    assert TS.board_api_get(path="/api/clinics", query="city=Muenchen")["town"] == {
+        "asked": "Muenchen", "board_spellings": ["München"], "matched_as": "town"}
+
+
+def test_the_city_line_tells_the_model_the_board_spelling_comes_back(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    TS.apply_board_vocabulary()
+    said = _description("search_postings")
+    assert "town.board_spellings" in said and "Name the town the way the board does" in said, said
+    assert "its OWN ad names, never for the town its clinic's head office is registered in" in said, said
+    assert "never pick" in said, said
+
+
+# --- requirements audit 2026-09-21: the housing mark is not a flat -------------------------------
+# 61 of the 497 marked open postings promise only help with the search or money towards the move
+# ('unterstützung bei der wohnungssuche' 37, 'umzugskosten' 13, 'wohnungssuche' 7, ...), and every
+# tool presented all 497 as one thing to somebody who is moving country for the job.
+
+@pytest.mark.parametrize("evidence, kind", [
+    ("personalwohn", "accommodation"),
+    ("mitarbeiterwohn", "accommodation"),
+    ("wohnheim", "accommodation"),
+    ("klinikeigener wohnraum (je nach verfügbarkeit)", "accommodation"),
+    ("Möglichkeit auf eine Unterkunft in unseren Mitarbeiterappartements", "accommodation"),
+    ("Personalwohnungen sowie Hilfe bei der Wohnungssuche", "accommodation"),   # both: there IS a flat
+    ("unterstützung bei der wohnungssuche", "relocation_support"),
+    ("Unterstuetzung bei der Wohnungssuche", "relocation_support"),
+    ("umzugskosten", "relocation_support"),
+    ("Wir beteiligen uns an den Umzugskosten", "relocation_support"),
+    ("wohnungssuche", "relocation_support"),
+    ("Mitarbeitervergünstigungen: Möglichkeit zur Wohnungsvermittlung", "relocation_support"),
+    ("betriebliche Altersvorsorge", "unspecified"),
+    ("", "unspecified"),
+    (None, "unspecified"),
+])
+def test_a_marked_posting_says_whether_it_is_a_flat_or_only_help_looking(tmp_path, monkeypatch,
+                                                                         evidence, kind):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"] = [{**D._snap["jobs"][0], "posting_id": 70, "enr_housing": True,
+                        "enr_housing_evidence": evidence}]
+    row = TS.search_postings_with_housing()["shown"][0]
+    assert (row["housing"], row["housing_kind"]) == (True, kind)
+
+
+def test_an_unmarked_posting_has_no_housing_kind_at_all(tmp_path, monkeypatch):
+    """None, not 'unspecified': the ad was never marked, so there is nothing to classify -- and a
+    posting without the mark is still not a flat."""
+    board(tmp_path, monkeypatch)
+    unmarked = [r for r in TS.search_postings()["shown"] if not r["housing"]]
+    assert unmarked and all(r["housing_kind"] is None for r in unmarked), unmarked
+
+
+def test_relocation_support_is_still_a_housing_hit_and_is_counted_apart(tmp_path, monkeypatch):
+    """The filter keeps returning it -- "wir helfen bei der Wohnungssuche" is a real answer to a real
+    question. What changes is that the model can no longer call it a flat."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 71, "city": "Coburg",
+                            "clinic_town": "Coburg", "clinic_id": "c3", "clinic_name": "Klinikum Coburg",
+                            "employer": "Klinikum Coburg", "regierungsbezirk": "Oberfranken",
+                            "enr_housing": True, "enr_housing_evidence": "umzugskosten"})
+    found = TS.search_postings_with_housing(city="Coburg")
+    assert [r["posting_id"] for r in found["shown"]] == [71] and found["total"] == 1
+    assert found["shown"][0]["housing_kind"] == "relocation_support"
+    counted = TS.count_postings(housing=True)
+    assert (counted["with_housing"], counted["with_accommodation"], counted["with_relocation_support"]) \
+        == (3, 2, 1)
+    listed = {c["clinic_name"]: c for c in TS.list_clinics_with_housing(limit=50)}
+    assert listed["Klinikum Coburg"]["postings_with_housing"] == 1
+    assert listed["Klinikum Coburg"]["postings_with_accommodation"] == 0
+    assert listed["Klinikum Coburg"]["postings_with_relocation_support"] == 1
+
+
+def test_the_housing_tools_say_the_mark_is_not_a_flat(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"][2]["enr_housing_evidence"] = "unterstützung bei der wohnungssuche"
+    TS.apply_board_vocabulary()
+    line = _description("search_postings_with_housing")
+    assert "1 accommodation" in line and "1 relocation_support" in line and "0 unspecified" in line, line
+    assert "never 'mit Wohnung'" in line, line
+    assert "READ housing_kind ON EVERY ROW BEFORE YOU PROMISE A FLAT" in line, line
+    assert "never quote it as \"Stellen mit Wohnung\"" in _description("count_postings")
+
+
+# --- requirements audit 2026-09-21: enr_childcare exists on 2170 of 2560 postings and no tool showed it
+
+def test_every_posting_row_carries_the_ads_own_childcare_answer(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(D, "job_detail", _detail_row)
+    D._snap["jobs"][1]["enr_childcare"] = None            # the ad was never read for it
+    by_id = {r["posting_id"]: r for r in TS.search_postings()["shown"]}
+    assert by_id[1]["childcare"] is True, "the ad names a Kita"
+    assert by_id[2]["childcare"] is None, "not read -- never the same as 'no Kita'"
+    assert by_id[3]["childcare"] is False, "the ad was read and says nothing of the kind"
+    assert TS.get_posting(posting_id=1)["childcare"] is True
+
+
+def test_the_childcare_line_separates_no_from_not_recorded(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"][1]["enr_childcare"] = None
+    TS.apply_board_vocabulary()
+    said = _description("search_postings")
+    assert "childcare on every posting row" in said, said
+    assert "1 of 4 live postings" in said and "1 postings" in said, said
+    assert "never 'there is no Kita'" in said, said
+
+
+# --- requirements audit 2026-09-21: stop advertising a column the board never fills --------------
+
+def test_get_posting_no_longer_advertises_a_field_the_board_never_fills(tmp_path, monkeypatch):
+    """shift_night_weekend is populated on 0 of 2462 live postings, while this tool's description
+    named it and its own rule says a null field "means this ad did not say it" -- so every candidate
+    asking about nights would have been told this particular ad is silent about them, 2462 times."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(D, "job_detail", _detail_row)
+    TS.apply_board_vocabulary()
+    said = _description("get_posting")
+    assert "shift_night_weekend" not in said, said
+    assert "The board records nothing at all about shifts" in said, said
+    assert "shift_night_weekend" not in TS.POSTING_DETAIL_FIELDS
+    assert "shift_night_weekend" not in TS.get_posting(posting_id=1)

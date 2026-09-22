@@ -11,9 +11,9 @@ never once used by the model):
 
 1. ``search_postings``/``get_posting``/``list_clinics`` -- the general board queries.
 2. Purpose-built tools with the filter already preset -- ``search_postings_with_housing``,
-   ``list_clinics_with_housing``, ``list_cities_with_postings``, ``count_postings``. A filter the
-   model has to assemble itself out of bare parameter names goes unused; a tool whose name *is* the
-   candidate's need does not.
+   ``list_clinics_with_housing``, ``list_cities_with_postings``, ``count_postings``,
+   ``match_cv_to_postings``. A filter the model has to assemble itself out of bare parameter names
+   goes unused; a tool whose name *is* the candidate's need does not.
 3. The fallback for everything the presets do not cover: ``read_board_docs`` (this repo's own agent
    documentation, skill/SKILL.md + skill/references/*.md) and ``board_api_get`` (an allowlist of
    public board GET paths, answered in-process by the same functions those routes call). Both fail
@@ -30,8 +30,24 @@ included (TASK-110 review). After the tools are registered this server stamps
 ``WA_LUNA_TOOLS_READY``, which is how ``luna_brain._live_reply`` sees that the turn actually had the
 board tools -- a server that dies or is dropped leaves the CLI exiting 0 with a normal-looking reply.
 
+What a tool may hand back (TASK-145, Ivan 2026-09-21, after the first real phone-rail conversation):
+
+* At most ``LISTING_LIMIT`` positions per listing call, next to the true number of matches
+  (``{shown, total}``). The cap is here, where the result set is assembled, so no prompt edit and no
+  tool argument can raise it, and a short list can never read as the whole market.
+* Live-verified postings only, with no way around it: there is no ``verify=`` escape hatch on the raw
+  query door any more and ``get_posting`` reads the same base. A posting whose liveness is not
+  confirmed is reported as withheld, never silently dropped.
+* The candidate's own word for a town is resolved to the board's spelling the way their word for a
+  department already is (``_resolve_city``); a word the board has no town for is an error naming the
+  nearest spellings, never an empty result that reads as "nothing open there".
+* ``get_posting`` returns the ad itself (description, requirements, pay, language, the flat's own
+  wording), not a search row: everything beyond clinic/city/department is invention unless it came
+  from there.
+
 Every call is appended to a JSONL log (``config.LUNA_SESSION_DIR/tool_calls.jsonl``) so a test can
-prove a tool was actually invoked -- not just that the reply happened to look right afterward.
+prove a tool was actually invoked -- not just that the reply happened to look right afterward. No
+candidate number and no message body ever enters that log or a tool result.
 
 Reuses the exact same query functions the rest of the harness already relies on: ``D.filter_jobs``/
 ``D.filter_clinics`` (the same ones GET /api/jobs and /api/clinics use, and the same ones
@@ -43,6 +59,7 @@ of) the working directory -- a relative import needs real package context, so ru
 directly (``python tools_server.py``) cannot work no matter what sys.path says. See
 ``luna_brain.py``'s mcp-config generator for the exact command/cwd this is started with.
 """
+import difflib
 import json
 import os
 import re
@@ -83,6 +100,31 @@ mcp = MCPServer("jobs")   # same name as luna_brain.MCP_SERVER_NAME; model-visib
 # harness's own shortlist count the same rows.
 RESULT_LIMIT = 50
 
+# Ivan 2026-09-21 (TASK-145; the dialog side of the same rule is TASK-144): a candidate never gets a wall
+# of vacancies -- at most five positions in one listing turn. It is a hard number, not a default: the
+# listing tools take no limit argument at all, so nothing the model writes and no prompt edit can raise
+# it. The count of what matched travels next to the rows (_listing) precisely because the list is short:
+# five of a hundred read as "that is all there is" unless the hundred is said in the same breath.
+LISTING_LIMIT = 5
+
+# Below this ratio a "near match" is a different town, and naming one invites the model to offer it as the
+# place the candidate asked for (measured with slots._fold: 'nuremberg'/'Nürnberg' 0.78, 'hamburg'/'Bamberg'
+# 0.71). Not a ceiling on any result -- it decides only which spellings the refusal names.
+CITY_NEAR_MATCH_RATIO = 0.75
+
+# The ad itself, for get_posting. None of these is in the snapshot's JOB_COLS projection except enr_tariff
+# and enr_pay_grade, so they are read through app/data.py:job_detail -- the board's own GET /api/jobs/{id}
+# read of the postings row (description and the enrichment excerpts live there only).
+#
+# shift_night_weekend is deliberately NOT here any more (requirements audit 2026-09-21, section 4): the
+# column is populated on 0 of 2462 live postings, while this tool's description advertised it and its own
+# rule says a null field "means this ad did not say it". Advertising a column the board never fills invites
+# the model to ask for shifts and then read an always-null answer as "this ad is silent about shifts",
+# 2462 times out of 2462. It goes back the day the board fills it, together with a real count.
+POSTING_DETAIL_FIELDS = ("description", "enr_requirements", "enr_experience", "enr_language_req",
+                         "qualification_hint", "enr_tariff", "enr_pay_grade", "enr_housing_evidence",
+                         "start_date", "contract")
+
 
 def _session_dir():
     """This server runs as a subprocess the CLI spawns fresh -- it does its own import of
@@ -95,24 +137,38 @@ def _session_dir():
 
 
 def _log_call(name, args):
-    """Append-only, best-effort: a logging failure must never break a tool call itself."""
-    try:
-        d = _session_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        line = json.dumps({"tool": name, "args": args, "at": time.time()}, ensure_ascii=False)
-        with open(d / "tool_calls.jsonl", "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except OSError:
-        pass
+    """Append-only, and it RAISES on a write failure (TASK-146).
+
+    It used to swallow OSError as "best-effort", which was true until TASK-144 made this log the
+    sole source of grounding evidence. Since then a failed write leaves the tool returning rows
+    normally while ``grounding.calls_since`` sees nothing, so every truthful clinic name in the
+    reply is rejected as an invention -- every turn on the service, until someone reads a traceback
+    about NO INVENTION and guesses at a disk or permission problem. A logging failure has to look
+    like a logging failure (CLAUDE.md: failures fail loudly and get recorded).
+    """
+    d = _session_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    line = json.dumps({"tool": name, "args": args, "at": time.time()}, ensure_ascii=False)
+    with open(d / "tool_calls.jsonl", "a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def _job_row(r):
+    # No source_url / external_url (TASK-146). offer.py deliberately keeps the link out of the
+    # payload the model writes from -- "the way to make that a guarantee rather than a rule is to
+    # keep the link out" -- while every tool-sourced row handed one over, and check_reply does not
+    # reject a URL in a bubble. Nothing in the dialog path used it.
+    #
+    # housing_kind and childcare (requirements audit 2026-09-21, sections 2 and 4). `housing` alone was
+    # a false promise on 61 of the 497 marked open postings, which offer only help with the search or
+    # the moving costs; and enr_childcare is populated on 2170 of 2560 open postings and was exposed by
+    # no tool at all, so "gibt es eine Kita?" could only be escalated to a human.
     return {"posting_id": r.get("posting_id"), "title": r.get("title"),
             "clinic_id": r.get("clinic_id"), "clinic_name": r.get("clinic_name") or r.get("employer"),
-            "city": r.get("city") or r.get("clinic_town"), "department": r.get("department_hint"),
+            "city": D.town_of(r), "department": r.get("department_hint"),
             "regierungsbezirk": r.get("regierungsbezirk"), "housing": bool(r.get("enr_housing")),
-            "employment_types": r.get("employment_types"),
-            "source_url": r.get("source_url") or r.get("external_url")}
+            "housing_kind": D.housing_kind(r), "childcare": r.get("enr_childcare"),
+            "employment_types": r.get("employment_types")}
 
 
 _city = city_of                 # one clinic/city identity for every count here and in the vocabulary
@@ -123,13 +179,127 @@ def _limit(value, default=10):
     return max(1, min(int(value or default), RESULT_LIMIT))
 
 
+def _listing(rows, project=_job_row, town=None):
+    """What a posting listing hands the model: the first LISTING_LIMIT rows, and how many matched in all.
+
+    ``total`` is the whole match count, never len(shown): the model has to be able to say "und 95 weitere"
+    and to offer narrowing the search, which it cannot do from a truncated list (TASK-145/TASK-144).
+
+    ``town`` rides along whenever a town was asked for, because the board's spelling is regularly not the
+    candidate's ('Lohr a. Main' for "Lohr am Main", 'Hausham' for "Landkreis Miesbach") and the reply has
+    to be able to say which town it is actually answering about."""
+    out = {"shown": [project(r) for r in rows[:LISTING_LIMIT]], "total": len(rows)}
+    if town:
+        out["town"] = _town_said(town)
+    return out
+
+
+def _town_said(town):
+    """The resolution, as the model gets to see it: what was asked, how the board writes it, and whether
+    it was matched as a town or through the registry's Landkreis column."""
+    return {"asked": town["asked"], "board_spellings": town["spellings"], "matched_as": town["matched"]}
+
+
+def _cities_with_postings():
+    """The board's own spelling of every town that has an OPEN posting -- both fields
+    app/data.py:filter_jobs matches a city against.
+
+    Open, not live-verified, and that is the fix rather than a loosening (TASK-146). The tools
+    search live-verified rows, but this set answers a different question: is this a town the board
+    knows at all? Building it from live rows only meant a town with open postings that the verifier
+    no longer confirms was reported to the model as a town the board does not have -- with an error
+    that says in so many words "this is NOT the same as nothing being open there" and sends it off
+    to ask the candidate to re-spell their own town, or offers a spelling-near DIFFERENT town as
+    the one they meant. Town known with nothing live in it must answer total=0. The live filter
+    still applies to the rows; it just stops deciding whether the town exists.
+    """
+    return {c for r in D.jobs()
+            for c in (city_of(r), (r.get("clinic_town") or "").strip()) if c}
+
+
+def _live_clinics(rows):
+    """Clinic rows that really have a live-verified open posting (TASK-146).
+
+    ``app/data.py:filter_clinics``'s ``has_jobs`` counts ``jobs_open``, which includes postings the
+    verifier no longer confirms -- so a clinic whose only posting is gone reached the model as a
+    clinic with openings, and ``grounding.clinics_returned`` then turned its name into valid
+    evidence for saying so to a candidate. ``jobs_live`` is aggregated right next to it
+    (app/data.py:249) and was unused. The posting doors have refused withheld rows since TASK-145;
+    this is the same rule on the clinic doors, which that task did not reach.
+    """
+    return [c for c in rows if (c.get("jobs_live") or 0) > 0]
+
+
+def _registry_towns():
+    """Every town the registry has a clinic in -- what app/data.py:filter_clinics matches a city against."""
+    return {(c.get("town") or "").strip() for c in D.clinics() if (c.get("town") or "").strip()}
+
+
+def _resolve_city(word, known, what):
+    """The candidate's own word -> every board spelling of the ONE town it names, or a ToolError.
+
+    -> app/data.py:town_spellings' dict ({asked, spellings, matched}), which is what the tool hands back
+    next to the rows so the reply can name the town the way the board writes it.
+
+    TASK-145 resolved a word by asking whether a BOARD spelling occurs inside it (slots.read_city), which
+    answered München/Muenchen/Munchen and 'Landkreis Coburg' and nothing else. The requirements audit
+    (2026-09-21) broke it four ways with correctly spelled Bavarian towns that have live postings:
+    'Weißenburg' (3), 'Lohr am Main' (12), 'Neumarkt' (11) and 'Landkreis Miesbach' (8) were all refused
+    as "not a town this board has open postings in", and 'Neuburg an der Donau' found 1 posting while 50
+    sat in the same town under the board's other spelling 'Neuburg/Donau'. The class of failure is in
+    app/data.py:town_spellings, which is where the fix is; read_city stays here as the reader for a word
+    that is really a phrase ('in München bitte', where no normalisation of the whole string can match).
+
+    An unrecognised word is an error, never []: those two are indistinguishable to the model, and only one
+    of them may be told to the candidate. The nearest spellings are named so it can ask which was meant --
+    with the warning, because a near match IS a different town (Bamberg is not Hamburg)."""
+    found = D.town_spellings(word, known, D.landkreis_towns())
+    if found["status"] == "unknown":
+        inside = SL.read_city(word, known)           # the word was a phrase with a town in it
+        if inside:
+            found = D.town_spellings(inside, known)
+            found["asked"] = word
+    if found["status"] == "resolved":
+        return found
+    if found["status"] == "ambiguous":
+        raise ToolError(f"{word!r} names {len(found['spellings'])} different towns this board has {what} in "
+                        f"({', '.join(found['spellings'])}) and nothing was searched. Ask the candidate which "
+                        f"one they mean -- do not pick one. Internal tool note, never quote it verbatim.")
+    by_fold = {SL._fold(c): c for c in known}        # the same fold read_city matched with, for difflib
+    near = [by_fold[f] for f in difflib.get_close_matches(SL._fold(word), list(by_fold), n=5,
+                                                          cutoff=CITY_NEAR_MATCH_RATIO)]
+    raise ToolError(f"{word!r} is not a town this board has {what} in, so nothing was searched -- this is NOT "
+                    f"the same as nothing being open there. "
+                    + (f"Spelling-nearest board towns: {', '.join(sorted(near))} -- each is a DIFFERENT town, "
+                       f"so ask which one is meant instead of answering about it. "
+                       if near else "No board town resembles it (the board is Bavaria only). ")
+                    + "list_cities_with_postings names the towns that do have postings. Internal tool note, "
+                      "never quote it to the candidate.")
+
+
+def _town_rows(rows, town):
+    """The rows that are IN this town (app/data.py:in_towns -> town_of: the posting's own city, the
+    clinic's registry town only when the posting has none).
+
+    Not a filter_jobs `city=` parameter, for two reasons the audit measured: filter_jobs matches the
+    posting's city OR its clinic's registry town, which answered a question about Ansbach with 53
+    postings in Bruckberg, Himmelkron, Obernzenn and Erlangen; and it compares one exact lowercased
+    string, which cannot take the several board spellings one town has ('Neuburg an der Donau' and
+    'Neuburg/Donau' are 1 and 50 postings in the same town, and a town name may itself contain a comma,
+    the separator that parameter splits on)."""
+    return [r for r in rows if D.in_towns(r, town["spellings"])] if town else rows
+
+
 def _job_filters(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q=""):
-    """The GET /api/jobs query for these arguments, with the department word read the way the rest of
-    the harness reads it. Shared by every posting tool below so the general search and the preset ones
-    can never disagree about what a candidate's word means."""
-    filters = dict(LIVE_BASE)
+    """(the GET /api/jobs query for these arguments, the resolved town or None), with the city and
+    department words read the way the rest of the harness reads them. Shared by every posting tool below so
+    the general search and the preset ones can never disagree about what a candidate's word means.
+
+    The town is returned beside the query rather than inside it because a town is not one string -- see
+    _town_rows, which is the other half of every call here."""
+    filters, town = dict(LIVE_BASE), None
     if city:
-        filters["city"] = city
+        town = _resolve_city(city, _cities_with_postings(), "open postings")
     if department:
         # TASK-96 review: the model passes the candidate's word (live tool log: department="Intensivstation",
         # 0 rows, "keine passende offene Stelle"). TASK-104: the same reading as luna_brain.market_snapshot; a
@@ -159,7 +329,13 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
         filters["employment_types"] = employment_type
     if q:
         filters["q"] = q
-    return filters
+    return filters, town
+
+
+def _job_rows(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q=""):
+    """(the matching live-verified postings, the resolved town or None) -- _job_filters plus _town_rows."""
+    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, q)
+    return _town_rows(D.filter_jobs(filters), town), town
 
 
 # --- vocabulary, read off the live board ----------------------------------------------------
@@ -190,12 +366,14 @@ def vocabulary_for_this_server():
 
 # Which lines each tool carries: the vocabulary of its own parameters, nothing else.
 TOOL_VOCABULARY = {
-    "search_postings": ("board", "department", "regierungsbezirk", "role_class", "employment_type", "housing"),
-    "search_postings_with_housing": ("housing", "department", "regierungsbezirk"),
-    "list_clinics_with_housing": ("housing", "regierungsbezirk"),
+    "search_postings": ("board", "city", "department", "regierungsbezirk", "role_class", "employment_type",
+                        "housing", "childcare"),
+    "search_postings_with_housing": ("housing", "city", "department", "regierungsbezirk", "childcare"),
+    "list_clinics_with_housing": ("housing", "city", "regierungsbezirk"),
     "list_cities_with_postings": ("department", "housing", "regierungsbezirk"),
-    "count_postings": ("department", "regierungsbezirk", "role_class", "employment_type", "housing"),
-    "list_clinics": ("regierungsbezirk",),
+    "count_postings": ("city", "department", "regierungsbezirk", "role_class", "employment_type", "housing"),
+    "list_clinics": ("city", "regierungsbezirk"),
+    "get_posting": ("housing", "childcare"),
     "board_api_get": ("api_columns",),
 }
 
@@ -220,40 +398,51 @@ def apply_board_vocabulary():
 # --- board queries ---------------------------------------------------------------------------
 @mcp.tool()
 def search_postings(city: str = "", department: str = "", role_class: str = "", regierungsbezirk: str = "",
-                     housing: bool = False, employment_type: str = "", q: str = "", limit: int = 10) -> list[dict]:
+                     housing: bool = False, employment_type: str = "", q: str = "") -> dict:
     """Search open Pflege postings on the board. Same filters as GET /api/jobs. Call this whenever
     the candidate names a city, department or region that market_snapshot did not already cover --
     do not guess or say you have no data when a live search would answer it directly. Every filter the
-    candidate stated belongs in the call; for a flat, search_postings_with_housing is the shorter way."""
+    candidate stated belongs in the call; for a flat, search_postings_with_housing is the shorter way.
+    Returns {shown, total}: at most 5 postings, and how many matched in all. There is no limit argument --
+    5 is the most that may ever go into one message. Say the total when it is larger ("und N weitere") and
+    offer to narrow the search with a criterion the shown rows actually differ in; never a board link.
+    With a city it also returns town.board_spellings -- how the board writes the town you asked for
+    ("Lohr am Main" -> 'Lohr a. Main'). Name the town that way. Every posting returned is IN that town by
+    its own ad, never one filed there because its clinic's head office is."""
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
-            "housing": housing, "employment_type": employment_type, "q": q, "limit": limit}
+            "housing": housing, "employment_type": employment_type, "q": q}
     _log_call("search_postings", args)
-    rows = D.filter_jobs(_job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, q))
-    return [_job_row(r) for r in rows[:_limit(limit)]]
+    rows, town = _job_rows(city, department, role_class, regierungsbezirk, housing, employment_type, q)
+    return _listing(rows, town=town)
 
 
 @mcp.tool()
-def search_postings_with_housing(city: str = "", department: str = "", regierungsbezirk: str = "",
-                                  limit: int = 10) -> list[dict]:
-    """Open postings the board marks as coming with a flat -- the housing filter is already on. Call this
+def search_postings_with_housing(city: str = "", department: str = "", regierungsbezirk: str = "") -> dict:
+    """Open postings whose ad says something about Wohnen -- the housing filter is already on. Call this
     the moment the candidate needs an Unterkunft/Wohnung and a place or department is on the table: a
-    stated need must be in the call, not only in your reply. Empty result = there is nothing with a flat
-    under these criteria (say so plainly; list_cities_with_postings(housing=true) gives the real
-    alternatives), never a reason to offer a posting without the mark."""
-    args = {"city": city, "department": department, "regierungsbezirk": regierungsbezirk, "limit": limit}
+    stated need must be in the call, not only in your reply. Returns {shown, total} like search_postings:
+    at most 5 postings and how many matched in all. total=0 means there is nothing with the mark under
+    these criteria (say so plainly; list_cities_with_postings(housing=true) gives the real alternatives),
+    never a reason to offer a posting without it. READ housing_kind ON EVERY ROW BEFORE YOU PROMISE A
+    FLAT: 'accommodation' = the clinic itself offers a room/flat/Wohnheim; 'relocation_support' = it only
+    helps look for one or pays towards the move, so say exactly that and never "mit Wohnung";
+    'unspecified' = it carries the mark and says neither, so get_posting and read enr_housing_evidence,
+    the ad's own words. No row here says anything about price, size or how long you may stay."""
+    args = {"city": city, "department": department, "regierungsbezirk": regierungsbezirk}
     _log_call("search_postings_with_housing", args)
-    rows = D.filter_jobs(_job_filters(city=city, department=department, regierungsbezirk=regierungsbezirk,
-                                      housing=True))
-    return [_job_row(r) for r in rows[:_limit(limit)]]
+    rows, town = _job_rows(city=city, department=department, regierungsbezirk=regierungsbezirk, housing=True)
+    return _listing(rows, town=town)
 
 
 @mcp.tool()
 def list_clinics_with_housing(city: str = "", regierungsbezirk: str = "", limit: int = 10) -> list[dict]:
-    """The clinics that have at least one open posting the board marks with a flat, each with how many.
-    Call this for a clinic-level housing question ("welche Kliniken bieten eine Wohnung"), where
-    search_postings_with_housing answers the posting-level one."""
+    """The clinics that have at least one open posting whose ad says something about Wohnen, each with how
+    many, split into the ones that actually offer somewhere to live (postings_with_accommodation) and the
+    ones that only help with the search or the move (postings_with_relocation_support). Call this for a
+    clinic-level housing question ("welche Kliniken bieten eine Wohnung") -- and answer it from
+    postings_with_accommodation, never from the total."""
     _log_call("list_clinics_with_housing", {"city": city, "regierungsbezirk": regierungsbezirk, "limit": limit})
-    rows = D.filter_jobs(_job_filters(city=city, regierungsbezirk=regierungsbezirk, housing=True))
+    rows, _ = _job_rows(city=city, regierungsbezirk=regierungsbezirk, housing=True)
     by_clinic = {}
     for r in rows:
         # clinic_key, not the name: two sites of one group share a name and are two clinics (and the
@@ -264,8 +453,14 @@ def list_clinics_with_housing(city: str = "", regierungsbezirk: str = "", limit:
             continue
         entry = by_clinic.setdefault(key, {"clinic_id": r.get("clinic_id"), "clinic_name": _clinic_name(r),
                                            "city": _city(r), "regierungsbezirk": r.get("regierungsbezirk"),
-                                           "postings_with_housing": 0})
+                                           "postings_with_housing": 0, "postings_with_accommodation": 0,
+                                           "postings_with_relocation_support": 0})
         entry["postings_with_housing"] += 1
+        kind = D.housing_kind(r)
+        if kind == "accommodation":
+            entry["postings_with_accommodation"] += 1
+        elif kind == "relocation_support":
+            entry["postings_with_relocation_support"] += 1
     out = sorted(by_clinic.values(), key=lambda e: (-e["postings_with_housing"], e["clinic_name"]))
     return out[:_limit(limit)]
 
@@ -279,7 +474,7 @@ def list_cities_with_postings(department: str = "", housing: bool = False, regie
     city here is one the board has postings in right now."""
     args = {"department": department, "housing": housing, "regierungsbezirk": regierungsbezirk, "limit": limit}
     _log_call("list_cities_with_postings", args)
-    rows = D.filter_jobs(_job_filters(department=department, regierungsbezirk=regierungsbezirk, housing=housing))
+    rows, _ = _job_rows(department=department, regierungsbezirk=regierungsbezirk, housing=housing)
     by_city = {}
     for r in rows:
         city = _city(r)
@@ -298,12 +493,13 @@ def list_cities_with_postings(department: str = "", housing: bool = False, regie
 @mcp.tool()
 def count_postings(city: str = "", department: str = "", role_class: str = "", regierungsbezirk: str = "",
                     housing: bool = False, employment_type: str = "") -> dict:
-    """How many open postings, distinct clinics and cities match these criteria, plus how many of them come
-    with a flat. Call this for a number ("wie viele Stellen haben Sie in X") instead of counting rows from a
-    search yourself, and always with at least one filter: the board-wide total is already in
+    """How many open postings, distinct clinics and cities match these criteria, plus how many of them say
+    anything about Wohnen. Call this for a number ("wie viele Stellen haben Sie in X") instead of counting
+    rows from a search yourself, and always with at least one filter: the board-wide total is already in
     market_snapshot.open_jobs, so calling this with every parameter empty only re-derives a number you have.
-    with_housing next to postings is the honest picture for a candidate who needs a flat: open positions
-    there, and how many of them actually come with one."""
+    For a candidate who needs a flat the honest number is with_accommodation -- ads that offer somewhere to
+    live; with_relocation_support counts the ones that only help look or pay towards the move, and
+    with_housing is the two added together, so never quote it as "Stellen mit Wohnung"."""
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
             "housing": housing, "employment_type": employment_type}
     if not any(args.values()):
@@ -316,21 +512,60 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
                         "regierungsbezirk, housing, employment_type). The board-wide total is already in "
                         "this turn's market_snapshot.open_jobs -- answer that from the payload, no call.")
     _log_call("count_postings", args)
-    filters = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type)
-    rows = D.filter_jobs(filters)
-    return {"postings": len(rows), "clinics": len({clinic_key(r) for r in rows if clinic_key(r)}),
-            "cities": len({_city(r) for r in rows if _city(r)}),
-            "with_housing": sum(1 for r in rows if D.offers_housing(r)),
-            "filters": {k: v for k, v in filters.items() if k not in LIVE_BASE}}
+    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type)
+    rows = _town_rows(D.filter_jobs(filters), town)
+    kinds = [D.housing_kind(r) for r in rows]
+    counted = {"postings": len(rows), "clinics": len({clinic_key(r) for r in rows if clinic_key(r)}),
+               "cities": len({_city(r) for r in rows if _city(r)}),
+               "with_housing": sum(1 for k in kinds if k is not None),
+               "with_accommodation": kinds.count("accommodation"),
+               "with_relocation_support": kinds.count("relocation_support"),
+               "filters": {k: v for k, v in filters.items() if k not in LIVE_BASE}}
+    if town:
+        counted["town"] = _town_said(town)
+    return counted
 
 
 @mcp.tool()
 def get_posting(posting_id: int) -> dict | None:
-    """Full detail (still board-public fields only) for one posting id already seen in a search
-    result or market_snapshot, or null if it no longer exists in the live snapshot."""
+    """Everything the board holds about ONE posting (board-public fields only), for an id already seen in a
+    search result or market_snapshot: the ad's own text (description), what it asks for (enr_requirements,
+    enr_experience, enr_language_req, qualification_hint), what it pays (enr_tariff, enr_pay_grade), the
+    housing wording in the ad's own words (enr_housing_evidence, next to housing_kind), plus start_date and
+    contract, on top of the fields a search row already carries. Call it before saying anything about a
+    posting beyond its clinic, city and department -- a search row carries nothing else, so the rest is
+    invention unless it came from here. A field the board has no value for comes back null: that means this
+    ad did not say it, never that the answer is no -- say the clinic confirms it. The board records nothing
+    at all about shifts, night/weekend work or surcharges, so there is no field to read and no honest answer
+    here: for those, say the clinic decides it and offer to ask. null instead of a row = no such posting."""
     _log_call("get_posting", {"posting_id": posting_id})
-    row = next((j for j in D.jobs() if j.get("posting_id") == posting_id), None)
-    return _job_row(row) if row else None
+    row = next((j for j in D.filter_jobs(dict(LIVE_BASE)) if j.get("posting_id") == posting_id), None)
+    if row is None:
+        # Withheld, not missing, and said so: this used to read the whole open board, so a posting the
+        # verifier had found gone came back looking exactly like a live one (TASK-145, Ivan 2026-09-21).
+        if any(j.get("posting_id") == posting_id for j in D.jobs()):
+            raise ToolError(f"posting {posting_id} is withheld: it is still on the open board, but the verifier "
+                            f"no longer confirms it is live, so it must not be named, described or offered. "
+                            f"Search again for what the candidate needs. Internal tool note, never quote it.")
+        return None
+    # The ad's text and the enrichment excerpts are not in the snapshot (app/data.py:JOB_COLS selects
+    # v_postings); job_detail is the board's own GET /api/jobs/{id} read of the postings row itself.
+    # Redacted like every other door here -- Luna is no member (app/data.py:redact).
+    detail = D.job_detail(posting_id)
+    if detail is None:
+        # `or {}` here degraded the answer to the bare search row, so every POSTING_DETAIL_FIELD
+        # came back null -- and this tool's own description tells the model a null field "means this
+        # ad did not say it, never that the answer is no". A detail read that failed is then
+        # indistinguishable from an ad that genuinely said nothing, and the candidate is told "das
+        # steht bei dieser Stelle nicht dabei" about an ad nobody read (TASK-146). Loud, like the
+        # withheld branch two lines up.
+        raise ToolError(f"posting {posting_id} is in the live board but its detail row could not be "
+                        f"read, so the ad's own text and requirements are NOT available -- do not "
+                        f"say anything about this posting beyond clinic, city and department, and "
+                        f"do not read the missing fields as 'the ad did not say it'. Internal tool "
+                        f"note, never quote it to the candidate.")
+    full = D.redact([{**row, **detail}], None)[0]
+    return {**_job_row(full), **{k: full.get(k) for k in POSTING_DETAIL_FIELDS}}
 
 
 @mcp.tool()
@@ -339,17 +574,94 @@ def list_clinics(city: str = "", regierungsbezirk: str = "", has_jobs: bool = Tr
     question (which hospitals are in a city/region) rather than a posting-level one; for clinics with a
     flat, list_clinics_with_housing."""
     _log_call("list_clinics", {"city": city, "regierungsbezirk": regierungsbezirk, "has_jobs": has_jobs, "limit": limit})
-    filters = {}
+    filters, town = {}, None
     if city:
-        filters["city"] = city
+        # The candidate's own spelling, against the registry's towns -- filter_clinics compares the town
+        # exactly too, so 'Nuernberg' answered [] here just as it did for postings (TASK-145). The town is
+        # applied below rather than as filters["city"] for the same reason as _town_rows: one town regularly
+        # has several board spellings, and a town name may itself contain the comma that parameter splits on.
+        town = _resolve_city(city, _registry_towns(), "clinics")
     if regierungsbezirk:
         filters["regierungsbezirk"] = regierungsbezirk
     if has_jobs:
         filters["has_jobs"] = "1"
     rows = D.filter_clinics(filters)
+    if town:
+        rows = [c for c in rows if D.town_match_keys(c.get("town") or "")
+                & {k for s in town["spellings"] for k in D.town_match_keys(s)}]
+    if has_jobs:
+        rows = _live_clinics(rows)
     return [{"clinic_id": c.get("clinic_id"), "name": c.get("name"), "town": c.get("town"),
              "regierungsbezirk": c.get("regierungsbezirk"), "beds": c.get("beds")}
             for c in rows[:_limit(limit)]]
+
+
+# --- the candidate's own CV, against the board ------------------------------------------------
+# TASK-145, Ivan 2026-09-21: app/cv.py:match() has ranked postings against a CV since TASK-65, but only
+# after consent, on the handover path (app/wa/api.py -> queue.py) -- so the conversation itself could
+# never answer "welche davon passt zu meinem Lebenslauf" and fell back to guessing from the chat.
+#
+# The candidate is the turn's own context, never an argument: this server is spawned per turn and is told
+# whose turn it is the same way it is told which database to read (WA_LUNA_PHONE, written by
+# luna_brain._mcp_config_path next to WA_SQLITE_PATH). So the number never enters the model's tool call,
+# the tool-call log or any result -- and the model cannot rank a CV that is not this conversation's.
+CV_PROFILE_KEYS = ("roles", "departments", "qualifications", "cities", "languages", "experience_years")
+
+
+def _turn_phone():
+    phone = (os.environ.get("WA_LUNA_PHONE") or "").strip()
+    if not phone:
+        raise ToolError("this tools server was started without WA_LUNA_PHONE, so it cannot tell whose CV to "
+                        "read (luna_brain._mcp_config_path passes it, like WA_SQLITE_PATH). Answer without "
+                        "this tool. Internal tool note, never quote it to the candidate.")
+    return phone
+
+
+def _stored_cv_text(phone):
+    """This thread's stored CV text (the card key app/wa/api.py's media intake appends to, TASK-96).
+
+    Read with a plain select rather than store.thread(): that helper creates the thread row on first
+    contact ("an unknown number is a lead, not an error"), and nothing this model calls may write."""
+    from .. import store as ST
+
+    conn = ST.db()
+    try:
+        row = conn.execute("select slots from wa_threads where phone=?", (phone,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise ToolError("no thread is stored for this conversation's number, so there is no CV to match. "
+                        "Internal tool note, never quote it to the candidate.")
+    return (json.loads(row["slots"] or "{}").get("cv_text") or "").strip()
+
+
+@mcp.tool()
+def match_cv_to_postings() -> dict:
+    """Rank the postings that are open right now against the CV this candidate already sent us, and say why
+    each one ranks. Call it for "welche Stelle passt zu mir / zu meinem Lebenslauf", and before naming which
+    of several postings fits them: this is the board's own matcher (role, department, town/region, freshness)
+    over their actual CV text, not a guess from the chat. Takes no arguments -- it reads this conversation's
+    own stored CV. Returns {shown, total, withheld_not_live, profile}: at most 5 postings, each with a score
+    and the reasons it scored, how many matched in all, and the profile read out of the CV so you can check
+    it (say what it got wrong if the candidate contradicts it). Reads only -- it sends nothing, applies to
+    nothing and tells no clinic anything. An error means no CV is stored yet: ask them to send one."""
+    _log_call("match_cv_to_postings", {})       # no argument, and deliberately no number in the log
+    from ... import cv as CV
+
+    cv_text = _stored_cv_text(_turn_phone())
+    if not cv_text:
+        raise ToolError("this candidate has no CV text stored yet (none sent, or the upload had no readable "
+                        "text), so nothing can be ranked. Ask them for the Lebenslauf. Internal tool note.")
+    profile = CV.profile_from_text(cv_text)
+    # limit = the whole open board: app/cv.py:match() would otherwise cut its own ranking at 50 and the
+    # total below would be that cut, not the truth. The cut that does apply is LISTING_LIMIT, in _listing.
+    ranked = CV.match(profile, limit=len(D.jobs()) or 1)
+    live = [r for r in ranked if r.get("verify_status") == LIVE_BASE["verify"]]
+    return {**_listing(live, project=lambda r: {**_job_row(r), "score": r["score"], "why": r["why"]}),
+            # match() ranks the whole open board; a posting the verifier no longer confirms is dropped here
+            # and said, not silently swallowed (TASK-145).
+            "withheld_not_live": len(ranked) - len(live),
+            "profile": {k: profile.get(k) for k in CV_PROFILE_KEYS}}
 
 
 @mcp.tool()
@@ -452,26 +764,63 @@ def _bounded(p, default=BOARD_API_MAX_ROWS):
     return {**p, "limit": str(limit)}
 
 
-def _verified(p):
-    """Every other tool searches the re-verified rows (LIVE_BASE). Without this the two doors answer the
-    same question differently -- live 2026-09-16: count_postings(city='Coburg') 2 vs GET /api/jobs?city=Coburg
-    39, München 369 vs 499 -- and the open board carries postings the verifier never confirmed or found
-    error/blocked/gone. An explicit verify= in the query still wins: asking for the whole open board on
-    purpose stays possible, it just cannot happen by accident (TASK-110 review)."""
-    return p if p.get("verify") else {**p, "verify": LIVE_BASE["verify"]}
+def _live_only(p):
+    """Every tool here searches the re-verified rows (LIVE_BASE). Without this the two doors answer the same
+    question differently -- live 2026-09-16: count_postings(city='Coburg') 2 vs GET /api/jobs?city=Coburg 39,
+    München 369 vs 499 -- and the open board carries postings the verifier never confirmed or found
+    error/blocked/gone.
+
+    TASK-110 left an explicit ``verify=`` in the query as a deliberate way past that base. Ivan removed it on
+    2026-09-21 (TASK-145): a posting whose liveness is not confirmed may not reach a candidate-facing model at
+    all, and one escape hatch in one door is the whole guarantee gone. Not validated, not narrowed to the
+    'safe' values -- refused, so the model reads why instead of silently getting a different board."""
+    if p.get("verify"):
+        raise ToolError(f"verify={p['verify']!r} is not yours to set: this door serves only the postings the "
+                        f"verifier confirmed are still live, exactly like every other tool here. Ask again "
+                        f"without verify=. Internal tool note, never quote it to the candidate.")
+    return {**p, "verify": LIVE_BASE["verify"]}
+
+
+def _withheld_not_live(p, live_rows, town=None):
+    """How many postings this query matched on the open board but the verifier no longer confirms. Said in
+    the envelope so a filtered result is never indistinguishable from a small one (TASK-145)."""
+    open_rows = _town_rows(D.filter_jobs({k: v for k, v in p.items() if k != "verify"}), town)
+    return len(open_rows) - len(live_rows)
 
 
 def _api_jobs(p):
-    p = _bounded(_verified(p))
-    out = D.page(D.filter_jobs(p), p, BOARD_API_MAX_ROWS)
+    p, town = _bounded(_live_only(p)), None
+    if p.get("city"):
+        # The same reading as every preset tool (_job_filters): otherwise this door is the way around the
+        # city resolution, and 'city=Nuernberg' is total=0 again -- "nothing open there" (TASK-145). The
+        # town leaves the query and is applied to the rows, exactly as in _town_rows.
+        town = _resolve_city(p["city"], _cities_with_postings(), "open postings")
+        p = {k: v for k, v in p.items() if k != "city"}
+    rows = _town_rows(D.filter_jobs(p), town)
+    out = D.page(rows, p, BOARD_API_MAX_ROWS)
     out["rows"] = D.redact(out["rows"], None)
+    out["withheld_not_live"] = _withheld_not_live(p, rows, town)
+    if town:
+        out["town"] = _town_said(town)
     return out
 
 
 def _api_clinics(p):
-    p = _bounded(p)
-    out = D.page(D.filter_clinics(p), p, BOARD_API_MAX_ROWS)
+    p, town = _bounded(p), None
+    if p.get("city"):
+        town = _resolve_city(p["city"], _registry_towns(), "clinics")
+        p = {k: v for k, v in p.items() if k != "city"}
+    rows = D.filter_clinics(p)
+    if town:
+        keys = {k for s in town["spellings"] for k in D.town_match_keys(s)}
+        rows = [c for c in rows if D.town_match_keys(c.get("town") or "") & keys]
+    if p.get("has_jobs"):
+        # Same rule as list_clinics: has_jobs on this door counted jobs_open too (TASK-146).
+        rows = _live_clinics(rows)
+    out = D.page(rows, p, BOARD_API_MAX_ROWS)
     out["rows"] = D.redact(out["rows"], None)
+    if town:
+        out["town"] = _town_said(town)
     return out
 
 
@@ -479,11 +828,13 @@ def _api_clinic(clinic_id, p):
     c = D.clinic(clinic_id)
     if not c:
         raise ToolError(f"unknown clinic {clinic_id!r}")
-    jobs = D.filter_jobs(_verified({"clinic_id": clinic_id, "sort": "-first_published"}))
+    filters = _live_only({"clinic_id": clinic_id, "sort": "-first_published"})
+    jobs = D.filter_jobs(filters)
     # `runs` is owner-only on the app API itself (app/main.py:api_clinic) -- an anonymous caller gets the
     # empty list there and gets it here. `jobs` is the route's own unpaged list, bounded like every other
     # result here, with the full number next to it so a cut list can never read as the whole one.
-    return {**c, "jobs_total": len(jobs), "jobs": D.redact(jobs[:BOARD_API_MAX_ROWS], None), "runs": []}
+    return {**c, "jobs_total": len(jobs), "jobs": D.redact(jobs[:BOARD_API_MAX_ROWS], None), "runs": [],
+            "jobs_withheld_not_live": _withheld_not_live(filters, jobs)}
 
 
 # Public, read-only, snapshot-backed board paths only. Everything else -- ops reads, every write, the
@@ -501,6 +852,26 @@ BOARD_API_PATHS = {
 }
 BOARD_API_CLINIC_PREFIX = "/api/clinics/"
 
+# Every key any board row can carry a URL in. TASK-151: ``_job_row`` has kept links out of the
+# PRESET tools since TASK-146, and app/wa/luna/offer.py keeps them out of the payload -- but
+# board_api_get handed the raw board rows over, so ``/api/jobs`` gave the model ``external_url`` and
+# ``/api/clinics`` gave it ``website``/``careers_url``/``board``. prompts.py tells the model to use
+# that tool, so "the model is never given a posting URL in any payload" (TASK-150 AC#3) was false in
+# production on every thread. Stripped at the door below rather than in each handler, so a path
+# added later cannot reopen it.
+URL_FIELDS = ("external_url", "source_url", "website", "careers_url", "board", "url", "link",
+              "apply_url", "ats_url")
+
+
+def _without_urls(value):
+    """``value`` with every URL-bearing key removed, however deep it sits (a clinic's ``jobs`` list,
+    a posting's ``observations``)."""
+    if isinstance(value, dict):
+        return {k: _without_urls(v) for k, v in value.items() if k not in URL_FIELDS}
+    if isinstance(value, list):
+        return [_without_urls(v) for v in value]
+    return value
+
 
 @mcp.tool()
 def board_api_get(path: str, query: str = "") -> dict | list:
@@ -509,10 +880,13 @@ def board_api_get(path: str, query: str = "") -> dict | list:
     /api/clinics, /api/clinics/{clinic_id}, /api/cities, /api/facets, /api/taxonomy, /api/search. query is
     the query string ('city=Coburg&housing=1&limit=5'); read_board_docs('api') documents every filter and
     the {total, limit, offset, next_offset, rows} envelope -- 'total' is the full number of matches however
-    few rows come back. Same rows as the tools above (verify=live, the re-verified postings) unless you
-    pass verify= yourself; at most 25 rows per call, a bigger limit is an error, so ignore what the docs
-    say about limit=999999. Read-only public board data: any other path is an error, personal data
-    (contact e-mail addresses) is removed, and nothing here can change anything."""
+    few rows come back, and 'withheld_not_live' is how many more matched on the open board but are not
+    confirmed live. Exactly the same rows as the tools above (the re-verified postings): verify= is not a
+    filter you may set, it is an error. At most 25 rows per call, a bigger limit is an error, so ignore what
+    the docs say about limit=999999 -- and at most 5 of them may ever go into a message to the candidate
+    (search_postings gives you those five and the true total directly). Read-only public board data: any
+    other path is an error, personal data (contact e-mail addresses) is removed, nothing here can change
+    anything, and no row carries a URL at all -- there is no link here for you to pass on."""
     _log_call("board_api_get", {"path": path, "query": query})
     path = (path or "").strip()
     params = dict(parse_qsl(str(query or "").lstrip("?")))
@@ -527,7 +901,7 @@ def board_api_get(path: str, query: str = "") -> dict | list:
                          f"public board data only -- no other route is reachable from here; one posting is "
                          f"get_posting(posting_id).")
     try:
-        return handler(*args, params)
+        return _without_urls(handler(*args, params))
     except HTTPException as exc:      # the app API's own 400s (a non-integer limit, a negative offset)
         raise ToolError(f"GET {path} rejected the query {query!r}: {exc.detail}")
 

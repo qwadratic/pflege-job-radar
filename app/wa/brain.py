@@ -249,11 +249,17 @@ def _clinic_name(name):
     return raw[:46].rstrip() + "…" if len(raw) > 47 else raw
 
 
-def match_bubble(rows, slots):
+def match_bubble(rows, slots, is_test=False):
     """The list itself: how many, then at most three, then where to read them.
 
-    One link per line, the posting's own ``source_url`` -- the board publishes no other outbound link
-    and an unverifiable list is worth nothing to a nurse.
+    THE AD LINK IS A TEST-THREAD AID, NOT A FEATURE OF THE MESSAGE (TASK-151). This bubble used to
+    append the posting's own URL to every line on every thread, production included, which is the
+    same link Ivan's standing rule keeps away from a candidate and which app/wa/luna/offer.py and
+    app/wa/luna/source_link.py go to some length to keep structural on the Luna side. WA_BRAIN
+    defaults to ``deterministic`` (app/wa/config.py), so any entry point started without the env var
+    sent real candidates a list of board URLs. The flag is the thread's own ``is_test``, the same one
+    source_link.py reads, so the two brains cannot disagree about what a test thread is shown
+    (TASK-150 AC#6).
     """
     lines = [f"{len(rows)} offene Stellen passen: {describe(slots)}." if len(rows) != 1
              else f"Eine offene Stelle passt: {describe(slots)}."]
@@ -263,7 +269,7 @@ def match_bubble(rows, slots):
         head = f"{where}, {city}" if city and city.casefold() not in where.casefold() else where
         title = (r.get("title") or "").strip()
         line = f"• {head} — {title[:60]}" if title else f"• {head}"
-        url = (r.get("source_url") or r.get("external_url") or "").strip()
+        url = (r.get("external_url") or "").strip() if is_test else ""
         lines.append(f"{line}\n{url}" if url else line)
     return "\n".join(lines)
 
@@ -327,6 +333,7 @@ def turn(text, thread, button_id=None):
     """
     slots = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
+    is_test = bool(thread.get("is_test"))
     last = asked[-1] if asked else None
 
     if SL.is_stop(text):
@@ -389,12 +396,12 @@ def turn(text, thread, button_id=None):
         q3 = URKUNDE_QUESTION if not slots.get("urkunde") else HANDOVER_QUESTION
         asked.append(q3["slot"])
         head = f"Für {describe(slots)} ist nichts offen – ohne {_und([DROP_LABEL[d] for d in dropped])}:"
-        return {"bubbles": _check([head + "\n" + match_bubble(rows, wider), q3["text"]]),
+        return {"bubbles": _check([head + "\n" + match_bubble(rows, wider, is_test), q3["text"]]),
                 "buttons": q3["buttons"], "slots": slots, "asked": asked, "stopped": False,
                 "matches": rows[:MATCH_LIMIT], "action": "widened:" + ",".join(dropped)}
 
     q2 = URKUNDE_QUESTION if not slots.get("urkunde") else HANDOVER_QUESTION
     asked.append(q2["slot"])
-    return {"bubbles": _check([match_bubble(rows, slots), q2["text"]]), "buttons": q2["buttons"],
+    return {"bubbles": _check([match_bubble(rows, slots, is_test), q2["text"]]), "buttons": q2["buttons"],
             "slots": slots, "asked": asked, "stopped": False, "matches": rows[:MATCH_LIMIT],
             "action": "matches+" + q2["slot"]}

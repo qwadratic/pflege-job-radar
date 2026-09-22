@@ -32,7 +32,9 @@ API_COLUMN_VALUES_BELOW = 0.10
 
 
 def city_of(row):
-    return (row.get("city") or row.get("clinic_town") or "").strip()
+    """One definition of which town a posting is in, shared with the tools and the CV matcher
+    (app/data.py:town_of): the posting's own city, the clinic's registry town only when it has none."""
+    return D.town_of(row)
 
 
 def clinic_name_of(row):
@@ -83,7 +85,15 @@ def board_vocabulary():
                    if SL.read_department_pref(name)["status"] == "applied"]
     filterable = sum(n for _, n in departments)
     housing_rows = [r for r in rows if D.offers_housing(r)]
+    housing_kinds = [D.housing_kind(r) for r in housing_rows]
     return {
+        # What the housing mark actually promises, counted rather than assumed: 61 of the 422 marked
+        # live rows on 2026-09-21 offer only help with the search or the move (app/data.py:housing_kind).
+        "housing_accommodation": housing_kinds.count("accommodation"),
+        "housing_relocation_support": housing_kinds.count("relocation_support"),
+        "housing_unspecified": housing_kinds.count("unspecified"),
+        "childcare_true": sum(1 for r in rows if r.get("enr_childcare")),
+        "childcare_known": sum(1 for r in rows if r.get("enr_childcare") is not None),
         "postings": len(rows), "open_postings": len(D.jobs()),
         "clinics": len({clinic_key(r) for r in rows if clinic_key(r)}),
         "cities": len({city_of(r) for r in rows if city_of(r)}),
@@ -121,12 +131,35 @@ def vocabulary_lines():
                       f"them, a flexible word (egal) filters nothing, a word the board has no department for is an "
                       f"error. {v['no_department']} of {v['postings']} postings carry no filterable department and "
                       f"drop out of every department filter.",
+        "city": f"city: pass the candidate's own word -- it is resolved to the board's own spelling(s) of "
+                f"that town over the {v['cities']} cities that carry postings, and the result says which "
+                f"(town.board_spellings: Nuernberg -> Nürnberg, 'Lohr am Main' -> 'Lohr a. Main', "
+                f"'Neuburg an der Donau' -> both 'Neuburg an der Donau' and 'Neuburg/Donau', a district "
+                f"with no town of its own -> the towns its clinics are in). Name the town the way the board "
+                f"does. A word the board has no town for is an error naming the spelling-nearest board "
+                f"towns; those are NOT the place that was asked for, so never offer one as it. A word that "
+                f"names several real towns (bare 'Neustadt') is an error too -- ask which one, never pick. "
+                f"An empty result therefore never means an unrecognised city. A posting counts for the town "
+                f"its OWN ad names, never for the town its clinic's head office is registered in.",
         "regierungsbezirk": f"regierungsbezirk: {_values(v['regierungsbezirke'])}.",
         "role_class": f"role_class: {_values(v['role_classes'])}.",
         "employment_type": f"employment_type: {_values(v['employment_types'])}.",
-        "housing": f"housing = the board's own mark on the ad (enr_housing: a flat/Unterkunft comes with the job), "
+        "housing": f"housing = the board's own mark that the ad says SOMETHING about Wohnen (enr_housing), "
                    f"{v['housing_postings']} of {v['postings']} postings ({share}%) at {v['housing_clinics']} "
-                   f"clinics in {v['housing_cities']} cities. A posting without the mark is not a flat.",
+                   f"clinics in {v['housing_cities']} cities. The mark is not a flat: every row carries "
+                   f"housing_kind -- {v['housing_accommodation']} accommodation (the clinic offers a "
+                   f"room/flat/Wohnheim), {v['housing_relocation_support']} relocation_support (it only "
+                   f"helps look for one or pays towards the move -- say that, never 'mit Wohnung'), "
+                   f"{v['housing_unspecified']} unspecified (marked, wording says neither: get_posting and "
+                   f"read enr_housing_evidence). No posting records rent, size or how long you may stay. A "
+                   f"posting without the mark is not a flat.",
+        # TASK-108 gave the board a housing mark and no way to answer the question that always follows it.
+        # childcare is the same shape of datum and was exposed by no tool at all (audit 2026-09-21).
+        "childcare": f"childcare on every posting row: true = the ad names a Kita/Betriebskindergarten/"
+                     f"Kinderbetreuung ({v['childcare_true']} of {v['postings']} live postings), false = the "
+                     f"ad was read and says nothing of the kind, null = not read ("
+                     f"{v['postings'] - v['childcare_known']} postings). false and null are both 'the ad does "
+                     f"not say', never 'there is no Kita' -- the clinic confirms that.",
         "api_columns": "filters only this tool reaches, and how many of the "
                        f"{v['postings']} postings carry any value for them: "
                        + ", ".join(_api_column_line(col, pairs, v["postings"]) for col, pairs in v["api_columns"])

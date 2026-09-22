@@ -3,10 +3,12 @@ per-site aggregates, routing, facets). Rebuilt on start, after every crawl, and 
 The snapshot is small (a few thousand rows), so filtering happens in Python — see docs/performance.md
 for what to move into Postgres once DDL is possible."""
 import csv
+import functools
 import json
 import re
 import threading
 import time
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
@@ -20,6 +22,8 @@ JOB_COLS = ("posting_id,title,role_class,role_label,department_hint,department_r
             "clinic_id,clinic_name,regierungsbezirk,versorgungsstufe,traegerart,clinic_beds,clinic_match_rule,city,plz,lat,lon,employment_types,contract,"
             "start_date,first_published,first_seen,last_seen,status,verify_status,verified_at,external_url,source_codes,n_observations,"
             "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,provenance")
+# enr_housing_evidence rides on every snapshot row too, but it is NOT in this select: the v_postings
+# view does not have the column (see _housing_evidence below, which reads it off postings).
 TTL = 600
 
 # Personal data, member-and-up only. enr_contact_emails is scraped off the job ad and is regularly a named
@@ -232,10 +236,26 @@ def _routing(clinics):
     return info
 
 
+def _housing_evidence():
+    """{posting_id: the ad's own wording behind the housing mark}, from the postings table.
+
+    A second read rather than a JOB_COLS column because the v_postings view does not carry
+    enr_housing_evidence at all (`select=enr_housing_evidence` on the view is a 400 -- probed
+    2026-09-21; the view is DDL the board lane owns). Two selected columns over the open postings
+    measured 1.5s against the 8-17s a whole snapshot build costs, and it is what lets every listing
+    row say whether the mark means a flat or only help with the search (housing_kind)."""
+    rows = A.rest_get_all("postings", {"select": "posting_id,enr_housing_evidence", "status": "eq.open",
+                                       "order": "posting_id"})
+    return {r["posting_id"]: r.get("enr_housing_evidence") for r in rows}
+
+
 def _build():
     t0 = time.time()
     jobs = A.rest_get_all("v_postings", {"select": JOB_COLS, "status": "eq.open", "order": "posting_id"})
     clinics = A.rest_get_all("clinics", {"select": "*", "order": "clinic_id"})
+    evidence = _housing_evidence()
+    for j in jobs:
+        j["enr_housing_evidence"] = evidence.get(j["posting_id"])
     tax = taxonomy()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=A.FRESH_DAYS)).strftime("%Y-%m-%d")
     agg = defaultdict(lambda: {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0})
@@ -378,14 +398,242 @@ def towns():
     return {norm_text(c["town"]) for c in clinics() if c.get("town")}
 
 
-# --- filtering ------------------------------------------------------------------------------
+# --- housing: the mark, and what the ad's own wording actually promises -----------------------
 def offers_housing(job):
     """The board's housing mark on a posting (enr_housing, 483 of 3905 postings on 2026-09-16).
 
-    The single definition of "this posting comes with a flat": filter_jobs(housing=1) below, the WhatsApp
+    The single definition of "the ad says something about Wohnen": filter_jobs(housing=1) below, the WhatsApp
     shortlist (app/wa/luna_brain.py:market_snapshot) and the post-consent queue (app/wa/queue.py) all read it
-    here, so what Luna promises a candidate and what the human handoff gets can never drift (TASK-108)."""
+    here, so what Luna promises a candidate and what the human handoff gets can never drift (TASK-108).
+
+    The mark alone does NOT mean a flat -- see housing_kind() below."""
     return bool(job.get("enr_housing"))
+
+
+# What the mark is not (requirements audit 2026-09-21, section 2 "Housing: cost, term, conditions"):
+# 61 of the 497 marked open postings say only that the clinic helps with the search or pays the move
+# ('unterstützung bei der wohnungssuche' 37, 'umzugskosten' 13, 'wohnungssuche' 7, 'möglichkeit zur
+# wohnungsvermittlung' 3, 'hilfe bei der wohnungssuche' 1). 1 in 8 of "has housing" is not a flat, and
+# the tools presented all 497 as one thing -- that is a false promise to somebody who is moving country
+# for the job. Measured over the live board 2026-09-21: 436 accommodation, 61 relocation_support, 0
+# unspecified. The evidence is the ad's own words, so the classification is the ad's own words too.
+HOUSING_RELOCATION = re.compile(
+    r"wohnungssuche|wohnungsvermittlung|wohnraumvermittlung|wohnungsboerse|wohnungsbörse"
+    r"|umzug|relocation|maklergebuehr|maklergebühr|maklerkosten", re.I)
+HOUSING_ACCOMMODATION = re.compile(
+    r"wohnraum|wohnheim|wohnanlage|wohnmoeglich|wohnmöglich|wohnung|wohnen|appartement|apartment"
+    r"|unterkunft|unterbringung|zimmer|personalwohn|mitarbeiterwohn|betriebswohn|dienstwohn|werkswohn", re.I)
+
+
+def housing_kind(job):
+    """What the marked posting's own evidence phrase actually promises, or None when it carries no mark.
+
+    * ``accommodation`` -- a room, flat, Wohnheim or Personalwohnung the clinic itself offers.
+    * ``relocation_support`` -- help finding a flat or money towards the move, and NOTHING to live in.
+    * ``unspecified`` -- marked, but the wording says neither (0 rows live on 2026-09-21; it exists
+      because the mark and the evidence are two separate columns and can disagree).
+
+    Order matters and is not arbitrary: 'Unterstützung bei der Wohnungssuche' contains the word
+    'Wohnung', so the relocation phrases are removed from the text BEFORE looking for something to live
+    in. An ad that offers both ('Personalwohnungen sowie Hilfe bei der Wohnungssuche') is accommodation
+    -- there is a flat in it.
+
+    ``enr_housing_evidence`` is not in the v_postings view JOB_COLS selects; _build() reads it from the
+    postings table in one extra call so every snapshot row carries it (see _housing_evidence)."""
+    if not offers_housing(job):
+        return None
+    evidence = (job.get("enr_housing_evidence") or "").strip()
+    if not evidence:
+        return "unspecified"
+    if HOUSING_ACCOMMODATION.search(HOUSING_RELOCATION.sub(" ", evidence)):
+        return "accommodation"
+    if HOUSING_RELOCATION.search(evidence):
+        return "relocation_support"
+    return "unspecified"
+
+
+# --- town identity: one town, however the board and the candidate spell it --------------------
+# Requirements audit 2026-09-21, section 2 "Search by city": 'Weißenburg' (3 live postings), 'Lohr am
+# Main' (12), 'Neumarkt' (11) and 'Landkreis Miesbach' (8) were all refused as "not a town this board
+# has open postings in", and 'Neuburg an der Donau' answered with 1 posting while 50 sat in the same
+# town under the board's other spelling 'Neuburg/Donau'. One class of failure behind all five: a board
+# town name carries an administrative qualifier the candidate does not type, in either the abbreviated
+# or the spelled-out form ('Weißenburg i.Bay.', 'Lohr a. Main', 'Neumarkt i.d.OPf.', 'Neuburg/Donau'),
+# and the resolver only ever asked whether the BOARD's spelling appears inside the CANDIDATE's word.
+#
+# So a town name is split into the town itself and its qualifier, and the qualifier is normalised:
+# everything after a connector word ('an der', 'i.', 'am', 'bei', 'ob der'), after a '/' or inside
+# '(...)' is the qualifier, the usual Bavarian abbreviations are spelled out, and a ', Bayern' /
+# ', Deutschland' tail is dropped. 'Neuburg an der Donau' and 'Neuburg/Donau' then key the same.
+_TOWN_CONNECTORS = {"a", "am", "an", "b", "bei", "d", "das", "dem", "den", "der", "die", "i", "im",
+                    "in", "ob", "vom", "von"}
+_TOWN_ABBREV = {"opf": "oberpfalz", "obb": "oberbayern", "ndb": "niederbayern", "ofr": "oberfranken",
+                "mfr": "mittelfranken", "ufr": "unterfranken", "bay": "bayern", "schw": "schwaben",
+                "do": "donau"}
+# 'Landkreis Coburg' has meant the town Coburg since TASK-145 and still does; the prefix is dropped
+# here so it reaches the town, and town_spellings() only falls through to the registry's Landkreis
+# column when no town answers at all (that is what 'Landkreis Miesbach' needs -- the board has no town
+# of that name, its clinic sits in Hausham).
+_TOWN_ADMIN_PREFIX = re.compile(r"^(?:landkreis|landkr\.?|lkr\.?|kreis|lk)\s+", re.I)
+_TOWN_QUALIFIER_START = re.compile(r"[/(]")
+_TOWN_UMLAUTS = (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss"))
+
+
+def town_folds(name):
+    """The two ways this population writes an umlaut: 'Würzburg' -> 'wuerzburg' AND 'wurzburg', so a
+    candidate typing either reaches the board's spelling (app/wa/slots.py:_fold/_fold_bare, same rule).
+    One form when the name has no umlaut. Also used by app/cv.py to find a town in free CV text."""
+    low = str(name or "").casefold()
+    expanded = low
+    for ch, rep in _TOWN_UMLAUTS:
+        expanded = expanded.replace(ch, rep)
+    bare = unicodedata.normalize("NFKD", low)
+    bare = "".join(c for c in bare if not unicodedata.combining(c)).replace("ß", "ss")
+    return (expanded,) if expanded == bare else (expanded, bare)
+
+
+def _town_words(text):
+    return [w for w in re.sub(r"[^a-z0-9 -]", " ", text).replace("-", " ").split() if w]
+
+
+def _town_parse(folded):
+    s = _TOWN_ADMIN_PREFIX.sub("", folded.strip()).split(",")[0]
+    start = _TOWN_QUALIFIER_START.search(s)
+    head, tail = (s[:start.start()], s[start.end():]) if start else (s, "")
+    base, qualifier, in_qualifier = [], [], False
+    for word in _town_words(head):
+        word = _TOWN_ABBREV.get(word, word)
+        if word in _TOWN_CONNECTORS and base:
+            in_qualifier = True              # everything from the connector on is the qualifier
+            continue
+        (qualifier if in_qualifier else base).append(word)
+    qualifier += [_TOWN_ABBREV.get(w, w) for w in _town_words(tail)]
+    if not base:                             # '/Donau', '(Allgäu)' -- no town was named at all
+        return (), ""
+    return tuple(base), " ".join(sorted(w for w in qualifier if w not in _TOWN_CONNECTORS))
+
+
+# Cached because resolving one town word keys every board town (232 live) and then every posting row
+# (2462), i.e. ~6,000 parses per tool call, over a vocabulary of a few hundred distinct strings.
+@functools.lru_cache(maxsize=8192)
+def town_key(name):
+    """(town words, qualifier) for one spelling -- 'Neumarkt i.d.OPf.' and 'Neumarkt in der Oberpfalz'
+    both give (('neumarkt',), 'oberpfalz'). Umlauts expanded; town_match_keys() adds the dropped form."""
+    return _town_parse(town_folds(name)[0])
+
+
+@functools.lru_cache(maxsize=8192)
+def town_match_keys(name):
+    """Every key this spelling may be asked for by -- both umlaut readings. Two spellings are the same
+    town when these sets intersect."""
+    return frozenset(_town_parse(f) for f in town_folds(name)) - {((), "")}
+
+
+def town_of(job):
+    """The town a posting is IN: its own city, and the clinic's registry town only when the posting
+    carries no city of its own (4 of 2462 live rows on 2026-09-21).
+
+    Not "city or clinic_town", which is what filter_jobs matches on: 309 live rows name a different
+    town than their clinic's registry town, so a search for the clinic's town answered with postings in
+    Bruckberg, Himmelkron, Obernzenn and Erlangen for a question about Ansbach (Diakoneo Rangauklinik,
+    53 rows), and Penzberg/Wolfratshausen for Starnberg. A candidate asking about a town must never be
+    offered a position in another one (requirements audit 2026-09-21, rule (a))."""
+    return (job.get("city") or "").strip() or (job.get("clinic_town") or "").strip()
+
+
+def _one_town(spellings):
+    """Do these board spellings, which share a town name, name ONE town? They do unless the board gives
+    that name two different qualifiers -- 'Neumarkt i.d.OPf.'/'Neumarkt in der Oberpfalz' are one town,
+    'Neustadt an der Aisch'/'Neustadt bei Coburg' are two. A bare spelling next to a single qualified one
+    ('Pfaffenhofen' and 'Pfaffenhofen a.d.Ilm') is the same town."""
+    return len({town_key(s)[1] for s in spellings if town_key(s)[1]}) <= 1
+
+
+def unambiguous_town_bases(names):
+    """{town name without its qualifier -> the spellings of the one town it names}, leaving out a name
+    several towns share. It is what lets free text (a CV) name a town the board writes with a qualifier
+    the candidate never types -- "Lohr am Main" reaching 'Lohr a. Main'."""
+    groups = defaultdict(set)
+    for name in names:
+        base, _ = town_key(name)
+        if base:
+            groups[base].add(name)
+    return {base: sorted(spellings) for base, spellings in groups.items() if _one_town(spellings)}
+
+
+def _extends(base, other):
+    """'München' -> 'München Mitte'/'München Süd'/'München-Flughafen': a district of the town asked for
+    is in that town. Word-wise and prefix-only, so 'Neustadt' never reaches 'Bad Neustadt'."""
+    return len(other) > len(base) and other[:len(base)] == base
+
+
+def town_spellings(word, known, districts=None):
+    """The candidate's own word -> every board spelling of the ONE town it names.
+
+    -> {"status": "resolved"|"ambiguous"|"unknown", "asked": word, "spellings": [...], "matched":
+    "town"|"landkreis"}. ``spellings`` on ambiguous is what the board does have, so the caller can ask
+    which one was meant; on unknown it is empty.
+
+    ambiguous is a real answer, not a failure to try: the board carries five Neustadts ('Neustadt',
+    '… an der Aisch', '… an der Donau', '… bei Coburg', '… a. d. Waldnaab'), and a bare "Neustadt"
+    genuinely does not say which. A base with at most ONE qualifier on the board is one town, so
+    'Pfaffenhofen' reaches 'Pfaffenhofen a.d.Ilm' and 'Weiden' reaches 'Weiden i.d. Oberpfalz'.
+
+    ``districts`` (landkreis_towns(), {Landkreis name: {town, ...}}) is consulted only when no town
+    matches at all:
+    'Landkreis Miesbach' has 8 live postings and no board town of that name (the audit's fourth
+    refusal). A town always wins over a district of the same name."""
+    asked = town_match_keys(word)
+    if not asked:
+        return {"status": "unknown", "asked": word, "spellings": [], "matched": None}
+    bases = {b for b, _ in asked}
+    same = [n for n in known if any(b in bases for b, _ in town_match_keys(n))]
+    subs = [n for n in known
+            if n not in same and any(_extends(b0, b) for b0 in bases for b, _ in town_match_keys(n))]
+    if not same and not subs:
+        for name, towns_in in (districts or {}).items():
+            if town_match_keys(name) & asked:
+                resolved = sorted(t for t in towns_in if t in known)
+                if resolved:
+                    return {"status": "resolved", "asked": word, "spellings": resolved,
+                            "matched": "landkreis"}
+        return {"status": "unknown", "asked": word, "spellings": [], "matched": None}
+    qualifiers = {town_key(n)[1] for n in same if town_key(n)[1]}
+    asked_qualifier = town_key(word)[1]
+    if asked_qualifier and asked_qualifier in qualifiers:
+        # The candidate named the qualifier: take that town. A bare board spelling of the same base
+        # joins it only when the board has no other qualifier it could belong to.
+        named = [n for n in same if town_key(n)[1] == asked_qualifier
+                 or (not town_key(n)[1] and len(qualifiers) == 1)]
+        return {"status": "resolved", "asked": word, "spellings": sorted(set(named + subs)),
+                "matched": "town"}
+    if not _one_town(same):
+        return {"status": "ambiguous", "asked": word, "spellings": sorted(same), "matched": "town"}
+    return {"status": "resolved", "asked": word, "spellings": sorted(set(same + subs)),
+            "matched": "town"}
+
+
+def in_towns(job, spellings):
+    """Is this posting in one of these board spellings of a town? Reads town_of(), so the answer is
+    about the posting's own town, never its clinic's registry town."""
+    keys = town_match_keys(town_of(job))
+    return any(keys & town_match_keys(s) for s in spellings)
+
+
+def landkreis_towns():
+    """{registry Landkreis -> the towns its clinics sit in}. The board files a clinic under a
+    Landkreis ('Landkreis Miesbach'), never a posting, so this is the only bridge from a district a
+    candidate names to a town that has postings."""
+    out = defaultdict(set)
+    for c in clinics():
+        lk, town = (c.get("landkreis") or "").strip(), (c.get("town") or "").strip()
+        if lk and town:
+            out[lk].add(town)
+    return dict(out)
+
+
+def _split(v):
+    return [x.strip() for x in (v or "").split(",") if x.strip()]
 
 
 def _split(v):

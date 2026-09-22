@@ -18,6 +18,7 @@ from ..autopilot import matching as MATCH
 from . import luna_brain as LB
 from . import store as ST
 from .luna import contacts as CT
+from .luna import offer as OF
 
 _QUALIFICATION_PHRASE = {
     "urkunde": "Gesundheits- und Krankenpflegerin, Urkunde anerkannt",
@@ -25,7 +26,37 @@ _QUALIFICATION_PHRASE = {
     "kenntnispruefung": "Krankenpflege, Kenntnisprüfung bestanden",
 }
 _ANERKENNUNG_STATUS = {"urkunde": "granted", "defizit": "deficit_notice", "kenntnispruefung": "applied"}
+
+# How many ranked clinics reach the queue for a card that did NOT choose the pool branch: the
+# narrow branch, and every card from before card.match_branch existed. This is what every consent
+# queued before TASK-144's branches, kept unchanged for those two cases -- it is NOT Ivan's five,
+# which is app/wa/luna/offer.py:OFFER_LIMIT and caps one MESSAGE, not the handoff list. Nobody has
+# stated a rule for the narrow branch's handoff size; this number is the status quo, not a decision.
 MATCH_TOP_N = 5
+
+
+def match_limit(card):
+    """How many ranked clinics this card's consent may queue. ``None`` means no limit at all.
+
+    Ivan, 2026-09-21: five is the cap on how many positions one message may show, however many
+    matched; the pool branch -- the candidate answering "then put me forward to all of them" --
+    means all X clinics that matched their criteria. So a pool card is queued whole. The message
+    promised all of them, and the message is the one the candidate read.
+
+    A card with no ``match_branch`` (a thread from before the field, or a consent that never went
+    through the offer turn) keeps the behaviour it had: MATCH_TOP_N. Anything else is a branch value
+    this module does not know -- it raises rather than quietly picking one of the two behaviours,
+    because both choices would be a guess about what a candidate was told."""
+    branch = card.get("match_branch")
+    if branch is None:
+        return MATCH_TOP_N
+    if branch == OF.BRANCH_POOL:
+        return None
+    if branch == OF.BRANCH_NARROW:
+        return MATCH_TOP_N
+    raise ValueError(f"unknown card.match_branch {branch!r}: expected {OF.BRANCH_NARROW!r}, "
+                     f"{OF.BRANCH_POOL!r} or none at all (app/wa/luna/offer.py:BRANCHES)")
+
 
 SCHEMA = """
 create table if not exists wa_queue_candidates (
@@ -141,7 +172,12 @@ def build_queue_entry(phone, card, cv_profile=None):
     (app.data.offers_housing -- the same criterion market_snapshot's shortlist uses) and the clinics those
     postings belong to, so the human handoff gets the clinics Luna was allowed to name, not a wider list. Once
     they said a clinic without a flat is also an option (housing_flexible), the filter drops here exactly as it
-    does in the shortlist -- the same rule on both sides, again."""
+    does in the shortlist -- the same rule on both sides, again.
+
+    TASK-144: how many of the ranked clinics are queued is the candidate's own branch choice,
+    ``match_limit(card)`` -- a pool card is queued whole (``n=None``, no cut in matching.rank), a narrow or
+    branchless card keeps MATCH_TOP_N. Before this, every consent queued five whatever the card said, so a
+    candidate who was told "we put you forward to all 224 matching clinics" got five of them."""
     candidate = card_to_candidate(card, cv_profile)
     snap = D.snapshot()
     jobs, clinics = snap["jobs"], snap["clinics"]
@@ -149,7 +185,9 @@ def build_queue_entry(phone, card, cv_profile=None):
         jobs = [j for j in jobs if D.offers_housing(j)]
         with_housing = {str(j["clinic_id"]) for j in jobs if j.get("clinic_id")}
         clinics = [c for c in clinics if str(c["clinic_id"]) in with_housing]
-    ranked = MATCH.rank(candidate, clinics, jobs, n=MATCH_TOP_N)
+    # n=None is matching.rank's own "no cut" (its out[:n]); a clinic still has to score at least
+    # min_score to be in `ranked` at all, which is what "matched their criteria" means here.
+    ranked = MATCH.rank(candidate, clinics, jobs, n=match_limit(card))
 
     conn = db()
     try:

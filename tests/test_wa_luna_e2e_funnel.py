@@ -182,7 +182,7 @@ def _fixture_board():
                      "clinic_id": clinic_id, "clinic_name": clinic_name, "employer": clinic_name,
                      "employment_types": ["vollzeit"], "enr_housing": True, "verify_status": "live",
                      "status": "open", "first_published": "2026-09-01", "fresh": True,
-                     "source_url": f"https://example.org/job/{i + 1}"})
+                     "external_url": f"https://example.org/job/{i + 1}"})
     clinics = [{"clinic_id": "c1", "name": "Klinikum München", "town": "München", "regierungsbezirk": "Oberbayern",
                "beds": 800, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1, "fachrichtungen": []},
               {"clinic_id": "c2", "name": "Klinikum Augsburg", "town": "Augsburg", "regierungsbezirk": "Schwaben",

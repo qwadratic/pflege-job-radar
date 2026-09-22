@@ -179,6 +179,94 @@ def test_an_imported_card_with_only_the_housing_flag_is_not_matched_as_if_it_ans
     assert cand["needs_housing"] is None and cand["housing_flexible"] is None
 
 
+# --- TASK-144: the branch the candidate chose decides how many clinics are queued -----------------
+# "narrow"/"pool" are written on the card verbatim by app/wa/luna_brain.py (the values of
+# app/wa/luna/offer.py:BRANCH_NARROW/BRANCH_POOL), so they are spelled out here as the cards carry them.
+
+def _pool_jobs(n):
+    """n open postings in n distinct München clinics, all matching a qualified Pflegefachkraft."""
+    return [{"posting_id": i, "clinic_id": f"p{i}", "role_class": "pflegefachkraft",
+             "department_hint": "Intensiv/IMC", "qualification_hint": None, "title": "Pflegefachkraft Intensiv",
+             "clinic_name": f"Klinikum München {i}", "employer": f"Klinikum München {i}", "city": "München",
+             "clinic_town": "München", "regierungsbezirk": "Oberbayern", "employment_types": ["vollzeit"],
+             "enr_housing": False, "status": "open", "verify_status": "live", "first_published": "2026-09-01",
+             "fresh": True}
+            for i in range(1, n + 1)]
+
+
+def _pool_clinics(n):
+    return [{"clinic_id": f"p{i}", "name": f"Klinikum München {i}", "town": "München",
+             "regierungsbezirk": "Oberbayern", "beds": 500, "jobs_open": 1, "fachrichtungen": []}
+            for i in range(1, n + 1)]
+
+
+@pytest.fixture()
+def twelve_matching_clinics(tmp_path, monkeypatch):
+    """12 matching clinics -- comfortably more than the five one message may show, so a queue that
+    still stops at five is visible as five, not as "the board happened to be small"."""
+    jobs, clinics = _pool_jobs(12), _pool_clinics(12)
+    D._snap.update({"at": time.time(), "jobs": jobs, "clinics": clinics,
+                    "by_clinic": {c["clinic_id"]: c for c in clinics}, "facets": {}, "taxonomy": {},
+                    "loading": False, "error": None})
+    monkeypatch.setattr(D, "refresh", lambda: D._snap)
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+
+
+_POOL_CARD = {**_READY_CARD, "housing_needed": False, "city": "München"}
+
+
+def test_the_pool_branch_queues_every_matching_clinic_not_five(twelve_matching_clinics):
+    """Ivan, 2026-09-21: five caps one message; "to all of them" means all X clinics that matched.
+    The audit case was 224 matching clinics and 5 queued rows."""
+    out = Q.build_queue_entry("+491234500010", {**_POOL_CARD, "match_branch": "pool"})
+    assert len(out["matches"]) == 12
+
+    conn = Q.db()
+    try:
+        rows = conn.execute("select clinic_id from wa_queue_matches where phone=?",
+                            ("+491234500010",)).fetchall()
+    finally:
+        conn.close()
+    assert len(rows) == 12
+    assert {r["clinic_id"] for r in rows} == {f"p{i}" for i in range(1, 13)}
+
+
+def test_the_narrow_branch_keeps_queueing_five(twelve_matching_clinics):
+    out = Q.build_queue_entry("+491234500011", {**_POOL_CARD, "match_branch": "narrow"})
+    assert len(out["matches"]) == 5
+
+
+def test_a_card_that_never_chose_a_branch_queues_five_as_before(twelve_matching_clinics):
+    """Threads from before match_branch existed, and consents that never went through the offer
+    turn: unchanged behaviour, not a silent promotion to the pool."""
+    out = Q.build_queue_entry("+491234500012", _POOL_CARD)
+    assert len(out["matches"]) == 5
+
+
+def test_an_unrecognised_branch_value_raises_instead_of_picking_one(twelve_matching_clinics):
+    with pytest.raises(ValueError, match="match_branch"):
+        Q.build_queue_entry("+491234500013", {**_POOL_CARD, "match_branch": "alle"})
+    conn = Q.db()
+    try:
+        rows = conn.execute("select phone from wa_queue_candidates where phone=?",
+                            ("+491234500013",)).fetchall()
+    finally:
+        conn.close()
+    assert rows == [], "a card nobody can read must queue nothing at all, not a default five"
+
+
+def test_the_message_says_how_many_matched_and_the_pool_queue_has_that_many(twelve_matching_clinics):
+    """The promise and the action, from one board: the offer shows 5 positions and says 12 clinics
+    matched; the pool consent that follows queues 12."""
+    from app.wa import luna_brain as LB
+
+    card = {**_POOL_CARD, "match_branch": "pool"}
+    offer = LB.market_snapshot(card)["offer"]
+    assert (offer["shown"], offer["clinics_total"]) == (5, 12)
+    out = Q.build_queue_entry("+491234500014", card)
+    assert len(out["matches"]) == 12
+
+
 # --- endpoints -----------------------------------------------------------------------------------
 
 def test_queue_endpoint_lists_candidates_with_matches(board):

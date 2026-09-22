@@ -79,6 +79,7 @@ from .. import config as C
 from .. import meta as M
 from .. import slots as SL
 from .. import store as ST
+from .. import transport as T
 
 QUERY_NAMES = ("facts", "placement", "messages", "documents", "opt_outs")
 COLUMNS = {
@@ -530,7 +531,7 @@ def _obtain(source, doc, client):
         return _read(path), "disk", path
     if not doc["media_id"]:
         return None, f"not on disk and no media_id: {doc['path']}", None
-    cl = client or M.Client()
+    cl = T.get_client(client=client)
     try:
         info = cl.media_url(doc["media_id"])
         blob = cl.download_media(info["url"])

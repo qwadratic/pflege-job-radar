@@ -28,8 +28,9 @@ DRY-RUN (default). Resolves the template by id (GET, must be APPROVED), canonica
 duplicate and conflicting duplicate leads reported, none dropped silently), validates and renders each lead, and
 plans each phone from a read-only in-memory copy of data/wa.sqlite: owner (wa_ownership, else the
 WA_REAL_SYSTEM_PHONES_FILE check), thread stage/ball, stopped, declined, marketing opt-out (user_preferences stop,
-failed status 131050), this and other campaigns' claims, history import preview (import_history dry-run, with its
-opt-out records and chat Stopps). Writes no database row, sends nothing; only the report file.
+failed status 131050), cross-rail suppression (wa_suppressions, TASK-113), this and other campaigns' claims, history
+import preview (import_history dry-run, with its opt-out records and chat Stopps). Writes no database row, sends
+nothing; only the report file.
 
 --send (needs WA_AUTOSEND=1). Per phone, in lead-file order:
 1. history import --apply (before the claim: its card merge refuses while any claim of the phone is in flight);
@@ -54,8 +55,11 @@ first); one that did go out (a status for a wamid we never recorded, with the te
 it in the same campaign as the next attempt, except to a phone that was stopped, declined, opted out or wrote to us
 since the campaign first claimed it (skip_replied). Once any attempt went out (sent, delivered or not), every later
 resend (retry_failed, --retry-uncertain) makes the same skip_replied check. Stopped, declined and opted-out phones
-are never sent. A phone marked as a test number (TASK-109, app/wa/luna/test_threads.py) is skip_test_number before
-any other action, in the dry run and in --send: a campaign template never lands in an operator's manual test.
+are never sent, and neither is a suppressed one (skip_suppressed, app/wa/suppression.py: the do-not-contact list is
+keyed on the human and shared by both rails, so a Stopp typed to the phone rail stops a Meta template too; checked
+again right before the POST, where it fails the attempt permanently). A phone marked as a test number (TASK-109,
+app/wa/luna/test_threads.py) is skip_test_number before any other action, in the dry run and in --send: a campaign
+template never lands in an operator's manual test.
 
 PACING. At most --batch-size claims of this campaign within any --batch-interval-min (counted from claimed_at in
 the database, so a restart keeps the pace), only inside --window local hours of --tz. Outside the window the run
@@ -101,6 +105,8 @@ from .. import config as C
 from .. import meta as M
 from .. import routing as R
 from .. import store as ST
+from .. import suppression as SUP
+from .. import transport as T
 from . import import_history as IH
 from . import reporting as REP
 from . import shadow_run as SR
@@ -451,7 +457,7 @@ def phone_state(c, campaign_id, phone):
                 "inbound_since_first_claim": {"count": len(inbound), "first_at": inbound[0]["at"] if inbound else None,
                                               "last_at": inbound[-1]["at"] if inbound else None}}
     return {"owner": ownership_view(c, phone), "thread": thread, "opted_out": marketing_opt_out(c, phone),
-            "this_campaign": this,
+            "suppressed": SUP.suppression(c, phone), "this_campaign": this,
             "other_campaigns": [_claim_view(r) for r in ST.campaign_sends_for_phone(c, phone)
                                 if r["campaign_id"] != campaign_id]}
 
@@ -479,6 +485,13 @@ def decide(state, retry):
         return "uncertain", (f"attempt {this['attempt']} {this['state']} since {this['claimed_at']}: it may have gone "
                              f"out; check --status, then --retry-uncertain" + (f" ({this['error']})" if this["error"]
                                                                                else ""))
+    if state["suppressed"]:
+        # TASK-113: the cross-thread, cross-lane list. Planned as a skip, exactly like the three below it, so no
+        # attempt is ever claimed for a number that refused us; send_one's own check is what makes it
+        # unbypassable, and that one raises (a suppressed phone that reached the POST is a permanent failure,
+        # never an uncertain one).
+        s = state["suppressed"]
+        return "skip_suppressed", f"suppressed {s['at']} on the {s['lane']} rail ({s['reason']})"
     if thread.get("stopped"):
         return "skip_stopped", f"stopped ({thread['stopped_reason']})"
     if thread.get("declined"):
@@ -649,6 +662,14 @@ def send_one(campaign_id, definition, lead, client, clock, retry, window, source
     result.update(attempt=attempt, claimed_at=claimed_at, prior_owner=prior)
 
     try:
+        # TASK-113: the campaign's suppression choke point -- the one send path that never touches
+        # api.send_and_record. decide() already planned a suppressed phone as skip_suppressed, so reaching
+        # this means the number refused us between the plan and the POST (a Stopp while the run was pacing,
+        # or during a history import that took minutes). Inside this try on purpose: SuppressedRecipient is a
+        # 4xx MetaError, so the classification below records the attempt failed (permanent, ownership
+        # restored) rather than uncertain, which --retry-uncertain would post again.
+        with live_db() as c:
+            SUP.assert_not_suppressed(c, phone)
         wamid = client.send_template(phone, definition=definition, params=lead["params"])
     except M.MetaError as exc:
         status_code = exc.status_code
@@ -1087,7 +1108,7 @@ def main(argv=None, client=None, clock=None, sleep=None):
     if args.mark_sent:
         if not args.template_id or args.leads or args.send:
             return fail("--mark-sent needs --template-id and goes without --leads/--send")
-        client = client or M.Client()
+        client = T.get_client(client=client)
         try:
             definition = client.get_template(args.template_id, require_approved=True)
         except M.MetaError as exc:
@@ -1131,7 +1152,7 @@ def main(argv=None, client=None, clock=None, sleep=None):
         return fail(str(exc))
     if args.send and not C.AUTOSEND:
         return fail("--send needs WA_AUTOSEND=1 (without it nothing may reach Meta); load .env first")
-    client = client or M.Client()
+    client = T.get_client(client=client)
     if args.send and (not client.access_token or not client.phone_number_id):
         return fail("--send needs META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID")
     try:

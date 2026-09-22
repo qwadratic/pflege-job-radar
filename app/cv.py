@@ -18,7 +18,6 @@ import json
 import os
 import pathlib
 import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -68,8 +67,90 @@ _SKILL_TO_DEPT = {"Intensiv": "Intensiv/IMC", "Anästhesie": "Anästhesie", "OP"
                   "Geburtshilfe": "Geburtshilfe", "Ambulanz": "Ambulanz/Tagesklinik", "Reha": "Reha"}
 
 
-def _fold(s):
-    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+# --- what this population's CVs actually look like (requirements audit 2026-09-21, section 2) -------
+# Two extraction bugs, both hit the normal shape of a foreign-trained nurse's CV rather than an edge case.
+#
+# 1. The desired town was dropped whenever it was written without umlauts: the fold this module used
+#    DROPPED the umlaut ('Nürnberg' -> 'nurnberg') while the candidate types the EXPANSION
+#    ('Nuernberg'), so the two never met and `cities` came back empty -- the town then counts for
+#    nothing in match()'s ranking, silently. app/data.py:town_folds produces both readings, and
+#    town_key gives one identity for the several spellings the board has of one town
+#    ('Neumarkt i.d.OPf.' / 'Neumarkt in der Oberpfalz').
+#
+# 2. The German level was lost whenever a mother tongue was listed before it: patterns.json's `cv.languages`
+#    pairs ANY language word with the next level token within 40 characters, so in "Russisch, Deutsch B2,
+#    Englisch A2" the match starts at 'Russisch', swallows 'Deutsch B2' whole, and the profile comes back
+#    ['Englisch A2'] -- the single most decisive datum for placement, gone, on every CV that lists the
+#    mother tongue first. The pattern says WHERE a language/level pair may be; which language the level
+#    belongs to is decided here: the nearest language word before it (_language_of).
+_LANGUAGE_WORDS = re.compile(
+    r"\b(deutsch|german|englisch|english|französisch|franzoesisch|french|spanisch|spanish|italienisch|"
+    r"italian|türkisch|tuerkisch|turkish|russisch|russian|arabisch|arabic|polnisch|polish|ukrainisch|"
+    r"ukrainian|rumänisch|rumaenisch|romanian|bulgarisch|bulgarian|serbisch|serbian|kroatisch|croatian|"
+    r"bosnisch|bosnian|albanisch|albanian|griechisch|greek|tschechisch|czech|slowakisch|slovak|ungarisch|"
+    r"hungarian|portugiesisch|portuguese|philippinisch|filipino|tagalog|hindi|urdu|nepalesisch|nepali|"
+    r"vietnamesisch|vietnamese|chinesisch|chinese|persisch|farsi|dari|kurdisch|kurdish|indonesisch|"
+    r"indonesian|thailändisch|thai|koreanisch|korean|japanisch|japanese)\b", re.I)
+# 'Deutschkenntnisse: B2' / 'Deutschniveau B2' -- the compound has no word boundary after 'deutsch', so
+# the pattern cannot see the language at all. Split before matching; nothing else reads this text.
+_LANGUAGE_COMPOUND = re.compile(r"\b(deutsch|englisch|german|english)"
+                                r"(kenntnisse|niveau|level|sprachkenntnisse|sprachniveau)\b", re.I)
+_LANGUAGE_TAGS = {"deutsch": "Deutsch", "german": "Deutsch", "englisch": "Englisch", "english": "Englisch"}
+
+
+def _language_of(span, level):
+    """Which language a level found inside one pattern match belongs to: the nearest language word BEFORE
+    it ('Russisch, Deutsch B2' -> deutsch), or the first one after it when the level came first
+    ('B2 Deutsch'). None when the span names no language at all."""
+    named = [(m.start(), m.group(1).lower()) for m in _LANGUAGE_WORDS.finditer(span)]
+    if not named:
+        return None
+    at = re.search(r"\b" + re.escape(level) + r"\b", span, re.I) if level else None
+    before = [name for pos, name in named if at is None or pos < at.start()]
+    return before[-1] if before else named[0][1]
+
+
+def _read_languages(text, pattern):
+    """['Deutsch B2', 'Englisch A2'] -- only the languages this board acts on, only where the CV states a
+    level. A language word with no CEFR level next to it ('Deutsch fließend', 'Russisch Muttersprache')
+    still tags the language, without a level, exactly as before."""
+    out = []
+    for m in re.finditer(pattern, _LANGUAGE_COMPOUND.sub(r"\1 \2", text), re.I):
+        groups = [g for g in m.groups() if g]
+        level = next((g for g in groups if re.fullmatch(r"[abc][12]", g, re.I)), None)
+        tag = _LANGUAGE_TAGS.get(_language_of(m.group(0), level) or "")
+        if tag:
+            tag = f"{tag} {level.upper()}" if level else tag
+            if tag not in out:
+                out.append(tag)
+    return out
+
+
+def _towns_in(text, towns):
+    """Every board town this CV text names, in the board's own spelling, at most one per town.
+
+    Both umlaut readings of the town and of the text (app/data.py:town_folds), so 'Nuernberg',
+    'Nurnberg' and 'Nürnberg' all reach the board's 'Nürnberg'; the town name without the board's
+    qualifier too, where that name belongs to only one town, so "Lohr am Main" and "Neumarkt" reach
+    'Lohr a. Main' and 'Neumarkt i.d.OPf.'; longest name first so 'Bad Tölz' is not read as 'Berg';
+    deduplicated by town identity so the board's two spellings of one town do not both take a place."""
+    readings = D.town_folds(text)
+    bases = D.unambiguous_town_bases(towns)
+    found, seen = [], set()
+    for town in sorted(towns, key=len, reverse=True):
+        key = D.town_key(town)
+        if not key[0] or key in seen:
+            continue
+        spellings = set(D.town_folds(town))
+        if town in bases.get(key[0], ()):
+            spellings |= set(D.town_folds(" ".join(key[0])))
+        # Three characters or fewer is not a town name anyone writes in a CV, it is a syllable of
+        # another word; the whole-word search would still fire on it.
+        if any(re.search(r"(?<![a-z])" + re.escape(s) + r"(?![a-z])", reading)
+               for s in spellings if len(s) >= 4 for reading in readings):
+            found.append(town)
+            seen.add(key)
+    return found
 
 
 def extract_text(filename, blob):
@@ -151,25 +232,13 @@ def profile_from_text(text):
             prof["experience_years"] = min(30, max(years) - min(years)) or None
     # languages
     try:
-        for m in re.finditer(pats["languages"], low, re.I):
-            g = [x for x in m.groups() if x]
-            lang = next((x for x in g if x in ("deutsch", "german", "englisch", "english")), None)
-            lvl = next((x for x in g if re.fullmatch(r"[abc][12]", x)), None)
-            if lang:
-                tag = ("Deutsch" if lang in ("deutsch", "german") else "Englisch") + (" " + lvl.upper() if lvl else "")
-                if tag not in prof["languages"]:
-                    prof["languages"].append(tag)
+        prof["languages"] = _read_languages(low, pats["languages"])
     except re.error:
         pass
     # cities: registry towns + job cities mentioned in the text
     snap = D.snapshot()
     towns = {c["town"] for c in snap["clinics"] if c.get("town")} | {j["city"] for j in snap["jobs"] if j.get("city")}
-    ftext = _fold(text)
-    for t in sorted(towns, key=len, reverse=True):
-        if len(t) >= 4 and re.search(r"(?<![a-z])" + re.escape(_fold(t)) + r"(?![a-z])", ftext):
-            prof["cities"].append(t)
-        if len(prof["cities"]) >= 8:
-            break
+    prof["cities"] = _towns_in(text, towns)[:8]
     # bezirk of the cities mentioned
     prof["regierungsbezirke"] = _regierungsbezirke_for_cities(prof["cities"])
     prof["keywords"] = sorted({w for w in re.findall(r"[a-zäöüß]{6,}", low) if w in _KEYWORDS})[:30]
@@ -183,7 +252,9 @@ def _regierungsbezirke_for_cities(cities):
     registry while being read) gets the same deterministic geography lookup, rather than asking
     the model to know Bavarian Regierungsbezirke by heart."""
     snap = D.snapshot()
-    return sorted({c["regierungsbezirk"] for c in snap["clinics"] if c.get("town") in (cities or []) and c.get("regierungsbezirk")})
+    keys = {k for c in cities or [] for k in D.town_match_keys(c)}
+    return sorted({c["regierungsbezirk"] for c in snap["clinics"]
+                   if c.get("regierungsbezirk") and D.town_match_keys(c.get("town") or "") & keys})
 
 
 _KEYWORDS = {"pflegefachkraft", "krankenpfleger", "krankenschwester", "intensivpflege", "anästhesie", "notaufnahme", "stationsleitung", "praxisanleitung",
@@ -610,7 +681,12 @@ _ROLE_NEAR = {"pflegefachkraft": {"fachpflege": 0.6, "sonstige_pflege": 0.5, "pr
 def match(prof, limit=50):
     snap = D.snapshot()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
-    roles, depts, cities, bez = set(prof.get("roles") or []), set(prof.get("departments") or []), {c.lower() for c in prof.get("cities") or []}, set(prof.get("regierungsbezirke") or [])
+    roles, depts, bez = set(prof.get("roles") or []), set(prof.get("departments") or []), set(prof.get("regierungsbezirke") or [])
+    # Town identity, not a lowercased string: the profile's town comes from a CV ('Nuernberg') or, on the
+    # LLM path, straight out of the model ('Neuburg an der Donau'), while the posting carries whichever of
+    # the board's spellings its ad used ('Neuburg/Donau') -- 50 of those 51 postings scored no town point
+    # at all (audit 2026-09-21). app/data.py:town_match_keys is the same identity the board tools resolve on.
+    cities = {k for c in prof.get("cities") or [] for k in D.town_match_keys(c)}
     skills = [s.lower() for s in prof.get("skills") or []]
     out = []
     for j in snap["jobs"]:
@@ -632,9 +708,8 @@ def match(prof, limit=50):
                 score += min(30, 12 * len(hits)); why += hits[:2]
             elif depts and not d:
                 score += 6                                        # generic ward, no contradiction
-        city = (j.get("city") or "").lower(); town = (j.get("clinic_town") or "").lower()
-        if cities and (city in cities or town in cities):
-            score += 20; why.append(j.get("city") or j.get("clinic_town"))
+        if cities and D.town_match_keys(D.town_of(j)) & cities:
+            score += 20; why.append(D.town_of(j))
         elif bez and j.get("regierungsbezirk") in bez:
             score += 10; why.append(j.get("regierungsbezirk"))
         elif not cities:

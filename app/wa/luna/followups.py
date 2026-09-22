@@ -123,7 +123,14 @@ def run(client=None, phones=None):
             since = t.get("last_inbound_at") or _EPOCH
             if not ST.claim_nudge(c, phone, f"followup:{tier}:{since}"):
                 continue
-            sent = API.send_and_record(c, t, [C.FOLLOWUP_NUDGE_DE], [], client=client, action="followup")
+            # The nudge's own turn key (TASK-146). A rail whose messages have no provider id needs
+            # one per send or ``api._send`` refuses, and every nudge on the phone rail was failing
+            # here and writing a wa_send_failures row per phone. This key is the fingerprint the
+            # claim two lines up already treats as this nudge's identity -- deterministic, unique
+            # per nudge, and the same value on a retry of the same nudge, which is exactly what
+            # makes the executor replay it instead of delivering it twice.
+            sent = API.send_and_record(c, t, [C.FOLLOWUP_NUDGE_DE], [], client=client,
+                                       action="followup", turn_key=f"followup:{tier}:{since}")
             if sent != "nothing_to_send":
                 ST.record_followup_sent(c, phone, tier)
             ST.save_thread(c, t)

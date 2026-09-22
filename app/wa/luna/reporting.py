@@ -3,9 +3,13 @@
 to keep in sync. Used by the migration script and the dry-run shadow tool (TASK-72) -- nothing in
 the live turn() path needs either of these, they exist purely so a human (or a report) can see
 where a thread stands without reading the raw card.
+
+Not to be confused with luna_brain.funnel_stage / card["stage"] (TASK-144), which is the funnel stage
+the CONVERSATION resumes from. STAGES below is the operator's coarser label for a whole thread,
+including the terminal states a funnel stage has no name for (declined, already_placed).
 """
 from .. import store as ST
-from ..luna_brain import requirement_scoreboard
+from ..luna_brain import SCOREBOARD_GATES, requirement_scoreboard
 
 STAGES = ("new_lead", "declined", "already_placed", "not_placeable", "qualifying", "documents_in", "ready",
           "consented")
@@ -28,10 +32,11 @@ def stage_for(card):
     if card.get("anonymous_send_consent"):
         return "consented"
     board = requirement_scoreboard(card)
-    # next_objective (TASK-91) is a computed hint string, not a per-gate satisfied|open|blocked
-    # status -- excluded here the same way handoff_consent already is (this function's own "ready"
-    # means "everything except consent," and next_objective is never a gate at all).
-    if all(v == "satisfied" for k, v in board.items() if k not in ("handoff_consent", "next_objective")):
+    # Gates only (luna_brain.SCOREBOARD_GATES): the scoreboard also carries computed hints --
+    # next_objective (TASK-91), stage and stage_since (TASK-144) -- which are not satisfied|open|blocked
+    # statuses at all. handoff_consent is skipped on top of that because this function's own "ready"
+    # means "everything except consent".
+    if all(board[gate] == "satisfied" for gate in SCOREBOARD_GATES if gate != "handoff_consent"):
         return "ready"
     if card.get("cv_text") or card.get("urkunde_text"):
         return "documents_in"
