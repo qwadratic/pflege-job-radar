@@ -943,3 +943,27 @@ def test_an_explicit_request_for_a_human_escalates_with_the_matching_code(board)
         f"escalated for the wrong reason, or with no code at all: "
         f"{final['slots'].get('_escalation_codes')!r} {transcript!r}")
     assert _all_bubbles(results), f"escalating must not mean going silent: {transcript!r}"
+
+
+_HEADCOUNT_ASK_RE = re.compile(r"wie viele\s+Personen|allein oder mit Familie|f[üu]r wie viele", re.I)
+
+
+def test_a_bare_number_answers_the_housing_headcount_and_is_never_re_asked(board):
+    """Live UAT finding, 2026-09-22: asked 'Wären Sie dabei allein oder mit Familie?', Valy answered
+    just '3' -- and the very next turn asked the same headcount question again ('Noch offen: Wären
+    Sie bei der Wohnung allein oder mit Familie?'), and Valy had to say 'Habe ich schon gesagt' (I
+    already said that). A bare number is a complete answer (RULES point 4, HOUSING), not the
+    ambiguous kind of either/or reply -- it must be recorded and never re-asked."""
+    thread = {"slots": dict(_OLENA_CARD), "asked": []}
+    results = _run([
+        "Ich brauche auch eine Wohnung.",
+        "3",
+    ], thread=thread)
+    final = results[-1]
+    transcript = [(r["bubbles"]) for r in results]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    assert final["slots"].get("people_count") == 3, (
+        f"a bare '3' after the housing headcount question must set people_count: {transcript!r}")
+    last_said = " ".join(results[-1]["bubbles"])
+    assert not _HEADCOUNT_ASK_RE.search(last_said), (
+        f"the headcount was already given as '3' -- asking again is the exact live bug: {transcript!r}")
