@@ -166,7 +166,10 @@ def raw_board_rows(clinic):
         else:
             obs, _st = _seed_obs(b, clinic, D.towns(), lambda *_: None)
             for o in obs:
-                out.append({"title": o.get("title"), "url": o.get("source_ref") or o.get("source_url")})
+                # source_url, not source_ref: since TASK-83 source_ref is a vendor identity string
+                # ("dvinci:<host>:52664"), not a link, and spend_gate compares these against real
+                # URLs Firecrawl reports -- an identity string never matches one.
+                out.append({"title": o.get("title"), "url": o.get("source_url") or o.get("source_ref")})
     return [r for r in out if r["title"] and r["url"]]
 
 

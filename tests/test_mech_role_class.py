@@ -65,6 +65,31 @@ def test_ward_leadership_without_pflege_token():
     assert classify_role("Organisatorische Teamleitung (m/w/d) für den OP-Bereich", "")[0] == "leitung"
     assert classify_role("Medizinische Fachangestellte (m/w/d)", "")[0] == "nicht_pflege"
     assert classify_role("Teamleitung Buchhaltung (m/w/d)", "")[0] == "nicht_pflege"
+    # TASK-89 M8: "OP Leitung" carries no gate token (no "pfleg", no hyphenated "op-bereich") even
+    # though the _ROLES leitung rule already recognises standalone "Leitung" as its own word -- the
+    # gate blocked it before the role rule ever ran. A leitung-titled non-nursing role (a facility
+    # name, a department name the nicht_pflege list already knows) must still land on nicht_pflege
+    # via that list, never on "leitung" just because the gate got more permissive -- both of the
+    # existing asserts above ("Leitung Restaurant" in test_audit_fixes, "AEMP-Leitung" too) already
+    # pin that; this only adds the positive case.
+    assert classify_role("OP Leitung (m/w/d)", "")[0] == "leitung"
+
+
+def test_medizinische_fachangestellte_inflected_forms_stay_excluded():
+    # TASK-89 M8/M9: the pattern was "medizinische/?r? fachangestellte" -- an exact "medizinische"
+    # immediately followed by " fachangestellte", so the common dative/accusative inflection
+    # ("Medizinischen Fachangestellten") never matched at all. Harmless while the pflege_gate also
+    # rejects the title outright (as here), but a real leak wherever something else already gets the
+    # title past the gate -- clinic 47701's live posting title below contains "Station 11", which
+    # passes the gate on its own, and the row was stored as sonstige_pflege (kept) before this fix.
+    assert classify_role("Medizinischen Fachangestellten (m/w/d)", "")[0] == "nicht_pflege"
+    assert classify_role(
+        "Medizinischen Fachangestellten (m/w/d) für den ambulanten OP/Station 11 in Voll-/Teilzeit", ""
+    ) == ("nicht_pflege", "nicht_pflege:medizinischen fachangestellten")
+    # section-confirmed path (dept label rescues the gate, same as TASK-89 M8's "Onkologische
+    # Fachkraft" case) must still exclude an MFA on the inflected form, exactly like the un-inflected
+    # form already does in test_classify_section.py's competing-occupations test.
+    assert classify_role("Medizinischen Fachangestellten (m/w/d)", "", nursing_section_confirmed=True)[0] == "nicht_pflege"
 
 
 # OP-Fachkraft is OP nursing written without the word "Pflege"; neighbouring titles (MFA, Stationsassistenz) stay excluded.
@@ -117,3 +142,24 @@ def test_strong_pflege_no_longer_overrides_on_a_facility_name_alone():
 def test_mechanic_try_flags_excluded():
     r = get("role_class").run({"title": "MFA (m/w/d)", "hauptberuf": "", "offer_kind": ""})
     assert r["result"] == {"role_class": "nicht_pflege", "excluded": True}
+
+
+# TASK-84 AC3: sonstige_pflege's fallback stops being a catch-all for any bare pflege_gate token --
+# it now also requires the title to carry a posting-shaped signal (a gender marker). Decision: NOT
+# adding sonstige_pflege to excluded_role_classes, because that would also drop the real, already-kept
+# "Betreuungskräfte (m/w/d) gesucht" and section-confirmed "Gerontofachkraft (w/m/d)" cases just above
+# (both still assert sonstige_pflege, unchanged) -- narrowing the fallback itself keeps those while
+# dropping a bare mention of "pflegen" that carries no job-title shape at all.
+def test_sonstige_pflege_fallback_requires_a_posting_shaped_title():
+    # Klinikum Memmingen: classify_role('PFLEGEN KÖNNEN.') used to return sonstige_pflege/fallback,
+    # which is how 31 news headlines on that board became open postings (confirmed live 2026-09-21).
+    assert classify_role("PFLEGEN KÖNNEN.", "") == ("nicht_pflege", "fallback_no_posting_signal")
+    # München Klinik (clinic 16201, confirmed live 2026-09-22): division-landing-page and marketing
+    # <h1> headlines heuristically read as job titles by career_crawl -- none carry a gender marker.
+    for title in ("Intensivpflege MACHEN KÖNNEN.", "IMC-Station: Wir sagen, wie es läuft", "#BildderPflege"):
+        role, rule = classify_role(title, "")
+        assert role == "nicht_pflege" and rule == "fallback_no_posting_signal", title
+    # a real title that only reaches the fallback because of the pflegehelfer umlaut-plural gap (see
+    # test_pflege_gate_recognises_the_previously_missing_tokens above) still keeps its marker and is
+    # still kept -- this narrowing must not regress it.
+    assert classify_role("Betreuungskräfte (m/w/d) gesucht", "")[0] == "sonstige_pflege"

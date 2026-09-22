@@ -323,7 +323,14 @@ def _facets(jobs, clinics, tax):
 
 def snapshot(force=False, wait=180):
     """Current snapshot; builds synchronously when empty (or waits for the build in flight),
-    refreshes in the background when stale."""
+    refreshes in the background when stale.
+
+    Raises 503 when the snapshot has never held real data AND the most recent build attempt
+    failed (empty + error together) -- the one state a caller must not read as "the registry is
+    genuinely empty": every clinic_id lookup would return None indistinguishably from a real
+    unknown id (TASK-91 AC#2; app/main.py's `if not c: raise HTTPException(404, "unknown
+    clinic")` call sites turn that into a false 404 today). A stale-but-populated snapshot is not
+    this case -- it is still served, same as before, while a background refresh retries."""
     with _lock:
         stale = time.time() - _snap["at"] > TTL
         empty = not _snap["clinics"]
@@ -334,6 +341,8 @@ def snapshot(force=False, wait=180):
         _ready.wait(wait)
     elif stale and not loading:
         threading.Thread(target=refresh, daemon=True).start()
+    if not _snap["clinics"] and _snap.get("error"):
+        raise HTTPException(503, f"snapshot unavailable: {_snap['error']}")
     return _snap
 
 
@@ -352,7 +361,13 @@ def refresh():
         with _lock:
             _snap["loading"] = False
             _snap["error"] = f"{type(e).__name__}: {str(e)[:200]}"
-            _snap["at"] = time.time() - TTL + 60          # retry in a minute, keep serving what we have
+            # `at` is deliberately left untouched here (TASK-91): this used to set
+            # `at = now - TTL + 60`, which made a failed build look like a fresh one for the next
+            # ~60s -- snapshot()'s own `stale` check stayed False, so nothing retried and every
+            # caller silently kept reading the same stale-or-empty snapshot as current. Leaving
+            # `at` alone means the very next snapshot() call still sees the real staleness/empty
+            # state and tries again -- a transient failure is retried on the next request instead
+            # of being masked for a full cycle.
     return _snap
 
 

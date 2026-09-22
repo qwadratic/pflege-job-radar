@@ -518,6 +518,20 @@ def test_dvinci_keeps_everything_when_no_category_is_nursing(monkeypatch):
     assert len(rows) == 2
 
 
+# TASK-83: jobPublicationURL sometimes carries a trailing /<slug> and sometimes doesn't for the SAME
+# job (confirmed live 2026-09-22: Bamberg/Fuerth/Neumarkt each stored the same job twice, once per
+# shape, 5 duplicate ids each) -- parse_dvinci normalizes both to the id-only form so they collapse
+# onto the same source_ref (unique(source_id, source_ref), sql/001_schema.sql:112) instead of two rows.
+def test_parse_dvinci_normalizes_id_slug_url_to_the_bare_id_form():
+    j_with_slug = {"position": "Pflegefachkraft", "jobOpening": {},
+                   "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52664/pflegefachkraft-mwd-dialyse"}
+    j_bare = {"position": "Pflegefachkraft", "jobOpening": {},
+              "jobPublicationURL": "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52664"}
+    p_slug = va.parse_dvinci(j_with_slug, "Org", "https://x/list.json")
+    p_bare = va.parse_dvinci(j_bare, "Org", "https://x/list.json")
+    assert p_slug["url"] == p_bare["url"] == "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52664"
+
+
 # ---------------------------------------------------------------------------
 # oracle: prefer the tenant's own jobs.feed.json (softgarden-fronted, e.g. St. Josef), else fall
 # back to crawl_wp_jobs and backfill the fields that fallback's own parser never sets (TASK-31)
@@ -597,6 +611,15 @@ def test_not_job_path_still_allows_real_karriere_detail_pages():
     for path in ["/karriere-detail/Ottobeuren/Pflegefachkraft-mwd/2612", "/karriere/detail/42-pflegefachkraft",
                  "/stellenangebote/detail/7"]:
         assert va.JOB_PATH.search(path) and not va.NOT_JOB_PATH.search(path), path
+
+
+# TASK-84 AC2: a medical-glossary entry is the same TYPO3 /detail/ shape one folder over from the
+# news/press/blog cases above -- confirmed live 2026-09-21, klinikum-msp.de's own
+# /patienten-besucher/glossar/detail/fusspflege stored as an open nursing posting.
+def test_not_job_path_excludes_glossary_detail_pages():
+    path = "/patienten-besucher/glossar/detail/fusspflege"
+    assert va.JOB_PATH.search(path), "should still look job-shaped by URL alone"
+    assert va.NOT_JOB_PATH.search(path), "should be excluded as a non-job detail page"
 
 
 def test_find_job_urls_drops_typo3_news_detail_pages_confirmed_klinikum_memmingen(monkeypatch):

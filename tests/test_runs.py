@@ -45,16 +45,43 @@ def test_board_walk_ok_true_with_no_recorded_issue(fresh):
     assert R.board_walk_ok("https://x.example/board", "2026-09-21") is True
 
 
-def test_board_walk_ok_false_on_error_or_truncated(fresh):
+def test_board_walk_ok_false_on_vendor_kind(fresh):
+    # kind='vendor' is what app/crawl.py:786 actually records for a board still transport-failing
+    # after 3 attempts (b["kind"] is crawlers.routing.ADAPTERS' calling-convention tag -- there is no
+    # literal 'error' kind; see board_walk_ok's docstring). Isolated on its own row/day so a filter
+    # mutated down to e.g. kind in ('seeded','truncated') would redden this specific test.
     url, day = "https://x.example/board", "2026-09-21"
-    R.record_crawl_issue(url, day, "error", "wp_jobs", ["1"], "transport failure", 1)
+    R.record_crawl_issue(url, day, "vendor", "wp_jobs", ["1"], "transport failure: 0/3 succeeded", 1)
     assert R.board_walk_ok(url, day) is False
-    R.record_crawl_issue(url, day, "truncated", "wp_jobs", ["1"], "safety ceiling stopped the walk", 2)
+
+
+def test_board_walk_ok_false_on_seeded_kind(fresh):
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "seeded", "softgarden", ["1"], "transport failure: 0/3 succeeded", 1)
     assert R.board_walk_ok(url, day) is False
+
+
+def test_board_walk_ok_false_on_truncated_kind(fresh):
+    # isolated with NO 'vendor'/'seeded' row for this board/day -- the old test inserted 'error' first
+    # and never cleared it, so this case was never actually exercised on its own (mutation-confirmed:
+    # narrowing the filter to kind in ('error') alone left the old test green).
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "truncated", "wp_jobs", ["1"], "safety ceiling stopped the walk", 1)
+    assert R.board_walk_ok(url, day) is False
+
+
+def test_board_walk_ok_true_on_kinds_unrelated_to_a_board_walk(fresh):
+    # 'city'/'posting' are per-posting verify issues for this exact url, recorded on a day the board
+    # walk itself otherwise succeeded fine -- guards against a filter widened the wrong way (e.g.
+    # `kind != 'empty'`) mistaking them for the walk itself having failed.
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "city", "jsonld", ["1"], "page says 'Oberhausen', stored 'Regensburg'", 1)
+    R.record_crawl_issue(url, day, "posting", "jsonld", ["1"], "unrelated single-posting issue", 2)
+    assert R.board_walk_ok(url, day) is True
 
 
 def test_board_walk_ok_true_on_a_merely_empty_walk(fresh):
-    # 'empty' (0 rows, no transport error) is deliberately NOT one of the two kinds that flip this
+    # 'empty' (0 rows, no transport error) is deliberately NOT one of the three kinds that flip this
     # false -- board_absent_gone's own docstring explains why a plain 0-rows success must stay the
     # caller's judgment call, not a blanket ok/not-ok baked in here.
     url, day = "https://x.example/board", "2026-09-21"
@@ -63,9 +90,11 @@ def test_board_walk_ok_true_on_a_merely_empty_walk(fresh):
 
 
 def test_board_walk_ok_ignores_other_days_and_other_boards(fresh):
+    # kind='vendor' here on purpose (a real matched kind): with the never-recorded 'error' this test
+    # used before the fix, it passed regardless of whether the day/board_url scoping worked at all.
     url, day = "https://x.example/board", "2026-09-21"
-    R.record_crawl_issue(url, "2026-09-20", "error", "wp_jobs", ["1"], "yesterday's failure", 1)
-    R.record_crawl_issue("https://other.example/board", day, "error", "wp_jobs", ["2"], "a different board", 2)
+    R.record_crawl_issue(url, "2026-09-20", "vendor", "wp_jobs", ["1"], "yesterday's failure", 1)
+    R.record_crawl_issue("https://other.example/board", day, "vendor", "wp_jobs", ["2"], "a different board", 2)
     assert R.board_walk_ok(url, day) is True
 
 

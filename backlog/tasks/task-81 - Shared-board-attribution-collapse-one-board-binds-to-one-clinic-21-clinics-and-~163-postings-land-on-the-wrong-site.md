@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:25'
-updated_date: '2026-09-21 18:59'
+updated_date: '2026-09-22 00:40'
 labels: []
 dependencies: []
 ordinal: 81000
@@ -98,6 +98,18 @@ Full offline suite: .venv/bin/python -m pytest -q -m "not network": 1309 passed,
 Full writeup: backups/task80-81-dryrun-report-20260921.md, "Follow-up (2026-09-21, reviewer round)" section.
 
 Still not done, unchanged from before (out of scope this round too): AC#1 (per-vendor location fields, needs crawlers/vendor_adapters.py + pflege_jobs/sources/*.py, not owned), AC#4/#5 (no replay data available for the 15 named clinics in this environment), AC#6 (needs career_crawl.py's in_bavaria(), not owned). Mechanism #1 (board bound to clinics[0]) and mechanism #4 (_pick_site bed tie-break, clinic 46103) unchanged, same reasons as before.
+
+Independent re-verification (2026-09-22, follow-up session, triggered by a workflow message claiming the reviewer-round rework never ran because the prior session hit its limit): that premise did not match the repository. git status/diff showed a completely clean tree at a5c01d6 (zero uncommitted changes anywhere) BEFORE this session touched anything, and reading pflege_jobs/registry.py confirmed the "Reviewer round" fixes described above (city_key() strips a leading "markt ", R1_exact's other_town_disagrees refinement, the test_inherited_fields.py line-132 assertion update) were already committed code, not just narrated notes.
+
+Rather than trust that and stop, re-ran fresh mutation tests via /tmp copies (cp to /tmp, edit the real file in place, run pytest, restore from /tmp, confirm zero final diff -- never git checkout/stash/reset, per this round's parallel-execution rule) to independently confirm each claim above:
+- Removed city_key()'s "markt " strip -> test_board_town_gate_survives_a_leading_civic_qualifier goes RED (AssertionError: None != ('17402','R0_board_town',0.85)); every other test in the file stays green. Restored, green.
+- Reverted R1_exact's gate to the old unconditional "any known disagreeing city refuses" shape (drop other_town_disagrees, back to `if not ck or _town_match(own_town, ck)`) -> test_r1_exact_falls_through_on_a_known_disagreeing_city's Bielefeld assertion goes RED (AssertionError: None != ('X1','R1_exact',1.0)); isolated to that one test. Restored, green.
+- Removed only the CITY_ALIASES "neumarkt in oberpfalz" entry -> test_r1_exact_town_gate_survives_an_abbreviated_registry_qualifier stays GREEN (independently confirms the corrected claim above: that test is rescued by the other_town_disagrees fix, not the alias) while test_city_aliases_neumarkt_survives_on_the_board_path_too goes RED (confirms that newer test is the one genuinely covering the alias). Restored, green.
+Every restore verified via `diff` against the /tmp copy before moving on; final `git diff --stat HEAD` for every file this task owns plus tests/test_inherited_fields.py is empty.
+
+Targeted suite (test_mech_clinic_link.py + test_inherited_fields.py + test_crawl_board_retry.py): 61/61 passed. Full offline suite (-m "not network"): first run 1309 passed, 1 skipped, 1197 deselected, 1 failed -- tests/test_web_hero.py::test_a_card_lands_on_the_list_it_promised_and_the_chip_clears_it, a Playwright wait_for_function timeout, not in any file this task owns. Re-ran that one test alone: 1 passed in 15.41s, consistent with a load-induced flake from other agents' concurrent work in this shared tree (per this round's parallel-execution note), not a regression from anything in this task. Net: 1310/1310 real passes, 1 skipped, 0 genuine failures -- matches this task's own prior "0 failed" claim.
+
+Conclusion: no code changes were needed or made this round for TASK-81's reviewer problems -- all 4 were already fixed and committed in a5c01d6. This entry is independent confirmation only. AC#1/#4/#5/#6 remain honestly unmet for the same reasons already on record (need crawlers/vendor_adapters.py and pflege_jobs/sources/*.py, and/or crawl_output data this environment doesn't have for the 15 named clinics) -- not re-investigated this round since nothing about them changed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

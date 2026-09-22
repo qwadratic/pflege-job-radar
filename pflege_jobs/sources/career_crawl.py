@@ -20,8 +20,8 @@ from urllib.parse import urljoin, urlparse, urldefrag
 import requests
 
 from .. import config as C
-from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm,
-                        enrich_description, fuzzy_key, norm_text, qualification_hint)
+from ..classify import (canonical_job_url, classify_employer, classify_role, content_hash, department_hint,
+                        employer_norm, enrich_description, fuzzy_key, norm_text, qualification_hint)
 from ..section import pick_nursing_link
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
@@ -328,7 +328,7 @@ class Crawler:
         the caller (the seed page, when peeking for a section link) be reused instead of re-fetched."""
         prefetched = dict(prefetched or {})
         list_q = deque((u, 0) for u in start_urls)
-        seen_lists, job_links = set(), {}
+        seen_lists, job_links, jobs = set(), {}, {}
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0}
         while list_q and stats["list_pages"] < self.list_budget:
             url, depth = list_q.popleft()
@@ -339,15 +339,33 @@ class Crawler:
             if not r: continue
             stats["list_pages"] += 1
             html = r.text
+            # A category/nav page can itself carry a promotional JobPosting block (or, rarer, BE one) --
+            # checked on every fetched list page, same signal job_links' own fetch loop below uses, so
+            # a link that only matched JOB_HREF (see below, no gender marker of its own) still becomes
+            # a job when the page it points at actually states JobPosting JSON-LD.
+            jps = _jsonld_jobpostings(html)
+            if jps and r.url not in jobs:
+                stats["jobposting_pages"] += 1
+                jobs[r.url] = self._from_jsonld(jps[0], r.url, seed, section_confirmed=section_confirmed)
             for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S | re.I):
                 href, inner = m.group(1), _strip(m.group(2))[:200]
                 u = urldefrag(urljoin(r.url, href))[0]
                 if not self._page_hosts_ok(u, hosts): continue
                 if u in job_links or u in seen_lists: continue
-                is_job = bool(JOB_TEXT.search(inner)) or (bool(JOB_HREF.search(u)) and inner and not LIST_NAV.fullmatch(inner.strip()))
-                if is_job and inner and len(inner) > 6 and not re.search(r"^(mehr|details?|zur stelle|jetzt bewerben|weiterlesen|ansehen)$", inner.strip(), re.I) or (is_job and JOB_HREF.search(u) and not inner):
+                # A link is only ever emitted as a posting on its OWN anchor text carrying a
+                # posting-shaped signal (a gender marker, "(m/w/d)" and friends -- JOB_TEXT). A link
+                # that merely LOOKS job-shaped by its href (JOB_HREF) is not trusted on that alone
+                # (TASK-84: 'Pflegedienst'/'Ansprechpartner' nav links and a division/category index
+                # page both matched JOB_HREF and neither is a posting) -- it is queued as a list page
+                # instead, same as any other candidate list link: its own fetch gets the JSON-LD check
+                # above, and its own links get explored, so a real listing one hop behind a
+                # category link (confirmed live 2026-09-21: St. Josef Regensburg/36202,
+                # /alle-stellenangebote unreachable, 9 of 14 real vacancies never seen -- the category
+                # link used to dead-end in job_links instead of ever being queued) is still reached.
+                if JOB_TEXT.search(inner) and len(inner) > 6 and not re.search(
+                        r"^(mehr|details?|zur stelle|jetzt bewerben|weiterlesen|ansehen)$", inner.strip(), re.I):
                     job_links[u] = inner
-                elif PAGINATE.search(u) or LIST_NAV.search(inner) or LIST_NAV.search(u):
+                elif JOB_HREF.search(u) or PAGINATE.search(u) or LIST_NAV.search(inner) or LIST_NAV.search(u):
                     # No queue-size ceiling here: `len(seen_lists) + len(list_q) >= list_budget * 2`
                     # used to drop candidate list pages for good, and seen_lists counts every url
                     # POPPED -- including the ones whose fetch failed, which never raise list_pages.
@@ -360,7 +378,6 @@ class Crawler:
             for u in self.sitemap_job_urls(sm):
                 if u not in job_links and not LINK_BAD.search(u): job_links[u] = ""
         stats["sitemap_links"] = sum(1 for v in job_links.values() if v == "")
-        jobs = {}
         for u, anchor in list(job_links.items())[: self.budget]:
             r = self.fetch(u)
             if not r: continue
@@ -439,7 +456,12 @@ class Crawler:
         role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
         return {
-            "source_id": SOURCE_ID, "source_ref": url, "source_url": url, "observed_at": datetime.now(timezone.utc).isoformat(),
+            # source_ref is the (source_id, source_ref)-unique DEDUP identity (sql/001_schema.sql:112)
+            # -- canonicalized to the vendor job id (TASK-83) so a job crawled under 2-3 URL shapes
+            # upserts onto one observation instead of becoming a duplicate posting per shape.
+            # source_url/external_url stay the real, as-crawled link (never rewritten): source_ref is
+            # never used to fetch anything (see pflege_jobs/verify.py), only to key identity.
+            "source_id": SOURCE_ID, "source_ref": canonical_job_url(url), "source_url": url, "observed_at": datetime.now(timezone.utc).isoformat(),
             "title": title, "employer_name": emp, "employer_name_norm": employer_norm(emp),
             "employer_class": "clinic" if e_class != "clinic" else e_class, "employer_class_rule": e_rule if e_class == "clinic" else f"registry_seed|{e_rule}",
             "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],

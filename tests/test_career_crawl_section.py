@@ -279,6 +279,72 @@ def test_section_first_merge_keeps_truncated_even_when_the_subtree_found_nothing
     assert stats["truncated"] is True
 
 
+# --- TASK-84 AC1: a link is only a posting on its OWN posting-shaped signal ----------------------
+
+def test_category_link_with_no_gender_marker_is_queued_not_emitted_as_a_posting():
+    """St. Josef Regensburg/36202 (confirmed live 2026-09-21): a division/category link
+    ('Pflegedienst', href matching JOB_HREF via '/stellenangebot' but no gender marker of its own)
+    used to be emitted straight into job_links and, since job_links is a dead end (its own links are
+    never explored), the BFS never reached '/alle-stellenangebote' one hop behind it -- 9 of 14 real
+    vacancies were never seen. It must now be queued as a list page instead, so the real listing
+    behind it is still reached."""
+    seed_url = "https://example-klinik.de/karriere/"
+    category_url = "https://example-klinik.de/stellenangebote/pflege/"
+    listing_url = "https://example-klinik.de/alle-stellenangebote"
+    job_url = "https://example-klinik.de/job/1"
+    seed_html = '<a href="/stellenangebote/pflege/">Pflegedienst</a>'
+    # category page itself carries no job -- just the real listing one hop further in
+    category_html = '<a href="/alle-stellenangebote">Alle Stellenangebote</a>'
+    listing_html = '<a href="/job/1">Pflegefachkraft (m/w/d) Station A</a>'
+    job_html = JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station A")
+    fetch_map = {seed_url: R(seed_html, seed_url), category_url: R(category_html, category_url),
+                 listing_url: R(listing_html, listing_url), job_url: R(job_html, job_url)}
+    cr = _crawler(fetch_map)
+
+    rows, stats = cr._crawl_urls({"name": "X", "kez": "1", "career": seed_url}, {"example-klinik.de"}, [seed_url], [])
+
+    assert category_url in cr.calls and listing_url in cr.calls  # both hops reached
+    assert len(rows) == 1 and rows[0]["title"] == "Pflegefachkraft (m/w/d) Station A"
+    assert "Pflegedienst" not in {r["title"] for r in rows}      # the category link itself never becomes a row
+
+
+def test_junk_nav_link_matching_job_href_produces_no_row_when_its_page_is_not_a_posting():
+    """The other half of the same bug (12 junk rows at 56101): 'Ansprechpartner', href matching
+    JOB_HREF, no gender marker -- must not become a posting just because a plain contact page happens
+    to sit under a job-ish path and has no further job-shaped content of its own."""
+    seed_url = "https://example-klinik.de/karriere/"
+    contact_url = "https://example-klinik.de/karriere/jobs/ansprechpartner"
+    seed_html = '<a href="/karriere/jobs/ansprechpartner">Ansprechpartner</a>'
+    # carries "bewerb" (Crawler._heuristic's own "is this even a candidate page" gate) so this test
+    # actually exercises the posting-shaped-signal requirement, not just _heuristic's unrelated gate
+    contact_html = ("<html><body><h1>Ansprechpartner</h1>"
+                     "<p>Frau Muster, Personalabteilung. Bewerbungen bitte per Post.</p></body></html>")
+    fetch_map = {seed_url: R(seed_html, seed_url), contact_url: R(contact_html, contact_url)}
+    cr = _crawler(fetch_map)
+
+    rows, stats = cr._crawl_urls({"name": "X", "kez": "1", "career": seed_url}, {"example-klinik.de"}, [seed_url], [])
+
+    assert contact_url in cr.calls   # queued and fetched (as a list-page candidate)...
+    assert rows == []                # ...but produced no posting: no gender marker, no JobPosting JSON-LD
+
+
+def test_jsonld_jobposting_on_a_list_queued_page_is_still_accepted():
+    """A link that only matched JOB_HREF (no gender marker of its own) is queued as a list page, not
+    trusted outright -- but if the page it points at IS a real job detail page, its own JSON-LD says
+    so, same signal job_links' fetch loop already uses. Proves the queued-candidate path isn't a
+    strictly weaker path than job_links, just a deferred one."""
+    seed_url = "https://example-klinik.de/karriere/"
+    detail_url = "https://example-klinik.de/stellenangebote/42"
+    seed_html = '<a href="/stellenangebote/42">Details</a>'   # anchor alone: no gender marker
+    detail_html = JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Notaufnahme")
+    fetch_map = {seed_url: R(seed_html, seed_url), detail_url: R(detail_html, detail_url)}
+    cr = _crawler(fetch_map)
+
+    rows, stats = cr._crawl_urls({"name": "X", "kez": "1", "career": seed_url}, {"example-klinik.de"}, [seed_url], [])
+
+    assert len(rows) == 1 and rows[0]["title"] == "Pflegefachkraft (m/w/d) Notaufnahme"
+
+
 class _SitemapResp:
     def __init__(self, text):
         self.text, self.status_code = text, 200

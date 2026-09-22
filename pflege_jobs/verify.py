@@ -471,7 +471,7 @@ def verify_one(session, url, title, rungs=("http", "render"), towns=None):
 # pulled down stays verify_status='live' forever even after it drops off the board (M7: Münchberg's
 # two .io duplicates were still status='open' 15 days after their last observation). The board
 # itself, not the posting's own page, is the only source that can say a posting left it.
-def board_absent_gone(open_rows, board_urls, walk_ok):
+def board_absent_gone(open_rows, board_urls, walk_ok, key=lambda url: url):
     """verify-shaped rows (VERIFY_FIELDS) that retire postings a SUCCESSFUL board walk no longer
     lists. Feeds the same EdgeSink 'verify' op verify_all() already posts -- the edge function
     already closes a posting on verify_status='gone' (edge/pflege-ingest/index.ts:63), so this needs
@@ -482,21 +482,33 @@ def board_absent_gone(open_rows, board_urls, walk_ok):
     board_urls: every URL the walk just returned -- board MEMBERSHIP as of right now, not liveness.
     walk_ok: True only when the walk itself completed (TASK-73 AC#6 / TASK-14 AC#2: a failed or
       safety-ceiling-truncated walk read less of the board than exists, so absence there proves
-      nothing -- see app/crawl.py's crawl_issues kinds 'error'/'truncated'). The caller decides this
-      from its own signals; False always returns [] here, so a walk that did not finish can never
-      retire a posting no matter what the caller forgets to check elsewhere.
+      nothing -- see app/runs.board_walk_ok's docstring for the exact crawl_issues kinds this depends
+      on ('vendor'/'seeded' for a hard transport failure, 'truncated' for a safety-ceiling stop --
+      there is no literal 'error' kind; an earlier version of this docstring claimed one, disproven
+      against production data/app.sqlite). The caller decides walk_ok from its own signals; False
+      always returns [] here, so a walk that did not finish can never retire a posting no matter what
+      the caller forgets to check elsewhere.
 
     Deliberately silent on 'empty' (0 rows, no transport error): a board that is genuinely down to
     zero real postings should retire everything on it (that IS the M7 gap), but a board read at the
     WRONG url (a registry defect, not a walk failure) also comes back 0 rows with no error -- this
     function cannot tell those apart from board_urls alone, so that call is the caller's, made with
-    whatever it additionally knows about the board's own registry state."""
+    whatever it additionally knows about the board's own registry state.
+
+    key: identity used to match open_rows against board_urls, applied to both sides. Defaults to the
+    raw URL string, which FALSE-POSITIVES when a vendor changes a cosmetic part of a job's URL while
+    the underlying posting is unchanged -- not a hypothetical, confirmed on the TASK-87 retirement
+    dry run (2026-09-21, live boards): Asklepios (clinics 18811, 17302) and helix (67804) each still
+    listed the SAME vendor job id under a cosmetically different URL (slug text / path segment), which
+    raw string equality reads as "gone" and would have retired real open postings. A caller that can
+    derive a vendor's own stable job id from a URL should pass a `key` that extracts it, on both
+    open_rows' external_url and board_urls, rather than trust the default for a real write."""
     if not walk_ok:
         return []
-    seen = {u for u in (board_urls or []) if u}
+    seen = {key(u) for u in (board_urls or []) if u}
     return [{"posting_id": r["posting_id"], "verify_status": "gone", "verify_http": None, "verified_at": _now(),
              "verify_note": "absent from a successful board walk (board membership, not URL liveness)"}
-            for r in open_rows if (r.get("external_url") or r.get("source_url")) not in seen]
+            for r in open_rows if key(r.get("external_url") or r.get("source_url") or "") not in seen]
 
 
 VERIFY_FIELDS = ("posting_id", "verify_status", "verify_http", "verified_at", "verify_note")

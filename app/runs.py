@@ -149,16 +149,27 @@ def list_crawl_issues(day=None, since=None):
 
 
 def board_walk_ok(board_url, day):
-    """True unless `board_url` has a recorded crawl_issue of kind 'error' or 'truncated' for `day` --
-    the two kinds _fetch_board (app/crawl.py) records for a walk that did not complete (TASK-73 AC#6
-    / TASK-14 AC#2: a failed request or a safety-ceiling stop before the board's own end of
-    pagination). Feeds pflege_jobs.verify.board_absent_gone's walk_ok (TASK-87 AC#1): a walk this
-    calls ok read no less of the board than either of those two documented failure shapes, so a
-    posting's absence from its result set is real board-membership evidence, not a stop condition.
-    Deliberately silent on kind='empty' -- see board_absent_gone's own docstring for why that one is
-    the caller's judgment call, not a blanket ok/not-ok here."""
+    """True unless `board_url` has a recorded crawl_issue, for `day`, of a kind that means the walk
+    did not complete. Checked against app/crawl.py's actual _fetch_board (2026-09-22) and against
+    production data/app.sqlite's real kind distribution (city 1712, empty 23, posting 19, seeded 9,
+    vendor 2 -- zero 'error'): there is NO literal 'error' kind. A board still transport-failing
+    after 3 same-run attempts is recorded (app/crawl.py:786) with kind=b["kind"], which
+    crawlers.routing.ADAPTERS sets to 'vendor' or 'seeded' -- the adapter's own calling-convention
+    tag, reused as the issue kind because nothing else names this failure. A walk stopped early by
+    its own safety ceiling before the board's real end of pagination is kind='truncated' (TASK-14
+    AC#2). An earlier version of this docstring, and of the TASK-87 implementation notes, claimed the
+    two kinds were 'error'/'truncated' -- false, and filtering on that literal 'error' string left this
+    guard inert (it matched no row any code path ever writes), so a hard-failing board's walk_ok read
+    True and a downstream board_absent_gone(walk_ok=True) call would have retired every open row on
+    it -- the exact inversion of TASK-87 AC#1's hard constraint. Fixed to filter on the kinds actually
+    recorded for an incomplete walk: 'vendor', 'seeded' (hard failure), 'truncated' (early stop).
+    Feeds pflege_jobs.verify.board_absent_gone's walk_ok (TASK-87 AC#1): a walk this calls ok read no
+    less of the board than any of those three documented failure shapes, so a posting's absence from
+    its result set is real board-membership evidence, not a stop condition. Deliberately silent on
+    kind='empty' -- see board_absent_gone's own docstring for why that one is the caller's judgment
+    call, not a blanket ok/not-ok here."""
     with _lock, db() as c:
-        r = c.execute("select 1 from crawl_issues where board_url=? and day=? and kind in ('error','truncated') limit 1",
+        r = c.execute("select 1 from crawl_issues where board_url=? and day=? and kind in ('vendor','seeded','truncated') limit 1",
                       (board_url, day)).fetchone()
     return not bool(r)
 

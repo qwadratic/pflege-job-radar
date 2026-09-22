@@ -499,9 +499,16 @@ JOB_PATH = re.compile(r"[/-](jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(kar
 # /detail/<id> shape JOB_PATH's un-prefixed alternative accepts for a job -- a news/press/blog/event
 # section under that shape is not a posting no matter how it classifies afterwards (confirmed live
 # 2026-09-18: klinikum-memmingen.de's /aktuelles/detail/ news archive, 1545 rows/run, 31 surviving
-# the role filter as fake nursing postings).
+# the role filter as fake nursing postings). A medical-glossary entry is the same TYPO3 shape one
+# folder over (confirmed live 2026-09-21: klinikum-msp.de's own /patienten-besucher/glossar/detail/
+# fusspflege, a foot-care glossary definition, stored as an open nursing posting) -- "glossar" joins
+# the same blacklist rather than JOB_PATH's own /detail/ alternative gaining a positive job-word
+# requirement: tests/test_vendor_adapters.py's test_not_job_path_excludes_typo3_news_press_blog_event_
+# detail_pages pins JOB_PATH matching the BARE /aktuelles|presse|blog|.../detail/ shape on purpose, so
+# NOT_JOB_PATH has something to positively exclude; narrowing JOB_PATH itself would have to un-match
+# that same fixture.
 NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b|[?&](kategorie|category)=|"
-                          r"/(aktuelles?|presse|news|blog|veranstaltung(?:en)?|termine?|events?)/(?:karriere-)?detail/", re.I)
+                          r"/(aktuelles?|presse|news|blog|glossar|veranstaltung(?:en)?|termine?|events?)/(?:karriere-)?detail/", re.I)
 
 
 def _registrable_domain(netloc):
@@ -1617,6 +1624,24 @@ def _erecruiter_jobs(htmltext):
     return [j for j in (data.get("Jobs") or []) if isinstance(j, dict)], data
 
 
+class _BoardTotalRows(list):
+    """A plain row list -- the return-value shape app/crawl.py's generic vendor-adapter caller
+    depends on, so this class changes nothing about how a caller sees it -- that also carries THIS
+    call's own board-total signal as instance attributes.
+
+    Not stashed on `session` (the first cut did, mirroring get()'s _attempts/_ok side channel):
+    session is one per whole RUN (app/crawl.py:655 creates a single requests.Session and reuses it
+    board after board), while a board total is per-BOARD. get()'s _attempts/_ok survive that reuse
+    only because _fetch_board resets them right before every board fetch (app/crawl.py:707); nothing
+    equivalent reset _board_total, so it kept the last eRecruiter board's number and _fetch_board's
+    pending AC#2 wiring ('read session._board_total after calling a vendor adapter') would have read
+    a stale total for every following NON-eRecruiter board and recorded it as falsely incomplete
+    (review finding, 2026-09-22). A fresh instance of this class per call carries only this call's
+    own value -- nothing to go stale, nothing another file has to remember to reset."""
+    board_total = None
+    board_paginated = None
+
+
 def crawl_erecruiter(c, session=None, cu_resp=None):
     cu = (c.get("careers_url") or "").strip()
     r = cu_resp if (cu_resp is not None and cu_resp.ok) else (get(cu, session=session) if cu else None)
@@ -1624,18 +1649,17 @@ def crawl_erecruiter(c, session=None, cu_resp=None):
         return []
     p = urlparse(r.url)
     base = "%s://%s" % (p.scheme, p.netloc)
-    out = []
+    out = _BoardTotalRows()
     jobs, board = _erecruiter_jobs(r.text)
-    if session is not None:
-        # TASK-88: both live tenants today ship TotalJobsCount == len(Jobs) (the comment above says
-        # why -- no server-side page to walk), so this has never been WRONG yet, but nothing ever
-        # checked it either -- a third tenant that DOES paginate server-side would silently under-read
-        # as a clean success. Stashed on session (mirrors get()'s _attempts/_ok, TASK-72 AC#1): this
-        # fn returns a plain row list whose shape the generic vendor-adapter caller depends on, so
-        # board-level metadata (not per-row) has no return-value channel of its own.
-        total = board.get("TotalJobsCount")
-        session._board_total = total if isinstance(total, int) else None
-        session._board_paginated = bool((board.get("Pagination") or {}).get("IsPagination"))
+    # TASK-88: both live tenants today ship TotalJobsCount == len(Jobs) (the comment above says why --
+    # no server-side page to walk), so this has never been WRONG yet, but nothing ever checked it
+    # either -- a third tenant that DOES paginate server-side would silently under-read as a clean
+    # success. This fn returns a plain row list whose shape the generic vendor-adapter caller depends
+    # on, so board-level metadata (not per-row) has no return-value channel of its own besides
+    # attributes on the list instance itself (see _BoardTotalRows).
+    total = board.get("TotalJobsCount")
+    out.board_total = total if isinstance(total, int) else None
+    out.board_paginated = bool((board.get("Pagination") or {}).get("IsPagination"))
     for j in jobs:
         jid = j.get("Id")
         title = _txt(j.get("Title"), 300)
@@ -1778,6 +1802,12 @@ def parse_dvinci(j, org, list_url):
     desc = _txt(" ".join(_html.unescape(p) for p in
                          (j.get("introduction"), j.get("tasks"), j.get("profile"), j.get("weOffer")) if p))
     url = j.get("jobPublicationURL") or list_url
+    # jobPublicationURL sometimes carries a trailing /<slug> after the numeric id and sometimes
+    # doesn't (confirmed live 2026-09-22: Bamberg/Fuerth/Neumarkt each store 5 of the SAME job twice,
+    # once per shape) -- the id-only form is itself a real, currently-serving dvinci URL (dvinci 200s
+    # it and redirects straight to the slugged page), so normalize to it here rather than downstream:
+    # one shape stored, never two rows for one job.
+    url = re.sub(r"(/de/jobs/\d+)/[^/?#]+", r"\1", url)
     employment_type = ", ".join(wt.get("name") for wt in (jo.get("workingTimes") or []) if wt.get("name")) or None
     company_name = (jo.get("company") or {}).get("name") or None
     return {"title": j.get("position"), "org": company_name or org,

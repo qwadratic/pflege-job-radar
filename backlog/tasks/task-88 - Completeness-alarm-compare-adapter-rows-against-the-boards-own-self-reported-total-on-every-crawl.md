@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:26'
-updated_date: '2026-09-21 18:50'
+updated_date: '2026-09-22 00:47'
 labels: []
 dependencies: []
 ordinal: 88000
@@ -100,6 +100,20 @@ the split) was not re-run live this round; the already-committed top100 audit
 (docs/reports/top100-coverage-audit-2026-09-21.md section 4) remains the standing answer (17 full,
 9 not full, 2 honest-unknown: 47601/67601 Akamai-walled, exactly as this task's own instruction says
 to preserve) until data/feature_cells.jsonl is populated for real.
+
+2026-09-22 review-fix pass (independent Opus review of the a5c01d6 commit; fixing the one concrete defect found in this task's file scope: crawlers/vendor_adapters.py's crawl_erecruiter board-total side channel. The rework session that was supposed to fix it hit its limit before running).
+
+Reviewer finding: session._board_total / session._board_paginated (crawl_erecruiter, previously) were written on the shared `session`, but app/crawl.py creates ONE session per whole RUN (app/crawl.py:655) and reuses it board after board -- get()'s own _attempts/_ok side channel survives that reuse only because _fetch_board explicitly resets both right before every board fetch (app/crawl.py:707); nothing equivalent existed for _board_total, so it kept the LAST eRecruiter board's number. The pending AC#2 wiring this task documented ("_fetch_board reads session._board_total after calling a vendor adapter") would, exactly as specified, have read a stale eRecruiter total for every following NON-eRecruiter board that same run and recorded a false 'incomplete' crawl_issue on a board that was actually fine.
+
+Fixed within file scope (app/crawl.py is owned by another agent this round, so a reset "next to line 707" was not available -- used the reviewer's other named option, an adapter-scoped carrier): crawl_erecruiter now returns a _BoardTotalRows (a list subclass -- transparent to every existing caller: isinstance/len/iteration/truthiness are all identical to a plain list, preserving the hard "plain row list" return-value contract this fn cannot break) carrying .board_total/.board_paginated as instance attributes instead of session attributes. Each call gets a brand-new instance, so there is no shared mutable state left to go stale and nothing for a future caller to remember to reset.
+
+Updated the wiring note for the still-pending AC#2 piece: the next agent that wires app/crawl.py's _fetch_board should read rows.board_total (the vendor-adapter call's own return value, right where `rows = _vendor_rows(...)` already happens at app/crawl.py:708) instead of session._board_total -- the old session-based attribute no longer exists.
+
+tests/test_erecruiter_board_total.py's 3 existing tests updated to assert on the returned rows' own attributes instead of the session's; added a 5th test that reuses ONE shared session across two sequential crawl_erecruiter calls (board A total=57, board B total=1) and proves each call's own returned rows carry only its own board's total -- board A's return value is provably untouched after board B runs. Mutation-tested via /tmp copies (not git): reintroducing a realistic version of the original bug (writing the total onto the _BoardTotalRows CLASS instead of the per-call instance -- the same shared-state shape as the session bug) reddens exactly this new test; restored clean after.
+
+Full offline suite after this pass: 1319 passed, 5 skipped, 0 failed, 403.64s.
+
+AC status unchanged by this pass: 0/5 checked, for the same out-of-file-scope reasons recorded before (the other ~18 adapters and the app/crawl.py wiring belong to other agents this round). This pass is a correctness fix to the worked example's own mechanism, not new AC coverage.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -118,4 +132,6 @@ level the acceptance criteria ask for -- the remaining ~18 adapters and the app/
 would make AC#2 a live guarantee belong to other concurrent agents' files this round. 0/5 AC checked;
 all evidence and the precise pending wiring points are in the implementation notes. Full offline
 suite: 1311 passed, 5 skipped, 0 failed.
+
+2026-09-22 rework: fixed the reviewer-found defect in file scope (crawl_erecruiter stashed its board total on the shared per-RUN session with no per-board reset available in-scope, so a stale total from one eRecruiter board would misattribute to the next non-eRecruiter board once app/crawl.py's pending wiring reads it). Replaced with a per-call list-subclass return-value carrier (_BoardTotalRows) that needs no reset by construction. Mutation-tested via /tmp copies. Full offline suite: 1319 passed, 5 skipped, 0 failed. AC checkboxes unchanged (still 0/5 -- this pass corrected the worked example's mechanism, it did not extend coverage to other adapters or wire app/crawl.py, both owned by other agents this round).
 <!-- SECTION:FINAL_SUMMARY:END -->
