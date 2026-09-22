@@ -364,8 +364,6 @@ def test_a_truncated_seeded_read_is_recorded_as_crawl_issue_kind_truncated(fresh
     monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
     monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
         obs, {"truncated": True, "job_links_found": 180, "list_pages": 500, "job_pages": 150}))
-    monkeypatch.setattr(CR, "_load_observations", lambda o, by_id, log: ({}, []))
-
     rid = R.create_run("clinic", "1", "adapter")
     CR.execute(rid)
 
@@ -382,8 +380,6 @@ def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
     monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
     monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
         obs, {"truncated": False, "job_links_found": 12, "list_pages": 2, "job_pages": 12}))
-    monkeypatch.setattr(CR, "_load_observations", lambda o, by_id, log: ({}, []))
-
     rid = R.create_run("clinic", "1", "adapter")
     CR.execute(rid)
 

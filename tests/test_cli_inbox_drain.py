@@ -35,7 +35,7 @@ def _args(clinics_csv, max_batches, no_ack=False):
 
 
 def test_max_batches_reached_prints_truncated_to_stderr(clinics_csv, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns: 1000)   # never signals "queue empty"
+    monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: 1000)   # never signals "queue empty"
     cli.cmd_inbox(_args(clinics_csv, max_batches=3))
     out = capsys.readouterr()
     assert "TRUNCATED: max_batches=3" in out.err
@@ -45,7 +45,7 @@ def test_max_batches_reached_prints_truncated_to_stderr(clinics_csv, monkeypatch
 def test_natural_end_of_queue_prints_no_truncation_warning(clinics_csv, monkeypatch, capsys):
     calls = {"n": 0}
 
-    def drain(a, url, H, m, towns):
+    def drain(a, url, H, m, towns, **kw):
         calls["n"] += 1
         return 1000 if calls["n"] < 2 else 400   # queue drains on the 2nd batch
 

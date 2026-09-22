@@ -40,6 +40,35 @@ def test_same_kind_board_and_day_still_upserts(fresh):
     assert issues[0]["error"] == "second failure" and issues[0]["run_id"] == 2
 
 
+# --- board_walk_ok: TASK-87 AC#1's walk_ok signal for pflege_jobs.verify.board_absent_gone -----
+def test_board_walk_ok_true_with_no_recorded_issue(fresh):
+    assert R.board_walk_ok("https://x.example/board", "2026-09-21") is True
+
+
+def test_board_walk_ok_false_on_error_or_truncated(fresh):
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "error", "wp_jobs", ["1"], "transport failure", 1)
+    assert R.board_walk_ok(url, day) is False
+    R.record_crawl_issue(url, day, "truncated", "wp_jobs", ["1"], "safety ceiling stopped the walk", 2)
+    assert R.board_walk_ok(url, day) is False
+
+
+def test_board_walk_ok_true_on_a_merely_empty_walk(fresh):
+    # 'empty' (0 rows, no transport error) is deliberately NOT one of the two kinds that flip this
+    # false -- board_absent_gone's own docstring explains why a plain 0-rows success must stay the
+    # caller's judgment call, not a blanket ok/not-ok baked in here.
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "empty", "wp_jobs", ["1"], "0 rows, no transport error", 1)
+    assert R.board_walk_ok(url, day) is True
+
+
+def test_board_walk_ok_ignores_other_days_and_other_boards(fresh):
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, "2026-09-20", "error", "wp_jobs", ["1"], "yesterday's failure", 1)
+    R.record_crawl_issue("https://other.example/board", day, "error", "wp_jobs", ["2"], "a different board", 2)
+    assert R.board_walk_ok(url, day) is True
+
+
 def test_init_migrates_a_pre_task72_database_without_losing_rows(tmp_path, monkeypatch):
     """A database file created before this fix has crawl_issues with primary key (board_url, day)
     only -- init() must recreate it with the new key and keep whatever rows already existed."""

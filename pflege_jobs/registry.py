@@ -19,7 +19,16 @@ from .sources.career_crawl import _canon_town
 STOP = {"klinik", "kliniken", "klinikum", "krankenhaus", "gmbh", "ggmbh", "ag", "kg", "ev", "e", "v", "gku", "aör", "aoer",
         "stiftung", "gemeinnützige", "gemeinnuetzige", "und", "der", "des", "die", "für", "fuer", "im", "am", "an", "in", "von", "st", "sankt",
         "fachklinik", "fachkliniken", "gesundheit", "medizinisches", "zentrum", "personalabteilung", "bereich", "campus", "standort", "haus", "recht", "rechts" if False else "recht", "stadt", "landkreis", "kreis", "bezirk", "des", "öffentlichen", "anstalt", "körperschaft"}
-CITY_ALIASES = {"münchen": {"münchen", "muenchen", "munich"}, "nürnberg": {"nürnberg", "nuernberg"}}
+CITY_ALIASES = {"münchen": {"münchen", "muenchen", "munich"}, "nürnberg": {"nürnberg", "nuernberg"},
+                # "i.d." (= "in der") folds fine via _canon_town's own connector-stripping when the
+                # qualifier after it is spelled out ("Weiden i.d. Oberpfalz" -> "weiden oberpfalz",
+                # _town_match's own docstring example) -- but clinic 37301's live registry town
+                # abbreviates the qualifier too ("Neumarkt i.d.OPf."), which _canon_town has no reason
+                # to know means "Oberpfalz". Found live 2026-09-21: TASK-81's R1_exact town gate
+                # started comparing this town for the first time (R1_exact never checked city before)
+                # and refused a real "Klinikum Neumarkt" posting stating the spelled-out city, because
+                # the two forms canonicalized to "neumarkt opf" vs "neumarkt in oberpfalz" -- disjoint.
+                "neumarkt in oberpfalz": {"neumarkt i.d.opf.", "neumarkt i.d. opf."}}
 
 
 ALIASES = {"universitätsklinikum": {"universität"}, "uniklinikum": {"universität"}, "uniklinik": {"universität"},
@@ -62,6 +71,15 @@ def city_key(c):
     c = norm_text(c or "")
     c = re.sub(r"^\d{5}\s+", "", c)                # '82467 Garmisch-Partenkirchen'
     c = re.sub(r"\s*(,|\().*$", "", c)            # 'Landshut, Isar' -> 'landshut'
+    # 'Markt Indersdorf' is the LEADING-qualifier mirror of the trailing-qualifier case
+    # _town_match already handles: a posting names the town alone ('Indersdorf'). Stripped here
+    # (not via a _town_match generalization) because a generic prefix-or-suffix _town_match would
+    # also bridge real, DIFFERENT towns that happen to share a last word (measured live 2026-09-21
+    # against all 407 clinics: 'Coburg' vs 'Neustadt bei Coburg', 'Pegnitz' vs 'Lauf an der
+    # Pegnitz' -- both distinct real places, ~15-30km apart). 'markt' is the only leading qualifier
+    # measured in the live registry (clinic 17402); unlike 'Bad' it is never itself part of a bare
+    # town's identity, so stripping it cannot collapse two different real towns together.
+    c = re.sub(r"^markt\s+", "", c)
     for k, al in CITY_ALIASES.items():
         if c in al: return k
     return _canon_town(c)
@@ -114,7 +132,7 @@ class Matcher:
         if not ck: return []
         return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
 
-    def match(self, employer, city, board=None, description=None, employer_inherited=False):
+    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
@@ -127,11 +145,22 @@ class Matcher:
         circular: it always succeeds, on every posting of a nationwide board, which is how every AMEOS
         posting in Germany attached to Neuburg (decision-5 left this open as a crawler-layer problem;
         with the marker it can finally be enforced here). Such a row must earn its clinic from the
-        city/tokens/board instead."""
+        city/tokens/board instead.
+
+        city_inherited=True is the same problem for the OTHER half of a board-fallback match
+        (pflege_jobs/sources/inbox.py's city_source='seed', set when a job page names no location at
+        all and the crawler substituted the seed clinic's own registry town, TASK-81 mechanism #3):
+        R0_board_town then "agrees" with the seed by construction, and R0_board_name/_tokens can hit
+        the same way when employer is ALSO inherited (city_inherited and employer_inherited commonly
+        travel together, but are gated independently here since either alone is enough to fabricate a
+        false agreement with the seed). A copied city/name is dropped for the board fallback only --
+        content-side matching (_match_content, above) is unaffected."""
         r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
         if r: return r
         if board:
-            en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
+            en = "" if employer_inherited else employer_norm(employer or "")
+            et = set() if employer_inherited else toks(employer)
+            ck = None if city_inherited else city_key(city)
             return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
         return None
 
@@ -139,7 +168,22 @@ class Matcher:
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
         if not en: return self._match_jd(description)
         c = [] if employer_inherited else self.by_name.get(en, [])
-        if len(c) == 1: return c[0]["clinic_id"], "R1_exact", 1.0
+        # Gated on town the same way its own R1_exact_town sibling two lines below always was: a
+        # UNIQUE employer-name hit is still a wrong match when the posting's own city is known and
+        # names a different registry town (TASK-81 mechanism #2; e.g. a unique-nationwide employer
+        # name that also runs a Bavaria-adjacent site). Unknown city (ck falsy) is unchanged -- no
+        # evidence to contradict the name match with. A known city that names no OTHER registry town
+        # at all is *also* not contradicting evidence -- it can be a board/employer label ('RoMed
+        # Verbund'), or a real place the registry simply has no clinic in ('Titting',
+        # 'Petershausen'); only refuse when the city actually points at a DIFFERENT real registry
+        # site (measured live 2026-09-21 over all 2560 open postings: the unqualified gate below
+        # cost 17 R1_exact matches this way, 4 of them on a city matching no registry town at all).
+        if len(c) == 1:
+            own_town = city_key(c[0].get("town"))
+            other_town_disagrees = ck and not _town_match(own_town, ck) and \
+                any(x["clinic_id"] != c[0]["clinic_id"] for x in self._by_town(ck))
+            if not other_town_disagrees:
+                return c[0]["clinic_id"], "R1_exact", 1.0
         if len(c) > 1:
             t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R1_exact_town", 0.98

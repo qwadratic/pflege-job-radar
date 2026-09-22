@@ -1605,14 +1605,16 @@ ERECRUITER_LIST_RX = re.compile(r"new\s+JobList\s*\(.*?,\s*(?=\{)", re.S)
 
 
 def _erecruiter_jobs(htmltext):
+    """(jobs, board) -- board is the whole embedded JobList payload (TotalJobsCount, Pagination, ...),
+    not only the Jobs array, so a caller can read the engine's own completeness signal too."""
     m = ERECRUITER_LIST_RX.search(htmltext or "")
     if not m:
-        return []
+        return [], {}
     try:
         data, _ = json.JSONDecoder().raw_decode(htmltext, m.end())
     except ValueError:
-        return []
-    return [j for j in (data.get("Jobs") or []) if isinstance(j, dict)]
+        return [], {}
+    return [j for j in (data.get("Jobs") or []) if isinstance(j, dict)], data
 
 
 def crawl_erecruiter(c, session=None, cu_resp=None):
@@ -1623,7 +1625,18 @@ def crawl_erecruiter(c, session=None, cu_resp=None):
     p = urlparse(r.url)
     base = "%s://%s" % (p.scheme, p.netloc)
     out = []
-    for j in _erecruiter_jobs(r.text):
+    jobs, board = _erecruiter_jobs(r.text)
+    if session is not None:
+        # TASK-88: both live tenants today ship TotalJobsCount == len(Jobs) (the comment above says
+        # why -- no server-side page to walk), so this has never been WRONG yet, but nothing ever
+        # checked it either -- a third tenant that DOES paginate server-side would silently under-read
+        # as a clean success. Stashed on session (mirrors get()'s _attempts/_ok, TASK-72 AC#1): this
+        # fn returns a plain row list whose shape the generic vendor-adapter caller depends on, so
+        # board-level metadata (not per-row) has no return-value channel of its own.
+        total = board.get("TotalJobsCount")
+        session._board_total = total if isinstance(total, int) else None
+        session._board_paginated = bool((board.get("Pagination") or {}).get("IsPagination"))
+    for j in jobs:
         jid = j.get("Id")
         title = _txt(j.get("Title"), 300)
         if jid is None or not title:

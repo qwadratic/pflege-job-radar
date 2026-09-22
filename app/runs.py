@@ -148,6 +148,21 @@ def list_crawl_issues(day=None, since=None):
     return out
 
 
+def board_walk_ok(board_url, day):
+    """True unless `board_url` has a recorded crawl_issue of kind 'error' or 'truncated' for `day` --
+    the two kinds _fetch_board (app/crawl.py) records for a walk that did not complete (TASK-73 AC#6
+    / TASK-14 AC#2: a failed request or a safety-ceiling stop before the board's own end of
+    pagination). Feeds pflege_jobs.verify.board_absent_gone's walk_ok (TASK-87 AC#1): a walk this
+    calls ok read no less of the board than either of those two documented failure shapes, so a
+    posting's absence from its result set is real board-membership evidence, not a stop condition.
+    Deliberately silent on kind='empty' -- see board_absent_gone's own docstring for why that one is
+    the caller's judgment call, not a blanket ok/not-ok here."""
+    with _lock, db() as c:
+        r = c.execute("select 1 from crawl_issues where board_url=? and day=? and kind in ('error','truncated') limit 1",
+                      (board_url, day)).fetchone()
+    return not bool(r)
+
+
 # --- runs ------------------------------------------------------------------------------------
 def _row(r):
     d = dict(r)

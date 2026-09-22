@@ -47,15 +47,25 @@ def _read_cells(path=CELLS_PATH):
 
 
 def _feature_score(cells):
-    """{'feature_score': weighted % of the cells that carry a verdict, or None when none do, 'feature_verdicts': counts}."""
+    """{'feature_score': weighted % of the cells that carry a verdict, or None when none do,
+    'feature_verdicts': counts across all five feature rows blended together, 'features': the same
+    counts broken out PER feature_id. An adapter can hold many boards (subjects), each with its own
+    five-row feature-matrix cell -- without the per-feature split, declared_total_parity's own
+    verdicts (TASK-88: 'rows returned == the board's own claimed count') are invisible, blended into
+    one bucket with read_path_coverage/field_completeness/public_url/round_trip. A board whose total
+    is genuinely unparseable stays honestly 'not_checked' here (docs/feature-matrix.md's own verdict
+    enum) rather than silently reading as complete."""
     num = den = 0.0
+    by_feature = defaultdict(Counter)
     for c in cells:
+        by_feature[c["feature_id"]][c["verdict"]] += 1
         v = VERDICT_VALUE.get(c["verdict"])
         if v is not None:
             w = FEATURE_WEIGHTS.get(c["feature_id"], 1)
             num, den = num + w * v, den + w
     return {"feature_score": round(100.0 * num / den, 1) if den else None,
-            "feature_verdicts": dict(Counter(c["verdict"] for c in cells))}
+            "feature_verdicts": dict(Counter(c["verdict"] for c in cells)),
+            "features": {fid: dict(vc) for fid, vc in by_feature.items()}}
 
 
 def adapter_keys():
@@ -89,6 +99,42 @@ def _plan(clinics):
 
 def _empty():
     return {"clinics_labelled": 0, "clinics_routable": 0, "boards": 0, "clinics_with_jobs": 0, "open_jobs": 0, "fresh_jobs": 0}
+
+
+# --- per-clinic last_seen age (TASK-87 M6/AC#3) ---------------------------------------------------
+# jobs_fresh above is about the POSTING (first_published/first_seen vs. FRESH_DAYS) -- a completely
+# different question from whether the CRAWLER has actually looked at this board lately. A clinic
+# whose board simply did not move reads identically to one that was just re-crawled, because nothing
+# surfaced how old the freshest sighting is: at audit time 12 clinics held rows last seen 16 days
+# earlier than siblings crawled the same day, invisible in every count coverage.py already returned.
+def _clinic_freshness(clinics, jobs):
+    """[{clinic_id, name, open_jobs, last_seen, stale_days}], one row per clinic with >=1 open
+    posting, oldest known last_seen first; a clinic with no last_seen signal at all (stale_days=None)
+    sorts after every clinic with a real number -- zero evidence is not the same claim as "just
+    crawled". last_seen is the MAX last_seen across that clinic's own open postings -- the most
+    recent evidence a walk actually re-observed this board, not when a posting first appeared. No
+    verdict/threshold is computed here on purpose: the raw age is the signal, and a UI or caller can
+    pick its own staleness cutoff without this endpoint hiding the number behind one baked-in choice."""
+    freshest = {}
+    for j in jobs:
+        cid, ls = j.get("clinic_id"), j.get("last_seen")
+        if cid and ls and ls > (freshest.get(cid) or ""):     # ISO8601 strings compare correctly lexically
+            freshest[cid] = ls
+    now = datetime.now(timezone.utc)
+    out = []
+    for c in clinics:
+        if not (c.get("jobs_open") or 0):
+            continue
+        ls = freshest.get(c.get("clinic_id"))
+        stale_days = None
+        if ls:
+            try:
+                stale_days = (now - datetime.fromisoformat(ls.replace("Z", "+00:00"))).days
+            except ValueError:
+                stale_days = None
+        out.append({"clinic_id": c.get("clinic_id"), "name": c.get("name"), "open_jobs": c.get("jobs_open"),
+                    "last_seen": ls, "stale_days": stale_days})
+    return sorted(out, key=lambda r: (r["stale_days"] is None, -(r["stale_days"] or 0)))
 
 
 def _add(acc, c):
@@ -214,7 +260,7 @@ def compute():
 
     why = Counter(reason for _, reason in unroutable)
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "rows": rows, "totals": totals, "unattributed": unattributed,
+            "rows": rows, "totals": totals, "unattributed": unattributed, "clinic_freshness": _clinic_freshness(clinics, jobs),
             "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))]}
 
 

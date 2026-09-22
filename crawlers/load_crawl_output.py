@@ -28,7 +28,7 @@ for f in sorted(glob.glob(os.path.join(d, "*.jsonl"))):
         if not line: continue
         try: r = json.loads(line)
         except Exception: continue
-        if r.get("kind") in ("jobposting", "listing", "probe") and r.get("source_url"): rows.append(r)
+        if r.get("kind") in ("jobposting", "listing", "probe", "observation") and r.get("source_url"): rows.append(r)
 seen = set(); rows = [r for r in rows if not (r["source_url"] in seen or seen.add(r["source_url"]))]
 print(f"{len(rows)} rows from {d}/*.jsonl")
 before = snapshot()

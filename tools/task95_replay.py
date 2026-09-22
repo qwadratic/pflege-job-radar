@@ -16,6 +16,7 @@ import collections
 import csv
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -46,12 +47,33 @@ class _Sink:
         return {k: (len(v) if isinstance(v, list) else 1) for k, v in body.items()}
 
 
+RUN_ID_RX = re.compile(r"run_(\d+)\.jsonl$")
+
+
+def run_id_for(jsonl_path, explicit=None):
+    """The run this jsonl belongs to, for IB.enqueue(run_id=...) and IB.reset(run_id=...).
+
+    Was hardcoded to 108 regardless of which file was passed -- harmless against the /tmp default
+    (a scratch db, thrown away), but with --db pointing at the real data/inbox.sqlite it would label
+    real rows with the wrong run_id, and reset(run_id=108) would unmark real run 108 rows that have
+    nothing to do with this replay. Taken from --run-id if given, else parsed from the filename
+    (crawl_output/run_N.jsonl); neither guessed nor defaulted when both are missing -- fail loudly."""
+    if explicit is not None:
+        return explicit
+    m = RUN_ID_RX.search(jsonl_path)
+    if not m:
+        raise SystemExit(f"can't infer a run_id from {jsonl_path!r} (expected .../run_<N>.jsonl) -- pass --run-id")
+    return int(m.group(1))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("jsonl")
     ap.add_argument("--db", default="/tmp/task95_replay.sqlite")
     ap.add_argument("--clinics", default="data/registry/clinics.csv")
+    ap.add_argument("--run-id", type=int, default=None, help="defaults to the run_<N> parsed from the jsonl filename")
     a = ap.parse_args()
+    run_id = run_id_for(a.jsonl, a.run_id)
 
     rows = []
     for line in open(a.jsonl, encoding="utf-8"):
@@ -75,7 +97,7 @@ def main():
 
     if os.path.exists(a.db):
         os.remove(a.db)
-    n = IB.enqueue(rows, run_id=108, path=a.db)
+    n = IB.enqueue(rows, run_id=run_id, path=a.db)
     print(f"NEW PATH: {n} rows queued in {a.db} ({os.path.getsize(a.db) / 1e6:.1f} MB), 0 rows written to Postgres so far")
 
     clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
@@ -108,7 +130,7 @@ def main():
     print(f"   matched to a clinic: {sum(1 for o in written if o.get('_kez'))}")
 
     # --- reprocessing: same rows, no re-crawl
-    unmarked = IB.reset(run_id=108, path=a.db)
+    unmarked = IB.reset(run_id=run_id, path=a.db)
     read2, written2 = drain()
     print(f"\nreprocess: {unmarked} raw rows unmarked and run again -> {read2} read, {len(written2)} observations "
           f"({'same result' if len(written2) == len(written) else 'DIFFERENT'})")

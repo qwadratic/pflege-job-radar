@@ -19,7 +19,7 @@ the same raw rows can be run through a changed classifier or matcher without re-
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PATH = os.environ.get("PFLEGE_INBOX_DB") or str(Path(__file__).resolve().parent.parent / "data" / "inbox.sqlite")
@@ -112,6 +112,25 @@ def known_urls(urls, path=None):
             q = "select distinct source_url from inbox where source_url in (%s)" % ",".join("?" * len(batch))
             out.update(r["source_url"] for r in c.execute(q, batch))
     return out
+
+
+def purge_older_than(days, path=None, now_iso=None):
+    """Ordinary maintenance, not a cap in the write path (Ivan, 2026-09-21): the crawl keeps writing
+    every row unfiltered; this is a separate operation an operator/cron runs to delete rows whose
+    received_at (enqueue time, NOT processed_at) is older than `days`. Age is taken from received_at
+    on purpose -- an unprocessed row would otherwise live forever and never get old enough to purge.
+    Measured 2026-09-21 on a full run's rows (run 108/96 replay, jobposting rows + the seeded-adapter
+    observations app/crawl.py._obs_row now also queues here): ~40.8 MB + ~14.7 MB =~ 55 MB/run. At 30
+    days that is a steady ~1.6 GB, against ~11 GB free. Returns the number of rows deleted. `now_iso`
+    is for tests only."""
+    if not days or days <= 0:
+        raise ValueError(f"days must be a positive number of days, got {days!r}")
+    now = datetime.fromisoformat(now_iso) if now_iso else datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=days)).isoformat(timespec="seconds")
+    with connect(path) as c:
+        # No VACUUM here -- it cannot run inside a transaction, and SQLite already reuses freed pages
+        # from its own freelist for later inserts, which is what keeps the file at a steady state.
+        return c.execute("delete from inbox where received_at < ?", (cutoff,)).rowcount
 
 
 def counts(path=None):

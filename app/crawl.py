@@ -7,11 +7,14 @@
              those and only applies the EUR cap to runs past the allowance (docs/firecrawl.md §5, docs/coverage-plan.md §2).
   auto       adapter where routable and not walled, else firecrawl while the weekly credit budget allows.
 
-Rows flow through the same intake as every other crawler, but the queue is local: every raw row a board serves
--> pflege_jobs.inbox_db (SQLite, unfiltered) -> `cli inbox`, which is where filtering/matching/conversion happen
-and which writes only the finished observations to Postgres. pflege_jobs.inbox (Postgres) stays for the producers
-that hold only the anon key and is drained by the same command. Observations (seeded adapters produce those
-directly) -> EdgeSink + clinic_links. New postings are verified by URL.
+Rows flow through the same intake as every other crawler, and through the same local queue: every raw row a
+board serves -> pflege_jobs.inbox_db (SQLite, unfiltered) -> `cli inbox`, which is where filtering/matching/
+conversion happen and which writes only the finished observations to Postgres. Seeded adapters (softgarden/
+bite/umantis/pi_asp) already return a finished observation rather than a raw jobposting -- _obs_row wraps it
+as a queue row (kind='observation') so it is archived and drain-filtered exactly like every other row, instead
+of going straight to EdgeSink unfiltered-and-unrecorded (2026-09-21 review: 21% of run 96 was dropped this way
+with no trace). pflege_jobs.inbox (Postgres) stays for the producers that hold only the anon key and is drained
+by the same command. New postings are verified by URL.
 """
 import hashlib
 import json
@@ -446,6 +449,20 @@ def _enqueue_local(rows, run_id, log):
     return n
 
 
+def _obs_row(o):
+    """Wrap a seeded-adapter observation (softgarden/bite/umantis/pi_asp -- already fully classified:
+    role_class, in_bavaria, source_id/source_ref, ...) as a local-queue row, so it is archived
+    (_write_jsonl) and drain-filtered (pflege_jobs.cli._process_rows) the same way as every other
+    row. kind='observation' tells the drain the payload IS the finished observation already, not a
+    raw jobposting needing jobposting_to_obs. Before this, these rows went straight to EdgeSink from
+    _load_observations, unrecorded and unfiltered-by-the-queue -- 21% of run 96 dropped at crawl time
+    with no trace (2026-09-21 review)."""
+    from urllib.parse import urlparse
+    url = o.get("source_url") or o.get("source_ref")
+    return {"kind": "observation", "collector": f"seed-{o.get('source_id')}",
+            "source_host": urlparse(url or "").netloc, "source_url": url, "payload": o}
+
+
 def _post_inbox(rows, log):
     """Postgres inbox, for the producers that hold only the anon key: POST /api/ingest and the
     Firecrawl webhook. The crawler's own rows go to the local queue (_enqueue_local) instead.
@@ -517,43 +534,6 @@ def _posting_ids_for_refs(refs):
         except Exception as e:
             continue
     return ids
-
-
-def _load_observations(obs, clinics_by_id, log):
-    """Seeded-adapter observations -> EdgeSink + clinic links (mirrors cli inbox's post-load steps)."""
-    from urllib.parse import urlparse
-    from pflege_jobs.registry import Matcher
-    from pflege_jobs.sinks import EdgeSink
-    from pflege_jobs.sources.inbox import NON_PROD_HOST
-    from pflege_jobs import config as C
-    # The inbox path gates staging/preview hosts (cli.py _drain_once); this path writes straight to
-    # EdgeSink and did not, which is how referral-portal-staging.lmu-klinikum.de put 70 rows that are
-    # still open in the table (TASK-61 AC#2). Same regex, both doors.
-    nonprod = [o for o in obs if NON_PROD_HOST.search(urlparse(o.get("source_url") or "").netloc)]
-    if nonprod:
-        log(f"  {len(nonprod)} row(s) from a non-production host (staging/preview) -- not loaded: "
-            f"{sorted({urlparse(o.get('source_url') or '').netloc for o in nonprod})}")
-    obs = [o for o in obs if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES and o.get("in_bavaria") is not False
-           and not NON_PROD_HOST.search(urlparse(o.get("source_url") or "").netloc)]
-    if not obs:
-        return {}, []
-    m = Matcher([dict(c) for c in (D.clinics() or D.registry_csv_rows())])
-    for o in obs:
-        mt = m.match(o.get("employer_name"), o.get("city"), board=o.get("_board"), employer_inherited=o.get("_emp_inherited", False))
-        o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
-        o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
-        if o["_kez"]:
-            o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + (o.get("employer_class_rule") or "")
-    sink = EdgeSink(batch=200)
-    st = sink.write(obs, resolve=True, log=lambda *_: None)
-    log(f"ingested observations: {st}")
-    ids = _posting_ids_for_refs([o["source_ref"] for o in obs])
-    links = [{"posting_id": ids[o["source_ref"]], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9}
-             for o in obs if o["source_ref"] in ids and o.get("_kez")]
-    for i in range(0, len(links), 400):
-        sink._post({"clinic_links": links[i:i + 400]})
-    log(f"clinic links pushed: {len(links)}")
-    return ids, obs
 
 
 def _run_verify(run_id, clinics, params, log, scope=None):
@@ -671,7 +651,6 @@ def execute(run_id):
         log(f"  skip {c['clinic_id']} {c['name'][:40]}: {c.get('route_reason')}")
     before_ids = {j["posting_id"] for j in D.jobs()}
     towns = D.towns()
-    by_id = {c["clinic_id"]: c for c in clinics}
     inbox_rows, observations, credits_used, errors = [], [], 0, 0
     session = requests.Session()
 
@@ -876,12 +855,17 @@ def execute(run_id):
 
     n_rows = len(inbox_rows) + len(observations)
     R.update_run(run_id, n_rows=n_rows)
-    if inbox_rows:
-        _write_jsonl(run_id, inbox_rows)
+    # Seeded adapters (softgarden/bite/umantis/pi_asp) already return finished observations rather
+    # than raw jobpostings; wrap them as queue rows too (_obs_row) so they are archived and
+    # drain-filtered exactly like every other row instead of going straight to EdgeSink unfiltered
+    # and unrecorded (2026-09-21 review: 21% of run 96 dropped this way with no trace).
+    queued_rows = inbox_rows + [_obs_row(o) for o in observations]
+    if queued_rows:
+        _write_jsonl(run_id, queued_rows)
     refs = []
     try:
-        if inbox_rows:
-            _enqueue_local(inbox_rows, run_id, log)
+        if queued_rows:
+            _enqueue_local(queued_rows, run_id, log)
         rc = _cli(["inbox"], log)     # drain both queues every run, not only when this run added rows --
                                        # a run with only observations (e.g. seeded adapters) must not
                                        # leave an earlier run's backlog stranded
@@ -890,13 +874,10 @@ def execute(run_id):
             # left stranded) was invisible both to this run's own status and to crawl_issues.
             errors += 1
             R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
-        if inbox_rows:
+        if queued_rows:
             # what the drain actually turned into an observation -- the rows that reached Postgres,
             # which is what link-cross and verify have anything to say about
             refs += IB.loaded_refs(run_id)
-        if observations:
-            ids, obs = _load_observations(observations, by_id, log)
-            refs += [o["source_ref"] for o in obs]
         if refs:
             rc = _cli(["link-cross"], log)
             if rc:

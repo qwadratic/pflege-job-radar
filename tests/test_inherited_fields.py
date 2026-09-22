@@ -127,9 +127,18 @@ def test_employer_inherited_from_real_pipeline_suppresses_r1_r2_on_a_shared_boar
     mt = m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=o["_emp_inherited"])
     assert mt is not None and mt[0] == "19003" and mt[1] == "R0_board_town"   # earned via city, not name
 
-    # Sanity check on the same fixture: without the marker, the inherited name WOULD R1-exact-match
-    # the seed clinic outright, city ignored -- confirming this test actually exercises the gate.
-    assert m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=False) == ("19001", "R1_exact", 1.0)
+    # Sanity check on the same fixture, updated by TASK-81 AC#2 (2026-09-21): R1_exact is now gated
+    # on town even for a genuinely-read (non-inherited) name, the same as its R1_exact_town sibling
+    # always was -- verified correct on live production data, structurally identical to this fixture
+    # (employer text names one specific site, the posting's own city names a real sibling on the
+    # same board): "RoMed Klinikum Rosenheim" / city "Bad Aibling", posting_id 6421, used to
+    # R1_exact-match RoMed's Rosenheim site and now correctly falls through to the Bad Aibling
+    # sibling the city actually names. So here too: city "Penzberg" names a real OTHER registry site
+    # (19003), not just any string, so R1_exact refuses and the board rules correctly hand it to
+    # 19003 instead -- same result as the `employer_inherited=True` branch above, for a different
+    # reason (this diff's docstring point -- "a value the crawler substituted is not evidence" --
+    # still holds; a value the crawler substituted was never the only thing that could be wrong).
+    assert m.match(o["employer_name"], o["city"], board=o["_board"], employer_inherited=False) == ("19003", "R0_board_town", 0.85)
 
 
 def test_career_crawl_from_jsonld_trusts_the_posting_own_hiring_organization():

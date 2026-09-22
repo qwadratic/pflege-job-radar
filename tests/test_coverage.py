@@ -1,4 +1,5 @@
 """GET /api/coverage: per-adapter coverage from the stubbed snapshot + a temp SQLite run log (no network)."""
+from app import data as D
 from app import runs as R
 from tests.test_app_api import CLINICS, client  # noqa: F401  (fixture: stubbed snapshot, temp sqlite)
 
@@ -74,6 +75,68 @@ def test_coverage_firecrawl_row_shows_both_pools_and_free_runs(client, monkeypat
     monkeypatch.setattr(FA, "credits", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
     fc = _row(client.get("/api/coverage").json(), "firecrawl")
     assert fc["tokens_remaining"] is None and fc["free_runs_left_today"] is None and fc["credits_7d"] == 0 and fc["tokens_7d"] == 0
+
+
+# --- feature-matrix per-feature breakdown (TASK-88 AC#3/#4: declared_total_parity must be visible
+# on its own, not blended into one count with the other four feature rows) --------------------------
+def test_feature_verdicts_break_down_per_feature_not_just_blended(client, monkeypatch):
+    from app import coverage as C
+    cells = [
+        {"subject": "b1", "adapter": "rexx", "feature_id": "declared_total_parity", "verdict": "supported"},
+        {"subject": "b2", "adapter": "rexx", "feature_id": "declared_total_parity", "verdict": "absent"},
+        {"subject": "b1", "adapter": "rexx", "feature_id": "read_path_coverage", "verdict": "supported"},
+        {"subject": "b3", "adapter": "typo3_jobs", "feature_id": "declared_total_parity", "verdict": "not_checked"},
+    ]
+    monkeypatch.setattr(C, "_read_cells", lambda: cells)
+    d = client.get("/api/coverage").json()
+    rexx = _row(d, "rexx")
+    assert rexx["features"]["declared_total_parity"] == {"supported": 1, "absent": 1}
+    assert rexx["features"]["read_path_coverage"] == {"supported": 1}
+    # the old blended count still exists (nothing removed), but on its own it could not tell
+    # declared_total_parity's 1/1 apart from read_path_coverage's clean 1/1
+    assert rexx["feature_verdicts"] == {"supported": 2, "absent": 1}
+    t3 = _row(d, "typo3_jobs")
+    assert t3["features"]["declared_total_parity"] == {"not_checked": 1}          # honest unknown, not absent
+    assert _row(d, "firecrawl")["features"] == {}                                  # no cells at all for it
+
+
+def test_feature_score_empty_when_no_cells_are_recorded(client, monkeypatch):
+    # data/feature_cells.jsonl is genuinely empty in this repo today (docs/feature-matrix.md:
+    # "Everything is not_checked today") -- stubbed here rather than relied on so this test does not
+    # silently start failing the day someone populates the real file. Every row must show the empty
+    # state honestly, never a silent 0%% or 100%%.
+    from app import coverage as C
+    monkeypatch.setattr(C, "_read_cells", lambda: [])
+    d = client.get("/api/coverage").json()
+    assert _row(d, "rexx")["feature_score"] is None and _row(d, "rexx")["features"] == {}
+
+
+# --- clinic_freshness: per-clinic last_seen age (TASK-87 AC#3) --------------------------------------------------------
+def _freshness(d, cid):
+    return next(r for r in d["clinic_freshness"] if r["clinic_id"] == cid)
+
+
+def test_clinic_freshness_reports_the_freshest_last_seen_per_clinic(client, monkeypatch):
+    import time as T
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    jobs = [
+        {**D._snap["jobs"][0], "posting_id": 101, "last_seen": (now - timedelta(days=16)).isoformat()},   # 36201: stale
+        {**D._snap["jobs"][0], "posting_id": 102, "last_seen": (now - timedelta(days=1)).isoformat()},    # 36201: freshest wins
+        {**D._snap["jobs"][2], "posting_id": 103, "last_seen": None},                                     # 16104: no last_seen at all
+    ]
+    monkeypatch.setitem(D._snap, "jobs", jobs)
+    monkeypatch.setitem(D._snap, "at", T.time())
+    d = client.get("/api/coverage").json()
+    r36201 = _freshness(d, "36201")
+    assert r36201["last_seen"] == jobs[1]["last_seen"] and r36201["stale_days"] == 1     # max(), not first/last in list
+    assert r36201["open_jobs"] == 24                                                     # from the clinic row, not len(jobs)
+    r16104 = _freshness(d, "16104")
+    assert r16104["last_seen"] is None and r16104["stale_days"] is None
+    # a clinic with a known (however recent) last_seen outranks one with no signal at all --
+    # zero evidence is not the same claim as "just crawled", so it sorts after every real number.
+    assert [r["clinic_id"] for r in d["clinic_freshness"]] == ["36201", "16104"]
+    assert not any(r["clinic_id"] == "36202" for r in d["clinic_freshness"])             # 0 open jobs -> excluded
 
 
 # --- GET /api/billing/clinics (app/coverage.py): spend per clinic in a window -----------------------------------------

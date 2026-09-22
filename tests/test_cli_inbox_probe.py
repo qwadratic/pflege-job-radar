@@ -109,10 +109,20 @@ def test_drain_once_never_fabricates_a_verify_stamp(monkeypatch):
     _FakeSink.posted = []
     monkeypatch.setattr(cli, "EdgeSink", _FakeSink)
 
-    n = cli._drain_once(argparse.Namespace(no_ack=False), "https://db", {}, _FakeMatcher(), set())
+    # clinic_links is no longer pushed inside _drain_once (2026-09-21 review, problem #1): posting_id
+    # is NULL in posting_observations until the end-of-run resolve, so a per-page lookup here -- before
+    # that resolve happened -- found nothing for every brand-new posting. _drain_once now only
+    # accumulates the matched observation into link_candidates; cmd_inbox looks up + pushes once, after
+    # the single resolve.
+    link_candidates = []
+    n = cli._drain_once(argparse.Namespace(no_ack=False), "https://db", {}, _FakeMatcher(), set(), link_candidates=link_candidates)
     assert n == 1
     assert not any("verify" in body for body in _FakeSink.posted), _FakeSink.posted
-    assert any("clinic_links" in body for body in _FakeSink.posted)          # the real link still happens
+    assert not any("clinic_links" in body for body in _FakeSink.posted)      # not pushed here anymore
+    assert link_candidates == [{"source_id": 20, "source_ref": "https://x.de/job/1", "role_class": "pflegefachkraft",
+                                 "in_bavaria": True, "employer_name": "Klinikum X", "city": "München",
+                                 "employer_class_rule": "registry_match|keyword_rule", "employer_class": "clinic",
+                                 "observed_at": "2026-09-17T03:00:00Z", "_kez": "77402", "_rule": "exact"}]
     assert any("inbox_ack" in body for body in _FakeSink.posted)
 
 
@@ -208,52 +218,35 @@ def test_drain_once_pins_the_non_prod_host_and_in_bavaria_false_drop_gates(monke
     assert notes[3] == "skipped: non-production host (staging/preview)"
 
 
-def test_load_observations_pins_the_non_prod_host_and_in_bavaria_false_drop_gates(monkeypatch):
-    """Same in_bavaria-is-False drop gate, the app/crawl.py:_load_observations side (seeded adapters
-    -- career_crawl, bite, pi_asp, ... -- never pass through cli.py's inbox at all, so this is a
-    second, independent place the same 2026-09-18 review found the gate needed pinning). An
-    in-memory 3-row batch: Bavarian, non-Bavarian (in_bavaria False), and unknown (in_bavaria None,
-    e.g. a page with no placeable city at all) -- only the Bavarian row must reach the sink."""
-    import app.crawl as CR
-    from app import config as A
-    from app import data as D
-    import pflege_jobs.registry as registry_mod
-    import pflege_jobs.sinks as sinks_mod
+def test_observation_kind_rows_pin_the_non_prod_host_and_in_bavaria_false_drop_gates(tmp_path, monkeypatch):
+    """Same in_bavaria-is-False / staging-host drop gates, for kind='observation' local-queue rows.
 
-    written = []
-
-    class _FakeSink2:
-        def __init__(self, *a, **kw):
-            pass
-
-        def write(self, obs, **kw):
-            written.extend(obs)
-            return {"observations": len(obs)}
-
-        def _post(self, body):
-            return {}
-
-    class _NoopMatcher:
-        def match(self, *a, **kw):
-            return None
-
-    monkeypatch.setattr(D, "clinics", lambda: [{"clinic_id": "0", "name": "x", "town": "x"}])
-    monkeypatch.setattr(registry_mod, "Matcher", lambda clinics: _NoopMatcher())
-    monkeypatch.setattr(sinks_mod, "EdgeSink", _FakeSink2)
-    monkeypatch.setattr(A, "rest_get", lambda *a, **k: [])   # _posting_ids_for_refs: no network
+    Seeded adapters (career_crawl, bite, pi_asp, umantis) return an already-classified observation,
+    not a raw jobposting -- app/crawl.py._obs_row wraps it as kind='observation' so it goes through
+    this same drain instead of straight to EdgeSink (2026-09-21 review: that direct path dropped 21%
+    of run 96's seeded rows with no trace and no persistence). An in-memory 4-row queue: Bavarian,
+    non-Bavarian (in_bavaria False), unknown (in_bavaria None, e.g. no placeable city at all), and a
+    Bavarian-flagged row on a staging host -- only the Bavarian row must reach the sink."""
+    from pflege_jobs import inbox_db as IB
 
     def make(source_ref, in_bavaria, role_class="pflegefachkraft", source_url="https://www.klinikum-x.de/stelle/1"):
-        return {"source_ref": source_ref, "employer_name": "Klinikum X", "city": "X", "source_url": source_url,
-                "role_class": role_class, "in_bavaria": in_bavaria, "employer_class_rule": "r"}
+        return {"source_id": 30, "source_ref": source_ref, "employer_name": "Klinikum X", "city": "X",
+                "source_url": source_url, "role_class": role_class, "in_bavaria": in_bavaria, "employer_class_rule": "r"}
 
     obs = [make("bav-1", True), make("non-bav-2", False), make("unknown-3", None),
-           # a seeded adapter reaches EdgeSink without ever passing through cli.py's inbox, so the
-           # staging gate has to exist here too -- 70 referral-portal-staging.lmu-klinikum.de rows
-           # are still open in the table because it did not (TASK-61 AC#2).
+           # a staging-host row must be gated here too -- 70 referral-portal-staging.lmu-klinikum.de
+           # rows are still open in the table because an earlier version of this path did not (TASK-61 AC#2).
            make("staging-4", True, source_url="https://referral-portal-staging.lmu-klinikum.de/stellenanzeigen/4")]
-    ids, kept = CR._load_observations(obs, {}, log=lambda *_: None)
+    db = str(tmp_path / "inbox.sqlite")
+    IB.enqueue([{"kind": "observation", "source_url": o["source_url"], "payload": o} for o in obs], run_id=1, path=db)
 
+    _FakeSink.posted, _FakeSink.written = [], []
+    monkeypatch.setattr(cli, "EdgeSink", _FakeSink)
+    monkeypatch.setattr(requests, "get", lambda u, params=None, headers=None, timeout=None: _Resp([]))
+
+    n = cli._drain_local_once(argparse.Namespace(no_ack=False, inbox_db=db), "https://db", {}, _FakeMatcher(), set())
+
+    assert n == 4
     # the gate is specifically "in_bavaria is False", not "is not True" -- an unplaceable/unknown
     # location (None) is not evidence of being outside Bavaria and must not be dropped either.
-    assert {o["source_ref"] for o in kept} == {"bav-1", "unknown-3"}
-    assert {o["source_ref"] for o in written} == {"bav-1", "unknown-3"}
+    assert {o["source_ref"] for o in _FakeSink.written} == {"bav-1", "unknown-3"}
