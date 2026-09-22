@@ -67,12 +67,24 @@ def test_ward_leadership_without_pflege_token():
     assert classify_role("Teamleitung Buchhaltung (m/w/d)", "")[0] == "nicht_pflege"
     # TASK-89 M8: "OP Leitung" carries no gate token (no "pfleg", no hyphenated "op-bereich") even
     # though the _ROLES leitung rule already recognises standalone "Leitung" as its own word -- the
-    # gate blocked it before the role rule ever ran. A leitung-titled non-nursing role (a facility
-    # name, a department name the nicht_pflege list already knows) must still land on nicht_pflege
-    # via that list, never on "leitung" just because the gate got more permissive -- both of the
-    # existing asserts above ("Leitung Restaurant" in test_audit_fixes, "AEMP-Leitung" too) already
-    # pin that; this only adds the positive case.
+    # gate blocked it before the role rule ever ran. Fixed with a gate token scoped to "op leit(ung|er)"
+    # rather than a bare standalone "leitung"/"leiter" (that bare form was tried first and reverted:
+    # it made the gate self-admitting -- match leitung to pass the gate, match leitung again in _ROLES
+    # -- so ANY "X Leitung" title got stored, 41 of them real non-nursing roles when replayed against
+    # crawl_output/run_*.jsonl's ~528 distinct 'leit*' titles; see the negative pins below, which are
+    # real titles from that replay and go red against the bare-word gate).
     assert classify_role("OP Leitung (m/w/d)", "")[0] == "leitung"
+    assert classify_role("OP-Leitung (m/w/d)", "")[0] == "leitung"
+    # Negative pins: a standalone "Leitung"/"Leiter" with no OP/nursing context must NOT put a title
+    # in policy on its own -- "leitung" is not in excluded_role_classes, so a false admission here is
+    # stored and served as an open nursing posting. All four are real titles (crawl_output/run_*.jsonl,
+    # 2026-09-22 replay); the pre-existing "Leitung Restaurant"/"AEMP-Leitung" pins elsewhere in this
+    # file do NOT cover this -- both are caught by nicht_pflege keywords ("restaurant"/"aemp"), not by
+    # the gate, so they stayed green even while the gate itself was too permissive.
+    assert classify_role("Ärztliche Leitung (m/w/d)", "")[0] == "nicht_pflege"          # Bad Reichenhall: a physician role
+    assert classify_role("Leiter (m/w/d) Technik Region AMEOS Süd", "")[0] == "nicht_pflege"
+    assert classify_role("Leitung Recht (m/w/d)", "")[0] == "nicht_pflege"
+    assert classify_role("Leiter des Klinikums hört auf", "")[0] == "nicht_pflege"       # Klinikum Memmingen news headline, not a posting
 
 
 def test_medizinische_fachangestellte_inflected_forms_stay_excluded():

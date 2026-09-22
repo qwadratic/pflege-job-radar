@@ -37,6 +37,13 @@ LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|m
                        # is a generic "apply speculatively" CTA, not a posting either (confirmed live on
                        # all 4 direct-host umantis boards: both otherwise pass JOB_HREF's /vacanc match).
                        r"|/Jobs/\d+(?:[?&]|$)|InitiativeApplication", re.I)
+# The positive counterpart of LINK_BAD's umantis carve-out just above: a URL shape that is ALWAYS a
+# single vacancy's own detail page for its vendor, never a listing/category/contact page, so it is
+# trusted as strong per-URL evidence in _crawl_urls the same way JSON-LD is trusted as strong
+# per-page evidence -- unlike JOB_HREF's own broad alternatives, which also match plenty of non-job
+# pages under a job-ish parent folder (TASK-84). umantis' own listing is the structurally different
+# /Jobs/<n> path (LINK_BAD above); /Vacancies/<id>/Description/<n> is only ever the detail page.
+UNAMBIGUOUS_DETAIL_HREF = re.compile(r"/Vacancies/\d+/Description/\d+", re.I)
 PAGINATE = re.compile(r"[?&](page|p|seite|start|offset|pageNo|pagenr)=\d+", re.I)
 # Bavarian PLZ ranges: 637xx-639xx (Aschaffenburg), 80xxx-87xxx, 881[3-7]xx (Lindau), 892xx-895xx (Neu-Ulm/Günzburg/Dillingen), 90xxx-97xxx.
 # Excluded even though they fall inside those broad ranges: 895xx (Heidenheim/Giengen, Baden-
@@ -347,6 +354,24 @@ class Crawler:
             if jps and r.url not in jobs:
                 stats["jobposting_pages"] += 1
                 jobs[r.url] = self._from_jsonld(jps[0], r.url, seed, section_confirmed=section_confirmed)
+            elif r.url not in jobs and UNAMBIGUOUS_DETAIL_HREF.search(url):
+                # JSON-LD is one strong, page-level signal that a list-queued candidate is actually a
+                # detail page (just above); a handful of vendors also carry an equally strong SIGNAL IN
+                # THE URL ITSELF, unlike JOB_HREF's own broad alternatives (loose enough to also match a
+                # plain contact/category page under a job-ish parent folder, e.g. "Ansprechpartner" at
+                # .../karriere/jobs/ansprechpartner -- TASK-84, still correctly produces no row below,
+                # since NEITHER signal fires for it). umantis' own /Vacancies/<id>/Description/<n> is
+                # unambiguous: its listing is a structurally different path, /Jobs/<n> (LINK_BAD above),
+                # so this shape is never a category/nav page -- only ever a single vacancy's own detail
+                # page. Without this, a real vacancy whose anchor text on the page that linked it carries
+                # no gender marker (JOB_TEXT) is queued here as a list page and, since umantis ships no
+                # JobPosting JSON-LD either, permanently lost (confirmed live 2026-09-22, clinic 16211/
+                # recruitingapp-5545: "Teamassistenz Ärztliche Direktion", Vacancies/720/Description/1,
+                # a real 12KB vacancy page -- 15 rows became 14).
+                h = self._heuristic(html, r.url, seed, section_confirmed=section_confirmed)
+                if h:
+                    stats["heuristic_pages"] += 1
+                    jobs[r.url] = h
             for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S | re.I):
                 href, inner = m.group(1), _strip(m.group(2))[:200]
                 u = urldefrag(urljoin(r.url, href))[0]
@@ -357,9 +382,9 @@ class Crawler:
                 # that merely LOOKS job-shaped by its href (JOB_HREF) is not trusted on that alone
                 # (TASK-84: 'Pflegedienst'/'Ansprechpartner' nav links and a division/category index
                 # page both matched JOB_HREF and neither is a posting) -- it is queued as a list page
-                # instead, same as any other candidate list link: its own fetch gets the JSON-LD check
-                # above, and its own links get explored, so a real listing one hop behind a
-                # category link (confirmed live 2026-09-21: St. Josef Regensburg/36202,
+                # instead, same as any other candidate list link: its own fetch gets the JSON-LD/
+                # UNAMBIGUOUS_DETAIL_HREF check above, and its own links get explored, so a real listing
+                # one hop behind a category link (confirmed live 2026-09-21: St. Josef Regensburg/36202,
                 # /alle-stellenangebote unreachable, 9 of 14 real vacancies never seen -- the category
                 # link used to dead-end in job_links instead of ever being queued) is still reached.
                 if JOB_TEXT.search(inner) and len(inner) > 6 and not re.search(

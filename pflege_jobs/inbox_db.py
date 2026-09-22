@@ -95,11 +95,35 @@ def reset(run_id=None, inbox_ids=None, path=None):
 
 
 def loaded_refs(run_id, path=None):
-    """source_urls of this run's rows that the drain turned into an observation -- what reached
-    Postgres, which is what the run's link-cross/verify steps work on."""
+    """The identity string each of this run's loaded rows was actually written to
+    posting_observations.source_ref under -- what app/crawl.py's _posting_ids_for_refs (filters
+    posting_observations.source_ref=in.(...)) must key on to find the row again for this run's own
+    'N postings touched' count and its post-crawl _verify_ids pass.
+
+    kind='observation' rows (career_crawl.py's Crawler and the other seeded adapters) carry the
+    exact source_ref the write used, inside payload: since TASK-83 that is
+    pflege_jobs.classify.canonical_job_url(source_url), a vendor-job-id string that no longer
+    equals source_url for softgarden/dvinci/umantis/helix/b-ite shapes -- confirmed live
+    2026-09-22: 591 of 676 career_crawl-produced observations have a source_ref shape
+    canonical_job_url rewrites. Returning source_url here (as before) made refs and
+    posting_observations.source_ref two non-overlapping spaces: every touched-or-new posting from
+    those rows was silently invisible to both the run's stats and its verify pass. kind='jobposting'
+    rows carry no such field -- jobposting_to_obs sets source_ref = source_url at drain time
+    (pflege_jobs/sources/inbox.py:60) -- so source_url is still the right key for them, and
+    payload.get('source_ref') is reliably absent there. Chosen over changing the consumer side
+    (filtering by source_url instead): (source_id, source_ref) is the table's own unique identity
+    (sql/001_schema.sql:112) and already what pflege_jobs.cli's own lookup_posting_ids keys on --
+    filtering by source_url would need a second, non-unique column and would keep missing a row
+    that reached Postgres under a URL-shape variant of what this run itself just crawled, which is
+    exactly the duplication TASK-83's canonicalization exists to collapse."""
     with connect(path) as c:
-        return [r["source_url"] for r in c.execute(
-            "select source_url from inbox where run_id=? and process_note like 'loaded%'", (run_id,))]
+        rows = c.execute(
+            "select source_url, payload from inbox where run_id=? and process_note like 'loaded%'", (run_id,))
+        out = []
+        for r in rows:
+            payload = json.loads(r["payload"]) if r["payload"] else {}
+            out.append(payload.get("source_ref") or r["source_url"])
+        return out
 
 
 def known_urls(urls, path=None):

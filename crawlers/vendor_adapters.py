@@ -508,7 +508,19 @@ JOB_PATH = re.compile(r"[/-](jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(kar
 # NOT_JOB_PATH has something to positively exclude; narrowing JOB_PATH itself would have to un-match
 # that same fixture.
 NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b|[?&](kategorie|category)=|"
-                          r"/(aktuelles?|presse|news|blog|glossar|veranstaltung(?:en)?|termine?|events?)/(?:karriere-)?detail/", re.I)
+                          # A section word does not have to sit immediately before /detail/ -- a news
+                          # article can nest its own /detail/ view one folder deeper still (confirmed
+                          # live 2026-09-22: anregiomed.de's own postings 10453/10454/10455/10746,
+                          # clinic 56101, all four real news press releases stored as open nursing
+                          # postings under /aktuelles/neuigkeiten/detail/..., "neuigkeiten" the one
+                          # immediately before /detail/, "aktuelles" one folder further out -- the old
+                          # pattern only ever matched the word directly adjacent). (?:/[^/?#]+)* lets
+                          # any number of path segments sit between the excluded word and /detail/;
+                          # still anchored on one of the same named words, so a real "/karriere/.../
+                          # detail/" job path (test_not_job_path_still_allows_real_karriere_detail_pages)
+                          # is untouched -- none of those start with aktuelles/presse/news/blog/glossar/
+                          # veranstaltungen/termine/events.
+                          r"/(aktuelles?|presse|news|blog|glossar|veranstaltung(?:en)?|termine?|events?)(?:/[^/?#]+)*/(?:karriere-)?detail/", re.I)
 
 
 def _registrable_domain(netloc):
@@ -545,7 +557,10 @@ def find_job_urls(base, session=None, max_maps=500):  # loop-safety ceiling, not
     r = get(urljoin(base, "/robots.txt"), timeout=15, session=session)
     if r and r.ok:
         maps += re.findall(r"(?im)^\s*sitemap:\s*(\S+)", r.text)
-    maps += [urljoin(base, p) for p in ("/sitemap.xml", "/wp-sitemap.xml", "/sitemap_index.xml")]
+    # "-index" (hyphen), not just "_index" -- confirmed live 2026-09-21: karriere.ge-passau.de serves
+    # /sitemap-index.xml (200, -> /sitemap-0.xml, 26 /stellen/ job urls) while /sitemap_index.xml,
+    # /sitemap.xml and /robots.txt all 404 -- every job on the board was invisible to this list before.
+    maps += [urljoin(base, p) for p in ("/sitemap.xml", "/wp-sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml")]
     seen, queue, n = set(), list(dict.fromkeys(maps)), 0
     while queue and n < max_maps:
         u = queue.pop(0)
@@ -570,12 +585,68 @@ def find_job_urls(base, session=None, max_maps=500):  # loop-safety ceiling, not
     if not found and job_out:
         found = [u for u in dict.fromkeys(job_out) if JOB_PATH_LOOSE.search(u)]
     if not found:
+        # No sitemap named a job at all -- before giving up, ask the board's own WP REST API for a
+        # custom post type it kept OUT of every sitemap (confirmed live 2026-09-21: karriere.klinikum-
+        # altmuehlfranken.de excludes its 'stellenangebote' CPT, 53 open postings, from robots.txt and
+        # every /sitemap*.xml candidate above, but still answers /wp-json/wp/v2/stellenangebote).
+        found = _wp_json_cpt_job_urls(base, session=session)
+    if not found:
         # Silent zero-yield here is indistinguishable from "board has no jobs right now" --
         # but it is usually a JS-only site (sitemap has no job links) or an unmatched URL shape.
         # Surface it in the run log so these boards are visible instead of vanishing quietly.
         print("[wp_jobs] find_job_urls: no job links in sitemap for %s (%d sitemap urls seen)"
               % (base, len(out)), file=sys.stderr)
     return found
+
+
+def _wp_json_cpt_job_urls(base, session=None):
+    """A WordPress board's own REST API (/wp-json/wp/v2/types) names every registered post type --
+    used only as a last resort, after every sitemap candidate above found nothing job-shaped, to catch
+    a custom post type the board's own sitemap generator excludes (confirmed live 2026-09-21: see
+    find_job_urls' caller). Each matched type's own rest_base then answers /wp-json/wp/v2/<rest_base>
+    with every item's real, canonical detail-page `link` -- no separate parser needed, these urls feed
+    straight into the same _wp_job_rows fetch-and-parse path a sitemap url would."""
+    r = get(urljoin(base, "/wp-json/wp/v2/types"), timeout=20, session=session)
+    if not r or not r.ok:
+        return []
+    try:
+        types = r.json()
+    except ValueError:
+        return []
+    if not isinstance(types, dict):
+        return []
+    cpts = [slug for slug, info in types.items()
+            if slug not in ("post", "page", "attachment")
+            and (JOB_SITEMAP.search(slug) or JOB_SITEMAP.search((info or {}).get("name") or ""))]
+    if not cpts:
+        return []
+    # More than one job-vocabulary CPT can coexist (confirmed live: the same tenant also registers
+    # 'stellenangebote_old') -- the shortest matching slug is the live one, a suffixed variant
+    # ('_old', '_archiv', ...) is always the longer name and never the other way round.
+    slug = min(cpts, key=len)
+    rest_base = types[slug].get("rest_base") or slug
+    out, page = [], 1
+    while True:
+        rr = get(urljoin(base, "/wp-json/wp/v2/%s?per_page=100&page=%d" % (rest_base, page)), timeout=25, session=session)
+        if not rr or not rr.ok:
+            break
+        try:
+            items = rr.json()
+        except ValueError:
+            break
+        if not isinstance(items, list) or not items:
+            break
+        out += [it.get("link") for it in items if it.get("link")]
+        # WP's own X-WP-TotalPages header is the site's own end-of-pagination signal. When it is
+        # absent, that is not a stop signal -- the loop already has two of its own (not items /
+        # not rr.ok above); stopping here too would silently ceiling every board at per_page=100
+        # the moment a host omits this one header (review finding, 2026-09-22: this was a
+        # self-invented ceiling inside the very fix for "reads short and reports success").
+        total_pages = rr.headers.get("x-wp-totalpages")
+        if total_pages and page >= int(total_pages):
+            break
+        page += 1
+    return out
 
 
 # A heading styled with Bootstrap's h1/h2/h3 utility class on a non-heading tag is still the
@@ -638,7 +709,12 @@ def parse_job_page(htmltext, url, org):
                                  "plz": _txt(a.get("postalCode"), 40),
                                  "region": _txt(a.get("addressRegion"), 200)}],
                         "url": n_url or url, "page": url,
-                        "datePosted": _sane_date(n.get("datePosted")),
+                        # or _page_meta_date(...): a JobPosting block that states no datePosted of its
+                        # own (or an epoch placeholder _sane_date already rejected) can still sit next
+                        # to the same WP-SEO-meta/itemprop the no-JSON-LD branch below reads -- read
+                        # off this SAME already-fetched htmltext rather than leave it for
+                        # _enrich_wp_fallback_fields to re-fetch the page just to find it.
+                        "datePosted": _sane_date(n.get("datePosted")) or _page_meta_date(htmltext),
                         "employmentType": n.get("employmentType"),
                         "description": _txt(n.get("description"))}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
@@ -694,7 +770,15 @@ def parse_job_page(htmltext, url, org):
     return {"title": title, "org": org, "org_source": "seed",
             "loc": [{"city": facts.get("location"), "plz": None, "region": None}],
             "url": url, "page": url, "description": _txt(body),
-            "employmentType": facts.get("schedule")}
+            "employmentType": facts.get("schedule"),
+            # TASK-85 AC#6: this is the branch a JSON-LD-less TYPO3 board (AMEOS: itemprop meta, no
+            # JobPosting block at all, see ITEMPROP_DATE_RX) always took, so datePosted was always
+            # empty here pre-fix -- _enrich_wp_fallback_fields then re-fetched every single one of
+            # ~778 rows a second time just to run these same three regexes, serialized with its own
+            # 0.5s sleep per row on top of _wp_job_rows' own 0.2s, ~doubling total requests and
+            # stretching one run past 17 minutes before it had to be killed. Read it here instead, off
+            # the SAME response already in hand, so the second fetch is never needed at all.
+            "datePosted": _page_meta_date(htmltext)}
 
 
 def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=None):
@@ -750,6 +834,22 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
         j = parse_job_page(r.text, r.url, c["name"])
         if not j or not j.get("title"):
             continue
+        if not GENDER.search(j["title"]):
+            # parse_job_page accepts an ungendered <h1>/<title> too (its own weak fallback, for the
+            # rare real posting whose title genuinely carries no marker) -- but the SAME weak fallback
+            # is how a department/category INDEX page's own <h1> ("Stellenangebote", "Pflegedienst",
+            # ...) gets mistaken for one job (confirmed live 2026-09-22, clinic 36202/csj.de: 10 of 17
+            # stored rows were index pages under /beruf-und-karriere/stellenangebote/<dept>, including
+            # .../alle-stellenangebote itself stored as a posting titled 'Stellenangebote' -- and the
+            # real nursing postings one hop behind them, /berufsfelder/alle-stellenangebote/pflegedienst/
+            # ..., were never read at all). A genuine listing always links several further job-shaped
+            # pages of its own; a genuine single posting with an unusual, ungendered title (rare) does
+            # not -- so only recurse into this page's own links, instead of accepting it as a row,
+            # when it actually looks like a listing by that measure.
+            sub = _job_link_pairs(r.text, r.url)
+            if len(sub) > 1:
+                out += _wp_job_rows(list(sub), c, host, session, section_labels, seen)
+                continue
         if not j["loc"][0]["city"] and c.get("town"):
             j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = list(section_labels) if section_labels else []
@@ -808,17 +908,29 @@ def _job_link_pairs(html, base, exclude=()):
     same OR-of-href-or-text signal pflege_jobs/sources/career_crawl.py's _crawl_urls already uses,
     just missing here.
 
-    Off-board links are dropped (see _same_board) -- job-looking on href/text alone says nothing
-    about which site actually owns the posting."""
-    out = {}
+    Off-board links are dropped (see _same_board) UNLESS the same off-board host is linked repeatedly
+    for distinct postings -- a host named only once is a stray cross-reference (confirmed live
+    2026-09-18: psychiatrie-werneck.de naming one koenig-ludwig-haus.de posting, an unrelated
+    hospital's own board), but a host linked repeatedly is not a stray mention, it is where this
+    board's own vacancies actually live (confirmed live 2026-09-21: waldkrankenhaus.de's own careers
+    page links jobs.malteser.de 31 times across distinct postings, its own host only twice -- TASK-85
+    AC#3). The registry/board itself is what draws that line, never a link reached one hop further in
+    (see _widget_endpoint_job_links, which stays same-board-only for exactly that reason)."""
+    out, off_board = {}, {}
     for h, t in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S):
         text = _txt(t)
         if not ((JOB_PATH.search(h) or (text and GENDER.search(text))) and not NOT_JOB_PATH.search(h)):
             continue
         u = urljoin(base, _html.unescape(h))
-        if u in exclude or u in out or not _same_board(u, base):
+        if u in exclude or u in out:
             continue
-        out[u] = text
+        if _same_board(u, base):
+            out[u] = text
+        else:
+            off_board.setdefault(urlparse(u).netloc, {})[u] = text
+    for links in off_board.values():
+        if len(links) > 1:
+            out.update(links)
     return out
 
 
@@ -1157,7 +1269,7 @@ def crawl_wp_jobs(c, session=None):
     # stages) -- without it each stage's own fresh dedup set can't see a page (or a klinikum-jobs
     # widget page's own embedded postings, ALLJOBS_RX) another stage already fetched, and the same
     # job comes back as a duplicate row once per stage that happens to reach it.
-    out, fetched, seen, titles = [], set(), set(), {}
+    out, fetched, seen, titles = _BoardTotalRows(), set(), set(), {}
     if cu_resp and cu_resp.ok:
         not_a_job.add(_listing_page_key(cu_resp.url))
         # beesite (muz global-jobboard-client): fingerprinted on the page already fetched here, no
@@ -1173,7 +1285,13 @@ def crawl_wp_jobs(c, session=None):
         # on the response already fetched above, so the probe itself costs no extra request.
         for delegate in (crawl_asklepios, crawl_erecruiter, crawl_concludis_widget):
             rows = delegate(c, session=session, cu_resp=cu_resp)
-            if rows:
+            # `if rows:` alone is falsy for an empty-but-annotated _BoardTotalRows, so a board this
+            # delegate DID recognise (it parsed a total off the board's own JSON) but read zero rows
+            # from would fall through as an untagged empty list -- exactly the under-read shape this
+            # mechanism exists to catch (review finding, 2026-09-22: 0 rows vs a declared total>0).
+            # board_total is not None means "this vendor, and it told us its total", distinct from
+            # "not this vendor" (plain [] / board_total still None) which must keep falling through.
+            if rows or getattr(rows, "board_total", None) is not None:
                 return rows
         # Merged into the normal walk below, not returned early: these shapes have no per-job
         # detail link for the sitemap/career-page walk to find on its own, but a career page can
@@ -1185,7 +1303,7 @@ def crawl_wp_jobs(c, session=None):
                     or _inline_heading_job_rows(cu_resp, c, host) or _title_only_job_rows(cu_resp, c, host)
                     or _bootstrap_panel_job_rows(cu_resp, c, host))
         if faq_rows:
-            out = faq_rows   # enriched once, together with everything else, at the final return
+            out = _BoardTotalRows(faq_rows)   # enriched once, together with everything else, at the final return
             fetched = {j["payload"]["url"] for j in out}
     section_label, section_url = _wp_nursing_section_url(cu, cu_resp)
     # Seed `titles` from the career page itself before the sitemap stage runs (not just from the
@@ -1208,7 +1326,18 @@ def crawl_wp_jobs(c, session=None):
             out += new
             fetched |= {j["payload"]["url"] for j in new}
 
-    urls = [u for u in find_job_urls(base, session=session) if _listing_page_key(u) not in not_a_job]
+    sitemap_urls = find_job_urls(base, session=session)
+    if not sitemap_urls and cu_resp and cu_resp.ok:
+        # TASK-85 AC#1: sitemap discovery (and, since AC#2, the wp-json CPT fallback inside
+        # find_job_urls) found NOTHING -- whatever the career page's own homepage/pagination links
+        # below turn up instead is a degraded read of this board, not a complete one. This used to be
+        # a stderr-only print with the crawl still returning a clean, nonzero-row success (confirmed
+        # live: karriere.ge-passau.de reported "adapter: 2 rows" as a clean result while 27 real
+        # sitemap job urls sat behind the untried hyphenated /sitemap-index.xml). A caller that reads
+        # this attribute (see _BoardTotalRows) can record it as its own crawl_issue instead of never
+        # learning the count it got was not the real board.
+        out.degraded = "sitemap_and_wp_json_empty"
+    urls = [u for u in sitemap_urls if _listing_page_key(u) not in not_a_job]
     if urls:
         more_urls = [u for u in urls if u not in fetched]
         new = _wp_job_rows(more_urls, c, host, session, seen=seen, titles=titles)
@@ -1235,8 +1364,14 @@ def crawl_wp_jobs(c, session=None):
         # location/jobs subpage the page itself points to, not on the page or its own scripts) --
         # tried last, after every generic sitemap/page-link path above found nothing. Never a
         # registry label either (see pflege_jobs.sources.hr4you docstring, TASK-40 AC#3).
+        # crawl_hr4you returns a plain list, not a _BoardTotalRows -- assigning it straight to `out`
+        # would silently drop the .degraded tag set above (review finding, 2026-09-22: a board whose
+        # sitemap AND wp-json are both empty, and that hr4you then also reads 0 rows from, is exactly
+        # the worst case AC#1 exists to flag, and it lost the tag here).
         from pflege_jobs.sources.hr4you import crawl_hr4you
-        out = crawl_hr4you(c, session=session)
+        degraded = out.degraded
+        out = _BoardTotalRows(crawl_hr4you(c, session=session))
+        out.degraded = degraded
     # crawl_wp_jobs's own parser extracts no employmentType/datePosted from plain HTML (only from
     # JSON-LD, where present) -- backfill both from what these WordPress/TYPO3 boards already
     # publish (Vollzeit/Teilzeit in the body, WP SEO meta dates), not just for crawl_oracle's fallback.
@@ -1258,14 +1393,35 @@ EMPLOYMENT_KEYWORD_RX = re.compile(r"\b(Vollzeit|Teilzeit|Minijob)\b", re.I)
 ITEMPROP_DATE_RX = re.compile(r'itemprop="datePosted"[^>]*content="([^"]+)"')
 
 
-def _enrich_wp_fallback_fields(rows, session=None):
-    """crawl_wp_jobs's own parser (owned by TASK-35) extracts no employmentType/datePosted --
-    backfill both here from data these WordPress boards already publish: Vollzeit/Teilzeit named in
-    the visible body (already sitting in payload.description, no extra fetch), the
+def _page_meta_date(htmltext):
+    """A page's own publish date read directly off an already-fetched response: the
     article:modified_time / og:updated_time <meta> every WP SEO plugin (Yoast, RankMath) stamps on
-    each post, and a bare schema.org itemprop="datePosted" meta some TYPO3 boards use instead of
-    JSON-LD (one light re-fetch per row, since crawl_wp_jobs keeps only the body text, not <head>).
-    Verified stable, not request-time-generated, by refetching the same detail page twice."""
+    each post, InnKlinikum's own "Ausschreibung ... vom" body text, or a bare schema.org
+    itemprop="datePosted" meta some TYPO3 boards use instead of JSON-LD -- in that order. Shared by
+    parse_job_page (reads it from the SAME response it is already parsing, TASK-85 AC#6) and
+    _enrich_wp_fallback_fields (its fallback for a row parse_job_page could not reach this from, e.g.
+    a sitemap/wp-json url _wp_job_rows fetched under a different code path)."""
+    dm = WP_META_DATE_RX.search(htmltext or "")
+    if dm:
+        return _sane_date(dm.group(1))
+    am = AUSSCHREIBUNG_DATE_RX.search(htmltext or "")
+    if am:
+        return _sane_date("%s-%02d-%02d" % (am.group(3), int(am.group(2)), int(am.group(1))))
+    im = ITEMPROP_DATE_RX.search(htmltext or "")
+    if im:
+        return _sane_date(im.group(1))
+    return None
+
+
+def _enrich_wp_fallback_fields(rows, session=None):
+    """crawl_wp_jobs's own parser (owned by TASK-35) extracts no employmentType -- backfill it here
+    from Vollzeit/Teilzeit named in the visible body (already sitting in payload.description, no
+    extra fetch). datePosted is normally filled by parse_job_page itself now (_page_meta_date, off the
+    SAME response already fetched) -- this re-fetch is only reached for the rare row that got here
+    without ever going through parse_job_page. TASK-85 AC#6: this used to be the ONLY place any of
+    these three regexes ran, so a JSON-LD-less board (AMEOS TYPO3: itemprop only, no JobPosting block)
+    re-fetched every single one of its ~778 detail pages a second time just to find a date the first
+    fetch already had in hand -- serialized, ~doubling total requests, one run killed past 17 minutes."""
     for r in rows:
         p = r["payload"]
         if not p.get("employmentType"):
@@ -1275,15 +1431,7 @@ def _enrich_wp_fallback_fields(rows, session=None):
         if not p.get("datePosted"):
             resp = get(p.get("url") or r["source_url"], session=session)
             if resp and resp.ok:
-                dm = WP_META_DATE_RX.search(resp.text)
-                am = AUSSCHREIBUNG_DATE_RX.search(resp.text)
-                im = ITEMPROP_DATE_RX.search(resp.text)
-                if dm:
-                    p["datePosted"] = _sane_date(dm.group(1))
-                elif am:
-                    p["datePosted"] = _sane_date("%s-%02d-%02d" % (am.group(3), int(am.group(2)), int(am.group(1))))
-                elif im:
-                    p["datePosted"] = _sane_date(im.group(1))
+                p["datePosted"] = _page_meta_date(resp.text)
             time.sleep(0.5)
     return rows
 
@@ -1624,6 +1772,35 @@ def _erecruiter_jobs(htmltext):
     return [j for j in (data.get("Jobs") or []) if isinstance(j, dict)], data
 
 
+def _erecruiter_host_resp(cu_resp, session=None):
+    """The registered careers_url is sometimes only a WRAPPER page that links out to the real board
+    on a same-domain subdomain, never embedding the JobList JSON itself -- confirmed live 2026-09-21:
+    klinikum-ab-alz.de/karriere/ links jobs.klinikum-ab-alz.de/Jobs (63 postings, TASK-85 AC#5, the
+    audit misread this as a Knockout SPA needing a render rung -- it is this same engine one hop
+    away); bezirkskliniken-schwaben.de/ausbildung-karriere/... links jobs.bezirkskliniken-schwaben.de/
+    Jobs (56 postings, AC#4, the audit's "inline JSON model" -- also this engine, also one hop away).
+    Neither link matches JOB_PATH (a bare "/Jobs", no trailing slash) or carries gender-marked anchor
+    text, so the generic job-link scan never follows either. Same "resolve the real tenant host
+    first" shape as crawl_dvinci's dvinci_host, narrowed to the SAME registrable domain the caller
+    already trusts -- a genuinely different domain is _job_link_pairs' repeat-count call, not this
+    one's (see its docstring)."""
+    if not cu_resp or not cu_resp.ok or ERECRUITER_LIST_RX.search(cu_resp.text):
+        return cu_resp
+    own_netloc = urlparse(cu_resp.url).netloc
+    own_domain = _registrable_domain(own_netloc)
+    tried = set()
+    hrefs = [h for h in re.findall(r'href="(https?://[^"#]+)"', cu_resp.text, re.I) if JOB_SITEMAP.search(h)]
+    for h in sorted(dict.fromkeys(hrefs), key=len):
+        p = urlparse(h)
+        if p.netloc == own_netloc or p.netloc in tried or _registrable_domain(p.netloc) != own_domain:
+            continue
+        tried.add(p.netloc)
+        r = get(h, session=session)
+        if r and r.ok and ERECRUITER_LIST_RX.search(r.text):
+            return r
+    return cu_resp
+
+
 class _BoardTotalRows(list):
     """A plain row list -- the return-value shape app/crawl.py's generic vendor-adapter caller
     depends on, so this class changes nothing about how a caller sees it -- that also carries THIS
@@ -1640,13 +1817,22 @@ class _BoardTotalRows(list):
     own value -- nothing to go stale, nothing another file has to remember to reset."""
     board_total = None
     board_paginated = None
+    # None: a normal, complete read. A short string names WHY this read is degraded (currently only
+    # crawl_wp_jobs' "sitemap_and_wp_json_empty", TASK-85 AC#1) -- a caller can record it as its own
+    # crawl_issue instead of a degraded-but-nonzero row count silently reading as a clean success.
+    degraded = None
 
 
 def crawl_erecruiter(c, session=None, cu_resp=None):
     cu = (c.get("careers_url") or "").strip()
     r = cu_resp if (cu_resp is not None and cu_resp.ok) else (get(cu, session=session) if cu else None)
+    r = _erecruiter_host_resp(r, session=session)
     if not (r and r.ok):
-        return []
+        # A bare [] here has no .board_total -- app/crawl.py's pending wiring (see _BoardTotalRows'
+        # docstring) reads that attribute unconditionally and would AttributeError on this path
+        # (review finding, 2026-09-22). _BoardTotalRows' class-level board_total=None default makes
+        # an empty instance exactly as safe to read as a real one that found no total.
+        return _BoardTotalRows()
     p = urlparse(r.url)
     base = "%s://%s" % (p.scheme, p.netloc)
     out = _BoardTotalRows()

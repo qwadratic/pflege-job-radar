@@ -13,6 +13,7 @@ import requests
 
 from .schema import OBS_COLUMNS, ARRAY_COLUMNS, JSON_COLUMNS  # single source of truth
 from . import config as C
+from .registry_lint import check_careers_url
 
 
 def only_pflege(observations, keep_non_pflege=False):
@@ -175,7 +176,10 @@ class EdgeSink:
         server-side, self.batch client-side). Callers must send every column (schema.CLINIC_SPEC) with
         only the intended fields changed -- the edge function's upsert does `col=excluded.col` for every
         column except ats_type/careers_url (coalesce(nullif(excluded.col,''), stored)), so a partial dict
-        nulls the rest. Returns the number of rows the server reports as upserted."""
+        nulls the rest. A careers_url matching a known job-detail-page shape is refused and replaced with
+        "" instead (coalesces to whatever is already stored -- never written, never regressing a good
+        live value): see the comment below for why this is scoped to the one field, not the row or the
+        batch. Returns the number of rows the server reports as upserted."""
         # Deduplicate by clinic_id -- last wins -- same as write()'s observations dedupe above: the
         # edge function's insert is one multi-row `on conflict (clinic_id) do update`, and Postgres
         # raises "ON CONFLICT DO UPDATE command cannot affect row a second time" if the same clinic_id
@@ -187,6 +191,26 @@ class EdgeSink:
         for r in rows:
             seen[r.get("clinic_id")] = r
         rows = list(seen.values())
+        # TASK-86: refuse a single-job-detail-page-shaped careers_url here, loudly, rather than let it
+        # become a one-row "board" once crawled -- but drop only that ONE value, not the whole row or
+        # batch. Every real caller (career_discover_exa.py's Exa write-back, cli.py's ats-probe drain,
+        # cli.py's registry CSV push) builds this row from a full live-clinic snapshot and only
+        # conditionally overwrites careers_url, so a row proposing an unrelated correction (e.g.
+        # ats_type only) routinely CARRIES THROUGH an already-bad, unchanged careers_url. Refusing the
+        # whole row for that protects nothing (the value is already live) while it wedges every other
+        # clean row in the same batch and, in cli.py's inbox drain, the ack that follows it -- the
+        # exact TASK-73 AC2 shape again, reopened via ValueError instead of a Postgres exception.
+        # Sending "" is safe specifically because the upsert's coalesce (see docstring) leaves the
+        # stored value untouched when the incoming one is blank.
+        scrubbed = []
+        for r in rows:
+            shape = check_careers_url(r.get("careers_url", ""))
+            if shape:
+                log(f"write_clinics: refused job-detail-page careers_url for clinic {r.get('clinic_id')} "
+                    f"({shape}): {r.get('careers_url')!r} -- dropped, rest of the row still written")
+                r = {**r, "careers_url": ""}
+            scrubbed.append(r)
+        rows = scrubbed
         n = 0
         for i in range(0, len(rows), self.batch):
             batch = rows[i:i + self.batch]

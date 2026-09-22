@@ -13,14 +13,19 @@ import csv
 import re
 from dataclasses import dataclass
 
-_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-
 # Each pattern matches a URL *path* shape known to name one specific posting
 # rather than a board. Keep this list short and specific -- a board URL that
 # merely contains "/stellenangebote/" with ONE slug (a category or "view all"
 # page) must not match, only two nested slugs (category/specific-posting).
+#
+# job-slug: "/job/<anything>/" is a single-posting permalink on every vendor
+# seen in this registry (Helios/Oracle, mvt-zentrum and gkg-bamberg's WordPress
+# sites). A UUID slug (47601/67201/67601) is just one instance of that shape --
+# matching UUID-only missed the human-readable-slug instances, live on 16268
+# and 47102 (.../job/leitung-finanzen-medizincontrolling-m-w-d/ and
+# .../job/stationshilfen-m-w-in-teilzeit-oder-auf-minijob-basis/).
 JOB_DETAIL_SHAPES = [
-    ("job-uuid", re.compile(r"/job/" + _UUID + r"(?:/|$)", re.I)),
+    ("job-slug", re.compile(r"/job/[a-z0-9][a-z0-9-]*(?:/|$)", re.I)),
     ("stellenangebote-slug-slug",
      re.compile(r"/stellenangebote/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(?:/|$)", re.I)),
 ]

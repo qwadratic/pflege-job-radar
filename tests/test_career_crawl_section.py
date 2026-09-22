@@ -345,6 +345,31 @@ def test_jsonld_jobposting_on_a_list_queued_page_is_still_accepted():
     assert len(rows) == 1 and rows[0]["title"] == "Pflegefachkraft (m/w/d) Notaufnahme"
 
 
+def test_umantis_vacancy_with_no_gender_marker_is_recovered_via_its_own_unambiguous_url_shape():
+    """Regression (2026-09-22 remediation round, reviewer finding #3). A real vacancy whose OWN
+    anchor text on the page that links it carries no gender marker (JOB_TEXT) is queued as a list
+    page, not job_links -- and umantis ships no JobPosting JSON-LD on its detail pages either, so
+    before this fix it was silently lost, never entering the raw queue at all (confirmed live, clinic
+    16211/recruitingapp-5545 umantis: 'Teamassistenz Ärztliche Direktion', Vacancies/720/
+    Description/1, a real 12KB vacancy page -- 15 rows became 14). Its own URL shape
+    (/Vacancies/<id>/Description/<n>) is unambiguous for this vendor -- umantis' own listing lives at
+    the structurally different /Jobs/<n> (LINK_BAD) -- so it is trusted on its own, the same way
+    JSON-LD already is for other boards."""
+    seed_url = "https://recruitingapp-5545.de.umantis.com/Vacancies/720"
+    detail_url = "https://recruitingapp-5545.de.umantis.com/Vacancies/720/Description/1"
+    seed_html = '<a href="/Vacancies/720/Description/1">Teamassistenz Ärztliche Direktion</a>'  # no gender marker
+    detail_html = ("<html><body><h1>Teamassistenz Ärztliche Direktion</h1>"
+                   "<p>Wir suchen Verstaerkung. Jetzt bewerben!</p></body></html>")
+    fetch_map = {seed_url: R(seed_html, seed_url), detail_url: R(detail_html, detail_url)}
+    cr = _crawler(fetch_map)
+
+    rows, stats = cr._crawl_urls({"name": "X", "kez": "1", "career": seed_url},
+                                  {"recruitingapp-5545.de.umantis.com"}, [seed_url], [])
+
+    assert detail_url in cr.calls              # queued as a list-page candidate, then fetched
+    assert len(rows) == 1 and rows[0]["title"] == "Teamassistenz Ärztliche Direktion"
+
+
 class _SitemapResp:
     def __init__(self, text):
         self.text, self.status_code = text, 200

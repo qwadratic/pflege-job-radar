@@ -163,6 +163,27 @@ def test_processing_writes_only_clean_rows_to_postgres_and_keeps_the_raw_rows(qu
     assert IB.loaded_refs(7, path=queue) == ["https://x.example/job/0", "https://x.example/job/4"]
 
 
+def test_loaded_refs_keys_an_observation_row_on_its_own_source_ref_not_source_url(queue):
+    """Regression (2026-09-22 remediation round, reviewer finding #1). career_crawl.py's Crawler
+    (and the other seeded adapters) write source_ref=canonical_job_url(source_url) into the
+    observation itself (TASK-83); kind='observation' rows reach posting_observations with that
+    same source_ref unchanged (pflege_jobs/cli.py _process_rows: `o = dict(r['payload'])`). app/
+    crawl.py's _posting_ids_for_refs filters posting_observations.source_ref=in.(refs) -- refs must
+    therefore be the canonical source_ref, not the raw source_url, or the lookup finds nothing for
+    every softgarden/dvinci/umantis/helix/b-ite row this run just wrote (confirmed live: 591 of 676
+    career_crawl-produced observations have a source_ref shape canonical_job_url rewrites)."""
+    row = {"kind": "observation", "collector": "seed-20", "source_host": "klinikum-neumarkt.dvinci-hr.com",
+           "source_url": "https://klinikum-neumarkt.dvinci-hr.com/de/jobs/90791/pflegefachkraft-mwd",
+           "payload": {"source_id": 20, "source_ref": "dvinci:klinikum-neumarkt.dvinci-hr.com:90791",
+                       "source_url": "https://klinikum-neumarkt.dvinci-hr.com/de/jobs/90791/pflegefachkraft-mwd",
+                       "title": "Pflegefachkraft (m/w/d)"}}
+    IB.enqueue([row], run_id=11, path=queue)
+    inbox_id = IB.pending(path=queue)[0]["inbox_id"]
+    IB.ack([{"inbox_id": inbox_id, "note": "loaded -> 37301"}], path=queue)
+
+    assert IB.loaded_refs(11, path=queue) == ["dvinci:klinikum-neumarkt.dvinci-hr.com:90791"]
+
+
 def test_historical_raw_rows_can_be_reprocessed_after_a_rule_change(queue, monkeypatch):
     """AC#4. The payoff of keeping the raw rows: a classifier change is replayed over what is
     already on disk instead of re-crawling the boards."""

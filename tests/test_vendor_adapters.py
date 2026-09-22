@@ -10,11 +10,12 @@ from crawlers import vendor_adapters as va  # noqa: E402
 
 
 class _R:
-    def __init__(self, text="", url="", ok=True, json_data=None):
+    def __init__(self, text="", url="", ok=True, json_data=None, headers=None):
         self.text = text
         self.url = url
         self.ok = ok
         self.encoding = None
+        self.headers = headers or {}
         self._json = json_data
 
     def json(self):
@@ -347,6 +348,109 @@ def test_wp_jobs_falls_back_to_the_sitemap_walk_when_no_nursing_nav_exists(monke
     assert {r["payload"]["title"] for r in rows} == {"Pflegefachkraft (m/w/d)", "Koch (m/w/d)"}
 
 
+def test_crawl_wp_jobs_flags_the_board_degraded_when_sitemap_and_wp_json_both_come_up_empty(monkeypatch):
+    """TASK-85 AC#1: this used to be a stderr-only print with the crawl still reporting a clean,
+    nonzero-row success off whatever the homepage-link fallback below happened to find (confirmed
+    live: karriere.ge-passau.de, "adapter: 2 rows" read as a clean result while the real board sat
+    behind an untried sitemap variant, see AC#2's tests below). A caller can now read rows.degraded
+    instead of never learning the count it got was not the real board."""
+    cu = "https://example.de/karriere/"
+    cu_page = _R('<a href="/stellen/hausmeister-1">Hausmeister (m/w/d)</a>', url=cu, ok=True)
+    detail = _R(_jsonld_job("Hausmeister (m/w/d)"), url="https://example.de/stellen/hausmeister-1", ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page, "https://example.de/stellen/hausmeister-1": detail}))
+    rows = va.crawl_wp_jobs({"name": "X", "careers_url": cu})
+    assert len(rows) == 1
+    assert rows.degraded == "sitemap_and_wp_json_empty"
+
+
+def test_crawl_wp_jobs_keeps_the_degraded_tag_when_the_hr4you_fallback_also_finds_nothing(monkeypatch):
+    """Review finding 2026-09-22: `out = crawl_hr4you(...)` reassigned `out` from the _BoardTotalRows
+    instance carrying .degraded to hr4you's own plain list, silently dropping the tag exactly in the
+    worst case it exists for -- a board whose sitemap and wp-json are both empty AND whose hr4you
+    fallback also reads 0 rows. The AC#1 test above only exercises the 1-row homepage-fallback path,
+    which never reaches this reassignment."""
+    cu = "https://example.de/karriere/"
+    cu_page = _R("<html><body>no job-shaped links here</body></html>", url=cu, ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page}))
+    import pflege_jobs.sources.hr4you as hr4you
+    monkeypatch.setattr(hr4you, "crawl_hr4you", lambda c, session=None: [])
+    rows = va.crawl_wp_jobs({"name": "X", "careers_url": cu})
+    assert list(rows) == []
+    assert rows.degraded == "sitemap_and_wp_json_empty"
+
+
+def test_find_job_urls_tries_the_hyphenated_sitemap_index_variant(monkeypatch):
+    """TASK-85 AC#2: karriere.ge-passau.de serves /sitemap-index.xml (HYPHEN) while /sitemap.xml,
+    /sitemap_index.xml (underscore) and /robots.txt all 404 -- every job on the board was invisible
+    to this candidate list before."""
+    base = "https://karriere.ge-passau.de"
+    index = _R("<sitemapindex><sitemap><loc>%s/sitemap-0.xml</loc></sitemap></sitemapindex>" % base,
+               url=base + "/sitemap-index.xml", ok=True)
+    detail_url = base + "/stellen/pflegefachkraft-1"
+    leaf = _R("<urlset><url><loc>%s</loc></url></urlset>" % detail_url, url=base + "/sitemap-0.xml", ok=True)
+    mapping = {base + "/sitemap-index.xml": index, base + "/sitemap-0.xml": leaf}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    assert va.find_job_urls(base) == [detail_url]
+
+
+def test_wp_json_cpt_job_urls_prefers_the_shorter_slug_over_an_old_archive_variant(monkeypatch):
+    """TASK-85 AC#2: karriere.klinikum-altmuehlfranken.de excludes its 'stellenangebote' CPT (53 open
+    postings) from robots.txt and every sitemap candidate, but still answers its own WP REST API for
+    it. A second, longer-named CPT ('stellenangebote_old') also matches the job vocabulary and must
+    lose the tiebreak to the shorter, live one."""
+    base = "https://karriere.klinikum-altmuehlfranken.de"
+    types = {
+        "post": {"name": "Beiträge", "rest_base": "posts"},
+        "stellenangebote_old": {"name": "Stellenangebote (Old)", "rest_base": "stellenangebote_old"},
+        "stellenangebote": {"name": "Stellenangebote", "rest_base": "stellenangebote"},
+    }
+    items = [{"link": base + "/stellenangebote/ergotherapeut-1/"}]
+    mapping = {
+        base + "/wp-json/wp/v2/types": _R(json_data=types, ok=True),
+        base + "/wp-json/wp/v2/stellenangebote?per_page=100&page=1": _R(json_data=items, ok=True),
+    }
+    calls = []
+    monkeypatch.setattr(va, "get", _router(mapping, calls))
+    found = va.find_job_urls(base)
+    assert found == [base + "/stellenangebote/ergotherapeut-1/"]
+    assert not any("stellenangebote_old" in u for u in calls)
+
+
+def test_wp_json_cpt_job_urls_pages_until_the_sites_own_totalpages_header(monkeypatch):
+    """No hardcoded page cap -- read on until the board's own X-WP-TotalPages says stop."""
+    base = "https://example.de"
+    types = {"stellenangebote": {"name": "Stellenangebote", "rest_base": "stellenangebote"}}
+    page1 = _R(json_data=[{"link": base + "/s/1"}], ok=True, headers={"x-wp-totalpages": "2"})
+    page2 = _R(json_data=[{"link": base + "/s/2"}], ok=True, headers={"x-wp-totalpages": "2"})
+    mapping = {
+        base + "/wp-json/wp/v2/types": _R(json_data=types, ok=True),
+        base + "/wp-json/wp/v2/stellenangebote?per_page=100&page=1": page1,
+        base + "/wp-json/wp/v2/stellenangebote?per_page=100&page=2": page2,
+    }
+    monkeypatch.setattr(va, "get", _router(mapping))
+    assert va._wp_json_cpt_job_urls(base) == [base + "/s/1", base + "/s/2"]
+
+
+def test_wp_json_cpt_job_urls_keeps_paging_when_totalpages_header_is_missing(monkeypatch):
+    """No-safety-nets rule (CLAUDE.md): the source's own end signal is `not items` / a failed fetch,
+    never a missing header. Review finding 2026-09-22: `if not total_pages or ...: break` silently
+    ceilinged every board at per_page=100 the moment a host omitted X-WP-TotalPages -- inside the very
+    fix for 'near-complete read reported as success'."""
+    base = "https://example.de"
+    types = {"stellenangebote": {"name": "Stellenangebote", "rest_base": "stellenangebote"}}
+    page1 = _R(json_data=[{"link": base + "/s/1"}], ok=True)  # no headers -> no X-WP-TotalPages
+    page2 = _R(json_data=[{"link": base + "/s/2"}], ok=True)  # no headers -> no X-WP-TotalPages
+    mapping = {
+        base + "/wp-json/wp/v2/types": _R(json_data=types, ok=True),
+        base + "/wp-json/wp/v2/stellenangebote?per_page=100&page=1": page1,
+        base + "/wp-json/wp/v2/stellenangebote?per_page=100&page=2": page2,
+        # page 3 deliberately absent from mapping -> _router's default 404 is the board's own
+        # end-of-pagination signal (not rr.ok), the only thing allowed to stop this loop.
+    }
+    monkeypatch.setattr(va, "get", _router(mapping))
+    assert va._wp_json_cpt_job_urls(base) == [base + "/s/1", base + "/s/2"]
+
+
 def test_find_job_urls_visits_every_unnamed_sitemap_index_child_not_just_the_first_3(monkeypatch):
     """TASK-72 AC#2: locs[:3] used to permanently drop children 4+ of a sitemap index whose own
     names carry no job-ish word at all (confirmed live: klinikum-ab-alz.de's wp-sitemap.xml)."""
@@ -562,6 +666,68 @@ def test_oracle_falls_back_to_wp_jobs_and_backfills_missing_fields(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# _wp_job_rows: an ungendered <h1>/<title> is parse_job_page's own weak fallback (real, if rare, for
+# an odd-titled posting) -- but the same weak fallback is how a department/category INDEX page got
+# stored as a fake posting under its own <h1> label (2026-09-22 remediation round, reviewer finding
+# #2). Confirmed live, clinic 36202/csj.de: .../stellenangebote/alle-stellenangebote stored as a
+# posting titled 'Stellenangebote', so its own 20+ real nursing postings one hop behind it were
+# never read (17 rows, 10 of them index pages -> fixed: 32 rows, all real postings).
+# ---------------------------------------------------------------------------
+def test_wp_job_rows_walks_an_ungendered_index_page_instead_of_storing_it_as_a_fake_posting(monkeypatch):
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    index_url = "https://csj.de/beruf-und-karriere/stellenangebote/alle-stellenangebote"
+    job1 = "https://csj.de/beruf-und-karriere/berufsfelder/alle-stellenangebote/pflegedienst/notaufnahme"
+    job2 = "https://csj.de/beruf-und-karriere/berufsfelder/alle-stellenangebote/pflegedienst/allgemeinstation"
+    index_html = ('<h1>Stellenangebote</h1>'
+                  f'<a href="{job1}">Pflegefachkraft (m/w/d) fuer die Notaufnahme</a>'
+                  f'<a href="{job2}">Pflegefachkraft (m/w/d) fuer die Allgemeinstation</a>')
+    job1_html = '<h1>Pflegefachkraft (m/w/d) fuer die Notaufnahme</h1><p>Jetzt bewerben.</p>'
+    job2_html = '<h1>Pflegefachkraft (m/w/d) fuer die Allgemeinstation</h1><p>Jetzt bewerben.</p>'
+    mapping = {index_url: _R(index_html, index_url), job1: _R(job1_html, job1), job2: _R(job2_html, job2)}
+    monkeypatch.setattr(va, "get", _router(mapping))
+
+    rows = va._wp_job_rows([index_url], {"name": "St. Josef Regensburg"}, "csj.de", None)
+
+    titles = sorted(r["payload"]["title"] for r in rows)
+    assert titles == ["Pflegefachkraft (m/w/d) fuer die Allgemeinstation", "Pflegefachkraft (m/w/d) fuer die Notaufnahme"]
+    assert "Stellenangebote" not in titles     # the index page itself never becomes a row
+
+
+def test_wp_job_rows_still_keeps_a_genuine_ungendered_title_with_no_further_job_links(monkeypatch):
+    """The other half of the same fix: an ungendered title is only reinterpreted as a listing when the
+    page actually links MORE THAN ONE further job-shaped page of its own -- a genuine (if oddly
+    titled) single posting with no such links, or only one incidental related-job link, still keeps
+    its own row instead of being silently dropped."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    url = "https://klinikum.example.de/karriere/jobs/quereinstieg"
+    html = '<h1>Quereinstieg Pflege</h1><p>Jetzt bewerben.</p>'
+    monkeypatch.setattr(va, "get", _router({url: _R(html, url)}))
+
+    rows = va._wp_job_rows([url], {"name": "Klinikum"}, "klinikum.example.de", None)
+
+    assert [r["payload"]["title"] for r in rows] == ["Quereinstieg Pflege"]
+
+
+def test_enrich_wp_fallback_fields_does_not_refetch_a_row_whose_date_parse_job_page_already_found(monkeypatch):
+    """TASK-85 AC#6: parse_job_page's non-JSON-LD branch used to leave datePosted empty, so this
+    function re-fetched the SAME detail page a second time on every single row just to read the one
+    meta tag it could have read on the first fetch -- confirmed live: karriere.ameos.eu, 0/766 rows
+    had a date before this fix, ~doubling total requests on a 778-job board (one run killed at 17
+    minutes, still running)."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    detail = _R('<h1>Pflegefachkraft (m/w/d)</h1><p>Bewerben. Vollzeit.</p>'
+                '<meta itemprop="datePosted" content="2026-08-15">',
+                url="https://karriere.ameos.eu/stelle/1", ok=True)
+    calls = []
+    monkeypatch.setattr(va, "get", _router({"https://karriere.ameos.eu/stelle/1": detail}, calls))
+    rows = va._wp_job_rows(["https://karriere.ameos.eu/stelle/1"], {"name": "AMEOS"}, "karriere.ameos.eu", None)
+    assert calls == ["https://karriere.ameos.eu/stelle/1"]                    # exactly one fetch so far
+    out = va._enrich_wp_fallback_fields(rows)
+    assert out[0]["payload"]["datePosted"] == "2026-08-15"
+    assert calls == ["https://karriere.ameos.eu/stelle/1"]                    # _enrich must not refetch it
+
+
+# ---------------------------------------------------------------------------
 # _sane_date / parse_job_page: a JSON-LD epoch placeholder must not freeze a posting as ancient
 # forever (TASK-73 AC7). Confirmed live 2026-09-18: 9 kbo.de + 2 frg-kliniken.de open postings.
 # ---------------------------------------------------------------------------
@@ -594,6 +760,17 @@ def test_parse_job_page_keeps_a_real_dateposted():
     assert j["datePosted"] == "2026-05-04"
 
 
+def test_parse_job_page_reads_dateposted_from_itemprop_when_no_jsonld():
+    """TASK-85 AC#6: this is the branch a JSON-LD-less TYPO3 board (AMEOS: bare itemprop meta, no
+    JobPosting block at all) always takes -- reading the date here, off the SAME already-fetched
+    response, is what lets _enrich_wp_fallback_fields skip re-fetching every row a second time just
+    to find it (see the end-to-end test next to _enrich_wp_fallback_fields below)."""
+    html = ('<h1>Pflegefachkraft (m/w/d)</h1><p>Bewerben Sie sich jetzt.</p>'
+            '<meta itemprop="datePosted" content="2026-08-15">')
+    j = va.parse_job_page(html, "https://karriere.ameos.eu/stelle/1", "AMEOS")
+    assert j["datePosted"] == "2026-08-15"
+
+
 # ---------------------------------------------------------------------------
 # NOT_JOB_PATH: a TYPO3 news/press/blog/event single-record view uses the exact same bare
 # /detail/<id> shape as a job posting (TASK-73 AC9). Confirmed live 2026-09-18:
@@ -622,6 +799,22 @@ def test_not_job_path_excludes_glossary_detail_pages():
     assert va.NOT_JOB_PATH.search(path), "should be excluded as a non-job detail page"
 
 
+# Regression (2026-09-22 remediation round, reviewer finding #5): the excluded word does not have to
+# sit immediately before /detail/ -- a news section can nest its own /detail/ view one folder deeper
+# still. Confirmed live: anregiomed.de postings 10453/10454/10455/10746 (clinic 56101), four real
+# press releases ("15.000 Euro zur Foerderung...", "Mediroth spendet Reanimationspuppe", ...) stored
+# as open nursing postings, all under /aktuelles/neuigkeiten/detail/... -- "neuigkeiten" sits
+# immediately before /detail/, "aktuelles" one folder further out, which the old adjacency-only
+# pattern never saw.
+def test_not_job_path_excludes_a_news_detail_page_nested_a_folder_deeper_than_the_section_word():
+    for path in ["/aktuelles/neuigkeiten/detail/15000-euro-zur-foerderung-des-klinikums-ansbach/",
+                 "/aktuelles/neuigkeiten/detail/mediroth-spendet-reanimationspuppe/",
+                 "/aktuelles/neuigkeiten/detail/foerderverein-spendet-transportstuehle/",
+                 "/aktuelles/neuigkeiten/detail/kleine-implantate-grosse-wirkung/"]:
+        assert va.JOB_PATH.search(path), f"should still look job-shaped by URL alone: {path}"
+        assert va.NOT_JOB_PATH.search(path), f"should be excluded as a non-job detail page: {path}"
+
+
 def test_find_job_urls_drops_typo3_news_detail_pages_confirmed_klinikum_memmingen(monkeypatch):
     base = "https://www.klinikum-memmingen.de"
     sitemap = _R(
@@ -645,6 +838,21 @@ def test_job_link_pairs_drops_a_link_to_an_unrelated_site():
             '<a href="https://koenig-ludwig-haus.de/karriere/stellenangebote/9">Pflegefachkraft (m/w/d) dort</a>')
     pairs = va._job_link_pairs(html, "https://psychiatrie-werneck.de/karriere/")
     assert list(pairs) == ["https://psychiatrie-werneck.de/karriere/stellenangebote/1"]
+
+
+def test_job_link_pairs_follows_an_off_board_host_linked_repeatedly():
+    # TASK-85 AC#3, confirmed live 2026-09-21: waldkrankenhaus.de's own careers page links
+    # jobs.malteser.de 31 times (13 of them nursing) -- _same_board alone dropped every one, the
+    # exact same guard that (correctly) drops the test above's single stray link to a DIFFERENT,
+    # unrelated hospital's own site. The two are told apart by repetition: a host linked only once is
+    # a stray cross-reference, a host linked repeatedly for distinct postings is where this board's
+    # own vacancies actually live.
+    html = "".join(
+        '<a href="https://jobs.malteser.de/de/job-offer-list/job-detail/Job-%d.html">Pflegefachkraft (m/w/d) %d</a>' % (i, i)
+        for i in range(3))
+    pairs = va._job_link_pairs(html, "https://www.waldkrankenhaus.de/karriere/unsere-stellenangebote.html")
+    assert len(pairs) == 3
+    assert all(u.startswith("https://jobs.malteser.de/") for u in pairs)
 
 
 def test_job_link_pairs_keeps_a_link_reached_via_the_boards_own_redirect():
@@ -755,3 +963,38 @@ def test_txt_handles_the_non_string_json_ld_shapes_that_aborted_whole_board_walk
     assert va._txt(None) is None
     assert va._txt("<b>Pflege</b>&nbsp;kraft") == "Pflege kraft"  # unchanged for the normal case
     assert va._txt(0) == "0"                                    # falsy but real
+
+
+# ---------------------------------------------------------------------------
+# crawl_erecruiter: the registered careers_url is sometimes only a wrapper page linking out to the
+# real board on a same-domain "jobs." subdomain (TASK-85 AC#4/AC#5)
+# ---------------------------------------------------------------------------
+def test_crawl_erecruiter_follows_a_same_domain_jobs_subdomain_link_from_a_wrapper_page(monkeypatch):
+    """TASK-85 AC#4/AC#5: klinikum-ab-alz.de/karriere/ links jobs.klinikum-ab-alz.de/Jobs (63
+    postings; the audit misread this as a Knockout SPA needing a render rung -- it is this same
+    eRecruiter engine one hop away). bezirkskliniken-schwaben.de's own careers page does the same
+    thing for jobs.bezirkskliniken-schwaben.de/Jobs (56 postings, the audit's "inline JSON model").
+    Neither link matches JOB_PATH (a bare "/Jobs", no trailing slash) or carries a gender-marked
+    anchor, so the generic job-link scan never follows either on its own."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    wrapper = "https://klinikum-ab-alz.de/karriere/"
+    board = "https://jobs.klinikum-ab-alz.de/Jobs"
+    wrapper_page = _R('<a href="%s">Offene Stellen</a><a href="/impressum/">Impressum</a>' % board, url=wrapper, ok=True)
+    payload = ('{"TotalJobsCount": 1, "Jobs": [{"Id": 9, "Title": "Pflegefachkraft (m/w/d)", "SubTitle": "",'
+               ' "Location": "Aschaffenburg", "Date": "01.09.2026"}], "Pagination": {"IsPagination": false}}')
+    board_page = _R('<script>window.jobList = new JobList($a, $b, %s);</script>' % payload, url=board, ok=True)
+    mapping = {wrapper: wrapper_page, board: board_page, "https://jobs.klinikum-ab-alz.de/Job/9": _R(ok=False)}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_erecruiter({"name": "Klinikum AB-ALZ", "careers_url": wrapper})
+    assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
+    assert rows.board_total == 1
+
+
+def test_crawl_erecruiter_does_not_chase_a_same_domain_link_when_its_own_page_already_has_the_board():
+    """No wasted probe when the landing page already carries the JobList JSON itself (the common
+    case, e.g. tests/test_erecruiter_board_total.py's fixtures) -- _erecruiter_host_resp must return
+    the same response object unchanged, not fetch anything else."""
+    payload = '{"TotalJobsCount": 0, "Jobs": [], "Pagination": {"IsPagination": false}}'
+    cu_resp = _R('<script>window.jobList = new JobList($a, $b, %s);</script>' % payload,
+                 url="https://jobs.example.de/Jobs", ok=True)
+    assert va._erecruiter_host_resp(cu_resp) is cu_resp

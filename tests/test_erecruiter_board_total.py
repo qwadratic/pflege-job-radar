@@ -73,6 +73,31 @@ def test_missing_total_jobs_count_is_none_not_a_false_match(monkeypatch):
     assert rows.board_total is None
 
 
+def test_a_failed_board_fetch_still_returns_something_with_a_readable_board_total(monkeypatch):
+    """A bare [] here has no .board_total attribute -- app/crawl.py's pending AC#2 wiring reads that
+    attribute unconditionally, so a plain list on this path would AttributeError instead of just
+    reporting an unknown total (review finding, 2026-09-22)."""
+    monkeypatch.setattr(va, "get", _router({}))              # ER_CU unmapped -> _router's own 404
+    rows = va.crawl_erecruiter({"name": "seed", "careers_url": ER_CU}, session=_Session())
+    assert len(rows) == 0
+    assert rows.board_total is None                          # readable, not an AttributeError
+
+
+def test_crawl_wp_jobs_keeps_the_board_total_when_erecruiter_parses_zero_rows(monkeypatch):
+    """The mechanism's most severe case (review finding, 2026-09-22): a board this delegate loop DOES
+    recognise as eRecruiter (its own TotalJobsCount is right there in the embedded JSON) but which
+    yields zero parsed rows must stay tagged with that total, not fall through as an indistinguishable
+    plain empty list. `if rows: return rows` used to treat 0-rows-with-a-real-total exactly like
+    'not eRecruiter at all' -- the one shape the board-total signal exists to catch, since the live
+    registry has zero clinics labelled ats_type=erecruiter, so this delegate loop is the ONLY path
+    production reaches this adapter through."""
+    page = _erecruiter_page([], total=57, is_paginated=True)  # board claims 57, ships an empty Jobs array
+    monkeypatch.setattr(va, "get", _router({ER_CU: _R(page, url=ER_CU)}))
+    rows = va.crawl_wp_jobs({"name": "seed", "careers_url": ER_CU})
+    assert len(rows) == 0
+    assert rows.board_total == 57                             # not discarded as "not this vendor"
+
+
 def test_a_stale_total_from_a_prior_board_never_leaks_onto_the_next_board(monkeypatch):
     """The review-flagged bug: the first cut stashed the total on the shared `session`, which
     app/crawl.py reuses across every board in one run -- a later board's own return value (a plain

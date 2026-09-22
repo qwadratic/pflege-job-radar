@@ -118,7 +118,6 @@ def cmd_link_clinics(a):
     if a.dry_run:
         json.dump(links, open(a.out, "w")); return
     sink = EdgeSink(batch=400)
-    n = 0
     # `ats_type` / `careers_url` are discovered asynchronously (crawlers/ats_discover2.py) and also
     # live in this CSV. The edge upsert assigns every column it receives, and a column that is simply
     # *omitted* still arrives as NULL from json_to_recordset -- so omitting them (the previous guard)
@@ -132,10 +131,11 @@ def cmd_link_clinics(a):
         live = []
         print(f"  warning: could not read current ATS labels ({e}); sending CSV values as-is")
     merge_discovered(clinics, live)
-    for i in range(0, len(clinics), 400):
-        batch = [{k: v for k, v in c.items() if not k.startswith("_")}
-                 for c in clinics[i:i + 400]]
-        n += sink._post({"clinics": batch}).get("clinics", 0)
+    # TASK-86 review finding #2: this registry push is a real production write of careers_url (the
+    # CSV can still carry a known job-detail-page URL a human hasn't corrected yet -- lint_csv flags
+    # it), so it must go through the same sanctioned gate as career_discover_exa.py's and this file's
+    # own ats-probe write-back, not straight through sink._post.
+    n = sink.write_clinics([{k: v for k, v in c.items() if not k.startswith("_")} for c in clinics])
     m = 0
     for i in range(0, len(links), 400):
         m += sink._post({"clinic_links": links[i:i+400]}).get("clinic_links", 0)

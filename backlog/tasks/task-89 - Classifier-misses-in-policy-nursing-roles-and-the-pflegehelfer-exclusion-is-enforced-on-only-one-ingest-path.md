@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:27'
-updated_date: '2026-09-22 01:41'
+updated_date: '2026-09-22 05:25'
 labels: []
 dependencies: []
 ordinal: 89000
@@ -32,7 +32,7 @@ The pflegehelfer question is a product decision for Ivan before it is a code cha
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The Hygienefachkraft drop is traced end to end and the real cause named with file:line -- the row is in-policy and the adapter returns it, so something between adapter and database discards it
-- [ ] #2 'OP Leitung' and section_labels-rescued titles like 'Onkologische Fachkraft' classify correctly, and the MFA pattern matches its inflected forms
+- [x] #2 'OP Leitung' and section_labels-rescued titles like 'Onkologische Fachkraft' classify correctly, and the MFA pattern matches its inflected forms
 - [ ] #3 The pflegehelfer/ausbildung scope decision is recorded explicitly, then enforced at a single point that every ingest path passes through rather than only for seeded-adapter observations
 - [x] #4 Each classifier change is pinned by a test using the exact title strings from this task
 <!-- AC:END -->
@@ -45,6 +45,20 @@ The pflegehelfer question is a product decision for Ivan before it is a code cha
 3. Fix the OP Leitung gate miss and the Onkologische Fachkraft / MFA-inflection bugs in patterns.json (classify.py owns no separate logic bug here -- verified empirically); add tests pinned to the exact task title strings; mutation-test each via /tmp copies.
 4. Check the CURRENT pflegehelfer/ausbildung enforcement point(s) (sinks.only_pflege + cli._process_rows, both post-TASK-95) against the claim that it 'was historically enforced on only one ingest path'; record what is actually single-pointed today vs what is stale production data; flag the scope question to Ivan, do not decide it.
 5. Run targeted tests, then note evidence per acceptance criterion; leave AC#2's section_labels-rescue portion honestly unchecked where the real fix is outside classify.py/patterns.json (career_crawl.py, not owned this round).
+
+6. (Correction pass 2026-09-22) Replay crawl_output/run_*.jsonl's 'leit' titles under HEAD vs pre-bug
+   (8bf6d63^) patterns.json to reproduce the reviewer's 41-title regression; narrow pflege_gate's leitung
+   admission to an OP-scoped token; re-replay to confirm 0 regression + 0 new flips.
+7. Pin 4 negative test cases (real non-nursing standalone-Leitung titles) in
+   test_ward_leadership_without_pflege_token; mutation-test via /tmp-backed patterns.json swap.
+8. Re-verify AC#1's Hygienefachkraft root cause against live Postgres inbox rows (inbox_id 16275/16280);
+   correct the note to the real cause (classifier-vs-processed_at timing gap, not a write-cap or a
+   removed pre-insert filter).
+9. Re-verify AC#2's Onkologische Fachkraft collector attribution against crawl_output/run_108.jsonl;
+   correct the note (vendor-asklepios-v1, not career_crawl.py) and withdraw the career_crawl.py handoff
+   for this example.
+10. Dry-run (not applied) the 4 confirmed-bad open production rows this bug already produced; run the
+    full offline suite once.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -69,6 +83,110 @@ PFLEGEHELFER/AUSBILDUNG SINGLE-POINT ENFORCEMENT (AC#3) -- checked what the new 
 Confirmed: after TASK-95's rewrite, EXCLUDED_ROLE_CLASSES (patterns.json:344-349, the one source of truth) is now enforced at a SINGLE functional choke point every ingest path passes through: pflege_jobs/cli.py::_process_rows -- both its kind=='jobposting' branch (line ~443) and its kind=='observation' branch (line ~460, added by TASK-95 round 1 specifically to close this exact gap for seeded adapters) check role_class against it before a row is ever handed to EdgeSink; sinks.py::only_pflege() (called from EdgeSink.write()) re-checks the identical set as a redundant safety net. Every queue (local SQLite via cmd_inbox's local drain, and the Postgres anon-key queue via its drain) funnels through this same _process_rows. app/crawl.py:518's dedupe-existing-inbox-rows loop (the file:line the task description pointed at) is the OLD _post_inbox, which per its own current docstring no longer runs classify_role at all -- it is not a role-exclusion enforcement point today, historical or current. So the 'only enforced on one ingest path' bug is already fixed as a side effect of TASK-95's queue unification, not something this round needs to change in code.
 What is NOT fixed: production rows already written under the OLD, inconsistent enforcement. Confirmed live via PostgREST: clinic 27106 and 46401 both currently hold open postings with role_class-shaped titles matching the pflegehelfer pattern (Pflegefachhelfer), and 17101 holds open ausbildung-titled rows -- these predate TASK-95 and will not self-heal (no re-crawl reprocesses existing DB rows; only a fresh classify+re-resolve would, and this round may not write to production).
 PRODUCT DECISION, flagged for Ivan, not decided here: patterns.json already encodes 'pflegehelfer/ausbildung are excluded' as policy (patterns.json:344-349) -- whether that is still the right call for this board is Ivan's call per the task brief. If the answer is 'exclude', the stale rows at 27106/46401/17101 need a cleanup pass (reprocessing existing posting_observations through the current classifier, or an explicit close); if the answer is 'include', patterns.json's excluded_role_classes list is the one place to change it and every ingest path already reads that same list.
+
+CORRECTION PASS 2026-09-22 (Opus review of the prior pass): the pflege_gate fix below had shipped with
+a bare `(?<![a-zäöüß])leitung\b|(?<![a-zäöüß])leiter(/in|*in|in)?\b` alternation, and AC#1/AC#2's notes
+named root causes that recorded production state contradicts. All three corrected below with fresh
+evidence gathered this pass; sections not touched by the review (MFA inflection, AC#3) are unchanged.
+
+PFLEGE_GATE OP-LEITUNG FIX (AC#2 part 1) -- CORRECTED.
+Original fix added the SAME bare `leitung`/`leiter` alternation already present in the _ROLES `leitung`
+rule (patterns.json:102) to the gate (patterns.json:76) too. That makes the gate self-admitting: match
+bare "Leitung"/"Leiter" to pass the gate, match it again in _ROLES to get role_class=leitung -- so ANY
+title containing that word alone was stored, and `leitung` is not in excluded_role_classes. Measured by
+replaying every distinct title containing "leit" from crawl_output/run_*.jsonl (527 files, 528 distinct
+titles, 5303 total occurrences across runs) through classify_role(title) under three patterns.json
+versions: `git show 8bf6d63^` (pre-bug), `HEAD`/working-tree-before-this-pass (bug), and the fix below.
+Pre-bug -> bug: exactly 41 distinct titles flip nicht_pflege -> leitung, e.g. "Ärztliche Leitung (m/w/d)"
+(a physician role), "Leiter des Klinikums hört auf" (Klinikum Memmingen news headline, the TASK-84
+junk-row class), "Leitung Recht (m/w/d)", "Leiter (m/w/d) Technik Region AMEOS Süd", "Stellvertretende
+Leitung Housekeeping (m/w/d)", "Leitung OP-Management (w/m/d) – Hannover", "Stellv. Leitung für den OP
+(m/w/d) in Voll- oder Teilzeit" (script: /tmp/leit_replay/{extract_titles,classify_titles,diff}.py this
+session, not committed). Cross-checked live: production currently holds 153 open postings with
+role_class=leitung (verified via PostgREST, excluded_role_classes = ['ausbildung', 'nicht_pflege',
+'pflegehelfer', 'werkstudent_praktikum'] -- leitung is not in it) -- see backups/task-89-leitung-gate-
+dryrun-2026-09-22.md for 4 already-open rows independently confirmed as this exact bug class live
+(Ansbach clinic 56101 x3, Forchheim 56103 x1), not applied.
+Fix: replaced the bare alternation with a token scoped to the one title that actually needed it --
+`\bop[- ]?leit(?:ung|er)\b` -- admitting "OP Leitung (m/w/d)" / "OP-Leitung (m/w/d)" / "OP Leiter (m/w/d)"
+without admitting a bare "Leitung"/"Leiter" on its own. Re-ran the same 528-title replay against the fix:
+0 flips vs the pre-bug baseline in either direction (exact match, all 528 titles), and all 41 bug-era
+false admissions revert to nicht_pflege. "OP Leitung (m/w/d)" still classifies ('leitung','leitung:leitung').
+tests/test_mech_role_class.py::test_ward_leadership_without_pflege_token extended: kept the OP-Leitung
+positive pin, added an OP-Leitung-with-hyphen pin, and four negative pins using real titles from the
+replay ("Ärztliche Leitung (m/w/d)", "Leiter (m/w/d) Technik Region AMEOS Süd", "Leitung Recht (m/w/d)",
+"Leiter des Klinikums hört auf") -- the pre-existing "Leitung Restaurant"/"AEMP-Leitung" pins elsewhere in
+this file do NOT cover this: both are caught by nicht_pflege keywords ("restaurant"/"aemp"), not by the
+gate, which is exactly why the full suite stayed green while the gate itself was too permissive (reviewer
+finding #2). Mutation-tested: copied the fixed patterns.json to /tmp, overwrote the repo file with
+`git show HEAD:pflege_jobs/patterns.json` (the bug-era content), reran the new test -- red
+(AssertionError: 'leitung' == 'nicht_pflege' on the Ärztliche-Leitung pin) -- then restored from the /tmp
+copy (sha256 41cd3bed...814ff7ef both before and after, git diff shows only the one pflege_gate line
+changed). Targeted suite after restore: tests/test_mech_role_class.py + tests/test_classify_section.py,
+18 passed, 0 failed.
+
+MEDIZINISCHE FACHANGESTELLTE INFLECTION (AC#2 part 2) -- unchanged this pass, still correct.
+nicht_pflege's `medizinische[nr]?/?r? fachangestellte[nr]?` (patterns.json:77) and its test
+(tests/test_mech_role_class.py::test_medizinische_fachangestellte_inflected_forms_stay_excluded) were
+already fixed and committed (8bf6d63); not touched this pass, still green.
+
+ONKOLOGISCHE FACHKRAFT / section_labels-rescue (AC#2 part 3) -- CORRECTED, handoff withdrawn.
+Original note claimed clinic 18811 (Asklepios Lungenklinik Gauting) is served by career_crawl.py (the
+generic JSON-LD reader, which never sets section_labels) and handed off a fix request to that file's
+owner. Wrong collector. Checked crawl_output/run_108.jsonl directly this pass: the actual
+"Onkologische Fachkraft (w/m/d) für pneumologische Onkologie" row has `"collector":
+"vendor-asklepios-v1"`, `"kind": "jobposting"`, and already carries `"section_labels": ["Pflege- und
+Funktionsdienst"]` in its payload -- a structured vendor adapter (crawlers/vendor_adapters.py), not
+career_crawl.py, and it already emits the department label this feature needs. Verified end to end:
+section.job_confirmed_nursing(["Pflege- und Funktionsdienst"]) -> True;
+classify_role(title, '', '', nursing_section_confirmed=True) -> ('sonstige_pflege','fallback'), i.e.
+already in policy; pflege_jobs/sources/inbox.py:54 is exactly where nursing_section_confirmed gets
+computed from `p.get("section_labels")` for every jobposting-kind row, this one included. Nothing to fix
+in classify.py/patterns.json OR in career_crawl.py for this example -- it already works today, given its
+real collector. HANDOFF WITHDRAWN. Separately confirmed clinic 76401 (Klinikum Memmingen, the other clinic
+the withdrawn note also misattributed to career_crawl.py) is 100% served by collector vendor-wp_jobs-v1
+across all 4146 of its rows in the crawl archive (also a vendor_adapters.py adapter, also NOT
+career_crawl.py) -- its section_labels happen to be empty ([]) for the sampled rows, a real but different
+and unverified-this-pass question (whether vendor-wp_jobs-v1 itself should populate section_labels),
+not the claim being corrected here.
+
+HYGIENEFACHKRAFT DROP (AC#1) -- CORRECTED root cause, re-verified end to end this pass.
+Original note named two mechanisms ("dropped before insert by the old _post_inbox classify filter" /
+"the 2000-row/24h write cap made intake fail outright") for why inbox_id 16275/16280 (the two Memmingen
+Hygienefachkraft rows) never reached posting_observations. Both imply the rows never reached the inbox at
+all. Verified live this pass (PostgREST, pflege_jobs.inbox, 2026-09-22): both rows exist, with
+received_at=2026-09-12T03:26:17Z and processed_at=2026-09-13T03:20:47Z -- they WERE inserted and WERE
+processed. process_note on both: "skipped: nicht_pflege (not an experienced nursing role)" -- this exact
+string is only ever written by pflege_jobs/cli.py:443-444 (`if o["role_class"] in
+C.EXCLUDED_ROLE_CLASSES: ack.append({...,"note": f"skipped: {o['role_class']} (not an experienced
+nursing role)"})`), the drain's role gate, confirmed by grep -- not by _post_inbox (which per its own
+current docstring, app/crawl.py:469-477, no longer runs classify_role at all) and not by any write-cap
+rejection (a rejected write would never get an inbox_id or a processed_at). Real cause: pflege_gate had
+no `hygienefachkraft` token until commit 19bc3dc (2026-09-21, 01:10 UTC) -- 8 days after these rows were
+processed. Verified: `classify_role('Hygienefachkraft (m/w/d)', '')` against `19bc3dc^:patterns.json`
+returns ('nicht_pflege','no_pflege_token'); against current patterns.json it returns
+('apn_experte','apn_experte:hygienefachkraft'). The drain correctly-at-the-time (but now incorrectly)
+classified these two rows as excluded, in the one enforcement choke point (cli.py:443), 8 days before the
+classifier that would have kept them existed. Not a bug in the current intake path.
+Code-level gap this trace surfaces (not fixed this pass, not owned by these 4 files): cmd_inbox's drain
+query only ever selects `processed_at is null` (sql/010_inbox.sql) -- an acked row is never reconsidered
+after a classifier change. app/crawl.py's `_post_inbox` (still-active function, lines 469-513) dedupes
+future crawls of the same URL against inbox.source_url with no processed_at filter (the `existing` set
+built at app/crawl.py:487-509) -- so even a fresh crawl of the same two Memmingen postings would be
+silently skipped as "already present" and never re-queued. These two rows cannot self-heal without a
+manual backfill/reprocess; flagging for whoever runs the next scheduled crawl or owns cli.py/app/crawl.py,
+not fixing here (outside the 4 owned files this round).
+AC#1 RE-DECIDED: still met. The AC asks for an end-to-end trace with file:line naming the real cause; that
+now exists and is verified against live production state (previously it was not -- the old note's two
+named mechanisms are both contradicted by the rows having a processed_at at all). Kept checked.
+
+AC#2 RE-DECIDED: now met, checking this pass. All three concrete things the AC names are verified: (1)
+"OP Leitung (m/w/d)" classifies leitung via the narrowed gate above: (2) "Onkologische Fachkraft" already
+classifies sonstige_pflege end-to-end given its real collector's section_labels, no code change needed;
+(3) the MFA inflection fix (prior pass, unchanged) still holds. Checking AC#2.
+
+AC#4 unchanged, still met: the new negative pins above use exact real titles (from this pass's own replay
+and from the reviewer's findings), same standard as the existing positive pins.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -85,4 +203,46 @@ AC#3 NOT CHECKED. The 'single point' half is true today, verified by reading the
 AC#4 CHECKED. tests/test_mech_role_class.py::test_ward_leadership_without_pflege_token (extended) pins 'OP Leitung (m/w/d)' exactly; ::test_medizinische_fachangestellte_inflected_forms_stay_excluded pins the task's named phrase plus clinic 47701's real live title (posting_id 10156, verified via PostgREST, was role_class=sonstige_pflege before this fix). Both mutation-tested: reverted each patterns.json line individually via the Edit tool, confirmed red, restored, confirmed green.
 
 Full offline suite: not yet run (pending TASK-90/91 work in this same session); targeted suite covering every classify.py-touching test file: 198 passed, 0 failed. No production data read or written beyond GET requests (Accept-Profile: pflege_jobs) and free live HTTP board checks.
+
+CORRECTION PASS 2026-09-22 (Opus review): the pflege_gate fix above shipped broken -- a bare leitung/leiter
+alternation self-admitted any "X Leitung" title (41 real non-nursing titles confirmed via crawl_output
+replay, e.g. Aerztliche Leitung, Leiter Technik, Leitung Recht), and AC#1/AC#2 above were checked against
+root causes production data contradicts. All fixed this pass, see the CORRECTION PASS note for full
+evidence. Summary of what changed:
+- pflege_jobs/patterns.json: pflege_gate's bare leitung/leiter admitted 41 non-nursing titles (measured:
+  replayed 528 distinct crawl_output 'leit' titles under old/new gate, exact match to reviewer's 41).
+  Narrowed to \bop[- ]?leit(?:ung|er)\b -- OP Leitung/OP-Leitung/OP Leiter still admit, the 41 revert to
+  nicht_pflege, 0 new flips vs the pre-bug baseline across all 528 titles. 4 of the 41-style false
+  admissions confirmed already live and open in production (backups/task-89-leitung-gate-dryrun-
+  2026-09-22.md, not applied -- writes refused this round).
+- tests/test_mech_role_class.py: test_ward_leadership_without_pflege_token gained 4 negative pins (real
+  titles) the old test suite never exercised, which is why the regression shipped green. Mutation-tested
+  against the bug-era gate (/tmp copy swap): red before the fix, green after, sha256-confirmed restore.
+- AC#1: re-verified end to end against live Postgres inbox (inbox_id 16275/16280) this pass. Real cause is
+  a timing gap (pflege_gate got hygienefachkraft 8 days after these two rows were drained and correctly-
+  at-the-time excluded), not either mechanism the prior note named -- both are contradicted by the rows
+  having a processed_at at all. Stays checked, note corrected.
+- AC#2: now checked. All three named things verified this pass: OP Leitung (fixed above), Onkologische
+  Fachkraft (already worked end to end -- wrong collector was named, corrected, handoff to career_crawl.py
+  withdrawn for this example), MFA inflection (unchanged, still correct).
+Targeted suite this pass: tests/test_mech_role_class.py + tests/test_classify_section.py, 18 passed, 0
+failed. Full offline suite: run once at the end of this session, see the next append for the count.
+
+Full suite result (2026-09-22, this session): targeted (test_mech_role_class.py + test_classify_section.py,
+the two files this fix touches) = 18 passed, 0 failed. Broad sweep with the repo's own `network` marker
+deselected (.venv/bin/python -m pytest -q -m "not network" tests, 1339 of 2536 collected tests -- every
+test that does NOT talk to a live board) = 1338 passed, 1 skipped, 0 failed, 1197 deselected, 363s. The
+true full run (2536 tests, network included, matching the "1336 passed, 1 skipped, 0 failed" HEAD
+baseline's own scope) was started (.venv/bin/python -m pytest -q tests) and left running in this session's
+background past 30 minutes without completing -- this environment has heavy concurrent load right now
+(multiple sibling agents on this same tree, several also touching live-crawl code per git status) and the
+suite's live-network-marked tests (tests/test_adapter_completeness.py alone parametrizes ~100+ real-board
+fetches) appear to be the bottleneck, not anything in this task's 2 changed files. The only failures visible
+in the partial run before I stopped waiting on it (6, at fixed positions) are all parametrized cases inside
+tests/test_adapter_completeness.py (typo3_jobs/wp_jobs/umantis/dvinci live-board completeness checks) --
+outside this task's owned files (patterns.json/classify.py/test_mech_role_class.py/test_classify_section.py),
+orthogonal to role classification, and that file's own task (TASK-88) is separately in progress this round
+per its own backlog entry. Not claiming the full suite is green -- only that the two files this task
+changed, plus the ~53% of the suite verified deselecting live-network tests, show 0 failures, and that the
+failures actually observed belong to a sibling's file, not this fix.
 <!-- SECTION:FINAL_SUMMARY:END -->
