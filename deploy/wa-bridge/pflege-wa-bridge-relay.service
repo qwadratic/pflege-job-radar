@@ -1,0 +1,49 @@
+# The inbound relay. THIS UNIT RUNS ON OUR VPS (tasker-dispatcher-01). It is a TEMPLATE: TASK-143
+# deliberately does not install it, because installing a unit that reaches a real WhatsApp
+# conversation is a decision, not a step. The command to install it is in INSTALL.md.
+#
+# It opens ONE ssh -L forward from here to the handset machine, drains GET /v1/outbox, and POSTs each
+# item to our own webhook on loopback. Every leg is outbound from this host: an ssh -R into this host
+# is not available and this design does not need one.
+#
+# A loop and not a timer: a systemd timer's floor is a minute and a candidate's reply must not wait
+# that long. The loop sleeps WA_BRIDGE_RELAY_INTERVAL_SEC (3 s) between drains and backs off to 60 s
+# while the far end is unreachable.
+[Unit]
+Description=pflege WhatsApp phone-rail inbound relay (TASK-143)
+After=network-online.target pflege-wa.service
+Wants=pflege-wa.service
+# In [Unit], not [Service]: systemd parses the rate limit on the unit and logged "Unknown key name
+# StartLimitIntervalSec in section Service, ignoring" for it here (TASK-146).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=claude
+WorkingDirectory=/home/claude/repo/pflege-board
+# Three files, and the order matters only in that rail.env is the rail's single source of truth.
+#   .env       -- the harness's own settings (it is a file in a git worktree; no rail secret is in it)
+#   rail.env   -- WA_TRANSPORT, WA_BRIDGE_URL, WA_BRIDGE_PHONE_NUMBER_ID and the two rail secrets
+#   relay.env  -- the ssh target, the ports, the webhook URL and the cursor's path
+# rail.env is read by pflege-wa.service too, which is what keeps WA_BRIDGE_PHONE_NUMBER_ID equal on
+# both sides: the relay writes it into metadata.phone_number_id and api._number_matches compares
+# against the same variable. Two copies of that value drifting apart makes our own server skip a
+# candidate's message as "another WhatsApp number's change" -- silently (TASK-146).
+EnvironmentFile=/home/claude/repo/pflege-board/.env
+EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/rail.env
+EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/relay.env
+# Unbuffered, or nothing this process prints reaches journald until it exits -- and it is a loop
+# that never exits, so "delivered outbox #N" and every RelayError would have been invisible for the
+# life of the unit (TASK-146). The harness unit has carried this for the same reason since rollout.
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/claude/repo/pflege-board/.venv/bin/python -m bridge.relay_pull
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pflege-wa-bridge-relay
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

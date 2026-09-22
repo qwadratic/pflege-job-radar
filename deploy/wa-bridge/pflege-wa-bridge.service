@@ -1,0 +1,35 @@
+# The phone-rail executor. THIS UNIT RUNS ON THE HANDSET MACHINE, not on the VPS.
+# systemd --user, because the handset is reachable through the user's own adb server and the flock
+# it shares with the other lane lives in that user's ~/.local/share. Root would have neither.
+#
+# Install:  ~/.config/systemd/user/pflege-wa-bridge.service   (see deploy/wa-bridge/INSTALL.md)
+# Linger is already on for this user, so the unit survives logout and reboot.
+#
+# It binds 127.0.0.1 only. Our VPS reaches it through an ssh -L forward the VPS opens itself; the
+# machine also runs another worker under the same uid, so a port on 0.0.0.0 is not a mistake to make.
+[Unit]
+Description=pflege WhatsApp phone-rail executor (TASK-130/142/143)
+Documentation=file:///home/cursorworker1/pflege-wa-bridge/INSTALL.md
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/pflege-wa-bridge
+EnvironmentFile=%h/pflege-wa-bridge/bridge.env
+ExecStart=/usr/bin/python3 -m bridge.server
+# Restart=always, not on-failure: a crash here is a candidate waiting for an answer. The 3 s floor
+# and the 5-in-60 burst limit stop a misconfigured env file from spinning the CPU.
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+# stdout is the log; journald keeps it per user.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pflege-wa-bridge
+# It needs adb (user-owned), its own state dir and the shared phone lock. Nothing else.
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

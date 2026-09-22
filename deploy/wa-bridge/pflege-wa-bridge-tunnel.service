@@ -1,0 +1,31 @@
+# The one ssh leg to the handset machine. RUNS ON OUR VPS. TEMPLATE -- TASK-143 does not install it.
+#
+# Why it is its own unit and not part of the relay: the rail is TWO directions over ONE forward.
+# Outbound (app/wa/bridge.Client, WA_BRIDGE_URL=http://127.0.0.1:18793) has to work whether or not
+# the inbound relay happens to be up, so the forward cannot be owned by the relay's process.
+# bridge/relay_pull.py notices a forward that is already there and uses it instead of opening a
+# second one; with this unit stopped it opens its own, so either arrangement works.
+#
+# -L only. An ssh -R INTO this host is not available and this design needs none: every leg is
+# opened from here.
+[Unit]
+Description=pflege WhatsApp phone-rail ssh forward (TASK-129/143)
+After=network-online.target
+
+[Service]
+Type=simple
+User=claude
+EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/relay.env
+ExecStart=/usr/bin/ssh -N -T \
+  -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=15 \
+  -L 127.0.0.1:${WA_BRIDGE_LOCAL_PORT}:127.0.0.1:${WA_BRIDGE_REMOTE_PORT} ${WA_BRIDGE_SSH_HOST}
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pflege-wa-bridge-tunnel
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
