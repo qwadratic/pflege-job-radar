@@ -4,6 +4,7 @@ title: Freeze the staged candidate shortlist and move the exporter into our repo
 status: To Do
 assignee: []
 created_date: '2026-09-21 09:09'
+updated_date: '2026-09-22 06:10'
 labels:
   - wa-transport
 dependencies: []
@@ -37,3 +38,9 @@ PII: the shortlist content is off limits. Count rows, never print numbers or nam
 - [ ] #5 The task record states in one sentence that this is advisory and names why it cannot be enforced from our side
 - [ ] #6 No candidate number, name or message body is printed, logged or committed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT built. No tools/wa_phone_export_shortlist.py or equivalent found anywhere in this repo, and no record of the colleague being asked to freeze the 59-candidate shortlist. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->

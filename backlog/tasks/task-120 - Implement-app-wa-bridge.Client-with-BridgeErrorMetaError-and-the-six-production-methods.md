@@ -3,10 +3,10 @@ id: TASK-120
 title: >-
   Implement app/wa/bridge.Client with BridgeError(MetaError) and the six
   production methods
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-21 01:21'
-updated_date: '2026-09-21 09:12'
+updated_date: '2026-09-22 06:07'
 labels:
   - wa-transport
 dependencies:
@@ -41,15 +41,27 @@ Injectable transport= and media_transport= mirroring meta.Client, so tests need 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 BridgeError subclasses M.MetaError and carries .status_code, and every existing except M.MetaError path catches it unchanged
-- [ ] #2 Against a fake transport, 400/401/409/422/429 raise with those int status codes so campaign.py classifies them as failed, and 500/503/504 so it classifies them as uncertain
-- [ ] #3 A 504 send_unconfirmed is never auto-resent, proven by a test that drives the campaign path and asserts no second send
-- [ ] #4 An unreachable bridge raises status 424 on a send but None on a media call, so import_history aborts the run rather than skipping a document
-- [ ] #5 A 200 response with no verified delivery tick raises rather than recording a send
-- [ ] #6 A 200 response whose tick is unverified raises as a 504 and is never recorded as sent
-- [ ] #7 A 202 response is never reported as sent by the client
-- [ ] #8 begin_turn returns a turn boundary the executor keys its ledger on, and one turn of several bubbles is several calls under one turn key
-- [ ] #9 wants_idempotency_key is True on the bridge client and absent or False on the Meta client
-- [ ] #10 requires_freeform_window is False and supports_buttons is False on the class
-- [ ] #11 Tests run fully offline through the injected transports, with no network marker
+- [x] #1 BridgeError subclasses M.MetaError and carries .status_code, and every existing except M.MetaError path catches it unchanged
+- [x] #2 Against a fake transport, 400/401/409/422/429 raise with those int status codes so campaign.py classifies them as failed, and 500/503/504 so it classifies them as uncertain
+- [x] #3 A 504 send_unconfirmed is never auto-resent, proven by a test that drives the campaign path and asserts no second send
+- [x] #4 An unreachable bridge raises status 424 on a send but None on a media call, so import_history aborts the run rather than skipping a document
+- [x] #5 A 200 response with no verified delivery tick raises rather than recording a send
+- [x] #6 A 200 response whose tick is unverified raises as a 504 and is never recorded as sent
+- [x] #7 A 202 response is never reported as sent by the client
+- [x] #8 begin_turn returns a turn boundary the executor keys its ledger on, and one turn of several bubbles is several calls under one turn key
+- [x] #9 wants_idempotency_key is True on the bridge client and absent or False on the Meta client
+- [x] #10 requires_freeform_window is False and supports_buttons is False on the class
+- [x] #11 Tests run fully offline through the injected transports, with no network marker
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: app/wa/bridge.py (1048 lines) implements Client exactly to this spec, shipped 2026-09-21 alongside TASK-146/147/148 but never marked here. class BridgeError(M.MetaError) at line 203 with .status_code/.payload/.client_msg_id; requires_freeform_window=False, supports_buttons=False, wants_idempotency_key=True as class attributes (line 320-322); begin_turn/begin_campaign_attempt mint via app/wa/bridge_ids; all six methods present (send_text, send_buttons, send_template, get_template, media_url, download_media) plus the operations surface TASK-147/148 added on top. tests/test_wa_bridge_client.py (42 tests, all passing) name this task explicitly in their docstrings, e.g. test_the_bridges_own_status_reaches_campaigns_classification (parametrized 400/401/409/422/429->failed, 500/503/504->uncertain, docstring 'TASK-120 AC#1/#2'), test_a_200_without_a_verified_tick_is_never_a_send (AC#5), test_the_unverified_refusal_names_the_failure_it_is_refusing (AC#6), test_an_accepted_202_is_uncertain_and_keeps_the_key_for_reconciliation (AC#7), test_an_unreachable_bridge_fails_a_send_as_4xx / test_an_unreachable_bridge_aborts_an_import_run_instead_of_skipping_a_document (AC#4), test_the_bubbles_of_one_turn_are_separate_calls_with_separate_keys (AC#8), test_the_capability_flags_say_what_this_rail_can_do (AC#9/#10). All offline via injected transport= (AC#11). Full offline suite green: 2312 passed.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+app/wa/bridge.Client implements the full spec: BridgeError(MetaError) with .status_code, the six production methods, begin_turn/begin_campaign_attempt as the turn boundary, and the three capability flags (requires_freeform_window=False, supports_buttons=False, wants_idempotency_key=True). The renegotiated invariant (a 200 with no verified tick raises, unverified is a 504 and never auto-resent) is enforced in _post_message. Verified by tests/test_wa_bridge_client.py, 42 offline tests whose docstrings cite this task's ACs directly, plus a green full offline suite (2312 passed). This shipped as part of the 2026-09-21 phone-rail work (TASK-146 onward) but the task was never closed; this closes it to match the tree.
+<!-- SECTION:FINAL_SUMMARY:END -->

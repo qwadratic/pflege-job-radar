@@ -4,7 +4,7 @@ title: Bridge health timer with a conjunction alert and a host free-space check
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:23'
-updated_date: '2026-09-21 09:14'
+updated_date: '2026-09-22 06:10'
 labels:
   - wa-transport
 dependencies:
@@ -46,3 +46,9 @@ UNRESOLVED INPUT, needs Ivan before this ships: what the pager actually is. This
 - [ ] #8 A test drives each disjunct of the conjunction independently and asserts no alert when only part of a conjunct is true
 - [ ] #9 deploy/ carries the timer as a template only; nothing is installed, enabled or started by this task
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT built beyond a docstring pointer. bridge/server.py:5 names GET /v1/health as 'what the 3-minute timer alarms on (TASK-132)' but no conjunction-alert logic, no VPS free-space check, no tunnel-restart counter, no colleague-daemon-liveness signal and no flock-contention counter were found anywhere in app/, bridge/ or deploy/ -- grepped for each by name, only this one comment hit. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->

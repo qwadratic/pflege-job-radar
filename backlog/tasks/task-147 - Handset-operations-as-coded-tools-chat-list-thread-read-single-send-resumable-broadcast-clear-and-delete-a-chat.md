@@ -3,11 +3,11 @@ id: TASK-147
 title: >-
   Handset operations as coded tools: chat list, thread read, single send,
   resumable broadcast, clear and delete a chat
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 12:51'
-updated_date: '2026-09-21 16:38'
+updated_date: '2026-09-22 06:08'
 labels: []
 dependencies: []
 ordinal: 155000
@@ -98,4 +98,12 @@ REJECTED
 - 'docstring-only fix for the dedupe key': the docstring was wrong because the code was; changing the prose would have left GET /v1/chats under-reporting a handset.
 
 TESTS: 24 new offline tests (operations, adb, CLI). The archived gate is now mutation-checked: removing 'and r["archived"] == archived' from _match_row fails two tests. Suite: 2151 passed, 127 skipped, 70 deselected.
+
+Audit 2026-09-22: all 8 ACs were already checked and the offline suite was green (2151 passed at the time), but the task was left In Progress with no final summary -- finalizing it now to match the work already recorded above. Re-verified 2026-09-22: bridge/operations.py and bridge/broadcast.py exist, tests/test_bridge_operations.py passes offline, and the full suite is still green (2312 passed, grown since by TASK-150/151/152).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Handset operations (list_chats, read_thread, send_message, clear_chat, delete_chat) and a resumable ledger-backed broadcast are built in bridge/operations.py and bridge/broadcast.py, deployed to the mini and proven live (GET /v1/chats returned all 10 real chats including 7 archived ones nobody had authorised acting on; destructive routes refused a missing confirm, an unknown field and an unknown chat with no tap and no audit row). Two reviewers' 12 findings were fixed (10) or rejected with reasons (2), all offline. Verified by 24 new offline tests plus the full suite (2151 passing at ship time, 2312 as of this audit). Closing now: all 8 acceptance criteria were already checked and the work was complete, it had simply never been moved to the terminal status.
+<!-- SECTION:FINAL_SUMMARY:END -->

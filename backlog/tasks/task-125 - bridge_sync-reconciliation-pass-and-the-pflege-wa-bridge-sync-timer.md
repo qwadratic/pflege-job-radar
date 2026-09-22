@@ -4,7 +4,7 @@ title: bridge_sync reconciliation pass and the pflege-wa-bridge-sync timer
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:22'
-updated_date: '2026-09-21 09:14'
+updated_date: '2026-09-22 06:09'
 labels:
   - wa-transport
 dependencies:
@@ -40,6 +40,12 @@ catchup.py runs bridge_sync first when the rail is bridge, then its two existing
 - [ ] #5 deploy/pflege-wa-bridge-sync.service and .timer exist as templates copied from the catchup pair, and nothing is installed or started by this task
 - [ ] #6 catchup.py runs bridge_sync before its existing passes when the thread rail is bridge
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT built. Grepped for a bridge_sync module/function and for pflege-wa-bridge-sync.service/.timer across app/, bridge/, tools/ and deploy/ -- the only hits are forward references in app/wa/bridge.py comments ('bridge_sync (TASK-125) is where those actually resolve') and docs/whatsapp.md prose. No reconciliation pass exists: an 'attempting' ledger row from a crash mid-send is never resolved except by bridge/executor.py's own reconcile() path when the SAME process comes back up (covered by TASK-130), not by a periodic GET /v1/inbox / GET /v1/jobs?state=terminal sweep from the VPS. TASK-146's implementation notes confirm this directly: 'nothing resolves an attempting row automatically, which is why every nothing-was-typed refusal now leaves no row.' Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 09:10'
+updated_date: '2026-09-22 06:10'
 labels:
   - wa-transport
 dependencies: []
@@ -48,3 +49,9 @@ Carried over from TASK-128 because they survive the handset correction: two-step
 - [ ] #6 Address-book sync is off, no candidate number is saved as a contact on the device, and upsert_contact is absent from our design
 - [ ] #7 Nothing on the colleague stack is enabled, flipped or configured, and the forbidden serial is never addressed by any tool of ours
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT resolved, and the code itself says so out loud. bridge/executor.py:336 and docs/whatsapp.md:71,77 still state the MSISDN on L2N4C19B14054874 is UNVERIFIED and blocking; GET /v1/health reports rail.number: null, msisdn_verified: false (tests/test_bridge_executor.py::test_health_says_the_msisdn_is_unverified). This is exactly why nothing but Ivan's own test number is pinned to the rail today. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->

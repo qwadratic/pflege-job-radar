@@ -86,6 +86,22 @@ BRIDGE_INBOUND_TOKEN = os.environ.get("WA_BRIDGE_INBOUND_TOKEN", "").strip()
 # make _number_matches accept every number's payload instead of ours.
 BRIDGE_PHONE_NUMBER_ID = os.environ.get("WA_BRIDGE_PHONE_NUMBER_ID", "").strip()
 
+# TASK-122: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-121)
+# may recover a typed "ja"/"1" into app/wa/luna_brain.CONSENT_YES_ID -- the one place a typed reply
+# stands in for a tap luna_brain.py otherwise requires. Plan ADDENDUM item 5 (Ivan, 2026-09-21):
+# ships ON. Unlike AUTOSEND/INTERNAL_WEBHOOK_ENABLED above, an unrecognized value raises at import
+# rather than silently reading as off -- this flag decides whether a candidate's own typed words can
+# produce a documented consent record, so a typo in the env file must stop the process, not quietly
+# change what consent means. Taking it back to tap-only needs no code change, only this var set off.
+_SYNTHETIC_CONSENT_RAW = os.environ.get("WA_BRIDGE_SYNTHETIC_CONSENT", "").strip().lower()
+if _SYNTHETIC_CONSENT_RAW in ("", "1", "true", "yes", "on"):
+    SYNTHETIC_CONSENT = True
+elif _SYNTHETIC_CONSENT_RAW in ("0", "false", "no", "off"):
+    SYNTHETIC_CONSENT = False
+else:
+    raise RuntimeError(f"WA_BRIDGE_SYNTHETIC_CONSENT={_SYNTHETIC_CONSENT_RAW!r} is not a recognized "
+                       f"boolean (1/true/yes/on, 0/false/no/off, or unset for the default ON)")
+
 # Which brain answers a turn: "deterministic" (app/wa/brain.py, the board-filter question ladder,
 # no LLM) or "luna" (app/wa/luna_brain.py, same persona/rules/gates as the reference this is
 # adapted from -- app/wa/luna/VENDORED.md -- but calling Claude to decide the action and wording).
@@ -114,6 +130,33 @@ LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "cla
 # reply time, observed live during TASK-68's E2E run (subprocess.TimeoutExpired at 60s on an
 # otherwise-ordinary turn). 120s gives that room without hiding a genuinely stuck process forever.
 LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
+
+# The refusal classifier (app/wa/luna/refusal.py, TASK-155, Ivan 2026-09-22): a small-model second
+# opinion on whether the candidate's own text is an unambiguous refusal to continue the conversation,
+# called only at the one moment the brain is about to end a thread on a decline -- not on every turn,
+# so this stays cheap where it matters. Its own model constant rather than reusing LUNA_MODEL: this is
+# a narrow yes/no classification, not the conversation itself, so it defaults straight to the Haiku
+# tier LUNA_MODEL's own comment already names as this repo's cheap option, never to Sonnet. Rides the
+# same `claude` CLI as LUNA_CLAUDE_BIN above -- no second model-calling mechanism.
+REFUSAL_MODEL = os.environ.get("WA_REFUSAL_MODEL", "claude-haiku-4-5").strip()
+if not REFUSAL_MODEL:
+    raise RuntimeError("WA_REFUSAL_MODEL is set but empty -- unset it for the default (claude-haiku-4-5) "
+                       "or give it a real model id")
+# A one-shot classification with no tools and no session needs none of LUNA_TIMEOUT_SEC's 120s
+# reasons, so this began at 20s. Measured on this host (TASK-157 verification, 2026-09-22): 2 of 6
+# probes exceeded 20s and every one of them completed inside 90s. "Not a refusal" is the safe
+# direction for a WRONG answer, but a TIMEOUT is not free: the decline is then not honoured, so a
+# candidate who typed a terse "Nein" stays in the follow-up nudge population -- the exact harm
+# TASK-157 closed, reached through latency instead. The call runs only on the decline path, which is
+# rare, so waiting costs almost nothing and finishing is worth much more than finishing fast.
+_REFUSAL_TIMEOUT_RAW = os.environ.get("WA_REFUSAL_TIMEOUT_SEC", "90").strip() or "90"
+try:
+    REFUSAL_TIMEOUT_SEC = int(_REFUSAL_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_REFUSAL_TIMEOUT_SEC={_REFUSAL_TIMEOUT_RAW!r} is not an integer")
+if REFUSAL_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_REFUSAL_TIMEOUT_SEC={REFUSAL_TIMEOUT_SEC} must be a positive number of seconds")
+
 # Claude Code keys a resumable session by session id *and* the working directory it was started
 # in (session transcripts live under a path derived from cwd). Every luna turn for every phone
 # number must run from this exact directory, or `--resume <id>` from a later turn silently looks
@@ -211,4 +254,5 @@ def readiness():
     if BRAIN == "luna":
         out["luna_model"] = LUNA_MODEL
         out["luna_ready"] = bool(shutil.which(LUNA_CLAUDE_BIN))
+        out["refusal_model"] = REFUSAL_MODEL
     return out

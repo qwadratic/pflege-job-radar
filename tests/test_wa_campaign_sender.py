@@ -23,6 +23,7 @@ from app.wa import store as ST
 from app.wa.luna import campaign as CAMP
 from app.wa.luna import followups as FU
 from app.wa.luna import import_history as IH
+from app.wa.luna import refusal as RF
 from tests.test_wa_luna_import_history import OLD_SCHEMA, QUERIES as OLD_QUERIES
 
 REAL_REPORT_DIR = CAMP.DEFAULT_REPORT_DIR
@@ -896,6 +897,10 @@ def test_status_shows_delivery_statuses_errors_and_replies(wa, monkeypatch):
                          {"id": wamid_b, "status": "failed", "timestamp": "1789400003", "recipient_id": LEAD_B[1:],
                           "errors": [{"code": 131042, "title": "Business eligibility payment issue",
                                       "error_data": {"details": "unsettled payments"}}]}]})
+    # TASK-157: a fake refusal-classifier transport -- the decline branch (app/wa/luna_brain.py) now
+    # runs app/wa/luna/refusal.is_unambiguous_refusal on the candidate's text before honoring the
+    # model's decline flag; without this the offline suite would spawn a real `claude -p` subprocess.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     Model(monkeypatch, _out(decline=True, decline_reason="kein Interesse"))
     _route({"messages": [{"id": "wamid.in.no", "from": LEAD_A[1:], "type": "button", "context": {"id": wamid_a},
                           "button": {"text": "Nein, kein Interesse", "payload": "Nein, kein Interesse"}}]})

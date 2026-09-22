@@ -999,16 +999,53 @@ def test_card_patch_must_be_an_object(luna):
         LB.turn("Hallo", luna, client=fake_client(bad))
 
 
-def test_too_many_bubbles_is_rejected(luna):
+def test_too_many_bubbles_is_a_corrective_retry_not_an_exception(luna):
+    """TASK-156 (F2): a style violation on the first pass no longer raises straight out of turn() --
+    it is a corrective retry in the same session, same contract as every other checked dialog rule
+    (see tests/test_wa_luna_dialog_rules.py's own coverage of this same check)."""
+    attempts = []
+
+    def reply(system, user, session_id):
+        attempts.append(user)
+        if len(attempts) == 1:
+            return _out(bubbles=["one", "two", "three"]), session_id
+        return _out(bubbles=["Nur noch eins."]), session_id
+
+    d = LB.turn("Hallo", luna, client=fake_client(reply))
+    assert len(attempts) == 2, "no exception -- the model got a corrective retry"
+    assert d["bubbles"] == ["Nur noch eins."]
+    assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
+
+
+def test_a_persistent_too_many_bubbles_violation_ends_in_the_holding_message_not_silence(luna):
     out = _out(bubbles=["one", "two", "three"])
-    with pytest.raises(AssertionError, match="style rule"):
-        LB.turn("Hallo", luna, client=fake_client(out))
+    d = LB.turn("Hallo", luna, client=fake_client(out))
+    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["action"] == "reply_blocked_escalated"
+    assert d["slots"]["_escalated"] is True
 
 
-def test_an_empty_bubble_is_rejected(luna):
+def test_an_empty_bubble_is_a_corrective_retry_not_an_exception(luna):
+    attempts = []
+
+    def reply(system, user, session_id):
+        attempts.append(user)
+        if len(attempts) == 1:
+            return _out(bubbles=[""]), session_id
+        return _out(bubbles=["Alles klar."]), session_id
+
+    d = LB.turn("Hallo", luna, client=fake_client(reply))
+    assert len(attempts) == 2, "no exception -- the model got a corrective retry"
+    assert d["bubbles"] == ["Alles klar."]
+    assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
+
+
+def test_a_persistent_empty_bubble_violation_ends_in_the_holding_message_not_silence(luna):
     out = _out(bubbles=[""])
-    with pytest.raises(AssertionError, match="empty bubble"):
-        LB.turn("Hallo", luna, client=fake_client(out))
+    d = LB.turn("Hallo", luna, client=fake_client(out))
+    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["action"] == "reply_blocked_escalated"
+    assert d["slots"]["_escalated"] is True
 
 
 # --- the fence-stripping and validation helpers, directly ---------------------------------------

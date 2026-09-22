@@ -4,7 +4,7 @@ title: Expire stale bridge replies and let catch-up regenerate a fresh one
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:22'
-updated_date: '2026-09-21 09:15'
+updated_date: '2026-09-22 06:09'
 labels:
   - wa-transport
 dependencies:
@@ -37,6 +37,12 @@ The fresh reply is the point. The candidate gets an answer written now, not a st
 - [ ] #4 A test asserts the regenerated text is produced fresh and that exactly one message reaches the transport across the expire-and-regenerate cycle
 - [ ] #5 Expiry applies to the bridge rail only; Meta-rail behaviour is unchanged
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT built. Grepped for WA_OUTBOX_MAX_AGE_MIN and any stale-reply/expiry logic across app/wa/ -- no hits. A bridge reply that goes unsent for hours (the scenario this task exists for: '06:00 handset still holding a 02:00 answer') has no cancellation path; the claim only becomes reclaimable through the existing skipped_error mechanism on an actual send failure (TASK-114/130's territory), not through a time-based expiry that has never been written. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

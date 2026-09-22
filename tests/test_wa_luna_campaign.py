@@ -19,6 +19,7 @@ from app.wa import meta as M
 from app.wa import store as ST
 from app.wa.luna import catchup as CU
 from app.wa.luna import followups as FU
+from app.wa.luna import refusal as RF
 from app.wa.luna import reporting as REP
 from app.wa.luna import shadow_run as SR
 
@@ -315,6 +316,8 @@ def test_introduced_follows_the_old_bot_greeting_check_not_the_session(wa, monke
     """Review 2026-09-14: the decline turn started a session whose bubbles became the fixed ack, so fresh_session was
     false on the re-engagement and Valentina never introduced herself."""
     _campaign()
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, bubbles=[]),
                   _out(re_engaged=True, bubbles=["Schön! Ich bin Valentina von der NDT Group. Haben Sie die Urkunde?"]),
                   _out(bubbles=["Super."]))
@@ -359,6 +362,10 @@ def test_shadow_run_hands_the_model_the_same_context(wa, monkeypatch):
 
 def test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent(wa, monkeypatch):
     _campaign()
+    # TASK-157: a fake refusal-classifier transport -- the decline branch now runs
+    # app/wa/luna/refusal.is_unambiguous_refusal on the candidate's own text before honoring the
+    # model's decline flag; without this the offline suite would spawn a real `claude -p` subprocess.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch,
                   _out(decline=True, decline_reason="no interest", bubbles=["Schade, alles Gute!"]),
                   _out(bubbles=["Gern geschehen!"]),
@@ -382,6 +389,8 @@ def test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent
 
 
 def test_a_clear_re_engagement_after_a_decline_resumes_the_funnel(wa, monkeypatch):
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     Model(monkeypatch, _out(decline=True, bubbles=[]),
           _out(re_engaged=True, bubbles=["Schön! Haben Sie die deutsche Urkunde schon?"], card_patch={"region": "Bayern"}))
     _deliver(wa, _message("wamid.in.1", text="Nein danke, kein Interesse"))
@@ -404,6 +413,9 @@ def test_the_model_cannot_write_code_owned_card_keys(wa):
 def test_a_consent_no_tap_is_never_a_decline(wa, monkeypatch):
     """Review 2026-09-14 (live 2/2): the consent button 'Nein danke' became the fixed decline ack and silence for a
     candidate ready to close. The model's decline flag is ignored for that tap; its reply goes out."""
+    # TASK-157: consent_no_tap already keeps this off the classifier's decline branch, but the fake is
+    # installed anyway so this test can never reach a live `claude -p` if that ever changes.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": False}))
     with ST.db() as c:
         t = ST.thread(c, LEAD)
         t["slots"].update(region="Bayern", qualification_path="urkunde", qualification_ok=True, city="München",
@@ -423,6 +435,8 @@ def test_a_decline_naming_another_land_on_a_campaign_thread_is_a_decline_not_the
     """Review 2026-09-14: the out-of-scope shortcut ran before the model on a campaign thread (no region yet), sent
     'käme Bayern für Sie infrage?' to a decliner and left the thread open for follow-up nudges."""
     _campaign()
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, decline_reason="has a job in Hessen", bubbles=[]))
     [r] = _deliver(wa, _message("wamid.in.1", text="Nein danke, habe schon eine Stelle in Hessen"))
     assert r["action"] == "decline_ack" and wa.sent == [LB.P.DECLINE_ACK_DE] and len(model.payloads) == 1
@@ -437,6 +451,8 @@ def test_a_decline_naming_another_land_on_a_campaign_thread_is_a_decline_not_the
 
 def test_a_land_named_on_a_declined_thread_gets_no_reply(wa, monkeypatch):
     _campaign()
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, bubbles=[]), _out(no_send=True, bubbles=[]))
     _deliver(wa, _message("wamid.in.1", kind="button", text="Nein, danke", payload="bayern_no"))
     [r] = _deliver(wa, _message("wamid.in.2", text="Ich wohne jetzt sowieso in Berlin, danke"))
@@ -483,6 +499,8 @@ def test_a_video_on_a_declined_thread_gets_no_reply_and_is_flagged_for_a_human(w
     goes this way."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     _campaign()
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, bubbles=[]))
     meta = MediaMeta()
     _deliver(meta, _message("wamid.in.1", text="Nein, kein Interesse"))
@@ -505,6 +523,8 @@ def test_a_voice_note_on_a_declined_thread_is_a_model_turn_on_its_transcript_sil
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     openai = use_openai(monkeypatch, {"text": "Okay, danke."}, {"text": "Ich suche jetzt doch eine Stelle in Bayern."})
     _campaign()
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, bubbles=[]), _out(bubbles=[], no_send=True),
                   _out(re_engaged=True, bubbles=["Schön, dass Sie sich melden! Haben Sie die deutsche Urkunde schon?"]))
     meta = MediaMeta("audio/ogg")
@@ -573,6 +593,8 @@ def test_a_voice_note_reply_to_the_campaign_is_answered_from_its_transcript(wa, 
 
 
 def test_stop_on_a_declined_thread_stops_without_any_ack(wa, monkeypatch):
+    # TASK-157: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
+    monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     Model(monkeypatch, _out(decline=True, bubbles=[]))
     _deliver(wa, _message("wamid.in.1", text="kein Interesse"))
     [r] = _deliver(wa, _message("wamid.in.2", text="Stopp"))
@@ -679,7 +701,10 @@ def test_the_prompt_campaign_outbound_template_button_decline_and_already_placed
     assert "means the candidate is still there" in outbound and "never a card fact" in outbound
     assert "never a word about yourself being there ('ich bin (noch) da/hier'" in outbound
     assert "is_template_button=true" in _rule("TEMPLATE BUTTON (TASK-100)")
-    decline = _rule("DECLINE (TASK-101)")
+    # TASK-155 split the decline prose in two: what counts as a refusal stays under the DECLINE header,
+    # the consequence (silence, re-engagement) moved to its own rule. The behaviour both must state is
+    # what this asserts, so read them together rather than pinning the header text.
+    decline = "\n".join(r for r in LB.P.RULES if r.startswith("DECLINE (TASK-101") or r.startswith("decline=true:"))
     assert "A Nein to one of your gate questions" in decline and "re_engaged=true" in decline
     assert "consent button 'Nein danke'" in decline and "is not a decline either" in decline
     assert "After 'Nein danke'" in _rule("CONSENT IS A BUTTON TAP")

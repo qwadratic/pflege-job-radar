@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:21'
-updated_date: '2026-09-21 13:24'
+updated_date: '2026-09-22 06:11'
 labels:
   - wa-transport
 dependencies:
@@ -42,4 +42,6 @@ What is genuinely still missing is the reference half: a literal request and res
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-21 rescope: ACs 1, 7 dropped (a contract that no longer exists, and a probe superseded by tools/wa_bridge.py, TASK-148). ACs 2, 3, 4, 6 are already satisfied in the Transports section by TASK-139, TASK-146 and TASK-149 and were folded out of this task. AC 5 (error-code table) survives and is now the core of it.
+
+Audit 2026-09-22: description already accurately rescoped (2026-09-21) and status correctly To Do. Confirmed the reference half genuinely does not exist yet: docs/whatsapp.md has the Transports section (TASK-139/146/149) but no literal request/response body table for every route bridge/server.py serves, and no error-code table (code, HTTP status, retryable, exception, campaign.py classification). No changes made.
 <!-- SECTION:NOTES:END -->

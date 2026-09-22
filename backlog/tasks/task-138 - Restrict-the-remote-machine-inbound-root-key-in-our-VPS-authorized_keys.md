@@ -4,6 +4,7 @@ title: Restrict the remote machine inbound root key in our VPS authorized_keys
 status: To Do
 assignee: []
 created_date: '2026-09-21 09:10'
+updated_date: '2026-09-22 06:10'
 labels:
   - wa-transport
 dependencies: []
@@ -37,3 +38,9 @@ CAUTION: this edits ssh access to the production VPS. It is trivially self-locko
 - [ ] #5 Only our own /root/.ssh/authorized_keys is modified; no file, key or config on the remote machine is touched
 - [ ] #6 sshd LogLevel is raised enough to record executed commands for that key, or the decision not to is written down with its reason
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT done. Grepped for any restrict/from=/command= addition to authorized_keys handling anywhere in this repo (deploy/, app/, bridge/, tools/) -- nothing found; this is a one-line edit to /root/.ssh/authorized_keys on the live VPS, which is infrastructure state outside the repo and outside this audit's read access. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->

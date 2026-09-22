@@ -3,9 +3,10 @@ id: TASK-134
 title: >-
   Lane-ownership record: pin the driver-library boundary against the colleague's
   wa_phone package
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-21 09:09'
+updated_date: '2026-09-22 06:07'
 labels:
   - wa-transport
 dependencies: []
@@ -42,3 +43,15 @@ Read-only investigation: /home/claude/plans/2026-09-21-macmini-revision.md secti
 - [ ] #5 It names the fallback if the colleague declines the wrap, so a no is a rescope and not a restart
 - [ ] #6 Nothing is deployed, written or run on the remote machine by this task; every fact in it is read-only
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+CLOSED AS SUPERSEDED, 2026-09-22, not done as written. This task exists to document the boundary of a WRAP architecture (Option A, decision-8): import the colleague's device.py/whatsapp.py/inbox.py from ~/wa-phone-outreach/apps/wa_phone as a driver library. That architecture was abandoned before this task's own record was ever written: TASK-142 (created 2026-09-21 09:54, after this task's 09:09) shipped bridge/adb_driver.py instead -- 'our own adb driver for the handset. Stdlib only, and it imports nothing of theirs' (bridge/adb_driver.py docstring). bridge/driver.py's own docstring states the history: 'This file used to wrap apps.wa_phone out of a colleague's agent worktree on the mini. TASK-142 replaced that with our own adb driver... We own this rail end to end now and import nothing from that tree.' Confirmed by grep: no import of apps.wa_phone anywhere under bridge/ or app/wa/. docs/whatsapp.md:60 states it plainly: 'the earlier plan to wrap his package as a driver library was dropped because a git worktree remove would swap every signature under us.' There is no driver-library boundary left to pin -- the boundary this task was written to record was never built. What DID need recording (the flock-sharing protocol, the entry condition of not messaging two senders on one account) is covered instead by TASK-141's question list and by bridge/adb_driver.py's own docstring. No acceptance criterion is checked: none was verified, because the artifact they describe (a wrap boundary) does not exist.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Obsolete, not implemented as written. The WRAP architecture this task exists to document a boundary for was abandoned in favour of TASK-142's independent adb driver (bridge/adb_driver.py, stdlib only, imports nothing from the colleague's tree) before this task was ever worked. There is no driver-library import boundary left to pin. The one part of this task that still matters -- the shared-handset flock protocol and the entry condition of not running two senders on one account -- is covered by TASK-141 and by bridge/adb_driver.py's own docstring instead.
+<!-- SECTION:FINAL_SUMMARY:END -->

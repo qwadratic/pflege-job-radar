@@ -44,6 +44,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import cv as CV
 from . import brain as B
 from . import config as C
+from .luna import choices as CH
 from . import meta as M
 from . import queue as Q
 from . import store as ST
@@ -865,6 +866,11 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
         # the catch-up driver (TASK-78) is what actually answers it once the window rolls over.
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
         return {"status": "rate_limited"}
+
+    # TASK-121: a genuine tap (button_id already set) is left alone; only a bare typed reply, which
+    # is all the phone rail can ever produce, is recovered against the offer this thread's own last
+    # outbound row actually made. Covers both callers (webhook and catchup.py) from this one point.
+    button_id = button_id or CH.recover_button_id(c, t["phone"], turn_key, text)
 
     was_consented = C.BRAIN == "luna" and bool((t.get("slots") or {}).get("anonymous_send_consent"))
 

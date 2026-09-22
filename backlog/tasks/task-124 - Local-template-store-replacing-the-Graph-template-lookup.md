@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:22'
-updated_date: '2026-09-21 09:12'
+updated_date: '2026-09-22 06:11'
 labels:
   - wa-transport
 dependencies:
@@ -44,3 +44,9 @@ The 29 APPROVED recruitment_* templates on the Valentyn NDT number are the colle
 - [ ] #6 The first-touch set holds more than one opening variant, and a test asserts that two consecutive first touches do not produce byte-identical bodies
 - [ ] #7 The Meta rail still resolves its Graph templates unchanged, proven by a test on the Meta path
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Audit 2026-09-22: verified NOT built, exactly as the code itself says. app/wa/bridge.py:566-596 raises citing '(TASK-124)' by name from get_template/send_template when called on the bridge rail -- there is no data/wa_templates/ local store and no first-touch message set. tests/test_wa_bridge_client.py::test_send_template_without_a_definition_says_why_there_is_no_registry and ::test_get_template_refuses_instead_of_inventing_an_approved_definition both assert the refusal names TASK-124. Status and description remain accurate as written.
+<!-- SECTION:NOTES:END -->

@@ -3,11 +3,11 @@ id: TASK-59
 title: >-
   WhatsApp harness: answer inbound Pflege leads as Luna with the board's own
   filters
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-11 17:19'
-updated_date: '2026-09-11 17:41'
+updated_date: '2026-09-22 06:10'
 labels:
   - whatsapp
   - luna
@@ -49,3 +49,15 @@ Nurses reach us on WhatsApp from Meta ads and landing pages. Today the replies c
 6. tests/test_wa_harness.py: offline, snapshot stubbed like tests/test_app_api.py, Meta faked; cover verification, signature rejection, redelivery, the ladder, matching, widening, the qualification block, opt-out and the send path.
 7. docs/whatsapp.md + docs/index.json + README layout/run lines + .env.example + .gitignore for data/wa.sqlite.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+CLOSED AS SUPERSEDED, 2026-09-22, not done as written. This is the original genesis task for a self-contained minimal WhatsApp harness (Meta webhook, basic question ladder, board-filter matching). What actually got built over TASK-60 through TASK-152 is a categorically different and far larger system: a persistent Claude-session brain (TASK-60/61), an MCP tool server (TASK-62/110/145), campaign sending with full delivery/retry/history semantics (TASK-98-106), a second full transport (the phone rail: TASK-116/117/120/142/143/146/147/148), cross-lane suppression (TASK-113), and dialog-rule enforcement (TASK-144/150/151/152) -- none of which resembles this task's own Implementation Plan (a deterministic slot-filling ladder with no LLM). The task's acceptance criteria (webhook verification against fixtures, one-question-per-turn ladder, opt-out, a docs page and deploy unit) are all satisfied by since-superseding, already-Done tasks rather than by this one: TASK-84 (webhook routing), TASK-113 (opt-out/suppression), TASK-149 (docs), and the existing deploy/pflege-wa.service. Left In Progress with 0/7 acceptance criteria checked and nobody working it -- the harness has been live in production for over a week under a completely different design. No acceptance criterion is checked: this specific implementation plan was never followed.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Obsolete as written. The single self-contained minimal harness this task describes was overtaken almost immediately by a much larger system built across dozens of later tasks (TASK-60 onward): an LLM-driven brain, an MCP tool layer, campaign sending, and eventually a second full transport (the phone rail). Every acceptance criterion this task lists is satisfied by later, already-Done tasks instead. Closing to match a tree that has run a completely different design in production for over a week.
+<!-- SECTION:FINAL_SUMMARY:END -->
