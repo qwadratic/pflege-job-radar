@@ -12,11 +12,15 @@ lock the operator out of GET /api/wa/threads on the harness host. Local reads st
 from fastapi import FastAPI
 
 from .api import router
+from .bridge_api import router as bridge_router  # POST /wa/bridge-webhook (TASK-123): the phone rail's inbound door
 from .router import router as router_router  # POST /wa/route-webhook (TASK-84): Meta's live webhook via nginx
 
 app = FastAPI(title="pflege-board WhatsApp harness", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(router, prefix="/api", tags=["whatsapp"])
 app.include_router(router_router, prefix="/api", tags=["whatsapp"])
+# Only this process mounts it, and only on 127.0.0.1: the executor's push arrives through the ssh
+# tunnel on this host's own stack, which is what the route's loopback check is built on.
+app.include_router(bridge_router, prefix="/api", tags=["whatsapp"])
 
 
 @app.get("/healthz")

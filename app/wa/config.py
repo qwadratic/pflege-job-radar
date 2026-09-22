@@ -47,6 +47,45 @@ DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A
 # not hand anything to Meta, so a webhook can be pointed at a fresh deployment without messaging anyone.
 AUTOSEND = os.environ.get("WA_AUTOSEND", "").strip() in ("1", "true", "yes")
 
+# Which transport carries an outbound message (TASK-116, app/wa/transport.py): "meta" is the Cloud
+# API (app/wa/meta.py), "bridge" is the phone rail on the remote machine (app/wa/bridge.py). This is
+# the rail a NEW thread starts on: an existing thread keeps the rail pinned on wa_threads (TASK-117),
+# so flipping this variable never moves a live conversation to a different sender number. Same
+# discipline as WA_BRAIN below: an unknown value stops the process at import, it never becomes a
+# default that quietly sends.
+TRANSPORT = os.environ.get("WA_TRANSPORT", "meta").strip().lower()
+if TRANSPORT not in ("meta", "bridge"):
+    raise RuntimeError(f"WA_TRANSPORT={TRANSPORT!r} is not 'meta' or 'bridge'")
+
+# The phone rail's executor (TASK-120, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
+# one ssh -R leg -- the executor listens on the remote machine and the tunnel presents it on loopback
+# here, which is also why no secret of Meta's ever travels: the WhatsApp account lives on the handset
+# and this rail holds no credential of its own beyond these two tokens.
+# Empty is "not configured", never a default that could pass for one: app/wa/bridge.py raises at send
+# time (and only at send time, like meta.Client) rather than at import, because WA_TRANSPORT=bridge is
+# a valid value on a host that has not been wired up yet.
+BRIDGE_URL = os.environ.get("WA_BRIDGE_URL", "").strip()
+if BRIDGE_URL and not BRIDGE_URL.startswith(("http://", "https://")):
+    raise RuntimeError(f"WA_BRIDGE_URL={BRIDGE_URL!r} is not an http(s) URL")
+# Bearer on every /v1 call to the executor. Its counterpart for the other direction (executor ->
+# POST /api/wa/bridge-webhook) is a separate secret, TASK-123: a leak in one direction must not grant
+# the other.
+BRIDGE_TOKEN = os.environ.get("WA_BRIDGE_TOKEN", "").strip()
+# 90s, not HTTP_TIMEOUT_SEC's 30: a send here is a human-paced sequence of UI actions on a real
+# handset -- open the chat, type at 3-5 characters per second, press send, then poll the bubble for a
+# delivery tick -- and their own verify loop alone runs up to 30s (whatsapp.py:123). Plan §6.
+BRIDGE_TIMEOUT_SEC = int(os.environ.get("WA_BRIDGE_TIMEOUT_SEC", "90") or "90")
+# The other direction's secret (TASK-123): the executor pushes inbound to POST /api/wa/bridge-webhook
+# with this one in X-Pflege-Bridge-Token. Separate from BRIDGE_TOKEN above on purpose -- a leak in one
+# direction must not grant the other. Empty means the door is shut: app/wa/bridge_api.py answers 403
+# rather than accept an unauthenticated payload that would enter a real conversation.
+BRIDGE_INBOUND_TOKEN = os.environ.get("WA_BRIDGE_INBOUND_TOKEN", "").strip()
+# metadata.phone_number_id in the envelope the executor pushes. The phone rail has no Meta
+# phone-number id, so it carries its own name (e.g. "pflege-bridge-01") and api._number_matches
+# accepts either that or PHONE_NUMBER_ID. META_WHATSAPP_PHONE_NUMBER_ID stays SET: blanking it would
+# make _number_matches accept every number's payload instead of ours.
+BRIDGE_PHONE_NUMBER_ID = os.environ.get("WA_BRIDGE_PHONE_NUMBER_ID", "").strip()
+
 # Which brain answers a turn: "deterministic" (app/wa/brain.py, the board-filter question ladder,
 # no LLM) or "luna" (app/wa/luna_brain.py, same persona/rules/gates as the reference this is
 # adapted from -- app/wa/luna/VENDORED.md -- but calling Claude to decide the action and wording).
@@ -152,11 +191,22 @@ def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""
     checks = {"access_token": bool(ACCESS_TOKEN), "app_secret": bool(APP_SECRET),
               "verify_token": bool(VERIFY_TOKEN), "phone_number_id": bool(PHONE_NUMBER_ID),
-              "openai_api_key": bool(OPENAI_API_KEY)}
+              "openai_api_key": bool(OPENAI_API_KEY),
+              "bridge_url": bool(BRIDGE_URL), "bridge_token": bool(BRIDGE_TOKEN),
+              "bridge_inbound_token": bool(BRIDGE_INBOUND_TOKEN)}
     out = {"checks": checks,
            "webhook_ready": checks["app_secret"] and checks["verify_token"],
            "outbound_ready": checks["access_token"] and checks["phone_number_id"],
            "autosend": AUTOSEND, "graph_api_version": GRAPH_API_VERSION, "brain": BRAIN,
+           "transport": TRANSPORT,
+           # Which rail could send right now, independently of which one is selected: an operator
+           # flipping WA_TRANSPORT must be able to see beforehand that the other rail is configured,
+           # and afterwards that the live one is (TASK-120).
+           "bridge_ready": checks["bridge_url"] and checks["bridge_token"],
+           # The inbound door is a separate readiness: the rail can send while the executor still
+           # cannot push a reply back (TASK-123), and an operator has to see which half is missing.
+           "bridge_inbound_ready": checks["bridge_inbound_token"],
+           "bridge_phone_number_id": BRIDGE_PHONE_NUMBER_ID,
            "stt_ready": checks["openai_api_key"], "stt_model": STT_MODEL}
     if BRAIN == "luna":
         out["luna_model"] = LUNA_MODEL

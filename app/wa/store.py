@@ -3,6 +3,8 @@
 Two invariants carry the whole design. ``wa_messages.wamid`` is UNIQUE, because Meta redelivers a
 webhook for minutes after a non-2xx and the same message must not be answered twice. ``wa_threads.stopped``
 is checked before every send, because an opt-out that can be overtaken by a queued reply is not an opt-out.
+``wa_suppressions`` is that second invariant's cross-thread, cross-lane twin (TASK-113): one row per human
+rather than per thread, read by app/wa/suppression.py before every send on either rail.
 Slots are a JSON blob: they are the conversation's memory, and their vocabulary lives in app/wa/slots.py.
 """
 import hashlib
@@ -148,6 +150,18 @@ create table if not exists wa_inbound_pending (
   last_attempt_at text
 );
 create index if not exists idx_wa_inbound_pending_phone on wa_inbound_pending(phone);
+-- One row per suppressed phone: the cross-thread, cross-lane do-not-contact list (TASK-113/TASK-137).
+-- wa_threads.stopped is per thread and every card save rewrites it; this row is per human (the key is
+-- phones.canonicalize_phone) and nothing but a suppression writes it. The rules, and the choke points
+-- that read it before every send, live in app/wa/suppression.py; the table is declared here because
+-- db() is what creates the tables of this file.
+create table if not exists wa_suppressions (
+  phone text primary key,
+  reason text not null,
+  lane text not null,
+  trigger_text text,
+  at text not null
+);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -174,7 +188,10 @@ def db():
 MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "import_ref", "text"),
               ("wa_documents", "import_meta", "text"), ("wa_documents", "reuse_state", "text"),
               ("wa_documents", "reuse_decided_at", "text"),
-              ("wa_threads", "is_test", "integer not null default 0"), ("wa_threads", "test_marked_at", "text"))
+              ("wa_threads", "is_test", "integer not null default 0"), ("wa_threads", "test_marked_at", "text"),
+              # TASK-117: which rail this thread's messages go out on. Null until its first successful
+              # outbound; see pin_rail below for why it never changes after that.
+              ("wa_threads", "rail", "text"))
 
 
 def _migrate(c):
@@ -218,6 +235,8 @@ def save_thread(c, t):
 
 
 def _update_thread(c, t):
+    # Writes neither is_test nor rail: both are pinned by their own function (mark_test_thread,
+    # pin_rail) and a card save must never be able to flip them.
     c.execute("""update wa_threads set slots=?, asked=?, matches_sent_at=?, stopped=?, stopped_reason=?,
                  turns=?, last_inbound_at=?, last_outbound_at=? where phone=?""",
               (json.dumps(t["slots"], ensure_ascii=False), json.dumps(t["asked"]), t.get("matches_sent_at"),
@@ -285,6 +304,59 @@ def test_phones(c):
     """Every phone marked as a test number, oldest thread first."""
     rows = c.execute("select phone from wa_threads where is_test=1 order by opened_at, phone").fetchall()
     return [r["phone"] for r in rows]
+
+
+# --- the thread's rail (TASK-117) ----------------------------------------------------------------
+# One column, written by pin_rail and by nothing else: _update_thread leaves it alone, so no card save
+# can flip it, and there is no CLI to set it by hand. app/wa/transport.py reads it to decide which
+# client a send is built from; GET /api/wa/threads and GET /api/wa/health report it.
+
+RAILS = ("meta", "bridge")
+
+
+def rail_of(c, phone):
+    """The rail pinned on this thread, or None -- no thread yet, or nothing has gone out on it yet."""
+    row = c.execute("select rail from wa_threads where phone=?", (phone,)).fetchone()
+    return row["rail"] if row else None
+
+
+def pin_rail(c, phone, rail):
+    """Pin the rail on a thread's first successful outbound. -> the pinned rail.
+
+    The pin is immutable because a rail is a sender number, not a configuration detail: the Meta rail
+    writes from the WABA number, the bridge rail from the number registered on the handset. Letting a
+    live thread change rail means the candidate's next answer arrives from a number they have never
+    seen -- a stranger continuing their conversation, which earns a block or a spam report against the
+    one WhatsApp asset this project has. A global env rollback (WA_TRANSPORT) would do that to every
+    thread at once, which is exactly why the routing state is this row and not that variable.
+
+    Idempotent for the rail already pinned. A different rail raises rather than overwrite: at that
+    point the message has already gone out from one number while the thread claims the other, and the
+    only honest thing left is to say so loudly. An unknown rail raises before anything is written.
+    """
+    if rail not in RAILS:
+        raise ValueError(f"cannot pin {phone} to rail {rail!r}: not one of {', '.join(RAILS)}")
+    # A message just went out to this number, so it has a thread: same rule as thread() ("an unknown
+    # number is a lead, not an error"), written the same way record_campaign_send writes it.
+    c.execute("insert or ignore into wa_threads (phone, opened_at) values (?,?)", (phone, now_iso()))
+    cur = c.execute("update wa_threads set rail=? where phone=? and rail is null", (rail, phone))
+    c.commit()
+    if cur.rowcount == 1:
+        return rail
+    pinned = rail_of(c, phone)
+    if pinned != rail:
+        raise RuntimeError(f"{phone} is pinned to the {pinned!r} rail and a send just went out on the "
+                           f"{rail!r} one -- a thread never changes rail, because the rail is the number "
+                           f"the candidate sees (TASK-117)")
+    return pinned
+
+
+def rail_counts(c):
+    """{rail or 'unpinned': number of threads} -- GET /api/wa/health, so which rail carries which
+    threads is answered by one call rather than by reading the database."""
+    rows = c.execute("select coalesce(rail, 'unpinned') as rail, count(*) as n from wa_threads "
+                     "group by coalesce(rail, 'unpinned') order by rail").fetchall()
+    return {r["rail"]: r["n"] for r in rows}
 
 
 # --- reply-turn claims (TASK-77): durable, cross-process dedup beyond wamid uniqueness ----------
@@ -402,9 +474,16 @@ def claim_nudge(c, phone, fingerprint):
 
 
 def candidate_phones(c):
-    """Every phone with a thread, not stopped -- the pool app.wa.luna.followups/catchup-style
-    drivers scan."""
-    rows = c.execute("select phone from wa_threads where stopped=0").fetchall()
+    """Every phone with a thread, not stopped and not suppressed -- the pool app.wa.luna.followups/
+    catchup-style drivers scan.
+
+    TASK-113: the suppression filter is the identity-scoped twin of ``stopped=0`` right beside it. A
+    suppressed number that stayed in the pool would reach ``api.send_and_record``, which refuses it by
+    raising -- correct for a send somebody asked for, but it would end the whole sweep for every other
+    thread. Not sending is not a decision made here: the choke point still refuses these numbers if a
+    driver is pointed at one by hand (``followups --phones``)."""
+    rows = c.execute("select phone from wa_threads where stopped=0 "
+                     "and phone not in (select phone from wa_suppressions)").fetchall()
     return [r["phone"] for r in rows]
 
 

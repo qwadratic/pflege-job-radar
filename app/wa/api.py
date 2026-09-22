@@ -48,6 +48,8 @@ from . import meta as M
 from . import queue as Q
 from . import store as ST
 from . import stt as STT
+from . import suppression as SUP
+from . import transport as T
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -55,8 +57,16 @@ log = logging.getLogger(__name__)
 
 @router.get("/wa/health")
 def wa_health():
-    """Non-secret readiness, for a deploy check. Public like the other self-describing reads."""
-    return C.readiness()
+    """Non-secret readiness, for a deploy check. Public like the other self-describing reads.
+
+    ``rails`` is how many threads each rail actually carries (TASK-117). Which rail is configured is
+    one question ("transport"), which rail live conversations are pinned to is another -- a thread
+    never follows a flipped WA_TRANSPORT, so the second is the one an operator needs after a change.
+    No phone numbers: this response is public.
+    """
+    with ST.db() as c:
+        rails = ST.rail_counts(c)
+    return {**C.readiness(), "rails": rails}
 
 
 @router.get("/wa/webhook", include_in_schema=False)
@@ -118,10 +128,18 @@ def inbound_messages(payload):
 
 
 def _number_matches(value):
-    """A payload for another WhatsApp number is not ours to answer."""
-    if not C.PHONE_NUMBER_ID:
+    """A payload for another WhatsApp number is not ours to answer.
+
+    Both rails answer here (TASK-123): Meta's webhook carries C.PHONE_NUMBER_ID, the executor's
+    envelope carries C.BRIDGE_PHONE_NUMBER_ID -- the phone rail has no Meta number id, so it names
+    itself. Neither configured means "this deployment has not said which number is ours" and
+    everything still matches, as before; blanking META_WHATSAPP_PHONE_NUMBER_ID to let the bridge in
+    would silently re-open that door for every foreign number too.
+    """
+    ours = {C.PHONE_NUMBER_ID, C.BRIDGE_PHONE_NUMBER_ID} - {""}
+    if not ours:
         return True
-    return str((value.get("metadata") or {}).get("phone_number_id") or "") == C.PHONE_NUMBER_ID
+    return str((value.get("metadata") or {}).get("phone_number_id") or "") in ours
 
 
 # A template quick-reply tap's button_id is this prefix + Meta's payload (TASK-100), so it can never equal
@@ -300,7 +318,7 @@ def _store_original(c, m, client=None):
     media id, network, disk, an existing target file); a failure after the write leaves the file
     without a row.
     """
-    cl = client or M.Client()
+    cl = T.get_client(phone=m["phone"], client=client)
     info = cl.media_url(m["media_id"])
     blob = cl.download_media(info["url"])
     mime_type = m.get("media_mime_type") or info.get("mime_type")
@@ -533,12 +551,16 @@ _background_guard = threading.Lock()
 
 
 def submit_accepted(accepted, client=None):
-    """Queue accept_payload's phones for the background worker. -> the Future, or None with no message. The
-    Meta client is built here, in the request, and handed to the job."""
+    """Queue accept_payload's phones for the background worker. -> the Future, or None with no message.
+
+    No client is built here (TASK-116). This call knows no phone yet -- one payload may carry messages
+    from several candidates -- and the rail is a property of the thread (TASK-117), so a client built
+    here would pin every phone in the payload to whichever rail the first lookup happened to pick.
+    ``process_phones`` resolves one per phone instead. An injected ``client`` is still passed straight
+    through to every phone."""
     global _background
     if not accepted["phones"]:
         return None
-    client = client or M.Client()
     with _background_guard:
         if _background is None:
             _background = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wa-inbound")
@@ -564,11 +586,18 @@ def wait_for_background(timeout=None):
 
 def process_phones(phones, client=None, raise_errors=True):
     """``drain_pending`` for each phone under ST._lock, then its consent queue builds outside the lock. ->
-    every result. Shared by handle_payload, the background worker and catch-up."""
+    every result. Shared by handle_payload, the background worker and catch-up.
+
+    One client per phone, resolved with that phone (TASK-116): the rail is per-thread (TASK-117), and
+    one client threaded through the whole loop would answer the second candidate in a payload over the
+    first one's rail. ``meta.Client`` is documented as one instance per request with no state of its
+    own ("state lives in SQLite, not here"), so one per phone instead of one per payload is
+    behaviour-identical on the Meta rail. An injected ``client`` wins for every phone, as before."""
     results = []
     for phone in phones:
+        cl = T.get_client(phone=phone, client=client)
         with ST._lock, ST.db() as c:
-            done = drain_pending(c, phone, client=client, raise_errors=raise_errors)
+            done = drain_pending(c, phone, client=cl, raise_errors=raise_errors)
         build_consent_queues(done, raise_errors=raise_errors)
         results.extend(done)
     return results
@@ -785,7 +814,7 @@ def _media_ack(c, t, m, client):
         ST.save_thread(c, t)
         return {"wamid": wamid, "status": "nothing_to_send", "action": "declined_no_send"}
     try:
-        sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack")
+        sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack", turn_key=wamid)
     except Exception:
         ST.finish_reply_turn_claim(c, t["phone"], wamid, "skipped_error")
         raise
@@ -854,14 +883,25 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
         d = B.turn(text, t, button_id=None if is_template_tap else button_id)
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
+        # Both brains set this from SL.is_stop(text) and from nothing else (brain.py:332, luna_brain.py:943),
+        # so this is the one place the STOP detector reaches a decision -- and TASK-113 is what makes that
+        # decision outlive this thread: wa_threads.stopped answers "not in this conversation", the suppression
+        # row answers "not on any rail, ever", keyed on the human rather than on the row. The candidate's own
+        # words go in as the audit artefact.
         t["stopped"], t["stopped_reason"] = True, ST.STOPPED
+        # The lane is this thread's own rail, not C.TRANSPORT: the record says which number the
+        # candidate typed STOP to, and on a per-thread rail (TASK-117) the process-wide setting is
+        # not that number. An unpinned thread (a refusal before we ever answered) is recorded on the
+        # rail its first answer would have gone out on.
+        SUP.suppress(c, t["phone"], SUP.REASON_STOP, T.rail_for(c, t["phone"]), trigger_text=text)
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_stopped")
         return {"status": "stopped", "action": "stopped"}
     if d["matches"]:
         t["matches_sent_at"] = ST.now_iso()
 
     try:
-        sent = send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"])
+        sent = send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"],
+                               turn_key=turn_key)
     except Exception:
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_error")
         raise
@@ -898,7 +938,7 @@ def _freeform_window_open(t):
     return age_hours < C.FREEFORM_WINDOW_HOURS
 
 
-def _send(c, t, bubbles, buttons, client=None, action=None):
+def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     """Send the turn and record it. Buttons ride on the last bubble, which is the question.
 
     With WA_AUTOSEND unset nothing is handed to Meta and the bubbles are stored as 'draft' -- the
@@ -911,16 +951,51 @@ def _send(c, t, bubbles, buttons, client=None, action=None):
     rejects free-form text outside the window. This swaps in the configured reopen template
     instead of the bubbles, or fails loudly if none is configured, rather than silently trying (and
     having Meta reject it) or silently doing nothing.
+
+    That window is the Cloud API's rule, so it is now the CLIENT's rule (TASK-118): the client is
+    built first and the gate reads ``requires_freeform_window`` off it. A consumer chat on the phone
+    rail has no such window, so a bridge thread answers free text where Meta would have demanded a
+    template -- and a Meta thread keeps today's behaviour byte for byte, including the hard "no
+    window at all" return in ``_freeform_window_open`` for a candidate who never wrote. The default
+    is True, so a test double without the attribute is a Meta client, and two threads on different
+    rails in the same process are gated one by one rather than by a process-wide setting.
+
+    The rail is pinned here too (TASK-117), after a send actually went out and never before: a draft
+    is not an outbound, and a thread whose first send failed must stay free to start on the rail the
+    next attempt resolves.
+
+    ``turn_key`` is which inbound message this turn answers, and it is what makes a retry on a rail
+    with no provider ids safe (TASK-114): a client that says ``wants_idempotency_key`` is told the
+    turn before the first bubble, and derives one deterministic ``client_msg_id`` per bubble from it,
+    so the catch-up re-drive of a failed turn replays the bubbles that already went out instead of
+    sending them a second time. A send path that cannot name its turn cannot have that guarantee, so
+    on such a client it raises instead of minting a key that would make a duplicate look new.
     """
     if not bubbles:
         return "nothing_to_send"
-    if not _freeform_window_open(t):
-        return _send_reopen_template(c, t, client=client, action=action)
+    rail = T.rail_for(c, t["phone"])
+    cl = T.get_client(phone=t["phone"], client=client, conn=c)
+    if getattr(cl, "requires_freeform_window", True) and not _freeform_window_open(t):
+        status = _send_reopen_template(c, t, client=cl, action=action)
+        if status == "sent_template":
+            ST.pin_rail(c, t["phone"], rail)
+        return status
     if not C.AUTOSEND:
         for b in bubbles:
             ST.record_outbound(c, t["phone"], None, b, kind="draft", meta={"action": action})
         return "draft"
-    cl = client or M.Client()
+    if getattr(cl, "wants_idempotency_key", False):
+        if not turn_key:
+            # The rail named here is the CLIENT's, derived from the object actually in hand, not
+            # T.rail_for's answer: an injected client (a test's fake, the one campaign.py holds for
+            # a whole run) can be a different rail from the thread's, and a failure row that names
+            # the wrong one sends whoever reads it to the wrong rail (TASK-146).
+            raise RuntimeError(
+                f"a {action!r} send on the {T.rail_of_client(cl)} rail carries no turn_key: on a rail "
+                f"whose messages have no "
+                f"provider id, the key derived from the turn is the only thing that stops a retry from "
+                f"delivering this reply twice (TASK-114, app/wa/bridge_ids.py)")
+        cl.begin_turn(t["phone"], turn_key, action)
     for i, b in enumerate(bubbles):
         last = i == len(bubbles) - 1
         if last and buttons:
@@ -931,16 +1006,26 @@ def _send(c, t, bubbles, buttons, client=None, action=None):
             wamid = cl.send_text(t["phone"], b)
             ST.record_outbound(c, t["phone"], wamid, b, kind="text", meta={"action": action})
     t["last_outbound_at"] = ST.now_iso()
+    ST.pin_rail(c, t["phone"], rail)
     return "sent"
 
 
-def send_and_record(c, t, bubbles, buttons, client=None, action=None):
+def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-79) -- the
     loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
-    GET /wa/threads) instead of vanishing along with the never-persisted thread state."""
+    GET /wa/threads) instead of vanishing along with the never-persisted thread state.
+
+    Also the suppression choke point for every free-form send (TASK-113). This is the right point
+    because it is the only way into ``_send``: the webhook reply, a catch-up reply, ``_media_ack``,
+    the reopen template and the ``luna.followups`` nudge all pass here, on whichever rail
+    ``transport.get_client`` resolves -- one check instead of five, and a sixth send path cannot be
+    added without crossing it. It refuses by raising ``SUP.SuppressedRecipient`` inside the try, so a
+    refusal is recorded and surfaced exactly like any other undeliverable thread (``last_send_error``)
+    instead of returning a status a caller could read as a successful send."""
     try:
-        return _send(c, t, bubbles, buttons, client=client, action=action)
+        SUP.assert_not_suppressed(c, t["phone"])
+        return _send(c, t, bubbles, buttons, client=client, action=action, turn_key=turn_key)
     except Exception as exc:
         ST.record_send_failure(c, t["phone"], str(exc))
         raise
@@ -957,7 +1042,7 @@ def _send_reopen_template(c, t, client=None, action=None):
         ST.record_outbound(c, t["phone"], None, label, kind="draft_template",
                            meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
         return "draft_template"
-    cl = client or M.Client()
+    cl = T.get_client(phone=t["phone"], client=client)
     wamid = cl.send_template(t["phone"], C.WA_REOPEN_TEMPLATE_NAME, C.WA_REOPEN_TEMPLATE_LANG)
     ST.record_outbound(c, t["phone"], wamid, label, kind="template",
                        meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
@@ -1016,6 +1101,11 @@ def wa_threads(request: Request, limit: int = 50):
     returned rows, so a count of real candidates is ``total - test_threads``. They stay listed on purpose:
     this is where an operator checks which numbers are flagged.
 
+    TASK-113: a row (and the ``?phone=`` view) carries ``suppression`` when that number is on the
+    cross-rail do-not-contact list -- reason, lane, verbatim trigger, time. This is where an operator reads
+    why a thread gets no answer even though ``stopped`` is false: the list is keyed on the human, not the
+    thread, so it survives a purge and a suppression another rail recorded.
+
     TASK-99: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
     and ``stuck_reply`` is also true once the oldest is older than C.STUCK_REPLY_HOURS. ``?phone=`` adds
     ``pending_inbound``, ``message_statuses`` (latest delivery status per wamid, Meta errors included) and
@@ -1026,6 +1116,7 @@ def wa_threads(request: Request, limit: int = 50):
         if phone:
             documents = [{k: v for k, v in d.items() if k != "text"} for d in ST.documents_for(c, phone)]
             return {"phone": phone, "thread": ST.thread(c, phone), "messages": ST.history(c, phone),
+                    "suppression": SUP.suppression(c, phone),
                     "documents": documents, "imported_messages": ST.imported_messages_for(c, phone),
                     "pending_inbound": ST.pending_inbound_summary(c, phone),
                     "message_statuses": ST.latest_message_statuses_for(c, phone),
@@ -1043,6 +1134,9 @@ def wa_threads(request: Request, limit: int = 50):
             failure = ST.recent_send_failure(c, row["phone"])
             if failure:
                 row["last_send_error"] = failure
+            suppressed = SUP.suppression(c, row["phone"])
+            if suppressed:
+                row["suppression"] = suppressed   # TASK-113: this number is refused on every rail, not just here
     return {"total": len(rows), "test_threads": sum(1 for row in rows if row["is_test"]), "rows": rows}
 
 

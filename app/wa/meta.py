@@ -15,6 +15,10 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import config as C
+# TASK-115: sender_e164/canonicalize_phone live in app/wa/phones.py now -- a phone number is not a
+# Meta concept. Re-exported here, so every existing M.sender_e164 / M.canonicalize_phone caller
+# (and every test that patches through this module) keeps working unchanged.
+from .phones import canonicalize_phone, sender_e164  # noqa: F401
 
 
 class MetaError(RuntimeError):
@@ -45,31 +49,6 @@ def verify_webhook_challenge(mode, token, challenge, verify_token):
     if not verify_token or token != verify_token:
         return None
     return str(challenge)
-
-
-def sender_e164(sender):
-    """Meta sends the wa_id as bare digits; the harness keys threads on +digits."""
-    digits = re.sub(r"\D", "", str(sender or ""))
-    return "+" + digits if digits else ""
-
-
-def canonicalize_phone(raw, default_country_code=None):
-    """One identity per human: '0170…', '0049170…', '+49170…' and '49170…' all become '+49170…'."""
-    text = str(raw or "").strip()
-    if not text:
-        return ""
-    cc = re.sub(r"\D", "", default_country_code or C.DEFAULT_COUNTRY_CODE) or "49"
-    if text.startswith("+"):
-        digits = re.sub(r"\D", "", text)
-    elif text.startswith("00"):
-        digits = re.sub(r"\D", "", text[2:])
-    else:
-        digits = re.sub(r"\D", "", text)
-        if digits.startswith("0") and len(digits) >= 10:
-            digits = cc + digits[1:]
-        elif len(digits) <= 11 and not digits.startswith(cc):
-            digits = cc + digits
-    return "+" + digits if digits else ""
 
 
 def _default_transport(method, url, headers=None, data=None, timeout=C.HTTP_TIMEOUT_SEC):
