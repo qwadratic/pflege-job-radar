@@ -384,3 +384,57 @@ def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
     CR.execute(rid)
 
     assert [i for i in R.list_crawl_issues() if i["kind"] == "truncated"] == []
+
+
+def test_a_board_already_fetched_reaches_the_local_queue_even_if_the_run_never_finishes(fresh, monkeypatch, tmp_path):
+    """Live 2026-09-22, run 118: a systemd restart mid-run killed the process after 188 of 220
+    boards had already been fetched and logged. All 188 were lost -- data/inbox.sqlite had not
+    changed since the day before -- because execute() held every board's rows in memory and wrote
+    the local queue once, after the LAST board. Fixed via _flush_board, called right after each
+    board's own fetch instead of at the end of the run.
+
+    This test proves the fix the way the incident actually happened: raise partway through
+    execute(), after one board's rows would already have been fetched, and check the queue anyway."""
+    board2 = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [CLINIC]}
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {
+        "https://x.example/board1": {"kind": "vendor", "vendor": "wp_jobs", "clinics": [CLINIC]},
+        "https://x.example/board2": board2,
+    })
+
+    def two_boards(c, session=None):
+        return [{"kind": "jobposting", "payload": {"title": "Pflegefachkraft", "page": "https://x.example/board1/1"}}]
+
+    # VENDORS is a dict built at import time holding a direct function reference -- patching the
+    # module attribute crawl_wp_jobs does not change what VENDORS["wp_jobs"] points at.
+    import crawlers.vendor_adapters as VA
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", two_boards)
+
+    # _fetch_board catches its own vendor-call exceptions (that is its retry mechanism, not a bug),
+    # so a real process kill -- which does not discriminate -- has to be simulated between boards,
+    # at the one point execute() calls out to _flush_board directly. The first board's flush runs
+    # for real and must already be durable by the time the second one blows up.
+    real_flush = CR._flush_board
+    state = {"n": 0}
+
+    def flush_then_die(rows, obs, run_id, log):
+        state["n"] += 1
+        n = real_flush(rows, obs, run_id, log)
+        if state["n"] == 1:
+            raise RuntimeError("process killed right after the first board's flush completed")
+        return n
+
+    monkeypatch.setattr(CR, "_flush_board", flush_then_die)
+
+    run_id = R.create_run("all", "", "adapter", {"max_credits": 0}, ["1"], trigger="test")
+    with pytest.raises(RuntimeError):
+        CR.execute(run_id)
+
+    # The board that finished before the crash must already be on disk -- not lost with the
+    # in-memory accumulator the old code relied on.
+    queued = IB.pending(limit=10, path=str(tmp_path / "inbox.sqlite"))
+    assert len(queued) == 1
+    assert queued[0]["payload"]["title"] == "Pflegefachkraft"
+
+    archive = tmp_path / "crawl_output" / f"run_{run_id}.jsonl"
+    assert archive.exists()
+    assert "Pflegefachkraft" in archive.read_text(encoding="utf-8")

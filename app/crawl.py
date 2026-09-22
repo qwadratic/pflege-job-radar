@@ -452,6 +452,24 @@ def _enqueue_local(rows, run_id, log):
     return n
 
 
+def _flush_board(rows, obs, run_id, log):
+    """One board's rows -> disk immediately, not accumulated for a single end-of-run write.
+
+    execute() used to hold every board's rows in memory for the whole run and write once at the
+    very end (_write_jsonl + _enqueue_local on the full accumulated list). Both are append-only
+    (_write_jsonl opens "a"; IB.enqueue is a plain INSERT), so writing per board instead of once
+    is exactly as correct and costs one extra disk write per board. The reason to do it: a kill or
+    restart mid-run (systemd restart, an out-of-memory kill, a deploy) used to lose the ENTIRE
+    run's crawl, not just the board in flight when it died -- confirmed live 2026-09-22, run 118,
+    restarted at 188/220 boards in to pick up an unrelated queued run: nothing from those 188
+    boards had reached data/inbox.sqlite, because the flush that writes it had not run yet."""
+    batch = rows + [_obs_row(o) for o in obs]
+    if batch:
+        _write_jsonl(run_id, batch)
+        _enqueue_local(batch, run_id, log)
+    return len(batch)
+
+
 def _obs_row(o):
     """Wrap a seeded-adapter observation (softgarden/bite/umantis/pi_asp -- already fully classified:
     role_class, in_bavaria, source_id/source_ref, ...) as a local-queue row, so it is archived
@@ -754,6 +772,7 @@ def execute(run_id):
                 break
             rows, obs, err = _fetch_board(url, b)
             inbox_rows += rows; observations += obs
+            _flush_board(rows, obs, run_id, log)
             if err:
                 board_issues[url] = {"b": b, "error": err}
             time.sleep(POLITE_SLEEP)
@@ -774,6 +793,7 @@ def execute(run_id):
                     break
                 rows, obs, err = _fetch_board(url, board_issues[url]["b"])
                 inbox_rows += rows; observations += obs
+                _flush_board(rows, obs, run_id, log)
                 if err:
                     board_issues[url]["error"] = err
                 else:
@@ -821,6 +841,7 @@ def execute(run_id):
                 credits_used += res["credits_used"]
                 R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
                 inbox_rows += res["rows"]
+                _flush_board(res["rows"], [], run_id, log)
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits charged "
                     f"(API {res.get('credits_api')}, credits delta {res.get('credits_delta')}, tokens delta {res.get('tokens_delta')}, cap {gate['cap']})")
                 # A completed agent run whose OWN answer flags blocked_reason, or that plainly
@@ -858,17 +879,12 @@ def execute(run_id):
 
     n_rows = len(inbox_rows) + len(observations)
     R.update_run(run_id, n_rows=n_rows)
-    # Seeded adapters (softgarden/bite/umantis/pi_asp) already return finished observations rather
-    # than raw jobpostings; wrap them as queue rows too (_obs_row) so they are archived and
-    # drain-filtered exactly like every other row instead of going straight to EdgeSink unfiltered
-    # and unrecorded (2026-09-21 review: 21% of run 96 dropped this way with no trace).
-    queued_rows = inbox_rows + [_obs_row(o) for o in observations]
-    if queued_rows:
-        _write_jsonl(run_id, queued_rows)
+    # Every board's rows already reached disk as it was fetched (_flush_board, called from each of
+    # the three loops above) -- a kill mid-run now loses at most the one board in flight, not the
+    # whole run (confirmed live 2026-09-22, run 118: a restart at 188/220 boards lost all 188,
+    # because the old code wrote once here, after the last board, and never got there).
     refs = []
     try:
-        if queued_rows:
-            _enqueue_local(queued_rows, run_id, log)
         rc = _cli(["inbox"], log)     # drain both queues every run, not only when this run added rows --
                                        # a run with only observations (e.g. seeded adapters) must not
                                        # leave an earlier run's backlog stranded
@@ -877,7 +893,7 @@ def execute(run_id):
             # left stranded) was invisible both to this run's own status and to crawl_issues.
             errors += 1
             R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
-        if queued_rows:
+        if n_rows:
             # what the drain actually turned into an observation -- the rows that reached Postgres,
             # which is what link-cross and verify have anything to say about
             refs += IB.loaded_refs(run_id)
