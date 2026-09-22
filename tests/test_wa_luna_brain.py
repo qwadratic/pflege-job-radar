@@ -95,6 +95,20 @@ def test_out_of_scope_region_is_whole_word(luna):
     assert LB.named_non_bavaria_land("Baden-Württemberg bitte") == "baden-württemberg"
 
 
+def test_out_of_scope_shortcut_does_not_fire_when_bayern_is_also_named(luna):
+    """Real bug, found reading the full real candidate-history corpus (2026-09-22): 'In Bayern oder
+    in Baden-Württemberg' used to trip the out-of-scope shortcut on Baden-Württemberg alone, sending
+    the canned OUT_OF_SCOPE_REGION_DE text -- which never names the state that was just asked about
+    -- and silently recording the WRONG region, even though the candidate explicitly named Bayern,
+    the one region this board actually has. The shortcut must stand down and let the model (and its
+    REGION prompt rule) handle the mixed case instead."""
+    assert LB.named_non_bavaria_land("In Bayern oder in Baden-Württemberg wäre ich offen.") is None
+    assert LB.named_non_bavaria_land("Baden-Württemberg oder Bayern wäre Interessant") is None
+    assert LB.named_non_bavaria_land("Bayern und Hessen") is None
+    # unchanged: Bayern absent, the shortcut still fires
+    assert LB.named_non_bavaria_land("Baden-Württemberg wäre Interessant") == "baden-württemberg"
+
+
 def test_a_region_already_on_the_card_is_not_re_gated(luna):
     """Once Bayern is recorded, a later off-topic mention of another Land must not derail the chat."""
     luna["slots"]["region"] = "Bayern"

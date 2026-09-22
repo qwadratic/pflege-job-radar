@@ -1309,9 +1309,6 @@ def _approx_supported(marker, n, true):
         tol = _round_tolerance(n)
         return any(abs(e - n) <= tol for e in true)
     return n in true
-# The offer's two branches, in the words a German reply actually uses for them (offer.BRANCHES).
-_NARROW_RE = re.compile(r"eingrenz|einschr(ä|a)nk|genauer|konkreter|filter", re.I)
-_POOL_RE = re.compile(r"\ball(e|en)\b[^.!?\n]{0,40}\b(klinik\w*|h(ä|a)user|stellen)\b|\bpool\b", re.I)
 # Any link. The payload carries none (offer.py, tools_server), so one in a bubble came out of the
 # model's own memory -- Ivan's standing rule is that a candidate never gets a board link.
 #
@@ -1596,13 +1593,6 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
                 f"the reply offers {offered} positions while {remaining} more matched, without "
                 f"saying how many more -- COUNT (TASK-144, Ivan's rule (b)). Write the remainder next "
                 f"to a word like 'weitere' or 'insgesamt', using one of these numbers: {sorted(counts)!r}")
-        if branches and not (_NARROW_RE.search(text) and _POOL_RE.search(text)):
-            missing = [w for w, ok in (("narrow the search", _NARROW_RE.search(text)),
-                                       ("be put forward to all matching clinics (the pool)",
-                                        _POOL_RE.search(text))) if not ok]
-            raise ReplyRejected(
-                f"the offer turn does not put both branches to the candidate -- BRANCHES (TASK-144, "
-                f"Ivan's rule (b)): missing {missing!r}. Both go in the SAME message as the positions")
     # The EVIDENCE spelling, never the model's: what goes into the thread's grounded memory has to be
     # a name the board really has (reviewer F5).
     return list(dict.fromkeys(resolved[m] for m in resolved))

@@ -758,3 +758,165 @@ def test_a_question_the_preset_tools_do_not_cover_is_answered_through_the_fallba
     assert not re.search(r"(kein[e]?n?|null|0)\b[^.!?]{0,40}\bunbefristete", said, re.I), (
         f"0 rows from a column the board barely fills was turned into 'we have none': {transcript!r}")
     assert not re.search(r"alle[^.!?]{0,30}\bbefristet", said, re.I), transcript
+
+
+# --- TASK C (2026-09-22): non-standard candidate answers the bot was not ready for ---------------
+# Mined from a read of real candidate WhatsApp history the same way this whole file's patterns were
+# (module docstring above) -- anonymized, no verbatim message, no name/phone/email/CV copied. Two
+# patterns stood out: two or three Bavarian towns named together in one breath ("München oder
+# Nürnberg" -- the live UAT finding tonight that broke the dialog and drove the _resolve_city fix,
+# commit 8d3ac38; "München, Nürnberg, Augsburg" -- a live UAT thread the same night), and Bayern
+# named together with a neighboring, out-of-scope Bundesland ("Bayern oder Baden-Württemberg" --
+# this shape turned up MORE often in a small sample than two in-scope Bavarian cities together).
+# These three scenarios were written before FIX A's (open question vs. narrow/pool) diff landed in
+# this working tree -- only FIX B (ESCALATION: try, then ask, rather than escalate) was visible --
+# so they exercise best-understanding-of-intent behaviour, not a fixed prompt wording.
+
+_NUERNBERG_PLAN = (*_PLAN, ("Nürnberg", "Mittelfranken", "Innere Medizin", True))
+_NUERNBERG_BOARD_CLINICS = {f"Klinikum {city}" for city, *_ in _NUERNBERG_PLAN}
+_CLINIC_MENTION_RE = re.compile(r"Klinikum\s+[A-ZÄÖÜ][\wäöüÄÖÜß-]*")
+
+
+@pytest.fixture()
+def board_with_nuernberg(tmp_path, monkeypatch):
+    """Same shape as the ``board`` fixture, plus a Nürnberg posting. ``_resolve_city`` only knows
+    towns the (fixture) board actually has postings in (app/wa/luna/tools_server.py:
+    _cities_with_postings), so a real multi-city merge test needs Nürnberg to be a genuine fixture
+    town, not just a real one -- ``board``'s own five cities do not include it. Kept separate from
+    ``board``/``_PLAN`` rather than extending them in place, so this addition cannot change what any
+    of the pre-existing (untouched-by-this-task) scenarios see."""
+    rows = []
+    for i, (city, bezirk, dept, housing) in enumerate(_NUERNBERG_PLAN):
+        rows.append({"posting_id": i + 1, "title": f"Pflegefachkraft {dept}", "role_class": "pflegefachkraft",
+                     "department_hint": dept, "city": city, "clinic_town": city, "regierungsbezirk": bezirk,
+                     "clinic_id": _clinic_id(city), "clinic_name": f"Klinikum {city}", "employer": f"Klinikum {city}",
+                     "employment_types": ["vollzeit"], "enr_housing": housing, "verify_status": "live",
+                     "contract": None, "status": "open", "first_published": "2026-09-01", "fresh": True,
+                     "source_url": f"https://example.org/job/{i + 1}"})
+    open_by_city = Counter((city, bezirk) for city, bezirk, _, _ in _NUERNBERG_PLAN)
+    clinics = [{"clinic_id": _clinic_id(city), "name": f"Klinikum {city}", "town": city, "regierungsbezirk": bezirk,
+               "beds": 500, "jobs_open": n, "jobs_fresh": n, "jobs_live": n, "fachrichtungen": []}
+              for (city, bezirk), n in open_by_city.items()]
+    D._snap.update({"at": time.time(), "jobs": rows, "clinics": clinics,
+                    "by_clinic": {c["clinic_id"]: c for c in clinics}, "facets": {},
+                    "taxonomy": {}, "loading": False, "error": None})
+    monkeypatch.setattr(D, "refresh", lambda: D._snap)
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    use_fixture_board(monkeypatch, tmp_path)
+
+
+def _assert_no_invented_clinic(bubbles, known_clinics, transcript):
+    said = " ".join(bubbles)
+    mentioned = {re.sub(r"\s+", " ", m).strip() for m in _CLINIC_MENTION_RE.findall(said)}
+    invented = mentioned - known_clinics
+    assert invented == set(), f"named a clinic the fixture board does not have: {invented!r} {transcript!r}"
+
+
+def _assert_city_answer_does_not_stall(d, transcript):
+    assert d["bubbles"], f"the reply must not stall (empty bubbles): {transcript!r}"
+    assert d["bubbles"] != [LB.P.BLOCKED_REPLY_DE], f"grounding rejected the reply twice: {transcript!r}"
+    assert not d["slots"].get("_escalated"), (
+        f"a resolvable multi-city answer should not need a human: {transcript!r} "
+        f"reason={d['slots'].get('_escalate_reason')!r}")
+    assert LB.requirement_scoreboard(d["slots"])["city_or_department"] == "satisfied", (
+        f"the funnel did not move forward off the city gate: {transcript!r}")
+
+
+def test_a_candidate_naming_two_bavarian_cities_with_oder_does_not_stall_the_funnel(board_with_nuernberg):
+    """Live UAT finding, 2026-09-22 (commit 8d3ac38): a candidate answering the city question with
+    two Bavarian towns joined by 'oder' broke the dialog -- Luna's reply named a clinic count no
+    tool call actually backed (count_postings/search_postings had no evidence for two towns at
+    once), the grounding checker rejected it as invented, and two straight rejections escalated the
+    thread. Fixed at the resolution layer (_resolve_city, tools_server.py), which now splits and
+    resolves each town so one call covers both. Card: qualification already settled (urkunde), city
+    still the one open gate -- exactly the point in the funnel where the live thread broke."""
+    inbound = "München oder Nürnberg"
+    d = LB.turn(inbound, {"slots": dict(_OLENA_CARD), "asked": []})
+    transcript = [("candidate", inbound), ("luna", d["bubbles"])]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    _assert_city_answer_does_not_stall(d, transcript)
+    _assert_no_invented_clinic(d["bubbles"], _NUERNBERG_BOARD_CLINICS, transcript)
+    calls = _tool_calls(names_only=False)
+    searched = [c for c in calls if c["tool"] in ("search_postings", "count_postings",
+                                                  "search_postings_with_housing", "list_clinics",
+                                                  "list_clinics_with_housing")]
+    assert searched, f"the city answer must be checked against the live board, not guessed: {transcript!r}"
+    assert any("nürnberg" in json.dumps(c["args"], ensure_ascii=False).lower() for c in searched), (
+        f"Nürnberg never reached a real tool call: {calls!r}")
+
+
+def test_a_candidate_naming_three_bavarian_cities_does_not_stall_the_funnel(board_with_nuernberg):
+    """Same pattern as the two-city case, one town further -- a live UAT thread the same night
+    (2026-09-22) had a candidate name three Bavarian towns in one breath. Same assertions: grounded,
+    no escalation, no stall, the city gate actually moves."""
+    inbound = "München, Nürnberg, Augsburg"
+    d = LB.turn(inbound, {"slots": dict(_OLENA_CARD), "asked": []})
+    transcript = [("candidate", inbound), ("luna", d["bubbles"])]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    _assert_city_answer_does_not_stall(d, transcript)
+    _assert_no_invented_clinic(d["bubbles"], _NUERNBERG_BOARD_CLINICS, transcript)
+    calls = _tool_calls(names_only=False)
+    searched = [c for c in calls if c["tool"] in ("search_postings", "count_postings",
+                                                  "search_postings_with_housing", "list_clinics",
+                                                  "list_clinics_with_housing")]
+    assert searched, f"the city answer must be checked against the live board, not guessed: {transcript!r}"
+    named_args = " ".join(json.dumps(c["args"], ensure_ascii=False).lower() for c in searched)
+    assert "nürnberg" in named_args, f"Nürnberg never reached a real tool call: {calls!r}"
+
+
+_BAYERN_SCOPE_RE = re.compile(r"\bnur\b|\bausschließlich\b|\blediglich\b|\bbeschränk", re.I)
+
+
+def test_a_candidate_naming_bayern_and_an_out_of_scope_land_gets_an_honest_scope_answer(board):
+    """Mined 2026-09-22 from real candidate history: naming Bayern together with a neighboring,
+    out-of-scope Bundesland in one breath ('Bayern oder Baden-Württemberg') turned up MORE often in
+    a small sample than two in-scope Bavarian cities together. Region is already Bayern on the card
+    (an earlier turn settled it), so the harness's own code-level out-of-scope shortcut -- which
+    only fires while region is still unset, app/wa/luna_brain.py:_region_shortcut_applies -- does
+    not swallow this turn before the model ever sees it: the model itself has to say plainly the
+    board only covers Bavaria, never silently drop the other Land, keep the Bavaria funnel moving,
+    and never escalate or go silent over it."""
+    inbound = "Bayern oder Baden-Württemberg wäre für mich beides denkbar, am liebsten was Zentrales."
+    d = LB.turn(inbound, {"slots": dict(_OLENA_CARD), "asked": []})
+    transcript = [("candidate", inbound), ("luna", d["bubbles"])]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    assert d["bubbles"], f"the reply must not stall (empty bubbles): {transcript!r}"
+    assert not d["slots"].get("_escalated"), (
+        f"an out-of-scope Land named alongside Bayern should not need a human: {transcript!r} "
+        f"reason={d['slots'].get('_escalate_reason')!r}")
+    assert d["slots"].get("region") == "Bayern", (
+        f"region must not be silently overwritten by the other, out-of-scope Land: {transcript!r}")
+    said = " ".join(d["bubbles"])
+    sentences = _SENTENCE_SPLIT_RE.split(said)
+    scoped = [s for s in sentences if re.search(r"bayer", s, re.I) and _BAYERN_SCOPE_RE.search(s)]
+    assert scoped, f"the reply never plainly said the board is Bavaria-only: {transcript!r}"
+    assert "?" in said, f"the reply must still move the Bavaria funnel forward, not just state scope: {transcript!r}"
+
+
+# --- Group 8: real, non-standard location answers (TASK-131 adjacent, 2026-09-22) --------------
+# Live UAT finding: "München oder Nürnberg" stalled a real thread (the model named a fabricated
+# clinic count, the grounding checker rejected it, two rejections running escalated to a human).
+# The two-city, three-city and Bayern-plus-out-of-scope-state shapes are covered above (Group/TASK
+# C, this same file) with tighter assertions (actual tool-call args, requirement_scoreboard gate
+# state). This one is unique to this section: the single commonest real answer of all to a location
+# question is no preference at all ("egal, wo").
+
+
+def test_no_location_preference_at_all_still_moves_the_funnel_forward(board):
+    """The single commonest real answer to a location question: no preference at all. Must not
+    stall the funnel waiting for a preference that was already, plainly, given."""
+    results = _run([
+        "Hallo, ich suche einen Pflegejob mit Wohnung.",
+        "Ja, ich habe die Urkunde schon, ist anerkannt.",
+        "Ist mir eigentlich egal, wo.",
+    ])
+    final = results[-1]
+    transcript = [(r["bubbles"]) for r in results]
+    print(json.dumps(transcript, ensure_ascii=False, indent=1))
+    assert not final["slots"].get("_escalated"), (
+        f"'egal, wo' is a complete answer, not a reason to escalate: "
+        f"{final['slots'].get('_escalate_reason')!r} {transcript!r}")
+    said = " ".join(_all_bubbles(results))
+    assert not re.search(r"welche stadt|in welcher stadt|welche region", said, re.I), (
+        f"the funnel re-asked for a preference the candidate already said they don't have: {transcript!r}")

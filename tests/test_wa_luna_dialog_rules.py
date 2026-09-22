@@ -484,6 +484,46 @@ def test_the_system_prompt_states_what_the_code_now_checks():
     assert "http" not in P.BLOCKED_REPLY_DE, "the holding reply is a reply, not a link"
 
 
+def test_escalation_defaults_to_attempting_an_answer_not_calling_a_human():
+    """Ivan 2026-09-22, right after 'München oder Nürnberg' broke a live dialog: escalation must stay
+    a rare last resort, never an easy default for something the model could try or ask about instead."""
+    rule = next(r for r in P.RULES if r.startswith("ESCALATION:"))
+    assert "the default is to ATTEMPT an answer" in rule
+    assert "ASK A CLARIFYING QUESTION" in rule
+    assert "never as a substitute for trying" in rule
+    # still names the genuine-unknown cases escalation IS for, unchanged in substance
+    assert "pets, visa specifics, a policy question" in rule
+    assert "unreadable" in rule and "attachment" in rule
+    assert "never for a short typo, timing or weekday answer" in rule
+
+
+def test_tools_rule_allows_several_calls_in_one_turn_merged_by_the_model():
+    """Several tool calls in one turn, merged by the model, is allowed and expected when one call's
+    parameters cannot cover every dimension the candidate named -- not a reason to escalate."""
+    rule = next(r for r in P.RULES if r.startswith("TOOLS (mandatory"))
+    assert "MORE THAN ONE TOOL CALL, SAME TURN" in rule
+    assert "Make every call you need, IN THE SAME TURN, and combine the results yourself" in rule
+    assert "never a reason to escalate or to ask permission first" in rule
+    # honest about what is ALREADY solved at the tool level (_resolve_city, same-day fix) vs what
+    # this guidance is actually for
+    assert "Multi-city is already solved for you INSIDE one call, not an example of this" in rule
+    assert "München oder Nürnberg" in rule
+    assert "department, employment_type, role_class" in rule
+
+
+def test_region_rule_answers_the_bavaria_half_instead_of_escalating_or_dropping_the_rest():
+    """A candidate naming Bayern together with a Bundesland the board has no data for at all
+    (Baden-Württemberg, Hessen) must get an honest, complete answer for the Bavaria half -- never a
+    silently dropped other state, and never an escalation instead of answering."""
+    rule = next(r for r in P.RULES if r.startswith("REGION:"))
+    assert "this board covers Bavaria (Bayern) only" in rule
+    assert "Bayern oder Baden-Württemberg" in rule
+    assert "never silently drop the other Bundesland without acknowledging it was asked about" in rule
+    assert "never a reason to escalate instead of answering" in rule
+    # grounds the rule in the real, verified fact: the multi-town fix cannot help here
+    assert "there is no board town to resolve for the other Bundesland at all" in rule
+
+
 # --- wiring the CV matcher needs (TASK-145 lives in tools_server.py; this half is luna_brain's) ---
 
 def test_the_tools_server_is_told_whose_cv_to_match(small, monkeypatch):
@@ -764,19 +804,42 @@ def test_naming_several_positions_without_saying_how_many_more_is_rejected(hundr
                               remaining=offer["remaining_clinics"])) == OF.OFFER_LIMIT
 
 
-def test_an_offer_turn_without_both_branches_is_rejected(hundred):
-    """Audit D: a reply naming five with neither branch offered was accepted. Both go in the SAME
-    message as the positions (Ivan's rule (b))."""
+def test_an_offer_turn_without_branch_wording_is_no_longer_rejected(hundred):
+    """Ivan, 2026-09-22: the forced narrow/pool branch menu is gone -- BRANCHES stopped blocking, so
+    a reply naming five with neither branch phrasing (audit D's old failure case) now passes."""
     offer = LB.market_snapshot(READY)["offer"]
     named = [p["clinic"] for p in offer["positions"]]
     counts = {offer["clinics_total"], offer["remaining_clinics"]}
     body = "Passend sind: " + ", ".join(named) + f". Es gibt {offer['remaining_clinics']} weitere."
-    with pytest.raises(AssertionError, match="BRANCHES"):
-        GR.check_reply([body], set(named), counts=counts, remaining=offer["remaining_clinics"],
-                       branches=True)
+    assert len(GR.check_reply([body], set(named), counts=counts, remaining=offer["remaining_clinics"],
+                              branches=True)) == OF.OFFER_LIMIT
     both = body + " Wollen Sie eingrenzen, oder soll ich Sie allen passenden Kliniken vorschlagen?"
     assert GR.check_reply([both], set(named), counts=counts, remaining=offer["remaining_clinics"],
                           branches=True)
+
+
+def test_an_open_question_offer_turn_is_not_rejected_and_count_is_still_enforced(hundred):
+    """TASK (2026-09-22, Ivan): the open question replacing the forced branch menu carries no
+    narrow/pool wording at all and must not be rejected for that. The remainder/COUNT check right
+    above BRANCHES in the same rule is untouched: missing the number of how many more matched, or
+    stating a wrong one, still fails the turn."""
+    offer = LB.market_snapshot(READY)["offer"]
+    named = [p["clinic"] for p in offer["positions"]]
+    remainder = offer["remaining_clinics"]
+    counts = {offer["clinics_total"], remainder}
+    open_q = ("Passend sind: " + ", ".join(named) + f". Es gibt {remainder} weitere. "
+              "Was ist Ihnen bei der Auswahl besonders wichtig?")
+    assert len(GR.check_reply([open_q], set(named), counts=counts, remaining=remainder,
+                              branches=True)) == OF.OFFER_LIMIT
+    missing_remainder = "Passend sind: " + ", ".join(named) + ". Was ist Ihnen dabei wichtig?"
+    with pytest.raises(AssertionError, match="COUNT"):
+        GR.check_reply([missing_remainder], set(named), counts=counts, remaining=remainder,
+                       branches=True)
+    wrong_remainder = ("Passend sind: " + ", ".join(named) + ". Es gibt 999 weitere. "
+                        "Was ist Ihnen dabei wichtig?")
+    with pytest.raises(AssertionError, match="COUNT"):
+        GR.check_reply([wrong_remainder], set(named), counts=counts, remaining=remainder,
+                       branches=True)
 
 
 def test_a_bubble_carrying_a_board_url_is_rejected(small):

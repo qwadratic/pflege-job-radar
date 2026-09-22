@@ -177,10 +177,23 @@ def _fold(text):
     return str(text or "").casefold()
 
 
+_BAYERN_RE = re.compile(r"(?<![a-zäöü0-9-])(bayern|bavaria)(?![a-zäöü0-9-])", re.I)
+
+
 def named_non_bavaria_land(text):
     """The out-of-scope Bundesland named in this message, or None. Whole-word (and not glued to
-    a hyphen either), so 'Hessendorf' and 'NRW-Fan-Artikel' do not fire on 'Hessen'/'NRW'."""
+    a hyphen either), so 'Hessendorf' and 'NRW-Fan-Artikel' do not fire on 'Hessen'/'NRW'.
+
+    None when Bayern is ALSO named in the same message (real bug, TASK-131 adjacent, 2026-09-22 --
+    found by reading the full real candidate-history corpus): 'In Bayern oder in Baden-Württemberg'
+    used to trip this shortcut on 'Baden-Württemberg' alone, sending the canned OUT_OF_SCOPE_REGION_DE
+    text (which never even names the state that WAS just asked about) and silently setting
+    card.region to the wrong Land, even though the candidate explicitly included Bayern -- the one
+    region this board actually has. The REGION prompt rule (app/wa/luna/prompts.py) exists precisely
+    for this mixed case and needs the model to actually run, not this shortcut intercepting first."""
     low = _fold(text)
+    if _BAYERN_RE.search(low):
+        return None
     for land in NON_BAVARIA_LAENDER:
         if re.search(r"(?<![a-zäöü0-9-])" + re.escape(land) + r"(?![a-zäöü0-9-])", low):
             return land
