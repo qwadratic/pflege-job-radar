@@ -978,6 +978,58 @@ def test_a_word_that_names_several_real_towns_asks_which_instead_of_picking_one(
         ["Neustadt an der Aisch"]
 
 
+# --- live UAT finding 2026-09-22: a candidate naming two towns in one breath must reach both -------
+# 'München oder Nürnberg' broke the dialog live: _resolve_city resolved (or silently dropped to) only
+# ONE of the two towns, so a truthful combined count had no evidence behind it and the grounding
+# checker's NO INVENTION rule rejected the reply as if it named an unknown clinic.
+@pytest.mark.parametrize("asked", [
+    "München oder Augsburg", "München, Augsburg", "München und Augsburg",
+    "München or Augsburg", "München/Augsburg", "München; Augsburg",
+])
+def test_a_candidate_naming_two_towns_in_one_breath_reaches_both(tmp_path, monkeypatch, asked):
+    board(tmp_path, monkeypatch)
+    out = TS.search_postings(city=asked)
+    assert out["town"] == {"asked": asked, "board_spellings": ["Augsburg", "München"], "matched_as": "multi"}
+    assert out["total"] == 3, "München's 2 postings plus Augsburg's 1 -- neither silently dropped"
+    assert {r["city"] for r in out["shown"]} == {"München", "Augsburg"}
+
+
+def test_count_postings_sums_across_two_named_towns(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    counted = TS.count_postings(city="München oder Augsburg")
+    assert counted["postings"] == 3 and counted["clinics"] == 2 and counted["cities"] == 2
+    assert counted["town"] == {"asked": "München oder Augsburg",
+                               "board_spellings": ["Augsburg", "München"], "matched_as": "multi"}
+
+
+def test_a_single_town_whose_own_board_spelling_contains_a_split_separator_is_not_split(tmp_path,
+                                                                                        monkeypatch):
+    """'Neuburg/Donau' is one town's own board spelling (the _audit_board fixture, TASK-145) -- it must
+    resolve whole, on the first attempt, never reach the multi-city split fallback."""
+    _audit_board(tmp_path, monkeypatch)
+    out = TS.search_postings(city="Neuburg/Donau")
+    assert out["town"]["matched_as"] == "town", "resolved as ONE town, not split on its own '/'"
+    assert out["total"] == 2
+
+
+def test_one_bad_town_in_a_pair_names_itself_rather_than_silently_answering_for_the_other(tmp_path,
+                                                                                          monkeypatch):
+    board(tmp_path, monkeypatch)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("search_postings", {"city": "München oder Nichtstadt"}))
+    said = str(raised.value)
+    assert "'Nichtstadt' is not a town" in said, said
+
+
+@pytest.mark.parametrize("word", ["Landshut", "Fundament", "Nordbayern"])
+def test_the_split_pattern_is_word_bounded_not_a_bare_substring_match(word):
+    """Each of these carries a separator word mid-string ('Landshut' has 'and', 'Fundament' has 'und',
+    'Nordbayern' has 'or') without being one -- none of these may be torn apart looking for a second
+    town that was never named. A direct regex check: no board or ToolError machinery needed to prove
+    this, and 'Landshut' is a real Bavarian town this exact bug would otherwise have broken."""
+    assert TS._MULTI_CITY_SPLIT_RE.split(word) == [word]
+
+
 def test_a_posting_is_never_offered_for_a_town_other_than_the_one_its_own_ad_names(tmp_path, monkeypatch):
     """Live 2026-09-21: 53 of the 116 postings a search for Ansbach returned were in Bruckberg,
     Himmelkron, Obernzenn or Erlangen -- filed under a clinic whose registry town is Ansbach. Rule (a):

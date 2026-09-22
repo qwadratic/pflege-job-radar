@@ -235,7 +235,15 @@ def _registry_towns():
     return {(c.get("town") or "").strip() for c in D.clinics() if (c.get("town") or "").strip()}
 
 
-def _resolve_city(word, known, what):
+#: Splits a candidate's multi-town phrase into individual town words -- ONLY tried as a fallback
+#: after the whole string has already failed to resolve as one town (see _resolve_city), so a real
+#: single-spelling town that happens to contain one of these ('Neuburg/Donau', 'Bad Kissingen') is
+#: never touched: it always resolves on the first attempt and this pattern is never reached for it.
+_MULTI_CITY_SPLIT_RE = re.compile(
+    r"\s*(?:,|;|/|\+|&|\boder\b|\bund\b|\bor\b|\band\b|\bbzw\.?\b|\bsowie\b)\s*", re.I)
+
+
+def _resolve_one_city(word, known, what):
     """The candidate's own word -> every board spelling of the ONE town it names, or a ToolError.
 
     -> app/data.py:town_spellings' dict ({asked, spellings, matched}), which is what the tool hands back
@@ -275,6 +283,51 @@ def _resolve_city(word, known, what):
                        if near else "No board town resembles it (the board is Bavaria only). ")
                     + "list_cities_with_postings names the towns that do have postings. Internal tool note, "
                       "never quote it to the candidate.")
+
+
+def _resolve_city(word, known, what):
+    """The candidate's own word -> every board spelling of every town it names, or a ToolError.
+
+    A candidate naming two or more towns in one breath ('München oder Nürnberg', 'Augsburg, Ingolstadt')
+    is common and the board genuinely has postings in both -- TASK-131-adjacent live finding, 2026-09-22:
+    a candidate offered 'München oder Nürnberg' broke the dialog. Before this fix the whole phrase went
+    straight to _resolve_one_city, whose own phrase-fallback (slots.read_city, meant for 'in München
+    bitte') scans the WHOLE known-town list for any embedded match and keeps the LONGEST one -- for a
+    two-town phrase that finds both towns embedded and silently keeps only one of them (whichever
+    board spelling is longer), so the reply's evidence covers a single town while the candidate asked
+    about two, and a truthful combined figure has no evidence behind it at all.
+
+    A whole string that IS ITSELF one of the board's own literal spellings resolves first, unsplit --
+    checked by folded membership in ``known`` directly, not by ``D.town_spellings``'s own status: that
+    function tokenises on the same punctuation this splits on, and answered 'resolved' -- spellings
+    truncated to the FIRST town only -- for both 'München, Augsburg' (the comma reads as no qualifier
+    at all) and 'München/Augsburg' (the slash reads as a qualifier, the shape a real single-town
+    spelling like 'Neuburg/Donau' uses), which would have made those two exact separators silently
+    keep answering for one town forever. Folded membership has no such tokeniser to fool: 'Neuburg/
+    Donau' resolves here because it is, verbatim, a board spelling; 'München/Augsburg' is not, so it
+    reaches the split below. Every existing single-city caller keeps its exact behaviour either way.
+
+    Only when the whole string is not itself a known spelling AND it contains one of this module's own
+    multi-town separators is the phrase split and each piece resolved through the FULL
+    _resolve_one_city (phrase-fallback included, so 'die Stadt München' still resolves as its own
+    piece). Every piece has to resolve for the split to succeed: one bad or ambiguous piece surfaces
+    THAT piece's own named error rather than silently answering for only the town that did resolve. No
+    separator found -- falls through to _resolve_one_city on the whole original string, unchanged from
+    before this fix (a bare ambiguous base town like the five Neustadts lands here, exactly as before).
+
+    -> the same {asked, spellings, matched} shape every caller already reads, 'matched' set to 'multi'
+    on a split and 'spellings' the union of every resolved town's own board spellings, so _town_rows's
+    existing `any(... for s in spellings)` matching includes a posting in EITHER town with no change to
+    _town_rows, _job_filters, _job_rows or count_postings -- and grounding.py's replay (which re-runs
+    this exact call) then recomputes the same, correct, combined count as evidence."""
+    if SL._fold(word) in {SL._fold(k) for k in known}:
+        return _resolve_one_city(word, known, what)
+    parts = [p for p in _MULTI_CITY_SPLIT_RE.split(word) if p.strip()]
+    if len(parts) >= 2:
+        resolved = [_resolve_one_city(p, known, what) for p in parts]  # first ToolError names its own piece
+        spellings = sorted({s for r in resolved for s in r["spellings"]})
+        return {"status": "resolved", "asked": word, "spellings": spellings, "matched": "multi"}
+    return _resolve_one_city(word, known, what)
 
 
 def _town_rows(rows, town):
