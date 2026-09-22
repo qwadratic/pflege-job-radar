@@ -43,15 +43,38 @@ ORDER OF OPERATIONS IN ``send``, and every step of it is load-bearing:
 """
 from __future__ import annotations
 
+import pathlib
 import time
 from contextlib import ExitStack
 from datetime import datetime, timezone
 
 from . import driver as D
 from . import errors as E
+from . import identity as ID
 from . import ledger as L
 
+#: The route ``bridge/server.py`` answers the bytes on. Named here, not imported from ``server.py``
+#: (which already imports this module -- a cross-import would be circular), because
+#: ``media_metadata`` has to say where the bytes live and the two files are one contract.
+MEDIA_RAW_PATH_SUFFIX = "/raw"
+
 VERSION = "0.1.0"
+
+#: How long ``auto_match_media`` waits for huawei01.lock (TASK-131 round 6). This is UI work, the
+#: same class of work a send is -- it waits for the phone as long as a send would, not the
+#: notification watcher's short 5 s (which does not take the lock at all any more -- see
+#: ``drain_inbound``). A busy phone delays a match; it must never make one give up and guess.
+IDENTITY_LOCK_TIMEOUT_SEC = 180.0
+#: How wide a net "candidates worth opening a chat for" casts, in EITHER direction from the file's
+#: own stat mtime. Purely a cost control on how many threads a cycle opens -- never a filter that
+#: can exclude the only correct candidate: bridge/executor.py::Executor._narrow_by_time falls back
+#: to the full candidate list rather than ever returning an empty one.
+IDENTITY_TIME_WINDOW_SEC = 24 * 3600.0
+#: Kinds whose WhatsApp bubble draws a comparable attribute at all (audio's duration, a document's
+#: filename/size) -- see bridge/adb_driver.py's own docstring: an image or video bubble draws
+#: neither. Used only to decide whether a SOLE candidate's own thread is worth opening to check for
+#: a contradiction (blocker B2); irrelevant to the multi-candidate tie-break, which always reads.
+EVIDENCE_BEARING_KINDS = frozenset({"audio", "document"})
 
 #: The contract's key prefix (plan section 4). The executor validates, it does not mint: the key is
 #: derived on our VPS from phone|turn_key|action|bubble_index (TASK-114) and an executor that could
@@ -86,10 +109,18 @@ class Executor:
         self.inbound_unresolved = 0
         self.inbound_last_at = None
         self.watcher = None
+        # Set by server.main when the media watcher starts (TASK-131). Same reason as ``watcher``
+        # above: an empty media backlog is what a quiet rail looks like AND what a dead media
+        # watcher looks like, and only a heartbeat tells them apart.
+        self.media_watcher = None
         # Set by server.main when the broadcast runner starts (TASK-147). Same reason as the
         # watcher's counters: a run that is not moving and a runner that is dead produce the same
         # queue, and only a heartbeat tells them apart.
         self.broadcast_runner = None
+        # Set by server.main when the identity watcher starts (TASK-131 round 6). Same reason again:
+        # an empty unresolved queue is what a fully-caught-up rail looks like AND what a dead
+        # matcher looks like.
+        self.identity_watcher = None
 
     # --- POST /v1/messages ---------------------------------------------------------------------
     def send(self, req):
@@ -283,25 +314,28 @@ class Executor:
                             f"{attempted_clock}, none matching this body"}
 
     # --- GET /v1/outbox --------------------------------------------------------------------------
-    def drain_inbound(self, *, lock_timeout=D.LOCK_TIMEOUT_SEC):
+    def drain_inbound(self):
         """Phone -> ledger outbox. -> {"stored", "seen", "unresolved"}.
 
-        The HTTP pull reads the table; it never touches the handset. Taking the flock here is what
-        makes the watcher and a send queue instead of racing, and ``lock_timeout`` is short for the
-        watcher so a long send does not stall a poll cycle -- a missed cycle is picked up by the
-        next one, because the notification shade still holds the message.
+        NO LOCK (TASK-131 round 6, fixing the root of half the decoy attributions this task's own
+        brief was written from). ``pull_inbound`` is ``dumpsys notification --noredact`` -- a pure
+        read that touches no UI -- and holding ``huawei01.lock`` for it was never load-bearing, only
+        inherited from the send path's own discipline. The old shape skipped an entire watcher cycle
+        whenever a send held the lock (90-150 s, executor.py's own note on that), so a notification
+        that arrived mid-send was simply missed until the next 5 s poll saw the shade still holding
+        it -- usually true, but not always (a second message inside that window, overwritten before
+        the next poll, was the actual loss). Now this call can never be skipped by a busy phone: it
+        always runs, and the durable queue it appends to (``ledger.append_inbound``, a plain sqlite
+        write, no lock either) is drained separately by whatever does the UI work
+        (``Executor.auto_match_media``, ``bridge/watcher.py::IdentityWatcher``), which DOES wait for
+        the lock, as long as it needs to.
 
         An inbound whose counterparty the handset cannot name is NOT put in the outbox: without a
         number there is no ``from`` for the envelope and the item would wedge the cursor forever.
         It is journalled and counted instead, and ``/v1/health`` carries the count.
-
-        The lock failure is NOT converted to a refusal here, unlike ``send``: this is not an HTTP
-        request, it is the watcher's own loop, and ``watcher.cycle`` counts a ``D.PhoneBusy`` as a
-        skipped cycle rather than an incident. The shade still holds the message.
         """
         now = self.clock()
-        with self.driver.lock(timeout=lock_timeout):
-            messages, unresolved = self.driver.pull_inbound()
+        messages, unresolved = self.driver.pull_inbound()
         return self.record_inbound(messages, unresolved, now)
 
     def record_inbound(self, messages, unresolved, now):
@@ -326,6 +360,222 @@ class Executor:
                 "cursor": events[-1]["id"] if events else int(after),
                 "backlog": self.ledger.inbound_backlog()}
 
+    # --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-131) -------------------------------------
+    def media_metadata(self, media_id):
+        """-> {"url", "mime_type", "filename", "size"} for a pulled file, or raise 404.
+
+        ``url`` is a PATH, not an absolute URL: this executor has no way to know which local port
+        the VPS's own ssh tunnel maps it to (today 18793, per ``docs/whatsapp.md`` -- and it must
+        stay free to change without a redeploy of this side). ``app/wa/bridge.Client.media_url``
+        resolves a relative answer against its own ``base_url`` before handing it back, the same way
+        every other route on this rail is already addressed by that client.
+        """
+        row = self.ledger.media_file(media_id)
+        if row is None:
+            raise E.media_not_found(f"no media was ever pulled for id {media_id!r}")
+        return {"ok": True, "url": f"/v1/media/{media_id}{MEDIA_RAW_PATH_SUFFIX}",
+                "mime_type": row["mime_type"], "filename": row["filename"], "size": row["size"]}
+
+    def media_bytes(self, media_id):
+        """-> (blob, mime_type). A recorded row whose file is missing from disk is a LOUD error
+        (executor_error, 500) rather than empty bytes read as a document with nothing in it --
+        the failure mode this task's own acceptance criteria name explicitly."""
+        row = self.ledger.media_file(media_id)
+        if row is None:
+            raise E.media_not_found(f"no media was ever pulled for id {media_id!r}")
+        path = pathlib.Path(row["local_path"])
+        try:
+            blob = path.read_bytes()
+        except OSError as exc:
+            raise E.executor_error(
+                f"media {media_id!r} is recorded at {path} but the file could not be read: {exc}"
+            ) from exc
+        return blob, row["mime_type"]
+
+    # --- GET /v1/media, POST /v1/media/attach: the queue and the human escape hatch (TASK-131
+    # round 5, decision-9 2026-09-22: automatic attribution removed) ------------------------------
+    def unresolved_media(self):
+        """-> every pulled file nobody has attached yet, oldest first, with what a human needs to
+        decide and nothing that could identify who it might be about: kind, size, age, the handset
+        folder it came from, and which threads plausibly relate to it in that period (a hint, never
+        a decision -- ``bridge/ledger.py::media_related_threads``). A filename (often the sender's
+        own real name) or a phone is exactly the identity question ``attach_media`` below exists for
+        a HUMAN to settle, not something this listing should leak while doing it."""
+        now = self.clock()
+        files = [self._queue_entry(row, now) for row in self.ledger.media_queue()]
+        return {"ok": True, "at": L.utc(now), "count": len(files), "files": files}
+
+    def _queue_entry(self, row, now):
+        around = row["mtime"]
+        if not around:
+            try:
+                around = datetime.fromisoformat(row["pulled_at"].replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                around = None
+        return {"queue_id": row["queue_id"], "media_id": row["media_id"], "kind": row["kind"],
+               "size": row["size"], "source_dir": row["source_dir"], "pulled_at": row["pulled_at"],
+               "age_sec": L.age_sec(row["pulled_at"], now),
+               "related_threads": self.ledger.media_related_threads(row["kind"], around),
+               # TASK-131 round 6 ALSO FIX: >1 means this file's bytes were pulled more than once
+               # (a resend, or two people sending one identical file) -- visible on the row itself,
+               # not just folded into whichever pull got attached or stored first.
+               "content_pull_count": row["content_pull_count"]}
+
+    def attach_media(self, queue_id, phone):
+        """THE human escape hatch: tie one queued file to ``phone``'s own thread, by hand. -> the
+        executor's own report. Goes through ``bridge/ledger.py::attach_media`` -- THE SAME CALL
+        (``link_media``) an automatic link used to make, before round 5 removed automatic linking
+        entirely -- so the document reaches the card, gets classified, and a voice note reaches
+        transcription exactly as before.
+
+        The operator names the phone directly: on this rail that is not a shortcut around the
+        identity question, it IS the answer to it -- a human, using evidence off this machine (no
+        signal on this rail proves it; see ``bridge/media.py``'s own module docstring). This works
+        for every queued file the same way, including one pulled before this ledger ever recorded an
+        inbound row for it at all (the six files already on the live rail when this round shipped):
+        there is no "pending message" this has to find first any more, only the file id and the
+        phone a human is naming.
+        """
+        now = self.clock()
+        try:
+            inbound_key = self.ledger.attach_media(queue_id, phone, now=now)
+        except KeyError as exc:
+            raise E.media_not_found(f"no queued file with id {queue_id!r}") from exc
+        except ValueError as exc:
+            raise E.already_attached(str(exc), queue_id=queue_id) from exc
+        row = self.ledger.media_queue_row(queue_id)
+        self.ledger.note(now, "media_attached", None, thread=L.thread_tag(phone),
+                         queue_id=queue_id, media_id=row["media_id"], kind=row["kind"])
+        return {"ok": True, "at": L.utc(now), "queue_id": queue_id, "media_id": row["media_id"],
+               "kind": row["kind"], "thread": L.thread_tag(phone), "inbound_id": inbound_key}
+
+    # --- automatic identity matching (TASK-131 round 6, Ivan's ruling 2026-09-22) ------------------
+    def auto_match_media(self, *, lock_timeout=IDENTITY_LOCK_TIMEOUT_SEC):
+        """Work the unresolved queue, attributing what ``bridge/identity.py::decide`` can decide on
+        what a file IS. -> {"attached", "weak"}. Never raises: a driver failure reading one
+        candidate's thread is journalled and that row is left for the next cycle, the same
+        never-raises contract every watcher cycle here already keeps.
+
+        Called by ``bridge/watcher.py::IdentityWatcher`` on its own schedule, never by
+        ``InboundWatcher`` or ``MediaWatcher`` -- this is the UI work bridge/watcher.py's own
+        module docstring describes as a separate job from draining the shade, and the only one of
+        the three that ever takes ``huawei01.lock``.
+        """
+        now = self.clock()
+        attached = weak = 0
+        for row in self.ledger.media_queue(auto_only=True):
+            candidates = self.ledger.unlinked_media_candidates(row["kind"])
+            if not candidates:
+                continue      # nothing of this kind has arrived yet -- retried next cycle
+            evidence = None
+            # Evidence is read whenever it could change the decision: always among several
+            # candidates (the tie-break), and ALSO for a sole candidate when this file's own kind
+            # can carry a comparable bubble attribute at all (audio's duration, a document's
+            # filename/size) -- round 6's own bug (Ivan's brief, blocker B2): a sole candidate was
+            # unconditionally "strong" even when its own thread's bubble read a flatly different
+            # duration, because evidence was never even looked at for that case. An image or video
+            # bubble draws neither today (bridge/adb_driver.py's own docstring), so reading one
+            # would only cost a chat open for nothing -- skipped, exactly as before, for those kinds.
+            if len(candidates) > 1 or row["kind"] in EVIDENCE_BEARING_KINDS:
+                narrowed = self._narrow_by_time(candidates, row["mtime"]) if len(candidates) > 1 \
+                    else candidates
+                try:
+                    evidence = self._read_evidence_for(narrowed, lock_timeout=lock_timeout)
+                except (D.DriverError, E.BridgeRefusal) as exc:
+                    # D.DriverError: a thread would not open or read. E.BridgeRefusal: take_phone's
+                    # own device_unavailable when even ``lock_timeout`` (round 6's long, send-sized
+                    # wait) was not enough. Either way: try again next cycle rather than decide on
+                    # an incomplete read.
+                    self.ledger.note(now, "identity_evidence_failed", None, kind=row["kind"],
+                                     error=str(exc))
+                    continue
+            decision = ID.decide(self._file_facts(row), candidates, evidence)
+            if decision is None:
+                continue
+            phone, inbound_id, strength, reason = decision
+            try:
+                created = self.ledger.link_media_auto(row["queue_id"], inbound_id, phone,
+                                                       strength=strength, reason=reason, now=now)
+            except (KeyError, ValueError) as exc:
+                self.ledger.note(now, "identity_attach_failed", None, kind=row["kind"],
+                                 error=str(exc))
+                continue
+            if created:
+                attached += 1
+                weak += int(strength == "weak")
+                self.ledger.note(now, "media_auto_attach_decided", None, kind=row["kind"],
+                                 strength=strength, reason=reason)
+        return {"attached": attached, "weak": weak}
+
+    def _file_facts(self, row):
+        """-> the pulled file's own facts (TASK-131 round 6): size and kind off the queue row
+        (always known), filename off the store (only meaningful for a document -- the one kind
+        WhatsApp keeps the sender's own name for) and, for audio, the duration computed from the
+        file's own bytes (``bridge/identity.py::opus_duration_seconds_of_file`` -- no bubble read
+        needed for this half of the comparison, only for the candidate's)."""
+        media = self.ledger.media_file(row["media_id"]) or {}
+        facts = {"kind": row["kind"], "size": row["size"], "filename": media.get("filename")}
+        if row["kind"] == "audio" and media.get("local_path"):
+            try:
+                facts["duration_sec"] = ID.opus_duration_seconds_of_file(media["local_path"])
+            except (ValueError, OSError) as exc:
+                self.ledger.note(self.clock(), "identity_duration_failed", None, error=str(exc))
+        return facts
+
+    @staticmethod
+    def _narrow_by_time(candidates, mtime):
+        """-> candidates within ``IDENTITY_TIME_WINDOW_SEC`` of the file's own stat mtime, or every
+        candidate when that narrows to nothing (no mtime, or all of them fall outside the window) --
+        time is a cost control on how many threads get opened, never a filter that can exclude the
+        only right answer (Ivan's ruling)."""
+        if not mtime:
+            return candidates
+        narrowed = [c for c in candidates if c.get("time_ms") and
+                   abs(c["time_ms"] / 1000.0 - mtime) <= IDENTITY_TIME_WINDOW_SEC]
+        return narrowed or candidates
+
+    def _read_evidence_for(self, candidates, *, lock_timeout):
+        """-> {phone: {"duration_sec", "size_bytes", "pages", "filename"}} for each distinct
+        candidate phone: open its thread, read every media bubble's own evidence
+        (``driver.read_media_evidence``), and keep the NEWEST non-None value per field across all of
+        them -- the candidate set here is already narrowed to one chat minute or so, so more than
+        one media bubble in the window is the rare case this is written to still handle sanely
+        rather than assume away. One lock acquisition per phone (the same flock discipline the send
+        path documents: released between chats, not held across all of them).
+
+        Newest, not oldest (fixed TASK-131 round 6 blocker B1): ``driver.read_media_evidence``
+        returns bands oldest first, and the file this cycle is trying to place is -- by definition
+        of reaching this candidate pool at all -- one nobody has attributed yet, i.e. the newest
+        thing on that thread. An older bubble further up the same chat belongs to a file that was
+        already resolved in an earlier cycle (or is simply old scrollback); letting it answer for
+        today's file is exactly how a 7-second voice note landed on a thread whose own newest bubble
+        read 1:30, because an unrelated 0:07 sat higher up the same screen."""
+        by_phone = {}
+        for phone in sorted({c["phone"] for c in candidates}):
+            with ExitStack() as phone_held:
+                self.take_phone(phone_held, phone, timeout=lock_timeout)
+                try:
+                    self.driver.open_chat(phone)
+                    bands = self.driver.read_media_evidence()
+                except D.DriverError as exc:
+                    # This ONE candidate's thread would not open or read -- leaves it with no
+                    # evidence (decide() treats that as "does not confirm", never as "excluded"),
+                    # not a reason to give up on every other candidate in the same sweep.
+                    self.ledger.note(self.clock(), "identity_thread_unreadable", None, error=str(exc))
+                    continue
+                finally:
+                    try:
+                        self.driver.park()
+                    except D.DriverError as exc:
+                        self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
+            merged = {"duration_sec": None, "size_bytes": None, "pages": None, "filename": None}
+            for band in reversed(bands):    # newest first -- see this method's own docstring (B1)
+                for key, value in ID.parse_bubble_evidence(band["evidence"]).items():
+                    if merged[key] is None and value is not None:
+                        merged[key] = value
+            by_phone[phone] = merged
+        return by_phone
+
     # --- GET /v1/health ----------------------------------------------------------------------------
     def health(self):
         now = self.clock()
@@ -342,6 +592,8 @@ class Executor:
                             "unresolved": self.inbound_unresolved,
                             "last_poll_at": self.inbound_last_at},
                 "watcher": self.watcher.heartbeat() if self.watcher else None,
+                "media_watcher": self.media_watcher.heartbeat() if self.media_watcher else None,
+                "identity_watcher": self.identity_watcher.heartbeat() if self.identity_watcher else None,
                 "broadcast": {
                     "runs_open": len(self.ledger.open_runs()),
                     "runner": self.broadcast_runner.heartbeat() if self.broadcast_runner else None},

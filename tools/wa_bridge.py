@@ -13,6 +13,8 @@ Usage:
     python tools/wa_bridge.py delete-chat (--phone +49... | --title "Name") [--archived]
         [--confirm [--expect-messages N]]
     python tools/wa_bridge.py audit [--title "Name"] [--limit N] [--json]
+    python tools/wa_bridge.py media-list [--json]
+    python tools/wa_bridge.py media-attach --id wab.q.xxxxxxxxxxxxxxxxxxxx --phone +49...
 
 Load .env first (set -a; . ./.env; set +a): WA_BRIDGE_URL, WA_BRIDGE_TOKEN, WA_AUTOSEND.
 
@@ -88,8 +90,20 @@ does not canonicalize, a repeated recipient, a row with no body and no common bo
 is refused, naming the line. Nothing is sent from a file we cannot read completely -- a broadcast
 that silently skips a recipient is a broadcast nobody can audit.
 
+THE HUMAN ESCAPE HATCH (TASK-131 round 5, decision-9 2026-09-22). Automatic attachment is gone:
+nothing on this rail can prove who sent a pulled file (four rounds tried; see ``bridge/media.py``'s
+own module docstring for why). Every pulled file sits in the QUEUE until a human attaches it.
+``media-list`` prints what is known about each queued file -- its id, kind, age, size, the handset
+folder it came from, and which threads plausibly relate to it in that period (a hint, never a
+decision) -- and deliberately nothing that could identify whose file it might be: no filename, no
+phone. ``media-attach`` is how a human closes the gap, once they know the answer from something off
+this machine: it ties one file to one phone's own thread through the executor's own ``link_media``
+-- the exact call an automatic link used to make, before round 5 removed automatic linking entirely
+-- so the document reaches the card exactly as before.
+
 PII. Chat titles, numbers and message bodies are printed to stdout, because reading a thread is the
-point of ``read``. Nothing is written to a file and nothing is logged.
+point of ``read``. ``media-list`` is the one read command that deliberately prints none of that --
+see above. Nothing is written to a file and nothing is logged.
 
 EXIT. 0 done (including a chat this rail had already deleted: the handset is in the state that was
 asked for and the audit says why); 1 something needs attention (a refused or failed item, a bridge
@@ -280,6 +294,25 @@ def cmd_health(args, client):
     print(f"bridge {health.get('version')} at {health.get('at')}")
     print(f"  rail number: {rail.get('number') or 'UNVERIFIED'}   driver: {(rail.get('driver') or {}).get('kind')}")
     print(f"  queue: {queue}   quota: {health.get('quota')}")
+    # TASK-131: health keeps reporting the queue -- surfaced here rather than only in --json, so an
+    # operator sees it without asking twice.
+    backlog = ((health.get("media_watcher") or {}).get("unresolved_backlog")) or {}
+    if backlog.get("unresolved"):
+        print(f"  media queue: {backlog['unresolved']} unattached, oldest "
+              f"{backlog.get('oldest_unresolved_sec') or 0:.0f}s, by kind {backlog.get('by_kind')} "
+              f"-- see `media-list`")
+    if backlog.get("duplicate_content"):
+        print(f"  {backlog['duplicate_content']} file(s) share bytes with another pull "
+              f"(a resend, or two people sending one identical file) -- visible on `media-list`")
+    if backlog.get("weak_links"):
+        print(f"  {backlog['weak_links']} attribution(s) marked WEAK -- an automatic pick with "
+              f"nothing to confirm it; audit with `--json`")
+    # TASK-131 round 6: the one watcher that opens a chat, so its own count of what it attached
+    # (strong vs weak) is worth a line an operator does not have to compute from the journal.
+    identity = health.get("identity_watcher") or {}
+    if identity:
+        print(f"  identity watcher: {identity.get('attached_total', 0)} attached "
+              f"({identity.get('weak_total', 0)} weak), {identity.get('errors', 0)} errors")
     return EXIT_OK
 
 
@@ -537,6 +570,34 @@ def cmd_audit(args, client):
     return EXIT_OK
 
 
+def cmd_media_list(args, client):
+    """The queue itself (read-only): every unattached file, kind/size/age/folder/related threads --
+    no filename, no phone (bridge/executor.py::unresolved_media is the only source)."""
+    files = client.unresolved_media()
+    if args.json:
+        print(json.dumps(files, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    print(f"{len(files)} file(s) in the queue")
+    for f in files:
+        dup = f" DUPLICATE_CONTENT(x{f['content_pull_count']})" if f.get("content_pull_count", 1) > 1 else ""
+        print(f"  {f['queue_id']}  kind={f['kind']}  size={f['size']}B  "
+              f"age={f['age_sec']:.0f}s  folder={f['source_dir']!r}  "
+              f"related_threads={f['related_threads']}{dup}")
+    return EXIT_OK
+
+
+def cmd_media_attach(args, client):
+    """The escape hatch itself: tie one queued file to one phone's own thread, through the same
+    path (``bridge/ledger.py::link_media``) an automatic link used to make."""
+    phone = canonical_phone(args.phone, "--phone")
+    report = client.attach_media(args.id, phone)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    print(f"attached {report['queue_id']} (kind={report['kind']}) to {report['thread']}")
+    return EXIT_OK
+
+
 def cmd_clear_chat(args, client):
     return _destroy(args, client, "clear")
 
@@ -572,6 +633,20 @@ def build_parser():
     audit.add_argument("--limit", type=int, help="how many rows to read back")
     audit.add_argument("--json", action="store_true")
     audit.set_defaults(fn=cmd_audit)
+
+    media_list = sub.add_parser("media-list", help="the unattached-file queue: id, kind, size, age, "
+                                                    "folder, related threads -- no filename, no "
+                                                    "phone (read-only)")
+    media_list.add_argument("--json", action="store_true")
+    media_list.set_defaults(fn=cmd_media_list)
+
+    media_attach = sub.add_parser("media-attach", help="attach one queued file to a phone by id "
+                                                        "(the human escape hatch)")
+    media_attach.add_argument("--id", required=True, help="the queue id, from `media-list`")
+    media_attach.add_argument("--phone", required=True, help="the recipient's number, +E.164 or a "
+                                                              "local spelling")
+    media_attach.add_argument("--json", action="store_true")
+    media_attach.set_defaults(fn=cmd_media_attach)
 
     read = chat_target(sub.add_parser("read", help="read one thread (read-only)"))
     read.add_argument("--no-text", action="store_true", help="counts, clocks and ticks without the message bodies")

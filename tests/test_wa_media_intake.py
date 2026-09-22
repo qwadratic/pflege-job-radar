@@ -438,8 +438,10 @@ def test_download_failure_stores_nothing_but_keeps_the_media_id_on_the_message(l
     with ST.db() as c:
         assert ST.documents_for(c, LEAD) == []
         row = c.execute("select meta from wa_messages where wamid='wamid.gone'").fetchone()
+    # media_link_strength (TASK-131 round 6, phone rail only): None here -- this payload came
+    # through the real Meta client, which never sets it.
     assert json.loads(row["meta"]) == {"button_id": None, "media_id": "gone", "media_mime_type": "application/pdf",
-                                       "media_filename": "cv.pdf"}
+                                       "media_filename": "cv.pdf", "media_link_strength": None}
     assert not (tmp_path / "wa_documents").exists()
 
 

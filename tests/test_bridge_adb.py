@@ -30,6 +30,21 @@ def outgoing(text, clock="10:05", tick="Gesendet", y=500):
             node("status", desc=tick, bounds=(960, y + 82, 1017, y + 110))]
 
 
+def voice_note_incoming(duration, clock="11:02", y=300):
+    """A voice-note bubble as this module's own docstring says it is verified to draw: a ``date``
+    node (every bubble has one) and NO ``message_text`` node at all -- the duration is on some other
+    node's content-desc, shape unverified (module docstring), stood in here as a play-button node."""
+    return [node("audio_play_pause", desc=f"Sprachnachricht, {duration}",
+                bounds=(57, y, 300, y + 80), clickable=True),
+            node("date", clock, bounds=(700, y + 82, 905, y + 110))]
+
+
+def document_incoming(filename, size_text, clock="11:05", y=500):
+    return [node("document_name", filename, bounds=(57, y, 905, y + 40)),
+            node("document_size", size_text, bounds=(57, y + 42, 400, y + 70)),
+            node("date", clock, bounds=(700, y + 82, 905, y + 110))]
+
+
 def conversation(header, bubbles=(), composer=""):
     screen = [node("conversation_contact_name", header, bounds=(150, 60, 800, 130)),
               node("entry", composer, bounds=(60, 2100, 900, 2200), clickable=True),
@@ -53,6 +68,10 @@ class ScriptedAdb(AD.Adb):
         self.taps = []
         self.keys = []
         self.ime_sets = []
+        # --- media (TASK-131) ---------------------------------------------------------------
+        self.media_listing = ""     # what the find+stat shell command answers, scripted per test
+        self.pulls = []             # (remote, local) pairs this test's driver was asked to pull
+        self.fail_pull = None       # a remote path whose pull answers rc != 0
 
     # --- what the driver asks of a phone -------------------------------------------------------
     def connected(self):
@@ -81,7 +100,21 @@ class ScriptedAdb(AD.Adb):
             return AD.ADB_IME
         if "default_input_method" in cmd:
             return self.ime
+        if "find" in cmd and "stat" in cmd:
+            return self.media_listing
         return ""
+
+    def pull(self, remote, local, *, timeout=120):
+        import pathlib
+        import subprocess
+        self.pulls.append((remote, local))
+        if remote == self.fail_pull:
+            return subprocess.CompletedProcess(["adb", "pull"], returncode=1,
+                                               stdout="", stderr="remote object not found")
+        pathlib.Path(local).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(local).write_bytes(b"scripted bytes for " + remote.encode())
+        return subprocess.CompletedProcess(["adb", "pull"], returncode=0, stdout="1 file pulled",
+                                           stderr="")
 
     def tap(self, x, y):
         self.taps.append((x, y))
@@ -161,6 +194,41 @@ def test_bubble_direction_comes_from_the_x_edge_and_the_tick_from_the_content_de
     assert [(b.direction, b.text, b.clock, b.tick) for b in bubbles] == \
         [("in", "Hallo", "10:04", ""), ("out", "Guten Tag", "10:05", "Zugestellt")]
     assert bubbles[1].tick_state == "delivered"
+
+
+# --- media bubble evidence (TASK-131 round 6): reading past message_text ------------------------
+def test_a_voice_note_bubble_with_no_message_text_node_is_still_found_by_its_date():
+    """The bug this round exists to fix: _placed_bubbles anchors on message_text, which a voice
+    note never draws. read_media_evidence anchors on the date node every bubble has instead."""
+    driver, _ = build([conversation("+49 152 1667 8689", [voice_note_incoming("0:07")])])
+    [entry] = driver.read_media_evidence()
+    assert entry["clock"] == "11:02"
+    assert any("0:07" in e for e in entry["evidence"])
+
+
+def test_a_document_bubbles_filename_and_size_are_both_in_the_evidence_pool():
+    driver, _ = build([conversation("+49 152 1667 8689",
+                                    [document_incoming("Lebenslauf.pdf", "165 KB")])])
+    [entry] = driver.read_media_evidence()
+    assert "Lebenslauf.pdf" in entry["evidence"]
+    assert "165 KB" in entry["evidence"]
+
+
+def test_evidence_is_only_the_other_partys_bubbles_never_our_own():
+    driver, _ = build([conversation("+49 152 1667 8689",
+                                    [voice_note_incoming("0:07"), outgoing("Danke")])])
+    entries = driver.read_media_evidence()
+    assert len(entries) == 1 and entries[0]["clock"] == "11:02"
+
+
+def test_two_media_bubbles_in_one_minute_are_two_separate_evidence_bands():
+    driver, _ = build([conversation("+49 152 1667 8689", [
+        document_incoming("Anna-CV.pdf", "165 KB", clock="12:00", y=300),
+        document_incoming("Bernd-CV.pdf", "900 KB", clock="12:00", y=500)])])
+    entries = driver.read_media_evidence()
+    assert len(entries) == 2
+    assert "Anna-CV.pdf" in entries[0]["evidence"] and "Anna-CV.pdf" not in entries[1]["evidence"]
+    assert "Bernd-CV.pdf" in entries[1]["evidence"] and "Bernd-CV.pdf" not in entries[0]["evidence"]
 
 
 # --- the thread guard ---------------------------------------------------------------------------
@@ -631,3 +699,34 @@ def test_an_adb_that_never_returns_is_a_driver_error_not_a_raw_timeout():
             adb.connected()
     finally:
         AD.subprocess.run = adb_run
+
+
+# --- inbound media (TASK-131) --------------------------------------------------------------------
+def test_list_media_parses_the_find_stat_listing_and_scopes_the_shell_command():
+    driver, adb = build([[]])
+    adb.media_listing = ("1234 1758534000 WhatsApp Documents/Lebenslauf.pdf\n"
+                         "222 1758534010 WhatsApp Images/IMG-20260922-WA0007.jpg\n")
+    listing = driver.list_media()
+    assert listing == {"WhatsApp Documents/Lebenslauf.pdf": (1234, 1758534000),
+                       "WhatsApp Images/IMG-20260922-WA0007.jpg": (222, 1758534010)}
+    cmd = next(c for c in adb.commands if "find" in c)
+    assert "WhatsApp Documents" in cmd and "WhatsApp Images" in cmd
+    assert "*/Sent/*" in cmd, "outgoing copies of our own sends are excluded"
+
+
+def test_pull_media_writes_the_file_and_returns_its_path(tmp_path):
+    driver, adb = build([[]])
+    dest = tmp_path / "incoming" / "a.pdf"
+    got = driver.pull_media("WhatsApp Documents/Lebenslauf.pdf", dest)
+    assert got == dest and dest.exists()
+    assert adb.pulls == [("/sdcard/WhatsApp/Media/WhatsApp Documents/Lebenslauf.pdf", str(dest))]
+
+
+def test_a_failed_pull_is_a_driver_error_and_writes_nothing_useful(tmp_path):
+    driver, adb = build([[]])
+    remote = "/sdcard/WhatsApp/Media/WhatsApp Documents/gone.pdf"
+    adb.fail_pull = remote
+    dest = tmp_path / "gone.pdf"
+    with pytest.raises(D.DriverError) as caught:
+        driver.pull_media("WhatsApp Documents/gone.pdf", dest)
+    assert "adb pull" in str(caught.value)

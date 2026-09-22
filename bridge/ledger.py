@@ -37,7 +37,9 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
+
+from . import media as MD
 
 # --- states -----------------------------------------------------------------------------------
 ATTEMPTING = "attempting"        # written before the first keystroke; only reconcile resolves it
@@ -67,6 +69,28 @@ SPENT = frozenset({ATTEMPTING, SENT, UNCONFIRMED})
 LEDGER_RETENTION_DAYS = 30
 #: Inbound events already acked by our VPS are handed over; 7 days is the batch-result retention.
 INBOUND_RETENTION_DAYS = 7
+
+#: The inbound event minted for a human's attach (TASK-131 round 5 -- decision-9, 2026-09-22:
+#: automatic attribution removed). There is never a real notification behind it: the file may have
+#: arrived long after its own placeholder message was drained and swept off this ledger, or (the
+#: files already on the live rail before this round) before this ledger even recorded one. A fresh
+#: event is minted every time rather than trying to find and patch an old one -- one code path,
+#: whether or not a placeholder ever existed. Deterministic on the queue id alone, so a retried
+#: attach after a crash between ``append_inbound`` and ``link_media`` below replays (the same
+#: unique key) instead of minting a second event for the same file.
+ATTACH_INBOUND_PREFIX = "wab.i.attach."
+
+#: WhatsApp's own generic notification glyph per kind (bridge/inbound.py::MEDIA_HINTS), used as the
+#: placeholder text of a hand-minted attach event -- honest about being a placeholder, never a
+#: sender's real filename.
+ATTACH_PLACEHOLDER_TEXT = {"image": "\U0001f4f7 Foto", "video": "\U0001f3a5 Video",
+                          "document": "\U0001f4c4 Dokument", "audio": "\U0001f3a4 Sprachnachricht"}
+
+#: How wide a net "threads that plausibly relate to this file" (the queue listing, TASK-131 round
+#: 5 requirement 3) casts. Informational only, never a decision: nothing built on this ever
+#: attaches anything, so a wide net costs a human a longer glance, not a wrong attach -- unlike the
+#: deleted link_files' 180s pre-filter, which was a proof obligation for an automatic decision.
+RELATED_THREAD_WINDOW_SEC = 3600.0
 
 SCHEMA = """
 create table if not exists outbound (
@@ -145,6 +169,38 @@ create table if not exists audit (
   verified      integer not null,
   detail        text not null
 );
+create table if not exists media_seen (
+  source_rel    text primary key,
+  media_id      text not null,
+  size          integer not null,
+  mtime         integer not null,
+  seen_at       text not null,
+  queue_id      text,
+  kind          text,
+  source_dir    text,
+  attached_at   text,
+  attached_inbound_id text,
+  attached_phone text,
+  link_strength text,
+  link_reason   text,
+  legacy        integer not null default 0
+);
+create table if not exists media_file (
+  media_id      text primary key,
+  sha256        text not null,
+  local_path    text not null,
+  size          integer not null,
+  mime_type     text,
+  filename      text,
+  pulled_at     text not null
+);
+create table if not exists media_link (
+  inbound_id    text primary key,
+  media_id      text not null,
+  filename      text,
+  linked_at     text not null
+);
+create index if not exists idx_media_link_media on media_link(media_id);
 """
 
 
@@ -155,6 +211,11 @@ def utc(now):
     return now.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def age_sec(stamp, now):
+    """Seconds between the ledger's own RFC3339 spelling of a moment and ``now``."""
+    return (now - datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))).total_seconds()
+
+
 def _audit_row(row):
     """One audit row as JSON-ready data: the flag as a bool, the detail as the object it was."""
     return {**dict(row), "verified": bool(row["verified"]), "detail": json.loads(row["detail"])}
@@ -163,6 +224,20 @@ def _audit_row(row):
 def thread_tag(phone):
     """A phone number that is safe in a log line. PII: the number itself never appears in one."""
     return hashlib.sha256(str(phone).encode("utf-8")).hexdigest()[:12]
+
+
+#: One queue entry per PULL INSTANCE, not per unique content (TASK-131 round 5, requirement 2): two
+#: people sending byte-identical files are two ``media_seen`` rows sharing one ``media_file`` row
+#: for the bytes, so this has to be keyed on the handset path, never on the content id -- a content
+#: id is exactly what the two rows have in common and would collapse them back into one entry, the
+#: silent-loss bug this round fixes (the second sender's file used to vanish from the queue and
+#: health alike the moment the first one's was linked).
+_QUEUE_ID_PREFIX = "wab.q."
+_QUEUE_ID_CHARS = 20
+
+
+def _queue_id(source_rel):
+    return _QUEUE_ID_PREFIX + hashlib.sha256(str(source_rel).encode("utf-8")).hexdigest()[:_QUEUE_ID_CHARS]
 
 
 @dataclass(frozen=True)
@@ -192,8 +267,73 @@ class Ledger:
         self._db.row_factory = sqlite3.Row
         self._db.execute("pragma journal_mode=wal")
         self._db.executescript(SCHEMA)
+        self._migrate_media_seen()
         self._db.commit()
         self._lock = threading.RLock()
+
+    def _migrate_media_seen(self):
+        """TASK-131 round 5 (decision-9, 2026-09-22). ``media_seen`` already holds rows on the mini
+        that predate the queue columns entirely (six from August) -- ``create table if not exists``
+        cannot add a column to a table that already exists, so they need their own explicit step,
+        guarded by checking what is already there rather than assuming a bare install. This is also
+        where those six rows become reachable: their ``media_file`` rows carry NULL kind and NULL
+        mtime (an earlier round's ALTER added those columns after the rows existed, and never
+        backfilled them), which is exactly why the attach path used to refuse them with
+        ``no_pending_media`` -- there was no kind to match against. ``media_seen``, unlike
+        ``media_file``, has held the real handset mtime since the very first pull (it was never an
+        ALTER-added column here), and a file's kind is fully recoverable from its own handset path
+        (``bridge/media.py::kind_for_path`` -- exact, not a guess) -- so both are backfilled from
+        facts already on the row, not invented.
+        """
+        cols = {r["name"] for r in self._db.execute("pragma table_info(media_seen)").fetchall()}
+        for name, decl in (("queue_id", "text"), ("kind", "text"), ("source_dir", "text"),
+                          ("attached_at", "text"), ("attached_inbound_id", "text"),
+                          ("attached_phone", "text"), ("link_strength", "text"),
+                          ("link_reason", "text"),
+                          ("legacy", "integer not null default 0")):
+            if name not in cols:
+                self._db.execute(f"alter table media_seen add column {name} {decl}")
+        # After the columns are guaranteed to exist, never before -- an index on a column a
+        # pre-round-5 table does not have yet is the same "alter after the rows existed" trap the
+        # six live files are already in (this docstring's own opening paragraph).
+        self._db.execute("create index if not exists idx_media_seen_queue on media_seen(queue_id)")
+        # TASK-131 round 6 fix (Ivan, 2026-09-22, acceptance-run blocker): these six rows have no
+        # notification, no candidate, no time context left -- whatever inbound message they once
+        # belonged to is long past. Round 6's own brief asked for them to be reachable "by a human";
+        # leaving them in auto_match_media()'s pool instead let them win as a false "sole candidate"
+        # against a live person's fresh file the moment one of the same kind arrived, permanently
+        # stranding the real file (queue-full-of-one). ``legacy=1`` keeps them in
+        # ``unresolved_media()`` (attach_media still reaches them) and OUT of ``media_queue(auto_only=True)``
+        # -- marked here, once, for exactly the rows this backfill branch already identifies as
+        # pre-round-5 (queue_id was null), never re-computed and never applied to a row pulled by a
+        # live MediaWatcher cycle.
+        rows = self._db.execute(
+            "select source_rel, media_id, mtime from media_seen where queue_id is null").fetchall()
+        for row in rows:
+            self._db.execute(
+                "update media_seen set queue_id=?, kind=?, source_dir=?, legacy=1 where source_rel=?",
+                (_queue_id(row["source_rel"]), MD.kind_for_path(row["source_rel"]),
+                 MD.source_dir_for_path(row["source_rel"]), row["source_rel"]))
+        # A pre-round-5 automatic link (rare in the acceptance run, but not assumed impossible):
+        # carry it over as an attachment rather than stranding it back in the queue. Only when
+        # exactly one still-unattached media_seen row shares that media_id -- an ambiguous case (two
+        # pulls of identical bytes, one old link) is left alone rather than guessed, the same
+        # discipline the deleted matcher itself used to follow.
+        for link in self._db.execute(
+                "select l.inbound_id, l.media_id, l.linked_at, i.payload from media_link l "
+                "left join inbound i on i.inbound_key = l.inbound_id").fetchall():
+            candidates = self._db.execute(
+                "select source_rel from media_seen where media_id=? and attached_at is null",
+                (link["media_id"],)).fetchall()
+            if len(candidates) != 1:
+                continue
+            phone = None
+            if link["payload"]:
+                phone = json.loads(link["payload"]).get("from")
+            self._db.execute(
+                "update media_seen set attached_at=?, attached_inbound_id=?, attached_phone=? "
+                "where source_rel=?",
+                (link["linked_at"], link["inbound_id"], phone, candidates[0]["source_rel"]))
 
     def close(self):
         self._db.close()
@@ -338,15 +478,263 @@ class Ledger:
             return cur.lastrowid
 
     def pull_inbound(self, after=0, limit=None):
-        """-> events with id > after, oldest first. No default page size: the caller decides, and
-        a truncation we invented here would silently drop a candidate's message."""
-        sql = "select id, received_at, payload from inbound where id > ? order by id"
-        args = [int(after)]
-        if limit is not None:
-            sql += " limit ?"
-            args.append(int(limit))
-        return [{"id": r["id"], "received_at": r["received_at"], "payload": json.loads(r["payload"])}
-                for r in self._db.execute(sql, args).fetchall()]
+        """-> events with id > after, oldest first. No default page size: the caller decides, and a
+        truncation invented here would silently drop a candidate's message.
+
+        A row a file has since been attached to (a human's ``Executor.attach_media``, or an
+        automatic match -- ``Executor.auto_match_media``, TASK-131 round 6, both through
+        ``link_media`` below) has ``media_id``/``media_mime_type``/``media_filename`` merged into
+        the payload the caller already stored fresh from whatever ``media_link``/``media_file`` say
+        right now -- the stored payload itself is never rewritten, so a re-poll of the same window
+        still shows the original text too. An automatic match ALSO carries
+        ``media_link_strength`` ('strong'|'weak'): the one field ``app/wa/api.py`` reads to keep a
+        weakly-attributed document's text from ever reaching the model (bridge/envelope.py mints
+        the same field into the webhook payload downstream). A human attach or a legacy link
+        (migrated before this column existed) carries no strength at all -- omitted, not "strong",
+        so a reader cannot mistake silence for a claim of confidence. Every other row is released
+        exactly as stored, immediately: there is nothing left to wait for.
+        """
+        sql = ("select i.id, i.received_at, i.payload, m.media_id, m.filename as link_filename, "
+               "f.mime_type, s.link_strength from inbound i "
+               "left join media_link m on m.inbound_id = i.inbound_key "
+               "left join media_file f on f.media_id = m.media_id "
+               "left join media_seen s on s.attached_inbound_id = i.inbound_key "
+               "where i.id > ? order by i.id")
+        out = []
+        for r in self._db.execute(sql, (int(after),)).fetchall():
+            payload = json.loads(r["payload"])
+            if r["media_id"]:
+                payload = {**payload, "media_id": r["media_id"], "media_mime_type": r["mime_type"],
+                          "media_filename": r["link_filename"]}
+                if r["link_strength"]:
+                    payload["media_link_strength"] = r["link_strength"]
+            out.append({"id": r["id"], "received_at": r["received_at"], "payload": payload})
+            if limit is not None and len(out) >= int(limit):
+                break
+        return out
+
+    # --- inbound media: the unresolved queue (TASK-131 round 5) ----------------------------------
+    def media_known_paths(self):
+        """-> the handset rel-paths already pulled at least once. A file at one of these paths is
+        never fetched a second time (colleague's own ``_known_media`` set, made durable here)."""
+        return {r[0] for r in self._db.execute("select source_rel from media_seen").fetchall()}
+
+    def record_media(self, *, source_rel, mtime, media_id, sha256, local_path, size, kind,
+                     mime_type, filename, now):
+        """A file just pulled off the handset -> one queue row, always. -> True when these bytes
+        are new to the store.
+
+        Content-addressed for the BYTES only (TASK-131): two handset paths carrying the same bytes
+        (a resend, or two different people) share one ``media_file`` row and the second pull does
+        not re-store a duplicate copy. The QUEUE is keyed on the handset path instead
+        (``media_seen``, one row per ``source_rel``) -- on purpose, and it is the fix for the round
+        4 silent-loss bug: two people sending byte-identical files must produce two queue entries,
+        and a content id is exactly the thing the two pulls have in common.
+        """
+        stamp = utc(now)
+        queue_id = _queue_id(source_rel)
+        with self._lock:
+            self._db.execute(
+                "insert or ignore into media_seen(source_rel, media_id, size, mtime, seen_at, "
+                "queue_id, kind, source_dir) values(?,?,?,?,?,?,?,?)",
+                (source_rel, media_id, int(size), int(mtime), stamp, queue_id, kind,
+                 MD.source_dir_for_path(source_rel)))
+            new = self._db.execute(
+                "insert or ignore into media_file(media_id, sha256, local_path, size, mime_type, "
+                "filename, pulled_at) values(?,?,?,?,?,?,?)",
+                (media_id, sha256, str(local_path), int(size), mime_type, filename, stamp)
+            ).rowcount > 0
+            self._db.commit()
+        self.note(now, "media_pulled", None, media_id=media_id, queue_id=queue_id, new_bytes=new,
+                 size=size)
+        return new
+
+    def media_file(self, media_id):
+        row = self._db.execute("select * from media_file where media_id=?", (media_id,)).fetchone()
+        return dict(row) if row else None
+
+    def media_queue(self, *, auto_only=False):
+        """-> every pulled file nobody has attached yet, oldest first -- what a human still sees for
+        whatever it cannot place (``auto_only=False``, the default: everything, legacy rows
+        included -- ``attach_media`` must still reach them by hand). ``content_pull_count`` is how
+        many pulls (this row included) share this file's bytes (TASK-131 round 6 ALSO FIX): 1 for an
+        ordinary file, >1 when the same content was pulled more than once -- a resend, or two people
+        sending one identical template -- made visible here rather than silently folded into
+        whichever pull got stored first.
+
+        ``auto_only=True`` is ``bridge/executor.py::Executor.auto_match_media``'s own pool: legacy
+        rows (``legacy=1``, see ``_migrate_media_seen``) are excluded, never candidates for automatic
+        attribution -- they predate this matcher and carry no notification or candidate context to
+        decide against, and letting them compete for a fresh live candidate the moment one of the
+        same kind arrives is exactly the acceptance-run bug this excludes."""
+        where = "s.attached_at is null" + (" and s.legacy = 0" if auto_only else "")
+        rows = self._db.execute(
+            "select s.queue_id, s.media_id, s.kind, s.source_dir, s.size, s.mtime, "
+            "s.seen_at as pulled_at, s.attached_at, s.legacy, "
+            "(select count(*) from media_seen d where d.media_id = s.media_id) as content_pull_count "
+            f"from media_seen s where {where} order by s.seen_at").fetchall()
+        return [dict(r) for r in rows]
+
+    def media_queue_row(self, queue_id):
+        row = self._db.execute("select * from media_seen where queue_id=?", (queue_id,)).fetchone()
+        return dict(row) if row else None
+
+    def media_backlog(self, now):
+        """-> {"unresolved", "oldest_unresolved_sec", "by_kind", "duplicate_content", "weak_links"}
+        for /v1/health -- enough for a human to see the queue is growing, or not, and to audit an
+        automatic match (TASK-131 round 6) without opening ``media-list``."""
+        rows = self._db.execute(
+            "select kind, seen_at from media_seen where attached_at is null").fetchall()
+        by_kind, oldest = {}, None
+        for r in rows:
+            kind = r["kind"] or "unknown"
+            by_kind[kind] = by_kind.get(kind, 0) + 1
+            age = age_sec(r["seen_at"], now)
+            if oldest is None or age > oldest:
+                oldest = age
+        dup = self._db.execute(
+            "select count(*) c from (select media_id from media_seen group by media_id "
+            "having count(*) > 1)").fetchone()["c"]
+        weak = self._db.execute(
+            "select count(*) c from media_seen where link_strength = 'weak'").fetchone()["c"]
+        return {"unresolved": len(rows), "oldest_unresolved_sec": oldest, "by_kind": by_kind,
+               "duplicate_content": dup, "weak_links": weak}
+
+    def media_related_threads(self, kind, around_epoch, *, window_sec=RELATED_THREAD_WINDOW_SEC):
+        """-> sorted thread tags (never a phone number) of inbound messages carrying this file's
+        own kind within ``window_sec`` of ``around_epoch`` -- decision SUPPORT for the human running
+        ``media-attach``, never a decision: nothing here selects, ranks or attaches anything, and
+        every tag it can name is one ``media-attach`` would happily let through even if it were not
+        on this list. An operator who already knows a candidate's own number can compute that
+        number's own tag (``thread_tag``) and check it is here; nobody else learns anything from it.
+        Read and filtered in Python, not SQL: inbound volume on this rail is candidates, not rows at
+        any scale that would matter."""
+        if not around_epoch:
+            return []
+        tags = set()
+        for r in self._db.execute("select payload from inbound").fetchall():
+            payload = json.loads(r["payload"])
+            if payload.get("media_kind") != kind:
+                continue
+            t = (payload.get("time_ms") or 0) / 1000.0
+            phone = payload.get("from")
+            if t and phone and abs(t - around_epoch) <= window_sec:
+                tags.add(thread_tag(phone))
+        return sorted(tags)
+
+    def unlinked_media_candidates(self, kind):
+        """-> [{"phone", "inbound_id", "time_ms"}] for inbound rows of this media kind that no file
+        has been linked to yet -- ``bridge/executor.py::Executor.auto_match_media``'s candidate pool
+        (TASK-131 round 6). Never the decision itself, only the pool ``bridge/identity.py::decide``
+        picks from. Read and filtered in Python, like ``media_related_threads`` above: inbound
+        volume on this rail is candidates, not rows at any scale that would matter."""
+        rows = self._db.execute(
+            "select i.inbound_key, i.payload from inbound i "
+            "left join media_link m on m.inbound_id = i.inbound_key "
+            "where m.inbound_id is null").fetchall()
+        out = []
+        for r in rows:
+            payload = json.loads(r["payload"])
+            phone = payload.get("from")
+            if payload.get("media_kind") == kind and phone:
+                out.append({"phone": phone, "inbound_id": r["inbound_key"],
+                           "time_ms": payload.get("time_ms") or 0})
+        return out
+
+    def link_media(self, inbound_id, media_id, *, filename, now):
+        """Tie one pulled file to one inbound message. -> True when this created the link, False
+        when that message already had one (idempotent; never a silent overwrite of an existing link
+        with a different file). The one place a media_id reaches an inbound row -- both the human
+        escape hatch (``attach_media`` below) and, before round 5 removed it, the automatic linker
+        went through this exact call, so ``pull_inbound``'s merge and everything past it is the same
+        either way."""
+        with self._lock:
+            try:
+                self._db.execute(
+                    "insert into media_link(inbound_id, media_id, filename, linked_at) "
+                    "values(?,?,?,?)", (inbound_id, media_id, filename, utc(now)))
+            except sqlite3.IntegrityError:
+                return False
+            self._db.commit()
+        self.note(now, "media_linked", None, media_id=media_id)
+        return True
+
+    def attach_media(self, queue_id, phone, *, now):
+        """THE human escape hatch (TASK-131 round 5, decision-9 2026-09-22): the one way a file
+        leaves the queue. -> the inbound_key minted for it. Raises ``KeyError`` for an unknown
+        ``queue_id``, ``ValueError`` when it is already attached -- ``Executor.attach_media`` turns
+        both into the wire's own refusal codes.
+
+        There is never a real notification behind the event this mints: the file may have arrived
+        long after its own placeholder message was drained and swept off this ledger, or (the files
+        already on the live rail before this round) before this ledger ever recorded one for it --
+        so a fresh event is minted every time rather than trying to find and patch an old one. One
+        code path, whether or not a placeholder still exists. It goes through ``link_media`` above
+        -- THE SAME CALL an automatic link used to make -- so ``pull_inbound``'s merge, and
+        everything past it (the card, classification, transcription), is unchanged; the only thing
+        round 5 removed is WHO decides the phone. A human does, always, by naming it.
+        """
+        row = self._db.execute("select * from media_seen where queue_id=?", (queue_id,)).fetchone()
+        if row is None:
+            raise KeyError(queue_id)
+        if row["attached_at"] is not None:
+            raise ValueError(f"{queue_id} is already attached")
+        media = self.media_file(row["media_id"])
+        stamp = utc(now)
+        inbound_key = ATTACH_INBOUND_PREFIX + hashlib.sha256(
+            queue_id.encode("utf-8")).hexdigest()[:32]
+        payload = {"envelope": "wa_bridge.inbound.v1", "inbound_id": inbound_key, "from": phone,
+                  "title": phone, "text": ATTACH_PLACEHOLDER_TEXT.get(row["kind"], ""),
+                  "local_date": stamp[:10], "clock": stamp[11:16],
+                  "time_ms": int(now.timestamp() * 1000), "media_kind": row["kind"],
+                  "source": "attached", "occurrence": 0}
+        self.append_inbound(inbound_key, payload, now)
+        self.link_media(inbound_key, row["media_id"],
+                        filename=media["filename"] if media else None, now=now)
+        with self._lock:
+            self._db.execute(
+                "update media_seen set attached_at=?, attached_inbound_id=?, attached_phone=?, "
+                "link_strength=?, link_reason=? where queue_id=?",
+                (stamp, inbound_key, phone, "human", "human_attach", queue_id))
+            self._db.commit()
+        return inbound_key
+
+    def link_media_auto(self, queue_id, inbound_id, phone, *, strength, reason, now):
+        """THE automatic path (TASK-131 round 6, Ivan's ruling 2026-09-22, supersedes decision-9):
+        tie a queued file to an EXISTING inbound row -- the real notification-shade message
+        ``bridge/identity.py::decide`` picked a candidate for -- unlike ``attach_media`` above,
+        which mints a placeholder because a human names only a phone, never a specific message.
+
+        -> True when this created the link, False when the inbound row already had one (idempotent:
+        a re-run of the matcher over the same still-unattached queue row never double-attaches).
+        Raises ``KeyError`` for an unknown ``queue_id``, ``ValueError`` when it is already attached
+        -- same two refusals as the human path, same reason: the caller (``Executor.auto_match_media``)
+        already filtered to unattached rows, so either means a race with another attach.
+
+        ``strength``/``reason`` land on the row (audit trail per Ivan's ruling: a weak pick must be
+        visible) and, through ``pull_inbound``'s merge, in the payload itself -- the one field
+        ``app/wa/api.py`` reads to keep a weakly-attributed document's text from the model.
+        """
+        row = self._db.execute("select * from media_seen where queue_id=?", (queue_id,)).fetchone()
+        if row is None:
+            raise KeyError(queue_id)
+        if row["attached_at"] is not None:
+            raise ValueError(f"{queue_id} is already attached")
+        media = self.media_file(row["media_id"])
+        created = self.link_media(inbound_id, row["media_id"],
+                                  filename=media["filename"] if media else None, now=now)
+        if not created:
+            return False
+        stamp = utc(now)
+        with self._lock:
+            self._db.execute(
+                "update media_seen set attached_at=?, attached_inbound_id=?, attached_phone=?, "
+                "link_strength=?, link_reason=? where queue_id=?",
+                (stamp, inbound_id, phone, strength, reason, queue_id))
+            self._db.commit()
+        self.note(now, "media_auto_attached", None, media_id=row["media_id"], strength=strength,
+                 reason=reason)
+        return True
 
     def ack_inbound(self, through, now):
         """Everything up to `through` reached our VPS. Acked rows are swept, unacked rows are not."""

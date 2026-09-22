@@ -726,6 +726,22 @@ def test_health_prints_what_the_rail_says_about_itself(capsys):
     assert "1.2.3" in out and "UNVERIFIED" in out, "an unverified rail number is said out loud"
 
 
+def test_health_says_a_weak_attribution_and_a_duplicate_out_loud(capsys):
+    """TASK-131 round 6: a weak pick is visible in health, not just the row -- Ivan's own
+    requirement that a human can audit one."""
+    health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-21T10:00:00Z",
+                    "rail": {"number": None, "driver": {"kind": "adb"}}, "queue": {"pending": 0},
+                    "quota": {"sent_today": 0},
+                    "media_watcher": {"unresolved_backlog": {"unresolved": 1, "duplicate_content": 1,
+                                                             "weak_links": 2, "by_kind": {"image": 1}}},
+                    "identity_watcher": {"attached_total": 5, "weak_total": 2, "errors": 0}})
+    assert run(["health"], v1_health=health)[0] == 0
+    out = capsys.readouterr().out
+    assert "share bytes with another pull" in out
+    assert "2 attribution(s) marked WEAK" in out
+    assert "5 attached (2 weak), 0 errors" in out
+
+
 # --- the archive flag is the operator's assertion, not a field read off the row -----------------------
 
 ARCHIVED_CHAT = (200, {"ok": True, "count": 1, "chats": [
@@ -806,3 +822,76 @@ def test_a_pacing_argument_that_is_not_an_object_is_a_usage_error(tmp_path, caps
                       "--pacing", "[1,2]", "--send"])
     assert code == 2 and fake.calls == []
     assert "--pacing must be a JSON object" in capsys.readouterr().err
+
+
+# --- the human escape hatch (TASK-131 round 5, decision-9 2026-09-22) ----------------------------------
+UNRESOLVED = (200, {"ok": True, "at": "2026-09-22T10:00:00.000Z", "count": 1, "files": [
+    {"queue_id": "wab.q.aaaaaaaaaaaaaaaaaaaa", "media_id": "wab.m.aaaaaaaaaaaaaaaaaaaa",
+     "kind": "document", "size": 40213, "source_dir": "WhatsApp Documents",
+     "pulled_at": "2026-09-22T09:58:00.000Z", "age_sec": 120.0, "related_threads": []}]})
+
+
+def test_media_list_prints_the_facts_and_only_the_facts(capsys):
+    code, _ = run(["media-list"], v1_media=UNRESOLVED)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "wab.q.aaaaaaaaaaaaaaaaaaaa" in out
+    assert "kind=document" in out and "size=40213B" in out
+    assert "folder='WhatsApp Documents'" in out
+    # PII: nothing this listing was never handed (no filename, no phone) can appear in it
+    assert "phone" not in out.lower()
+
+
+def test_media_list_json_passes_the_executors_answer_through(capsys):
+    code, _ = run(["media-list", "--json"], v1_media=UNRESOLVED)
+    out = json.loads(capsys.readouterr().out)
+    assert code == 0 and out == UNRESOLVED[1]["files"]
+
+
+def test_media_list_flags_a_duplicate_pull_out_loud(capsys):
+    dup = (200, {"ok": True, "at": "2026-09-22T10:00:00.000Z", "count": 1, "files": [
+        {"queue_id": "wab.q.bbbbbbbbbbbbbbbbbbbb", "media_id": "wab.m.bbbbbbbbbbbbbbbbbbbb",
+         "kind": "document", "size": 40213, "source_dir": "WhatsApp Documents",
+         "pulled_at": "2026-09-22T09:58:00.000Z", "age_sec": 120.0, "related_threads": [],
+         "content_pull_count": 2}]})
+    code, _ = run(["media-list"], v1_media=dup)
+    out = capsys.readouterr().out
+    assert code == 0 and "DUPLICATE_CONTENT(x2)" in out
+
+
+def test_media_attach_posts_the_id_and_the_operators_own_phone(capsys):
+    report = (200, {"ok": True, "queue_id": "wab.q.aaaa", "media_id": "wab.m.aaaa",
+                    "kind": "document", "thread": "deadbeef1234"})
+    code, fake = run(["media-attach", "--id", "wab.q.aaaa", "--phone", PARTNER],
+                     **{"v1_media_attach": report})
+    assert code == 0
+    posted = fake.posted(BR.MEDIA_ATTACH_PATH)
+    assert len(posted) == 1
+    assert posted[0]["body"] == {"queue_id": "wab.q.aaaa", "phone": PARTNER}
+    out = capsys.readouterr().out
+    assert "attached wab.q.aaaa" in out and "deadbeef1234" in out
+    assert PARTNER not in out, "the report carries a thread tag, never the number itself"
+
+
+def test_media_attach_an_unknown_id_is_a_refusal(capsys):
+    refusal = BR.BridgeError("no queued file with this id", status_code=404,
+                             code="media_not_found")
+    code, _ = run(["media-attach", "--id", "wab.q.nope", "--phone", PARTNER],
+                  **{"v1_media_attach": refusal})
+    assert code == 1
+    assert "media_not_found" in capsys.readouterr().err
+
+
+def test_media_attach_twice_is_a_refusal(capsys):
+    refusal = BR.BridgeError("wab.q.aaaa is already attached", status_code=409,
+                             code="already_attached")
+    code, _ = run(["media-attach", "--id", "wab.q.aaaa", "--phone", PARTNER],
+                  **{"v1_media_attach": refusal})
+    assert code == 1
+    assert "already_attached" in capsys.readouterr().err
+
+
+def test_media_attach_needs_both_id_and_phone():
+    with pytest.raises(SystemExit) as caught:
+        run(["media-attach", "--id", "wab.q.aaaa"])
+    assert caught.value.code == 2

@@ -241,6 +241,29 @@ def test_a_media_lookup_with_no_url_also_aborts_the_run():
     assert err.value.status_code is None
 
 
+def test_a_relative_media_url_is_resolved_against_the_clients_own_base_url():
+    """TASK-131: the executor cannot know which local port our ssh tunnel maps it to, so it answers
+    with a path and this client resolves it -- the same base every other route on this rail uses."""
+    cl, _ = build((200, {"url": "/v1/media/wab.m.abc/raw", "mime_type": "application/pdf"}))
+    info = cl.media_url("wab.m.abc")
+    assert info["url"] == BASE + "/v1/media/wab.m.abc/raw"
+
+
+def test_an_already_absolute_media_url_is_passed_through_untouched():
+    cl, _ = build((200, {"url": "http://127.0.0.1:9999/elsewhere", "mime_type": "image/jpeg"}))
+    assert cl.media_url("wab.m.abc")["url"] == "http://127.0.0.1:9999/elsewhere"
+
+
+def test_a_media_lookup_that_definitely_refuses_is_a_404_not_an_unanswered_question():
+    """The other half of the None-versus-raise distinction import_history.py depends on: a bridge
+    that DID answer, and said no (the file was never pulled), must not read like an unreachable
+    bridge -- that would abort the whole import run over one recoverable-elsewhere document."""
+    cl, _ = build((404, {"error": {"code": "media_not_found", "message": "no media pulled"}}))
+    with pytest.raises(BR.BridgeError) as err:
+        cl.media_url("wab.m.never-pulled")
+    assert err.value.status_code == 404
+
+
 def test_download_media_never_goes_through_the_json_transport():
     """Same reason meta.py carries a second transport: a parsed body corrupts binary content."""
     seen = {}

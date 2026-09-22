@@ -14,11 +14,13 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from bridge import driver as D
+from bridge import envelope as EN
 from bridge import errors as E
 from bridge import executor as X
 from bridge import governor as G
 from bridge import inbound as I
 from bridge import ledger as L
+from bridge import media as MD
 from bridge import server as S
 from bridge import watcher as W
 
@@ -397,10 +399,11 @@ def test_reconcile_leaves_a_matching_bubble_without_a_tick_indeterminate(rig):
 
 
 # --- inbound handover, health, retention ---------------------------------------------------------------
-def _inbound(text="Ja, gerne", phone=PHONE, clock="10:04"):
+def _inbound(text="Ja, gerne", phone=PHONE, clock="10:04", media=None):
     return I.assign_ids([I.InboundMessage(counterparty=phone, title=phone, text=text,
                                           local_date="2026-09-23", clock=clock,
-                                          source="notification", time_ms=1789312500000)])
+                                          source="notification", time_ms=1789312500000,
+                                          media=media)])
 
 
 def test_the_outbox_is_a_durable_pull_with_a_cursor(rig):
@@ -422,6 +425,656 @@ def test_an_unresolvable_inbound_is_journalled_and_never_wedges_the_cursor(rig):
     assert result == {"stored": 0, "seen": 0, "unresolved": 1}
     assert rig.executor.outbox()["events"] == []
     assert rig.executor.health()["inbound"]["unresolved"] == 1
+
+
+# --- inbound media (TASK-131 round 5, decision-9 2026-09-22: automatic attribution removed) -------
+def test_an_unattached_media_message_is_released_as_its_placeholder_immediately(rig):
+    """No hold any more (round 5 deleted MEDIA_HOLD_SEC and the automatic linker it existed for):
+    a media message is released exactly like any other message, the moment it is polled."""
+    msg = _inbound(text="\U0001f4c4 Dokument", media="document")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    events = rig.executor.outbox()["events"]
+    assert len(events) == 1
+    assert events[0]["payload"]["text"] == "\U0001f4c4 Dokument"
+    assert "media_id" not in events[0]["payload"]
+
+
+def test_attaching_a_file_by_hand_merges_into_the_event_it_mints_not_the_old_placeholder(rig):
+    """Round 5's attach mints its OWN inbound event (bridge/ledger.py::attach_media) rather than
+    patching the original placeholder -- see that test section below. The original placeholder row
+    stays exactly what it was; the new event carries the file."""
+    msg = _inbound(text="\U0001f4c4 Dokument", media="document")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                            sha256="a" * 64, local_path="/tmp/x.pdf", size=10, kind="document",
+                            mime_type="application/pdf", filename="Lebenslauf.pdf", now=rig.clock())
+    [queued] = rig.ledger.media_queue()
+    rig.executor.attach_media(queued["queue_id"], PHONE)
+
+    events = rig.executor.outbox()["events"]
+    assert len(events) == 2
+    assert events[0]["payload"]["text"] == "\U0001f4c4 Dokument" and \
+        "media_id" not in events[0]["payload"], "the original placeholder, untouched"
+    assert events[1]["payload"]["media_id"] == "wab.m.aaaa"
+    assert events[1]["payload"]["media_filename"] == "Lebenslauf.pdf"
+
+
+def test_a_text_message_is_never_held_back(rig):
+    assert rig.executor.record_inbound(_inbound(), [], rig.clock())["stored"] == 1
+    assert len(rig.executor.outbox()["events"]) == 1
+
+
+# --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-131) -----------------------------------------
+def test_media_metadata_and_raw_bytes_round_trip(http, tmp_path):
+    rig, base = http
+    blob = b"%PDF-1.4 fake bytes"
+    path = tmp_path / "store" / "wab.m.aaaa"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(blob)
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                            sha256="a" * 64, local_path=str(path), size=len(blob), kind="document",
+                            mime_type="application/pdf", filename="Lebenslauf.pdf", now=rig.clock())
+
+    status, meta = call(base, "/v1/media/wab.m.aaaa")
+    assert status == 200
+    assert (meta["mime_type"], meta["filename"], meta["size"]) == \
+        ("application/pdf", "Lebenslauf.pdf", len(blob))
+    assert meta["url"] == "/v1/media/wab.m.aaaa/raw"
+
+    req = urllib.request.Request(base + meta["url"],
+                                 headers={"Authorization": "Bearer s3cret"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        assert resp.read() == blob
+        assert resp.headers["Content-Type"] == "application/pdf"
+
+
+def test_an_unknown_media_id_is_a_404(http):
+    _rig, base = http
+    status, body = call(base, "/v1/media/wab.m.never-pulled")
+    assert (status, body["error"]["code"]) == (404, "media_not_found")
+    status, body = call(base, "/v1/media/wab.m.never-pulled/raw")
+    assert (status, body["error"]["code"]) == (404, "media_not_found")
+
+
+def test_a_recorded_file_missing_from_disk_is_a_loud_500_not_an_empty_document(http):
+    rig, base = http
+    rig.ledger.record_media(source_rel="WhatsApp Documents/gone.pdf", mtime=0,
+                            media_id="wab.m.gone", sha256="b" * 64,
+                            local_path="/nonexistent/pflege-bridge-test/gone.pdf", size=5,
+                            kind="document", mime_type="application/pdf", filename="gone.pdf",
+                            now=rig.clock())
+    status, body = call(base, "/v1/media/wab.m.gone/raw")
+    assert status == 500 and body["error"]["code"] == "executor_error"
+    assert "missing" in body["error"]["message"] or "could not be read" in body["error"]["message"]
+
+
+# --- the media watcher: pulls into the queue, links nothing (TASK-131 round 5) ----------------------
+def test_the_media_watcher_only_pulls_into_the_queue_and_never_pulls_a_path_twice(rig, tmp_path):
+    msg = _inbound(text="\U0001f4c4 Dokument", media="document")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    rig.driver.media_files["WhatsApp Documents/Lebenslauf.pdf"] = b"%PDF-1.4 bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/Lebenslauf.pdf"] = int(msg[0].time_ms / 1000)
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    assert watch.cycle() == {"pulled": 1}
+    [row] = rig.ledger.media_queue()
+    assert row["kind"] == "document" and row["attached_at"] is None
+    assert rig.ledger.media_file(row["media_id"])["filename"] == "Lebenslauf.pdf"
+
+    # a second cycle sees the same file on the handset and must not re-pull it
+    assert watch.cycle() == {"pulled": 0}
+    assert rig.driver.pulled_media == ["WhatsApp Documents/Lebenslauf.pdf"]
+
+
+def test_a_voice_note_is_queued_without_any_chat_read(rig, tmp_path):
+    """A voice note has no text node a chat read could ever consult (round 3's now-deleted oracle
+    could never fire for one at all); round 5 asks a chat nothing about ANY kind -- pulling touches
+    no lock and opens no chat, full stop."""
+    msg = _inbound(text="\U0001f3a4 Sprachnachricht", media="audio")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    rig.driver.media_files["WhatsApp Voice Notes/PTT-20260913.opus"] = b"opus bytes"
+    rig.driver.media_mtimes["WhatsApp Voice Notes/PTT-20260913.opus"] = int(msg[0].time_ms / 1000)
+    rig.driver.busy = True   # a send holds huawei01.lock throughout -- must not matter either
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    assert watch.cycle() == {"pulled": 1}
+    [row] = rig.ledger.media_queue()
+    assert row["kind"] == "audio"
+    assert rig.driver.opened == [], "no chat was ever opened"
+
+
+def test_a_repeat_cycle_never_ingests_the_same_file_twice(rig, tmp_path):
+    rig.driver.media_files["WhatsApp Documents/CV.pdf"] = b"%PDF-1.4 bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/CV.pdf"] = 0
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    watch.cycle()
+    watch.cycle()
+    watch.cycle()
+
+    assert rig.driver.pulled_media == ["WhatsApp Documents/CV.pdf"]
+    assert watch.pulled_total == 1
+    assert rig.ledger.media_backlog(rig.clock())["unresolved"] == 1
+
+
+def test_a_queued_file_is_never_dropped_however_old_it_gets(rig, tmp_path):
+    """No retirement any more (round 5 -- "keep only what the queue genuinely needs"): the whole
+    point of the queue is that nothing in it is ever lost or made invisible, however long it sits."""
+    rig.driver.media_files["WhatsApp Documents/Old.pdf"] = b"%PDF-1.4 bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/Old.pdf"] = 0
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    assert watch.cycle() == {"pulled": 1}
+    rig.clock.advance(60 * 60 * 24 * 400)   # far past the old (now-deleted) retirement horizon
+    assert watch.cycle() == {"pulled": 0}
+    assert rig.ledger.media_backlog(rig.clock())["unresolved"] == 1
+    assert len(rig.ledger.media_queue()) == 1
+
+
+def test_health_reports_the_queue_backlog(rig, tmp_path):
+    rig.driver.media_files["WhatsApp Documents/Orphan.pdf"] = b"%PDF-1.4 bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/Orphan.pdf"] = 0
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    rig.executor.media_watcher = watch
+    watch.cycle()
+
+    backlog = rig.executor.health()["media_watcher"]["unresolved_backlog"]
+    assert backlog == {"unresolved": 1, "oldest_unresolved_sec": backlog["oldest_unresolved_sec"],
+                       "by_kind": {"document": 1}, "duplicate_content": 0, "weak_links": 0}
+    assert backlog["oldest_unresolved_sec"] >= 0
+
+
+def test_media_watcher_errors_are_counted_and_never_raise(rig, tmp_path):
+    class BrokenMediaDriver(D.FakeDriver):
+        def list_media(self):
+            raise RuntimeError("adb gone")
+
+    watch = W.MediaWatcher(BrokenMediaDriver(), rig.ledger, tmp_path / "media",
+                           log=lambda _m: None, clock=rig.clock)
+    assert watch.cycle() is None
+    assert watch.errors == 1 and "adb gone" in watch.last_error
+
+
+def test_health_reports_the_media_watchers_heartbeat(rig, tmp_path):
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    rig.executor.media_watcher = watch
+    watch.cycle()
+    assert rig.executor.health()["media_watcher"]["cycles"] == 1
+
+
+def test_health_reports_no_media_watcher_when_none_is_wired(rig):
+    assert rig.executor.health()["media_watcher"] is None
+
+
+# --- no automatic attachment exists any more, structurally (TASK-131 round 5 requirement 1) ---------
+def test_no_ledger_method_left_that_an_automatic_matcher_could_even_call(rig):
+    """Delete the inference machinery rather than leave it dormant (round 5's own instruction): a
+    dead method still importable would teach the next person something here is still guarded."""
+    for name in ("pending_media", "unresolved_media", "retire_stale_media", "record_media_outcome",
+                "shade_last_ok_epoch", "record_shade_read"):
+        assert not hasattr(rig.ledger, name), f"Ledger.{name} should not exist any more"
+
+
+# --- the four failures the last verification found, now structurally absent (round 5 requirement 1) -
+def test_decoy_a_download_finishing_outside_the_old_window_never_causes_a_wrong_attach(rig, tmp_path):
+    """Round 4's window was a 180s pre-filter; a slow auto-download landing well outside it, with an
+    unrelated same-kind candidate sitting conveniently close to the DRIFTED mtime, risked a wrong
+    attach if that candidate happened to be the sole window survivor. There is no window left to
+    drift past: the file simply queues, and nothing in this package ever creates a link, regardless
+    of who else is pending nearby."""
+    real_sender = _inbound(text="\U0001f4c4 Dokument", phone=PHONE, clock="17:15", media="document")
+    rig.executor.record_inbound(real_sender, [], rig.clock())
+    decoy = _inbound(text="\U0001f4c4 Dokument", phone=OTHER, clock="18:00", media="document")
+    rig.executor.record_inbound(decoy, [], rig.clock())
+
+    rig.driver.media_files["WhatsApp Documents/Slow-CV.pdf"] = b"%PDF-1.4 bytes"
+    # lands 900s after its own sender's notification -- well outside the old 180s window, and much
+    # closer to the unrelated decoy candidate's own notification time instead
+    rig.driver.media_mtimes["WhatsApp Documents/Slow-CV.pdf"] = \
+        int(real_sender[0].time_ms / 1000) + 900
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    for _ in range(3):
+        watch.cycle()
+    [row] = rig.ledger.media_queue()
+    assert row["attached_at"] is None
+    assert rig.executor.unresolved_media()["count"] == 1
+
+
+def test_decoy_a_kind_mismatch_between_the_extension_and_the_placeholder_never_attaches(rig, tmp_path):
+    """WhatsApp's notification classifies by message kind ('document'), not by what the bytes
+    actually are; a photo forwarded AS a document is still a .jpg on disk. Round 4 keyed matching on
+    both sides agreeing on a kind, which either stranded such a file forever or, worse, could align
+    by coincidence with an unrelated candidate of the kind the EXTENSION says. Round 5 does not
+    compare kinds to any notification at all: the file queues with its own true kind (read off its
+    own extension) and nothing tries to reconcile it with what a notification claimed."""
+    msg = _inbound(text="\U0001f4c4 Dokument", phone=PHONE, media="document")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    # forwarded as a "document" bubble, but the bytes are a photo
+    path = "WhatsApp Documents/photo_forwarded_as_document.jpg"
+    rig.driver.media_files[path] = b"\xff\xd8\xff bytes"
+    rig.driver.media_mtimes[path] = int(msg[0].time_ms / 1000)
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    watch.cycle()
+    [row] = rig.ledger.media_queue()
+    assert row["kind"] == "image", "the file's own extension, not the notification's claimed kind"
+    assert row["attached_at"] is None
+
+
+def test_decoy_a_cross_host_clock_skew_never_attaches_or_skews_the_queues_own_age(rig, tmp_path):
+    """Round 4's catch-up gate compared the mini's own clock (when the shade was last read) against
+    the HANDSET's own stat mtime -- two clocks never guaranteed to agree, as the module's own
+    docstring said. There is no such comparison left at all: a wildly skewed handset mtime (a year
+    ahead of the mini's own clock here) neither blocks nor causes an attach, and the queue's own age
+    is read off the LEDGER's own wall clock at pull time, never off the handset's."""
+    rig.driver.media_files["WhatsApp Documents/Skewed.pdf"] = b"%PDF-1.4 bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/Skewed.pdf"] = \
+        int(rig.clock.now.timestamp()) + 60 * 60 * 24 * 365
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    watch.cycle()
+    [entry] = rig.executor.unresolved_media()["files"]
+    assert entry["age_sec"] < 5, "age comes off the ledger's own pull time, not the skewed mtime"
+    assert entry["kind"] == "document"
+
+
+def test_identical_bytes_from_two_senders_are_two_queue_entries_not_one(rig, tmp_path):
+    """THE SILENT-LOSS BUG THIS ROUND FIXES: round 4 kept one queue row per CONTENT id, so the
+    second of two byte-identical files (a shared template CV from two different candidates) vanished
+    the moment the first one's content id was ever linked -- gone from the links, the queue and
+    health alike. Round 5 keys the queue on the pull instance, never on the content."""
+    rig.driver.media_files["WhatsApp Documents/Anna-CV.pdf"] = b"%PDF-1.4 identical bytes"
+    rig.driver.media_files["WhatsApp Documents/Bernd-CV.pdf"] = b"%PDF-1.4 identical bytes"
+    rig.driver.media_mtimes["WhatsApp Documents/Anna-CV.pdf"] = 100
+    rig.driver.media_mtimes["WhatsApp Documents/Bernd-CV.pdf"] = 200
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    rig.executor.media_watcher = watch
+    assert watch.cycle() == {"pulled": 2}
+
+    queue = rig.ledger.media_queue()
+    assert len(queue) == 2, "two pulls, two queue entries -- even though the bytes are identical"
+    assert len({row["queue_id"] for row in queue}) == 2
+    assert len({row["media_id"] for row in queue}) == 1, "one media_id: the bytes really are shared"
+    assert rig.executor.unresolved_media()["count"] == 2
+    assert rig.executor.health()["media_watcher"]["unresolved_backlog"]["unresolved"] == 2
+
+    store_dir = tmp_path / "media" / "store"
+    assert len(list(store_dir.iterdir())) == 1, "the bytes are still stored only once on disk"
+
+    # attaching one leaves the other -- untouched, still in the queue, independently attachable
+    rig.executor.attach_media(queue[0]["queue_id"], PHONE)
+    remaining = rig.ledger.media_queue()
+    assert len(remaining) == 1 and remaining[0]["queue_id"] == queue[1]["queue_id"]
+
+
+# --- the human escape hatch (TASK-131 round 6: the fallback, not the front door) --------------------
+def test_unresolved_media_lists_facts_and_nothing_identifying(rig):
+    rig.ledger.record_media(source_rel="WhatsApp Documents/Anna Musterfrau Lebenslauf.pdf", mtime=0,
+                            media_id="wab.m.orphan", sha256="9" * 64, local_path="/tmp/orphan.pdf",
+                            size=42, kind="document", mime_type="application/pdf",
+                            filename="Anna Musterfrau Lebenslauf.pdf", now=rig.clock())
+
+    listing = rig.executor.unresolved_media()
+    assert listing["count"] == 1
+    [row] = listing["files"]
+    assert row["media_id"] == "wab.m.orphan"
+    assert row["kind"] == "document" and row["size"] == 42
+    assert row["source_dir"] == "WhatsApp Documents"
+    assert row["age_sec"] >= 0
+    assert row["related_threads"] == []
+    assert row["content_pull_count"] == 1
+    assert set(row) == {"queue_id", "media_id", "kind", "size", "source_dir", "pulled_at",
+                        "age_sec", "related_threads", "content_pull_count"}, \
+        "no filename, no phone -- facts (and a hint) only"
+
+
+def test_unresolved_media_names_plausibly_related_threads_as_a_hint_not_a_decision(rig):
+    msg = _inbound(text="\U0001f4c4 Dokument", phone=PHONE, media="document")
+    rig.executor.record_inbound(msg, [], rig.clock())
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=int(msg[0].time_ms / 1000),
+                            media_id="wab.m.aaaa", sha256="a" * 64, local_path="/tmp/x.pdf",
+                            size=10, kind="document", mime_type="application/pdf",
+                            filename="Lebenslauf.pdf", now=rig.clock())
+    [row] = rig.executor.unresolved_media()["files"]
+    assert row["related_threads"] == [L.thread_tag(PHONE)], "a hint the operator can check -- never used to attach"
+
+
+def test_attach_media_delivers_the_document_to_the_right_thread(rig):
+    """Acceptance: the manual attach delivers the document to the named thread -- through the EXACT
+    SAME call (bridge/ledger.py::link_media) an automatic link used to make, before round 5 removed
+    automatic linking entirely -- so the outbox merge is exactly what a real link always produced."""
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                            sha256="a" * 64, local_path="/tmp/x.pdf", size=10, kind="document",
+                            mime_type="application/pdf", filename="Lebenslauf.pdf", now=rig.clock())
+    [queued] = rig.ledger.media_queue()
+
+    report = rig.executor.attach_media(queued["queue_id"], PHONE)
+    assert report["media_id"] == "wab.m.aaaa" and report["kind"] == "document"
+    assert report["thread"] == L.thread_tag(PHONE)
+    assert rig.ledger.media_queue() == [], "the queue no longer offers it"
+
+    events = rig.executor.outbox()["events"]
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["media_id"] == "wab.m.aaaa"
+    assert payload["media_filename"] == "Lebenslauf.pdf"
+    assert payload["from"] == PHONE
+
+
+def test_attach_media_works_with_no_pending_placeholder_message_at_all(rig):
+    """THE SIX FILES ALREADY ON THE LIVE RAIL (round 5 requirement 4): a file whose own placeholder
+    message was drained and swept off this ledger long ago -- or one that arrived before this ledger
+    ever recorded an inbound row for it -- is attachable from the file id alone. Attach never looks
+    for a pending message any more; it mints the event itself."""
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                            sha256="a" * 64, local_path="/tmp/x.pdf", size=10, kind="document",
+                            mime_type="application/pdf", filename="Lebenslauf.pdf", now=rig.clock())
+    assert rig.executor.outbox()["events"] == [], "nothing pending, no placeholder, nothing at all"
+    [queued] = rig.ledger.media_queue()
+
+    report = rig.executor.attach_media(queued["queue_id"], PHONE)
+    assert report["thread"] == L.thread_tag(PHONE)
+    events = rig.executor.outbox()["events"]
+    assert len(events) == 1 and events[0]["payload"]["media_id"] == "wab.m.aaaa"
+
+
+def test_attach_media_an_unknown_id_is_media_not_found(rig):
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.attach_media("wab.q.never-pulled", PHONE)
+    assert (caught.value.code, caught.value.status_code) == ("media_not_found", 404)
+
+
+def test_attach_media_twice_is_refused_as_already_attached(rig):
+    rig.ledger.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                            sha256="a" * 64, local_path="/tmp/x.pdf", size=10, kind="document",
+                            mime_type="application/pdf", filename="Lebenslauf.pdf", now=rig.clock())
+    [queued] = rig.ledger.media_queue()
+    rig.executor.attach_media(queued["queue_id"], PHONE)
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.attach_media(queued["queue_id"], OTHER)
+    assert (caught.value.code, caught.value.status_code) == ("already_attached", 409)
+
+
+def test_a_voice_note_attached_by_hand_reaches_the_shape_transcription_reads(rig):
+    """app/wa/api.py transcribes off a Meta ``audio`` message object (out of this lane); what this
+    lane owns is the shape that reaches it -- bridge/envelope.py::meta_envelope, fed the same
+    outbox payload attach_media produces."""
+    rig.ledger.record_media(source_rel="WhatsApp Voice Notes/PTT-1.opus", mtime=0,
+                            media_id="wab.m.voice", sha256="v" * 64, local_path="/tmp/v.opus",
+                            size=2048, kind="audio", mime_type="audio/ogg", filename="PTT-1.opus",
+                            now=rig.clock())
+    [queued] = rig.ledger.media_queue()
+    rig.executor.attach_media(queued["queue_id"], PHONE)
+
+    [event] = rig.executor.outbox()["events"]
+    envelope = EN.meta_envelope(event["payload"], phone_number_id="pnid", display_phone_number="+1",
+                               waba_id="waba")
+    message = envelope["entry"][0]["changes"][0]["value"]["messages"][0]
+    assert message["type"] == "audio"
+    assert message["audio"]["id"] == "wab.m.voice"
+
+
+def test_the_queue_survives_a_restart(tmp_path):
+    """The queue lives in the ledger's own sqlite file, not in the watcher's memory -- a restart
+    (fresh Python objects, same file underneath) must not lose or duplicate a single row."""
+    path = tmp_path / "ledger.sqlite"
+    now = datetime(2026, 9, 22, 10, 0, 0, tzinfo=timezone.utc)
+    first = L.Ledger(str(path))
+    first.record_media(source_rel="WhatsApp Documents/x.pdf", mtime=0, media_id="wab.m.aaaa",
+                       sha256="a" * 64, local_path="/tmp/x.pdf", size=10, kind="document",
+                       mime_type="application/pdf", filename="Lebenslauf.pdf", now=now)
+    first.close()
+
+    reborn = L.Ledger(str(path))
+    queue = reborn.media_queue()
+    assert len(queue) == 1 and queue[0]["media_id"] == "wab.m.aaaa"
+    reborn.close()
+
+
+# --- ALSO FIX: a duplicate is visible, and the six pre-existing rows are reachable (round 6) -------
+def test_a_byte_identical_duplicate_pull_is_visible_on_the_queue_row(rig, tmp_path):
+    """Ivan does not expect two people to send byte-identical bytes -- but if it happens anyway, it
+    must be visible, not silently folded into whichever pull got stored first."""
+    rig.driver.media_files["WhatsApp Documents/Anna-CV.pdf"] = b"same bytes twice"
+    rig.driver.media_files["WhatsApp Documents/Bernd-CV.pdf"] = b"same bytes twice"
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    rig.executor.media_watcher = watch
+    watch.cycle()
+
+    assert len(rig.ledger.media_queue()) == 2
+    assert all(row["content_pull_count"] == 2 for row in rig.ledger.media_queue())
+    assert rig.executor.health()["media_watcher"]["unresolved_backlog"]["duplicate_content"] == 1
+
+    rig.driver.media_files["WhatsApp Documents/Solo.pdf"] = b"nobody else sent this"
+    watch.cycle()
+    solo = [r for r in rig.ledger.media_queue() if r["content_pull_count"] == 1]
+    assert len(solo) == 1
+
+
+def test_the_six_legacy_rows_from_before_the_queue_columns_existed_are_reachable(tmp_path):
+    """Reproduces the exact pre-round-5 schema found live on the mini 2026-09-22: ``media_seen``
+    with only (source_rel, media_id, size, mtime, seen_at) -- no queue_id/kind/source_dir/attach
+    columns at all, six rows from an earlier build. The migration must backfill kind (derivable from
+    the handset path) so these rows stop being unreachable, without inventing an mtime they already
+    carry."""
+    import sqlite3
+
+    path = tmp_path / "legacy.sqlite"
+    raw = sqlite3.connect(str(path))
+    raw.execute("create table media_seen (source_rel text primary key, media_id text not null, "
+               "size integer not null, mtime integer not null, seen_at text not null)")
+    raw.execute("insert into media_seen values (?,?,?,?,?)",
+               ("WhatsApp Voice Notes/202632/PTT-20260804-WA0001.opus", "wab.m.legacy1", 165803,
+                1785858224, "2026-09-22T08:02:05.680Z"))
+    raw.execute("insert into media_seen values (?,?,?,?,?)",
+               ("WhatsApp Images/Private/IMG-20260805-WA0000.jpg", "wab.m.legacy2", 122272,
+                1785928218, "2026-09-22T08:02:05.680Z"))
+    raw.commit()
+    raw.close()
+
+    ledger = L.Ledger(str(path))
+    try:
+        queue = {row["media_id"]: row for row in ledger.media_queue()}
+        assert set(queue) == {"wab.m.legacy1", "wab.m.legacy2"}
+        assert queue["wab.m.legacy1"]["kind"] == "audio"
+        assert queue["wab.m.legacy1"]["mtime"] == 1785858224, "the real stat mtime, not invented"
+        assert queue["wab.m.legacy2"]["kind"] == "image"
+        # reachable end to end: the human escape hatch (and, by the same call, an automatic match)
+        # can attach either one now that it carries a kind.
+        ledger.attach_media(queue["wab.m.legacy1"]["queue_id"], PHONE, now=berlin(2026, 9, 22, 10))
+    finally:
+        ledger.close()
+
+
+# --- automatic identity matching (TASK-131 round 6, Ivan's ruling 2026-09-22) ----------------------
+def _seed_media(rig, *, kind, size, filename, local_path="/tmp/x", media_id="wab.m.x", source_rel=None):
+    rig.ledger.record_media(source_rel=source_rel or f"WhatsApp {kind}/{filename}",
+                            mtime=int(rig.clock().timestamp()), media_id=media_id, sha256=media_id * 2,
+                            local_path=local_path, size=size, kind=kind,
+                            mime_type="application/octet-stream", filename=filename, now=rig.clock())
+    [row] = [r for r in rig.ledger.media_queue() if r["media_id"] == media_id]
+    return row
+
+
+def _write_opus(path, seconds):
+    """A minimal, valid two-page Ogg/Opus file whose last granule is exactly ``seconds`` -- enough
+    for bridge/identity.py::opus_duration_seconds_of_file to read back, nothing else about Opus."""
+    import struct
+
+    def page(granule, payload, seq, *, first=False, last=False):
+        header_type = (0x02 if first else 0) | (0x04 if last else 0)
+        head = struct.pack("<4sBBqIIIB", b"OggS", 0, header_type, granule, 1, seq, 0, 1)
+        return head + bytes([len(payload)]) + payload
+
+    blob = page(0, b"OpusHead" + b"\x00" * 10, 0, first=True)
+    blob += page(int(seconds * 48000), b"\x00" * 10, 1, last=True)
+    path.write_bytes(blob)
+
+
+def test_sole_candidate_of_a_kind_is_attached_strong_with_no_chat_ever_opened(rig):
+    _seed_media(rig, kind="image", size=1000, filename="IMG-1.jpg")
+    rig.executor.record_inbound(_inbound(media="image", phone=PHONE), [], rig.clock())
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    assert rig.ledger.media_queue() == []
+    assert rig.driver.opened == [], "a sole candidate needs no bubble read at all"
+    [event] = rig.executor.outbox()["events"]
+    assert event["payload"]["from"] == PHONE and event["payload"]["media_link_strength"] == "strong"
+
+
+def test_two_candidates_in_one_chat_minute_separated_by_size_not_time(rig):
+    """THE ACCEPTANCE CASE: two files, one chat minute, told apart because an attribute (size)
+    differs -- matching by time alone would have been unable to choose."""
+    _seed_media(rig, kind="document", size=165000, filename="Anna.pdf", media_id="wab.m.doc1")
+    rig.executor.record_inbound(_inbound(media="document", phone=PHONE, clock="10:04"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="document", phone=OTHER, clock="10:04"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {
+        PHONE: [{"clock": "10:04", "evidence": ["Anna.pdf", "165 KB"]}],
+        OTHER: [{"clock": "10:04", "evidence": ["Bernd.pdf", "900 KB"]}],
+    }
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["from"] == PHONE and event["payload"]["media_link_strength"] == "strong"
+
+
+def test_a_voice_note_is_matched_by_duration(rig, tmp_path):
+    audio = tmp_path / "v.opus"
+    _write_opus(audio, 7.0)
+    _seed_media(rig, kind="audio", size=audio.stat().st_size, filename="PTT-1.opus",
+               local_path=str(audio), media_id="wab.m.voice1")
+    rig.executor.record_inbound(_inbound(media="audio", phone=PHONE, clock="11:02"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="audio", phone=OTHER, clock="11:02"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {
+        PHONE: [{"clock": "11:02", "evidence": ["Sprachnachricht", "0:42"]}],
+        OTHER: [{"clock": "11:02", "evidence": ["Sprachnachricht", "0:07"]}],
+    }
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["from"] == OTHER and event["payload"]["media_link_strength"] == "strong"
+
+
+def test_the_newest_bubble_in_a_thread_supplies_the_evidence_not_the_oldest(rig, tmp_path):
+    """TASK-131 round 6 blocker B1, fixed: a chat that already holds an OLD voice note (already
+    resolved in an earlier cycle, or just old scrollback) must not answer for today's file with that
+    old bubble's duration. PHONE's newest bubble (1:30) does not match; OTHER's newest bubble (0:07)
+    does -- OTHER wins, even though PHONE's OLDEST bubble also happened to read 0:07."""
+    audio = tmp_path / "v.opus"
+    _write_opus(audio, 7.0)
+    _seed_media(rig, kind="audio", size=audio.stat().st_size, filename="PTT-9.opus",
+               local_path=str(audio), media_id="wab.m.v7")
+    rig.executor.record_inbound(_inbound(media="audio", phone=PHONE, clock="11:02"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="audio", phone=OTHER, clock="11:02"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {
+        # A: an old 0:07 voice note from last week (already resolved), today's real one at 1:30
+        PHONE: [{"clock": "09:00", "evidence": ["Sprachnachricht", "0:07"]},
+                {"clock": "11:02", "evidence": ["Sprachnachricht", "1:30"]}],
+        # B: an old 0:55, and today's real one -- the 7-second file we are attributing
+        OTHER: [{"clock": "09:10", "evidence": ["Sprachnachricht", "0:55"]},
+                {"clock": "11:02", "evidence": ["Sprachnachricht", "0:07"]}],
+    }
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["from"] == OTHER and event["payload"]["media_link_strength"] == "strong"
+
+
+def test_a_sole_candidate_contradicted_by_its_own_bubble_attaches_weak_not_strong(rig, tmp_path):
+    """TASK-131 round 6 blocker B2, fixed: a sole candidate is no longer unconditionally strong.
+    Its own thread reads 2:30 for a file whose bytes are 7 seconds -- that is read (audio is an
+    evidence-bearing kind) and disagreed with, so the pick is weak and audited, not silently strong."""
+    audio = tmp_path / "v.opus"
+    _write_opus(audio, 7.0)
+    _seed_media(rig, kind="audio", size=audio.stat().st_size, filename="PTT-9.opus",
+               local_path=str(audio), media_id="wab.m.contra")
+    rig.executor.record_inbound(_inbound(media="audio", phone=PHONE, clock="11:02"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {PHONE: [{"clock": "11:02",
+                                                   "evidence": ["Sprachnachricht", "2:30"]}]}
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 1}
+    phone, strength, reason = [(r["attached_phone"], r["link_strength"], r["link_reason"])
+                               for r in [dict(x) for x in
+                                        rig.ledger._db.execute("select * from media_seen").fetchall()]
+                               if r["media_id"] == "wab.m.contra"][0]
+    assert (phone, strength, reason) == (PHONE, "weak", "sole_candidate_contradicted")
+    assert rig.driver.opened == [PHONE], "an evidence-bearing kind's sole candidate IS checked"
+
+
+def test_a_sole_candidate_confirmed_by_its_own_bubble_stays_strong(rig, tmp_path):
+    """The same check, agreeing this time: still strong, still audited as a real confirmation."""
+    audio = tmp_path / "v.opus"
+    _write_opus(audio, 7.0)
+    _seed_media(rig, kind="audio", size=audio.stat().st_size, filename="PTT-9.opus",
+               local_path=str(audio), media_id="wab.m.agree")
+    rig.executor.record_inbound(_inbound(media="audio", phone=PHONE, clock="11:02"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {PHONE: [{"clock": "11:02",
+                                                   "evidence": ["Sprachnachricht", "0:07"]}]}
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["media_link_strength"] == "strong"
+
+
+def test_a_legacy_row_never_wins_a_live_candidate_over_the_fresh_file(rig):
+    """TASK-131 round 6 blocker B3, fixed: a pre-round-5 backfilled row (``legacy=1``) must not
+    compete for a live candidate at all -- it stays queued (still reachable by a human via
+    ``unresolved_media``/``attach_media``) while the fresh file of the same kind gets the match."""
+    old = _seed_media(rig, kind="image", size=999, filename="IMG-OLD.jpg", media_id="wab.m.old")
+    rig.ledger._db.execute("update media_seen set legacy=1 where media_id=?", (old["media_id"],))
+    rig.ledger._db.commit()
+    _seed_media(rig, kind="image", size=1000, filename="IMG-NEW.jpg", media_id="wab.m.new")
+    rig.executor.record_inbound(_inbound(media="image", phone=PHONE, clock="10:04"), [], rig.clock())
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["media_id"] == "wab.m.new"
+    # the legacy row is untouched, still in the queue, still visible to a human
+    remaining = [r["media_id"] for r in rig.ledger.media_queue()]
+    assert remaining == ["wab.m.old"]
+
+
+def test_two_images_with_nothing_to_distinguish_them_attach_weak_not_stalled(rig):
+    """Ivan's own example: an image bubble shows neither size nor a name. Attached anyway --
+    deterministically -- and marked weak, visible on the row and in the backlog, never a stall."""
+    _seed_media(rig, kind="image", size=1000, filename="IMG-1.jpg")
+    rig.executor.record_inbound(_inbound(media="image", phone=PHONE, clock="10:04"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="image", phone=OTHER, clock="10:04"), [], rig.clock())
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 1}
+    assert rig.ledger.media_backlog(rig.clock())["weak_links"] == 1
+    [event] = [e for e in rig.executor.outbox()["events"] if e["payload"].get("media_id")]
+    assert event["payload"]["media_link_strength"] == "weak"
+
+
+def test_zero_same_kind_candidates_stays_queued_not_guessed(rig):
+    _seed_media(rig, kind="document", size=10, filename="x.pdf")
+    assert rig.executor.auto_match_media() == {"attached": 0, "weak": 0}
+    assert len(rig.ledger.media_queue()) == 1
+
+
+def test_an_unreadable_candidate_thread_does_not_block_a_readable_one(rig):
+    """One candidate's chat will not open (a stale contact, a driver hiccup); the sweep still
+    reaches a decision using the other -- and the row is not stranded for next cycle to retry blind."""
+    _seed_media(rig, kind="document", size=165000, filename="Anna.pdf")
+    rig.executor.record_inbound(_inbound(media="document", phone=PHONE, clock="10:04"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="document", phone=OTHER, clock="10:04"), [], rig.clock())
+    rig.driver.fail_on_open = "no chat on the handset for this number"
+    rig.driver.chats = {}  # unused; fail_on_open fires on any open_chat call
+
+    result = rig.executor.auto_match_media()
+    assert result["attached"] == 1  # weak tie-break: neither candidate's evidence was readable
 
 
 def test_health_says_the_msisdn_is_unverified(rig):
@@ -495,16 +1148,18 @@ def test_a_refusal_travels_as_the_contract_envelope(http):
     assert body["error"]["retryable"] is False
 
 
-# --- the inbound watcher (TASK-143) --------------------------------------------------------------
+# --- the inbound watcher (TASK-143, lock removed TASK-131 round 6) --------------------------------
 class BusyPhone(D.FakeDriver):
-    """The other lane is holding the flock. That is the expected case, not an incident."""
+    """The other lane holds huawei01.lock for a send. The shade read must not care."""
 
     def lock(self, *, timeout=D.LOCK_TIMEOUT_SEC):
         raise D.PhoneBusy(f"phone lock busy for {timeout:.0f}s: /home/x/huawei01.lock")
 
 
 class BrokenPhone(D.FakeDriver):
-    def lock(self, *, timeout=D.LOCK_TIMEOUT_SEC):
+    """adb itself is gone -- the one failure the shade read can still have."""
+
+    def pull_inbound(self):
         raise D.DriverError("L2N4C19B14054874 is not in adb 'device' state")
 
 
@@ -516,17 +1171,60 @@ def test_a_watcher_cycle_stores_what_the_phone_saw_and_beats(rig):
     assert watch.errors == 0
 
 
-def test_a_busy_flock_is_a_skipped_cycle_and_not_an_error(rig):
-    rig.executor.driver = BusyPhone()
+def test_a_notification_arriving_while_the_lock_is_held_is_still_queued_and_processed(rig):
+    """THE ACCEPTANCE CASE (TASK-131 round 6): the shade read takes no lock at all, so a send in
+    flight (or anything else holding huawei01.lock) can never make this watcher skip a cycle -- the
+    root of half the decoy attributions this round's brief was written from."""
+    driver = BusyPhone(inbound=_inbound())
+    rig.executor.driver = driver
     watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
-    assert watch.cycle() is None
-    assert (watch.busy_cycles, watch.errors, watch.last_ok_at) == (1, 0, None)
+    assert watch.cycle() == {"stored": 1, "seen": 1, "unresolved": 0}
+    assert watch.errors == 0 and watch.last_ok_at == L.utc(rig.clock())
+    assert rig.executor.outbox()["events"], "the notification reached the durable queue"
+    assert not hasattr(watch, "busy_cycles"), "there is nothing left for this counter to count"
 
 
 def test_a_phone_that_is_gone_is_counted_and_journalled_and_never_raises(rig):
     rig.executor.driver = BrokenPhone()
     watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
     assert watch.cycle() is None
-    assert (watch.errors, watch.busy_cycles) == (1, 0)
+    assert watch.errors == 1
     assert "adb 'device' state" in watch.last_error
     assert watch.heartbeat()["last_ok_at"] is None
+
+
+# --- the identity watcher (TASK-131 round 6) --------------------------------------------------------
+def test_an_identity_watcher_cycle_runs_the_sweep_and_beats(rig):
+    _seed_media(rig, kind="image", size=1000, filename="IMG-1.jpg")
+    rig.executor.record_inbound(_inbound(media="image", phone=PHONE), [], rig.clock())
+    watch = W.IdentityWatcher(rig.executor, log=lambda _m: None)
+
+    assert watch.cycle() == {"attached": 1, "weak": 0}
+    assert watch.heartbeat()["last_ok_at"] == L.utc(rig.clock())
+    assert (watch.attached_total, watch.weak_total, watch.errors) == (1, 0, 0)
+
+
+def test_an_identity_watcher_error_is_counted_and_journalled_and_never_raises(rig):
+    class BrokenExecutor:
+        clock = rig.clock
+        ledger = rig.ledger
+
+        def auto_match_media(self):
+            raise RuntimeError("boom")
+
+    watch = W.IdentityWatcher(BrokenExecutor(), log=lambda _m: None)
+    assert watch.cycle() is None
+    assert watch.errors == 1 and "boom" in watch.last_error
+    assert watch.heartbeat()["last_ok_at"] is None
+
+
+def test_health_reports_the_identity_watcher(rig):
+    W.IdentityWatcher(rig.executor, log=lambda _m: None).start()
+    heartbeat = rig.executor.health()["identity_watcher"]
+    assert heartbeat["alive"] is True
+    heartbeat_direct = rig.executor.identity_watcher
+    heartbeat_direct.stop()
+
+
+def test_health_reports_no_identity_watcher_when_none_is_wired(rig):
+    assert rig.executor.health()["identity_watcher"] is None

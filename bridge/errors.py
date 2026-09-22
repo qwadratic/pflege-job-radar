@@ -11,6 +11,8 @@ raised by us on purpose.
 | invalid_request   | 400  | the request cannot be classified; nothing was attempted           |
 | unauthorized      | 401  | bad or missing bearer token, or a non-loopback peer               |
 | chat_not_found    | 404  | no chat by that identity is on the handset's list                 |
+| media_not_found   | 404  | no media was ever pulled for that id, or no queued file has this id (TASK-131) |
+| already_attached  | 409  | that queued file was already attached to a thread (TASK-131 round 5) |
 | idempotency_conflict | 409 | a different body under a key whose first body has no result yet |
 | chat_identity_mismatch | 409 | the chat on screen is not the one the caller named           |
 | not_on_whatsapp   | 422  | the chat could not be opened for that number                      |
@@ -57,8 +59,22 @@ def chat_not_found(message, **detail):
     return BridgeRefusal("chat_not_found", 404, message, detail=detail)
 
 
+def media_not_found(message, **detail):
+    # TASK-131. The definite, MetaError-shaped refusal app/wa/bridge.Client.media_url needs
+    # status_code to carry: import_history.py:538-539 reads "not None" as "an answer arrived, and
+    # it says no" (not the same as an unreachable bridge, where status_code stays None).
+    return BridgeRefusal("media_not_found", 404, message, detail=detail)
+
+
 def idempotency_conflict(message, **detail):
     return BridgeRefusal("idempotency_conflict", 409, message, detail=detail)
+
+
+def already_attached(message, **detail):
+    # TASK-131 round 5: the human escape hatch (Executor.attach_media) named a queue_id that had
+    # already been attached -- an operator input problem (a stale listing, a repeated command), not
+    # a system failure, so it is a 409 alongside idempotency_conflict rather than a 500.
+    return BridgeRefusal("already_attached", 409, message, detail=detail)
 
 
 def chat_identity_mismatch(message, **detail):

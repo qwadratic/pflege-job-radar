@@ -23,6 +23,7 @@ import hashlib
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import errors as E
 from . import inbound as I
@@ -127,6 +128,28 @@ class PhoneDriver:
         """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now."""
         raise NotImplementedError
 
+    def read_media_evidence(self):
+        """-> [{"clock", "evidence"}] for the chat that is open right now (TASK-131 round 6): one
+        entry per bubble, ``evidence`` the pool of every text and content-desc string in that
+        bubble's own node cluster -- not just ``message_text`` (bridge/adb_driver.py's own docstring
+        on why a voice note used to be invisible to this reader). ``bridge/identity.py::
+        parse_bubble_evidence`` turns the pool into duration/size/pages/filename; this method only
+        gathers it. Caller holds the lock and has already opened the thread, same contract as
+        ``read_bubbles``."""
+        raise NotImplementedError
+
+    # --- inbound media (TASK-131) --------------------------------------------------------------
+    def list_media(self):
+        """-> {rel_path: (size, mtime_epoch)} for every file under the handset's WhatsApp media
+        tree. Filesystem-level (``find``+``stat``), touches no UI, takes no lock."""
+        raise NotImplementedError
+
+    def pull_media(self, rel_path, dest_path):
+        """Copy one file off the handset to ``dest_path``. -> the path written. Raises
+        ``DriverError`` on any failure; nothing was written on that path in that case.
+        Filesystem-level (``adb pull``), touches no UI, takes no lock."""
+        raise NotImplementedError
+
     # --- the chat list (TASK-147) -------------------------------------------------------------
     def list_chats(self, *, include_archived=True):
         """-> [ChatRow] as the handset draws them, top row first. Read-only, taps nothing but the
@@ -184,12 +207,24 @@ class FakeDriver(PhoneDriver):
     proof for the flock rule: one acquire/release pair per bubble, nothing in between.
     """
 
-    def __init__(self, *, ticks=None, thread=None, inbound=None, open_thread=None, chats=None):
+    def __init__(self, *, ticks=None, thread=None, inbound=None, open_thread=None, chats=None,
+                 media_files=None):
         self.ticks = list(ticks or [])
         self.thread = list(thread or [])
         self.inbound = list(inbound or [])
         self.open_thread = list(open_thread or [])   # what the post-send thread read hands back
         self.unresolved = []
+        # what read_media_evidence() hands back for the chat currently open (TASK-131 round 6) --
+        # a test scripts it per phone via ``media_evidence_by_phone``, keyed the same way open_chat
+        # keys ``chats``.
+        self.media_evidence_by_phone = {}
+        # --- media (TASK-131) -------------------------------------------------------------------
+        # rel_path -> bytes, scriptable per test. mtimes default to 0 for every file and a test
+        # that cares about the linking window sets media_mtimes[rel] explicitly.
+        self.media_files = dict(media_files or {})
+        self.media_mtimes = {}
+        self.pulled_media = []     # rel paths this driver was asked to pull, in call order
+        self.fail_pull = None      # a rel path that raises when pulled, or None
         self.sent = []            # bodies that reached the phone -- the "did it send" assertion
         self.opened = []
         self.lock_events = []
@@ -207,6 +242,7 @@ class FakeDriver(PhoneDriver):
         # test that cares about chats fills it, and then the open chat follows the book.
         self.chats = {k: dict(v) for k, v in (chats or {}).items()}
         self.open_title = None
+        self._open_phone = None
         self.cleared = []         # titles a clear was tapped on
         self.deleted = []         # titles a delete was tapped on
         self.clear_leaves = 0     # bubbles a clear leaves behind: the verification-failure script
@@ -240,6 +276,7 @@ class FakeDriver(PhoneDriver):
         if self.fail_on_open:
             raise DriverError(self.fail_on_open)
         self.opened.append(phone)
+        self._open_phone = phone
         for title, chat in self.chats.items():
             if chat.get("phone") == phone:
                 self.open_title = title
@@ -276,8 +313,9 @@ class FakeDriver(PhoneDriver):
         return self.thread
 
     def pull_inbound(self):
-        if not self.lock_held:
-            raise AssertionError("pull_inbound outside the lock")
+        # NO lock assertion (TASK-131 round 6): the notification shade is a pure read and
+        # bridge/executor.py::Executor.drain_inbound no longer takes huawei01.lock for it -- this
+        # must be reachable and correct whether or not something else holds the lock right now.
         out, self.inbound = list(self.inbound), []
         unresolved, self.unresolved = list(self.unresolved), []
         return out, unresolved
@@ -287,6 +325,27 @@ class FakeDriver(PhoneDriver):
             raise AssertionError("read_open_thread outside the lock")
         out, self.open_thread = list(self.open_thread), []
         return out, []
+
+    def read_media_evidence(self):
+        if not self.lock_held:
+            raise AssertionError("read_media_evidence outside the lock")
+        return list(self.media_evidence_by_phone.get(self._open_phone) or [])
+
+    # --- media (TASK-131) ------------------------------------------------------------------------
+    def list_media(self):
+        return {rel: (len(blob), self.media_mtimes.get(rel, 0))
+                for rel, blob in self.media_files.items()}
+
+    def pull_media(self, rel_path, dest_path):
+        if self.fail_pull == rel_path:
+            raise DriverError(f"adb pull of {rel_path!r} failed (scripted)")
+        if rel_path not in self.media_files:
+            raise DriverError(f"no such file on the handset: {rel_path!r}")
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(self.media_files[rel_path])
+        self.pulled_media.append(rel_path)
+        return dest
 
     # --- the chat list (TASK-147) -------------------------------------------------------------
     def list_chats(self, *, include_archived=True):

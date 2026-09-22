@@ -230,6 +230,110 @@ def test_a_number_as_its_own_profile_name_is_not_a_name():
     assert contacts[0]["profile"]["name"] == ""
 
 
+# --- the envelope, once media is linked (TASK-131) --------------------------------------------------
+def test_a_linked_document_arrives_as_the_meta_shape_the_webhook_already_reads():
+    """Shape fidelity again, now for the branch TASK-131 adds: app/wa/api.py must read this exactly
+    like a real Cloud API document message without one line of change."""
+    from app.wa import api as API
+
+    photo = DUMP.replace("text=Ja, gerne, time", "text=\U0001f4c4 Dokument, time")
+    messages, _ = I.notification_messages(photo, tz=BERLIN, resolve=resolver)
+    payload = messages[0].payload()
+    payload["media_id"] = "wab.m.aaaaaaaaaaaaaaaaaaaa"
+    payload["media_mime_type"] = "application/pdf"
+    payload["media_filename"] = "Lebenslauf.pdf"
+
+    envelope = EV.meta_envelope(payload, phone_number_id="pflege-bridge-01",
+                                display_phone_number="+4915216678689", waba_id="pflege-wa-bridge")
+    message = envelope["entry"][0]["changes"][0]["value"]["messages"][0]
+    assert message["type"] == "document"
+    assert message["document"] == {"id": "wab.m.aaaaaaaaaaaaaaaaaaaa", "mime_type": "application/pdf",
+                                   "filename": "Lebenslauf.pdf"}
+
+    parsed, skipped = API.inbound_messages(envelope)
+    assert skipped == 0 and len(parsed) == 1
+    assert parsed[0]["kind"] == "document"
+    assert parsed[0]["media_id"] == "wab.m.aaaaaaaaaaaaaaaaaaaa"
+    assert parsed[0]["media_mime_type"] == "application/pdf"
+    assert parsed[0]["media_filename"] == "Lebenslauf.pdf"
+
+
+def test_a_weakly_attributed_documents_strength_reaches_the_parsed_message():
+    """TASK-131 round 6: the one field that gates a weak document's text from the model
+    (app/wa/api.py) travels the same wire everything else about a linked file already does."""
+    from app.wa import api as API
+
+    photo = DUMP.replace("text=Ja, gerne, time", "text=\U0001f4c4 Dokument, time")
+    messages, _ = I.notification_messages(photo, tz=BERLIN, resolve=resolver)
+    payload = messages[0].payload()
+    payload["media_id"] = "wab.m.aaaaaaaaaaaaaaaaaaaa"
+    payload["media_filename"] = "Lebenslauf.pdf"
+    payload["media_link_strength"] = "weak"
+
+    envelope = EV.meta_envelope(payload, phone_number_id="pflege-bridge-01",
+                                display_phone_number="+4915216678689", waba_id="pflege-wa-bridge")
+    assert envelope["entry"][0]["changes"][0]["value"]["messages"][0]["document"]["link_strength"] \
+        == "weak"
+
+    parsed, skipped = API.inbound_messages(envelope)
+    assert skipped == 0
+    assert parsed[0]["media_link_strength"] == "weak"
+
+
+def test_a_strongly_attributed_documents_strength_also_reaches_the_parsed_message():
+    from app.wa import api as API
+
+    photo = DUMP.replace("text=Ja, gerne, time", "text=\U0001f4c4 Dokument, time")
+    messages, _ = I.notification_messages(photo, tz=BERLIN, resolve=resolver)
+    payload = messages[0].payload()
+    payload["media_id"] = "wab.m.bbbbbbbbbbbbbbbbbbbb"
+    payload["media_filename"] = "Lebenslauf.pdf"
+    payload["media_link_strength"] = "strong"
+
+    envelope = EV.meta_envelope(payload, phone_number_id="pflege-bridge-01",
+                                display_phone_number="+4915216678689", waba_id="pflege-wa-bridge")
+    parsed, skipped = API.inbound_messages(envelope)
+    assert skipped == 0
+    assert parsed[0]["media_link_strength"] == "strong"
+
+
+def test_no_strength_at_all_is_omitted_not_sent_as_a_value():
+    """A human attach (or a legacy link migrated before this column existed) carries no strength --
+    omitted, never defaulted to 'strong', so a reader cannot mistake silence for a claim."""
+    from app.wa import api as API
+
+    photo = DUMP.replace("text=Ja, gerne, time", "text=\U0001f4c4 Dokument, time")
+    messages, _ = I.notification_messages(photo, tz=BERLIN, resolve=resolver)
+    payload = messages[0].payload()
+    payload["media_id"] = "wab.m.cccccccccccccccccccc"
+    payload["media_filename"] = "Lebenslauf.pdf"
+
+    envelope = EV.meta_envelope(payload, phone_number_id="pflege-bridge-01",
+                                display_phone_number="+4915216678689", waba_id="pflege-wa-bridge")
+    assert "link_strength" not in envelope["entry"][0]["changes"][0]["value"]["messages"][0]["document"]
+    parsed, _ = API.inbound_messages(envelope)
+    assert parsed[0]["media_link_strength"] is None
+
+
+def test_an_unlinked_media_message_still_falls_back_to_the_placeholder_text():
+    photo = DUMP.replace("text=Ja, gerne, time", "text=\U0001f4f7 Foto, time")
+    messages, _ = I.notification_messages(photo, tz=BERLIN, resolve=resolver)
+    message = envelope_for(messages[0])["entry"][0]["changes"][0]["value"]["messages"][0]
+    assert message["type"] == "text"
+    assert message["text"]["body"] == "\U0001f4f7 Foto"
+
+
+def test_a_location_placeholder_never_becomes_a_media_message_even_with_an_id_on_it():
+    """Not a downloadable kind (bridge/media.py:DOWNLOADABLE_KINDS): a location or a contact card
+    is never a file on disk, so an id here would be invented, not pulled."""
+    payload = parse()[0][0].payload()
+    payload["media_kind"] = "location"
+    payload["media_id"] = "wab.m.whatever"
+    message = EV.meta_envelope(payload, phone_number_id="x", display_phone_number="y",
+                               waba_id="z")["entry"][0]["changes"][0]["value"]["messages"][0]
+    assert message["type"] == "text"
+
+
 # --- the relay cursor -------------------------------------------------------------------------------
 class FakeRelay(RP.Relay):
     """A relay with the ssh leg and the webhook replaced by lists."""

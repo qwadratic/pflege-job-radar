@@ -93,6 +93,7 @@ A real (trimmed) transcript:
 | `POST /v1/chats/clear`, `POST /v1/chats/delete` | server → executor | destructive, `confirm` required, identity proved, result verified, audited |
 | `POST`/`GET /v1/broadcasts`, `GET /v1/broadcasts/<id>`, `POST /v1/broadcasts/<id>/stop` | server → executor | a broadcast run: queue it, read every item's status, stop it between items |
 | `GET /v1/audit` | server → executor | the destruction record; the one table the retention sweep never touches |
+| `GET /v1/media/<id>`, `GET /v1/media/<id>/raw` | server → executor | TASK-131: a pulled inbound file's metadata (mime type, filename, size, a relative URL) and its bytes — the two steps `app/wa/bridge.Client.media_url`/`download_media` already speak to Meta, now answered by our own executor for a document/image/audio/video the media watcher tied to a message with confidence |
 
 Every route is loopback-only and bearer-token guarded (`bridge/server.py:_guard`), and a refusal answers the same envelope shape everywhere: `{code, message, http_status, detail}` (`bridge/errors.py`).
 

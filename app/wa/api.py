@@ -188,10 +188,16 @@ def parse_message(m):
         return {**base, "button_id": bid or None, "text": title}
     if kind in ("document", "image", "audio", "video"):
         media = m.get(kind) or {}
+        # ``link_strength`` is not a Meta field -- it is only ever present on our own phone rail's
+        # envelope (bridge/envelope.py::_media_object, TASK-131 round 6), 'strong'/'weak'/'human'
+        # depending on how bridge/identity.py::decide attributed the file, or absent for a real Meta
+        # payload and for a legacy link that predates the column. finish_inbound reads it to keep a
+        # weakly-attributed DOCUMENT's text from ever reaching the model.
         return {**base, "button_id": None, "text": "",
                 "media_id": str(media.get("id") or "").strip() or None,
                 "media_mime_type": str(media.get("mime_type") or "").strip() or None,
-                "media_filename": str(media.get("filename") or "").strip() or None}
+                "media_filename": str(media.get("filename") or "").strip() or None,
+                "media_link_strength": str(media.get("link_strength") or "").strip() or None}
     if kind in SUMMARIZED_KINDS:
         return {**base, "button_id": None, **_summarized(kind, m)}
     return None
@@ -696,7 +702,15 @@ def finish_inbound(c, m, client=None):
     t = ST.thread(c, phone)
     dirty = _note_arrival(c, t, wamid)
     is_media = m["kind"] in _MEDIA_KINDS
-    reads = is_media and C.BRAIN == "luna" and m["kind"] in _READ_KINDS
+    # TASK-131 round 6: a WEAK automatic attribution (bridge/identity.py::decide picked this phone
+    # over another candidate on no confirming attribute -- our own phone rail's own extension to the
+    # Meta shape, app/wa/api.py:parse_message) is acknowledged like any unread kind (the flat
+    # MEDIA_REPLY below), never read -- the one place a wrong attachment would otherwise recite one
+    # candidate's document text into a conversation with another. A weak IMAGE or AUDIO is not
+    # gated here: neither carries the risk this exists for (an image's text never lands on a card
+    # key; a voice note's own strongest signal, duration, already made a weak audio pick rare).
+    weak_document = m["kind"] == "document" and m.get("media_link_strength") == "weak"
+    reads = is_media and C.BRAIN == "luna" and m["kind"] in _READ_KINDS and not weak_document
     transcript = None
     if is_media:
         media_key = MEDIA_CLAIM_PREFIX + wamid

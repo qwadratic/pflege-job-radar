@@ -48,6 +48,7 @@ from zoneinfo import ZoneInfo
 
 from . import driver as D
 from . import inbound as I
+from . import media as MD
 
 # --- the handset, pinned ------------------------------------------------------------------------
 #: Huawei P30 Lite "01", the phone that holds the WhatsApp account.
@@ -349,6 +350,12 @@ class Adb:
 
     def shell(self, cmd, *, timeout=40):
         return self.run("shell", cmd, timeout=timeout).stdout
+
+    def pull(self, remote, local, *, timeout=120):
+        """-> the finished process (``.returncode``, ``.stderr``). Filesystem-level (TASK-131):
+        not a shell command, so it is its own method rather than a ``shell()`` string, and its own
+        override point in a scripted test (``tests/test_bridge_adb.py::ScriptedAdb``)."""
+        return self.run("pull", remote, local, timeout=timeout)
 
     def connected(self):
         try:
@@ -656,6 +663,48 @@ class AdbDriver(D.PhoneDriver):
             out.append((y1, D.BubbleView(direction, node.text, clock, tick)))
         return out
 
+    def _media_bubble_bands(self, nodes):
+        """-> [{"clock", "direction", "evidence"}] oldest first: one entry per bubble, gathered by
+        proximity to its own ``date`` node the same way ``_placed_bubbles`` groups a date and a tick
+        to a message -- except the band here is read WIDE (every node between this bubble's date
+        and the previous one's), not narrowed to ``message_text``, because a voice note draws no
+        ``message_text`` node at all (this module's own docstring: today's reader is blind to one
+        for exactly that reason). ``evidence`` is every non-empty ``text``/``desc`` string in the
+        band, content-desc included.
+
+        UNVERIFIED against a live voice-note or document bubble (module docstring: uiautomator
+        would not dump this handset's WhatsApp window on 2026-09-22 to confirm it, launcher and
+        Settings both dumped fine the same session, so the block is not WhatsApp-specific and not
+        this code's own doing). Deliberately NOT keyed to a specific resource id the way
+        ``message_text``/``date``/``status`` are -- ``bridge/identity.py::parse_bubble_evidence``
+        pattern-matches the whole pool, so whatever the real node shape turns out to be, a duration,
+        size or filename drawn as text OR content-desc anywhere in the band is still found. Confirm
+        against a real voice note and a real document the first time either is reachable, the same
+        caution this task's own brief applies to a document's filename-preservation claim.
+        """
+        width = 1080
+        for node in nodes:
+            if node.short_rid == "conversation_layout" or node.cls.endswith("FrameLayout"):
+                width = max(width, node.bounds[2])
+        dates = sorted((n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)),
+                      key=lambda n: n.bounds[1])
+        out, prev_bottom = [], 0
+        for d in dates:
+            top, bottom = prev_bottom, d.bounds[3] + 4
+            direction = "out" if d.bounds[2] > width * 0.9 else "in"
+            band = [n for n in nodes if n is not d and top <= n.bounds[1] <= bottom]
+            evidence = [t.strip() for n in band for t in (n.text, n.desc) if t and t.strip()]
+            out.append({"clock": d.text.strip(), "direction": direction, "evidence": evidence})
+            prev_bottom = d.bounds[3]
+        return out
+
+    def read_media_evidence(self):
+        """-> [{"clock", "evidence"}] for the INCOMING bubbles of the open thread (PhoneDriver
+        contract, TASK-131 round 6) -- the file this rail is trying to attribute is always the other
+        party's, never our own reply."""
+        bands = self._media_bubble_bands(self.adb.dump())
+        return [{"clock": b["clock"], "evidence": b["evidence"]} for b in bands if b["direction"] == "in"]
+
     @staticmethod
     def day_separator_y(nodes):
         """-> the top y of the LOWEST day separator on screen, or None when none is drawn.
@@ -774,6 +823,42 @@ class AdbDriver(D.PhoneDriver):
         today = datetime.now(self.tz).strftime("%Y-%m-%d")
         return I.thread_messages([view for _y, view in placed],
                                  counterparty="+" + I.digits(phone), local_date=today, older=older)
+
+    # --- inbound media (TASK-131) -------------------------------------------------------------------------
+    def list_media(self):
+        """-> {rel_path: (size, mtime_epoch)} for every RECEIVED file under WhatsApp's flat media
+        tree. Filesystem-level (``find``+``stat``, both toybox on this handset): touches no UI and
+        is never taken under ``huawei01.lock`` (bridge/watcher.py::MediaWatcher does not acquire it
+        for exactly this reason).
+
+        The technique is read off a colleague's own solution (``wa_phone/inbox.py::_list_media``),
+        which is the right approach to a flat tree neither ``find`` nor ``stat`` needs the screen
+        for; what is NOT reused is their linking of what this returns to a candidate -- this rail
+        does not link it at all any more (``bridge/media.py``'s own module docstring says why).
+        ``! -path
+        '*/Sent/*'`` drops the outgoing copies WhatsApp keeps of what this number itself sent --
+        their own poller excludes the same tree for the same reason: it is not inbound. Missing
+        folders (a fresh handset that has never received a document) are not an error; ``2>
+        /dev/null`` on both the ``cd`` and the ``find`` makes an empty tree read as an empty listing.
+        """
+        self.adb.require_device()
+        dirs = " ".join(shlex.quote(d) for d in MD.WA_MEDIA_DIRS)
+        out = self.adb.shell(
+            f"cd {shlex.quote(MD.WA_MEDIA_ROOT)} 2>/dev/null && find {dirs} -type f "
+            f"! -path '*/Sent/*' ! -name '.*' -exec stat -c '%s %Y %n' {{}} + 2>/dev/null",
+            timeout=60)
+        return MD.parse_stat_listing(out)
+
+    def pull_media(self, rel_path, dest_path):
+        """``adb pull`` one file off the handset. -> ``dest_path``. Filesystem-level: does not
+        touch the screen and is not taken under the flock, same reason as ``list_media``."""
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        result = self.adb.pull(f"{MD.WA_MEDIA_ROOT}/{rel_path}", str(dest), timeout=120)
+        if result.returncode != 0 or not dest.exists():
+            raise D.DriverError(f"adb pull of {rel_path!r} failed (rc={result.returncode}): "
+                                f"{(result.stderr or '').strip()[:200]}")
+        return dest
 
     # --- the chat list, and the two destructive verbs (TASK-147) -----------------------------------------
     def _chat_list(self, *, archived=False):

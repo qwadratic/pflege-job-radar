@@ -89,6 +89,10 @@ BROADCASTS_PATH = "/v1/broadcasts"
 CHAT_CLEAR_PATH = "/v1/chats/clear"
 CHAT_DELETE_PATH = "/v1/chats/delete"
 AUDIT_PATH = "/v1/audit"
+# TASK-131 round 4: the human escape hatch -- an unresolved file's own listing, and attaching one
+# to a phone by hand, through the exact path an automatic link takes.
+MEDIA_LIST_PATH = "/v1/media"
+MEDIA_ATTACH_PATH = "/v1/media/attach"
 
 # The executor's four per-item statuses (``bridge/broadcast.py``): ``sent`` is a verified tick or a
 # ledger replay of one, ``queued`` is not attempted yet or deferred to ``next_attempt_at``,
@@ -596,15 +600,25 @@ class Client:
                           f"Meta template registry, and the local set is TASK-124", status_code=CONTRACT_STATUS)
 
     def media_url(self, media_id):
-        """Step 1 of the same two-step download ``meta.Client`` does: the executor answers with a
-        loopback URL on its own ``/v1/media`` route plus the mime type. Unreachable keeps
+        """Step 1 of the same two-step download ``meta.Client`` does: the executor answers with the
+        mime type and a URL for its own ``/v1/media/<id>/raw`` route (TASK-131). Unreachable keeps
         ``status_code=None`` so ``import_history.py:538-539`` aborts the run instead of recording the
-        document as permanently unrecoverable."""
+        document as permanently unrecoverable; a definite refusal (media never pulled) is a 404, so
+        ``import_history`` records that one document as not recoverable and keeps going.
+
+        The executor answers with a PATH, not an absolute URL -- it has no way to know which local
+        port our own ssh tunnel maps it to, and that mapping must stay free to change without a
+        redeploy on its side. An already-absolute answer (a test's fake transport, or a future
+        executor that does know its own address) is passed through untouched.
+        """
         status, out = self._request("GET", MEDIA_PATH + urllib.parse.quote(str(media_id)))
         if status != 200 or not isinstance(out, dict) or not out.get("url"):
             raise BridgeError(f"bridge media lookup for {media_id!r} returned HTTP {status} with no url",
                               status_code=status if status != 200 else None, payload=out)
-        return out
+        url = out["url"]
+        if not urllib.parse.urlsplit(url).scheme:
+            url = self.base_url + url
+        return {**out, "url": url}
 
     def download_media(self, url):
         """Step 2: the bytes, through the binary transport, with the same bearer token."""
@@ -868,6 +882,33 @@ class Client:
             raise BridgeError(f"bridge answered {AUDIT_PATH} without rows (rows={rows!r})",
                               status_code=UNCERTAIN_STATUS, payload=body)
         return rows
+
+    # --- the queue and the human escape hatch (TASK-131 round 6, Ivan's ruling 2026-09-22): most
+    # pulled files never reach this queue at all any more -- bridge/identity.py::decide attributes
+    # them automatically, strong or weak (bridge/executor.py::Executor.auto_match_media). What is
+    # LEFT here is whatever has zero same-kind candidates yet, the genuine fallback. -------------------
+    def unresolved_media(self):
+        """-> every pulled file automatic matching has not been able to place yet, oldest first
+        (``GET /v1/media``): kind, size, age, the handset folder it came from, and which threads
+        plausibly relate to it in that period -- no filename, no phone. The listing exists so an
+        operator can decide, from facts alone, which id in ``attach_media`` below is the one they
+        mean."""
+        body = self._require_ok(*self._request("GET", MEDIA_LIST_PATH), MEDIA_LIST_PATH)
+        files = body.get("files")
+        if not isinstance(files, list):
+            raise BridgeError(f"bridge answered {MEDIA_LIST_PATH} without files (files={files!r})",
+                              status_code=UNCERTAIN_STATUS, payload=body)
+        return files
+
+    def attach_media(self, queue_id, phone):
+        """Attach one queued file to one phone's own thread, by hand (``POST /v1/media/attach``).
+        -> the executor's own report. The fallback for whatever automatic matching could not place
+        at all (no same-kind candidate yet): the operator already knows whose file this is from
+        something off this machine, and naming the phone is how that knowledge reaches the ledger,
+        through ``bridge/ledger.py::link_media`` -- the same call an automatic match makes."""
+        payload = {"queue_id": BI.require_text(queue_id, "queue_id"),
+                  "phone": BI.require_e164(phone)}
+        return self._require_ok(*self._request("POST", MEDIA_ATTACH_PATH, payload), MEDIA_ATTACH_PATH)
 
     def destructions_of(self, *, chat=None, phone=None, operation=None, since=None):
         """-> ``(tied, undecidable)``: the audit rows the record ties to one conversation, newest

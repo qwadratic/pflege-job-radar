@@ -13,6 +13,11 @@
     GET  /v1/broadcasts/<id>   one run, with every item's status
     POST /v1/broadcasts/<id>/stop   the hard stop; takes effect between items
     GET  /v1/audit             the destruction record
+    GET  /v1/media/<id>        pulled inbound media's metadata: mime type, filename, size, a path
+    GET  /v1/media/<id>/raw    the bytes themselves, at the path the metadata route just answered
+    GET  /v1/media             the queue: unattached files, kind/size/age/folder/related threads
+    POST /v1/media/attach      the human escape hatch: attach one queued file to a phone by id
+                               (TASK-131 round 5 -- automatic attachment is gone, decision-9)
 
 The handlers are thin on purpose and the rule is enforceable by reading them: every one of them
 parses, calls exactly one Executor method, and serialises the result. No decision about a send is
@@ -94,6 +99,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _write_binary(self, status, blob, content_type):
+        """TASK-131: the one route on this surface whose body is not JSON. Bearer-guarded and
+        loopback-checked exactly like every other route (``_dispatch_binary`` below runs the same
+        ``_guard()`` this one skips)."""
+        self.send_response(status)
+        self.send_header("Content-Type", content_type or "application/octet-stream")
+        self.send_header("Content-Length", str(len(blob)))
+        self.end_headers()
+        self.wfile.write(blob)
+
     def _dispatch(self, route):
         try:
             self._guard()
@@ -105,6 +120,21 @@ class Handler(BaseHTTPRequestHandler):
             self._write(500, E.executor_error(f"{type(exc).__name__}: {exc}").envelope())
         else:
             self._write(status, payload)
+
+    def _dispatch_binary(self, route):
+        """Same contract as ``_dispatch``, for a handler that returns ``(blob, mime_type)`` instead
+        of a JSON-able payload. A refusal here still answers the ordinary JSON error envelope --
+        only a 200 carries bytes."""
+        try:
+            self._guard()
+            blob, mime_type = route()
+        except E.BridgeRefusal as refusal:
+            self._write(refusal.status_code, refusal.envelope())
+        except Exception as exc:  # a bug in our executor, named as one
+            self.server.log(f"executor_error: {type(exc).__name__}: {exc}")
+            self._write(500, E.executor_error(f"{type(exc).__name__}: {exc}").envelope())
+        else:
+            self._write_binary(200, blob, mime_type)
 
     # --- routes ------------------------------------------------------------------------------------
     def do_POST(self):
@@ -123,6 +153,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._body()))))
         elif path == "/v1/broadcasts":
             self._dispatch(lambda: (200, self.server.broadcast.create(self._body())))
+        elif path == "/v1/media/attach":
+            self._dispatch(lambda: (200, self.server.executor.attach_media(**_media_attach_args(
+                self._body()))))
         elif stop:
             self._dispatch(lambda: (200, self.server.broadcast.stop(unquote(stop.group(1)))))
         else:
@@ -132,7 +165,17 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         one_run = re.match(r"/v1/broadcasts/([^/]+)\Z", parsed.path)
-        if parsed.path == "/v1/health":
+        media_raw = re.match(r"/v1/media/([^/]+)/raw\Z", parsed.path)
+        media_meta = re.match(r"/v1/media/([^/]+)\Z", parsed.path)
+        if media_raw:
+            self._dispatch_binary(lambda: self.server.executor.media_bytes(
+                unquote(media_raw.group(1))))
+        elif media_meta:
+            self._dispatch(lambda: (200, self.server.executor.media_metadata(
+                unquote(media_meta.group(1)))))
+        elif parsed.path == "/v1/media":
+            self._dispatch(lambda: (200, self.server.executor.unresolved_media()))
+        elif parsed.path == "/v1/health":
             self._dispatch(lambda: (200, self.server.executor.health()))
         elif parsed.path == "/v1/outbox":
             self._dispatch(lambda: (200, self.server.executor.outbox(
@@ -199,6 +242,20 @@ def _chat_args(body, *, extra=()):
     return {name: body[name] for name in allowed if name in body}
 
 
+def _media_attach_args(body):
+    """``POST /v1/media/attach``'s two fields, named explicitly (TASK-131) -- the same reason
+    ``_chat_args`` does not spread the body: an unknown key silently ignored on a route that ties a
+    document to a person is exactly the mistake this rail's other write routes already refuse."""
+    allowed = ("queue_id", "phone")
+    unknown = sorted(set(body) - set(allowed))
+    if unknown:
+        raise E.invalid_request(f"unknown field(s) {unknown}; this route takes {list(allowed)}")
+    missing = [name for name in allowed if name not in body]
+    if missing:
+        raise E.invalid_request(f"missing field(s) {missing}; this route takes {list(allowed)}")
+    return {name: body[name] for name in allowed}
+
+
 class BridgeServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -254,6 +311,20 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         executor, interval=float(os.environ.get("WA_BRIDGE_WATCH_INTERVAL_SEC",
                                                 W.DEFAULT_INTERVAL_SEC)),
         log=stamped).start()
+    # TASK-131: the handset's WhatsApp media folders -> pulled files -> linked to a message. Its
+    # own thread, its own interval, and no flock -- see bridge/watcher.py::MediaWatcher.
+    media_watcher = W.MediaWatcher(
+        driver, ledger, os.path.join(root, "media"),
+        interval=float(os.environ.get("WA_BRIDGE_MEDIA_INTERVAL_SEC",
+                                      W.DEFAULT_MEDIA_INTERVAL_SEC)),
+        log=stamped).start()
+    executor.media_watcher = media_watcher
+    # TASK-131 round 6: the one watcher that may open a chat, on its own schedule -- see
+    # bridge/watcher.py::IdentityWatcher's own docstring.
+    identity_watcher = W.IdentityWatcher(
+        executor, interval=float(os.environ.get("WA_BRIDGE_IDENTITY_INTERVAL_SEC",
+                                                W.DEFAULT_IDENTITY_INTERVAL_SEC)),
+        log=stamped).start()
     # The broadcast runner sends only what a caller queued: with no run in the ledger it is a
     # thread that asks a question every few seconds and goes back to sleep (TASK-147).
     broadcast = B.Broadcast(executor)
@@ -266,12 +337,16 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
                           log=stamped, operations=O.Operations(executor), broadcast=broadcast)
     server.log(f"bridge executor {X.VERSION} on {LOOPBACK}:{server.server_address[1]}, "
                f"driver={driver.describe()['kind']}, watcher every {watcher.interval:.0f}s, "
+               f"media watcher every {media_watcher.interval:.0f}s, "
+               f"identity watcher every {identity_watcher.interval:.0f}s, "
                f"broadcast runner every {runner.interval:.0f}s")
     try:
         server.serve_forever()
     finally:
         stop.set()
         watcher.stop()
+        media_watcher.stop()
+        identity_watcher.stop()
         runner.stop()
         server.server_close()
         ledger.close()
