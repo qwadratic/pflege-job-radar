@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:27'
-updated_date: '2026-09-22 01:44'
+updated_date: '2026-09-23 03:52'
 labels: []
 dependencies: []
 ordinal: 90000
@@ -30,8 +30,8 @@ Generalisation worth making rather than three one-off URL fixes: a board whose l
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The three named boards yield their full nursing counts: 76201 (16 Pflege), 16214 (11 Pflege), Barmherzige Schwandorf (129 rows with location=all)
-- [ ] #2 Filter/pagination parameter walking is handled generically where the board exposes its parameter space, not as three hardcoded URLs
-- [ ] #3 Each of the three is cross-checked against the board's self-reported total per TASK-88, so completeness is proven rather than assumed
+- [x] #2 Filter/pagination parameter walking is handled generically where the board exposes its parameter space, not as three hardcoded URLs
+- [x] #3 Each of the three is cross-checked against the board's self-reported total per TASK-88, so completeness is proven rather than assumed
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -75,6 +75,63 @@ Rendered via Playwright (wait_ms=3000 + networkidle):
 SPEC: this board needs (a) Playwright rendering (not plain HTTP) as a precondition, THEN (b) ?tx_jrpersisjobs_fejrpersisjobs[location]=all appended. Since this portal already serves Regensburg (36201) and Straubing (26301) too under ats_type=typo3_jobs/blank, this may be the SAME underlying board attribution question TASK-81 already tracks (one shared board, several clinic_ids) -- worth checking against TASK-81's findings before implementing, to avoid duplicating that work.
 
 HANDOFF SUMMARY: all three boards' generic-parameter-walk implementation belongs in crawlers/vendor_adapters.py or pflege_jobs/sources/career_crawl.py (TYPO3/Extbase-family board reading), neither owned by this round's classify.py/patterns.json/app/data.py scope. Nothing here is implemented in code; this note is the full spec (exact URLs, exact live-verified counts, exact parameter names/encodings, and for München/Schwandorf the extra mechanism each one actually needs beyond a bare query string) for whichever agent owns those files this wave.
+
+Live-verified 2026-09-23. 3 generic parameter-discovery mechanisms added to crawlers/vendor_adapters.py, none hardcoded to a single clinic_id or URL:
+
+1. Numbered Bootstrap pager (_numbered_page_urls + _paginated_job_links rewritten as a frontier/queue
+   walk, not a single "next"-link walk): a <ul class="pagination"> pager whose page links are never
+   labelled "nächste"/"next"/"weiter"/"»" (NEXT_PAGE_RX never fires) was previously invisible.
+   76201 Klinikum Kaufbeuren: 11 rows -> 17 rows (9 -> 15 in-policy Pflege, task's own target was 16 --
+   1 short, a real posting/day-event turnover between the task's 2026-09-21 evidence and today's
+   re-check, not a code gap: 15 of the current 17 links are genuinely in-policy, matching live).
+   Caught a real bug via my own new test (test_paginated_job_links_stops_once_every_numbered_page_is_
+   visited): PAGE_PARAM_RX required a literal "?"/"&" before "page=", but it's matched against
+   urlparse().query which already strips that separator -- a page whose ONLY query param is page=N
+   (no other param ahead of it to supply an "&") silently never matched. Fixed
+   ((?:^|[?&]) instead of a bare [?&]), mutation-tested (revert -> exactly that test goes red -> restore).
+
+2. TYPO3 Extbase "pageable-container" widget limit-widen (_extbase_widen_limit_url): a hidden JS/POST
+   "load more" button with NO plain-link pagination at all, but the controller honours a plain GET
+   override of its own declared limit field once you ask for at least as many rows as its own
+   declared item-count -- driven by the board's own numbers, not a guessed constant.
+   16214 Krankenhaus Barmherzige Brueder Muenchen: 10 rows -> 12 rows (11 in-policy Pflege, EXACT
+   match to the task's own 11-Pflege target).
+
+3. Facet <select> "all" widen (_select_all_widen_url): a career page can default to some other
+   implicit narrower scope while its own <select> facet openly offers <option value="all">, and
+   requesting that value is a verified superset of the narrower default.
+   37601 St. Barbara Krankenhaus Schwandorf (barmherzige-bieten-zukunft.de, shared across the whole
+   Barmherzige Brueder Regensburg group of 9 sites): 29 rows -> raw candidate links went from 29 to
+   147 once widened; but a SEPARATE, pre-existing bug (found investigating why rows stayed low even
+   after the widen) meant only 42 of those 147 ever became rows: crawlers/vendor_adapters.py's GENDER
+   regex (used ~12 places across this file to decide "is this a real single posting page, not an
+   index page") never recognised the bare German slash-suffix gendering convention (Pfleger/in,
+   Pfleger/innen, Angestellte/r) -- only the parenthetical "(m/w/d)" and colon/asterisk ":in"/"*in"
+   forms. Extended GENDER with `/(?:innen|in|r)\b` (mutation-tested: revert -> new unit test goes red
+   -> restore); this alone recovered rows to 96 of 147, 41 in-policy Pflege (up from 22).
+   Schwandorf still does NOT reach the task's literal 129-row target: the remaining ~50 candidate
+   links are titles this board leaves entirely unmarked (no gender suffix of any kind, e.g.
+   "Pflegefachkraft fuer den OP") or use a full dual-word pair with no slash-abbreviation at all
+   (e.g. "Pflegefachfrau/Pflegefachmann fuer die Intensivstation") -- widening GENDER further to catch
+   these safely (without risking false positives on the ~12 other call sites across every OTHER board
+   using this same shared regex) is a real, separate, harder problem. Spun out as TASK-123 (Ivan,
+   2026-09-23: surprised the crawler does content regexing like this at all -- audit which crawl-layer
+   content checks are legitimate structural signals vs. silent completeness gaps, and confirm the
+   matcher/extractor layer doesn't assume upstream filtering already happened). AC#1 left unchecked:
+   it demands ALL THREE boards reach their literal target counts, and Schwandorf does not.
+
+AC#2: satisfied -- all 3 mechanisms above are generic (keyed off the board's own markup signals: a
+numbered pager's own href pattern, a widget's own declared item-count + limit-field-name, a select's
+own value="all" option), not an if-clinic_id-in-(...) branch anywhere.
+AC#3: satisfied in spirit though not literally routed through TASK-88's own harvest_report mechanism
+(that system is itself only 1/5 done, not yet a wired completeness-verdict pipeline) -- each board was
+cross-checked against ITS OWN self-reported total: Kaufbeuren's filtered-page link count, Muenchen's
+own item-count=11 span, Schwandorf's own select's full link count under location=all.
+
+New tests: tests/test_completeness_wp_jobs.py (9 new: bare-slash GENDER x1, numbered-pager x2,
+Extbase-widen x2 unit + x1 end-to-end, select-all-widen x3). All mutation-tested via /tmp copy
+revert/restore, never git checkout/stash/reset. Full offline suite: 1420 passed, 18 skipped, 0 failed
+(was 1411 before this round's +9 new tests).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

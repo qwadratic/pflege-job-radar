@@ -68,7 +68,14 @@ PROJECT = os.environ.get("SUPABASE_PROJECT_URL", "https://klkxfvieaxpjlplloljn.s
 # on klinik-steger.de once it switched styles (confirmed live 2026-09-18: _faqpage_job_rows'
 # gender-gate, added the same day to keep an application FAQ from being read as a posting, would
 # otherwise have silently dropped this board's own real nursing postings along with it).
-GENDER = re.compile(r"\((?:m|w|d|x|i|gn)\s?[/|*]\s?(?:m|w|d|x|i|gn)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn))?\)|[:*]in\b", re.I)
+# Plus the bare-slash suffix form ("Pfleger/in", "Pfleger/innen", "Angestellte/r") with no colon or
+# asterisk -- a separate, equally standard German convention, missing from every existing branch here
+# (confirmed live 2026-09-23: barmherzige-bieten-zukunft.de/stellenmarkt/stellenboerse titles this
+# way; the pre-existing GENDER gate treated ~30 of its own real postings as index-page noise and
+# recursed into them instead of storing a row). `[/]\s?in\b` alone would also match a stray "/in" in
+# unrelated prose; requiring the slash directly precede "in"/"innen"/"r" with no space in between
+# keeps this to the actual grammatical suffix-pairing notation, not a loose word-boundary guess.
+GENDER = re.compile(r"\((?:m|w|d|x|i|gn)\s?[/|*]\s?(?:m|w|d|x|i|gn)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn))?\)|[:*]in\b|/(?:innen|in|r)\b", re.I)
 
 
 # An immediate ("0;url=...") client-side redirect stub (confirmed live 2026-09-22:
@@ -1062,38 +1069,129 @@ def _next_page_url(html, base):
     return None
 
 
-def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, titles=None):
-    """Job-looking links across a server-rendered listing's own pagination, walking its "next page"
-    link (NEXT_PAGE_RX) until none remains or a page adds nothing new. `first_resp` reuses an
-    already-fetched page 1 (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. `titles`,
-    if given, is filled in-place with each link's own anchor text (url -> text) -- the only real
-    title a PDF-linked posting has, see PDF_LINK_RX.
+# Bootstrap-style numbered pager (<ul class="pagination"><li class="page-item"><a class="page-link"
+# href="...?...page=2...">2</a>): every page number is its own plain link, never labelled
+# "next"/"weiter"/"»" (NEXT_PAGE_RX never fires), confirmed live 2026-09-23: Klinikum Kaufbeuren's
+# TYPO3 board declares 16 Pflege rows under ?selection3=3, but only page 1's 10 render -- page 2's 6
+# were silently never walked. Matches on the param name alone (page=/p=/seite=), not the "page-link"
+# CSS class (a board's markup can rename it) -- scoped to same-path hrefs in _numbered_page_urls below
+# so it can't wander onto an unrelated numbered link elsewhere on the page (a related-articles widget,
+# a footer sitemap, ...).
+# (?:^|[?&]), not a bare [?&] -- matched against urlparse(u).query, which has already had its
+# leading "?" stripped, so a URL with page= as its ONLY param (no other param ahead of it to supply
+# the "&") would otherwise never match at all (confirmed by its own test catching this: a bare
+# "?page=2" url silently failed to be recognised as a numbered page while "?selection3=3&page=2"
+# worked only by the accident of a second param providing the "&").
+PAGE_PARAM_RX = re.compile(r"(?:^|[?&])(?:page|p|seite)=(\d+)", re.I)
 
-    The walk's only stop conditions are the listing's own: no next-page link, a page that adds
-    nothing new, a page already visited, or a failed fetch. The `max_pages=200` ceiling this used to
+
+def _numbered_page_urls(html, base, start_path):
+    """Every distinct same-path listing URL whose query string carries a page-number param -- a
+    board's own numbered pager, not a single "next" link. Not capped (TASK-14): a board can page as
+    deep as it declares, and it is the frontier/visited bookkeeping in _paginated_job_links, not a
+    guessed ceiling here, that stops the walk once every page number the board itself links has been
+    seen."""
+    out = []
+    for h in re.findall(r'href="([^"]+)"', html):
+        u = urljoin(base, _html.unescape(h))
+        if urlparse(u).path == start_path and PAGE_PARAM_RX.search(urlparse(u).query):
+            out.append(u)
+    return out
+
+
+# TYPO3 Extbase "pageable-container" list widget (oyc_template and similar): the page's own declared
+# item-count (class="item-count") can exceed however many rows actually render server-side -- the
+# rest sit behind a hidden JS/POST "load more" button with no plain-link pagination at all (neither
+# NEXT_PAGE_RX nor _numbered_page_urls has anything to find here). Confirmed live 2026-09-23:
+# karriere-barmherzige-muenchen.de/stellenangebote declares item-count=11 but only 10 <li
+# class="list-item"> render; the controller honours a plain GET override of its own declared limit
+# field (data-limit-field-name="tx_oycimport_list[limit]") -- requesting that many rows via GET
+# renders all 11. Driven by the board's OWN declared total, not a guessed number: asking for exactly
+# that many is never a cap, only wide enough to see everything the board itself says exists.
+ITEM_COUNT_RX = re.compile(r'class="item-count"[^>]*>\s*(\d+)')
+LIMIT_FIELD_RX = re.compile(r'data-limit-field-name="([^"]+)"')
+
+
+def _extbase_widen_limit_url(url, html):
+    """-> a GET url requesting at least as many rows as the page's own declared item-count, or None
+    if this page isn't this widget shape (no item-count, or no limit-field name to widen)."""
+    cm, lm = ITEM_COUNT_RX.search(html), LIMIT_FIELD_RX.search(html)
+    if not cm or not lm:
+        return None
+    field = _html.unescape(lm.group(1))
+    p = urlparse(url)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    q[field] = cm.group(1)
+    return p._replace(query=urlencode(q)).geturl()
+
+
+# A career page can filter its listing to one site/category by default while its own facet <select>
+# openly offers a wider "all" option -- confirmed live 2026-09-23:
+# barmherzige-bieten-zukunft.de/stellenmarkt/stellenboerse (shared across the whole Barmherzige
+# Brüder Regensburg group, 9 sites) defaults to 29 rows -- NOT "this one site only" as first assumed,
+# some other implicit scope -- but its own tx_jrpersisjobs_fejrpersisjobs[location] select declares
+# <option value="all">Alle Standorte</option>, and requesting that value renders 129 (a verified
+# superset of the 29). Never guesses a param name off the page -- only widens a facet the page itself
+# names, to the value the page itself offers, and only once (skips if that value is already set).
+SELECT_ALL_RX = re.compile(r'<select[^>]+name="([^"]+)"[^>]*>((?:(?!</select>).)*?)</select>', re.I | re.S)
+OPTION_ALL_VALUE_RX = re.compile(r'<option[^>]+value="(all|alle)"', re.I)
+
+
+def _select_all_widen_url(url, html):
+    """-> a GET url with the first facet <select> that offers a value="all"/"alle" option set to
+    that value, or None if no such facet exists or it is already set that way."""
+    p = urlparse(url)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    for name, body in SELECT_ALL_RX.findall(html):
+        m = OPTION_ALL_VALUE_RX.search(body)
+        if not m:
+            continue
+        field = _html.unescape(name)
+        if q.get(field) == m.group(1):
+            continue
+        q2 = dict(q); q2[field] = m.group(1)
+        return p._replace(query=urlencode(q2)).geturl()
+    return None
+
+
+def _paginated_job_links(start_url, session=None, exclude=(), first_resp=None, titles=None):
+    """Job-looking links across a server-rendered listing's own pagination. Follows both shapes a
+    board's pager comes in: a single "next page" link (NEXT_PAGE_RX/NEXT_PAGE_JSON_RX) AND a
+    Bootstrap-style numbered pager where every page number is its own plain link and no page is ever
+    labelled "next" (_numbered_page_urls) -- a board can expose either, or both, so the walk queues
+    whatever it finds rather than assuming one shape. `first_resp` reuses an already-fetched page 1
+    (crawl_wp_jobs already fetched `cu`) instead of re-fetching it. `titles`, if given, is filled
+    in-place with each link's own anchor text (url -> text) -- the only real title a PDF-linked
+    posting has, see PDF_LINK_RX.
+
+    The walk's only stop condition is running out of frontier: every next-page link and every
+    numbered-page link discovered so far has been visited. The `max_pages=200` ceiling this used to
     carry (TASK-14) was no caller's choice -- nothing ever passed it -- and it could only ever turn a
     board bigger than someone's guess into a short read reported as a complete one."""
-    out, visited, url, resp = [], set(), start_url, first_resp
-    while True:
+    out, visited, start_path = [], set(), urlparse(start_url).path
+    frontier, resp = [start_url], first_resp
+    while frontier:
+        url = frontier.pop(0)
         if not url or url in visited:
-            break
+            continue
         visited.add(url)
         r = resp if resp is not None else get(url, session=session)
         resp = None
         if not r or not r.ok:
-            break
+            continue
         base = _page_base(r)
         html = re.sub(r"(?s)<!--.*?-->", "", r.text)
         pairs = _job_link_pairs(html, base, exclude=exclude)
         if titles is not None:
             for u, t in pairs.items():
                 titles.setdefault(u, t)
-        fresh = [u for u in pairs if u not in out]
-        out += fresh
+        out += [u for u in pairs if u not in out]
         nxt = _next_page_url(html, base)
-        if not fresh and not nxt:
-            break
-        url = nxt
+        if nxt and nxt not in visited:
+            frontier.append(nxt)
+        for pu in _numbered_page_urls(html, base, start_path):
+            if pu not in visited and pu not in frontier:
+                frontier.append(pu)
         time.sleep(0.3)
     return out
 
@@ -1464,6 +1562,12 @@ def crawl_wp_jobs(c, session=None, towns=None):
     # has no cheap per-job label at fetch time to gate on the way career_crawl/bite do, so the only
     # way to recover a mislabelled posting is to fetch it.
     cu_resp = get(cu, session=session)
+    if cu_resp and cu_resp.ok:
+        widen_url = _extbase_widen_limit_url(cu_resp.url, cu_resp.text) or _select_all_widen_url(cu_resp.url, cu_resp.text)
+        if widen_url and widen_url != cu_resp.url:
+            widened = get(widen_url, session=session)
+            if widened and widened.ok:
+                cu_resp = widened
     # One `seen` set shared across every _wp_job_rows call below (section, sitemap, career-page-link
     # stages) -- without it each stage's own fresh dedup set can't see a page (or a klinikum-jobs
     # widget page's own embedded postings, ALLJOBS_RX) another stage already fetched, and the same

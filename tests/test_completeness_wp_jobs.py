@@ -286,6 +286,17 @@ def test_gender_marker_accepts_the_colon_and_asterisk_suffix_form():
         assert not va.GENDER.search(bad), bad
 
 
+def test_gender_marker_accepts_the_bare_slash_suffix_form():
+    """TASK-90: barmherzige-bieten-zukunft.de titles this way with no colon/asterisk at all
+    ("Pfleger/in", "Pfleger/innen", "Fachangestellte/r") -- confirmed live, this convention alone
+    was silently dropping 105 of 147 real candidate links on that board before this fix (treated as
+    index-page noise, recursed into instead of stored as rows)."""
+    for good in ("Krankenpfleger/in", "Krankenpfleger/innen", "Fachangestellte/r"):
+        assert va.GENDER.search(good), good
+    for bad in ("Berlin", "Auszubildende- in allen Bereichen", "Straße/Hausnummer"):
+        assert not va.GENDER.search(bad), bad
+
+
 def test_faqpage_job_rows_accepts_colon_gender_titles_and_still_drops_the_apply_faq(monkeypatch):
     """klinik-steger.de switched its FAQPage titles from "(m/w/d)" to "Pfleger:in" style -- the
     gender-gate added to keep an application-FAQ question out must not also drop this board's own
@@ -520,3 +531,103 @@ def test_wp_job_rows_falls_back_to_the_seed_town_when_no_standort_is_stated(monk
                            towns={"schongau", "weilheim"})
     assert rows[0]["payload"]["loc"][0]["city"] == "Schongau"
     assert rows[0]["payload"]["city_source"] == "seed"
+
+
+# --- TASK-90: filter/pagination parameter walking, generic across boards ------------------------
+
+def test_paginated_job_links_follows_a_numbered_bootstrap_pager_not_just_a_next_link(monkeypatch):
+    """Klinikum Kaufbeuren (clinic 76201): a Bootstrap <ul class="pagination"> numbered pager --
+    <li class="page-item"><a class="page-link" href="...?...&page=2">2</a></li> -- never carries a
+    "nächste"/"next"/"weiter"/"»" label NEXT_PAGE_RX looks for, so the old single-link walk never
+    reached page 2 at all. Confirmed live 2026-09-23: 6 of 16 real Pflege postings sat on page 2."""
+    p1 = "https://x.example/stellenangebote?selection3=3&page=1"
+    p2 = "https://x.example/stellenangebote?selection3=3&page=2"
+    page1 = _R('<a href="/j1">Pflegefachkraft A (m/w/d)</a>'
+               '<nav><ul class="pagination"><li class="page-item"><a class="page-link" href="%s">2</a></li></ul></nav>' % p2,
+               url=p1, ok=True)
+    page2 = _R('<a href="/j2">Pflegefachkraft B (m/w/d)</a>', url=p2, ok=True)
+    monkeypatch.setattr(va, "get", _router({p1: page1, p2: page2}))
+    links = va._paginated_job_links(p1, first_resp=page1)
+    assert set(links) == {"https://x.example/j1", "https://x.example/j2"}
+
+
+def test_paginated_job_links_stops_once_every_numbered_page_is_visited(monkeypatch):
+    """No infinite loop: a pager that repeats page 1's own link (common in real markup, "first"
+    page style) must not be re-fetched once visited."""
+    p1 = "https://x.example/stellenangebote?page=1"
+    p2 = "https://x.example/stellenangebote?page=2"
+    calls = []
+    page1 = _R('<a href="/j1">Pflegefachkraft (m/w/d)</a>'
+               '<a class="page-link" href="%s">1</a><a class="page-link" href="%s">2</a>' % (p1, p2), url=p1, ok=True)
+    page2 = _R('<a href="/j2">Pflegefachkraft (m/w/d)</a>'
+               '<a class="page-link" href="%s">1</a><a class="page-link" href="%s">2</a>' % (p1, p2), url=p2, ok=True)
+    monkeypatch.setattr(va, "get", _router({p1: page1, p2: page2}, calls=calls))
+    links = va._paginated_job_links(p1, first_resp=page1)
+    assert set(links) == {"https://x.example/j1", "https://x.example/j2"}
+    assert calls.count(p2) == 1
+
+
+def test_extbase_widen_limit_url_asks_for_the_boards_own_declared_item_count():
+    """Krankenhaus Barmherzige Brueder Muenchen (clinic 16214): a TYPO3 Extbase "pageable-container"
+    widget declares item-count=11 but only 10 <li class="list-item"> render server-side, the 11th
+    sitting behind a hidden JS/POST "load more" button with no plain-link pagination at all.
+    Confirmed live 2026-09-23: a plain GET override of the widget's own declared limit field renders
+    all 11."""
+    html = ('<span class="item-count">11</span>'
+            '<form data-limit-field-name="tx_oycimport_list[limit]">...</form>')
+    url = "https://x.example/stellenangebote?tx_oycimport_list%5Bcategory%5D=15"
+    got = va._extbase_widen_limit_url(url, html)
+    assert got == "https://x.example/stellenangebote?tx_oycimport_list%5Bcategory%5D=15&tx_oycimport_list%5Blimit%5D=11"
+
+
+def test_extbase_widen_limit_url_is_none_without_both_signals():
+    html_no_limit_field = '<span class="item-count">11</span>'
+    html_no_count = '<form data-limit-field-name="tx_oycimport_list[limit]">...</form>'
+    assert va._extbase_widen_limit_url("https://x.example/", html_no_limit_field) is None
+    assert va._extbase_widen_limit_url("https://x.example/", html_no_count) is None
+
+
+def test_select_all_widen_url_picks_the_facets_own_all_option():
+    """St. Barbara Krankenhaus Schwandorf (clinic 37601), barmherzige-bieten-zukunft.de: the board
+    defaults to some other implicit narrower scope (29 rows) while its own facet <select> openly
+    offers <option value="all">Alle Standorte</option>, and requesting that value renders all 129 --
+    a verified superset. Confirmed live 2026-09-23."""
+    html = ('<select name="tx_jrpersisjobs_fejrpersisjobs[location]">'
+            '<option value="all">Alle Standorte</option><option value="5">Schwandorf</option></select>')
+    url = "https://x.example/stellenboerse"
+    got = va._select_all_widen_url(url, html)
+    assert got == "https://x.example/stellenboerse?tx_jrpersisjobs_fejrpersisjobs%5Blocation%5D=all"
+
+
+def test_select_all_widen_url_is_none_once_already_widened():
+    html = ('<select name="tx_jrpersisjobs_fejrpersisjobs[location]">'
+            '<option value="all">Alle Standorte</option></select>')
+    url = "https://x.example/stellenboerse?tx_jrpersisjobs_fejrpersisjobs%5Blocation%5D=all"
+    assert va._select_all_widen_url(url, html) is None
+
+
+def test_select_all_widen_url_ignores_a_select_with_no_all_option():
+    html = '<select name="dept"><option value="1">Pflege</option><option value="2">Verwaltung</option></select>'
+    assert va._select_all_widen_url("https://x.example/", html) is None
+
+
+def test_crawl_wp_jobs_widens_an_extbase_limit_field_before_reading_the_career_page(monkeypatch):
+    """End-to-end: crawl_wp_jobs itself must apply the widen BEFORE parsing the career page's own
+    job links, not just as an isolated helper -- otherwise the 11th posting still never gets read."""
+    narrow = "https://x.example/stellenangebote?tx_oycimport_list%5Bcategory%5D=15"
+    wide = ("https://x.example/stellenangebote?tx_oycimport_list%5Bcategory%5D=15"
+            "&tx_oycimport_list%5Blimit%5D=2")
+    narrow_page = _R('<span class="item-count">2</span>'
+                      '<form data-limit-field-name="tx_oycimport_list[limit]"></form>'
+                      '<a href="/j1">Pflegefachkraft A (m/w/d)</a>', url=narrow, ok=True)
+    wide_page = _R('<span class="item-count">2</span>'
+                    '<form data-limit-field-name="tx_oycimport_list[limit]"></form>'
+                    '<a href="/j1">Pflegefachkraft A (m/w/d)</a><a href="/j2">Pflegefachkraft B (m/w/d)</a>',
+                    url=wide, ok=True)
+    j1 = _R(_jsonld_job("Pflegefachkraft A (m/w/d)"), url="https://x.example/j1", ok=True)
+    j2 = _R(_jsonld_job("Pflegefachkraft B (m/w/d)"), url="https://x.example/j2", ok=True)
+    monkeypatch.setattr(va, "get", _router({narrow: narrow_page, wide: wide_page,
+                                            "https://x.example/j1": j1, "https://x.example/j2": j2}))
+    rows = va.crawl_wp_jobs({"name": "Klinik X", "town": "X", "careers_url": narrow})
+    titles = {r["payload"]["title"] for r in rows}
+    assert titles == {"Pflegefachkraft A (m/w/d)", "Pflegefachkraft B (m/w/d)"}
