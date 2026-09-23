@@ -204,6 +204,25 @@ def test_r1_exact_falls_through_on_a_known_disagreeing_city():
     assert m.match("Sonnenklinik Fernost GmbH", None) == ("X1", "R1_exact", 1.0)           # unknown city -> unchanged
 
 
+def test_r1_exact_ignores_a_named_city_unreliable_employer():
+    """TASK-96: KJF Klinik Hochried (clinic 18006, Murnau) shares josefinum.softgarden.io with its
+    sibling Fachklinik KJF Josefinum (76110, Augsburg) -- every Hochried-employer posting on that
+    board states city=Augsburg (the Diözese Augsburg's registered address) regardless of Hochried
+    being the real employer, so the ordinary other_town_disagrees gate would refuse a genuinely
+    correct, uniquely-named R1_exact match. registry.CITY_UNRELIABLE_EMPLOYERS is a named,
+    single-employer exception (not a blanket relaxation -- see its own module comment for why a
+    general fix was rejected after live-scanning 25 real refusals) that skips the gate ONLY for an
+    employer_norm on that list."""
+    from pflege_jobs.registry import CITY_UNRELIABLE_EMPLOYERS
+    assert "kjf klinik hochried" in CITY_UNRELIABLE_EMPLOYERS
+    cl = [{"clinic_id": "18006", "name": "KJF Klinik Hochried", "town": "Murnau", "operator": "Katholische Jugendfürsorge der Diözese Augsburg e.V."},
+          {"clinic_id": "76110", "name": "Fachklinik KJF Josefinum", "town": "Augsburg", "operator": "KJF Klinik Josefinum gGmbH"}]
+    m = Matcher(cl)
+    assert m.match("KJF Klinik Hochried", "Augsburg") == ("18006", "R1_exact", 1.0)     # named exception -> still matches despite the disagreeing city
+    assert m.match("KJF Klinik Hochried", "Murnau") == ("18006", "R1_exact", 1.0)       # agreeing city, unaffected either way
+    assert m.match("Fachklinik KJF Josefinum", "Augsburg") == ("76110", "R1_exact", 1.0)  # sibling's own name, unaffected
+
+
 def test_city_inherited_cannot_fabricate_agreement_with_the_seed_via_board_town():
     """TASK-81 mechanism #3 (city half): when a job page names no location at all, the crawler
     substitutes the seed clinic's own registry town (pflege_jobs/sources/inbox.py city_source='seed')

@@ -105,6 +105,22 @@ def jaccard(a, b):
 SITE_PREFERENCE = {("16291", "16292"): "16291",                     # TUM: Rechts der Isar over Deutsches Herzzentrum
                    ("16290", "16291", "16292"): "16290"}            # generic "Klinikum der Universität München": LMU (largest)
 
+# employer_norm() values whose vendor feed reliably states the wrong city -- the operator's
+# registered/legal address, not the posting's real work site -- confirmed live 2026-09-23 (TASK-96):
+# KJF Klinik Hochried (clinic 18006, Murnau) posts through josefinum.softgarden.io, the SAME shared
+# board as its sibling Fachklinik KJF Josefinum (76110, Augsburg); every Hochried-employer posting on
+# that board states city=Augsburg regardless of it being Hochried's own name in the employer field --
+# the Diözese Augsburg's registered address, not Hochried's real site. Not a generalizable gate
+# relaxation: scanned all 25 live other_town_disagrees refusals this session
+# (tools/task96_scan_r1_exact_disagreements.py, backups/task96-r1exact-disagreements-2026-09-23.json)
+# and 13 of 25 are genuine multi-site ambiguity (RoMed Klinikum Rosenheim / Bad Aibling, the gate's
+# own flagship case) or a genuinely wrong employer_name extraction the gate correctly catches (TUM/
+# Klinikum Rechts der Isar mislabelled on Universitätsklinikum Augsburg's own board) -- a blanket
+# "ignore city disagreement" rule would silently readmit those. This is a named, single-employer
+# exception, not a heuristic; add another entry only after the same live-evidence bar (a confirmed
+# per-posting city that the vendor's own feed cannot correct, not just an assumption).
+CITY_UNRELIABLE_EMPLOYERS = {"kjf klinik hochried"}
+
 
 def _pick_site(cands):
     ids = tuple(sorted(x["clinic_id"] for x in cands))
@@ -180,7 +196,7 @@ class Matcher:
         # cost 17 R1_exact matches this way, 4 of them on a city matching no registry town at all).
         if len(c) == 1:
             own_town = city_key(c[0].get("town"))
-            other_town_disagrees = ck and not _town_match(own_town, ck) and \
+            other_town_disagrees = en not in CITY_UNRELIABLE_EMPLOYERS and ck and not _town_match(own_town, ck) and \
                 any(x["clinic_id"] != c[0]["clinic_id"] for x in self._by_town(ck))
             if not other_town_disagrees:
                 return c[0]["clinic_id"], "R1_exact", 1.0
