@@ -828,7 +828,7 @@ def parse_job_page(htmltext, url, org):
             "datePosted": _page_meta_date(htmltext)}
 
 
-def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=None):
+def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=None, towns=None):
     """Fetch each url and turn it into a row -- except a klinikum-jobs widget page (ALLJOBS_RX),
     whose own title is never a job (see the regex's docstring): walk its embedded postings' own
     `link`s instead of accepting the division page itself as one fake row. `titles` (url -> anchor
@@ -881,7 +881,7 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
             except Exception:
                 entries = []
             widget_urls = [urljoin(r.url, e["link"]) for e in entries if e.get("link")]
-            out += _wp_job_rows(widget_urls, c, host, session, section_labels, seen, titles)
+            out += _wp_job_rows(widget_urls, c, host, session, section_labels, seen, titles, towns)
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if not j or not j.get("title"):
@@ -916,7 +916,7 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
                 # haus.de: every candidate here is already in the outer `titles`), dropping it made
                 # anchor_title lookups above miss on the recursive pass and lose 7 of 10 real postings
                 # (confirmed live 2026-09-22).
-                out += _wp_job_rows(list(sub), c, host, session, section_labels, seen, {**titles, **sub})
+                out += _wp_job_rows(list(sub), c, host, session, section_labels, seen, {**titles, **sub}, towns)
                 continue
             if NOT_JOB_TITLE_RX.search(j["title"]):
                 # The meta-refresh follow (added this session, in the shared get()) newly lets a
@@ -926,8 +926,18 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
                 # len(sub)<=1 fallback and were stored as two fake postings. Not board-specific: any
                 # board can link these same standard German legal-notice pages from its careers page.
                 continue
-        if not j["loc"][0]["city"] and c.get("town"):
-            j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
+        if not j["loc"][0]["city"]:
+            # TASK-118: a shared board with no structured location field at all can still state the
+            # real work site in plain body prose ("am Standort Weilheim") -- confirmed live
+            # 2026-09-23, meinkrankenhaus2030.de. Try that BEFORE the single-clinic seed-town
+            # fallback, so a board this function's own caller has widened to more than one clinic
+            # (crawlers.vendor_adapters.account_pool_for) does not get every row stamped with
+            # whichever clinic happened to trigger this fetch.
+            standort = extract_standort_city(j.get("description"), towns) if towns else None
+            if standort:
+                j["loc"] = [{"city": standort, "plz": None, "region": None}]
+            elif c.get("town"):
+                j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
@@ -1430,7 +1440,7 @@ def _elementor_toggle_job_rows(cu_resp, c, host):
     return out
 
 
-def crawl_wp_jobs(c, session=None):
+def crawl_wp_jobs(c, session=None, towns=None):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
@@ -1512,7 +1522,7 @@ def crawl_wp_jobs(c, session=None):
         if section_urls:
             # += / |=, not = -- out/fetched may already carry the FAQ-shape rows merged in above.
             new = _wp_job_rows(section_urls, c, host, session,
-                               section_labels=[section_label] if section_label else None, seen=seen, titles=titles)
+                               section_labels=[section_label] if section_label else None, seen=seen, titles=titles, towns=towns)
             out += new
             fetched |= {j["payload"]["url"] for j in new}
 
@@ -1530,7 +1540,7 @@ def crawl_wp_jobs(c, session=None):
     urls = [u for u in sitemap_urls if not _listing_dup(u, not_a_job, titles)]
     if urls:
         more_urls = [u for u in urls if u not in fetched]
-        new = _wp_job_rows(more_urls, c, host, session, seen=seen, titles=titles)
+        new = _wp_job_rows(more_urls, c, host, session, seen=seen, titles=titles, towns=towns)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
@@ -1548,7 +1558,7 @@ def crawl_wp_jobs(c, session=None):
     page_urls += _widget_endpoint_job_links(cu_resp, session=session)
     page_urls = [u for u in dict.fromkeys(page_urls) if not _listing_dup(u, not_a_job, titles) and u not in fetched]
     if page_urls:
-        new = _wp_job_rows(page_urls, c, host, session, seen=seen, titles=titles)
+        new = _wp_job_rows(page_urls, c, host, session, seen=seen, titles=titles, towns=towns)
         out += new
         fetched |= {j["payload"]["url"] for j in new}
 
@@ -2334,6 +2344,17 @@ VENDOR_ACCOUNT_POOLS = [
     # that town -- likely non-hospital Gesundheitswelt facilities, out of this registry's scope (same
     # class as TASK-103), not added here.
     {"account": "Gesundheitswelt Chiemgau (karriere.gesundheitswelt.de)", "clinic_ids": ["18721", "18713"]},
+    # TASK-118: 19001 (Krankenhaus Schongau) and 19002 (Krankenhaus Weilheim) share one IDENTICAL
+    # careers_url (meinkrankenhaus2030.de/karriere/stellenboerse) -- crawlers.routing._boards() already
+    # groups them correctly on a full-registry crawl (same exact URL). The gap is scope: a CLINIC-
+    # scoped crawl (scope=clinic, value=19001 alone) never includes 19002 in plan["clinics"] at all, so
+    # _boards() only ever sees ids=["19001"], and app/crawl.py._vendor_rows' single-clinic seed-city
+    # fallback then stamps EVERY row on the shared board with Schongau -- including postings whose own
+    # body text plainly says "am Standort Weilheim" (no JSON-LD on this board at all; confirmed live
+    # 2026-09-23, posting_id 6268's real page). Same mechanism as the two entries above (this list
+    # widens `ids` in _vendor_rows regardless of how narrow the crawl's own scope was), just a
+    # same-URL pair rather than a shared-account/different-URL one.
+    {"account": "meinkrankenhaus2030.de (Weilheim-Schongau)", "clinic_ids": ["19001", "19002"]},
 ]
 
 
@@ -2387,6 +2408,27 @@ def clean_talention_city(raw_city, pool_towns):
         hit = next(iter(hits))
         return next(t for t in towns if t.lower() == hit)
     return raw_city
+
+
+def extract_standort_city(description, towns):
+    """A board with no structured location field at all (no JSON-LD, no icon-fact -- confirmed live
+    2026-09-23, meinkrankenhaus2030.de, TASK-118) can still state the real work site in plain body
+    prose ("...suchen wir zum naechstmoeglichen Zeitpunkt eine/n ... am Standort Weilheim"). Only
+    accept a hit that is itself a real, known town (the same "no match beats a wrong match" bar
+    clean_talention_city uses) -- `towns` is the full registry town set here, not one board's own
+    pool, so the match is still gated by _match_board's own town rung finding that town among the
+    board's actual clinics; this function only has to avoid inventing a town that does not exist."""
+    if not description or not towns:
+        return None
+    ordered = sorted((t for t in towns if t), key=len, reverse=True)
+    if not ordered:
+        return None
+    rx = re.compile(r"\bStandort:?\s+(" + "|".join(re.escape(t) for t in ordered) + r")\b", re.I)
+    m = rx.search(description)
+    # `towns` (app.data.towns()) is norm_text()-lowercased; keep the page's own capitalisation for
+    # the value actually stored (e.g. "Weilheim", not "weilheim") once the lowercase form is confirmed
+    # to be a real registry town.
+    return m.group(1) if m and m.group(1).lower() in towns else None
 
 
 def group_portal_for(c):

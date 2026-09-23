@@ -1042,3 +1042,21 @@ def test_clean_talention_city_leaves_ambiguous_or_out_of_pool_strings_alone():
     # "Weidenberg" must not false-positive on "Weiden" -- a real, different Bavarian town.
     assert va.clean_talention_city("Klinikum Weidenberg", pool) == "Klinikum Weidenberg"
     assert va.clean_talention_city(None, pool) is None
+
+
+def test_extract_standort_city_reads_a_real_town_from_plain_prose():
+    # TASK-118: meinkrankenhaus2030.de has no JSON-LD and no icon-fact location at all -- the real
+    # work site is only ever stated in plain body prose.
+    towns = {"weilheim", "schongau", "münchen"}
+    desc = ("Für unsere OP-Abteilung am Standort Weilheim suchen wir zum nächstmöglichen "
+            "Zeitpunkt eine/n Operations-Technischen-Assistenten (w/m/d).")
+    assert va.extract_standort_city(desc, towns) == "Weilheim"
+
+
+def test_extract_standort_city_rejects_a_standort_that_names_no_real_town():
+    towns = {"weilheim", "schongau"}
+    assert va.extract_standort_city("An unserem Standort Teamgeist suchen wir Verstärkung.", towns) is None
+    assert va.extract_standort_city("Ohne jede Standortangabe.", towns) is None
+    assert va.extract_standort_city(None, towns) is None
+    assert va.extract_standort_city("am Standort Weilheim", None) is None
+    assert va.extract_standort_city("am Standort Weilheim", set()) is None

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:25'
-updated_date: '2026-09-22 21:41'
+updated_date: '2026-09-23 02:48'
 labels: []
 dependencies: []
 ordinal: 81000
@@ -77,6 +77,26 @@ AC#4 (15 named clinics, before/after): current live state reported honestly, not
 
 Full offline suite (-m not network) at the end of this round: 1379 passed, 18 skipped, 0 failed, 354.86s.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-23 02:48
+---
+2026-09-23, from TASK-118: a same-EXACT-URL 2-clinic board (19001 Krankenhaus Schongau / 19002
+Krankenhaus Weilheim, meinkrankenhaus2030.de) hit a variant of this mechanism not from a wrong seed
+city, but from crawl SCOPE -- a clinic-scoped run of just 19001 never includes 19002 in
+plan["clinics"] at all, so crawlers.routing._boards()'s own exact-URL grouping only ever sees ids=
+["19001"], and crawlers/vendor_adapters.py's own (pre-existing, separate from app/crawl.py's)
+seed-city fallback inside _wp_job_rows stamps every row on the shared board with Schongau regardless
+of scope. Fixed by adding the pair to VENDOR_ACCOUNT_POOLS (crawlers.vendor_adapters.account_pool_for
+already widens board_clinic_ids in _vendor_rows regardless of scope -- same mechanism TASK-99 built,
+just for a same-URL pair instead of TASK-99's different-URL shape) plus a new body-prose "Standort
+<Ort>" reader for boards with no structured location field at all. Any OTHER shared-exact-URL,
+multi-clinic board reached only via a clinic-scoped crawl is exposed to the same scope gap; not
+audited registry-wide this round.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

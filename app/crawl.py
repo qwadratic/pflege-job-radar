@@ -428,7 +428,12 @@ def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
         fn = VA.VENDORS.get(board["vendor"])
         if not fn:
             raise RuntimeError(f"no vendor adapter for {board['vendor']}")
-        rows = fn(c, session=session)
+        # crawl_wp_jobs (the default for concludis/typo3_jobs/talention/wp_jobs/self_hosted) reads
+        # a "Standort <Ort>" mention in the page's own body prose when it has no structured location
+        # field at all (TASK-118) -- every other vendor function's own signature is a hard contract
+        # this generic caller cannot vary per-vendor, so this is a targeted special-case, not a
+        # kwarg every VENDORS entry must now accept.
+        rows = fn(c, session=session, towns=towns) if fn is VA.crawl_wp_jobs else fn(c, session=session)
     ids = [x["clinic_id"] for x in board.get("clinics") or [c]]
     # TASK-99: a shared-vendor-ACCOUNT board (Artemed/SmartRecruiters, Gesundheitswelt Chiemgau) keeps
     # each clinic on its own distinct careers_url, so board.get("clinics") above is correctly just this
@@ -456,9 +461,18 @@ def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
             for l in (r["payload"].get("loc") or []):
                 l["city"] = VA.clean_talention_city(l.get("city"), board_towns)
         locs = r["payload"].get("loc") or [{}]
-        if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
-            r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
-            r["payload"]["city_source"] = "seed"
+        if not any((l or {}).get("city") for l in locs):
+            # TASK-118: a shared board with no structured location field at all sometimes still
+            # states the real work site in plain body prose ("am Standort Weilheim") -- try that
+            # BEFORE falling back to the single-clinic seed town below, so a multi-clinic board
+            # (widened by VA.account_pool_for above, or by routing's own exact-URL grouping) does
+            # not get every row stamped with whichever clinic happened to trigger the fetch.
+            standort = VA.extract_standort_city(r["payload"].get("description"), towns) if towns else None
+            if standort:
+                r["payload"]["loc"] = [{"city": standort, "plz": None, "region": None}]
+            elif len(ids) == 1 and c.get("town"):
+                r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+                r["payload"]["city_source"] = "seed"
     return rows
 
 

@@ -494,3 +494,29 @@ def test_legal_notice_pages_are_never_accepted_via_the_ungendered_single_candida
     monkeypatch.setattr(va, "get", _router({legal: legal_page}))
     rows = va._wp_job_rows([legal], {"name": "Klinik X", "town": "X"}, "x.example", None)
     assert rows == []
+
+
+# --- TASK-118: no structured location field at all, only plain body prose -----------------------
+
+def test_wp_job_rows_reads_a_standort_mention_when_the_page_has_no_jsonld_location(monkeypatch):
+    """meinkrankenhaus2030.de (clinics 19001 Schongau / 19002 Weilheim, shared board, no JSON-LD at
+    all): the real work site is only ever stated as "...am Standort Weilheim..." in plain body
+    prose. Confirmed live 2026-09-23 against the real page."""
+    url = "https://x.example/stellenanzeige-ota"
+    page = _R("<h1>Operations-Technischen-Assistent (m/w/d)</h1>"
+              "<p>Für unsere OP-Abteilung am Standort Weilheim suchen wir Verstärkung.</p>", url=url, ok=True)
+    monkeypatch.setattr(va, "get", _router({url: page}))
+    rows = va._wp_job_rows([url], {"name": "Krankenhaus Schongau", "town": "Schongau"}, "x.example", None,
+                           towns={"schongau", "weilheim"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Weilheim"
+    assert rows[0]["payload"].get("city_source") is None
+
+
+def test_wp_job_rows_falls_back_to_the_seed_town_when_no_standort_is_stated(monkeypatch):
+    url = "https://x.example/stellenanzeige-other"
+    page = _R("<h1>Pflegefachkraft (m/w/d)</h1><p>Wir suchen Verstärkung für unser Team.</p>", url=url, ok=True)
+    monkeypatch.setattr(va, "get", _router({url: page}))
+    rows = va._wp_job_rows([url], {"name": "Krankenhaus Schongau", "town": "Schongau"}, "x.example", None,
+                           towns={"schongau", "weilheim"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Schongau"
+    assert rows[0]["payload"]["city_source"] == "seed"

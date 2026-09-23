@@ -77,3 +77,52 @@ def test_vendor_rows_does_not_narrow_an_unrelated_typo3_jobs_board(monkeypatch):
     monkeypatch.setitem(VA.VENDORS, "typo3_jobs", lambda c, session=None: [{"kind": "jobposting", "payload": {"title": "x", "url": "https://x/1"}}])
     rows = CR._vendor_rows(board, clinic, requests.Session(), print)
     assert rows[0]["payload"]["board_clinic_ids"] == ["99999"]
+
+
+# --- TASK-118: meinkrankenhaus2030.de shares one board (19001 Schongau / 19002 Weilheim), no ------
+# structured location field at all -- a clinic-scoped crawl of just one of the two never includes
+# its sibling in board.clinics, so VA.account_pool_for widens board_clinic_ids the same way TASK-99's
+# pools do; the row's own city, when the board states it in plain "am Standort <Ort>" prose, must
+# also stop being silently overwritten by the single triggering clinic's seed town.
+
+WEILHEIM_TRIGGER = {"clinic_id": "19001", "name": "Krankenhaus Schongau", "town": "Schongau"}
+BAVARIA_TOWNS = {"schongau", "weilheim", "münchen"}
+
+
+def test_vendor_rows_reads_a_real_standort_instead_of_stamping_the_seed_town(monkeypatch):
+    board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [WEILHEIM_TRIGGER]}  # clinic-scoped: 19002 not in the list
+    fake_rows = [{"kind": "jobposting", "payload": {
+        "title": "Operations-Technischen-Assistent (w/m/d)", "url": "https://x/1",
+        "description": "Für unsere OP-Abteilung am Standort Weilheim suchen wir Verstärkung."}}]
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", lambda c, session=None: list(fake_rows))
+    rows = CR._vendor_rows(board, WEILHEIM_TRIGGER, requests.Session(), print, towns=BAVARIA_TOWNS)
+    assert rows[0]["payload"]["board_clinic_ids"] == ["19001", "19002"]  # widened by account_pool_for
+    assert rows[0]["payload"]["loc"][0]["city"] == "Weilheim"            # read from the page, not seed-stamped
+    assert rows[0]["payload"].get("city_source") is None                # real page data, not city_source="seed"
+
+
+def test_vendor_rows_leaves_city_unset_when_the_pool_has_no_standort_and_more_than_one_town(monkeypatch):
+    # Unchanged pre-existing behaviour (same as the Artemed/SmartRecruiters 8-clinic pool): the
+    # single-clinic seed-town fallback only ever applied when len(ids) == 1 -- a row with no real
+    # location signal on a WIDENED multi-clinic pool stays without a city, rather than confidently
+    # (and, for this exact pair, often wrongly) stamping whichever clinic happened to trigger the
+    # fetch. board_clinic_ids is still widened -- that part is unconditional -- only the per-row city
+    # default is gated on pool size, same as before this task.
+    board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [WEILHEIM_TRIGGER]}
+    fake_rows = [{"kind": "jobposting", "payload": {
+        "title": "Pflegefachkraft (m/w/d)", "url": "https://x/1", "description": "Wir suchen Verstärkung für unser Team."}}]
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", lambda c, session=None: list(fake_rows))
+    rows = CR._vendor_rows(board, WEILHEIM_TRIGGER, requests.Session(), print, towns=BAVARIA_TOWNS)
+    assert rows[0]["payload"]["board_clinic_ids"] == ["19001", "19002"]  # still widened -- the pool itself is unconditional
+    assert "loc" not in rows[0]["payload"]                              # no real signal, no pool-size-1 fallback either
+
+
+def test_vendor_rows_still_falls_back_to_seed_town_for_a_single_clinic_board(monkeypatch):
+    clinic = {"clinic_id": "99999", "name": "Not In Any Pool", "town": "Regensburg"}
+    board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [clinic]}
+    fake_rows = [{"kind": "jobposting", "payload": {"title": "Pflegefachkraft (m/w/d)", "url": "https://x/1"}}]
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", lambda c, session=None: list(fake_rows))
+    rows = CR._vendor_rows(board, clinic, requests.Session(), print, towns=BAVARIA_TOWNS)
+    assert rows[0]["payload"]["board_clinic_ids"] == ["99999"]          # no pool, unwidened
+    assert rows[0]["payload"]["loc"][0]["city"] == "Regensburg"         # no real signal, but a lone clinic -> seed fallback stands
+    assert rows[0]["payload"]["city_source"] == "seed"
