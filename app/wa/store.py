@@ -258,9 +258,16 @@ def record_inbound(c, phone, wamid, body, kind="text", meta=None):
         return False
 
 
-def record_outbound(c, phone, wamid, body, kind="text", meta=None):
+def record_outbound(c, phone, wamid, body, kind="text", meta=None, at=None):
+    """``at``, when given, is the real moment this message left (RFC3339) -- tools/wa_bridge.py's
+    broadcast --status backfill (TASK-284) passes the broadcast item's own ``updated_at`` here,
+    because it runs well after the actual send and stamping "now" would insert the row at POLL
+    time. A row inserted late, out of chronological order relative to whatever the candidate said
+    in between, is exactly the "brain has no memory of what it sent" bug TASK-284 exists to fix --
+    stamping it at poll time instead of send time would just move the same defect one field over.
+    Every other caller is unaffected: at=None keeps the old now_iso() behaviour bit for bit."""
     c.execute("insert into wa_messages (phone, direction, wamid, body, kind, meta, at) values (?,?,?,?,?,?,?)",
-              (phone, "out", wamid, body, kind, json.dumps(meta or {}, ensure_ascii=False), now_iso()))
+              (phone, "out", wamid, body, kind, json.dumps(meta or {}, ensure_ascii=False), at or now_iso()))
     c.commit()
 
 

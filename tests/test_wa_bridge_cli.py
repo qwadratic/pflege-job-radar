@@ -15,6 +15,7 @@ import pytest
 from app.wa import bridge as BR
 from app.wa import bridge_ids as BI
 from app.wa import config as C
+from app.wa import store as ST
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SPEC = importlib.util.spec_from_file_location("wa_bridge_cli", ROOT / "tools" / "wa_bridge.py")
@@ -909,6 +910,91 @@ def test_a_pacing_argument_that_is_not_an_object_is_a_usage_error(tmp_path, caps
                       "--pacing", "[1,2]", "--send"])
     assert code == 2 and fake.calls == []
     assert "--pacing must be a JSON object" in capsys.readouterr().err
+
+
+# --- --status records a sent broadcast into wa_messages (TASK-284) -------------------------------
+# Before this, the brain had no memory of a template a phone-rail broadcast just sent: turn_context()
+# reads only wa_messages, and a broadcast send never wrote one -- see cmd_broadcast's own module
+# docstring, "THE BRAIN'S MEMORY OF A BROADCAST".
+
+SENT_AT = "2026-09-23T19:21:19.675Z"     # stands in for the real send moment, far from "now"
+
+
+def _sent_view(key, body, updated_at=SENT_AT):
+    return (200, {"ok": True, "run": {"run_id": "b1", "state": "done"}, "counts": {"sent": 1},
+                  "items": [{"client_msg_id": key, "position": 0, "thread": "…0", "status": "sent",
+                             "code": None, "detail": "Zugestellt", "attempts": 1,
+                             "next_attempt_at": None, "body_sha256": CLI.D.body_sha256(body),
+                             "updated_at": updated_at}]})
+
+
+def test_a_status_poll_without_file_leaves_wa_messages_untouched_and_says_so(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    key = BI.campaign_key(campaign_id="b1", phone=PARTNER, attempt=1)
+    code, _ = run(["broadcast", "--id", "b1", "--status"], **{"v1_broadcasts/b1": _sent_view(key, "Hallo")})
+    assert code == 0
+    assert "were not recorded into wa_messages" in capsys.readouterr().out
+    assert ST.message_by_wamid(ST.db(), key) is None
+
+
+def test_a_status_poll_with_file_records_the_sent_item_into_wa_messages(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    file = recipients(tmp_path, f"phone\n{PARTNER}\n")
+    key = BI.campaign_key(campaign_id="b1", phone=PARTNER, attempt=1)
+    code, _ = run(["broadcast", "--id", "b1", "--status", "--file", file, "--body", "Hallo"],
+                  **{"v1_broadcasts/b1": _sent_view(key, "Hallo")})
+    assert code == 0
+    assert "1 sent item(s) newly recorded" in capsys.readouterr().out
+    row = ST.message_by_wamid(ST.db(), key)
+    assert row["phone"] == PARTNER and row["body"] == "Hallo" and row["direction"] == "out"
+    assert row["kind"] == "text" and row["meta"] == {"action": "broadcast", "run_id": "b1"}
+    assert row["at"] == SENT_AT, (
+        "stamped at the real send moment (the item's own updated_at), not at poll time -- a "
+        "human runs --status well after the send, and 'now' would insert this row out of "
+        "chronological order against whatever the candidate said in between (2026-09-23 review)")
+
+
+def test_a_repeat_status_poll_does_not_duplicate_the_recorded_row(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    file = recipients(tmp_path, f"phone\n{PARTNER}\n")
+    key = BI.campaign_key(campaign_id="b1", phone=PARTNER, attempt=1)
+    view = _sent_view(key, "Hallo")
+    run(["broadcast", "--id", "b1", "--status", "--file", file, "--body", "Hallo"],
+        **{"v1_broadcasts/b1": view})
+    code, _ = run(["broadcast", "--id", "b1", "--status", "--file", file, "--body", "Hallo"],
+                  **{"v1_broadcasts/b1": view})
+    assert code == 0
+    assert "1 already there" in capsys.readouterr().out
+    assert len(ST.messages_for(ST.db(), PARTNER, direction="out")) == 1
+
+
+def test_a_status_poll_with_a_different_body_than_what_was_sent_is_refused(tmp_path, monkeypatch, capsys):
+    """The run view's body_sha256 is the sent item's real identity; a --body that rebuilds a
+    different text for the same key is not this run's own pairing and is refused, not recorded."""
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    file = recipients(tmp_path, f"phone\n{PARTNER}\n")
+    key = BI.campaign_key(campaign_id="b1", phone=PARTNER, attempt=1)
+    code, _ = run(["broadcast", "--id", "b1", "--status", "--file", file, "--body", "A different text"],
+                  **{"v1_broadcasts/b1": _sent_view(key, "Hallo")})
+    assert code == 2
+    assert "whose body does not match" in capsys.readouterr().err
+    assert ST.message_by_wamid(ST.db(), key) is None
+
+
+def test_a_sent_item_the_file_cannot_explain_at_all_is_refused_not_silent(tmp_path, monkeypatch, capsys):
+    """2026-09-23 review: this used to `continue` quietly on a key the file's recipients never
+    produce -- a wrong --file (typo'd path, an old recipients list, the wrong --attempt) then
+    matched nothing, printed nothing, and exited 0, indistinguishable from a clean "already
+    recorded". A sent item this file cannot account for is exactly as loud a problem as a body
+    mismatch: it means this was not really the file/attempt this run went out from."""
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    file = recipients(tmp_path, f"phone\n{MINE}\n")            # a DIFFERENT phone than the run sent
+    key = BI.campaign_key(campaign_id="b1", phone=PARTNER, attempt=1)
+    code, _ = run(["broadcast", "--id", "b1", "--status", "--file", file, "--body", "Hallo"],
+                  **{"v1_broadcasts/b1": _sent_view(key, "Hallo")})
+    assert code == 2
+    assert "cannot explain at all" in capsys.readouterr().err
+    assert ST.message_by_wamid(ST.db(), key) is None
 
 
 # --- the human escape hatch (TASK-131 round 5, decision-9 2026-09-22) ----------------------------------

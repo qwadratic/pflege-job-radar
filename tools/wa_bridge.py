@@ -7,7 +7,8 @@ Usage:
     python tools/wa_bridge.py send --to +49... (--body TEXT | --body-file F) [--key LABEL] [--attempt N] [--dry-run]
     python tools/wa_bridge.py broadcast --id RUN --file RECIPIENTS.csv|.json [--body TEXT | --body-file F]
         [--attempt N] [--pacing JSON] [--note TEXT] [--send]
-    python tools/wa_bridge.py broadcast --id RUN (--status | --stop) | --runs
+    python tools/wa_bridge.py broadcast --id RUN --status [--file RECIPIENTS.csv|.json
+        [--body TEXT | --body-file F] [--attempt N]] | --stop | --runs
     python tools/wa_bridge.py clear-chat  (--phone +49... | --title "Name") [--archived]
         [--confirm [--expect-messages N] [--keep-starred]]
     python tools/wa_bridge.py delete-chat (--phone +49... | --title "Name") [--archived]
@@ -49,6 +50,17 @@ until every item is ``sent``; ``--stop`` halts it between items. Queued items on
 open are exit 1, not exit 3: the executor picks items out of open runs only, so asking again about
 a stopped run is a loop whose answer can never change. Re-running the same ``--id`` with
 the same recipients is a replay, not a second message: the keys are deterministic.
+
+THE BRAIN'S MEMORY OF A BROADCAST (TASK-284). The executor's run view never carries a phone or a
+body back -- ``bridge/broadcast.py``'s own view says why: "bodies stay on the handset machine". So
+``--status --file RECIPIENTS...`` (the same ``--file``/``--body``/``--body-file``/``--attempt`` a
+``--send`` of this run used) rebuilds the phone/body pairing the way ``--send`` built it, checks
+each ``sent`` item's ``body_sha256`` against the body it rebuilt (a mismatch is a different file than
+what actually went out, and is refused rather than recorded wrong), and writes the ones not already
+there into ``data/wa.sqlite::wa_messages`` -- the store ``app/wa/luna_brain.py::turn_context`` reads
+to know what was just sent. ``wamid`` is UNIQUE, so re-polling the same run re-records nothing.
+Plain ``--status`` (no ``--file``) still reads the run back; it just cannot write what it was never
+told.
 
 DESTRUCTIVE COMMANDS. ``clear-chat`` empties a chat and keeps it; ``delete-chat`` removes it. Both
 read the chat list first and print the row they are about to destroy; without ``--confirm`` they
@@ -130,6 +142,8 @@ from app.wa import bridge as BR          # noqa: E402
 from app.wa import bridge_ids as BI      # noqa: E402
 from app.wa import config as C           # noqa: E402
 from app.wa import phones as PH          # noqa: E402
+from app.wa import store as ST           # noqa: E402
+from bridge import driver as D           # noqa: E402
 from bridge import ledger as BL          # noqa: E402
 from bridge import relay_pull as RP      # noqa: E402
 
@@ -551,6 +565,65 @@ def cmd_send_document(args, client):
     return EXIT_OK
 
 
+def _record_broadcast_sent(client, run_id, attempt, file, body, body_file, view):
+    """Every item ``view`` reports ``sent`` and ``wa_messages`` does not hold yet, written there
+    (TASK-284) -> ``(recorded, already)`` client_msg_ids. Raises naming any ``sent`` item whose
+    ``body_sha256`` disagrees with what ``file``/``body``/``body_file`` rebuild for it -- that is a
+    different file than the one this run was sent from, and recording the wrong text into Luna's
+    memory of what she said is worse than recording nothing.
+
+    The pairing (phone, body) is rebuilt exactly as ``--send`` built it, because the run view itself
+    never carries either back (see the module docstring, "THE BRAIN'S MEMORY OF A BROADCAST")."""
+    items = plan_broadcast(read_recipients(file), read_body(body, body_file))
+    keys = client.broadcast_keys(run_id, [i["to"] for i in items], attempt=attempt)
+    by_key = {keys[i["to"]]: i for i in items}
+    sent_rows = [row for row in view["items"] if row.get("status") == BR.BROADCAST_SENT]
+    recorded, already, mismatched, unmatched = [], [], [], []
+    c = ST.db()
+    try:
+        for row in sent_rows:
+            item = by_key.get(row["client_msg_id"])
+            if item is None:
+                # Opus review, 2026-09-23 (post-fix pass): this used to be a silent `continue` -- a
+                # WRONG --file (typo'd path, an old recipients list, someone else's run) would then
+                # match nothing, print nothing, and exit 0, indistinguishable from "already
+                # recorded". A sent item this file cannot explain is exactly as loud a problem as a
+                # body mismatch below -- it means this is not really the file that run went out
+                # from, or --attempt is wrong, and staying quiet about it is how the 2026-09-23
+                # incident (a broadcast the brain never learned about) would have kept happening.
+                unmatched.append(row["client_msg_id"])
+                continue
+            if row.get("body_sha256") not in (None, D.body_sha256(item["body"])):
+                mismatched.append(row["client_msg_id"])
+                continue
+            if ST.message_by_wamid(c, row["client_msg_id"]) is not None:
+                already.append(row["client_msg_id"])
+                continue
+            # updated_at, not now_iso(): this backfill usually runs well after the real send (a
+            # human runs --status later, or -- 2026-09-23 -- the executor was mid-restart when the
+            # send happened). Stamping "now" would insert this row out of chronological order
+            # against whatever the candidate said in between, corrupting turn_context()'s reading
+            # of what was said when -- the same class of defect TASK-284 exists to fix, just moved
+            # into the timestamp instead of the row's existence.
+            ST.record_outbound(c, item["to"], row["client_msg_id"], item["body"], kind="text",
+                               meta={"action": "broadcast", "run_id": run_id}, at=row.get("updated_at"))
+            recorded.append(row["client_msg_id"])
+    finally:
+        c.close()
+    if mismatched or unmatched:
+        problems = []
+        if mismatched:
+            problems.append(f"{len(mismatched)} item(s) whose body does not match what {file} "
+                            f"names ({', '.join(mismatched)})")
+        if unmatched:
+            problems.append(f"{len(unmatched)} sent item(s) this file/attempt cannot explain at "
+                            f"all ({', '.join(unmatched)})")
+        raise ValueError(f"broadcast {run_id!r}: {' and '.join(problems)} -- this is not the "
+                         f"file/attempt this run was sent from. {len(recorded)} other item(s) were "
+                         f"recorded; these were not")
+    return recorded, already
+
+
 def cmd_broadcast(args, client):
     if args.runs:
         runs = client.broadcast_runs()
@@ -566,7 +639,18 @@ def cmd_broadcast(args, client):
     if args.stop:
         return _print_run(client.broadcast_stop(args.id), args.json)
     if args.status:
-        return _print_run(client.broadcast_status(args.id), args.json)
+        view = client.broadcast_status(args.id)
+        if args.file:
+            recorded, already = _record_broadcast_sent(client, args.id, args.attempt, args.file,
+                                                        args.body, args.body_file, view)
+            if not args.json and (recorded or already):
+                print(f"wa_messages: {len(recorded)} sent item(s) newly recorded, "
+                      f"{len(already)} already there")
+        elif not args.json and any(i.get("status") == BR.BROADCAST_SENT for i in view["items"]):
+            print("NOTE: --file was not given, so the sent item(s) above were not recorded into "
+                  "wa_messages -- turn_context() will not see them. Re-run with the same --file "
+                  "(and --body/--body-file/--attempt as at --send) to record them")
+        return _print_run(view, args.json)
     if not args.file:
         raise ValueError("broadcast needs --file RECIPIENTS.csv|.json (or --status / --stop / --runs)")
     items = plan_broadcast(read_recipients(args.file), read_body(args.body, args.body_file))
@@ -939,7 +1023,9 @@ def build_parser():
 
     bcast = sub.add_parser("broadcast", help="one message to many recipients, paced by the executor")
     bcast.add_argument("--id", help="run id ([A-Za-z0-9._-]); part of every recipient's key")
-    bcast.add_argument("--file", help="recipients, .csv (phone[,body] header) or .json (list of objects)")
+    bcast.add_argument("--file", help="recipients, .csv (phone[,body] header) or .json (list of objects); "
+                                      "with --status, the same file this run was --send with records its "
+                                      "sent items into wa_messages")
     bcast.add_argument("--body")
     bcast.add_argument("--body-file")
     bcast.add_argument("--attempt", type=int, default=1)
