@@ -448,6 +448,16 @@ def record_clinic_photo(clinic_id, path, source="maps"):
                   (clinic_id, path, source, now()))
 
 
+def clear_clinic_photos(clinic_id):
+    """Delete every stored row for this clinic, regardless of source -- used by the Haiku building
+    classifier (TASK-120) before recording its own winner, so a clinic never carries both a stale
+    'maps' row and a new 'classified' one (clinic_photo_path()'s bare `limit 1`, no ORDER BY, would
+    pick between them arbitrarily) and so a clinic with no qualifying candidate ends up with zero
+    rows -- no photo shown -- rather than keeping a disqualified one."""
+    with _lock, db() as c:
+        c.execute("delete from clinic_photos where clinic_id=?", (clinic_id,))
+
+
 def clinic_photo_url(clinic_id):
     """"/photos/<id>" if a stored photo exists for this clinic, else None -- never the raw filesystem path."""
     with _lock, db() as c:
