@@ -548,6 +548,7 @@ _ROUTES = (
     ("GET", "/api/search", "read:board", "none", "free"),
     ("GET", "/api/clinics", "read:board", "none", "free"),
     ("GET", "/api/clinics/{clinic_id}", "read:board", "none", "free"),
+    ("GET", "/api/clinics/{clinic_id}/expose", "read:board", "none", "free"),
     ("GET", "/api/jobs", "read:board", "none", "free"),
     ("GET", "/api/jobs/{posting_id}", "read:board", "none", "free"),
     ("GET", "/api/crawl/runs", "read:ops", "none", "free"),

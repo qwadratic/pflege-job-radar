@@ -1,6 +1,8 @@
 """Local state (SQLite) + the crawl worker queue.
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
+clinic_photos (one cached photo path per clinic + source, e.g. 'maps' -- served via GET /photos/{clinic_id}),
+clinic_blurbs (one Firecrawl-researched presentation paragraph per clinic -- served via GET /api/clinics/{clinic_id}/expose),
 settings (json blobs by key), hunt_state + hunt_meta (app/hunter.py: one row per clinic and UTC day, and the hunter's
 per-day accumulators / flags -- schema here, all reads and writes live in app/hunter.py), magic_links + sessions + customers
 (app/auth.py: single-use login tokens, cookie sessions, Stripe customers -- schema here, reads/writes in app/auth.py), firecrawl_usage (credits + Extract-token delta per call; job_id = the Firecrawl agent
@@ -31,6 +33,9 @@ create table if not exists crawl_runs (
 create table if not exists run_log (id integer primary key autoincrement, run_id integer, at text, line text);
 create index if not exists run_log_run on run_log(run_id);
 create table if not exists career_profiles (clinic_id text primary key, profile text, fetched_at text, credits_used integer default 0, run_id integer);
+create table if not exists clinic_photos (
+  clinic_id text, path text, source text default 'maps', fetched_at text, primary key(clinic_id, source));
+create table if not exists clinic_blurbs (clinic_id text primary key, blurb text, fetched_at text);
 create table if not exists settings (key text primary key, value text);
 create table if not exists firecrawl_usage (id integer primary key autoincrement, at text, kind text, clinic_id text, credits integer, run_id integer, job_id text, tokens integer);
 create table if not exists firecrawl_events (
@@ -163,13 +168,20 @@ def board_walk_ok(board_url, day):
     True and a downstream board_absent_gone(walk_ok=True) call would have retired every open row on
     it -- the exact inversion of TASK-87 AC#1's hard constraint. Fixed to filter on the kinds actually
     recorded for an incomplete walk: 'vendor', 'seeded' (hard failure), 'truncated' (early stop).
-    Feeds pflege_jobs.verify.board_absent_gone's walk_ok (TASK-87 AC#1): a walk this calls ok read no
-    less of the board than any of those three documented failure shapes, so a posting's absence from
-    its result set is real board-membership evidence, not a stop condition. Deliberately silent on
-    kind='empty' -- see board_absent_gone's own docstring for why that one is the caller's judgment
-    call, not a blanket ok/not-ok here."""
+    TASK-85/88 (2026-09-22) added two more: kind='degraded' (crawl_wp_jobs fell through from its
+    primary sitemap/wp-json discovery to a lower-confidence fallback -- postings past what that
+    fallback can see are invisible this walk, same risk shape as 'truncated') and kind='incomplete'
+    (an adapter that reads the board's own self-reported total measured rows < that total directly --
+    stronger evidence than 'degraded', not weaker). Both mean the walk under-read the board, so a
+    posting missing from its result set is not real board-membership evidence; both added here for
+    the same reason 'truncated' is here. Feeds pflege_jobs.verify.board_absent_gone's walk_ok
+    (TASK-87 AC#1): a walk this calls ok read no less of the board than any of those five documented
+    failure shapes, so a posting's absence from its result set is real board-membership evidence, not
+    a stop condition. Deliberately silent on kind='empty' -- see board_absent_gone's own docstring for
+    why that one is the caller's judgment call, not a blanket ok/not-ok here."""
     with _lock, db() as c:
-        r = c.execute("select 1 from crawl_issues where board_url=? and day=? and kind in ('vendor','seeded','truncated') limit 1",
+        r = c.execute("select 1 from crawl_issues where board_url=? and day=? and kind in "
+                      "('vendor','seeded','truncated','degraded','incomplete') limit 1",
                       (board_url, day)).fetchone()
     return not bool(r)
 
@@ -426,6 +438,60 @@ def career_profiles():
         p["fetched_at"] = r["fetched_at"]
         p["credits_used"] = r["credits_used"]
         out[r["clinic_id"]] = p
+    return out
+
+
+def record_clinic_photo(clinic_id, path, source="maps"):
+    with _lock, db() as c:
+        c.execute("insert into clinic_photos(clinic_id,path,source,fetched_at) values(?,?,?,?) "
+                  "on conflict(clinic_id,source) do update set path=excluded.path, fetched_at=excluded.fetched_at",
+                  (clinic_id, path, source, now()))
+
+
+def clinic_photo_url(clinic_id):
+    """"/photos/<id>" if a stored photo exists for this clinic, else None -- never the raw filesystem path."""
+    with _lock, db() as c:
+        r = c.execute("select 1 from clinic_photos where clinic_id=? limit 1", (clinic_id,)).fetchone()
+    return f"/photos/{clinic_id}" if r else None
+
+
+def clinic_photo_path(clinic_id):
+    """The stored filesystem path for a clinic's photo (any source), or None."""
+    with _lock, db() as c:
+        r = c.execute("select path from clinic_photos where clinic_id=? limit 1", (clinic_id,)).fetchone()
+    return r["path"] if r else None
+
+
+def clinic_photos_map():
+    """clinic_id -> "/photos/<id>" for every clinic with a stored photo -- one query for _build()'s
+    per-snapshot merge, mirroring career_profiles()'s shape."""
+    with _lock, db() as c:
+        rows = c.execute("select distinct clinic_id from clinic_photos").fetchall()
+    return {r["clinic_id"]: f"/photos/{r['clinic_id']}" for r in rows}
+
+
+def save_clinic_blurb(clinic_id, data):
+    """data: {"text_de": str, "sources": [str], "confidence": "high"|"partial"|"registry_only",
+    "facts_used": [str]} -- stored as one JSON blob, same shape as career_profiles()'s `profile`."""
+    with _lock, db() as c:
+        c.execute("insert into clinic_blurbs(clinic_id,blurb,fetched_at) values(?,?,?) "
+                  "on conflict(clinic_id) do update set blurb=excluded.blurb, fetched_at=excluded.fetched_at",
+                  (clinic_id, json.dumps(data, ensure_ascii=False), now()))
+
+
+def clinic_blurbs_map():
+    """clinic_id -> the stored blurb dict (+ fetched_at) -- mirrors career_profiles()'s reader shape."""
+    with _lock, db() as c:
+        rows = c.execute("select * from clinic_blurbs").fetchall()
+    out = {}
+    for r in rows:
+        try:
+            b = json.loads(r["blurb"])
+        except Exception:
+            b = {}
+        b = dict(b)
+        b["fetched_at"] = r["fetched_at"]
+        out[r["clinic_id"]] = b
     return out
 
 

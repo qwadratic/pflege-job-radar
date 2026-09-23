@@ -19,7 +19,7 @@ from . import runs as R
 JOB_COLS = ("posting_id,title,role_class,role_label,department_hint,department_raw,qualification_hint,employer,employer_id,employer_class,"
             "clinic_id,clinic_name,regierungsbezirk,versorgungsstufe,traegerart,clinic_beds,clinic_match_rule,city,plz,lat,lon,employment_types,contract,"
             "start_date,first_published,first_seen,last_seen,status,verify_status,verified_at,external_url,source_codes,n_observations,"
-            "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,provenance")
+            "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,enr_requirements,enr_language_req,enr_experience,provenance")
 TTL = 600
 
 # Personal data, member-and-up only. enr_contact_emails is scraped off the job ad and is regularly a named
@@ -250,6 +250,8 @@ def _build():
     routing = _routing(clinics)
     last = R.last_run_per_clinic()
     profiles = R.career_profiles()
+    photos = R.clinic_photos_map()
+    blurbs = R.clinic_blurbs_map()
     for c in clinics:
         c["fachrichtungen"] = [x for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
         c["size"] = size_bucket(c.get("beds"), tax)
@@ -264,6 +266,8 @@ def _build():
         lr = last.get(c["clinic_id"]) or {}
         c["last_crawl_at"], c["last_crawl_status"], c["last_crawl_mode"] = lr.get("at"), lr.get("status"), lr.get("mode")
         c["career_profile"] = profiles.get(c["clinic_id"])
+        c["photo_url"] = photos.get(c["clinic_id"])
+        c["presentation"] = blurbs.get(c["clinic_id"])
         c["ats_type"] = (c.get("ats_type") or "").strip()
         # how a scrape would reach this site: a vendor adapter, or the Firecrawl agent (everything is scrapable)
         via_adapter = bool(c.get("routable")) and not c.get("walled")

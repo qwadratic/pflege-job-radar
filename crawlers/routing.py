@@ -87,7 +87,10 @@ ADAPTERS = {
 }
 
 # Boards that reject datacenter traffic outright; a 0-row crawl here means "walled", not "no jobs".
-WALLED = re.compile(r"helios-gesundheit\.de|helios\.de", re.I)
+# simssee-klinik.de confirmed live 2026-09-22: every page 403s, including the bare homepage, from
+# every User-Agent tried -- the same whole-site pattern as helios (unlike a page-specific 403, e.g.
+# rotkreuzklinik-wuerzburg.de, TASK-50 AC#2, which is NOT walled here for that reason).
+WALLED = re.compile(r"helios-gesundheit\.de|helios\.de|simssee-klinik\.de", re.I)
 
 # "no fingerprint found" labels, weaker than any vendor a census run actually identified.
 FALLBACK_VENDORS = {"wp_jobs", "self_hosted"}

@@ -98,6 +98,50 @@ def test_wp_job_rows_does_not_collapse_two_postings_distinguished_only_by_query_
     assert titles == ["Pflegefachkraft Station A (m/w/d)", "Pflegefachkraft Station B (m/w/d)"]
 
 
+# --- run-120 recon 2026-09-22: same PATH as the listing, distinguished ONLY by a job-id query -----
+
+def test_same_path_detail_pages_distinguished_only_by_a_query_id_are_not_excluded_as_the_listing(monkeypatch):
+    """koenig-ludwig-haus.de shape (confirmed live 2026-09-22): every posting's own url is the
+    LISTING's identical path, differing only by ?detID=N -- _listing_page_key is deliberately
+    query-blind (see its own docstring), so before this fix every candidate here collapsed onto the
+    listing's own not_a_job key and 0 rows ever reached _wp_job_rows (13 real postings lost). The
+    live detail page itself also carries no h1/JSON-LD/Bootstrap-classed heading and repeats one
+    generic <title> on every single posting -- only the listing anchor's own gender-marked text
+    names the real title, same as PDF_LINK_RX's existing anchor-text fallback."""
+    cu = "https://x.example/karriere/jobs/index.html"
+    u1 = "https://x.example/karriere/jobs/index.html?detID=1"
+    u2 = "https://x.example/karriere/jobs/index.html?detID=2"
+    cu_page = _R(
+        '<a href="%s">Stellenanzeige Pflegefachkraft (w/m/d) Station A</a>'
+        '<a href="%s">Stellenanzeige Pflegefachkraft (w/m/d) Station B</a>' % (u1, u2),
+        url=cu, ok=True)
+    detail_html = '<title>Jobs bei X</title><span class="fancytitle">irrelevant body text</span>'
+    p1 = _R(detail_html, url=u1, ok=True)
+    p2 = _R(detail_html, url=u2, ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page, u1: p1, u2: p2}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = sorted(r["payload"]["title"] for r in rows)
+    assert titles == ["Pflegefachkraft (w/m/d) Station A", "Pflegefachkraft (w/m/d) Station B"]
+
+
+def test_career_page_with_no_listing_html_embeds_the_whole_board_as_a_third_party_iframe(monkeypatch):
+    """kh-as.de shape (confirmed live 2026-09-22): the career page itself carries no job-looking
+    content at all, only <iframe src="https://jobs.maxime-media.de/..."> -- a small vendor with no
+    fingerprint anywhere else in this file, but otherwise a plain server-rendered board (real anchor
+    links, real JSON-LD per detail page) once you are actually on that host. Before this fix the
+    iframe src was never followed at all, so this board (and every other one shaped like it) read 0."""
+    cu = "https://x.example/karriere/stellenangebote/"
+    iframe_src = "https://jobs.vendor.example/tenant"
+    u1 = "https://jobs.vendor.example/tenant/1"
+    cu_page = _R('<iframe src="%s" style="width:100%%;border:0"></iframe>' % iframe_src, url=cu, ok=True)
+    iframe_page = _R('<a href="%s">Pflegefachkraft (m/w/d) fuer die Kardiologie</a>' % u1, url=iframe_src, ok=True)
+    detail_page = _R(_jsonld_job("Pflegefachkraft (m/w/d) fuer die Kardiologie"), url=u1, ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page, iframe_src: iframe_page, u1: detail_page}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["Pflegefachkraft (m/w/d) fuer die Kardiologie"]
+
+
 def test_faqpage_shape_merges_with_the_normal_walk_instead_of_returning_early(monkeypatch):
     cu = "https://x.example/karriere"
     real_detail = "https://x.example/stellenangebot/pflegefachkraft-notaufnahme"
@@ -148,11 +192,25 @@ def test_listing_page_only_helpers_give_each_posting_a_distinct_url_without_digi
         '<div class="panel-title"><a>OTA (VZ/TZ)</a></div>'
         '<div class="panel-body">b</div></div></div>',
         url="https://klinik-wirsberg.de/karriere", ok=True)
+    accordion2 = _R(
+        '<div class="dan-bewerbungen-job-headline"><b>Pflegefachkraft (m/w/d) ()</b></div>'
+        '<div class="dan-bewerbungen-job-body"><h3>Wir suchen</h3><p>a</p></div>'
+        '<div class="dan-bewerbungen-job-headline"><b>OTA (m/w/d) ()</b></div>'
+        '<div class="dan-bewerbungen-job-body"><h3>Wir suchen</h3><p>b</p></div>',
+        url="https://www.kreisklinik-woerth.de/stellenangebote/", ok=True)
+    toggle = _R(
+        '<a class="elementor-toggle-title" tabindex="0">Pflegefachkraft (m/w/d)</a>'
+        '<div class="elementor-tab-content elementor-clearfix">a</div></div>'
+        '<a class="elementor-toggle-title" tabindex="0">OTA (m/w/d)</a>'
+        '<div class="elementor-tab-content elementor-clearfix">b</div></div>',
+        url="https://www.spezialklinik-neukirchen.de/ueber-uns/stellenangebote/", ok=True)
     cases = [
         (va._faqpage_job_rows, faq, "klinik-steger.de"),
         (va._faq_accordion_job_rows, accordion, "www.waldhausklinik.de"),
         (va._title_only_job_rows, title_only, "klinik-bad-trissl.de"),
         (va._bootstrap_panel_job_rows, panel, "klinik-wirsberg.de"),
+        (va._dan_bewerbungen_job_rows, accordion2, "www.kreisklinik-woerth.de"),
+        (va._elementor_toggle_job_rows, toggle, "www.spezialklinik-neukirchen.de"),
     ]
     for fn, resp, host in cases:
         rows = fn(resp, {"name": "Klinik", "town": "X"}, host)
@@ -163,6 +221,62 @@ def test_listing_page_only_helpers_give_each_posting_a_distinct_url_without_digi
             base, frag = u.split("#", 1)
             assert base == resp.url, fn.__name__
             assert not any(ch.isdigit() for ch in frag) and "=" not in frag, fn.__name__
+
+
+def test_dan_bewerbungen_accordion_strips_the_templates_own_trailing_empty_parens(monkeypatch):
+    """kreisklinik-woerth.de shape (confirmed live 2026-09-22): a legacy <font>-tag page whose
+    postings sit in a "dan-bewerbungen-job-headline"/"-job-body" accordion pair, title repeated a
+    second time (with the real Wir-suchen/Wir-sind/... body) inside the body div -- the split on the
+    headline regex alone must not also re-match that inner duplicate, and every title in this
+    plugin's own template carries a trailing "()" placeholder that must not leak into the row."""
+    cu = "https://www.kreisklinik-woerth.de/stellenangebote/"
+    html = (
+        '<div class="dan-bewerbungen-job-headline dan-bewerbungen-job-headline-closed">'
+        '<b>Gesundheits- und Krankenpfleger (m/w/d) ()</b></div>'
+        '<div class="dan-bewerbungen-job-body dan-bewerbungen-job-body-closed">'
+        '<h3>Wir suchen</h3><p><b>Gesundheits- und Krankenpfleger </b>(m/w/d) </p>'
+        '<h3>Wir sind</h3><p>Eine Kreisklinik.</p>'
+        '<p><a href="/online-bewerbung?jobid=399">Hier gehts zum Online-Bewerbungsformular</a></p></div>')
+    monkeypatch.setattr(va, "get", _router({cu: _R(html, url=cu, ok=True)}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["Gesundheits- und Krankenpfleger (m/w/d)"]  # not "...(m/w/d) ()"
+
+
+def test_elementor_toggle_accordion_skips_ungendered_titles_and_keeps_the_real_posting(monkeypatch):
+    """spezialklinik-neukirchen.de shape (confirmed live 2026-09-22): an Elementor Toggle widget
+    (a DIFFERENT Elementor widget than INLINE_HEADING_SITES' Heading one -- own class name, and the
+    toggle title itself is a JS-only <a> with no href to find nearby). Most of this board's own
+    toggle entries carry no gender marker at all (reception/admin role, a doctor-leadership role, a
+    flat "we do NOT train for X" non-opening) -- only the one real gendered posting should survive."""
+    cu = "https://www.spezialklinik-neukirchen.de/ueber-uns/stellenangebote/"
+    html = (
+        '<a class="elementor-toggle-title" tabindex="0">Patientenverwaltung / Empfang</a>'
+        '<div class="elementor-tab-content elementor-clearfix"><p>Ungendered admin role.</p></div></div>'
+        '<a class="elementor-toggle-title" tabindex="0">Examinierte/n Krankenschwester/- pfleger (m/w/d)</a>'
+        '<div class="elementor-tab-content elementor-clearfix"><p>Ab sofort suchen wir fuer unsere Station.</p></div></div>')
+    monkeypatch.setattr(va, "get", _router({cu: _R(html, url=cu, ok=True)}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["Examinierte/n Krankenschwester/- pfleger (m/w/d)"]
+    assert "Station" in rows[0]["payload"]["description"]
+
+
+def test_typo3_eid_dumpfile_pdf_link_uses_anchor_text_like_a_suffixed_pdf(monkeypatch):
+    """panorama-fachklinik.de shape (confirmed live 2026-09-22): TYPO3's own eID=dumpFile download
+    handler serves a PDF flyer with no ".pdf" anywhere in the URL at all -- the same "anchor text is
+    the only real title" shape PDF_LINK_RX already handles for a literal .pdf suffix (augenklinik-
+    muenchen.de), just a different URL shape. The PDF url is deliberately NOT in the router mapping:
+    a correct fix never fetches it at all (same as the .pdf-suffixed case) -- if this ever regressed
+    to trying to fetch it, the router's 404-shaped default response would silently drop the row
+    instead of raising, so the row's presence is what proves the no-fetch path ran."""
+    cu = "https://x.example/karriere/jobs/"
+    pdf_url = "https://x.example/index.php?eID=dumpFile&t=f&f=2336&token=abc123"
+    cu_page = _R('<a href="%s">Assistenzarzt (m/w/d) fuer psychosomatische Medizin</a>' % pdf_url, url=cu, ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["Assistenzarzt (m/w/d) fuer psychosomatische Medizin"]
 
 
 def test_gender_marker_accepts_the_colon_and_asterisk_suffix_form():
@@ -192,6 +306,31 @@ def test_category_filtered_overview_link_is_not_treated_as_a_posting():
     pairs = va._job_link_pairs(html, "https://x.example/")
     assert "https://x.example/stellenanzeigen/pflegefachkraft-station-a/" in pairs
     assert "https://x.example/stellenanzeigen/uebersicht.html?kategorie=Pflege" not in pairs
+
+
+def test_job_link_pairs_reads_a_gender_marker_slugified_into_the_url_itself():
+    """clinicum-stgeorg.de shape (confirmed live 2026-09-22): detail links are plain post slugs with
+    no job/stellen/karriere keyword in the path (JOB_PATH misses) AND the anchor's own visible text
+    is a generic "Zum Jobangebot: <title>" with no gender marker either (GENDER-on-text misses) --
+    the ONLY signal is "(m/w/d)" slugified into the URL itself, e.g. "...-m-w-d-vollzeit-110488"."""
+    html = ('<a href="/karriere/gesundheits-und-krankenpfleger-m-w-d-vollzeit-110488">'
+            'Zum Jobangebot: Gesundheits- und Krankenpfleger</a>'
+            '<a href="/karriere/impressum">Impressum</a>')
+    pairs = va._job_link_pairs(html, "https://x.example/")
+    assert "https://x.example/karriere/gesundheits-und-krankenpfleger-m-w-d-vollzeit-110488" in pairs
+    assert "https://x.example/karriere/impressum" not in pairs
+
+
+def test_stgeorg_shape_end_to_end_reads_the_real_detail_page_title(monkeypatch):
+    cu = "https://x.example/karriere"
+    detail = "https://x.example/karriere/gesundheits-und-krankenpfleger-m-w-d-vollzeit-110488"
+    cu_page = _R('<a href="%s"><span class="visually-hidden">Zum Jobangebot: '
+                 'Gesundheits- und Krankenpfleger</span></a>' % detail, url=cu, ok=True)
+    detail_page = _R('<h1 class="hyphens h2">Gesundheits- und Krankenpfleger (m/w/d)</h1>', url=detail, ok=True)
+    monkeypatch.setattr(va, "get", _router({cu: cu_page, detail: detail_page}))
+    rows = va.crawl_wp_jobs({"name": "Klinik", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["Gesundheits- und Krankenpfleger (m/w/d)"]
 
 
 def test_parse_job_page_ignores_json_ld_url_naming_the_site_root_or_a_foreign_host():
@@ -295,3 +434,63 @@ def test_pipe_title_without_any_gender_marker_still_takes_segment_zero():
     "<real title> | SiteName" convention is still the common case."""
     html = "<html><head><title>Pflegedienstleitung | Klinikum Musterstadt</title></head><body></body></html>"
     assert va.parse_job_page(html, "https://x/stellen/a", "Klinikum")["title"] == "Pflegedienstleitung"
+
+
+# --- recursive listing-page fallback must not drop the outer discovery's own anchor titles ------
+
+def test_recursive_listing_candidates_inherit_the_already_known_anchor_titles(monkeypatch):
+    """koenig-ludwig-haus.de (clinic 66305): the career page's own detail pages carry no h1/JSON-LD
+    at all, only a shared generic <title> -- so when a page LOOKS like a listing (recurses via
+    _job_link_pairs, len(sub)>1) the only real title left for its own sub-candidates is the anchor
+    text discovered ON that page. Before the fix, the recursive _wp_job_rows call dropped `titles`
+    entirely, so every recursive candidate fell through to the shared generic title instead
+    (confirmed live 2026-09-22: 7 of 10 real postings lost or mistitled this way)."""
+    cu = "https://x.example/karriere/"
+    division = "https://x.example/karriere/stellen/uebersicht"
+    b = "https://x.example/karriere/stellen/b"
+    c = "https://x.example/karriere/stellen/c"
+    cu_page = _R('<a href="%s">Alle Stellen</a>' % division, url=cu, ok=True)
+    division_page = _R(
+        '<title>Job Overview</title>'
+        '<a href="%s">Pflegefachkraft (m/w/d)</a>'
+        '<a href="%s">Examinierte Pflegekraft (m/w/d)</a>' % (b, c),
+        url=division, ok=True)
+    # Both detail pages repeat the SAME generic, ungendered <title> -- no other heading anywhere.
+    detail_b = _R('<title>Stellenangebote</title>', url=b, ok=True)
+    detail_c = _R('<title>Stellenangebote</title>', url=c, ok=True)
+    mapping = {cu: cu_page, division: division_page, b: detail_b, c: detail_c}
+    monkeypatch.setattr(va, "get", _router(mapping))
+    rows = va.crawl_wp_jobs({"name": "Klinik X", "careers_url": cu})
+    titles = sorted(r["payload"]["title"] for r in rows)
+    assert titles == ["Examinierte Pflegekraft (m/w/d)", "Pflegefachkraft (m/w/d)"]  # not "Stellenangebote" x2
+
+
+def test_two_path_aliases_sharing_one_query_id_collapse_to_one_row(monkeypatch):
+    """koenig-ludwig-haus.de serves every posting under BOTH .../index.html?detID=N and
+    .../NNNNN.Stellenanzeigen.html?detID=N -- two different paths, the same query id. Confirmed live
+    2026-09-22: _fetch_dedupe_key keeps the path, so this doubled every row."""
+    alias_a = "https://x.example/karriere/index.html?detID=7"
+    alias_b = "https://x.example/karriere/9999.Stellenanzeigen.html?detID=7"
+    # Each alias answers as ITSELF (no redirect) -- the existing final_key-collapse (line ~849,
+    # for a slug that redirects to a shared landing page) must not be what makes this test pass.
+    detail_a = _R(_jsonld_job("Pflegefachkraft (m/w/d)"), url=alias_a, ok=True)
+    detail_b = _R(_jsonld_job("Pflegefachkraft (m/w/d)"), url=alias_b, ok=True)
+    monkeypatch.setattr(va, "get", _router({alias_a: detail_a, alias_b: detail_b}))
+    rows = va._wp_job_rows([alias_a, alias_b], {"name": "Klinik X", "town": "X"}, "x.example", None)
+    assert len(rows) == 1
+
+
+# --- a standard legal-notice page must never be accepted as a posting ---------------------------
+
+def test_legal_notice_pages_are_never_accepted_via_the_ungendered_single_candidate_fallback(monkeypatch):
+    """psychiatrie-werneck.de (clinic 66205): the meta-refresh-following fix (this session, in the
+    shared get()) newly lets a site-wide "Impressum"/"Barrierefreiheitserklaerung" link resolve all
+    the way to its target instead of bouncing -- confirmed live 2026-09-22, both landed here via the
+    len(sub)<=1 ungendered fallback and were stored as fake postings. Calls _wp_job_rows directly
+    (not crawl_wp_jobs' own discovery, which a bare "Impressum" link never even survives) -- this is
+    a defense at the acceptance point itself, for whatever board-specific discovery route reaches it."""
+    legal = "https://x.example/impressum"
+    legal_page = _R('<title>Impressum</title>', url=legal, ok=True)
+    monkeypatch.setattr(va, "get", _router({legal: legal_page}))
+    rows = va._wp_job_rows([legal], {"name": "Klinik X", "town": "X"}, "x.example", None)
+    assert rows == []

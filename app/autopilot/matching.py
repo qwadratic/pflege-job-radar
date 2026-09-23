@@ -6,6 +6,7 @@
 Clinics and postings are registry rows (app.data snapshot shape, cached by seed.py in the autopilot SQLite).
 Reasons are short German strings so the UI can print them next to the score.
 """
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -23,6 +24,22 @@ FACH_TO_DEPT = {"INN": "Innere Medizin", "CHI": "Chirurgie/Orthopädie", "PSY": 
                 "HD": "Dialyse/Nephrologie", "HCH": "Kardiologie", "NCH": "Chirurgie/Orthopädie", "URO": "Chirurgie/Orthopädie",
                 "STR": "Onkologie", "NUK": "Onkologie", "MKG": "OP", "AUG": "OP", "HNO": "OP"}
 GERMAN_RANK = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
+# enr_language_req (pflege_jobs.classify.enrich_description) is the matched regex SNIPPET around a level
+# marker ("Deutschkenntnisse mindestens B2"), not a clean enum -- pull the level back out of it here.
+_LEVEL_RX = re.compile(r"\b(A1|A2|B1|B2|C1|C2)\b", re.I)
+
+
+def _stated_level(jobs):
+    """(max required GERMAN_RANK, its own snippet text) across jobs_of_clinic's postings that state a
+    language requirement -- max, not first, since a candidate qualifies for the clinic if ANY of its
+    open postings would take them (score() has no per-posting view, only per-clinic, see rank())."""
+    best_rank, best_text = 0, None
+    for j in jobs:
+        req = j.get("enr_language_req")
+        m = req and _LEVEL_RX.search(req)
+        if m and GERMAN_RANK[m.group(1).upper()] > best_rank:
+            best_rank, best_text = GERMAN_RANK[m.group(1).upper()], req.strip()
+    return best_rank, best_text
 ANERK_FACTOR = {"granted": 1.0, "not_needed": 1.0, "applied": 0.5, "deficit_notice": 0.25, "none": 0.0}
 ANERK_LABEL = {"granted": "Anerkennung erteilt", "not_needed": "keine Anerkennung nötig", "applied": "Anerkennung beantragt",
                "deficit_notice": "Defizitbescheid", "none": "Anerkennung fehlt"}
@@ -84,9 +101,21 @@ def score(candidate, clinic, jobs_of_clinic):
     if overlap:
         s += W_DEPT
         reasons.append(f"{sorted(overlap)[0]} gesucht")
-    # German 10
+    # German 10 -- against the specific posting's own stated requirement when one exists, not a fixed
+    # B2 bar: a posting silent on language and one stating "Deutsch mindestens B2" used to score a
+    # candidate identically (TASK-105).
     lvl = GERMAN_RANK.get((candidate.get("german_level") or "").upper(), 0)
-    if lvl >= 4:
+    req_lvl, req_text = _stated_level(jobs)
+    if req_lvl:
+        if lvl >= req_lvl:
+            s += W_GERMAN
+            reasons.append(f"Deutsch {candidate.get('german_level')} erfüllt Anforderung ({req_text})")
+        elif lvl == req_lvl - 1:
+            s += W_GERMAN / 2
+            reasons.append(f"Deutsch {candidate.get('german_level')} knapp unter Anforderung ({req_text})")
+        else:
+            reasons.append(f"Deutschniveau unter Anforderung ({req_text})")
+    elif lvl >= 4:
         s += W_GERMAN
         reasons.append(f"Deutsch {candidate.get('german_level')}")
     elif lvl == 3:

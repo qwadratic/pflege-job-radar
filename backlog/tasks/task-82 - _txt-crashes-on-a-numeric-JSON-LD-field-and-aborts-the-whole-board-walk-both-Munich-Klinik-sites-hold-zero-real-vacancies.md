@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 04:25'
+updated_date: '2026-09-22 08:52'
 labels: []
 dependencies: []
 ordinal: 82000
@@ -27,8 +28,23 @@ Related registry correction from the same audit: 16201 and 16203 should point at
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 _txt() coerces any non-string scalar rather than raising, and a test pins the numeric-postalCode case with a real JSON-LD fixture
+- [x] #1 _txt() coerces any non-string scalar rather than raising, and a test pins the numeric-postalCode case with a real JSON-LD fixture
 - [ ] #2 Every sibling field reader in parse_job_page that assumes a string is audited for the same numeric/list/dict-shaped input, not just the one that crashed
 - [ ] #3 A crash inside one posting page cannot silently abort the whole board walk with a success result: the failure is recorded (crawl_issue) and the walk's outcome reports what it lost
 - [ ] #4 16201 and 16203 yield their real nursing vacancies after the fix; report the count for each, and purge 16201's 15 marketing-page rows
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC#1 закрыт 2026-09-21 в коммите 38287cc (правка сделана оркестратором вручную, до того как задача попала в какой-либо рабочий раунд, поэтому галочка осталась непроставленной).
+
+_txt() (crawlers/vendor_adapters.py:92) теперь приводит любое не-строковое значение JSON-LD вместо падения: bare scalar через str(), массив склеивается через ", ", типизированный литерал {"@value": ...} разворачивается, объект без @value даёт None. Причина в комментарии на месте: JSON-LD допускает все три формы, поэтому это корректный разбор, а не защитная обёртка.
+
+Тест: tests/test_vendor_adapters.py::test_txt_handles_the_non_string_json_ld_shapes_that_aborted_whole_board_walks пинит обе живые формы отказа -- числовой "postalCode":81545 с muenchen-klinik.de и массив с komm-ins-klinikland.de, плюс обычный случай и falsy-но-реальный 0.
+
+AC#2, #3, #4 остаются открытыми и это не формальность:
+- #2 требует аудита соседних читателей полей в parse_job_page на те же формы -- не делался.
+- #3 требует, чтобы падение на одной странице вакансии не обрывало весь обход борда с результатом "успех". Механизм записи деградации появился в TASK-85 (крах и degraded-тег), но связка именно для исключения внутри parse_job_page не проверена.
+- #4 требует живых чисел по 16201 и 16203 и чистки 15 маркетинговых строк 16201. Упирается в TASK-86: обеим клиникам нужен careers_url https://www.muenchen-klinik.de/stellenmarkt/ вместо /jobs/, и этот перевод пока в dry-run, в прод не применён.
+<!-- SECTION:NOTES:END -->

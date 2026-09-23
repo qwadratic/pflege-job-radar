@@ -158,7 +158,16 @@ LAND_RX = re.compile(r"bayern|bavaria|baden-württemberg|baden-wuerttemberg|hess
 # the only thing that catches the AMEOS shape, where the page states no location anywhere and 22 of 26
 # new rows a night carry the seed clinic's Bavarian town while their own URL says Oberhausen,
 # Haldensleben, Eutin (measured 2026-09-17).
-_URL_CITY = re.compile(r"-in-([a-zäöüß][a-zäöüß0-9\-]{3,})(?:\.html?)?/?$", re.I)
+# Tail-only on purpose (no leading "-in-" in the pattern): the capture class itself allows hyphens, so
+# an earlier version anchored on `-in-(...)$` via .search() matched the FIRST "-in-" in the whole slug,
+# not the last, and greedily swallowed everything after it -- a title containing ordinary German "in
+# der/im" text before the real trailing city silently broke this (confirmed live 2026-09-22, TASK-81
+# AC#6: ".../pflegefachkraft-dauernachtwache-in-der-pflege-und-eingliederung-in-haldensleben" captured
+# "der-pflege-und-eingliederung-in-haldensleben", not "haldensleben" -- in_bavaria() couldn't place the
+# garbage string, so the seed clinic's own Bavarian town survived unchallenged on a Saxony-Anhalt
+# posting). city_from_url() now finds the LAST "-in-" itself (str.rfind, not regex search) and only
+# regex-validates the tail after it.
+_URL_CITY_TAIL = re.compile(r"^[a-zäöüß][a-zäöüß0-9\-]{3,}(?:\.html?)?/?$", re.I)
 _URL_PCT = {"%c3%bc": "ü", "%c3%a4": "ä", "%c3%b6": "ö", "%c3%9f": "ß", "%c3%9c": "ü", "%c3%84": "ä", "%c3%96": "ö"}
 
 
@@ -169,10 +178,13 @@ def city_from_url(url, towns):
     u = (url or "").split("?")[0].split("#")[0]
     for k, v in _URL_PCT.items():
         u = u.replace(k, v).replace(k.upper(), v)
-    m = _URL_CITY.search(u)
-    if not m:
+    idx = u.rfind("-in-")
+    if idx == -1:
         return None
-    city = m.group(1).replace("-", " ").strip()
+    tail = u[idx + len("-in-"):]
+    if not _URL_CITY_TAIL.match(tail):
+        return None
+    city = re.sub(r"(?:\.html?)?/?$", "", tail, flags=re.I).replace("-", " ").strip()
     if in_bavaria(city, None, None, towns) is not None:
         return city
     # the registry writes some towns in a form a slug never uses ("Neuburg/Donau" vs

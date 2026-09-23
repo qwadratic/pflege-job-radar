@@ -310,8 +310,17 @@ def plan_for(scope, value, mode, max_credits, target=None):
     except Exception:
         boards = len({(c.get("board") or c.get("careers_url") or c["clinic_id"]).lower() for c in adapter})
     walled = sum(1 for c in clinics if c.get("walled"))
+    # 2026-09-08 API audit finding #7: the preview ran no gate at all, so the panel could show "est 160,
+    # 100 left" with Confirm enabled for a run that then charges 0 and ends failed on "refused by spend
+    # gate" lines -- kill_switch() is cheap (settings + campaign + a ledger read, no live fetch) so it
+    # runs on every preview; spend_gate() per clinic is NOT run here (it live-probes a routable clinic's
+    # adapter as part of its own decision -- see spend_gate()'s docstring -- so doing that for every
+    # Firecrawl-bound clinic on every keystroke-adjacent preview would make the preview itself slow and
+    # spend-adjacent; execute() still re-checks each clinic for real before it actually runs).
+    ks_allowed, ks_reason = kill_switch(run_mode=mode) if fire else (True, None)
     return {"target": tgt, "clinics": clinics, "adapter": adapter, "firecrawl": fire, "skipped": skipped, "boards": boards, "walled": walled,
-            "credits_needed": len(fire) * int(max_credits or 0), "credits_left": _budget_left()}
+            "credits_needed": len(fire) * int(max_credits or 0), "credits_left": _budget_left(),
+            "blocked": not ks_allowed, "blocked_reason": ks_reason}
 
 
 # --- adapters -------------------------------------------------------------------------------
@@ -421,11 +430,31 @@ def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
             raise RuntimeError(f"no vendor adapter for {board['vendor']}")
         rows = fn(c, session=session)
     ids = [x["clinic_id"] for x in board.get("clinics") or [c]]
+    # TASK-99: a shared-vendor-ACCOUNT board (Artemed/SmartRecruiters, Gesundheitswelt Chiemgau) keeps
+    # each clinic on its own distinct careers_url, so board.get("clinics") above is correctly just this
+    # one clinic -- but the vendor's own feed returns the whole account's postings regardless of which
+    # clinic triggered the fetch. Widen to the full account pool here, after routing's own per-board
+    # grouping, not instead of it (routing.plan() must keep fetching each clinic's own URL separately).
+    pool = VA.account_pool_for(c["clinic_id"])
+    if pool:
+        ids = sorted(set(ids) | set(pool))
+    # TASK-102: talention's own jobLocation.addressLocality is filled inconsistently by the employer --
+    # a facility/department label on some postings, a clean town on others, same field, same board.
+    # Pool-scoped so it can only ever resolve to a town this board's own clinics already list.
+    board_towns = [x.get("town") for x in (board.get("clinics") or [c])] if board.get("vendor") == "talention" else None
+    # TASK-81 mechanism #1: la-regio-kliniken.de shares one board between 26108 (general hospital) and
+    # 26103 (Kinderkrankenhaus St. Marien, pediatric-only) with no per-posting location field at all --
+    # narrow board_clinic_ids to a single clinic per row, by title, instead of leaving the whole pool
+    # for a town-based matcher rung that cannot help here (both clinics are in Landshut).
+    la_regio_pool = {x["clinic_id"] for x in (board.get("clinics") or [])} >= {"26108", "26103"}
     for r in rows:
         # which board this came from is provenance, not a guess -- it bounds the site the posting
         # can belong to (74 boards are shared, covering 253 clinics)
         r["payload"]["board_url"] = board.get("url") or c.get("careers_url")
-        r["payload"]["board_clinic_ids"] = ids
+        r["payload"]["board_clinic_ids"] = [VA.split_la_regio_landshut(r["payload"].get("title"))] if la_regio_pool else ids
+        if board_towns:
+            for l in (r["payload"].get("loc") or []):
+                l["city"] = VA.clean_talention_city(l.get("city"), board_towns)
         locs = r["payload"].get("loc") or [{}]
         if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
             r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
@@ -672,7 +701,7 @@ def execute(run_id):
         log(f"  skip {c['clinic_id']} {c['name'][:40]}: {c.get('route_reason')}")
     before_ids = {j["posting_id"] for j in D.jobs()}
     towns = D.towns()
-    inbox_rows, observations, credits_used, errors = [], [], 0, 0
+    inbox_rows, observations, credits_used, errors, fatal_errors = [], [], 0, 0, 0
     session = requests.Session()
 
     # job scope: re-check the posting first
@@ -734,6 +763,27 @@ def execute(run_id):
                     R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
                                          f"0 rows, no transport error ({session._attempts} request(s), {session._ok} ok) -- board returned nothing", run_id)
                     log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=empty")
+                # TASK-85 AC#1: crawl_wp_jobs tags its own return value .degraded when its primary
+                # discovery path (sitemap + wp-json CPT fallback) found nothing and it fell through to
+                # a lower-confidence path (hr4you / homepage-anchor scraping) -- orthogonal to `rows`
+                # being empty (AMEOS: degraded but the hr4you fallback still found 734 real rows).
+                # This is the one place every vendor adapter's return value already flows through.
+                degraded = getattr(rows, "degraded", None)
+                if degraded:
+                    R.record_crawl_issue(url, day, "degraded", b.get("vendor"), ids,
+                                         f"fell back to a lower-confidence discovery path: {degraded}", run_id)
+                    log(f"  WARNING: degraded discovery ({degraded}) for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=degraded")
+                # TASK-88 AC#2: some adapters (crawl_erecruiter, directly or via crawl_wp_jobs'
+                # delegate loop) read the board's own self-reported total off its embedded JSON and
+                # carry it as .board_total on the same _BoardTotalRows return value -- a plain list
+                # (~18 of ~19 other adapters) has no such attribute, so getattr's default keeps this a
+                # no-op for them rather than an AttributeError.
+                board_total = getattr(rows, "board_total", None)
+                if board_total is not None and len(rows) < board_total:
+                    R.record_crawl_issue(url, day, "incomplete", b.get("vendor"), ids,
+                                         f"board reports {board_total} total but the adapter returned {len(rows)} row(s)"
+                                         + (" (paginated board)" if getattr(rows, "board_paginated", None) else ""), run_id)
+                    log(f"  WARNING: under-read {len(rows)}/{board_total} for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=incomplete")
                 return rows, [], None
             obs, st = _seed_obs(b, c, towns, log)
             for o in obs:
@@ -891,7 +941,7 @@ def execute(run_id):
         if rc:
             # TASK-72 AC#4: this return code used to be discarded outright -- a failed drain (queue
             # left stranded) was invisible both to this run's own status and to crawl_issues.
-            errors += 1
+            errors += 1; fatal_errors += 1
             R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
         if n_rows:
             # what the drain actually turned into an observation -- the rows that reached Postgres,
@@ -900,7 +950,7 @@ def execute(run_id):
         if refs:
             rc = _cli(["link-cross"], log)
             if rc:
-                errors += 1
+                errors += 1; fatal_errors += 1
                 R.record_crawl_issue("pflege_jobs.cli link-cross", R.now()[:10], "intake", "link-cross", [], f"cli link-cross exited {rc}", run_id)
             ids = _posting_ids_for_refs(refs)
             new_ids = [pid for pid in set(ids.values()) if pid not in before_ids]
@@ -912,18 +962,22 @@ def execute(run_id):
                 _verify_ids(new_ids or list(set(ids.values())), log)
             R.update_run(run_id, n_new=len(new_ids))
     except Exception as e:
-        errors += 1
+        errors += 1; fatal_errors += 1
         log(f"intake FAILED {type(e).__name__}: {str(e)[:300]}")
         # TASK-92 AC#5: run 108's intake failure existed only as this log line, so three days of
         # runs crawled thousands of rows and stored none while nothing outside run_log said so.
         R.record_crawl_issue("app.crawl intake", R.now()[:10], "intake", "intake", [], f"{type(e).__name__}: {str(e)[:300]}", run_id)
-    # Any error fails the run -- n_rows>0 used to mask errors as status="done" even when the whole
-    # intake block (inbox post/drain/link-cross/verify) blew up right after real rows were fetched
-    # (TASK-72 AC#4; confirmed live: 6 historical runs showed n_new=0 with status=done this way).
-    status = "cancelled" if cancelled else ("failed" if errors else "done")
-    if errors and status == "failed":
-        log(f"finished with {errors} error(s)")
-    R.update_run(run_id, status=status, finished_at=R.now(), error=(f"{errors} error(s), see log" if errors else None))
+    # Only a fatal (intake-pipeline) error fails the run -- TASK-72 AC#4 was about the whole intake
+    # block (inbox post/drain/link-cross/verify) blowing up silently right after real rows were
+    # fetched. A single board or Firecrawl clinic failing (already recorded per-item in crawl_issues
+    # and run_log) is normal partial-coverage noise, not a run failure -- confirmed live 2026-09-22,
+    # runs 120 (509 new postings, 13796 rows, status=failed on 1 unrelated board) and 122 (4 new
+    # postings landed, status=failed because a DIFFERENT clinic's Firecrawl agent hit its own cap).
+    status = "cancelled" if cancelled else ("failed" if fatal_errors else "done")
+    if errors:
+        log(f"finished with {errors} issue(s) ({fatal_errors} fatal)")
+    R.update_run(run_id, status=status, finished_at=R.now(),
+                 error=(f"{errors} issue(s), see log" if errors else None))
     try:
         D.refresh()                                  # after the final status, so last_crawl_* on the clinic rows is right
     except Exception as e:

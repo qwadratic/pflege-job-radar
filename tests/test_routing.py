@@ -1,5 +1,14 @@
 """Routing must never turn one shared board into N fetches, nor crash on unsupported vendors."""
-from crawlers.routing import plan, ADAPTERS
+from crawlers.routing import plan, ADAPTERS, WALLED
+
+
+def test_walled_flags_simssee_but_not_a_merely_page_specific_403():
+    """simssee-klinik.de confirmed live 2026-09-22: every page (incl. the bare homepage) 403s from
+    every User-Agent -- a real datacenter wall, so a 0-row crawl there must read as "walled", not
+    "no jobs" (see WALLED's own comment). rotkreuzklinik-wuerzburg.de (TASK-50 AC#2) is the contrast:
+    only ONE page 403s while the homepage answers 200, which is not this pattern and must stay out."""
+    assert WALLED.search("https://www.simssee-klinik.de/karriere/")
+    assert not WALLED.search("https://rotkreuzklinik-wuerzburg.de/stellenangebote/")
 
 
 def test_shared_board_is_fetched_once():

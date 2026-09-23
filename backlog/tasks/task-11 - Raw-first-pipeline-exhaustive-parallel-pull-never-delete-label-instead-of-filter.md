@@ -3,9 +3,10 @@ id: TASK-11
 title: >-
   Raw-first pipeline: exhaustive parallel pull, never delete, label instead of
   filter
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 07:27'
+updated_date: '2026-09-22 18:59'
 labels: []
 dependencies: []
 ordinal: 11000
@@ -35,3 +36,9 @@ Context a future agent cannot recover from the code: the live site's current kee
 - [ ] #6 A research session runs Clawl entirely from fixtures with zero network calls and zero paid API credits, and fails loudly rather than silently falling through to the network
 - [ ] #7 The live site's keep/drop behaviour is unchanged while this is built
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed as superseded: TASK-95 (2026-09-22, this session) implemented the exact direction described here -- raw-first SQLite inbox queue, no in-crawler filtering, labels instead of drops (5/6 AC). TASK-12 (Pro raw-data UI) should reference TASK-95 going forward, not this task.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -63,3 +63,8 @@ eval_out/
 data/hunter.lock
 data/HUNTER_STOP
 supabase/.temp/
+
+# TASK-120: collected clinic photos (large, regenerable via tools/task120_collect_clinic_photos.py) --
+# the served copies live under data/clinic_photos/<id>/, indexed by the clinic_photos sqlite table
+data/clinic_photos/
+data/clinic_photos.zip

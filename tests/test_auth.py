@@ -353,9 +353,11 @@ def test_required_role_matrix():
 PUBLIC_ROUTES = [
     ("GET", "/"), ("GET", "/login"), ("GET", "/health"), ("GET", "/dock.css"), ("GET", "/dock.js"),
     ("GET", "/docs/{name}"), ("GET", "/docs/krankenhausplan_2026.pdf"), ("GET", "/skill/{name}"),
+    ("GET", "/photos/{clinic_id}"),
     ("GET", "/api/docs"), ("GET", "/api/stats"), ("GET", "/api/facets"), ("GET", "/api/taxonomy"),
     ("GET", "/api/ontology"), ("GET", "/api/cities"), ("GET", "/api/plan"), ("GET", "/api/search"),
-    ("GET", "/api/clinics"), ("GET", "/api/clinics/{clinic_id}"), ("GET", "/api/jobs"), ("GET", "/api/jobs/{posting_id}"),
+    ("GET", "/api/clinics"), ("GET", "/api/clinics/{clinic_id}"), ("GET", "/api/clinics/{clinic_id}/expose"),
+    ("GET", "/api/jobs"), ("GET", "/api/jobs/{posting_id}"),
     ("GET", "/api/mechanics"), ("GET", "/api/mechanics/{mid}"), ("GET", "/api/flags"), ("GET", "/api/me"),
     ("GET", "/api/ingest/schemas"), ("GET", "/api/agent/manifest"),
     ("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("POST", "/api/auth/magic"),

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-11 10:49'
-updated_date: '2026-09-21 03:16'
+updated_date: '2026-09-22 09:13'
 labels: []
 dependencies: []
 ordinal: 50000
@@ -46,6 +46,8 @@ Volume note for the operator: this is a nationwide board -- 515 of the 1398 pass
 rotkreuzklinik-wuerzburg.de (66303, 100 beds) -- AC#2 done; the answer is 'neither UA nor WALLED'. /stellenangebote/ answers 403 to every User-Agent tried (the repo UA, Windows Chrome, Googlebot, curl) on both the apex and www hosts -- but https://rotkreuzklinik-wuerzburg.de/ itself answers 200 to all four from the same IP, and its homepage links no careers/jobs/Stellen page at all. So this is not a datacenter bot wall (a wall would refuse the homepage too, the way helios-gesundheit.de does); it is one removed page. That matches backlog decision-1: the clinic filed Schutzschirmverfahren in Sept 2025 and ceased operations 2026-04-01, ahead of the Krankenhausplan. Deliberately NOT added to routing.WALLED: that set means 'known-unfetchable, a 0 here is not a real 0', and recording a wall that does not exist would hide a closed clinic behind a transport excuse. Nothing to recover here.
 
 dbkg.de (57505 + 57570, 40 beds) -- AC#3 done, and it is a stale careers_url, not an SPA. dbkg.de/stellenangebote-karriere hands off to drbecker.jobs, whose 'Stellenangebote' link is https://karriere.drbecker.jobs/ -- a plain server-rendered rexx-shaped board (-de-j<id>.html). No code change needed: crawl_wp_jobs already reads it. Verified live: 77 rows, 18 of them located in Bad Windsheim (the Bavarian site), 2 of those experienced-nursing class.
+
+2026-09-22 status audit (read-only; no source/data files touched; run 118 live throughout). Fresh live re-verification: crawl_asklepios still defined in crawlers/vendor_adapters.py:1702 and wired as a probe-and-delegate target from crawl_wp_jobs (line 1286) and in the vendor dispatch map; ran tools/compare_adapter_fc.py 18811 --max-credits 0 (Asklepios Lungenklinik Gauting, Bavarian, Accept-Profile read only) -- adapter: 1400 rows today (was 1398 on 2026-09-21), using the clinic's CURRENT unmodified DB careers_url/ats_type, so AC#1's fix is confirmed already live in production, no registry dependency. rotkreuzklinik-wuerzburg.de re-fetched just now: homepage 200, /stellenangebote/ 403 -- same page-specific pattern as recorded; decision-1 (status=deferred) still exists and records the Schutzschirmverfahren/closure evidence exactly as this task's AC#2 cites. karriere.drbecker.jobs re-fetched just now: 200, page text still contains 'Bad Windsheim'/'Kiliani'/'Pflegefachkraft'. Targeted tests (same 5 files as TASK-49): 103 passed, 0 failed. Live pflege_jobs.clinics for 57505/57570 (dbkg.de) still carries the STALE careers_url=https://dbkg.de/stellenangebote-karriere -- AC#3's correction has not reached production. Decision: all 3 ACs hold under fresh evidence; NOT moved to Done -- 2 of 3 boards (Asklepios, the 1035-bed headline item, and Rotkreuzklinik) are fully resolved with no outstanding delivery gap, but dbkg.de's registry write is still undelivered today, matching (and reconfirming) the task's own final-summary reasoning rather than the earlier passing AC text alone.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

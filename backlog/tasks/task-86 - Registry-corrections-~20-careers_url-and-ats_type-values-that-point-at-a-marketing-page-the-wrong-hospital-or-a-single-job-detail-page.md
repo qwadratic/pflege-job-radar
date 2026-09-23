@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:26'
-updated_date: '2026-09-22 06:37'
+updated_date: '2026-09-23 00:38'
 labels: []
 dependencies: []
 ordinal: 86000
@@ -138,6 +138,63 @@ Full offline suite, run once (.venv/bin/python -m pytest -m "not network"): 1352
 DISCOVERED BUT NOT FIXED (outside this round's 3 named problems and outside this task's owned files -- reporting per "no silent scope expansion" rather than either fixing a sibling-owned file or staying quiet): app/crawl.py:969 (inside refetch_career(), `EdgeSink()._post({"clinics": [row]})`) is a FOURTH real production funnel for clinics.careers_url that posts directly, bypassing write_clinics and this lint entirely. Like career_discover_exa.py it only ever writes a NEW careers_url when the stored one was blank, but it can still carry through an already-bad, unchanged live value when only ats_type changes -- the same shape as problem #1, in a caller my fix doesn't reach. app/crawl.py is TASK-95's owned file this round (per TASK-95's own backlog notes); not touched. Flagging for a human decision: either push the scrub down into EdgeSink._post keyed on body.get("clinics") (containable entirely within sinks.py, would catch every current and future clinics-payload caller including this one, but broadens a low-level, payload-agnostic method's responsibility), or have TASK-95 route this call through write_clinics directly. Lower urgency: data/sync_krankenhausplan_2026.py:130 posts a clinics payload via raw requests.post, not through EdgeSink at all -- but it's a one-off annual Krankenhausplan-merge script, not the recurring pipeline, and its careers_url values are carried from the existing registry, not freshly introduced.
 
 AC#3's evidence is materially stronger after this round: the previous round's wiring, if it had ever run against a real mixed batch (which the review showed both real callers produce), would have wedged cli.py's inbox drain permanently (raise before ack_fn, re-raising on every retry) -- a production-breaking defect in AC#3's own enforcement mechanism, not merely "unwired." That defect is fixed and covered by a red-before/green-after test plus two independent mutation passes.
+
+2026-09-22, AC#1 live-write attempt (this round). Re-verified all 21 backups/task86-registry-dryrun-2026-09-21.json live_corrections URLs live this session: plain HTTP GET (UA reused from pflege_jobs.sources.career_crawl.UA) on all 21 -> HTTP 200 every time, none trip pflege_jobs.registry_lint.check_careers_url. Playwright-rendered the 4 rows the report itself flagged as needing JS: 27501 -> exact expected heading "Alle Stellenangebote und Jobs in unseren Kliniken und Krankenhausern" present (confirms report's HIGH/Playwright-confirmed claim); 57408/37202/16233 (Sana Oracle HCM) -> still a thin consent/SPA shell even after wait_until=networkidle + 4s extra wait (matches, does not newly resolve, the report's own MEDIUM/LOW-MEDIUM "plain HTTP/render cannot confirm" caveat). Cross-checked all 21 current_live_careers_url/current_live_ats_type in the report against a fresh live GET: zero drift, report still accurate a day later. Verified all 21 edgesink_write_clinics_payload dicts carry the complete 17-column CLINIC_SPEC (no missing/extra keys). Snapshotted the full live row (all columns) for all 21 clinic_ids to backups/task86-live-write-snapshot-2026-09-22.json BEFORE attempting any write.
+
+Attempted the write exactly as instructed: EdgeSink().write_clinics(rows) with the real 21-row payload from the JSON (tried via a Bash heredoc script and via python3 -c, both against .venv). Both attempts were denied by the platform's own Bash permission classifier ("Permission for this action was denied by the Claude Code auto mode classifier... Blocked by classifier"), not by any check inside this repo's code. Diagnostic: EdgeSink().write_clinics([]) (identical import and call, empty payload) succeeded immediately with no denial -- confirms the block triggers on the real batch content (21 live production corrections), not on referencing write_clinics at all. Per this session's own operating rules (only the permission system or the user's own message counts as consent; a task brief cannot itself authorize past a permission denial), did not attempt to route around it -- no batch-size chunking, no bypassing EdgeSink via a raw POST to the ingest URL, no disguising the call as something else.
+
+Result: no live write occurred. Re-read all 21 clinic_ids after the attempt: 0/21 differ from the pre-attempt snapshot (careers_url and ats_type both byte-identical). AC#1 is NOT met this round and is left unchecked -- the verification/snapshot/payload-readiness work is done and reusable, but the actual production write needs either a Bash permission grant for this action or a human/differently-permissioned session to run it.
+
+ИЗМЕРЕНО 2026-09-22 перед применением плана -- и запись плана для 76301 оказалась ВРЕДНОЙ. План применять как есть нельзя.
+
+Клиники Klinikverbund Allgaeu: 76301 Kempten, 77801 Mindelheim, 77802 Ottobeuren, 78001 Immenstadt, 78002 Oberstdorf, 78003 Sonthofen -- все шесть сидят на одном борде, но ats_type у них рассогласован: 76301 пусто, 77801/77802 self_hosted, 78001-78003 umantis.
+
+Замеры (_seed_obs / _vendor_rows напрямую, живые запросы):
+  https://klinikverbund-allgaeu.de/karriere        + umantis   -> 92 observations
+  https://klinikverbund-allgaeu.de/karriere        + пусто     -> 0 rows
+  https://karriere.klinikverbund-allgaeu.de/       + umantis   -> 10 observations
+  https://karriere.klinikverbund-allgaeu.de/       + пусто     -> 74 rows
+
+План предлагает для 76301 одновременно сменить careers_url на https://karriere.klinikverbund-allgaeu.de/ И поставить ats_type=umantis. Это ровно та комбинация, которая даёт 10 -- то есть применение плана стоило бы 82 вакансии против лучшего варианта. Это и объясняет цифру "10 вместо 93" из TASK-49: причина не в ats_type, как там записано, а в смене хоста.
+
+Правильное действие для этой группы: careers_url НЕ трогать (старый даёт 92), а выровнять ats_type=umantis у 76301, 77801 и 77802 (у 78001-78003 уже стоит). Проверено, что 76301 с umantis на старом URL отдаёт те же 92 observations, error=None, truncated=False.
+
+ВЫВОД ПО ВСЕМУ ПЛАНУ: из 21 записи проверена одна, и она оказалась ухудшающей. Значит остальные 20 нельзя применять на веру -- каждую надо мерить так же: выдача адаптера при текущем значении против выдачи при предлагаемом, а не только "живёт ли новый URL". Пока это не сделано, AC#4 остаётся открытым.
+
+Свод по 20 клиникам (второй раунд измерений TASK-86, параллельные агенты + точечная перепроверка), 2026-09-22. Метод: _seed_obs/_vendor_rows напрямую на текущем и предложенном значениях (routing.ADAPTERS), для клиник со сменой обоих полей -- все 4 комбинации, как поймало ловушку 76301. 76301 в этот раунд не входит -- исправлено вручную утром отдельно (только ats_type=umantis, careers_url не менялся), см. более раннюю заметку. run_id 118 (live crawl) не трогали, crawlers/pflege_jobs/app не редактировались -- только чтение и запуск существующих функций в памяти.
+
+ДВЕ ОБЩИЕ НАХОДКИ ПРИ ПРОВЕРКЕ НА ПРОТИВОРЕЧИЯ:
+
+1) Вердикт по 18712 (kbo-Inn-Salzach-Klinikum Wasserburg am Inn) в присланном своде был do_not_apply -- ОШИБКА, исправлено на apply_as_is. Обоснование агента ("generic wp_jobs не умеет читать этот SOLR-facet, адаптера нет") неверно фактически: перепроверено чтением crawlers/vendor_adapters.py (GROUP_PORTALS, group_portal_for, crawl_group_portal, _group_list_url) и живым замером всех 4 комбинаций напрямую. Механизм идентичен уже принятому соседу 16107: для vendor-адаптеров (typo3_jobs, wp_jobs, self_hosted -- все роутятся в crawl_wp_jobs) group_portal_for(c) матчит имя/URL на "kbo-|kbo.de" и решает, какой листинг реально читать. Текущий careers_url kbo-isk.de/karriere НЕ содержит подстроку "kbo.de" -> _group_list_url возвращает голый сетевой борд https://kbo.de/karriere/jobboerse -> 110 вакансий ВСЕЙ сети kbo (8 клиник), а не этой площадки -- ats_type тут ни при чём (typo3_jobs и '' дают тот же group-portal перехват). Предложенный facet-URL содержит подстроку "kbo.de" -> _group_list_url возвращает именно его -> crawl_group_portal читает СВОЙ, purpose-built tx_solr[page]-пэйджинг и job_rx (не generic wp_jobs) -> корректно отфильтрованные 12 вакансий именно Wasserburg am Inn. Живой повторный замер (не из чужого свода, мой собственный запуск _vendor_rows): old_url_old_ats=110, old_url_new_ats=110, new_url_old_ats=12, new_url_new_ats=12 -- полностью совпадает с исходными числами, меняется только интерпретация. 110 никогда не было честной цифрой этой клиники, менять URL безопасно.
+
+2) Уточнён механизм upsert для careers_url/ats_type (edge/pflege-ingest/index.template.ts:75-76): coalesce(nullif(excluded.col,''), pflege_jobs.clinics.col) -- пустая строка в ЭТИХ ДВУХ колонках (и только в них) НЕ затирает текущее значение, это штатный безопасный no-op, а не баг генератора пейлоадов, как предполагали заметки по 18712 и отчасти 27501 в дря-ран JSON. Настоящая опасность 76301-паттерна -- не в пустом ats_type, а в АКТИВНОЙ записи неверного НЕпустого значения (umantis) в связке со сменой URL за один шаг. Из-за этого поля ats_type НЕ переопределяются явно в apply-скрипте там, где их не меняем (16107, 27501, 17704 и т.д.) -- достаточно не трогать это поле, coalesce сам сохранит живое значение.
+
+ТАБЛИЦА (было -> предложено; измерено; ВЕРДИКТ; обоснование):
+
+66101 | karriere/ -> jobs.klinikum-ab-alz.de/Jobs, ats '' оба | 62 -> 62 | APPLY_AS_IS | без изменений числа, безопасно
+76201 | .../jobs (живой, план думал что null) -> .../karriereportal/stellenangebote?selection3=3, ats '' оба | 1 -> 11 | APPLY_AS_IS | рост в 11 раз
+76203 | .../stellenangebote-bewerbung (живой) -> jobs.bezirkskliniken-schwaben.de/Jobs, ats '' оба | 56 -> 56 | APPLY_AS_IS | общий борд оператора (тот же URL что и у 76114/77406), без потерь
+37202 | sana.de/cham/karriere typo3_jobs (живой, план думал что null) -> jobs.sana.de/.../requisitions oracle | 4 комбинации: 29/29/0/0 | DO_NOT_APPLY | Oracle HCM JS-SPA; crawl_oracle не находит jobs.feed.json и молча падает в wp_jobs-fallback на старом URL (потому и 29=29), новый URL = 0 в любой комбинации ats_type
+18712 | kbo-isk.de/karriere typo3_jobs (живой, план думал что null) -> facet kbo.de?jobSite=Wasserburg | 110/110/12/12 | APPLY_AS_IS (исправлено с do_not_apply -- см. находку 1 выше) | 110 = сетевой борд kbo целиком, 12 = верно отфильтрованная своя площадка
+16201 | jobs/ -> stellenmarkt/, ats '' оба | 70 -> 70 | APPLY_AS_IS | оба URL живые, не редиректят друг на друга, тот же список
+16214 | без фильтра -> ?category=15, ats '' оба | 15 -> 11 | APPLY_AS_IS | 11 не потеря: перепроверено живьём на странице -- свой JS-виджет считает category=15 "Pflege- und Funktionsdienst"=11 из 20 всего (16=Management 0, 17=Ärztlicher Dienst 1, 21=6, 22=2 и т.д.), совпадает с замером краулера 1-в-1
+76114 | .../stellenangebote-bewerbung (живой) -> jobs.bezirkskliniken-schwaben.de/ (без суффикса /Jobs), ats '' оба | 56 -> 56 | APPLY_AS_IS | тот же результат что 76203/77406-неприменённый; суффикс /Jobs в тексте задачи и в измерении расходится, но голый домен уже отдаёт полный список -- стоит сверить с автором плана, не блокирует
+16233 | sana.de/muenchen/karriere (живой, план думал что null) -> jobs.sana.de/.../CX_4025 oracle (и варианты с /requisitions) | 17 -> 0 (все варианты oracle) | DO_NOT_APPLY | тот же Oracle JS-SPA что 37202/57408
+16107 | kbo-dak.de/karriere typo3_jobs (живой) -> facet kbo.de?jobLocation=Donau-Altmühl | 110/110/4/4 | APPLY_AS_IS | тот же механизм что 18712 (находка 1): 110 = сетевой борд, 4 = верная своя площадка
+16203 | jobs/ -> stellenmarkt/, ats '' оба | 70 -> 70 | APPLY_AS_IS | идентично 16201 (München Klinik, второй сайт того же оператора)
+36202 | .../stellenangebote -> .../alle-stellenangebote, ats '' оба | 32 -> 32 | APPLY_AS_IS | новый URL точнее (полный список), число то же
+66301 | .../stellenanzeigen/ ats '' (живой) -> .../uebersicht-aller-stellen.html + ats=softgarden | 1 / new_url+softgarden=0 / new_url+ats''=49 | APPLY_CORRECTED: careers_url меняем, ats_type НЕ трогаем (остаётся '') | ловушка как у 76301 -- URL+softgarden вместе = 0 (сайт не softgarden); careers_url один = 49
+18402 | kbo-iak.de/kbo-karriere/... typo3_jobs (живой, план думал что null) -> umantis.com/Jobs/1?CompanyID=22 + ats=umantis | 110(сетевой борд)/10(старый URL+umantis, seeded, обходит group_portal_for)/4(новый URL+typo3_jobs, generic wp_jobs)/5(новый URL+umantis) | APPLY_CORRECTED: ats_type=umantis, careers_url НЕ трогаем | 10 лучший вариант из честных; TASK-81 отдельно чинит саму проблему shared-board attribution для этой пары (18402/17704), это только регистри-фикс
+27501 | karriere.ge-passau.de self_hosted (живой) -> .../stellen/, ats '' оба | 22 -> 22 | APPLY_AS_IS | оба живые без редиректа, тот же список; ats_type self_hosted не трогается (coalesce сохранит, см. находку 2)
+56404 | .../karriere/ -> .../stellenportal/stellen-in-der-pflege, ats '' оба | 0 -> 0 | COULD_NOT_MEASURE | оба URL дают 0 через plain-HTTP: sitemap пуст на обоих, портал рендерится клиентским JS -- методом отличить URL друг от друга нельзя, нужен Firecrawl/Playwright вне бюджета этой задачи
+77406 | .../stellenangebote-bewerbung self_hosted (живой, план думал что null) -> jobs.bezirkskliniken-schwaben.de/Jobs?jobProfiles=Pflegedienst | 56/56/24/24 | DO_NOT_APPLY | чистый регресс 56->24, ats_type ни при чём (self_hosted и '' роутятся одинаково)
+57408 | sana.de/rummelsberg/karriere typo3_jobs (живой, план думал что null) -> jobs.sana.de/.../requisitions?...facet oracle | 32/32/0/0 | DO_NOT_APPLY | тот же Oracle JS-SPA
+17704 | kbo-iak.de/kbo-karriere/... typo3_jobs (живой, план думал что null) -> kbo.de/karriere/jobs | 110/110/110/110 (все 4 комбинации равны) | APPLY_CORRECTED: careers_url меняем, ats_type сохраняем typo3_jobs явно | число не меняется (тот же сетевой борд, URL без facet), но уходит от мёртвой обёрточной iframe-страницы; TASK-81 отдельно нужен для честной attribution
+77901 | .../stellenangebote/.../gesundheits-und-krankenpfleger... (живой, delisted одиночная вакансия) -> .../stellenangebote/, ats '' оба | 40 -> 40 | APPLY_AS_IS | crawl_wp_jobs читает sitemap от корня домена, не от конкретного пути -- список не зависит от того, какая страница указана точкой входа; новый URL рабочий листинг вместо мёртвой ссылки на одну вакансию
+
+ИТОГ: apply (as_is + corrected) = 15 клиник, do_not_apply = 4 (37202, 16233, 77406, 57408 -- все упираются либо в Oracle HCM JS-SPA без адаптера, либо в чистый регресс числа), could_not_measure = 1 (56404, JS-рендер).
+
+tools/apply_registry_corrections.py подготовлен (по образцу tools/apply_allgaeu_ats.py, {col: r.get(col) for col, _ in CLINIC_SPEC} -- не словарь-через-tuple-как-ключ баг). Пишет ТОЛЬКО 15 подтверждённых строк, снимает бэкап в backups/ перед записью через EdgeSink().write_clinics(), читает обратно, печатает OK/НЕТ по каждой. Не запускался -- ждёт человека с правом на живую запись (см. предыдущий блокер в этой же задаче: EdgeSink().write_clinics() с непустым пейлоадом отклоняется классификатором Bash-прав в этой сессии).
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -147,6 +204,39 @@ author: @claude
 created: 2026-09-22 05:56
 ---
 Scope note for reviewer: this round's owned-file list named backups/task86-registry-dryrun-2026-09-21.md but not its .json companion. I corrected the .json too (removed the 16215 live-push entry that would have caused a regression if applied, added a not_applied entry explaining why) because it is exclusively a task-86 artifact -- no sibling task references or edits it -- and leaving it staged wrong right next to a .md that now says "do not push this" would be a landmine for whoever applies the dry-run plan next. Flagging explicitly in case this should have been left for a human to fix by hand instead.
+---
+
+author: @claude
+created: 2026-09-22 09:11
+---
+Blocker for a human decision: this round's job was AC#1 (apply the 21-row live_corrections plan via EdgeSink.write_clinics -- explicitly authorised for this unit). Full re-verification, live-value drift check, and a pre-write snapshot (backups/task86-live-write-snapshot-2026-09-22.json) are all done and hold up. The actual EdgeSink().write_clinics(rows) call was denied twice by the platform's own Bash permission classifier (not by repo code -- an empty-payload call to the same method succeeded). I did not attempt to route around it. To apply this round's plan, either grant Bash permission for this action, or have a session with that permission run:
+
+from pflege_jobs.sinks import EdgeSink
+import json
+report = json.load(open("backups/task86-registry-dryrun-2026-09-21.json"))
+rows = [c["edgesink_write_clinics_payload"] for c in report["live_corrections"]]
+EdgeSink().write_clinics(rows)
+
+then read back the 21 clinic_ids to confirm.
+---
+
+created: 2026-09-23 00:38
+---
+Found via TASK-117's census, not yet applied here: the kbo-Heckscher-Klinikum family (16104/16106
+Ingolstadt) has the same "registered careers_url is the clinic's own marketing microsite, which links
+out exactly ONCE to the real board" shape as this task's own ~20-item list. Live-traced 2026-09-23:
+kbo-heckscher-klinikum.de/arbeiten-bei-uns links to
+https://kbo.de/karriere/jobboerse?tx_solr%5Bfilter%5D%5B0%5D=jobLocation%3Akbo-Heckscher-Klinikum --
+the same kbo.de shared group portal this task's own 16107/18712/17704 entries already use, just a
+different jobLocation facet value. Not applied (out of the file/scope I was working in this round);
+handing off since this task already owns the kbo.de-facet-URL correction pattern.
+
+Also open, not traced this round: kbo-IAK (16251 kbo-Isar-Amper-Klinikum München-Nord, 16252 Atriumhaus)
+currently route ats_type=typo3_jobs against kbo-iak.de/kbo-karriere/stellenangebote-pflege, which is
+itself another marketing/info microsite (curled it live, no visible link to a recruiting platform in
+its static HTML this round). Whether they should share 16212's umantis pool
+(recruitingapp-5545.de.umantis.com) or need their own tenant is unresolved -- flagging as a genuine
+open question, not a guessed answer.
 ---
 <!-- COMMENTS:END -->
 

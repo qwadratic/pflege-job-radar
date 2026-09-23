@@ -164,10 +164,14 @@ def test_cli_inbox_nonzero_exit_is_recorded_and_fails_the_run(fresh, monkeypatch
     assert R.get_run(rid, with_log=False)["status"] == "failed"   # errors>0 fails the run even though rows > 0
 
 
-def test_status_is_failed_when_a_board_errors_even_though_rows_came_in(fresh, monkeypatch):
-    """TASK-72 AC#4: status used to be "done if not errors or n_rows" -- a board that failed outright
-    (exhausting the retry ladder) still reported the whole run as done as long as ANY other board in
-    the same run produced rows. errors>0 must fail the run regardless of n_rows."""
+def test_status_stays_done_when_one_board_errors_but_the_run_otherwise_completes(fresh, monkeypatch):
+    """A board that fails outright (exhausting the retry ladder) is recorded in crawl_issues/run_log
+    and no longer flips the WHOLE run to "failed" -- that used to conflate normal partial-coverage
+    noise (one board out of hundreds) with a genuinely broken run. Confirmed live 2026-09-22: run 120
+    (509 new postings, 13796 rows, 1 unrelated board still failing) and run 122 (4 new postings landed,
+    a different clinic's Firecrawl agent hit its own cap) both reported status=failed despite real,
+    useful work completing. Only a fatal intake-pipeline error (cli inbox/link-cross exit code, or an
+    exception in the intake block itself -- TASK-72 AC#4) still fails the run."""
     calls = {"n": 0}
 
     def one_board_ok_one_board_dead(b, c, session, log, **kw):
@@ -183,7 +187,21 @@ def test_status_is_failed_when_a_board_errors_even_though_rows_came_in(fresh, mo
     rid = R.create_run("clinic", "1", "adapter")
     CR.execute(rid)
     run = R.get_run(rid, with_log=False)
-    assert run["n_rows"] == 1 and run["status"] == "failed"
+    assert run["n_rows"] == 1 and run["status"] == "done" and "1 issue" in (run.get("error") or "")
+
+
+def test_status_is_failed_when_the_intake_pipeline_itself_blows_up(fresh, monkeypatch):
+    """TASK-72 AC#4: the intake block (inbox post/drain/link-cross/verify) blowing up must still fail
+    the run -- unlike a single board fetch error, this is not per-item noise, it silently strands or
+    loses rows that already reached the queue."""
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board-ok": {"kind": "vendor", "vendor": "wp_jobs", "clinics": [CLINIC]}})
+    monkeypatch.setattr(CR, "_vendor_rows", lambda b, c, session, log, **kw: [
+        {"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+    monkeypatch.setattr(CR, "_cli", lambda args, log=None: 1)   # every cli invocation "fails" (non-zero exit)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    run = R.get_run(rid, with_log=False)
+    assert run["status"] == "failed"
 
 
 def test_verify_ids_receives_every_touched_posting_not_capped_at_200(fresh, monkeypatch):
@@ -384,6 +402,83 @@ def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
     CR.execute(rid)
 
     assert [i for i in R.list_crawl_issues() if i["kind"] == "truncated"] == []
+
+
+def test_a_degraded_vendor_read_is_recorded_as_crawl_issue_kind_degraded(fresh, monkeypatch):
+    """TASK-85 AC#1: crawl_wp_jobs tags its own return value .degraded when its primary discovery
+    path (sitemap + wp-json CPT fallback) came up empty and it fell through to a lower-confidence
+    path -- orthogonal to whether the fallback then found rows (AMEOS: degraded, 734 real rows via
+    the hr4you fallback). Uses the real _BoardTotalRows carrier, same as production code."""
+    from crawlers import vendor_adapters as VA
+
+    def degraded_but_not_empty(b, c, session, log, **kw):
+        out = VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+        out.degraded = "sitemap_and_wp_json_empty"
+        return out
+
+    monkeypatch.setattr(CR, "_vendor_rows", degraded_but_not_empty)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "degraded"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "sitemap_and_wp_json_empty" in issues[0]["error"]
+
+
+def test_a_normal_vendor_read_records_no_degraded_issue(fresh, monkeypatch):
+    from crawlers import vendor_adapters as VA
+
+    def normal(b, c, session, log, **kw):
+        return VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+
+    monkeypatch.setattr(CR, "_vendor_rows", normal)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "degraded"] == []
+
+
+def test_an_under_read_vendor_board_is_recorded_as_crawl_issue_kind_incomplete(fresh, monkeypatch):
+    """TASK-88 AC#2: an adapter (crawl_erecruiter, directly or via crawl_wp_jobs' delegate loop)
+    read the board's own self-reported total and it exceeds the row count actually returned."""
+    from crawlers import vendor_adapters as VA
+
+    def under_read(b, c, session, log, **kw):
+        out = VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+        out.board_total = 57
+        out.board_paginated = True
+        return out
+
+    monkeypatch.setattr(CR, "_vendor_rows", under_read)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "57" in issues[0]["error"] and "1" in issues[0]["error"]
+
+
+def test_a_board_matching_its_own_declared_total_records_no_incomplete_issue(fresh, monkeypatch):
+    from crawlers import vendor_adapters as VA
+
+    def full_read(b, c, session, log, **kw):
+        out = VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+        out.board_total = 1
+        return out
+
+    monkeypatch.setattr(CR, "_vendor_rows", full_read)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+
+
+def test_a_plain_list_return_value_triggers_neither_new_check(fresh, monkeypatch):
+    """~18 of ~19 vendor adapters still return a plain list with no .degraded/.board_total attribute
+    at all -- getattr's default must keep both new checks a no-op for them, not an AttributeError
+    that a bare `except Exception` would then misrecord as a fake board failure."""
+    monkeypatch.setattr(CR, "_vendor_rows", lambda b, c, session, log, **kw: [
+        {"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert R.list_crawl_issues() == []
+    assert R.get_run(rid, with_log=False)["status"] == "done"
 
 
 def test_a_board_already_fetched_reaches_the_local_queue_even_if_the_run_never_finishes(fresh, monkeypatch, tmp_path):

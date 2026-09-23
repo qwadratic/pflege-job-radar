@@ -38,6 +38,11 @@ def _obs(url, city, org, city_source=None, org_source=None):
     ("https://x/3-pfk-m-w-d-in-teilzeit", None),                            # not a city
     ("https://x/5-pfk-in-vollzeit/", None),
     ("https://x/6-ota-m-w-d", None),                                        # no city in the url at all
+    # TASK-81 AC#6: a title containing ordinary German "in der/im ..." text before the real trailing
+    # city used to make the old regex capture the whole garbled tail from the FIRST "-in-", not the
+    # last -- confirmed live 2026-09-22 on karriere.ameos.eu, a real Haldensleben (Saxony-Anhalt)
+    # posting whose seed-inherited city ("Neuburg/Donau") then went unchallenged.
+    ("https://x/11010-pflegefachkraft-dauernachtwache-in-der-pflege-und-eingliederung-in-haldensleben", "haldensleben"),
 ])
 def test_city_from_url_only_returns_placeable_cities(url, expected):
     assert city_from_url(url, TOWNS) == expected
@@ -66,6 +71,25 @@ def test_matcher_refuses_a_clinic_matched_by_its_own_inherited_name():
     assert m.match(name, "Oberhausen")[1] == "R1_exact"                  # read off the page: still trusted
     assert m.match(name, "Oberhausen", employer_inherited=True) is None  # circular: refused
     assert m.match(name, "Neuburg/Donau", employer_inherited=True)[0] == "18501"   # earns it from the city
+
+
+def test_an_inherited_employer_name_cannot_token_match_its_way_back_when_the_city_is_shared():
+    """TASK-81 mechanism #1: la-regio-kliniken.de shares one board between two Landshut clinics; every
+    posting's org defaults to whichever clinic's crawl triggered the fetch (org_source='seed'). R1_exact
+    correctly declines on employer_inherited, but R3_tokens used to token-match the same seed-copied
+    name straight back to the identical clinic anyway -- same circular echo, different rule. Confirmed
+    live 2026-09-22: 38 of 39 open postings on this board, including clearly general-hospital
+    departments, sat on the 120-bed pediatric sibling because of exactly this leak."""
+    cl = [{"clinic_id": "26108", "name": "LA-Regio Kliniken Landshut", "town": "Landshut", "beds": 862},
+          {"clinic_id": "26103", "name": "Kinderkrankenhaus St. Marien Landshut", "town": "Landshut", "beds": 120}]
+    m = Matcher(cl)
+    name = "Kinderkrankenhaus St. Marien Landshut"
+    # Content alone (both employer AND city inherited from the seed, no board given) must refuse --
+    # nothing here is real evidence, same as the AMEOS "circular: refused" case above.
+    assert m.match(name, "Landshut", employer_inherited=True) is None
+    # With the board narrowed to the OTHER clinic (crawlers.vendor_adapters.split_la_regio_landshut's
+    # own job), R0_board must be free to decide -- R3_tokens must not veto it back to the seed clinic.
+    assert m.match(name, "Landshut", board=["26108"], employer_inherited=True, city_inherited=True) == ("26108", "R0_board", 0.9)
 
 
 def test_parse_job_page_marks_org_source_seed_only_when_the_page_states_no_employer():

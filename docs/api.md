@@ -278,7 +278,33 @@ curl "$B/billing?window=custom&from=2026-09-01&to=2026-09-08T00:00:00Z&granulari
 Rules: `usd = credits * price_per_credit` (`settings.firecrawl.eur_per_credit`, Hobby pricing, USD-derived -- label it USD/credit); a run is booked at `finished_at` (else `started_at` / `queued_at`); `free` = a Firecrawl run with status `done` and 0 credits (Firecrawl's 5 free daily agent runs; the ledger records the balance delta, so free runs carry 0 credits and `credits_free` is only non-zero when Firecrawl bills inside the allowance); `runs_billable` = credits > 0; `runs_failed` = status `failed`; `runs_adapter` = runs without Firecrawl; `new_postings` = `crawl_runs.n_new`; `cost_per_posting_usd = usd / new_postings` (null when 0); `refills` = `hunt_meta '<day>/refills'` summed over the window's days (0 when absent); `tokens` = Extract-token deltas from `firecrawl_usage`; `runs` newest first, at most 500 (totals count every run); ledger rows without a run row appear with `trigger: "ledger"` (free when 0 credits / 0 tokens inside the day's first 5 submissions). `by_kind.exa` and `totals.exa_*` are a whole-cache total (the cache has no timestamps; `exa_note` says so) and are not part of `totals.usd`. `pools` / `hist` come from `FA.credits()`; keys are null with `pools.error` set when the API is unreachable.
 
 ### Clinic row
-`clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile`
+`clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile, photo_url, presentation`
+
+`photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
+`clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key
+`(clinic_id, source)`) -- today exactly one Google-Maps cover photo per clinic (TASK-120 partial pass, no
+scoring/multi-photo curation yet). `app.data._build()` joins it into every clinic row once per snapshot
+rebuild, not per request.
+
+`presentation` is `{text_de, sources[], confidence, facts_used[], fetched_at}` when a Firecrawl-researched
+presentation paragraph is on file for this clinic, else `null`. Backed by the `clinic_blurbs` table
+(app/runs.py: `clinic_id` primary key, `blurb` a JSON blob, `fetched_at`) -- `confidence` is `"high"`,
+`"partial"`, or `"registry_only"` (the researching agent found nothing beyond the registry's own facts).
+Pilot stage as of 2026-09-23: 15 of 407 clinics.
+
+### `GET /photos/{clinic_id}`
+Serves the cached photo bytes for a clinic (`Content-Type` from the file extension, `Cache-Control: public,
+max-age=86400`). 404 if `clinic_id` has no stored photo or the file is missing on disk. The API never exposes
+the raw filesystem path -- only this route and the `photo_url` field above do.
+
+### `GET /api/clinics/{clinic_id}/expose`
+A minimal, bot-facing combination of the two fields above (the term "expose" is a real-estate one: a
+ready presentation sheet) -- `{clinic_id, name, town, photo_url, presentation}`, `presentation` shaped as
+`{text_de, confidence, sources[]}` or `null`. Meant for a candidate-facing bot integration (e.g. the
+WhatsApp nurse funnel) that wants one small, stable response rather than the full clinic dict `GET
+/api/clinics/{clinic_id}` returns (which also carries jobs, routing, and crawl status). 404 for an
+unknown `clinic_id`; never 404s for a clinic that simply has no photo/presentation yet -- both fields
+are just `null` in that case.
 
 ### Job row
 `posting_id, title, role_class, role_label, department_hint, department_raw, qualification_hint, employer, employer_class, clinic_id, clinic_name, regierungsbezirk, versorgungsstufe, traegerart, clinic_beds, city, plz, lat, lon, employment_types[], contract, start_date, first_published, first_seen, last_seen, status, verify_status, verified_at, source_url, external_url, source_codes[], n_observations, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare, fresh`

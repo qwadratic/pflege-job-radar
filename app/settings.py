@@ -194,9 +194,10 @@ FEATURE_FLAGS_INFO = {
 
 FEATURE_STATUS_NOTES = [
     {"key": "autopilot", "label": "Autopilot console (/autopilot)",
-     "note": "WIP, route disabled 2026-09-08 (503) -- recruiting-funnel proof of concept on synthetic, seeded "
-             "data, no real WhatsApp/e-mail/Meta integration wired. Code and API untouched, needs more work "
-             "before it's worth exposing; not a runtime toggle -- re-enable in app/main.py:autopilot_page."},
+     "note": "WIP, page disabled 2026-09-08 (503), API unmounted too as of 2026-09-22 (zero real usage since) "
+             "-- recruiting-funnel proof of concept on synthetic, seeded data, no real WhatsApp/e-mail/Meta "
+             "integration wired. Code untouched, needs more work before it's worth exposing; not a runtime "
+             "toggle -- re-enable in app/main.py (autopilot_page and the include_router call)."},
     {"key": "tailnet_login", "label": "Tailnet login for /pro",
      "note": "Removed 2026-09-10, together with the exe.dev proxy-header door. identity() has no tailnet branch "
              "any more and no code reads TAILNET_TRUST -- the service binds 0.0.0.0, so a source-IP check was a "

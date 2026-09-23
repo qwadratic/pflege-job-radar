@@ -114,7 +114,9 @@ def _scalar(v):
     ["Kitzingen"]}). Unwrapped here rather than defended against downstream: a list inside the
     (city, plz) tuple below is unhashable, and the TypeError took down the WHOLE daily verify run --
     5 pages aborted the re-check of all 2560 open postings (run 109, 2026-09-21)."""
-    return (v[0] if v else None) if isinstance(v, list) else v
+    while isinstance(v, list):          # nested twice on real data: [["Kitzingen"]]
+        v = v[0] if v else None
+    return v
 
 
 def _walk_jsonld(node, out):

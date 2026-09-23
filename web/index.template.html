@@ -234,7 +234,7 @@ const I18N={
   cv_login:"Zum Hochladen anmelden",cv_401:"Der Lebenslauf-Abgleich braucht eine Anmeldung.",
   loading:"Lade …",err:"Laden fehlgeschlagen.",retry:"Erneut versuchen",none:"Nichts gefunden.",
   e_list_clinics:"Die Klinikliste konnte nicht geladen werden.",e_list_jobs:"Die Stellenliste konnte nicht geladen werden.",
-  d_meta:"Stammdaten",d_operator:"Träger",d_district:"Regierungsbezirk",d_county:"Landkreis",d_level:"Versorgungsstufe",d_owner:"Trägerschaft",d_beds:"Betten",d_status:"Status",d_web:"Website",d_career:"Karriereseite",d_fach:"Fachrichtungen",d_jobs:"Stellen an dieser Klinik",
+  d_meta:"Stammdaten",d_operator:"Träger",d_district:"Regierungsbezirk",d_county:"Landkreis",d_level:"Versorgungsstufe",d_owner:"Trägerschaft",d_beds:"Betten",d_status:"Status",d_web:"Website",d_career:"Karriereseite",d_fach:"Fachrichtungen",d_jobs:"Stellen an dieser Klinik",d_about:"Über die Klinik",d_about_partial:"Teilweise recherchiert",
   j_source:"Originalanzeige öffnen",j_hospital:"Klinik",j_town:"Ort",j_pub:"Veröffentlicht",j_role:"Rolle",j_dept:"Fachbereich",j_qual:"Qualifikation",j_emp:"Arbeitszeit",j_contract:"Vertrag",j_desc:"Beschreibung",j_proof:"Web-Nachweis",
   cv_h:"Passende Stellen zu deinem Lebenslauf",cv_profile:"Erkanntes Profil",cv_wait:"Lebenslauf wird analysiert …",cv_none:"Keine passenden Stellen gefunden.",cv_years:"Jahre Erfahrung",match:"Treffer",
   today:"heute",yesterday:"gestern",days:"Tage",back:"← zurück",
@@ -252,7 +252,7 @@ const I18N={
   cv_login:"Sign in to upload",cv_401:"The CV match needs a signed-in session.",
   loading:"Loading …",err:"Failed to load.",retry:"Retry",none:"Nothing found.",
   e_list_clinics:"The hospital list could not be loaded.",e_list_jobs:"The job list could not be loaded.",
-  d_meta:"Master data",d_operator:"Operator",d_district:"District",d_county:"County",d_level:"Care level",d_owner:"Ownership",d_beds:"Beds",d_status:"Status",d_web:"Website",d_career:"Careers page",d_fach:"Departments",d_jobs:"Jobs at this hospital",
+  d_meta:"Master data",d_operator:"Operator",d_district:"District",d_county:"County",d_level:"Care level",d_owner:"Ownership",d_beds:"Beds",d_status:"Status",d_web:"Website",d_career:"Careers page",d_fach:"Departments",d_jobs:"Jobs at this hospital",d_about:"About this hospital",d_about_partial:"Partially researched",
   j_source:"Open original posting",j_hospital:"Hospital",j_town:"Town",j_pub:"Published",j_role:"Role",j_dept:"Department",j_qual:"Qualification",j_emp:"Hours",j_contract:"Contract",j_desc:"Description",j_proof:"Web proof",
   cv_h:"Jobs matching your CV",cv_profile:"Detected profile",cv_wait:"Analysing the CV …",cv_none:"No matching jobs found.",cv_years:"years of experience",match:"match",
   today:"today",yesterday:"yesterday",days:"days ago",back:"← back",
@@ -953,7 +953,15 @@ async function pageClinic(id){ await taxonomy(); const c=await api("/api/clinics
       [t("d_web"),c.website?el("a",{href:c.website,target:"_blank",rel:"noopener",text:c.website.replace(/^https?:\/\//,"")}):null],[t("d_career"),c.careers_url?el("a",{href:c.careers_url,target:"_blank",rel:"noopener",text:c.careers_url.replace(/^https?:\/\//,"").slice(0,48)}):null]].filter(([,v])=>v).flatMap(([k,v])=>[el("dt",{text:k}),el("dd",{},v)])),
     (c.fachrichtungen||[]).length?el("div",{style:"margin-top:14px"},el("p",{class:"eyebrow",text:t("d_fach")}),...(c.fachrichtungen||[]).map(fachTag)):null);
   const list=el("div",{class:"list"}); if(!jobs.length) list.append(el("p",{class:"empty",text:t("none")})); jobs.forEach(j=>list.append(jobRow(j)));
+  // c.presentation: {text_de, confidence, sources[], fetched_at} or null (TASK-120 AC#8 -- a
+  // Firecrawl-researched paragraph, its own section, distinct from the jobs list below). Pilot
+  // stage: most clinics have none yet, so this section is simply absent rather than an empty box.
+  const pres=c.presentation;
+  const about=pres&&pres.text_de?el("section",{class:"block",style:"border-top:0;padding-top:0"},
+    el("p",{class:"eyebrow"},t("d_about"),pres.confidence==="registry_only"?el("small",{style:"margin-left:8px;opacity:.6",text:t("d_about_partial")}):null),
+    el("p",{style:"max-width:70ch;line-height:1.6"},pres.text_de)):null;
   return [el("section",{class:"block",style:"border-top:0"},el("a",{href:"#/",text:t("back"),style:"font-size:12px"}),el("p",{class:"eyebrow",style:"margin-top:18px",text:[c.town,c.regierungsbezirk].filter(Boolean).join(" · ")}),el("div",{class:"idh"},clinicPhoto(c,true),el("h1",{style:"font-size:clamp(24px,3.4vw,40px);max-width:24ch",text:c.name})),
+    about,
     el("div",{class:"grid2",style:"margin-top:26px"},el("div",{},el("p",{class:"eyebrow",text:t("d_jobs")+" · "+jobs.length}),list),meta))]; }
 // The four states the verifier can report were printed raw, in both languages: "Web-Nachweis: live",
 // "Web proof: gone". The API already ships the words for them (taxonomy verify_status / verify_status_en),

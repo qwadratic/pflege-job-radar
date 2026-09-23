@@ -207,6 +207,20 @@ class Matcher:
                 return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in t)), 0.5
         same_town = self._by_town(ck)
         et = et - set(ck.split()); ek = kinds(employer)
+        # R1/R2 above only skip the DIRECT by_name/by_op lookups on employer_inherited -- et/ek below
+        # were still built from the same seed-copied text, so a generic wp_jobs board (org defaults to
+        # the triggering clinic's own registry name when the page states no employer) could still
+        # token-match its way back to that exact clinic via R3_tokens, just via a different rule than
+        # R1_exact (confirmed live 2026-09-22, TASK-81: la-regio-kliniken.de's shared board, 2 clinics
+        # in Landshut -- every posting's org was the seed clinic's own name, R1_exact correctly
+        # declined on employer_inherited, R3_tokens then re-admitted the identical wrong clinic anyway
+        # by token-matching the same seed text against the SAME_TOWN pool). Only blank when there is
+        # more than one same-town candidate to disambiguate BETWEEN -- a single same-town candidate has
+        # nothing to disambiguate from, so its token check is redundant confirmation, not circular
+        # evidence, and stays allowed (TASK-62's own "a real, non-inherited city still earns the match"
+        # case, tests/test_inherited_fields.py).
+        if employer_inherited and len(same_town) > 1:
+            et, ek = set(), set()
         if not et and not ek: return None
         for rule, key, thr, score in (("R3_tokens", "_ntoks", 0.6, 0.8), ("R4_tokens_op", "_otoks", 0.6, 0.75)):
             cands = []
@@ -294,6 +308,18 @@ class Matcher:
                                  ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x))):
             hit = [x for x in pool if sel(x)]
             if len(hit) == 1: return hit[0]["clinic_id"], rule, score
+            if len(hit) > 1:
+                # A tie within one rung's own signal is only safe to break by real-bed-capacity
+                # (_pick_site) when the tied candidates share one normalized name or operator -- the
+                # same Plan-KH/Vertrags-KH twin-site shape _match_content already resolves this way
+                # (decision-4/TASK-58A). R0_board_town's own tie condition is pure city agreement, no
+                # name signal at all, so without this gate a genuinely different site sharing the same
+                # town (confirmed live 2026-09-22: Schön Klinik München Harlaching vs Schwabing, same
+                # town, different operators) would get silently force-picked by bed count instead of
+                # correctly staying unmatched.
+                ops = {employer_norm(x.get("operator") or x["name"]) for x in hit}
+                if len(ops) == 1:
+                    return _pick_site(hit)["clinic_id"], rule + "_bestsite", score - 0.1
         return None
 
 

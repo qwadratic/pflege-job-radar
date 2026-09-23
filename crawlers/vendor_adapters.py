@@ -71,6 +71,16 @@ PROJECT = os.environ.get("SUPABASE_PROJECT_URL", "https://klkxfvieaxpjlplloljn.s
 GENDER = re.compile(r"\((?:m|w|d|x|i|gn)\s?[/|*]\s?(?:m|w|d|x|i|gn)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn))?\)|[:*]in\b", re.I)
 
 
+# An immediate ("0;url=...") client-side redirect stub (confirmed live 2026-09-22:
+# psychiatrie-werneck.de's careers_url is nothing but this, to bezirk-unterfranken.helixjobs.com) --
+# `requests`' own allow_redirects only ever follows an HTTP 3xx Location header, never this HTML-level
+# equivalent, so every caller of get() saw only the tiny stub page and never the real board. Gated on
+# delay=="0" specifically (not "refresh after N seconds"): a longer delay is usually a session-timeout
+# or please-wait notice meant for a human to read, not "this page IS a redirect", and auto-following
+# THAT would silently skip real content a slower page still has.
+META_REFRESH_RX = re.compile(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*content=["\']0\s*;\s*url=([^"\']+)', re.I)
+
+
 def get(u, timeout=30, session=None):
     # Every call for one board fetch shares one requests.Session (app/crawl.py's _fetch_board) --
     # tallying attempts/oks on it lets that caller tell a real transport failure (every request to
@@ -80,8 +90,21 @@ def get(u, timeout=30, session=None):
     # the same "0 rows, no error" as an empty one.
     if session is not None:
         session._attempts = getattr(session, "_attempts", 0) + 1
+    seen, r = set(), None
     try:
         r = (session or requests).get(u, headers=H, timeout=timeout, allow_redirects=True)
+        # bounded the same way a browser's own redirect-chain limit is -- two stub pages pointing at
+        # each other must not spin forever, but 5 hops is far more than any real single meta-refresh
+        # stub (always one hop in practice) ever needs.
+        for _ in range(5):
+            m = r.ok and META_REFRESH_RX.search(r.text[:4000])
+            if not m:
+                break
+            nxt = urljoin(r.url, _html.unescape(m.group(1).strip().strip('"\'')))
+            if nxt == r.url or nxt in seen:
+                break
+            seen.add(nxt)
+            r = (session or requests).get(nxt, headers=H, timeout=timeout, allow_redirects=True)
     except Exception:
         return None
     if session is not None and r.ok:
@@ -507,6 +530,13 @@ JOB_PATH = re.compile(r"[/-](jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(kar
 # detail_pages pins JOB_PATH matching the BARE /aktuelles|presse|blog|.../detail/ shape on purpose, so
 # NOT_JOB_PATH has something to positively exclude; narrowing JOB_PATH itself would have to un-match
 # that same fixture.
+# A slugified gender marker (confirmed live 2026-09-22: clinicum-stgeorg.de's own detail links are
+# plain post slugs, e.g. ".../gesundheits-und-krankenpfleger-m-w-d-vollzeit-110488", no job/stellen/
+# karriere keyword anywhere in the path -- and unlike klinik-menterschwaige.de's shape, the anchor's
+# own visible TEXT carries no gender marker either, just a generic "Zum Jobangebot: <title>"). "(m/w/d)"
+# and "(w/m/d)" are the only orders seen live across every board surveyed so far -- not widened to
+# every theoretical permutation without evidence one exists.
+SLUG_GENDER_RX = re.compile(r"[/-](?:m-w-d|w-m-d)(?:[/-]|$)", re.I)
 NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b|[?&](kategorie|category)=|"
                           # A section word does not have to sit immediately before /detail/ -- a news
                           # article can nest its own /detail/ view one folder deeper still (confirmed
@@ -664,6 +694,23 @@ def _headinglike(htmltext):
             + [m.group(2) for m in BOOTSTRAP_HEADING_RX.finditer(htmltext or "")])
 
 
+# TASK-52: a generic application-flow label, not the job itself -- "Stellenanzeige" joins the
+# original 3 (koenig-ludwig-haus.de's own <a> text is "Stellenanzeige <em>real title</em>", the same
+# generic-label-first shape as the HubSpot "Stellenanzeige | <real title>" board this pattern was
+# built for). Shared by parse_job_page's own <h1> cleanup and _wp_job_rows' anchor-text title
+# fallback below, so both strip the same known labels instead of drifting apart.
+GENERIC_TITLE_PREFIX_RX = re.compile(r"^(Bewirb dich als|Jetzt bewerben als|Stellenangebot:?|Stellenanzeige:?)\s+", re.I)
+# A teaser-sentence anchor (koenig-ludwig-haus.de: "Der Bezirk ... sucht ... Pflegekraefte ...
+# Lesezeit: 4 min.") carries the reading-time UI label as its own trailing sentence -- strip it same
+# as any other chrome, not just the leading label above.
+GENERIC_TITLE_SUFFIX_RX = re.compile(r"\s*Lesezeit:?\s*\d+\s*min\.?\s*$", re.I)
+# Standard German legal-notice page titles -- never a job posting on any board, so the ungendered
+# len(sub)<=1 fallback below (kept for the rare real posting with no gender marker) must not accept
+# them just because they happen to be linked from a careers page with no other candidates alongside.
+NOT_JOB_TITLE_RX = re.compile(r"^(Impressum|Datenschutzerkl.rung|Barrierefreiheitserkl.rung|"
+                              r"Kontakt|AGB|Sitemap|Cookie-Einstellungen)\s*$", re.I)
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -729,7 +776,7 @@ def parse_job_page(htmltext, url, org):
         h1 = None
     title = _txt(h1.group(1), 300) if h1 else None
     if title:
-        title = re.sub(r"^(Bewirb dich als|Jetzt bewerben als|Stellenangebot:?)\s+", "", title, flags=re.I)
+        title = GENERIC_TITLE_PREFIX_RX.sub("", title)
     if not title or not GENDER.search(title):
         t = re.search(r"<title>(.*?)</title>", htmltext or "", re.S)
         cand = _txt(t.group(1), 300) if t else None
@@ -794,7 +841,12 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
         key = _fetch_dedupe_key(u)
         if key in seen:
             continue
+        qkey = _query_id_key(u)
+        if qkey and qkey in seen:
+            continue
         seen.add(key)
+        if qkey:
+            seen.add(qkey)
         if PDF_LINK_RX.search(u):
             title = titles.get(u)
             if not title:
@@ -829,11 +881,22 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
             except Exception:
                 entries = []
             widget_urls = [urljoin(r.url, e["link"]) for e in entries if e.get("link")]
-            out += _wp_job_rows(widget_urls, c, host, session, section_labels, seen)
+            out += _wp_job_rows(widget_urls, c, host, session, section_labels, seen, titles)
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if not j or not j.get("title"):
             continue
+        if not GENDER.search(j["title"]):
+            # A detail page whose own markup has no heading parse_job_page/_headinglike can read a
+            # title from at all (confirmed live 2026-09-22: koenig-ludwig-haus.de -- the real title
+            # sits only in a plain <span> with no h1-2-3/Bootstrap class, and every detail page on the
+            # board repeats the SAME generic <title> tag) still linked here with real anchor text; if
+            # THAT text is gender-marked, trust it instead of falling straight to the listing-page
+            # guess below -- the same anchor-text fallback PDF_LINK_RX's branch above already relies on.
+            anchor_title = titles.get(u)
+            if anchor_title and GENDER.search(anchor_title):
+                cleaned = GENERIC_TITLE_SUFFIX_RX.sub("", GENERIC_TITLE_PREFIX_RX.sub("", _txt(anchor_title, 300) or ""))
+                j["title"] = cleaned.strip() or j["title"]
         if not GENDER.search(j["title"]):
             # parse_job_page accepts an ungendered <h1>/<title> too (its own weak fallback, for the
             # rare real posting whose title genuinely carries no marker) -- but the SAME weak fallback
@@ -848,7 +911,20 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
             # when it actually looks like a listing by that measure.
             sub = _job_link_pairs(r.text, r.url)
             if len(sub) > 1:
-                out += _wp_job_rows(list(sub), c, host, session, section_labels, seen)
+                # {**titles, **sub}, not a bare titles= or sub= -- the recursive candidates are the
+                # SAME detID urls the outer discovery already gendered-anchor-checked (koenig-ludwig-
+                # haus.de: every candidate here is already in the outer `titles`), dropping it made
+                # anchor_title lookups above miss on the recursive pass and lose 7 of 10 real postings
+                # (confirmed live 2026-09-22).
+                out += _wp_job_rows(list(sub), c, host, session, section_labels, seen, {**titles, **sub})
+                continue
+            if NOT_JOB_TITLE_RX.search(j["title"]):
+                # The meta-refresh follow (added this session, in the shared get()) newly lets a
+                # site-wide legal-notice link resolve all the way to its target page instead of
+                # bouncing on redirect -- confirmed live 2026-09-22: psychiatrie-werneck.de's own
+                # Impressum/Barrierefreiheitserklaerung links landed here via this exact ungendered,
+                # len(sub)<=1 fallback and were stored as two fake postings. Not board-specific: any
+                # board can link these same standard German legal-notice pages from its careers page.
                 continue
         if not j["loc"][0]["city"] and c.get("town"):
             j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
@@ -890,8 +966,11 @@ def _wp_nursing_section_url(cu, cu_resp):
 # listing page (confirmed live: augenklinik-muenchen.de, 3 "..._v02.pdf" attachments, no HTML detail
 # anywhere) -- the anchor's own visible text is the only real title available (a PDF response body
 # has no <h1>/<title> parse_job_page can read), so every job-link scan below captures it alongside
-# the href, not just the href.
-PDF_LINK_RX = re.compile(r"\.pdf(?:[?#]|$)", re.I)
+# the href, not just the href. TYPO3's own "eID=dumpFile" download handler (confirmed live
+# 2026-09-22: www.panorama-fachklinik.de, 3 postings) serves the identical PDF-flyer-as-only-detail
+# shape but through a query-string handler with no ".pdf" anywhere in the URL at all -- same handling,
+# widened match.
+PDF_LINK_RX = re.compile(r"\.pdf(?:[?#]|$)|[?&]eID=dumpFile\b", re.I)
 
 
 def _job_link_pairs(html, base, exclude=()):
@@ -919,7 +998,8 @@ def _job_link_pairs(html, base, exclude=()):
     out, off_board = {}, {}
     for h, t in re.findall(r'<a[^>]+href="([^"#]+)"[^>]*>(.*?)</a>', html, re.S):
         text = _txt(t)
-        if not ((JOB_PATH.search(h) or (text and GENDER.search(text))) and not NOT_JOB_PATH.search(h)):
+        if not ((JOB_PATH.search(h) or (text and GENDER.search(text)) or SLUG_GENDER_RX.search(h))
+                and not NOT_JOB_PATH.search(h)):
             continue
         u = urljoin(base, _html.unescape(h))
         if u in exclude or u in out:
@@ -1036,6 +1116,28 @@ def _widget_endpoint_job_links(cu_resp, session=None):
     return list(dict.fromkeys(out))
 
 
+# A career page can carry no listing HTML of its own at all, only a wholesale third-party <iframe>
+# (confirmed live 2026-09-22: kh-as.de embeds jobs.maxime-media.de, a small vendor with no fingerprint
+# elsewhere in this file -- plain server-rendered anchors, JSON-LD detail pages, nothing exotic, just
+# never reachable because it lives on a different host entirely). Off-board is deliberate here, unlike
+# _job_link_pairs' own off-board carve-out for a stray same-page link: an iframe's src IS the board
+# the page chose to show, not a cross-reference one hop further in.
+IFRAME_SRC_RX = re.compile(r'<iframe[^>]+src="([^"]+)"', re.I)
+
+
+def _iframe_start_url(cu_resp):
+    """-> the first off-board <iframe src> on an already-fetched career page, or None. Meant to be
+    walked by _paginated_job_links exactly like the career page itself (same pagination-following,
+    same job_link_pairs candidate rules) -- just against the iframe's own host."""
+    if not cu_resp or not cu_resp.ok:
+        return None
+    m = IFRAME_SRC_RX.search(cu_resp.text)
+    if not m:
+        return None
+    u = urljoin(cu_resp.url, _html.unescape(m.group(1)))
+    return None if _same_board(u, cu_resp.url) else u
+
+
 def _listing_page_key(u):
     """Normalize a URL for "is this the listing page itself" comparisons -- strip index.php/.html
     and a trailing slash so http://x/stellenangebote/ == http://x/stellenangebote/index.php.
@@ -1060,6 +1162,33 @@ def _fetch_dedupe_key(u):
     path = re.sub(r"/index\.(php|html?)$", "/", p.path or "/", flags=re.I).rstrip("/") or "/"
     q = urlencode(sorted(parse_qsl(p.query, keep_blank_values=True)))
     return (p.netloc.lower(), path.lower(), q)
+
+
+def _query_id_key(u):
+    """When a url carries exactly one query param, two DIFFERENT paths sharing that same param value
+    are almost certainly board aliases for one posting, not two (confirmed live 2026-09-22:
+    koenig-ludwig-haus.de serves both .../index.html?detID=1003 and
+    .../20396.Stellenanzeigen.html?detID=1003 for the same posting) -- _fetch_dedupe_key keeps the
+    path, so it treats them as distinct and doubles every row. Return a (netloc, param) key for this
+    single-param case, None for ordinary multi-param pagination/filter urls where path still matters."""
+    p = urlparse(u)
+    qs = parse_qsl(p.query, keep_blank_values=True)
+    return (p.netloc.lower(), qs[0]) if len(qs) == 1 else None
+
+
+def _listing_dup(u, not_a_job, titles):
+    """not_a_job's query-blind key check (see _listing_page_key) also swallows a genuine posting on
+    boards that distinguish EVERY detail page from the listing ONLY by a query id on the identical
+    path (confirmed live 2026-09-22: koenig-ludwig-haus.de's own postings are all
+    .../jobs-im-klh/index.html?detID=NNN -- same normalized key as the listing itself, so all 13 were
+    silently dropped before this). A bare pagination/filter link never carries a real job title as
+    its own anchor text; trust that existing signal (already computed for `titles`, see
+    _job_link_pairs) instead of guessing from the query shape which param names are "pagination"."""
+    if _listing_page_key(u) not in not_a_job:
+        return False
+    if not urlparse(u).query:
+        return True
+    return not GENDER.search(titles.get(u) or "")
 
 
 def _synthetic_job_url(page_url, title):
@@ -1241,6 +1370,66 @@ def _bootstrap_panel_job_rows(cu_resp, c, host):
     return out
 
 
+# A "dan-bewerbungen"-classed accordion (confirmed live 2026-09-22: kreisklinik-woerth.de, a legacy
+# <font>-tag page from before this plugin's site was rebuilt) -- title in .../job-headline's own
+# <b>, full Wir-suchen/Wir-sind/Wir-erwarten/... body in the matching .../job-body div right after,
+# same shared-listing-page/no-detail-page shape as the FAQPage/FAQ-accordion/bootstrap-panel cases
+# above. Each title repeats its own "(m/w/d) ()" suffix verbatim (an empty trailing placeholder in
+# the plugin's own template) -- stripped, not left in a user-facing title.
+DAN_BEWERBUNGEN_SITES = {"kreisklinik-woerth.de"}
+DAN_HEADLINE_RX = re.compile(r'class="[^"]*dan-bewerbungen-job-headline[^"]*"[^>]*>.*?<b>(.*?)</b>', re.S)
+
+
+def _dan_bewerbungen_job_rows(cu_resp, c, host):
+    if not any(d in host for d in DAN_BEWERBUNGEN_SITES) or not cu_resp or not cu_resp.ok:
+        return []
+    out, seen = [], set()
+    parts = DAN_HEADLINE_RX.split(cu_resp.text)[1:]  # alternating [title, tail, title, tail, ...]
+    for title_html, tail in zip(parts[0::2], parts[1::2]):
+        title = re.sub(r"\(\)\s*$", "", _txt(title_html) or "").strip()
+        if not title or not GENDER.search(title) or title in seen:
+            continue
+        seen.add(title)
+        u = _synthetic_job_url(cu_resp.url, title)
+        j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
+             "url": u, "page": cu_resp.url, "description": _txt(tail[:4000]), "employmentType": None}
+        out.append(row(host, u, j, "wp_jobs"))
+    return out
+
+
+# An Elementor "Toggle" (accordion) widget (confirmed live 2026-09-22: spezialklinik-neukirchen.de)
+# -- a DIFFERENT Elementor widget than INLINE_HEADING_SITES' Heading widget, so a different class
+# name and, unlike that one, no separate "mehr erfahren" href to find nearby: the toggle title
+# itself is a JS-only <a> with no href at all, and the matching description sits in the immediately
+# following .elementor-tab-content div. Most postings on this specific board have no gender marker
+# at all (an admin/reception role, a doctor-leadership role, a flat "no, we don't train for X"
+# non-opening) -- gating on GENDER here, same as every other listing-page-only helper, correctly
+# keeps only the two that are real gendered postings instead of guessing which prose is a vacancy.
+ELEMENTOR_TOGGLE_SITES = {"spezialklinik-neukirchen.de"}
+TOGGLE_TITLE_RX = re.compile(r'class="elementor-toggle-title"[^>]*>(.*?)</a>', re.S)
+TOGGLE_BODY_RX = re.compile(r'class="elementor-tab-content[^"]*"[^>]*>(.*?)</div>\s*</div>', re.S)
+
+
+def _elementor_toggle_job_rows(cu_resp, c, host):
+    if not any(d in host for d in ELEMENTOR_TOGGLE_SITES) or not cu_resp or not cu_resp.ok:
+        return []
+    out = []
+    parts = TOGGLE_TITLE_RX.split(cu_resp.text)[1:]  # alternating [title, tail, title, tail, ...]
+    for title_html, tail in zip(parts[0::2], parts[1::2]):
+        title = _txt(title_html)
+        if not title or not GENDER.search(title):
+            continue
+        bm = TOGGLE_BODY_RX.search(tail)
+        u = _synthetic_job_url(cu_resp.url, title)
+        j = {"title": title, "org": c["name"], "loc": [{"city": c.get("town"), "plz": None, "region": None}],
+                 "city_source": "seed", "org_source": "seed",
+             "url": u, "page": cu_resp.url, "description": _txt(bm.group(1)) if bm else None,
+             "employmentType": None}
+        out.append(row(host, u, j, "wp_jobs"))
+    return out
+
+
 def crawl_wp_jobs(c, session=None):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
@@ -1301,7 +1490,8 @@ def crawl_wp_jobs(c, session=None):
         # application FAQ on the same page taking this branch first).
         faq_rows = (_faqpage_job_rows(cu_resp, c, host) or _faq_accordion_job_rows(cu_resp, c, host)
                     or _inline_heading_job_rows(cu_resp, c, host) or _title_only_job_rows(cu_resp, c, host)
-                    or _bootstrap_panel_job_rows(cu_resp, c, host))
+                    or _bootstrap_panel_job_rows(cu_resp, c, host) or _dan_bewerbungen_job_rows(cu_resp, c, host)
+                    or _elementor_toggle_job_rows(cu_resp, c, host))
         if faq_rows:
             out = _BoardTotalRows(faq_rows)   # enriched once, together with everything else, at the final return
             fetched = {j["payload"]["url"] for j in out}
@@ -1318,7 +1508,7 @@ def crawl_wp_jobs(c, session=None):
         cu_links = ({urljoin(_page_base(cu_resp), h) for h in re.findall(r'href="([^"#]+)"', cu_resp.text)}
                     if cu_resp and cu_resp.ok else set())
         section_urls = [u for u in _paginated_job_links(section_url, session=session, exclude=cu_links | {section_url}, titles=titles)
-                        if _listing_page_key(u) not in not_a_job]
+                        if not _listing_dup(u, not_a_job, titles)]
         if section_urls:
             # += / |=, not = -- out/fetched may already carry the FAQ-shape rows merged in above.
             new = _wp_job_rows(section_urls, c, host, session,
@@ -1337,7 +1527,7 @@ def crawl_wp_jobs(c, session=None):
         # this attribute (see _BoardTotalRows) can record it as its own crawl_issue instead of never
         # learning the count it got was not the real board.
         out.degraded = "sitemap_and_wp_json_empty"
-    urls = [u for u in sitemap_urls if _listing_page_key(u) not in not_a_job]
+    urls = [u for u in sitemap_urls if not _listing_dup(u, not_a_job, titles)]
     if urls:
         more_urls = [u for u in urls if u not in fetched]
         new = _wp_job_rows(more_urls, c, host, session, seen=seen, titles=titles)
@@ -1352,8 +1542,11 @@ def crawl_wp_jobs(c, session=None):
     # page's own "next page" link -- a table paginated on the career page itself (ameosjobs), not
     # just a distinct narrower section, would otherwise only ever be read one page deep.
     page_urls = _paginated_job_links(cu, session=session, first_resp=cu_resp, titles=titles) if cu_resp and cu_resp.ok else []
+    iframe_url = _iframe_start_url(cu_resp)
+    if iframe_url:
+        page_urls += _paginated_job_links(iframe_url, session=session, titles=titles)
     page_urls += _widget_endpoint_job_links(cu_resp, session=session)
-    page_urls = [u for u in dict.fromkeys(page_urls) if _listing_page_key(u) not in not_a_job and u not in fetched]
+    page_urls = [u for u in dict.fromkeys(page_urls) if not _listing_dup(u, not_a_job, titles) and u not in fetched]
     if page_urls:
         new = _wp_job_rows(page_urls, c, host, session, seen=seen, titles=titles)
         out += new
@@ -2112,6 +2305,88 @@ GROUP_PORTALS = [
      "page_param": "c_page",
      "job_rx": r"https://karriere\.barmherzige\.net/jobs/[a-z0-9][^\"'\s>?]+", "host": "karriere.barmherzige.net"},
 ]
+
+
+# TASK-99 (2026-09-22): a DIFFERENT shape than GROUP_PORTALS above -- these clinics each keep their own,
+# genuinely distinct careers_url (crawlers.routing.plan() correctly treats them as separate boards to
+# fetch), but the underlying recruiting-vendor ACCOUNT behind those URLs is shared, so whichever clinic's
+# crawl fires returns the WHOLE account's postings, not just its own. app/crawl.py._vendor_rows tags every
+# row with board_clinic_ids = the triggering board's own clinic list, which is a single clinic here --
+# pflege_jobs.registry.Matcher._match_board then correctly refuses a single-clinic pool when the posting's
+# own city disagrees (decision-5), so nothing outside that one clinic can ever match. account_pool_for()
+# widens the pool to every sibling BEFORE the matcher sees it.
+# Manually curated on purpose, not auto-detected from the vendor's account id: the two confirmed instances
+# below took a live Matcher replay plus (for Gesundheitswelt) confirming the sibling by name in the
+# portal's own site/location filter -- auto-clustering by a resolved vendor ident risks silently grouping
+# unrelated clinics that merely share a SaaS reseller, with no such verification step.
+VENDOR_ACCOUNT_POOLS = [
+    # SmartRecruiters "ArtemedSE" company feed: 7 distinct own-domain careers_urls, one shared candidate
+    # pool. Verified live 2026-09-22: replaying pflege_jobs.registry.Matcher with this pool resolves
+    # 261 of 303 previously-unmatched jobs.smartrecruiters.com inbox rows via the existing R0_board_town
+    # rule alone -- no new matching logic. 18813/18872 is the Feldafing Plan-KH/Vertrags-KH twin pair.
+    {"account": "SmartRecruiters/ArtemedSE",
+     "clinic_ids": ["16228", "16235", "18105", "18802", "18808", "18813", "18872", "76108"]},
+    # karriere.gesundheitswelt.de: confirmed live 2026-09-22 -- the portal's own site/location filter on
+    # https://karriere.gesundheitswelt.de/stellenangebote.html lists "Simssee Klinik GmbH" (18713, Bad
+    # Endorf) as one of its own options alongside St. Irmingard (18721, Prien am Chiemsee), even though
+    # 18713's OWN registered careers_url is a separate, unrelated (and walled) domain. Other towns the
+    # portal also lists (Rosenheim, Seeon-Seebruck) matched no Krankenhausplan-registered clinic at
+    # that town -- likely non-hospital Gesundheitswelt facilities, out of this registry's scope (same
+    # class as TASK-103), not added here.
+    {"account": "Gesundheitswelt Chiemgau (karriere.gesundheitswelt.de)", "clinic_ids": ["18721", "18713"]},
+]
+
+
+def account_pool_for(clinic_id):
+    """The full sibling clinic_id list (as strings) for clinic_id's shared vendor account, or None if it
+    is not part of one. Only ever WIDENS a board's own clinic list -- never used to route a fetch."""
+    clinic_id = str(clinic_id)
+    for p in VENDOR_ACCOUNT_POOLS:
+        if clinic_id in p["clinic_ids"]:
+            return p["clinic_ids"]
+    return None
+
+
+# TASK-102 (2026-09-22): kliniken-nordoberpfalz.talention.com's own JSON-LD jobLocation.addressLocality is
+# filled inconsistently by whoever posted each job on the employer's side -- confirmed live: one posting
+# carries the clean "Weiden, Bayern, Deutschland", another for the SAME site carries the facility/department
+# label "Klinikum Weiden Zentrale Notaufnahme" in the exact same field, same page structure. No other,
+# cleaner field exists on the page to prefer instead -- this is upstream data-entry inconsistency, not a
+# parser bug. Vendor-specific (ats_type == "talention" only) and pool-scoped (only ever picks a town this
+# board's OWN registry pool already contains), same shape as GROUP_PORTALS' kbo Einsatzort handling for a
+# different vendor (TASK-57) -- never invents a town the board doesn't already know about.
+# TASK-81 mechanism #1: la-regio-kliniken.de/stellenportal shares one board between 26108 (LA-Regio
+# Kliniken Landshut, the 862-bed general hospital) and 26103 (Kinderkrankenhaus St. Marien Landshut,
+# 120-bed, pediatric-only). The board is a JS SPA with no static per-posting location/department field
+# at all (confirmed live 2026-09-22, no Einsatzort-style block anywhere in the fetched HTML) -- every
+# posting currently lands on whichever clinic's board_clinic_ids happened to be first, which today means
+# all 39 open postings sit on 26103 including clearly general-hospital departments (Gastroenterologie,
+# Kardiologie, Onkologie, Anästhesie, IMC) a 120-bed children's hospital does not run on its own. The one
+# real signal is the posting's own title: a pediatric nursing qualification/ward always says so verbatim
+# ("Kinderkrankenpflegekräfte", "(Kinder-)", "Kinderchirurgische", "Pädiatrie") -- checked against all 39
+# live titles, zero false positives either direction.
+LA_REGIO_LANDSHUT_PEDIATRIC_RX = re.compile(r"\bkinder|p[aä]diatrie", re.I)
+
+
+def split_la_regio_landshut(title):
+    return "26103" if LA_REGIO_LANDSHUT_PEDIATRIC_RX.search(title or "") else "26108"
+
+
+def clean_talention_city(raw_city, pool_towns):
+    """raw_city already naming exactly one of pool_towns (as a whole word) -> that clean town name.
+    Zero or more than one hit (e.g. "Krankenhaus Tirschenreuth und Klinikum Weiden" names two) -> raw_city
+    unchanged, so town matching fails safely exactly as it did before (no match beats a wrong match)."""
+    if not raw_city:
+        return raw_city
+    towns = [t for t in (pool_towns or []) if t]
+    if not towns:
+        return raw_city
+    rx = re.compile(r"\b(" + "|".join(re.escape(t) for t in towns) + r")\b", re.I)
+    hits = {m.group(1).lower() for m in rx.finditer(raw_city)}
+    if len(hits) == 1:
+        hit = next(iter(hits))
+        return next(t for t in towns if t.lower() == hit)
+    return raw_city
 
 
 def group_portal_for(c):

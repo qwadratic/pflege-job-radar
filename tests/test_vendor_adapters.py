@@ -57,6 +57,29 @@ def test_get_tallies_attempts_and_oks_on_the_shared_session():
     assert s._attempts == 3 and s._ok == 1
 
 
+def test_get_follows_an_immediate_meta_refresh_but_not_a_delayed_one():
+    """psychiatrie-werneck.de shape (confirmed live 2026-09-22): careers_url is nothing but a
+    "content=0;url=..." redirect stub to the real board -- requests' own allow_redirects never
+    follows an HTML-level refresh, only an HTTP 3xx. A DELAYED refresh (content="30;...") is left
+    alone -- that shape is usually a session-timeout/please-wait notice for a human, not "this page
+    IS the redirect", and auto-following it would silently skip whatever real content that page has."""
+    stub = _R('<meta http-equiv="refresh" content="0;url=https://x/real">', url="https://x/stub", ok=True)
+    real = _R("real board content", url="https://x/real", ok=True)
+    r = va.get("https://x/stub", session=_FakeSession([stub, real]))
+    assert r.text == "real board content" and r.url == "https://x/real"
+
+    slow = _R('<meta http-equiv="refresh" content="30;url=https://x/other">', url="https://x/slow", ok=True)
+    r2 = va.get("https://x/slow", session=_FakeSession([slow]))
+    assert r2.url == "https://x/slow"  # not followed
+
+
+def test_get_meta_refresh_loop_terminates_instead_of_spinning_forever():
+    a = _R('<meta http-equiv="refresh" content="0;url=https://x/b">', url="https://x/a", ok=True)
+    b = _R('<meta http-equiv="refresh" content="0;url=https://x/a">', url="https://x/b", ok=True)
+    r = va.get("https://x/a", session=_FakeSession([a, b, a, b]))
+    assert r is not None and r.url in ("https://x/a", "https://x/b")
+
+
 # ---------------------------------------------------------------------------
 # personio
 # ---------------------------------------------------------------------------
@@ -998,3 +1021,24 @@ def test_crawl_erecruiter_does_not_chase_a_same_domain_link_when_its_own_page_al
     cu_resp = _R('<script>window.jobList = new JobList($a, $b, %s);</script>' % payload,
                  url="https://jobs.example.de/Jobs", ok=True)
     assert va._erecruiter_host_resp(cu_resp) is cu_resp
+
+
+# --- TASK-102: talention's own jobLocation.addressLocality mixes clean towns with facility labels ------
+
+def test_clean_talention_city_extracts_the_one_pool_town_it_names():
+    pool = ["Weiden", "Tirschenreuth", "Kemnath"]
+    assert va.clean_talention_city("Klinikum Weiden Zentrale Notaufnahme", pool) == "Weiden"
+    assert va.clean_talention_city("Krankenhaus Tirschenreuth | Innere Medizin", pool) == "Tirschenreuth"
+    assert va.clean_talention_city("Weiden, Bayern, Deutschland", pool) == "Weiden"  # already clean, unchanged shape
+
+
+def test_clean_talention_city_leaves_ambiguous_or_out_of_pool_strings_alone():
+    pool = ["Weiden", "Tirschenreuth", "Kemnath"]
+    # Names TWO pool towns -- no match beats a wrong match (decision-5).
+    assert va.clean_talention_city("Krankenhaus Tirschenreuth und Klinikum Weiden", pool) == "Krankenhaus Tirschenreuth und Klinikum Weiden"
+    # Names no pool town at all.
+    assert va.clean_talention_city("Steinwaldklinik Erbendorf | Geriatrische Rehabilitation", pool) == "Steinwaldklinik Erbendorf | Geriatrische Rehabilitation"
+    assert va.clean_talention_city("Kliniken Nordoberpfalz AG", pool) == "Kliniken Nordoberpfalz AG"
+    # "Weidenberg" must not false-positive on "Weiden" -- a real, different Bavarian town.
+    assert va.clean_talention_city("Klinikum Weidenberg", pool) == "Klinikum Weidenberg"
+    assert va.clean_talention_city(None, pool) is None

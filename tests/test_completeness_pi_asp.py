@@ -204,6 +204,29 @@ def test_crawl_reads_department_and_date_straight_from_the_list_no_click_needed(
     assert rows[0]["city"] == "Lichtenfels"  # split off ", Bayern, Deutschland"
 
 
+def test_crawl_uses_the_seeds_own_query_param_name(monkeypatch):
+    # TASK-117: brkm.pi-asp.de (BRK Muenchen) renders 0 rows through "?companyEid=..." (every other
+    # seed's param) -- live-verified 2026-09-23 it needs "?company=..." instead. seed["param"] is an
+    # optional per-seed override; fake_save.calls[0][0] is the exact board url crawl() built and
+    # passed to save(), so this pins the real query string without a live board.
+    postings = [_posting(0, navigates=True)]
+    page, fake_save = _wire_fake_playwright(monkeypatch, postings)
+    seed = {"name": "BRK München", "host": "brkm.pi-asp.de", "companyEid": "123-FIRMA-ID", "param": "company",
+            "default": {"kez": "16254", "town": "München"}}
+    pi_asp.crawl(seed, set())
+    assert fake_save.calls[0][0] == "https://brkm.pi-asp.de/bewerber-web/?company=123-FIRMA-ID"
+
+
+def test_crawl_defaults_to_companyeid_when_no_param_override_is_given(monkeypatch):
+    # The two pre-existing seeds (Helios, Regiomed) carry no "param" key at all -- must keep working
+    # exactly as before.
+    postings = [_posting(0, navigates=True)]
+    page, fake_save = _wire_fake_playwright(monkeypatch, postings)
+    seed = {"name": "Helios", "host": "helios-gesundheit.pi-asp.de", "companyEid": 1134, "default": {"kez": "16207", "town": "München"}}
+    pi_asp.crawl(seed, set())
+    assert fake_save.calls[0][0] == "https://helios-gesundheit.pi-asp.de/bewerber-web/?companyEid=1134"
+
+
 def test_crawl_snapshots_the_list_and_every_real_detail(monkeypatch):
     postings = [_posting(0, navigates=True), _posting(1, navigates=False)]
     page, fake_save = _wire_fake_playwright(monkeypatch, postings)

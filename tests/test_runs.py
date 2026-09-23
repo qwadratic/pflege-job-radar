@@ -89,6 +89,22 @@ def test_board_walk_ok_true_on_a_merely_empty_walk(fresh):
     assert R.board_walk_ok(url, day) is True
 
 
+def test_board_walk_ok_false_on_degraded_kind(fresh):
+    # TASK-85 AC#1: crawl_wp_jobs fell through from sitemap/wp-json discovery to a lower-confidence
+    # fallback -- isolated with no 'vendor'/'seeded'/'truncated' row so a filter that forgot to add
+    # 'degraded' would leave this specific test red.
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "degraded", "wp_jobs", ["1"], "fell back to a lower-confidence discovery path", 1)
+    assert R.board_walk_ok(url, day) is False
+
+
+def test_board_walk_ok_false_on_incomplete_kind(fresh):
+    # TASK-88 AC#2: an adapter measured rows < the board's own self-reported total.
+    url, day = "https://x.example/board", "2026-09-21"
+    R.record_crawl_issue(url, day, "incomplete", "erecruiter", ["1"], "board reports 57 total but the adapter returned 1 row(s)", 1)
+    assert R.board_walk_ok(url, day) is False
+
+
 def test_board_walk_ok_ignores_other_days_and_other_boards(fresh):
     # kind='vendor' here on purpose (a real matched kind): with the never-recorded 'error' this test
     # used before the fix, it passed regardless of whether the day/board_url scoping worked at all.

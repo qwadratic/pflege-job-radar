@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:27'
-updated_date: '2026-09-22 05:25'
+updated_date: '2026-09-22 20:25'
 labels: []
 dependencies: []
 ordinal: 89000
@@ -188,6 +188,15 @@ classifies sonstige_pflege end-to-end given its real collector's section_labels,
 AC#4 unchanged, still met: the new negative pins above use exact real titles (from this pass's own replay
 and from the reviewer's findings), same standard as the existing positive pins.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-22 20:25
+---
+2026-09-22, found while verifying TASK-99's Gesundheitswelt Chiemgau pool fix: posting_id 12315 ('Medizinischen Fachangestellten ... Zentralen Funktionsdienst', Bad Endorf) sits in v_postings with role_class='sonstige_pflege' (not in EXCLUDED_ROLE_CLASSES) and clinic_id=null, but its LOCAL data/inbox.sqlite row (inbox_id 7802) is marked process_note='skipped: nicht_pflege' -- the local skip gate and what's actually stored in Postgres disagree on this exact row's role classification. Bad Endorf is clinic 18713 (Simssee Klinik)'s own town and IS in the Gesundheitswelt account pool (TASK-99), so if reclassified correctly this row would resolve via R0_board_town -- but re-matching without first resolving the role_class disagreement risks landing a genuinely non-pflege row on a real clinic. Second concrete data point for this task's AC#3 mechanism (same policy, different outcome depending on ingest path/timing) -- not a new task, filing here.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

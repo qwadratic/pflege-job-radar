@@ -15,6 +15,17 @@ from app.autopilot import db as ADB
 from app.autopilot import engine as E
 from app.autopilot import seed as ASEED
 
+# The router is unmounted from the live app (2026-09-22, app/main.py) since /api/autopilot/* had no real
+# usage -- code is untouched, so this skip is keyed off the live app's own route table, not a hardcoded
+# flag, and lifts itself automatically the day the include_router call is restored.
+from app.main import app as _APP  # noqa: E402
+# app.routes wraps an included router without exposing its sub-paths' .path (confirmed live 2026-09-22,
+# same gotcha tests/test_agent_api.py:gated() already documents) -- app.openapi()["paths"] is what
+# actually reflects mount state.
+pytestmark = pytest.mark.skipif(
+    not any(p.startswith("/api/autopilot") for p in _APP.openapi()["paths"]),
+    reason="autopilot router unmounted 2026-09-22 (zero real usage) -- see app/main.py")
+
 # A tiny registry: two clinics in Regensburg/Oberpfalz (pflegefachkraft + fachpflege openings) and one in
 # München/Oberbayern (fachpflege), so matching.rank/cohort_preview/share_posting all have something real to find.
 CLINICS = [

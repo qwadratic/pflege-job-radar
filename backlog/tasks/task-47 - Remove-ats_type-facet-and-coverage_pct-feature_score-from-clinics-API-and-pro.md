@@ -1,9 +1,10 @@
 ---
 id: TASK-47
 title: Remove ats_type facet and coverage_pct/feature_score from clinics API and /pro
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-11 05:01'
+updated_date: '2026-09-22 18:59'
 labels:
   - harvester
 dependencies: []
@@ -21,3 +22,9 @@ Judgment + TASK-25: ats_type carries no information for 242 of 407 clinics (5 la
 - [ ] #1 clinics API drops coverage_pct and feature_score; a board's completeness verdict replaces both in /pro's coverage view
 - [ ] #2 ats_type is relabelled 'family' pending TASK-25, not removed before then
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed alongside TASK-25 (its hard dependency), for the same reason: ats_type removal / capability-based routing never happened and this session moved further in the opposite direction.
+<!-- SECTION:FINAL_SUMMARY:END -->

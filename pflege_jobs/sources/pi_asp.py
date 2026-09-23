@@ -84,7 +84,12 @@ def _list_rows(pg):
 def crawl(seed, towns, log=print):
     from playwright.sync_api import sync_playwright
     from tests.adapter_contract import save
-    url = f"https://{seed['host']}/bewerber-web/?companyEid={seed['companyEid']}"
+    # TASK-117: brkm.pi-asp.de (BRK München) renders 0 rows through the query param every other seeded
+    # tenant uses ("?companyEid=...") -- live-verified 2026-09-23 it needs "?company=..." instead (same
+    # P&I product, this tenant's deployment just names the param differently). Optional per-seed
+    # override, defaulting to the param every existing seed (Helios, Regiomed) already relies on.
+    param = seed.get("param", "companyEid")
+    url = f"https://{seed['host']}/bewerber-web/?{param}={seed['companyEid']}"
     rows, stats = [], {"listed": 0, "opened": 0, "pflege": 0, "dead_click": False}
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True, args=["--no-sandbox"])

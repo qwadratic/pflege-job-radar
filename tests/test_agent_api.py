@@ -143,7 +143,10 @@ def test_every_route_the_manifest_calls_session_only_is_closed_to_every_scope(cl
     """The other half of the manifest contract: what `session_only` publishes really is unreachable with a
     key carrying every scope -- 401 (no scope would help), not 403 (ask for this scope)."""
     session_only = client.get("/api/agent/manifest").json()["session_only"]
-    assert len(session_only) > 60, "the walk lost routers again"
+    # Threshold dropped from 60 to 25 (2026-09-22): unmounting the unused /api/autopilot/* router
+    # (app/main.py) removed ~35 owner-gated routes from the manifest, a real and intentional count
+    # drop, not the walk losing routers -- restore to 60 if the router is remounted.
+    assert len(session_only) > 25, "the walk lost routers again"
     key = key_for(client, *AU.SCOPES, label="full")
     for r in session_only:
         concrete = re.sub(r"\{[^}]+\}", "1", r["path"])

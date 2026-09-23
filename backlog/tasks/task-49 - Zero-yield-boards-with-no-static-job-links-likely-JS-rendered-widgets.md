@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-11 10:49'
-updated_date: '2026-09-21 03:16'
+updated_date: '2026-09-22 09:47'
 labels: []
 dependencies: []
 ordinal: 49000
@@ -168,6 +168,16 @@ klinikverbund-allgaeu.de (6 clinics, 1048 beds) -- two separate problems, both n
 Known remaining gap, NOT fixed (out of this task's ACs): the board names each posting's site as a URL path segment (/karriere-detail/Immenstadt/..., /karriere-detail/Mindelheim-Ottobeuren/...), but career_crawl.city_from_url only recognises the trailing '-in-<city>' shape, so 48 of the 82 postings will carry the seed clinic's town (Kempten) with city_source='seed' rather than their own. Widening city_from_url to any placeable path segment would change attribution on every board that uses it, so it is flagged here rather than done silently.
 
 klinikum-ab-alz.de (2 clinics, 831 beds) -- not JS-templated after all. The {{PortalUrl}}/{{Id}} placeholders the 2026-09-11 recon saw are the handlebars TEMPLATE of the same eRecruiter engine bezirkskliniken-schwaben runs (TASK-77); the board itself lives on the clinic's own jobs subdomain, https://jobs.klinikum-ab-alz.de/Jobs, which the careers page links, and ships its whole job list as JSON in the plain HTML. Covered with no extra code by the crawl_erecruiter adapter written for TASK-77. Verified live: crawl_wp_jobs on that URL returns 62 rows via vendor-erecruiter-v1, 19 experienced-nursing class, with per-posting city and PLZ.
+
+2026-09-22 status audit (read-only; no source/data files touched; run 118 live throughout). Re-verified fresh: code artifacts for every fix cited above still present (JOB_PATH hyphen widening L485, INLINE_HEADING_SITES/TITLE_ONLY_SITES/BOOTSTRAP_PANEL_SITES + their row helpers, crawl_erecruiter delegate, Bootstrap h1/h2/h3 heading fallback, all in crawlers/vendor_adapters.py) and commits 59c71bf/165b1eb/8d0d7eb are in git log. Targeted tests (test_completeness_js_widget_boards, test_routing, test_completeness_wp_jobs, test_vendor_adapters, test_erecruiter_board_total): 103 passed, 0 failed. Live pflege_jobs.clinics queried via PostgREST just now still carries the STALE values for both headline boards: 76301/77801/77802/78001/78002/78003 (klinikverbund-allgaeu.de) all still careers_url=https://klinikverbund-allgaeu.de/karriere, ats_type unchanged (78001/78002/78003 still 'umantis', 77801/77802 'self_hosted', 76301 blank); 66101/67101 (klinikum-ab-alz.de) still careers_url=https://klinikum-ab-alz.de/karriere/. So the two registry blockers named in comment #1 (2026-09-21) are still open today -- production yield for both boards is unchanged from before this task started. Decision: all 3 ACs are honestly checked (classification/code claims hold under fresh evidence) and NOT moved to Done -- this task's own headline value has not reached the live system yet, matching its own final summary's reasoning, independently reconfirmed rather than assumed. Separate finding, not acted on here (file restrictions): TASK-86's dry-run list covers only 66101 of these 8 clinic_ids, and its proposed 76301 fix (set ats_type='umantis') directly CONTRADICTS this task's comment #1 (clear ats_type to '' on the 3 umantis rows) -- whoever applies either dry-run should resolve that conflict first, or the wrong one will ship.
+
+Поправка 2026-09-22: рекомендация из заметок этой задачи -- очистить ats_type у клиник Klinikverbund Allgaeu -- измерена и оказалась неверной.
+
+Замеры на живом борде: старый careers_url (https://klinikverbund-allgaeu.de/karriere) с ats_type=umantis даёт 92 observations, он же с пустым ats_type -- 0 строк. Новый хост (https://karriere.klinikverbund-allgaeu.de/) с пустым ats_type даёт 74, с umantis -- 10.
+
+То есть цифра "10 вместо 93", на которой строилась рекомендация, возникает не от ats_type=umantis самого по себе, а от комбинации НОВЫЙ хост + umantis. На старом хосте umantis -- лучший из четырёх вариантов.
+
+Правильное действие: careers_url не трогать, ats_type=umantis выровнять у 76301, 77801, 77802. Подробности и все четыре замера -- в заметках TASK-86.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

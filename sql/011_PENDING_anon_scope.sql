@@ -73,9 +73,14 @@ declare
   blocked text[] := array[
     'enr_contact_emails',      -- the recruiter addresses themselves
     'description',             -- same addresses in prose in 569 of 572 rows
-    'enr_housing_evidence', 'enr_requirements', 'enr_experience',   -- free-text excerpts of the same ad
+    'enr_housing_evidence',    -- free-text excerpt of the same ad
     'payload'                  -- posting_observations.payload = the original record, ad body included
   ];
+  -- TASK-105 (2026-09-22, Ivan): enr_requirements and enr_experience stay OPEN, explicitly, not by
+  -- omission -- app/autopilot/matching.py and the app server itself need them for candidate-clinic
+  -- matching, and the app has no key but anon (see precondition #1 below). Decided over leaving them
+  -- blocked and giving the app server a service-role key first; that's the bigger, separate project
+  -- this file's own "OPEN QUESTION" note already flags. enr_language_req was never in this list.
 begin
   for r in
     select c.relname

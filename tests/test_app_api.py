@@ -126,6 +126,25 @@ def test_crawl_plan_targets(client):
     assert r.status_code == 200 and r.json()["boards"] == 1
 
 
+def test_plan_surfaces_the_real_kill_switch_verdict(client):
+    """2026-09-08 API audit finding #7: the preview ran no gate at all, so the panel could show a healthy
+    estimate with Confirm enabled for a run that then spent 0 and failed on 'refused by spend gate'. Only
+    kill_switch() is checked here (cheap: settings + campaign + a ledger read) -- not spend_gate() itself,
+    which live-probes a routable clinic's adapter, too slow for every preview keystroke."""
+    from app import campaign as CAM
+    d = client.get("/api/crawl/plan?scope=city&values=Regensburg&mode=auto").json()
+    assert d["via_firecrawl"] == 1 and d["blocked"] is False and d["blocked_reason"] is None
+    CAM.save({"stopped": True, "stop_reason": "test pause"})
+    try:
+        d = client.get("/api/crawl/plan?scope=city&values=Regensburg&mode=auto").json()
+        assert d["blocked"] is True and "test pause" in d["blocked_reason"]
+    finally:
+        CAM.save({"stopped": False, "stop_reason": None})
+    # A pure-adapter target (no Firecrawl involved at all) is never blocked by a Firecrawl-only switch.
+    d = client.get("/api/crawl/plan?scope=ats_type&values=firecrawl&mode=adapter").json()
+    assert d["via_firecrawl"] == 0 and d["blocked"] is False
+
+
 def test_cancel_queued_run_marks_cancelled_immediately(client):
     """R.enqueue is stubbed in this fixture, so a created run stays 'queued' -- exactly the case a
     cancel click can land on before the (single, serial) worker ever picks it up."""
@@ -295,6 +314,10 @@ def autopilot_tmp(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("path,base,params", NUMERIC_QUERY_PARAMS)
 def test_garbage_numeric_query_params_are_4xx_naming_the_parameter(client, autopilot_tmp, path, base, params):
+    if path.startswith("/api/autopilot"):
+        from app.main import app as _APP
+        if not any(p.startswith("/api/autopilot") for p in _APP.openapi()["paths"]):
+            pytest.skip("autopilot router unmounted 2026-09-22 (zero real usage) -- see app/main.py")
     assert client.get(path, params=base).status_code == 200, (path, "base query must be valid on its own")
     for param in params:
         for bad in GARBAGE_VALUES:
