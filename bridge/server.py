@@ -18,10 +18,13 @@
     GET  /v1/media             the queue: unattached files, kind/size/age/folder/related threads
     POST /v1/media/attach      the human escape hatch: attach one queued file to a phone by id
                                (TASK-131 round 5 -- automatic attachment is gone, decision-9)
+    GET  /v1/ops/<id>          one queued phone op's state/result/error (TASK-227)
+    POST /v1/ops/<id>/resolve  mark a failed op reviewed and safe to delete (TASK-230)
 
-The handlers are thin on purpose and the rule is enforceable by reading them: every one of them
-parses, calls exactly one Executor method, and serialises the result. No decision about a send is
-made in this file.
+The handlers are thin on purpose and the rule is enforceable by reading them: every phone-touching
+one of them parses, then enqueues onto the ops dispatcher (bridge/dispatcher.py) rather than
+calling an Executor method inline -- see that module's own docstring for why. No decision about a
+send is made in this file.
 
 BOUND TO 127.0.0.1, ALWAYS. There is no bind-address setting, because the only reason to have one
 would be to move this off loopback, and this process can message real people. Our VPS reaches it
@@ -30,11 +33,15 @@ and any peer that is not 127.0.0.1 is refused before the token is even compared.
 runs a root-installed Cursor cloud worker under the same uid as us -- a port on 0.0.0.0 there is
 not a mistake we get to make twice.
 
-WHAT THIS VERSION DOES NOT DO, stated rather than stubbed: there is no 202 "queued" answer and no
-batch route. The revision document's 202-first shape needs a scheduler and a second pacing
-authority on this side; until that exists a paced request is refused loudly with 429 rail_parked
-and a next_slot_at, which our campaign classifier already turns into "failed, ownership restored".
-Accepting work we cannot pace would be the same lie as reporting an unverified send as sent.
+WHAT THIS VERSION DOES NOT DO, stated rather than stubbed: there is no batch route, and a paced
+request is still refused loudly with 429 rail_parked and a next_slot_at (which our campaign
+classifier turns into "failed, ownership restored") rather than accepted and queued for later --
+accepting work we cannot pace would be the same lie as reporting an unverified send as sent. A
+phone-touching route DOES now answer a 200 {"op_id", "state": "queued"} before TASK-227's queue
+guarantees the operation runs at all (bridge/dispatcher.py's own docstring is explicit about why
+that is not the same lie): every caller above the wire -- app/wa/bridge.py::Client, and everything
+built on it -- polls that to a terminal state internally, so nothing above this file's own routes
+ever sees "queued" and mistakes it for done.
 """
 from __future__ import annotations
 
@@ -51,11 +58,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import adb_driver as AD
 from . import broadcast as B
 from . import dispatcher as OD
+from . import driver as D
 from . import errors as E
 from . import executor as X
 from . import governor as G
 from . import ledger as L
 from . import operations as O
+from . import retention as RT
 from . import watcher as W
 
 LOOPBACK = "127.0.0.1"
@@ -112,6 +121,18 @@ class Handler(BaseHTTPRequestHandler):
                "result": row["result"], "error": row["error"], "created_at": row["created_at"],
                "started_at": row["started_at"], "finished_at": row["finished_at"]}
 
+    def _resolve_op(self, op_id):
+        """-> the body for ``POST /v1/ops/<id>/resolve`` (TASK-230): the human escape hatch for a
+        failed op that minted no client_msg_id to auto-resolve against (clear_chat, delete_chat,
+        read_thread, send_photos/gallery/document). Raises 404 for an id this ledger never
+        enqueued, same as ``_op_status``. Never touches the phone -- a plain ledger write, so it
+        answers directly rather than going through the dispatcher."""
+        executor = self.server.executor
+        if executor.ledger.op_status(op_id) is None:
+            raise E.op_not_found(f"no such op {op_id!r}")
+        executor.ledger.resolve_op(op_id, executor.clock())
+        return {"ok": True, "op_id": op_id, "resolved": True}
+
     def _write(self, status, payload):
         raw = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -161,6 +182,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         stop = re.match(r"/v1/broadcasts/([^/]+)/stop\Z", path)
+        resolve_op = re.match(r"/v1/ops/([^/]+)/resolve\Z", path)
         # TASK-227: every phone-touching route below enqueues onto the ops dispatcher instead of
         # calling the executor/operations method inline -- see bridge/dispatcher.py's own
         # docstring. The route's whole job is naming which method and what arguments; running it,
@@ -175,8 +197,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/v1/document":
             self._dispatch(lambda: self._enqueue("send_document", _document_args(self._body())))
         elif path == "/v1/reconcile":
-            self._dispatch(lambda: (200, {"ok": True, "results": self.server.executor.reconcile(
-                self._body().get("client_msg_ids") or [])}))
+            # TASK-230: reconcile's own _scan touches the phone (opens the chat, reads bubbles,
+            # parks) exactly like every other queued verb -- it was left calling straight through
+            # when TASK-227 shipped (a known, documented gap) and is now load-bearing for
+            # retention review, so it goes through the same queue as everything else.
+            self._dispatch(lambda: self._enqueue(
+                "reconcile", {"client_msg_ids": self._body().get("client_msg_ids") or []}))
         elif path == "/v1/chats/clear":
             self._dispatch(lambda: self._enqueue("clear_chat", _chat_args(
                 self._body(), extra=("include_starred",))))
@@ -189,6 +215,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._body()))))
         elif stop:
             self._dispatch(lambda: (200, self.server.broadcast.stop(unquote(stop.group(1)))))
+        elif resolve_op:
+            self._dispatch(lambda: (200, self._resolve_op(unquote(resolve_op.group(1)))))
         else:
             self._dispatch(lambda: _no_route(path))
 
@@ -365,14 +393,18 @@ class BridgeServer(ThreadingHTTPServer):
 
 
 def maintenance_once(executor, now=None):
-    """TASK-130 AC#9: the retention sweeps ship with the first commit, not later."""
+    """TASK-130 AC#9: the retention sweeps ship with the first commit, not later. TASK-230: the
+    screenshot/recording sweep now reviews before it deletes (bridge/retention.py) -- an artefact
+    past its 14-day cutoff is held, not removed, until it is either a happy op_done or a resolved
+    issue. ``executor.last_retention`` is set here so /v1/health can show whether the held pile is
+    growing without an operator having to read the journal by hand."""
     now = now or executor.clock()
     swept = executor.ledger.sweep(now)
-    shots = executor.driver.sweep_screenshots(now)
-    recordings = executor.driver.sweep_recordings(now)
-    executor.ledger.note(now, "maintenance", None, ledger=swept, screenshots=shots,
-                         recordings=recordings)
-    return {"ledger": swept, "screenshots": shots, "recordings": recordings}
+    reviewed = RT.review_and_sweep(executor, now, screenshot_days=D.SCREENSHOT_RETENTION_DAYS,
+                                   recording_days=D.SCREENSHOT_RETENTION_DAYS)
+    executor.last_retention = reviewed
+    executor.ledger.note(now, "maintenance", None, ledger=swept, **reviewed)
+    return {"ledger": swept, **reviewed}
 
 
 def maintenance_loop(executor, stop, interval=MAINTENANCE_INTERVAL_SEC):
@@ -461,17 +493,20 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     # TASK-227: the one thread that ever calls a phone-touching executor/operations method now --
     # see bridge/dispatcher.py's own docstring for why this replaces the old bare-flock race.
     operations = O.Operations(executor)
-    # TASK-228, Ivan 2026-09-23: "первое время поставим флаг «дебаг»" -- off unless bridge.env
-    # opts in, so the postmortem screenshots/recording below cost nothing on a quiet night.
-    debug_capture = os.environ.get("WA_BRIDGE_DEBUG_CAPTURE", "").strip() in ("1", "true", "yes")
+    # TASK-228 shipped this "первое время" (Ivan, 2026-09-22) as an off-by-default flag. TASK-230
+    # (Ivan, 2026-09-23: "там на макмини вроде, достаточно места ... давай просто не больше 2
+    # недель хранить это и все") made it safe to leave on by default -- review-before-delete
+    # (bridge/retention.py) means the artefacts this produces get reviewed, not just aged out, so
+    # the original caution ("не в полном разрешении хранить" -- keep it lean, which downscale/14d
+    # already do) is covered. WA_BRIDGE_DEBUG_CAPTURE=0 still turns it back off if ever needed.
+    debug_capture = os.environ.get("WA_BRIDGE_DEBUG_CAPTURE", "1").strip() not in ("0", "false", "no")
     ops_dispatcher = OD.OpsDispatcher(
         ledger, executor, operations,
         poll_interval=float(os.environ.get("WA_BRIDGE_OPS_POLL_SEC", OD.DEFAULT_POLL_SEC)),
         debug_capture=debug_capture, log=stamped).start()
-    if debug_capture:
-        stamped("WA_BRIDGE_DEBUG_CAPTURE=1: every queued op now takes pre/post/error screenshots "
-               "and a screen recording under WA_BRIDGE_STATE/{shots,recordings} -- unset it in "
-               "bridge.env once the postmortem window this was turned on for is over.")
+    stamped(f"debug capture: {'on' if debug_capture else 'off'} -- pre/post/error screenshots + a "
+           f"screen recording per queued op under WA_BRIDGE_STATE/{{shots,recordings}}, reviewed "
+           f"before deletion (bridge/retention.py), 14 days. WA_BRIDGE_DEBUG_CAPTURE=0 to disable.")
     executor.ops_dispatcher = ops_dispatcher
     server = BridgeServer(executor, token, port=int(os.environ.get("WA_BRIDGE_PORT", DEFAULT_PORT)),
                           log=stamped, operations=operations, broadcast=broadcast,

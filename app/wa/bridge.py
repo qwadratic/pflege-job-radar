@@ -96,6 +96,7 @@ MEDIA_ATTACH_PATH = "/v1/media/attach"
 PHOTOS_PATH = "/v1/photos"
 GALLERY_PATH = "/v1/gallery"
 DOCUMENT_PATH = "/v1/document"
+RECONCILE_PATH = "/v1/reconcile"
 # TASK-227: every phone-touching route above answers 200 {"op_id", "state": "queued"} instead of
 # its result now -- a real FIFO queue on the executor's side, not a bare flock. _request() below
 # polls this route until the op is terminal and unwraps it back to the exact (status, body) shape
@@ -183,6 +184,10 @@ DESTROY_BUDGET_SEC = FLOCK_WAIT_SEC + DESTROY_LIST_PASSES * HANDSET_CHAT_LIST_PA
 # somebody can check rather than a coincidence nobody noticed.
 CHATS_BUDGET_SEC = FLOCK_WAIT_SEC + HANDSET_CHAT_LIST_PASS_SEC + 5
 THREAD_BUDGET_SEC = FLOCK_WAIT_SEC + HANDSET_CHAT_LIST_PASS_SEC + 16 + 5 + 5
+# reconcile (TASK-230) scans one thread per id that is not already settled by its own ledger row
+# (bridge/executor.py::Executor._scan) -- variable count, so this is a per-id cost the caller
+# multiplies rather than a fixed budget like the ones above.
+RECONCILE_PER_ID_SEC = HANDSET_CHAT_LIST_PASS_SEC + 16 + 5
 
 # --- the codes this client mints when the ANSWER is lost ------------------------------------------
 # Not the executor's taxonomy (bridge/errors.py): these say what we could establish about a
@@ -483,7 +488,13 @@ class Client:
             if status == 200 and isinstance(body, dict):
                 state = body.get("state")
                 if state == "done":
-                    return 200, body.get("result") or {}
+                    # TASK-230: NOT `body.get("result") or {}` -- a dispatched kind whose own
+                    # result is a legitimately falsy value (reconcile([]) answers [], an empty
+                    # list) would have that silently rewritten to {} here, a type change a caller
+                    # matching on `isinstance(result, list)` would never expect. Only an ACTUALLY
+                    # missing key (None) falls back to {}.
+                    result = body.get("result")
+                    return 200, ({} if result is None else result)
                 if state == "failed":
                     error = body.get("error") or {}
                     return (error.get("error") or {}).get("http_status") or 500, error
@@ -821,6 +832,36 @@ class Client:
             raise BridgeError(f"bridge answered {THREAD_PATH} without messages (messages={messages!r})",
                               status_code=UNCERTAIN_STATUS, payload=body)
         return body
+
+    def reconcile(self, client_msg_ids):
+        """Ask the executor what actually happened to each of these sends. -> a list of
+        {"client_msg_id", "verdict", ...} dicts, in the order asked -- verdict is one of
+        confirmed_sent/confirmed_absent/indeterminate/unknown_key (bridge/executor.py::
+        Executor.reconcile's own docstring has the exact rules; only confirmed_absent authorises a
+        resend). A key already SENT or RESENDABLE in the executor's ledger answers from that row
+        alone; anything else costs a live chat scan (TASK-230), so the budget scales with how many
+        ids are asked. Not run through ``_require_ok`` -- the dispatched result is the bare verdict
+        list itself, never wrapped in an ``{"ok": ...}`` envelope."""
+        client_msg_ids = list(client_msg_ids)
+        budget = FLOCK_WAIT_SEC + max(1, len(client_msg_ids)) * RECONCILE_PER_ID_SEC
+        status, body = self._request("POST", RECONCILE_PATH, {"client_msg_ids": client_msg_ids},
+                                     timeout=self._timeout_for(budget))
+        if status != 200:
+            raise BridgeError(f"bridge answered HTTP {status} to {RECONCILE_PATH}",
+                              status_code=status, payload=body)
+        if not isinstance(body, list):
+            raise BridgeError(f"bridge answered {RECONCILE_PATH} with {body!r}, not a list of verdicts",
+                              status_code=UNCERTAIN_STATUS, payload=body)
+        return body
+
+    def resolve_op(self, op_id):
+        """Mark one failed op resolved (TASK-230) -- the human escape hatch for a failed op that
+        minted no client_msg_id to auto-resolve against (clear_chat, delete_chat, read_thread,
+        send_photos/gallery/document -- none of these have an outbound ledger row reconcile can
+        read a verdict off). -> {"ok": True, "op_id", "resolved": True}. A plain ledger write,
+        never queued -- it does not touch the phone."""
+        path = f"{OPS_PATH}/{op_id}/resolve"
+        return self._require_ok(*self._request("POST", path), path)
 
     def broadcast_keys(self, run_id, recipients, *, attempt=1):
         """-> ``{phone: client_msg_id}`` for a run, without asking anything of the executor.

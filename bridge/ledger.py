@@ -176,7 +176,8 @@ create table if not exists phone_ops (
   error       text,
   created_at  text not null,
   started_at  text,
-  finished_at text
+  finished_at text,
+  resolved_at text
 );
 create index if not exists idx_phone_ops_state on phone_ops(state, position);
 create table if not exists audit (
@@ -288,6 +289,7 @@ class Ledger:
         self._db.execute("pragma journal_mode=wal")
         self._db.executescript(SCHEMA)
         self._migrate_media_seen()
+        self._migrate_phone_ops()
         self._db.commit()
         self._lock = threading.RLock()
 
@@ -383,6 +385,17 @@ class Ledger:
                 "update media_seen set attached_at=?, attached_inbound_id=?, attached_phone=? "
                 "where source_rel=?",
                 (link["linked_at"], link["inbound_id"], phone, candidates[0]["source_rel"]))
+
+    def _migrate_phone_ops(self):
+        """TASK-230, Ivan 2026-09-23: ``resolved_at`` on ``phone_ops`` did not exist when TASK-227
+        shipped, so the mini's live ``phone_ops`` table predates it -- same ``create table if not
+        exists`` limit ``_migrate_media_seen`` explains, same fix (an ALTER guarded by what the
+        table already has, not an inference)."""
+        self._db.execute(
+            "create table if not exists schema_migrations (name text primary key, applied_at text not null)")
+        cols = {r["name"] for r in self._db.execute("pragma table_info(phone_ops)").fetchall()}
+        if "resolved_at" not in cols:
+            self._db.execute("alter table phone_ops add column resolved_at text")
 
     def close(self):
         self._db.close()
@@ -566,6 +579,34 @@ class Ledger:
         out["args"] = json.loads(out["args"])
         out["result"] = json.loads(out["result"]) if out["result"] is not None else None
         out["error"] = json.loads(out["error"]) if out["error"] is not None else None
+        return out
+
+    # --- retention review (TASK-230, Ivan 2026-09-23): a failed op with no outbound entry to read a
+    # verdict off (clear_chat, delete_chat, read_thread, send_photos/gallery/document -- none of
+    # these mint a client_msg_id) has no automatic way to become safe to delete. This is the manual
+    # escape hatch: a human looks at the op's own debug-capture artifacts (op_id names them) and
+    # marks it resolved once satisfied nothing is owed. Idempotent -- resolving twice, or resolving
+    # an op that turned out fine on its own, is harmless.
+    def resolve_op(self, op_id, now):
+        with self._lock:
+            self._db.execute("update phone_ops set resolved_at = ? where op_id = ?",
+                             (utc(now), op_id))
+            self._db.commit()
+        self.note(now, "op_resolved", None, op_id=op_id)
+
+    def escalation_shot_index(self):
+        """-> {shot_path: client_msg_id} for every escalation shot this ledger has journalled
+        (bridge/executor.py::_escalate). The retention sweep's only way to tell which send an
+        old-style escalation shot (filename carries no op_id) belongs to, so it can read that
+        send's own outbound.state instead of guessing from the shot alone."""
+        rows = self._db.execute(
+            "select client_msg_id, detail from journal where event = 'escalation_shot'").fetchall()
+        out = {}
+        for row in rows:
+            detail = json.loads(row["detail"]) if row["detail"] else {}
+            path = detail.get("path")
+            if path:
+                out[path] = row["client_msg_id"]
         return out
 
     # --- inbound handover (GET /v1/outbox) --------------------------------------------------------

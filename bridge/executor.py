@@ -130,6 +130,10 @@ class Executor:
         # empty phone_ops queue is what a caught-up rail looks like AND what a dead dispatcher
         # looks like.
         self.ops_dispatcher = None
+        # Set by bridge/server.py::maintenance_once, every cycle (TASK-230). {"deleted", "held"}
+        # per artefact kind -- a growing "held" count across cycles is a review backlog forming,
+        # visible here instead of only in the journal.
+        self.last_retention = None
 
     # --- POST /v1/messages ---------------------------------------------------------------------
     def send(self, req):
@@ -414,6 +418,9 @@ class Executor:
         """
         try:
             shot = self.driver.escalation_shot(f"{L.thread_tag(phone)}_{reason}")
+            # TASK-230: the shot's own filename carries no client_msg_id -- this is the only trail
+            # the retention sweep has to read THIS send's outbound.state before ever deleting it.
+            self.ledger.note(self.clock(), "escalation_shot", key, path=shot)
         except D.DriverError as exc:
             shot = f"(screenshot failed: {exc})"
         self.ledger.mark_unconfirmed(
@@ -776,6 +783,7 @@ class Executor:
                     "runs_open": len(self.ledger.open_runs()),
                     "runner": self.broadcast_runner.heartbeat() if self.broadcast_runner else None},
                 "ops_dispatcher": self.ops_dispatcher.heartbeat() if self.ops_dispatcher else None,
+                "retention": self.last_retention,
                 "audit": {"destructions": self.ledger.audit_count()}}
 
 

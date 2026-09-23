@@ -1634,13 +1634,23 @@ class AdbDriver(D.PhoneDriver):
         stamp = datetime.now(self.tz).strftime("%Y%m%d_%H%M%S")
         return self.adb.screenshot(self.shots_dir / f"{stamp}_{self._shot_n:03d}_{slug}.png")
 
-    def sweep_screenshots(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+    # --- retention (TASK-230): listing is mechanical (mtime), deciding is bridge/retention.py's job
+    def list_screenshot_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
         cutoff = now.timestamp() - days * 86400
+        return [p for p in sorted(self.shots_dir.rglob("*.png")) if p.stat().st_mtime < cutoff]
+
+    def list_recording_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+        cutoff = now.timestamp() - days * 86400
+        return [p for p in sorted(self.recordings_dir.rglob("*.mp4")) if p.stat().st_mtime < cutoff]
+
+    def delete_paths(self, paths):
         removed = 0
-        for path in sorted(self.shots_dir.rglob("*.png")):
-            if path.stat().st_mtime < cutoff:
-                path.unlink()
+        for path in paths:
+            try:
+                Path(path).unlink()
                 removed += 1
+            except FileNotFoundError:
+                pass
         return removed
 
     # --- debug capture (TASK-228) ---------------------------------------------------------------
@@ -1679,15 +1689,6 @@ class AdbDriver(D.PhoneDriver):
         result = self.adb.pull(remote, str(local))
         self.adb.shell(f"rm -f {remote}")
         return str(local) if result.returncode == 0 else None
-
-    def sweep_recordings(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
-        cutoff = now.timestamp() - days * 86400
-        removed = 0
-        for path in sorted(self.recordings_dir.rglob("*.mp4")):
-            if path.stat().st_mtime < cutoff:
-                path.unlink()
-                removed += 1
-        return removed
 
     def describe(self):
         """What the drift monitor reads. Ours is our own file's hash: there is no third party left."""

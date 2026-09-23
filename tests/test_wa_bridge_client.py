@@ -536,3 +536,57 @@ def test_selecting_the_bridge_rail_does_not_require_the_rail_to_be_configured_ye
     failure belongs at send time, and tests/test_wa_transport.py asserts that import stays green."""
     assert _run("import app.wa.config", WA_TRANSPORT="bridge", WA_BRIDGE_URL="",
                 WA_BRIDGE_TOKEN="").returncode == 0
+
+
+# --- TASK-230: reconcile / resolve_op, and the _await_op falsy-result fix -------------------------
+
+def _queued(op_id):
+    return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+
+def _done(op_id, result):
+    return 200, {"ok": True, "op_id": op_id, "state": "done", "result": result}
+
+
+def test_await_op_preserves_a_falsy_but_real_result_like_an_empty_list():
+    """`body.get("result") or {}` used to silently rewrite a legitimately empty result (an empty
+    list, reconcile([])'s own answer) into {} -- a type change no caller expects. Only an
+    ACTUALLY missing result (None) may fall back to {}."""
+    op_id = "op." + "1" * 24
+    cl, _fake = build(_queued(op_id), _done(op_id, []))
+    assert cl._request("POST", BR.RECONCILE_PATH, {"client_msg_ids": []}) == (200, [])
+
+
+def test_await_op_still_defaults_a_genuinely_missing_result_to_an_empty_dict():
+    op_id = "op." + "2" * 24
+    cl, _fake = build(_queued(op_id), (200, {"ok": True, "op_id": op_id, "state": "done"}))
+    assert cl._request("GET", "/v1/chats") == (200, {})
+
+
+def test_reconcile_returns_the_bare_verdict_list_in_order():
+    op_id = "op." + "3" * 24
+    verdicts = [{"client_msg_id": "wab.o.x", "verdict": "confirmed_sent"},
+               {"client_msg_id": "wab.o.y", "verdict": "indeterminate"}]
+    cl, fake = build(_queued(op_id), _done(op_id, verdicts))
+    out = cl.reconcile(["wab.o.x", "wab.o.y"])
+    assert out == verdicts
+    assert fake.calls[0]["body"] == {"client_msg_ids": ["wab.o.x", "wab.o.y"]}
+    assert fake.calls[0]["url"].endswith(BR.RECONCILE_PATH)
+
+
+def test_reconcile_raises_when_the_bridge_answers_something_that_is_not_a_list():
+    cl, _fake = build((200, {"ok": True, "state": "sent"}))
+    with pytest.raises(BR.BridgeError, match="not a list of verdicts"):
+        cl.reconcile(["wab.o.x"])
+
+
+def test_resolve_op_posts_to_the_ops_resolve_path_and_is_never_queued():
+    """resolve_op is a plain ledger write on the executor side -- it answers directly, so this is
+    one call, not an enqueue-then-poll pair."""
+    op_id = "op." + "4" * 24
+    cl, fake = build((200, {"ok": True, "op_id": op_id, "resolved": True}))
+    out = cl.resolve_op(op_id)
+    assert out == {"ok": True, "op_id": op_id, "resolved": True}
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["url"].endswith(f"{BR.OPS_PATH}/{op_id}/resolve")
+    assert fake.calls[0]["method"] == "POST"

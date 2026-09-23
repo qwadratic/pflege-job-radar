@@ -15,6 +15,8 @@ Usage:
     python tools/wa_bridge.py audit [--title "Name"] [--limit N] [--json]
     python tools/wa_bridge.py media-list [--json]
     python tools/wa_bridge.py media-attach --id wab.q.xxxxxxxxxxxxxxxxxxxx --phone +49...
+    python tools/wa_bridge.py reconcile --keys wab.o.xxx,wab.o.yyy [--json]
+    python tools/wa_bridge.py ops-resolve --id op.xxxxxxxxxxxxxxxxxxxxxxxx [--json]
 
 Load .env first (set -a; . ./.env; set +a): WA_BRIDGE_URL, WA_BRIDGE_TOKEN, WA_AUTOSEND.
 
@@ -671,6 +673,38 @@ def cmd_media_attach(args, client):
     return EXIT_OK
 
 
+def cmd_reconcile(args, client):
+    """Ask the executor what actually happened to sends still sitting UNCONFIRMED/ATTEMPTING in
+    its ledger (TASK-230) -- the step that lets a failed send's own retention (bridge/retention.py)
+    ever leave 'held' on its own, without a human resolving anything by hand. Only confirmed_absent
+    authorises a resend; nothing here resends by itself."""
+    keys = [k.strip() for k in args.keys.split(",") if k.strip()]
+    if not keys:
+        print("--keys names at least one client_msg_id")
+        return EXIT_CONFIG
+    results = client.reconcile(keys)
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    for r in results:
+        print(f"  {r.get('client_msg_id')}  {r.get('verdict')}  {r.get('evidence', '')}")
+    return EXIT_OK
+
+
+def cmd_ops_resolve(args, client):
+    """Mark one failed phone op reviewed and safe to delete (TASK-230) -- the escape hatch for a
+    failure that minted no client_msg_id (clear_chat, delete_chat, read_thread,
+    send_photos/gallery/document), so reconcile has nothing to read a verdict off. Look at the
+    op's own artefacts first (WA_BRIDGE_STATE/shots/{op_id}_*.png, recordings/{op_id}.mp4) --
+    this command only records that a human already did."""
+    report = client.resolve_op(args.id)
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    print(f"resolved {report['op_id']}")
+    return EXIT_OK
+
+
 def cmd_clear_chat(args, client):
     return _destroy(args, client, "clear")
 
@@ -720,6 +754,19 @@ def build_parser():
                                                               "local spelling")
     media_attach.add_argument("--json", action="store_true")
     media_attach.set_defaults(fn=cmd_media_attach)
+
+    reconcile = sub.add_parser("reconcile", help="ask the executor what happened to sends still "
+                                                 "unconfirmed in its ledger (TASK-230)")
+    reconcile.add_argument("--keys", required=True, help="comma-separated client_msg_ids")
+    reconcile.add_argument("--json", action="store_true")
+    reconcile.set_defaults(fn=cmd_reconcile)
+
+    ops_resolve = sub.add_parser("ops-resolve", help="mark one failed phone op reviewed and safe "
+                                                      "to delete (TASK-230)")
+    ops_resolve.add_argument("--id", required=True, help="the op_id, from a phone_ops row or its "
+                                                          "artefact filenames")
+    ops_resolve.add_argument("--json", action="store_true")
+    ops_resolve.set_defaults(fn=cmd_ops_resolve)
 
     read = chat_target(sub.add_parser("read", help="read one thread (read-only)"))
     read.add_argument("--no-text", action="store_true", help="counts, clocks and ticks without the message bodies")

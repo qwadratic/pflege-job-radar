@@ -895,3 +895,68 @@ def test_media_attach_needs_both_id_and_phone():
     with pytest.raises(SystemExit) as caught:
         run(["media-attach", "--id", "wab.q.aaaa"])
     assert caught.value.code == 2
+
+
+# --- TASK-230: reconcile / ops-resolve --------------------------------------------------------
+
+def test_reconcile_prints_each_keys_verdict(capsys):
+    verdicts = [{"client_msg_id": "wab.o.x", "verdict": "confirmed_sent",
+                "evidence": "ledger: delivery tick read at send time"}]
+    code, fake = run(["reconcile", "--keys", "wab.o.x"], **{"v1_reconcile": (200, verdicts)})
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "wab.o.x" in out and "confirmed_sent" in out
+    assert fake.calls[0]["body"] == {"client_msg_ids": ["wab.o.x"]}
+
+
+def test_reconcile_json_passes_the_verdict_list_through(capsys):
+    verdicts = [{"client_msg_id": "wab.o.x", "verdict": "indeterminate"}]
+    code, _fake = run(["reconcile", "--keys", "wab.o.x", "--json"],
+                      **{"v1_reconcile": (200, verdicts)})
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == verdicts
+
+
+def test_reconcile_splits_and_trims_comma_separated_keys(capsys):
+    code, fake = run(["reconcile", "--keys", " wab.o.x , wab.o.y "],
+                     **{"v1_reconcile": (200, [])})
+    assert code == 0
+    assert fake.calls[0]["body"] == {"client_msg_ids": ["wab.o.x", "wab.o.y"]}
+
+
+def test_reconcile_needs_at_least_one_key():
+    code, fake = run(["reconcile", "--keys", " , "])
+    assert code == CLI.EXIT_CONFIG
+    assert fake.calls == []
+
+
+def test_ops_resolve_prints_confirmation(capsys):
+    op_id = "op." + "5" * 24
+    fake = FakeBridge()
+    fake.answers[f"/v1/ops/{op_id}/resolve"] = (200, {"ok": True, "op_id": op_id, "resolved": True})
+    client = BR.Client(transport=fake, base_url=BASE, token="tok")
+    code = CLI.main(["ops-resolve", "--id", op_id], client=client)
+    assert code == 0
+    assert f"resolved {op_id}" in capsys.readouterr().out
+    assert fake.calls[0]["method"] == "POST"
+
+
+def test_ops_resolve_json_passes_the_report_through(capsys):
+    op_id = "op." + "6" * 24
+    fake = FakeBridge()
+    fake.answers[f"/v1/ops/{op_id}/resolve"] = (200, {"ok": True, "op_id": op_id, "resolved": True})
+    client = BR.Client(transport=fake, base_url=BASE, token="tok")
+    code = CLI.main(["ops-resolve", "--id", op_id, "--json"], client=client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "op_id": op_id, "resolved": True}
+
+
+def test_ops_resolve_an_unknown_op_id_is_a_refusal(capsys):
+    op_id = "op." + "7" * 24
+    fake = FakeBridge()
+    fake.answers[f"/v1/ops/{op_id}/resolve"] = BR.BridgeError(
+        f"no such op {op_id!r}", status_code=404, code="op_not_found")
+    client = BR.Client(transport=fake, base_url=BASE, token="tok")
+    code = CLI.main(["ops-resolve", "--id", op_id], client=client)
+    assert code == 1
+    assert "op_not_found" in capsys.readouterr().err

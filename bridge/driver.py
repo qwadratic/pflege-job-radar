@@ -40,8 +40,9 @@ LOCK_TIMEOUT_SEC = 30.0
 TICK_WAIT_SEC = 30.0
 #: TASK-130 AC#9: escalation screenshots are kept for 7 days. Raised to 14 for TASK-228 (Ivan,
 #: 2026-09-23) once this same sweep started also covering the debug-capture screenshots below;
-#: bridge/adb_driver.py::AdbDriver.sweep_recordings shares this constant rather than its own,
-#: same later note.
+#: bridge/adb_driver.py::AdbDriver.list_recording_candidates shares this constant rather than its
+#: own, same later note. TASK-230: age past this is necessary but no longer sufficient on its own
+#: -- see bridge/retention.py for what else has to be true before either kind is deleted.
 SCREENSHOT_RETENTION_DAYS = 14
 #: Ivan's own cap, 2026-09-22 (VOLUME-style -- a candidate never gets a wall of anything): the
 #: most photos one send_photos() call attaches at once. Shared by every PhoneDriver implementation
@@ -229,8 +230,24 @@ class PhoneDriver:
         """-> path of one screenshot, taken only when a send could not be confirmed."""
         raise NotImplementedError
 
-    def sweep_screenshots(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
-        """-> how many escalation screenshots the retention sweep removed (TASK-130 AC#9)."""
+    # --- retention (TASK-230, Ivan 2026-09-23): listing what is old enough is mechanical and
+    # belongs here; DECIDING what is safe to delete needs the ledger (bridge/retention.py), so the
+    # driver only ever lists candidates and deletes exactly the paths it is given -- it never
+    # deletes on its own say-so. This replaced the old combined sweep_screenshots/sweep_recordings
+    # (TASK-130/TASK-228), which decided AND deleted in one call and had no way to hold anything
+    # back for review.
+    def list_screenshot_candidates(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        """-> [Path] of every screenshot (escalation or debug-capture) older than ``days``, oldest
+        first. Read-only -- lists candidates, deletes nothing."""
+        raise NotImplementedError
+
+    def list_recording_candidates(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        """-> [Path] of every pulled recording older than ``days``, oldest first."""
+        raise NotImplementedError
+
+    def delete_paths(self, paths):
+        """Delete exactly the given paths (already decided safe by the caller). -> how many were
+        actually removed; a path already gone is not an error."""
         raise NotImplementedError
 
     # --- debug capture (TASK-228) ---------------------------------------------------------------
@@ -249,10 +266,6 @@ class PhoneDriver:
     def stop_recording(self, op_id):
         """-> path of the pulled recording, or None if none was running for ``op_id`` or the pull
         failed."""
-        raise NotImplementedError
-
-    def sweep_recordings(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
-        """-> how many recordings the retention sweep removed."""
         raise NotImplementedError
 
     def describe(self):
@@ -312,6 +325,12 @@ class FakeDriver(PhoneDriver):
         self.recording_started = []  # op_ids start_recording was called for, in call order
         self.recording_stopped = []  # op_ids stop_recording was called for, in call order
         self.fail_recording = False  # stop_recording returns None instead of a path
+        # --- retention (TASK-230) ---------------------------------------------------------------
+        # A test scripts what "old enough" looks like directly, the same way open_thread/inbound
+        # are scripted lists rather than derived from a fake clock and fake mtimes.
+        self.screenshot_candidates = []   # [Path], what list_screenshot_candidates() hands back
+        self.recording_candidates = []    # [Path], what list_recording_candidates() hands back
+        self.deleted_paths = []           # every path delete_paths() was asked to remove, in order
         self.busy = False         # the other lane holds huawei01.lock
         self.fail_on_open = None
         self.fail_on_send = None
@@ -566,8 +585,16 @@ class FakeDriver(PhoneDriver):
         self.shots.append(tag)
         return f"/fake/shots/{tag}.png"
 
-    def sweep_screenshots(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
-        return 0
+    def list_screenshot_candidates(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        return list(self.screenshot_candidates)
+
+    def list_recording_candidates(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        return list(self.recording_candidates)
+
+    def delete_paths(self, paths):
+        paths = list(paths)
+        self.deleted_paths.extend(paths)
+        return len(paths)
 
     def debug_shot(self, op_id, tag):
         if self.fail_debug_shot == tag:
@@ -581,9 +608,6 @@ class FakeDriver(PhoneDriver):
     def stop_recording(self, op_id):
         self.recording_stopped.append(op_id)
         return None if self.fail_recording else f"/fake/recordings/{op_id}.mp4"
-
-    def sweep_recordings(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
-        return 0
 
     def describe(self):
         return {"kind": "fake", "serial": None, "modules": {}}

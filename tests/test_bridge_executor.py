@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -1179,6 +1180,19 @@ def test_retention_sweeps_ship_with_the_first_commit(rig):
     assert swept["ledger"]["outbound"] == 1 and swept["ledger"]["journal"] >= 1
 
 
+def test_maintenance_once_reviews_before_sweeping_and_surfaces_the_result_in_health(rig):
+    """TASK-230: maintenance no longer deletes screenshots/recordings by age alone -- an artefact
+    for an op this ledger has never heard of is held, and the held count is visible in /v1/health
+    without reading the journal by hand."""
+    unknown_shot = Path("/shots/op." + "1" * 24 + "_00_pre.png")
+    rig.driver.screenshot_candidates = [unknown_shot]
+    swept = S.maintenance_once(rig.executor, now=rig.clock.now)
+    assert swept["screenshots"] == {"deleted": 0, "held": 1}
+    assert rig.driver.deleted_paths == []
+    assert rig.executor.health()["retention"] == {"screenshots": {"deleted": 0, "held": 1},
+                                                   "recordings": {"deleted": 0, "held": 0}}
+
+
 # --- the HTTP surface -------------------------------------------------------------------------------------
 @pytest.fixture
 def http(tmp_path):
@@ -1247,8 +1261,10 @@ def test_the_four_routes_answer_on_loopback(http):
         "trace": {"action": "reply"}})
     assert (status, body["state"]) == (200, "sent")
     assert call(base, "/v1/outbox")[1]["events"] == []
-    assert call(base, "/v1/reconcile", payload={"client_msg_ids": [KEY]})[1]["results"][0][
-        "verdict"] == "confirmed_sent"
+    # TASK-230: reconcile now goes through the ops queue like every other phone-touching route, so
+    # its result is the bare verdict list mark_op_done stored, not the old {"ok", "results"} wrapper.
+    assert call(base, "/v1/reconcile", payload={"client_msg_ids": [KEY]})[1][0]["verdict"] == \
+        "confirmed_sent"
     assert call(base, "/v1/nope", payload={})[0] == 400
 
 
@@ -1493,6 +1509,43 @@ def test_debug_capture_failure_is_logged_and_never_fails_the_op(rig):
     assert status["state"] == "done"
     assert rig.driver.sent == ["eins"]
     assert journal(rig, "debug_capture_failed") != []
+
+
+# --- TASK-230: retention review, over the wire -------------------------------------------------------
+def test_ops_resolve_marks_a_failed_op_resolved_over_the_wire(http):
+    rig, base = http
+    oid = "op." + "2" * 24
+    rig.ledger.enqueue_op(oid, "clear_chat", {}, rig.clock.now)
+    rig.ledger.mark_op_failed(oid, {"ok": False, "error": {"code": "x"}}, rig.clock.now)
+    status, body = call(base, f"/v1/ops/{oid}/resolve", payload={})
+    assert (status, body["resolved"]) == (200, True)
+    assert rig.ledger.op_status(oid)["resolved_at"] is not None
+
+
+def test_ops_resolve_on_an_unknown_op_id_is_a_404(http):
+    _rig, base = http
+    status, _body = call(base, "/v1/ops/" + "op." + "9" * 24 + "/resolve", payload={})
+    assert status == 404
+
+
+def test_reconcile_goes_through_the_ops_queue_and_answers_a_bare_verdict_list(http):
+    """TASK-230: reconcile used to call straight through (a documented TASK-227 gap); it is now
+    queued like every other phone-touching route, and its result is the bare list
+    Executor.reconcile returns -- never wrapped in the old {"ok", "results"} envelope."""
+    rig, base = http
+    call(base, "/v1/messages", payload={"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                        "body": "hi", "trace": {"action": "reply"}})
+    status, body = call(base, "/v1/reconcile", payload={"client_msg_ids": [KEY]})
+    assert status == 200
+    assert isinstance(body, list) and body[0]["verdict"] == "confirmed_sent"
+
+
+def test_reconcile_with_no_keys_answers_an_empty_list_not_an_empty_dict(http):
+    """The _await_op ``or {}`` bug this task fixed (app/wa/bridge.py): an empty list is a
+    legitimate, falsy result and must survive the unwrap as a list."""
+    _rig, base = http
+    status, body = call(base, "/v1/reconcile", payload={"client_msg_ids": []})
+    assert (status, body) == (200, [])
 
 
 # --- the identity watcher (TASK-131 round 6) --------------------------------------------------------

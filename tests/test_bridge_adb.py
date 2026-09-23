@@ -1289,7 +1289,21 @@ def test_stop_recording_returns_none_when_the_pull_fails(tmp_path):
     assert driver.stop_recording("op.abc123") is None
 
 
-def test_sweep_recordings_removes_only_what_is_past_retention(tmp_path):
+def test_list_screenshot_candidates_names_only_what_is_past_retention(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    (tmp_path / "shots").mkdir()
+    old = tmp_path / "shots" / "op.old_00_pre.png"
+    fresh = tmp_path / "shots" / "op.fresh_00_pre.png"
+    old.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    old_mtime = time.time() - 20 * 86400
+    os.utime(old, (old_mtime, old_mtime))
+    candidates = driver.list_screenshot_candidates(datetime.now(timezone.utc), days=14)
+    assert candidates == [old]
+    assert old.exists() and fresh.exists()
+
+
+def test_list_recording_candidates_names_only_what_is_past_retention(tmp_path):
     driver, adb = build_capture(tmp_path)
     (tmp_path / "recordings").mkdir()
     old = tmp_path / "recordings" / "op.old.mp4"
@@ -1298,6 +1312,19 @@ def test_sweep_recordings_removes_only_what_is_past_retention(tmp_path):
     fresh.write_bytes(b"x")
     old_mtime = time.time() - 20 * 86400
     os.utime(old, (old_mtime, old_mtime))
-    removed = driver.sweep_recordings(datetime.now(timezone.utc), days=14)
+    candidates = driver.list_recording_candidates(datetime.now(timezone.utc), days=14)
+    assert candidates == [old], "listing only names candidates -- nothing is deleted yet"
+    assert old.exists() and fresh.exists()
+
+
+def test_delete_paths_removes_exactly_what_it_is_given_and_tolerates_a_missing_file(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    (tmp_path / "recordings").mkdir()
+    a = tmp_path / "recordings" / "op.a.mp4"
+    b = tmp_path / "recordings" / "op.b.mp4"
+    a.write_bytes(b"x")
+    b.write_bytes(b"x")
+    gone = tmp_path / "recordings" / "op.gone.mp4"   # never created -- already-swept-elsewhere case
+    removed = driver.delete_paths([a, gone])
     assert removed == 1
-    assert not old.exists() and fresh.exists()
+    assert not a.exists() and b.exists()
