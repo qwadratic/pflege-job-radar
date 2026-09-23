@@ -43,6 +43,7 @@ ORDER OF OPERATIONS IN ``send``, and every step of it is load-bearing:
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import time
 from contextlib import ExitStack
@@ -211,6 +212,146 @@ class Executor:
                 self.ledger.note(self.clock(), "park_failed", key, error=str(exc))
 
         return _sent_response(entry, self.rail_number, grant)
+
+    # --- POST /v1/photos (TASK-131 round 7, Ivan 2026-09-22): outbound media -----------------------
+    def send_photos(self, phone, local_paths):
+        """Share up to D.MAX_PHOTOS_PER_SEND local image files into the thread for ``phone``. ->
+        [{"clock", "tick"}, ...], one per photo, in order.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (said plainly, not papered over): unlike send(),
+        this has no ledger idempotency (no client_msg_id, no replay/mismatch handling -- a retried
+        call sends the photos again, full stop), no governor pacing check, and no inbound piggyback
+        read. It exists to prove the drive-a-real-send-of-a-real-photo mechanism works at all
+        (Ivan, 2026-09-22: 'реализуй и протестируй... возможность прикреплять до пяти фотографий'),
+        on one number, by hand. Wiring this into Luna's own automatic sends needs all three of
+        those before it ever reaches a real candidate -- tracked, not silently skipped.
+        """
+        if not local_paths:
+            raise E.invalid_request("local_paths must be a non-empty list")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise E.invalid_request(f"{len(local_paths)} photos requested, this rail sends at "
+                                    f"most {D.MAX_PHOTOS_PER_SEND} at once")
+        missing = [p for p in local_paths if not os.path.exists(p)]
+        if missing:
+            # Checked here, before the phone is ever touched, so a bad path is a 400 (nothing
+            # attempted) and not a 504 (send_unconfirmed already tells the caller "the handset WAS
+            # touched" -- claiming that over a file that was never pushed is the same false
+            # positive TASK-130 exists to refuse). AdbDriver.send_photo keeps its own check too, for
+            # a direct driver caller that skips this method.
+            raise E.invalid_request(f"{len(missing)} of {len(local_paths)} file(s) do not exist on "
+                                    f"this machine -- nothing was sent: {missing!r}")
+        now = self.clock()
+        with ExitStack() as phone_held:
+            self.take_phone(phone_held, phone)
+            try:
+                self.driver.open_chat(phone)
+            except D.DriverError as exc:
+                raise E.not_on_whatsapp(f"chat did not open; driver message: {exc}",
+                                        thread=L.thread_tag(phone)) from exc
+            results = []
+            try:
+                for path in local_paths:
+                    clock, tick = self.driver.send_photo(phone, path)
+                    results.append({"clock": clock, "tick": tick})
+                    self.ledger.note(self.clock(), "photo_sent", None,
+                                     thread=L.thread_tag(phone), file=os.path.basename(path),
+                                     tick=tick)
+            except D.DriverError as exc:
+                self.ledger.note(self.clock(), "photo_send_failed", None,
+                                 thread=L.thread_tag(phone), sent_so_far=len(results), error=str(exc))
+                raise E.send_unconfirmed(
+                    f"sent {len(results)}/{len(local_paths)} photos, then: {exc}",
+                    thread=L.thread_tag(phone)) from exc
+            finally:
+                try:
+                    self.driver.park()
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
+        return {"ok": True, "at": L.utc(now), "sent": results}
+
+    # --- POST /v1/gallery (TASK-131 round 7 gallery redesign, Ivan 2026-09-22): one message,
+    # several photos, a shared caption -------------------------------------------------------------
+    def send_gallery(self, phone, local_paths, caption=""):
+        """Share up to D.MAX_PHOTOS_PER_SEND local image files as ONE WhatsApp message. ->
+        {"clock", "tick"} the newest outgoing bubble reads after sending.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (same caveat as send_photos, said plainly again
+        rather than assumed carried over): no ledger idempotency, no governor pacing check, no
+        inbound piggyback read. Ivan, 2026-09-22, mid-test of send_photos: 'Если вы сейчас фотки
+        отправляют по одной, а мы можем отправить галерейкой плюс текстовое сообщение, все это
+        одно сообщение' -- one message reads as one moment to a candidate, five bubbles do not.
+        """
+        if not local_paths:
+            raise E.invalid_request("local_paths must be a non-empty list")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise E.invalid_request(f"{len(local_paths)} photos requested, this rail sends at "
+                                    f"most {D.MAX_PHOTOS_PER_SEND} at once")
+        missing = [p for p in local_paths if not os.path.exists(p)]
+        if missing:
+            raise E.invalid_request(f"{len(missing)} of {len(local_paths)} file(s) do not exist on "
+                                    f"this machine -- nothing was sent: {missing!r}")
+        now = self.clock()
+        with ExitStack() as phone_held:
+            self.take_phone(phone_held, phone)
+            try:
+                self.driver.open_chat(phone)
+            except D.DriverError as exc:
+                raise E.not_on_whatsapp(f"chat did not open; driver message: {exc}",
+                                        thread=L.thread_tag(phone)) from exc
+            try:
+                clock, tick = self.driver.send_gallery(phone, local_paths, caption=caption)
+                self.ledger.note(self.clock(), "gallery_sent", None, thread=L.thread_tag(phone),
+                                 files=[os.path.basename(p) for p in local_paths], tick=tick)
+            except D.DriverError as exc:
+                self.ledger.note(self.clock(), "gallery_send_failed", None,
+                                 thread=L.thread_tag(phone), error=str(exc))
+                raise E.send_unconfirmed(f"gallery send did not confirm: {exc}",
+                                         thread=L.thread_tag(phone)) from exc
+            finally:
+                try:
+                    self.driver.park()
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
+        return {"ok": True, "at": L.utc(now), "clock": clock, "tick": tick}
+
+    # --- POST /v1/document (TASK-131 round 7, Ivan 2026-09-23: files, not photos alone) ---------
+    def send_document(self, phone, local_path, caption=""):
+        """Share ONE local file, any type, as WhatsApp's own document attachment. -> {"clock",
+        "tick"} the newest outgoing bubble reads after sending.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (send_gallery's own caveat, said again rather than
+        assumed carried over): no ledger idempotency, no governor pacing check. Ivan, 2026-09-23:
+        'в будущем будет задача с тем, что мы будем предлагать людям их резюме обновлять...
+        поэтому файлы тоже мы должны уметь прикреплять' -- a future resume-update flow needs this.
+        """
+        if not local_path:
+            raise E.invalid_request("local_path is required")
+        if not os.path.exists(local_path):
+            raise E.invalid_request(f"{local_path} does not exist on this machine -- nothing "
+                                    f"was sent")
+        now = self.clock()
+        with ExitStack() as phone_held:
+            self.take_phone(phone_held, phone)
+            try:
+                self.driver.open_chat(phone)
+            except D.DriverError as exc:
+                raise E.not_on_whatsapp(f"chat did not open; driver message: {exc}",
+                                        thread=L.thread_tag(phone)) from exc
+            try:
+                clock, tick = self.driver.send_document(phone, local_path, caption=caption)
+                self.ledger.note(self.clock(), "document_sent", None, thread=L.thread_tag(phone),
+                                 file=os.path.basename(local_path), tick=tick)
+            except D.DriverError as exc:
+                self.ledger.note(self.clock(), "document_send_failed", None,
+                                 thread=L.thread_tag(phone), error=str(exc))
+                raise E.send_unconfirmed(f"document send did not confirm: {exc}",
+                                         thread=L.thread_tag(phone)) from exc
+            finally:
+                try:
+                    self.driver.park()
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
+        return {"ok": True, "at": L.utc(now), "clock": clock, "tick": tick}
 
     def take_phone(self, stack, phone, **kw):
         """Take huawei01.lock, or refuse with 503 ``device_unavailable`` (TASK-146).

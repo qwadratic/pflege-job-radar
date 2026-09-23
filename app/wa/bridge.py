@@ -93,6 +93,9 @@ AUDIT_PATH = "/v1/audit"
 # to a phone by hand, through the exact path an automatic link takes.
 MEDIA_LIST_PATH = "/v1/media"
 MEDIA_ATTACH_PATH = "/v1/media/attach"
+PHOTOS_PATH = "/v1/photos"
+GALLERY_PATH = "/v1/gallery"
+DOCUMENT_PATH = "/v1/document"
 
 # The executor's four per-item statuses (``bridge/broadcast.py``): ``sent`` is a verified tick or a
 # ledger replay of one, ``queued`` is not attempted yet or deferred to ``next_attempt_at``,
@@ -554,6 +557,84 @@ class Client:
                               status_code=CONTRACT_STATUS)
         numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(titles, start=1))
         return self.send_text(to_e164, f"{body}\n\n{numbered}")
+
+    def send_photos(self, to_e164, local_paths):
+        """Attach up to ``bridge.driver.MAX_PHOTOS_PER_SEND`` local image files to the thread for
+        ``to_e164`` (TASK-131 round 7, outbound media; Ivan, 2026-09-22).
+
+        ``local_paths`` names files already sitting on the MINI's own filesystem, not this
+        machine's -- there is no upload step in this route, the same way ``media_url``/
+        ``download_media`` is a two-step read rather than one that carries bytes over this call.
+        An operator (or a caller with filesystem access to the mini) puts the files there first.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (said plainly here too, matching the executor's own
+        docstring): no idempotency key, so calling this twice sends the photos twice; no governor
+        pacing check either. Built and tested by hand, on one number, before wiring photos into
+        Luna's own automatic sends -- that wiring needs both of those first.
+
+        -> {"ok", "at", "sent": [{"clock", "tick"}, ...]}, one entry per photo, in order.
+        """
+        phone = BI.require_e164(to_e164)
+        if not local_paths:
+            raise BridgeError(f"send_photos to {phone} carries no files", status_code=CONTRACT_STATUS)
+        status, body = self._request("POST", PHOTOS_PATH,
+                                     {"phone": phone, "local_paths": list(local_paths)})
+        if status != 200:
+            raise BridgeError(f"send_photos to {phone}: bridge HTTP {status}", status_code=status,
+                              payload=body)
+        return body
+
+    def send_gallery(self, to_e164, local_paths, caption=""):
+        """Attach up to ``bridge.driver.MAX_PHOTOS_PER_SEND`` local image files to the thread for
+        ``to_e164`` as ONE WhatsApp message -- a photo album with a single shared caption -- via
+        the mini's gallery-picker automation (TASK-131 round 7 gallery redesign; Ivan, 2026-09-22:
+        'галерейкой плюс текстовое сообщение, все это одно сообщение').
+
+        Same two-step-read shape as send_photos: ``local_paths`` names files already on the
+        mini's own filesystem, nothing is uploaded over this call.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (send_photos' own caveat, unchanged here): no
+        idempotency key, no governor pacing check. Built and tested by hand, on one number, before
+        wiring a gallery send into Luna's own automatic sends.
+
+        -> {"ok", "at", "clock", "tick"}.
+        """
+        phone = BI.require_e164(to_e164)
+        if not local_paths:
+            raise BridgeError(f"send_gallery to {phone} carries no files", status_code=CONTRACT_STATUS)
+        payload = {"phone": phone, "local_paths": list(local_paths)}
+        if caption:
+            payload["caption"] = caption
+        status, body = self._request("POST", GALLERY_PATH, payload)
+        if status != 200:
+            raise BridgeError(f"send_gallery to {phone}: bridge HTTP {status}", status_code=status,
+                              payload=body)
+        return body
+
+    def send_document(self, to_e164, local_path, caption=""):
+        """Attach ONE local file, any type, to the thread for ``to_e164`` as WhatsApp's own
+        document attachment (TASK-131 round 7; Ivan, 2026-09-23: a future resume-update flow needs
+        files, not photos alone).
+
+        Same two-step-read shape as send_photos/send_gallery: ``local_path`` names a file already
+        on the mini's own filesystem, nothing is uploaded over this call.
+
+        MECHANISM PROOF, NOT PRODUCTION-READY (send_gallery's own caveat, unchanged here): no
+        idempotency key, no governor pacing check.
+
+        -> {"ok", "at", "clock", "tick"}.
+        """
+        phone = BI.require_e164(to_e164)
+        if not local_path:
+            raise BridgeError(f"send_document to {phone} carries no file", status_code=CONTRACT_STATUS)
+        payload = {"phone": phone, "local_path": local_path}
+        if caption:
+            payload["caption"] = caption
+        status, body = self._request("POST", DOCUMENT_PATH, payload)
+        if status != 200:
+            raise BridgeError(f"send_document to {phone}: bridge HTTP {status}", status_code=status,
+                              payload=body)
+        return body
 
     def send_template(self, to_e164, template_name=None, language=None, params=None, *, definition=None):
         """A campaign message on this rail is plain text: a consumer number has no Meta template

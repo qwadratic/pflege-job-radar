@@ -40,6 +40,10 @@ LOCK_TIMEOUT_SEC = 30.0
 TICK_WAIT_SEC = 30.0
 #: TASK-130 AC#9: escalation screenshots are kept for 7 days.
 SCREENSHOT_RETENTION_DAYS = 7
+#: Ivan's own cap, 2026-09-22 (VOLUME-style -- a candidate never gets a wall of anything): the
+#: most photos one send_photos() call attaches at once. Shared by every PhoneDriver implementation
+#: (bridge/adb_driver.py's own copy would drift from this one otherwise).
+MAX_PHOTOS_PER_SEND = 5
 
 
 class DriverError(RuntimeError):
@@ -114,6 +118,31 @@ class PhoneDriver:
 
     def send_bubble(self, text):
         """-> BubbleView read back off the thread. Keys MAY have been pressed if this raises."""
+        raise NotImplementedError
+
+    def send_photo(self, phone, local_path):
+        """Share one local image file into the thread for ``phone`` (TASK-131 round 7, outbound
+        media). -> (clock, tick) the newest outgoing bubble reads after sending. Same contract as
+        send_bubble: requires an already-open, already-verified thread for ``phone``."""
+        raise NotImplementedError
+
+    def send_photos(self, phone, local_paths):
+        """send_photo, once per path, in order. -> [(clock, tick), ...]. Raises at the first
+        failure rather than sending the rest silently."""
+        raise NotImplementedError
+
+    def send_gallery(self, phone, local_paths, caption=""):
+        """Share up to MAX_PHOTOS_PER_SEND local image files as ONE message -- a photo album with
+        a single shared caption -- via WhatsApp's own in-chat gallery picker (TASK-131 round 7
+        gallery redesign). -> (clock, tick) the newest outgoing bubble reads after sending. Same
+        contract as send_photo: requires an already-open, already-verified thread for ``phone``."""
+        raise NotImplementedError
+
+    def send_document(self, phone, local_path, caption=""):
+        """Share ONE local file, any type, as WhatsApp's own document attachment (TASK-131 round 7,
+        Ivan 2026-09-23: a future resume-update flow needs files, not photos alone). -> (clock,
+        tick) the newest outgoing bubble reads after sending. Same contract as send_photo: requires
+        an already-open, already-verified thread for ``phone``."""
         raise NotImplementedError
 
     def read_bubbles(self):
@@ -226,6 +255,15 @@ class FakeDriver(PhoneDriver):
         self.pulled_media = []     # rel paths this driver was asked to pull, in call order
         self.fail_pull = None      # a rel path that raises when pulled, or None
         self.sent = []            # bodies that reached the phone -- the "did it send" assertion
+        # --- outbound media: photos (TASK-131 round 7) ------------------------------------------
+        self.sent_photos = []     # (phone, local_path) pairs that reached the phone
+        self.fail_on_send_photo = None
+        # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign) -------------
+        self.sent_galleries = []  # (phone, local_paths, caption) tuples that reached the phone
+        self.fail_on_send_gallery = None
+        # --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23) --------------------
+        self.sent_documents = []  # (phone, local_path, caption) tuples that reached the phone
+        self.fail_on_send_document = None
         self.opened = []
         self.lock_events = []
         self.lock_held = False
@@ -298,6 +336,64 @@ class FakeDriver(PhoneDriver):
         bubble = BubbleView("out", text, "09:15", tick)
         self._bubbles().append(bubble)
         return bubble
+
+    def send_photo(self, phone, local_path):
+        if not self.lock_held:
+            raise AssertionError("send_photo outside the lock")
+        if self._open_phone != phone:
+            raise DriverError("send_photo without a verified open chat for this phone")
+        if self.hook is not None:
+            self.hook(self)
+        if self.fail_on_send_photo:
+            self.sent_photos.append((phone, local_path))
+            raise DriverError(self.fail_on_send_photo)
+        self.sent_photos.append((phone, local_path))
+        tick = self.ticks.pop(0) if self.ticks else "Gesendet"
+        self._bubbles().append(BubbleView("out", "", "09:15", tick))
+        return ("09:15", tick)
+
+    def send_photos(self, phone, local_paths):
+        if not local_paths:
+            raise DriverError("send_photos called with no files")
+        if len(local_paths) > MAX_PHOTOS_PER_SEND:
+            raise DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                              f"{MAX_PHOTOS_PER_SEND} at once")
+        return [self.send_photo(phone, p) for p in local_paths]
+
+    def send_gallery(self, phone, local_paths, caption=""):
+        if not self.lock_held:
+            raise AssertionError("send_gallery outside the lock")
+        if self._open_phone != phone:
+            raise DriverError("send_gallery without a verified open chat for this phone")
+        if not local_paths:
+            raise DriverError("send_gallery called with no files")
+        if len(local_paths) > MAX_PHOTOS_PER_SEND:
+            raise DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                              f"{MAX_PHOTOS_PER_SEND} at once")
+        if self.hook is not None:
+            self.hook(self)
+        if self.fail_on_send_gallery:
+            self.sent_galleries.append((phone, local_paths, caption))
+            raise DriverError(self.fail_on_send_gallery)
+        self.sent_galleries.append((phone, local_paths, caption))
+        tick = self.ticks.pop(0) if self.ticks else "Gesendet"
+        self._bubbles().append(BubbleView("out", caption, "09:15", tick))
+        return ("09:15", tick)
+
+    def send_document(self, phone, local_path, caption=""):
+        if not self.lock_held:
+            raise AssertionError("send_document outside the lock")
+        if self._open_phone != phone:
+            raise DriverError("send_document without a verified open chat for this phone")
+        if self.hook is not None:
+            self.hook(self)
+        if self.fail_on_send_document:
+            self.sent_documents.append((phone, local_path, caption))
+            raise DriverError(self.fail_on_send_document)
+        self.sent_documents.append((phone, local_path, caption))
+        tick = self.ticks.pop(0) if self.ticks else "Gesendet"
+        self._bubbles().append(BubbleView("out", caption, "09:15", tick))
+        return ("09:15", tick)
 
     def read_bubbles(self):
         if not self.lock_held:

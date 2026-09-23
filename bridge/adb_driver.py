@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import mimetypes
 import os
 import random
 import re
@@ -42,7 +43,7 @@ import time
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -111,6 +112,52 @@ RID_ALERT_TITLE = "alertTitle"
 #: no rows, and "no rows" must never be what an unreadable dump looks like.
 RID_NEW_CHAT_FAB = "fab"
 
+#: Sharing a file into WhatsApp via ACTION_SEND (TASK-131 round 7, outbound media): the picker
+#: WhatsApp itself draws (com.whatsapp.contact.ui.picker.ExternalShareAlias), then the compose
+#: screen it opens once exactly one recipient is picked (RID_SEND, already defined, is the send
+#: button on this screen too -- the two screens are never on-screen together). Verified live on
+#: this handset, 2026-09-22, WhatsApp 2.26.36.74.
+RID_SHARE_ROW_NAME = "contactpicker_row_name"
+RID_SHARE_RECIPIENTS = "recipients"
+#: /sdcard/Pictures/<this>/ -- kept apart from a candidate's own received media (WhatsApp
+#: Images/...) so an outbound push can never collide with, or be mistaken for, inbound content.
+OUTBOUND_MEDIA_DIR = "wa_outbound"
+
+#: WhatsApp's in-chat gallery album picker (TASK-131 round 7 gallery redesign, Ivan 2026-09-22:
+#: "галерейкой плюс текстовое сообщение, все это одно сообщение" -- one message, several photos,
+#: one caption, not five separate bubbles). Verified live, this handset, 2026-09-22,
+#: WhatsApp 2.26.36.74: attach -> "Galerie" -> a folder spinner -> a grid of ``media_item_view``/
+#: ``unsupported_media_item_view`` thumbnails (the "unsupported" ones just have no cached
+#: thumbnail bitmap yet -- still real, still selectable) -> a shared ``caption`` field -> one
+#: ``send_media_btn``. Tapping a thumbnail stamps it with a green ordinal badge; the running total
+#: is ``send_media_counter``.
+RID_ATTACH_BUTTON = "input_attach_button"
+RID_GALLERY_HOLDER = "pickfiletype_gallery_holder"
+RID_GALLERY_SPINNER = "gallery_spinner"
+RID_CAPTION = "caption"
+RID_SEND_MEDIA_BTN = "send_media_btn"
+RID_SEND_MEDIA_COUNTER = "send_media_counter"
+
+#: A non-image file, sent via the SAME ACTION_SEND mechanism send_photo uses (TASK-131 round 7,
+#: Ivan 2026-09-23: a future resume-update flow needs this too, not photos alone). Verified live,
+#: this handset, 2026-09-23: WhatsApp's own DocumentPreviewActivity, opened once the share picker's
+#: matched row is tapped (and, for a document specifically, a recipient-confirm screen past that --
+#: send_document's own docstring), draws the chosen file's own name here, alongside the same
+#: caption/send shape the gallery compose screen has (RID_CAPTION, RID_SEND -- the plain
+#: conversation's own send button id, reused).
+RID_DOCUMENT_FILE_NAME = "document_file_name"
+
+#: The bucket WhatsApp's picker files OUTBOUND_MEDIA_DIR's contents under -- NOT that folder's own
+#: name. A Pictures subfolder with no prior bucket metadata merges into the camera roll's own
+#: bucket instead of becoming its own album (a MediaStore quirk, confirmed live on this handset,
+#: 2026-09-22 -- pushed files immediately showed up inside "Kamera", never as a "wa_outbound" album
+#: of their own). One handset, one house rule (module docstring): hardcoded exactly like the
+#: German button labels elsewhere in this file, not detected -- getting this wrong means selecting
+#: from a MIXED pool that, on this handset, also holds a real candidate's CV photo (seen live in
+#: "Letzte" the same session). send_gallery refuses rather than select from it when the count is
+#: off by even one.
+GALLERY_BUCKET_NAME = "Kamera"
+
 #: A long press. ``input swipe x y x y`` is delivered as a tap on this build and raises no
 #: selection, which is why the press is two motion events with a hold between them.
 LONG_PRESS_HOLD_SEC = 1.2
@@ -119,6 +166,22 @@ UI_SETTLE_SEC = 1.5
 
 #: How long we re-read the thread looking for the bubble we just typed, before calling it unverified.
 BUBBLE_APPEAR_SEC = 30.0
+#: Same idea, sized for a photo instead of typed text (TASK-131 round 7). A photo bubble is not on
+#: screen the instant ``send`` is tapped the way a typed bubble already is -- WhatsApp has to finish
+#: writing/encoding the local copy and lay out the thumbnail before its date/status nodes exist at
+#: all, and that measured slower than 30s at least once live (2026-09-22: a photo verified as
+#: send_unconfirmed at 30s had a real, delivered, read tick on the handset by the time it was
+#: screenshotted a few minutes later). Wider than BUBBLE_APPEAR_SEC on purpose rather than raising
+#: that constant too -- text's own 30s budget is separately proven and untouched here.
+PHOTO_APPEAR_SEC = 60.0
+#: How long send_gallery waits for a just-staged file's own stamp to appear in WhatsApp's "Letzte"
+#: pool (TASK-131 round 7 gallery redesign). Raised from an initial 15s after a live refusal,
+#: 2026-09-23: a file whose mtime and MediaStore row were BOTH already correct (checked directly,
+#: ``content query``/``stat`` agreed with what was pushed) still had zero matching picker items at
+#: 15s -- refused correctly rather than guess, but WhatsApp's own picker fragment plainly lags a
+#: fresh write by more than that. 45s is a first widening, not a measured floor; revisit if a live
+#: send still needs more.
+GALLERY_INDEX_SEC = 45.0
 #: Composer placeholder text on the German UI: an empty composer, not leftover text.
 COMPOSER_EMPTY = ("", "Nachricht")
 
@@ -282,6 +345,36 @@ def find(nodes, *, rid=None, text=None, contains=None, clickable=None):
     return hits
 
 
+#: German month names as WhatsApp's gallery picker draws them in a thumbnail's content-desc
+#: ("Foto, Datum: 22. September 2026 23:52") -- one handset, one locale, same convention as the
+#: rest of this file's hardcoded German UI strings.
+_MONTHS_DE = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4, "mai": 5, "juni": 6,
+    "juli": 7, "august": 8, "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+}
+_PHOTO_DATUM_RE = re.compile(r"Datum:\s*(\d{1,2})\.\s*(\S+)\s+(\d{4})\s+(\d{1,2}):(\d{2})")
+
+
+def _media_item_nodes(nodes):
+    return [n for n in nodes if n.short_rid in ("media_item_view", "unsupported_media_item_view")]
+
+
+def _parse_photo_datum(desc):
+    """-> (year, month, day, hour, minute) parsed from a gallery thumbnail's own content-desc, or
+    None when it does not match at all (a folder tile, an album cover, anything not a dated photo).
+    Tolerant of the leading bidi mark WhatsApp draws ("‎Foto, Datum: ...") and of whichever day
+    padding this build uses, by regex rather than an exact string template -- the exact-tuple
+    comparison this feeds (send_gallery) still refuses on anything but a clean single match."""
+    m = _PHOTO_DATUM_RE.search(desc or "")
+    if not m:
+        return None
+    day, month_name, year, hh, mm = m.groups()
+    month = _MONTHS_DE.get(month_name.lower())
+    if month is None:
+        return None
+    return (int(year), month, int(day), int(hh), int(mm))
+
+
 class PhoneLock:
     """flock on huawei01.lock. Non-blocking with a deadline, so a stuck holder is a 503, not a hang."""
 
@@ -356,6 +449,12 @@ class Adb:
         not a shell command, so it is its own method rather than a ``shell()`` string, and its own
         override point in a scripted test (``tests/test_bridge_adb.py::ScriptedAdb``)."""
         return self.run("pull", remote, local, timeout=timeout)
+
+    def push(self, local, remote, *, timeout=120):
+        """-> the finished process (``.returncode``, ``.stderr``). ``pull``'s own mirror (TASK-131
+        round 7, outbound media): filesystem-level, its own method for the same reason ``pull`` is
+        one, and its own override point in a scripted test."""
+        return self.run("push", local, remote, timeout=timeout)
 
     def connected(self):
         try:
@@ -682,16 +781,18 @@ class AdbDriver(D.PhoneDriver):
         against a real voice note and a real document the first time either is reachable, the same
         caution this task's own brief applies to a document's filename-preservation claim.
         """
-        width = 1080
-        for node in nodes:
-            if node.short_rid == "conversation_layout" or node.cls.endswith("FrameLayout"):
-                width = max(width, node.bounds[2])
+        # Direction is a nearby RID_STATUS (delivery-tick) node, not the date node's own
+        # x-position -- see _outgoing_bubble_count's docstring for why a width-fraction threshold
+        # on the date node itself undercounts every outgoing bubble (confirmed live, 2026-09-22,
+        # on a real delivered text bubble). This reader shares the same date node and the same bug
+        # would have shared the same fix.
         dates = sorted((n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)),
                       key=lambda n: n.bounds[1])
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
         out, prev_bottom = [], 0
         for d in dates:
             top, bottom = prev_bottom, d.bounds[3] + 4
-            direction = "out" if d.bounds[2] > width * 0.9 else "in"
+            direction = "out" if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states) else "in"
             band = [n for n in nodes if n is not d and top <= n.bounds[1] <= bottom]
             evidence = [t.strip() for n in band for t in (n.text, n.desc) if t and t.strip()]
             out.append({"clock": d.text.strip(), "direction": direction, "evidence": evidence})
@@ -761,6 +862,376 @@ class AdbDriver(D.PhoneDriver):
     def _count_matching(bubbles, want_sha256):
         return sum(1 for b in bubbles
                    if b.direction == "out" and D.body_sha256(b.text) == want_sha256)
+
+    # --- outbound media: photos (TASK-131 round 7, Ivan 2026-09-22) ------------------------------
+    def _outgoing_bubble_count(self, nodes):
+        """How many outgoing bubbles are on screen right now, image or text alike -- banded by their
+        own date node the same way _media_bubble_bands is, not by RID_MESSAGE (_placed_bubbles'
+        own way), because an image bubble draws no message_text node at all and would be invisible
+        to that reader.
+
+        Direction is a nearby RID_STATUS (delivery-tick) node, not the date node's own x-position.
+        WhatsApp draws that tick icon on a sent bubble only, so its presence is a direct signal --
+        unlike the date/time text itself, which sits well inside the bubble's true right edge (room
+        for the tick icon) and so undercounts against ANY width-fraction threshold. Confirmed live,
+        2026-09-22: a delivered, read text bubble's own date node measured x2=942 of 1080 (87%),
+        below a 90% floor that was tuned against message_text's/the image's own much wider bounds --
+        this cost the first live photo send test a false send_unconfirmed on a photo that had
+        already landed."""
+        dates = [n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)]
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        return sum(1 for d in dates if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states))
+
+    def _newest_outgoing_tick(self, nodes):
+        """-> (clock, tick) for the bottom-most outgoing bubble on screen, found the same
+        date-banded way _outgoing_bubble_count counts them -- so an image bubble's tick is read
+        back exactly like a text bubble's (RID_STATUS by proximity to the date node), never missed
+        for lack of a message_text node. None if no outgoing bubble is on screen at all."""
+        dates = sorted((n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)),
+                      key=lambda n: n.bounds[1])
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        out_dates = [d for d in dates if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states)]
+        if not out_dates:
+            return None
+        newest = out_dates[-1]
+        close = [s for s in states if abs(s.bounds[1] - newest.bounds[1]) < 90]
+        return (newest.text.strip(), close[0].desc if close else "")
+
+    def send_photo(self, phone, local_path):
+        """Share ONE local image file into the thread for ``phone``, via Android's own ACTION_SEND
+        (TASK-131 round 7, outbound media) -- there is no compose-time attach button this driver
+        can reach any other way, and this is the exact mechanism a person uses to share a photo
+        from their own gallery: verified live, this handset, 2026-09-22, WhatsApp 2.26.36.74. ->
+        the (clock, tick) the newest outgoing bubble reads after sending. Raises D.DriverError
+        rather than guess.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_bubble) -- WhatsApp's own share picker is checked against it, and the code returns to
+        THIS thread afterwards (open_chat again) to read the result back, rather than trusting
+        wherever the share flow itself lands.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_photo without a verified open chat for this phone")
+        if not os.path.exists(local_path):
+            raise D.DriverError(f"{local_path} does not exist locally -- nothing to push")
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        remote = f"{remote_dir}/{os.path.basename(local_path)}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        pushed = self.adb.push(local_path, remote)
+        if pushed.returncode != 0:
+            raise D.DriverError(f"adb push {local_path} failed: {(pushed.stderr or '').strip()[:200]}")
+        before = self._outgoing_bubble_count(self.adb.dump())
+        suffix = os.path.splitext(local_path)[1].lower()
+        mime = "image/png" if suffix == ".png" else "image/jpeg"
+        self.adb.shell(f"am start -a android.intent.action.SEND -t {mime} "
+                       f"--eu android.intent.extra.STREAM file://{remote} -p {WHATSAPP}")
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SHARE_ROW_NAME)), timeout=10)
+        tail = I.digits(phone)[-8:]
+        rows = find(nodes, rid=RID_SHARE_ROW_NAME)
+        match = [r for r in rows if I.digits(r.text)[-8:] == tail]
+        if not match:
+            raise D.DriverError(f"no row in WhatsApp's own share picker matches {phone} -- "
+                                f"seen: {[r.text for r in rows]!r}")
+        if len(match) > 1:
+            raise D.DriverError(f"{len(match)} rows in the share picker match {phone} -- refusing "
+                                f"to guess which one")
+        self.adb.tap_node(match[0])
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SEND)), timeout=10)
+        recipients = find(nodes, rid=RID_SHARE_RECIPIENTS)
+        if not recipients or I.digits(recipients[0].text)[-8:] != tail:
+            raise D.DriverError(f"the share compose screen's own recipient line does not read "
+                                f"back {phone}: {[r.text for r in recipients]!r}")
+        send = find(nodes, rid=RID_SEND)
+        if not send:
+            raise D.DriverError("share compose screen has no send button")
+        self.adb.tap_node(send[0])
+        self.open_chat(phone)   # the share flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
+
+    def _verify_photo_sent(self, before_count):
+        deadline = time.monotonic() + PHOTO_APPEAR_SEC
+        while True:
+            nodes = self.adb.dump()
+            count = self._outgoing_bubble_count(nodes)
+            if count > before_count:
+                return self._newest_outgoing_tick(nodes)
+            if time.monotonic() > deadline:
+                raise D.DriverError(f"no new outgoing bubble appeared after the photo was sent "
+                                    f"(still {count}, was {before_count})")
+            time.sleep(0.5)
+
+    def send_photos(self, phone, local_paths):
+        """send_photo, once per path, in order. -> [(clock, tick), ...], one per photo. Stops at
+        the first failure (raises) rather than silently sending photo 3 after photo 2 failed --
+        a caller that wants best-effort has to call send_photo itself and decide per file."""
+        if not local_paths:
+            raise D.DriverError("send_photos called with no files")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise D.DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                                f"{D.MAX_PHOTOS_PER_SEND} at once")
+        return [self.send_photo(phone, p) for p in local_paths]
+
+    # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign, Ivan 2026-09-22) --
+    def _stage_gallery_files(self, local_paths):
+        """Push local_paths into MAX_PHOTOS_PER_SEND fixed positional slots under
+        OUTBOUND_MEDIA_DIR, each stamped with a distinct, known minute -- so send_gallery can find
+        EXACTLY these files, and never a leftover or a real candidate's own photo sitting in the
+        same "Letzte" pool, by content-desc timestamp rather than by screen position. -> [(remote,
+        (year, month, day, hour, minute)), ...] the expected WALL-CLOCK stamp for each file, in
+        local_paths order.
+
+        THE SLOT NAME IS UNIQUE PER CALL, not fixed (revised live, 2026-09-23, after a fixed
+        ``gallery_1.jpg``-style name self-collided on repeated calls): WhatsApp's own picker cache
+        does not evict an old row when a file at the same path is overwritten with a new mtime --
+        both were still found in "Letzte" minutes apart, sharing that path but not that minute, and
+        a later call whose OWN fresh stamp happened to land on an old call's leftover minute read
+        back "found 2" or "found 3" for one expected stamp, refusing exactly as designed but never
+        completing a send. A path stamped with this call's own ``device_now`` can never collide
+        with a previous call's leftovers this way again. Every ``gallery_*`` file under
+        OUTBOUND_MEDIA_DIR is removed first regardless of length -- not just "slots beyond
+        len(local_paths)", now that the slot name is not fixed there is nothing to leave in place.
+
+        THE TOUCH OFFSET (confirmed live, this handset, 2026-09-23, CEST/DST): this device's
+        toybox ``touch -t`` reads a wall-clock argument as if the zone were CET (UTC+1) while the
+        device is actually running CEST (UTC+2) -- a stamp of 02:03 came back 03:03 on ``stat``,
+        every time this was tried. Subtracting one hour before calling ``touch -t`` is the fix,
+        confirmed the same way. This is a DST bug, not a fixed offset -- re-confirm it once Central
+        Europe leaves DST (routinely late October) rather than trust this constant year-round.
+        """
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        self.adb.shell(f"rm -f {remote_dir}/gallery_*")
+        raw = self.adb.shell("date +%Y%m%d%H%M.%S").strip()
+        device_now = datetime.strptime(raw, "%Y%m%d%H%M.%S")
+        touch_base = device_now - timedelta(hours=1)  # the confirmed DST compensation
+        run_token = device_now.strftime("%H%M%S")
+        n = len(local_paths)
+        staged = []
+        for i, local in enumerate(local_paths):
+            ext = os.path.splitext(local)[1].lower() or ".jpg"
+            remote = f"{remote_dir}/gallery_{run_token}_{i + 1}{ext}"
+            pushed = self.adb.push(local, remote)
+            if pushed.returncode != 0:
+                raise D.DriverError(f"adb push {local} failed: "
+                                    f"{(pushed.stderr or '').strip()[:200]}")
+            # Oldest first, most recent last -- staggered a minute apart so each file gets an
+            # unambiguous stamp of its own (the picker's content-desc has no finer resolution).
+            offset = timedelta(minutes=(n - 1 - i))
+            touch_at = (touch_base - offset).strftime("%Y%m%d%H%M") + ".00"
+            self.adb.shell(f"touch -t {touch_at} {shlex.quote(remote)}")
+            self.adb.shell(f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+                           f"-d file://{remote} >/dev/null")
+            want = device_now - offset
+            staged.append((remote, (want.year, want.month, want.day, want.hour, want.minute)))
+        return staged
+
+    def send_gallery(self, phone, local_paths, caption=""):
+        """Share up to D.MAX_PHOTOS_PER_SEND local image files as ONE WhatsApp message -- a photo
+        album with a single shared caption -- via WhatsApp's own in-chat gallery picker (Ivan,
+        2026-09-22: "галерейкой плюс текстовое сообщение, все это одно сообщение"; TASK-131
+        round 7). Android's ``am start`` cannot drive ACTION_SEND_MULTIPLE for this: its own extras
+        table has no type for a Uri ArrayList, which is what ACTION_SEND_MULTIPLE's EXTRA_STREAM
+        needs (``--eu`` sets exactly one Uri) -- checked against ``am start``'s own extras before
+        writing this. So this drives the same taps a person does: attach -> "Galerie" -> pick a
+        caption -> send. Verified live, this handset, 2026-09-23, WhatsApp 2.26.36.74.
+
+        Selection is matched by each staged file's own timestamp in the "Letzte" pool, never by
+        screen position, and REFUSES rather than guesses when a stamp's count is not exactly one --
+        that pool mixes in whatever else is on this handset, a real candidate's CV photo included
+        (seen live, 2026-09-22). A second album, this handset's "Kamera", looked like a clean,
+        isolated pool at first (it showed only this code's own pushed files) but turned out to
+        cache its own snapshot: files deleted and rescanned through both ``rm`` and a proper
+        ``content delete``, and even a WhatsApp force-stop/relaunch, still left it showing photos
+        that were no longer on disk (confirmed live, 2026-09-23). "Letzte" does not have that
+        problem -- its count tracked every push and delete made against it in the same session --
+        which is why this method matches within "Letzte" instead of switching album.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_bubble/send_photo). -> the (clock, tick) the newest outgoing bubble reads after
+        sending. Raises D.DriverError rather than guess.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_gallery without a verified open chat for this phone")
+        if not local_paths:
+            raise D.DriverError("send_gallery called with no files")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise D.DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                                f"{D.MAX_PHOTOS_PER_SEND} at once")
+        for p in local_paths:
+            if not os.path.exists(p):
+                raise D.DriverError(f"{p} does not exist locally -- nothing to push")
+
+        staged = self._stage_gallery_files(local_paths)
+        before = self._outgoing_bubble_count(self.adb.dump())
+
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_ATTACH_BUTTON)), timeout=10)
+        attach = find(nodes, rid=RID_ATTACH_BUTTON)
+        if not attach:
+            raise D.DriverError("attach button not visible -- the conversation is not on screen")
+        self.adb.tap_node(attach[0])
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_GALLERY_HOLDER)), timeout=10)
+        gallery = find(nodes, rid=RID_GALLERY_HOLDER)
+        if not gallery:
+            raise D.DriverError("attach menu has no 'Galerie' option")
+        self.adb.tap_node(gallery[0])
+
+        def _all_stamps_present(ns):
+            by_stamp = {}
+            for item in _media_item_nodes(ns):
+                stamp = _parse_photo_datum(item.desc)
+                if stamp is not None:
+                    by_stamp.setdefault(stamp, []).append(item)
+            return all(len(by_stamp.get(want, [])) == 1 for _, want in staged)
+
+        nodes = self.adb.wait_for(_all_stamps_present, timeout=GALLERY_INDEX_SEC)
+        by_stamp = {}
+        for item in _media_item_nodes(nodes):
+            stamp = _parse_photo_datum(item.desc)
+            if stamp is not None:
+                by_stamp.setdefault(stamp, []).append(item)
+        chosen = []
+        for remote, want in staged:
+            hits = by_stamp.get(want, [])
+            if len(hits) != 1:
+                raise D.DriverError(
+                    f"expected exactly one 'Letzte' item timestamped {want!r} for "
+                    f"{os.path.basename(remote)!r}, found {len(hits)} -- refusing to guess")
+            chosen.append(hits[0])
+        for item in chosen:
+            self.adb.tap_node(item)
+            time.sleep(0.3)
+
+        nodes = self.adb.dump()
+        counter = find(nodes, rid=RID_SEND_MEDIA_COUNTER)
+        if not counter or counter[0].text.strip() != str(len(local_paths)):
+            raise D.DriverError(
+                f"selection counter reads {counter[0].text if counter else None!r}, expected "
+                f"{len(local_paths)!r} -- refusing to send an unconfirmed selection")
+
+        if caption:
+            # rid=RID_CAPTION alone is not selective enough (found live, 2026-09-23): WhatsApp
+            # reuses the SAME resource-id for the live, editable caption box on this screen AND
+            # for the read-only caption TEXT drawn under an already-sent gallery bubble further up
+            # the same conversation, which stays in every dump once one such bubble is on screen.
+            # Both are android.widget.TextView in the DOM except the live one, which is the only
+            # EditText -- that is the one signal this handset draws differently between them.
+            # Picking the first RID_CAPTION match blind hit the read-only one at least once, whose
+            # bounds sit outside the picker sheet entirely: the tap landed on the conversation
+            # behind it, which is how a typed caption ended up in the ordinary chat composer and
+            # the "picker" screen right after was WhatsApp's own discard-selection confirmation.
+            cap = [n for n in find(nodes, rid=RID_CAPTION) if n.cls == "android.widget.EditText"]
+            if not cap:
+                raise D.DriverError("gallery compose screen has no caption field")
+            with self.adb.adb_keyboard():
+                self.adb.tap_node(cap[0])
+                self.adb.type_human(caption, rng=self.rng)
+                time.sleep(self.rng.uniform(*PAUSE_BEFORE_SEND))
+                nodes = self.adb.dump()
+                send = find(nodes, rid=RID_SEND_MEDIA_BTN)
+                if not send:
+                    raise D.DriverError("gallery compose screen has no send button")
+                self.adb.tap_node(send[0])
+        else:
+            send = find(nodes, rid=RID_SEND_MEDIA_BTN)
+            if not send:
+                raise D.DriverError("gallery compose screen has no send button")
+            self.adb.tap_node(send[0])
+
+        self.open_chat(phone)   # the send flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
+
+    # --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23: a future resume-update
+    # flow needs files attached too, not only photos) -------------------------------------------
+    def send_document(self, phone, local_path, caption=""):
+        """Share ONE local file, any type, into the thread for ``phone``, via Android's own
+        ACTION_SEND -- the SAME mechanism send_photo uses, just a general-purpose MIME type instead
+        of an image one, and it works identically: verified live, this handset, 2026-09-23. An
+        EARLIER version of this method drove the in-app attach button -> "Dokument" ->
+        "Dokumente durchsuchen" -> the real Android system file picker instead; abandoned after a
+        live refusal ("found 0") traced to that picker's "Zuletzt verwendet" list not being a
+        simple recent-by-mtime view at all (Android's Storage Access Framework tracks actual past
+        USAGE of a file through a picker, not filesystem freshness) -- a file this driver had only
+        ever pushed, never "used" through any app, was not guaranteed to appear there on any
+        timeline. ACTION_SEND does not go through that picker at all.
+
+        WHAT DIFFERS FROM send_photo, both confirmed live: the share picker's matched row does not
+        land directly on the compose screen for a document the way it does for an image -- it
+        lands on an intermediate "N ausgewählt" recipient-confirm screen with its own send/confirm
+        control (same resource id as the real send button, RID_SEND) that has to be tapped once
+        more first. And the compose screen itself reads the CHOSEN file's own name back
+        (RID_DOCUMENT_FILE_NAME), checked against what was pushed before anything is sent -- a
+        second guard past the phone-number match the share-picker row already gives.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_photo). -> the (clock, tick) the newest outgoing bubble reads after sending. Raises
+        D.DriverError rather than guess.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_document without a verified open chat for this phone")
+        if not os.path.exists(local_path):
+            raise D.DriverError(f"{local_path} does not exist locally -- nothing to push")
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        basename = os.path.basename(local_path)
+        remote = f"{remote_dir}/{basename}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        pushed = self.adb.push(local_path, remote)
+        if pushed.returncode != 0:
+            raise D.DriverError(f"adb push {local_path} failed: {(pushed.stderr or '').strip()[:200]}")
+        before = self._outgoing_bubble_count(self.adb.dump())
+        mime = mimetypes.guess_type(local_path)[0] or "application/octet-stream"
+        self.adb.shell(f"am start -a android.intent.action.SEND -t {mime} "
+                       f"--eu android.intent.extra.STREAM file://{remote} -p {WHATSAPP}")
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SHARE_ROW_NAME)), timeout=10)
+        tail = I.digits(phone)[-8:]
+        rows = find(nodes, rid=RID_SHARE_ROW_NAME)
+        match = [r for r in rows if I.digits(r.text)[-8:] == tail]
+        if not match:
+            raise D.DriverError(f"no row in WhatsApp's own share picker matches {phone} -- "
+                                f"seen: {[r.text for r in rows]!r}")
+        if len(match) > 1:
+            raise D.DriverError(f"{len(match)} rows in the share picker match {phone} -- refusing "
+                                f"to guess which one")
+        self.adb.tap_node(match[0])
+
+        nodes = self.adb.wait_for(
+            lambda ns: bool(find(ns, rid=RID_DOCUMENT_FILE_NAME) or find(ns, rid=RID_SEND)),
+            timeout=10)
+        if not find(nodes, rid=RID_DOCUMENT_FILE_NAME):
+            confirm = find(nodes, rid=RID_SEND)
+            if not confirm:
+                raise D.DriverError("share flow landed on neither the compose screen nor a "
+                                    "recipient-confirm step")
+            self.adb.tap_node(confirm[0])
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_DOCUMENT_FILE_NAME)),
+                                      timeout=10)
+
+        shown = find(nodes, rid=RID_DOCUMENT_FILE_NAME)
+        if not shown or shown[0].text.strip() != basename:
+            raise D.DriverError(
+                f"WhatsApp's own compose screen reads back {shown[0].text if shown else None!r}, "
+                f"expected {basename!r} -- refusing to send an unconfirmed file")
+
+        if caption:
+            cap = [n for n in find(nodes, rid=RID_CAPTION) if n.cls == "android.widget.EditText"]
+            if not cap:
+                raise D.DriverError("document compose screen has no caption field")
+            with self.adb.adb_keyboard():
+                self.adb.tap_node(cap[0])
+                self.adb.type_human(caption, rng=self.rng)
+                time.sleep(self.rng.uniform(*PAUSE_BEFORE_SEND))
+                nodes = self.adb.dump()
+                send = find(nodes, rid=RID_SEND)
+                if not send:
+                    raise D.DriverError("document compose screen has no send button")
+                self.adb.tap_node(send[0])
+        else:
+            send = find(nodes, rid=RID_SEND)
+            if not send:
+                raise D.DriverError("document compose screen has no send button")
+            self.adb.tap_node(send[0])
+
+        self.open_chat(phone)   # the share flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
 
     def _verify(self, body, already=0):
         """Re-read the thread until a bubble with THIS body that was NOT there before is on it.

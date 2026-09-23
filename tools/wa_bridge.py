@@ -372,6 +372,79 @@ def cmd_send(args, client):
     return EXIT_OK
 
 
+def cmd_send_photos(args, client):
+    """TASK-131 round 7, Ivan 2026-09-22: mechanism proof, not production-ready (client.send_photos'
+    own docstring) -- no idempotency key, a re-run sends the photos again. ``--files`` names paths
+    already on the MINI's own filesystem, not this machine's."""
+    to = canonical_phone(args.to, "--to")
+    files = [f.strip() for f in args.files.split(",") if f.strip()]
+    if not files:
+        raise ValueError("--files must name at least one path (comma-separated)")
+    print(f"to {to}, {len(files)} file(s): {files}")
+    if args.dry_run:
+        print("dry run: nothing was sent")
+        return EXIT_OK
+    if not C.AUTOSEND:
+        print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
+        return EXIT_CONFIG
+    result = client.send_photos(to, files)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        for i, item in enumerate(result.get("sent") or [], start=1):
+            print(f"  photo {i}: clock {item.get('clock')!r}, tick {item.get('tick')!r}")
+    return EXIT_OK
+
+
+def cmd_send_gallery(args, client):
+    """TASK-131 round 7 gallery redesign, Ivan 2026-09-22: one message, several photos, a shared
+    caption -- mechanism proof, not production-ready (client.send_gallery's own docstring) -- no
+    idempotency key, a re-run sends the album again. ``--files`` names paths already on the MINI's
+    own filesystem, not this machine's."""
+    to = canonical_phone(args.to, "--to")
+    files = [f.strip() for f in args.files.split(",") if f.strip()]
+    if not files:
+        raise ValueError("--files must name at least one path (comma-separated)")
+    caption = read_body(args.caption, args.caption_file) if (args.caption or args.caption_file) else ""
+    print(f"to {to}, {len(files)} file(s): {files}, caption {caption!r}")
+    if args.dry_run:
+        print("dry run: nothing was sent")
+        return EXIT_OK
+    if not C.AUTOSEND:
+        print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
+        return EXIT_CONFIG
+    result = client.send_gallery(to, files, caption=caption)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(f"sent: clock {result.get('clock')!r}, tick {result.get('tick')!r}")
+    return EXIT_OK
+
+
+def cmd_send_document(args, client):
+    """TASK-131 round 7, Ivan 2026-09-23: one file, any type -- mechanism proof, not
+    production-ready (client.send_document's own docstring) -- no idempotency key, a re-run sends
+    the file again. ``--file`` names a path already on the MINI's own filesystem, not this
+    machine's."""
+    to = canonical_phone(args.to, "--to")
+    if not args.file.strip():
+        raise ValueError("--file must name a path")
+    caption = read_body(args.caption, args.caption_file) if (args.caption or args.caption_file) else ""
+    print(f"to {to}, file {args.file!r}, caption {caption!r}")
+    if args.dry_run:
+        print("dry run: nothing was sent")
+        return EXIT_OK
+    if not C.AUTOSEND:
+        print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
+        return EXIT_CONFIG
+    result = client.send_document(to, args.file, caption=caption)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        print(f"sent: clock {result.get('clock')!r}, tick {result.get('tick')!r}")
+    return EXIT_OK
+
+
 def cmd_broadcast(args, client):
     if args.runs:
         runs = client.broadcast_runs()
@@ -663,6 +736,33 @@ def build_parser():
     send.add_argument("--json", action="store_true")
     send.set_defaults(fn=cmd_send)
 
+    photos = sub.add_parser("send-photos", help="attach up to 5 local images (mechanism proof, TASK-131 round 7)")
+    photos.add_argument("--to", required=True)
+    photos.add_argument("--files", required=True, help="comma-separated paths already on the mini's own disk")
+    photos.add_argument("--dry-run", action="store_true", help="print the plan, post nothing")
+    photos.add_argument("--json", action="store_true")
+    photos.set_defaults(fn=cmd_send_photos)
+
+    gallery = sub.add_parser("send-gallery", help="one message: up to 5 local images + a shared caption "
+                                                   "(TASK-131 round 7 gallery redesign)")
+    gallery.add_argument("--to", required=True)
+    gallery.add_argument("--files", required=True, help="comma-separated paths already on the mini's own disk")
+    gallery.add_argument("--caption", help="shared caption text")
+    gallery.add_argument("--caption-file", help="read the caption from a file instead of --caption")
+    gallery.add_argument("--dry-run", action="store_true", help="print the plan, post nothing")
+    gallery.add_argument("--json", action="store_true")
+    gallery.set_defaults(fn=cmd_send_gallery)
+
+    document = sub.add_parser("send-document", help="one file, any type, as WhatsApp's own document "
+                                                     "attachment (TASK-131 round 7)")
+    document.add_argument("--to", required=True)
+    document.add_argument("--file", required=True, help="a path already on the mini's own disk")
+    document.add_argument("--caption", help="caption text")
+    document.add_argument("--caption-file", help="read the caption from a file instead of --caption")
+    document.add_argument("--dry-run", action="store_true", help="print the plan, post nothing")
+    document.add_argument("--json", action="store_true")
+    document.set_defaults(fn=cmd_send_document)
+
     bcast = sub.add_parser("broadcast", help="one message to many recipients, paced by the executor")
     bcast.add_argument("--id", help="run id ([A-Za-z0-9._-]); part of every recipient's key")
     bcast.add_argument("--file", help="recipients, .csv (phone[,body] header) or .json (list of objects)")
@@ -706,6 +806,20 @@ def _audit_of(exc):
     return f" (audit {audit_id})" if audit_id is not None else ""
 
 
+def _server_detail(exc):
+    """-> ' -- <executor message>' when the executor's own envelope says more than ``str(exc)``.
+
+    A real HTTP error status raises inside ``app/wa/bridge.py::_default_transport`` before the
+    client ever sees the parsed body, so every such ``BridgeError`` carries the same generic
+    ``"bridge HTTP {code}"`` as its own message -- the executor's actual sentence (how many photos
+    went out before it broke, which thread, etc.) only reaches this process inside ``.payload``.
+    Printing nothing here is how an operator ends up reading the handset directly to learn what the
+    server already knew.
+    """
+    message = (((exc.payload or {}).get("error") or {}).get("message") or "").strip()
+    return f" -- {message}" if message and message not in str(exc) else ""
+
+
 def main(argv=None, client=None):
     args = build_parser().parse_args(argv)
     cl = client if client is not None else BR.Client()
@@ -732,12 +846,12 @@ def main(argv=None, client=None):
             # handset WAS tapped and the result could not be proved. "bridge refused" over "was
             # confirmed on the handset" is the same lie in the executor's vocabulary.
             print(f"ERROR: the handset was touched and the result is not proved -- this is not a "
-                  f"refusal (status {exc.status_code}, code {exc.code!r}): {exc}"
+                  f"refusal (status {exc.status_code}, code {exc.code!r}): {exc}{_server_detail(exc)}"
                   f"{_audit_of(exc)}. Read what the handset shows: {TOUCHED_NEXT_STEP[exc.code]}",
                   file=sys.stderr)
         else:
-            print(f"ERROR: bridge refused (status {exc.status_code}, code {exc.code!r}): {exc}",
-                  file=sys.stderr)
+            print(f"ERROR: bridge refused (status {exc.status_code}, code {exc.code!r}): "
+                  f"{exc}{_server_detail(exc)}", file=sys.stderr)
         return EXIT_ATTENTION
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED

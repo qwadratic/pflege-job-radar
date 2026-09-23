@@ -1204,6 +1204,44 @@ def test_a_refusal_travels_as_the_contract_envelope(http):
     assert body["error"]["retryable"] is False
 
 
+def test_v1_photos_answers_200_on_a_real_send(http, tmp_path):
+    """Regression, found live 2026-09-23 while wiring /v1/gallery next to this route: the handler
+    used to hand executor.send_photos' plain 3-key dict straight to _dispatch, which does
+    ``status, payload = route()`` -- unpacking a dict that way raises ValueError, caught by
+    _dispatch's own generic handler as a false 500. Every live send attempted through this route
+    before the bug was found had hit a BridgeRefusal first (which raises before the assignment
+    ever runs), so a genuinely successful send had never once reached this line."""
+    rig, base = http
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    status, body = call(base, "/v1/photos", payload={"phone": PHONE, "local_paths": [str(a)]})
+    assert status == 200
+    assert body["ok"] is True
+    assert body["sent"] == [{"clock": "09:15", "tick": "Gesendet"}]
+
+
+def test_v1_gallery_answers_200_on_a_real_send(http, tmp_path):
+    rig, base = http
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    status, body = call(base, "/v1/gallery", payload={
+        "phone": PHONE, "local_paths": [str(a)], "caption": "Unsere Klinik"})
+    assert status == 200
+    assert body["ok"] is True
+    assert (body["clock"], body["tick"]) == ("09:15", "Gesendet")
+
+
+def test_v1_document_answers_200_on_a_real_send(http, tmp_path):
+    rig, base = http
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    status, body = call(base, "/v1/document", payload={
+        "phone": PHONE, "local_path": str(a), "caption": "Bitte pruefen"})
+    assert status == 200
+    assert body["ok"] is True
+    assert (body["clock"], body["tick"]) == ("09:15", "Gesendet")
+
+
 # --- the inbound watcher (TASK-143, lock removed TASK-131 round 6) --------------------------------
 class BusyPhone(D.FakeDriver):
     """The other lane holds huawei01.lock for a send. The shade read must not care."""
@@ -1284,3 +1322,158 @@ def test_health_reports_the_identity_watcher(rig):
 
 def test_health_reports_no_identity_watcher_when_none_is_wired(rig):
     assert rig.executor.health()["identity_watcher"] is None
+
+
+# --- POST /v1/photos: outbound media (TASK-131 round 7, Ivan 2026-09-22) ------------------------
+def test_send_photos_opens_the_chat_sends_each_file_and_parks(rig, tmp_path):
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    a.write_bytes(b"a"); b.write_bytes(b"b")
+    result = rig.executor.send_photos(PHONE, [str(a), str(b)])
+    assert result["ok"] is True
+    assert result["sent"] == [{"clock": "09:15", "tick": "Gesendet"}] * 2
+    assert rig.driver.opened == [PHONE]
+    assert rig.driver.sent_photos == [(PHONE, str(a)), (PHONE, str(b))]
+    assert rig.driver.parked == 1, "the phone is released after the last photo, not held"
+
+
+def test_send_photos_refuses_a_missing_file_before_touching_the_phone(rig, tmp_path):
+    real = tmp_path / "a.jpg"
+    real.write_bytes(b"a")
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_photos(PHONE, [str(real), str(tmp_path / "missing.jpg")])
+    assert caught.value.code == "invalid_request"
+    assert "do not exist" in str(caught.value)
+    assert rig.driver.opened == [], "refused before the phone lock was even taken"
+
+
+def test_send_photos_refuses_more_than_the_cap_before_touching_the_phone(rig):
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_photos(PHONE, [f"/tmp/{i}.jpg" for i in range(D.MAX_PHOTOS_PER_SEND + 1)])
+    assert "at most" in str(caught.value)
+    assert rig.driver.opened == [], "refused before the phone lock was even taken"
+
+
+def test_send_photos_refuses_an_empty_list(rig):
+    with pytest.raises(E.BridgeRefusal):
+        rig.executor.send_photos(PHONE, [])
+
+
+def test_a_send_photo_failure_partway_through_reports_how_many_actually_sent(rig, tmp_path):
+    """The first photo lands, the second raises -- the caller has to know one real send already
+    reached the candidate, not just that the call as a whole failed (TASK-146's own discipline for
+    text: keys pressed are keys pressed, never silently retried)."""
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    a.write_bytes(b"a"); b.write_bytes(b"b")
+    rig.driver.ticks = ["Gesendet"]
+
+    def _fail_second(driver):
+        if len(driver.sent_photos) == 1:
+            driver.fail_on_send_photo = "boom"
+    rig.driver.hook = _fail_second
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_photos(PHONE, [str(a), str(b)])
+    assert caught.value.code == "send_unconfirmed", (
+        "a real photo already reached the handset -- this must stay the 'handset was touched' 504, "
+        "never the pre-flight 400")
+    assert "sent 1/2 photos" in str(caught.value)
+    assert rig.driver.sent_photos == [(PHONE, str(a)), (PHONE, str(b))], (
+        "the second attempt still reached the driver -- keys/taps may already have happened")
+
+
+# --- one gallery message (TASK-131 round 7 gallery redesign, Ivan 2026-09-22) -------------------
+def test_send_gallery_opens_the_chat_sends_one_message_and_parks(rig, tmp_path):
+    a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
+    a.write_bytes(b"a"); b.write_bytes(b"b")
+    result = rig.executor.send_gallery(PHONE, [str(a), str(b)], caption="Unsere Klinik")
+    assert result["ok"] is True
+    assert (result["clock"], result["tick"]) == ("09:15", "Gesendet")
+    assert rig.driver.opened == [PHONE]
+    assert rig.driver.sent_galleries == [(PHONE, [str(a), str(b)], "Unsere Klinik")]
+    assert rig.driver.parked == 1
+
+
+def test_send_gallery_defaults_to_no_caption(rig, tmp_path):
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    rig.executor.send_gallery(PHONE, [str(a)])
+    assert rig.driver.sent_galleries == [(PHONE, [str(a)], "")]
+
+
+def test_send_gallery_refuses_a_missing_file_before_touching_the_phone(rig, tmp_path):
+    real = tmp_path / "a.jpg"
+    real.write_bytes(b"a")
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_gallery(PHONE, [str(real), str(tmp_path / "missing.jpg")])
+    assert caught.value.code == "invalid_request"
+    assert "do not exist" in str(caught.value)
+    assert rig.driver.opened == [], "refused before the phone lock was even taken"
+
+
+def test_send_gallery_refuses_more_than_the_cap_before_touching_the_phone(rig):
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_gallery(PHONE, [f"/tmp/{i}.jpg" for i in range(D.MAX_PHOTOS_PER_SEND + 1)])
+    assert "at most" in str(caught.value)
+    assert rig.driver.opened == [], "refused before the phone lock was even taken"
+
+
+def test_send_gallery_refuses_an_empty_list(rig):
+    with pytest.raises(E.BridgeRefusal):
+        rig.executor.send_gallery(PHONE, [])
+
+
+def test_a_send_gallery_failure_is_reported_as_handset_touched_not_a_refusal(rig, tmp_path):
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    rig.driver.fail_on_send_gallery = "boom"
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_gallery(PHONE, [str(a)])
+    assert caught.value.code == "send_unconfirmed"
+    assert "boom" in str(caught.value)
+    assert rig.driver.sent_galleries == [(PHONE, [str(a)], "")], (
+        "the attempt still reached the driver -- keys/taps may already have happened")
+
+
+# --- one document (TASK-131 round 7, Ivan 2026-09-23) -------------------------------------------
+def test_send_document_opens_the_chat_sends_and_parks(rig, tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    result = rig.executor.send_document(PHONE, str(a), caption="Bitte pruefen")
+    assert result["ok"] is True
+    assert (result["clock"], result["tick"]) == ("09:15", "Gesendet")
+    assert rig.driver.opened == [PHONE]
+    assert rig.driver.sent_documents == [(PHONE, str(a), "Bitte pruefen")]
+    assert rig.driver.parked == 1
+
+
+def test_send_document_defaults_to_no_caption(rig, tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    rig.executor.send_document(PHONE, str(a))
+    assert rig.driver.sent_documents == [(PHONE, str(a), "")]
+
+
+def test_send_document_refuses_a_missing_file_before_touching_the_phone(rig, tmp_path):
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_document(PHONE, str(tmp_path / "missing.pdf"))
+    assert caught.value.code == "invalid_request"
+    assert "does not exist" in str(caught.value)
+    assert rig.driver.opened == [], "refused before the phone lock was even taken"
+
+
+def test_send_document_refuses_an_empty_path(rig):
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_document(PHONE, "")
+    assert caught.value.code == "invalid_request"
+    assert rig.driver.opened == []
+
+
+def test_a_send_document_failure_is_reported_as_handset_touched_not_a_refusal(rig, tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    rig.driver.fail_on_send_document = "boom"
+    with pytest.raises(E.BridgeRefusal) as caught:
+        rig.executor.send_document(PHONE, str(a))
+    assert caught.value.code == "send_unconfirmed"
+    assert "boom" in str(caught.value)
+    assert rig.driver.sent_documents == [(PHONE, str(a), "")], (
+        "the attempt still reached the driver -- keys/taps may already have happened")

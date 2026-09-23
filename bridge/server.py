@@ -143,6 +143,21 @@ class Handler(BaseHTTPRequestHandler):
         stop = re.match(r"/v1/broadcasts/([^/]+)/stop\Z", path)
         if path == "/v1/messages":
             self._dispatch(lambda: self.server.executor.send(self._body()))
+        elif path == "/v1/photos":
+            # NOT ``lambda: executor.send_photos(...)`` alone (found live, 2026-09-23, while wiring
+            # /v1/gallery next to it): _dispatch does ``status, payload = route()``, and
+            # send_photos returns a plain 3-key dict -- unpacking that raises ValueError, caught by
+            # _dispatch's generic handler as a false 500 on the one call this route had never yet
+            # made it to a real 200 on tonight (every live attempt before now hit a BridgeRefusal
+            # first, which raises before the assignment runs).
+            self._dispatch(lambda: (200, self.server.executor.send_photos(
+                **_photos_args(self._body()))))
+        elif path == "/v1/gallery":
+            self._dispatch(lambda: (200, self.server.executor.send_gallery(
+                **_gallery_args(self._body()))))
+        elif path == "/v1/document":
+            self._dispatch(lambda: (200, self.server.executor.send_document(
+                **_document_args(self._body()))))
         elif path == "/v1/reconcile":
             self._dispatch(lambda: (200, {"ok": True, "results": self.server.executor.reconcile(
                 self._body().get("client_msg_ids") or [])}))
@@ -255,6 +270,58 @@ def _media_attach_args(body):
     if missing:
         raise E.invalid_request(f"missing field(s) {missing}; this route takes {list(allowed)}")
     return {name: body[name] for name in allowed}
+
+
+def _photos_args(body):
+    """``POST /v1/photos``'s two fields, named explicitly (TASK-131 round 7) -- same reason as
+    ``_media_attach_args``: an unknown key silently ignored on a route that drives a real send is
+    exactly the mistake this rail's other write routes already refuse. ``local_paths`` names files
+    already on THIS machine (the mini) -- there is no upload endpoint here, an operator (or a
+    caller with filesystem access, TASK-131 round 7's own scope) puts them there first."""
+    allowed = ("phone", "local_paths")
+    unknown = sorted(set(body) - set(allowed))
+    if unknown:
+        raise E.invalid_request(f"unknown field(s) {unknown}; this route takes {list(allowed)}")
+    missing = [name for name in allowed if name not in body]
+    if missing:
+        raise E.invalid_request(f"missing field(s) {missing}; this route takes {list(allowed)}")
+    if not isinstance(body["local_paths"], list) or not body["local_paths"]:
+        raise E.invalid_request("local_paths must be a non-empty list of file paths")
+    return {name: body[name] for name in allowed}
+
+
+def _gallery_args(body):
+    """``POST /v1/gallery``'s three fields, named explicitly -- same reason as ``_photos_args``,
+    plus ``caption`` (optional: an empty/omitted caption sends the album with none)."""
+    allowed = ("phone", "local_paths", "caption")
+    unknown = sorted(set(body) - set(allowed))
+    if unknown:
+        raise E.invalid_request(f"unknown field(s) {unknown}; this route takes {list(allowed)}")
+    missing = [name for name in ("phone", "local_paths") if name not in body]
+    if missing:
+        raise E.invalid_request(f"missing field(s) {missing}; this route takes {list(allowed)}")
+    if not isinstance(body["local_paths"], list) or not body["local_paths"]:
+        raise E.invalid_request("local_paths must be a non-empty list of file paths")
+    out = {"phone": body["phone"], "local_paths": body["local_paths"]}
+    if "caption" in body:
+        out["caption"] = body["caption"]
+    return out
+
+
+def _document_args(body):
+    """``POST /v1/document``'s three fields, named explicitly -- same reason as ``_gallery_args``,
+    one file instead of a list (``local_path``, not ``local_paths``)."""
+    allowed = ("phone", "local_path", "caption")
+    unknown = sorted(set(body) - set(allowed))
+    if unknown:
+        raise E.invalid_request(f"unknown field(s) {unknown}; this route takes {list(allowed)}")
+    missing = [name for name in ("phone", "local_path") if name not in body]
+    if missing:
+        raise E.invalid_request(f"missing field(s) {missing}; this route takes {list(allowed)}")
+    out = {"phone": body["phone"], "local_path": body["local_path"]}
+    if "caption" in body:
+        out["caption"] = body["caption"]
+    return out
 
 
 class BridgeServer(ThreadingHTTPServer):

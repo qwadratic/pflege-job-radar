@@ -361,6 +361,106 @@ def test_send_buttons_with_no_title_to_render_is_a_4xx_not_a_bare_exception():
     assert fake.calls == []
 
 
+def test_send_photos_posts_the_phone_and_local_paths_and_returns_the_body():
+    """TASK-131 round 7 (Ivan, 2026-09-22): mechanism proof, no idempotency key -- unlike send_text/
+    send_buttons this does not go through begin_turn/begin_campaign_attempt at all, matching the
+    executor route it calls (no client_msg_id there either)."""
+    cl, fake = build((200, {"ok": True, "at": "2026-09-22T21:00:00.000Z",
+                            "sent": [{"clock": "21:00", "tick": "Gesendet"},
+                                    {"clock": "21:01", "tick": "Gesendet"}]}))
+    result = cl.send_photos(LEAD, ["/tmp/a.jpg", "/tmp/b.jpg"])
+    assert result["sent"] == [{"clock": "21:00", "tick": "Gesendet"},
+                              {"clock": "21:01", "tick": "Gesendet"}]
+    [call] = fake.calls
+    assert call["url"] == BASE + BR.PHOTOS_PATH
+    assert call["body"] == {"phone": LEAD, "local_paths": ["/tmp/a.jpg", "/tmp/b.jpg"]}
+
+
+def test_send_photos_with_no_files_is_a_4xx_not_a_bare_exception():
+    cl, fake = build()
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_photos(LEAD, [])
+    assert caught.value.status_code == BR.CONTRACT_STATUS
+    assert fake.calls == []
+
+
+def test_send_photos_surfaces_a_non_200_as_a_bridge_error():
+    cl, fake = build((500, {"error": {"code": "executor_error", "detail": "boom"}}))
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_photos(LEAD, ["/tmp/a.jpg"])
+    assert caught.value.status_code == 500
+
+
+def test_send_gallery_posts_the_phone_local_paths_and_caption_and_returns_the_body():
+    """TASK-131 round 7 gallery redesign (Ivan, 2026-09-22): one message, several photos, a shared
+    caption -- same mechanism-proof shape as send_photos, its own route."""
+    cl, fake = build((200, {"ok": True, "at": "2026-09-23T02:00:00.000Z",
+                            "clock": "02:00", "tick": "Gesendet"}))
+    result = cl.send_gallery(LEAD, ["/tmp/a.jpg", "/tmp/b.jpg"], caption="Unsere Klinik")
+    assert (result["clock"], result["tick"]) == ("02:00", "Gesendet")
+    [call] = fake.calls
+    assert call["url"] == BASE + BR.GALLERY_PATH
+    assert call["body"] == {"phone": LEAD, "local_paths": ["/tmp/a.jpg", "/tmp/b.jpg"],
+                            "caption": "Unsere Klinik"}
+
+
+def test_send_gallery_omits_caption_from_the_body_when_none_is_given():
+    cl, fake = build((200, {"ok": True, "at": "x", "clock": "02:00", "tick": "Gesendet"}))
+    cl.send_gallery(LEAD, ["/tmp/a.jpg"])
+    [call] = fake.calls
+    assert call["body"] == {"phone": LEAD, "local_paths": ["/tmp/a.jpg"]}
+
+
+def test_send_gallery_with_no_files_is_a_4xx_not_a_bare_exception():
+    cl, fake = build()
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_gallery(LEAD, [])
+    assert caught.value.status_code == BR.CONTRACT_STATUS
+    assert fake.calls == []
+
+
+def test_send_gallery_surfaces_a_non_200_as_a_bridge_error():
+    cl, fake = build((500, {"error": {"code": "executor_error", "detail": "boom"}}))
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_gallery(LEAD, ["/tmp/a.jpg"])
+    assert caught.value.status_code == 500
+
+
+def test_send_document_posts_the_phone_local_path_and_caption_and_returns_the_body():
+    """TASK-131 round 7 (Ivan, 2026-09-23): a file, any type -- same mechanism-proof shape as
+    send_photos/send_gallery, its own route."""
+    cl, fake = build((200, {"ok": True, "at": "2026-09-23T02:50:00.000Z",
+                            "clock": "02:50", "tick": "Gesendet"}))
+    result = cl.send_document(LEAD, "/tmp/Lebenslauf.pdf", caption="Bitte pruefen")
+    assert (result["clock"], result["tick"]) == ("02:50", "Gesendet")
+    [call] = fake.calls
+    assert call["url"] == BASE + BR.DOCUMENT_PATH
+    assert call["body"] == {"phone": LEAD, "local_path": "/tmp/Lebenslauf.pdf",
+                            "caption": "Bitte pruefen"}
+
+
+def test_send_document_omits_caption_from_the_body_when_none_is_given():
+    cl, fake = build((200, {"ok": True, "at": "x", "clock": "02:50", "tick": "Gesendet"}))
+    cl.send_document(LEAD, "/tmp/Lebenslauf.pdf")
+    [call] = fake.calls
+    assert call["body"] == {"phone": LEAD, "local_path": "/tmp/Lebenslauf.pdf"}
+
+
+def test_send_document_with_no_file_is_a_4xx_not_a_bare_exception():
+    cl, fake = build()
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_document(LEAD, "")
+    assert caught.value.status_code == BR.CONTRACT_STATUS
+    assert fake.calls == []
+
+
+def test_send_document_surfaces_a_non_200_as_a_bridge_error():
+    cl, fake = build((500, {"error": {"code": "executor_error", "detail": "boom"}}))
+    with pytest.raises(BR.BridgeError) as caught:
+        cl.send_document(LEAD, "/tmp/Lebenslauf.pdf")
+    assert caught.value.status_code == 500
+
+
 def test_a_template_with_buttons_is_refused_not_flattened():
     definition = {"name": "erstkontakt", "language": "de", "status": "APPROVED",
                   "parameter_format": "POSITIONAL",

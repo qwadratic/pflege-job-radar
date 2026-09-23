@@ -14,8 +14,9 @@ OTHER = "+491701112233"
 WIDTH = 1080
 
 
-def node(rid, text="", *, bounds=(57, 100, 900, 180), desc="", clickable=False, pkg="com.whatsapp"):
-    return AD.Node(cls="android.widget.TextView", rid=f"com.whatsapp:id/{rid}", text=text,
+def node(rid, text="", *, bounds=(57, 100, 900, 180), desc="", clickable=False, pkg="com.whatsapp",
+        cls="android.widget.TextView"):
+    return AD.Node(cls=cls, rid=f"com.whatsapp:id/{rid}", text=text,
                    desc=desc, bounds=bounds, clickable=clickable, pkg=pkg)
 
 
@@ -72,6 +73,11 @@ class ScriptedAdb(AD.Adb):
         self.media_listing = ""     # what the find+stat shell command answers, scripted per test
         self.pulls = []             # (remote, local) pairs this test's driver was asked to pull
         self.fail_pull = None       # a remote path whose pull answers rc != 0
+        # --- outbound media: photos (TASK-131 round 7) ----------------------------------------
+        self.pushes = []            # (local, remote) pairs this test's driver was asked to push
+        self.fail_push = None       # a local path whose push answers rc != 0
+        # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign) ----------
+        self.device_date = "202609230200.00"   # what "date +%Y%m%d%H%M.%S" answers, scripted per test
 
     # --- what the driver asks of a phone -------------------------------------------------------
     def connected(self):
@@ -102,6 +108,8 @@ class ScriptedAdb(AD.Adb):
             return self.ime
         if "find" in cmd and "stat" in cmd:
             return self.media_listing
+        if cmd == "date +%Y%m%d%H%M.%S":
+            return self.device_date
         return ""
 
     def pull(self, remote, local, *, timeout=120):
@@ -114,6 +122,15 @@ class ScriptedAdb(AD.Adb):
         pathlib.Path(local).parent.mkdir(parents=True, exist_ok=True)
         pathlib.Path(local).write_bytes(b"scripted bytes for " + remote.encode())
         return subprocess.CompletedProcess(["adb", "pull"], returncode=0, stdout="1 file pulled",
+                                           stderr="")
+
+    def push(self, local, remote, *, timeout=120):
+        import subprocess
+        self.pushes.append((local, remote))
+        if local == self.fail_push:
+            return subprocess.CompletedProcess(["adb", "push"], returncode=1,
+                                               stdout="", stderr="no such file or directory")
+        return subprocess.CompletedProcess(["adb", "push"], returncode=0, stdout="1 file pushed",
                                            stderr="")
 
     def tap(self, x, y):
@@ -730,3 +747,467 @@ def test_a_failed_pull_is_a_driver_error_and_writes_nothing_useful(tmp_path):
     with pytest.raises(D.DriverError) as caught:
         driver.pull_media("WhatsApp Documents/gone.pdf", dest)
     assert "adb pull" in str(caught.value)
+
+
+# --- outbound media: photos (TASK-131 round 7, Ivan 2026-09-22) ---------------------------------
+def share_picker(*row_texts):
+    """WhatsApp's own share-target screen (ExternalShareAlias), one row per candidate text --
+    verified live, this handset, 2026-09-22."""
+    return [node("contactpicker_row_name", text, bounds=(216, 813 + i * 90, 608, 878 + i * 90))
+           for i, text in enumerate(row_texts)]
+
+
+def photo_compose(recipient_text):
+    """The screen WhatsApp opens once exactly one share-picker row is tapped: a recipients line
+    (what it read back) and the send button, verified live the same session."""
+    return [node("recipients", recipient_text, bounds=(48, 2063, 457, 2107)),
+           node("send", bounds=(912, 2020, 1056, 2107), clickable=True)]
+
+
+def outgoing_photo(clock="10:06", tick="Gesendet", y=600):
+    """An image bubble draws no message_text node at all (this module's own docstring) -- just a
+    date and a status, banded the way _outgoing_bubble_count/_newest_outgoing_tick read them."""
+    return [node("date", clock, bounds=(800, y + 82, 1017, y + 110)),
+           node("status", desc=tick, bounds=(960, y + 82, 1017, y + 110))]
+
+
+def test_send_photo_pushes_shares_and_verifies_a_new_outgoing_bubble(tmp_path):
+    header = PHONE
+    local = tmp_path / "clinic.jpg"
+    local.write_bytes(b"not a real jpeg, this test only cares about the path")
+    driver, adb = build([
+        conversation(header, []),           # before-count read
+        share_picker(header),               # WhatsApp's own picker, our row present
+        photo_compose(header),              # compose screen, recipient line reads back correctly
+        conversation(header, []),           # open_chat's own re-verification after sending
+        conversation(header, [outgoing_photo()]),   # the new bubble, read back for the tick
+    ])
+    driver._open_phone = PHONE
+    clock, tick = driver.send_photo(PHONE, str(local))
+    assert (clock, tick) == ("10:06", "Gesendet")
+    assert adb.pushes == [(str(local), f"/sdcard/Pictures/{AD.OUTBOUND_MEDIA_DIR}/clinic.jpg")]
+    assert any("android.intent.action.SEND" in c and "image/jpeg" in c for c in adb.commands)
+
+
+def test_send_photo_without_a_verified_open_chat_refuses(tmp_path):
+    local = tmp_path / "clinic.jpg"
+    local.write_bytes(b"x")
+    driver, adb = build([[]])
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photo(PHONE, str(local))
+    assert "without a verified open chat" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_photo_refuses_a_local_file_that_does_not_exist():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photo(PHONE, "/tmp/definitely-not-here-9f8e7d.jpg")
+    assert "does not exist" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_photo_refuses_when_no_picker_row_matches_the_phone(tmp_path):
+    local = tmp_path / "clinic.jpg"
+    local.write_bytes(b"x")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(OTHER),          # WhatsApp's own picker, but not our number
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photo(PHONE, str(local))
+    assert "no row in WhatsApp's own share picker matches" in str(caught.value)
+
+
+def test_send_photo_refuses_two_ambiguous_picker_rows_rather_than_guess(tmp_path):
+    local = tmp_path / "clinic.jpg"
+    local.write_bytes(b"x")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(PHONE, PHONE),   # the same number drawn twice -- refuse, never guess
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photo(PHONE, str(local))
+    assert "refusing to guess" in str(caught.value)
+
+
+def test_send_photo_refuses_when_the_compose_screens_recipient_line_disagrees(tmp_path):
+    local = tmp_path / "clinic.jpg"
+    local.write_bytes(b"x")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(PHONE),
+        photo_compose(OTHER),   # picked the right row, but the compose screen reads back wrong
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photo(PHONE, str(local))
+    assert "does not read back" in str(caught.value)
+
+
+# --- outbound media: one gallery message (TASK-131 round 7 gallery redesign, 2026-09-23) -------
+def attach_button():
+    """The paperclip on the conversation screen itself, verified live this handset, 2026-09-23."""
+    return [node("input_attach_button", desc="Anhängen", bounds=(596, 2031, 740, 2107), clickable=True)]
+
+
+def attach_menu():
+    """The bottom-sheet a tap on the paperclip opens; only the row this driver needs is scripted."""
+    return [node("pickfiletype_gallery_holder", text="Galerie", bounds=(0, 1357, 270, 1524),
+                 clickable=True)]
+
+
+def gallery_item(day, month_name, year, hh, mm, *, y=1129):
+    """One 'Letzte' thumbnail, dated the way WhatsApp's own content-desc draws it -- verified live
+    this handset, 2026-09-23: '‎Foto, Datum: 22. September 2026 23:52'."""
+    text = f"Foto, Datum: {day}. {month_name} {year} {hh:02d}:{mm:02d}"
+    return node("media_item_view", desc=text, bounds=(0, y, 265, y + 266), clickable=True)
+
+
+def gallery_screen(items, *, selected_count=None, caption_text=""):
+    """The gallery grid screen; once ``selected_count`` is set, the counter/caption/send nodes a
+    real selection draws are included too (this scripted phone does not simulate a tap's effect on
+    the screen, so a test that wants to read them back after "tapping" scripts them present from
+    the start, same convention as ``photo_compose``)."""
+    screen = list(items)
+    if selected_count is not None:
+        screen.append(node("send_media_counter", str(selected_count),
+                           bounds=(1002, 2008, 1074, 2080)))
+        screen.append(node("send_media_btn", desc=f"{selected_count} Medienobjekte senden",
+                           bounds=(912, 2020, 1056, 2107), clickable=True))
+        screen.append(node("caption", caption_text, desc="Bildunterschrift hinzufügen",
+                           bounds=(228, 1980, 744, 2107), clickable=True,
+                           cls="android.widget.EditText"))
+    return screen
+
+
+def sent_gallery_bubble_caption(text, *, y=446):
+    """The SAME resource-id, drawn read-only under an already-sent gallery bubble further up the
+    same conversation -- verified live, this handset, 2026-09-23 (module docstring in
+    send_gallery): a TextView, not the picker's own EditText, and its bounds sit outside the
+    picker sheet -- tapping it (picked blind by rid alone) lands on the conversation behind the
+    sheet instead."""
+    return node("caption", text, bounds=(251, y, 737, y + 83), cls="android.widget.TextView")
+
+
+def test_send_gallery_pushes_stamps_selects_by_timestamp_captions_and_sends(tmp_path):
+    header = PHONE
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    b = tmp_path / "b.jpg"
+    b.write_bytes(b"b")
+    items = [gallery_item(23, "September", 2026, 1, 59), gallery_item(23, "September", 2026, 2, 0)]
+    driver, adb = build([
+        conversation(header, []),                                          # before-count
+        conversation(header, []) + attach_button(),                        # attach button wait
+        attach_menu(),                                                     # "Galerie" tapped
+        gallery_screen(items, selected_count=2),                           # matched by timestamp
+        gallery_screen(items, selected_count=2),                           # counter re-read
+        gallery_screen(items, selected_count=2, caption_text="Test caption"),  # send button, post-caption
+        conversation(header, []),                                          # open_chat re-verification
+        conversation(header, [outgoing_photo(clock="10:06", tick="Gesendet")]),  # the new bubble
+    ])
+    adb.device_date = "202609230200.00"   # device "now" = 2026-09-23 02:00 -- the DST-compensated
+                                            # touch lands at 01:00, the two files stamp 01:59/02:00
+    driver._open_phone = PHONE
+    clock, tick = driver.send_gallery(PHONE, [str(a), str(b)], caption="Test caption")
+    assert (clock, tick) == ("10:06", "Gesendet")
+    assert len(adb.pushes) == 2
+    assert any(c.startswith("touch -t") for c in adb.commands)
+    assert any("MEDIA_SCANNER_SCAN_FILE" in c for c in adb.commands)
+    assert "Test caption" in "".join(t for t in adb.typed if t != "<clear>"), (
+        "type_human chunks words randomly -- join before asserting, never assume a chunk boundary")
+
+
+def test_send_gallery_types_into_the_live_caption_field_not_a_sent_bubbles_readonly_one(tmp_path):
+    """The regression this fix exists for (found live, 2026-09-23): rid=RID_CAPTION alone matches
+    BOTH the picker's own live caption box (an EditText) and the read-only caption TextView
+    WhatsApp draws under an already-sent gallery bubble higher up the same conversation -- present
+    in every dump once such a bubble is on screen, and sorted FIRST here on purpose. Taking the
+    first rid match blind grabbed the read-only one at least once live, typed the caption into the
+    ordinary chat composer behind the sheet instead, and read back "no send button" next. This
+    proves the class filter reaches the editable one regardless of node order."""
+    header = PHONE
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    items = [gallery_item(23, "September", 2026, 2, 0)]
+    screen_with_old_bubble = ([sent_gallery_bubble_caption("Test gallery caption")]
+                              + gallery_screen(items, selected_count=1, caption_text="New caption"))
+    driver, adb = build([
+        conversation(header, []),
+        conversation(header, []) + attach_button(),
+        attach_menu(),
+        screen_with_old_bubble,
+        screen_with_old_bubble,
+        screen_with_old_bubble,
+        conversation(header, []),
+        conversation(header, [outgoing_photo(clock="10:06", tick="Gesendet")]),
+    ])
+    adb.device_date = "202609230200.00"
+    driver._open_phone = PHONE
+    driver.send_gallery(PHONE, [str(a)], caption="New caption")
+    assert "New caption" in "".join(t for t in adb.typed if t != "<clear>")
+    live_caption_center = (228 + 744) // 2, (1980 + 2107) // 2
+    stale_bubble_center = (251 + 737) // 2, (446 + 529) // 2
+    assert live_caption_center in adb.taps
+    assert stale_bubble_center not in adb.taps
+
+
+def test_send_gallery_refuses_without_a_verified_open_chat(tmp_path):
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    driver, adb = build([[]])
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, [str(a)])
+    assert "without a verified open chat" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_gallery_refuses_a_local_file_that_does_not_exist():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, ["/tmp/definitely-not-here-9f8e7d.jpg"])
+    assert "does not exist" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_gallery_refuses_more_than_the_cap():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, [f"/tmp/{i}.jpg" for i in range(D.MAX_PHOTOS_PER_SEND + 1)])
+    assert "at most" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_gallery_refuses_an_empty_list():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError):
+        driver.send_gallery(PHONE, [])
+
+
+def test_send_gallery_refuses_when_a_stamp_has_no_match(tmp_path):
+    """One of the two staged files' own minute is simply not in the pool -- MediaStore/the picker
+    has not caught up yet, or the touch failed silently. Never fall back to selecting something
+    close; a real candidate's own photo could be the nearest match."""
+    header = PHONE
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    b = tmp_path / "b.jpg"
+    b.write_bytes(b"b")
+    only_second = [gallery_item(23, "September", 2026, 2, 0)]
+    driver, adb = build([
+        conversation(header, []),
+        conversation(header, []) + attach_button(),
+        attach_menu(),
+        gallery_screen(only_second, selected_count=1),
+    ])
+    adb.device_date = "202609230200.00"
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, [str(a), str(b)])
+    assert "refusing to guess" in str(caught.value)
+
+
+def test_send_gallery_refuses_when_a_stamp_matches_more_than_one_item(tmp_path):
+    """A real candidate's photo (or an earlier leftover) happens to share a staged file's own
+    minute -- refuse rather than pick either one blind."""
+    header = PHONE
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    b = tmp_path / "b.jpg"
+    b.write_bytes(b"b")
+    duplicated = [gallery_item(23, "September", 2026, 1, 59), gallery_item(23, "September", 2026, 1, 59),
+                 gallery_item(23, "September", 2026, 2, 0)]
+    driver, adb = build([
+        conversation(header, []),
+        conversation(header, []) + attach_button(),
+        attach_menu(),
+        gallery_screen(duplicated, selected_count=2),
+    ])
+    adb.device_date = "202609230200.00"
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, [str(a), str(b)])
+    assert "refusing to guess" in str(caught.value)
+
+
+def test_send_gallery_refuses_when_the_selection_counter_disagrees(tmp_path):
+    header = PHONE
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    b = tmp_path / "b.jpg"
+    b.write_bytes(b"b")
+    items = [gallery_item(23, "September", 2026, 1, 59), gallery_item(23, "September", 2026, 2, 0)]
+    driver, adb = build([
+        conversation(header, []),
+        conversation(header, []) + attach_button(),
+        attach_menu(),
+        gallery_screen(items, selected_count=1),   # both matched, but the counter reads "1" not "2"
+    ])
+    adb.device_date = "202609230200.00"
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_gallery(PHONE, [str(a), str(b)])
+    assert "selection counter" in str(caught.value)
+
+
+# --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23) ---------------------------
+def document_recipient_confirm():
+    """The intermediate "N ausgewählt" recipient-confirm screen a document share -- unlike a
+    photo share -- lands on first: its own confirm control shares the plain send button's own
+    resource id (RID_SEND), verified live, this handset, 2026-09-23."""
+    return [node("send", desc="Senden", bounds=(912, 2020, 1056, 2107), clickable=True)]
+
+
+def document_compose(basename, *, caption_text=""):
+    """WhatsApp's own DocumentPreviewActivity, opened once the share picker's matched row (and,
+    for a document, the recipient-confirm screen past that) is tapped -- verified live, this
+    handset, 2026-09-23."""
+    return [
+        node("document_file_name", basename, bounds=(0, 995, 1080, 1177)),
+        node("caption", caption_text, desc="Bildunterschrift hinzufügen",
+             bounds=(84, 1831, 1014, 1969), clickable=True, cls="android.widget.EditText"),
+        node("send", desc="Senden", bounds=(912, 2020, 1056, 2107), clickable=True),
+    ]
+
+
+def test_send_document_pushes_shares_confirms_captions_and_sends(tmp_path):
+    """The full flow as observed live, 2026-09-23: unlike a photo, a document share lands on an
+    intermediate recipient-confirm screen before the real compose screen."""
+    header = PHONE
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(header, []),                          # before-count
+        share_picker(header),                               # WhatsApp's own picker, our row present
+        document_recipient_confirm(),                        # "N ausgewählt" -- one more tap
+        document_compose("Lebenslauf.pdf"),                  # filename verified, caption present
+        document_compose("Lebenslauf.pdf", caption_text="New caption"),  # send, post-caption
+        conversation(header, []),                            # open_chat re-verification
+        conversation(header, [outgoing_photo(clock="10:06", tick="Gesendet")]),  # the new bubble
+    ])
+    driver._open_phone = PHONE
+    clock, tick = driver.send_document(PHONE, str(a), caption="New caption")
+    assert (clock, tick) == ("10:06", "Gesendet")
+    assert adb.pushes == [(str(a), f"/sdcard/Pictures/{AD.OUTBOUND_MEDIA_DIR}/Lebenslauf.pdf")]
+    assert any("android.intent.action.SEND" in c and "application/pdf" in c for c in adb.commands)
+    assert "New caption" in "".join(t for t in adb.typed if t != "<clear>")
+
+
+def test_send_document_skips_the_confirm_screen_when_the_share_lands_on_compose_directly(tmp_path):
+    """Not assumed fixed at exactly one extra tap: if some WhatsApp build (or content type) lands
+    directly on the compose screen the way a photo share does, this must still work without ever
+    tapping a "send" that turns out to belong to a screen already left behind."""
+    header = PHONE
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(header, []),
+        share_picker(header),
+        document_compose("Lebenslauf.pdf"),   # no intermediate screen this time
+        conversation(header, []),
+        conversation(header, [outgoing_photo(clock="10:06", tick="Gesendet")]),
+    ])
+    driver._open_phone = PHONE
+    clock, tick = driver.send_document(PHONE, str(a))
+    assert (clock, tick) == ("10:06", "Gesendet")
+
+
+def test_send_document_refuses_without_a_verified_open_chat(tmp_path):
+    a = tmp_path / "a.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([[]])
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, str(a))
+    assert "without a verified open chat" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_document_refuses_a_local_file_that_does_not_exist():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, "/tmp/definitely-not-here-9f8e7d.pdf")
+    assert "does not exist" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_document_refuses_when_no_picker_row_matches_the_phone(tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(OTHER),
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, str(a))
+    assert "no row in WhatsApp's own share picker matches" in str(caught.value)
+
+
+def test_send_document_refuses_two_ambiguous_picker_rows_rather_than_guess(tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(PHONE, PHONE),
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, str(a))
+    assert "refusing to guess" in str(caught.value)
+
+
+def test_send_document_refuses_when_the_share_flow_lands_nowhere_recognised(tmp_path):
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(PHONE),
+        [],   # neither the confirm screen nor the compose screen
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, str(a))
+    assert "neither the compose screen nor a recipient-confirm step" in str(caught.value)
+
+
+def test_send_document_refuses_when_whatsapps_own_compose_screen_shows_a_different_file(tmp_path):
+    """A defensive re-check, not a redundant one: this is the SAME real bug class the caption
+    class-filter fix exists for (module docstring, send_gallery) -- WhatsApp's own compose screen
+    is the truth about what will actually send, checked again rather than assumed from having
+    matched the intended recipient in the share picker."""
+    a = tmp_path / "Lebenslauf.pdf"
+    a.write_bytes(b"a")
+    driver, adb = build([
+        conversation(PHONE, []),
+        share_picker(PHONE),
+        document_compose("a_totally_different_file.pdf"),
+    ])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_document(PHONE, str(a))
+    assert "reads back" in str(caught.value)
+
+
+def test_send_photos_refuses_more_than_the_cap():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photos(PHONE, [f"/tmp/{i}.jpg" for i in range(D.MAX_PHOTOS_PER_SEND + 1)])
+    assert "at most" in str(caught.value)
+    assert adb.pushes == [], "refused before anything was pushed to the handset"
+
+
+def test_send_photos_refuses_an_empty_list():
+    driver, adb = build([[]])
+    driver._open_phone = PHONE
+    with pytest.raises(D.DriverError) as caught:
+        driver.send_photos(PHONE, [])
+    assert "no files" in str(caught.value)
