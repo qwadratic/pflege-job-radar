@@ -131,16 +131,18 @@ def search(key: str, session=None, locale="de", page_num=1000, offset=0):
 
 
 def walk_all_postings(key: str, session=None, page_size=1000):
-    """-> (jobPostings, error) -- walks page.offset until page.total is reached (the board's own end
-    signal, not a fixed page count; a tenant whose first page already covers page.total, true for
-    every board surveyed so far, makes just the one call). error is None on success, or a message if
-    the search endpoint could not be reached at all -- distinguishes a genuinely empty board from one
-    the crawl never got to ask, the same way every other fetch in this module reports failure rather
-    than raising into the caller."""
+    """-> (jobPostings, error, board_total) -- walks page.offset until page.total is reached (the
+    board's own end signal, not a fixed page count; a tenant whose first page already covers
+    page.total, true for every board surveyed so far, makes just the one call). error is None on
+    success, or a message if the search endpoint could not be reached at all -- distinguishes a
+    genuinely empty board from one the crawl never got to ask, the same way every other fetch in
+    this module reports failure rather than raising into the caller. board_total is the API's own
+    declared page.total (None if the board does not publish one) -- TASK-88 AC#1: it already drove
+    the walk above, this just stops discarding it afterwards."""
     try:
         data = search(key, session, page_num=page_size)
     except requests.RequestException as e:
-        return [], f"B-ITE postings search failed: {e}"
+        return [], f"B-ITE postings search failed: {e}", None
     jps = list(data.get("jobPostings") or [])
     total = (data.get("page") or {}).get("total")
     while total is not None and len(jps) < total:
@@ -152,7 +154,7 @@ def walk_all_postings(key: str, session=None, page_size=1000):
         if not got:
             break   # board's own total overstates what it actually serves -- stop, don't spin
         jps.extend(got)
-    return jps, None
+    return jps, None, total
 
 
 def posting_html(url: str, session=None):
@@ -331,8 +333,9 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
         if key:
             cust, lst = d["customer"], d["listing"]
             break
+    board_total = None
     if key:
-        jps, walk_err = walk_all_postings(key, s)
+        jps, walk_err, board_total = walk_all_postings(key, s)
         if walk_err:
             return [], {"error": walk_err}
     else:
@@ -362,7 +365,11 @@ def crawl(seed: dict, towns, with_descriptions=True, log=print):
     # classify.classify_role's nursing_section_confirmed signal instead.
     matched = sum(1 for jp in jps if tax_key and _has_label(jp, tax_key, nursing_label)) if tax_key else None
     out, stats = [], {"customer": cust, "listing": lst, "total": len(jps), "pflege": 0,
-                       "section_field": tax_key, "section_label": nursing_label, "section_matched": matched}
+                       "section_field": tax_key, "section_label": nursing_label, "section_matched": matched,
+                       # TASK-88 AC#1: the API's own declared page.total (None for the same-origin
+                       # fallback paths, which have no such field) -- distinct from "total" above
+                       # (rows this crawl actually fetched), so app/crawl.py can compare the two.
+                       "board_total": board_total}
     for i, jp in enumerate(jps):
         section_confirmed = bool(tax_key) and _has_label(jp, tax_key, nursing_label)
         desc0 = jp.get("_desc_html")   # jobposting_links fallback already fetched the detail page's own JSON-LD

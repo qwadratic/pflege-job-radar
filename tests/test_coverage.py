@@ -32,6 +32,20 @@ def test_coverage_rows_and_totals(client):
     assert reasons.get("no careers_url") == 1 and reasons.get("no adapter for helios") == 1
 
 
+def test_coverage_surfaces_incomplete_boards_from_crawl_issues(client):
+    """TASK-88 AC#4: crawl_issues kind='incomplete' was written every crawl (app/crawl.py's
+    board_total checks) but read nowhere in app/ -- an under-reading board was invisible until the
+    next manual audit. A kind='empty'/'truncated' issue must not count (different signal)."""
+    R.record_crawl_issue("https://x.example/board", R.now()[:10], "incomplete", "typo3_jobs",
+                          ["36201"], "board reports 57 total but the adapter returned 12 row(s)", None)
+    R.record_crawl_issue("https://y.example/board", R.now()[:10], "empty", "rexx", ["1"], "0 rows", None)
+    d = client.get("/api/coverage").json()
+    assert _row(d, "typo3_jobs")["incomplete_boards_7d"] == 1
+    assert _row(d, "rexx")["incomplete_boards_7d"] == 0
+    assert d["incomplete_boards"] == [{"board_url": "https://x.example/board", "vendor": "typo3_jobs",
+                                        "day": R.now()[:10], "error": "board reports 57 total but the adapter returned 12 row(s)"}]
+
+
 def test_coverage_last_run_and_credits(client):
     rid = R.create_run("ats_type", "typo3_jobs", "adapter", clinic_ids=["36201"])
     R.update_run(rid, status="done", started_at=R.now(), finished_at=R.now(), n_rows=12, n_new=4, error="2 error(s), see log")

@@ -151,6 +151,49 @@ def test_seeded_adapter_error_in_stats_enters_the_retry_ladder(fresh, monkeypatc
     assert "no umantis instance" in issues[0]["error"]
 
 
+def test_seeded_adapter_under_read_is_recorded_as_crawl_issue_kind_incomplete(fresh, monkeypatch):
+    """TASK-88 AC#1/#2: the seeded-adapter counterpart of the vendor-branch board_total check --
+    bite.py is the first seeded adapter to surface its own board's declared total (page.total)
+    via stats['board_total']; st.get() keeps this a no-op for seeded adapters that don't yet."""
+    seeded_board = {"kind": "seeded", "vendor": "bite", "clinics": [CLINIC]}
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        [{"kind": "observation", "payload": {}}], {"total": 1, "board_total": 57}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "57" in issues[0]["error"] and "1" in issues[0]["error"]
+
+
+def test_seeded_adapter_matching_its_own_declared_total_records_no_incomplete_issue(fresh, monkeypatch):
+    seeded_board = {"kind": "seeded", "vendor": "bite", "clinics": [CLINIC]}
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        [{"kind": "observation", "payload": {}}], {"total": 1, "board_total": 1}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+
+
+def test_seed_obs_softgarden_branch_carries_the_feeds_declared_total_into_stats(monkeypatch):
+    """TASK-88 AC#1: softgarden.fetch_feed's own numberOfItems (schema.org DataFeed field) must
+    reach _seed_obs's returned stats, the same way bite's page.total does -- otherwise
+    app/crawl.py's generic board_total consumer never sees it for this vendor."""
+    import pflege_jobs.sources.softgarden as SG
+    monkeypatch.setattr(SG, "seed_for", lambda facility, kez, town, session=None: {
+        "name": facility["name"], "kez": kez, "town": town, "career": "https://x.example/de/vacancies",
+        "feed_hosts": ["https://x.example"], "host": "https://x.example", "bavaria_only_operator": True})
+    monkeypatch.setattr(SG, "fetch_feed", lambda hosts, session=None: (
+        [{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", "url": "https://x.example/jobs/1"}],
+        "https://x.example", 5))
+    clinic = {**CLINIC, "careers_url": "https://x.example/karriere"}
+    board = {"kind": "seeded", "vendor": "softgarden", "clinics": [clinic]}
+    obs, st = CR._seed_obs(board, clinic, {"x"}, print)
+    assert len(obs) == 1
+    assert st["board_total"] == 5
+
+
 def test_cli_inbox_nonzero_exit_is_recorded_and_fails_the_run(fresh, monkeypatch):
     """TASK-72 AC#4: _cli(["inbox"])'s return code used to be discarded outright -- a failed drain
     left the queue stranded with no trace in either crawl_issues or the run's own status."""

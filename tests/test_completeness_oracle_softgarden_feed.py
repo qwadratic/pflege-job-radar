@@ -78,7 +78,7 @@ def test_fetch_feed_backfills_missing_valid_through_from_detail_page():
                                                            url="https://tenant.example/jobs.feed.json"),
         "https://tenant.example/jobs/1/Pflegefachkraft/": FakeResp(text=detail_html, url="https://tenant.example/jobs/1/Pflegefachkraft/"),
     })
-    items, host = fetch_feed(["https://tenant.example"], session=s)
+    items, host, _board_total = fetch_feed(["https://tenant.example"], session=s)
     assert host == "https://tenant.example"
     assert items[0]["validThrough"] == "2028-07-30T10:19:31+02:00"
 
@@ -90,7 +90,7 @@ def test_fetch_feed_leaves_valid_through_alone_when_feed_already_has_it():
     }}]}
     s = FakeSession({"https://tenant.example/jobs.feed.json":
                       FakeResp(status_code=200, json_data=feed, url="https://tenant.example/jobs.feed.json")})
-    items, _host = fetch_feed(["https://tenant.example"], session=s)
+    items, _host, _board_total = fetch_feed(["https://tenant.example"], session=s)
     assert items[0]["validThrough"] == "2027-01-01"  # no detail fetch triggered -- feed value kept
 
 

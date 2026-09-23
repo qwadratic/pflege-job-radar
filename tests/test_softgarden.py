@@ -57,11 +57,24 @@ def test_fetch_feed_skips_404_and_returns_first_hit():
         "https://a.example/jobs.feed.json": FakeResp(status_code=404, url="https://a.example/jobs.feed.json"),
         "https://b.example/jobs.feed.json": FakeResp(status_code=200, url="https://b.example/jobs.feed.json", json_data=good),
     })
-    items, host = fetch_feed(["https://a.example", "https://b.example"], session=s)
+    items, host, board_total = fetch_feed(["https://a.example", "https://b.example"], session=s)
     assert host == "https://b.example"
     assert items == [{"@type": "JobPosting", "title": "x"}]
+    assert board_total is None   # `good` carries no numberOfItems field
+
+
+def test_fetch_feed_carries_the_feeds_own_number_of_items_as_board_total():
+    """TASK-88 AC#1: schema.org DataFeed's own numberOfItems field, confirmed live equal to
+    len(dataFeedElement) on a real tenant (jobs.pkd.de: 131 == 131) -- a cross-check against the
+    parsed array length, not trusted blindly (only used when it is actually an int)."""
+    good = {"numberOfItems": 2, "dataFeedElement": [
+        {"item": {"@type": "JobPosting", "title": "x"}}, {"item": {"@type": "JobPosting", "title": "y"}}]}
+    s = FakeSession({"https://a.example/jobs.feed.json": FakeResp(status_code=200, url="https://a.example/jobs.feed.json", json_data=good)})
+    items, host, board_total = fetch_feed(["https://a.example"], session=s)
+    assert len(items) == 2
+    assert board_total == 2
 
 
 def test_fetch_feed_returns_none_when_all_hosts_miss():
-    items, host = fetch_feed(["https://a.example", "https://b.example"], session=FakeSession({}))
-    assert items is None and host is None
+    items, host, board_total = fetch_feed(["https://a.example", "https://b.example"], session=FakeSession({}))
+    assert items is None and host is None and board_total is None

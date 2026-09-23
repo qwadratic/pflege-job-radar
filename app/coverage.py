@@ -231,11 +231,23 @@ def compute():
     for c in cells:
         by_adapter[c["adapter"]].append(c)
 
+    # TASK-88 AC#4: crawl_issues kind='incomplete' (an adapter that read its board's own
+    # self-reported total and returned fewer rows than it, see app/crawl.py's board_total checks)
+    # was written every crawl but read nowhere in app/ until now -- a board that starts under-reading
+    # was invisible until the next manual audit. 7d, not all-time: a board fixed last week should not
+    # keep showing as broken forever.
+    incomplete_since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    incomplete_issues = [i for i in R.list_crawl_issues(since=incomplete_since) if i.get("kind") == "incomplete"]
+    incomplete_by_vendor = defaultdict(list)
+    for i in incomplete_issues:
+        incomplete_by_vendor[i.get("vendor")].append(i)
+
     rows = []
     for key, a in acc.items():
         a["boards"] = len(fc_boards) if key == FIRECRAWL else board_count.get(key, 0)
         row = {"adapter": key, **a, "coverage_pct": _pct(a), **_feature_score(by_adapter.get(key) or []),
-               "last_run": _last_run(runs, key, members.get(key) or set())}
+               "last_run": _last_run(runs, key, members.get(key) or set()),
+               "incomplete_boards_7d": len(incomplete_by_vendor.get(key) or [])}
         if key == FIRECRAWL:
             row["credits_7d"] = credits_7d
             row["tokens_7d"] = tokens_7d
@@ -261,7 +273,14 @@ def compute():
     why = Counter(reason for _, reason in unroutable)
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "rows": rows, "totals": totals, "unattributed": unattributed, "clinic_freshness": _clinic_freshness(clinics, jobs),
-            "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))]}
+            "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))],
+            # TASK-88 AC#4: which boards, not just a per-adapter count -- one row per still-open
+            # under-read, most recent first, deduped by (board_url) at read time (record_crawl_issue's
+            # own upsert already keeps one row per (kind, board_url, day), so a re-crawl the same day
+            # that still under-reads updates it in place rather than piling up duplicates).
+            "incomplete_boards": sorted(
+                ({"board_url": i["board_url"], "vendor": i.get("vendor"), "day": i["day"], "error": i["error"]}
+                 for i in incomplete_issues), key=lambda x: x["day"], reverse=True)}
 
 
 @router.get("/coverage")

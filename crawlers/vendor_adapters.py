@@ -407,7 +407,15 @@ def crawl_smartrecruiters(c, session=None):
 
     out = [row("jobs.smartrecruiters.com", j["url"], j, "smartrecruiters")
            for j in parse_smartrecruiters({"content": content}, c["name"], first_url) if j.get("title") and j.get("url")]
-    return out or crawl_wp_jobs(c, session=session)
+    if not out:
+        return crawl_wp_jobs(c, session=session)
+    # TASK-88 AC#1: the board's own totalFound was already read to drive the offset walk above (the
+    # walk's own end signal) -- carrying it here costs nothing extra and lets app/crawl.py's existing
+    # board_total consumer (see _BoardTotalRows) catch a genuine under-read the same way it already
+    # does for crawl_erecruiter.
+    out = _BoardTotalRows(out)
+    out.board_total = total_found
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1763,8 +1771,14 @@ def crawl_oracle(c, session=None):
             if isinstance(data, dict) and data.get("dataFeedElement"):
                 from crawlers.portals import parse_jobposting_feed
                 jobs = parse_jobposting_feed(data, feed_url)
-                if jobs:
-                    return [row(p.netloc, j["url"], j, "oracle") for j in jobs if j.get("title") and j.get("url")]
+                out = [row(p.netloc, j["url"], j, "oracle") for j in jobs if j.get("title") and j.get("url")]
+                if out:
+                    # TASK-88 AC#1: same schema.org DataFeed shape softgarden.fetch_feed reads its
+                    # own numberOfItems from -- this softgarden-fronted oracle tenant carries the
+                    # identical field.
+                    out = _BoardTotalRows(out)
+                    out.board_total = data.get("numberOfItems") if isinstance(data.get("numberOfItems"), int) else None
+                    return out
     return _enrich_wp_fallback_fields(crawl_wp_jobs(c, session=session), session=session)
 
 
@@ -2014,7 +2028,7 @@ def crawl_asklepios(c, session=None, cu_resp=None):
         return []
     p = urlparse(r.url)
     api = "%s://%s/api/search" % (p.scheme, p.netloc)
-    out, seen, offset = [], set(), 0
+    out, seen, offset, board_total = [], set(), 0, None
     while True:
         resp = post_json(api, {"searchEndpoint": m.group(1), "q": "", "o": offset,
                                "l": ASKL_PAGE, "f": False, "filter": {}}, session=session)
@@ -2047,9 +2061,15 @@ def crawl_asklepios(c, session=None, cu_resp=None):
                            "asklepios"))
         offset += len(items)
         count = data.get("count")
+        if count is not None:
+            board_total = count
         if count is not None and offset >= count:
             break
         time.sleep(0.5)
+    # TASK-88 AC#1: the board's own declared `count` was already read to drive the offset walk above
+    # -- carry it as board_total so app/crawl.py's existing consumer catches a genuine under-read.
+    out = _BoardTotalRows(out)
+    out.board_total = board_total
     return out
 
 
@@ -2205,6 +2225,9 @@ def _erecruiter_date(raw):
 CONCLUDIS_WIDGET_HOST = re.compile(r"\(\s*window\s*,\s*document\s*,\s*'script'\s*,\s*'concludis'\s*,\s*'([a-z0-9.\-]+)'\s*\)", re.I)
 CONCLUDIS_BOARD = re.compile(r"concludis\(\s*'setJobBoard'\s*,\s*'([^']+)'\s*\)", re.I)
 CONCLUDIS_JOB = re.compile(r"cJobboard\.openJob\('([^']+)'\).*?<span class=\"headerlink stellenlink\">(.*?)</span>", re.S)
+# TASK-88 AC#1: the widget's own listing header states its count in plain text -- confirmed live
+# 2026-09-23, swmbrk.concludis.de board 36: <div class="stellensum">17 Stellen gefunden</div>.
+CONCLUDIS_COUNT_RX = re.compile(r'class="stellensum">\s*(\d+)\s*Stellen gefunden', re.I)
 
 
 def concludis_widget(careers_html):
@@ -2222,6 +2245,8 @@ def crawl_concludis_widget(c, session=None, cu_resp=None):
     lst = get("https://%s/prj/lst/?b=%s&lang=de_DE&jsinclude=1" % (host, board), session=session)
     if not (lst and lst.ok):
         return []
+    cm = CONCLUDIS_COUNT_RX.search(lst.text)
+    board_total = int(cm.group(1)) if cm else None
     out = []
     for href, inner in CONCLUDIS_JOB.findall(lst.text):
         title = _txt(inner, 300)
@@ -2242,6 +2267,8 @@ def crawl_concludis_widget(c, session=None, cu_resp=None):
                         "employmentType": (full or {}).get("employmentType")},
                        "concludis-widget"))
         time.sleep(0.5)
+    out = _BoardTotalRows(out)
+    out.board_total = board_total
     return out
 
 

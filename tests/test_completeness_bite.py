@@ -86,19 +86,21 @@ class _PagedFakeSession:
 def test_walk_all_postings_paginates_to_the_boards_own_total():
     all_jps = [{"title": f"Job {i}", "url": f"https://x/{i}"} for i in range(7)]
     fake = _PagedFakeSession(all_jps)
-    got, err = bite.walk_all_postings("key", fake, page_size=2)
+    got, err, board_total = bite.walk_all_postings("key", fake, page_size=2)
     assert err is None
     assert [j["title"] for j in got] == [j["title"] for j in all_jps]
     assert len(fake.calls) == 4   # 7 postings / page_size 2 -> 4 calls (2,2,2,1), not one guessed call
+    assert board_total == 7
 
 
 def test_walk_all_postings_single_call_when_first_page_already_covers_total():
     all_jps = [{"title": "only one", "url": "https://x/0"}]
     fake = _PagedFakeSession(all_jps)
-    got, err = bite.walk_all_postings("key", fake, page_size=1000)
+    got, err, board_total = bite.walk_all_postings("key", fake, page_size=1000)
     assert err is None
     assert len(got) == 1
     assert len(fake.calls) == 1
+    assert board_total == 1
 
 
 class _FailingPostSession:
@@ -110,9 +112,10 @@ def test_walk_all_postings_reports_the_failure_instead_of_raising():
     # 2026-09 regression: search() used to call raise_for_status() unguarded -- a blocked/broken
     # search endpoint crashed the whole crawl() instead of a clean (rows=[], error=...) like every
     # other fetch in this module already returns on failure (api_key, posting_html, the fallbacks).
-    got, err = bite.walk_all_postings("key", _FailingPostSession())
+    got, err, board_total = bite.walk_all_postings("key", _FailingPostSession())
     assert got == []
     assert err and "search failed" in err
+    assert board_total is None
 
 
 # --- _fallback_jobposting_links: no invented cap -------------------------------------------------
@@ -178,3 +181,18 @@ def test_crawl_reports_the_real_reason_when_only_mount_is_non_functional_and_no_
     rows, stats = bite.crawl(seed, {"münchen"}, with_descriptions=False)
     assert rows == []
     assert "artemed-8" in stats["error"] and "niiid" in stats["error"]   # names the mount it tried, not a silent []
+
+
+def test_crawl_carries_walk_all_postings_own_board_total_into_its_stats(monkeypatch):
+    """TASK-88 AC#1: crawl() must not just USE walk_all_postings' board_total to drive the walk
+    (that happens inside walk_all_postings itself) -- it must also forward it into stats, or
+    app/crawl.py's consumer never sees it."""
+    monkeypatch.setattr(bite, "api_key", lambda customer, listing, session=None: "deadbeef")
+    monkeypatch.setattr(bite, "walk_all_postings", lambda key, session=None, page_size=1000: (
+        [{"title": "Pflegefachkraft (m/w/d)", "url": "https://x/1"}], None, 57))
+    seed = {"name": "Klinik X", "kez": "K1", "career": "https://x.example/karriere",
+            "customer": "cust1", "listing": "list1"}
+    rows, stats = bite.crawl(seed, {"x"}, with_descriptions=False)
+    assert len(rows) == 1
+    assert stats["board_total"] == 57
+    assert stats["total"] == 1   # rows actually fetched, distinct from the board's own declared total

@@ -196,6 +196,21 @@ def test_smartrecruiters_keeps_full_walk_when_no_department_field(monkeypatch):
     assert not any("department=" in u for u in calls)
 
 
+def test_smartrecruiters_carries_the_boards_own_total_found_as_board_total(monkeypatch):
+    """TASK-88 AC#1: totalFound was already read to drive the offset walk (the "No offset ceiling"
+    comment in crawl_smartrecruiters) -- carrying it as board_total lets app/crawl.py's existing
+    consumer (TASK-88 AC#2) catch a genuine under-read the same way it already does for crawl_erecruiter."""
+    page = _R(json_data={"totalFound": 2, "content": [
+        _sr_posting("1", "Pflegefachkraft (m/w/d)", "1", "Pflege"),
+        _sr_posting("2", "Buchhalter (m/w/d)", "2", "Verwaltung"),
+    ]})
+    base = "https://api.smartrecruiters.com/v1/companies/ArtemedSE/postings"
+    monkeypatch.setattr(va, "get", _router({"%s?limit=100&offset=0" % base: page}))
+    rows = va.crawl_smartrecruiters({"name": "Artemed", "careers_url": "https://www.smartrecruiters.com/ArtemedSE"})
+    assert len(rows) == 2
+    assert rows.board_total == 2
+
+
 def test_smartrecruiters_finds_tenant_from_company_code_on_the_listing_page_itself(monkeypatch):
     # Klinik Vincentinum-shaped board: the careers_url IS the listing page (no smartrecruiters.com
     # in the url, no category subpages to crawl) -- the tenant only shows up as the widget's own
@@ -673,6 +688,17 @@ def test_oracle_prefers_the_jobs_feed_json_when_present(monkeypatch):
     rows = va.crawl_oracle({"name": "St. Josef", "careers_url": "https://karriere.example.de/"})
     assert [r["payload"]["title"] for r in rows] == ["Pflegefachkraft (m/w/d)"]
     assert rows[0]["payload"]["datePosted"] == "2026-07-01"
+    assert rows.board_total is None   # `feed` above carries no numberOfItems field
+
+
+def test_oracle_carries_the_feeds_own_number_of_items_as_board_total(monkeypatch):
+    """TASK-88 AC#1: same schema.org DataFeed shape softgarden.fetch_feed reads numberOfItems from."""
+    feed = {"numberOfItems": 1, "dataFeedElement": [{"item": {
+        "@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)",
+        "url": "https://karriere.example.de/jobs/1/Pflegefachkraft/"}}]}
+    monkeypatch.setattr(va, "get", _router({"https://karriere.example.de/jobs.feed.json": _R(json_data=feed, ok=True)}))
+    rows = va.crawl_oracle({"name": "St. Josef", "careers_url": "https://karriere.example.de/"})
+    assert rows.board_total == 1
 
 
 def test_oracle_falls_back_to_wp_jobs_and_backfills_missing_fields(monkeypatch):

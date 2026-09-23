@@ -340,12 +340,13 @@ def _seed_obs(board, c, towns, log):
         if not seed:
             return [], {"error": "no softgarden host found on careers page"}
         cr = Crawler(towns, sleep=0.2, log=log)  # BFS fallback walks to its own end -- see Crawler's ceiling note
-        items, feed_host = fetch_feed(seed["feed_hosts"], session=cr.s)
+        items, feed_host, board_total = fetch_feed(seed["feed_hosts"], session=cr.s)
         if items is None:
             log("softgarden: no jobs.feed.json on", " / ".join(seed["feed_hosts"]), "-- falling back to BFS")
             return cr.crawl(seed)
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": len(items), "heuristic_pages": 0,
-                  "job_links_found": len(items), "feed_items": len(items), "feed_host": feed_host, "truncated": False}
+                  "job_links_found": len(items), "feed_items": len(items), "feed_host": feed_host, "truncated": False,
+                  "board_total": board_total}
         out = []
         for jp in items:
             j = cr._from_jsonld(jp, jp.get("url") or seed["host"], seed)
@@ -802,7 +803,7 @@ def execute(run_id):
             obs, st = _seed_obs(b, c, towns, log)
             for o in obs:
                 o["_board"] = [x["clinic_id"] for x in b["clinics"]]
-            log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
+            log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'board_total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
             if st and st.get("error"):
                 return [], obs, st["error"]
             if st and st.get("truncated"):
@@ -814,6 +815,14 @@ def execute(run_id):
                                      f"read stopped by a safety ceiling, not by the board's own end of pagination "
                                      f"({json.dumps({k: v for k, v in st.items() if k in ('job_links_found', 'list_pages', 'job_pages')}, ensure_ascii=False)})", run_id)
                 log(f"  WARNING: truncated read for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=truncated")
+            # TASK-88 AC#1/#2: the seeded-adapter counterpart to the vendor branch's board_total
+            # check above -- bite.py is the first seeded adapter to carry it (page.total off its own
+            # API), st.get() keeps this a no-op for the others until they do too.
+            board_total = st.get("board_total") if st else None
+            if board_total is not None and len(obs) < board_total:
+                R.record_crawl_issue(url, day, "incomplete", b.get("vendor"), ids,
+                                     f"board reports {board_total} total but the adapter returned {len(obs)} row(s)", run_id)
+                log(f"  WARNING: under-read {len(obs)}/{board_total} for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=incomplete")
             if not obs:
                 R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
                                      f"0 observations, no error ({json.dumps({k: v for k, v in (st or {}).items() if k in ('job_links_found', 'list_pages', 'truncated')}, ensure_ascii=False)})", run_id)
