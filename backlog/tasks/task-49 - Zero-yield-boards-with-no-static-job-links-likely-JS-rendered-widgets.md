@@ -1,11 +1,11 @@
 ---
 id: TASK-49
 title: Zero-yield boards with no static job links -- likely JS-rendered widgets
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-11 10:49'
-updated_date: '2026-09-22 09:47'
+updated_date: '2026-09-23 09:21'
 labels: []
 dependencies: []
 ordinal: 49000
@@ -178,6 +178,14 @@ klinikum-ab-alz.de (2 clinics, 831 beds) -- not JS-templated after all. The {{Po
 То есть цифра "10 вместо 93", на которой строилась рекомендация, возникает не от ats_type=umantis самого по себе, а от комбинации НОВЫЙ хост + umantis. На старом хосте umantis -- лучший из четырёх вариантов.
 
 Правильное действие: careers_url не трогать, ats_type=umantis выровнять у 76301, 77801, 77802. Подробности и все четыре замера -- в заметках TASK-86.
+
+2026-09-23: applied both pending registry writes live (this session has EdgeSink write access via PFLEGE_INGEST_URL/PFLEGE_INGEST_SECRET, unlike the prior round). 
+
+klinikverbund-allgaeu.de: fresh live 4-way remeasurement (not trusting the 11-day-old note) confirmed the 2026-09-22 correction's verdict still holds today -- OLD careers_url (klinikverbund-allgaeu.de/karriere) + ats_type=umantis gives 93 rows (best; the ats_seeds umantis builder auto-discovers the real recruitingapp-5556 host from that page AND keeps the wrapper host too), vs NEW host (karriere.klinikverbund-allgaeu.de) + umantis = only 10, vs NEW host + generic = 85, vs OLD host + generic = 0. Checked all 6 clinics' CURRENT live registry rows: 5 of 6 (77801/77802/78001/78002/78003) were ALREADY correctly set to the OLD host + umantis. Only 76301 (Klinikum Kempten) had drifted to the NEW host -- corrected it to match its 5 siblings. Verified live via EdgeSink.write_clinics (full_clinic_rows, only careers_url changed): clinic_id 76301 now careers_url='https://klinikverbund-allgaeu.de/karriere', ats_type='umantis' (unchanged), matching the other 5.
+
+klinikum-ab-alz.de: 66101 was already correctly set (careers_url='https://jobs.klinikum-ab-alz.de/Jobs'); 67101 was still stale (careers_url='https://klinikum-ab-alz.de/karriere/'). Corrected via the same write path. Live re-crawl confirms: crawl_wp_jobs(67101) -> 64 rows (was 0 on the stale URL).
+
+Both registry blockers this task's own final summary named as the reason it stayed In Progress are now resolved and verified live. Moving to Done.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -195,5 +203,5 @@ Registry writes still pending (no production DB write permitted this session); a
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-2026-09-21 addendum to the 2026-09-11 close-out: the two high-value boards this task had left open are now both read in full. klinikverbund-allgaeu.de (1048 beds) had two stacked faults -- the registered careers_url and the umantis instance are both stale (0 and 10 postings respectively; the real board is karriere.klinikverbund-allgaeu.de with 82), and every detail page on that real board returned the same title because it renders its headline as <strong class='h1'> with no h-tag anywhere, which parse_job_page now handles. Live: 93 rows, 82 distinct titles (was 3), 19 experienced-nursing class. klinikum-ab-alz.de (831 beds) is not JS-templated -- the {{PortalUrl}}/{{Id}} placeholders are the handlebars template of the same eRecruiter engine as bezirkskliniken-schwaben, and the real board jobs.klinikum-ab-alz.de/Jobs ships its whole list as JSON in plain HTML; covered free by the crawl_erecruiter adapter written on TASK-77 (62 rows, 19 nursing-class, was 0). Offline suite 1228 passed, 1 skipped, 0 failed. Left In Progress: both fixes need a careers_url write to the production registry (plus clearing ats_type='umantis' on the three Allgaeu rows), which this session may not do -- exact UPDATEs in the task comment, applied to data/registry/clinics.csv.
+Both pending registry writes applied and verified live this session (EdgeSink write access confirmed working, unlike the prior blocked round): Klinikum Kempten (76301) corrected from a drifted NEW-host careers_url back to the OLD host + ats_type=umantis, matching its 5 siblings and the freshly-remeasured best configuration (93 rows, re-confirmed live today, not just trusted from 11-day-old notes). Klinikum Aschaffenburg-Alzenau Alzenau (67101) corrected to the real jobs.klinikum-ab-alz.de/Jobs board (0 -> 64 rows live). All 3 AC's underlying claims re-verified live today.
 <!-- SECTION:FINAL_SUMMARY:END -->

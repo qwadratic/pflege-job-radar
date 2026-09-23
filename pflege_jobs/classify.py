@@ -26,13 +26,26 @@ def _compile():
 
 _compile()
 
-# A gender-neutral suffix ("(m/w/d)", ":in", bare "m/w/d") is the same structural "this is a real job
-# title" signal career_crawl.JOB_TEXT and vendor_adapters.GENDER already use on the crawl side --
-# reused here (not imported: those live downstream of this module) to decide whether classify_role's
-# catch-all fallback is looking at an actual posting title or just prose that mentions "Pflege".
-_POSTING_SHAPED = re.compile(
-    r"\((?:m|w|d|x|i|gn|a)\s?[/|*]\s?(?:m|w|d|x|i|gn|a)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn|a))?\)"
-    r"|\b[mwd]/[mwd]/[mwdx]\b|[:*]in\b", re.I)
+# A gender-neutral suffix ("(m/w/d)", ":in", bare "m/w/d", "Pfleger/in") is the same structural "this
+# is a real job title" signal crawlers.vendor_adapters/career_crawl already use on the crawl side to
+# decide whether classify_role's catch-all fallback is looking at an actual posting title or just
+# prose that mentions "Pflege". Shared via pflege_jobs/posting_signal.py (TASK-123/126: this used to be
+# a fourth independently-drifted copy, missing the bare-slash suffix form -- posting_signal.py is a
+# leaf module with no downstream dependents, so importing it here creates no cycle).
+from .posting_signal import GENDER_MARKER as _POSTING_SHAPED  # noqa: E402
+
+# Real, live-surveyed (2026-09-23, TASK-126) prefixes for a speculative "apply even with no open
+# vacancy" invitation, never a genuine open posting: "Initiativbewerbung"/"Initiativbewerbungen"
+# (survey: wolfartklinik.de, kbo-iak.de, martha-maria.de, klinikum-passau.de, bkh-landshut.de, ~15
+# more) and "Blitzbewerbung" (kbo-iak.de, kbo-lmk.de). Every real example puts the word FIRST, then
+# optionally the role/department it's soliciting for ("Blitzbewerbung Pflegefachkräfte (m/w/d)",
+# "Initiativbewerbungen Assistenzärzte (m/w/d)") -- confirmed live: kbo-iak.de/kbo-lmk.de's own
+# "Blitzbewerbung Pflegefachkräfte (m/w/d)" carries a real gender marker and, unchecked, matches
+# _ROLES' plain substring rule below exactly like a genuine open Pflegefachkraft posting would.
+# Anchored at the start (not a bare word-boundary search) since no surveyed board ever buries the
+# word mid-title -- a genuine posting title happening to mention "Initiativbewerbung" in its own body
+# text elsewhere is not read by this check at all (title only).
+_SPECULATIVE_APPLICATION_RX = re.compile(r"^\s*(initiativbewerbung(?:en)?|blitzbewerbung)\b", re.I)
 
 _JOB_URL_HOST_RX = re.compile(r"^https?://([^/]+)", re.I)
 
@@ -137,7 +150,15 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
         though step 1 no longer blocks them on the way in.
       - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
         detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
+
+    Checked before all of that: a speculative-application title ("Initiativbewerbung Pflegefachkraft
+    (m/w/d)", "Blitzbewerbung Ärzte (m/w/d)") is never a genuine open posting, no matter which role it
+    names or whether a section confirms it -- the _ROLES loop below matches on a bare substring
+    (TASK-126: "Blitzbewerbung Pflegefachkräfte (m/w/d)", confirmed live on kbo-iak.de/kbo-lmk.de,
+    would otherwise classify as a real pflegefachkraft posting).
     """
+    if _SPECULATIVE_APPLICATION_RX.search(title or ""):
+        return "nicht_pflege", "speculative_application"
     s = norm_text(f"{title} || {hauptberuf}")
     if not _PFLEGE.search(s):                      # gate first: Ausbildung Elektroniker is not nursing
         if not nursing_section_confirmed:

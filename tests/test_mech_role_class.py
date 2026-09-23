@@ -175,3 +175,21 @@ def test_sonstige_pflege_fallback_requires_a_posting_shaped_title():
     # test_pflege_gate_recognises_the_previously_missing_tokens above) still keeps its marker and is
     # still kept -- this narrowing must not regress it.
     assert classify_role("Betreuungskräfte (m/w/d) gesucht", "")[0] == "sonstige_pflege"
+
+
+# TASK-126: a speculative-application category link ("Initiativbewerbung <Rolle>", "Blitzbewerbung
+# <Rolle>") is never a genuine open posting, no matter which role name it carries -- confirmed live
+# 2026-09-23 that kbo-iak.de/kbo-lmk.de's own "Blitzbewerbung Pflegefachkräfte (m/w/d)" would otherwise
+# match the plain pflegefachkraft substring rule exactly like a real posting.
+def test_speculative_application_titles_never_classify_as_a_real_role():
+    for title in (
+        "Blitzbewerbung Pflegefachkräfte (m/w/d)",
+        "Initiativbewerbung Pflegefachkraft (VZ/TZ)",
+        "Initiativbewerbungen Assistenzärzte (m/w/d)",
+        "Initiativbewerbung",
+    ):
+        assert classify_role(title, "") == ("nicht_pflege", "speculative_application"), title
+    # a genuine posting that merely happens to carry the role token stays classified normally --
+    # this check must not swallow real postings, only speculative-application titles.
+    assert classify_role("Pflegefachkraft (m/w/d)", "")[0] == "pflegefachkraft"
+    assert classify_role("Pflegefachkraft Intensivstation (m/w/d)", "")[0] == "pflegefachkraft"

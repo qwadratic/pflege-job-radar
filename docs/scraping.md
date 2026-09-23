@@ -40,7 +40,29 @@ Goal: read every hospital's own career board. No job boards, no labour agency.
 | group portals | kbo, Schön, RHÖN, Südostbayern | one board, many sites | `vendor_adapters.py:GROUP_PORTALS` |
 
 All adapters emit the inbox row shape; one loader (`crawlers/load_crawl_output.py` / backend worker) ingests everything.
-Every row an adapter finds is stored raw in the local queue (`pflege_jobs/inbox_db.py`) — nothing is filtered at crawl time — and `python -m pflege_jobs.cli inbox` is where classification, Bavaria/host gating, matching and conversion happen before anything reaches Postgres.
+Every row an adapter finds is stored raw in the local queue (`pflege_jobs/inbox_db.py`) — nothing is filtered at crawl time — and `python -m pflege_jobs.cli inbox` is where classification, Bavaria/host gating, matching and conversion happen before anything reaches Postgres. That is the *storage-time* boundary. One layer earlier, at *discovery* time, each adapter still has to decide which URLs even become row candidates in the first place — see below for who owns that decision.
+
+## Who owns which decision (TASK-123)
+
+Three layers, three different questions, never mixed:
+
+- **Crawl layer** (this file's adapters — `crawlers/vendor_adapters.py`, `crawlers/portals.py`, `pflege_jobs/sources/*.py`): is this URL a *candidate posting page at all*? Decided by URL/page shape wherever a shape exists (`JOB_PATH`/`JOB_HREF`/`UMANTIS_ROW`/... families) — content is read only when shape gives no answer (below).
+- **`pflege_jobs/classify.py`** (`classify_role` / `classify_employer`): is it Pflege, and which role (real nursing role / pflegehelfer / ausbildung / nicht_pflege)?
+- **`pflege_jobs/registry.py`**'s `Matcher`: which clinic does this posting belong to?
+
+A new content-based filtering rule belongs in `classify.py`/`registry.py`, never a new regex in a crawler module — the crawl layer's own gates below exist only because some boards give it no URL/page-shape signal to work with at all (an accordion/FAQ-shaped listing with no separate detail page, or a detail URL indistinguishable from a category page).
+
+**Content-based accept/reject checks found in the crawl layer**, catalogued 2026-09-23 (grep for every `re.compile` in the three locations above, then read each call site):
+
+| signal | file:line | what it gates | classification |
+|---|---|---|---|
+| `GENDER_MARKER` (imported as `GENDER` in vendor_adapters.py, `JOB_TEXT` in career_crawl.py) | `pflege_jobs/posting_signal.py:16` — ~15 call sites in `crawlers/vendor_adapters.py`'s `crawl_wp_jobs`/`_wp_job_rows` family, plus `pflege_jobs/sources/career_crawl.py:332,402,564` | "does this title/anchor text carry a German job-posting gender marker (`(m/w/d)`, `:in`, `Pfleger/in`, ...)" — the only signal available on boards with no separate detail page (FAQ/accordion/title-only listings) or no distinguishing detail-URL shape | **content-guessing (b).** Was two independently-drifted copies before TASK-123 (vendor_adapters' had a bare-slash suffix form career_crawl's never got; career_crawl's had a bare-unparenthesized `m/w/d` form vendor_adapters' never got) — reconciled into one shared, unioned regex. Every prior gap (klinik-steger.de's colon form, barmherzige-bieten-zukunft.de's bare-slash form, ~30 postings) was found by live-counting candidate links against stored rows, never by unit-testing the regex alone — TASK-123 AC3 repeated that method on 2 fresh boards (WolfartKlinik: 15 candidates, 10 correctly kept, 0 false negatives; kbo-IAK München-Ost/umantis: found a real gap, but root-caused to umantis' own session-pinned `CompanyID` scoping, not this regex — spun off as TASK-125). Most call sites recurse into a page's own links instead of dropping outright when the check fails (`_wp_job_rows`, career_crawl.py's list-page queue) — a hard drop only happens when recursion also finds no further candidates |
+| `NOT_JOB_TITLE_RX` | `crawlers/vendor_adapters.py:725`, used at line 936 | rejects a small fixed list of boilerplate titles (Impressum, Datenschutzerklärung, ...) a mis-parsed page can surface as a fake "title" | low-risk (a) — none of these strings is ever a real job title |
+| `_TAXONOMY_NAME_DENYLIST` | `pflege_jobs/sources/bite.py:57` | skips a tenant custom-field name that looks like a thumbnail/image slug when hunting for a department taxonomy | not a reject gate at all — documented no-op fallback: an unmatched field simply isn't used as a taxonomy hint, every posting is still classified exactly as before |
+| `BERUF_AUSB` | `pflege_jobs/sources/bite.py:35`, used at line 183 | feeds an `"AUSBILDUNG"` hint into `classify_role` | correctly placed already — a hint into the classifier, not a crawl-layer filter; the actual accept/reject decision stays classify.py's |
+| `GM` | `pflege_jobs/sources/pi_asp.py:46`, used at lines 104/126 | third, independent, narrower copy of the same "gendered posting text" signal (a Playwright locator filter) | **content-guessing (b)**, out of TASK-123 AC2's named scope (only GENDER/JOB_TEXT) — narrower than the reconciled `GENDER_MARKER` (only the parenthetical form). pi_asp.py is TASK-39's board (1/3 AC, not yet audited this way) — follow-up, not fixed here |
+
+Everything else that gates discovery (`JOB_PATH`/`JOB_PATH_LOOSE`/`NOT_JOB_PATH`/`SLUG_GENDER_RX` in vendor_adapters.py; `LINK_OK`/`JOB_HREF`/`LINK_BAD`/`PAGINATE`/`UNAMBIGUOUS_DETAIL_HREF` in career_crawl.py; `UMANTIS_ROW` in portals.py) matches URL shape or generic pagination/nav-link text, not posting content — structural (a), out of this audit's (b) category.
 
 ## Routing table
 

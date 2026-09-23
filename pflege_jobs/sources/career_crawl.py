@@ -23,12 +23,15 @@ from .. import config as C
 from ..classify import (canonical_job_url, classify_employer, classify_role, content_hash, department_hint,
                         employer_norm, enrich_description, fuzzy_key, norm_text, qualification_hint)
 from ..section import pick_nursing_link
+# Shared with crawlers.vendor_adapters' own copy of this signal (TASK-123: the two had independently
+# drifted -- this copy never gained the bare-slash suffix form, "Pfleger/in"/"Pfleger/innen"/
+# "Angestellte/r") -- see pflege_jobs/posting_signal.py for the reconciled union.
+from ..posting_signal import GENDER_MARKER as JOB_TEXT
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 pflege-jobs-crawler"
 LINK_OK = re.compile(r"job|stelle|vacanc|position|karriere|career|bewerb|angebot|offer|posting|/p/|/de/", re.I)
 JOB_HREF = re.compile(r"/detail/|/detailansicht/|/job/|/jobad\?|/jobs?/[^/?]*\d|/karriere/jobs/|/stellenangebot|/stellenanzeige|/vacanc|/position/|jobid|job_id|jobdetail|/p/|[?&]id=\d|/de/jobs/\d|/jobs/\d", re.I)
-JOB_TEXT = re.compile(r"\((?:m|w|d|x|i|gn|a)\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a)(?:\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a))?\)|\b[mwd]/[mwd]/[mwdx]\b|\*in\b|:in\b", re.I)
 LIST_NAV = re.compile(r"weiter|nächste|next|mehr laden|alle stellen|page|seite|pflege|krankenpflege|medizin|berufsgruppe|fachbereich|kategorie|filter", re.I)
 LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#|login|logout|datenschutz|impressum|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print"
                        # umantis: /Jobs/<n> is always its own paginated listing (never a posting) --

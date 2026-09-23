@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:26'
-updated_date: '2026-09-22 08:12'
+updated_date: '2026-09-23 09:49'
 labels: []
 dependencies: []
 ordinal: 84000
@@ -65,6 +65,8 @@ Reviewer finding #2 (TASK-84 AC#1 checked on the wrong code path): the career_cr
 Reviewer finding #5 (TASK-84 AC#2 checked on the wrong code path): NOT_JOB_PATH's news/press/blog/glossary blacklist only excluded the section word when it sat IMMEDIATELY before /detail/ -- klinikum-msp.de's glossar/detail/fusspflege (adjacent) was correctly excluded and stayed excluded (test_not_job_path_excludes_glossary_detail_pages, unchanged), but a section word one folder further out was not caught at all. Confirmed live before fix: anregiomed.de (clinic 56101) postings 10453/10454/10455/10746 are real press releases ('15.000 Euro zur Foerderung des Klinikums Ansbach', 'Mediroth spendet Reanimationspuppe', 'Foerderverein spendet Transportstuehle', 'Kleine Implantate...') stored as open nursing postings, all under /aktuelles/neuigkeiten/detail/... -- 'neuigkeiten' sits immediately before /detail/, 'aktuelles' one folder further out, which the old adjacency-only pattern never saw. Fix: NOT_JOB_PATH's news/press/blog/glossary alternative now allows (?:/[^/?#]+)* -- any number of path segments -- between the excluded word and /detail/, still anchored on the same fixed word list, so it does not touch the real /karriere(-)/detail/ shapes (test_not_job_path_still_allows_real_karriere_detail_pages, unchanged, none of those paths start with aktuelles/presse/news/blog/glossar/veranstaltungen/termine/events). Verified live: all 4 anregiomed URLs now match NOT_JOB_PATH. Test: tests/test_vendor_adapters.py::test_not_job_path_excludes_a_news_detail_page_nested_a_folder_deeper_than_the_section_word, mutation-tested red against the pre-fix pattern (via a /tmp backup + in-place revert + restore, not git). Did not touch JOB_PATH's own /detail/ alternative itself, same reasoning the prior round already recorded (test_not_job_path_excludes_typo3_news_press_blog_event_detail_pages pins JOB_PATH still matching the bare shape so NOT_JOB_PATH has something to positively exclude) -- the AC's literal 'JOB_PATH requires a job-ish parent segment' half remains a deliberate, documented substitution, not a live gap: no row survives today via that specific half regardless.
 
 Correction to the final summary above: that parenthetical is garbled. To be precise -- TASK-84's own AC#4 is the RETRO-PURGE of junk rows (distinct from TASK-83's AC#2, which is a duplicate-row MERGE/dedup, not a purge). This round's reviewer findings were numbered 1-5 and covered TASK-83's finding #1 (loaded_refs regression) + finding #4 (redo the dedup dry run) and TASK-84's findings #2/#3/#5 (wp_jobs index pages, umantis emission-gate regression, NOT_JOB_PATH multi-segment) -- none of the five asked for TASK-84's AC#4 purge dry run to be redone or re-verified, so it is untouched this round and stays exactly as the prior round left it (81 rows / 34 clinics, not re-measured now).
+
+2026-09-23: AC4 purge applied live via EdgeSink verify_status=gone, all 81 rows confirmed status=expired.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -75,7 +75,9 @@ PROJECT = os.environ.get("SUPABASE_PROJECT_URL", "https://klkxfvieaxpjlplloljn.s
 # recursed into them instead of storing a row). `[/]\s?in\b` alone would also match a stray "/in" in
 # unrelated prose; requiring the slash directly precede "in"/"innen"/"r" with no space in between
 # keeps this to the actual grammatical suffix-pairing notation, not a loose word-boundary guess.
-GENDER = re.compile(r"\((?:m|w|d|x|i|gn)\s?[/|*]\s?(?:m|w|d|x|i|gn)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn))?\)|[:*]in\b|/(?:innen|in|r)\b", re.I)
+# Shared with pflege_jobs.sources.career_crawl's own copy of this signal (TASK-123: the two had
+# independently drifted) -- see pflege_jobs/posting_signal.py for the reconciled union.
+from pflege_jobs.posting_signal import GENDER_MARKER as GENDER  # noqa: E402
 
 
 # An immediate ("0;url=...") client-side redirect stub (confirmed live 2026-09-22:
