@@ -23,6 +23,7 @@ decision structure (gate, action, whether it would send at all) is not affected 
 """
 import argparse
 import json
+import os
 import pathlib
 import sqlite3
 from contextlib import contextmanager
@@ -92,6 +93,11 @@ def shadow_turn(conn, phone, client=None):
     exists = conn.execute("select 1 from wa_threads where phone=?", (phone,)).fetchone()
     if exists is None:
         return None
+    # This module's "never call WhatsApp send" contract stops at app/wa/api.py. show_clinic_photos
+    # (app/wa/luna/tools_server.py) sends by calling the phone rail from inside the tools server, so
+    # the model reaching for it mid-dry-run would put real photos in a real candidate's chat. The
+    # env var is how that reaches the spawned server (luna_brain.NO_SEND_ENV).
+    os.environ["WA_LUNA_NO_SEND"] = "1"
     t = ST.thread(conn, phone)
     if t["stopped"]:
         return {"phone": phone, "stage": REP.stage_for(t["slots"]), "action": "stopped", "test": t["is_test"],

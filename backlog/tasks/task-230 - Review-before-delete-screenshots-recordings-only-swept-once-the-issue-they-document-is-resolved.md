@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-23 04:33'
-updated_date: '2026-09-23 05:24'
+updated_date: '2026-09-23 06:33'
 labels: []
 dependencies: []
 project: whatsapp
@@ -32,6 +32,8 @@ Ivan, 2026-09-23: 'давай просто не больше 2 недель хр
 
 <!-- SECTION:NOTES:BEGIN -->
 Adversarial multi-lens review (Workflow, 4 Find + 5 Verify agents, wf_10b8e919-294) found 4 real safety gaps in the first cut, all fixed in bridge/retention.py before commit: (1) classify-then-batch-delete left every already-classified file exposed to a resend for as long as the whole sweep took -- fixed by deleting each file the instant it is classified, not batched at the end (_sweep_one_kind). (2) classify_op_artifact treated any OP_DONE as happy, but Executor.reconcile() is three-valued and never raises on 'indeterminate' -- a reconcile op could finish OP_DONE while the send it was checking was still wide open; fixed with _reconcile_settled(), holding unless every verdict closed the question. (3) same OP_DONE-is-happy assumption broke for send_photos/send_gallery/send_document, which never gate on a delivery tick the way send() does (TASK-131's own 'mechanism proof, not production ready' caveat) -- fixed with _media_send_confirmed(), reading the tick(s) back out of the op's own stored result. (4) classify_op_artifact fell through to the resolved_at manual-escape-hatch even when a client_msg_id existed and its outbound row was still open, so resolve_op (meant only for the no-client_msg_id kinds) could be misused to paper over an unresolved send -- fixed by returning on the client_msg_id branch unconditionally, never falling through to resolved_at when a client_msg_id is present. 8 new regression tests added (tests/test_bridge_retention.py), 2 existing ones updated for the now more specific hold reasons. Full non-llm suite + the four directly-touched lanes re-run clean after the fixes.
+
+Correction (2026-09-23 06:35 UTC): the final summary first said '31 tests' for tests/test_bridge_retention.py -- the real count is 23. Miscount on my side, no change to what is covered.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

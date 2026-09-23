@@ -1065,6 +1065,15 @@ def show_clinic_photos(clinic_id: str) -> dict:
     photo_paths = data.get("photos") or []
     presentation = data.get("presentation") or {}
     caption = (presentation.get("text_de") or "").strip()
+    if os.environ.get("WA_LUNA_NO_SEND"):
+        # A dry run (app/wa/luna/shadow_run.py). The lookup above still runs, because WHICH branch
+        # this tool takes is exactly what the report exists to show -- only the handset is spared.
+        if not photo_paths:
+            return ({"sent": False, "presentation_text": caption, "dry_run": True} if caption else
+                    {"sent": False, "reason": "no photos or presentation available yet for this clinic",
+                     "dry_run": True})
+        return {"sent": True, "photos": len(photo_paths[:5]), "has_presentation": bool(caption),
+                "dry_run": True}
     if not photo_paths:
         if caption:
             return {"sent": False, "presentation_text": caption}

@@ -36,6 +36,7 @@ Everything else -- tone, which question to ask, how to phrase the market snapsho
 escalate -- is the model's call, per turn, from the state this module hands it.
 """
 import json
+import os
 import pathlib
 import re
 import sys
@@ -97,7 +98,18 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                         "read_board_docs", "board_api_get",
                         # TASK-229: the live-handset ground-check. Also needs WA_LUNA_PHONE, same as
                         # match_cv_to_postings -- both read this thread's own number, never an argument.
-                        "look_at_phone"))
+                        "look_at_phone",
+                        # TASK-131 round 7. Missing from this tuple until 2026-09-23 while
+                        # prompts.py's SHOW_CLINIC_PHOTOS rule already told the model to call it:
+                        # --allowedTools is an allowlist, so every call the model made was denied and
+                        # the funnel's climax moment silently degraded to text.
+                        "show_clinic_photos"))
+
+#: Set by app/wa/luna/shadow_run.py for the length of a dry run. show_clinic_photos is the one tool
+#: that SENDS, and it sends by calling the phone rail itself -- so shadow_run's own "never call
+#: WhatsApp send, regardless of WA_AUTOSEND" contract does not reach it, and a dry run would put real
+#: photos in a real candidate's chat. Passed into the tools server's environment below.
+NO_SEND_ENV = "WA_LUNA_NO_SEND"
 
 
 def _write_atomic(path, text):
@@ -172,7 +184,8 @@ def _mcp_config_path(ready_path, phone=None):
                                                         # the model answers without it.
                                                         "WA_LUNA_PHONE": str(phone or ""),
                                                         "WA_BRIDGE_URL": C.BRIDGE_URL,
-                                                        "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN}}}}
+                                                        "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN,
+                                                        NO_SEND_ENV: os.environ.get(NO_SEND_ENV, "")}}}}
     _write_atomic(path, json.dumps(config))
     return path
 
