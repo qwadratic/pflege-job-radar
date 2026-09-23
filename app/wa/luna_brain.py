@@ -36,10 +36,12 @@ Everything else -- tone, which question to ask, how to phrase the market snapsho
 escalate -- is the model's call, per turn, from the state this module hands it.
 """
 import json
+import logging
 import os
 import pathlib
 import re
 import sys
+import time
 import uuid
 
 from .. import data as D
@@ -54,6 +56,8 @@ from .luna import offer as OF
 from .luna import prompts as P
 from .luna import refusal as RF
 from .luna import source_link as SRC
+
+log = logging.getLogger(__name__)
 
 MAX_BUBBLES = 2
 
@@ -923,6 +927,8 @@ class Client:
         # Stamped by the tools server once its tools are registered; one file per turn, so two turns
         # running at once cannot read each other's.
         ready_path = C.LUNA_SESSION_DIR / "tools_ready" / f"{uuid.uuid4()}.json"
+        spawned_at = time.time()
+        tools_ready_at = None
         try:
             try:
                 proc = subprocess.run(
@@ -956,6 +962,13 @@ class Client:
                                    f"tools the system prompt says are mandatory, so nothing it said about "
                                    f"the board was looked up. Run "
                                    f"`{sys.executable} -m app.wa.luna.tools_server` to see why it failed.")
+            # TASK-287 (latency profiling): the stamp already carries the moment the CLI finished the
+            # MCP handshake; read it before it's deleted so a turn's wall time can be split into
+            # "CLI cold-start + board tools ready" vs. "everything after," without guessing.
+            try:
+                tools_ready_at = json.loads(ready_path.read_text(encoding="utf-8")).get("at")
+            except (OSError, json.JSONDecodeError):
+                pass
         finally:
             ready_path.unlink(missing_ok=True)
         try:
@@ -964,6 +977,19 @@ class Client:
             raise RuntimeError(f"claude -p did not return JSON on stdout: {exc}: {proc.stdout[:300]!r}")
         if envelope.get("is_error"):
             raise RuntimeError(f"claude -p reported an error: {envelope.get('result')!r}")
+        # TASK-287 (latency profiling): claude -p already computes this split (CLI wall time vs. the
+        # model API's own time) on every call -- log it instead of throwing it away, so a slow turn is
+        # attributable without adding new instrumentation later. warning, not info: this process sets
+        # up no root logging config (same reason router.py/refusal.py/bridge_api.py only ever log at
+        # warning/error), so an info call here would be silently dropped rather than reach journalctl.
+        finished_at = time.time()
+        log.warning(
+            "luna turn timing: fresh=%s total_wall_ms=%d tools_ready_ms=%s cli_duration_ms=%s "
+            "api_duration_ms=%s num_turns=%s",
+            fresh, round((finished_at - spawned_at) * 1000),
+            round((tools_ready_at - spawned_at) * 1000) if tools_ready_at else None,
+            envelope.get("duration_ms"), envelope.get("duration_api_ms"), envelope.get("num_turns"),
+        )
         result = envelope.get("result")
         if not isinstance(result, str) or not result.strip():
             raise RuntimeError(f"claude -p returned no result text: {envelope!r}")
