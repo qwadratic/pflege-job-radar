@@ -1,5 +1,14 @@
 [
  {
+  "name": "Klinik Hallerwiese Nürnberg (Diakoneo)",
+  "city": "Nürnberg",
+  "kr_id": null,
+  "career": "https://www.diakoneo.de/karriere",
+  "customer": "diakoniewerk-schwaebisch-hall",
+  "listing": "main-listing",
+  "kez": "56404"
+ },
+ {
   "name": "Donauisar Klinikum Deggendorf",
   "city": "Deggendorf",
   "kr_id": 1485,

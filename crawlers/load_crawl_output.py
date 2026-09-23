@@ -1,5 +1,5 @@
 """Load Playwright-crawler output (crawl_output/*.jsonl, one inbox-shaped row per line: kind, source_host, source_url, payload,
-collector, client_id) into pflege_jobs.inbox, run the inbox processor + dedupe, then print what changed.
+collector, client_id) into the local raw queue (pflege_jobs.inbox_db), run the inbox processor + dedupe, then print what changed.
 
   python crawlers/load_crawl_output.py [crawl_output/]           # needs SUPABASE_URL, SUPABASE_ANON_KEY, PFLEGE_INGEST_*
 """
@@ -28,15 +28,14 @@ for f in sorted(glob.glob(os.path.join(d, "*.jsonl"))):
         if not line: continue
         try: r = json.loads(line)
         except Exception: continue
-        if r.get("kind") in ("jobposting", "listing", "probe") and r.get("source_url"): rows.append(r)
+        if r.get("kind") in ("jobposting", "listing", "probe", "observation") and r.get("source_url"): rows.append(r)
 seen = set(); rows = [r for r in rows if not (r["source_url"] in seen or seen.add(r["source_url"]))]
 print(f"{len(rows)} rows from {d}/*.jsonl")
 before = snapshot()
-for i in range(0, len(rows), 200):
-    r = requests.post(f"{U}/rest/v1/inbox", headers={**H, "Authorization": "Bearer " + os.environ["SUPABASE_ANON_KEY"], "Content-Profile": "pflege_jobs", "Content-Type": "application/json", "Prefer": "return=minimal"},
-                      json=rows[i:i + 200], timeout=120)
-    r.raise_for_status()
-print("posted to inbox"); time.sleep(2)
+# The local queue, not pflege_jobs.inbox: a directory of crawl output is thousands of rows and the
+# Postgres table takes 2000 per client per rolling 24h (TASK-95). `cli inbox` drains both.
+from pflege_jobs import inbox_db as IB
+print(f"queued {IB.enqueue(rows)} rows in {IB.PATH}"); time.sleep(2)
 subprocess.run([sys.executable, "-m", "pflege_jobs.cli", "inbox"], check=False)
 subprocess.run([sys.executable, "-m", "pflege_jobs.cli", "link-cross"], check=False)
 time.sleep(2); after = snapshot()
@@ -48,6 +47,6 @@ print(f"ATS labels set/changed:              {len(changed)}")
 if changed:
     names = {x["clinic_id"]: x["name"] for x in q("clinics?select=clinic_id,name&clinic_id=in.(" + ",".join(changed) + ")")}
     for c, (o, n) in changed.items(): print(f"   {names.get(c, c)}: {o or '—'} -> {n}")
-notes = q("inbox?select=process_note&processed_at=not.is.null&order=inbox_id.desc&limit=2000")
+notes = IB.connect().execute("select process_note from inbox order by inbox_id desc limit 2000")
 from collections import Counter
 print("inbox notes:", Counter((n["process_note"] or "").split(" ->")[0].split(" (")[0] for n in notes).most_common(8))

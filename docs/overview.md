@@ -75,6 +75,12 @@ Arbeitsagentur (30) and aggregators (40, Indeed/StepStone) were **removed and th
  "collector":"vendor-adapters-…|firecrawl-agent|…","client_id":"…"}
 ```
 `collector` starting with `firecrawl` → source 25, otherwise source 20.
+
+Two queues, one shape and one processor (`python -m pflege_jobs.cli inbox`, which drains both):
+- **local, SQLite** (`pflege_jobs/inbox_db.py`, `data/inbox.sqlite`) — where the crawler puts **every** row it finds, unfiltered and undeduped. Rows are never deleted, only marked `processed_at`/`process_note`, so a classifier or matcher change can be replayed over them (`cli inbox --reprocess-run <run_id>` / `--reprocess-all`) instead of re-crawling.
+- **`pflege_jobs.inbox`, Postgres** — for producers that hold only the anon key (`web/collect.html`, `POST /api/ingest`, the Firecrawl webhook). Tens of rows a day. It carries a server-side rule of 2000 rows per `client_id` per rolling 24h, measured 2026-09-21, which is why the crawler is off it (TASK-95).
+
+Filtering (role class, Bavaria, non-production host), registry matching and conversion to observations happen in the **processing** step, not at the queue, so only finished rows reach Postgres — 1,467 observations out of run 108's 8,743 raw rows, measured.
 Schema (columns, indexes, the RLS-off note, retention policy for the guarded purge): `sql/010_inbox.sql` — reconstructed from the live table, not yet applied (needs a Supabase access token).
 
 ### role_classes, crawl_runs, views

@@ -66,6 +66,12 @@ ADAPTERS = {
     # here so a future census run that DOES fingerprint one of them by name routes straight to it.
     "beesite":         ("vendor", "pflege_jobs.sources.beesite:crawl_beesite"),
     "hr4you":          ("vendor", "pflege_jobs.sources.hr4you:crawl_hr4you"),
+    # Same story for these three (TASK-49/50/77): crawl_wp_jobs fingerprints each on the careers
+    # page it has already fetched and delegates. Listed so a census run that does name one routes
+    # straight to it.
+    "asklepios":       ("vendor", "crawlers.vendor_adapters:crawl_asklepios"),
+    "erecruiter":      ("vendor", "crawlers.vendor_adapters:crawl_erecruiter"),
+    "concludis_widget": ("vendor", "crawlers.vendor_adapters:crawl_concludis_widget"),
     "bite":            ("seeded", "pflege_jobs.sources.bite:crawl"),
     "bite_jobs":       ("seeded", "pflege_jobs.sources.bite:crawl"),
     "pi_asp":          ("seeded", "pflege_jobs.sources.pi_asp:crawl"),
@@ -81,7 +87,10 @@ ADAPTERS = {
 }
 
 # Boards that reject datacenter traffic outright; a 0-row crawl here means "walled", not "no jobs".
-WALLED = re.compile(r"helios-gesundheit\.de|helios\.de", re.I)
+# simssee-klinik.de confirmed live 2026-09-22: every page 403s, including the bare homepage, from
+# every User-Agent tried -- the same whole-site pattern as helios (unlike a page-specific 403, e.g.
+# rotkreuzklinik-wuerzburg.de, TASK-50 AC#2, which is NOT walled here for that reason).
+WALLED = re.compile(r"helios-gesundheit\.de|helios\.de|simssee-klinik\.de", re.I)
 
 # "no fingerprint found" labels, weaker than any vendor a census run actually identified.
 FALLBACK_VENDORS = {"wp_jobs", "self_hosted"}

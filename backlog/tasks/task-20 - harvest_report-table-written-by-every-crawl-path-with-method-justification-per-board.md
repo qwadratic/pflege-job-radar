@@ -3,9 +3,10 @@ id: TASK-20
 title: >-
   harvest_report table written by every crawl path, with method justification
   per board
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 11:35'
+updated_date: '2026-09-22 18:59'
 labels:
   - harvester
 dependencies: []
@@ -24,3 +25,9 @@ Ivan's rules (2026-09-09): long comments in code are a red flag; concrete measur
 - [ ] #2 A board with zero rows is recorded as zero_rows, never ok
 - [ ] #3 Each row carries method_reason explaining why that rung or source was used
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed as duplicate of TASK-45, which describes the same missing harvest_report table with concrete measured numbers (150/220 boards green, 281/407 clinics). Kept TASK-45 as the canonical tracker.
+<!-- SECTION:FINAL_SUMMARY:END -->

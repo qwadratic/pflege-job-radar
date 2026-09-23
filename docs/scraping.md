@@ -40,6 +40,7 @@ Goal: read every hospital's own career board. No job boards, no labour agency.
 | group portals | kbo, Schön, RHÖN, Südostbayern | one board, many sites | `vendor_adapters.py:GROUP_PORTALS` |
 
 All adapters emit the inbox row shape; one loader (`crawlers/load_crawl_output.py` / backend worker) ingests everything.
+Every row an adapter finds is stored raw in the local queue (`pflege_jobs/inbox_db.py`) — nothing is filtered at crawl time — and `python -m pflege_jobs.cli inbox` is where classification, Bavaria/host gating, matching and conversion happen before anything reaches Postgres.
 
 ## Routing table
 
@@ -64,7 +65,7 @@ Used only when an adapter cannot: walled host, no label, dvinci, dead site, or m
 ```json
 {"portal_url":"…","jobs":[{"title":"","url":"","city":"","plz":"","department":"","employment_type":"","contract":"","start_date":"","published":"","description_excerpt":"","requirements":"","tariff":"","contact_email":""}],"notes":""}
 ```
-Rows land in `inbox` with `collector=firecrawl-agent` → source 25 → normal classify / link / verify path.
+Rows land in the queue with `collector=firecrawl-agent` → source 25 → normal classify / link / verify path (a run's own rows go to the local SQLite queue; the webhook's go to `pflege_jobs.inbox`, and one drain reads both).
 
 **Refetch-career agent** (`run_career_agent(clinic)`, button "Karriereseite neu ermitteln"): find the career portal from the website, name the ATS vendor, list the portal's filters with their values and job categories, count visible jobs, say whether the list is HTML / JS / PDF. Schema:
 ```json

@@ -149,6 +149,56 @@ def test_execute_stores_the_token_delta_on_the_ledger_row(client, monkeypatch):
     assert any("tokens delta 405" in l for l in R.get_run(rid)["log"])
 
 
+def test_execute_charges_the_ledger_when_run_jobs_agent_crashes(client, monkeypatch):
+    """2026-09-18 crawler review: a bare exception (not FA.AgentFailed, which already carries a
+    measured cost) left NOTHING charged to the ledger even when Firecrawl had already billed real
+    credits before the crash -- invisible to the 24h kill switch and the weekly budget."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: [])
+    monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 0)
+    monkeypatch.setattr(CR, "_budget_left", lambda: 1000)
+    monkeypatch.setattr(R, "mirror_to_supabase", lambda run: None)
+
+    def crashing_jobs_agent(clinic, max_credits, log, session, on_submit=None, **kw):
+        on_submit("job-88")
+        raise ValueError("bad scalar in agent answer")
+    monkeypatch.setattr(FA, "run_jobs_agent", crashing_jobs_agent)
+    rid = R.create_run("clinic", "36202", "firecrawl", {"max_credits": 40, "verify": False}, ["36202"], trigger="api")
+    CR.execute(rid)
+    with R.db() as c:
+        rows = [tuple(r) for r in c.execute("select job_id, credits from firecrawl_usage")]
+    charged = sum(r[1] for r in rows)
+    assert charged > 0, "the crashed run must not leave the ledger at 0 credits charged"
+    run = R.get_run(rid)
+    assert run["credits_used"] and run["credits_used"] > 0
+    assert any("charged cap" in l for l in run["log"])
+
+
+def test_execute_records_a_crawl_issue_when_the_agent_reports_a_blocked_reason(client, monkeypatch):
+    """2026-09-18 crawler review: a completed agent run whose own answer flags blocked_reason, or
+    that plainly succeeded but read zero jobs, was stored as a plain successful run with no
+    crawl_issue at all -- the only trace was a 200-char slice buried in the run log."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+    monkeypatch.setattr(CR, "_post_inbox", lambda rows, log: [])
+    monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 0)
+    monkeypatch.setattr(CR, "_budget_left", lambda: 1000)
+    monkeypatch.setattr(R, "mirror_to_supabase", lambda run: None)
+
+    def blocked_jobs_agent(clinic, max_credits, log, session, on_submit=None, **kw):
+        on_submit("job-99")
+        return {"rows": [], "credits_used": 12, "credits_api": 12, "credits_delta": 12, "job_id": "job-99",
+                "tokens_delta": 100, "raw": {}, "data": {"jobs": [], "blocked_reason": "job-search endpoint returned no parsable result list"}}
+    monkeypatch.setattr(FA, "run_jobs_agent", blocked_jobs_agent)
+    rid = R.create_run("clinic", "36202", "firecrawl", {"max_credits": 40, "verify": False}, ["36202"], trigger="api")
+    CR.execute(rid)
+    issues = R.list_crawl_issues()
+    assert len(issues) == 1 and issues[0]["kind"] == "firecrawl"
+    assert "job-search endpoint returned no parsable result list" in issues[0]["error"]
+    assert issues[0]["clinic_ids"] == ["36202"]
+
+
 def test_crawl_webhook_check_reads_back_terminal_event(client):
     secret = _secret(client)
     run_id = R.create_run("clinic", "36202", "firecrawl", {}, ["36202"], trigger="api")
@@ -271,6 +321,37 @@ def test_spend_gate_adapter_probe_failure_refuses(client):
         raise RuntimeError("board down")
     gate = CR.spend_gate(CLINIC_KNOWN, max_credits=40, probe_adapter=boom)
     assert not gate["allowed"] and "board down" in gate["reason"]
+
+
+def test_spend_gate_refuses_when_the_unseen_lookup_fails(client, monkeypatch):
+    """2026-09-18 crawler review: a failed dedupe lookup used to silently report every url as
+    unseen, which meant the "adapter already covers it" refusal could never fire once a lookup
+    started failing -- it must refuse the spend instead."""
+    from pflege_jobs.sources import firecrawl_agent as FA
+    monkeypatch.setattr(FA, "credits", lambda *a, **k: {"remaining": 100000, "plan": 8000})
+
+    def boom(path, params=None, **k):
+        raise RuntimeError("gateway 400")
+    monkeypatch.setattr(A, "rest_get", boom)
+    gate = CR.spend_gate(CLINIC_KNOWN, max_credits=40, probe_adapter=lambda c: ["https://x/jobs/1"])
+    assert not gate["allowed"] and "unseen-url lookup failed" in gate["reason"] and "gateway 400" in gate["reason"]
+
+
+def test_unseen_source_urls_chunks_at_50():
+    seen_batches = []
+
+    def fake_get(path, params=None, **k):
+        if path == "inbox":
+            seen_batches.append(params["source_url"].count(","))  # comma count == batch_size - 1
+        return []
+    import app.config as A2
+    old = A2.rest_get
+    A2.rest_get = fake_get
+    try:
+        CR._unseen_source_urls([f"https://x/{i}" for i in range(120)])
+    finally:
+        A2.rest_get = old
+    assert seen_batches == [49, 49, 19]   # 50 + 50 + 20 urls per batch, comma-separated
 
 
 # --- 24h kill switch -------------------------------------------------------------------------

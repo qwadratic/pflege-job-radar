@@ -7,6 +7,7 @@ Sources are hospital career sites only (employer_ats 20, firecrawl_agent 25); cr
   python -m pflege_jobs.cli verify --workers 6                                      # web-liveness check of all open postings
   python -m pflege_jobs.cli load  --inp data/obs.json --sink csv|sql|edge [--no-resolve]   # load a json {"observations":[...]} dump
   python -m pflege_jobs.cli load-board --csv data/board_snapshot.csv --sink edge   # career-site snapshot (source employer_ats)
+  python -m pflege_jobs.cli purge-inbox [--days 30]                                # delete local-queue rows older than N days (maintenance, not part of any drain)
 """
 import argparse, re
 import json
@@ -15,6 +16,7 @@ import sys
 import time
 
 from . import config as C
+from . import inbox_db as IB
 from .sinks import CsvSink, SqlSink, EdgeSink
 
 
@@ -116,7 +118,6 @@ def cmd_link_clinics(a):
     if a.dry_run:
         json.dump(links, open(a.out, "w")); return
     sink = EdgeSink(batch=400)
-    n = 0
     # `ats_type` / `careers_url` are discovered asynchronously (crawlers/ats_discover2.py) and also
     # live in this CSV. The edge upsert assigns every column it receives, and a column that is simply
     # *omitted* still arrives as NULL from json_to_recordset -- so omitting them (the previous guard)
@@ -130,10 +131,11 @@ def cmd_link_clinics(a):
         live = []
         print(f"  warning: could not read current ATS labels ({e}); sending CSV values as-is")
     merge_discovered(clinics, live)
-    for i in range(0, len(clinics), 400):
-        batch = [{k: v for k, v in c.items() if not k.startswith("_")}
-                 for c in clinics[i:i + 400]]
-        n += sink._post({"clinics": batch}).get("clinics", 0)
+    # TASK-86 review finding #2: this registry push is a real production write of careers_url (the
+    # CSV can still carry a known job-detail-page URL a human hasn't corrected yet -- lint_csv flags
+    # it), so it must go through the same sanctioned gate as career_discover_exa.py's and this file's
+    # own ats-probe write-back, not straight through sink._post.
+    n = sink.write_clinics([{k: v for k, v in c.items() if not k.startswith("_")} for c in clinics])
     m = 0
     for i in range(0, len(links), 400):
         m += sink._post({"clinic_links": links[i:i+400]}).get("clinic_links", 0)
@@ -177,24 +179,92 @@ def canonical_ref(url):
     return urlunsplit((p.scheme.lower(), p.netloc.lower(), re.sub(r"/+$", "", p.path).lower(), urlencode(q), frag))   # path case-folded (asklepios emits both), query/fragment kept verbatim
 
 
+# These ATS platforms are frequently white-labelled behind the clinic's own vanity domain (a CNAME
+# keeps the SaaS's own path shape, just under a different host -- pflege_jobs/sources/softgarden.py:
+# find_host tries the clinic's own domain and the *.softgarden.io/*.career.softgarden.de one), or split
+# across a TLD (personio <slug>.jobs.personio.de vs .com) or subdomain (jobs. vs api.smartrecruiters.com)
+# -- canonical_ref (conservative by design, above) correctly treats the two as different pages since
+# the netloc differs, so the same job opens two postings. Matched host-agnostically (except personio,
+# where the alias IS the host) and folded on the platform's own numeric job id in same_source_variant_pairs.
+_ATS_JOB_ID_RX = [
+    re.compile(r"/jobs?/(\d{6,})(?:[/?#]|$)", re.I),                # softgarden: canonical host or vanity CNAME
+    re.compile(r"\.jobs\.personio\.(?:de|com)/job/(\d+)", re.I),    # personio: .de/.com twin of the same tenant
+    re.compile(r"smartrecruiters\.com/[^/]+/(\d{9,})", re.I),       # smartrecruiters: jobs./api. subdomain twin
+]
+
+
+def _ats_job_id(url):
+    for rx in _ATS_JOB_ID_RX:
+        m = rx.search(url or "")
+        if m:
+            return m.group(1)
+    return None
+
+
+def collapse_merge_chains(pairs):
+    """Rewrite a pairs dst that is itself later merged away to its own final dst (dropping a genuine
+    cycle rather than looping) -- one `merges` call must never ask the edge function to move
+    observations onto, then delete, a posting that is also some other pair's destination: its single
+    CTE hit a posting_observations FK violation doing exactly that (concrete case: clinic 77402,
+    Klinik Krumbach/Kreiskliniken Guenzburg-Krumbach). Pure: [{src,dst}] in, same shape out.
+    """
+    dst_of = {p["src"]: p["dst"] for p in pairs}
+    resolved = {}
+    for src, dst in dst_of.items():
+        seen, d = {src}, dst
+        while d in dst_of and d not in seen:
+            seen.add(d); d = dst_of[d]
+        if d != src:
+            resolved[src] = d
+    return sorted(({"src": s, "dst": d} for s, d in resolved.items()), key=lambda x: (x["src"], x["dst"]))
+
+
 def same_source_variant_pairs(observations):
     """Merge pairs for postings that hold URL variants of one job within one source.
 
     Groups by (source_id, canonical_ref(source_ref)); every posting in a multi-posting group is merged
-    into the group's lowest posting_id (all of them, not just the highest -- so one run converges).
-    Pure: takes rows with posting_id/source_id/source_ref, returns [{src, dst}] sorted by src.
+    into the group's lowest posting_id (all of them, not just the highest -- so one run converges). A
+    second grouping by (source_id, ats-platform numeric job id, fuzzy_key) folds a vanity-domain alias
+    into its ATS-host twin (see _ats_job_id above); gated on fuzzy_key (already employer+city+title-
+    specific) so two unrelated boards never fold just because a numeric id coincides.
+
+    One posting_id can land in both groups at once (its own URL-variant group AND an ats-job-id group
+    -- e.g. its fuzzy_key drifted across re-crawls of the same URL), each with a different min -- so
+    every group is folded through one shared union-find rather than resolved independently: resolving
+    independently built two {src: dst} pairs for that one posting_id, and collapse_merge_chains'
+    dst_of dict silently kept only the last one, dropping a real duplicate-posting merge instead of
+    erroring on it. Union-find makes every posting_id in a connected component agree on one final
+    (lowest) destination no matter how many groups tie it to that component.
+    Pure: takes rows with posting_id/source_id/source_ref(/fuzzy_key), returns [{src, dst}] sorted by src.
     """
     from collections import defaultdict
     groups = defaultdict(set)
     for o in observations:
-        if o.get("posting_id"):
-            groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
-    pairs = []
+        if not o.get("posting_id"):
+            continue
+        groups[(o["source_id"], canonical_ref(o["source_ref"]))].add(o["posting_id"])
+        jid = _ats_job_id(o.get("source_ref"))
+        if jid and o.get("fuzzy_key"):
+            groups[(o["source_id"], "ats:" + jid, o["fuzzy_key"])].add(o["posting_id"])
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
     for ps in groups.values():
-        if len(ps) > 1:
-            dst = min(ps)
-            pairs += [{"src": src, "dst": dst} for src in sorted(ps) if src != dst]
-    return sorted(pairs, key=lambda x: (x["src"], x["dst"]))
+        ps = sorted(ps)
+        for p in ps[1:]:
+            union(ps[0], p)
+    pairs = [{"src": pid, "dst": find(pid)} for pid in parent if find(pid) != pid]
+    return collapse_merge_chains(sorted(pairs, key=lambda x: (x["src"], x["dst"])))
 
 
 def cmd_link_cross(a):
@@ -210,7 +280,7 @@ def cmd_link_cross(a):
     # (1) same-source URL variants
     obs, off = [], 0
     while True:
-        q = f"{url}/rest/v1/posting_observations?select=posting_id,source_id,source_ref&order=observation_id&limit=1000&offset={off}"
+        q = f"{url}/rest/v1/posting_observations?select=posting_id,source_id,source_ref,fuzzy_key&order=observation_id&limit=1000&offset={off}"
         ch = _rows(rq.get(q, headers=H, timeout=120), "observations"); obs += ch; off += len(ch)
         if len(ch) < 1000: break
     pairs = same_source_variant_pairs(obs)
@@ -246,6 +316,10 @@ def cmd_link_cross(a):
                 j = len(tx & ty) / len(tx | ty); o = len(tx & ty) / min(len(tx), len(ty))
                 if j >= 0.6 or (o >= 0.9 and len(tx & ty) >= 3):
                     used.add(x["posting_id"]); pairs.append({"src": x["posting_id"], "dst": y["posting_id"]})
+    # `used` above only ever guards the src side, so a posting already chosen as a *destination* for
+    # one pair can still be picked as the *source* of another (y iterates every posting in the group,
+    # unfiltered) -- collapse the resulting chain before it reaches one `merges` call (AC3 above).
+    pairs = collapse_merge_chains(pairs)
     print(f"cross-source pairs {len(pairs)}")
     if a.dry_run: json.dump(pairs, open(a.out, "w")); return
     n = 0
@@ -298,28 +372,125 @@ def lookup_posting_ids(get, url, H, observations, chunk=50, log=print):
     return ids
 
 
-def _drain_once(a, url, H, m, towns):
-    """Fetch and process one page (<=1000 rows) of the inbox queue. Returns the number of rows read."""
+def _drain_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None):
+    """Fetch and process one page (<=1000 rows) of the Postgres inbox queue -- the queue for
+    producers that hold only the anon key (web/collect.html, POST /api/ingest, the Firecrawl
+    webhook). The crawler's own rows go through the local queue below. Returns rows read."""
+    import requests as rq
+    rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
+    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres", resolve=resolve, stats=stats, link_candidates=link_candidates)
+
+
+def _drain_local_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None):
+    """Same processing over one page of the local SQLite queue (pflege_jobs.inbox_db), where the
+    crawler now puts every row it finds, unfiltered. Returns rows read."""
+    rows = IB.pending(1000, path=a.inbox_db)
+    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite", resolve=resolve, stats=stats, link_candidates=link_candidates)
+
+
+def _ack_postgres(acks):
+    sink, acked = EdgeSink(batch=200), 0
+    for i in range(0, len(acks), 400):
+        acked += sink._post({"inbox_ack": acks[i:i + 400]}).get("inbox_ack", 0)
+    return acked
+
+
+def _city_inherited(o):
+    """True when this observation's city was copied from the seed clinic's own registry town rather
+    than read off the posting (TASK-81 mechanism #3), so Matcher.match must not let it fabricate
+    agreement with that seed via R0_board_name/R0_board_town. pflege_jobs/sources/inbox.py buries the
+    city_source='seed' marker inside the jobposting branch's serialized payload; a seeded-adapter
+    observation that sets it would carry it as a plain top-level key, the same as _emp_inherited
+    already does for that branch."""
+    if o.get("city_source") == "seed":
+        return True
+    payload = o.get("payload")
+    if isinstance(payload, str):
+        try:
+            return json.loads(payload).get("city_source") == "seed"
+        except ValueError:
+            return False
+    return False
+
+
+def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=True, stats=None, link_candidates=None):
+    """One page of queued rows -> observations in Postgres. This is where filtering, matching and
+    conversion happen for every queue: the crawler stores raw rows and nothing else decides what is
+    kept, so a rule change can be replayed over the stored rows (inbox_db.reset).
+
+    resolve/stats let a multi-page caller (cmd_inbox) defer resolve_postings() to one call at the
+    end of the whole drain instead of once per page -- with the queue now ~9,000 rows (was tens),
+    a page-by-page resolve fired 10x a night for the historically heaviest server-side operation in
+    the log. stats, if given, is set stats['wrote']=True the first time this (or an earlier) page
+    actually had observations to write, so the caller knows whether a final resolve is needed at all.
+
+    link_candidates, if given, collects matched observations instead of looking up their posting_id
+    and pushing clinic_links here. A brand-new posting has posting_id=NULL in posting_observations
+    until resolve_postings() runs (sql/002_task73_migration.sql assigns it there); with resolve now
+    deferred to one call at the end of the whole drain (both queues, every page), looking up the
+    posting_id per-page here -- before that resolve has happened -- found nothing for every
+    brand-new posting and silently dropped its clinic_links. The caller does the lookup+push once,
+    after the single end-of-run resolve, over everything accumulated here across all pages/queues."""
     import requests as rq
     from urllib.parse import urlparse
-    from .sources.inbox import jobposting_to_obs
-    rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
+    from .sources.inbox import jobposting_to_obs, NON_PROD_HOST
     obs, ack, probes = [], [], []
     for r in rows:
         if r["kind"] == "jobposting":
+            if NON_PROD_HOST.search(urlparse(r.get("source_url") or "").netloc):
+                ack.append({"inbox_id": r["inbox_id"], "note": "skipped: non-production host (staging/preview)"}); continue
             o = jobposting_to_obs(r, towns)
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None))
+            mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
+                        city_inherited=_city_inherited(o))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
+            obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
+        elif r["kind"] == "observation":
+            # Seeded adapters (softgarden/bite/umantis/pi_asp) already return a finished observation,
+            # not a raw jobposting -- app/crawl.py._obs_row wraps it as-is so it is queued and
+            # archived like every other row (2026-09-21 review: these rows never touched the queue at
+            # all, and 21% of run 96 was dropped right here with no trace). The payload IS the
+            # observation; apply the same three gates jobposting rows get, no jobposting_to_obs.
+            o = dict(r["payload"])
+            if NON_PROD_HOST.search(urlparse(o.get("source_url") or "").netloc):
+                ack.append({"inbox_id": r["inbox_id"], "note": "skipped: non-production host (staging/preview)"}); continue
+            if o.get("role_class") in C.EXCLUDED_ROLE_CLASSES:
+                ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o.get('role_class')} (not an experienced nursing role)"}); continue
+            if o.get("in_bavaria") is False:
+                ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
+            mt = m.match(o.get("employer_name"), o.get("city"), board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
+                        city_inherited=_city_inherited(o))
+            # Unlike the jobposting branch, a seed can already carry its own _kez (e.g. a
+            # bavaria_only_operator seed) -- keep it when the registry match itself finds nothing,
+            # same as app/crawl.py's retired _load_observations did.
+            o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
+            o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
+            if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + (o.get("employer_class_rule") or "")
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
         elif r["kind"] == "probe" and (r["payload"] or {}).get("probe") == "ats_discovery":
             pl = r["payload"]; cid = pl.get("clinic_id")
             if not cid and pl.get("employer"):
                 mt = m.match(pl["employer"], None); cid = mt[0] if mt else None
-            cl = _rows(rq.get(f"{url}/rest/v1/clinics?select=*&clinic_id=eq.{cid}", headers=H, timeout=60), "clinics") if cid else []
+            cl, err = [], None
+            if cid:
+                # clinic_id is payload data (crawler/agent supplied), not a literal -- params= lets
+                # requests URL-encode it, same as lookup_posting_ids. String-interpolating it into the
+                # query broke PostgREST's filter parser on any clinic_id containing "&", and _rows()
+                # turned that 400 into a SystemExit right here inside the row loop, before any ack --
+                # one poison row then wedged every later drain forever (same row re-read, re-died).
+                try:
+                    resp = rq.get(f"{url}/rest/v1/clinics", params={"select": "*", "clinic_id": f"eq.{cid}"}, headers=H, timeout=60)
+                    cl = resp.json()
+                except Exception as e:
+                    err = str(e)
+                if err is None and not isinstance(cl, list):
+                    err = str(cl)[:200]
+                if err is not None:
+                    ack.append({"inbox_id": r["inbox_id"], "note": f"probe: clinic lookup for clinic_id={cid!r} failed: {err[:200]}"})
+                    continue
             if cl and (pl.get("ats") or pl.get("careers_url")) and (not cl[0].get("ats_type") or pl.get("ats") and pl.get("ats") != cl[0].get("ats_type")):
                 from .schema import CLINIC_SPEC
                 row = {k: cl[0].get(k) for k, _ in CLINIC_SPEC}; row["ats_type"] = pl.get("ats") or row.get("ats_type")
@@ -332,51 +503,128 @@ def _drain_once(a, url, H, m, towns):
                 ack.append({"inbox_id": r["inbox_id"], "note": "probe: nothing to update"})
         else:
             ack.append({"inbox_id": r["inbox_id"], "note": f"{r['kind']}: {len((r['payload'] or {}).get('links', []))} links recorded (detail pages needed)"})
-    print(f"inbox rows {len(rows)}: observations {len(obs)}, kez-linked {sum(1 for o in obs if o.get('_kez'))}")
+    print(f"{queue} inbox rows {len(rows)}: observations {len(obs)}, kez-linked {sum(1 for o in obs if o.get('_kez'))}")
     sink = EdgeSink(batch=200)
     if obs:
-        print("load:", sink.write(obs, resolve=True, log=lambda *_: None))
-        ids = lookup_posting_ids(rq.get, url, H, obs)
-        key = lambda o: (o["source_id"], o["source_ref"])
-        links = [{"posting_id": ids[key(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9} for o in obs if key(o) in ids and o.get("_kez")]
-        ver = [{"posting_id": ids[key(o)], "verify_status": "live", "verify_http": 200, "verified_at": o["observed_at"], "verify_note": "collected in a user's browser"} for o in obs if key(o) in ids]
-        if len(ids) < len(obs):
-            print(f"  warning: {len(obs) - len(ids)} of {len(obs)} written observations not found on re-read; their clinic links/verify marks are skipped")
-        for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
-        for i in range(0, len(ver), 400): sink._post({"verify": ver[i:i + 400]})
+        if stats is not None:
+            stats["wrote"] = True
+        print("load:", sink.write(obs, resolve=resolve, log=lambda *_: None))
+        if link_candidates is not None:
+            link_candidates.extend(o for o in obs if o.get("_kez"))
+        # No collector writing to this inbox is an actual browser that fetched *this* URL and got 200 --
+        # every one is a crawler/adapter/agent (vendor-*, playwright-*, firecrawl-agent, ats-discover2,
+        # career-discover-exa). Stamping verify_status=live/200 here was fabricated (248 rows in the
+        # 2026-09-17 03:00 run alone). Real verification happens downstream: app/crawl.py's _verify_ids
+        # right after this same drain when called from a crawl run, or the next `cli verify` full sweep
+        # otherwise -- both leave verify_status NULL until then, which is honest.
     if probes:
-        print("clinics ats updated:", sink._post({"clinics": probes}).get("clinics"))
+        print("clinics ats updated:", sink.write_clinics(probes, log=lambda *_: None))
     if ack and not a.no_ack:
-        acked = 0
-        for i in range(0, len(ack), 400): acked += sink._post({"inbox_ack": ack[i:i + 400]}).get("inbox_ack", 0)
-        print("acked", acked)
+        print("acked", ack_fn(ack))
     return len(rows)
 
 
+def _live_clinics(url, H):
+    """Every row of the live clinics table -- paged the same way every other full-table read in this
+    file is (cmd_verify, cmd_link_clinics), rather than assuming the ~450 rows always fit one
+    PostgREST page (it hard-caps a single response at 1000 regardless of the limit param)."""
+    import requests as rq
+    rows, off = [], 0
+    while True:
+        chunk = _rows(rq.get(f"{url}/rest/v1/clinics?select=*&order=clinic_id&limit=1000&offset={off}",
+                             headers=H, timeout=60), "clinics")
+        rows += chunk; off += len(chunk)
+        if len(chunk) < 1000: break
+    return rows
+
+
 def cmd_inbox(a):
-    """Process browser-collector inbox rows -> observations (+ registry link), then ack them.
+    """Process queued raw rows -> observations (+ registry link), then ack them.
+
+    Two queues, one processor: the local SQLite queue the crawler writes (pflege_jobs.inbox_db --
+    every row it found, unfiltered) and the Postgres inbox, which stays for the producers holding
+    only the anon key (web/collect.html, POST /api/ingest, the Firecrawl webhook).
 
     Pages through the whole queue (not just one 1000-row page): PostgREST hard-caps a single
     response at 1000 rows regardless of the limit param, so a batch of exactly 1000 means more
     may be waiting. Acked rows drop out of the processed_at=is.null filter, so no offset is
     needed between batches -- the same query just returns the next page.
+
+    resolve_postings() runs once, after every page of both queues has drained, not once per page:
+    the queue used to be tens of rows (1-2 pages); at ~9,000 rows it pages 10x, and a per-page
+    resolve made this the heaviest server-side call in the log 10x a night instead of once.
+
+    posting_id lookup + clinic_links push also happen once here, after that single resolve, not
+    per page inside _process_rows: a brand-new posting has posting_id=NULL in posting_observations
+    until resolve_postings() runs, so a per-page lookup -- before resolve had happened -- found
+    nothing for every posting created this run and silently dropped its clinic_links (2026-09-21
+    review). _process_rows only accumulates matched observations into link_candidates now.
+
+    Registry source (TASK-80): --clinics defaults to None, which reads the live clinics table --
+    the same source of truth app/data.py's D.clinics() and crawlers.routing.plan() already use to
+    plan crawls. Every production call (app/crawl.py's `_cli(["inbox"])`) passes no --clinics, so it
+    always got this. Before this fix the default was data/registry/clinics.csv, a hand-maintained
+    copy that ATS/career discovery (the 'probe' branch below, and pflege_jobs/mechanics.py) writes
+    straight to the live table and never back to -- 117 of 399 active clinics had drifted to a blank
+    careers_url in the CSV while live had the real one, so the Matcher's board rules (R0_board*,
+    pflege_jobs/registry.py) could not fire for postings on those clinics' boards. --clinics still
+    accepts an explicit CSV path (tests use this to stay off the network).
     """
     import csv
+    import requests as rq
     from .registry import Matcher
     from .classify import norm_text
     url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
     H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
-    clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
+    if a.clinics:
+        clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
+        for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
+    else:
+        clinics = _live_clinics(url, H)
     towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
-    for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
     m = Matcher([dict(c) for c in clinics])
+    if a.reprocess_all or a.reprocess_run is not None:
+        n = IB.reset(run_id=a.reprocess_run, path=a.inbox_db) if not a.reprocess_all else IB.reset(path=a.inbox_db)
+        print(f"reprocess: {n} local row(s) unmarked"
+              + (f" (run {a.reprocess_run})" if a.reprocess_run is not None else " (whole history)"))
     total = 0
-    for _ in range(a.max_batches):
-        n = _drain_once(a, url, H, m, towns)
-        total += n
-        if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
-            break
+    stats = {"wrote": False}
+    link_candidates = []
+    for drain in (_drain_local_once, _drain_once):
+        for _ in range(a.max_batches):
+            n = drain(a, url, H, m, towns, resolve=False, stats=stats, link_candidates=link_candidates)
+            total += n
+            if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
+                break
+        else:
+            # max_batches is a loop-safety ceiling now, not a real queue-size cap (raised well past any
+            # observed queue) -- if it's ever actually reached, the drain stopped with rows still
+            # waiting and that must be loud, not a silent "inbox drained N rows" indistinguishable from
+            # a real full drain (TASK-72 AC#2).
+            print(f"TRUNCATED: max_batches={a.max_batches} reached with the queue still returning full "
+                  f"batches -- the drain is incomplete", file=sys.stderr)
+    if stats["wrote"]:
+        print("resolve:", EdgeSink()._post({"resolve": True}).get("resolve"))
+    if link_candidates:
+        ids = lookup_posting_ids(rq.get, url, H, link_candidates)
+        key_fn = lambda o: (o["source_id"], o["source_ref"])
+        links = [{"posting_id": ids[key_fn(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9}
+                 for o in link_candidates if key_fn(o) in ids]
+        if len(ids) < len(link_candidates):
+            print(f"  warning: {len(link_candidates) - len(ids)} of {len(link_candidates)} written observations not found on re-read; their clinic links are skipped")
+        sink = EdgeSink(batch=200)
+        for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
+        print(f"clinic links pushed: {len(links)}")
     print(f"inbox drained {total} rows")
+
+
+def cmd_purge_inbox(a):
+    """Delete local-queue rows older than --days (default 30, Ivan's 2026-09-21 decision on
+    data/inbox.sqlite retention: an ordinary maintenance step, run separately from the crawl/drain
+    path -- the crawl keeps writing every row unfiltered, this just ages old ones out. Age is
+    received_at (enqueue time), not processed_at, so an unprocessed row does not live forever."""
+    n = IB.purge_older_than(a.days, path=a.inbox_db)
+    print(f"purged {n} row(s) older than {a.days} day(s) from {a.inbox_db or IB.PATH}")
 
 
 def _sink(a):
@@ -406,8 +654,21 @@ def main(argv=None):
     v.add_argument("--out", default="data/verify.json"); v.add_argument("--only-status", default=""); v.add_argument("--dry-run", action="store_true"); v.set_defaults(fn=cmd_verify)
     lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
-    ib = sp.add_parser("inbox"); ib.add_argument("--clinics", default="data/registry/clinics.csv"); ib.add_argument("--no-ack", action="store_true")
-    ib.add_argument("--max-batches", type=int, default=20); ib.set_defaults(fn=cmd_inbox)
+    ib = sp.add_parser("inbox")
+    ib.add_argument("--clinics", default=None, help="registry CSV to match against instead of the live clinics table "
+                     "(default: live, the same source crawl planning uses -- see cmd_inbox's docstring, TASK-80)")
+    ib.add_argument("--no-ack", action="store_true")
+    ib.add_argument("--max-batches", type=int, default=100_000)  # loop-safety ceiling, not a queue-size cap
+    ib.add_argument("--inbox-db", default=None, help="local raw queue (default pflege_jobs/inbox_db.PATH)")
+    # Replay: the raw rows are kept, so a classifier or matcher change can be re-run over them
+    # instead of re-crawling the boards. --reprocess-all is the whole table, on purpose and never a default.
+    ib.add_argument("--reprocess-run", type=int, default=None, help="unmark this crawl run's local rows and process them again")
+    ib.add_argument("--reprocess-all", action="store_true", help="unmark every local row and process the whole history again")
+    ib.set_defaults(fn=cmd_inbox)
+    pg = sp.add_parser("purge-inbox", help="delete local-queue rows older than --days (Ivan, 2026-09-21: 30-day rotation)")
+    pg.add_argument("--days", type=int, default=30)
+    pg.add_argument("--inbox-db", default=None, help="local raw queue (default pflege_jobs/inbox_db.PATH)")
+    pg.set_defaults(fn=cmd_purge_inbox)
     a = p.parse_args(argv)
     a.fn(a)
 

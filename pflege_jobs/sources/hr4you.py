@@ -40,10 +40,18 @@ def _get(u, session=None):
     # sequential, one request at a time -- 0.5s politeness spacing (project rule), same on every
     # tenant host even though each one alone sees only a handful of calls.
     time.sleep(0.5)
+    # Tally attempts/oks on the shared session, same as crawlers.vendor_adapters.get() (TASK-72
+    # AC#1) -- app/crawl.py's _fetch_board reads it to tell a real transport failure from a board
+    # genuinely read and found empty.
+    if session is not None:
+        session._attempts = getattr(session, "_attempts", 0) + 1
     try:
-        return (session or requests).get(u, headers=H, timeout=30, allow_redirects=True)
+        r = (session or requests).get(u, headers=H, timeout=30, allow_redirects=True)
     except Exception:
         return None
+    if session is not None and r.ok:
+        session._ok = getattr(session, "_ok", 0) + 1
+    return r
 
 
 def _txt(s, limit=20000):
@@ -115,7 +123,7 @@ def crawl_hr4you(c, session=None):
             if not j or not j.get("title"):
                 continue
             if not j["loc"][0]["city"] and c.get("town"):
-                j["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+                j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
             out.append({"kind": "jobposting", "source_host": host, "source_url": j["url"],
                         "payload": j, "collector": "vendor-hr4you-v1", "client_id": "vendor-adapters-hr4you"})
     return out

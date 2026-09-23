@@ -58,14 +58,16 @@ create table if not exists pflege_jobs.postings (
   employer_id         bigint references pflege_jobs.employers(employer_id),
   offer_kind          text, hauptberuf text, alle_berufe text[],
   role_class          text references pflege_jobs.role_classes(role_class),
-  role_rule           text, qualification_hint text, department_hint text,
+  role_rule           text, qualification_hint text, department_hint text, department_raw text,
   city text, plz text, region text, lat double precision, lon double precision,
+  city_override text, plz_override text,
   in_bavaria          boolean, n_locations int,
   employment_types    text[], shift_night_weekend boolean, homeoffice boolean, quereinstieg boolean,
   contract            text, fixed_term_months int, start_date date,
   salary_min numeric, salary_max numeric, salary_unit text, salary_note text,
   first_published     date, last_modified timestamptz, valid_until date,
   external_url        text, description text,
+  enr_pay_grade text, enr_pay_text text, enr_requirements text, enr_experience text,
   enr_housing boolean, enr_housing_evidence text, enr_tariff text, enr_contact_emails text[],
   enr_language_req text, enr_bonus boolean, enr_childcare boolean, enr_anerkennung_mentioned boolean,
   first_seen          timestamptz, last_seen timestamptz,
@@ -93,7 +95,7 @@ create table if not exists pflege_jobs.posting_observations (
   employer_id         bigint references pflege_jobs.employers(employer_id),
   employer_class      text, employer_class_rule text, aa_kundennummer_hash text,
   offer_kind          text, hauptberuf text, alle_berufe text[],
-  role_class          text, role_rule text, qualification_hint text, department_hint text,
+  role_class          text, role_rule text, qualification_hint text, department_hint text, department_raw text,
   city text, plz text, region text, lat double precision, lon double precision,
   in_bavaria          boolean, n_locations int, locations jsonb,
   employment_types    text[], shift_night_weekend boolean, homeoffice boolean, quereinstieg boolean,
@@ -101,6 +103,7 @@ create table if not exists pflege_jobs.posting_observations (
   salary_min numeric, salary_max numeric, salary_unit text, salary_note text,
   first_published     date, last_modified timestamptz, valid_until date,
   external_url        text, description text,
+  enr_pay_grade text, enr_pay_text text, enr_requirements text, enr_experience text,
   enr_housing boolean, enr_housing_evidence text, enr_tariff text, enr_contact_emails text[],
   enr_language_req text, enr_bonus boolean, enr_childcare boolean, enr_anerkennung_mentioned boolean,
   details_fetched_at  timestamptz, details_error text,
@@ -187,7 +190,13 @@ begin
     alle_berufe = (select array_agg(x) from jsonb_array_elements_text(coalesce(g->'alle_berufe','[]'::jsonb)) x),
     role_class = g->>'role_class', role_rule = g->>'role_rule',
     qualification_hint = g->>'qualification_hint', department_hint = g->>'department_hint',
-    city = g->>'city', plz = g->>'plz', region = g->>'region',
+    department_raw = g->>'department_raw',
+    -- city/plz are the only two golden fields with a manual-correction escape hatch: every other
+    -- field here is fully recomputed from posting_observations with nothing to check first, so a
+    -- plain PATCH straight onto postings.city/plz used to be silently undone by the very next crawl
+    -- (tools/reverify_and_clean.py apply --write-city, TASK-74 AC3, 2026-09-16). No crawler writes
+    -- *_override -- only that tool does -- so an ordinary re-crawl leaves it untouched.
+    city = coalesce(p.city_override, g->>'city'), plz = coalesce(p.plz_override, g->>'plz'), region = g->>'region',
     lat = (g->>'lat')::double precision, lon = (g->>'lon')::double precision,
     in_bavaria = (g->>'in_bavaria')::boolean, n_locations = (g->>'n_locations')::int,
     employment_types = (select array_agg(x) from jsonb_array_elements_text(coalesce(g->'employment_types','[]'::jsonb)) x),
@@ -199,25 +208,33 @@ begin
     salary_unit = g->>'salary_unit', salary_note = g->>'salary_note',
     first_published = (g->>'first_published')::date, last_modified = (g->>'last_modified')::timestamptz,
     valid_until = (g->>'valid_until')::date, external_url = g->>'external_url', description = g->>'description',
+    enr_pay_grade = g->>'enr_pay_grade', enr_pay_text = g->>'enr_pay_text',
+    enr_requirements = g->>'enr_requirements', enr_experience = g->>'enr_experience',
     enr_housing = (g->>'enr_housing')::boolean, enr_housing_evidence = g->>'enr_housing_evidence',
     enr_tariff = g->>'enr_tariff',
     enr_contact_emails = (select array_agg(x) from jsonb_array_elements_text(coalesce(g->'enr_contact_emails','[]'::jsonb)) x),
     enr_language_req = g->>'enr_language_req', enr_bonus = (g->>'enr_bonus')::boolean,
     enr_childcare = (g->>'enr_childcare')::boolean, enr_anerkennung_mentioned = (g->>'enr_anerkennung_mentioned')::boolean,
     first_seen = least(coalesce(p.first_seen, m.fs), m.fs), last_seen = m.ls,
-    status = 'open', n_observations = m.n, provenance = m.prov, updated_at = now()
+    -- status is deliberately left untouched here: this resolver runs for every posting that has ANY
+    -- observation, including ones a prior mark_expired() already closed, and it must not silently
+    -- reopen them just because their old observations are still on file (TASK-73 AC5/AC6; the
+    -- unconditional status='open' this file carried until 2026-09-18 would have reopened all 202
+    -- postings expired at the time). A brand-new posting still starts 'open' via the column default.
+    n_observations = m.n, provenance = m.prov, updated_at = now()
   from merged m where p.posting_id = m.posting_id;
   get diagnostics n_ref = row_count;
   return query select n_link, n_new, n_ref;
 end $$;
 
--- 10. Expiry: postings not observed for p_days -> expired (monitoring).
-create or replace function pflege_jobs.mark_expired(p_days int default 7) returns int
-language sql as $$
-  with u as (update pflege_jobs.postings set status = 'expired', updated_at = now()
-             where status = 'open' and last_seen < now() - make_interval(days => p_days) returning 1)
-  select count(*)::int from u
-$$;
+-- 10. mark_expired(p_days)/expire_days was dead code (TASK-73 AC6): its only caller was
+-- pflege_jobs/orchestrate.py's stage_verify, and orchestrate.py itself is not scheduled anywhere
+-- (deploy/github-workflow-daily.yml is reference-only; app/scheduler.py runs the real crawls and
+-- never calls it). It was also unsafe to schedule as-is: app/crawl.py's inbox dedupe drops every
+-- re-crawled URL already on file, so last_seen freezes at first sighting and firing this would have
+-- expired postings that still verify live. Dropped rather than left to rot; the real expiry signal
+-- is the daily verify pass writing verify_status='gone'.
+drop function if exists pflege_jobs.mark_expired(int);
 
 -- 11. Read views for dashboard + agents.
 create or replace view pflege_jobs.v_postings as

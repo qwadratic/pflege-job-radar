@@ -1,5 +1,14 @@
 """Routing must never turn one shared board into N fetches, nor crash on unsupported vendors."""
-from crawlers.routing import plan, ADAPTERS
+from crawlers.routing import plan, ADAPTERS, WALLED
+
+
+def test_walled_flags_simssee_but_not_a_merely_page_specific_403():
+    """simssee-klinik.de confirmed live 2026-09-22: every page (incl. the bare homepage) 403s from
+    every User-Agent -- a real datacenter wall, so a 0-row crawl there must read as "walled", not
+    "no jobs" (see WALLED's own comment). rotkreuzklinik-wuerzburg.de (TASK-50 AC#2) is the contrast:
+    only ONE page 403s while the homepage answers 200, which is not this pattern and must stay out."""
+    assert WALLED.search("https://www.simssee-klinik.de/karriere/")
+    assert not WALLED.search("https://rotkreuzklinik-wuerzburg.de/stellenangebote/")
 
 
 def test_shared_board_is_fetched_once():
@@ -52,6 +61,16 @@ def test_labelled_but_unsupported_vendor_is_reported_not_crashed():
 def test_missing_entry_point_is_reported():
     boards, unroutable = plan([{"clinic_id": "1", "name": "X", "ats_type": "softgarden", "careers_url": ""}])
     assert boards == {} and "entry point" in unroutable[0][1]
+
+
+def test_unlabelled_vendor_with_a_careers_url_defaults_to_wp_jobs():
+    # 101 clinics (28% of open postings) carry a careers_url but no ats_type fingerprint -- routing
+    # must still fetch them with the generic crawler rather than dropping the board as unroutable.
+    clinics = [{"clinic_id": "1", "name": "Some Clinic", "ats_type": "", "careers_url": "https://example.invalid/jobs"}]
+    boards, unroutable = plan(clinics)
+    assert unroutable == []
+    board = next(iter(boards.values()))
+    assert board["vendor"] == "wp_jobs" and board["clinics"][0]["ats_type"] == "wp_jobs"
 
 
 def test_every_advertised_adapter_is_importable():

@@ -95,3 +95,38 @@ def test_umantis_routes_through_the_seeded_ats_seeds_builder():
     kind, ref = ADAPTERS["umantis"]
     assert kind == "seeded"
     assert ref == "pflege_jobs.sources.ats_seeds:umantis"
+
+
+def test_app_crawl_umantis_branch_adds_no_per_board_ceiling_of_its_own(monkeypatch):
+    """TASK-14: app/crawl.py's umantis branch ran Crawler(per_site_pages=150), a detail-fetch
+    ceiling on a free board that the Crawler-level no-cap tests could not see because they build
+    their own Crawler. The production caller is the thing under test here: a 200-job board must
+    come back whole through _seed_obs, not sliced to the caller's own number."""
+    import app.crawl as CR
+
+    n = 200
+    hrefs = [f"/Vacancies/{i}/Description/1" for i in range(n)]
+    list_html = "".join(f'<a href="{h}">Pflegefachkraft (m/w/d) Station {i}</a>' for i, h in enumerate(hrefs))
+    detail = ('<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", '
+              '"description": "d", "datePosted": "2026-01-01", '
+              '"jobLocation": {"address": {"addressLocality": "M\\u00fcnchen"}}}</script>')
+    host = "https://recruitingapp-5511.de.umantis.com"
+    pages = {f"{host}/Jobs/1": list_html}
+    pages.update({host + h: detail for h in hrefs})
+
+    class _Resp:
+        def __init__(self, url, text):
+            self.url, self.text, self.status_code = url, text, 200
+            self.headers = {"content-type": "text/html"}
+
+    monkeypatch.setattr(Crawler, "fetch", lambda self, url: (_Resp(url, pages[url]) if url in pages else None))
+    monkeypatch.setitem(ats_seeds.BUILDERS, "umantis", lambda f, kez, town: {
+        "name": "Test Klinik", "kez": kez, "career": f"{host}/Jobs/1",
+        "hosts": ["recruitingapp-5511.de.umantis.com"], "extra_seeds": [], "sitemaps": []})
+
+    clinic = {"clinic_id": "56101", "name": "Test Klinik", "careers_url": f"{host}/Jobs/1", "town": "Ansbach"}
+    rows, stats = CR._seed_obs({"vendor": "umantis"}, clinic, {"münchen"}, log=lambda *a, **k: None)
+
+    assert stats["job_links_found"] == n
+    assert len(rows) == n
+    assert stats["truncated"] is False

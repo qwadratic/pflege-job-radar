@@ -30,15 +30,20 @@ def hunter_targets(day: str = None):
 def hunter_start():
     H.set_enabled(True)
     H.day_set(H.today(), "stop_reason", None)
+    H.day_set(H.today(), "operator_stop", None)
     return {"enabled": True, "stop_reason": None, "daemon_alive": H.lock_held()}
 
 
 @router.post("/hunter/stop")
 def hunter_stop():
-    """enabled=false: the daemon submits nothing more; runs already in flight finish (they are billed anyway)."""
+    """enabled=false: the daemon submits nothing more. "operator_stop" (distinct from "stop_reason",
+    which check_stop() also writes for its OWN computed verdicts) is what makes an ALREADY-RUNNING
+    pass notice this and stop submitting more clinics before its next iteration, instead of only
+    taking effect on the daemon's next 60s poll or once the pass runs out of targets on its own."""
     H.set_enabled(False)
     reason = "kill_switch: stopped via POST /api/hunter/stop"
     H.day_set(H.today(), "stop_reason", reason)
+    H.day_set(H.today(), "operator_stop", reason)
     return {"enabled": False, "stop_reason": reason, "running": bool(H.meta_get("running")) and H.lock_held()}
 
 
@@ -62,6 +67,7 @@ def hunter_run_once():
         raise HTTPException(409, f"{H.stop_file()} exists; remove it first")
     H.set_enabled(True)
     H.day_set(H.today(), "stop_reason", None)
+    H.day_set(H.today(), "operator_stop", None)
     t = threading.Thread(target=_run_once_thread, name="hunter-once", daemon=True)
     _bg["thread"] = t
     t.start()

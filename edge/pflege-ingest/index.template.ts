@@ -1,7 +1,7 @@
 // pflege-ingest: authenticated bulk upsert into pflege_jobs.* over the project's own DB connection.
 // RENDERED from index.template.ts by edge/build_ingest.py — column lists come from pflege_jobs/schema.py.
 // Auth: Supabase JWT (verify_jwt=true; the anon key is a valid JWT) AND x-ingest-secret header.
-// Body: { employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, inbox_purge?, resolve?, supersede_aa?, expire_days?, assets?, crawl_run? }
+// Body: { employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, inbox_purge?, resolve?, supersede_aa?, assets?, crawl_run? }
 import postgres from "npm:postgres@3.4.5";
 
 // Set PFLEGE_INGEST_SECRET as a function secret; rotate it there.
@@ -133,10 +133,9 @@ Deno.serve(async (req: Request) => {
       const r = await sql`select pflege_jobs.supersede_aa_at_covered_sites() as n`;
       out.superseded_aa = r[0].n;
     }
-    if (body.expire_days) {
-      const r = await sql`select pflege_jobs.mark_expired(${body.expire_days}::int) as n`;
-      out.expired = r[0].n;
-    }
+    // expire_days/mark_expired removed (TASK-73 AC6): dead code, no scheduled caller, and unsafe as-
+    // is since last_seen never refreshes for an unchanged posting. A posting closes only via the
+    // `verify` op above writing verify_status='gone'.
     if (body.assets?.length) {
       const r = await sql.unsafe(
         `insert into pflege_jobs.assets (key, content, content_type)

@@ -21,7 +21,7 @@ from . import runs as R
 JOB_COLS = ("posting_id,title,role_class,role_label,department_hint,department_raw,qualification_hint,employer,employer_id,employer_class,"
             "clinic_id,clinic_name,regierungsbezirk,versorgungsstufe,traegerart,clinic_beds,clinic_match_rule,city,plz,lat,lon,employment_types,contract,"
             "start_date,first_published,first_seen,last_seen,status,verify_status,verified_at,external_url,source_codes,n_observations,"
-            "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,provenance")
+            "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,enr_requirements,enr_language_req,enr_experience,provenance")
 # enr_housing_evidence rides on every snapshot row too, but it is NOT in this select: the v_postings
 # view does not have the column (see _housing_evidence below, which reads it off postings).
 TTL = 600
@@ -270,6 +270,8 @@ def _build():
     routing = _routing(clinics)
     last = R.last_run_per_clinic()
     profiles = R.career_profiles()
+    photos = R.clinic_photos_map()
+    blurbs = R.clinic_blurbs_map()
     for c in clinics:
         c["fachrichtungen"] = [x for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
         c["size"] = size_bucket(c.get("beds"), tax)
@@ -284,6 +286,8 @@ def _build():
         lr = last.get(c["clinic_id"]) or {}
         c["last_crawl_at"], c["last_crawl_status"], c["last_crawl_mode"] = lr.get("at"), lr.get("status"), lr.get("mode")
         c["career_profile"] = profiles.get(c["clinic_id"])
+        c["photo_url"] = photos.get(c["clinic_id"])
+        c["presentation"] = blurbs.get(c["clinic_id"])
         c["ats_type"] = (c.get("ats_type") or "").strip()
         # how a scrape would reach this site: a vendor adapter, or the Firecrawl agent (everything is scrapable)
         via_adapter = bool(c.get("routable")) and not c.get("walled")
@@ -343,7 +347,14 @@ def _facets(jobs, clinics, tax):
 
 def snapshot(force=False, wait=180):
     """Current snapshot; builds synchronously when empty (or waits for the build in flight),
-    refreshes in the background when stale."""
+    refreshes in the background when stale.
+
+    Raises 503 when the snapshot has never held real data AND the most recent build attempt
+    failed (empty + error together) -- the one state a caller must not read as "the registry is
+    genuinely empty": every clinic_id lookup would return None indistinguishably from a real
+    unknown id (TASK-91 AC#2; app/main.py's `if not c: raise HTTPException(404, "unknown
+    clinic")` call sites turn that into a false 404 today). A stale-but-populated snapshot is not
+    this case -- it is still served, same as before, while a background refresh retries."""
     with _lock:
         stale = time.time() - _snap["at"] > TTL
         empty = not _snap["clinics"]
@@ -354,6 +365,8 @@ def snapshot(force=False, wait=180):
         _ready.wait(wait)
     elif stale and not loading:
         threading.Thread(target=refresh, daemon=True).start()
+    if not _snap["clinics"] and _snap.get("error"):
+        raise HTTPException(503, f"snapshot unavailable: {_snap['error']}")
     return _snap
 
 
@@ -372,7 +385,13 @@ def refresh():
         with _lock:
             _snap["loading"] = False
             _snap["error"] = f"{type(e).__name__}: {str(e)[:200]}"
-            _snap["at"] = time.time() - TTL + 60          # retry in a minute, keep serving what we have
+            # `at` is deliberately left untouched here (TASK-91): this used to set
+            # `at = now - TTL + 60`, which made a failed build look like a fresh one for the next
+            # ~60s -- snapshot()'s own `stale` check stayed False, so nothing retried and every
+            # caller silently kept reading the same stale-or-empty snapshot as current. Leaving
+            # `at` alone means the very next snapshot() call still sees the real staleness/empty
+            # state and tries again -- a transient failure is retried on the next request instead
+            # of being masked for a full cycle.
     return _snap
 
 
@@ -795,26 +814,56 @@ def inbox_summary(recent=25):
     n = max(0, min(int(recent or 0), 200))
     recent_rows = A.rest_get("inbox", {"select": "inbox_id,kind,collector,source_host,source_url,received_at,processed_at,process_note",
                                        "order": "inbox_id.desc", "limit": n}) if n else []
-    return {"total": total, "unprocessed": len(waiting), "by_kind": _count(waiting, "kind"),
+    # The crawler's rows are in the local queue (TASK-95), so the Postgres numbers above are only
+    # the anon-key producers' backlog -- reporting them alone would show an empty queue while a
+    # night's crawl sits unprocessed on disk.
+    from pflege_jobs import inbox_db as IB
+    return {"total": total, "unprocessed": len(waiting), "local": IB.counts(), "by_kind": _count(waiting, "kind"),
             "waiting_by_collector": _count(waiting, "collector"), "waiting_by_host": _count(waiting, "source_host", label=host_clinic),
             "oldest_unprocessed_at": oldest_at, "oldest_unprocessed_age_s": oldest_age_s, "recent": recent_rows}
 
 
 # --- cities / plan ----------------------------------------------------------------------------
 def cities(q=None):
-    """One row per registry town: hospitals, open + fresh jobs (via clinic_id), how many have a known ATS."""
-    by = {}
+    """One row per town: hospitals/beds/ATS coverage from the registry (via clinic_id), open + fresh
+    jobs counted straight off the postings -- on the SAME own-city-OR-clinic-town key filter_jobs'
+    city filter uses (:455), not the clinic-registry jobs_open/jobs_fresh aggregate. That aggregate
+    only ever counted a posting under its clinic's registry town and skipped it outright when it had
+    no clinic_id at all, so GET /api/cities silently disagreed with GET /api/jobs?city= (TASK-73
+    AC8; measured live 2026-09-18: 198 clinic_id-less postings in no city row, Augsburg showing 57
+    vs 148 postings that actually name it)."""
+    by, by_lower = {}, {}
+
+    def _row(t):
+        r = by_lower.get(t.lower())
+        if r is None:
+            r = by[t] = {"city": t, "regierungsbezirk": None, "landkreis": None,
+                        "clinics": 0, "jobs_open": 0, "jobs_fresh": 0, "ats_known": 0, "beds": 0}
+            by_lower[t.lower()] = r
+        return r
+
     for c in clinics():
         t = (c.get("town") or "").strip()
         if not t:
             continue
-        r = by.setdefault(t, {"city": t, "regierungsbezirk": c.get("regierungsbezirk"), "landkreis": c.get("landkreis"),
-                              "clinics": 0, "jobs_open": 0, "jobs_fresh": 0, "ats_known": 0, "beds": 0})
+        r = _row(t)
+        r["regierungsbezirk"] = r["regierungsbezirk"] or c.get("regierungsbezirk")
+        r["landkreis"] = r["landkreis"] or c.get("landkreis")
         r["clinics"] += 1
-        r["jobs_open"] += c["jobs_open"]
-        r["jobs_fresh"] += c["jobs_fresh"]
         r["ats_known"] += int(bool(c.get("ats_type")))
         r["beds"] += c.get("beds") or 0
+    for j in jobs():
+        # A dict keyed by row identity, not by the raw town string: a posting whose own city and
+        # clinic_town are the same real town spelled/cased differently ("München" vs "münchen")
+        # must count once, not twice -- _row() already folds both onto the one row via by_lower.
+        rows_for_job = {}
+        for raw in ((j.get("city") or "").strip(), (j.get("clinic_town") or "").strip()):
+            if raw:
+                r = _row(raw)
+                rows_for_job[id(r)] = r
+        for r in rows_for_job.values():
+            r["jobs_open"] += 1
+            r["jobs_fresh"] += int(bool(j.get("fresh")))
     rows = sorted(by.values(), key=lambda r: (-r["jobs_open"], -r["clinics"], r["city"]))
     if q:
         rows = [r for r in rows if _q_match(q, r["city"], r["regierungsbezirk"], r["landkreis"])]

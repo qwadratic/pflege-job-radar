@@ -10,7 +10,7 @@ Stages (in order):
   browser     P&I (Helios), Playwright seeds (js_seeds)       [needs chromium]
   inbox       browser-collector / crawler / firecrawl rows -> observations
   link        registry links (link-clinics) + cross-source merge (link-cross)
-  verify      web-liveness of open postings (<=6 workers), then expire(7)
+  verify      web-liveness of open postings (<=6 workers); a posting closes only via verify_status='gone'
   publish     refresh dashboard assets (skill/html) if changed
 Every stage writes a crawl_runs row (source_id 20 or null) with counts and notes; failures don't stop later stages.
 """
@@ -70,14 +70,12 @@ def stage_link(a):
 
 
 def stage_verify(a):
+    # No time-based expire() call here any more (TASK-73 AC6): mark_expired/expire_days was dead
+    # code (this was its only caller, and this module is not scheduled anywhere -- see
+    # sql/001_schema.sql's note at the dropped function) and unsafe to wire up as-is, since
+    # last_seen freezes at first sighting for an unchanged posting. `cli verify` above is the real
+    # expiry signal: it writes verify_status='gone', which is what actually closes a posting.
     rc, out, s = sh("python -m pflege_jobs.cli verify --workers 5", 2400)
-    try:
-        from .sinks import EdgeSink
-        sink = EdgeSink()
-        import requests as rq
-        r = sink._post({"expire_days": 7}); out += f"\nexpired: {r.get('expired')}"
-    except Exception as e:
-        out += f"\nexpire failed: {e}"
     log_run(None, f"verify: rc={rc} {s}s\n{out[-600:]}"); return rc
 
 

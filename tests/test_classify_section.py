@@ -53,11 +53,18 @@ def test_confirmed_section_recovers_titles_that_only_failed_the_pflege_gate():
         assert classify_role(title, "", "", nursing_section_confirmed=True)[0] == want, title
 
 
-def test_without_confirmation_the_same_titles_are_still_dropped_today():
-    # unchanged default behaviour (nursing_section_confirmed=False) -- proves the relaxation is opt-in
-    for title in ("Dauernachtwache (m/w/d)", "Hygienefachkraft (m/w/d)", "Advanced Practice Nurses (m/w/d)"):
-        role, rule = classify_role(title, "")
-        assert (role, rule) == ("nicht_pflege", "no_pflege_token"), title
+def test_pflege_gate_now_recognises_three_of_the_four_titles_on_its_own():
+    # 2026-09-18 crawler review: pflege_gate itself was missing several tokens its own kept role
+    # rules already matched on (nachtwache, hygienefachkraft, "advanced practice"), so these three
+    # titles no longer need nursing_section_confirmed at all -- the gate now recognises them
+    # directly, independent of any department label.
+    for title, want in (("Dauernachtwache (m/w/d)", "pflegefachkraft"),
+                        ("Hygienefachkraft (m/w/d)", "apn_experte"),
+                        ("Advanced Practice Nurses (m/w/d)", "apn_experte")):
+        assert classify_role(title, "")[0] == want, title
+    # "Gerontofachkraft" carries no token the gate recognises at all -- it still genuinely needs
+    # the section-confirmed relaxation, proving that relaxation is still opt-in and still needed.
+    assert classify_role("Gerontofachkraft (w/m/d)", "") == ("nicht_pflege", "no_pflege_token")
 
 
 # --- classify_role: step 2 (nicht_pflege/strong_pflege) still runs inside a confirmed section ----

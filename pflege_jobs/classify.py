@@ -26,6 +26,60 @@ def _compile():
 
 _compile()
 
+# A gender-neutral suffix ("(m/w/d)", ":in", bare "m/w/d") is the same structural "this is a real job
+# title" signal career_crawl.JOB_TEXT and vendor_adapters.GENDER already use on the crawl side --
+# reused here (not imported: those live downstream of this module) to decide whether classify_role's
+# catch-all fallback is looking at an actual posting title or just prose that mentions "Pflege".
+_POSTING_SHAPED = re.compile(
+    r"\((?:m|w|d|x|i|gn|a)\s?[/|*]\s?(?:m|w|d|x|i|gn|a)(?:\s?[/|*]\s?(?:m|w|d|x|i|gn|a))?\)"
+    r"|\b[mwd]/[mwd]/[mwdx]\b|[:*]in\b", re.I)
+
+_JOB_URL_HOST_RX = re.compile(r"^https?://([^/]+)", re.I)
+
+# Same-vendor identity of a job URL, extracted from the vendor's own job id -- used ONLY to build the
+# posting_observations dedup key (source_ref; unique(source_id, source_ref), sql/001_schema.sql:112),
+# never as a value shown to a job seeker: callers keep external_url/source_url as the real, as-crawled
+# link. `host_scoped` True means the vendor's own id is only unique WITHIN one tenant/host (a small
+# per-tenant sequential -- two different tenants can and do reuse the same integer for an unrelated
+# job) and must be combined with the host to avoid folding two different clinics' postings together.
+# Shapes confirmed live 2026-09-22, one job stored 2-3 times under exactly these before this fix:
+#   dvinci     <tenant>.dvinci-(easy|hr).com/de/jobs/<id> vs .../de/jobs/<id>/<slug>
+#              (Bamberg sozialstiftung-bamberg.dvinci-easy.com, Fuerth jobs.klinikum-fuerth.de,
+#              Neumarkt klinikum-neumarkt.dvinci-hr.com: 5 duplicate ids each)
+#   helix      <host>/<unit>/jobad?prj=<id> -- the SAME prj re-posted under different unit paths on
+#              one host (bezirk-unterfranken.helixjobs.com: prj=2618P680 under both /tzbu/ and
+#              /bkhwerneck/, prj=2618P779 under both /bkhwerneck/ and /KPPPM/)
+#   umantis    <host>/Vacancies/<id>/... -- ANregiomed Ansbach carries both a vanity domain
+#              (www.anregiomed.de) and the raw recruitingapp-5511.de.umantis.com tenant host
+#   softgarden <any host>/job(s)/<id>/... -- softgarden's own id is a platform-wide sequential, not
+#              per-tenant (Klinikum Bayreuth ids are 8 digits), so it is deliberately NOT host-scoped
+#              -- that is what lets a vanity domain and the *.softgarden.io host fold together
+#   b-ite      <host>/(de/)?jobposting/<hex-id>/... -- id is a hash (confirmed live: 41 hex chars,
+#              not the 40 a first read of the id suggests -- matched by length range, not a fixed
+#              count), never host-scoped either
+_CANON_JOB_ID_RULES = (
+    ("dvinci", re.compile(r"/de/jobs/(\d+)", re.I), True),
+    ("bite", re.compile(r"/jobposting/([0-9a-f]{20,})(?:/|$)", re.I), False),
+    ("helix", re.compile(r"[?&]prj=([A-Za-z0-9]+)", re.I), True),
+    ("umantis", re.compile(r"/Vacancies/(\d+)", re.I), True),
+    ("softgarden", re.compile(r"/jobs?/(\d{6,})(?:[/?#]|$)", re.I), False),
+)
+
+
+def canonical_job_url(url: str) -> str:
+    """-> a stable per-vendor-job-id identity string for `url` (see _CANON_JOB_ID_RULES), or `url`
+    itself unchanged when no known vendor shape matches -- always a usable string, never None."""
+    if not url:
+        return url
+    for vendor, rx, host_scoped in _CANON_JOB_ID_RULES:
+        m = rx.search(url)
+        if m:
+            if host_scoped:
+                hm = _JOB_URL_HOST_RX.match(url)
+                return f"{vendor}:{hm.group(1).lower() if hm else ''}:{m.group(1)}"
+            return f"{vendor}:{m.group(1).lower()}"
+    return url
+
 
 def norm_text(s: str) -> str:
     """lowercase, unicode-normalize, collapse whitespace."""
@@ -98,7 +152,18 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
         m = r.search(s)
         if m:
             return name, f"{name}:{m.group(0)}"
-    return C.ROLE_FALLBACK, "fallback"
+    # sonstige_pflege is a real, kept catch-all -- but only for a title that is itself shaped like a
+    # job posting (carries a gender-neutral marker: "(m/w/d)", ":in", ...). A bare pflege_gate token
+    # match with no _ROLES hit and no marker is not evidence of a nursing ROLE, only that a
+    # conjugated form of "pflegen" occurs somewhere in the text (TASK-84: classify_role('PFLEGEN
+    # KÖNNEN.') used to return sonstige_pflege/fallback, which is how 31 Klinikum Memmingen news
+    # headlines became open postings). "Betreuungskräfte (m/w/d) gesucht" -- no _ROLES hit, see
+    # pflegehelfer's umlaut-plural gap in tests/test_mech_role_class.py -- keeps falling back here
+    # because it DOES carry the marker; so does the section-confirmed "Gerontofachkraft (w/m/d)"
+    # (tests/test_classify_section.py).
+    if _POSTING_SHAPED.search(title or ""):
+        return C.ROLE_FALLBACK, "fallback"
+    return "nicht_pflege", "fallback_no_posting_signal"
 
 
 def qualification_hint(title: str, hauptberuf: str = ""):

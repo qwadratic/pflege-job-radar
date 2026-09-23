@@ -34,8 +34,11 @@ both tables named `crawl_runs`; and `firecrawl_campaign` (reingest) vs `ad_campa
 
 ## resolve_postings() (after every load)
 1. Link: unlinked observation → if exactly one posting shares `fuzzy_key` AND that posting has no observation from the same source → link; otherwise new posting. Same-source rows never merge.
-2. Fields: per field, first non-null ordered by `precedence asc, observed_at desc`. `first_seen=min`, `last_seen=max`, `provenance{field: source_code}`.
-3. `mark_expired(p_days)` → `status='expired'` where `last_seen < now() - p_days`.
+2. Fields: per field, first non-null ordered by `precedence asc, observed_at desc`. `first_seen=min`, `last_seen=max`, `provenance{field: source_code}`. `status` is left as-is (never forced back to `open`), so a posting an earlier expiry closed stays closed.
+
+There is no time-based expiry: `mark_expired(p_days)` was dead code (only caller was orchestrate.py's
+unscheduled `stage_verify`) and is removed. The only thing that closes a posting is the daily verify
+pass writing `verify_status='gone'`.
 
 ## link-clinics (postings → KeZ)
 Six ordered rules: R1 exact name, R2 operator, R3/R4 token overlap + town, R5 loose, R6 operator with several sites in one town → preferred/largest site, rule stored as `R6_ambiguous_sites:…`. `clinic_match_rule='manual'` is never touched.

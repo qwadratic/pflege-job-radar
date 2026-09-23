@@ -126,16 +126,37 @@ def sitemap_urls(base, session=None, max_maps=6):
     return found
 
 
+def _listing_path(urls):
+    """The shared parent path across >=2 job detail URLs (e.g. both .../stellenangebote/a and
+    .../stellenangebote/b -> .../stellenangebote/) -- the actual board/listing a clinic's careers_url
+    should point at, never a single job's own detail page. A lone job URL has no sibling to confirm
+    a shared listing folder against, so it is deliberately NOT promoted to careers_url here (see
+    probe_sitemap's apply_url, which keeps it as evidence instead)."""
+    if len(urls) < 2:
+        return None
+    paths = [urlparse(u).path for u in urls]
+    common = os.path.commonprefix(paths)
+    common = common.rsplit("/", 1)[0] + "/" if "/" in common else ""
+    if common in ("", "/"):
+        return None
+    p0 = urlparse(urls[0])
+    return f"{p0.scheme}://{p0.netloc}{common}"
+
+
 def probe_sitemap(clinic, base, session=None):
-    """Job URLs in the sitemap either fingerprint directly or give us a detail page to fetch."""
+    """Job URLs in the sitemap either fingerprint directly or give us a detail page to fetch.
+    careers_url is the jobs' shared listing path (_listing_path), never one job's own detail page --
+    a single found job URL used to become the clinic's permanent careers_url outright (confirmed
+    live: 12 registry rows this way), so the board it actually belongs to was never crawled again."""
     locs = sitemap_urls(base, session=session)
     if not locs:
         return None
     jobs = [u for u in locs if JOB_URL_RX.search(u) and not SKIP_EXT.search(u)]
+    listing = _listing_path(jobs)
     ats, ev = fingerprint("", " ".join(jobs[:200]))
     if ats:
         return {"ats": ats, "apply_url": next((u for u in jobs if re.search(ATS[[n for n, _ in ATS].index(ats)][1], u, re.I)), None),
-                "careers_url": jobs[0] if jobs else None, "evidence": ev, "angle": "sitemap",
+                "careers_url": listing, "evidence": ev, "angle": "sitemap",
                 "n_job_urls": len(jobs)}
     for u in jobs[:4]:                                   # open a couple of job pages, fingerprint those
         r = get(u, session=session)
@@ -143,10 +164,10 @@ def probe_sitemap(clinic, base, session=None):
             continue
         ats, ev = fingerprint(r.text, r.url)
         if ats:
-            return {"ats": ats, "apply_url": None, "careers_url": u, "evidence": ev,
+            return {"ats": ats, "apply_url": u, "careers_url": listing, "evidence": ev,
                     "angle": "sitemap", "n_job_urls": len(jobs)}
     if jobs:                                             # no vendor, but we did find the job pages
-        return {"ats": None, "apply_url": None, "careers_url": jobs[0], "evidence": None,
+        return {"ats": None, "apply_url": jobs[0], "careers_url": listing, "evidence": None,
                 "angle": "sitemap", "n_job_urls": len(jobs)}
     return None
 

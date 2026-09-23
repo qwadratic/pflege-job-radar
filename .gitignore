@@ -57,6 +57,8 @@ data/wa_documents/
 # Phones known to the old system (export_known_phones.py, rewritten hourly by known-phones-export.timer,
 # docs/rollout-runbook.md) -- real phone numbers: never commit it
 data/known-real-system-phones.txt
+# the raw crawler queue (TASK-95): local, large, and the only copy of rows nobody re-crawls
+data/inbox.sqlite*
 .venv/
 *.log
 
@@ -77,3 +79,10 @@ data/HUNTER_STOP
 
 # synthetic E2E funnel test report (tests/test_wa_luna_e2e_funnel.py) -- regenerated each real run
 tests/.artifacts/
+
+supabase/.temp/
+
+# TASK-120: collected clinic photos (large, regenerable via tools/task120_collect_clinic_photos.py) --
+# the served copies live under data/clinic_photos/<id>/, indexed by the clinic_photos sqlite table
+data/clinic_photos/
+data/clinic_photos.zip

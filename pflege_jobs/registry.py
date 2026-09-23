@@ -14,11 +14,21 @@ from collections import defaultdict
 from .schema import CLINIC_SPEC
 
 from .classify import employer_norm, norm_text
+from .sources.career_crawl import _canon_town
 
 STOP = {"klinik", "kliniken", "klinikum", "krankenhaus", "gmbh", "ggmbh", "ag", "kg", "ev", "e", "v", "gku", "aör", "aoer",
         "stiftung", "gemeinnützige", "gemeinnuetzige", "und", "der", "des", "die", "für", "fuer", "im", "am", "an", "in", "von", "st", "sankt",
         "fachklinik", "fachkliniken", "gesundheit", "medizinisches", "zentrum", "personalabteilung", "bereich", "campus", "standort", "haus", "recht", "rechts" if False else "recht", "stadt", "landkreis", "kreis", "bezirk", "des", "öffentlichen", "anstalt", "körperschaft"}
-CITY_ALIASES = {"münchen": {"münchen", "muenchen", "munich"}, "nürnberg": {"nürnberg", "nuernberg"}}
+CITY_ALIASES = {"münchen": {"münchen", "muenchen", "munich"}, "nürnberg": {"nürnberg", "nuernberg"},
+                # "i.d." (= "in der") folds fine via _canon_town's own connector-stripping when the
+                # qualifier after it is spelled out ("Weiden i.d. Oberpfalz" -> "weiden oberpfalz",
+                # _town_match's own docstring example) -- but clinic 37301's live registry town
+                # abbreviates the qualifier too ("Neumarkt i.d.OPf."), which _canon_town has no reason
+                # to know means "Oberpfalz". Found live 2026-09-21: TASK-81's R1_exact town gate
+                # started comparing this town for the first time (R1_exact never checked city before)
+                # and refused a real "Klinikum Neumarkt" posting stating the spelled-out city, because
+                # the two forms canonicalized to "neumarkt opf" vs "neumarkt in oberpfalz" -- disjoint.
+                "neumarkt in oberpfalz": {"neumarkt i.d.opf.", "neumarkt i.d. opf."}}
 
 
 ALIASES = {"universitätsklinikum": {"universität"}, "uniklinikum": {"universität"}, "uniklinik": {"universität"},
@@ -51,13 +61,40 @@ def overlap(a, b):
 
 
 def city_key(c):
+    """Full canonical town, not just its first word -- truncating to one word (the old
+    `.split()[0]` fallback) collapsed every "Bad *" town (19 distinct places / 27 clinics) and
+    several differently-qualified "Neustadt *" towns into one bucket, attributing postings to a
+    clinic 100-250 km away (confirmed live 2026-09-18). career_crawl._canon_town already folds
+    connector words (an der/a.d./am/bei/...) while KEEPING the geographic qualifier noun that
+    follows one ("Neustadt an der Donau" -> "neustadt donau", not the bare "Neustadt" three other
+    real Bavarian towns also share) -- exactly the town-identity signal city_key needs to keep."""
     c = norm_text(c or "")
     c = re.sub(r"^\d{5}\s+", "", c)                # '82467 Garmisch-Partenkirchen'
     c = re.sub(r"\s*(,|\().*$", "", c)            # 'Landshut, Isar' -> 'landshut'
-    c = re.sub(r"\b(an der|am|im|bei|a\.d\.|i\.d\.)\b.*$", "", c).strip()
+    # 'Markt Indersdorf' is the LEADING-qualifier mirror of the trailing-qualifier case
+    # _town_match already handles: a posting names the town alone ('Indersdorf'). Stripped here
+    # (not via a _town_match generalization) because a generic prefix-or-suffix _town_match would
+    # also bridge real, DIFFERENT towns that happen to share a last word (measured live 2026-09-21
+    # against all 407 clinics: 'Coburg' vs 'Neustadt bei Coburg', 'Pegnitz' vs 'Lauf an der
+    # Pegnitz' -- both distinct real places, ~15-30km apart). 'markt' is the only leading qualifier
+    # measured in the live registry (clinic 17402); unlike 'Bad' it is never itself part of a bare
+    # town's identity, so stripping it cannot collapse two different real towns together.
+    c = re.sub(r"^markt\s+", "", c)
     for k, al in CITY_ALIASES.items():
         if c in al: return k
-    return c.split()[0] if c else ""
+    return _canon_town(c)
+
+
+def _town_match(a, b):
+    """a and b are both city_key() outputs. Equal, or one is the other's whitespace-delimited
+    prefix -- a registry town's canon form can carry a trailing geographic qualifier a posting's
+    own city string may not repeat (city_key('Weiden i.d. Oberpfalz') == 'weiden oberpfalz', but a
+    posting naming just 'Weiden' must still match it; nothing else in the registry starts with
+    'weiden ', so this cannot silently absorb an unrelated town)."""
+    if not a or not b: return False
+    if a == b: return True
+    shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+    return longer.startswith(shorter + " ")
 
 
 def jaccard(a, b):
@@ -85,40 +122,105 @@ class Matcher:
             self.by_name[employer_norm(c["name"])].append(c)
             if c.get("operator"): self.by_op[employer_norm(c["operator"])].append(c)
             self.by_town[city_key(c.get("town"))].append(c)
-            tk = set(city_key(c.get("town")).split("-")) | toks(c.get("town"))
+            tk = set(city_key(c.get("town")).split()) | toks(c.get("town"))
             c["_ntoks"] = toks(c["name"]) - tk; c["_otoks"] = toks(c.get("operator")) - tk; c["_kinds"] = kinds(c["name"]) | kinds(c.get("operator"))
 
-    def match(self, employer, city, board=None, description=None):
+    def _by_town(self, ck):
+        """Every registry clinic in ck's town, using _town_match's prefix rule -- a plain dict
+        lookup on the exact city_key would miss a registry town whose canon form carries a
+        trailing qualifier a posting's own (unqualified) city string doesn't repeat."""
+        if not ck: return []
+        return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
+
+    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
         Board-first was tried and reverted: it forced a guess on shared boards that host non-Bavaria
-        entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched."""
-        r = self._match_content(employer, city, description)
+        entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched.
+
+        employer_inherited=True means the crawler did not read that employer off the posting -- it
+        substituted the seed clinic's own registry name (pflege_jobs/sources/inbox.py records this as
+        employer_source='seed'). Matching a clinic against the name we copied FROM that clinic is
+        circular: it always succeeds, on every posting of a nationwide board, which is how every AMEOS
+        posting in Germany attached to Neuburg (decision-5 left this open as a crawler-layer problem;
+        with the marker it can finally be enforced here). Such a row must earn its clinic from the
+        city/tokens/board instead.
+
+        city_inherited=True is the same problem for the OTHER half of a board-fallback match
+        (pflege_jobs/sources/inbox.py's city_source='seed', set when a job page names no location at
+        all and the crawler substituted the seed clinic's own registry town, TASK-81 mechanism #3):
+        R0_board_town then "agrees" with the seed by construction, and R0_board_name/_tokens can hit
+        the same way when employer is ALSO inherited (city_inherited and employer_inherited commonly
+        travel together, but are gated independently here since either alone is enough to fabricate a
+        false agreement with the seed). A copied city/name is dropped for the board fallback only --
+        content-side matching (_match_content, above) is unaffected."""
+        r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
         if r: return r
         if board:
-            en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
+            en = "" if employer_inherited else employer_norm(employer or "")
+            et = set() if employer_inherited else toks(employer)
+            ck = None if city_inherited else city_key(city)
             return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
         return None
 
-    def _match_content(self, employer, city, description=None):
+    def _match_content(self, employer, city, description=None, employer_inherited=False):
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
         if not en: return self._match_jd(description)
-        c = self.by_name.get(en, [])
-        if len(c) == 1: return c[0]["clinic_id"], "R1_exact", 1.0
+        c = [] if employer_inherited else self.by_name.get(en, [])
+        # Gated on town the same way its own R1_exact_town sibling two lines below always was: a
+        # UNIQUE employer-name hit is still a wrong match when the posting's own city is known and
+        # names a different registry town (TASK-81 mechanism #2; e.g. a unique-nationwide employer
+        # name that also runs a Bavaria-adjacent site). Unknown city (ck falsy) is unchanged -- no
+        # evidence to contradict the name match with. A known city that names no OTHER registry town
+        # at all is *also* not contradicting evidence -- it can be a board/employer label ('RoMed
+        # Verbund'), or a real place the registry simply has no clinic in ('Titting',
+        # 'Petershausen'); only refuse when the city actually points at a DIFFERENT real registry
+        # site (measured live 2026-09-21 over all 2560 open postings: the unqualified gate below
+        # cost 17 R1_exact matches this way, 4 of them on a city matching no registry town at all).
+        if len(c) == 1:
+            own_town = city_key(c[0].get("town"))
+            other_town_disagrees = ck and not _town_match(own_town, ck) and \
+                any(x["clinic_id"] != c[0]["clinic_id"] for x in self._by_town(ck))
+            if not other_town_disagrees:
+                return c[0]["clinic_id"], "R1_exact", 1.0
         if len(c) > 1:
-            t = [x for x in c if city_key(x.get("town")) == ck]
+            t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R1_exact_town", 0.98
-        c = self.by_op.get(en, [])
+        c = [] if employer_inherited else self.by_op.get(en, [])
         if len(c) == 1: return c[0]["clinic_id"], "R2_operator", 0.95
         if len(c) > 1:
-            t = [x for x in c if city_key(x.get("town")) == ck]
+            t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R2_operator_town", 0.9
             if len(t) > 1:
+                # An operator tie is not necessarily a name tie: the employer text can still name
+                # one of the sites far better than the others, and that beats _pick_site's bed
+                # count, which is blind to what the posting actually says (confirmed live
+                # 2026-09-21: kbo.de's per-posting Einsatzort block says "kbo-Kinderzentrum
+                # München" -- 16211's own name -- but 16211 and 16212 share that operator, so the
+                # bed count filed 13 postings under 16212 kbo-Heckscher-Klinikum München instead).
+                # Same best-Jaccard idiom R3/R4 already use one rung below.
+                js = sorted(((jaccard(et, x["_ntoks"]), x) for x in t), key=lambda kv: -kv[0])
+                if js[0][0] - js[1][0] >= 0.1:
+                    return js[0][1]["clinic_id"], "R2_operator_town_bestj", 0.85
                 top = _pick_site(t)
                 return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in t)), 0.5
-        same_town = self.by_town.get(ck, []) if ck else []
-        et = et - set(ck.split("-")); ek = kinds(employer)
+        same_town = self._by_town(ck)
+        et = et - set(ck.split()); ek = kinds(employer)
+        # R1/R2 above only skip the DIRECT by_name/by_op lookups on employer_inherited -- et/ek below
+        # were still built from the same seed-copied text, so a generic wp_jobs board (org defaults to
+        # the triggering clinic's own registry name when the page states no employer) could still
+        # token-match its way back to that exact clinic via R3_tokens, just via a different rule than
+        # R1_exact (confirmed live 2026-09-22, TASK-81: la-regio-kliniken.de's shared board, 2 clinics
+        # in Landshut -- every posting's org was the seed clinic's own name, R1_exact correctly
+        # declined on employer_inherited, R3_tokens then re-admitted the identical wrong clinic anyway
+        # by token-matching the same seed text against the SAME_TOWN pool). Only blank when there is
+        # more than one same-town candidate to disambiguate BETWEEN -- a single same-town candidate has
+        # nothing to disambiguate from, so its token check is redundant confirmation, not circular
+        # evidence, and stays allowed (TASK-62's own "a real, non-inherited city still earns the match"
+        # case, tests/test_inherited_fields.py).
+        if employer_inherited and len(same_town) > 1:
+            et, ek = set(), set()
         if not et and not ek: return None
         for rule, key, thr, score in (("R3_tokens", "_ntoks", 0.6, 0.8), ("R4_tokens_op", "_otoks", 0.6, 0.75)):
             cands = []
@@ -180,12 +282,44 @@ class Matcher:
         clinics sharing that board, so the candidate set is that board and nothing else. Undecidable
         within the board stays unmatched rather than falling back to a repo-wide search."""
         if not pool: return None
-        if len(pool) == 1: return pool[0]["clinic_id"], "R0_board", 0.9
-        for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en),
-                                 ("R0_board_town", 0.85, lambda x: city_key(x.get("town")) == ck and ck),
-                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6)):
+        # A single-clinic pool used to win outright with no city check at all -- but a group
+        # portal whose registry pool collapsed to one clinic (e.g. a shared board where every
+        # other member routes elsewhere) still hosts postings for OTHER towns/operators entirely
+        # (confirmed live 2026-09-18: psychosomatik-diessen.de's Artemed SmartRecruiters feed, pool
+        # = [Kloster Diessen], attributed 50 of its own Tutzing/Augsburg/Feldafing postings to
+        # Diessen). Same rule as the name/tokens rungs below: an unknown city (ck falsy) still
+        # passes through unchanged, but a known, disagreeing city refuses the match -- decision-5's
+        # "no match beats a wrong match" applied to the one board rule it didn't yet cover.
+        if len(pool) == 1:
+            if not ck or _town_match(city_key(pool[0].get("town")), ck):
+                return pool[0]["clinic_id"], "R0_board", 0.9
+            return None
+        # R0_board_name/_tokens match on employer text alone, which a crawler's own org-defaulting
+        # bug can make IDENTICAL for every posting on a shared multi-site board regardless of the
+        # real site (confirmed live 2026-09-11: karriere.ameos.eu's crawl_wp_jobs sets every row's
+        # employer_name to whichever clinic seeded the crawl, so R0_board_name silently matched
+        # postings for Haldensleben/Oberhausen/Hameln -- nowhere near Bavaria -- to AMEOS Klinikum
+        # Neuburg just because they shared that board pool). When the posting's own city IS known,
+        # require it to agree with the candidate's town before trusting name/token overlap; an
+        # unknown city (ck falsy) still falls through unchanged, same as before.
+        same_town_only = lambda x: not ck or _town_match(city_key(x.get("town")), ck)
+        for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en and same_town_only(x)),
+                                 ("R0_board_town", 0.85, lambda x: ck and _town_match(city_key(x.get("town")), ck)),
+                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x))):
             hit = [x for x in pool if sel(x)]
             if len(hit) == 1: return hit[0]["clinic_id"], rule, score
+            if len(hit) > 1:
+                # A tie within one rung's own signal is only safe to break by real-bed-capacity
+                # (_pick_site) when the tied candidates share one normalized name or operator -- the
+                # same Plan-KH/Vertrags-KH twin-site shape _match_content already resolves this way
+                # (decision-4/TASK-58A). R0_board_town's own tie condition is pure city agreement, no
+                # name signal at all, so without this gate a genuinely different site sharing the same
+                # town (confirmed live 2026-09-22: Schön Klinik München Harlaching vs Schwabing, same
+                # town, different operators) would get silently force-picked by bed count instead of
+                # correctly staying unmatched.
+                ops = {employer_norm(x.get("operator") or x["name"]) for x in hit}
+                if len(ops) == 1:
+                    return _pick_site(hit)["clinic_id"], rule + "_bestsite", score - 0.1
         return None
 
 

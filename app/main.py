@@ -38,8 +38,12 @@ except Exception as _e:                                     # pragma: no cover -
     print("autopilot router not loaded:", _e)
 
 app = FastAPI(title="pflege-board", version="1.0", docs_url="/api/openapi-ui", redoc_url=None, openapi_url="/api/openapi.json")
-if _autopilot_router is not None:
-    app.include_router(_autopilot_router, prefix="/api/autopilot", tags=["autopilot"])
+# Not mounted (2026-09-22, Ivan): the /autopilot PAGE was already disabled 2026-09-08 (c3ffded), but
+# /api/autopilot/* itself stayed live and gated -- real traffic since then is one manual check
+# (2026-09-11) plus this repo's own fuzz-testing, never product usage. Router code is untouched
+# (app/autopilot/api.py), unmounting is the only change; re-enable by restoring the include_router call.
+# if _autopilot_router is not None:
+#     app.include_router(_autopilot_router, prefix="/api/autopilot", tags=["autopilot"])
 from .coverage import router as _coverage_router                    # GET /api/coverage (Clawl page)
 from .firecrawl_hooks import router as _firecrawl_router           # POST /api/firecrawl/webhook, spend gate, kill switch
 app.include_router(_coverage_router, prefix="/api", tags=["coverage"])
@@ -280,6 +284,28 @@ def api_clinic(clinic_id: str, request: Request):
     return out
 
 
+@app.get("/api/clinics/{clinic_id}/expose")
+def api_clinic_expose(clinic_id: str):
+    """A single, minimal, bot-facing "expose" (real-estate-listing term Ivan used) -- one call hands a
+    candidate-facing bot (the WhatsApp nurse funnel) a ready clinic presentation: photo + the
+    Firecrawl-researched paragraph. Deliberately NOT the full clinic dict (jobs/routing/crawl status
+    are a different concern, already served by GET /api/clinics/{clinic_id}) -- a bot integration wants
+    a small, stable shape, not the whole board's internals. `presentation` is null until the blurb
+    pipeline has covered this clinic (TASK-120 AC#7, pilot stage: 15 of 407 clinics as of 2026-09-23).
+
+    `photos` is a LIST, not a single field (Ivan, 2026-09-23: TASK-121 will curate up to 3 photos per
+    clinic -- an integration built against this contract today must not need to change once that
+    lands). Holds at most one URL today (R.clinic_photo_urls, distinct from clinic_photo_url()'s
+    single-string shape the main clinic dict/frontend still use) -- an empty list, not null/missing,
+    when there is none yet."""
+    c = D.clinic(clinic_id)
+    if not c:
+        raise HTTPException(404, "unknown clinic")
+    p = c.get("presentation") or {}
+    return {"clinic_id": c["clinic_id"], "name": c["name"], "town": c.get("town"), "photos": R.clinic_photo_urls(clinic_id),
+            "presentation": {"text_de": p.get("text_de"), "confidence": p.get("confidence"), "sources": p.get("sources") or []} if p else None}
+
+
 @app.get("/api/jobs")
 def api_jobs(request: Request):
     return _list_response(request, D.filter_jobs(dict(request.query_params)), 200)
@@ -343,7 +369,7 @@ async def api_cv(request: Request, file: Optional[UploadFile] = File(None), limi
 
 # --- crawl ----------------------------------------------------------------------------------
 SCOPES = T.SCOPES
-MODES = ("auto", "adapter", "firecrawl")
+MODES = ("auto", "adapter", "firecrawl", "verify")
 
 
 def _target_from_query(request: Request):
@@ -358,7 +384,8 @@ def _plan_payload(target, p):
             "walled": p["walled"], "est_credits": p["credits_needed"], "credits_left": p["credits_left"],
             "skipped": [{"clinic_id": c["clinic_id"], "reason": c.get("route_reason")} for c in p["skipped"]][:50],
             "sample": [c["name"] for c in p["clinics"][:8]],
-            "adapter": [c["clinic_id"] for c in p["adapter"]], "firecrawl": [c["clinic_id"] for c in p["firecrawl"]], "credits_needed": p["credits_needed"]}
+            "adapter": [c["clinic_id"] for c in p["adapter"]], "firecrawl": [c["clinic_id"] for c in p["firecrawl"]], "credits_needed": p["credits_needed"],
+            "blocked": p["blocked"], "blocked_reason": p["blocked_reason"]}
 
 
 def _validate_only(request, body):
@@ -854,10 +881,14 @@ async def api_refetch(clinic_id: str, request: Request):
     return {"run_id": rid, "queued": True}
 
 
-@app.post("/api/autocrawl/tick")
-def api_autocrawl_tick():
-    """Fire every enabled schedule now (today's stagger slice) — what the scheduler thread would do at its cron time."""
-    return S.tick(force=True)
+# Disabled (2026-09-22, Ivan): zero real calls in the full service journal, ever (one 401 attempt,
+# 2026-09-08). The scheduler's own clock already fires every enabled schedule on time; this was a
+# manual "fire now" override nothing in the product actually calls. S.tick(force=True) itself is
+# untouched -- re-enable by restoring the route.
+# @app.post("/api/autocrawl/tick")
+# def api_autocrawl_tick():
+#     """Fire every enabled schedule now (today's stagger slice) — what the scheduler thread would do at its cron time."""
+#     return S.tick(force=True)
 
 
 # --- schedules ------------------------------------------------------------------------------
@@ -1110,6 +1141,23 @@ def docs_file(name: str):
     if not _servable(p, A.DOCS_DIR):
         raise HTTPException(404, "not found")
     return FileResponse(str(p), media_type="application/json" if name.endswith(".json") else "text/markdown; charset=utf-8")
+
+
+CLINIC_ID_RX = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+@app.get("/photos/{clinic_id}")
+def clinic_photo(clinic_id: str):
+    if not CLINIC_ID_RX.match(clinic_id):
+        raise HTTPException(404, "not found")
+    path = R.clinic_photo_path(clinic_id)
+    if not path:
+        raise HTTPException(404, "no photo for this clinic")
+    p = pathlib.Path(path)
+    if not p.is_file():
+        raise HTTPException(404, "no photo for this clinic")
+    ct = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}.get(p.suffix.lower(), "application/octet-stream")
+    return FileResponse(str(p), media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _web(rel, media=None):

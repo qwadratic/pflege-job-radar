@@ -419,7 +419,8 @@ def jobs_to_inbox_rows(data, clinic):
         if not url.startswith("http") or not title or url in seen:
             continue
         seen.add(url)
-        city = (j.get("city") or "").strip() or town
+        agent_city = (j.get("city") or "").strip() or None
+        city = agent_city or town
         plz = re.sub(r"\D", "", j.get("plz") or "")[:5] or None
         desc_parts = [j.get("description"), ("Anforderungen: " + j["requirements"]) if j.get("requirements") else None,
                       ("Vergütung: " + j["tariff_or_salary"]) if j.get("tariff_or_salary") else None,
@@ -428,9 +429,18 @@ def jobs_to_inbox_rows(data, clinic):
                       ("Kontakt: " + j["contact_email"]) if j.get("contact_email") else None]
         pub = (j.get("published") or "")[:10]
         seniority = (j.get("seniority") or "unknown").strip().lower()
-        payload = {"title": title, "org": clinic.get("name"), "loc": [{"city": city, "plz": plz, "region": "BAYERN"}], "url": url,
+        payload = {"title": title, "org": clinic.get("name"), "org_source": "seed",  # JOBS_SCHEMA has no employer field at all
+                   "loc": [{"city": city, "plz": plz, "region": None}], "city_source": "page" if agent_city else "seed",
+                   "url": url,
                    "page": (data or {}).get("portal_url") or clinic.get("careers_url"),
                    "description": " ".join(p for p in desc_parts if p)[:20000], "department": j.get("department") or None,
+                   # app/crawl.py's pre-inbox role filter and pflege_jobs/sources/inbox.py's intake
+                   # gate both read section_labels (pflege_jobs.section.job_confirmed_nursing), never
+                   # department -- an agent-read board category was silently discarded here, so a
+                   # nursing posting whose own title carries no pflege keyword was dropped even when
+                   # its own board category said "Pflegedienst" (confirmed live: clinic 37504,
+                   # "Intensivfachkräfte (m/w/d) für unsere Intensiv- und Weaningstation").
+                   "section_labels": [j["department"]] if j.get("department") else None,
                    "seniority": seniority if seniority in SENIORITY else "unknown",
                    "employmentType": _employment(j.get("employment_type")) + (["TEMPORARY"] if "befristet" in (j.get("contract") or "").lower() and "unbefristet" not in (j.get("contract") or "").lower() else []),
                    "datePosted": pub if re.fullmatch(r"\d{4}-\d{2}-\d{2}", pub) else None, "start_date": j.get("start_date"),

@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "crawlers"))
 
-from ats_discover2 import _match_name, base_of, fingerprint   # noqa: E402
+from ats_discover2 import _listing_path, _match_name, base_of, fingerprint   # noqa: E402
 
 
 def test_fingerprint_prefers_url_over_body():
@@ -45,6 +45,21 @@ def test_base_of():
     assert base_of("https://x.de/karriere/stellen?a=1") == "https://x.de"
     assert base_of("") is None
     assert base_of("not-a-url") is None
+
+
+def test_listing_path_is_the_shared_parent_of_multiple_job_urls():
+    """2026-09-18 crawler review: a single sitemap job URL used to become the clinic's permanent
+    careers_url outright, which was that ONE posting's own detail page, not the board -- confirmed
+    live producing 12 registry rows. A shared parent path across 2+ jobs is real listing evidence;
+    a lone job URL is not."""
+    assert _listing_path([
+        "https://x.de/stellenangebote/pflegefachkraft-a",
+        "https://x.de/stellenangebote/pflegefachkraft-b",
+    ]) == "https://x.de/stellenangebote/"
+    assert _listing_path(["https://x.de/job/12345-pflegefachkraft"]) is None       # one job, no sibling
+    assert _listing_path([]) is None
+    # no shared folder at all (different top-level sections) -> no listing to report
+    assert _listing_path(["https://x.de/jobs/a", "https://x.de/news/b"]) is None
 
 
 def test_match_name_ignores_legal_forms_and_generic_words():

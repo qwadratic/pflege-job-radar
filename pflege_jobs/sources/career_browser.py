@@ -9,7 +9,7 @@ import re
 import time
 from urllib.parse import urljoin, urlparse, urldefrag
 
-from .career_crawl import Crawler, JOB_HREF, JOB_TEXT, LINK_BAD, _jsonld_jobpostings, UA
+from .career_crawl import Crawler, JOB_HREF, JOB_TEXT, LINK_BAD, _jsonld_jobpostings, _registrable_domain, UA
 
 CONSENT = re.compile(r"alle akzeptieren|akzeptieren|zustimmen|einverstanden|accept all|agree|verstanden|ok", re.I)
 MORE = re.compile(r"mehr laden|weitere (stellen|anzeigen|laden|ergebnisse)|mehr anzeigen|alle (stellen|anzeigen)|load more|show more|nächste|weiter", re.I)
@@ -81,7 +81,7 @@ class BrowserCrawler(Crawler):
             for href, text in links:
                 u = urldefrag(href)[0]; p = urlparse(u)
                 if p.scheme not in ("http", "https") or LINK_BAD.search(u): continue
-                if p.netloc not in hosts and not any(p.netloc.endswith(h.split(".", 1)[-1]) for h in hosts): continue
+                if p.netloc not in hosts and not any(_registrable_domain(p.netloc) == _registrable_domain(h) for h in hosts): continue
                 if JOB_TEXT.search(text or "") or (JOB_HREF.search(u) and text and not re.fullmatch(r"(mehr|details?|weiter|ansehen|zur stelle|jetzt bewerben)", text.strip(), re.I)):
                     job_links.setdefault(u, text)
             # JSON payloads that look like job lists (title + url keys) -> add links

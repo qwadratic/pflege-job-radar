@@ -38,6 +38,7 @@ attempt to remap either into our own section/role taxonomy.
 import json, re
 from datetime import datetime, timezone
 from ..classify import (classify_employer, classify_role, content_hash, department_hint, employer_norm, enrich_description, fuzzy_key, qualification_hint)
+from .career_crawl import in_bavaria
 from .. import config as C
 from .career_crawl import UA, _strip
 
@@ -83,7 +84,12 @@ def _list_rows(pg):
 def crawl(seed, towns, log=print):
     from playwright.sync_api import sync_playwright
     from tests.adapter_contract import save
-    url = f"https://{seed['host']}/bewerber-web/?companyEid={seed['companyEid']}"
+    # TASK-117: brkm.pi-asp.de (BRK München) renders 0 rows through the query param every other seeded
+    # tenant uses ("?companyEid=...") -- live-verified 2026-09-23 it needs "?company=..." instead (same
+    # P&I product, this tenant's deployment just names the param differently). Optional per-seed
+    # override, defaulting to the param every existing seed (Helios, Regiomed) already relies on.
+    param = seed.get("param", "companyEid")
+    url = f"https://{seed['host']}/bewerber-web/?{param}={seed['companyEid']}"
     rows, stats = [], {"listed": 0, "opened": 0, "pflege": 0, "dead_click": False}
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -144,7 +150,8 @@ def crawl(seed, towns, log=print):
                 "employer_name": emp, "employer_name_norm": employer_norm(emp), "employer_class": e_class, "employer_class_rule": e_rule,
                 "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
                 "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(title), "department_raw": m["dept"],
-                "city": city, "plz": plz, "region": "BAYERN", "lat": None, "lon": None, "in_bavaria": True, "n_locations": 1,
+                "city": city, "plz": plz, "region": None, "lat": None, "lon": None,
+                "in_bavaria": in_bavaria(city, plz, None, towns), "n_locations": 1,
                 "locations": json.dumps([{"adresse": {"ort": city, "plz": plz}}], ensure_ascii=False),
                 "employment_types": [t for t, k in (("vollzeit", "vollzeit"), ("teilzeit", "teilzeit")) if k in (desc or "").lower()],
                 "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None, "contract": "UNBEFRISTET" if "unbefristet" in (desc or "").lower() else None,

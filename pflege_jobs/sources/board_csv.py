@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from .. import config as C
 from ..classify import (classify_employer, classify_role, content_hash, department_hint,
                         employer_norm, fuzzy_key, qualification_hint)
+from .career_crawl import in_bavaria
 
 SOURCE_CODE = "employer_ats"
 SOURCE_ID = C.SOURCES[SOURCE_CODE]["source_id"]
@@ -46,7 +47,7 @@ def _grade(g):
     return g or None
 
 
-def to_observation(row: dict, coords: dict, observed_at=None) -> dict:
+def to_observation(row: dict, coords: dict, observed_at=None, towns=None) -> dict:
     observed_at = observed_at or datetime.now(timezone.utc).isoformat()
     url = (row.get("job_url") or "").strip()
     clinic = (row.get("clinic") or "").strip()
@@ -75,8 +76,11 @@ def to_observation(row: dict, coords: dict, observed_at=None) -> dict:
         "role_class": role, "role_rule": role_rule,
         "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(f"{title} {dept_raw or ''}"),
         "department_raw": dept_raw,
-        "city": city, "plz": None, "region": "BAYERN" if city else None, "lat": lat, "lon": lon,
-        "in_bavaria": True, "n_locations": 1 if city else 0, "locations": json.dumps([{"adresse": {"ort": city, "region": "BAYERN"}}], ensure_ascii=False),
+        "city": city, "plz": None, "region": None, "lat": lat, "lon": lon,
+        # this importer used to assert both the region and the flag; the snapshot states neither, so
+        # the city decides like it does for every other source (2026-09-16)
+        "in_bavaria": in_bavaria(city, None, None, towns or set()), "n_locations": 1 if city else 0,
+        "locations": json.dumps([{"adresse": {"ort": city}}], ensure_ascii=False),
         "employment_types": _employment(row.get("employment_type")), "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None,
         "contract": None, "fixed_term_months": None, "start_date": None,
         "salary_min": None, "salary_max": None, "salary_unit": None, "salary_note": None,

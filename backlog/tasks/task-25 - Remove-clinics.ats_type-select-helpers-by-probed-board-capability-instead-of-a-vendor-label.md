@@ -3,9 +3,10 @@ id: TASK-25
 title: >-
   Remove clinics.ats_type; select helpers by probed board capability instead of
   a vendor label
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 22:20'
+updated_date: '2026-09-22 18:59'
 labels:
   - harvester
 dependencies: []
@@ -29,3 +30,9 @@ Ordering matters: routing keys on ats_type today (crawlers/routing.py plan()), s
 - [ ] #3 The column is dropped from the registry, the schema, the ingest function, the API and the docs, and no facet or filter exposes it
 - [ ] #4 The vendor fingerprint survives only as a recorded signal in the harvest report, never as a routing key
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed as an abandoned architecture bet, contradicted by this session's own work: every registry correction landed 2026-09-22 (TASK-86, apply_run120_zero_yield_fixes.py, apply_allgaeu_ats.py) writes ats_type as the routing key, and crawlers/routing.py's ADAPTERS map still routes purely off it. Capability-based routing was never built and the codebase has moved further into ats_type reliance, not away from it. Revisit only if Ivan restarts this direction deliberately.
+<!-- SECTION:FINAL_SUMMARY:END -->

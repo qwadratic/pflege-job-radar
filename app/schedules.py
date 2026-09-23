@@ -19,7 +19,7 @@ PRESETS = {
     "hourly":           {"cron": "0 * * * *", "stagger_days": 1},
     "custom":           {},
 }
-MODES = ("auto", "adapter", "firecrawl")
+MODES = ("auto", "adapter", "firecrawl", "verify")
 SCHEMA = """
 create table if not exists schedules (
   id integer primary key autoincrement, name text, enabled integer default 1, preset text default 'custom', cron text,

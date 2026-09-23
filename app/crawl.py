@@ -7,8 +7,14 @@
              those and only applies the EUR cap to runs past the allowance (docs/firecrawl.md §5, docs/coverage-plan.md §2).
   auto       adapter where routable and not walled, else firecrawl while the weekly credit budget allows.
 
-Rows flow through the same intake as every other crawler: inbox rows -> pflege_jobs.inbox -> `cli inbox`;
-observations (seeded adapters produce those directly) -> EdgeSink + clinic_links. New postings are verified by URL.
+Rows flow through the same intake as every other crawler, and through the same local queue: every raw row a
+board serves -> pflege_jobs.inbox_db (SQLite, unfiltered) -> `cli inbox`, which is where filtering/matching/
+conversion happen and which writes only the finished observations to Postgres. Seeded adapters (softgarden/
+bite/umantis/pi_asp) already return a finished observation rather than a raw jobposting -- _obs_row wraps it
+as a queue row (kind='observation') so it is archived and drain-filtered exactly like every other row, instead
+of going straight to EdgeSink unfiltered-and-unrecorded (2026-09-21 review: 21% of run 96 was dropped this way
+with no trace). pflege_jobs.inbox (Postgres) stays for the producers that hold only the anon key and is drained
+by the same command. New postings are verified by URL.
 """
 import hashlib
 import json
@@ -19,6 +25,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 import requests
+
+from pflege_jobs import inbox_db as IB
 
 from . import config as A
 from . import data as D
@@ -114,27 +122,30 @@ def kill_switch(run_mode=None, trigger=None, log=print):
 # --- spend gate --------------------------------------------------------------------------------
 def _unseen_source_urls(urls):
     """Which of these URLs are NOT already sitting in the inbox or already an observed posting.
-    Mirrors _post_inbox's dedupe, plus a posting_observations lookup for rows the seeded adapters
-    already pushed straight through (those never pass through the inbox table)."""
+    Mirrors _post_inbox's dedupe -- the same 50-URL batch size, since a batch of 200 real URLs
+    regularly built a >20KB query string the gateway 400'd -- plus a posting_observations lookup
+    for rows the seeded adapters already pushed straight through (those never pass through the
+    inbox table). Raises on a failed lookup batch rather than swallowing it: silently treating an
+    unchecked URL as "definitely unseen" made the spend_gate "adapter already covers it" refusal
+    unable to ever fire once a lookup started failing (confirmed live 2026-09-18: 11 boards over
+    ~170 rows each, 4908 of 9142 daily rows, were affected every time this failed)."""
     urls = [u for u in dict.fromkeys(u for u in urls if u)]
     if not urls:
         return []
-    existing = set()
-    for i in range(0, len(urls), 200):
-        batch = urls[i:i + 200]
+    # The crawler's own rows live in the local queue now (TASK-95), so the Postgres lookups below
+    # no longer see them at all -- without this the "adapter covers it" refusal could never fire
+    # again for a row the adapter found but intake has not loaded yet, and Firecrawl would be paid
+    # to re-find it.
+    existing = set(IB.known_urls(urls))
+    for i in range(0, len(urls), 50):
+        batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
-        try:
-            for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
-                if x.get("source_url"):
-                    existing.add(x["source_url"])
-        except Exception:
-            pass
-        try:
-            for x in A.rest_get("posting_observations", {"select": "source_ref", "source_ref": f"in.({q})"}):
-                if x.get("source_ref"):
-                    existing.add(x["source_ref"])
-        except Exception:
-            pass
+        for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
+            if x.get("source_url"):
+                existing.add(x["source_url"])
+        for x in A.rest_get("posting_observations", {"select": "source_ref", "source_ref": f"in.({q})"}):
+            if x.get("source_ref"):
+                existing.add(x["source_ref"])
     return [u for u in urls if u not in existing]
 
 
@@ -149,13 +160,16 @@ def raw_board_rows(clinic):
     out = []
     for _url, b in boards.items():
         if b["kind"] == "vendor":
-            for r in _vendor_rows(b, clinic, session, lambda *_: None):
+            for r in _vendor_rows(b, clinic, session, lambda *_: None, towns=D.towns()):
                 pl = r.get("payload") or {}
                 out.append({"title": pl.get("title"), "url": r.get("source_url")})
         else:
             obs, _st = _seed_obs(b, clinic, D.towns(), lambda *_: None)
             for o in obs:
-                out.append({"title": o.get("title"), "url": o.get("source_ref") or o.get("source_url")})
+                # source_url, not source_ref: since TASK-83 source_ref is a vendor identity string
+                # ("dvinci:<host>:52664"), not a link, and spend_gate compares these against real
+                # URLs Firecrawl reports -- an identity string never matches one.
+                out.append({"title": o.get("title"), "url": o.get("source_url") or o.get("source_ref")})
     return [r for r in out if r["title"] and r["url"]]
 
 
@@ -239,7 +253,13 @@ def spend_gate(clinic, max_credits, probe_adapter=None, log=print):
             urls = probe_adapter(clinic)
         except Exception as e:
             return {"allowed": False, "cap": 0, "reason": f"adapter probe failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None, **extra}
-        unseen = _unseen_source_urls(urls)
+        try:
+            unseen = _unseen_source_urls(urls)
+        except Exception as e:
+            # A failed dedupe lookup must refuse the spend, not proceed as if every url were
+            # unseen -- see _unseen_source_urls' own docstring for why the opposite default
+            # silently defeated the "adapter already covers it" refusal below.
+            return {"allowed": False, "cap": 0, "reason": f"unseen-url lookup failed: {type(e).__name__}: {str(e)[:150]}", "unseen": None, **extra}
         if urls and not unseen:
             return {"allowed": False, "cap": 0, "reason": "adapter covers it", "unseen": 0, **extra}
         cap = min(int(max_credits or 0), max(0, budget_cap))
@@ -290,8 +310,17 @@ def plan_for(scope, value, mode, max_credits, target=None):
     except Exception:
         boards = len({(c.get("board") or c.get("careers_url") or c["clinic_id"]).lower() for c in adapter})
     walled = sum(1 for c in clinics if c.get("walled"))
+    # 2026-09-08 API audit finding #7: the preview ran no gate at all, so the panel could show "est 160,
+    # 100 left" with Confirm enabled for a run that then charges 0 and ends failed on "refused by spend
+    # gate" lines -- kill_switch() is cheap (settings + campaign + a ledger read, no live fetch) so it
+    # runs on every preview; spend_gate() per clinic is NOT run here (it live-probes a routable clinic's
+    # adapter as part of its own decision -- see spend_gate()'s docstring -- so doing that for every
+    # Firecrawl-bound clinic on every keystroke-adjacent preview would make the preview itself slow and
+    # spend-adjacent; execute() still re-checks each clinic for real before it actually runs).
+    ks_allowed, ks_reason = kill_switch(run_mode=mode) if fire else (True, None)
     return {"target": tgt, "clinics": clinics, "adapter": adapter, "firecrawl": fire, "skipped": skipped, "boards": boards, "walled": walled,
-            "credits_needed": len(fire) * int(max_credits or 0), "credits_left": _budget_left()}
+            "credits_needed": len(fire) * int(max_credits or 0), "credits_left": _budget_left(),
+            "blocked": not ks_allowed, "blocked_reason": ks_reason}
 
 
 # --- adapters -------------------------------------------------------------------------------
@@ -327,6 +356,19 @@ def _seed_obs(board, c, towns, log):
     if vendor in ("bite", "bite_jobs"):
         from pflege_jobs.sources import bite
         seed = {"name": c["name"], "kez": c["clinic_id"], "career": c["careers_url"], "bavaria_only_operator": True, "town": c.get("town")}
+        # data/registry/bite_seeds.json records the hand-verified tenant (customer/listing) for
+        # boards whose careers_url does not mount the standard jobs-api widget detectably on its
+        # own -- without it, bite.crawl() falls back to scraping that one page's own links, which
+        # silently degrades a real 43-posting tenant listing to whatever the page happens to link
+        # (confirmed live 2026-09-18: kreiskliniken-bogen-mallersdorf.de's careers_url is an
+        # Ausbildung/trainee page, so the un-seeded fallback returns only 14 trainee-only rows).
+        try:
+            bite_seeds = json.load(open(A.DATA_DIR / "registry" / "bite_seeds.json", encoding="utf-8"))
+        except (OSError, ValueError):
+            bite_seeds = []
+        seeded = next((s for s in bite_seeds if str(s.get("kez")) == str(c["clinic_id"])), None)
+        if seeded and seeded.get("customer"):
+            seed["customer"], seed["listing"] = seeded["customer"], seeded.get("listing")
         rows, st = bite.crawl(seed, towns, log=log)
         for r in rows:
             r.setdefault("_kez", None)
@@ -336,7 +378,11 @@ def _seed_obs(board, c, towns, log):
         seed = BUILDERS["umantis"]({"name": c["name"], "career": c["careers_url"], "operator": c.get("operator")}, c["clinic_id"], c.get("town"))
         if not seed:
             return [], {"error": "no umantis instance found on careers page"}
-        return Crawler(towns, per_site_pages=150, list_pages=6, sleep=0.2, log=log).crawl(seed)
+        # No per-board ceiling override here: list_pages was pinned to 6 (below the seed's own 7-8
+        # start URLs, so every umantis board reported truncated before its start pages were even
+        # fetched once) and per_site_pages to 150 (a detail-fetch ceiling on a free board). Crawler's
+        # own defaults are documented loop-safety ceilings, not targets -- use those.
+        return Crawler(towns, sleep=0.2, log=log).crawl(seed)
     if vendor == "klinikum_passau":
         from pflege_jobs.sources.klinikum_passau import crawl as crawl_klinikum_passau
         return crawl_klinikum_passau(c, towns, log=log)
@@ -358,26 +404,61 @@ def _seed_obs(board, c, towns, log):
     return [], {"error": f"no seeded runner for {vendor}"}
 
 
-def _vendor_rows(board, c, session, log):
-    """Vendor adapters return inbox-shaped rows."""
+def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
+    """Vendor adapters return inbox-shaped rows.
+
+    group_cache (dict, shared across one execute() run) dedupes a shared group-portal fetch: several
+    registry boards can independently route to the same group listing (e.g. 5 distinct kbo-branded
+    satellite domains all falling back to kbo.de's bare, unfiltered list) -- without a cache the same
+    paginated group listing was refetched once per such board every run. Keyed by the URL
+    crawl_group_portal will actually page (VA._group_list_url), not the group's bare list, since a
+    clinic with its own pre-filtered querystring on the shared board must still be fetched on its
+    own and never skipped as "already done" by an unfiltered sibling fetch."""
     from crawlers import vendor_adapters as VA
     g = VA.group_portal_for(c)
     if g:
-        rows = VA.crawl_group_portal(c, g, session=session)
+        key = VA._group_list_url(c, g)
+        if group_cache is not None and key in group_cache:
+            log(f"  {board.get('vendor', 'group'):<14} {key[:60]} -> shared group board, already fetched this run")
+            return []
+        rows = VA.crawl_group_portal(c, g, session=session, towns=towns)
+        if group_cache is not None:
+            group_cache[key] = True
     else:
         fn = VA.VENDORS.get(board["vendor"])
         if not fn:
             raise RuntimeError(f"no vendor adapter for {board['vendor']}")
         rows = fn(c, session=session)
     ids = [x["clinic_id"] for x in board.get("clinics") or [c]]
+    # TASK-99: a shared-vendor-ACCOUNT board (Artemed/SmartRecruiters, Gesundheitswelt Chiemgau) keeps
+    # each clinic on its own distinct careers_url, so board.get("clinics") above is correctly just this
+    # one clinic -- but the vendor's own feed returns the whole account's postings regardless of which
+    # clinic triggered the fetch. Widen to the full account pool here, after routing's own per-board
+    # grouping, not instead of it (routing.plan() must keep fetching each clinic's own URL separately).
+    pool = VA.account_pool_for(c["clinic_id"])
+    if pool:
+        ids = sorted(set(ids) | set(pool))
+    # TASK-102: talention's own jobLocation.addressLocality is filled inconsistently by the employer --
+    # a facility/department label on some postings, a clean town on others, same field, same board.
+    # Pool-scoped so it can only ever resolve to a town this board's own clinics already list.
+    board_towns = [x.get("town") for x in (board.get("clinics") or [c])] if board.get("vendor") == "talention" else None
+    # TASK-81 mechanism #1: la-regio-kliniken.de shares one board between 26108 (general hospital) and
+    # 26103 (Kinderkrankenhaus St. Marien, pediatric-only) with no per-posting location field at all --
+    # narrow board_clinic_ids to a single clinic per row, by title, instead of leaving the whole pool
+    # for a town-based matcher rung that cannot help here (both clinics are in Landshut).
+    la_regio_pool = {x["clinic_id"] for x in (board.get("clinics") or [])} >= {"26108", "26103"}
     for r in rows:
         # which board this came from is provenance, not a guess -- it bounds the site the posting
         # can belong to (74 boards are shared, covering 253 clinics)
         r["payload"]["board_url"] = board.get("url") or c.get("careers_url")
-        r["payload"]["board_clinic_ids"] = ids
+        r["payload"]["board_clinic_ids"] = [VA.split_la_regio_landshut(r["payload"].get("title"))] if la_regio_pool else ids
+        if board_towns:
+            for l in (r["payload"].get("loc") or []):
+                l["city"] = VA.clean_talention_city(l.get("city"), board_towns)
         locs = r["payload"].get("loc") or [{}]
         if len(ids) == 1 and c.get("town") and not any((l or {}).get("city") for l in locs):
-            r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": "BAYERN"}]
+            r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+            r["payload"]["city_source"] = "seed"
     return rows
 
 
@@ -391,7 +472,57 @@ def _write_jsonl(run_id, rows):
     return p
 
 
+def _enqueue_local(rows, run_id, log):
+    """Every row this run found -> the local raw queue, unfiltered and undeduped (TASK-95).
+    Filtering, matching and conversion happen when the queue is processed, so a row a rule drops
+    today is still on disk when the rule changes."""
+    n = IB.enqueue(rows, run_id=run_id)
+    log(f"queued {n} raw rows in {IB.PATH}")
+    return n
+
+
+def _flush_board(rows, obs, run_id, log):
+    """One board's rows -> disk immediately, not accumulated for a single end-of-run write.
+
+    execute() used to hold every board's rows in memory for the whole run and write once at the
+    very end (_write_jsonl + _enqueue_local on the full accumulated list). Both are append-only
+    (_write_jsonl opens "a"; IB.enqueue is a plain INSERT), so writing per board instead of once
+    is exactly as correct and costs one extra disk write per board. The reason to do it: a kill or
+    restart mid-run (systemd restart, an out-of-memory kill, a deploy) used to lose the ENTIRE
+    run's crawl, not just the board in flight when it died -- confirmed live 2026-09-22, run 118,
+    restarted at 188/220 boards in to pick up an unrelated queued run: nothing from those 188
+    boards had reached data/inbox.sqlite, because the flush that writes it had not run yet."""
+    batch = rows + [_obs_row(o) for o in obs]
+    if batch:
+        _write_jsonl(run_id, batch)
+        _enqueue_local(batch, run_id, log)
+    return len(batch)
+
+
+def _obs_row(o):
+    """Wrap a seeded-adapter observation (softgarden/bite/umantis/pi_asp -- already fully classified:
+    role_class, in_bavaria, source_id/source_ref, ...) as a local-queue row, so it is archived
+    (_write_jsonl) and drain-filtered (pflege_jobs.cli._process_rows) the same way as every other
+    row. kind='observation' tells the drain the payload IS the finished observation already, not a
+    raw jobposting needing jobposting_to_obs. Before this, these rows went straight to EdgeSink from
+    _load_observations, unrecorded and unfiltered-by-the-queue -- 21% of run 96 dropped at crawl time
+    with no trace (2026-09-21 review)."""
+    from urllib.parse import urlparse
+    url = o.get("source_url") or o.get("source_ref")
+    return {"kind": "observation", "collector": f"seed-{o.get('source_id')}",
+            "source_host": urlparse(url or "").netloc, "source_url": url, "payload": o}
+
+
 def _post_inbox(rows, log):
+    """Postgres inbox, for the producers that hold only the anon key: POST /api/ingest and the
+    Firecrawl webhook. The crawler's own rows go to the local queue (_enqueue_local) instead.
+
+    This used to run classify_role before the insert and drop everything that was not an
+    experienced nursing role (5,976 of 12,251 rows on run 108). That filter existed only to survive
+    the server-side 2000-rows-per-rolling-24h write rule, and it decided what is worth keeping at
+    crawl time, which is exactly what TASK-11 and TASK-14 say not to do. With the crawler off this
+    table, the remaining producers are tens of rows a day and every row they send is stored as sent;
+    what is kept is decided in the processing step (pflege_jobs.cli cmd_inbox)."""
     seen, uniq = set(), []
     for r in rows:
         if r.get("source_url") and r["source_url"] not in seen:
@@ -402,15 +533,26 @@ def _post_inbox(rows, log):
     # driver -- bigger than any one-off probe traffic.
     existing = set()
     urls = [r["source_url"] for r in uniq]
-    for i in range(0, len(urls), 200):
-        batch = urls[i:i + 200]
+    # 200 real job-posting URLs in one in.() filter regularly built a >20KB query string and the
+    # gateway in front of PostgREST 400'd the whole request (confirmed live 2026-09-16: 200 real
+    # AMEOS URLs at ~22KB failed, the same 150 at ~16KB succeeded) -- every such failure fell into
+    # the except below and posted its batch unchecked, duplicate-inserting rows already in the
+    # inbox from a prior day's run, which is what was actually driving the recurring "inbox: daily
+    # limit reached for this client" run failures, not genuinely new volume. 50 matches the chunk
+    # size pflege_jobs/cli.py's lookup_posting_ids already uses for the identical class of problem.
+    #
+    # The lookup failure is raised, not swallowed (matching _unseen_source_urls above). Posting an
+    # unchecked batch treats every URL as unseen, so it re-inserts rows already in the inbox -- which
+    # burns the very daily write quota whose exhaustion is the most likely reason the lookup 400'd in
+    # the first place (run 105, 2026-09-20: 17 lookups failed inside 10s, then the insert failed with
+    # "inbox: daily limit reached for this client"). Swallowing it turned one tripped quota into a
+    # guaranteed duplicate flood, and left the run reported as done.
+    for i in range(0, len(urls), 50):
+        batch = urls[i:i + 50]
         q = ",".join('"' + s.replace('"', '\\"') + '"' for s in batch)
-        try:
-            for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
-                if x.get("source_url"):
-                    existing.add(x["source_url"])
-        except Exception as e:
-            log(f"  inbox dedupe lookup failed ({e}); posting this batch unchecked")
+        for x in A.rest_get("inbox", {"select": "source_url", "source_url": f"in.({q})"}):
+            if x.get("source_url"):
+                existing.add(x["source_url"])
     new = [r for r in uniq if r["source_url"] not in existing]
     for i in range(0, len(new), 200):
         A.rest_post("inbox", new[i:i + 200])
@@ -444,31 +586,77 @@ def _posting_ids_for_refs(refs):
     return ids
 
 
-def _load_observations(obs, clinics_by_id, log):
-    """Seeded-adapter observations -> EdgeSink + clinic links (mirrors cli inbox's post-load steps)."""
-    from pflege_jobs.registry import Matcher
+def _run_verify(run_id, clinics, params, log, scope=None):
+    """mode='verify': re-check this scope's postings against their own pages. No crawling.
+
+    Ivan 2026-09-16: a status is only usable as the single filter while it is FRESH and while it came
+    from a real request, so the whole board is re-checked on a schedule instead of only the postings a
+    crawl happened to touch. The page also states the posting's own city, which is the only city worth
+    trusting (a crawler with no per-posting location falls back to the seed clinic's town, TASK-59a) --
+    a mismatch is recorded in crawl_issues rather than patched here, because this process only holds
+    the anon key and the ingest function has no op to move a posting's city. tools/reverify_and_clean.py
+    (secret key) applies those corrections and the permanent non-Bavarian deletions.
+    """
+    from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, verify_all
     from pflege_jobs.sinks import EdgeSink
-    from pflege_jobs import config as C
-    obs = [o for o in obs if o.get("role_class") not in C.EXCLUDED_ROLE_CLASSES and o.get("in_bavaria") is not False]
-    if not obs:
-        return {}, []
-    m = Matcher([dict(c) for c in (D.clinics() or D.registry_csv_rows())])
-    for o in obs:
-        mt = m.match(o.get("employer_name"), o.get("city"), board=o.get("_board"))
-        o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
-        o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
-        if o["_kez"]:
-            o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + (o.get("employer_class_rule") or "")
-    sink = EdgeSink(batch=200)
-    st = sink.write(obs, resolve=True, log=lambda *_: None)
-    log(f"ingested observations: {st}")
-    ids = _posting_ids_for_refs([o["source_ref"] for o in obs])
-    links = [{"posting_id": ids[o["source_ref"]], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9}
-             for o in obs if o["source_ref"] in ids and o.get("_kez")]
-    for i in range(0, len(links), 400):
-        sink._post({"clinic_links": links[i:i + 400]})
-    log(f"clinic links pushed: {len(links)}")
-    return ids, obs
+    from pflege_jobs.classify import norm_text
+    ids = {c["clinic_id"] for c in clinics}
+    towns = D.towns()          # lets extract_location() reject a label that is not a real place
+    # A posting the registry Matcher left unattributed (clinic_id null) is not in `ids` on ANY
+    # scope-to-clinics parse, so it was excluded from every scheduled re-verification including
+    # the daily all-postings run and kept its last status/city forever (confirmed live 2026-09-18:
+    # 198 of 2676 open postings, 7.4%). Scope "all" must still reach them.
+    target_is_all = scope == "all"
+    rows = [j for j in D.jobs() if j.get("status") == "open"
+           and (not ids or j.get("clinic_id") in ids or (target_is_all and not j.get("clinic_id")))]
+    if not rows:
+        log("verify: no open postings in scope")
+        R.update_run(run_id, status="done", finished_at=R.now(), n_rows=0)
+        return
+    log(f"verify: {len(rows)} open posting(s) in scope")
+    # The Firecrawl rung is the only thing that sees a bot-walled board (every www.helios-gesundheit.de
+    # posting is an Akamai refusal to both plain HTTP and headless Chromium), and a posting stuck on
+    # 'blocked' is hidden by the "only live" filter even though it is alive. Gate it on the same switch
+    # every other Firecrawl call uses -- firecrawl.enabled, the 24h kill switch, the campaign stop --
+    # rather than on a flag of its own, and it only ever runs on rows the first two rungs could not see.
+    fc_ok, fc_why = kill_switch(run_mode=None, trigger="verify", log=log)
+    if params.get("firecrawl") is not None:
+        fc_ok = bool(params.get("firecrawl"))
+    elif not fc_ok:
+        log(f"verify: firecrawl rung unavailable -- {fc_why}")
+    res = verify_all([{"posting_id": j["posting_id"], "external_url": j.get("external_url"), "source_url": j.get("source_url"),
+                       "title": j.get("title")} for j in rows], workers=int(params.get("workers") or 8), log=log,
+                     render=not params.get("no_render"), firecrawl=fc_ok, towns=towns)
+    sink, pushed = EdgeSink(batch=400), 0
+    payload = [{k: v for k, v in r.items() if k in VERIFY_FIELDS} for r in res]
+    for i in range(0, len(payload), 400):
+        pushed += sink._post({"verify": payload[i:i + 400]}).get("verify", 0)
+    from collections import Counter
+    counts = dict(Counter(r["verify_status"] for r in res))
+    log(f"verify: pushed {pushed}, {counts}")
+
+    by_id = {j["posting_id"]: j for j in rows}
+    day = R.now()[:10]
+    stale, unseen = 0, 0
+    for r in res:
+        j = by_id.get(r["posting_id"]) or {}
+        if r["verify_status"] in ("blocked", "error"):
+            unseen += 1
+            R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "posting",
+                                 r.get("method"), [j.get("clinic_id")], f"{r['verify_status']}: {r['verify_note']}", run_id)
+        elif (r.get("city") and r.get("loc_source") in TRUSTED_LOC
+              and norm_text(r["city"]) != norm_text(j.get("city") or "")):
+            stale += 1
+            R.record_crawl_issue(r.get("final_url") or j.get("external_url") or str(r["posting_id"]), day, "city",
+                                 r.get("loc_source"), [j.get("clinic_id")],
+                                 f"page says {r['city']!r} ({r.get('plz')}), stored {j.get('city')!r}", run_id)
+    log(f"verify: {unseen} posting(s) nothing could see, {stale} city mismatch(es) recorded for review")
+    R.update_run(run_id, status="done", finished_at=R.now(), n_rows=len(res),
+                 error=(f"{unseen} unverifiable, {stale} city mismatch" if unseen or stale else None))
+    try:
+        D.refresh()
+    except Exception as e:
+        log(f"cache refresh failed: {e}")
 
 
 def _verify_ids(posting_ids, log):
@@ -513,8 +701,7 @@ def execute(run_id):
         log(f"  skip {c['clinic_id']} {c['name'][:40]}: {c.get('route_reason')}")
     before_ids = {j["posting_id"] for j in D.jobs()}
     towns = D.towns()
-    by_id = {c["clinic_id"]: c for c in clinics}
-    inbox_rows, observations, credits_used, errors = [], [], 0, 0
+    inbox_rows, observations, credits_used, errors, fatal_errors = [], [], 0, 0, 0
     session = requests.Session()
 
     # job scope: re-check the posting first
@@ -529,9 +716,102 @@ def execute(run_id):
         except Exception as e:
             log(f"posting re-check failed: {str(e)[:120]}")
 
+    if mode == "verify":
+        _run_verify(run_id, clinics, params, log, scope=scope)
+        return
+
     cancelled = False
+    # Shared across every board this run: several registry boards can independently route to the
+    # same group-portal listing (crawlers.vendor_adapters.group_portal_for) -- without this cache
+    # the same paginated group listing was refetched once per such board every run (confirmed live
+    # 2026-09-18: kbo.de's group listing was refetchable once per each of its 5+ kbo-branded
+    # satellite-domain boards).
+    group_cache = {}
+
+    def _fetch_board(url, b):
+        """One board fetch attempt. Returns (inbox_rows, observations, error_or_None).
+
+        TASK-72 AC#1: 0 rows/observations with no exception used to always mean err=None -- a board
+        genuinely down for the night (every request failing transport-side) looked identical to one
+        that was fetched fine and simply has nothing on it right now, so the real failure skipped the
+        3-attempt retry ladder and never reached crawl_issues. crawlers.vendor_adapters.get() (and the
+        beesite/hr4you copies of it) tally attempts/oks onto the shared `session` for exactly this:
+        0 successes despite 1+ attempts is a real transport failure (returned as an error, same path
+        as a raised exception); 0 rows with 1+ successes (or a board that never even attempted a
+        request, e.g. no careers_url) is a board genuinely read and found empty, recorded directly as
+        its own crawl_issue kind='empty' instead of a log-only WARNING nobody sees again."""
+        c = b["clinics"][0]
+        names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
+        t0 = time.time()
+        day = R.now()[:10]
+        ids = [x["clinic_id"] for x in b["clinics"]]
+        try:
+            if b["kind"] == "vendor":
+                from crawlers import vendor_adapters as VA
+                g = VA.group_portal_for(c)
+                # Checked BEFORE the fetch: _vendor_rows marks the group cache the instant it runs
+                # the real fetch, so checking after (the old code) was always true right after a
+                # board's own FIRST real fetch too, and the empty/failure checks below could never
+                # fire for a shared group board (kbo.de, karriere.barmherzige.net) at all.
+                already_fetched = bool(g) and VA._group_list_url(c, g) in group_cache
+                session._attempts = session._ok = 0
+                rows = _vendor_rows(b, c, session, log, group_cache=group_cache, towns=towns)
+                log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
+                if not rows and not already_fetched:
+                    if session._attempts and not session._ok:
+                        return [], [], f"transport failure: 0/{session._attempts} request(s) to this board succeeded"
+                    R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
+                                         f"0 rows, no transport error ({session._attempts} request(s), {session._ok} ok) -- board returned nothing", run_id)
+                    log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=empty")
+                # TASK-85 AC#1: crawl_wp_jobs tags its own return value .degraded when its primary
+                # discovery path (sitemap + wp-json CPT fallback) found nothing and it fell through to
+                # a lower-confidence path (hr4you / homepage-anchor scraping) -- orthogonal to `rows`
+                # being empty (AMEOS: degraded but the hr4you fallback still found 734 real rows).
+                # This is the one place every vendor adapter's return value already flows through.
+                degraded = getattr(rows, "degraded", None)
+                if degraded:
+                    R.record_crawl_issue(url, day, "degraded", b.get("vendor"), ids,
+                                         f"fell back to a lower-confidence discovery path: {degraded}", run_id)
+                    log(f"  WARNING: degraded discovery ({degraded}) for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=degraded")
+                # TASK-88 AC#2: some adapters (crawl_erecruiter, directly or via crawl_wp_jobs'
+                # delegate loop) read the board's own self-reported total off its embedded JSON and
+                # carry it as .board_total on the same _BoardTotalRows return value -- a plain list
+                # (~18 of ~19 other adapters) has no such attribute, so getattr's default keeps this a
+                # no-op for them rather than an AttributeError.
+                board_total = getattr(rows, "board_total", None)
+                if board_total is not None and len(rows) < board_total:
+                    R.record_crawl_issue(url, day, "incomplete", b.get("vendor"), ids,
+                                         f"board reports {board_total} total but the adapter returned {len(rows)} row(s)"
+                                         + (" (paginated board)" if getattr(rows, "board_paginated", None) else ""), run_id)
+                    log(f"  WARNING: under-read {len(rows)}/{board_total} for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=incomplete")
+                return rows, [], None
+            obs, st = _seed_obs(b, c, towns, log)
+            for o in obs:
+                o["_board"] = [x["clinic_id"] for x in b["clinics"]]
+            log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
+            if st and st.get("error"):
+                return [], obs, st["error"]
+            if st and st.get("truncated"):
+                # TASK-14 AC#2: the walk's own safety ceiling stopped it before the board's end
+                # signal did, so this board was NOT read in full. The flag existed but only ever
+                # reached the log line above, where a board silently short by an unknown number of
+                # postings is indistinguishable from a complete one on every later read.
+                R.record_crawl_issue(url, day, "truncated", b.get("vendor"), ids,
+                                     f"read stopped by a safety ceiling, not by the board's own end of pagination "
+                                     f"({json.dumps({k: v for k, v in st.items() if k in ('job_links_found', 'list_pages', 'job_pages')}, ensure_ascii=False)})", run_id)
+                log(f"  WARNING: truncated read for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=truncated")
+            if not obs:
+                R.record_crawl_issue(url, day, "empty", b.get("vendor"), ids,
+                                     f"0 observations, no error ({json.dumps({k: v for k, v in (st or {}).items() if k in ('job_links_found', 'list_pages', 'truncated')}, ensure_ascii=False)})", run_id)
+                log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=empty")
+            return [], obs, None
+        except Exception as e:
+            err = f"{type(e).__name__}: {str(e)[:160]}"
+            log(f"  {b['vendor']:<14} {url[:60]} FAILED {err}")
+            return [], [], err
 
     # adapters, grouped by board
+    board_issues = {}   # url -> {"b": board, "error": str} -- only boards still failing, updated as retries run
     if plan["adapter"] and not cancelled:
         boards = _boards(plan["adapter"])
         log(f"{len(boards)} board(s) to fetch")
@@ -540,30 +820,44 @@ def execute(run_id):
                 cancelled = True
                 log(f"cancelled by operator ({len(boards)} board(s) planned, stopping before the rest)")
                 break
-            c = b["clinics"][0]
-            names = ", ".join(x["name"][:30] for x in b["clinics"][:3]) + (" …" if len(b["clinics"]) > 3 else "")
-            t0 = time.time()
-            try:
-                if b["kind"] == "vendor":
-                    rows = _vendor_rows(b, c, session, log)
-                    inbox_rows += rows
-                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(rows)} rows ({names}) {round(time.time() - t0)}s")
-                    if not rows:
-                        log(f"  WARNING: 0 rows with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
-                else:
-                    obs, st = _seed_obs(b, c, towns, log)
-                    for o in obs:
-                        o["_board"] = [x["clinic_id"] for x in b["clinics"]]
-                    observations += obs
-                    log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
-                    if st and st.get("error"):
-                        errors += 1
-                    elif not obs:
-                        log(f"  WARNING: 0 observations with no error for {b['vendor']} {url[:60]} — board returned nothing but did not fail; check the adapter/URL")
-            except Exception as e:
-                errors += 1
-                log(f"  {b['vendor']:<14} {url[:60]} FAILED {type(e).__name__}: {str(e)[:160]}")
+            rows, obs, err = _fetch_board(url, b)
+            inbox_rows += rows; observations += obs
+            _flush_board(rows, obs, run_id, log)
+            if err:
+                board_issues[url] = {"b": b, "error": err}
             time.sleep(POLITE_SLEEP)
+
+        # Same-run retries: some board failures are transient (a site hiccup, a momentary gateway
+        # error) and clear up within minutes on their own -- retry a few times right now instead of
+        # waiting for tomorrow's run (2026-09-16, Ivan: some errors just need a restart to clear).
+        # Whatever is STILL failing after 3 total attempts (1 + 2 retries) is not retried again
+        # tonight -- it goes into crawl_issues for the daily report instead.
+        attempt = 1
+        while board_issues and attempt < 3 and not cancelled:
+            attempt += 1
+            log(f"retry pass {attempt}/3 for {len(board_issues)} still-failing board(s)")
+            time.sleep(20)
+            for url in list(board_issues):
+                if R.get_run(run_id, with_log=False).get("cancel_requested"):
+                    cancelled = True
+                    break
+                rows, obs, err = _fetch_board(url, board_issues[url]["b"])
+                inbox_rows += rows; observations += obs
+                _flush_board(rows, obs, run_id, log)
+                if err:
+                    board_issues[url]["error"] = err
+                else:
+                    log(f"  {url[:60]} recovered on retry {attempt}")
+                    del board_issues[url]
+                time.sleep(POLITE_SLEEP)
+
+        errors += len(board_issues)
+        if board_issues:
+            day = R.now()[:10]
+            for url, info in board_issues.items():
+                b = info["b"]
+                R.record_crawl_issue(url, day, b["kind"], b.get("vendor"), [x["clinic_id"] for x in b["clinics"]], info["error"], run_id)
+            log(f"{len(board_issues)} board(s) still failing after 3 attempts -- recorded in crawl_issues for the daily report")
 
     # firecrawl agent
     if plan["firecrawl"] and not cancelled:
@@ -597,8 +891,23 @@ def execute(run_id):
                 credits_used += res["credits_used"]
                 R.add_usage("jobs", c["clinic_id"], res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
                 inbox_rows += res["rows"]
+                _flush_board(res["rows"], [], run_id, log)
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]}: {len(res['rows'])} rows, {res['credits_used']} credits charged "
                     f"(API {res.get('credits_api')}, credits delta {res.get('credits_delta')}, tokens delta {res.get('tokens_delta')}, cap {gate['cap']})")
+                # A completed agent run whose OWN answer flags blocked_reason, or that plainly
+                # succeeded but read zero jobs, used to be stored as a plain successful run with
+                # no crawl_issue at all -- the only trace was a 200-char slice buried in the run
+                # log (confirmed live: Helios Frankenwaldklinik Kronach dropping 7 -> 4 postings
+                # between runs with the agent explicitly saying its job-search endpoint returned no
+                # parsable result list, invisible anywhere but here).
+                agent_data = res.get("data") or {}
+                blocked_reason = (agent_data.get("blocked_reason") or "").strip() if isinstance(agent_data, dict) else ""
+                if blocked_reason or not res["rows"]:
+                    notes = (agent_data.get("notes") or "").strip() if isinstance(agent_data, dict) else ""
+                    detail = " | ".join(x for x in (f"blocked_reason: {blocked_reason}" if blocked_reason else "", f"notes: {notes}" if notes else "") if x) \
+                        or "0 jobs, no blocked_reason or notes from the agent"
+                    R.record_crawl_issue(c.get("careers_url") or c.get("website") or c["clinic_id"], R.now()[:10], "firecrawl",
+                                         "firecrawl_agent", [c["clinic_id"]], detail, run_id)
             except FA.AgentFailed as e:
                 errors += 1
                 credits_used += e.credits_used
@@ -606,38 +915,69 @@ def execute(run_id):
                 log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
             except Exception as e:
                 errors += 1
-                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]}")
+                # Unlike FA.AgentFailed above, a bare exception here (e.g. a crash converting the
+                # agent's own answer) carries no measured cost -- charging nothing left the run
+                # invisible to the 24h kill switch and the weekly budget even when Firecrawl had
+                # already billed real credits before the crash (confirmed live: 3 historical
+                # firecrawl-mode runs left no ledger row at all). Charge the approved cap as the
+                # safe upper-bound estimate; on_submit already logged whatever job_id (if any) was
+                # obtained before the crash.
+                credits_used += gate["cap"]
+                R.add_usage("jobs", c["clinic_id"], gate["cap"], run_id)
+                log(f"  firecrawl {c['clinic_id']} {c['name'][:40]} FAILED {type(e).__name__}: {str(e)[:200]} -- charged cap {gate['cap']} (unmeasured)")
             R.update_run(run_id, credits_used=credits_used)
 
     n_rows = len(inbox_rows) + len(observations)
     R.update_run(run_id, n_rows=n_rows)
-    if inbox_rows:
-        _write_jsonl(run_id, inbox_rows)
+    # Every board's rows already reached disk as it was fetched (_flush_board, called from each of
+    # the three loops above) -- a kill mid-run now loses at most the one board in flight, not the
+    # whole run (confirmed live 2026-09-22, run 118: a restart at 188/220 boards lost all 188,
+    # because the old code wrote once here, after the last board, and never got there).
     refs = []
     try:
-        if inbox_rows:
-            refs += _post_inbox(inbox_rows, log)
-        _cli(["inbox"], log)          # drain the queue every run, not only when this run added rows --
+        rc = _cli(["inbox"], log)     # drain both queues every run, not only when this run added rows --
                                        # a run with only observations (e.g. seeded adapters) must not
                                        # leave an earlier run's backlog stranded
-        if observations:
-            ids, obs = _load_observations(observations, by_id, log)
-            refs += [o["source_ref"] for o in obs]
+        if rc:
+            # TASK-72 AC#4: this return code used to be discarded outright -- a failed drain (queue
+            # left stranded) was invisible both to this run's own status and to crawl_issues.
+            errors += 1; fatal_errors += 1
+            R.record_crawl_issue("pflege_jobs.cli inbox", R.now()[:10], "intake", "inbox", [], f"cli inbox exited {rc}", run_id)
+        if n_rows:
+            # what the drain actually turned into an observation -- the rows that reached Postgres,
+            # which is what link-cross and verify have anything to say about
+            refs += IB.loaded_refs(run_id)
         if refs:
-            _cli(["link-cross"], log)
+            rc = _cli(["link-cross"], log)
+            if rc:
+                errors += 1; fatal_errors += 1
+                R.record_crawl_issue("pflege_jobs.cli link-cross", R.now()[:10], "intake", "link-cross", [], f"cli link-cross exited {rc}", run_id)
             ids = _posting_ids_for_refs(refs)
             new_ids = [pid for pid in set(ids.values()) if pid not in before_ids]
             log(f"{len(ids)} postings touched, {len(new_ids)} new")
             if params.get("verify", True):
-                _verify_ids(new_ids or list(set(ids.values()))[:200], log)
+                # No cap on how many touched-but-not-new postings get re-verified -- [:200] used
+                # to silently drop the rest of an arbitrary set() ordering with no truncated flag
+                # anywhere (TASK-72 AC#2); _verify_ids already chunks its own REST lookups by 200.
+                _verify_ids(new_ids or list(set(ids.values())), log)
             R.update_run(run_id, n_new=len(new_ids))
     except Exception as e:
-        errors += 1
+        errors += 1; fatal_errors += 1
         log(f"intake FAILED {type(e).__name__}: {str(e)[:300]}")
-    status = "cancelled" if cancelled else ("done" if not errors or n_rows else "failed")
-    if errors and status == "done":
-        log(f"finished with {errors} error(s)")
-    R.update_run(run_id, status=status, finished_at=R.now(), error=(f"{errors} error(s), see log" if errors else None))
+        # TASK-92 AC#5: run 108's intake failure existed only as this log line, so three days of
+        # runs crawled thousands of rows and stored none while nothing outside run_log said so.
+        R.record_crawl_issue("app.crawl intake", R.now()[:10], "intake", "intake", [], f"{type(e).__name__}: {str(e)[:300]}", run_id)
+    # Only a fatal (intake-pipeline) error fails the run -- TASK-72 AC#4 was about the whole intake
+    # block (inbox post/drain/link-cross/verify) blowing up silently right after real rows were
+    # fetched. A single board or Firecrawl clinic failing (already recorded per-item in crawl_issues
+    # and run_log) is normal partial-coverage noise, not a run failure -- confirmed live 2026-09-22,
+    # runs 120 (509 new postings, 13796 rows, status=failed on 1 unrelated board) and 122 (4 new
+    # postings landed, status=failed because a DIFFERENT clinic's Firecrawl agent hit its own cap).
+    status = "cancelled" if cancelled else ("failed" if fatal_errors else "done")
+    if errors:
+        log(f"finished with {errors} issue(s) ({fatal_errors} fatal)")
+    R.update_run(run_id, status=status, finished_at=R.now(),
+                 error=(f"{errors} issue(s), see log" if errors else None))
     try:
         D.refresh()                                  # after the final status, so last_crawl_* on the clinic rows is right
     except Exception as e:
@@ -673,7 +1013,11 @@ def refetch_career(run_id):
         R.add_usage("career", cid, e.credits_used, run_id, job_id=getattr(e, "job_id", None), tokens=getattr(e, "tokens_delta", None))
         R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
     except Exception as e:
-        R.update_run(run_id, status="failed", finished_at=R.now(), error=str(e)[:300]); log(f"FAILED {e}"); return
+        # Same reasoning as execute()'s firecrawl branch: a bare exception carries no measured
+        # cost, so charge the approved cap rather than leave this run invisible to the ledger.
+        R.add_usage("career", cid, gate["cap"], run_id)
+        R.update_run(run_id, status="failed", finished_at=R.now(), credits_used=gate["cap"],
+                     error=f"{str(e)[:280]} -- charged cap {gate['cap']} (unmeasured)"); log(f"FAILED {e}"); return
     prof = res["profile"]
     R.add_usage("career", cid, res["credits_used"], run_id, job_id=res.get("job_id"), tokens=res.get("tokens_delta"))
     R.save_career_profile(cid, prof, res["credits_used"], run_id)

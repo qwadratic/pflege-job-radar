@@ -52,9 +52,12 @@ def test_section_labels_confirm_nursing_and_recover_a_gate_only_failure():
     assert o["role_rule"] == "pflegefachkraft:dauernachtwache"
 
 
-def test_no_section_labels_falls_back_to_todays_gate_unchanged():
+def test_no_section_labels_is_no_longer_needed_for_this_title():
+    # 2026-09-18 crawler review: pflege_gate itself now recognises "nachtwache" directly (it was
+    # missing even though the pflegefachkraft rule already matched on it), so this exact title no
+    # longer depends on a section label to be classified as nursing.
     o = obs(payload={"title": "Dauernachtwache (m/w/d)", "section_labels": []})
-    assert o["role_class"] == "nicht_pflege" and o["role_rule"] == "no_pflege_token"
+    assert o["role_class"] == "pflegefachkraft"
 
 
 def test_sql_sink_escapes_quotes():
@@ -104,6 +107,24 @@ def test_edge_sink_write_drops_trainees(monkeypatch):
     assert stats["dropped_non_pflege"] == 2
     sent = [r for b in posted for r in b.get("observations", [])]
     assert [r["role_class"] for r in sent] == ["pflegefachkraft"]
+
+
+def test_write_clinics_dedupes_by_clinic_id_last_wins(monkeypatch):
+    """TASK-73 AC2: the edge function's `clinics` op is one multi-row `on conflict (clinic_id) do
+    update` insert -- two rows for the same clinic_id in one batch make Postgres raise ("ON CONFLICT
+    DO UPDATE command cannot affect row a second time"), and an uncaught raise here is exactly the
+    "one bad batch wedges the caller" failure this task closes elsewhere. Two ats-discovery probes
+    for the same clinic in one inbox page is the concrete way this happens."""
+    from pflege_jobs.sinks import EdgeSink
+    monkeypatch.setenv("PFLEGE_INGEST_URL", "http://x"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k"); monkeypatch.setenv("PFLEGE_INGEST_SECRET", "s")
+    sink = EdgeSink(); posted = []
+    sink._post = lambda body: (posted.append(body), {"clinics": len(body.get("clinics", []))})[1]
+    n = sink.write_clinics([{"clinic_id": "77402", "ats_type": "softgarden"},
+                            {"clinic_id": "77402", "ats_type": "personio"},
+                            {"clinic_id": "66103", "ats_type": "rexx"}])
+    sent = [r for b in posted for r in b.get("clinics", [])]
+    assert len(sent) == 2 and n == 2
+    assert {r["clinic_id"]: r["ats_type"] for r in sent} == {"77402": "personio", "66103": "rexx"}
 
 
 class _Resp:

@@ -29,8 +29,16 @@ CLINICS = [
      "routable": False, "walled": True, "board": "https://kbo.de/jobs", "vendor": "helios", "route_reason": "walled host", "fetch": "firecrawl", "fetch_label": "Firecrawl",
      "last_crawl_at": None, "last_crawl_status": None, "last_crawl_mode": None, "career_profile": None},
 ]
-JOBS = [{"posting_id": 1, "title": "Pflegefachkraft Intensiv", "clinic_id": "36201", "city": "Regensburg", "fresh": True, "first_published": "2026-09-05", "status": "open",
-         "verify_status": "live", "role_class": "fachpflege", "employer": "BB", "clinic_town": "Regensburg", "clinic_size": "XL"}]
+JOBS = [
+    {"posting_id": 1, "title": "Pflegefachkraft Intensiv", "clinic_id": "36201", "city": "Regensburg", "fresh": True, "first_published": "2026-09-05", "status": "open",
+     "verify_status": "live", "role_class": "fachpflege", "employer": "BB", "clinic_town": "Regensburg", "clinic_size": "XL"},
+    # No clinic_id at all -- TASK-73 AC8: must still show up under its own city, not vanish from GET /api/cities.
+    {"posting_id": 2, "title": "Pflegefachkraft Anästhesie", "clinic_id": None, "city": "Augsburg", "fresh": False, "first_published": "2026-08-01", "status": "open",
+     "verify_status": None, "role_class": "fachpflege", "employer": "Uniklinik Augsburg", "clinic_town": None, "clinic_size": None},
+    # Linked to the Ingolstadt clinic, but this posting's own city is München -- must count toward BOTH.
+    {"posting_id": 3, "title": "Pflegefachkraft München-Zweigstelle", "clinic_id": "16104", "city": "München", "fresh": True, "first_published": "2026-09-10", "status": "open",
+     "verify_status": "live", "role_class": "fachpflege", "employer": "kbo", "clinic_town": "Ingolstadt", "clinic_size": "S"},
+]
 CSV_ROWS = [{"clinic_id": c["clinic_id"], "name": c["name"], "town": c["town"], "operator": c["operator"], "landkreis": c["landkreis"], "regierungsbezirk": c["regierungsbezirk"],
              "status": c["status"], "versorgungsstufe": c["versorgungsstufe"], "traegerart": c["traegerart"], "beds": str(c["beds"]), "day_places": str(c["day_places"]),
              "fachrichtungen": "|".join(c["fachrichtungen"]), "parse_quality": "ok", "source": "Krankenhausplan Bayern 2026 (51. Fortschreibung), StMGP",
@@ -73,9 +81,20 @@ def test_plan_rows_and_source(client):
 
 
 def test_cities(client):
+    # TASK-73 AC8: jobs_open/jobs_fresh come from the actual postings (own city OR clinic_town, same
+    # as filter_jobs' city filter), not the clinic-registry aggregate -- so a posting with no
+    # clinic_id gets its own row, and one whose own city differs from its clinic's town counts
+    # toward both, instead of only the clinic's town or nowhere at all.
     rows = client.get("/api/cities").json()
-    rb = next(r for r in rows if r["city"] == "Regensburg")
-    assert rb["clinics"] == 2 and rb["jobs_open"] == 24 and rb["ats_known"] == 1 and rb["regierungsbezirk"] == "Oberpfalz"
+    by_city = {r["city"]: r for r in rows}
+    rb = by_city["Regensburg"]
+    assert rb["clinics"] == 2 and rb["jobs_open"] == 1 and rb["ats_known"] == 1 and rb["regierungsbezirk"] == "Oberpfalz"
+    assert by_city["Augsburg"] == {"city": "Augsburg", "regierungsbezirk": None, "landkreis": None,
+                                    "clinics": 0, "jobs_open": 1, "jobs_fresh": 0, "ats_known": 0, "beds": 0}
+    ingolstadt = by_city["Ingolstadt"]
+    assert ingolstadt["clinics"] == 1 and ingolstadt["jobs_open"] == 1 and ingolstadt["jobs_fresh"] == 1
+    muenchen = by_city["München"]
+    assert muenchen["clinics"] == 0 and muenchen["jobs_open"] == 1 and muenchen["jobs_fresh"] == 1
     assert client.get("/api/cities?q=ingol").json()[0]["city"] == "Ingolstadt"
 
 
@@ -105,6 +124,25 @@ def test_crawl_plan_targets(client):
     assert client.get("/api/crawl/plan?scope=nope").status_code == 400
     r = client.post("/api/crawl", json={"target": {"scope": "clinic", "values": ["36201"]}, "mode": "adapter"})
     assert r.status_code == 200 and r.json()["boards"] == 1
+
+
+def test_plan_surfaces_the_real_kill_switch_verdict(client):
+    """2026-09-08 API audit finding #7: the preview ran no gate at all, so the panel could show a healthy
+    estimate with Confirm enabled for a run that then spent 0 and failed on 'refused by spend gate'. Only
+    kill_switch() is checked here (cheap: settings + campaign + a ledger read) -- not spend_gate() itself,
+    which live-probes a routable clinic's adapter, too slow for every preview keystroke."""
+    from app import campaign as CAM
+    d = client.get("/api/crawl/plan?scope=city&values=Regensburg&mode=auto").json()
+    assert d["via_firecrawl"] == 1 and d["blocked"] is False and d["blocked_reason"] is None
+    CAM.save({"stopped": True, "stop_reason": "test pause"})
+    try:
+        d = client.get("/api/crawl/plan?scope=city&values=Regensburg&mode=auto").json()
+        assert d["blocked"] is True and "test pause" in d["blocked_reason"]
+    finally:
+        CAM.save({"stopped": False, "stop_reason": None})
+    # A pure-adapter target (no Firecrawl involved at all) is never blocked by a Firecrawl-only switch.
+    d = client.get("/api/crawl/plan?scope=ats_type&values=firecrawl&mode=adapter").json()
+    assert d["via_firecrawl"] == 0 and d["blocked"] is False
 
 
 def test_cancel_queued_run_marks_cancelled_immediately(client):
@@ -277,6 +315,10 @@ def autopilot_tmp(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("path,base,params", NUMERIC_QUERY_PARAMS)
 def test_garbage_numeric_query_params_are_4xx_naming_the_parameter(client, autopilot_tmp, path, base, params):
+    if path.startswith("/api/autopilot"):
+        from app.main import app as _APP
+        if not any(p.startswith("/api/autopilot") for p in _APP.openapi()["paths"]):
+            pytest.skip("autopilot router unmounted 2026-09-22 (zero real usage) -- see app/main.py")
     assert client.get(path, params=base).status_code == 200, (path, "base query must be valid on its own")
     for param in params:
         for bad in GARBAGE_VALUES:
@@ -614,3 +656,24 @@ def test_a_validating_document_cannot_silently_drop_a_section(client, patterns_t
     assert client.put("/api/settings/patterns", json=emptied).status_code == 200
     assert json.loads(patterns_tmp.read_text(encoding="utf-8")) == emptied
     client.put("/api/settings/patterns", json=good)                 # leave the loaded document as it was
+
+
+def test_rest_get_error_carries_the_servers_own_message_not_just_the_status(monkeypatch):
+    """TASK-60: raise_for_status() reports the status and the request URL and throws the response
+    body away. A 400 whose body said "inbox: daily limit reached for this client" was logged as a
+    bare "400 Bad Request for url: <25KB of in.() filter>" and read for four days as a URL-length
+    problem -- two unrelated failures only the body tells apart. rest_post already raises with the
+    body; rest_get must too."""
+    from app import config as A
+
+    class R400:
+        status_code = 400
+        text = '{"code":"P0001","message":"inbox: daily limit reached for this client"}'
+        url = "https://db.example/rest/v1/inbox?source_url=in.%28%22https%3A%2F%2Fx%22%29"
+
+        def json(self):
+            return {"code": "P0001", "message": "inbox: daily limit reached for this client"}
+
+    monkeypatch.setattr(A.requests, "get", lambda *a, **kw: R400())
+    with pytest.raises(RuntimeError, match="daily limit reached for this client"):
+        A.rest_get("inbox", {"select": "source_url"})

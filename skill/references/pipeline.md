@@ -8,7 +8,7 @@ Install: `python -m venv .venv && .venv/bin/pip install -r requirements.txt`; te
 clinics.careers_url + ats_type ──routing──▶ board list ──adapter──▶ inbox rows (jsonl) ──cli inbox──▶ observations
                                    │                                                            │
                                    └─ not routable / walled / dvinci ──Firecrawl agent──▶ inbox  ▼
-                                                                                   resolve → postings → link-clinics → link-cross → verify → expire
+                                                                                   resolve → postings → link-clinics → link-cross → verify
 ```
 One row shape for every crawler (`{kind, source_host, source_url, payload{title,org,loc[],url,description}, collector, client_id}`), one loader.
 
@@ -26,9 +26,11 @@ python data/run_softgarden.py 100 ; python data/run_bite.py ; python data/run_pi
 python crawlers/load_crawl_output.py crawl_vendors   # inbox → cli inbox → link-cross, prints deltas
 python -m pflege_jobs.cli inbox | link-clinics | link-cross | verify --workers 5 | renormalize
 python -m pflege_jobs.orchestrate --stages ats,browser,inbox,link,verify,publish   # the daily job (.github/workflows/daily.yml)
-curl -X POST "$PFLEGE_INGEST_URL" -H "Authorization: Bearer $SUPABASE_ANON_KEY" -H "x-ingest-secret: $PFLEGE_INGEST_SECRET" -H 'Content-Type: application/json' -d '{"expire_days":7}'
 ```
-Verify: ≤ 6 workers (8 trigger 429s). Only `gone` expires a posting.
+Verify: ≤ 6 workers (8 trigger 429s). Only `gone` expires a posting -- there is no time-based expiry
+(`mark_expired`/`expire_days` was removed as dead code: its only caller was orchestrate.py's unscheduled
+`stage_verify`, and it would have expired postings that still verify live but whose `last_seen` never
+refreshes on an unchanged posting).
 
 ## Adapters (how each vendor is read)
 softgarden `jobs.feed.json` · B-ITE loader → key → `POST jobs.b-ite.com/api/v1/postings/search` · rexx `/stellenangebote.html?start=N` · umantis `/Jobs/1` server-rendered · mein-check-in `/<tenant>/overview` · typo3_jobs/concludis/talention/oracle job sitemap → detail HTML · personio `<slug>.jobs.personio.de/xml` · smartrecruiters public JSON · helix `/joblist` · pi_asp (Helios' P&I backend) Playwright · group portals (kbo, Schön, RHÖN, Südostbayern) once per board.
@@ -45,7 +47,7 @@ Not covered: 11 sites with no adapter match (`coveto` and a few unlabeled) → F
 Write a function returning inbox rows for a clinic row (`crawlers/vendor_adapters.py` style) or a seeded module (`pflege_jobs/sources/<x>.py`), register it in `crawlers/routing.py:ADAPTERS` (a test pins every label to an importable callable), add the label to `taxonomy.json.ats_types`.
 
 ## Ingest endpoint
-POST JSON `{employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, resolve?, expire_days?, assets?, crawl_run?}` with `Authorization: Bearer <anon>` + `x-ingest-secret`; ≤ 500 rows per key. Column lists rendered from `pflege_jobs/schema.py` by `python edge/build_ingest.py` — edit spec, rebuild, redeploy (needs a Supabase access token; not available on 2026-09-06).
+POST JSON `{employers?, observations?, verify?, clinics?, clinic_links?, merges?, inbox_ack?, resolve?, assets?, crawl_run?}` with `Authorization: Bearer <anon>` + `x-ingest-secret`; ≤ 500 rows per key. Column lists rendered from `pflege_jobs/schema.py` by `python edge/build_ingest.py` — edit spec, rebuild, redeploy (needs a Supabase access token; not available on 2026-09-06).
 
 ## Deploy
 ```bash

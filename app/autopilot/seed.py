@@ -27,7 +27,7 @@ create table if not exists registry_clinics (
   beds integer, jobs_open integer default 0, careers_url text, versorgungsstufe text, traegerart text);
 create table if not exists registry_postings (
   posting_id integer primary key, clinic_id text, title text, role_class text, department_hint text, qualification_hint text,
-  city text, url text, first_published text);
+  city text, url text, first_published text, enr_language_req text, enr_requirements text, enr_experience text);
 """
 
 STAGES = ["new", "contacted", "qualifying", "docs_pending", "qualified", "matching", "profile_sent", "interview_scheduling",
@@ -103,6 +103,13 @@ def init():
     db.init()
     with db._lock, db.db() as c:
         c.executescript(EXTRA_SCHEMA)
+        # registry_postings predates enr_language_req/enr_requirements/enr_experience (TASK-105) -- add
+        # them to an existing data/autopilot.sqlite without forcing a --reset; "create table if not
+        # exists" above is a no-op once the table already exists with the old 9 columns.
+        cols = {r[1] for r in c.execute("pragma table_info(registry_postings)")}
+        for col in ("enr_language_req", "enr_requirements", "enr_experience"):
+            if col not in cols:
+                c.execute(f"alter table registry_postings add column {col} text")
 
 
 # --- registry ------------------------------------------------------------------------------------------
@@ -135,9 +142,10 @@ def cache_registry(c, clinics, jobs):
     for jb in jobs:
         if not jb.get("clinic_id"):
             continue
-        c.execute("insert or replace into registry_postings values(?,?,?,?,?,?,?,?,?)",
+        c.execute("insert or replace into registry_postings values(?,?,?,?,?,?,?,?,?,?,?,?)",
                   (jb["posting_id"], str(jb["clinic_id"]), jb.get("title"), jb.get("role_class"), jb.get("department_hint"), jb.get("qualification_hint"),
-                   jb.get("city"), jb.get("external_url"), jb.get("first_published")))
+                   jb.get("city"), jb.get("external_url"), jb.get("first_published"),
+                   jb.get("enr_language_req"), jb.get("enr_requirements"), jb.get("enr_experience")))
 
 
 def registry(c):
