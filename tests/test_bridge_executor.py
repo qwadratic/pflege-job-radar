@@ -1350,6 +1350,26 @@ def test_active_hours_override_rejects_garbage_and_out_of_range():
             S.active_hours_override(bad)
 
 
+# --- first-touch pacing override for a single test run (Ivan, 2026-09-23 UAT) -----------------
+def test_first_touch_gap_override_is_none_when_unset_or_blank():
+    """The default path -- what every deploy without the env var set gets -- must be bit-for-bit
+    unchanged: None, so main() keeps G.MINI_FLOOR.first_touch_gap_sec exactly as built."""
+    assert S.first_touch_gap_override(None) is None
+    assert S.first_touch_gap_override("") is None
+    assert S.first_touch_gap_override("   ") is None
+
+
+def test_first_touch_gap_override_parses_lo_hi():
+    assert S.first_touch_gap_override("60-90") == (60.0, 90.0)
+    assert S.first_touch_gap_override("1-600") == (1.0, 600.0)
+
+
+def test_first_touch_gap_override_rejects_garbage_and_out_of_range():
+    for bad in ("garbage", "60", "90-60", "-1-90", "0-90"):
+        with pytest.raises(RuntimeError):
+            S.first_touch_gap_override(bad)
+
+
 def test_health_says_the_msisdn_is_unverified(rig):
     health = rig.executor.health()
     assert health["rail"]["msisdn_verified"] is False

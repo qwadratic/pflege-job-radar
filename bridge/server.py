@@ -556,6 +556,38 @@ def active_hours_override(raw):
     return (lo, hi)
 
 
+def first_touch_gap_override(raw):
+    """-> a narrowed ``(lo, hi)`` seconds range for ``bridge/governor.py::MINI_FLOOR.
+    first_touch_gap_sec``, or ``None`` to leave the built-in 240-600s (4-10 min) floor untouched --
+    the caller's default when ``raw`` (from ``WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC``) is unset.
+
+    Same override shape and same reasoning as ``active_hours_override`` above (TASK-131 UAT
+    precedent): one explicit, env-only, opt-in override for a single test night, never a change to
+    the fuse's own default. The built-in floor exists to keep a burst of first-contact messages from
+    reading as spam to WhatsApp on a consumer number that has no appeals path if it gets banned
+    (docs/whatsapp.md) -- this override is for testing against known test numbers, not for widening
+    the pacing that will ever run a real cold-outreach campaign. Ivan, 2026-09-23 UAT: the 4-10 min
+    floor made two already-composed messages LOOK stuck when they were paced exactly as designed;
+    'давай одну минуту задержку'. Unset -> behaviour is bit-for-bit what it always was."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    lo_s, sep, hi_s = raw.partition("-")
+    if not sep:
+        raise RuntimeError(
+            f"WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC={raw!r} must be 'LO-HI' seconds, e.g. '60-90'")
+    try:
+        lo, hi = float(lo_s), float(hi_s)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC={raw!r} must be 'LO-HI' seconds, e.g. '60-90'"
+        ) from exc
+    if not (0 < lo <= hi):
+        raise RuntimeError(
+            f"WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC={raw!r} must satisfy 0 < LO <= HI")
+    return (lo, hi)
+
+
 def main():  # pragma: no cover - the entry point on the mini, not exercised offline
     token = os.environ.get("WA_BRIDGE_TOKEN", "")
     cap = os.environ.get("WA_BRIDGE_PER_NUMBER_DAILY_CAP")
@@ -574,11 +606,18 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     # per process, so anything left over belongs to a process that no longer exists).
     driver.sweep_orphaned_recordings()
     hours = active_hours_override(os.environ.get("WA_BRIDGE_ACTIVE_HOURS_OVERRIDE"))
-    pacing = G.MINI_FLOOR if hours is None else dataclasses.replace(G.MINI_FLOOR, active_hours=hours)
+    gap = first_touch_gap_override(os.environ.get("WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC"))
+    pacing = G.MINI_FLOOR
     if hours is not None:
+        pacing = dataclasses.replace(pacing, active_hours=hours)
         stamped(f"WA_BRIDGE_ACTIVE_HOURS_OVERRIDE is set: active hours widened from the built-in "
                f"{G.MINI_FLOOR.active_hours} to {hours}. This is a fuse override for one test run -- "
                f"unset it in bridge.env and restart once the test is done.")
+    if gap is not None:
+        pacing = dataclasses.replace(pacing, first_touch_gap_sec=gap)
+        stamped(f"WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC is set: first-touch pacing narrowed from "
+               f"the built-in {G.MINI_FLOOR.first_touch_gap_sec} to {gap}. This is a fuse override "
+               f"for one test run -- unset it in bridge.env and restart once the test is done.")
     governor = G.Governor(ledger, per_number_daily_cap=int(cap), pacing=pacing)
     executor = X.Executor(ledger=ledger, governor=governor, driver=driver,
                           rail_number=os.environ.get("WA_BRIDGE_RAIL_NUMBER") or None)
