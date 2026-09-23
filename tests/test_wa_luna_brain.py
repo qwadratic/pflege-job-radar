@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from app import data as D
 from app.wa import api as WAPI
+from app.wa import bridge as BR
 from app.wa import config as C
 from app.wa import luna_brain as LB
 from app.wa import slots as SL
@@ -1163,6 +1164,18 @@ def test_live_reply_starts_a_fresh_session_with_session_id_flag(luna, monkeypatc
     assert captured["cwd"] == C.LUNA_SESSION_DIR, "resume only finds this session again from the same cwd"
 
 
+def test_luna_timeout_sec_exceeds_the_gallery_budget_it_wraps():
+    """TASK-271: C.LUNA_TIMEOUT_SEC bounds the whole `claude -p` subprocess, including a
+    show_clinic_photos call, whose own send_gallery is separately budgeted at
+    BR.GALLERY_BUDGET_SEC (187s, app/wa/bridge.py) for an EMPTY caption alone -- before the
+    expose lookup, the per-photo downloads and staging that run before it. At the old bare
+    120s default this always lost that race: the CLI was killed mid-send on every real gallery
+    call. config.py cannot import bridge.py (bridge.py imports config.py first), so its derived
+    default is a copy of these same figures, not a shared import -- this is the check that
+    catches the two drifting apart again."""
+    assert C.LUNA_TIMEOUT_SEC > BR.GALLERY_BUDGET_SEC
+
+
 def test_live_reply_resumes_an_existing_session_with_resume_flag(luna, monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(subprocess, "run",
@@ -1172,6 +1185,58 @@ def test_live_reply_resumes_an_existing_session_with_resume_flag(luna, monkeypat
     assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "existing-thread-session"
     assert "--session-id" not in cmd, "resuming must not also claim a fresh session id"
     assert session_id == "existing-thread-session"
+
+
+def test_live_reply_raises_session_not_found_only_on_a_resumes_own_signature(luna, monkeypatch, tmp_path):
+    """TASK-239: the CLI's own stderr for a --resume whose transcript is gone, distinguished from every
+    other non-zero exit -- which must keep raising the plain RuntimeError exactly as before, or a real
+    incident (auth, network, a genuine bug) would get silently rewritten into a fabricated first-contact
+    reply instead of surfacing loudly."""
+    stale_stderr = "No conversation found with session ID: stale-id"
+    monkeypatch.setattr(subprocess, "run", _fake_cli(returncode=1, stderr=stale_stderr))
+    with pytest.raises(LB.SessionNotFound) as raised:
+        LB.Client()._live_reply("s", "u", "stale-id")
+    assert raised.value.stale_session_id == "stale-id"
+
+    # the identical stderr text on a FRESH attempt (--session-id, never --resume) is not this case
+    monkeypatch.setattr(subprocess, "run", _fake_cli(returncode=1, stderr=stale_stderr))
+    with pytest.raises(RuntimeError) as raised2:
+        LB.Client()._live_reply("s", "u", None)
+    assert not isinstance(raised2.value, LB.SessionNotFound)
+
+    # a --resume failing for an unrelated reason must not be swallowed as "first contact" either
+    monkeypatch.setattr(subprocess, "run", _fake_cli(returncode=1, stderr="rate limited"))
+    with pytest.raises(RuntimeError) as raised3:
+        LB.Client()._live_reply("s", "u", "stale-id")
+    assert not isinstance(raised3.value, LB.SessionNotFound)
+
+
+def test_turn_recovers_from_a_stale_session_id_by_retrying_once_as_a_fresh_contact(luna, monkeypatch):
+    """TASK-239: before this fix, SessionNotFound (then a bare RuntimeError) propagated straight out of
+    turn() -- BEFORE card["_session_id"] was ever updated -- so the card was saved unchanged and catch-up
+    re-drove the identical failure every three minutes, forever. The card, scoreboard and market snapshot
+    carry everything the gates need; FUNNEL CONTINUITY/PRIOR CONTACT (prompts.py) already make a
+    memoryless restart safe, so one retry as first contact recovers the thread instead of dead-ending it."""
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if len(calls) == 1:
+            assert "--resume" in cmd and cmd[cmd.index("--resume") + 1] == "stale-thread-session"
+            fake = _fake_cli(returncode=1, stderr="No conversation found with session ID: stale-thread-session")
+        else:
+            assert "--session-id" in cmd, "the retry must start a fresh session, never resume the dead one again"
+            assert "--resume" not in cmd
+            fake = _fake_cli(stdout=_ok_stdout(session_id="fresh-after-recovery"))
+        return fake(cmd, **kw)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    thread = {"slots": {"_session_id": "stale-thread-session"}, "asked": []}
+    d = LB.turn("Hallo nochmal", thread)
+    assert len(calls) == 2, "exactly one retry, no unbounded loop"
+    assert d["bubbles"], "the candidate gets an answer, not silence"
+    assert d["slots"]["_session_id"] == "fresh-after-recovery", (
+        "the stale id must be replaced by the new session, not left unchanged")
 
 
 def test_live_reply_strips_a_markdown_fence_around_the_result(luna, monkeypatch, tmp_path):

@@ -208,12 +208,13 @@ def test_in_quiet_hours_simple_window(monkeypatch):
 
 
 def test_in_quiet_hours_wraps_past_midnight():
-    """Default-shaped window (21 -> 9): quiet in the evening, through midnight, into the morning."""
+    """Default-shaped window (21 -> 8): quiet in the evening, through midnight, into the morning."""
     assert FU._in_quiet_hours(_at(21)) is True
     assert FU._in_quiet_hours(_at(23)) is True
     assert FU._in_quiet_hours(_at(0)) is True
-    assert FU._in_quiet_hours(_at(8)) is True
-    assert FU._in_quiet_hours(_at(9)) is False, "the end hour itself is outside the window"
+    assert FU._in_quiet_hours(_at(7)) is True
+    assert FU._in_quiet_hours(_at(8)) is False, "the end hour itself is outside the window"
+    assert FU._in_quiet_hours(_at(9)) is False, "08:00 opens the window Ivan asked for on 2026-09-23"
     assert FU._in_quiet_hours(_at(20)) is False, "the hour just before start is still daytime"
     assert FU._in_quiet_hours(_at(14)) is False, "mid-afternoon is never quiet in the default window"
 

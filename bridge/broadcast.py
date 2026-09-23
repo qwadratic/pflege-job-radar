@@ -163,6 +163,13 @@ class Broadcast:
         """Attempt the next due item. -> a result dict, or None when nothing is due.
 
         Every outcome lands in the ledger before this returns, including the ones that raised.
+
+        A NON-EMPTY ``phone_ops`` QUEUE DEFERS THE ITEM (TASK-268): this call is not routed
+        through ``bridge/dispatcher.py``, so ``executor.send`` below would race a dispatched op
+        for ``huawei01.lock`` -- and it is a race the dispatched side is built to lose: its own
+        patience is ``driver.LOCK_TIMEOUT_SEC`` (30 s) against one bubble's own 90-150 s hold
+        (``executor.py``'s own note). The item is untouched and stays ``queued``; the runner's
+        own next ``DEFAULT_POLL_SEC`` picks it up again.
         """
         now = self.clock()
         self._settle(now)
@@ -170,6 +177,10 @@ class Broadcast:
         if run is None:
             return None
         run_id, key = run["run_id"], item["client_msg_id"]
+        queued = self.ledger.phone_ops_queue_counts()["queued"]
+        if queued:
+            self.ledger.note(now, "broadcast_send_deferred", key, run_id=run_id, queued=queued)
+            return None
         request = {"client_msg_id": key, "to": item["to_phone"], "kind": "text",
                    "body": item["body"], "trace": {"action": item["action"]},
                    "constraints": json.loads(run["pacing"])}

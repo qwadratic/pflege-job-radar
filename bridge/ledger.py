@@ -9,8 +9,13 @@ FOUR RULES, and they are the task:
   1. The row is written BEFORE the send is attempted. If the process dies between the write and
      the confirm, the row stays ``attempting`` -- which is the truth, and the only honest state.
   2. Same key, same body -> replay the original result, send nothing.
-  3. Same key, DIFFERENT body -> record a body_mismatch, return the first body's outcome, send
-     nothing. First body wins, always. A regenerated reply must never overwrite a delivered one.
+  3. Same key, DIFFERENT body, and the first body is SENT or may still be in flight (``attempting``,
+     ``unconfirmed``) -> record a body_mismatch, return the first body's outcome, send nothing. A
+     regenerated reply must never overwrite a delivered one. But if the first body is RESENDABLE
+     (``not_attempted``, ``absent``) it demonstrably never reached the phone, so there is nothing to
+     protect: record the body_mismatch for the audit trail, then let the new body proceed (TASK-236
+     -- the alternative is a body-sensitive key paired with a non-deterministic generator, which has
+     no exit).
   4. ``attempting`` is resolvable only by a reconcile, and only ``confirmed_absent`` authorises a
      resend. An automatic retry out of ``attempting`` is a duplicate message to a real person.
 
@@ -51,6 +56,14 @@ NOT_ATTEMPTED = "not_attempted"  # refused before any keystroke (lock busy, chat
 #: states in which the same key may be sent again
 RESENDABLE = frozenset({ABSENT, NOT_ATTEMPTED})
 
+#: states in which a send's fate is known and it is not still open (TASK-277) -- the same set
+#: bridge/retention.py::classify_op_artifact trusts to auto-resolve a failed op's own artefact.
+#: Owned here, not retention.py, so sweep() below can key its own outbound delete on the exact set
+#: retention calls "settled" instead of drifting from it. UNCONFIRMED is deliberately absent: "keys
+#: were pressed, no tick" is still an open question a reconcile has to answer, never one age alone
+#: settles.
+SAFE_OUTBOUND_STATES = frozenset({SENT, ABSENT, NOT_ATTEMPTED})
+
 # --- broadcast states (TASK-147) ---------------------------------------------------------------
 RUN_OPEN = "open"                # the runner may pick items out of it
 RUN_STOPPED = "stopped"          # a caller pulled the handle; queued items stay queued
@@ -86,6 +99,13 @@ INBOUND_RETENTION_DAYS = 7
 #: attach after a crash between ``append_inbound`` and ``link_media`` below replays (the same
 #: unique key) instead of minting a second event for the same file.
 ATTACH_INBOUND_PREFIX = "wab.i.attach."
+
+#: The inbound event ``link_media_auto`` mints when the row it matched has already been acked
+#: (TASK-233): ``pull_inbound`` only merges a link into rows with ``id`` past the relay's own
+#: cursor, and an acked row's id is behind it for good -- linking that row directly is invisible
+#: forever, not delayed. Same idea as ``ATTACH_INBOUND_PREFIX`` above, own prefix so the two mints
+#: (a human naming a phone; the matcher rescuing an already-drained row) never collide on one key.
+AUTO_LINK_INBOUND_PREFIX = "wab.i.autolink."
 
 #: WhatsApp's own generic notification glyph per kind (bridge/inbound.py::MEDIA_HINTS), used as the
 #: placeholder text of a hand-minted attach event -- honest about being a placeholder, never a
@@ -177,7 +197,8 @@ create table if not exists phone_ops (
   created_at  text not null,
   started_at  text,
   finished_at text,
-  resolved_at text
+  resolved_at text,
+  budget_sec  real
 );
 create index if not exists idx_phone_ops_state on phone_ops(state, position);
 create table if not exists audit (
@@ -292,6 +313,7 @@ class Ledger:
         self._migrate_phone_ops()
         self._db.commit()
         self._lock = threading.RLock()
+        self._recover_stuck_ops(datetime.now(timezone.utc))
 
     def _migrate_media_seen(self):
         """TASK-131 round 5 (decision-9, 2026-09-22). ``media_seen`` already holds rows on the mini
@@ -390,12 +412,37 @@ class Ledger:
         """TASK-230, Ivan 2026-09-23: ``resolved_at`` on ``phone_ops`` did not exist when TASK-227
         shipped, so the mini's live ``phone_ops`` table predates it -- same ``create table if not
         exists`` limit ``_migrate_media_seen`` explains, same fix (an ALTER guarded by what the
-        table already has, not an inference)."""
+        table already has, not an inference). TASK-243 adds ``budget_sec`` the same way: a row
+        enqueued before this shipped has none, and ``claim_next_op`` treats that as unbounded --
+        never a backfilled guess at what the caller would have said."""
         self._db.execute(
             "create table if not exists schema_migrations (name text primary key, applied_at text not null)")
         cols = {r["name"] for r in self._db.execute("pragma table_info(phone_ops)").fetchall()}
         if "resolved_at" not in cols:
             self._db.execute("alter table phone_ops add column resolved_at text")
+        if "budget_sec" not in cols:
+            self._db.execute("alter table phone_ops add column budget_sec real")
+
+    def _recover_stuck_ops(self, now):
+        """TASK-232: ``claim_next_op`` is the only writer of ``OP_RUNNING`` and nothing else in
+        this package ever reads it back -- a systemd restart (``Restart=always``, TASK-227's own
+        service unit) or a mini reboot landing inside ``dispatcher.run_one()`` left that row
+        ``running`` forever: never re-claimed (``claim_next_op`` only selects ``OP_QUEUED``),
+        never swept (``sweep`` only touches rows with ``finished_at`` set, and only
+        ``mark_op_done``/``mark_op_failed`` set it), and every debug artefact named after it held
+        by ``retention.classify_op_artifact`` as "op still running", forever. There is exactly one
+        dispatcher thread per process, so a row still ``running`` when a fresh ``Ledger`` opens
+        belongs, by construction, to a process that no longer exists. Fail it with a reason no
+        real refusal ever raises, so it becomes terminal, reviewable, and swept like any other
+        failed op once past retention -- this never touches the outbound row a ``send`` may have
+        left ``attempting``; only a reconcile resolves that (Rule 4 above)."""
+        stuck = [r["op_id"] for r in self._db.execute(
+            "select op_id from phone_ops where state = ?", (OP_RUNNING,)).fetchall()]
+        for op_id in stuck:
+            self.mark_op_failed(op_id, {"ok": False, "error": {
+                "code": "restarted_while_running",
+                "message": "the executor restarted while this op was in flight",
+                "http_status": 504, "retryable": False}}, now)
 
     def close(self):
         self._db.close()
@@ -419,6 +466,16 @@ class Ledger:
 
         'proceed' means: nothing under this key has been attempted, or a reconcile proved the last
         attempt never left the phone. Anything else sends nothing.
+
+        TASK-236: Rule 3's own justification is "a regenerated reply must never overwrite a
+        delivered one" -- that is a claim about SENT/ATTEMPTING/UNCONFIRMED, where a first body may
+        already be on the phone or headed there. A RESENDABLE entry (NOT_ATTEMPTED, ABSENT) is the
+        opposite case by construction: the old body demonstrably never reached the phone, so there
+        is nothing to protect. Refusing there anyway turned a body-sensitive key plus a
+        non-deterministic generator (LB.turn is a live Sonnet call) into a permanent wedge: the
+        catch-up loop regenerates, mismatches, and never delivers, forever. So a RESENDABLE
+        mismatch still gets the audit row -- the disagreement is real and worth keeping -- but is
+        let through to attempt the new body instead of refused.
         """
         entry = self.get(client_msg_id)
         if entry is None:
@@ -430,7 +487,8 @@ class Ledger:
                     (client_msg_id, body_sha256, utc(now)))
                 self._db.commit()
             self.note(now, "body_mismatch", client_msg_id, state=entry.state)
-            return "mismatch", entry
+            if entry.state not in RESENDABLE:
+                return "mismatch", entry
         if entry.state in RESENDABLE:
             return "proceed", entry
         return "replay", entry
@@ -443,7 +501,13 @@ class Ledger:
     # --- the write-ahead write ------------------------------------------------------------------
     def begin(self, client_msg_id, *, phone, kind, body_sha256, body_len, now):
         """Rule 1. After this returns, a crash is indistinguishable from a send in flight -- which
-        is correct, because from the outside it is."""
+        is correct, because from the outside it is.
+
+        TASK-236: the ON CONFLICT clause also refreshes body_sha256/body_len. A RESENDABLE key can
+        now proceed with a new body (see classify()); without this, the row would keep the stale
+        first body's hash while the new body is what actually gets typed, so the NEXT replay of
+        that new body would classify as a mismatch against a hash nobody ever sent.
+        """
         stamp = utc(now)
         with self._lock:
             self._db.execute(
@@ -453,7 +517,8 @@ class Ledger:
                    on conflict(client_msg_id) do update set
                      state=excluded.state, attempts=outbound.attempts+1,
                      attempted_at=excluded.attempted_at, resolved_at=null, detail=null,
-                     tick=null, tick_state=null, bubble_clock=null""",
+                     tick=null, tick_state=null, bubble_clock=null,
+                     body_sha256=excluded.body_sha256, body_len=excluded.body_len""",
                 (client_msg_id, phone, thread_tag(phone), kind, body_sha256, body_len,
                  ATTEMPTING, stamp, stamp))
             self._db.commit()
@@ -505,6 +570,17 @@ class Ledger:
             args.append(kind)
         return self._db.execute(" ".join(sql), args).fetchone()["c"]
 
+    def event_count(self, event, start, end):
+        """How many journal rows named ``event`` landed in [start, end) -- same bounded-window
+        shape as count_spent above, but over the append-only journal instead of outbound (TASK-264).
+        An instance counter fed by the same event (Executor.dirty_recovered,
+        InboundWatcher.idle_dirty_recovered/errors) reads 0 after a crash-restart; the journal row
+        each of those events also writes does not."""
+        row = self._db.execute(
+            "select count(*) c from journal where event = ? and at >= ? and at < ?",
+            (event, utc(start), utc(end))).fetchone()
+        return row["c"]
+
     def last_spent_at(self, *, phone=None, kind=None):
         """-> RFC3339 string of the most recent attempt, or None."""
         sql = ["select max(attempted_at) m from outbound where state in (%s)" % ",".join("?" * len(SPENT))]
@@ -524,36 +600,95 @@ class Ledger:
     # --- the phone-op queue (TASK-227): every HTTP route that touches the phone enqueues here and
     # a single dispatcher thread drains it strictly in ``position`` order. This is what makes two
     # concurrent HTTP requests execute one-after-another instead of racing a bare flock. -----------
-    def enqueue_op(self, op_id, kind, args, now):
+    def enqueue_op(self, op_id, kind, args, now, budget_sec=None):
         """One row, ``queued``, at the back of the line. -> nothing; ``op_id`` is already minted by
         the caller (``bridge/server.py``), not here -- the caller needs it before this call returns
-        to answer the HTTP request with it."""
+        to answer the HTTP request with it.
+
+        ``budget_sec`` (TASK-243) is the CALLER's own already-computed patience for this op --
+        ``app/wa/bridge.py::Client`` sends it as the ``X-Wa-Op-Budget-Sec`` header, the exact
+        number it is about to poll ``GET /v1/ops/<id>`` against. Never invented here: ``None``
+        (no header, an older client, a direct caller) means ``claim_next_op`` treats the row as
+        unbounded, exactly its behaviour before this column existed."""
         with self._lock:
             position = self._db.execute(
                 "select coalesce(max(position), 0) + 1 as n from phone_ops").fetchone()["n"]
             self._db.execute(
-                "insert into phone_ops(op_id, position, kind, args, state, created_at) "
-                "values (?,?,?,?,?,?)",
-                (op_id, position, kind, json.dumps(args, sort_keys=True), OP_QUEUED, utc(now)))
+                "insert into phone_ops(op_id, position, kind, args, state, created_at, budget_sec) "
+                "values (?,?,?,?,?,?,?)",
+                (op_id, position, kind, json.dumps(args, sort_keys=True), OP_QUEUED, utc(now),
+                 None if budget_sec is None else float(budget_sec)))
             self._db.commit()
 
     def claim_next_op(self):
-        """-> the oldest still-``queued`` row, marked ``running``, or None with nothing waiting.
-        Single-writer via ``self._lock`` same as everything else here -- there is only ever one
-        dispatcher thread calling this, but the guard costs nothing and keeps that an invariant
-        this method enforces rather than one the caller has to remember."""
+        """-> the oldest still-``queued`` row that is not past its own budget, marked ``running``,
+        or None once nothing claimable is left. Single-writer via ``self._lock`` same as
+        everything else here -- there is only ever one dispatcher thread calling this, but the
+        guard costs nothing and keeps that an invariant this method enforces rather than one the
+        caller has to remember.
+
+        TASK-243: a row whose ``budget_sec`` has elapsed is not claimed -- the caller that queued
+        it already stopped listening (``app/wa/bridge.py::Client._await_op`` raised
+        ``answer_timeout`` and, on a live client, also called ``cancel_op`` below, but a lost
+        cancel or an older caller with no cancel route must not leave this stuck open). It is
+        expired instead, the same ``mark_op_failed``-shaped write ``_recover_stuck_ops`` already
+        uses for a different terminal reason, and the scan moves on to the row behind it -- one
+        stale ticket must never block a fresh one sitting right behind it in the queue. A row with
+        no ``budget_sec`` (no header, an older client) is never expired: unbounded stays unbounded.
+        """
         with self._lock:
-            row = self._db.execute(
-                "select * from phone_ops where state = ? order by position limit 1",
-                (OP_QUEUED,)).fetchone()
-            if row is None:
-                return None
-            now = utc(datetime.now(timezone.utc))
-            self._db.execute(
-                "update phone_ops set state = ?, started_at = ? where op_id = ? and state = ?",
-                (OP_RUNNING, now, row["op_id"], OP_QUEUED))
+            now_dt = datetime.now(timezone.utc)
+            while True:
+                row = self._db.execute(
+                    "select * from phone_ops where state = ? order by position limit 1",
+                    (OP_QUEUED,)).fetchone()
+                if row is None:
+                    return None
+                budget = row["budget_sec"]
+                if budget is not None and age_sec(row["created_at"], now_dt) > budget:
+                    self._expire_op(row, now_dt, budget)
+                    continue
+                now = utc(now_dt)
+                self._db.execute(
+                    "update phone_ops set state = ?, started_at = ? where op_id = ? and state = ?",
+                    (OP_RUNNING, now, row["op_id"], OP_QUEUED))
+                self._db.commit()
+                return dict(row, state=OP_RUNNING, started_at=now, args=json.loads(row["args"]))
+
+    def _expire_op(self, row, now_dt, budget):
+        """Caller already holds ``self._lock`` (an ``RLock``, so this nested acquire is free)."""
+        age = age_sec(row["created_at"], now_dt)
+        self._db.execute(
+            "update phone_ops set state = ?, error = ?, finished_at = ? where op_id = ? and state = ?",
+            (OP_FAILED, json.dumps({"ok": False, "error": {
+                "code": "op_expired",
+                "message": f"queued {age:.0f}s, past the {budget:.0f}s budget the caller queued it "
+                          f"under -- nobody is still waiting on it",
+                "http_status": 504, "retryable": False}}, sort_keys=True),
+             utc(now_dt), row["op_id"], OP_QUEUED))
+        self._db.commit()
+        self.note(now_dt, "op_expired", None, op_id=row["op_id"], age_sec=age, budget_sec=budget)
+
+    def cancel_op(self, op_id, now):
+        """The caller gave up (TASK-243: ``app/wa/bridge.py::Client._await_op``'s own timeout). ->
+        True when this flipped a still-``queued`` row to a terminal cancellation, False when the
+        row was already ``running`` or terminal (or does not exist) -- a no-op, never an
+        interruption of a live adb call: only a row still in ``OP_QUEUED`` can lose the race here,
+        by the same ``and state = ?`` guard ``claim_next_op`` itself relies on."""
+        with self._lock:
+            changed = self._db.execute(
+                "update phone_ops set state = ?, error = ?, finished_at = ? "
+                "where op_id = ? and state = ?",
+                (OP_FAILED, json.dumps({"ok": False, "error": {
+                    "code": "op_cancelled",
+                    "message": "the caller gave up waiting for this op and cancelled it before it "
+                              "was claimed",
+                    "http_status": 504, "retryable": False}}, sort_keys=True),
+                 utc(now), op_id, OP_QUEUED)).rowcount
             self._db.commit()
-            return dict(row, state=OP_RUNNING, started_at=now, args=json.loads(row["args"]))
+        if changed:
+            self.note(now, "op_cancelled", None, op_id=op_id)
+        return bool(changed)
 
     def mark_op_done(self, op_id, result, now):
         with self._lock:
@@ -580,6 +715,17 @@ class Ledger:
         out["result"] = json.loads(out["result"]) if out["result"] is not None else None
         out["error"] = json.loads(out["error"]) if out["error"] is not None else None
         return out
+
+    def phone_ops_queue_counts(self):
+        """-> {"queued": count, "oldest_queued_at": timestamp or None} over ``phone_ops`` --
+        ``queue_counts()`` above only ever grouped ``outbound``, so a dispatcher silently falling
+        behind (TASK-260) moved nothing in that number for anyone to see. Same shape as
+        ``inbound_backlog()`` below: a raw timestamp, not an age -- the caller has a clock,
+        this does not."""
+        row = self._db.execute(
+            "select count(*) c, min(created_at) oldest from phone_ops where state = ?",
+            (OP_QUEUED,)).fetchone()
+        return {"queued": row["c"], "oldest_queued_at": row["oldest"]}
 
     # --- retention review (TASK-230, Ivan 2026-09-23): a failed op with no outbound entry to read a
     # verdict off (clear_chat, delete_chat, read_thread, send_photos/gallery/document -- none of
@@ -864,6 +1010,18 @@ class Ledger:
         ``strength``/``reason`` land on the row (audit trail per Ivan's ruling: a weak pick must be
         visible) and, through ``pull_inbound``'s merge, in the payload itself -- the one field
         ``app/wa/api.py`` reads to keep a weakly-attributed document's text from the model.
+
+        TASK-233: ``inbound_id`` is always linked (below), so it drops out of
+        ``unlinked_media_candidates`` either way -- a stale placeholder must never sit around to be
+        wrongly matched against a later, unrelated file of the same kind. But that link alone only
+        reaches ``pull_inbound``'s merge while the relay has not yet acked the row; once acked, its
+        id is behind the relay's cursor for good and the link is invisible forever, not delayed --
+        the loss this task is about. So when ``inbound_id`` is already acked, a SECOND, fresh row is
+        minted (``attach_media``'s own pattern: a new key past whatever the cursor now is) and that
+        one carries the real link and the payload's ``attached_inbound_id``; the already-acked
+        original keeps its link purely to vacate the candidate pool, not to deliver anything -- a
+        stale cursor re-reading it redelivers old text under its own already-consumed wamid, which
+        the webhook dedupes for free, exactly as any redelivery on this rail does.
         """
         row = self._db.execute("select * from media_seen where queue_id=?", (queue_id,)).fetchone()
         if row is None:
@@ -871,16 +1029,29 @@ class Ledger:
         if row["attached_at"] is not None:
             raise ValueError(f"{queue_id} is already attached")
         media = self.media_file(row["media_id"])
-        created = self.link_media(inbound_id, row["media_id"],
-                                  filename=media["filename"] if media else None, now=now)
+        filename = media["filename"] if media else None
+        created = self.link_media(inbound_id, row["media_id"], filename=filename, now=now)
         if not created:
             return False
         stamp = utc(now)
+        delivered_id = inbound_id
+        acked = self._db.execute(
+            "select acked_at from inbound where inbound_key=?", (inbound_id,)).fetchone()
+        if acked and acked["acked_at"] is not None:
+            delivered_id = AUTO_LINK_INBOUND_PREFIX + hashlib.sha256(
+                queue_id.encode("utf-8")).hexdigest()[:32]
+            payload = {"envelope": "wa_bridge.inbound.v1", "inbound_id": delivered_id, "from": phone,
+                      "title": phone, "text": ATTACH_PLACEHOLDER_TEXT.get(row["kind"], ""),
+                      "local_date": stamp[:10], "clock": stamp[11:16],
+                      "time_ms": int(now.timestamp() * 1000), "media_kind": row["kind"],
+                      "source": "auto_attached", "occurrence": 0}
+            self.append_inbound(delivered_id, payload, now)
+            self.link_media(delivered_id, row["media_id"], filename=filename, now=now)
         with self._lock:
             self._db.execute(
                 "update media_seen set attached_at=?, attached_inbound_id=?, attached_phone=?, "
                 "link_strength=?, link_reason=? where queue_id=?",
-                (stamp, inbound_id, phone, strength, reason, queue_id))
+                (stamp, delivered_id, phone, strength, reason, queue_id))
             self._db.commit()
         self.note(now, "media_auto_attached", None, media_id=row["media_id"], strength=strength,
                  reason=reason)
@@ -1078,15 +1249,59 @@ class Ledger:
         ledger_cut = utc(now - timedelta(days=ledger_days))
         inbound_cut = utc(now - timedelta(days=inbound_days))
         with self._lock:
+            # TASK-277: age alone used to be "resolved_at is not null" -- but mark_unconfirmed also
+            # goes through _resolve() and sets resolved_at, so a still-open UNCONFIRMED row (a
+            # reconcile has not yet answered for) was swept at ledger_days like any settled one,
+            # taking bridge/retention.py::classify_escalation_shot's only way to read its outcome
+            # with it. Gated to the same SAFE_OUTBOUND_STATES retention.py itself already calls
+            # "settled" -- nothing new invented, just the set this delete should have used from the
+            # start.
             done = self._db.execute(
-                "delete from outbound where resolved_at is not null and resolved_at < ?",
-                (ledger_cut,)).rowcount
+                "delete from outbound where resolved_at is not null and resolved_at < ? "
+                "and state in (%s)" % ",".join("?" * len(SAFE_OUTBOUND_STATES)),
+                (ledger_cut, *sorted(SAFE_OUTBOUND_STATES))).rowcount
             lines = self._db.execute("delete from journal where at < ?", (ledger_cut,)).rowcount
             mism = self._db.execute(
                 "delete from body_mismatch where seen_at < ?", (ledger_cut,)).rowcount
             acked = self._db.execute(
                 "delete from inbound where acked_at is not null and acked_at < ?",
                 (inbound_cut,)).rowcount
+            # TASK-278: an attached file's inbound row just reached the cut above -- its job is
+            # done, the VPS already holds its own permanent copy (app/wa/api.py::_write_original)
+            # -- so the media_seen row that names it, and any media_link row pointing at an
+            # inbound_key that no longer exists (the acked-branch of link_media_auto above can
+            # mint a second, throwaway inbound row purely to vacate the queue; that row ages out
+            # on the same clock and its link goes with it), are swept here too. A media_seen row
+            # that was NEVER attached (attached_inbound_id is null, still sitting in the queue) is
+            # left alone -- how long an unclaimed pull should wait is a decision nobody has made
+            # yet, not one this sweep invents.
+            orphan_media_seen = self._db.execute(
+                "select source_rel, media_id from media_seen where attached_inbound_id is not null "
+                "and attached_inbound_id not in (select inbound_key from inbound)").fetchall()
+            media_seen = 0
+            touched_media_ids = set()
+            for row in orphan_media_seen:
+                self._db.execute(
+                    "delete from media_seen where source_rel=?", (row["source_rel"],))
+                media_seen += 1
+                touched_media_ids.add(row["media_id"])
+            media_link = self._db.execute(
+                "delete from media_link where inbound_id not in "
+                "(select inbound_key from inbound)").rowcount
+            # media_file is content-addressed (bridge/media.py) and shared across resends or two
+            # people sending byte-identical bytes -- the bytes are only safe to drop once no
+            # media_seen row (attached-and-live, or still unattached) names this media_id any more.
+            media_file_paths = []
+            for media_id in touched_media_ids:
+                if self._db.execute(
+                        "select 1 from media_seen where media_id=? limit 1", (media_id,)).fetchone():
+                    continue
+                row = self._db.execute(
+                    "select local_path from media_file where media_id=?", (media_id,)).fetchone()
+                if row is None:
+                    continue
+                self._db.execute("delete from media_file where media_id=?", (media_id,))
+                media_file_paths.append(row["local_path"])
             # Finished runs take their bodies with them. An unfinished run is never swept: it is
             # still owed to somebody. The audit table is not here on purpose -- see append_audit.
             items = self._db.execute(
@@ -1097,12 +1312,40 @@ class Ledger:
             runs = self._db.execute(
                 "delete from broadcast_run where finished_at is not null and finished_at < ?",
                 (ledger_cut,)).rowcount
-            # TASK-227: a terminal op (done or failed) past its retention window. A queued/running
-            # one is never swept, same reasoning as an unfinished broadcast run above -- it is
-            # still owed to whoever is polling GET /v1/ops/<id> for it.
-            ops = self._db.execute(
-                "delete from phone_ops where finished_at is not null and finished_at < ?",
-                (ledger_cut,)).rowcount
             self._db.commit()
+        # TASK-227/TASK-277: a terminal phone_ops row past its retention window used to be deleted
+        # right here, on age alone -- exactly what bridge/retention.py's own artefact review cannot
+        # promise, since a debug-capture screenshot or recording is reviewed independently, on its
+        # OWN 14-day clock, and routinely still named a row this bare age check had already deleted
+        # (closing resolve_op's escape hatch out from under a file nobody had looked at yet).
+        # retire_unreferenced_ops below is the replacement: bridge/retention.py::review_and_sweep
+        # calls it, once per pass, with the op_ids that SAME pass just classified `hold` -- the
+        # only place that knows, right now, whether anything on disk still needs the row.
         return {"outbound": done, "journal": lines, "body_mismatch": mism, "inbound": acked,
-                "broadcast_runs": runs, "broadcast_items": items, "phone_ops": ops}
+                "broadcast_runs": runs, "broadcast_items": items, "media_seen": media_seen,
+                "media_link": media_link, "media_file_paths": media_file_paths}
+
+    def retire_unreferenced_ops(self, now, held_op_ids, *, ledger_days=LEDGER_RETENTION_DAYS):
+        """TASK-277: delete a terminal (done or failed) phone_ops row past ``ledger_days`` UNLESS
+        ``held_op_ids`` -- bridge/retention.py::review_and_sweep's own op_ids classified `hold`
+        THIS pass -- says a screenshot or recording still names it.
+
+        Must be called AFTER that pass's own classify-and-delete loop, never before: a row a human
+        just resolved, or a send whose outbound row just reached SENT/ABSENT/NOT_ATTEMPTED, has
+        its last artefact deleted by that loop and so is already absent from ``held_op_ids`` by
+        the time this runs -- resolving it here a second, independent way (an age check keyed on
+        ``resolved_at`` instead) would race that loop and could delete the row before its own
+        artefact was, leaving the file behind with no row left to explain why it is safe. -> how
+        many rows this removed.
+        """
+        cut = utc(now - timedelta(days=ledger_days))
+        with self._lock:
+            rows = self._db.execute(
+                "select op_id from phone_ops where finished_at is not null and finished_at < ?",
+                (cut,)).fetchall()
+            stale = [r["op_id"] for r in rows if r["op_id"] not in held_op_ids]
+            if stale:
+                self._db.executemany(
+                    "delete from phone_ops where op_id = ?", [(op_id,) for op_id in stale])
+                self._db.commit()
+        return len(stale)

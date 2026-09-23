@@ -544,6 +544,44 @@ def test_the_tools_server_is_told_whose_cv_to_match(small, monkeypatch):
         "TASK-195: clinic contacts are for the human handoff, never the candidate-facing turn")
 
 
+def test_show_clinic_photos_rule_does_not_name_get_clinic_contact():
+    """TASK-280: RULES is joined verbatim into the system prompt every turn (P.system_prompt), so a
+    tool name mentioned here reaches the model whether or not that tool is callable. get_clinic_contact
+    is excluded from MCP_TOOL_NAMES on purpose (TASK-195, above) -- this rule must not undo that by
+    naming it as something the model can reach for."""
+    rule = next(r for r in P.RULES if r.startswith("SHOW_CLINIC_PHOTOS"))
+    assert "get_clinic_contact" not in rule
+
+
+def test_the_tools_server_is_told_whether_autosend_is_on(small, monkeypatch):
+    """TASK-250: show_clinic_photos reads C.AUTOSEND to decide whether to send -- but the tools
+    server is a fresh subprocess whose env is this dict, not the parent's os.environ (same reason
+    WA_SQLITE_PATH is passed explicitly), so without this key the subprocess would see WA_AUTOSEND
+    unset and read AUTOSEND as False always, gating nothing so much as disabling the tool outright."""
+    monkeypatch.setattr(LB.BV, "vocabulary_lines", lambda: {})
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    env_on = json.loads(LB._mcp_config_path(small / "ready.json")
+                        .read_text(encoding="utf-8"))["mcpServers"][LB.MCP_SERVER_NAME]["env"]
+    assert env_on["WA_AUTOSEND"] == "1"
+    monkeypatch.setattr(C, "AUTOSEND", False)
+    env_off = json.loads(LB._mcp_config_path(small / "ready2.json")
+                         .read_text(encoding="utf-8"))["mcpServers"][LB.MCP_SERVER_NAME]["env"]
+    assert env_off["WA_AUTOSEND"] == ""
+
+
+def test_mcp_config_path_is_not_clobbered_by_a_concurrent_turn(small, monkeypatch):
+    """TASK-249: the webhook worker, the 3-minute catch-up poller and a campaign send are separate
+    OS processes sharing one LUNA_SESSION_DIR. A fixed mcp_config.json filename meant candidate B's
+    turn starting mid-A's CLI startup overwrote A's WA_LUNA_PHONE with B's before A's tools server
+    read the file -- look_at_phone/show_clinic_photos would then act on B's number inside A's turn.
+    The config path must carry the same per-turn identity ready_path already has."""
+    monkeypatch.setattr(LB.BV, "vocabulary_lines", lambda: {})
+    path_a = LB._mcp_config_path(small / "ready_a.json", "+49A")
+    LB._mcp_config_path(small / "ready_b.json", "+49B")
+    env_a = json.loads(path_a.read_text(encoding="utf-8"))["mcpServers"][LB.MCP_SERVER_NAME]["env"]
+    assert env_a["WA_LUNA_PHONE"] == "+49A"
+
+
 def test_the_turn_hands_its_own_number_to_the_client(small):
     client = fake_client(_out())
     LB.turn("Hallo", {"phone": "+4915550001234", "slots": {}, "asked": []}, client=client)

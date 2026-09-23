@@ -21,8 +21,18 @@ THE FAILURE CHAIN THIS EXISTS TO FIX, verified in this tree:
 
 On the Cloud API the window between pressing send and knowing is milliseconds. On a phone-mediated
 send it is 20-60 s and is the dominant failure class, so the key has to be a pure function of the
-turn: same phone, same inbound message, same action, same bubble index -> same key, in any process,
-after any restart, forever. The executor's ledger then applies first-body-wins (TASK-130).
+turn: same phone, same inbound message, same bubble index -> same key, in any process, after any
+restart, forever. The executor's ledger then applies first-body-wins (TASK-130).
+
+``action`` is NOT in that material (TASK-245). It reads like a fact about the turn but it is the
+model's own free-text output for that call (``OUTPUT_SCHEMA["action"]`` has no enum), and the
+catch-up re-drive above is a second brain call answering the same inbound message -- it can and does
+come back with a different action slug (two harness paths force one outright: a grounding retry
+forces "reply_after_correction", a source-links fallback forces "test_source_links"). Hashing it in
+would key the replayed bubbles fresh every time catch-up disagrees with itself, which is the one
+thing this module exists to prevent. ``action`` is still a required argument here -- a caller that
+cannot state which action it is sending has no business minting a key for it -- it is simply not
+material to the key itself.
 
 ``turn_key`` is a REQUIRED, EXPLICIT argument and has no default on purpose. On the Meta rail it is
 the inbound wamid that already scopes the reply-turn claim (``app/wa/store.py:305-309``); on this
@@ -84,16 +94,19 @@ def require_index(value, what, minimum):
 def reply_key(*, phone, turn_key, action, bubble_index):
     """-> the ``client_msg_id`` for one bubble of one conversational turn.
 
-    ``"wab.o." + sha256("phone|turn_key|action|bubble_index")[:32]``. Every argument is
-    keyword-only and required: this is the identity of a message to a real person, and a positional
-    mix-up between ``turn_key`` and ``action`` would silently produce a different, equally
+    ``"wab.o." + sha256("phone|turn_key|bubble_index")[:32]``. ``action`` is required and
+    validated like the rest, but deliberately not part of the material (TASK-245): it is the
+    model's own free-text choice for this call, not a fact about which turn or bubble is being
+    answered, so two calls that disagree on it must still mint the same key. Every argument is
+    keyword-only: this is the identity of a message to a real person, and a positional mix-up
+    between ``turn_key`` and ``action`` would silently produce a different, equally
     plausible-looking key.
     """
     phone = require_e164(phone)
     turn_key = require_text(turn_key, "turn_key")
     action = require_text(action, "action")
     bubble_index = require_index(bubble_index, "bubble_index", 0)
-    material = f"{phone}|{turn_key}|{action}|{bubble_index}"
+    material = f"{phone}|{turn_key}|{bubble_index}"
     return CONVERSATIONAL_PREFIX + hashlib.sha256(material.encode("utf-8")).hexdigest()[:DIGEST_CHARS]
 
 

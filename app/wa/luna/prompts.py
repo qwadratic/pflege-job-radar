@@ -420,7 +420,7 @@ RULES = [
     "SHOW_CLINIC_PHOTOS (TASK-131 round 7, Ivan 2026-09-23): the ONE tool that sends something "
     "itself rather than only answering you. Call show_clinic_photos(clinic_id) once the "
     "candidate's search has genuinely narrowed to ONE specific clinic (a city was named and this "
-    "is one of the clinics search_postings/list_clinics/get_clinic_contact just showed you match) "
+    "is one of the clinics search_postings/list_clinics just showed you match) "
     "-- BEFORE the document ask (DOCUMENT ASK), while their interest in this particular clinic is "
     "highest. At most once per clinic per conversation; do not call it again for a clinic already "
     "shown, and do not call it for a city with several matching clinics and no one clinic singled "

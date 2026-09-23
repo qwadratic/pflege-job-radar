@@ -86,3 +86,13 @@ supabase/.temp/
 # the served copies live under data/clinic_photos/<id>/, indexed by the clinic_photos sqlite table
 data/clinic_photos/
 data/clinic_photos.zip
+
+# Real mailbox material and rehearsal/test artefacts. `git add -A` swept these into a release
+# commit on 2026-09-23 -- 300k lines of real candidate and clinic correspondence, caught and
+# reverted before it was pushed. They are dumps and working files, not source; nothing rebuilds
+# from the repo copy.
+data/email-dump/
+data/email-analysis/
+data/docs-site/
+data/wa_test_docs/
+data/wa_rehearsal.sqlite

@@ -12,8 +12,10 @@ import time
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 
+from app import config as A
 from app import data as D
 from app.wa import config as C
+from app.wa import store as ST
 from app.wa.luna import board_vocabulary as BV
 from app.wa.luna import tools_server as TS
 
@@ -585,21 +587,88 @@ def test_a_vocabulary_file_missing_a_line_is_a_loud_failure_not_a_tool_without_v
     assert "carries no vocabulary line for" in str(raised.value) and "housing" in str(raised.value)
 
 
+# --- TASK-273: the board rows travel from the parent the same way the vocabulary already does ----
+# TASK-213 (above) moved the tool descriptions' text off a cold Supabase build in this process; it
+# never touched the row data every board tool actually queries (D.filter_jobs/D.filter_clinics,
+# reached through D.jobs()/D.clinics()/D.snapshot()) -- this server's own D._snap started empty
+# regardless, and the first board tool call of every turn cold-built the whole snapshot synchronously.
+
+def _empty_snap():
+    """The state a freshly spawned subprocess's own D._snap actually starts in (app/data.py:186) --
+    board() above already fills D._snap with real rows via D.refresh, which would hide whether
+    priming did anything at all."""
+    return {"at": 0.0, "jobs": [], "clinics": [], "by_clinic": {}, "facets": {}, "taxonomy": {},
+            "loading": False, "error": None}
+
+
+def test_the_server_is_primed_from_the_parents_snapshot_and_never_builds_its_own(tmp_path, monkeypatch):
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    clinics = _clinics()
+    dump = {"jobs": _jobs(), "clinics": clinics, "by_clinic": {c["clinic_id"]: c for c in clinics},
+            "facets": {}, "taxonomy": {}}
+    path = tmp_path / "board_snapshot.json"
+    path.write_text(json.dumps(dump, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("WA_LUNA_BOARD_SNAPSHOT", str(path))
+    monkeypatch.setattr(D, "_snap", _empty_snap())
+    monkeypatch.setattr(A, "rest_get_all", lambda *a, **k: pytest.fail("a primed server must not build a board"))
+
+    TS._prime_board_snapshot()
+
+    out = TS.search_postings(city="München")
+    assert (len(out["shown"]), out["total"]) == (2, 2)
+
+
+def test_without_the_env_var_priming_is_a_no_op_and_the_cold_build_stays_available(tmp_path, monkeypatch):
+    """Guards the fallback: ``python -m app.wa.luna.tools_server`` run by hand, with no parent handing
+    over a snapshot, must still be free to cold-build its own -- priming must not silently eat that case."""
+    empty = _empty_snap()
+    monkeypatch.setattr(D, "_snap", empty)
+    monkeypatch.delenv("WA_LUNA_BOARD_SNAPSHOT", raising=False)
+
+    TS._prime_board_snapshot()
+
+    assert D._snap is empty and D._snap == _empty_snap()
+
+
 def test_serving_stamps_the_readiness_file_the_parent_checks(tmp_path, monkeypatch):
     """A tools server that dies at start, or that the CLI drops, leaves claude -p exiting 0 with a
     normal-looking reply and no MCP status anywhere in its output -- this stamp is the only signal
-    luna_brain._live_reply has that the turn actually had the board tools."""
+    luna_brain._live_reply has that the turn actually had the board tools. Stamped off the
+    ``tools/list`` hook (TASK-274), so the mock stands in for the CLI's real first move once stdio
+    is open -- asking for the tools -- not just the transport starting."""
     board(tmp_path, monkeypatch)
     ready = tmp_path / "tools_ready" / "turn.json"
     monkeypatch.setenv("WA_LUNA_TOOLS_READY", str(ready))
     ran = []
-    monkeypatch.setattr(TS.mcp, "run", lambda **kw: ran.append(kw))
+
+    def fake_run(**kw):
+        ran.append(kw)
+        asyncio.run(TS.mcp.list_tools())
+
+    monkeypatch.setattr(TS.mcp, "run", fake_run)
 
     TS.serve()
     assert ran == [{"transport": "stdio"}]
     stamped = json.loads(ready.read_text(encoding="utf-8"))
     assert "search_postings_with_housing" in stamped["tools"] and stamped["pid"] > 0
     assert stamped["at"] <= time.time()
+
+
+def test_a_server_the_cli_never_actually_lists_tools_from_leaves_no_readiness_stamp(tmp_path, monkeypatch):
+    """TASK-274: the stamp used to be written unconditionally inside serve(), before mcp.run()'s stdio
+    handshake had even opened -- a server that stamped and then died or was dropped mid-handshake left
+    _live_reply's readiness check satisfied for a turn that never actually reached the CLI. Tying the
+    stamp to the first tools/list response instead: a run that never gets that far (the stdio loop
+    dies, the CLI drops the connection before asking) leaves no stamp behind. Fails on the old
+    unconditional-stamp code, where the file exists regardless of what mcp.run does."""
+    board(tmp_path, monkeypatch)
+    ready = tmp_path / "tools_ready" / "turn.json"
+    monkeypatch.setenv("WA_LUNA_TOOLS_READY", str(ready))
+    monkeypatch.setattr(TS.mcp, "run", lambda **kw: None)   # handshake "starts", never lists tools
+
+    TS.serve()
+
+    assert not ready.exists(), "no tools/list response ever happened -- nothing to prove the CLI got"
 
 
 def test_a_board_that_did_not_load_leaves_no_readiness_stamp(tmp_path, monkeypatch):
@@ -946,6 +1015,221 @@ def test_look_at_phone_on_a_bridge_error_raises_a_tool_error_and_never_crashes_t
         asyncio.run(TS.mcp.call_tool("look_at_phone", {}))
     assert not isinstance(raised.value, UnexpectedToolError)
     assert "say nothing" in str(raised.value) and "device_unavailable" in str(raised.value)
+
+
+def test_look_at_phone_in_a_dry_run_never_touches_the_bridge_client(tmp_path, monkeypatch):
+    """TASK-240: shadow_run/wa_rehearse set WA_LUNA_NO_SEND to keep a dry run off the live handset --
+    show_clinic_photos honours it (tested above via _NO_SEND branch) but look_at_phone did not, so a
+    dry run over a stuck thread could open a real candidate's chat and clear its notification
+    (bridge/operations.py:read_thread). BR.Client is never even constructed once the gate is in."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    monkeypatch.setenv("WA_LUNA_NO_SEND", "1")
+
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed in a dry run")
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("look_at_phone", {}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "dry run" in str(raised.value) and "say nothing" in str(raised.value)
+
+
+# --- TASK-250: show_clinic_photos is the one tool that sends, and it bypassed every discipline
+# api._send applies to every other outbound (AUTOSEND, the thread's pinned rail, a wa_messages row) --
+# it called BR.Client().send_gallery(...) unconditionally instead.
+
+def _with_photos(monkeypatch, photos=("/media/a.jpg",), caption="Schöne Klinik"):
+    monkeypatch.setattr(TS, "_fetch_clinic_expose",
+                        lambda clinic_id: {"photos": list(photos), "presentation": {"text_de": caption}})
+
+
+def test_show_clinic_photos_refuses_to_send_with_autosend_off(tmp_path, monkeypatch):
+    """A staging deployment with WA_AUTOSEND unset must not send a real candidate real photos --
+    the exact gate api._send applies (api.py:1006-1009) before it hands anything to a transport."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", False)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _with_photos(monkeypatch)
+
+    def _must_not_download(*a, **kw):
+        raise AssertionError("a photo must not be downloaded with AUTOSEND off")
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed with AUTOSEND off")
+    monkeypatch.setattr(TS, "_download_to_temp", _must_not_download)
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    assert TS.show_clinic_photos("c1") == {"sent": False, "reason": "AUTOSEND is off"}
+
+
+def test_show_clinic_photos_refuses_a_thread_already_pinned_to_the_meta_rail(tmp_path, monkeypatch):
+    """A thread whose first successful outbound already went out from the WABA number (TASK-220's
+    pin) must not suddenly get a photo album from the handset number -- a stranger continuing their
+    conversation, per store.pin_rail's own reasoning. Rail is checked with AUTOSEND on, so this is
+    not the same gate as the AUTOSEND test above."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _with_photos(monkeypatch)
+    with ST.db() as c:
+        ST.pin_rail(c, _CV_PHONE, "meta")
+
+    def _must_not_download(*a, **kw):
+        raise AssertionError("a photo must not be downloaded on a thread pinned to meta")
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed on a thread pinned to meta")
+    monkeypatch.setattr(TS, "_download_to_temp", _must_not_download)
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    out = TS.show_clinic_photos("c1")
+    assert out["sent"] is False and "meta" in out["reason"]
+
+
+def test_show_clinic_photos_records_a_wa_messages_row_on_a_real_send(tmp_path, monkeypatch):
+    """api._send writes a wa_messages row per bubble so a resumed session's outbound_since_last_turn
+    (prompts.py:120) can show what already went out; this tool wrote nothing at all, so the next
+    turn had no record that a photo album -- not the preceding text -- was the candidate's last
+    message from us."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")   # this thread has never sent -- rail_for falls
+                                                     # back to C.TRANSPORT, "bridge" in production
+                                                     # per rail.env (deploy/wa-bridge/INSTALL.md)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _with_photos(monkeypatch, caption="Schöne Klinik in München")
+    monkeypatch.setattr(TS, "_download_to_temp", lambda url, suffix: f"/tmp/local{suffix}")
+    monkeypatch.setattr(TS, "_staged_already", lambda remote_name: False)
+    monkeypatch.setattr(TS, "_stage_on_mini", lambda local, remote_name: f"/remote/{local}")
+
+    class _FakeSendGalleryClient:
+        def __init__(self):
+            self.calls = []
+
+        def send_gallery(self, phone, remote_files, caption=""):
+            self.calls.append((phone, remote_files, caption))
+
+    fake = _FakeSendGalleryClient()
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    out = TS.show_clinic_photos("c1")
+    assert out == {"sent": True, "photos": 1, "has_presentation": True}
+    assert fake.calls == [(_CV_PHONE, ["/remote//tmp/local.jpg"], "Schöne Klinik in München")]
+    with ST.db() as c:
+        rows = ST.messages_for(c, _CV_PHONE, direction="out")
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "gallery" and rows[0]["body"] == "Schöne Klinik in München"
+    assert rows[0]["wamid"] is None
+
+
+def test_show_clinic_photos_reuses_what_an_earlier_candidate_already_staged_on_the_mini(tmp_path, monkeypatch):
+    """TASK-272: _stage_on_mini used to derive the remote filename from tempfile.mkstemp's own
+    random local name, so a SECOND candidate reaching the same clinic re-downloaded the same photo
+    from the board and re-scp'd it to the mini even though the first candidate's copy was still
+    sitting there -- twenty candidates over a week, twenty downloads, twenty scp's, nothing ever
+    reused (the existing 'already sent' short-circuit tested above only ever looks at ONE phone's
+    own wa_messages rows, so it does nothing for a second, different phone). The remote name is now
+    deterministic on (clinic_id, photo url), so a second candidate's call can find it already
+    staged and skip both the download and the scp."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    _with_photos(monkeypatch, caption="Schöne Klinik in München")
+
+    staged = set()
+
+    def _fake_download(url, suffix):
+        return f"/tmp/local{suffix}"
+
+    def _fake_stage(local, remote_name):
+        staged.add(remote_name)
+        return f"{TS.MINI_MEDIA_DIR}/{remote_name}"
+
+    monkeypatch.setattr(TS, "_download_to_temp", _fake_download)
+    monkeypatch.setattr(TS, "_stage_on_mini", _fake_stage)
+    monkeypatch.setattr(TS, "_staged_already", lambda remote_name: remote_name in staged)
+
+    class _FakeSendGalleryClient:
+        def send_gallery(self, phone, remote_files, caption=""):
+            pass
+    monkeypatch.setattr(TS.BR, "Client", _FakeSendGalleryClient)
+
+    candidate_a, candidate_b = "491700000001", "491700000002"
+
+    monkeypatch.setenv("WA_LUNA_PHONE", candidate_a)
+    out_a = TS.show_clinic_photos("c1")
+    assert out_a["sent"] is True
+    expected_name = TS._staged_media_name("c1", "/media/a.jpg", ".jpg")
+    assert staged == {expected_name}
+
+    def _must_not_download(*a, **kw):
+        raise AssertionError("a second candidate reaching the same clinic must not re-download it")
+    def _must_not_stage(*a, **kw):
+        raise AssertionError("a second candidate reaching the same clinic must not re-scp it")
+    monkeypatch.setattr(TS, "_download_to_temp", _must_not_download)
+    monkeypatch.setattr(TS, "_stage_on_mini", _must_not_stage)
+
+    monkeypatch.setenv("WA_LUNA_PHONE", candidate_b)
+    out_b = TS.show_clinic_photos("c1")
+    assert out_b == {"sent": True, "photos": 1, "has_presentation": True}
+
+
+def test_show_clinic_photos_does_not_resend_a_clinic_already_sent_this_conversation(tmp_path, monkeypatch):
+    """TASK-271: the tool's own docstring tells the MODEL "call it at most once per clinic" -- a
+    retry the model never sees (the turn's `claude -p` killed on LUNA_TIMEOUT_SEC while an orphaned
+    tools_server.py grandchild finishes the send anyway, or the ~3-minute catch-up re-driving the
+    same inbound) reaches this far again with no memory of the first call, and send_gallery itself
+    has no idempotency key. The wa_messages row the first send already wrote (meta.action /
+    meta.clinic_id, same shape ST.record_outbound stamps below on a real send) is what the second
+    call must notice before it downloads or sends anything a second time."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _with_photos(monkeypatch, caption="Schöne Klinik in München")
+    with ST.db() as c:
+        ST.record_outbound(c, _CV_PHONE, None, "Schöne Klinik in München", kind="gallery",
+                           meta={"action": "show_clinic_photos", "clinic_id": "c1", "photos": 1})
+
+    def _must_not_download(*a, **kw):
+        raise AssertionError("a clinic already sent this conversation must not be downloaded again")
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed for a clinic already sent")
+    monkeypatch.setattr(TS, "_download_to_temp", _must_not_download)
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    out = TS.show_clinic_photos("c1")
+    assert out == {"sent": False, "reason": "already sent to this candidate"}
+    with ST.db() as c:
+        rows = ST.messages_for(c, _CV_PHONE, direction="out")
+    assert len(rows) == 1, "the short-circuit must not write a second row either"
+
+
+def test_show_clinic_photos_refuses_to_send_a_caption_carrying_a_link(tmp_path, monkeypatch):
+    """TASK-251: check_reply's LINK gate (grounding.has_link, TASK-144) only ever runs on the model's
+    own bubbles -- this caption goes straight from GET .../expose to send_gallery and never becomes
+    one. A blurb carrying the clinic's own careers URL must not go out uncensored; it falls back to
+    the same {"sent": False, "presentation_text": ...} branch the no-photo case already uses, so the
+    model writes it in its own words next turn, where LINK actually applies."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    caption = "Bewerben Sie sich direkt hier: https://klinik-x.de/karriere -- 120 Betten."
+    _with_photos(monkeypatch, caption=caption)
+
+    def _must_not_download(*a, **kw):
+        raise AssertionError("a photo must not be downloaded when the caption carries a link")
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed when the caption carries a link")
+    monkeypatch.setattr(TS, "_download_to_temp", _must_not_download)
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    out = TS.show_clinic_photos("c1")
+    assert out == {"sent": False, "presentation_text": caption}
+    with ST.db() as c:
+        rows = ST.messages_for(c, _CV_PHONE, direction="out")
+    assert rows == []
 
 
 def test_match_cv_to_postings_on_a_server_started_without_the_turns_number_fails_loudly(tmp_path, monkeypatch):

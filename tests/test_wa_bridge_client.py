@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import types
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -117,10 +118,24 @@ def test_the_injected_transport_is_used_verbatim_and_carries_the_whole_contract(
     assert call["method"] == "POST" and call["url"] == BASE + BR.MESSAGES_PATH
     assert call["headers"]["Authorization"] == "Bearer tok"
     assert call["timeout"] == cl.send_timeout("Guten Tag!") > C.BRIDGE_TIMEOUT_SEC
+    # TASK-243: the executor's claim_next_op reads this to refuse a ticket nobody is still
+    # waiting on -- the same number this call is itself about to poll GET /v1/ops/<id> against.
+    assert call["headers"][BR.OP_BUDGET_HEADER] == str(cl.send_timeout("Guten Tag!"))
     # trace.action is the executor's PACING class, not Luna's slug -- the slug rides as intent.
     assert call["body"] == {"client_msg_id": key, "to": LEAD, "kind": "text", "body": "Guten Tag!",
                             "trace": {"action": "reply", "intent": "reply", "turn_key": TURN,
                                       "bubble_index": 0}}
+
+
+def test_send_timeout_carries_the_flock_wait_every_sibling_budget_already_has():
+    """Every other per-operation budget in this file (DESTROY_BUDGET_SEC, CHATS_BUDGET_SEC,
+    THREAD_BUDGET_SEC) explicitly adds FLOCK_WAIT_SEC for the lock wait executor.take_phone can
+    spend before a route even starts; send_timeout was the one that did not, with no comment ever
+    claiming that was on purpose (TASK-243)."""
+    cl, _ = build(timeout=1.0)
+    body = "x" * 100
+    assert cl.send_timeout(body) == (BR.FLOCK_WAIT_SEC + BR.EXECUTOR_FIXED_BUDGET_SEC
+                                     + len(body) / BR.EXECUTOR_SLOWEST_CHARS_PER_SEC)
 
 
 @pytest.mark.parametrize("tick", BR.VERIFIED_TICKS)
@@ -391,6 +406,17 @@ def test_send_photos_surfaces_a_non_200_as_a_bridge_error():
     assert caught.value.status_code == 500
 
 
+def test_send_photos_carries_the_derived_media_budget_not_the_bare_floor():
+    """TASK-247: send_photos called _request with no timeout= at all, so it inherited the bare 90s
+    client floor -- smaller than even one photo's own worst case (HANDSET_ONE_PHOTO_SEC), let alone
+    the up-to-five this route can be asked to send in one flock hold."""
+    cl, fake = build((200, {"ok": True, "at": "x", "sent": [{"clock": "1", "tick": "Gesendet"},
+                                                            {"clock": "2", "tick": "Gesendet"}]}))
+    cl.send_photos(LEAD, ["/tmp/a.jpg", "/tmp/b.jpg"])
+    [call] = fake.calls
+    assert call["timeout"] == BR.PHOTOS_FLOOR_SEC + 2 * BR.HANDSET_ONE_PHOTO_SEC > C.BRIDGE_TIMEOUT_SEC
+
+
 def test_send_gallery_posts_the_phone_local_paths_and_caption_and_returns_the_body():
     """TASK-131 round 7 gallery redesign (Ivan, 2026-09-22): one message, several photos, a shared
     caption -- same mechanism-proof shape as send_photos, its own route."""
@@ -426,6 +452,20 @@ def test_send_gallery_surfaces_a_non_200_as_a_bridge_error():
     assert caught.value.status_code == 500
 
 
+def test_send_gallery_carries_the_derived_media_budget_and_the_captions_typing_time():
+    """TASK-247: send_gallery called _request with no timeout= at all, so it inherited the bare 90s
+    client floor -- GALLERY_BUDGET_SEC alone (187s) already exceeds that floor with an EMPTY
+    caption, before a captioned gallery's own typing time is even added (mirrors
+    test_send_timeout_carries_the_flock_wait_every_sibling_budget_already_has, the same gap on the
+    three routes TASK-243 did not reach)."""
+    cl, fake = build((200, {"ok": True, "at": "x", "clock": "02:00", "tick": "Gesendet"}))
+    caption = "Unsere Klinik in Passau" * 10
+    cl.send_gallery(LEAD, ["/tmp/a.jpg"], caption=caption)
+    [call] = fake.calls
+    assert call["timeout"] == (BR.GALLERY_BUDGET_SEC
+                               + len(caption) / BR.EXECUTOR_SLOWEST_CHARS_PER_SEC) > C.BRIDGE_TIMEOUT_SEC
+
+
 def test_send_document_posts_the_phone_local_path_and_caption_and_returns_the_body():
     """TASK-131 round 7 (Ivan, 2026-09-23): a file, any type -- same mechanism-proof shape as
     send_photos/send_gallery, its own route."""
@@ -459,6 +499,17 @@ def test_send_document_surfaces_a_non_200_as_a_bridge_error():
     with pytest.raises(BR.BridgeError) as caught:
         cl.send_document(LEAD, "/tmp/Lebenslauf.pdf")
     assert caught.value.status_code == 500
+
+
+def test_send_document_carries_the_derived_media_budget_not_the_bare_floor():
+    """TASK-247: send_document called _request with no timeout= at all, so it inherited the bare
+    90s client floor -- smaller than DOCUMENT_BUDGET_SEC alone, before its own caption is typed."""
+    cl, fake = build((200, {"ok": True, "at": "x", "clock": "02:50", "tick": "Gesendet"}))
+    caption = "Bitte pruefen" * 10
+    cl.send_document(LEAD, "/tmp/Lebenslauf.pdf", caption=caption)
+    [call] = fake.calls
+    assert call["timeout"] == (BR.DOCUMENT_BUDGET_SEC
+                               + len(caption) / BR.EXECUTOR_SLOWEST_CHARS_PER_SEC) > C.BRIDGE_TIMEOUT_SEC
 
 
 def test_a_template_with_buttons_is_refused_not_flattened():
@@ -590,3 +641,63 @@ def test_resolve_op_posts_to_the_ops_resolve_path_and_is_never_queued():
     assert len(fake.calls) == 1
     assert fake.calls[0]["url"].endswith(f"{BR.OPS_PATH}/{op_id}/resolve")
     assert fake.calls[0]["method"] == "POST"
+
+
+def test_when_the_caller_gives_up_it_best_effort_cancels_the_still_queued_op():
+    """TASK-243: _await_op's own timeout means this caller has stopped waiting on op_id -- but
+    until this fix nothing ever told the executor that, so a ticket merely slow to be claimed
+    (lock contention, a deep queue) went on to be claimed and typed into a real chat regardless.
+    Without the fix the raise below is the last call this client ever makes for op_id; with it, a
+    cancel POST is. A URL-keyed fake (not the fixed-answer-queue FakeExecutor above) because the
+    op is never claimed here -- every GET poll answers ``queued`` for as long as the deadline
+    takes to arrive, an unknown count in advance."""
+    op_id = "op." + "5" * 24
+    clock = {"t": datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)}
+    calls = []
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        calls.append({"method": method, "url": url})
+        if url.endswith(f"{BR.OPS_PATH}/{op_id}/cancel"):
+            return 200, {"ok": True, "op_id": op_id, "cancelled": True}
+        return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+    def now():
+        return clock["t"]
+
+    def advance(seconds):
+        clock["t"] += timedelta(seconds=seconds)
+
+    cl = BR.Client(transport=transport, base_url=BASE, token="tok", now=now, sleep=advance)
+
+    with pytest.raises(BR.BridgeError) as caught:
+        cl._request("POST", BR.MESSAGES_PATH, {"x": 1}, timeout=1.0)
+    assert caught.value.code == BR.CODE_ANSWER_TIMEOUT
+
+    cancel_calls = [c for c in calls if c["url"].endswith(f"{BR.OPS_PATH}/{op_id}/cancel")]
+    assert len(cancel_calls) == 1
+    assert cancel_calls[0]["method"] == "POST"
+
+
+def test_the_cancel_itself_failing_never_hides_the_real_answer_timeout():
+    """The cancel is a courtesy on top of an already-decided outcome (TASK-243): if the executor
+    is unreachable for the cancel call too, the caller still hears about the lost answer, not
+    about the cancel's own failure."""
+    op_id = "op." + "6" * 24
+    clock = {"t": datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)}
+
+    def transport(method, url, headers=None, data=None, timeout=None):
+        if url.endswith(f"{BR.OPS_PATH}/{op_id}/cancel"):
+            raise BR.BridgeUnreachable("no route to host")
+        return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+    def now():
+        return clock["t"]
+
+    def advance(seconds):
+        clock["t"] += timedelta(seconds=seconds)
+
+    cl = BR.Client(transport=transport, base_url=BASE, token="tok", now=now, sleep=advance)
+
+    with pytest.raises(BR.BridgeError) as caught:
+        cl._request("POST", BR.MESSAGES_PATH, {"x": 1}, timeout=1.0)
+    assert caught.value.code == BR.CODE_ANSWER_TIMEOUT

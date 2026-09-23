@@ -285,6 +285,33 @@ def test_a_failed_send_pins_nothing(wa):
         assert ST.rail_of(c, LEAD) is None
 
 
+def test_a_body_mismatch_replay_is_never_recorded_as_the_new_text(wa):
+    """TASK-246: a catch-up re-drive that regenerates a bubble's wording reuses that bubble's key
+    (bridge_ids.reply_key), and the executor answers 200 with the FIRST body's tick plus
+    ``body_mismatch: True`` (first-body-wins, TASK-130) -- it never re-sends the new wording. Before
+    the fix, ``_send`` trusted the bare 200 and wrote the regenerated text into wa_messages as if it
+    had gone out; this pins nothing was ever delivered under that text."""
+    class MismatchBridge(FakeBridge):
+        def __init__(self):
+            super().__init__()
+            self.last_send = None
+
+        def send_text(self, to_e164, body):
+            wamid = super().send_text(to_e164, body)
+            self.last_send = {"ok": True, "client_msg_id": wamid, "state": "sent",
+                              "replayed": True, "body_mismatch": True}
+            return wamid
+
+    cl = MismatchBridge()
+    with ST.db() as c:
+        t = _thread(c, last_inbound_hours=1, rail="bridge")
+        with pytest.raises(RuntimeError, match="already delivered with a different body"):
+            WAPI._send(c, t, ["Guten Tag, hier noch einmal!"], [], client=cl, action="reply",
+                      turn_key=TURN)
+        out = [m for m in ST.history(c, LEAD) if m["direction"] == "out"]
+    assert out == [], "the regenerated wording must never be recorded as a sent message"
+
+
 def test_a_reopen_template_pins_the_rail_it_went_out_on(wa):
     with ST.db() as c:
         t = _thread(c, last_inbound_hours=48)

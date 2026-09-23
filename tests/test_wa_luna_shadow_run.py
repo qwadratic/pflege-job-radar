@@ -116,6 +116,40 @@ def test_shadow_turn_luna_brain_never_resumes_the_live_session(db, monkeypatch):
     assert row["bubbles"] == ["Hallo 🙂"]
 
 
+def test_a_dry_run_asks_for_no_send_per_turn_and_leaves_the_process_environment_alone(db, monkeypatch):
+    """shadow_turn used to do this by assigning os.environ["WA_LUNA_NO_SEND"] = "1", which never
+    unset. In a long-lived process -- the uvicorn worker that serves the webhook -- one dry run
+    anywhere turned every LATER real turn's show_clinic_photos into a silent no-op that still
+    reported success, because tools_server.py reads that variable and returns dry_run=True. The
+    flag is now an argument on the turn, so it dies with the turn."""
+    import os
+
+    monkeypatch.setattr(C, "BRAIN", "luna")
+    _seed_thread(db, "+49111")
+    ST.record_inbound(db, "+49111", "wamid.1", "Hallo")
+    before = os.environ.get(LB.NO_SEND_ENV)
+
+    client = fake_client(_out())
+    SR.shadow_turn(db, "+49111", client=client)
+
+    assert client.no_send is True, "the dry run must reach the spawned tools server"
+    assert os.environ.get(LB.NO_SEND_ENV) == before, \
+        "a dry run must not leave WA_LUNA_NO_SEND set for whatever runs next in this process"
+
+
+def test_a_real_turn_after_a_dry_run_in_the_same_process_still_sends(db, monkeypatch):
+    """The consequence the test above protects against, stated as its own case: the webhook worker
+    handles a dry run and then a real candidate's turn, in that order, in one process."""
+    monkeypatch.setattr(C, "BRAIN", "luna")
+    _seed_thread(db, "+49111")
+    ST.record_inbound(db, "+49111", "wamid.1", "Hallo")
+    SR.shadow_turn(db, "+49111", client=fake_client(_out()))
+
+    real = fake_client(_out())
+    LB.turn("Hallo", {"phone": "+49111", "slots": {}, "asked": []}, client=real)
+    assert real.no_send is False, "the next real turn must be allowed to send"
+
+
 def test_shadow_turn_luna_brain_reports_the_gate_and_stage(db, monkeypatch):
     monkeypatch.setattr(C, "BRAIN", "luna")
     _seed_thread(db, "+49111", slots={"qualification_path": "urkunde"}, last_inbound_at=ST.now_iso())

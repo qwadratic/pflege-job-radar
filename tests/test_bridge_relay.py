@@ -4,6 +4,7 @@ No phone, no ssh, no webhook. What is asserted here is what a candidate would fe
 a message that never gets answered because its id collided with someone else's, a message answered
 twice because two doors minted two ids for it, and a message the relay walked past.
 """
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -142,7 +143,26 @@ def test_a_collapsed_count_is_a_summary_and_never_a_message():
                  "        android.title=String (+49 170 0000001)\n"
                  "        android.text=String (2 neue Nachrichten)\n"
                  "        android.isGroupConversation=Boolean (false)\n")
-    assert I.notification_messages(collapsed, tz=BERLIN, resolve=resolver)[0] == []
+    messages, unresolved = I.notification_messages(collapsed, tz=BERLIN, resolve=resolver)
+    assert messages == []
+    # A suppressed summary is not silence: it has to land in the journal and the health counter,
+    # not evaporate the way an empty `unresolved` here would (TASK-254).
+    assert unresolved == [("+49 170 0000001", "coalesced summary text, no individual message available")]
+
+
+def test_a_collapsed_count_of_exactly_one_is_still_a_summary_and_never_a_message():
+    """German always inflects the noun for count=1 ("1 neue Nachricht"), not "1 neue Nachrichten" --
+    and a thread's very first inbound message is, by construction, a count of exactly one. Before
+    TASK-254's fix, this singular text missed _SUMMARY and fell through the fallback at :235,
+    minting an id and storing "1 neue Nachricht" as if the candidate had typed it."""
+    collapsed = ("    NotificationRecord(0x9: pkg=com.whatsapp user=UserHandle{0} id=9 tag=z "
+                 "key=0|com.whatsapp|9|null|10148appImportanceLocked=false: Notification(x)\n"
+                 "        android.title=String (+49 170 0000001)\n"
+                 "        android.text=String (1 neue Nachricht)\n"
+                 "        android.isGroupConversation=Boolean (false)\n")
+    messages, unresolved = I.notification_messages(collapsed, tz=BERLIN, resolve=resolver)
+    assert messages == []
+    assert unresolved == [("+49 170 0000001", "coalesced summary text, no individual message available")]
 
 
 def test_one_message_with_a_summary_record_beside_it_is_one_message():
@@ -415,6 +435,8 @@ def test_a_webhook_that_handled_nothing_stops_the_relay_rather_than_walking_past
     with pytest.raises(RP.RelayError) as caught:
         relay.deliver(outbox_item(1, messages[0]))
     assert "WA_BRIDGE_PHONE_NUMBER_ID" in str(caught.value)
+    assert "outbox #1" in str(caught.value), "an operator stuck on this alarm needs the item, not just the cause"
+    assert messages[0].inbound_id in str(caught.value)
     assert cursor.position() == 0
 
 
@@ -450,3 +472,94 @@ def test_a_borrowed_tunnel_is_announced_once_and_not_every_three_seconds():
         forward.open()
     assert lines == ["tunnel borrowed: 127.0.0.1:18793 is already forwarded"]
     assert forward.borrowed and forward.proc is None, "and no child of ours was started"
+
+
+# --- TASK-255: nothing consumed the watcher heartbeat / /v1/health ------------------------------
+def _health_body(*, watcher_alive=True, watcher_last_ok_at, oldest_unacked_at=None):
+    return {"watcher": {"alive": watcher_alive, "last_ok_at": watcher_last_ok_at},
+            "inbound": {"oldest_unacked_at": oldest_unacked_at}}
+
+
+def _ago(seconds):
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+
+
+def test_check_watcher_alarm_is_silent_on_a_healthy_body(cursor):
+    relay = FakeRelay(cursor, [], [])
+    lines = []
+    relay.log = lines.append
+    relay.health = lambda: (_health_body(watcher_last_ok_at=_ago(1)), 0.01)
+    assert relay.check_watcher_alarm() == []
+    assert lines == []
+
+
+def test_check_watcher_alarm_fires_on_a_stale_last_ok_at(cursor):
+    relay = FakeRelay(cursor, [], [])
+    lines = []
+    relay.log = lines.append
+    stale = _ago(RP.WATCHER_STALE_SEC + 30)
+    relay.health = lambda: (_health_body(watcher_last_ok_at=stale), 0.01)
+    problems = relay.check_watcher_alarm()
+    assert problems and "last_ok_at" in problems[0]
+    assert any(line.startswith("ALARM:") for line in lines)
+
+
+def test_check_watcher_alarm_fires_when_alive_is_false(cursor):
+    relay = FakeRelay(cursor, [], [])
+    lines = []
+    relay.log = lines.append
+    relay.health = lambda: (_health_body(watcher_alive=False, watcher_last_ok_at=_ago(1)), 0.01)
+    problems = relay.check_watcher_alarm()
+    assert any("alive" in p for p in problems)
+    assert any(line.startswith("ALARM:") for line in lines)
+
+
+def test_check_watcher_alarm_fires_on_an_old_inbound_backlog(cursor):
+    relay = FakeRelay(cursor, [], [])
+    lines = []
+    relay.log = lines.append
+    old = _ago(RP.INBOUND_BACKLOG_STALE_SEC + 30)
+    relay.health = lambda: (
+        _health_body(watcher_last_ok_at=_ago(1), oldest_unacked_at=old), 0.01)
+    problems = relay.check_watcher_alarm()
+    assert any("unacked" in p for p in problems)
+    assert any(line.startswith("ALARM:") for line in lines)
+
+
+def test_check_watcher_alarm_never_raises_when_health_itself_fails(cursor):
+    """A stuck executor (the exact class of failure this alarm exists to catch) must not take the
+    check itself out -- it has to report the failure, not crash the drain loop that calls it."""
+    relay = FakeRelay(cursor, [], [])
+    lines = []
+    relay.log = lines.append
+
+    def broken_health():
+        raise RP.RelayError("executor health is 500: {}")
+
+    relay.health = broken_health
+    problems = relay.check_watcher_alarm()
+    assert problems
+    assert any(line.startswith("ALARM:") for line in lines)
+
+
+class _StopAfterOnePass:
+    """A fake ``stop`` event that lets Relay.run()'s while-loop body execute exactly once."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def is_set(self):
+        self.calls += 1
+        return self.calls > 1
+
+
+def test_relay_run_asks_the_watcher_alarm_check_on_its_own_cadence(cursor, monkeypatch):
+    """Before TASK-255, Relay.run() called drain_once() every pass and never health() -- the
+    reachable gap the task names. This drives run() for exactly one loop body and proves the new
+    call is actually wired in, not just defined."""
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    checks = []
+    relay.check_watcher_alarm = lambda: checks.append(1)
+    relay.run(stop=_StopAfterOnePass())
+    assert checks == [1]

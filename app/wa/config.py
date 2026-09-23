@@ -86,6 +86,18 @@ BRIDGE_INBOUND_TOKEN = os.environ.get("WA_BRIDGE_INBOUND_TOKEN", "").strip()
 # make _number_matches accept every number's payload instead of ours.
 BRIDGE_PHONE_NUMBER_ID = os.environ.get("WA_BRIDGE_PHONE_NUMBER_ID", "").strip()
 
+# Where show_clinic_photos (app/wa/luna/tools_server.py) stages a downloaded clinic photo before
+# BR.Client().send_gallery can reach it -- an ssh alias + a directory on the SAME handset machine
+# BRIDGE_URL above talks to over HTTP, but reached directly over ssh/scp instead, so it is its own
+# pair rather than reusing BRIDGE_URL (a different leg, a different protocol) or
+# WA_BRIDGE_SSH_HOST (bridge/relay_pull.py's own alias for the inbound pull tunnel, read from a
+# different env file). TASK-272: these were bare string literals in tools_server.py with no env
+# override and no readiness() entry, so a host-alias or username change turned every photo send
+# into a ToolError with nothing in the health view showing why. Defaults match the old literals, so
+# an unconfigured deploy is unchanged.
+LUNA_MEDIA_HOST = os.environ.get("WA_LUNA_MEDIA_HOST", "").strip() or "macmini"
+LUNA_MEDIA_DIR = os.environ.get("WA_LUNA_MEDIA_DIR", "").strip() or "/home/cursorworker1/wa_luna_media"
+
 # TASK-122: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-224)
 # may recover a typed "ja"/"1" into app/wa/luna_brain.CONSENT_YES_ID -- the one place a typed reply
 # stands in for a tap luna_brain.py otherwise requires. Plan ADDENDUM item 5 (Ivan, 2026-09-21):
@@ -130,8 +142,44 @@ LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "cla
 # 60s (this repo's original default) started timing out for real once TASK-166 added a tool
 # call in the loop and bumped effort to "high" -- both add real latency on top of the base
 # reply time, observed live during TASK-172's E2E run (subprocess.TimeoutExpired at 60s on an
-# otherwise-ordinary turn). 120s gives that room without hiding a genuinely stuck process forever.
-LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
+# otherwise-ordinary turn). 120s gave that room for an ordinary turn, but TASK-271 found nobody
+# had ever checked it against the one tool call that costs the most: show_clinic_photos
+# (app/wa/luna/tools_server.py) downloads and stages up to 5 photos and then makes ONE
+# send_gallery call that is, on its own, already budgeted at GALLERY_BUDGET_SEC = 187s
+# (app/wa/bridge.py) for an EMPTY caption -- more than the whole 120s this subprocess.run() gave
+# the CLI to finish the entire turn in. A killed subprocess.run() does not stop that send either:
+# it kills the direct `claude` child only (no process group), so the MCP tools_server.py
+# grandchild the CLI spawned via --mcp-config keeps running the call to completion, including its
+# own wa_messages row, orphaned and unaware the turn that started it was declared failed.
+# Derived the same way DESTROY_BUDGET_SEC is (app/wa/bridge.py), term by term, not a round number
+# picked apart from the tool that runs inside it. This module cannot import app/wa/bridge.py to
+# read GALLERY_BUDGET_SEC directly -- bridge.py itself imports this module first, and config.py
+# is meant to be the leaf everything else depends on -- so the terms are literal copies of
+# figures bridge.py/tools_server.py already publish in their own comments, and
+# tests/test_wa_luna_brain.py cross-checks them against bridge.py's own constants so a future
+# change to either side cannot drift out of sync silently the way this one did:
+#   the clinic lookup        tools_server.py _fetch_clinic_expose's own urlopen timeout, 15s
+#   worst-case photo count   tools_server.py show_clinic_photos slices photo_paths[:5] -- 5
+#   per photo, download+stage  _download_to_temp timeout 20s + _stage_on_mini's ssh mkdir
+#                            timeout 20s + scp timeout 30s = 70s, paid once per photo, before any
+#                            send starts
+#   the one gallery send     GALLERY_BUDGET_SEC = 187s (app/wa/bridge.py), empty caption
+# 15 + 5*70 + 187 = 552s. This adds nothing for the model's own generation time before or after
+# the tool call -- LUNA_TIMEOUT_SEC wraps the whole `claude -p` subprocess, not just one tool --
+# because unlike the figures above there is no measured number for that yet; if it turns out to
+# matter, measure it live the way TASK-172 measured the original 60s overrun, do not guess it
+# here. Real cost of raising this floor: an ordinary, genuinely hung turn that never calls
+# show_clinic_photos at all now also waits up to 552s before this call gives up on it, where it
+# used to wait 120s -- unavoidable as long as one constant covers every turn shape.
+_LUNA_PHOTO_EXPOSE_FETCH_SEC = 15
+_LUNA_PHOTO_MAX_COUNT = 5
+_LUNA_PHOTO_DOWNLOAD_STAGE_SEC = 70
+_LUNA_PHOTO_GALLERY_BUDGET_SEC = 187   # app/wa/bridge.py GALLERY_BUDGET_SEC, copied not imported
+_LUNA_TIMEOUT_DEFAULT_SEC = (_LUNA_PHOTO_EXPOSE_FETCH_SEC
+                             + _LUNA_PHOTO_MAX_COUNT * _LUNA_PHOTO_DOWNLOAD_STAGE_SEC
+                             + _LUNA_PHOTO_GALLERY_BUDGET_SEC)
+LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", str(_LUNA_TIMEOUT_DEFAULT_SEC))
+                      or str(_LUNA_TIMEOUT_DEFAULT_SEC))
 
 # The refusal classifier (app/wa/luna/refusal.py, TASK-155, Ivan 2026-09-22): a small-model second
 # opinion on whether the candidate's own text is an unambiguous refusal to continue the conversation,
@@ -226,11 +274,13 @@ FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
 # proactive nudge during a candidate's likely sleep window -- this scaled-down version lacked that
 # entirely until now. One fixed local-time window in one timezone, not per-candidate, since this
 # board has no per-candidate timezone data (it is Bavaria-only, same reasoning as the rest of this
-# harness). Hours are 0-23; START > END means the window wraps past midnight (default 21 -> 9).
+# harness). Hours are 0-23; START > END means the window wraps past midnight (default 21 -> 8).
+# END is 8, not 9: Ivan widened the active window by an hour on 2026-09-23 ("давай начинать с
+# восьми") -- Pflege shift handover is early and a candidate reading at 08:00 is awake, not asleep.
 # Deliberately NOT applied to catchup.py (TASK-182) -- a reply owed to something the candidate
 # already said is never proactive, so it is never delayed by this.
 QUIET_HOURS_START = int(os.environ.get("WA_QUIET_HOURS_START", "21") or "21")
-QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "9") or "9")
+QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "8") or "8")
 QUIET_HOURS_TZ = os.environ.get("WA_QUIET_HOURS_TZ", "Europe/Berlin").strip() or "Europe/Berlin"
 
 # Voice-note transcription (TASK-210, app/wa/stt.py), WA_BRAIN=luna only. The old system's setup
@@ -261,6 +311,10 @@ def readiness():
            # cannot push a reply back (TASK-123), and an operator has to see which half is missing.
            "bridge_inbound_ready": checks["bridge_inbound_token"],
            "bridge_phone_number_id": BRIDGE_PHONE_NUMBER_ID,
+           # Neither is a secret (a host alias, a directory path) -- shown directly, the same way
+           # bridge_phone_number_id is above, so an operator can see what show_clinic_photos will
+           # actually ssh/scp to without reading tools_server.py (TASK-272).
+           "luna_media_host": LUNA_MEDIA_HOST, "luna_media_dir": LUNA_MEDIA_DIR,
            "stt_ready": checks["openai_api_key"], "stt_model": STT_MODEL}
     if BRAIN == "luna":
         out["luna_model"] = LUNA_MODEL

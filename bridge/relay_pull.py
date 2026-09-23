@@ -38,6 +38,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import envelope as EV
+from . import ledger as L
 
 #: The executor's loopback port on the mini (bridge/server.py DEFAULT_PORT).
 REMOTE_PORT = 8793
@@ -54,6 +55,22 @@ TUNNEL_READY_SEC = 20.0
 #: merely waiting for a slow adb, and the probe reports it as unreachable -- the same mismatch
 #: between a client's patience and the server's real work that lost a delete on 2026-09-21.
 HEALTH_TIMEOUT_SEC = 75.0
+#: How often Relay.run() asks executor.health() for the watcher's own heartbeat, on top of the
+#: drain cadence above (TASK-255: last_ok_at/alive/inbound_backlog already existed and, outside a
+#: hand-run --probe, nothing ever asked). Slower than INTERVAL_SEC on purpose: health() can cost up
+#: to HEALTH_TIMEOUT_SEC when the phone is genuinely gone, so asking on every drain pass would make
+#: the alarm itself a source of the stalls it exists to catch.
+ALARM_CHECK_INTERVAL_SEC = 60.0
+#: How stale InboundWatcher.heartbeat()'s last_ok_at may sit before this counts as dead rather than
+#: quiet (TASK-255). The watcher polls every 5s (bridge/watcher.py::DEFAULT_INTERVAL_SEC); a live
+#: one touches last_ok_at every cycle, so this is several missed cycles' worth of slack. A first
+#: number so the alarm exists at all, not a reviewed one -- TASK-132 (still To Do) is where a
+#: considered threshold and an actual alert channel belong.
+WATCHER_STALE_SEC = 60.0
+#: How old the oldest unacked inbound row may sit before this counts as delivery having stopped
+#: rather than the ordinary gap to the next drain (INTERVAL_SEC above). Same caveat as
+#: WATCHER_STALE_SEC: a first number, not a considered one.
+INBOUND_BACKLOG_STALE_SEC = 60.0
 
 
 class RelayError(RuntimeError):
@@ -267,6 +284,40 @@ class Relay:
             raise RelayError(f"executor health is {status}: {body}")
         return body, elapsed
 
+    def check_watcher_alarm(self):
+        """Ask health() for the watcher heartbeat and log loudly if it looks dead (TASK-255):
+        ``last_ok_at`` stale, ``alive`` false, or the oldest unacked inbound row sitting past
+        INBOUND_BACKLOG_STALE_SEC. -> the problems found (empty if none). Never raises past this --
+        a bug or a transport failure here must not take down the drain loop it only supplements."""
+        try:
+            body, _elapsed = self.health()
+        except Exception as exc:  # our own bug or a transport failure, named, never swallowed
+            self.log(f"ALARM: could not reach the executor for the watcher health check: "
+                     f"{type(exc).__name__}: {exc}")
+            return [f"health check failed: {exc}"]
+        now = datetime.now(timezone.utc)
+        watcher = body.get("watcher") or {}
+        problems = []
+        if watcher.get("alive") is False:
+            problems.append("watcher.alive is false")
+        last_ok_at = watcher.get("last_ok_at")
+        if last_ok_at is None:
+            problems.append("watcher.last_ok_at has never been set")
+        else:
+            stale = L.age_sec(last_ok_at, now)
+            if stale > WATCHER_STALE_SEC:
+                problems.append(f"watcher.last_ok_at is {stale:.0f}s old "
+                                f"(over {WATCHER_STALE_SEC:.0f}s)")
+        oldest_unacked_at = (body.get("inbound") or {}).get("oldest_unacked_at")
+        if oldest_unacked_at is not None:
+            backlog_age = L.age_sec(oldest_unacked_at, now)
+            if backlog_age > INBOUND_BACKLOG_STALE_SEC:
+                problems.append(f"oldest unacked inbound row is {backlog_age:.0f}s old "
+                                f"(over {INBOUND_BACKLOG_STALE_SEC:.0f}s)")
+        if problems:
+            self.log("ALARM: watcher heartbeat looks dead -- " + "; ".join(problems))
+        return problems
+
     def fetch(self):
         """-> the outbox items after our cursor. The ack rides along, so the mini can sweep."""
         position = self.cursor.position()
@@ -291,11 +342,13 @@ class Relay:
                      "X-Bridge-Delivery-Id": payload["inbound_id"]},
             timeout=60.0)
         if status != 200:
-            raise RelayError(f"bridge-webhook answered {status}: {answer}")
+            raise RelayError(f"bridge-webhook answered {status} for outbox #{item['id']} "
+                             f"(inbound_id={payload['inbound_id']}): {answer}")
         results = answer.get("results") or []
         if not results:
             raise RelayError(
-                "bridge-webhook accepted the payload but handled no message "
+                f"bridge-webhook accepted outbox #{item['id']} (inbound_id={payload['inbound_id']}) "
+                "but handled no message "
                 f"(skipped={answer.get('skipped')}, events={answer.get('events')}). The cursor "
                 "stays where it is. Check WA_BRIDGE_PHONE_NUMBER_ID against the server's.")
         verdict = results[0].get("status") or "accepted"
@@ -316,6 +369,9 @@ class Relay:
     def run(self, *, interval=INTERVAL_SEC, stop=None):
         self.log(f"relay: cursor at {self.cursor.position()}, every {interval:.0f}s")
         backoff = interval
+        # TASK-255: checked once immediately, not only after the first ALARM_CHECK_INTERVAL_SEC --
+        # a relay that starts up already blind should say so now, not wait a full interval to ask.
+        next_alarm_check = time.monotonic()
         while stop is None or not stop.is_set():
             try:
                 self.drain_once()
@@ -330,6 +386,9 @@ class Relay:
                 self.log(f"relay: {type(exc).__name__}: {exc}")
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
+            if time.monotonic() >= next_alarm_check:
+                self.check_watcher_alarm()
+                next_alarm_check = time.monotonic() + ALARM_CHECK_INTERVAL_SEC
             time.sleep(backoff)
 
     def close(self):

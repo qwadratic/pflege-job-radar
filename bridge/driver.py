@@ -158,7 +158,26 @@ class PhoneDriver:
         raise NotImplementedError
 
     def read_open_thread(self, phone):
-        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now."""
+        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now.
+        CALLED ONLY RIGHT AFTER OUR OWN SEND -- see AdbDriver.read_open_thread's own docstring for
+        why that anchor is what makes its day-derivation sound."""
+        raise NotImplementedError
+
+    def read_cold_thread(self, phone):
+        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now, for a
+        caller with no just-sent bubble of its own to anchor "today" against (TASK-231) -- see
+        AdbDriver.read_cold_thread's own docstring for the derivation this uses instead."""
+        raise NotImplementedError
+
+    def current_chat_phone(self):
+        """-> E.164 for whatever conversation is open right now, or None (TASK-234).
+
+        For a caller that finds a chat open without having opened it itself -- unlike
+        ``open_chat``, which is GIVEN the phone and only verifies the header against it, this one
+        has nothing to verify against and has to read the header off the screen and resolve it the
+        same way a notification title is. None when nothing sound can be said: no header drawn, or
+        a display name shared by more than one contact (``bridge/inbound.py::Unresolvable``).
+        """
         raise NotImplementedError
 
     def read_media_evidence(self):
@@ -281,12 +300,17 @@ class FakeDriver(PhoneDriver):
     proof for the flock rule: one acquire/release pair per bubble, nothing in between.
     """
 
-    def __init__(self, *, ticks=None, thread=None, inbound=None, open_thread=None, chats=None,
-                 media_files=None):
+    def __init__(self, *, ticks=None, thread=None, inbound=None, open_thread=None,
+                 cold_thread=None, chats=None, media_files=None):
         self.ticks = list(ticks or [])
         self.thread = list(thread or [])
         self.inbound = list(inbound or [])
         self.open_thread = list(open_thread or [])   # what the post-send thread read hands back
+        # what a cold piggyback read (TASK-231: Operations.read_thread, ._read_evidence_for)
+        # hands back -- scripted separately from ``open_thread`` because the two callers have no
+        # send of their own to anchor a real day-derivation with; a test sets this directly, or
+        # appends to it from ``read_hook`` to script a message arriving mid-read.
+        self.cold_thread = list(cold_thread or [])
         self.unresolved = []
         # what read_media_evidence() hands back for the chat currently open (TASK-131 round 6) --
         # a test scripts it per phone via ``media_evidence_by_phone``, keyed the same way open_chat
@@ -483,6 +507,20 @@ class FakeDriver(PhoneDriver):
             raise AssertionError("read_open_thread outside the lock")
         out, self.open_thread = list(self.open_thread), []
         return out, []
+
+    def read_cold_thread(self, phone):
+        if not self.lock_held:
+            raise AssertionError("read_cold_thread outside the lock")
+        out, self.cold_thread = list(self.cold_thread), []
+        return out, []
+
+    def current_chat_phone(self):
+        if not self.lock_held:
+            raise AssertionError("current_chat_phone outside the lock")
+        # A test scripts what the screen would resolve to directly -- ``_open_phone`` doubles as
+        # that script (set by open_chat for the mediated paths, or by a test standing in for an
+        # out-of-band/manual open the same way it already sets ``focus_value``).
+        return self._open_phone
 
     def read_media_evidence(self):
         if not self.lock_held:

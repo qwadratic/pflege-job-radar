@@ -39,6 +39,15 @@ ssh macmini 'systemctl --user daemon-reload && systemctl --user enable --now pfl
 | `WA_BRIDGE_PER_NUMBER_DAILY_CAP` | **required, no default.** See below. |
 | `WA_BRIDGE_WATCH_INTERVAL_SEC` | how often the watcher asks the notification shade. 5. |
 | `WA_BRIDGE_DEBUG_CAPTURE` | pre/post/error screenshots + a screen recording per queued op, under `WA_BRIDGE_STATE/{shots,recordings}`, kept 14 days and reviewed before deletion (TASK-228/230). **On by default** since TASK-230 (review-before-delete made it safe to leave running); set to `0` to disable. |
+| `WA_LUNA_MEDIA_DIR` | where `app/wa/luna/tools_server.py`'s `show_clinic_photos` scp's clinic photos in from the VPS, straight over ssh, never through this executor's own routes. Must equal the VPS's `rail.env` value of the same name (TASK-272). Defaults to `/home/cursorworker1/wa_luna_media` if unset, which is what every deploy before this variable existed already used. Swept hourly by age alone, kept 14 days (`bridge/server.py::LUNA_MEDIA_RETENTION_DAYS`) — these files carry no `phone_ops` row, so they never go through the review-before-delete screenshot/recording sweep above. |
+| `WA_BRIDGE_RAIL_NUMBER` | the msisdn this handset sends from, reported as `rail.number` in `GET /v1/health` and carried into the inbound envelope by `bridge/relay_pull.py`. **Unset on this deploy and that is the honest state** — the number registered to WhatsApp on `huawei_p30_lite_01` is recorded nowhere and two read-only settles both need a human (TASK-136). Unset reads as `null` plus `msisdn_verified: false`, never as a guess. |
+| `WA_BRIDGE_OPS_POLL_SEC` | how often the FIFO ops dispatcher claims the next queued row. Defaults to `bridge/dispatcher.py::DEFAULT_POLL_SEC`. |
+| `WA_BRIDGE_RECONCILE_INTERVAL_SEC` | how often `ReconcileWatcher` opens and reads every chat still carrying an unread badge — the third inbound door, the one that catches what the notification shade missed while a human was holding the phone. 180. |
+| `WA_BRIDGE_UNRESOLVED_SEND_INTERVAL_SEC` | how often sends still `ATTEMPTING`/`UNCONFIRMED` are re-checked against the screen. 60. |
+| `WA_BRIDGE_IDENTITY_INTERVAL_SEC` | how often `IdentityWatcher` tries to attach queued media files to a phone number. 15. |
+| `WA_BRIDGE_MEDIA_INTERVAL_SEC` | how often the media watcher walks `WA_MEDIA_ROOT` for newly arrived inbound files. 5. |
+| `WA_BRIDGE_BROADCAST_POLL_SEC` | how often the broadcast runner picks up the next queued recipient. |
+| `WA_BRIDGE_ACTIVE_HOURS_OVERRIDE` | `LO-HI` hours widening `bridge/governor.py::MINI_FLOOR.active_hours` past its built-in 9-20 fuse. Opt-in, env-only, never a change to the fuse's own default. **This deploy has `8-24`**, which is the handset side of Ivan's 2026-09-23 decision to open the day at 08:00; the VPS side of the same decision is `QUIET_HOURS_END` in `app/wa/config.py`, and the two must agree or the earlier of them silently wins. |
 
 Python 3.12 from the distribution, stdlib only. No virtualenv, no pip install, nothing from our
 repo's `requirements.txt` — `bridge/` imports nothing outside the standard library, which is the
@@ -105,6 +114,8 @@ different sources. One file, read by **both** `pflege-wa.service` (through the d
 | `WA_BRIDGE_PHONE_NUMBER_ID` | `pflege-wa-bridge-huawei01`. What the relay writes into `metadata.phone_number_id` and what `api._number_matches` compares against — **the same variable on both sides is the only thing that keeps them equal.** Deliberately not a numeric: a forged Meta id would be provenance forgery into a column whose reader documents itself as Meta's. A value that does not match makes our own server skip the message as "another WhatsApp number's change", silently as far as a candidate is concerned. |
 | `WA_BRIDGE_TOKEN` | VPS to executor, `Authorization: Bearer`. Must equal the handset machine's `bridge.env`. |
 | `WA_BRIDGE_INBOUND_TOKEN` | relay to our own webhook, `X-Pflege-Bridge-Token`. |
+| `WA_LUNA_MEDIA_HOST` | the ssh alias `app/wa/luna/tools_server.py`'s `show_clinic_photos` stages clinic photos onto — the same handset machine as `WA_BRIDGE_URL` above, reached directly over ssh/scp rather than through the executor's HTTP surface, so it is its own variable rather than reusing `WA_BRIDGE_URL` or `relay.env`'s `WA_BRIDGE_SSH_HOST` (TASK-272). Defaults to `macmini`, the literal every deploy before this variable existed already used. |
+| `WA_LUNA_MEDIA_DIR` | where those photos land on the handset machine. Must equal the same variable in the handset machine's `bridge.env` (§1) — the sweep that ages them out runs there, not here. Defaults to `/home/cursorworker1/wa_luna_media`. |
 
 The two secrets are separate on purpose: a leak in one direction must not grant the other.
 `META_WHATSAPP_APP_SECRET` never leaves the VPS. The handset machine holds no Meta credential at

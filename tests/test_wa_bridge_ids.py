@@ -57,12 +57,21 @@ def test_each_bubble_of_one_turn_gets_its_own_key():
 @pytest.mark.parametrize("changed", [
     {"phone": OTHER},
     {"turn_key": "wamid.DIFFERENT"},
-    {"action": "media_ack"},
     {"bubble_index": 1},
 ])
 def test_every_component_changes_the_key(changed):
     base = {"phone": LEAD, "turn_key": TURN, "action": "reply", "bubble_index": 0}
     assert BI.reply_key(**base) != BI.reply_key(**{**base, **changed})
+
+
+def test_action_does_not_change_the_key():
+    """TASK-245: a catch-up re-drive answers the same inbound message with a second, independent
+    brain call, and that call's ``action`` is the model's own free-text choice (no enum on
+    OUTPUT_SCHEMA) -- it can legitimately differ from the first attempt's. If it changed the key,
+    the re-drive would mint brand-new client_msg_ids for bubbles already on the candidate's phone
+    and send the whole turn again."""
+    base = {"phone": LEAD, "turn_key": TURN, "action": "reply", "bubble_index": 0}
+    assert BI.reply_key(**base) == BI.reply_key(**{**base, "action": "media_ack"})
 
 
 def test_turn_key_has_no_default_and_must_be_passed_by_name():

@@ -5,6 +5,8 @@ non-delivery recorded as sent, a bubble at 07:53 in the morning. The driver itse
 tests/test_bridge_adb.py and the inbound ids in tests/test_bridge_relay.py.
 """
 import json
+import os
+import sqlite3
 import threading
 import time
 import urllib.error
@@ -167,17 +169,39 @@ def test_a_different_body_under_a_live_key_is_a_mismatch_and_sends_nothing(rig):
     assert rig.ledger.mismatch_count(KEY) == 1
 
 
-def test_a_different_body_on_a_resendable_key_is_a_409_and_sends_nothing(rig):
-    """No first-body result exists to replay, so the conflict is loud rather than quietly dropped."""
+def test_a_different_body_on_a_resendable_key_proceeds_and_sends(rig):
+    """TASK-236: NOT_ATTEMPTED means the first body demonstrably never reached the phone, so a
+    regenerated reply (catch-up's non-deterministic LB.turn on retry) must not wedge forever on
+    Rule 3 -- that rule protects a delivered body, and there is none here to protect."""
     rig.driver.fail_on_open = "conversation did not open"
     with pytest.raises(E.BridgeRefusal):
         rig.send(body="erste Fassung")
     assert rig.ledger.get(KEY).state == L.NOT_ATTEMPTED
     rig.driver.fail_on_open = None
-    with pytest.raises(E.BridgeRefusal) as caught:
-        rig.send(body="zweite Fassung")
-    assert (caught.value.code, caught.value.status_code) == ("idempotency_conflict", 409)
-    assert rig.driver.sent == []
+    status, body = rig.send(body="zweite Fassung")
+    assert status == 200 and body["state"] == "sent" and body["replayed"] is False
+    assert rig.driver.sent == ["zweite Fassung"]
+    # The disagreement is still recorded, only not refused on.
+    assert rig.ledger.mismatch_count(KEY) == 1
+    assert rig.ledger.get(KEY).state == L.SENT
+
+
+def test_a_resent_new_body_updates_the_stored_hash_so_its_own_replay_is_a_replay(rig):
+    """Without begin() refreshing body_sha256/body_len on the RESENDABLE path, the row would keep
+    the stale first body's hash while the new body is what actually got typed -- corrupting the
+    'body_sha256 records what was sent' invariant and misclassifying the next honest replay of the
+    body that actually went out as a mismatch against a hash nobody ever sent."""
+    rig.driver.fail_on_open = "conversation did not open"
+    with pytest.raises(E.BridgeRefusal):
+        rig.send(body="erste Fassung")
+    rig.driver.fail_on_open = None
+    rig.send(body="zweite Fassung")
+    assert rig.ledger.get(KEY).body_sha256 == D.body_sha256("zweite Fassung")
+
+    third = rig.send(body="zweite Fassung")  # same body as what actually sent -> a plain replay
+    assert third[1]["replayed"] is True and third[1]["body_mismatch"] is False
+    assert rig.driver.sent == ["zweite Fassung"]
+    assert rig.ledger.mismatch_count(KEY) == 1  # unchanged: this replay is not a new mismatch
 
 
 def test_a_two_bubble_turn_whose_second_bubble_fails_does_not_resend_the_first(rig):
@@ -414,6 +438,18 @@ def test_reconcile_will_not_call_absent_when_the_view_does_not_cover_the_attempt
     assert rig.ledger.get(KEY).state == L.ATTEMPTING  # unchanged: a question, not a verdict
 
 
+def test_reconcile_will_not_confirm_sent_off_an_older_bubble_with_the_same_body(rig):
+    """TASK-237: a body match with a tick is not automatically ours -- an earlier attempt (or a
+    constant-body message like the follow-up nudge) can leave a ticked bubble of the same text
+    before this attempt's own clock."""
+    sha = D.body_sha256("Guten Tag")
+    rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
+    rig.driver.thread = [D.BubbleView("out", "Guten Tag", "09:59", "Gelesen")]
+    verdict = rig.executor.reconcile([KEY])[0]
+    assert verdict["verdict"] == "indeterminate"
+    assert rig.ledger.get(KEY).state == L.ATTEMPTING  # unchanged: a question, not a verdict
+
+
 def test_reconcile_promotes_a_body_match_that_carries_a_tick(rig):
     sha = D.body_sha256("Guten Tag")
     rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
@@ -428,6 +464,29 @@ def test_reconcile_leaves_a_matching_bubble_without_a_tick_indeterminate(rig):
     rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
     rig.driver.thread = [D.BubbleView("out", "Guten Tag", "10:01", "")]
     assert rig.executor.reconcile([KEY])[0]["verdict"] == "indeterminate"
+
+
+def test_a_reply_that_arrives_while_reconcile_scans_the_chat_is_still_recorded(rig):
+    """TASK-241: _scan (reconcile's own chat-open step) was the one verb TASK-231/234 left
+    untouched, and since TASK-235 it is no longer only human-triggered -- UnresolvedSendWatcher
+    enqueues a reconcile automatically for every ATTEMPTING/UNCONFIRMED send. Injected from
+    read_hook, which fires inside read_bubbles(), so this really is 'arrived while the chat was
+    open for the scan', the same proof TASK-231's own read_thread piggyback test uses."""
+    sha = D.body_sha256("Guten Tag")
+    rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
+    rig.driver.thread = [D.BubbleView("out", "etwas anderes", "23:59", "Gelesen")]
+    fresh = I.assign_ids([I.InboundMessage(counterparty=PHONE, title=PHONE, text="Bin gleich da",
+                                           local_date="2026-09-23", clock="13:40", source="thread")])
+
+    def inject(drv):
+        drv.cold_thread.extend(fresh)
+
+    rig.driver.read_hook = inject
+    verdict = rig.executor.reconcile([KEY])[0]
+    assert verdict["verdict"] == "confirmed_absent"   # the scan's own verdict is untouched
+
+    events = rig.executor.outbox()["events"]
+    assert [e["payload"]["text"] for e in events] == ["Bin gleich da"]
 
 
 # --- inbound handover, health, retention ---------------------------------------------------------------
@@ -549,14 +608,69 @@ def test_the_media_watcher_only_pulls_into_the_queue_and_never_pulls_a_path_twic
 
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
+    # TASK-244: a file must read unchanged across two consecutive listings before it is pulled --
+    # the first cycle only primes that baseline.
+    assert watch.cycle() == {"pulled": 0}
     assert watch.cycle() == {"pulled": 1}
     [row] = rig.ledger.media_queue()
     assert row["kind"] == "document" and row["attached_at"] is None
     assert rig.ledger.media_file(row["media_id"])["filename"] == "Lebenslauf.pdf"
 
-    # a second cycle sees the same file on the handset and must not re-pull it
+    # a further cycle sees the same file on the handset and must not re-pull it
     assert watch.cycle() == {"pulled": 0}
     assert rig.driver.pulled_media == ["WhatsApp Documents/Lebenslauf.pdf"]
+
+
+# --- TASK-244: a still-growing file is never pulled, and a pull that races one anyway is retried,
+# never permanently frozen behind media_seen's insert-or-ignore --------------------------------------
+def test_a_file_still_growing_between_two_listings_is_not_pulled_until_it_stops(rig, tmp_path):
+    """WhatsApp writes a candidate's document over several cycles on a slow link; the old code pulled
+    it the first time ``list_media`` ever saw it, whatever bytes happened to be on disk that instant,
+    and ``record_media``'s insert-or-ignore meant a truncated pull was never retried."""
+    rel = "WhatsApp Documents/Growing.pdf"
+    rig.driver.media_files[rel] = b"%PDF-1.4 partial"
+    rig.driver.media_mtimes[rel] = 100
+
+    watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    assert watch.cycle() == {"pulled": 0}, "first sight only primes the baseline"
+
+    rig.driver.media_files[rel] = b"%PDF-1.4 partial plus more bytes still arriving"
+    rig.driver.media_mtimes[rel] = 105
+    assert watch.cycle() == {"pulled": 0}, "size and mtime moved since the last listing -- still writing"
+
+    # the handset stops writing: this listing repeats the previous one unchanged
+    assert watch.cycle() == {"pulled": 1}
+    assert rig.driver.pulled_media == [rel]
+    [row] = rig.ledger.media_queue()
+    assert rig.ledger.media_file(row["media_id"])["size"] == len(rig.driver.media_files[rel])
+
+
+def test_a_pull_shorter_than_the_listed_size_is_not_recorded_and_is_retried(rig, tmp_path):
+    """The stability check above still races a pull spanning the exact moment writing resumes (or
+    two listings that happen to agree mid-write) -- this is the backstop: a copy that came up short
+    must land in the exact same never-marked-known, retried-next-cycle branch as a failed adb pull,
+    not get frozen into media_seen as if it were complete."""
+    class TruncatingDriver(D.FakeDriver):
+        def pull_media(self, rel_path, dest_path):
+            dest = super().pull_media(rel_path, dest_path)
+            dest.write_bytes(dest.read_bytes()[:-1])   # one byte short of what was listed
+            return dest
+
+    driver = TruncatingDriver(media_files={"WhatsApp Documents/Truncated.pdf": b"%PDF-1.4 bytes"})
+    driver.media_mtimes["WhatsApp Documents/Truncated.pdf"] = 100
+
+    watch = W.MediaWatcher(driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
+                           clock=rig.clock)
+    watch.cycle()  # primes the stability baseline
+    assert watch.cycle() == {"pulled": 0}
+    assert rig.ledger.media_queue() == [], "a short copy is never recorded as a good pull"
+    assert rig.ledger.media_known_paths() == set(), "not marked known -- the next cycle retries it"
+
+    # the listing repeats unchanged, so the same truncated pull is attempted again, and fails again
+    assert watch.cycle() == {"pulled": 0}
+    assert driver.pulled_media == ["WhatsApp Documents/Truncated.pdf"] * 2
+    assert rig.ledger.media_queue() == []
 
 
 def test_a_voice_note_is_queued_without_any_chat_read(rig, tmp_path):
@@ -571,6 +685,7 @@ def test_a_voice_note_is_queued_without_any_chat_read(rig, tmp_path):
 
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     assert watch.cycle() == {"pulled": 1}
     [row] = rig.ledger.media_queue()
     assert row["kind"] == "audio"
@@ -600,6 +715,7 @@ def test_a_queued_file_is_never_dropped_however_old_it_gets(rig, tmp_path):
 
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     assert watch.cycle() == {"pulled": 1}
     rig.clock.advance(60 * 60 * 24 * 400)   # far past the old (now-deleted) retirement horizon
     assert watch.cycle() == {"pulled": 0}
@@ -614,6 +730,7 @@ def test_health_reports_the_queue_backlog(rig, tmp_path):
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
     rig.executor.media_watcher = watch
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     watch.cycle()
 
     backlog = rig.executor.health()["media_watcher"]["unresolved_backlog"]
@@ -697,6 +814,7 @@ def test_decoy_a_kind_mismatch_between_the_extension_and_the_placeholder_never_a
 
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     watch.cycle()
     [row] = rig.ledger.media_queue()
     assert row["kind"] == "image", "the file's own extension, not the notification's claimed kind"
@@ -715,6 +833,7 @@ def test_decoy_a_cross_host_clock_skew_never_attaches_or_skews_the_queues_own_ag
 
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     watch.cycle()
     [entry] = rig.executor.unresolved_media()["files"]
     assert entry["age_sec"] < 5, "age comes off the ledger's own pull time, not the skewed mtime"
@@ -734,6 +853,7 @@ def test_identical_bytes_from_two_senders_are_two_queue_entries_not_one(rig, tmp
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
     rig.executor.media_watcher = watch
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     assert watch.cycle() == {"pulled": 2}
 
     queue = rig.ledger.media_queue()
@@ -885,6 +1005,7 @@ def test_a_byte_identical_duplicate_pull_is_visible_on_the_queue_row(rig, tmp_pa
     watch = W.MediaWatcher(rig.driver, rig.ledger, tmp_path / "media", log=lambda _m: None,
                            clock=rig.clock)
     rig.executor.media_watcher = watch
+    watch.cycle()  # TASK-244: primes the stability baseline, see the doc test above
     watch.cycle()
 
     assert len(rig.ledger.media_queue()) == 2
@@ -892,6 +1013,7 @@ def test_a_byte_identical_duplicate_pull_is_visible_on_the_queue_row(rig, tmp_pa
     assert rig.executor.health()["media_watcher"]["unresolved_backlog"]["duplicate_content"] == 1
 
     rig.driver.media_files["WhatsApp Documents/Solo.pdf"] = b"nobody else sent this"
+    watch.cycle()  # primes Solo.pdf's own baseline
     watch.cycle()
     solo = [r for r in rig.ledger.media_queue() if r["content_pull_count"] == 1]
     assert len(solo) == 1
@@ -1020,6 +1142,29 @@ def test_two_candidates_in_one_chat_minute_separated_by_size_not_time(rig):
     assert event["payload"]["from"] == PHONE and event["payload"]["media_link_strength"] == "strong"
 
 
+def test_a_reply_that_arrives_while_identity_watcher_reads_evidence_is_recorded(rig):
+    """TASK-231: the most reachable of the three chat-open paths that used to drop this on the
+    floor -- no send, no model turn, just IdentityWatcher's own cadence opening a candidate's
+    thread because it holds an unresolved file. That is exactly the state right after a candidate
+    sends a CV, which is exactly when they are still most likely typing the next line."""
+    _seed_media(rig, kind="document", size=165000, filename="Anna.pdf", media_id="wab.m.doc1")
+    rig.executor.record_inbound(_inbound(media="document", phone=PHONE, clock="10:04"), [], rig.clock())
+    rig.executor.record_inbound(_inbound(media="document", phone=OTHER, clock="10:04"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {
+        PHONE: [{"clock": "10:04", "evidence": ["Anna.pdf", "165 KB"]}],
+        OTHER: [{"clock": "10:04", "evidence": ["Bernd.pdf", "900 KB"]}],
+    }
+    # PHONE sorts first, so this is what the cold read of PHONE's thread hands back.
+    rig.driver.cold_thread = I.assign_ids(
+        [I.InboundMessage(counterparty=PHONE, title=PHONE, text="Bin gleich da",
+                          local_date="2026-09-23", clock="10:07", source="thread")])
+
+    rig.executor.auto_match_media()
+
+    texts = [e["payload"]["text"] for e in rig.executor.outbox()["events"]]
+    assert "Bin gleich da" in texts
+
+
 def test_a_voice_note_is_matched_by_duration(rig, tmp_path):
     audio = tmp_path / "v.opus"
     _write_opus(audio, 7.0)
@@ -1145,6 +1290,46 @@ def test_an_unreadable_candidate_thread_does_not_block_a_readable_one(rig):
     assert result["attached"] == 1  # weak tie-break: neither candidate's evidence was readable
 
 
+def test_media_linked_after_its_row_was_already_acked_is_still_delivered(rig):
+    """TASK-233: the ordinary case on a healthy rail, not the edge case -- the relay drains and
+    acks the placeholder row (3 s cadence) well before the matcher links a file to it
+    (IdentityWatcher, 15 s; MediaWatcher, 5 s, ahead of that). Before the fix, linking the already
+    acked row is invisible forever: ``pull_inbound`` only merges a link into rows past the relay's
+    cursor, and an acked row's id is behind it for good, not merely delayed."""
+    _seed_media(rig, kind="document", size=165000, filename="Anna.pdf")
+    rig.executor.record_inbound(_inbound(media="document", phone=PHONE, clock="10:04"), [], rig.clock())
+
+    # the relay's own sequence (bridge/relay_pull.py): fetch, then ack -- before anything has
+    # linked a file to this row.
+    drained = rig.executor.outbox()
+    acked = rig.executor.outbox(after=drained["cursor"], ack=drained["cursor"])
+
+    assert rig.executor.auto_match_media() == {"attached": 1, "weak": 0}
+
+    delivered = rig.executor.outbox(after=acked["cursor"])["events"]
+    assert [e["payload"]["media_id"] for e in delivered] == ["wab.m.x"]
+
+
+def test_a_queued_phone_op_defers_the_evidence_read_instead_of_racing_it(rig, tmp_path):
+    """TASK-268: a dispatched op's own patience (driver.LOCK_TIMEOUT_SEC=30s) is far shorter than
+    this evidence read's (IDENTITY_LOCK_TIMEOUT_SEC=180s) -- without a yield, a candidate-facing
+    reply loses that race for huawei01.lock. Fails before the fix (the read runs, the lock is
+    taken, the file is attached); passes after it (the file stays queued, untouched, for the next
+    cycle -- the op is never even claimed here, so nothing about it changes)."""
+    audio = tmp_path / "v.opus"
+    _write_opus(audio, 7.0)
+    _seed_media(rig, kind="audio", size=audio.stat().st_size, filename="PTT-9.opus",
+               local_path=str(audio), media_id="wab.m.deferred")
+    rig.executor.record_inbound(_inbound(media="audio", phone=PHONE, clock="11:02"), [], rig.clock())
+    rig.driver.media_evidence_by_phone = {PHONE: [{"clock": "11:02",
+                                                   "evidence": ["Sprachnachricht", "0:07"]}]}
+    rig.ledger.enqueue_op("op.reply", "send", {"req": {"to": PHONE}}, rig.clock())
+
+    assert rig.executor.auto_match_media() == {"attached": 0, "weak": 0}
+    assert rig.driver.lock_events == [], "a queued phone op must not be raced for the flock"
+    assert len(rig.ledger.media_queue()) == 1
+
+
 # --- active-hours override for a single test run (TASK-131 UAT, Ivan 2026-09-22) -------------------
 def test_active_hours_override_is_none_when_unset_or_blank():
     """The default path -- what every deploy without the env var set gets -- must be bit-for-bit
@@ -1183,14 +1368,78 @@ def test_retention_sweeps_ship_with_the_first_commit(rig):
 def test_maintenance_once_reviews_before_sweeping_and_surfaces_the_result_in_health(rig):
     """TASK-230: maintenance no longer deletes screenshots/recordings by age alone -- an artefact
     for an op this ledger has never heard of is held, and the held count is visible in /v1/health
-    without reading the journal by hand."""
+    without reading the journal by hand. TASK-253: that result is now stamped ('at', 'duration_sec')
+    and sits behind the same last_ok_at/errors/last_error shape every watcher's heartbeat uses."""
     unknown_shot = Path("/shots/op." + "1" * 24 + "_00_pre.png")
     rig.driver.screenshot_candidates = [unknown_shot]
     swept = S.maintenance_once(rig.executor, now=rig.clock.now)
     assert swept["screenshots"] == {"deleted": 0, "held": 1}
     assert rig.driver.deleted_paths == []
-    assert rig.executor.health()["retention"] == {"screenshots": {"deleted": 0, "held": 1},
-                                                   "recordings": {"deleted": 0, "held": 0}}
+    retention = rig.executor.health()["retention"]
+    assert retention["errors"] == 0 and retention["last_error"] is None
+    assert retention["last_ok_at"] == L.utc(rig.clock.now)
+    result = retention["result"]
+    assert result["at"] == L.utc(rig.clock.now)
+    assert result["duration_sec"] >= 0
+    assert result["screenshots"] == {"deleted": 0, "held": 1}
+    assert result["recordings"] == {"deleted": 0, "held": 0}
+
+
+def test_maintenance_once_survives_a_toctou_error_and_journals_it(rig):
+    """TASK-253: list_screenshot_candidates races a file removed by hand on the mini between its
+    own glob and stat (bridge/adb_driver.py) and can raise FileNotFoundError straight out of
+    review_and_sweep. Before this fix that propagated out of maintenance_once and killed
+    maintenance_loop's daemon thread for the rest of the process's life -- mirrors
+    test_an_identity_watcher_error_is_counted_and_journalled_and_never_raises's shape."""
+    class BrokenScreenshotDriver(D.FakeDriver):
+        def list_screenshot_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+            raise FileNotFoundError("shots/op.deadbeef_00_pre.png")
+
+    rig.executor.driver = BrokenScreenshotDriver()
+    assert S.maintenance_once(rig.executor, now=rig.clock.now) is None
+    retention = rig.executor.health()["retention"]
+    assert retention["errors"] == 1
+    assert "shots/op.deadbeef_00_pre.png" in retention["last_error"]
+    assert retention["last_error_at"] == L.utc(rig.clock.now)
+    assert retention["last_ok_at"] is None
+    assert retention["result"] is None
+
+    # A later pass, once the race is gone, still updates last_retention/last_ok_at as normal.
+    rig.executor.driver = D.FakeDriver()
+    later = rig.clock.now + timedelta(hours=1)
+    assert S.maintenance_once(rig.executor, now=later) is not None
+    retention = rig.executor.health()["retention"]
+    assert retention["last_ok_at"] == L.utc(later)
+    assert retention["result"]["at"] == L.utc(later)
+    # The earlier error is still on the record -- a survived race is not the same as it never
+    # having happened.
+    assert retention["errors"] == 1 and retention["last_error"] is not None
+
+
+def test_maintenance_once_sweeps_luna_media_by_age_only(rig, monkeypatch, tmp_path):
+    """TASK-272: clinic photos app/wa/luna/tools_server.py::_stage_on_mini scp's onto this machine
+    carry no op_id and never touch the ledger -- _stage_on_mini is a bare ssh/scp from the VPS,
+    bypassing this executor's dispatcher/ledger entirely -- so review_and_sweep's
+    HAPPY/AUTO-RESOLVED/MANUALLY-RESOLVED machinery has nothing to look at for them and, before
+    this fix, nothing ever swept that directory at all. Age past LUNA_MEDIA_RETENTION_DAYS is the
+    whole rule here: no review, no 'held', unlike the screenshot/recording sweep above."""
+    media_dir = tmp_path / "wa_luna_media"
+    media_dir.mkdir()
+    old_file = media_dir / "deadbeef.jpg"
+    fresh_file = media_dir / "cafef00d.jpg"
+    old_file.write_bytes(b"x")
+    fresh_file.write_bytes(b"x")
+    old_mtime = (rig.clock.now - timedelta(days=S.LUNA_MEDIA_RETENTION_DAYS + 1)).timestamp()
+    fresh_mtime = (rig.clock.now - timedelta(days=1)).timestamp()
+    os.utime(old_file, (old_mtime, old_mtime))
+    os.utime(fresh_file, (fresh_mtime, fresh_mtime))
+    monkeypatch.setattr(S, "LUNA_MEDIA_DIR", str(media_dir))
+
+    swept = S.maintenance_once(rig.executor, now=rig.clock.now)
+
+    assert swept["luna_media"] == {"deleted": 1}
+    assert not old_file.exists()
+    assert fresh_file.exists()
 
 
 # --- the HTTP surface -------------------------------------------------------------------------------------
@@ -1205,6 +1454,22 @@ def http(tmp_path):
     server.shutdown()
     server.server_close()
     server.dispatcher.stop()
+    rig.ledger.close()
+
+
+@pytest.fixture
+def http_no_dispatch(tmp_path):
+    """Same wiring as ``http``, minus starting the ops dispatcher thread (TASK-243): a test that
+    needs a row it enqueued to stay ``queued`` deterministically -- rather than race a live drain
+    thread that could claim (and fail) it before the assertion it is testing even runs -- builds
+    the server this way instead."""
+    rig = Rig(tmp_path)
+    server = S.BridgeServer(rig.executor, "s3cret", port=0, log=lambda *a: None)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield rig, f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
     rig.ledger.close()
 
 
@@ -1385,6 +1650,35 @@ def test_a_sustained_dirty_conversation_is_parked_by_the_idle_check(rig):
     assert json.loads(rows[0]["detail"])["focus"] == "com.whatsapp/.Conversation"
 
 
+def test_a_sustained_dirty_conversation_is_read_before_it_is_parked(rig):
+    """TASK-234: this recovery used to take the lock, prove the phone is free (the non-blocking
+    probe above), and then throw away exactly what that proof was about. The screen it found open
+    already cleared its own notification the moment it was opened (pull_inbound's own docstring),
+    so a message that arrived during the stuck window has no other door -- read it before park()
+    discards it, the same reasoning every other piggyback read on this rail already acts on."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    rig.driver._open_phone = PHONE       # what the screen itself would resolve to
+    rig.driver.cold_thread = _inbound(text="Bin noch dran", phone=PHONE)
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
+    watch.cycle()
+    watch.cycle()
+    assert rig.driver.parked == 1
+    events = rig.executor.outbox()["events"]
+    assert [e["payload"]["text"] for e in events] == ["Bin noch dran"]
+
+
+def test_a_sustained_dirty_conversation_with_no_resolvable_identity_still_parks(rig):
+    """No header on screen (or a display name two contacts share) is unresolvable -- nothing
+    sound to key a read against -- but the recovery still has to park; it only cannot read first."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    rig.driver.cold_thread = [object()]  # would blow up if read_cold_thread were ever called
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
+    watch.cycle()
+    watch.cycle()
+    assert rig.driver.parked == 1
+    assert rig.executor.outbox()["events"] == []
+
+
 def test_the_idle_check_never_races_a_phone_something_else_holds(rig):
     """Sustained-dirty is not enough on its own: if the flock is held right now, something else
     is legitimately using the phone, and this watcher must never touch the UI underneath it."""
@@ -1397,6 +1691,30 @@ def test_the_idle_check_never_races_a_phone_something_else_holds(rig):
     assert driver.parked == 0
     assert watch.idle_dirty_recovered == 0
     assert journal(rig, "idle_dirty_recovered") == []
+
+
+def test_an_operator_hold_stops_the_idle_check_from_parking_a_human_at_the_handset(rig, tmp_path):
+    """TASK-266: a human reading or typing in a chat holds no flock and leaves ``focus()`` reading
+    the same Conversation an abandoned chat would -- indistinguishable to the two prior checks
+    (the streak, the non-blocking lock probe). The hold file is the third check: the human's own
+    statement that this is them, not a bug. Held, two dirty cycles log ``idle_dirty_held`` instead
+    of parking; once the stated expiry passes, the same two cycles park exactly as before."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    hold_path = tmp_path / "operator_hold"
+    hold_path.write_text(L.utc(rig.clock() + timedelta(minutes=5)))
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None, operator_hold_path=hold_path)
+    watch.cycle()
+    watch.cycle()
+    assert rig.driver.parked == 0
+    assert watch.idle_dirty_recovered == 0
+    assert watch.idle_dirty_held == 1
+    assert len(journal(rig, "idle_dirty_held")) == 1
+
+    rig.clock.advance(5 * 60 + 1)
+    watch.cycle()
+    watch.cycle()
+    assert rig.driver.parked == 1
+    assert watch.idle_dirty_recovered == 1
 
 
 # --- TASK-227: the phone-op FIFO queue -----------------------------------------------------------
@@ -1493,7 +1811,46 @@ def test_debug_capture_on_a_refusal_takes_an_error_shot_not_a_post_shot(rig):
     op_id = dispatch.enqueue("send_document", {"phone": PHONE, "local_path": "/no/such/file.pdf"})
     assert dispatch.cycle() is True
     assert rig.driver.debug_shots == [(op_id, "00_pre"), (op_id, "02_error")]
+    # send_document's missing-file refusal (executor.py) raises before it ever calls take_phone,
+    # so post-TASK-276 no recording starts (and none stops) for an op that never touched the phone.
+    assert rig.driver.recording_started == [] and rig.driver.recording_stopped == []
+
+
+def test_debug_capture_recording_starts_only_after_the_lock_is_acquired(rig):
+    """TASK-276 half 1: recording used to start at claim time, before the dispatched method ever
+    reached take_phone -- so the 180s screenrecord budget burned on lock-wait (or another lane's
+    screen) instead of the op's own work. Proof: spy on start_recording and check the phone's own
+    lock_events at the instant it fires -- ``acquire`` must already be there."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor),
+                                debug_capture=True)
+    lock_state_at_start = []
+    real_start_recording = rig.driver.start_recording
+
+    def spy_start_recording(op_id):
+        lock_state_at_start.append(list(rig.driver.lock_events))
+        return real_start_recording(op_id)
+
+    rig.driver.start_recording = spy_start_recording
+    op_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                              "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    assert lock_state_at_start == [["acquire"]]
     assert rig.driver.recording_started == [op_id] and rig.driver.recording_stopped == [op_id]
+
+
+def test_a_lost_recording_pull_is_journalled_not_silent(rig):
+    """TASK-276 half 2: AdbDriver.stop_recording returns None on a failed adb pull, and before
+    this fix that None reached the return-value-discarding ``_capture`` and left no trace at all.
+    A missing artefact must be visible the moment it goes missing, without ever failing the op."""
+    rig.driver.fail_recording = True
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor),
+                                debug_capture=True)
+    op_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                              "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    assert rig.ledger.op_status(op_id)["state"] == "done"
+    notes = journal(rig, "debug_recording_missing")
+    assert [n["client_msg_id"] for n in notes] == [op_id]
 
 
 def test_debug_capture_failure_is_logged_and_never_fails_the_op(rig):
@@ -1509,6 +1866,281 @@ def test_debug_capture_failure_is_logged_and_never_fails_the_op(rig):
     assert status["state"] == "done"
     assert rig.driver.sent == ["eins"]
     assert journal(rig, "debug_capture_failed") != []
+
+
+# --- TASK-242: a ledger write failure while writing an op's outcome must not kill the dispatcher ---
+def test_a_ledger_write_failure_marking_an_op_done_is_counted_not_fatal(rig):
+    """mark_op_done is called from run_one's own ``else`` clause; an exception raised there is
+    never caught by that same try's own ``except`` blocks (Python does not catch an except/else
+    clause's exception with the try it belongs to), so before this fix it unwound straight through
+    cycle() and would have killed the dispatcher thread on the very next real disk-full/I-O error.
+    Proof: patch mark_op_done to fail for one specific op_id -- run_one's own try/except never sees
+    E.BridgeRefusal or a plain "our own code" bug, only the write failing after a real success -- and
+    drive two queued ops through cycle(). Without the widened try this raises on the first cycle();
+    with it, cycle() returns True both times, the failure is counted, and the second, unrelated op
+    still reaches "done"."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    bad_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                               "body": "eins", "trace": {"action": "reply"}}})
+    good_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY2, "to": OTHER, "kind": "text",
+                                                "body": "zwei", "trace": {"action": "reply"}}})
+
+    real_mark_op_done = rig.ledger.mark_op_done
+
+    def flaky_mark_op_done(op_id, result, now):
+        if op_id == bad_id:
+            raise sqlite3.OperationalError("disk I/O error")
+        return real_mark_op_done(op_id, result, now)
+
+    rig.ledger.mark_op_done = flaky_mark_op_done
+
+    assert dispatch.cycle() is True  # would raise here, before the fix
+    assert dispatch.cycle() is True
+
+    assert rig.ledger.op_status(bad_id)["state"] == L.OP_RUNNING  # write never landed, not lost
+    assert rig.ledger.op_status(good_id)["state"] == L.OP_DONE    # the row behind it still ran
+    assert dispatch.errors == 1
+    assert "disk I/O error" in dispatch.last_error
+    assert dispatch.last_error_at is not None
+
+
+def test_a_claim_next_op_failure_is_counted_and_the_cycle_returns_false_not_fatal(rig):
+    """Same reasoning as above, for the other unguarded ledger call (TASK-242): claim_next_op() in
+    cycle() had no try at all."""
+    class BrokenLedger:
+        def claim_next_op(self):
+            raise sqlite3.OperationalError("disk I/O error")
+
+    dispatch = OD.OpsDispatcher(BrokenLedger(), rig.executor, O.Operations(rig.executor))
+    assert dispatch.cycle() is False  # would raise here, before the fix
+    assert dispatch.errors == 1
+    assert "disk I/O error" in dispatch.last_error
+
+
+# --- TASK-260: heartbeat progress evidence, and phone_ops queue depth in health() -----------------
+def test_dispatcher_heartbeat_counts_cycles_and_records_last_ok_at_on_both_empty_and_job_cycles(rig):
+    """Before this fix heartbeat() returned exactly {poll_interval_sec, alive, debug_capture,
+    errors, last_error, last_error_at} -- no cycles, no last_ok_at, unlike every watcher in
+    bridge/watcher.py. A dispatcher that is alive but stuck (errors climbing, or simply falling
+    behind) looked identical to a quiet evening. Drives one empty cycle and one job-carrying cycle
+    and checks both move the counters, the same as bridge/watcher.py's own heartbeat tests do."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    assert dispatch.heartbeat()["cycles"] == 0
+    assert dispatch.heartbeat()["last_ok_at"] is None
+
+    assert dispatch.cycle() is False  # nothing queued yet
+    hb = dispatch.heartbeat()
+    assert hb["cycles"] == 1
+    assert hb["last_ok_at"] == L.utc(rig.clock())
+
+    rig.clock.advance(5)
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                      "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    hb = dispatch.heartbeat()
+    assert hb["cycles"] == 2
+    assert hb["last_ok_at"] == L.utc(rig.clock())
+
+
+def test_health_reports_phone_ops_queue_depth_and_oldest_queued_at_when_the_dispatcher_is_not_draining(rig):
+    """health()['queue'] is ledger.queue_counts(), which only ever grouped the OUTBOUND table
+    (TASK-260) -- a phone_ops backlog forming behind a dispatcher that is alive but not keeping up
+    appeared nowhere. Enqueues two ops and never calls cycle(), the "alive but silently backing
+    up" shape the finding describes."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    rig.executor.ops_dispatcher = dispatch
+    assert rig.executor.health()["phone_ops"] == {"queued": 0, "oldest_queued_at": None}
+
+    first_at = L.utc(rig.clock())
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                      "body": "eins", "trace": {"action": "reply"}}})
+    rig.clock.advance(3)
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY2, "to": OTHER, "kind": "text",
+                                      "body": "zwei", "trace": {"action": "reply"}}})
+
+    assert rig.executor.health()["phone_ops"] == {"queued": 2, "oldest_queued_at": first_at}
+
+
+# --- TASK-264: a windowed journal count that survives a restart, unlike the instance counters ------
+def test_ledger_event_count_windows_the_journal_by_name_and_by_moment(tmp_path):
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    t0 = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+    ledger.note(t0 - timedelta(seconds=1), "watcher_error", None, error="before the window")
+    ledger.note(t0, "watcher_error", None, error="at the start, included")
+    ledger.note(t0 + timedelta(hours=1), "watcher_error", None, error="inside the window")
+    ledger.note(t0 + timedelta(hours=2), "watcher_error", None, error="at the end, excluded")
+    ledger.note(t0 + timedelta(hours=1), "dirty_state_recovered", None, focus="x")
+    assert ledger.event_count("watcher_error", t0, t0 + timedelta(hours=2)) == 2
+    assert ledger.event_count("dirty_state_recovered", t0, t0 + timedelta(hours=2)) == 1
+    ledger.close()
+
+
+def test_health_reports_a_windowed_journal_count_that_survives_a_restart(tmp_path):
+    """dirty_recovered (Executor) and idle_dirty_recovered/errors (InboundWatcher) are
+    process-lifetime instance attributes, zeroed in __init__ -- a crash-looping executor always
+    reports a clean history (TASK-264's own finding: executor.py:109-118, watcher.py:78). The
+    journal row the same recovery also writes (dirty_state_recovered) is append-only and does not
+    reset. Drives one recovery, then opens a second Ledger/Executor against the same sqlite file
+    (the restart, same shape as test_a_restart_mid_op_unsticks_the_running_row_it_left_behind
+    below) and checks health()'s windowed count still shows it while the instance counter reads 0."""
+    path = tmp_path / "ledger.sqlite"
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+
+    ledger = L.Ledger(path)
+    governor = G.Governor(ledger, per_number_daily_cap=3, rng=__import__("random").Random(7))
+    driver = D.FakeDriver()
+    driver.focus_value = "com.whatsapp/.Conversation"
+    executor = X.Executor(ledger=ledger, governor=governor, driver=driver, clock=lambda: now)
+    with ExitStack() as stack:
+        executor.take_phone(stack, PHONE)
+    assert executor.dirty_recovered == 1
+    ledger.close()
+
+    restarted_ledger = L.Ledger(path)
+    restarted_governor = G.Governor(restarted_ledger, per_number_daily_cap=3,
+                                    rng=__import__("random").Random(7))
+    later = now + timedelta(hours=1)
+    restarted = X.Executor(ledger=restarted_ledger, governor=restarted_governor,
+                           driver=D.FakeDriver(), clock=lambda: later)
+    assert restarted.dirty_recovered == 0  # the instance counter reset -- the whole finding
+    assert restarted.health()["journal_recent"]["dirty_state_recovered"] == 1
+    restarted_ledger.close()
+
+
+# --- TASK-232: a restart mid-op must not leave a phone_ops row `running` forever -------------------
+def test_a_restart_mid_op_unsticks_the_running_row_it_left_behind(tmp_path):
+    """claim_next_op is the only writer of OP_RUNNING and nothing ever read it back (TASK-232):
+    before this fix, a process that died between claiming a row and finishing it left that row
+    `running` forever -- never re-claimed, never swept, its artefacts held forever by
+    retention.classify_op_artifact. Simulates the restart for real: claim a row on one Ledger,
+    close it without ever calling mark_op_done/mark_op_failed (the crash), then open a second
+    Ledger against the same sqlite file (the restart) and check what it did on the way up."""
+    path = tmp_path / "ledger.sqlite"
+    now = datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc)
+
+    crashed = L.Ledger(path)
+    op_id = "op." + "7" * 24
+    crashed.enqueue_op(op_id, "clear_chat", {"phone": PHONE}, now)
+    claimed = crashed.claim_next_op()
+    assert claimed["state"] == L.OP_RUNNING
+    crashed.close()  # the process dies here, mid-op -- nothing ever marks this row terminal
+
+    restarted = L.Ledger(path)
+    row = restarted.op_status(op_id)
+    assert row["state"] == L.OP_FAILED
+    assert row["error"]["error"]["code"] == "restarted_while_running"
+    assert row["finished_at"] is not None
+    restarted.close()
+
+
+# --- TASK-243: an op nobody is still waiting on must not go on to type ---------------------------
+def test_claim_next_op_expires_a_stale_row_and_serves_the_fresh_one_behind_it(tmp_path):
+    """Before this fix, claim_next_op claims the oldest queued row unconditionally, no matter how
+    long it has sat there or whether anyone is still waiting on it -- the exact mechanism TASK-243
+    is about: a candidate reply queued behind lock contention outlives the caller's own budget,
+    the caller gives up, and the op is still the next one claimed and typed into a real chat.
+    Proof: a row enqueued under a budget that has long since elapsed must never be the row
+    claim_next_op hands the dispatcher -- it must be expired instead, and the fresh row behind it
+    served."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    long_ago = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    ledger.enqueue_op("op.stale", "send", {"req": {"to": PHONE}}, long_ago, budget_sec=1.0)
+    ledger.enqueue_op("op.fresh", "send", {"req": {"to": PHONE}}, datetime.now(timezone.utc),
+                      budget_sec=None)
+
+    claimed = ledger.claim_next_op()
+
+    assert claimed is not None and claimed["op_id"] == "op.fresh"
+    stale = ledger.op_status("op.stale")
+    assert stale["state"] == L.OP_FAILED
+    assert stale["error"]["error"]["code"] == "op_expired"
+    assert stale["error"]["error"]["retryable"] is False
+    assert stale["finished_at"] is not None
+    ledger.close()
+
+
+def test_claim_next_op_leaves_a_row_with_no_budget_unbounded(tmp_path):
+    """An older caller (or a direct enqueue_op with no budget_sec) never expires: unset stays
+    unset rather than a guessed default -- CLAUDE.md's no-invented-caps rule, applied to a row
+    this fix has no basis to assign a number to."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    ledger.enqueue_op("op.old_no_budget", "send", {}, datetime(2000, 1, 1, tzinfo=timezone.utc))
+    claimed = ledger.claim_next_op()
+    assert claimed["op_id"] == "op.old_no_budget"
+    ledger.close()
+
+
+def test_cancel_op_flips_a_still_queued_row_to_a_terminal_failure_and_it_is_never_claimed(tmp_path):
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    now = datetime.now(timezone.utc)
+    ledger.enqueue_op("op.give_up", "send", {}, now)
+    assert ledger.cancel_op("op.give_up", now) is True
+    status = ledger.op_status("op.give_up")
+    assert status["state"] == L.OP_FAILED
+    assert status["error"]["error"]["code"] == "op_cancelled"
+    assert ledger.claim_next_op() is None
+    ledger.close()
+
+
+def test_cancel_op_never_touches_a_row_already_running(tmp_path):
+    """A live adb call is never interrupted: once claim_next_op has claimed the row, cancel_op is
+    a no-op, reported honestly as False, and the row stays exactly as claim_next_op left it."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    now = datetime.now(timezone.utc)
+    ledger.enqueue_op("op.mid_type", "send", {}, now)
+    claimed = ledger.claim_next_op()
+    assert claimed["state"] == L.OP_RUNNING
+    assert ledger.cancel_op("op.mid_type", now) is False
+    assert ledger.op_status("op.mid_type")["state"] == L.OP_RUNNING
+    ledger.close()
+
+
+def test_dispatcher_enqueue_threads_the_budget_through_to_the_ledger_row(rig):
+    """Wiring proof, separate from the staleness logic itself (tested directly on the ledger
+    above): OpsDispatcher.enqueue's ``budget_sec`` argument has to actually reach the row
+    claim_next_op reads, not just exist as a parameter nothing passes on."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    op_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                              "body": "eins", "trace": {"action": "reply"}}},
+                             budget_sec=42.0)
+    row = rig.ledger._db.execute(
+        "select budget_sec from phone_ops where op_id=?", (op_id,)).fetchone()
+    assert row["budget_sec"] == 42.0
+
+
+def test_the_budget_header_reaches_the_ops_row_over_the_wire(http):
+    """app/wa/bridge.py::Client sends X-Wa-Op-Budget-Sec with every call (TASK-243) -- the exact
+    number it is about to poll GET /v1/ops/<id> against. The route threads it to enqueue_op rather
+    than dropping it on the floor."""
+    rig, base = http
+    req = urllib.request.Request(
+        base + "/v1/messages", method="POST",
+        data=json.dumps({"client_msg_id": KEY, "to": PHONE, "kind": "text", "body": "eins",
+                         "trace": {"action": "reply"}}).encode(),
+        headers={"Authorization": "Bearer s3cret", "Content-Type": "application/json",
+                "X-Wa-Op-Budget-Sec": "17.5"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        body = json.loads(resp.read())
+    row = rig.ledger._db.execute(
+        "select budget_sec from phone_ops where op_id=?", (body["op_id"],)).fetchone()
+    assert row["budget_sec"] == 17.5
+
+
+def test_ops_cancel_over_the_wire_flips_a_queued_op_and_is_never_claimed(http_no_dispatch):
+    rig, base = http_no_dispatch
+    op_id = "op." + "8" * 24
+    rig.ledger.enqueue_op(op_id, "clear_chat", {}, rig.clock.now)
+    status, body = call(base, f"/v1/ops/{op_id}/cancel", payload={})
+    assert (status, body["cancelled"]) == (200, True)
+    status_row = rig.ledger.op_status(op_id)
+    assert status_row["state"] == L.OP_FAILED
+    assert status_row["error"]["error"]["code"] == "op_cancelled"
+
+
+def test_ops_cancel_on_an_unknown_op_id_is_a_404(http):
+    _rig, base = http
+    status, _body = call(base, "/v1/ops/" + "op." + "9" * 24 + "/cancel", payload={})
+    assert status == 404
 
 
 # --- TASK-230: retention review, over the wire -------------------------------------------------------
@@ -1546,6 +2178,153 @@ def test_reconcile_with_no_keys_answers_an_empty_list_not_an_empty_dict(http):
     _rig, base = http
     status, body = call(base, "/v1/reconcile", payload={"client_msg_ids": []})
     assert (status, body) == (200, [])
+
+
+# --- TASK-235: nothing ever called reconcile for a send stuck attempting/unconfirmed --------------
+def test_nothing_drains_an_unconfirmed_send_without_the_unresolved_send_watcher(rig):
+    """Before TASK-235, ``ledger.unresolved()`` (ATTEMPTING/UNCONFIRMED rows) had no periodic
+    caller at all -- only a human running ``tools/wa_bridge.py reconcile`` -- so a 504'd send sat
+    UNCONFIRMED forever: ``classify()`` refuses to auto-resend it (Rule 4, bridge/ledger.py), and
+    pflege-wa-catchup.timer would re-drive the owed turn onto the same ``send_unconfirmed`` refusal
+    every 3 minutes, burning the phone's whole hourly Luna budget on a reply that could never land.
+    Proof this test fails without the fix: running the ops dispatcher on its own, with nothing
+    feeding it a "reconcile" op, never touches the stuck row -- it is still unresolved after any
+    number of dispatcher cycles, because nothing ever enqueues one."""
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal) as excinfo:
+        rig.send()
+    assert excinfo.value.code == "send_unconfirmed"
+    assert [e.client_msg_id for e in rig.ledger.unresolved()] == [KEY]
+
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    assert dispatch.cycle() is False  # nothing queued a reconcile op -- this is the bug
+    assert [e.client_msg_id for e in rig.ledger.unresolved()] == [KEY]
+
+
+def test_the_unresolved_send_watcher_queues_and_the_dispatcher_resolves_it(rig):
+    """Same setup as above, this time with ``UnresolvedSendWatcher`` feeding the dispatcher: one
+    cycle queues a ``reconcile`` op for every unresolved key, and once the dispatcher runs it the
+    row is gone from ``unresolved()``. The scripted chat is a clean scan (an outgoing bubble after
+    the attempt whose body does not match) so the verdict is ``confirmed_absent`` -- proving Rule 4
+    end to end: only that verdict authorises a resend, and the resend below is accepted rather than
+    replaying/raising."""
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal):
+        rig.send()
+    assert [e.client_msg_id for e in rig.ledger.unresolved()] == [KEY]
+
+    # Replace the scripted thread the failed send left behind (its own "unverified" bubble, which
+    # body-matches and would only ever read back as indeterminate) with a clean scan: an outgoing
+    # bubble after the attempt's own clock, different text -- nothing matches, so reconcile can
+    # confirm_absent it.
+    rig.driver.thread = [D.BubbleView("out", "andere Nachricht", "10:05", "Gesendet")]
+
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    watch = W.UnresolvedSendWatcher(rig.ledger, dispatch, log=lambda _m: None, clock=rig.clock)
+
+    result = watch.cycle()
+    assert result["unresolved"] == 1
+    assert result["op_id"] is not None
+    assert watch.queued_total == 1
+
+    assert dispatch.cycle() is True
+    status = rig.ledger.op_status(result["op_id"])
+    assert status["state"] == "done"
+    assert status["result"] == [{"client_msg_id": KEY, "verdict": "confirmed_absent",
+                                 "evidence": "chat scan: 1 outgoing bubbles at or after 10:00, "
+                                             "none matching this body"}]
+    assert rig.ledger.unresolved() == []
+
+    # Rule 4: only confirmed_absent authorises a resend -- the same key, same body is accepted.
+    status_code, body = rig.send()
+    assert (status_code, body["state"]) == (200, "sent")
+    assert body["replayed"] is False
+
+
+def test_the_unresolved_send_watcher_cycle_is_a_noop_when_nothing_is_stuck(rig):
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    watch = W.UnresolvedSendWatcher(rig.ledger, dispatch, log=lambda _m: None, clock=rig.clock)
+    assert watch.cycle() == {"unresolved": 0, "op_id": None}
+    assert watch.queued_total == 0
+    assert dispatch.cycle() is False
+
+
+def test_the_unresolved_send_watcher_error_is_counted_and_journalled_and_never_raises(rig):
+    class BrokenLedger:
+        def unresolved(self):
+            raise RuntimeError("boom")
+
+        def note(self, *a, **kw):
+            rig.ledger.note(*a, **kw)
+
+    watch = W.UnresolvedSendWatcher(BrokenLedger(), object(), log=lambda _m: None, clock=rig.clock)
+    assert watch.cycle() is None
+    assert watch.errors == 1 and "boom" in watch.last_error
+    assert watch.heartbeat()["last_ok_at"] is None
+
+
+def test_health_reports_the_unresolved_send_watcher(rig):
+    # Set directly, same as bridge/server.py::main wires MediaWatcher/ReconcileWatcher/etc: this
+    # class takes ledger + ops_dispatcher, not the executor, so it cannot self-assign the way
+    # InboundWatcher/IdentityWatcher do.
+    watch = W.UnresolvedSendWatcher(rig.ledger, object(), log=lambda _m: None).start()
+    rig.executor.unresolved_send_watcher = watch
+    heartbeat = rig.executor.health()["unresolved_send_watcher"]
+    assert heartbeat["alive"] is True
+    watch.stop()
+
+
+def test_health_reports_no_unresolved_send_watcher_when_none_is_wired(rig):
+    assert rig.executor.health()["unresolved_send_watcher"] is None
+
+
+# --- GET /v1/unresolved (TASK-261): ledger.unresolved() had no caller and no route -----------------
+def test_unresolved_sends_lists_id_thread_state_and_age(rig):
+    """Before this fix there was no way to see WHICH rows are stuck, only the count in
+    ``queue_counts`` -- ``executor.unresolved_sends()`` did not exist. Fails on
+    ``AttributeError: 'Executor' object has no attribute 'unresolved_sends'`` without the fix."""
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal):
+        rig.send()
+    rig.clock.advance(90)
+
+    listing = rig.executor.unresolved_sends()
+    assert listing["count"] == 1
+    [row] = listing["rows"]
+    assert row["client_msg_id"] == KEY
+    assert row["thread_tag"] == L.thread_tag(PHONE), "thread_tag, never the phone number itself"
+    assert row["state"] == L.UNCONFIRMED
+    assert row["age_sec"] == pytest.approx(90, abs=1)
+    assert PHONE not in json.dumps(listing)
+
+
+def test_get_v1_unresolved_returns_the_stuck_rows_id_and_age(http):
+    """Server-route proof: before this fix there was no ``/v1/unresolved`` route at all -- fails
+    with ``no route /v1/unresolved`` (400, invalid_request) without the fix."""
+    rig, base = http
+    rig.driver.ticks = [D.UNVERIFIED]
+    call(base, "/v1/messages", payload={"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                        "body": "Guten Tag", "trace": {"action": "reply"}})
+    status, body = call(base, "/v1/unresolved")
+    assert status == 200
+    assert body["count"] == 1
+    assert body["rows"][0]["client_msg_id"] == KEY
+    assert body["rows"][0]["state"] == L.UNCONFIRMED
+    assert body["rows"][0]["age_sec"] >= 0
+
+
+def test_health_reports_oldest_unresolved_sec_when_a_row_is_stuck(rig):
+    """Before this fix ``health()`` had no ``oldest_unresolved_sec`` key at all -- only the bare
+    count inside ``queue``, which does not say whether that count is fresh or six days old. Fails
+    with a KeyError on the assertion below without the fix."""
+    assert rig.executor.health()["oldest_unresolved_sec"] is None
+
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal):
+        rig.send()
+    rig.clock.advance(45)
+
+    assert rig.executor.health()["oldest_unresolved_sec"] == pytest.approx(45, abs=1)
 
 
 # --- the identity watcher (TASK-131 round 6) --------------------------------------------------------
@@ -1619,6 +2398,22 @@ def test_send_photos_refuses_an_empty_list(rig):
         rig.executor.send_photos(PHONE, [])
 
 
+def test_send_photos_reads_its_own_thread_back_before_parking(rig, tmp_path):
+    """TASK-231: show_clinic_photos is model-reachable now (MCP_TOOL_NAMES), so this is the same
+    door executor.send already piggybacks through -- whatever arrived while these photos were
+    going out must not be lost the moment the chat parks."""
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    rig.driver.open_thread = I.assign_ids(
+        [I.InboundMessage(counterparty=PHONE, title=PHONE, text="Danke!",
+                          local_date="2026-09-23", clock="09:16", source="thread")])
+
+    rig.executor.send_photos(PHONE, [str(a)])
+
+    texts = [e["payload"]["text"] for e in rig.executor.outbox()["events"]]
+    assert texts == ["Danke!"]
+
+
 def test_a_send_photo_failure_partway_through_reports_how_many_actually_sent(rig, tmp_path):
     """The first photo lands, the second raises -- the caller has to know one real send already
     reached the candidate, not just that the call as a whole failed (TASK-146's own discipline for
@@ -1682,6 +2477,20 @@ def test_send_gallery_refuses_an_empty_list(rig):
         rig.executor.send_gallery(PHONE, [])
 
 
+def test_send_gallery_reads_its_own_thread_back_before_parking(rig, tmp_path):
+    """Same piggyback as send_photos, same reason (TASK-231)."""
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    rig.driver.open_thread = I.assign_ids(
+        [I.InboundMessage(counterparty=PHONE, title=PHONE, text="Danke!",
+                          local_date="2026-09-23", clock="09:16", source="thread")])
+
+    rig.executor.send_gallery(PHONE, [str(a)])
+
+    texts = [e["payload"]["text"] for e in rig.executor.outbox()["events"]]
+    assert texts == ["Danke!"]
+
+
 def test_a_send_gallery_failure_is_reported_as_handset_touched_not_a_refusal(rig, tmp_path):
     a = tmp_path / "a.jpg"
     a.write_bytes(b"a")
@@ -1738,3 +2547,42 @@ def test_a_send_document_failure_is_reported_as_handset_touched_not_a_refusal(ri
     assert "boom" in str(caught.value)
     assert rig.driver.sent_documents == [(PHONE, str(a), "")], (
         "the attempt still reached the driver -- keys/taps may already have happened")
+
+
+def test_a_debug_capture_that_cannot_start_does_not_fail_the_send_it_was_filming(rig):
+    """TASK-276 moved start_recording out of OpsDispatcher._capture (which caught) and onto
+    take_phone's hook line (which did not). Debug capture defaults ON, so a screenrecord that
+    cannot start -- adb hiccup, /sdcard full, the verb missing on this Android build -- failed
+    every send on the rail. The recording is instrumentation; it never outranks the message."""
+    def exploding_hook():
+        raise RuntimeError("screenrecord: not found")
+
+    rig.executor.on_phone_acquired = exploding_hook
+    with ExitStack() as stack:
+        rig.executor.take_phone(stack, PHONE)
+    assert rig.executor.on_phone_acquired is None, "the one-shot hook is consumed even when it raises"
+    rows = journal(rig, "debug_capture_failed")
+    assert rows and "screenrecord: not found" in json.loads(rows[-1]["detail"])["error"]
+
+
+def test_a_failing_idle_check_is_counted_not_fatal_to_the_watcher_thread(rig, tmp_path):
+    """cycle()'s docstring promises it never raises, but _check_idle_dirty sat OUTSIDE the try, and
+    run() is a bare `while: cycle()` loop -- so one exception in the idle half killed the inbound
+    watcher thread outright. That is TASK-225's original incident reproduced by the code written to
+    prevent it: capture stops, nothing raises anywhere a human would see, and a rail that has gone
+    deaf looks exactly like a quiet one. The concrete trigger found in review: an operator-hold file
+    holding a timestamp that PARSES but carries no UTC offset, so comparing it to an aware `now`
+    raises TypeError -- which _operator_hold_until's own `except ValueError` does not catch."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    hold_path = tmp_path / "operator_hold"
+    hold_path.write_text("2026-09-23T20:00:00")          # parses, but naive: no offset
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None, operator_hold_path=hold_path)
+
+    watch.cycle()                                        # the idle check needs a dirty streak first
+    result = watch.cycle()
+
+    assert result is not None, "the inbound drain still reported, the idle half failed alone"
+    assert watch.errors >= 1 and "TypeError" in watch.last_error
+    assert journal(rig, "idle_check_error"), "the failure is on the record, not swallowed"
+    watch.cycle()
+    assert watch.cycles == 3, "the watcher is still alive and still polling"

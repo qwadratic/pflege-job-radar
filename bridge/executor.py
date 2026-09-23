@@ -47,7 +47,7 @@ import os
 import pathlib
 import time
 from contextlib import ExitStack
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import driver as D
 from . import errors as E
@@ -60,6 +60,14 @@ from . import ledger as L
 MEDIA_RAW_PATH_SUFFIX = "/raw"
 
 VERSION = "0.1.0"
+
+#: How far back GET /v1/health counts restart-surviving journal events (TASK-264). An instance
+#: counter fed by the same events (Executor.dirty_recovered, InboundWatcher.idle_dirty_recovered)
+#: reads 0 after every crash-restart a repeating incident causes; the journal rows those events
+#: also write (idle_dirty_recovered, dirty_state_recovered, watcher_error) are append-only and
+#: outlive the process. A first number, not a reviewed one -- same caveat as
+#: bridge/relay_pull.py's own WATCHER_STALE_SEC -- long enough to show a repeat across a shift.
+HEALTH_JOURNAL_WINDOW_SEC = 24 * 3600.0
 
 #: How long ``auto_match_media`` waits for huawei01.lock (TASK-131 round 6). This is UI work, the
 #: same class of work a send is -- it waits for the phone as long as a send would, not the
@@ -130,10 +138,34 @@ class Executor:
         # empty phone_ops queue is what a caught-up rail looks like AND what a dead dispatcher
         # looks like.
         self.ops_dispatcher = None
-        # Set by bridge/server.py::maintenance_once, every cycle (TASK-230). {"deleted", "held"}
-        # per artefact kind -- a growing "held" count across cycles is a review backlog forming,
-        # visible here instead of only in the journal.
+        # Set by server.main when the reconcile watcher starts (TASK-234). Same reason again: 0
+        # unread chats reconciled is what a rail nothing ever misses looks like AND what a dead
+        # reconciler looks like.
+        self.reconcile_watcher = None
+        # Set by server.main when the unresolved-send watcher starts (TASK-235). Same reason
+        # again: 0 unresolved sends queued is what a rail with nothing stuck looks like AND what a
+        # dead watcher looks like -- and unlike reconcile_watcher above, this one answers for
+        # OUTBOUND (attempting/unconfirmed rows), not unread inbound notifications.
+        self.unresolved_send_watcher = None
+        # Set by bridge/server.py::maintenance_once, on every SUCCESSFUL pass (TASK-230, stamped
+        # TASK-253). {"deleted", "held"} per artefact kind plus "at"/"duration_sec" -- a growing
+        # "held" count across cycles is a review backlog forming, visible here instead of only in
+        # the journal, and the stamp is what tells a three-week-old result from a fresh one.
         self.last_retention = None
+        # TASK-253: maintenance_once used to have no error guard at all -- one FileNotFoundError
+        # from the TOCTOU window in list_screenshot_candidates/list_recording_candidates
+        # (bridge/adb_driver.py, glob then stat) ended the daemon thread for the process's life,
+        # and last_retention above just sat there looking fresh. Same counters as every watcher in
+        # bridge/watcher.py, so a dead pass is as visible as a dead watcher.
+        self.last_retention_ok_at = None
+        self.retention_errors = 0
+        self.last_retention_error = None
+        self.last_retention_error_at = None
+        # TASK-276: a one-shot callback take_phone fires once the lock is genuinely held, then
+        # clears -- bridge/dispatcher.py's debug-capture recording hooks onto this instead of
+        # starting at claim time, so its 180s budget covers only this op's own work, never a lock
+        # wait or another lane's screen. None whenever debug capture is off or nothing is queued.
+        self.on_phone_acquired = None
 
     # --- POST /v1/messages ---------------------------------------------------------------------
     def send(self, req):
@@ -232,11 +264,15 @@ class Executor:
 
         MECHANISM PROOF, NOT PRODUCTION-READY (said plainly, not papered over): unlike send(),
         this has no ledger idempotency (no client_msg_id, no replay/mismatch handling -- a retried
-        call sends the photos again, full stop), no governor pacing check, and no inbound piggyback
-        read. It exists to prove the drive-a-real-send-of-a-real-photo mechanism works at all
-        (Ivan, 2026-09-22: 'реализуй и протестируй... возможность прикреплять до пяти фотографий'),
-        on one number, by hand. Wiring this into Luna's own automatic sends needs all three of
-        those before it ever reaches a real candidate -- tracked, not silently skipped.
+        call sends the photos again, full stop) and no governor pacing check. It exists to prove
+        the drive-a-real-send-of-a-real-photo mechanism works at all (Ivan, 2026-09-22: 'реализуй
+        и протестируй... возможность прикреплять до пяти фотографий'), on one number, by hand.
+        Wiring this into Luna's own automatic sends needs both of those before it ever reaches a
+        real candidate -- tracked, not silently skipped. Its missing inbound piggyback read was
+        the third gap on this list until TASK-231: ``show_clinic_photos`` was already
+        model-reachable (MCP_TOOL_NAMES) while this path silently dropped whatever a candidate
+        sent while the chat was open for the photos to go out -- fixed below, the same way
+        ``send()`` already reads its own thread back before parking.
         """
         if not local_paths:
             raise E.invalid_request("local_paths must be a non-empty list")
@@ -274,6 +310,15 @@ class Executor:
                 raise E.send_unconfirmed(
                     f"sent {len(results)}/{len(local_paths)} photos, then: {exc}",
                     thread=L.thread_tag(phone)) from exc
+            else:
+                # Right after our own send, same anchor executor.send leans on -- read_open_thread,
+                # not the cold-read variant (TASK-231).
+                try:
+                    messages, unresolved = self.driver.read_open_thread(phone)
+                    seen = self.record_inbound(messages, unresolved, self.clock())
+                    self.ledger.note(self.clock(), "thread_read", None, **seen)
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "thread_read_failed", None, error=str(exc))
             finally:
                 try:
                     self.driver.park()
@@ -288,10 +333,11 @@ class Executor:
         {"clock", "tick"} the newest outgoing bubble reads after sending.
 
         MECHANISM PROOF, NOT PRODUCTION-READY (same caveat as send_photos, said plainly again
-        rather than assumed carried over): no ledger idempotency, no governor pacing check, no
-        inbound piggyback read. Ivan, 2026-09-22, mid-test of send_photos: 'Если вы сейчас фотки
-        отправляют по одной, а мы можем отправить галерейкой плюс текстовое сообщение, все это
-        одно сообщение' -- one message reads as one moment to a candidate, five bubbles do not.
+        rather than assumed carried over): no ledger idempotency, no governor pacing check. Ivan,
+        2026-09-22, mid-test of send_photos: 'Если вы сейчас фотки отправляют по одной, а мы можем
+        отправить галерейкой плюс текстовое сообщение, все это одно сообщение' -- one message
+        reads as one moment to a candidate, five bubbles do not. Its inbound piggyback read is
+        fixed below, same as send_photos -- see that method's own docstring (TASK-231).
         """
         if not local_paths:
             raise E.invalid_request("local_paths must be a non-empty list")
@@ -319,6 +365,15 @@ class Executor:
                                  thread=L.thread_tag(phone), error=str(exc))
                 raise E.send_unconfirmed(f"gallery send did not confirm: {exc}",
                                          thread=L.thread_tag(phone)) from exc
+            else:
+                # Right after our own send, same anchor executor.send leans on -- read_open_thread,
+                # not the cold-read variant (TASK-231).
+                try:
+                    messages, unresolved = self.driver.read_open_thread(phone)
+                    seen = self.record_inbound(messages, unresolved, self.clock())
+                    self.ledger.note(self.clock(), "thread_read", None, **seen)
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "thread_read_failed", None, error=str(exc))
             finally:
                 try:
                     self.driver.park()
@@ -391,6 +446,23 @@ class Executor:
         except D.DriverError as exc:
             raise E.device_unavailable(f"the handset was not available: {exc}",
                                        thread=L.thread_tag(phone)) from exc
+        # TASK-276: fire the one-shot debug-capture hook, if one is waiting, now that the lock is
+        # genuinely ours -- before _recover_if_dirty so a dirty-phone park is inside the recording
+        # too, not before it.
+        hook, self.on_phone_acquired = self.on_phone_acquired, None
+        if hook is not None:
+            try:
+                hook()
+            except Exception as exc:
+                # Loud but never blocking -- the same contract every other capture failure here has
+                # (dispatcher.py's own `debug_capture_failed`, and `park_failed` below). TASK-276
+                # moved start_recording out of OpsDispatcher._capture, which HAD this try, and onto
+                # this line, which did not: a screenrecord that cannot start (adb hiccup, /sdcard
+                # full, the verb missing on this Android build) then raised straight out of
+                # take_phone and FAILED THE SEND IT WAS ONLY SUPPOSED TO FILM. Debug capture
+                # defaults on (bridge/server.py), so that was every send on the rail.
+                self.ledger.note(self.clock(), "debug_capture_failed", None,
+                                 error=f"{type(exc).__name__}: {exc}")
         self._recover_if_dirty("dirty_state_recovered")
         return driver
 
@@ -425,6 +497,23 @@ class Executor:
             shot = f"(screenshot failed: {exc})"
         self.ledger.mark_unconfirmed(
             key, self.clock(), detail=f"{reason} shot={shot}" + (f" driver={detail}" if detail else ""))
+
+    # --- GET /v1/unresolved (TASK-261) -------------------------------------------------------------
+    def unresolved_sends(self):
+        """-> every send still ATTEMPTING/UNCONFIRMED, oldest first (``Ledger.unresolved()``): the
+        id, thread and state a reconcile has to answer for, and how long it has been waiting.
+
+        TASK-235's ``UnresolvedSendWatcher`` already re-enqueues a reconcile for every one of these
+        rows on its own schedule, so nothing here starts or changes recovery -- this exists because
+        that heartbeat carries a cycle count, not a row: an operator asking "how many, how old,
+        which ones" had no answer without opening the ledger's own sqlite file by hand. Never the
+        phone number -- ``thread_tag`` is what the logs get (this module's own docstring), and the
+        same discipline applies to what an operator reads off this route.
+        """
+        now = self.clock()
+        rows = [{"client_msg_id": e.client_msg_id, "thread_tag": e.thread_tag, "state": e.state,
+                "age_sec": L.age_sec(e.attempted_at, now)} for e in self.ledger.unresolved()]
+        return {"ok": True, "at": L.utc(now), "count": len(rows), "rows": rows}
 
     # --- POST /v1/reconcile ----------------------------------------------------------------------
     def reconcile(self, client_msg_ids):
@@ -467,24 +556,45 @@ class Executor:
             except D.DriverError as exc:
                 return {"client_msg_id": entry.client_msg_id, "verdict": "indeterminate",
                         "evidence": f"thread unreadable: {exc}"}
+            # Same piggyback as every other chat-open verb (TASK-231/234): opening this thread
+            # already cleared whatever notification a candidate message would have posted, and
+            # since TASK-235 this open is no longer only human-triggered -- UnresolvedSendWatcher
+            # enqueues it automatically for every ATTEMPTING/UNCONFIRMED send. Cold, not
+            # open-anchored: this call has no just-sent bubble of its own to prove "today" against
+            # (bridge/operations.py::read_thread's own reasoning for using read_cold_thread).
+            try:
+                messages, unresolved = self.driver.read_cold_thread(entry.to_phone)
+                seen = self.record_inbound(messages, unresolved, now)
+                self.ledger.note(now, "thread_read", entry.client_msg_id, **seen)
+            except D.DriverError as exc:
+                self.ledger.note(now, "thread_read_failed", entry.client_msg_id, error=str(exc))
             try:
                 self.driver.park()
             except D.DriverError as exc:
                 self.ledger.note(now, "park_failed", entry.client_msg_id, error=str(exc))
 
         outgoing = [b for b in bubbles if b.direction == "out"]
+        attempted_clock = _clock_hhmm(entry.attempted_at, self.governor.tz)
         mine = [b for b in outgoing if D.body_sha256(b.text) == entry.body_sha256]
         if mine and mine[-1].tick_state is not None:
-            self.ledger.mark_sent(entry.client_msg_id, now, tick=mine[-1].tick,
-                                  tick_state=mine[-1].tick_state, clock=mine[-1].clock)
-            return {"client_msg_id": entry.client_msg_id, "verdict": "confirmed_sent",
-                    "tick": mine[-1].tick, "sent_at": L.utc(now),
-                    "evidence": "chat scan: body match carrying a delivery tick"}
+            # TASK-237: a tick alone is not ours -- identical bodies recur on this rail (constant
+            # nudge/ack text, different turn_key), so an older bubble can carry a body match and a
+            # tick that belong to a previous attempt. Only a bubble at or after this attempt's own
+            # clock is evidence of THIS send, mirroring the clock reasoning the absent branch below
+            # already does.
+            if mine[-1].clock and mine[-1].clock >= attempted_clock:
+                self.ledger.mark_sent(entry.client_msg_id, now, tick=mine[-1].tick,
+                                      tick_state=mine[-1].tick_state, clock=mine[-1].clock)
+                return {"client_msg_id": entry.client_msg_id, "verdict": "confirmed_sent",
+                        "tick": mine[-1].tick, "sent_at": L.utc(now),
+                        "evidence": "chat scan: body match carrying a delivery tick"}
+            return {"client_msg_id": entry.client_msg_id, "verdict": "indeterminate",
+                    "evidence": "chat scan: body match predates this attempt -- an older "
+                                "identical bubble, not ours"}
         if mine:
             return {"client_msg_id": entry.client_msg_id, "verdict": "indeterminate",
                     "evidence": "chat scan: body match with no tick -- it may still deliver"}
 
-        attempted_clock = _clock_hhmm(entry.attempted_at, self.governor.tz)
         covers = [b for b in outgoing if b.clock and b.clock >= attempted_clock]
         if not covers:
             return {"client_msg_id": entry.client_msg_id, "verdict": "indeterminate",
@@ -644,6 +754,13 @@ class Executor:
         ``InboundWatcher`` or ``MediaWatcher`` -- this is the UI work bridge/watcher.py's own
         module docstring describes as a separate job from draining the shade, and the only one of
         the three that ever takes ``huawei01.lock``.
+
+        A NON-EMPTY ``phone_ops`` QUEUE IS A COURTESY YIELD, NOT A FAILURE (TASK-268): this method
+        is not routed through ``bridge/dispatcher.py``, so a dispatched op racing it for
+        ``huawei01.lock`` is real, and it is a race the dispatched side is built to lose -- its own
+        patience is ``driver.LOCK_TIMEOUT_SEC`` (30 s) against this read's
+        ``IDENTITY_LOCK_TIMEOUT_SEC`` (180 s). A row skipped this way is not decided on incomplete
+        evidence; it stays queued and is tried again next cycle, same as a genuine read failure.
         """
         now = self.clock()
         attached = weak = 0
@@ -661,6 +778,13 @@ class Executor:
             # bubble draws neither today (bridge/adb_driver.py's own docstring), so reading one
             # would only cost a chat open for nothing -- skipped, exactly as before, for those kinds.
             if len(candidates) > 1 or row["kind"] in EVIDENCE_BEARING_KINDS:
+                queued = self.ledger.phone_ops_queue_counts()["queued"]
+                if queued:
+                    # A dispatched op is waiting on the same flock this read would hold for up to
+                    # lock_timeout -- see this method's own docstring (TASK-268). Step aside.
+                    self.ledger.note(now, "identity_evidence_deferred", None, kind=row["kind"],
+                                     queued=queued)
+                    continue
                 narrowed = self._narrow_by_time(candidates, row["mtime"]) if len(candidates) > 1 \
                     else candidates
                 try:
@@ -747,6 +871,20 @@ class Executor:
                     # not a reason to give up on every other candidate in the same sweep.
                     self.ledger.note(self.clock(), "identity_thread_unreadable", None, error=str(exc))
                     continue
+                else:
+                    # This thread has an unresolved media file, which is exactly the state a
+                    # candidate who just sent a CV is in -- the moment they are most likely still
+                    # typing. This runs every IDENTITY_TIME_WINDOW_SEC-scoped cycle against a real
+                    # candidate thread with no send and no model turn involved, which makes it the
+                    # most reachable of the three chat-open paths that used to drop a reply on the
+                    # floor in total silence (TASK-231). A piggyback failure does not cost the
+                    # evidence read that already succeeded -- it is journalled and moves on.
+                    try:
+                        messages, unresolved = self.driver.read_cold_thread(phone)
+                        seen = self.record_inbound(messages, unresolved, self.clock())
+                        self.ledger.note(self.clock(), "evidence_read_inbound", None, **seen)
+                    except D.DriverError as exc:
+                        self.ledger.note(self.clock(), "thread_read_failed", None, error=str(exc))
                 finally:
                     try:
                         self.driver.park()
@@ -763,6 +901,10 @@ class Executor:
     # --- GET /v1/health ----------------------------------------------------------------------------
     def health(self):
         now = self.clock()
+        # TASK-261: the count alone ("unconfirmed": 2) does not say whether that is two rows five
+        # minutes old or two rows six days old -- oldest_unresolved_sec is the difference, off the
+        # same rows GET /v1/unresolved lists.
+        unresolved = self.ledger.unresolved()
         return {"ok": True, "version": VERSION, "at": L.utc(now),
                 "rail": {"number": self.rail_number,
                          "msisdn_verified": self.rail_number is not None,
@@ -770,6 +912,8 @@ class Executor:
                                  "MSISDN of L2N4C19B14054874 is UNVERIFIED and blocking (TASK-136)",
                          "driver": self.driver.describe()},
                 "queue": self.ledger.queue_counts(),
+                "oldest_unresolved_sec": L.age_sec(unresolved[0].attempted_at, now)
+                                        if unresolved else None,
                 "quota": self.governor.quota(now),
                 "inbound": {**self.ledger.inbound_backlog(),
                             "seen": self.inbound_seen,
@@ -779,11 +923,32 @@ class Executor:
                 "watcher": self.watcher.heartbeat() if self.watcher else None,
                 "media_watcher": self.media_watcher.heartbeat() if self.media_watcher else None,
                 "identity_watcher": self.identity_watcher.heartbeat() if self.identity_watcher else None,
+                "reconcile_watcher": self.reconcile_watcher.heartbeat()
+                                    if self.reconcile_watcher else None,
+                "unresolved_send_watcher": self.unresolved_send_watcher.heartbeat()
+                                          if self.unresolved_send_watcher else None,
                 "broadcast": {
                     "runs_open": len(self.ledger.open_runs()),
                     "runner": self.broadcast_runner.heartbeat() if self.broadcast_runner else None},
                 "ops_dispatcher": self.ops_dispatcher.heartbeat() if self.ops_dispatcher else None,
-                "retention": self.last_retention,
+                "phone_ops": self.ledger.phone_ops_queue_counts(),
+                "retention": {"last_ok_at": self.last_retention_ok_at,
+                              "errors": self.retention_errors,
+                              "last_error": self.last_retention_error,
+                              "last_error_at": self.last_retention_error_at,
+                              "result": self.last_retention},
+                # TASK-264: the counters above (dirty_recovered, watcher.idle_dirty_recovered,
+                # watcher.errors) are process-lifetime instance attributes -- a crash-looping
+                # executor always reports them as 0. These are the same underlying journal events,
+                # windowed instead of reset, so a repeating incident stays visible across a restart.
+                "journal_recent": {
+                    "window_sec": HEALTH_JOURNAL_WINDOW_SEC,
+                    "idle_dirty_recovered": self.ledger.event_count(
+                        "idle_dirty_recovered", now - timedelta(seconds=HEALTH_JOURNAL_WINDOW_SEC), now),
+                    "dirty_state_recovered": self.ledger.event_count(
+                        "dirty_state_recovered", now - timedelta(seconds=HEALTH_JOURNAL_WINDOW_SEC), now),
+                    "watcher_error": self.ledger.event_count(
+                        "watcher_error", now - timedelta(seconds=HEALTH_JOURNAL_WINDOW_SEC), now)},
                 "audit": {"destructions": self.ledger.audit_count()}}
 
 

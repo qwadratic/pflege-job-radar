@@ -580,6 +580,18 @@ def test_the_executors_own_504_is_never_printed_as_a_refusal(capsys):
             "(audit 7). Read what the handset shows: tools/wa_bridge.py chats") in err
 
 
+def test_a_media_sends_answer_timeout_is_never_printed_as_a_refusal(capsys, autosend):
+    """TASK-247: send_photos/send_gallery/send_document queue for the handset before this client
+    ever gives up listening (OPS_PATH's own contract, bridge.py:100-104), so a timed-out answer is
+    never "bridge refused" -- and none of the three mint an idempotency key, so the operator must be
+    told not to resend on a guess, the same 2026-09-21 lesson the destructive routes already carry."""
+    code, fake = run(["send-gallery", "--to", MINE, "--files", "/tmp/a.jpg"], v1_gallery=TIMED_OUT)
+    err = capsys.readouterr().err
+    assert code == 1 and "refused" not in err
+    assert "not a refusal" in err and "do not resend" in err
+    assert f"tools/wa_bridge.py read --phone {MINE}" in err
+
+
 def test_the_executors_own_not_found_carries_the_reason_and_the_client_reads_it():
     """The CLI checks the list first, so this 404 is what a MODEL calling the client directly meets
     when the row went away between the list and the call. The reason travels in the refusal
@@ -629,11 +641,14 @@ def test_a_destructive_call_waits_for_what_a_destruction_costs_the_handset(capsy
     assert fake.calls[0]["timeout"] == 90.0, "the chat list fits inside WA_BRIDGE_TIMEOUT_SEC"
 
 
-def test_a_send_keeps_the_budget_it_had(capsys, autosend):
-    """The send path was measured and fixed in TASK-146 and is not touched by this: its budget is
-    the fixed 90 s plus what the body costs to type."""
+def test_a_send_budget_covers_the_flock_wait_the_op_queue_makes_it_pay(capsys, autosend):
+    """TASK-146 measured the send itself; TASK-243 added the 30 s the op may spend waiting for the
+    handset lock before any of that starts. Every sibling budget in app/wa/bridge.py already
+    carried FLOCK_WAIT_SEC -- send was the one that did not, so a send that merely queued behind
+    another op timed out as 'nothing was sent' while the executor went on to type it."""
     code, fake = run(["send", "--to", MINE, "--body", "x" * 320], v1_messages=sent_echo)
-    assert code == 0 and fake.posted(BR.MESSAGES_PATH)[0]["timeout"] == 90 + 320 / 3.2
+    expected = BR.FLOCK_WAIT_SEC + BR.EXECUTOR_FIXED_BUDGET_SEC + 320 / 3.2
+    assert code == 0 and fake.posted(BR.MESSAGES_PATH)[0]["timeout"] == expected
 
 
 # --- sending one message ------------------------------------------------------------------------------
@@ -740,6 +755,78 @@ def test_health_says_a_weak_attribution_and_a_duplicate_out_loud(capsys):
     assert "share bytes with another pull" in out
     assert "2 attribution(s) marked WEAK" in out
     assert "5 attached (2 weak), 0 errors" in out
+
+
+def test_health_says_unresolved_sends_out_loud_when_the_queue_has_them(capsys):
+    """TASK-261: the bare count was already in `queue` -- the age is the new information, and it
+    has to point at `unresolved-list` the same way the media line points at `media-list`."""
+    health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-21T10:00:00Z",
+                    "rail": {"number": None, "driver": {"kind": "adb"}},
+                    "queue": {"sent": 41, "unconfirmed": 2}, "quota": {"sent_today": 0},
+                    "oldest_unresolved_sec": 518400})
+    assert run(["health"], v1_health=health)[0] == 0
+    out = capsys.readouterr().out
+    assert "unresolved sends: 2 (oldest 518400s) -- see `unresolved-list`" in out
+
+
+def test_health_says_nothing_about_unresolved_sends_when_the_queue_has_none(capsys):
+    health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-21T10:00:00Z",
+                    "rail": {"number": None, "driver": {"kind": "adb"}},
+                    "queue": {"sent": 41}, "quota": {"sent_today": 0},
+                    "oldest_unresolved_sec": None})
+    assert run(["health"], v1_health=health)[0] == 0
+    assert "unresolved sends" not in capsys.readouterr().out
+
+
+# --- TASK-264: the liveness fields, printed every time, and the exit code they earn ------------------
+
+HEALTH_NOW = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+
+
+def test_health_prints_the_liveness_fields_when_everything_is_alive(capsys):
+    """Before this fix none of watcher/ops_dispatcher/phone_ops/inbound/retention printed anywhere
+    but --json -- a live rail and a dead one looked identical on screen."""
+    health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-23T12:00:00Z",
+                    "rail": {"number": None, "driver": {"kind": "adb"}},
+                    "queue": {"sent": 41}, "quota": {"sent_today": 0},
+                    "watcher": {"alive": True, "last_ok_at": "2026-09-23T11:59:55Z"},
+                    "ops_dispatcher": {"alive": True, "last_ok_at": "2026-09-23T11:59:58Z"},
+                    "phone_ops": {"queued": 0, "oldest_queued_at": None},
+                    "inbound": {"unacked": 0, "oldest_unacked_at": None},
+                    "retention": {"last_ok_at": "2026-09-23T09:00:00Z", "errors": 0,
+                                  "last_error": None, "last_error_at": None}})
+    assert run(["health"], now=HEALTH_NOW, v1_health=health)[0] == 0
+    out = capsys.readouterr().out
+    assert "watcher: alive=True  last_ok_at='2026-09-23T11:59:55Z'  age=5s" in out
+    assert "ops_dispatcher: alive=True  last_ok_at='2026-09-23T11:59:58Z'" in out
+    assert "phone_ops: queued=0  oldest_queued_at=None" in out
+    assert "inbound: unacked=0  oldest_unacked_at=None" in out
+    assert "retention: last_ok_at='2026-09-23T09:00:00Z'  errors=0" in out
+    assert "ATTENTION" not in out
+
+
+def test_health_flags_a_dead_watcher_a_stuck_dispatcher_and_a_retention_error(capsys):
+    """The scenario the finding names: a dead inbound watcher, a stale inbound backlog, a stopped
+    ops dispatcher and a held retention error -- none of it visible before, all of it exit 0."""
+    health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-23T12:00:00Z",
+                    "rail": {"number": None, "driver": {"kind": "adb"}},
+                    "queue": {"sent": 41}, "quota": {"sent_today": 0},
+                    "watcher": {"alive": False, "last_ok_at": "2026-09-23T11:00:00Z"},
+                    "ops_dispatcher": {"alive": False, "last_ok_at": "2026-09-23T11:00:00Z"},
+                    "phone_ops": {"queued": 5, "oldest_queued_at": "2026-09-23T10:00:00Z"},
+                    "inbound": {"unacked": 3, "oldest_unacked_at": "2026-09-23T11:00:00Z"},
+                    "retention": {"last_ok_at": "2026-09-22T09:00:00Z", "errors": 2,
+                                  "last_error": "boom", "last_error_at": "2026-09-23T08:00:00Z"}})
+    assert run(["health"], now=HEALTH_NOW, v1_health=health)[0] == 1
+    out = capsys.readouterr().out
+    assert "watcher: alive=False  last_ok_at='2026-09-23T11:00:00Z'  age=3600s" in out
+    assert "ops_dispatcher: alive=False  last_ok_at='2026-09-23T11:00:00Z'" in out
+    assert "phone_ops: queued=5  oldest_queued_at='2026-09-23T10:00:00Z'" in out
+    assert "inbound: unacked=3  oldest_unacked_at='2026-09-23T11:00:00Z'  age=3600s" in out
+    assert "retention: last_ok_at='2026-09-22T09:00:00Z'  errors=2  last_error='boom' at '2026-09-23T08:00:00Z'" in out
+    assert "ATTENTION: watcher.alive is false; watcher.last_ok_at is 3600s old (over 60s); " \
+           "ops_dispatcher.alive is false; oldest unacked inbound row is 3600s old (over 60s); " \
+           "retention has 2 error(s)" in out
 
 
 # --- the archive flag is the operator's assertion, not a field read off the row -----------------------
@@ -895,6 +982,36 @@ def test_media_attach_needs_both_id_and_phone():
     with pytest.raises(SystemExit) as caught:
         run(["media-attach", "--id", "wab.q.aaaa"])
     assert caught.value.code == 2
+
+
+# --- TASK-261: the rows a reconcile still has to answer for, read-only -----------------------------
+UNRESOLVED_SENDS = (200, {"ok": True, "at": "2026-09-22T10:00:00.000Z", "count": 1, "rows": [
+    {"client_msg_id": "wab.o.aaaa", "thread_tag": "deadbeef1234", "state": "unconfirmed",
+     "age_sec": 518400.0}]})
+
+
+def test_unresolved_list_prints_id_state_thread_and_age(capsys):
+    code, _ = run(["unresolved-list"], v1_unresolved=UNRESOLVED_SENDS)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "wab.o.aaaa" in out
+    assert "state=unconfirmed" in out and "thread=deadbeef1234" in out and "age=518400s" in out
+    assert "reconcile --keys wab.o.aaaa" in out, "feeds straight into reconcile"
+
+
+def test_unresolved_list_json_passes_the_executors_answer_through(capsys):
+    code, _ = run(["unresolved-list", "--json"], v1_unresolved=UNRESOLVED_SENDS)
+    out = json.loads(capsys.readouterr().out)
+    assert code == 0 and out == UNRESOLVED_SENDS[1]["rows"]
+
+
+def test_unresolved_list_with_nothing_stuck_prints_no_reconcile_hint(capsys):
+    empty = (200, {"ok": True, "at": "2026-09-22T10:00:00.000Z", "count": 0, "rows": []})
+    code, _ = run(["unresolved-list"], v1_unresolved=empty)
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "0 unresolved send(s)" in out
+    assert "reconcile --keys" not in out
 
 
 # --- TASK-230: reconcile / ops-resolve --------------------------------------------------------

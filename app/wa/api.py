@@ -961,6 +961,23 @@ def _freeform_window_open(t):
     return age_hours < C.FREEFORM_WINDOW_HOURS
 
 
+def _refuse_body_mismatch(cl, wamid, body):
+    """Rule 3 (TASK-130) already refuses to let a regenerated body overwrite a delivered one on the
+    executor's own ledger; a mismatch replay is how that refusal reaches this side -- a 200 whose
+    ``client_msg_id`` we recognise, carrying the FIRST body's tick and ``body_mismatch: True``
+    (``bridge/executor.py::_mismatch_response``). ``bridge.Client`` already keeps that answer on
+    ``last_send`` for exactly this reader (``app/wa/bridge.py:366-368``: "for the caller that wants
+    the tick and the replay flags ... Not consulted by this module"), so this is that caller.
+    Recording ``body`` here would write text the candidate never received into wa_messages
+    (TASK-246); raising instead leaves the claim reclaimable so catch-up keeps retrying, exactly as
+    a real send failure already does. ``getattr`` because ``meta.Client`` has no ``last_send`` at
+    all -- inert on that rail."""
+    if getattr(cl, "last_send", None) and cl.last_send.get("body_mismatch"):
+        raise RuntimeError(
+            f"{wamid} was already delivered with a different body under this key -- refusing to "
+            f"record {body!r} as sent (first-body-wins, TASK-130)")
+
+
 def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     """Send the turn and record it. Buttons ride on the last bubble, which is the question.
 
@@ -1023,10 +1040,12 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
         last = i == len(bubbles) - 1
         if last and buttons:
             wamid = cl.send_buttons(t["phone"], b, buttons)
+            _refuse_body_mismatch(cl, wamid, b)
             ST.record_outbound(c, t["phone"], wamid, b, kind="buttons",
                                meta={"action": action, "buttons": buttons})
         else:
             wamid = cl.send_text(t["phone"], b)
+            _refuse_body_mismatch(cl, wamid, b)
             ST.record_outbound(c, t["phone"], wamid, b, kind="text", meta={"action": action})
     t["last_outbound_at"] = ST.now_iso()
     ST.pin_rail(c, t["phone"], rail)

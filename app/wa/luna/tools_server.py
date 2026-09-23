@@ -26,9 +26,13 @@ hardcoded here: a list written into this file rots the first time the board chan
 value silently returns zero rows. The counting happens in the PARENT process, which already holds a
 warm snapshot, and arrives here as a file (``WA_LUNA_BOARD_VOCABULARY``): building it here put a cold
 Supabase build (8-17s measured) on the CLI's 30s MCP connect deadline, on every turn, tool-less ones
-included (TASK-213 review). After the tools are registered this server stamps
-``WA_LUNA_TOOLS_READY``, which is how ``luna_brain._live_reply`` sees that the turn actually had the
-board tools -- a server that dies or is dropped leaves the CLI exiting 0 with a normal-looking reply.
+included (TASK-213 review). The board rows the tools actually query travel the same way
+(``WA_LUNA_BOARD_SNAPSHOT``, TASK-273): without it, every board tool -- not just the vocabulary text --
+paid that same cold build on its own first call, which TASK-213's fix never touched. On the CLI's first
+``tools/list`` request -- proof it actually received the schemas, not just that this process started
+(TASK-274) -- this server stamps ``WA_LUNA_TOOLS_READY``, which is how ``luna_brain._live_reply`` sees
+that the turn actually had the board tools -- a server that dies or is dropped before that point
+leaves the CLI exiting 0 with a normal-looking reply and no stamp behind it.
 
 What a tool may hand back (TASK-145, Ivan 2026-09-21, after the first real phone-rail conversation):
 
@@ -60,6 +64,7 @@ directly (``python tools_server.py``) cannot work no matter what sys.path says. 
 ``luna_brain.py``'s mcp-config generator for the exact command/cwd this is started with.
 """
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -394,6 +399,27 @@ def _job_rows(city="", department="", role_class="", regierungsbezirk="", housin
     """(the matching live-verified postings, the resolved town or None) -- _job_filters plus _town_rows."""
     filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, q)
     return _town_rows(D.filter_jobs(filters), town), town
+
+
+# --- board snapshot, primed from the parent -----------------------------------------------------
+# TASK-273: the vocabulary text above was moved off this process's own board build (TASK-213), but
+# the row data every one of these tools queries -- D.filter_jobs/D.filter_clinics, reached through
+# D.jobs()/D.clinics()/D.snapshot() -- was not: this server's own D._snap (app/data.py:186) starts
+# empty in a fresh subprocess, so the first board tool call of the turn hit snapshot()'s own
+# `if force or (empty and not loading): refresh()` and cold-built synchronously from Supabase, the
+# same 8-17s TASK-213 already measured and moved the vocabulary count out of this process to avoid.
+def _prime_board_snapshot():
+    """Load the parent's already-warm board snapshot (WA_LUNA_BOARD_SNAPSHOT,
+    luna_brain._board_snapshot_path) into this process's own D._snap before the CLI can reach a
+    tool, so snapshot()'s empty/stale checks see a populated, fresh cache and never call refresh().
+    `at` is stamped to now rather than kept from the parent's own snapshot, so the `stale` check
+    cannot fire a background refresh either, for the rest of this short-lived process -- mirrors
+    tests/luna_fixture_tools_server.py's own priming of the fixture board into this same D._snap.
+    No variable (this module run by hand) leaves the board to cold-build as before."""
+    path = os.environ.get("WA_LUNA_BOARD_SNAPSHOT")
+    if not path:
+        return
+    D._snap.update(json.loads(Path(path).read_text(encoding="utf-8")), at=time.time(), loading=False, error=None)
 
 
 # --- vocabulary, read off the live board ----------------------------------------------------
@@ -978,8 +1004,10 @@ BOARD_PUBLIC_BASE = "https://pflege-board.exe.xyz"
 #: send_gallery's own contract (bridge/adb_driver.py) is a path already on the MINI's filesystem,
 #: never bytes over the HTTP call itself. Kept apart from this session's own manual test staging
 #: (~/wa_outbound_test) so a live tool call and a human poking at the rail by hand never collide.
-MINI_HOST = "macmini"
-MINI_MEDIA_DIR = "/home/cursorworker1/wa_luna_media"
+#: TASK-272: read from config (WA_LUNA_MEDIA_HOST/WA_LUNA_MEDIA_DIR) rather than hardcoded here, so
+#: config.readiness() can show what this will actually ssh/scp to.
+MINI_HOST = C.LUNA_MEDIA_HOST
+MINI_MEDIA_DIR = C.LUNA_MEDIA_DIR
 
 
 def _fetch_clinic_expose(clinic_id):
@@ -1013,13 +1041,33 @@ def _download_to_temp(url_path, suffix):
     return path
 
 
-def _stage_on_mini(local_path):
-    """scp local_path to MINI_MEDIA_DIR, ssh mkdir -p first -- the same two-step this session's own
-    manual staging has used all night, just from code instead of a human's shell. -> the remote
-    path send_gallery/send_document expects. Raises ToolError, never partial state the caller has
-    to notice on its own, if either step fails."""
-    basename = os.path.basename(local_path)
-    remote = f"{MINI_MEDIA_DIR}/{basename}"
+def _staged_media_name(clinic_id, url_path, suffix):
+    """-> the remote basename one (clinic_id, url_path) pair always stages under (TASK-272).
+    Hashes the clinic/URL pair, not the downloaded bytes: a content hash needs the bytes in hand
+    already, which defeats the point of checking before downloading them at all. mkstemp's random
+    basename (the previous scheme) guaranteed the opposite of this -- a fresh name, and therefore a
+    fresh download and scp, for every candidate who reaches the same clinic."""
+    digest = hashlib.sha1(f"{clinic_id}:{url_path}".encode("utf-8")).hexdigest()
+    return f"{digest}{suffix}"
+
+
+def _staged_already(remote_name):
+    """-> True if MINI_MEDIA_DIR/remote_name is already sitting on the mini. An ssh test, not a
+    local stat -- this process and MINI_MEDIA_DIR are on different machines. Any non-zero exit
+    (the file is genuinely absent, or ssh itself failed) reads as "not confirmed staged": the
+    caller falls back to downloading and staging exactly as it did before this existence check
+    existed, so an unreachable mini still fails loudly at that step, not silently here."""
+    check = subprocess.run(["ssh", MINI_HOST, f"test -f {MINI_MEDIA_DIR}/{remote_name}"],
+                           capture_output=True, text=True, timeout=20)
+    return check.returncode == 0
+
+
+def _stage_on_mini(local_path, remote_name):
+    """scp local_path to MINI_MEDIA_DIR/remote_name, ssh mkdir -p first -- the same two-step this
+    session's own manual staging has used all night, just from code instead of a human's shell.
+    -> the remote path send_gallery/send_document expects. Raises ToolError, never partial state
+    the caller has to notice on its own, if either step fails."""
+    remote = f"{MINI_MEDIA_DIR}/{remote_name}"
     mkdir = subprocess.run(["ssh", MINI_HOST, f"mkdir -p {MINI_MEDIA_DIR}"],
                            capture_output=True, text=True, timeout=20)
     if mkdir.returncode != 0:
@@ -1079,21 +1127,88 @@ def show_clinic_photos(clinic_id: str) -> dict:
             return {"sent": False, "presentation_text": caption}
         return {"sent": False, "reason": "no photos or presentation available yet for this clinic"}
 
+    # TASK-250: every other outbound goes through api._send, which stops here (C.AUTOSEND) and here
+    # (the thread's pinned rail) before anything leaves the process -- this tool called BR.Client()
+    # unconditionally instead, so a staging deployment with AUTOSEND unset sent real photos anyway,
+    # and a thread already pinned to the meta rail got them from the handset number, a stranger to
+    # that candidate. Same two gates, applied here.
+    from .. import store as ST
+    from .. import transport as T
+    if not C.AUTOSEND:
+        return {"sent": False, "reason": "AUTOSEND is off"}
+    rail = T.rail_for(phone=phone)
+    if rail != "bridge":
+        return {"sent": False, "reason": f"this thread is pinned to the {rail} rail, not the phone "
+                "rail show_clinic_photos sends from"}
+
+    # TASK-271: this tool's own docstring says "call it AT MOST ONCE per clinic per conversation",
+    # but that line is read by the model, not enforced -- a retry the model never sees (the turn's
+    # `claude -p` killed on LUNA_TIMEOUT_SEC, or the ~3-minute catch-up re-driving the same inbound)
+    # reaches this far again with no memory of the first call. send_gallery has no idempotency key
+    # of its own (its docstring: "MECHANISM PROOF, NOT PRODUCTION-READY ... calling it twice sends
+    # the photos twice") and bridge/executor.py never puts gallery/photos/document sends through the
+    # ledger's client_msg_id replay guard the way a text send is. The wa_messages row this same call
+    # writes on success below (meta.action="show_clinic_photos") is the one mechanical fact a repeat
+    # call can check before it touches the network or the handset a second time.
+    conn = ST.db()
+    try:
+        already_sent = any(r["meta"].get("action") == "show_clinic_photos"
+                           and r["meta"].get("clinic_id") == clinic_id
+                           for r in ST.messages_for(conn, phone, direction="out"))
+    finally:
+        conn.close()
+    if already_sent:
+        return {"sent": False, "reason": "already sent to this candidate"}
+
+    # TASK-251: check_reply's LINK gate (grounding.has_link, TASK-144) runs on the model's own
+    # bubbles only -- this caption is sent straight from here and never becomes one, so a researched
+    # blurb carrying the clinic's own site went out uncensored. Same rule, same fallback the no-photo
+    # branch above already uses: the model gets presentation_text and writes it in its own words,
+    # where LINK applies.
+    from . import grounding as GR
+    if GR.has_link(caption):
+        return {"sent": False, "presentation_text": caption}
+
     local_files, remote_files = [], []
     try:
         for p in photo_paths[:5]:
             suffix = os.path.splitext(p)[1] or ".jpg"
+            # TASK-272: a deterministic name keyed on (clinic_id, p) lets a second candidate
+            # reaching this same clinic reuse what an earlier one already staged, instead of a
+            # fresh mkstemp-random name forcing a fresh board download and scp every single time.
+            remote_name = _staged_media_name(clinic_id, p, suffix)
+            if _staged_already(remote_name):
+                remote_files.append(f"{MINI_MEDIA_DIR}/{remote_name}")
+                continue
             local = _download_to_temp(p, suffix)
             local_files.append(local)
-            remote_files.append(_stage_on_mini(local))
+            remote_files.append(_stage_on_mini(local, remote_name))
         try:
             BR.Client().send_gallery(phone, remote_files, caption=caption)
+            # api._send writes a wa_messages row per bubble it sends so outbound_since_last_turn
+            # (prompts.py) can show a resumed session what already went out; this call bypassed
+            # that too, so a next turn resuming without CLI session memory of this tool call read
+            # the candidate's reaction to the photos as an answer to whatever text preceded them.
+            conn = ST.db()
+            try:
+                ST.record_outbound(conn, phone, None, caption, kind="gallery",
+                                   meta={"action": "show_clinic_photos", "clinic_id": clinic_id,
+                                         "photos": len(remote_files)})
+            finally:
+                conn.close()
         except BR.BridgeError as exc:
             # Same "was the handset actually touched" distinction tools/wa_bridge.py draws for a
             # human operator (bridge/errors.py's HANDSET_TOUCHED_CODES) -- an uncaught BridgeError
             # here would otherwise crash this whole tools server mid-turn, which loses every OTHER
             # tool call already made this turn along with it.
-            if exc.code in BR.HANDSET_TOUCHED_CODES:
+            #
+            # CODE_ANSWER_TIMEOUT belongs in this branch too (TASK-247): OPS_PATH's own contract
+            # (bridge.py:100-104) is that send_gallery only ever reaches that code after the
+            # executor already answered 200 {"state": "queued"} -- this call WAS queued for the
+            # handset, so "nothing was sent" is never true of it, and the send is quite possibly
+            # still landing while this exception is raised (GALLERY_BUDGET_SEC alone is 187s,
+            # more than double the bare client floor this used to wait on).
+            if exc.code in BR.HANDSET_TOUCHED_CODES or exc.code == BR.CODE_ANSWER_TIMEOUT:
                 raise ToolError(
                     f"the phone rail touched the handset trying to send this but could not confirm "
                     f"it went out (code {exc.code!r}) -- do not tell the candidate photos are coming; "
@@ -1138,6 +1253,14 @@ def look_at_phone() -> dict:
     this to the candidate and continue from the stored history as normal; a failed call here is never
     evidence something is wrong with the conversation itself."""
     _log_call("look_at_phone", {})   # no phone number in the log, same as every tool above
+    if os.environ.get("WA_LUNA_NO_SEND"):
+        # A dry run (app/wa/luna/shadow_run.py, tools/wa_rehearse.py). Unlike show_clinic_photos this
+        # is "read-only" only from Luna's own side: BR.Client().read_thread() opens the real chat on
+        # the real handset and clears its notification (bridge/operations.py:read_thread), so a dry
+        # run reaching for it would touch a real candidate's live thread. No copy to read instead --
+        # this is TASK-240.
+        raise ToolError("the live handset cannot be read in a dry run -- say nothing about this to "
+                        "the candidate and continue from the stored history. Internal tool note.")
     phone = _turn_phone()
     try:
         body = BR.Client().read_thread(phone=phone, include_text=True)
@@ -1158,14 +1281,19 @@ _BASE_DESCRIPTIONS = {name: tool.description for name, tool in mcp._tool_manager
 
 
 def _stamp_ready():
-    """Tell the parent this turn actually got the board tools.
+    """Tell the parent the CLI actually received the board tool schemas.
 
-    A tools server that dies at start, or that the CLI drops for missing its connect deadline, is
-    invisible from outside: ``claude -p`` still exits 0 with ``is_error`` false and a normal-looking
-    reply, and the result envelope carries no MCP server status at all (probed, CLI 2.1.270) -- so the
-    turn runs with a system prompt that says "TOOLS (mandatory, not optional)", names nine tools that are
-    not there, and answers about the board from nothing. luna_brain._live_reply raises when this file is
-    missing after the run. No variable = this module started by hand, nothing to tell."""
+    Fired from the ``list_tools`` hook armed by ``_arm_ready_stamp`` (TASK-274), not unconditionally
+    at start: a tools server that dies at start, or that the CLI drops for missing its connect
+    deadline, is invisible from outside -- ``claude -p`` still exits 0 with ``is_error`` false and a
+    normal-looking reply, and the result envelope carries no MCP server status at all (probed, CLI
+    2.1.270) -- so the turn runs with a system prompt that says "TOOLS (mandatory, not optional)",
+    names nine tools that are not there, and answers about the board from nothing. Stamping here
+    rather than in serve() means a run that never gets as far as a ``tools/list`` response -- the
+    stdio loop dying or the CLI dropping it before the handshake completes -- leaves no stamp, where
+    stamping unconditionally in serve() would have left one anyway (the process having started is not
+    the CLI having received anything). luna_brain._live_reply raises when this file is missing after
+    the run. No variable = this module started by hand, nothing to tell."""
     path = os.environ.get("WA_LUNA_TOOLS_READY")
     if not path:
         return
@@ -1175,11 +1303,36 @@ def _stamp_ready():
                                 "tools": sorted(mcp._tool_manager._tools)}), encoding="utf-8")
 
 
+def _arm_ready_stamp():
+    """Wrap ``mcp.list_tools`` so the readiness stamp fires on the server's first real response to a
+    ``tools/list`` request -- the point the CLI actually has the schemas, verified by reading the
+    installed SDK: ``MCPServer`` wires ``on_list_tools=self._handle_list_tools`` into the lowlevel
+    ``Server`` at construction (mcp/server/mcpserver/server.py), and ``_handle_list_tools`` awaits
+    ``self.list_tools()`` on every such request -- so overriding the instance attribute here is seen
+    by every future call without touching the lowlevel wiring itself.
+
+    Tool listing, not the first tool CALL: most turns legitimately call zero tools, and tying the
+    stamp to a call would raise ``_live_reply``'s RuntimeError on every one of those. Listing is the
+    one signal real proof of a completed handshake and present on every turn regardless."""
+    original = mcp.list_tools
+    stamped = False
+
+    async def wrapped_list_tools():
+        nonlocal stamped
+        if not stamped:
+            stamped = True
+            _stamp_ready()
+        return await original()
+
+    mcp.list_tools = wrapped_list_tools
+
+
 def serve():
     """What ``python -m app.wa.luna.tools_server`` runs -- and what tests/luna_fixture_tools_server.py
     runs too, so an llm test sees the same tool descriptions the live turn does."""
+    _prime_board_snapshot()
     apply_board_vocabulary()
-    _stamp_ready()
+    _arm_ready_stamp()
     mcp.run(transport="stdio")
 
 

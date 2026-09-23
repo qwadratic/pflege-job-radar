@@ -16,6 +16,11 @@ THE THREE WAYS AN ARTEFACT BECOMES SAFE TO DELETE:
      and that send's own outbound ledger row has since reached SENT/ABSENT/NOT_ATTEMPTED -- a tick
      was read, or a reconcile scan settled it. This is the SAME state machine bridge/ledger.py's
      own sweep() already trusts for outbound rows; nothing new is invented here, just read.
+     A row that will NEVER exist counts here too (TASK-257): executor.py's own ORDER OF OPERATIONS
+     puts governor.check and take_phone before ledger.begin, so a rail_parked 429 or a lost flock
+     race 503 leaves no row at all -- the same "nothing was typed" fact NOT_ATTEMPTED already
+     carries, just never written down. Holding that state more strictly than NOT_ATTEMPTED itself
+     would be, is an inconsistency in this state machine, not a safety margin.
   3. MANUALLY RESOLVED -- a human looked at the artefact (op_id names every file for it) and called
      `resolve_op` (POST /v1/ops/<id>/resolve, tools/wa_bridge.py `ops resolve`). This is the only
      path for a failed op that never minted a client_msg_id at all (clear_chat, delete_chat,
@@ -37,10 +42,11 @@ _OP_ID = r"op\.[0-9a-f]{24}"
 SCREENSHOT_OP_RE = re.compile(rf"^({_OP_ID})_")
 RECORDING_OP_RE = re.compile(rf"^({_OP_ID})\.mp4$")
 
-#: outbound.state values that mean "this send's fate is known and it is not still open" -- the same
-#: set bridge/ledger.py::unresolved() excludes (it names ATTEMPTING and UNCONFIRMED explicitly;
-#: this is every OTHER state).
-SAFE_OUTBOUND_STATES = frozenset({L.SENT, L.ABSENT, L.NOT_ATTEMPTED})
+#: outbound.state values that mean "this send's fate is known and it is not still open" -- owned by
+#: bridge/ledger.py (TASK-277: sweep()'s own outbound delete keys on the exact same set now, so a
+#: still-open UNCONFIRMED row can never drift out of sync between what this module calls "settled"
+#: and what sweep() is willing to remove).
+SAFE_OUTBOUND_STATES = L.SAFE_OUTBOUND_STATES
 
 
 def _op_id_from_screenshot(path):
@@ -75,14 +81,41 @@ def _reconcile_settled(result):
     return all(r.get("verdict") != "indeterminate" for r in (result or []))
 
 
-def classify_op_artifact(ledger, op_id):
+#: TASK-265, revised by TASK-277: through the normal review_and_sweep pass this branch should no
+#: longer fire for a HELD file at all -- ledger.retire_unreferenced_ops only removes a phone_ops
+#: row once THIS SAME pass's own classification says nothing on disk still names it, so a row and
+#: a file that is still held now go missing and get reviewed together, never one without the
+#: other. What this still catches: artefacts orphaned by ledger.sweep()'s OLD age-only delete
+#: before this fix shipped, and any direct caller of classify_op_artifact (its own docstring) that
+#: skips review_and_sweep entirely -- both read the same ledger this module does, never a
+#: guaranteed-consistent one, so the row can still be legitimately gone here. The file's own mtime
+#: is the only signal left to tell that apart from a row that simply never existed.
+def _artifact_aged_out(path, now):
+    if path is None or now is None:
+        return False
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        # The whole question this answers is "what does the file's own age say", so a file whose
+        # age cannot be read answers it with "cannot tell" and the caller falls back to the generic
+        # reason. Raising instead would abort the entire hourly pass over every OTHER artefact --
+        # the maintenance guard added alongside this would catch it, count it, and hide it.
+        return False
+    return (now.timestamp() - mtime) / 86400 >= L.LEDGER_RETENTION_DAYS
+
+
+def classify_op_artifact(ledger, op_id, path=None, now=None):
     """-> ("delete"|"hold", reason) for a debug-capture screenshot or recording named after
-    ``op_id`` (TASK-228's own filename convention)."""
+    ``op_id`` (TASK-228's own filename convention). ``path``/``now`` let the "row is missing"
+    branch below tell LEDGER_RETENTION_DAYS aging it out apart from a row missing for no such
+    reason; _sweep_one_kind always passes them, a direct caller that only wants the "never
+    existed" case may omit them."""
     row = ledger.op_status(op_id)
     if row is None:
-        # phone_ops rows outlive these files by design (LEDGER_RETENTION_DAYS=30 vs 14 days of
-        # artefacts) -- reaching here means something deleted the row out from under its own
-        # artefact, which is a bug elsewhere, not a reason to guess here.
+        if _artifact_aged_out(path, now):
+            return "hold", (
+                "op row aged out past LEDGER_RETENTION_DAYS while this artefact was still held -- "
+                "resolve manually or extend retention, not a bug")
         return "hold", "op_id not found in phone_ops"
     if row["state"] == L.OP_DONE:
         kind = row.get("kind")
@@ -101,20 +134,33 @@ def classify_op_artifact(ledger, op_id):
         # to resolved_at here, or a human resolving the op (meant for the no-client_msg_id kinds
         # below) could paper over a send whose outbound row is still genuinely open.
         entry = ledger.get(client_msg_id)
-        if entry is not None and entry.state in SAFE_OUTBOUND_STATES:
+        if entry is None:
+            # No row means ledger.begin() never ran (executor.py's own ORDER OF OPERATIONS puts
+            # governor.check and take_phone before begin, on purpose) -- provably nothing was
+            # typed, the same fact NOT_ATTEMPTED (a row that DOES exist) already carries and that
+            # SAFE_OUTBOUND_STATES above already trusts. Age-gated by the caller (_sweep_one_kind),
+            # same as every other "delete" verdict here.
+            return "delete", "no outbound row: refused before ledger.begin, nothing was typed"
+        if entry.state in SAFE_OUTBOUND_STATES:
             return "delete", f"outbound resolved: {entry.state}"
-        return "hold", f"outbound still {entry.state if entry is not None else 'missing'}"
+        return "hold", f"outbound still {entry.state}"
     if row.get("resolved_at"):
         return "delete", "manually resolved"
     return "hold", "failed and not yet resolved"
 
 
-def classify_escalation_shot(ledger, path, shot_index):
+def classify_escalation_shot(ledger, path, shot_index, now=None):
     """-> ("delete"|"hold", reason) for an old-style escalation shot (bridge/adb_driver.py::
     escalation_shot, no op_id in its filename). ``shot_index`` is
-    ``ledger.escalation_shot_index()``, passed in so a sweep over many files builds it once."""
+    ``ledger.escalation_shot_index()``, passed in so a sweep over many files builds it once.
+    ``now``, when given, lets a missing journal entry be told apart from ledger.sweep()'s own
+    `delete from journal where at < ?` cutoff, same reasoning as classify_op_artifact above."""
     client_msg_id = shot_index.get(str(path))
     if client_msg_id is None:
+        if _artifact_aged_out(path, now):
+            return "hold", (
+                "escalation_shot journal row aged out past LEDGER_RETENTION_DAYS while this "
+                "artefact was still held -- resolve manually or extend retention, not a bug")
         return "hold", "no escalation_shot journal entry for this file"
     entry = ledger.get(client_msg_id)
     if entry is None:
@@ -132,13 +178,23 @@ def _unrecognized_recording(ledger, path):
     return "hold", "unrecognised recording filename"
 
 
+def _held_age_sec(path, now):
+    """-> how long ago ``path`` was last written, or ``None`` when its mtime cannot be read (same
+    "cannot tell" fallback as ``_artifact_aged_out`` above -- a stat race here must not crash the
+    whole hourly pass over one file's own age)."""
+    try:
+        return now.timestamp() - path.stat().st_mtime
+    except OSError:
+        return None
+
+
 def _sweep_one_kind(driver, ledger, now, *, list_candidates, op_id_of, classify_unrecognized, days):
     shot_index = ledger.escalation_shot_index()
     deleted, held = 0, []
     for path in list_candidates(now, days=days):
         op_id = op_id_of(path)
         if op_id:
-            verdict, reason = classify_op_artifact(ledger, op_id)
+            verdict, reason = classify_op_artifact(ledger, op_id, path, now)
         else:
             verdict, reason = classify_unrecognized(ledger, path, shot_index)
         if verdict == "delete":
@@ -149,26 +205,38 @@ def _sweep_one_kind(driver, ledger, now, *, list_candidates, op_id_of, classify_
             # yet deleted sits exposed to that for as long as the batch takes to finish.
             deleted += driver.delete_paths([path])
         else:
-            held.append((path, reason))
-    for path, reason in held:
+            held.append((path, op_id, reason))
+    for path, op_id, reason in held:
         ledger.note(now, "retention_held", None, path=str(path), reason=reason)
-    return {"deleted": deleted, "held": len(held)}
+    return {"deleted": deleted, "held": len(held)}, held
 
 
 def review_and_sweep(executor, now, *, screenshot_days, recording_days):
-    """-> {"screenshots": {"deleted", "held"}, "recordings": {"deleted", "held"}}. The one entry
-    point bridge/server.py::maintenance_once calls -- replaces the old age-only
-    sweep_screenshots/sweep_recordings."""
+    """-> {"screenshots": {"deleted", "held"}, "recordings": {"deleted", "held"},
+    "oldest_held_age_sec"}. The one entry point bridge/server.py::maintenance_once calls --
+    replaces the old age-only sweep_screenshots/sweep_recordings.
+
+    TASK-277: this pass's own held list is also the only place that knows, right now, which
+    op_ids still have a screenshot or recording naming them -- ``ledger.retire_unreferenced_ops``
+    below is called with exactly that set, every pass: a row in ``held_op_ids`` keeps its
+    ``resolve_op`` escape hatch open no matter how old it is; every other row past
+    ``LEDGER_RETENTION_DAYS`` is swept, same as ledger.sweep() used to do for phone_ops directly.
+    """
     driver, ledger = executor.driver, executor.ledger
-    screenshots = _sweep_one_kind(
+    screenshots, shot_held = _sweep_one_kind(
         driver, ledger, now, list_candidates=driver.list_screenshot_candidates,
         op_id_of=_op_id_from_screenshot,
         classify_unrecognized=lambda ledger_, path, shot_index: classify_escalation_shot(
-            ledger_, path, shot_index),
+            ledger_, path, shot_index, now),
         days=screenshot_days)
-    recordings = _sweep_one_kind(
+    recordings, rec_held = _sweep_one_kind(
         driver, ledger, now, list_candidates=driver.list_recording_candidates,
         op_id_of=_op_id_from_recording,
         classify_unrecognized=lambda ledger_, path, shot_index: _unrecognized_recording(ledger_, path),
         days=recording_days)
-    return {"screenshots": screenshots, "recordings": recordings}
+    held = shot_held + rec_held
+    held_op_ids = {op_id for _, op_id, _ in held if op_id}
+    ledger.retire_unreferenced_ops(now, held_op_ids)
+    ages = [age for path, _, _ in held if (age := _held_age_sec(path, now)) is not None]
+    return {"screenshots": screenshots, "recordings": recordings,
+            "oldest_held_age_sec": max(ages) if ages else None}

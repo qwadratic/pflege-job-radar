@@ -2,7 +2,8 @@
 
     POST /v1/messages          one bubble, one deterministic key, one flock acquisition
     GET  /v1/outbox            the durable inbound handover -- the pull is the contract
-    GET  /v1/health            what the 3-minute timer alarms on (TASK-132)
+    GET  /v1/health            polled by relay_pull.py's own slow-cadence alarm (TASK-255); the
+                               3-minute conjunction-alert timer TASK-132 describes is not built
     POST /v1/reconcile         three-valued verdicts; only confirmed_absent authorises a resend
     GET  /v1/chats             the chat list, read-only
     GET  /v1/thread            the visible bubbles of one chat, read-only
@@ -13,6 +14,7 @@
     GET  /v1/broadcasts/<id>   one run, with every item's status
     POST /v1/broadcasts/<id>/stop   the hard stop; takes effect between items
     GET  /v1/audit             the destruction record
+    GET  /v1/unresolved        sends still ATTEMPTING/UNCONFIRMED: id, thread, state, age (TASK-261)
     GET  /v1/media/<id>        pulled inbound media's metadata: mime type, filename, size, a path
     GET  /v1/media/<id>/raw    the bytes themselves, at the path the metadata route just answered
     GET  /v1/media             the queue: unattached files, kind/size/age/folder/related threads
@@ -20,6 +22,7 @@
                                (TASK-131 round 5 -- automatic attachment is gone, decision-9)
     GET  /v1/ops/<id>          one queued phone op's state/result/error (TASK-227)
     POST /v1/ops/<id>/resolve  mark a failed op reviewed and safe to delete (TASK-230)
+    POST /v1/ops/<id>/cancel   the caller gave up: cancel it if still queued, never mid-run (TASK-243)
 
 The handlers are thin on purpose and the rule is enforceable by reading them: every phone-touching
 one of them parses, then enqueues onto the ops dispatcher (bridge/dispatcher.py) rather than
@@ -53,6 +56,7 @@ import re
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import adb_driver as AD
@@ -70,6 +74,20 @@ from . import watcher as W
 LOOPBACK = "127.0.0.1"
 DEFAULT_PORT = 8793          # plan section 5: the server-side base URL is http://127.0.0.1:8793
 MAINTENANCE_INTERVAL_SEC = 3600.0
+#: Mirrors app/wa/config.py's WA_LUNA_MEDIA_DIR (VPS side, same name): the literal directory THIS
+#: machine receives clinic photos into over ssh/scp from
+#: app/wa/luna/tools_server.py::_stage_on_mini, never through this executor's own routes
+#: (TASK-272). Same default as tools_server.py's own fallback, so an unconfigured deploy sweeps
+#: the same path it has always been scp'd into.
+LUNA_MEDIA_DIR = os.environ.get("WA_LUNA_MEDIA_DIR", "").strip() or "/home/cursorworker1/wa_luna_media"
+#: TASK-272: age past this is the whole rule for that directory -- a staged clinic photo carries
+#: no op_id and never touches the ledger (see _sweep_luna_media below), so there is nothing for
+#: retention.py's review-before-delete machinery to adjudicate. Same number as
+#: driver.SCREENSHOT_RETENTION_DAYS's current value, kept as its own constant rather than a shared
+#: import: the two directories carry unrelated evidence and a future change to one must not move
+#: the other by accident. A first number, not a reviewed one -- same caveat SCREENSHOT_RETENTION_DAYS's
+#: own comment states.
+LUNA_MEDIA_RETENTION_DAYS = 14
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -107,8 +125,22 @@ class Handler(BaseHTTPRequestHandler):
         route handler's whole job becomes naming which already-existing operations/executor
         method to run and with what arguments -- see bridge/dispatcher.py's own docstring for why
         this is not the bare-202 lie this file's own module docstring warns against."""
-        op_id = self.server.dispatcher.enqueue(kind, args)
+        op_id = self.server.dispatcher.enqueue(kind, args, budget_sec=self._op_budget_sec())
         return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+    def _op_budget_sec(self):
+        """-> the caller's own patience for the op about to be queued (TASK-243), from the header
+        ``app/wa/bridge.py::Client._request`` sends with every call -- the exact number it is
+        about to poll ``GET /v1/ops/<id>`` against. ``None`` for a caller that sends no header
+        (an older client, a direct ``curl``): ``claim_next_op`` treats that row as unbounded, not
+        as a reason to invent one here."""
+        raw = self.headers.get("X-Wa-Op-Budget-Sec")
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except ValueError as exc:
+            raise E.invalid_request(f"X-Wa-Op-Budget-Sec must be a number, got {raw!r}") from exc
 
     def _op_status(self, op_id):
         """-> the op_status body for ``GET /v1/ops/<op_id>`` (TASK-227). Raises 404
@@ -120,6 +152,18 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True, "op_id": row["op_id"], "kind": row["kind"], "state": row["state"],
                "result": row["result"], "error": row["error"], "created_at": row["created_at"],
                "started_at": row["started_at"], "finished_at": row["finished_at"]}
+
+    def _cancel_op(self, op_id):
+        """-> the body for ``POST /v1/ops/<id>/cancel`` (TASK-243): the caller (``_await_op``'s own
+        timeout) gave up waiting. Flips a still-``queued`` row to a terminal cancellation via
+        ``ledger.cancel_op``; a no-op, reported honestly as ``cancelled: False``, once the row is
+        ``running`` or already terminal -- a live adb call is never interrupted from here. Raises
+        404 for an id this ledger never enqueued, same as ``_op_status``/``_resolve_op``."""
+        executor = self.server.executor
+        if executor.ledger.op_status(op_id) is None:
+            raise E.op_not_found(f"no such op {op_id!r}")
+        cancelled = executor.ledger.cancel_op(op_id, executor.clock())
+        return {"ok": True, "op_id": op_id, "cancelled": cancelled}
 
     def _resolve_op(self, op_id):
         """-> the body for ``POST /v1/ops/<id>/resolve`` (TASK-230): the human escape hatch for a
@@ -183,6 +227,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         stop = re.match(r"/v1/broadcasts/([^/]+)/stop\Z", path)
         resolve_op = re.match(r"/v1/ops/([^/]+)/resolve\Z", path)
+        cancel_op = re.match(r"/v1/ops/([^/]+)/cancel\Z", path)
         # TASK-227: every phone-touching route below enqueues onto the ops dispatcher instead of
         # calling the executor/operations method inline -- see bridge/dispatcher.py's own
         # docstring. The route's whole job is naming which method and what arguments; running it,
@@ -217,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
             self._dispatch(lambda: (200, self.server.broadcast.stop(unquote(stop.group(1)))))
         elif resolve_op:
             self._dispatch(lambda: (200, self._resolve_op(unquote(resolve_op.group(1)))))
+        elif cancel_op:
+            self._dispatch(lambda: (200, self._cancel_op(unquote(cancel_op.group(1)))))
         else:
             self._dispatch(lambda: _no_route(path))
 
@@ -244,8 +291,12 @@ class Handler(BaseHTTPRequestHandler):
                 after=_int(query, "after", 0), limit=_int(query, "limit", None),
                 ack=_int(query, "ack", None))))
         elif parsed.path == "/v1/chats":
-            self._dispatch(lambda: (200, self.server.operations.list_chats(
-                include_archived=_flag(query, "include_archived", True))))
+            # TASK-269: this was calling operations.list_chats inline, the same TASK-227 leftover
+            # TASK-230 already fixed for /v1/reconcile -- it could win huawei01.lock ahead of an
+            # already-queued op regardless of arrival order, and never showed up as an op_id for a
+            # caller to poll. Queued like every other phone-touching route.
+            self._dispatch(lambda: self._enqueue("list_chats", {
+                "include_archived": _flag(query, "include_archived", True)}))
         elif parsed.path == "/v1/thread":
             self._dispatch(lambda: self._enqueue("read_thread", {
                 "phone": _str(query, "phone"), "chat": _str(query, "chat"),
@@ -258,6 +309,8 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/v1/audit":
             self._dispatch(lambda: (200, {"ok": True, "rows": self.server.executor.ledger.audit_rows(
                 limit=_int(query, "limit", None))}))
+        elif parsed.path == "/v1/unresolved":
+            self._dispatch(lambda: (200, self.server.executor.unresolved_sends()))
         else:
             self._dispatch(lambda: _no_route(parsed.path))
 
@@ -392,17 +445,79 @@ class BridgeServer(ThreadingHTTPServer):
         self.log = log
 
 
+def _sweep_luna_media(now):
+    """Delete every file under LUNA_MEDIA_DIR older than LUNA_MEDIA_RETENTION_DAYS (TASK-272).
+    Age-only, unlike review_and_sweep's screenshots/recordings below: a clinic photo staged here
+    carries no op_id and never touches the ledger at all -- _stage_on_mini scp's it straight in
+    from the VPS, bypassing this executor's dispatcher/ledger entirely -- so there is nothing for
+    retention.py's HAPPY/AUTO-RESOLVED/MANUALLY-RESOLVED machinery to adjudicate; age past the
+    cutoff is the whole rule. A directory that does not exist yet (nothing ever staged into it) is
+    zero deleted, not an error."""
+    media_dir = Path(LUNA_MEDIA_DIR)
+    if not media_dir.is_dir():
+        return {"deleted": 0}
+    cutoff = now.timestamp() - LUNA_MEDIA_RETENTION_DAYS * 86400
+    deleted = 0
+    for path in media_dir.iterdir():
+        if path.is_file() and path.stat().st_mtime < cutoff:
+            path.unlink()
+            deleted += 1
+    return {"deleted": deleted}
+
+
+def _unlink_swept_media(paths):
+    """Delete the bytes of a media_file row ledger.sweep() (TASK-278) just decided is safe to
+    drop: its inbound row is gone, and no other media_seen row (attached-and-live, or still
+    unattached) still names this media_id. Same tolerance as bridge/adb_driver.py::AdbDriver.
+    delete_paths -- a path already gone (this pass crashed here last time) is not an error."""
+    removed = 0
+    for local_path in paths:
+        try:
+            Path(local_path).unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+    return removed
+
+
 def maintenance_once(executor, now=None):
     """TASK-130 AC#9: the retention sweeps ship with the first commit, not later. TASK-230: the
     screenshot/recording sweep now reviews before it deletes (bridge/retention.py) -- an artefact
     past its 14-day cutoff is held, not removed, until it is either a happy op_done or a resolved
     issue. ``executor.last_retention`` is set here so /v1/health can show whether the held pile is
-    growing without an operator having to read the journal by hand."""
+    growing without an operator having to read the journal by hand.
+
+    TASK-253: the candidate listing this pass drives (adb_driver.py's list_screenshot_candidates/
+    list_recording_candidates) globs then stats each path, and a file a human removed by hand on
+    the mini between those two steps raises FileNotFoundError -- through review_and_sweep,
+    unguarded, straight into whatever called this. Wrapped the same way every watcher in
+    bridge/watcher.py wraps its own cycle: count it, journal it, return None instead of raising, so
+    maintenance_loop's caller keeps its hourly schedule instead of losing the thread for good.
+
+    TASK-272: _sweep_luna_media rides the same guarded pass and the same hourly cadence, for a
+    directory review_and_sweep itself never walks (it is not phone_ops-shaped).
+
+    TASK-278: ledger.sweep() decides which media_file rows (and their media_seen/media_link rows)
+    are safe to drop -- their inbound row is gone, nothing still names the bytes -- and hands back
+    the local_paths it already removed the row for; unlinking them is the one piece of filesystem
+    work that decision still owes, same split as _sweep_luna_media's own raw unlink above."""
     now = now or executor.clock()
-    swept = executor.ledger.sweep(now)
-    reviewed = RT.review_and_sweep(executor, now, screenshot_days=D.SCREENSHOT_RETENTION_DAYS,
-                                   recording_days=D.SCREENSHOT_RETENTION_DAYS)
-    executor.last_retention = reviewed
+    started = executor.monotonic()
+    try:
+        swept = executor.ledger.sweep(now)
+        swept["media_file"] = _unlink_swept_media(swept.pop("media_file_paths"))
+        reviewed = RT.review_and_sweep(executor, now, screenshot_days=D.SCREENSHOT_RETENTION_DAYS,
+                                       recording_days=D.SCREENSHOT_RETENTION_DAYS)
+        reviewed["luna_media"] = _sweep_luna_media(now)
+    except Exception as exc:  # a bug in our code or a TOCTOU race under it, named, never swallowed
+        executor.retention_errors += 1
+        executor.last_retention_error = f"{type(exc).__name__}: {exc}"
+        executor.last_retention_error_at = L.utc(now)
+        executor.ledger.note(now, "maintenance_error", None, error=executor.last_retention_error)
+        return None
+    executor.last_retention = {**reviewed, "at": L.utc(now),
+                               "duration_sec": executor.monotonic() - started}
+    executor.last_retention_ok_at = L.utc(now)
     executor.ledger.note(now, "maintenance", None, ledger=swept, **reviewed)
     return {"ledger": swept, **reviewed}
 
@@ -453,6 +568,11 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     ledger = L.Ledger(os.path.join(root, "ledger.sqlite"))
     driver = AD.AdbDriver(shots_dir=os.path.join(root, "shots"),
                          recordings_dir=os.path.join(root, "recordings"), log=stamped)
+    # TASK-275: a previous process's debug recording, orphaned on /sdcard by a restart landing
+    # between start_recording and stop_recording's finally -- self-heals here the same way
+    # ledger's own _recover_stuck_ops does above, and for the same reason (one dispatcher thread
+    # per process, so anything left over belongs to a process that no longer exists).
+    driver.sweep_orphaned_recordings()
     hours = active_hours_override(os.environ.get("WA_BRIDGE_ACTIVE_HOURS_OVERRIDE"))
     pacing = G.MINI_FLOOR if hours is None else dataclasses.replace(G.MINI_FLOOR, active_hours=hours)
     if hours is not None:
@@ -467,7 +587,7 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     watcher = W.InboundWatcher(
         executor, interval=float(os.environ.get("WA_BRIDGE_WATCH_INTERVAL_SEC",
                                                 W.DEFAULT_INTERVAL_SEC)),
-        log=stamped).start()
+        log=stamped, operator_hold_path=os.path.join(root, "operator_hold")).start()
     # TASK-131: the handset's WhatsApp media folders -> pulled files -> linked to a message. Its
     # own thread, its own interval, and no flock -- see bridge/watcher.py::MediaWatcher.
     media_watcher = W.MediaWatcher(
@@ -493,6 +613,12 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     # TASK-227: the one thread that ever calls a phone-touching executor/operations method now --
     # see bridge/dispatcher.py's own docstring for why this replaces the old bare-flock race.
     operations = O.Operations(executor)
+    # TASK-234: the third door -- see bridge/watcher.py::ReconcileWatcher's own docstring.
+    reconcile_watcher = W.ReconcileWatcher(
+        operations, ledger, interval=float(os.environ.get("WA_BRIDGE_RECONCILE_INTERVAL_SEC",
+                                                          W.DEFAULT_RECONCILE_INTERVAL_SEC)),
+        log=stamped).start()
+    executor.reconcile_watcher = reconcile_watcher
     # TASK-228 shipped this "первое время" (Ivan, 2026-09-22) as an off-by-default flag. TASK-230
     # (Ivan, 2026-09-23: "там на макмини вроде, достаточно места ... давай просто не больше 2
     # недель хранить это и все") made it safe to leave on by default -- review-before-delete
@@ -508,6 +634,15 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
            f"screen recording per queued op under WA_BRIDGE_STATE/{{shots,recordings}}, reviewed "
            f"before deletion (bridge/retention.py), 14 days. WA_BRIDGE_DEBUG_CAPTURE=0 to disable.")
     executor.ops_dispatcher = ops_dispatcher
+    # TASK-235: nothing periodic ever called POST /v1/reconcile for a send left ATTEMPTING or
+    # UNCONFIRMED -- see bridge/watcher.py::UnresolvedSendWatcher's own docstring. Needs
+    # ops_dispatcher, so it is built after it, same as ReconcileWatcher needs operations.
+    unresolved_send_watcher = W.UnresolvedSendWatcher(
+        ledger, ops_dispatcher,
+        interval=float(os.environ.get("WA_BRIDGE_UNRESOLVED_SEND_INTERVAL_SEC",
+                                      W.DEFAULT_UNRESOLVED_SEND_INTERVAL_SEC)),
+        log=stamped).start()
+    executor.unresolved_send_watcher = unresolved_send_watcher
     server = BridgeServer(executor, token, port=int(os.environ.get("WA_BRIDGE_PORT", DEFAULT_PORT)),
                           log=stamped, operations=operations, broadcast=broadcast,
                           dispatcher=ops_dispatcher)
@@ -515,6 +650,8 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
                f"driver={driver.describe()['kind']}, watcher every {watcher.interval:.0f}s, "
                f"media watcher every {media_watcher.interval:.0f}s, "
                f"identity watcher every {identity_watcher.interval:.0f}s, "
+               f"reconcile watcher every {reconcile_watcher.interval:.0f}s, "
+               f"unresolved send watcher every {unresolved_send_watcher.interval:.0f}s, "
                f"broadcast runner every {runner.interval:.0f}s, "
                f"ops dispatcher every {ops_dispatcher.poll_interval:.1f}s")
     try:
@@ -524,6 +661,8 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         watcher.stop()
         media_watcher.stop()
         identity_watcher.stop()
+        reconcile_watcher.stop()
+        unresolved_send_watcher.stop()
         runner.stop()
         ops_dispatcher.stop()
         server.server_close()

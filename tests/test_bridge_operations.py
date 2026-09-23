@@ -21,6 +21,7 @@ from bridge import driver as D
 from bridge import errors as E
 from bridge import executor as X
 from bridge import governor as G
+from bridge import inbound as I
 from bridge import ledger as L
 from bridge import operations as O
 from bridge import server as S
@@ -136,6 +137,53 @@ def test_listing_the_chats_takes_the_phone_once_and_parks(rig):
     assert rig.driver.parked == 1
 
 
+# --- reconcile_unread (TASK-234) ------------------------------------------------------------
+def test_reconcile_unread_reads_every_unread_chat_nobody_else_touched(rig):
+    """The third door: a chat nobody sends to, reads from or attaches media for gets no
+    piggyback read at all (TASK-231's fix only ever fires when some OTHER operation already had
+    its own reason to open that exact chat), and if the shade also missed the message (full
+    shade, revoked notification access, a reboot before a poll) it sits uncaptured until a human
+    notices the unread badge on the handset. reconcile_unread reads every unread row back, the
+    same read_thread already does for any other caller -- CHATS has two: 'Ivan Test' (unread=1)
+    and '+49 170 0000002' (unread=11); 'Soak Rail' (unread=0) is left alone."""
+    fresh = I.assign_ids([I.InboundMessage(counterparty=IVAN, title=IVAN, text="Bin gleich da",
+                                           local_date="2026-09-23", clock="13:40",
+                                           source="thread")])
+    rig.driver.cold_thread = fresh
+    result = rig.ops.reconcile_unread()
+    assert (result["chats"], result["reconciled"], result["skipped"]) == (3, 2, 0)
+    events = rig.executor.outbox()["events"]
+    assert [e["payload"]["text"] for e in events] == ["Bin gleich da"]
+
+
+def test_reconcile_unread_skips_a_row_it_cannot_prove_the_identity_of(rig):
+    """Same refusal ``_identify`` already makes for every other caller of list_chats -- guessing
+    which conversation an ambiguous display name belongs to is worse than not reading it."""
+    rig.driver.ambiguous_titles = ["Ivan Test"]        # unread=1, now unresolvable
+    result = rig.ops.reconcile_unread()
+    # '+49 170 0000002' (unread=11) is still unambiguous and gets reconciled.
+    assert (result["reconciled"], result["skipped"]) == (1, 1)
+    rows = journal(rig, "reconcile_skipped")
+    assert len(rows) == 1
+    assert json.loads(rows[0]["detail"])["reason"] == "ambiguous_display_name"
+
+
+def test_reconcile_unread_never_raises_on_a_row_that_will_not_open(rig):
+    """One bad row does not end the sweep -- the same isolation ``_read_evidence_for`` already
+    keeps for its own per-candidate opens."""
+    real_open = rig.driver.open_chat
+
+    def flaky_open(phone):
+        if phone == IVAN:
+            raise D.DriverError("conversation did not open (scripted)")
+        return real_open(phone)
+
+    rig.driver.open_chat = flaky_open
+    result = rig.ops.reconcile_unread()
+    assert (result["reconciled"], result["skipped"]) == (1, 0)
+    assert journal(rig, "reconcile_read_failed")
+
+
 # --- read_thread ------------------------------------------------------------------------------
 def test_reading_a_thread_reports_direction_clock_and_tick(rig):
     result = rig.ops.read_thread(phone=IVAN)
@@ -150,6 +198,34 @@ def test_a_thread_can_be_read_without_its_text(rig):
     result = rig.ops.read_thread(phone=IVAN, include_text=False)
     assert "body" not in result["messages"][0]
     assert result["messages"][0]["body_sha256"] == D.body_sha256("Hallo")
+
+
+def test_a_reply_that_arrives_while_the_chat_is_open_for_read_thread_is_still_recorded(rig):
+    """TASK-231: opening a chat clears its notification and WhatsApp posts no shade record while
+    it is foregrounded -- so a message that lands during this read has exactly one door left, the
+    piggyback read_thread now takes before it parks. Injected from ``read_hook``, which fires
+    inside ``read_bubbles()``, so this really is 'arrived while the chat was open', not 'was
+    already there when it opened'."""
+    fresh = I.assign_ids([I.InboundMessage(counterparty=IVAN, title=IVAN, text="Bin gleich da",
+                                           local_date="2026-09-23", clock="13:40",
+                                           source="thread")])
+
+    def inject(drv):
+        drv.cold_thread.extend(fresh)
+
+    rig.driver.read_hook = inject
+    rig.ops.read_thread(phone=IVAN)
+
+    events = rig.executor.outbox()["events"]
+    assert [e["payload"]["text"] for e in events] == ["Bin gleich da"]
+
+
+def test_a_chat_opened_by_title_alone_has_no_number_to_mint_an_inbound_id_against(rig):
+    """The same piggyback would need to mint an id with no counterparty (bridge/inbound.py::mint
+    raises on that) -- read_thread must not even try when only a title was given."""
+    rig.driver.cold_thread = [object()]   # would blow up if read_cold_thread were ever called
+    rig.ops.read_thread(chat="Ivan Test")
+    assert rig.executor.outbox()["events"] == []
 
 
 def test_naming_both_a_number_and_a_title_is_refused(rig):
@@ -196,6 +272,19 @@ def test_the_runner_sends_one_item_per_step_and_records_each(rig):
     assert view["counts"] == {"sent": 2}
     assert view["run"]["state"] == "done"
     assert rig.driver.sent == ["eins", "zwei"]
+
+
+def test_a_queued_phone_op_defers_the_step_instead_of_racing_it(rig):
+    """TASK-268: this runner is not routed through bridge/dispatcher.py, so it would otherwise race
+    a dispatched op (a candidate-facing reply, patience driver.LOCK_TIMEOUT_SEC=30s) for
+    huawei01.lock across one bubble's own 90-150s hold. Fails before the fix (the item is attempted,
+    the phone is opened); passes after it (the item is left exactly as due, untouched)."""
+    rig.broadcast.create({"run_id": "probe-1", "items": rig.items((IVAN, "eins"))})
+    rig.ledger.enqueue_op("op.reply", "send", {"req": {"to": PARTNER}}, rig.clock())
+
+    assert rig.broadcast.step() is None
+    assert rig.driver.lock_events == [], "a queued phone op must not be raced for the flock"
+    assert rig.broadcast.view("probe-1")["counts"] == {"queued": 1}
 
 
 def test_a_broadcast_resumes_after_a_crash_without_re_sending_a_delivered_item(rig):
@@ -836,6 +925,20 @@ def _await_op(base, op_id, *, token, deadline_sec=10.0):
         if time.monotonic() >= deadline:
             raise AssertionError(f"op {op_id} did not finish within {deadline_sec}s: {body!r}")
         time.sleep(0.02)
+
+
+def test_chats_goes_through_the_ops_queue_instead_of_calling_list_chats_inline(http):
+    """TASK-269: GET /v1/chats used to call operations.list_chats() straight through inside
+    do_GET -- the same TASK-227 leftover TASK-230 already fixed for /v1/reconcile -- so it could
+    win huawei01.lock ahead of an already-queued op regardless of arrival order, and never
+    produced an op_id for a caller to poll or for /v1/ops/<id> to report on. Fails before the fix
+    (the raw response is the chat list itself, with no "state"/"op_id"); passes after it (the raw
+    response is {"state": "queued", "op_id": ...}, unwrapped by call() exactly like every other
+    phone-touching route)."""
+    _rig, base = http
+    status, raw = _raw_call(base, "/v1/chats")
+    assert (status, raw.get("state"), "op_id" in raw) == (200, "queued", True)
+    assert call(base, "/v1/chats")[1]["count"] == 3
 
 
 def test_the_new_routes_answer_on_loopback(http):

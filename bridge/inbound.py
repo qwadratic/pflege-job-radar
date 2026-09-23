@@ -65,7 +65,7 @@ OWN_SENDERS = ("Du", "Ich", "You", "Me")
 
 #: What the notification text says when the shade has collapsed several messages into a count. It is
 #: a summary, never a message: storing it would answer a candidate with a reply to "2 neue Nachrichten".
-_SUMMARY = re.compile(r"\d+\s*(neue Nachrichten|new messages|ungelesene)", re.I)
+_SUMMARY = re.compile(r"\d+\s*(neue Nachricht(en)?|new messages?|ungelesene)", re.I)
 
 _REC_SPLIT = re.compile(r"^\s{4}NotificationRecord\(", re.M)
 _MSG_LINE = re.compile(r"\[\d+\] Bundle\[\{(.*)\}\]\s*$")
@@ -232,9 +232,15 @@ def notification_messages(dump, *, tz, resolve, pkg=WHATSAPP_PKG):
     for rec in (rec for rec in parsed if not rec.is_group):
         lines = [(text, stamp) for sender, text, stamp in rec.messages
                  if sender not in OWN_SENDERS and not _SUMMARY.search(text)]
-        if not lines and rec.title not in with_messages and rec.summary_text \
-                and not _SUMMARY.search(rec.summary_text):
-            lines = [(rec.summary_text, rec.created_ms)]
+        if not lines and rec.title not in with_messages and rec.summary_text:
+            if not _SUMMARY.search(rec.summary_text):
+                lines = [(rec.summary_text, rec.created_ms)]
+            else:
+                # A coalesced count with nothing else to read it off: neither a message (that would
+                # answer a candidate with a reply to their own message count) nor silence -- the
+                # health counter and journal need to see it, not lose it the way an empty `lines`
+                # here would.
+                unresolved.append((rec.title, "coalesced summary text, no individual message available"))
         reason = "address book has no number for this title"
         try:
             phone = resolve(rec.title) if lines else ""

@@ -467,6 +467,52 @@ def test_a_day_separator_is_never_mistaken_for_a_bubble_clock():
     assert not AD._is_clock("GESTERN") and not AD._is_clock("20. September")
 
 
+# --- the cold-read day anchor (TASK-231): read_open_thread's derivation leans on our own just-sent
+# bubble proving the bottom of the thread is today; a cold read (Operations.read_thread,
+# Executor._read_evidence_for) has no such bubble and must not borrow that assumption.
+def test_a_cold_read_places_only_what_is_below_a_divider_that_names_today():
+    today = [node("date", "HEUTE", bounds=(450, 200, 630, 250))]
+    screen = conversation("+49 152 1667 8689",
+                          [incoming("Ja", clock="20:40", y=100), today,
+                           incoming("Guten Morgen", clock="09:05", y=400)])
+    driver, _ = build([screen])
+    driver._open_phone = PHONE
+    placed, unresolved = driver.read_cold_thread(PHONE)
+    assert [m.text for m in placed] == ["Guten Morgen"]
+    assert len(unresolved) == 1
+
+
+def test_a_cold_read_does_not_read_gestern_as_today_the_way_the_anchored_read_would():
+    """The defect this guards: read_open_thread treats the LOWEST divider on screen as the cut
+    into today, whatever it says -- sound only because its own just-sent bubble proves the bottom
+    of the thread really is today. A cold read has no such bubble, so a 'GESTERN' divider with
+    nothing else on screen must not be read as 'so the bubble below it is today' -- unlike
+    read_open_thread, which (wrongly, for a caller with no anchor) would place it."""
+    separator = [node("date", "GESTERN", bounds=(450, 200, 630, 250))]
+    screen = conversation("+49 152 1667 8689",
+                          [incoming("Ja", clock="20:40", y=100), separator,
+                           incoming("Guten Morgen", clock="09:05", y=400)])
+    driver, _ = build([screen])
+    driver._open_phone = PHONE
+    placed, unresolved = driver.read_cold_thread(PHONE)
+    assert placed == []
+    assert len(unresolved) == 2
+
+
+def test_a_cold_read_with_no_divider_at_all_mints_nothing_rather_than_guess():
+    """The other half of the same defect: read_open_thread reads 'no divider visible' as 'no day
+    change in the visible window, so all of it is today' -- true only because it knows the bottom
+    bubble is seconds-old. A cold read cannot tell a thread that is entirely today's from one that
+    is entirely some other day's without a divider to look at, so it places nothing -- the KNOWN
+    RESIDUAL read_cold_thread's own docstring states rather than papers over."""
+    screen = conversation("+49 152 1667 8689", [incoming("Guten Morgen", clock="09:05", y=400)])
+    driver, _ = build([screen])
+    driver._open_phone = PHONE
+    placed, unresolved = driver.read_cold_thread(PHONE)
+    assert placed == []
+    assert len(unresolved) == 1
+
+
 def test_two_contacts_with_one_display_name_are_unresolvable_rather_than_a_coin_toss():
     """Guessing keyed the inbound on the wrong human, and every opt-out on this rail is keyed on
     the human rather than on the row."""
@@ -475,6 +521,38 @@ def test_two_contacts_with_one_display_name_are_unresolvable_rather_than_a_coin_
     with pytest.raises(AD.I.Unresolvable):
         driver.resolve_counterparty("Anna")
     assert driver.resolve_counterparty("+49 170 1111111") == "+491701111111"
+
+
+# --- the idle self-check's own identity read (TASK-234): unlike open_chat, which is GIVEN the
+# phone and only verifies the header against it, this reads whatever header is on screen with no
+# expectation of its own and resolves it the same way a notification title is.
+def test_current_chat_phone_resolves_an_unsaved_contacts_own_number_header():
+    screen = conversation("+49 152 1667 8689")
+    driver, _ = build([screen])
+    assert driver.current_chat_phone() == PHONE
+
+
+def test_current_chat_phone_resolves_a_saved_contacts_display_name_via_the_address_book():
+    rows = "Row: 0 display_name=Anna, data1=+49 170 1111111\n"
+    screen = conversation("Anna")
+    driver, _ = build([screen], contacts=rows)
+    assert driver.current_chat_phone() == "+491701111111"
+
+
+def test_current_chat_phone_is_none_with_no_header_on_screen():
+    """Reachable when the idle check's own ``focus()`` read raced a screen change -- a 'some
+    Conversation is open' focus string proves nothing about what dump() catches an instant later."""
+    driver, _ = build([chat_list()])
+    assert driver.current_chat_phone() is None
+
+
+def test_current_chat_phone_is_none_for_a_display_name_two_contacts_share():
+    """Same refusal as everywhere else on this rail: two contacts sharing a display name is
+    unresolvable, not a coin toss, so this has nothing sound to key a read against."""
+    rows = "Row: 0 display_name=Anna, data1=+49 170 1111111\nRow: 1 display_name=Anna, data1=+49 170 2222222\n"
+    screen = conversation("Anna")
+    driver, _ = build([screen], contacts=rows)
+    assert driver.current_chat_phone() is None
 
 
 # --- the chat list and the two destructive verbs (TASK-147) -------------------------------------
@@ -1287,6 +1365,16 @@ def test_stop_recording_returns_none_when_the_pull_fails(tmp_path):
     driver.start_recording("op.abc123")
     adb.fail_pull = "/sdcard/op.abc123.mp4"
     assert driver.stop_recording("op.abc123") is None
+
+
+def test_sweep_orphaned_recordings_removes_whatever_op_mp4s_are_still_on_the_device(tmp_path):
+    """TASK-275: the only bookkeeping start_recording/stop_recording keep is the in-memory
+    self._recordings dict, so a process restart between the two leaves the mp4 on /sdcard with
+    nothing left to name it. A fresh driver -- no recording could possibly be in flight yet --
+    globs it away the same way a fresh Ledger fails a stuck-running row."""
+    driver, adb = build_capture(tmp_path)
+    driver.sweep_orphaned_recordings()
+    assert "rm -f /sdcard/op.*.mp4" in adb.commands
 
 
 def test_list_screenshot_candidates_names_only_what_is_past_retention(tmp_path):

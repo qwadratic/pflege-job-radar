@@ -119,6 +119,53 @@ class Operations:
             entry["phone"], entry["phone_source"] = resolved, "address_book"
         return entry
 
+    def reconcile_unread(self):
+        """The third door (TASK-234). -> {"chats", "reconciled", "skipped"}.
+
+        The notification shade sees a message only when it is posted (never while the app is
+        foregrounded -- ``AdbDriver.pull_inbound``'s own docstring), and every piggyback read
+        (``read_thread``, ``send``, ``send_photos``/``send_gallery``, ``_read_evidence_for``,
+        TASK-231) sees one only because SOME operation already had its own reason to open that
+        exact chat. A chat nobody sends to, reads from or attaches media for gets neither door --
+        its unread badge (``list_chats``'s own ``ChatRow.unread``) is the only place the loss is
+        visible, and nothing before this read it back. This is that read: every unread,
+        unambiguous row gets exactly the piggyback ``read_thread`` already gives any other caller
+        -- no new day-derivation here, ``read_cold_thread`` is reused whole (TASK-231's own fix for
+        a caller with no just-sent bubble to anchor "today" against).
+
+        A row whose identity this cannot prove (no resolvable phone, or a display name two
+        contacts share) is skipped and journalled rather than guessed -- the same refusal
+        ``_identify`` already makes for every other caller of ``list_chats``. A row whose open
+        or read fails is journalled and left for the next cycle; one bad row never ends the sweep.
+
+        UNREAD ONLY, NOT "OR AN OUTBOUND-LESS TAIL" (a proposed widening, not built): the wider
+        signal needs a bubble read of every chat, not only the unread ones, which is a full
+        chat-by-chat open on every cycle instead of one open per genuine unread badge -- a
+        materially bigger blast radius this task's own finding did not ask for. Said here rather
+        than silently narrowed.
+        """
+        now = self.clock()
+        listing = self.list_chats(include_archived=True)
+        reconciled = skipped = 0
+        for chat in listing["chats"]:
+            if not chat["unread"]:
+                continue
+            if chat["phone"] is None or chat["ambiguous"]:
+                skipped += 1
+                self.ledger.note(now, "reconcile_skipped", None,
+                                 title_tag=L.thread_tag(chat["title"]), reason=chat["phone_source"])
+                continue
+            try:
+                self.read_thread(phone=chat["phone"], include_text=False,
+                                 archived=chat["archived"])
+            except (D.DriverError, E.BridgeRefusal) as exc:
+                self.ledger.note(self.clock(), "reconcile_read_failed", None,
+                                 thread=L.thread_tag(chat["phone"]), error=str(exc))
+                continue
+            reconciled += 1
+        return {"ok": True, "at": L.utc(now), "chats": listing["count"],
+                "reconciled": reconciled, "skipped": skipped}
+
     def read_thread(self, *, phone=None, chat=None, include_text=True, archived=False):
         """-> the visible bubbles of one conversation, oldest first.
 
@@ -132,6 +179,19 @@ class Operations:
             self.executor.take_phone(phone_held, phone or title)
             header = self._open(title, phone, archived=archived)
             bubbles = self.driver.read_bubbles()
+            # Opening a chat clears its notification and WhatsApp posts no shade record while it
+            # is foregrounded, same as a send (executor.py's own piggyback, TASK-231) -- so
+            # whatever arrived in the seconds before or during this open is gone for good unless
+            # read here, where the lock is already ours. Only possible when the caller named a
+            # number: a chat opened by title alone has no E.164 for record_inbound to mint an id
+            # against, and stays read-only for that (``_one_address``).
+            if phone:
+                try:
+                    messages, unresolved = self.driver.read_cold_thread(phone)
+                    seen = self.executor.record_inbound(messages, unresolved, self.clock())
+                    self.ledger.note(self.clock(), "thread_read_inbound", None, **seen)
+                except D.DriverError as exc:
+                    self.ledger.note(self.clock(), "thread_read_failed", None, error=str(exc))
             self.driver.park()
         return {"ok": True, "at": L.utc(now), "chat": {"title": header, "phone": phone},
                 "visibility": VISIBILITY, "count": len(bubbles),

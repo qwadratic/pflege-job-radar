@@ -105,10 +105,19 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                         # the funnel's climax moment silently degraded to text.
                         "show_clinic_photos"))
 
-#: Set by app/wa/luna/shadow_run.py for the length of a dry run. show_clinic_photos is the one tool
+#: How "this turn must not send" reaches the spawned tools server. show_clinic_photos is the one tool
 #: that SENDS, and it sends by calling the phone rail itself -- so shadow_run's own "never call
 #: WhatsApp send, regardless of WA_AUTOSEND" contract does not reach it, and a dry run would put real
-#: photos in a real candidate's chat. Passed into the tools server's environment below.
+#: photos in a real candidate's chat.
+#:
+#: READ FROM os.environ ONLY FOR A WHOLE-PROCESS DRY RUN (tools/wa_rehearse.py, which is its own
+#: process and sets it before importing anything). An in-process caller asks per turn instead --
+#: turn(..., no_send=True) -> Client.no_send -> _mcp_config_path. shadow_run.shadow_turn used to do
+#: it by assigning os.environ["WA_LUNA_NO_SEND"] = "1", which never unset: one dry run anywhere in a
+#: long-lived process (the uvicorn worker serving the webhook) silently turned every LATER real
+#: turn's show_clinic_photos into a no-op that still reported success. The full test suite is where
+#: this surfaced -- tests/test_wa_luna_shadow_run.py leaked the variable into every
+#: tests/test_wa_luna_tools.py case that ran after it in the same process.
 NO_SEND_ENV = "WA_LUNA_NO_SEND"
 
 
@@ -136,7 +145,30 @@ def _board_vocabulary_path():
     return path
 
 
-def _mcp_config_path(ready_path, phone=None):
+# The board keys D._snap actually carries (app/data.py:_snap) minus the state-machine fields
+# (at/loading/error) that must not travel with it -- the tools server stamps its own `at` on load so a
+# short-lived child never reads as stale, and `loading`/`error` are this process's own build state, not
+# the child's. Same set tests/luna_fixture_tools_server.py already dumps for the same reason.
+_BOARD_SNAPSHOT_KEYS = ("jobs", "clinics", "by_clinic", "facets", "taxonomy")
+
+
+def _board_snapshot_path():
+    """Hand the tools server the board rows themselves, not just the vocabulary counted off them
+    (TASK-273): the tools server's own D._snap (data.py:186) starts empty in its fresh subprocess, so
+    the first board tool call of every turn -- search_postings, list_clinics, count_postings,
+    match_cv_to_postings, get_posting, anything hitting D.filter_jobs/D.filter_clinics -- used to hit
+    D.snapshot()'s `if force or (empty and not loading): refresh()` and cold-build synchronously: the
+    same 8-17s TASK-213 already moved the vocabulary count off this exact path for, just not the row
+    data every other tool queries. This process already holds a warm snapshot (market_snapshot, called
+    before _live_reply spawns the CLI) -- write it out the same way _board_vocabulary_path does, and
+    the child primes its own D._snap from it (tools_server.py, mirroring
+    tests/luna_fixture_tools_server.py's fixture-board priming) instead of building one from Supabase."""
+    path = C.LUNA_SESSION_DIR / "board_snapshot.json"
+    _write_atomic(path, json.dumps({k: D._snap[k] for k in _BOARD_SNAPSHOT_KEYS}, ensure_ascii=False))
+    return path
+
+
+def _mcp_config_path(ready_path, phone=None, no_send=False):
     """Write (once per turn) the --mcp-config file pointing the CLI at tools_server.py,
     launched with the same interpreter this process runs under -- that interpreter is guaranteed
     to have the `mcp` package installed, whereas a bare `python`/`python3` on PATH might be a
@@ -158,18 +190,41 @@ def _mcp_config_path(ready_path, phone=None):
     same one on both sides of the subprocess boundary (see tools_server.py's own handling).
 
     WA_LUNA_BOARD_VOCABULARY carries the tool descriptions' vocabulary counted here
-    (_board_vocabulary_path), WA_LUNA_TOOLS_READY the file that server stamps once its tools are
+    (_board_vocabulary_path), WA_LUNA_BOARD_SNAPSHOT the board rows themselves (_board_snapshot_path,
+    TASK-273) so the child's D._snap starts primed instead of cold-building on the first tool call,
+    WA_LUNA_TOOLS_READY the file that server stamps once its tools are
     registered -- ``_live_reply`` raises when that stamp is missing after the run, because a tools
     server that never started is otherwise indistinguishable from a turn that just did not call one.
 
-    WA_BRIDGE_URL/WA_BRIDGE_TOKEN (TASK-131 round 7, Ivan 2026-09-23): show_clinic_photos is the
-    first tool in this server that SENDS something rather than only reading -- it calls
-    app.wa.bridge.Client() itself, which needs these to reach the phone rail's executor. Every other
-    env value here is explicit rather than inherited (this dict, not the parent's os.environ, is the
-    subprocess's whole environment) for the same reason WA_SQLITE_PATH is: a test's own bridge
-    credentials must reach the subprocess the same deliberate way a test board does."""
+    WA_BRIDGE_URL/WA_BRIDGE_TOKEN/WA_AUTOSEND (TASK-131 round 7, Ivan 2026-09-23; WA_AUTOSEND added
+    TASK-250): show_clinic_photos is the first tool in this server that SENDS something rather than
+    only reading -- it calls app.wa.bridge.Client() itself, which needs the URL/token to reach the
+    phone rail's executor, and now reads C.AUTOSEND itself to decide whether to send at all (the same
+    gate api._send applies to every other outbound). Every other env value here is explicit rather
+    than inherited (this dict, not the parent's os.environ, is the subprocess's whole environment) for
+    the same reason WA_SQLITE_PATH is: a test's own bridge credentials -- and a test's own AUTOSEND
+    flip -- must reach the subprocess the same deliberate way a test board does. Without this, the
+    subprocess's own import of app.wa.config would see WA_AUTOSEND unset and read AUTOSEND as False
+    always, which would not gate show_clinic_photos so much as permanently disable it.
+
+    One file per turn, named from ready_path's own uuid stem (TASK-249): the webhook worker, the
+    3-minute catch-up poller and a campaign send are separate OS processes sharing this same
+    LUNA_SESSION_DIR, so a FIXED filename here let one turn's WA_LUNA_PHONE overwrite another's
+    between this write and the CLI opening the file -- look_at_phone/show_clinic_photos then acted
+    on the wrong candidate's number. _write_atomic only rules out a torn read of one file, not two
+    turns racing over the same path.
+
+    Unlike ready_path, nothing unlinks this file when the turn ends: the CLI only ever reads it
+    once, at MCP handshake time, so a stale one left behind cannot be read into a later turn the
+    way the fixed name could -- but tests/test_wa_luna_brain.py reads the config back through the
+    subprocess.run mock's captured argv well after the call returns, so deleting it here would
+    take that inspection point away. C.LUNA_SESSION_DIR/mcp_config therefore grows by one file
+    (carrying a candidate's phone number) per turn with nothing purging it -- a real gap, but a
+    separate finding from the clobber this fixes."""
     C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    path = C.LUNA_SESSION_DIR / "mcp_config.json"
+    config_dir = C.LUNA_SESSION_DIR / "mcp_config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / f"{ready_path.stem}.json"
     config = {"mcpServers": {MCP_SERVER_NAME: {"command": sys.executable,
                                                 "args": ["-m", "app.wa.luna.tools_server"],
                                                 "cwd": str(_REPO_ROOT),
@@ -177,6 +232,7 @@ def _mcp_config_path(ready_path, phone=None):
                                                         "WA_SQLITE_PATH": str(C.SQLITE_PATH),
                                                         "WA_LUNA_SESSION_DIR": str(C.LUNA_SESSION_DIR),
                                                         "WA_LUNA_BOARD_VOCABULARY": str(_board_vocabulary_path()),
+                                                        "WA_LUNA_BOARD_SNAPSHOT": str(_board_snapshot_path()),
                                                         "WA_LUNA_TOOLS_READY": str(ready_path),
                                                         # TASK-145: whose CV match_cv_to_postings reads.
                                                         # Empty when turn() was called without a thread
@@ -185,7 +241,8 @@ def _mcp_config_path(ready_path, phone=None):
                                                         "WA_LUNA_PHONE": str(phone or ""),
                                                         "WA_BRIDGE_URL": C.BRIDGE_URL,
                                                         "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN,
-                                                        NO_SEND_ENV: os.environ.get(NO_SEND_ENV, "")}}}}
+                                                        "WA_AUTOSEND": "1" if C.AUTOSEND else "",
+                                                        NO_SEND_ENV: "1" if no_send else os.environ.get(NO_SEND_ENV, "")}}}}
     _write_atomic(path, json.dumps(config))
     return path
 
@@ -802,6 +859,16 @@ def _validate(out):
     return out
 
 
+# TASK-239: the CLI's own transcript store outlives neither a disk cleanup nor a config-dir move, and a
+# --resume of a session it no longer has fails with this exact stderr text (checked against the live CLI,
+# 2.1.270) -- distinguished from every other non-zero exit (auth, network, a real bug) so only THIS one
+# is ever treated as recoverable by turn(), below.
+class SessionNotFound(RuntimeError):
+    def __init__(self, stale_session_id):
+        self.stale_session_id = stale_session_id
+        super().__init__(f"no transcript left for session {stale_session_id}")
+
+
 class Client:
     """Runs the turn through the `claude` CLI's non-interactive print mode, not the Anthropic
     Python SDK -- so this rides whatever auth the CLI already has on the host (see
@@ -842,6 +909,9 @@ class Client:
         # arguments (tests/test_wa_test_threads.py and five others), and a turn must keep working when
         # nobody set it -- the tool then says it has no number and the model answers without it.
         self.phone = None
+        # Per-turn dry run, set by turn(no_send=True) on the client it is about to use -- same idiom
+        # and same reason as self.phone above. NOT an environment variable: see NO_SEND_ENV.
+        self.no_send = False
 
     def _live_reply(self, system_text, user_text, session_id):
         import subprocess
@@ -858,7 +928,7 @@ class Client:
                 proc = subprocess.run(
                     [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
                      "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
-                     "--mcp-config", str(_mcp_config_path(ready_path, self.phone)), "--strict-mcp-config",
+                     "--mcp-config", str(_mcp_config_path(ready_path, self.phone, self.no_send)), "--strict-mcp-config",
                      "--allowedTools", ",".join(MCP_TOOL_NAMES),
                      "--system-prompt", system_text, *session_flags],
                     input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
@@ -870,7 +940,10 @@ class Client:
             except subprocess.TimeoutExpired:
                 raise RuntimeError(f"claude -p did not answer within {C.LUNA_TIMEOUT_SEC}s")
             if proc.returncode != 0:
-                raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
+                stderr = proc.stderr.strip()
+                if not fresh and "No conversation found with session ID" in stderr:
+                    raise SessionNotFound(this_session_id)
+                raise RuntimeError(f"claude -p exited {proc.returncode}: {stderr[:500]}")
             # A board tool server that died at start, or that the CLI dropped for missing its connect
             # deadline, leaves no trace anywhere else: claude -p exits 0, is_error is false, stderr is
             # empty, the result envelope carries no MCP status (probed, CLI 2.1.270), and the turn
@@ -1212,7 +1285,7 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
                                f"answered with its holding message: {violation}"}
 
 
-def turn(text, thread, button_id=None, client=None):
+def turn(text, thread, button_id=None, client=None, no_send=False):
     """Same contract as app/wa/brain.py:turn() -- {bubbles, buttons, slots, asked, stopped,
     matches, action} -- so app/wa/api.py can call either brain without knowing which one it got.
     ``slots`` here holds the Luna card (a different shape from the deterministic brain's slots;
@@ -1265,11 +1338,23 @@ def turn(text, thread, button_id=None, client=None):
 
     cl = client or Client()
     cl.phone = thread.get("phone")   # TASK-145: whose CV match_cv_to_postings may read
+    cl.no_send = no_send             # a dry run (shadow_run) keeps show_clinic_photos off the handset
     turn_at = ST.now_iso()
     # TASK-144: where this turn's own board tool calls start in the shared log, read before the model
     # runs -- what it looked up is what its reply may name (app/wa/luna/grounding.py).
     tool_log_offset = GR.log_offset()
-    out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))
+    try:
+        out, session_id = cl.reply(system_text, user_text, card.get("_session_id"))
+    except SessionNotFound:
+        # TASK-239: the resumed id's transcript is gone (a disk cleanup, a CLAUDE_CONFIG_DIR move, a
+        # host move, or just the CLI's own retention). Nothing conversational survives that -- but the
+        # card, scoreboard and snapshot do, and FUNNEL CONTINUITY/PRIOR CONTACT (prompts.py) already
+        # exist to make a memoryless restart safe. Clear the id, rebuild the payload so fresh_session
+        # reads true, and answer once as first contact. A second failure is not this same recoverable
+        # case -- it raises normally.
+        card["_session_id"] = None
+        user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
+        out, session_id = cl.reply(system_text, user_text, None)
     card["_session_id"] = session_id
 
     patch = dict(out.get("card_patch") or {})

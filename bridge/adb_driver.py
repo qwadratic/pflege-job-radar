@@ -190,6 +190,12 @@ COMPOSER_EMPTY = ("", "Nachricht")
 #: What a bubble's own timestamp looks like. A ``date`` node that is NOT this is a day divider.
 _CLOCK_RE = re.compile(r"\d{1,2}:\d{2}\Z")
 
+#: The one day-divider label that names today by itself, verified on this handset alongside
+#: 'GESTERN' and a bare date (day_separator_y's own docstring). Read literally rather than
+#: matched by position, because a cold read (TASK-231) has no just-sent bubble to anchor
+#: "lowest divider on screen" to today with -- only the divider's own word can say that.
+_TODAY_DIVIDER_LABELS = ("HEUTE", "TODAY")
+
 
 def _is_clock(text):
     return bool(_CLOCK_RE.match(str(text or "").strip()))
@@ -846,6 +852,23 @@ class AdbDriver(D.PhoneDriver):
         ys = [n.bounds[1] for n in nodes if n.short_rid == RID_DATE and not _is_clock(n.text)]
         return max(ys) if ys else None
 
+    @staticmethod
+    def today_divider_y(nodes):
+        """-> the top y of the divider labelled today ('HEUTE'/'TODAY'), or None when none is on
+        screen (TASK-231).
+
+        ``day_separator_y`` answers "where is the lowest divider" and leaves the caller to decide
+        what it means -- sound only for ``read_open_thread``, which already knows (from its own
+        just-sent bubble) that the bottom of the thread is today, so whichever divider is lowest
+        must be the one marking the entry into today. A cold read has no such bubble to anchor
+        with, so it needs the divider that says so itself rather than the lowest one, whatever it
+        says. A 'GESTERN' divider with nothing below it proves nothing about today one way or the
+        other -- it is not read here.
+        """
+        ys = [n.bounds[1] for n in nodes
+             if n.short_rid == RID_DATE and n.text.strip() in _TODAY_DIVIDER_LABELS]
+        return max(ys) if ys else None
+
     # --- send one bubble, and prove it landed ---------------------------------------------------------
     def send_bubble(self, text):
         """-> the BubbleView we read back off the thread. Raises rather than guess.
@@ -1293,7 +1316,14 @@ class AdbDriver(D.PhoneDriver):
         """-> ([InboundMessage] with ids, [(title, reason)] we could not mint).
 
         WhatsApp only posts MessagingStyle notifications while it is in the background, which is why
-        park() puts the phone on the launcher after every action.
+        park() puts the phone on the launcher after every action. This is the ONLY door that does
+        not depend on some other reason to already have that chat open -- every piggyback read
+        (``read_open_thread``, ``read_cold_thread``, TASK-231) only runs because a send, a read or
+        an evidence check happened to touch that exact chat. A chat nobody sends to, reads from or
+        attaches media for, or a message this poll's own shade drop, revoked notification access
+        or a reboot loses outright, gets neither -- that gap is what
+        ``bridge/watcher.py::ReconcileWatcher`` (TASK-234) exists to close from the other side, on
+        its own slow schedule, off ``list_chats``'s unread badge rather than the shade at all.
         """
         dump = self.adb.shell("dumpsys notification --noredact 2>/dev/null", timeout=60)
         return I.notification_messages(dump, tz=self.tz, resolve=self.resolve_counterparty)
@@ -1321,6 +1351,57 @@ class AdbDriver(D.PhoneDriver):
         today = datetime.now(self.tz).strftime("%Y-%m-%d")
         return I.thread_messages([view for _y, view in placed],
                                  counterparty="+" + I.digits(phone), local_date=today, older=older)
+
+    def read_cold_thread(self, phone):
+        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now, for a
+        caller that did NOT just send into it (TASK-231): ``Operations.read_thread``,
+        ``Executor._read_evidence_for``. Opening a chat clears its notification and WhatsApp posts
+        no shade record while it is foregrounded (``pull_inbound``'s own docstring), so whatever a
+        candidate sent in the seconds before or during the open is lost for good unless this reads
+        it -- the same reasoning ``read_open_thread`` already acts on for the one path that sent.
+
+        That path's derivation is NOT reused here. It is sound only because its own just-sent
+        bubble proves the bottom of the thread is today; a cold read has no such bubble, so "no
+        divider visible" cannot be read as "so all of it is today" the way it can there -- a chat
+        with nothing but today's messages in it draws no divider at all, and neither does one with
+        nothing but yesterday's. Only the divider that names today (``today_divider_y``) places
+        bubbles below it as today's; with none on screen this places nothing and reports every
+        incoming bubble unresolved rather than guess. KNOWN RESIDUAL, stated and not guarded: a
+        thread whose entire visible window is today's, with no earlier day above it to divide
+        against, mints nothing on a cold read -- exactly the shape of a brand-new candidate's first
+        message. Recovering that needs an independent "is this chat's last activity today" signal
+        (e.g. the chat list's own stamp column) that no caller here reads yet; closing it is
+        further work, not assumed away.
+        """
+        nodes = self.adb.dump()
+        placed = self._placed_bubbles(nodes)
+        cut = self.today_divider_y(nodes)
+        older = len(placed) if cut is None else sum(1 for y, _view in placed if y < cut)
+        today = datetime.now(self.tz).strftime("%Y-%m-%d")
+        return I.thread_messages([view for _y, view in placed],
+                                 counterparty="+" + I.digits(phone), local_date=today, older=older)
+
+    def current_chat_phone(self):
+        """-> E.164 for whatever conversation is on screen right now, or None (TASK-234).
+
+        For ``bridge/watcher.py``'s idle self-check, the one caller that finds a chat open without
+        opening it itself -- ``focus()`` alone only says "some Conversation", never which one.
+        ``open_chat`` is no help here: it is GIVEN the phone and verifies the header against it;
+        this has nothing to verify against, so it reads the header WhatsApp itself drew and
+        resolves it exactly as a notification title is (``resolve_counterparty``). None when
+        nothing sound can be said -- no header on screen, or a display name two contacts share
+        (``I.Unresolvable``) -- because a caller with no anchor of its own has nothing safer to
+        key an inbound id against than reading nothing at all.
+        """
+        nodes = self.adb.dump()
+        header = find(nodes, rid=RID_HEADER)
+        if not header:
+            return None
+        try:
+            resolved = self.resolve_counterparty(header[0].text.strip())
+        except I.Unresolvable:
+            return None
+        return resolved or None
 
     # --- inbound media (TASK-131) -------------------------------------------------------------------------
     def list_media(self):
@@ -1699,6 +1780,16 @@ class AdbDriver(D.PhoneDriver):
         result = self.adb.pull(remote, str(local))
         self.adb.shell(f"rm -f {remote}")
         return str(local) if result.returncode == 0 else None
+
+    def sweep_orphaned_recordings(self):
+        """A process that dies between ``start_recording`` and ``stop_recording``'s ``finally``
+        (a systemd restart, a mini reboot -- ``Restart=always``, TASK-227's own unit) leaves its
+        mp4 on ``/sdcard`` forever: the only record of it was ``self._recordings``, in memory,
+        gone with the process. One dispatcher thread per process, the same fact
+        ``bridge/ledger.py``'s ``_recover_stuck_ops`` already relies on for the matching ledger
+        row -- so any ``op.*.mp4`` still on the device when a fresh driver starts belongs to a
+        process that no longer exists. Call once, at startup, before anything can be recording."""
+        self.adb.shell("rm -f /sdcard/op.*.mp4")
 
     def describe(self):
         """What the drift monitor reads. Ours is our own file's hash: there is no third party left."""

@@ -89,6 +89,8 @@ BROADCASTS_PATH = "/v1/broadcasts"
 CHAT_CLEAR_PATH = "/v1/chats/clear"
 CHAT_DELETE_PATH = "/v1/chats/delete"
 AUDIT_PATH = "/v1/audit"
+# TASK-261: the read-only companion to RECONCILE_PATH -- which ids need one.
+UNRESOLVED_PATH = "/v1/unresolved"
 # TASK-131 round 4: the human escape hatch -- an unresolved file's own listing, and attaching one
 # to a phone by hand, through the exact path an automatic link takes.
 MEDIA_LIST_PATH = "/v1/media"
@@ -102,6 +104,12 @@ RECONCILE_PATH = "/v1/reconcile"
 # polls this route until the op is terminal and unwraps it back to the exact (status, body) shape
 # the route answered before the queue existed, so nothing past _request needs to know it exists.
 OPS_PATH = "/v1/ops"
+# TASK-243: every ``_request`` call carries the caller's OWN already-computed budget for that call
+# (``send_timeout``/``_timeout_for`` above) in this header, so the executor's ``claim_next_op`` can
+# refuse to start a queued op nobody is still waiting on any more -- see ``bridge/ledger.py``'s own
+# comment on ``budget_sec``. Never a number invented on that side: it is exactly what this side was
+# already willing to wait, restated where the queue can read it.
+OP_BUDGET_HEADER = "X-Wa-Op-Budget-Sec"
 
 # The executor's four per-item statuses (``bridge/broadcast.py``): ``sent`` is a verified tick or a
 # ledger replay of one, ``queued`` is not attempted yet or deferred to ``next_attempt_at``,
@@ -188,6 +196,64 @@ THREAD_BUDGET_SEC = FLOCK_WAIT_SEC + HANDSET_CHAT_LIST_PASS_SEC + 16 + 5 + 5
 # (bridge/executor.py::Executor._scan) -- variable count, so this is a per-id cost the caller
 # multiplies rather than a fixed budget like the ones above.
 RECONCILE_PER_ID_SEC = HANDSET_CHAT_LIST_PASS_SEC + 16 + 5
+
+# --- what the MEDIA routes cost the handset (TASK-247) ---------------------------------------------
+# send_photos/send_gallery/send_document called _request with no timeout= at all, so they inherited
+# the bare WA_BRIDGE_TIMEOUT_SEC floor -- the exact bug DESTROY_BUDGET_SEC above exists to fix, on
+# the three routes that were added (TASK-131 round 7) after TASK-243 fixed it everywhere else. Not a
+# tail case: GALLERY_BUDGET_SEC below already exceeds the 90 s floor with an EMPTY caption, so a real
+# captioned gallery times out on every single call while the send is still landing on the handset.
+#
+# Each term is read off bridge/adb_driver.py's own named waits, never re-measured or guessed:
+#   open a chat                 wait_for(header) 12 s + PAUSE_AFTER_OPEN up to 4 s (adb_driver.py:
+#                                727, 736)
+#   the Android share picker    wait_for(the matched row) 10 s (adb_driver.py:978, :1234), then the
+#                                compose/confirm screen 10 s (adb_driver.py:989, :1246) -- send_photo
+#                                and send_document only; send_gallery drives WhatsApp's OWN in-chat
+#                                picker instead of Android's share sheet
+#   the in-chat attach menu     the attach button 10 s + the "Galerie" option 10 s (adb_driver.py:
+#                                1117, 1122) -- send_gallery only
+#   the gallery picker's index  GALLERY_INDEX_SEC 45 s (adb_driver.py:186, waited at :1136)
+#   the appear wait              PHOTO_APPEAR_SEC 60 s (adb_driver.py:178, used by _verify_photo_sent
+#                                at :1002) -- NOT the shorter BUBBLE_APPEAR_SEC a text send waits on;
+#                                all three of these routes read their result off _verify_photo_sent,
+#                                never off _verify
+# All three routes also re-open the chat to reverify what they just sent ("the share/send flow may
+# land anywhere; come back to prove the result", adb_driver.py:998, :1190, :1283) -- a SECOND open on
+# top of whichever open happened before the send. The caption, where one exists, is added the same
+# way send_timeout adds a text body's typing time.
+HANDSET_OPEN_CHAT_SEC = 16
+HANDSET_SHARE_PICKER_SEC = 10
+HANDSET_SHARE_COMPOSE_SEC = 10
+HANDSET_ATTACH_SEC = 10
+HANDSET_GALLERY_HOLDER_SEC = 10
+HANDSET_GALLERY_INDEX_SEC = 45
+HANDSET_PHOTO_APPEAR_SEC = 60
+
+# send_gallery: the flock wait, one open_chat before the picker (bridge/executor.py's own
+# send_gallery), the attach-menu waits, the index wait, the reverifying open_chat, and the appear
+# wait -- 30+16+10+10+45+16+60 = 187 s before a caption is even typed, already more than double the
+# bare 90 s floor on every single call.
+GALLERY_BUDGET_SEC = (FLOCK_WAIT_SEC + HANDSET_OPEN_CHAT_SEC + HANDSET_ATTACH_SEC
+                      + HANDSET_GALLERY_HOLDER_SEC + HANDSET_GALLERY_INDEX_SEC
+                      + HANDSET_OPEN_CHAT_SEC + HANDSET_PHOTO_APPEAR_SEC)
+# send_document: the flock wait, one open_chat before the share intent (bridge/executor.py's own
+# send_document), the share picker, the compose/confirm screen, and -- unlike a photo -- a SECOND
+# wait for a document's own intermediate recipient-confirm step before the filename readback
+# (adb_driver.py:1246-1256), the reverifying open_chat, and the appear wait.
+DOCUMENT_BUDGET_SEC = (FLOCK_WAIT_SEC + HANDSET_OPEN_CHAT_SEC + HANDSET_SHARE_PICKER_SEC
+                       + 2 * HANDSET_SHARE_COMPOSE_SEC + HANDSET_OPEN_CHAT_SEC
+                       + HANDSET_PHOTO_APPEAR_SEC)
+# send_photos (plural) is not one bounded cost: AdbDriver.send_photos calls send_photo once per
+# path, in order, inside ONE flock hold (its own docstring: "Stops at the first failure ... a caller
+# that wants best-effort has to call send_photo itself") -- the share picker, the reverifying
+# open_chat and the appear wait are each paid AGAIN for every file. HANDSET_ONE_PHOTO_SEC is that
+# per-file term, multiplied by the caller the same way RECONCILE_PER_ID_SEC is; PHOTOS_FLOOR_SEC is
+# what is spent once regardless of count (the flock wait, and the one open_chat bridge/executor.py's
+# own send_photos does before the loop starts).
+HANDSET_ONE_PHOTO_SEC = (HANDSET_SHARE_PICKER_SEC + HANDSET_SHARE_COMPOSE_SEC
+                         + HANDSET_OPEN_CHAT_SEC + HANDSET_PHOTO_APPEAR_SEC)
+PHOTOS_FLOOR_SEC = FLOCK_WAIT_SEC + HANDSET_OPEN_CHAT_SEC
 
 # --- the codes this client mints when the ANSWER is lost ------------------------------------------
 # Not the executor's taxonomy (bridge/errors.py): these say what we could establish about a
@@ -435,9 +501,16 @@ class Client:
         working -- the turn was recorded ``skipped_error`` while the message went on to be
         delivered. ``WA_BRIDGE_TIMEOUT_SEC`` stays the floor (and the whole budget for the calls
         that do not type anything); a long body raises it by what that body takes to type.
+
+        TASK-243: also carries ``FLOCK_WAIT_SEC``, same as every other per-operation budget in
+        this file (``DESTROY_BUDGET_SEC``, ``CHATS_BUDGET_SEC``, ``THREAD_BUDGET_SEC``) -- this
+        was the one that did not, with no comment ever claiming that was on purpose, while
+        ``executor.take_phone`` waits the same ``LOCK_TIMEOUT_SEC`` for the flock before a send
+        even opens the chat.
         """
         return max(float(self.timeout),
-                   EXECUTOR_FIXED_BUDGET_SEC + len(body or "") / EXECUTOR_SLOWEST_CHARS_PER_SEC)
+                   FLOCK_WAIT_SEC + EXECUTOR_FIXED_BUDGET_SEC
+                   + len(body or "") / EXECUTOR_SLOWEST_CHARS_PER_SEC)
 
     def _timeout_for(self, budget_sec):
         """-> how long to wait for a route whose worst case is ``budget_sec`` on the handset.
@@ -453,10 +526,10 @@ class Client:
         if not self.base_url or not self.token:
             raise BridgeError("WA_BRIDGE_URL / WA_BRIDGE_TOKEN are not set")
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Authorization": "Bearer " + self.token}
+        budget = self.timeout if timeout is None else timeout
+        headers = {"Authorization": "Bearer " + self.token, OP_BUDGET_HEADER: str(budget)}
         if data is not None:
             headers["Content-Type"] = "application/json"
-        budget = self.timeout if timeout is None else timeout
         answer = self.transport(method=method, url=self.base_url + path, headers=headers, data=data,
                                 timeout=budget)
         if not (isinstance(answer, tuple) and len(answer) == 2):
@@ -499,9 +572,27 @@ class Client:
                     error = body.get("error") or {}
                     return (error.get("error") or {}).get("http_status") or 500, error
             if self.now() >= deadline:
+                # TASK-243: giving up here used to have zero effect on op_id -- the dispatcher had
+                # no cancel route at all, so a ticket still queued behind lock contention or a
+                # deep queue went on to be claimed and typed into a chat nobody was reading the
+                # answer to any more. Best-effort and fire-and-forget: op_id may already be
+                # RUNNING by now, in which case the executor's own cancel_op refuses to touch it
+                # (never interrupts a live adb call), and this call cannot tell which case it is
+                # in from here -- either way, the answer_timeout below is what this caller reports.
+                self._cancel_op(op_id)
                 raise BridgeError(f"op {op_id} did not reach a terminal state within {timeout:.0f}s "
                                   f"of queueing", status_code=UNCERTAIN_STATUS, code=CODE_ANSWER_TIMEOUT)
             self.sleep(OP_POLL_INTERVAL_SEC)
+
+    def _cancel_op(self, op_id):
+        """Tell the executor this caller is no longer waiting on ``op_id`` (TASK-243). Never
+        raises: a cancel that cannot be delivered (the bridge is unreachable, the op is already
+        gone) changes nothing about the answer_timeout ``_await_op`` is about to raise regardless
+        -- that is the real, already-decided outcome, and this is a courtesy on top of it."""
+        try:
+            self._request("POST", f"{OPS_PATH}/{op_id}/cancel")
+        except BridgeError:
+            pass
 
     def _await_slot(self):
         """Wait out the rail's own inter-bubble gap before the next bubble of the same turn.
@@ -628,13 +719,18 @@ class Client:
         pacing check either. Built and tested by hand, on one number, before wiring photos into
         Luna's own automatic sends -- that wiring needs both of those first.
 
+        TASK-247: the timeout is PHOTOS_FLOOR_SEC plus HANDSET_ONE_PHOTO_SEC per file, not the bare
+        WA_BRIDGE_TIMEOUT_SEC floor -- that floor is smaller than what even one file costs.
+
         -> {"ok", "at", "sent": [{"clock", "tick"}, ...]}, one entry per photo, in order.
         """
         phone = BI.require_e164(to_e164)
         if not local_paths:
             raise BridgeError(f"send_photos to {phone} carries no files", status_code=CONTRACT_STATUS)
+        budget = PHOTOS_FLOOR_SEC + len(local_paths) * HANDSET_ONE_PHOTO_SEC
         status, body = self._request("POST", PHOTOS_PATH,
-                                     {"phone": phone, "local_paths": list(local_paths)})
+                                     {"phone": phone, "local_paths": list(local_paths)},
+                                     timeout=self._timeout_for(budget))
         if status != 200:
             raise BridgeError(f"send_photos to {phone}: bridge HTTP {status}", status_code=status,
                               payload=body)
@@ -653,6 +749,10 @@ class Client:
         idempotency key, no governor pacing check. Built and tested by hand, on one number, before
         wiring a gallery send into Luna's own automatic sends.
 
+        TASK-247: the timeout is GALLERY_BUDGET_SEC plus what the caption costs to type, not the
+        bare WA_BRIDGE_TIMEOUT_SEC floor -- that floor is smaller than GALLERY_BUDGET_SEC alone,
+        with an empty caption, before this ever reaches the picker.
+
         -> {"ok", "at", "clock", "tick"}.
         """
         phone = BI.require_e164(to_e164)
@@ -661,7 +761,8 @@ class Client:
         payload = {"phone": phone, "local_paths": list(local_paths)}
         if caption:
             payload["caption"] = caption
-        status, body = self._request("POST", GALLERY_PATH, payload)
+        budget = GALLERY_BUDGET_SEC + len(caption or "") / EXECUTOR_SLOWEST_CHARS_PER_SEC
+        status, body = self._request("POST", GALLERY_PATH, payload, timeout=self._timeout_for(budget))
         if status != 200:
             raise BridgeError(f"send_gallery to {phone}: bridge HTTP {status}", status_code=status,
                               payload=body)
@@ -678,6 +779,10 @@ class Client:
         MECHANISM PROOF, NOT PRODUCTION-READY (send_gallery's own caveat, unchanged here): no
         idempotency key, no governor pacing check.
 
+        TASK-247: the timeout is DOCUMENT_BUDGET_SEC plus what the caption costs to type, not the
+        bare WA_BRIDGE_TIMEOUT_SEC floor -- that floor is smaller than DOCUMENT_BUDGET_SEC alone,
+        with an empty caption, before this ever reaches the share picker.
+
         -> {"ok", "at", "clock", "tick"}.
         """
         phone = BI.require_e164(to_e164)
@@ -686,7 +791,8 @@ class Client:
         payload = {"phone": phone, "local_path": local_path}
         if caption:
             payload["caption"] = caption
-        status, body = self._request("POST", DOCUMENT_PATH, payload)
+        budget = DOCUMENT_BUDGET_SEC + len(caption or "") / EXECUTOR_SLOWEST_CHARS_PER_SEC
+        status, body = self._request("POST", DOCUMENT_PATH, payload, timeout=self._timeout_for(budget))
         if status != 200:
             raise BridgeError(f"send_document to {phone}: bridge HTTP {status}", status_code=status,
                               payload=body)
@@ -1047,6 +1153,19 @@ class Client:
         rows = body.get("rows")
         if not isinstance(rows, list):
             raise BridgeError(f"bridge answered {AUDIT_PATH} without rows (rows={rows!r})",
+                              status_code=UNCERTAIN_STATUS, payload=body)
+        return rows
+
+    # --- the sends a reconcile still has to answer for (TASK-261) ---------------------------------
+    def unresolved_sends(self):
+        """-> every send still ATTEMPTING/UNCONFIRMED, oldest first (``GET /v1/unresolved``): the
+        client_msg_id, thread_tag, state and age a reconcile needs -- the same ids ``reconcile()``
+        above takes. Read-only, touches no phone: TASK-235's ``UnresolvedSendWatcher`` already
+        reconciles these on its own schedule, this only lists them."""
+        body = self._require_ok(*self._request("GET", UNRESOLVED_PATH), UNRESOLVED_PATH)
+        rows = body.get("rows")
+        if not isinstance(rows, list):
+            raise BridgeError(f"bridge answered {UNRESOLVED_PATH} without rows (rows={rows!r})",
                               status_code=UNCERTAIN_STATUS, payload=body)
         return rows
 

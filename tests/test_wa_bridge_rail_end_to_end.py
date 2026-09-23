@@ -136,6 +136,25 @@ def test_the_catch_up_re_drive_of_a_turn_replays_instead_of_sending_twice(rail):
     assert len(rail.requests) == 2, "and the second request really was made"
 
 
+def test_a_catch_up_re_drive_with_a_different_action_slug_still_replays_instead_of_resending(rail):
+    """TASK-245: catch-up's second brain call answers the same inbound message but is a fresh,
+    independent model call -- its ``action`` is free text with no enum and can legitimately differ
+    from the first attempt's (a grounding retry forces "reply_after_correction", for one). If that
+    drifted action changed the key, ledger.classify would see a key it has never met and wave the
+    already-delivered bubble through as "proceed" a second time."""
+    cl = rail.client()
+    cl.begin_turn(LEAD, TURN, "propose_matches")
+    cl.send_text(LEAD, "Wo moechten Sie arbeiten?")
+
+    rail.advance(180)  # the catch-up timer's own re-drive gap, well past any pacing floor
+
+    again = rail.client()
+    again.begin_turn(LEAD, TURN, "ask_housing")
+    assert again.send_text(LEAD, "Wo moechten Sie arbeiten?") == BI.reply_key(
+        phone=LEAD, turn_key=TURN, action="propose_matches", bubble_index=0)
+    assert rail.driver.sent == ["Wo moechten Sie arbeiten?"], "the candidate reads it once"
+
+
 def test_a_regenerated_reply_under_a_live_key_sends_nothing(rail):
     cl = rail.client()
     cl.begin_turn(LEAD, TURN, "ask_question")

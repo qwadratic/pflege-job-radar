@@ -21,7 +21,11 @@ is a different job now, done by ``IdentityWatcher`` below, on its own schedule, 
 as long as it needs to. A busy phone delays that job; it can no longer make this one miss anything.
 
 WHY THE COUNTERS ARE IN /v1/health. An empty outbox is what a working quiet rail looks like AND what
-a dead watcher looks like. ``last_ok_at`` is the difference, and it is what the health alarm keys on.
+a dead watcher looks like. ``last_ok_at`` is the difference -- it is what a health alarm has to key
+on. Until TASK-255, nothing outside a hand-run ``--probe`` ever read it: ``bridge/relay_pull.py``'s
+``Relay.run()`` now asks on a slow cadence and logs loudly (``check_watcher_alarm``) when it goes
+stale, but that is one log line on the VPS, not the reviewed conjunction alert with an alert channel
+that TASK-132 (still To Do) is meant to be.
 """
 from __future__ import annotations
 
@@ -58,7 +62,8 @@ class InboundWatcher:
     """Polls the handset's notification shade and appends to the ledger outbox. Never takes the
     phone lock (TASK-131 round 6) -- see this module's own docstring. One per executor process."""
 
-    def __init__(self, executor, *, interval=DEFAULT_INTERVAL_SEC, log=None, sleep=time.sleep):
+    def __init__(self, executor, *, interval=DEFAULT_INTERVAL_SEC, log=None, sleep=time.sleep,
+                 operator_hold_path=None):
         self.executor = executor
         self.interval = float(interval)
         self.sleep = sleep
@@ -76,6 +81,9 @@ class InboundWatcher:
         # threshold and this watcher parked the phone itself, with nothing queued.
         self._dirty_streak = 0
         self.idle_dirty_recovered = 0
+        # TASK-266: the operator's own escape hatch, read-only -- see _operator_hold_until.
+        self._operator_hold_path = Path(operator_hold_path) if operator_hold_path else None
+        self.idle_dirty_held = 0
 
     # --- one cycle, so a test can run it without a clock ------------------------------------------
     def cycle(self):
@@ -103,7 +111,22 @@ class InboundWatcher:
         if result["stored"]:
             self._log(f"watcher: {result['stored']} new inbound "
                       f"({result['seen']} seen, {result['unresolved']} unresolved)")
-        self._check_idle_dirty(now)
+        try:
+            self._check_idle_dirty(now)
+        except Exception as exc:
+            # This call sat OUTSIDE the try above, so cycle()'s own "never raises" promise in the
+            # docstring was not true for the idle half: anything _check_idle_dirty touches --
+            # focus(), park(), read_cold_thread(), or comparing a hand-written operator-hold
+            # timestamp that parsed but carries no UTC offset (TypeError, not ValueError, so
+            # _operator_hold_until does not catch it) -- propagated through run()'s bare loop and
+            # KILLED THE WATCHER THREAD. That is TASK-225's original incident exactly: inbound
+            # capture stops, nothing raises anywhere, and a quiet rail is what a working one looks
+            # like too. Counted as an error so /v1/health stops reading green.
+            self.errors += 1
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error_at = L.utc(now)
+            self.executor.ledger.note(now, "idle_check_error", None, error=self.last_error)
+            self._log(f"watcher idle check: {self.last_error}")
         return result
 
     def _check_idle_dirty(self, now):
@@ -113,7 +136,22 @@ class InboundWatcher:
         notification read above; the recovery itself, when it fires, briefly takes huawei01.lock
         -- and only after a NON-BLOCKING probe (``timeout=0``) proves nothing else holds it right
         now, so a legitimate in-flight send is never interrupted, only ever raced-and-skipped
-        (safe: the send's own ``finally: park()`` still runs, and the next cycle tries again)."""
+        (safe: the send's own ``finally: park()`` still runs, and the next cycle tries again).
+
+        BEFORE PARKING, READ (TASK-234): this used to take the lock, prove the phone is free, and
+        then throw away the very thing that proof was about -- whatever is on the screen it just
+        confirmed nobody else is touching. That screen clears its own notification the moment it
+        was opened (``pull_inbound``'s own docstring), so parking without reading is this rail's
+        own recovery mechanism discarding a message none of the other doors ever saw either.
+        ``current_chat_phone`` has no just-opened bubble of its own to verify against (unlike
+        ``open_chat``), so it reads the header off the screen instead; unresolvable (no header, or
+        a shared display name) still parks, it just has nothing sound to key a read against.
+
+        TASK-266: a Conversation held open by a human standing at the handset reads exactly like
+        one abandoned by a bug -- no flock, ``focus()`` unchanged either way -- so this could not
+        tell the two apart. ``_operator_hold_until`` is the human's own way of saying which one
+        this is, checked here, before the probe above, so a held phone is never touched at all.
+        """
         try:
             focus = self.executor.driver.focus()
         except D.DriverError:
@@ -125,6 +163,12 @@ class InboundWatcher:
         if self._dirty_streak < IDLE_DIRTY_CONFIRM_CYCLES:
             return
         self._dirty_streak = 0
+        hold_until = self._operator_hold_until(now)
+        if hold_until is not None and now < hold_until:
+            self.idle_dirty_held += 1
+            self.executor.ledger.note(now, "idle_dirty_held", None, focus=focus,
+                                      hold_until=L.utc(hold_until))
+            return
         with ExitStack() as stack:
             try:
                 stack.enter_context(self.executor.driver.lock(timeout=0))
@@ -133,9 +177,52 @@ class InboundWatcher:
             self.idle_dirty_recovered += 1
             self.executor.ledger.note(now, "idle_dirty_recovered", None, focus=focus)
             try:
+                phone = self.executor.driver.current_chat_phone()
+            except D.DriverError as exc:
+                phone = None
+                self.executor.ledger.note(now, "idle_dirty_identity_failed", None, error=str(exc))
+            if phone is not None:
+                try:
+                    messages, unresolved = self.executor.driver.read_cold_thread(phone)
+                    seen = self.executor.record_inbound(messages, unresolved, now)
+                    self.executor.ledger.note(now, "idle_dirty_read", None, **seen)
+                except D.DriverError as exc:
+                    self.executor.ledger.note(now, "thread_read_failed", None, error=str(exc))
+            try:
                 self.executor.driver.park()
             except D.DriverError as exc:
                 self.executor.ledger.note(now, "park_failed", None, error=str(exc))
+
+    def _operator_hold_until(self, now):
+        """-> the moment an operator-set hold expires, or None when there is none (TASK-266).
+
+        Read-only, no lock, no adb -- one local file, the human's own statement of how long they
+        need the handset, written by hand before going hands-on (the same by-hand, no-tool
+        convention ``docs/whatsapp.md`` already uses for ``WA_AGENT_PAUSED.flag``). Its whole
+        content is one RFC3339 timestamp, ``ledger.utc``'s own spelling. This rail has no signal
+        that tells a human reading a thread from a bug that abandoned one open (dumpsys wakefulness
+        says the screen is on, not who turned it on or since when, and nothing here records the
+        handset's screen-timeout setting) -- so it does not guess; the human states it instead.
+
+        A file that cannot be read or parsed is logged, never trusted silently, and treated as no
+        hold: the idle check falls back to exactly what it did before this existed, rather than a
+        stuck or mistyped file blocking TASK-225's recovery forever.
+        """
+        if self._operator_hold_path is None:
+            return None
+        try:
+            raw = self._operator_hold_path.read_text().strip()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            self.executor.ledger.note(now, "idle_dirty_hold_unreadable", None, error=str(exc))
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as exc:
+            self.executor.ledger.note(now, "idle_dirty_hold_unreadable", None,
+                                      error=f"unparsable hold_until {raw!r}: {exc}")
+            return None
 
     def run(self):
         self.started_at = L.utc(self.executor.clock())
@@ -160,6 +247,7 @@ class InboundWatcher:
                 "last_ok_at": self.last_ok_at, "last_error": self.last_error,
                 "last_error_at": self.last_error_at,
                 "idle_dirty_recovered": self.idle_dirty_recovered,
+                "idle_dirty_held": self.idle_dirty_held,
                 "alive": bool(self._thread and self._thread.is_alive())}
 
 
@@ -205,6 +293,13 @@ class MediaWatcher:
         self.pulled_total = 0
         self._thread = None
         self._stop = threading.Event()
+        # TASK-244: adb has no way to ask WhatsApp "is this file still being written" -- a listing
+        # that has not moved since the previous cycle is the only signal available that a download
+        # has stopped. Whether WhatsApp writes incoming media in place or downloads to a temp name
+        # and renames atomically is unknown (unreachable read-only, off the live handset); this does
+        # not assume either way, only that a still-growing file will show it across two 5s-apart
+        # listings.
+        self._last_listing = {}
 
     def cycle(self):
         """-> {"pulled"}, or None on a failure. Never raises: this is the thread's own loop, same
@@ -229,8 +324,14 @@ class MediaWatcher:
     def _cycle_once(self, now):
         listing = self.driver.list_media()
         known = self.ledger.media_known_paths()
+        # size > 0 alone used to be "fresh" (TASK-244): a candidate's PDF or voice note pulled mid-
+        # write left a truncated file permanently marked known, since record_media never re-admits a
+        # source_rel. Requiring this listing to agree with the previous one closes the gap a single
+        # snapshot cannot: a file still growing moves its size, its mtime, or both between two 5s-
+        # apart polls.
         fresh = sorted((rel, size, mtime) for rel, (size, mtime) in listing.items()
-                       if rel not in known and size > 0)
+                       if rel not in known and size > 0
+                       and self._last_listing.get(rel) == (size, mtime))
         pulled = 0
         for rel, size, mtime in fresh:
             local_name = _UNSAFE_PATH_CHARS.sub("_", rel)
@@ -243,6 +344,16 @@ class MediaWatcher:
                 self.ledger.note(now, "media_pull_failed", None, error=str(exc))
                 continue
             blob = dest.read_bytes()
+            if len(blob) != size:
+                # The stability check above still races a pull spanning the moment writing resumes,
+                # or two listings that happen to agree mid-write (TASK-244) -- caught here instead
+                # of recorded: not marked "known", so the next cycle retries it exactly like a
+                # failed pull above.
+                dest.unlink()
+                self.ledger.note(now, "media_pull_failed", None,
+                                 error=f"copied {len(blob)} bytes for {rel!r}, listed size was "
+                                       f"{size}")
+                continue
             sha = MD.sha256_bytes(blob)
             media_id = MD.content_media_id(sha)
             kind = MD.kind_for_path(rel)
@@ -261,6 +372,7 @@ class MediaWatcher:
             pulled += 1
 
         self.pulled_total += pulled
+        self._last_listing = listing
         return {"pulled": pulled}
 
     def run(self):
@@ -373,4 +485,189 @@ class IdentityWatcher:
                 "cycles": self.cycles, "errors": self.errors, "last_ok_at": self.last_ok_at,
                 "last_error": self.last_error, "last_error_at": self.last_error_at,
                 "attached_total": self.attached_total, "weak_total": self.weak_total,
+                "alive": bool(self._thread and self._thread.is_alive())}
+
+
+#: Seconds between reconciliation passes (TASK-234). Slower than every other watcher on purpose:
+#: this is a full chat listing plus one open-read-park per unread row, real handset time on the
+#: order of the send path's own 90-150 s per bubble, not one cheap dumpsys. A few minutes is the
+#: pace named in the finding this exists to close, not a cap on anything -- how often we ask.
+DEFAULT_RECONCILE_INTERVAL_SEC = 180.0
+
+
+class ReconcileWatcher:
+    """The third door (TASK-234): every other capture path -- the notification shade
+    (``InboundWatcher`` above) and every piggyback read (``Operations.read_thread``,
+    ``Executor.send``/``send_photos``/``send_gallery``/``_read_evidence_for``, TASK-231) -- only
+    ever sees a message because something else already had its own reason to touch that chat. A
+    chat nobody sends to, reads from or attaches media for gets neither, and if the shade also
+    missed it (a full shade, revoked notification access, a reboot before a poll) it sits
+    uncaptured until a human notices the unread badge on the handset itself.
+
+    ``Operations.reconcile_unread`` does the actual work; this is only the schedule. THIS WATCHER
+    TAKES ``huawei01.lock``, same as ``IdentityWatcher`` -- once for the listing and once per
+    unread chat -- and, same reasoning, WAITS for it rather than skipping: a busy phone should
+    delay a slow reconciliation pass, never make it drop a badge it already saw on the listing.
+    """
+
+    def __init__(self, operations, ledger, *, interval=DEFAULT_RECONCILE_INTERVAL_SEC, log=None,
+                clock=None, sleep=time.sleep):
+        self.operations = operations
+        self.ledger = ledger
+        self.interval = float(interval)
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.sleep = sleep
+        self._log = log or (lambda msg: None)
+        self.started_at = None
+        self.cycles = 0
+        self.errors = 0
+        self.last_ok_at = None
+        self.last_error = None
+        self.last_error_at = None
+        self.reconciled_total = 0
+        self._thread = None
+        self._stop = threading.Event()
+
+    def cycle(self):
+        """-> ``Operations.reconcile_unread``'s own {"chats", "reconciled", "skipped"}, or None on
+        a failure. Never raises, same contract as every other watcher cycle here."""
+        now = self.clock()
+        self.cycles += 1
+        try:
+            result = self.operations.reconcile_unread()
+        except Exception as exc:  # a bug in our own code, named as one and never silently swallowed
+            self.errors += 1
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error_at = L.utc(now)
+            self.ledger.note(now, "reconcile_watcher_error", None, error=self.last_error)
+            self._log(f"reconcile watcher: {self.last_error}")
+            return None
+        self.last_ok_at = L.utc(now)
+        self.reconciled_total += result["reconciled"]
+        if result["reconciled"] or result["skipped"]:
+            self._log(f"reconcile watcher: read {result['reconciled']} unread chat(s), "
+                      f"{result['skipped']} skipped (unresolved identity), of "
+                      f"{result['chats']} listed")
+        return result
+
+    def run(self):
+        self.started_at = L.utc(self.clock())
+        while not self._stop.is_set():
+            self.cycle()
+            self._stop.wait(self.interval)
+
+    def start(self):
+        self._thread = threading.Thread(target=self.run, name="wa-bridge-reconcile-watcher",
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=self.interval + 5)
+
+    def heartbeat(self):
+        return {"interval_sec": self.interval, "started_at": self.started_at,
+                "cycles": self.cycles, "errors": self.errors, "last_ok_at": self.last_ok_at,
+                "last_error": self.last_error, "last_error_at": self.last_error_at,
+                "reconciled_total": self.reconciled_total,
+                "alive": bool(self._thread and self._thread.is_alive())}
+
+
+#: Seconds between passes of the ledger's own unresolved rows (TASK-235). Shorter than
+#: pflege-wa-catchup.timer's 3-minute cadence, on purpose: that timer is the clock this exists to
+#: race -- a row still ATTEMPTING/UNCONFIRMED when catch-up re-drives the turn is exactly the
+#: wedge this closes, so the reconcile has to have a real chance to land a verdict first. Not a cap
+#: on anything -- how often we ask.
+DEFAULT_UNRESOLVED_SEND_INTERVAL_SEC = 60.0
+
+
+class UnresolvedSendWatcher:
+    """The other "nothing ever runs reconcile" (TASK-235). ``ReconcileWatcher`` above answers the
+    third door for INBOUND (an unread chat notification nobody's send/read happened to surface).
+    This answers it for OUTBOUND: ``bridge/executor.py::reconcile`` (POST /v1/reconcile) is the
+    only thing that can move a send out of ``attempting``/``unconfirmed``, and before this class
+    the only callers were a human running ``tools/wa_bridge.py reconcile`` and tests. A send that
+    504s (no tick inside the wait) sits UNCONFIRMED forever: ``ledger.classify`` refuses to
+    auto-resend it (Rule 4, ``bridge/ledger.py``'s own docstring), so ``pflege-wa-catchup.timer``
+    re-drives the owed turn every 3 minutes, spends a full Luna call, and dies at the same
+    ``send_unconfirmed`` -- burning the phone's entire hourly Luna budget on a reply that can never
+    land, and starving a genuinely new message from the same candidate onto ``rate_limited``.
+
+    ``ledger.unresolved()`` already returns exactly the rows a reconcile has to answer for, oldest
+    first, and ``Executor.reconcile``'s three-valued verdict (confirmed_sent / confirmed_absent /
+    indeterminate) is already safe to call on a row that is still mid-flight: it goes through
+    ``ops_dispatcher`` (TASK-227/230) like every other phone-touching call, so it queues behind
+    whatever is running and only scans once that op is done and the row may already be resolved.
+    This class is only the schedule: cycle() asks the ledger the question and, if it is not empty,
+    enqueues one ``reconcile`` op with every unresolved key -- the same op kind and the same
+    dispatcher POST /v1/reconcile already uses (``bridge/server.py``), so nothing about how a
+    reconcile runs changes, only who else calls it.
+    """
+
+    def __init__(self, ledger, ops_dispatcher, *, interval=DEFAULT_UNRESOLVED_SEND_INTERVAL_SEC,
+                log=None, clock=None):
+        self.ledger = ledger
+        self.ops_dispatcher = ops_dispatcher
+        self.interval = float(interval)
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self._log = log or (lambda msg: None)
+        self.started_at = None
+        self.cycles = 0
+        self.errors = 0
+        self.last_ok_at = None
+        self.last_error = None
+        self.last_error_at = None
+        self.queued_total = 0
+        self._thread = None
+        self._stop = threading.Event()
+
+    def cycle(self):
+        """-> {"unresolved", "op_id"}, or None on a failure. Never raises, same contract as every
+        other watcher cycle here: a bug in this thread must not stop the ops dispatcher it feeds."""
+        now = self.clock()
+        self.cycles += 1
+        try:
+            rows = self.ledger.unresolved()
+            op_id = None
+            if rows:
+                op_id = self.ops_dispatcher.enqueue(
+                    "reconcile", {"client_msg_ids": [row.client_msg_id for row in rows]})
+        except Exception as exc:  # a bug in our own code, named as one and never silently swallowed
+            self.errors += 1
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            self.last_error_at = L.utc(now)
+            self.ledger.note(now, "unresolved_send_watcher_error", None, error=self.last_error)
+            self._log(f"unresolved send watcher: {self.last_error}")
+            return None
+        self.last_ok_at = L.utc(now)
+        if op_id is not None:
+            self.queued_total += 1
+            self._log(f"unresolved send watcher: queued reconcile op {op_id} for {len(rows)} "
+                      f"row(s), oldest attempted_at {rows[0].attempted_at}")
+        return {"unresolved": len(rows), "op_id": op_id}
+
+    def run(self):
+        self.started_at = L.utc(self.clock())
+        while not self._stop.is_set():
+            self.cycle()
+            self._stop.wait(self.interval)
+
+    def start(self):
+        self._thread = threading.Thread(target=self.run, name="wa-bridge-unresolved-send-watcher",
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=self.interval + 5)
+
+    def heartbeat(self):
+        return {"interval_sec": self.interval, "started_at": self.started_at,
+                "cycles": self.cycles, "errors": self.errors, "last_ok_at": self.last_ok_at,
+                "last_error": self.last_error, "last_error_at": self.last_error_at,
+                "queued_total": self.queued_total,
                 "alive": bool(self._thread and self._thread.is_alive())}

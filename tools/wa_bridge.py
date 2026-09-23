@@ -15,6 +15,7 @@ Usage:
     python tools/wa_bridge.py audit [--title "Name"] [--limit N] [--json]
     python tools/wa_bridge.py media-list [--json]
     python tools/wa_bridge.py media-attach --id wab.q.xxxxxxxxxxxxxxxxxxxx --phone +49...
+    python tools/wa_bridge.py unresolved-list [--json]
     python tools/wa_bridge.py reconcile --keys wab.o.xxx,wab.o.yyy [--json]
     python tools/wa_bridge.py ops-resolve --id op.xxxxxxxxxxxxxxxxxxxxxxxx [--json]
 
@@ -110,7 +111,9 @@ see above. Nothing is written to a file and nothing is logged.
 EXIT. 0 done (including a chat this rail had already deleted: the handset is in the state that was
 asked for and the audit says why); 1 something needs attention (a refused or failed item, a bridge
 refusal, a destruction the executor could not verify, a lost answer whose record says the verb
-started or did not); 2 usage, configuration or input error (nothing was attempted); 3 not finished (a send the executor accepted but has not sent, queued broadcast items)
+started or did not, or -- TASK-264 -- ``health`` finding a dead/stale watcher, a dead ops dispatcher,
+a stale inbound backlog or a retention error); 2 usage, configuration or input error (nothing was
+attempted); 3 not finished (a send the executor accepted but has not sent, queued broadcast items)
 -- ask again with ``broadcast --id RUN --status``; 130 interrupted.
 """
 import argparse
@@ -127,6 +130,8 @@ from app.wa import bridge as BR          # noqa: E402
 from app.wa import bridge_ids as BI      # noqa: E402
 from app.wa import config as C           # noqa: E402
 from app.wa import phones as PH          # noqa: E402
+from bridge import ledger as BL          # noqa: E402
+from bridge import relay_pull as RP      # noqa: E402
 
 EXIT_OK, EXIT_ATTENTION, EXIT_CONFIG, EXIT_NOT_FINISHED, EXIT_INTERRUPTED = 0, 1, 2, 3, 130
 
@@ -287,6 +292,48 @@ def describe_chat(chat):
 
 # --- the commands ---------------------------------------------------------------------------------
 
+# TASK-264: `health`'s own help text is "is the rail alive" -- these are the same thresholds
+# bridge/relay_pull.py::Relay.check_watcher_alarm already judges a live executor's own heartbeat
+# against, every ALARM_CHECK_INTERVAL_SEC. Reused rather than reinvented, so a human running this
+# by hand gets the same verdict an automated alarm would, not a second number nobody reviewed.
+WATCHER_STALE_SEC = RP.WATCHER_STALE_SEC
+INBOUND_BACKLOG_STALE_SEC = RP.INBOUND_BACKLOG_STALE_SEC
+
+
+def _age(stamp, now):
+    """-> seconds since ``stamp`` (an RFC3339 string), or None when there is nothing to age."""
+    return BL.age_sec(stamp, now) if stamp else None
+
+
+def _liveness_problems(health, now):
+    """-> what makes `health`'s own exit code say something needs attention (TASK-264): the facts
+    the design already names as decisive, judged only where the body actually says something --
+    a field this call never asked about is unknown, not bad, and is left out of this list rather
+    than guessed at. ``phone_ops`` depth/age is printed by the caller but not judged here: unlike
+    watcher/inbound staleness, there is no reviewed number for it to be judged against, and this
+    file does not invent one."""
+    problems = []
+    if "watcher" in health:
+        watcher = health.get("watcher") or {}
+        if watcher.get("alive") is False:
+            problems.append("watcher.alive is false")
+        age = _age(watcher.get("last_ok_at"), now)
+        if age is None:
+            problems.append("watcher.last_ok_at has never been set")
+        elif age > WATCHER_STALE_SEC:
+            problems.append(f"watcher.last_ok_at is {age:.0f}s old (over {WATCHER_STALE_SEC:.0f}s)")
+    if (health.get("ops_dispatcher") or {}).get("alive") is False:
+        problems.append("ops_dispatcher.alive is false")
+    inbound_age = _age((health.get("inbound") or {}).get("oldest_unacked_at"), now)
+    if inbound_age is not None and inbound_age > INBOUND_BACKLOG_STALE_SEC:
+        problems.append(f"oldest unacked inbound row is {inbound_age:.0f}s old "
+                        f"(over {INBOUND_BACKLOG_STALE_SEC:.0f}s)")
+    retention_errors = (health.get("retention") or {}).get("errors")
+    if retention_errors:
+        problems.append(f"retention has {retention_errors} error(s)")
+    return problems
+
+
 def cmd_health(args, client):
     health = client.health()
     if args.json:
@@ -296,6 +343,35 @@ def cmd_health(args, client):
     print(f"bridge {health.get('version')} at {health.get('at')}")
     print(f"  rail number: {rail.get('number') or 'UNVERIFIED'}   driver: {(rail.get('driver') or {}).get('kind')}")
     print(f"  queue: {queue}   quota: {health.get('quota')}")
+    # TASK-261: "two unconfirmed" and "two unconfirmed, oldest six days" are different information --
+    # the count alone was already in `queue`, the age was not.
+    stuck = sum(queue.get(s, 0) for s in ("attempting", "unconfirmed"))
+    if stuck:
+        print(f"  unresolved sends: {stuck} (oldest {health.get('oldest_unresolved_sec') or 0:.0f}s) "
+              f"-- see `unresolved-list`")
+    # TASK-264: printed every time, not only when it looks bad -- a liveness check that only speaks
+    # up when something is wrong reads exactly like one that never runs at all, which is the whole
+    # finding. `queue`/`quota` above answer "is the rail sending"; these answer "is the rail alive".
+    now = client.now()
+    watcher = health.get("watcher") or {}
+    watcher_age = _age(watcher.get("last_ok_at"), now)
+    print(f"  watcher: alive={watcher.get('alive')}  last_ok_at={watcher.get('last_ok_at')!r}"
+          + (f"  age={watcher_age:.0f}s" if watcher_age is not None else ""))
+    ops_dispatcher = health.get("ops_dispatcher") or {}
+    print(f"  ops_dispatcher: alive={ops_dispatcher.get('alive')}  "
+          f"last_ok_at={ops_dispatcher.get('last_ok_at')!r}")
+    phone_ops = health.get("phone_ops") or {}
+    print(f"  phone_ops: queued={phone_ops.get('queued')}  "
+          f"oldest_queued_at={phone_ops.get('oldest_queued_at')!r}")
+    inbound = health.get("inbound") or {}
+    inbound_age = _age(inbound.get("oldest_unacked_at"), now)
+    print(f"  inbound: unacked={inbound.get('unacked')}  "
+          f"oldest_unacked_at={inbound.get('oldest_unacked_at')!r}"
+          + (f"  age={inbound_age:.0f}s" if inbound_age is not None else ""))
+    retention = health.get("retention") or {}
+    print(f"  retention: last_ok_at={retention.get('last_ok_at')!r}  errors={retention.get('errors')}"
+          + (f"  last_error={retention.get('last_error')!r} at {retention.get('last_error_at')!r}"
+             if retention.get("errors") else ""))
     # TASK-131: health keeps reporting the queue -- surfaced here rather than only in --json, so an
     # operator sees it without asking twice.
     backlog = ((health.get("media_watcher") or {}).get("unresolved_backlog")) or {}
@@ -315,7 +391,10 @@ def cmd_health(args, client):
     if identity:
         print(f"  identity watcher: {identity.get('attached_total', 0)} attached "
               f"({identity.get('weak_total', 0)} weak), {identity.get('errors', 0)} errors")
-    return EXIT_OK
+    problems = _liveness_problems(health, now)
+    if problems:
+        print(f"  ATTENTION: {'; '.join(problems)}")
+    return EXIT_ATTENTION if problems else EXIT_OK
 
 
 def cmd_chats(args, client):
@@ -374,6 +453,25 @@ def cmd_send(args, client):
     return EXIT_OK
 
 
+def _media_sent_or_answer_lost(send, to):
+    """Call one of client.send_photos/send_gallery/send_document and -> its result, or print the
+    "answer lost" line and -> None on CODE_ANSWER_TIMEOUT (TASK-247).
+
+    OPS_PATH's own contract (bridge.py:100-104) is that these three routes only ever reach
+    CODE_ANSWER_TIMEOUT after the executor already answered 200 {"state": "queued"} -- this call WAS
+    queued for the handset, so "bridge refused" is never true of it, and the send may well still be
+    landing while this prints (GALLERY_BUDGET_SEC alone is 187s). None of the three mint an
+    idempotency key (their own docstrings), so the caller must not resend on a guess."""
+    try:
+        return send()
+    except BR.BridgeError as exc:
+        if exc.code != BR.CODE_ANSWER_TIMEOUT:
+            raise
+        print(f"ERROR: {exc} -- this is not a refusal; do not resend. Read what the handset shows: "
+              f"tools/wa_bridge.py read --phone {to}", file=sys.stderr)
+        return None
+
+
 def cmd_send_photos(args, client):
     """TASK-131 round 7, Ivan 2026-09-22: mechanism proof, not production-ready (client.send_photos'
     own docstring) -- no idempotency key, a re-run sends the photos again. ``--files`` names paths
@@ -389,7 +487,9 @@ def cmd_send_photos(args, client):
     if not C.AUTOSEND:
         print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
         return EXIT_CONFIG
-    result = client.send_photos(to, files)
+    result = _media_sent_or_answer_lost(lambda: client.send_photos(to, files), to)
+    if result is None:
+        return EXIT_ATTENTION
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -415,7 +515,9 @@ def cmd_send_gallery(args, client):
     if not C.AUTOSEND:
         print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
         return EXIT_CONFIG
-    result = client.send_gallery(to, files, caption=caption)
+    result = _media_sent_or_answer_lost(lambda: client.send_gallery(to, files, caption=caption), to)
+    if result is None:
+        return EXIT_ATTENTION
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -439,7 +541,9 @@ def cmd_send_document(args, client):
     if not C.AUTOSEND:
         print("ERROR: sending needs WA_AUTOSEND=1 (load .env first); nothing was sent", file=sys.stderr)
         return EXIT_CONFIG
-    result = client.send_document(to, args.file, caption=caption)
+    result = _media_sent_or_answer_lost(lambda: client.send_document(to, args.file, caption=caption), to)
+    if result is None:
+        return EXIT_ATTENTION
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
     else:
@@ -673,6 +777,23 @@ def cmd_media_attach(args, client):
     return EXIT_OK
 
 
+def cmd_unresolved_list(args, client):
+    """The rows a reconcile still has to answer for, read-only (TASK-261): id, thread, state, age --
+    no phone (bridge/executor.py::unresolved_sends is the only source). Feeds straight into
+    `reconcile --keys`."""
+    rows = client.unresolved_sends()
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    print(f"{len(rows)} unresolved send(s)")
+    for r in rows:
+        print(f"  {r['client_msg_id']}  state={r['state']}  thread={r['thread_tag']}  "
+              f"age={r['age_sec']:.0f}s")
+    if rows:
+        print(f"reconcile them: reconcile --keys {','.join(r['client_msg_id'] for r in rows)}")
+    return EXIT_OK
+
+
 def cmd_reconcile(args, client):
     """Ask the executor what actually happened to sends still sitting UNCONFIRMED/ATTEMPTING in
     its ledger (TASK-230) -- the step that lets a failed send's own retention (bridge/retention.py)
@@ -754,6 +875,12 @@ def build_parser():
                                                               "local spelling")
     media_attach.add_argument("--json", action="store_true")
     media_attach.set_defaults(fn=cmd_media_attach)
+
+    unresolved_list = sub.add_parser("unresolved-list", help="sends still ATTEMPTING/UNCONFIRMED: "
+                                                              "id, thread, state, age (read-only, "
+                                                              "TASK-261)")
+    unresolved_list.add_argument("--json", action="store_true")
+    unresolved_list.set_defaults(fn=cmd_unresolved_list)
 
     reconcile = sub.add_parser("reconcile", help="ask the executor what happened to sends still "
                                                  "unconfirmed in its ledger (TASK-230)")
