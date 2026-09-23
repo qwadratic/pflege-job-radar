@@ -1100,6 +1100,49 @@ def show_clinic_photos(clinic_id: str) -> dict:
     return {"sent": True, "photos": len(remote_files), "has_presentation": bool(caption)}
 
 
+# --- look_at_phone (TASK-229, Ivan 2026-09-23): the brain's own eyes on the live handset ------------
+#
+# Everything else this server answers from (the stored thread, the card, requirement_scoreboard) is
+# built once, before the turn starts, from the database -- deliberately kept that way (TASK-229's own
+# scope note: that machinery is deep, already correct, and re-deriving it live every turn would cost
+# real latency for no gain). This is the one tool that steps outside it and asks the handset itself
+# what is on screen right now, for the moments that are specifically about live phone state: whether
+# something actually sent, whether a reply already arrived that the stored history has not caught up
+# with yet. It goes through the same queued, poll-to-terminal BR.Client() every send-type tool uses
+# (TASK-227), so a call here never races whatever the dispatcher is doing for this same number.
+@mcp.tool()
+def look_at_phone() -> dict:
+    """Ground-check the live WhatsApp chat on the handset itself -- what is actually on screen right
+    now, not the stored conversation history this turn's prompt was already built from. Call it
+    before an uncertain or high-stakes reply (you are not sure your last message really reached
+    them, or the stored history feels out of step with what they just wrote), and right after
+    show_clinic_photos to confirm the photos actually landed. Takes no arguments -- it reads this
+    conversation's own number, the same way match_cv_to_postings does.
+
+    Returns {"chat": {"title", "phone"}, "count": N, "incoming": n, "outgoing": n, "messages": [...]}, oldest
+    first. Each message is {"direction": "in"|"out", "clock": "HH:MM", "tick": "sent"|"delivered"|"read"|null,
+    "body": "..."}. "tick": null on an outgoing bubble means WhatsApp has not drawn a delivery mark for it
+    yet -- treat that message as unconfirmed, never as failed or lost.
+
+    Read-only: nothing is sent, nothing on the card or the stored thread changes. An error means the
+    live chat could not be read right now (the handset was busy or unreachable) -- say nothing about
+    this to the candidate and continue from the stored history as normal; a failed call here is never
+    evidence something is wrong with the conversation itself."""
+    _log_call("look_at_phone", {})   # no phone number in the log, same as every tool above
+    phone = _turn_phone()
+    try:
+        body = BR.Client().read_thread(phone=phone, include_text=True)
+    except BR.BridgeError as exc:
+        raise ToolError(f"could not read the live chat (code {exc.code!r}): {exc} -- say nothing "
+                        f"about this to the candidate and continue from the stored history. "
+                        f"Internal tool note.") from exc
+    return {"chat": body.get("chat"), "count": body.get("count"),
+            "incoming": body.get("incoming"), "outgoing": body.get("outgoing"),
+            "messages": [{"direction": m.get("direction"), "clock": m.get("clock"),
+                         "tick": m.get("tick"), "body": m.get("body")}
+                        for m in body.get("messages") or []]}
+
+
 # Captured before any vocabulary is appended, so apply_board_vocabulary() is idempotent (the fixture
 # tools server in tests/ imports this module and applies it again with its own board).
 _BASE_DESCRIPTIONS = {name: tool.description for name, tool in mcp._tool_manager._tools.items()}

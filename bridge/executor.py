@@ -126,6 +126,10 @@ class Executor:
         # an empty unresolved queue is what a fully-caught-up rail looks like AND what a dead
         # matcher looks like.
         self.identity_watcher = None
+        # Set by server.main when the ops dispatcher starts (TASK-227). Same reason again: an
+        # empty phone_ops queue is what a caught-up rail looks like AND what a dead dispatcher
+        # looks like.
+        self.ops_dispatcher = None
 
     # --- POST /v1/messages ---------------------------------------------------------------------
     def send(self, req):
@@ -771,6 +775,7 @@ class Executor:
                 "broadcast": {
                     "runs_open": len(self.ledger.open_runs()),
                     "runner": self.broadcast_runner.heartbeat() if self.broadcast_runner else None},
+                "ops_dispatcher": self.ops_dispatcher.heartbeat() if self.ops_dispatcher else None,
                 "audit": {"destructions": self.ledger.audit_count()}}
 
 

@@ -548,7 +548,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
     allowed = {name.split("__")[-1] for name in LB.MCP_TOOL_NAMES}
     assert allowed <= set(TS.mcp._tool_manager._tools), "the CLI allowlist names a tool the server does not serve"
     assert {"search_postings_with_housing", "list_clinics_with_housing", "list_cities_with_postings",
-            "count_postings", "read_board_docs", "board_api_get"} <= allowed
+            "count_postings", "read_board_docs", "board_api_get", "look_at_phone"} <= allowed
     # TASK-195: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
     # TASK-145: this one IS for the conversation. It is registered here; the CLI reaches it only once
@@ -876,6 +876,76 @@ def test_match_cv_to_postings_without_a_stored_cv_says_so_instead_of_ranking_not
         asyncio.run(TS.mcp.call_tool("match_cv_to_postings", {}))
     assert not isinstance(raised.value, UnexpectedToolError)
     assert "no CV text stored yet" in str(raised.value) and "Ask them for the Lebenslauf" in str(raised.value)
+
+
+# --- TASK-229: the brain's own eyes on the live handset -------------------------------------------
+class _FakeReadThreadClient:
+    """Stands in for BR.Client() -- look_at_phone's only network call. No real transport, no real
+    handset; a test only needs to prove the tool reads through Client.read_thread and trims what it
+    gets back, the same boundary tests/test_wa_bridge_client.py already covers BR.Client at."""
+
+    def __init__(self, *, body=None, error=None):
+        self._body = body
+        self._error = error
+        self.read_calls = []
+
+    def read_thread(self, *, phone, include_text=True):
+        self.read_calls.append(phone)
+        if self._error is not None:
+            raise self._error
+        return self._body
+
+
+def test_look_at_phone_reads_the_live_chat_and_trims_it_to_what_the_model_needs(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    fake = _FakeReadThreadClient(body={
+        "ok": True, "at": "2026-09-23T03:00:00Z", "visibility": "on_screen",
+        "chat": {"title": "Test", "phone": _CV_PHONE}, "count": 2, "incoming": 1, "outgoing": 1,
+        "oldest_clock": "09:10", "newest_clock": "09:11",
+        "messages": [
+            {"direction": "in", "clock": "09:10", "tick": None, "tick_state": None,
+             "body": "Hallo", "body_sha256": "x", "body_len": 5},
+            {"direction": "out", "clock": "09:11", "tick": "Gelesen", "tick_state": "read",
+             "body": "Guten Tag", "body_sha256": "y", "body_len": 9},
+        ]})
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    out = TS.look_at_phone()
+    assert fake.read_calls == [_CV_PHONE]
+    assert (out["count"], out["incoming"], out["outgoing"]) == (2, 1, 1)
+    assert out["chat"] == {"title": "Test", "phone": _CV_PHONE}
+    assert out["messages"] == [
+        {"direction": "in", "clock": "09:10", "tick": None, "body": "Hallo"},
+        {"direction": "out", "clock": "09:11", "tick": "Gelesen", "body": "Guten Tag"},
+    ]
+    assert "visibility" not in out and "ok" not in out, "internal plumbing, not the model's business"
+
+
+def test_look_at_phone_sends_nothing_and_never_logs_the_number(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    fake = _FakeReadThreadClient(body={"chat": {}, "count": 0, "incoming": 0, "outgoing": 0,
+                                       "messages": []})
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    TS.look_at_phone()
+    logged = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8")
+    assert json.loads(logged.splitlines()[-1]) == {"tool": "look_at_phone", "args": {},
+                                                   "at": pytest.approx(time.time(), abs=60)}
+    assert _CV_PHONE not in logged, "PII: the number is the turn's own context, never an argument or a log line"
+
+
+def test_look_at_phone_on_a_bridge_error_raises_a_tool_error_and_never_crashes_the_server(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    fake = _FakeReadThreadClient(error=TS.BR.BridgeError("phone busy", code="device_unavailable"))
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("look_at_phone", {}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "say nothing" in str(raised.value) and "device_unavailable" in str(raised.value)
 
 
 def test_match_cv_to_postings_on_a_server_started_without_the_turns_number_fails_loudly(tmp_path, monkeypatch):

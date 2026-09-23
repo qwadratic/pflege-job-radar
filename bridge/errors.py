@@ -66,6 +66,13 @@ def media_not_found(message, **detail):
     return BridgeRefusal("media_not_found", 404, message, detail=detail)
 
 
+def op_not_found(message, **detail):
+    """TASK-227: ``GET /v1/ops/<id>`` for an ``op_id`` this ledger never enqueued -- a typo, a
+    different executor's id, or (30 days out, TASK-130 AC#9's retention sweep) one old enough to
+    have been swept. Not device_unavailable: nothing about the phone is in question here."""
+    return BridgeRefusal("op_not_found", 404, message, detail=detail)
+
+
 def idempotency_conflict(message, **detail):
     return BridgeRefusal("idempotency_conflict", 409, message, detail=detail)
 

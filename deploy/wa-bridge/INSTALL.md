@@ -38,6 +38,7 @@ ssh macmini 'systemctl --user daemon-reload && systemctl --user enable --now pfl
 | `WA_BRIDGE_STATE` | ledger, inbound outbox and escalation screenshots. Outside any repo: candidate metadata. |
 | `WA_BRIDGE_PER_NUMBER_DAILY_CAP` | **required, no default.** See below. |
 | `WA_BRIDGE_WATCH_INTERVAL_SEC` | how often the watcher asks the notification shade. 5. |
+| `WA_BRIDGE_DEBUG_CAPTURE` | `1` to take pre/post/error screenshots and a screen recording for every queued op, under `WA_BRIDGE_STATE/{shots,recordings}`, kept 14 days (TASK-228). Unset/off by default -- turn on for a postmortem window, then unset it again. |
 
 Python 3.12 from the distribution, stdlib only. No virtualenv, no pip install, nothing from our
 repo's `requirements.txt` — `bridge/` imports nothing outside the standard library, which is the

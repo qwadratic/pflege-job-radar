@@ -16,7 +16,9 @@ WHAT IS DELIBERATELY DIFFERENT FROM WHAT WE READ THERE:
     Here a name header is verified against the handset's own address book, and an unverifiable
     header refuses before anything is typed.
   * their Device screenshots before every tap, swipe, key and type, with no off switch (91 MB from
-    16 h of one test chat). Here a screenshot is an escalation artefact and nothing else.
+    16 h of one test chat). Here a screenshot is an escalation artefact, or (TASK-228, opt-in via
+    ``WA_BRIDGE_DEBUG_CAPTURE``) one queued op's own pre/post/error postmortem shot -- never a
+    per-tap flood.
   * their flock is held across the brain call. Here the lock is taken per bubble by the executor and
     nothing slow happens inside it.
 
@@ -456,6 +458,26 @@ class Adb:
         one, and its own override point in a scripted test."""
         return self.run("push", local, remote, timeout=timeout)
 
+    def spawn_shell(self, cmd):
+        """Start a background ``adb shell`` process and return the ``Popen`` immediately, for a
+        job (``screenrecord``) that runs until told to stop rather than a call that returns on its
+        own (TASK-228). Its own method, not ``shell()``, so a test (``ScriptedAdb``) can override
+        it and start nothing real."""
+        return subprocess.Popen([self.binary, "-s", self.serial, "shell", cmd],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def downscale(self, path, *, max_dim=800):
+        """Shrink a screenshot in place with ImageMagick's ``convert`` (present on the mini, no
+        Pillow dependency needed) so postmortem storage is not full-resolution PNGs (TASK-228,
+        Ivan 2026-09-23). Best-effort: a missing binary or a timeout is logged and never raised --
+        a screenshot that could not be shrunk is still a screenshot, and this must not turn into
+        the failure of whatever op it was decorating."""
+        try:
+            subprocess.run(["convert", str(path), "-resize", f"{max_dim}x{max_dim}>", str(path)],
+                           timeout=30, check=False, capture_output=True)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.log(f"downscale of {path} failed: {exc}")
+
     def connected(self):
         try:
             out = subprocess.run([self.binary, "devices"], capture_output=True, text=True,
@@ -616,15 +638,20 @@ class Adb:
 class AdbDriver(D.PhoneDriver):
     """The five verbs of bridge.driver.PhoneDriver, spoken to a real handset."""
 
-    def __init__(self, *, shots_dir, adb=None, serial=SERIAL, lock_path=LOCK_PATH,
-                 device_tz=DEVICE_TZ, log=None, rng=None):
+    def __init__(self, *, shots_dir, recordings_dir=None, adb=None, serial=SERIAL,
+                 lock_path=LOCK_PATH, device_tz=DEVICE_TZ, log=None, rng=None):
         self.adb = adb if isinstance(adb, Adb) else Adb(serial, adb=adb, log=log)
         self.shots_dir = Path(shots_dir)
+        # TASK-228: pulled recordings live next to shots_dir by default -- a sibling directory
+        # under the same WA_BRIDGE_STATE root, not inside shots_dir, since sweep_screenshots only
+        # ever globs *.png there.
+        self.recordings_dir = Path(recordings_dir) if recordings_dir else self.shots_dir.parent / "recordings"
         self.lock_path = Path(lock_path)
         self.tz = ZoneInfo(device_tz)
         self.rng = rng or random.Random()
         self._log = log or (lambda msg: None)
         self._shot_n = 0
+        self._recordings = {}   # op_id -> (Popen, remote path), while a recording is in flight
         self._contacts = None       # address book cache, filled on first name-header
         self._open_phone = None     # the number of the chat we verified open
 
@@ -1611,6 +1638,52 @@ class AdbDriver(D.PhoneDriver):
         cutoff = now.timestamp() - days * 86400
         removed = 0
         for path in sorted(self.shots_dir.rglob("*.png")):
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        return removed
+
+    # --- debug capture (TASK-228) ---------------------------------------------------------------
+    def debug_shot(self, op_id, tag):
+        """One postmortem screenshot for one queued op, named so a postmortem finds every artefact
+        for that op with one glob (``{shots_dir}/{op_id}_*``). Lands in the same directory and the
+        same retention sweep as an escalation shot -- both are debug artefacts of the one rail."""
+        path = self.shots_dir / f"{op_id}_{tag}.png"
+        self.adb.screenshot(path)
+        self.adb.downscale(path)
+        return str(path)
+
+    def start_recording(self, op_id):
+        """Fire-and-forget: ``killall -2 screenrecord`` in ``stop_recording`` is safe to send at
+        any handset with no recording running (it just finds nothing to signal), and the FIFO ops
+        queue (TASK-227) guarantees only one op is ever in flight, so there is never a second
+        recording to collide with this one."""
+        remote = f"/sdcard/{op_id}.mp4"
+        proc = self.adb.spawn_shell(f"screenrecord --size 720x1280 --time-limit 180 {remote}")
+        self._recordings[op_id] = (proc, remote)
+
+    def stop_recording(self, op_id):
+        entry = self._recordings.pop(op_id, None)
+        if entry is None:
+            return None
+        proc, remote = entry
+        # SIGINT, not SIGKILL (signal 9) -- a killed screenrecord leaves the mp4 container
+        # unfinalized and unplayable. -2 is SIGINT's number, which is what a plain Ctrl-C sends.
+        self.adb.shell("killall -2 screenrecord")
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+        self.recordings_dir.mkdir(parents=True, exist_ok=True)
+        local = self.recordings_dir / f"{op_id}.mp4"
+        result = self.adb.pull(remote, str(local))
+        self.adb.shell(f"rm -f {remote}")
+        return str(local) if result.returncode == 0 else None
+
+    def sweep_recordings(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+        cutoff = now.timestamp() - days * 86400
+        removed = 0
+        for path in sorted(self.recordings_dir.rglob("*.mp4")):
             if path.stat().st_mtime < cutoff:
                 path.unlink()
                 removed += 1

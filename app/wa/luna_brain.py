@@ -94,7 +94,10 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                         # TASK-145: ranks the board against this thread's stored CV. Needs the thread's
                         # number to find that CV, which is why _mcp_config_path passes WA_LUNA_PHONE.
                         "match_cv_to_postings",
-                        "read_board_docs", "board_api_get"))
+                        "read_board_docs", "board_api_get",
+                        # TASK-229: the live-handset ground-check. Also needs WA_LUNA_PHONE, same as
+                        # match_cv_to_postings -- both read this thread's own number, never an argument.
+                        "look_at_phone"))
 
 
 def _write_atomic(path, text):

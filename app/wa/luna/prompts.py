@@ -431,6 +431,17 @@ RULES = [
     "with. {\"sent\": false} with no presentation_text means this clinic has nothing yet -- say "
     "nothing about photos and continue as normal; this is expected for most clinics while the "
     "collection pipelines are still mid-rollout, never a reason to mention the tool or the gap.",
+    "LOOK_AT_PHONE (TASK-229, Ivan 2026-09-23): call look_at_phone() -- no arguments, it reads this "
+    "conversation's own number -- to ground-check the live chat on the handset itself, not the stored "
+    "history this prompt was built from, in two situations: (1) before a reply when something feels "
+    "uncertain -- you are not sure your last message actually reached them, or what they just wrote "
+    "does not fit the stored history at all; (2) right after calling show_clinic_photos, to confirm "
+    "the photo message actually landed rather than assuming it from a bare {\"sent\": true}. Do not "
+    "call it on an ordinary turn with nothing uncertain about it -- the stored history is already "
+    "correct and current for everything else, and a live phone read is real latency, not a free "
+    "check. A message tick of null means WhatsApp has not drawn a delivery mark yet -- that is "
+    "unconfirmed, never a reason to say a message failed or to resend it. Never mention this tool, "
+    "a screen, a phone or checking anything to the candidate; act on what it tells you in silence.",
     "MEMORY: do not re-ask a fact already in the thread or the card. A document still missing "
     "per requirement_scoreboard is not such a fact -- keep asking for it (DOCUMENT ASK).",
     "FUNNEL CONTINUITY (TASK-144, Ivan's rule): card.stage says which stage this candidate is already "

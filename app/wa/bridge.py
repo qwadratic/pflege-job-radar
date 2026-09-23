@@ -54,7 +54,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import bridge_ids as BI
 from . import config as C
@@ -96,6 +96,11 @@ MEDIA_ATTACH_PATH = "/v1/media/attach"
 PHOTOS_PATH = "/v1/photos"
 GALLERY_PATH = "/v1/gallery"
 DOCUMENT_PATH = "/v1/document"
+# TASK-227: every phone-touching route above answers 200 {"op_id", "state": "queued"} instead of
+# its result now -- a real FIFO queue on the executor's side, not a bare flock. _request() below
+# polls this route until the op is terminal and unwraps it back to the exact (status, body) shape
+# the route answered before the queue existed, so nothing past _request needs to know it exists.
+OPS_PATH = "/v1/ops"
 
 # The executor's four per-item statuses (``bridge/broadcast.py``): ``sent`` is a verified tick or a
 # ledger replay of one, ``queued`` is not attempted yet or deferred to ``next_attempt_at``,
@@ -131,6 +136,12 @@ PACING_REPLY = "reply"
 # ``bridge/driver.py`` TICK_WAIT_SEC = 30 s for the tick, then reads the thread and parks.
 EXECUTOR_FIXED_BUDGET_SEC = 90
 EXECUTOR_SLOWEST_CHARS_PER_SEC = 3.2
+
+#: How often _await_op polls GET /v1/ops/<id> while a queued phone operation is still
+#: queued/running (TASK-227). Not a cap on anything -- the caller's own per-route timeout (the
+#: budgets above) is what actually bounds the wait; this only sets how promptly it notices the
+#: answer once the op is done.
+OP_POLL_INTERVAL_SEC = 0.3
 
 # --- what the OTHER routes cost the handset (the 2026-09-21 delete) -------------------------------
 # A destructive call is not a send and must not inherit a send's budget. On 2026-09-21 Ivan deleted
@@ -440,12 +451,46 @@ class Client:
         headers = {"Authorization": "Bearer " + self.token}
         if data is not None:
             headers["Content-Type"] = "application/json"
+        budget = self.timeout if timeout is None else timeout
         answer = self.transport(method=method, url=self.base_url + path, headers=headers, data=data,
-                                timeout=self.timeout if timeout is None else timeout)
+                                timeout=budget)
         if not (isinstance(answer, tuple) and len(answer) == 2):
             raise BridgeError(f"a bridge transport returns (http_status, body), got {answer!r} -- the HTTP "
                               f"status is load-bearing here (200 sent vs 202 accepted), unlike meta.py's")
-        return answer
+        status, body = answer
+        # TASK-227: a phone-touching route answers 200 {"op_id", "state": "queued"} now, never the
+        # result itself -- see OPS_PATH's own comment. Every caller of _request from here up
+        # (_post_message, send_photos, send_gallery, send_document, read_thread, clear_chat,
+        # delete_chat, ...) still expects the ORIGINAL synchronous (status, body) shape, so that is
+        # what this unwraps back to before returning -- nothing above this method may ever see
+        # "queued" on the wire.
+        if status == 200 and isinstance(body, dict) and body.get("state") == "queued" and body.get("op_id"):
+            return self._await_op(body["op_id"], timeout=budget)
+        return status, body
+
+    def _await_op(self, op_id, *, timeout):
+        """Poll ``GET /v1/ops/<op_id>`` until it leaves ``queued``/``running`` (TASK-227). -> the
+        SAME ``(http_status, body)`` shape the route would have answered before the queue existed:
+        ``done`` unwraps to ``(200, result)``; ``failed`` unwraps to the stored refusal envelope at
+        its own ``http_status``, exactly as if that refusal had come back on the original call.
+        Uses ``self.now``/``self.sleep`` (both already injectable for a test) rather than a bare
+        ``time.sleep``, so this stays on the same clock the rest of the class already waits on."""
+        deadline = self.now() + timedelta(seconds=timeout)
+        while True:
+            status, body = self.transport(
+                method="GET", url=f"{self.base_url}{OPS_PATH}/{op_id}",
+                headers={"Authorization": "Bearer " + self.token}, data=None, timeout=self.timeout)
+            if status == 200 and isinstance(body, dict):
+                state = body.get("state")
+                if state == "done":
+                    return 200, body.get("result") or {}
+                if state == "failed":
+                    error = body.get("error") or {}
+                    return (error.get("error") or {}).get("http_status") or 500, error
+            if self.now() >= deadline:
+                raise BridgeError(f"op {op_id} did not reach a terminal state within {timeout:.0f}s "
+                                  f"of queueing", status_code=UNCERTAIN_STATUS, code=CODE_ANSWER_TIMEOUT)
+            self.sleep(OP_POLL_INTERVAL_SEC)
 
     def _await_slot(self):
         """Wait out the rail's own inter-bubble gap before the next bubble of the same turn.

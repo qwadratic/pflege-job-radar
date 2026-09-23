@@ -4,6 +4,10 @@ The driver is the layer that cannot be integration-tested without messaging a re
 is testable about it is tested here: the parsing, the thread guard, the keyboard restore and the
 refusal to call an unmatched bubble a send. A scripted screen stands in for the phone.
 """
+import os
+import time
+from datetime import datetime, timezone
+
 import pytest
 
 from bridge import adb_driver as AD
@@ -55,6 +59,18 @@ def conversation(header, bubbles=(), composer=""):
     return screen
 
 
+class FakeProc:
+    """Stands in for the ``Popen`` a real ``spawn_shell`` would hand back (TASK-228) -- nothing is
+    ever really started in this offline lane."""
+
+    def __init__(self):
+        self.waited = 0
+
+    def wait(self, timeout=None):
+        self.waited += 1
+        return 0
+
+
 class ScriptedAdb(AD.Adb):
     """A phone made of a list of screens. Every shell command is recorded, nothing is executed."""
 
@@ -78,6 +94,11 @@ class ScriptedAdb(AD.Adb):
         self.fail_push = None       # a local path whose push answers rc != 0
         # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign) ----------
         self.device_date = "202609230200.00"   # what "date +%Y%m%d%H%M.%S" answers, scripted per test
+        # --- debug capture (TASK-228) -----------------------------------------------------------
+        self.spawned = []           # commands spawn_shell was asked to start, in call order
+        self.downscaled = []        # paths downscale was asked to shrink, in call order
+        self.next_proc = FakeProc()  # what spawn_shell hands back -- one test script sets a fresh
+                                     # one per call if it needs to tell two recordings apart
 
     # --- what the driver asks of a phone -------------------------------------------------------
     def connected(self):
@@ -155,6 +176,15 @@ class ScriptedAdb(AD.Adb):
 
     def screenshot(self, path):
         return str(path)
+
+    # --- debug capture (TASK-228) -----------------------------------------------------------
+    def spawn_shell(self, cmd):
+        self.commands.append(cmd)
+        self.spawned.append(cmd)
+        return self.next_proc
+
+    def downscale(self, path, *, max_dim=800):
+        self.downscaled.append(str(path))
 
 
 @pytest.fixture(autouse=True)
@@ -1211,3 +1241,63 @@ def test_send_photos_refuses_an_empty_list():
     with pytest.raises(D.DriverError) as caught:
         driver.send_photos(PHONE, [])
     assert "no files" in str(caught.value)
+
+
+# --- debug capture (TASK-228) ---------------------------------------------------------------
+
+def build_capture(tmp_path, screens=([],)):
+    adb = ScriptedAdb(list(screens))
+    driver = AD.AdbDriver(shots_dir=str(tmp_path / "shots"),
+                          recordings_dir=str(tmp_path / "recordings"), adb=adb)
+    return driver, adb
+
+
+def test_debug_shot_names_the_file_after_the_op_and_downscales_it(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    path = driver.debug_shot("op.abc123", "00_pre")
+    assert path == str(tmp_path / "shots" / "op.abc123_00_pre.png")
+    assert adb.downscaled == [path]
+
+
+def test_start_recording_spawns_a_sized_time_limited_screenrecord(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    driver.start_recording("op.abc123")
+    assert adb.spawned == ["screenrecord --size 720x1280 --time-limit 180 /sdcard/op.abc123.mp4"]
+
+
+def test_stop_recording_signals_sigint_pulls_and_cleans_the_device_copy(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    driver.start_recording("op.abc123")
+    path = driver.stop_recording("op.abc123")
+    assert "killall -2 screenrecord" in adb.commands
+    assert adb.pulls == [("/sdcard/op.abc123.mp4", str(tmp_path / "recordings" / "op.abc123.mp4"))]
+    assert "rm -f /sdcard/op.abc123.mp4" in adb.commands
+    assert path == str(tmp_path / "recordings" / "op.abc123.mp4")
+    assert (tmp_path / "recordings" / "op.abc123.mp4").exists()
+
+
+def test_stop_recording_with_nothing_started_is_a_noop(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    assert driver.stop_recording("op.never-started") is None
+    assert adb.commands == [] and adb.pulls == []
+
+
+def test_stop_recording_returns_none_when_the_pull_fails(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    driver.start_recording("op.abc123")
+    adb.fail_pull = "/sdcard/op.abc123.mp4"
+    assert driver.stop_recording("op.abc123") is None
+
+
+def test_sweep_recordings_removes_only_what_is_past_retention(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    (tmp_path / "recordings").mkdir()
+    old = tmp_path / "recordings" / "op.old.mp4"
+    fresh = tmp_path / "recordings" / "op.fresh.mp4"
+    old.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    old_mtime = time.time() - 20 * 86400
+    os.utime(old, (old_mtime, old_mtime))
+    removed = driver.sweep_recordings(datetime.now(timezone.utc), days=14)
+    assert removed == 1
+    assert not old.exists() and fresh.exists()

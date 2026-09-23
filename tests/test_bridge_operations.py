@@ -8,6 +8,7 @@ conversation still sitting on the phone.
 import copy
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -790,15 +791,28 @@ def http(tmp_path):
     rig = Rig(tmp_path)
     server = S.BridgeServer(rig.executor, "s3cret", port=0, log=lambda *a: None,
                             operations=rig.ops, broadcast=rig.broadcast)
+    server.dispatcher.start()  # TASK-227: every phone-touching route now enqueues onto this
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield rig, f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
     server.server_close()
+    server.dispatcher.stop()
     rig.ledger.close()
 
 
 def call(base, path, *, token="s3cret", payload=None):
+    """-> (status, body). TASK-227: a phone-touching route answers 200 {"op_id","state":"queued"}
+    first -- this polls GET /v1/ops/<id> until terminal and unwraps it back to the (status, body)
+    a synchronous route used to answer directly, the same way app/wa/bridge.py::Client._await_op
+    does for production callers."""
+    status, body = _raw_call(base, path, token=token, payload=payload)
+    if status == 200 and isinstance(body, dict) and body.get("state") == "queued" and body.get("op_id"):
+        return _await_op(base, body["op_id"], token=token)
+    return status, body
+
+
+def _raw_call(base, path, *, token="s3cret", payload=None):
     req = urllib.request.Request(base + path, method="POST" if payload is not None else "GET",
                                  data=json.dumps(payload).encode() if payload is not None else None,
                                  headers={"Authorization": f"Bearer {token}",
@@ -808,6 +822,20 @@ def call(base, path, *, token="s3cret", payload=None):
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as err:
         return err.code, json.loads(err.read())
+
+
+def _await_op(base, op_id, *, token, deadline_sec=10.0):
+    deadline = time.monotonic() + deadline_sec
+    while True:
+        status, body = _raw_call(base, f"/v1/ops/{op_id}", token=token)
+        if status == 200 and body.get("state") == "done":
+            return 200, body["result"]
+        if status == 200 and body.get("state") == "failed":
+            error = body["error"]
+            return error["error"]["http_status"], error
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"op {op_id} did not finish within {deadline_sec}s: {body!r}")
+        time.sleep(0.02)
 
 
 def test_the_new_routes_answer_on_loopback(http):

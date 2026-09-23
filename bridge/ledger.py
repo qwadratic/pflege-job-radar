@@ -64,6 +64,13 @@ ITEM_TERMINAL = frozenset({ITEM_SENT, ITEM_REFUSED, ITEM_FAILED})
 #: states that consumed a slot on the handset, whether or not they were confirmed
 SPENT = frozenset({ATTEMPTING, SENT, UNCONFIRMED})
 
+# --- phone-op queue states (TASK-227) -----------------------------------------------------------
+OP_QUEUED = "queued"    # waiting its turn; nothing has touched the phone for it yet
+OP_RUNNING = "running"  # the dispatcher claimed it and is inside the executor call right now
+OP_DONE = "done"        # the executor call returned; ``result`` carries what it returned
+OP_FAILED = "failed"    # the executor call raised; ``error`` carries the refusal/error envelope
+OP_TERMINAL = frozenset({OP_DONE, OP_FAILED})
+
 #: TASK-130 AC#9. Ledger rows and journal lines are kept 30 days; the mini has 457 G free but a
 #: candidate's thread metadata is not something to keep forever in a shared home directory.
 LEDGER_RETENTION_DAYS = 30
@@ -159,6 +166,19 @@ create table if not exists broadcast_item (
   primary key (run_id, client_msg_id)
 );
 create index if not exists idx_item_status on broadcast_item(run_id, status, position);
+create table if not exists phone_ops (
+  op_id       text primary key,
+  position    integer not null,
+  kind        text not null,
+  args        text not null,
+  state       text not null,
+  result      text,
+  error       text,
+  created_at  text not null,
+  started_at  text,
+  finished_at text
+);
+create index if not exists idx_phone_ops_state on phone_ops(state, position);
 create table if not exists audit (
   id            integer primary key,
   at            text not null,
@@ -487,6 +507,66 @@ class Ledger:
     def queue_counts(self):
         rows = self._db.execute("select state, count(*) c from outbound group by state").fetchall()
         return {r["state"]: r["c"] for r in rows}
+
+    # --- the phone-op queue (TASK-227): every HTTP route that touches the phone enqueues here and
+    # a single dispatcher thread drains it strictly in ``position`` order. This is what makes two
+    # concurrent HTTP requests execute one-after-another instead of racing a bare flock. -----------
+    def enqueue_op(self, op_id, kind, args, now):
+        """One row, ``queued``, at the back of the line. -> nothing; ``op_id`` is already minted by
+        the caller (``bridge/server.py``), not here -- the caller needs it before this call returns
+        to answer the HTTP request with it."""
+        with self._lock:
+            position = self._db.execute(
+                "select coalesce(max(position), 0) + 1 as n from phone_ops").fetchone()["n"]
+            self._db.execute(
+                "insert into phone_ops(op_id, position, kind, args, state, created_at) "
+                "values (?,?,?,?,?,?)",
+                (op_id, position, kind, json.dumps(args, sort_keys=True), OP_QUEUED, utc(now)))
+            self._db.commit()
+
+    def claim_next_op(self):
+        """-> the oldest still-``queued`` row, marked ``running``, or None with nothing waiting.
+        Single-writer via ``self._lock`` same as everything else here -- there is only ever one
+        dispatcher thread calling this, but the guard costs nothing and keeps that an invariant
+        this method enforces rather than one the caller has to remember."""
+        with self._lock:
+            row = self._db.execute(
+                "select * from phone_ops where state = ? order by position limit 1",
+                (OP_QUEUED,)).fetchone()
+            if row is None:
+                return None
+            now = utc(datetime.now(timezone.utc))
+            self._db.execute(
+                "update phone_ops set state = ?, started_at = ? where op_id = ? and state = ?",
+                (OP_RUNNING, now, row["op_id"], OP_QUEUED))
+            self._db.commit()
+            return dict(row, state=OP_RUNNING, started_at=now, args=json.loads(row["args"]))
+
+    def mark_op_done(self, op_id, result, now):
+        with self._lock:
+            self._db.execute(
+                "update phone_ops set state = ?, result = ?, finished_at = ? where op_id = ?",
+                (OP_DONE, json.dumps(result, sort_keys=True), utc(now), op_id))
+            self._db.commit()
+
+    def mark_op_failed(self, op_id, error, now):
+        with self._lock:
+            self._db.execute(
+                "update phone_ops set state = ?, error = ?, finished_at = ? where op_id = ?",
+                (OP_FAILED, json.dumps(error, sort_keys=True), utc(now), op_id))
+            self._db.commit()
+
+    def op_status(self, op_id):
+        """-> the row as a plain dict with ``args``/``result``/``error`` decoded back from JSON, or
+        None when this ``op_id`` was never enqueued on this ledger."""
+        row = self._db.execute("select * from phone_ops where op_id = ?", (op_id,)).fetchone()
+        if row is None:
+            return None
+        out = dict(row)
+        out["args"] = json.loads(out["args"])
+        out["result"] = json.loads(out["result"]) if out["result"] is not None else None
+        out["error"] = json.loads(out["error"]) if out["error"] is not None else None
+        return out
 
     # --- inbound handover (GET /v1/outbox) --------------------------------------------------------
     def append_inbound(self, inbound_key, payload, now):
@@ -976,6 +1056,12 @@ class Ledger:
             runs = self._db.execute(
                 "delete from broadcast_run where finished_at is not null and finished_at < ?",
                 (ledger_cut,)).rowcount
+            # TASK-227: a terminal op (done or failed) past its retention window. A queued/running
+            # one is never swept, same reasoning as an unfinished broadcast run above -- it is
+            # still owed to whoever is polling GET /v1/ops/<id> for it.
+            ops = self._db.execute(
+                "delete from phone_ops where finished_at is not null and finished_at < ?",
+                (ledger_cut,)).rowcount
             self._db.commit()
         return {"outbound": done, "journal": lines, "body_mismatch": mism, "inbound": acked,
-                "broadcast_runs": runs, "broadcast_items": items}
+                "broadcast_runs": runs, "broadcast_items": items, "phone_ops": ops}

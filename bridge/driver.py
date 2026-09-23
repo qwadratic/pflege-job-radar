@@ -38,8 +38,11 @@ UNVERIFIED = "unverified"
 LOCK_TIMEOUT_SEC = 30.0
 #: How long the executor waits for a tick to be drawn on a bubble that is already on the thread.
 TICK_WAIT_SEC = 30.0
-#: TASK-130 AC#9: escalation screenshots are kept for 7 days.
-SCREENSHOT_RETENTION_DAYS = 7
+#: TASK-130 AC#9: escalation screenshots are kept for 7 days. Raised to 14 for TASK-228 (Ivan,
+#: 2026-09-23) once this same sweep started also covering the debug-capture screenshots below;
+#: bridge/adb_driver.py::AdbDriver.sweep_recordings shares this constant rather than its own,
+#: same later note.
+SCREENSHOT_RETENTION_DAYS = 14
 #: Ivan's own cap, 2026-09-22 (VOLUME-style -- a candidate never gets a wall of anything): the
 #: most photos one send_photos() call attaches at once. Shared by every PhoneDriver implementation
 #: (bridge/adb_driver.py's own copy would drift from this one otherwise).
@@ -230,6 +233,28 @@ class PhoneDriver:
         """-> how many escalation screenshots the retention sweep removed (TASK-130 AC#9)."""
         raise NotImplementedError
 
+    # --- debug capture (TASK-228) ---------------------------------------------------------------
+    def debug_shot(self, op_id, tag):
+        """-> path of one postmortem screenshot for a queued op, or None if the capture itself
+        failed. ``tag`` is the dispatcher's own vocabulary (e.g. "00_pre", "01_post", "02_error");
+        this method only spells the filename. Never the operation's own failure -- a capture that
+        cannot be taken is logged by the caller and the op proceeds regardless."""
+        raise NotImplementedError
+
+    def start_recording(self, op_id):
+        """Start a screen recording for one queued op. Fire-and-forget: no return value, paired
+        with ``stop_recording`` and never awaited on its own."""
+        raise NotImplementedError
+
+    def stop_recording(self, op_id):
+        """-> path of the pulled recording, or None if none was running for ``op_id`` or the pull
+        failed."""
+        raise NotImplementedError
+
+    def sweep_recordings(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        """-> how many recordings the retention sweep removed."""
+        raise NotImplementedError
+
     def describe(self):
         """-> dict identifying the driver code actually loaded (TASK-140 drift monitor)."""
         raise NotImplementedError
@@ -281,6 +306,12 @@ class FakeDriver(PhoneDriver):
         # the same way the real driver's focus() would read the launcher after a real park.
         self.focus_value = "com.android.launcher/.Home"
         self.shots = []
+        # --- debug capture (TASK-228) --------------------------------------------------------
+        self.debug_shots = []       # (op_id, tag) pairs, in call order
+        self.fail_debug_shot = None  # a tag that raises DriverError instead of capturing
+        self.recording_started = []  # op_ids start_recording was called for, in call order
+        self.recording_stopped = []  # op_ids stop_recording was called for, in call order
+        self.fail_recording = False  # stop_recording returns None instead of a path
         self.busy = False         # the other lane holds huawei01.lock
         self.fail_on_open = None
         self.fail_on_send = None
@@ -536,6 +567,22 @@ class FakeDriver(PhoneDriver):
         return f"/fake/shots/{tag}.png"
 
     def sweep_screenshots(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
+        return 0
+
+    def debug_shot(self, op_id, tag):
+        if self.fail_debug_shot == tag:
+            raise DriverError(f"debug_shot({tag!r}) failed (scripted)")
+        self.debug_shots.append((op_id, tag))
+        return f"/fake/shots/{op_id}_{tag}.png"
+
+    def start_recording(self, op_id):
+        self.recording_started.append(op_id)
+
+    def stop_recording(self, op_id):
+        self.recording_stopped.append(op_id)
+        return None if self.fail_recording else f"/fake/recordings/{op_id}.mp4"
+
+    def sweep_recordings(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
         return 0
 
     def describe(self):

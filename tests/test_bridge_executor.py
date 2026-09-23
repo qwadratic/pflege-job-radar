@@ -6,6 +6,7 @@ tests/test_bridge_adb.py and the inbound ids in tests/test_bridge_relay.py.
 """
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from contextlib import ExitStack
@@ -14,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from bridge import dispatcher as OD
 from bridge import driver as D
 from bridge import envelope as EN
 from bridge import errors as E
@@ -22,6 +24,7 @@ from bridge import governor as G
 from bridge import inbound as I
 from bridge import ledger as L
 from bridge import media as MD
+from bridge import operations as O
 from bridge import server as S
 from bridge import watcher as W
 
@@ -1181,15 +1184,29 @@ def test_retention_sweeps_ship_with_the_first_commit(rig):
 def http(tmp_path):
     rig = Rig(tmp_path)
     server = S.BridgeServer(rig.executor, "s3cret", port=0, log=lambda *a: None)
+    server.dispatcher.start()  # TASK-227: every phone-touching route now enqueues onto this
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield rig, f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
     server.server_close()
+    server.dispatcher.stop()
     rig.ledger.close()
 
 
 def call(base, path, *, token="s3cret", payload=None):
+    """-> (status, body). TASK-227: a phone-touching route answers 200 {"op_id","state":"queued"}
+    first -- this polls GET /v1/ops/<id> until terminal and unwraps it back to the (status, body)
+    a synchronous route used to answer directly, the same way app/wa/bridge.py::Client._await_op
+    does for production callers, so every test written against the pre-queue contract still reads
+    the final outcome without knowing the queue is there."""
+    status, body = _raw_call(base, path, token=token, payload=payload)
+    if status == 200 and isinstance(body, dict) and body.get("state") == "queued" and body.get("op_id"):
+        return _await_op(base, body["op_id"], token=token)
+    return status, body
+
+
+def _raw_call(base, path, *, token="s3cret", payload=None):
     req = urllib.request.Request(base + path, method="POST" if payload is not None else "GET",
                                  data=json.dumps(payload).encode() if payload is not None else None,
                                  headers={"Authorization": f"Bearer {token}",
@@ -1199,6 +1216,20 @@ def call(base, path, *, token="s3cret", payload=None):
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as err:
         return err.code, json.loads(err.read())
+
+
+def _await_op(base, op_id, *, token, deadline_sec=10.0):
+    deadline = time.monotonic() + deadline_sec
+    while True:
+        status, body = _raw_call(base, f"/v1/ops/{op_id}", token=token)
+        if status == 200 and body.get("state") == "done":
+            return 200, body["result"]
+        if status == 200 and body.get("state") == "failed":
+            error = body["error"]
+            return error["error"]["http_status"], error
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"op {op_id} did not finish within {deadline_sec}s: {body!r}")
+        time.sleep(0.02)
 
 
 def test_the_wire_refuses_a_bad_token_before_anything_else(http):
@@ -1350,6 +1381,118 @@ def test_the_idle_check_never_races_a_phone_something_else_holds(rig):
     assert driver.parked == 0
     assert watch.idle_dirty_recovered == 0
     assert journal(rig, "idle_dirty_recovered") == []
+
+
+# --- TASK-227: the phone-op FIFO queue -----------------------------------------------------------
+def test_ops_run_in_strict_fifo_order(rig):
+    """The whole point of the queue: three requests that raced a bare flock before now execute in
+    the order they were queued, whichever order the claim happens to notice them in. Three
+    different recipients on purpose -- the governor's own reply-pacing gap for repeat sends to
+    the SAME number is a different rule and not what this test is proving."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    third = "+491700000003"
+    for key, phone, body in [(KEY, PHONE, "eins"), (KEY2, OTHER, "zwei"),
+                             ("wab.o.0000000000000000000000000000cccc", third, "drei")]:
+        dispatch.enqueue("send", {"req": {"client_msg_id": key, "to": phone, "kind": "text",
+                                          "body": body, "trace": {"action": "reply"}}})
+        rig.clock.advance(1)
+    assert dispatch.cycle() and dispatch.cycle() and dispatch.cycle()
+    assert dispatch.cycle() is False  # nothing left queued
+    assert rig.driver.sent == ["eins", "zwei", "drei"]
+
+
+def test_a_refusal_is_recorded_as_a_failed_op_with_its_own_envelope(rig):
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    op_id = dispatch.enqueue("send_document", {"phone": PHONE, "local_path": "/no/such/file.pdf"})
+    assert dispatch.cycle() is True
+    status = rig.ledger.op_status(op_id)
+    assert status["state"] == "failed"
+    assert status["error"]["error"]["code"] == "invalid_request"
+    assert status["error"]["error"]["http_status"] == 400
+    assert status["result"] is None
+
+
+def test_send_and_read_thread_both_reach_their_method_through_generic_dispatch(rig):
+    """No per-kind branch exists in the dispatcher: ``send`` resolves on the executor,
+    ``read_thread`` resolves on Operations, and both run through the identical code path."""
+    ops = O.Operations(rig.executor)
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, ops)
+    send_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                                "body": "eins", "trace": {"action": "reply"}}})
+    dispatch.cycle()
+    send_status = rig.ledger.op_status(send_id)
+    assert send_status["state"] == "done"
+    # Executor.send() returns (200, payload) directly; the dispatcher normalizes that to the bare
+    # payload, same as every other kind, so op_status().result is never a [200, {...}] artifact.
+    assert isinstance(send_status["result"], dict)
+    assert send_status["result"]["state"] == "sent"
+
+    read_id = dispatch.enqueue("read_thread", {"phone": PHONE, "chat": None,
+                                               "include_text": True, "archived": False})
+    dispatch.cycle()
+    read_status = rig.ledger.op_status(read_id)
+    assert read_status["state"] == "done"
+    assert isinstance(read_status["result"], dict)
+    assert read_status["result"]["count"] >= 1
+
+
+def test_dispatched_jobs_inherit_take_phones_pre_flight_dirty_recovery(rig):
+    """TASK-227 AC#4: the dispatcher names no dirty-check of its own -- every dispatched kind
+    already calls take_phone() (TASK-226), so a phone left dirty by whatever ran before this op
+    is recovered as part of running the very next queued job."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                      "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    assert rig.executor.dirty_recovered == 1
+    assert journal(rig, "dirty_state_recovered") != []
+    assert rig.driver.sent == ["eins"]
+
+
+# --- TASK-228: debug capture, off unless the dispatcher was built with it on -----------------------
+def test_debug_capture_off_by_default_touches_the_driver_not_at_all(rig):
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                      "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    assert rig.driver.debug_shots == []
+    assert rig.driver.recording_started == [] and rig.driver.recording_stopped == []
+
+
+def test_debug_capture_on_takes_pre_and_post_shots_and_brackets_a_recording(rig):
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor),
+                                debug_capture=True)
+    op_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                              "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    assert rig.driver.debug_shots == [(op_id, "00_pre"), (op_id, "01_post")]
+    assert rig.driver.recording_started == [op_id]
+    assert rig.driver.recording_stopped == [op_id]
+
+
+def test_debug_capture_on_a_refusal_takes_an_error_shot_not_a_post_shot(rig):
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor),
+                                debug_capture=True)
+    op_id = dispatch.enqueue("send_document", {"phone": PHONE, "local_path": "/no/such/file.pdf"})
+    assert dispatch.cycle() is True
+    assert rig.driver.debug_shots == [(op_id, "00_pre"), (op_id, "02_error")]
+    assert rig.driver.recording_started == [op_id] and rig.driver.recording_stopped == [op_id]
+
+
+def test_debug_capture_failure_is_logged_and_never_fails_the_op(rig):
+    """A postmortem screenshot that could not be taken is decoration, not a reason to refuse a
+    real send (TASK-228) -- same shape as the pre-existing ``park_failed`` note."""
+    rig.driver.fail_debug_shot = "00_pre"
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor),
+                                debug_capture=True)
+    op_id = dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                              "body": "eins", "trace": {"action": "reply"}}})
+    assert dispatch.cycle() is True
+    status = rig.ledger.op_status(op_id)
+    assert status["state"] == "done"
+    assert rig.driver.sent == ["eins"]
+    assert journal(rig, "debug_capture_failed") != []
 
 
 # --- the identity watcher (TASK-131 round 6) --------------------------------------------------------

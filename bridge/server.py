@@ -50,6 +50,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import adb_driver as AD
 from . import broadcast as B
+from . import dispatcher as OD
 from . import errors as E
 from . import executor as X
 from . import governor as G
@@ -91,6 +92,25 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise E.invalid_request("body must be a JSON object")
         return payload
+
+    def _enqueue(self, kind, args):
+        """-> (200, {"ok", "op_id", "state": "queued"}) for a phone-touching route (TASK-227): the
+        route handler's whole job becomes naming which already-existing operations/executor
+        method to run and with what arguments -- see bridge/dispatcher.py's own docstring for why
+        this is not the bare-202 lie this file's own module docstring warns against."""
+        op_id = self.server.dispatcher.enqueue(kind, args)
+        return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+    def _op_status(self, op_id):
+        """-> the op_status body for ``GET /v1/ops/<op_id>`` (TASK-227). Raises 404
+        ``op_not_found`` for an id this ledger never enqueued -- there is no phone state to report
+        on an id nobody minted."""
+        row = self.server.executor.ledger.op_status(op_id)
+        if row is None:
+            raise E.op_not_found(f"no such op {op_id!r}")
+        return {"ok": True, "op_id": row["op_id"], "kind": row["kind"], "state": row["state"],
+               "result": row["result"], "error": row["error"], "created_at": row["created_at"],
+               "started_at": row["started_at"], "finished_at": row["finished_at"]}
 
     def _write(self, status, payload):
         raw = json.dumps(payload).encode("utf-8")
@@ -141,32 +161,27 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         stop = re.match(r"/v1/broadcasts/([^/]+)/stop\Z", path)
+        # TASK-227: every phone-touching route below enqueues onto the ops dispatcher instead of
+        # calling the executor/operations method inline -- see bridge/dispatcher.py's own
+        # docstring. The route's whole job is naming which method and what arguments; running it,
+        # in what order, and recovering a dirty phone first (TASK-226) all happen on the
+        # dispatcher's one thread now.
         if path == "/v1/messages":
-            self._dispatch(lambda: self.server.executor.send(self._body()))
+            self._dispatch(lambda: self._enqueue("send", {"req": self._body()}))
         elif path == "/v1/photos":
-            # NOT ``lambda: executor.send_photos(...)`` alone (found live, 2026-09-23, while wiring
-            # /v1/gallery next to it): _dispatch does ``status, payload = route()``, and
-            # send_photos returns a plain 3-key dict -- unpacking that raises ValueError, caught by
-            # _dispatch's generic handler as a false 500 on the one call this route had never yet
-            # made it to a real 200 on tonight (every live attempt before now hit a BridgeRefusal
-            # first, which raises before the assignment runs).
-            self._dispatch(lambda: (200, self.server.executor.send_photos(
-                **_photos_args(self._body()))))
+            self._dispatch(lambda: self._enqueue("send_photos", _photos_args(self._body())))
         elif path == "/v1/gallery":
-            self._dispatch(lambda: (200, self.server.executor.send_gallery(
-                **_gallery_args(self._body()))))
+            self._dispatch(lambda: self._enqueue("send_gallery", _gallery_args(self._body())))
         elif path == "/v1/document":
-            self._dispatch(lambda: (200, self.server.executor.send_document(
-                **_document_args(self._body()))))
+            self._dispatch(lambda: self._enqueue("send_document", _document_args(self._body())))
         elif path == "/v1/reconcile":
             self._dispatch(lambda: (200, {"ok": True, "results": self.server.executor.reconcile(
                 self._body().get("client_msg_ids") or [])}))
         elif path == "/v1/chats/clear":
-            self._dispatch(lambda: (200, self.server.operations.clear_chat(**_chat_args(
-                self._body(), extra=("include_starred",)))))
+            self._dispatch(lambda: self._enqueue("clear_chat", _chat_args(
+                self._body(), extra=("include_starred",))))
         elif path == "/v1/chats/delete":
-            self._dispatch(lambda: (200, self.server.operations.delete_chat(**_chat_args(
-                self._body()))))
+            self._dispatch(lambda: self._enqueue("delete_chat", _chat_args(self._body())))
         elif path == "/v1/broadcasts":
             self._dispatch(lambda: (200, self.server.broadcast.create(self._body())))
         elif path == "/v1/media/attach":
@@ -181,9 +196,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         one_run = re.match(r"/v1/broadcasts/([^/]+)\Z", parsed.path)
+        one_op = re.match(r"/v1/ops/([^/]+)\Z", parsed.path)
         media_raw = re.match(r"/v1/media/([^/]+)/raw\Z", parsed.path)
         media_meta = re.match(r"/v1/media/([^/]+)\Z", parsed.path)
-        if media_raw:
+        if one_op:
+            self._dispatch(lambda: (200, self._op_status(unquote(one_op.group(1)))))
+        elif media_raw:
             self._dispatch_binary(lambda: self.server.executor.media_bytes(
                 unquote(media_raw.group(1))))
         elif media_meta:
@@ -201,10 +219,10 @@ class Handler(BaseHTTPRequestHandler):
             self._dispatch(lambda: (200, self.server.operations.list_chats(
                 include_archived=_flag(query, "include_archived", True))))
         elif parsed.path == "/v1/thread":
-            self._dispatch(lambda: (200, self.server.operations.read_thread(
-                phone=_str(query, "phone"), chat=_str(query, "chat"),
-                include_text=_flag(query, "include_text", True),
-                archived=_flag(query, "archived", False))))
+            self._dispatch(lambda: self._enqueue("read_thread", {
+                "phone": _str(query, "phone"), "chat": _str(query, "chat"),
+                "include_text": _flag(query, "include_text", True),
+                "archived": _flag(query, "archived", False)}))
         elif parsed.path == "/v1/broadcasts":
             self._dispatch(lambda: (200, self.server.broadcast.list_runs()))
         elif one_run:
@@ -328,15 +346,20 @@ class BridgeServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, executor, token, *, port=DEFAULT_PORT, log=print, operations=None,
-                 broadcast=None):
+                 broadcast=None, dispatcher=None):
         if not token:
             raise RuntimeError("WA_BRIDGE_TOKEN is empty: this process can message real people")
         super().__init__((LOOPBACK, port), Handler)
         self.executor = executor
-        # Both are built from the executor and hold no state of their own -- the run store is the
-        # ledger. They are arguments so a test can hand in the same instances it drives directly.
+        # All three are built from the executor and hold no state of their own -- the run store is
+        # the ledger. They are arguments so a test can hand in the same instances it drives
+        # directly. dispatcher is the one every phone-touching route now enqueues onto (TASK-227);
+        # a caller that does not start it (most offline tests) gets a queue that fills and never
+        # drains, which is deliberate -- a test that wants a real answer calls dispatcher.cycle()
+        # itself, the same shape as bridge/watcher.py's watchers.
         self.operations = operations or O.Operations(executor)
         self.broadcast = broadcast or B.Broadcast(executor)
+        self.dispatcher = dispatcher or OD.OpsDispatcher(executor.ledger, executor, self.operations)
         self.token = token
         self.log = log
 
@@ -346,8 +369,10 @@ def maintenance_once(executor, now=None):
     now = now or executor.clock()
     swept = executor.ledger.sweep(now)
     shots = executor.driver.sweep_screenshots(now)
-    executor.ledger.note(now, "maintenance", None, ledger=swept, screenshots=shots)
-    return {"ledger": swept, "screenshots": shots}
+    recordings = executor.driver.sweep_recordings(now)
+    executor.ledger.note(now, "maintenance", None, ledger=swept, screenshots=shots,
+                         recordings=recordings)
+    return {"ledger": swept, "screenshots": shots, "recordings": recordings}
 
 
 def maintenance_loop(executor, stop, interval=MAINTENANCE_INTERVAL_SEC):
@@ -394,7 +419,8 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     root = os.path.expanduser(os.environ.get("WA_BRIDGE_STATE", "~/.local/share/pflege-wa-bridge"))
     os.makedirs(root, exist_ok=True)
     ledger = L.Ledger(os.path.join(root, "ledger.sqlite"))
-    driver = AD.AdbDriver(shots_dir=os.path.join(root, "shots"), log=stamped)
+    driver = AD.AdbDriver(shots_dir=os.path.join(root, "shots"),
+                         recordings_dir=os.path.join(root, "recordings"), log=stamped)
     hours = active_hours_override(os.environ.get("WA_BRIDGE_ACTIVE_HOURS_OVERRIDE"))
     pacing = G.MINI_FLOOR if hours is None else dataclasses.replace(G.MINI_FLOOR, active_hours=hours)
     if hours is not None:
@@ -432,13 +458,30 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
                                                  B.DEFAULT_POLL_SEC)), log=stamped)
     executor.broadcast_runner = runner
     runner.start()
+    # TASK-227: the one thread that ever calls a phone-touching executor/operations method now --
+    # see bridge/dispatcher.py's own docstring for why this replaces the old bare-flock race.
+    operations = O.Operations(executor)
+    # TASK-228, Ivan 2026-09-23: "первое время поставим флаг «дебаг»" -- off unless bridge.env
+    # opts in, so the postmortem screenshots/recording below cost nothing on a quiet night.
+    debug_capture = os.environ.get("WA_BRIDGE_DEBUG_CAPTURE", "").strip() in ("1", "true", "yes")
+    ops_dispatcher = OD.OpsDispatcher(
+        ledger, executor, operations,
+        poll_interval=float(os.environ.get("WA_BRIDGE_OPS_POLL_SEC", OD.DEFAULT_POLL_SEC)),
+        debug_capture=debug_capture, log=stamped).start()
+    if debug_capture:
+        stamped("WA_BRIDGE_DEBUG_CAPTURE=1: every queued op now takes pre/post/error screenshots "
+               "and a screen recording under WA_BRIDGE_STATE/{shots,recordings} -- unset it in "
+               "bridge.env once the postmortem window this was turned on for is over.")
+    executor.ops_dispatcher = ops_dispatcher
     server = BridgeServer(executor, token, port=int(os.environ.get("WA_BRIDGE_PORT", DEFAULT_PORT)),
-                          log=stamped, operations=O.Operations(executor), broadcast=broadcast)
+                          log=stamped, operations=operations, broadcast=broadcast,
+                          dispatcher=ops_dispatcher)
     server.log(f"bridge executor {X.VERSION} on {LOOPBACK}:{server.server_address[1]}, "
                f"driver={driver.describe()['kind']}, watcher every {watcher.interval:.0f}s, "
                f"media watcher every {media_watcher.interval:.0f}s, "
                f"identity watcher every {identity_watcher.interval:.0f}s, "
-               f"broadcast runner every {runner.interval:.0f}s")
+               f"broadcast runner every {runner.interval:.0f}s, "
+               f"ops dispatcher every {ops_dispatcher.poll_interval:.1f}s")
     try:
         server.serve_forever()
     finally:
@@ -447,6 +490,7 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         media_watcher.stop()
         identity_watcher.stop()
         runner.stop()
+        ops_dispatcher.stop()
         server.server_close()
         ledger.close()
 
