@@ -83,6 +83,15 @@ def route_decision(conn, phone):
     flip_to_us_on_reopen() and the campaign pair below may ever change it once set. A brand-new phone is
     decided (and the decision recorded) here: unknown to the real system -> 'us' (a genuinely new lead); known to
     the real system -> 'them' (an existing conversation, left alone unless we reopen it)."""
+    if C.OWN_ALL_CHATS:
+        # The migration switch (app/wa/config.py::OWN_ALL_CHATS). Authoritative over an existing
+        # record too: a phone recorded 'them' before the move must not keep being forwarded away
+        # after it, which is exactly how Valentyn's two messages reached the real system and never
+        # this harness's database (found live 2026-09-23).
+        row = conn.execute("select owner from wa_ownership where phone=?", (phone,)).fetchone()
+        if row is None or row["owner"] != "us":
+            _set_ownership(conn, phone, "us", reason="own_all_chats")
+        return "us"
     row = conn.execute("select owner from wa_ownership where phone=?", (phone,)).fetchone()
     if row is not None:
         return row["owner"]

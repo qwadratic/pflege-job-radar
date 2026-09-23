@@ -190,6 +190,15 @@ STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 # that everything defaults one way or the other.
 REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip()
 
+# Ivan, 2026-09-23: "с этого момента чужих чатов нету -- все чаты наши, все кандидаты наши. Мы
+# переезжаем." The split above exists because two systems shared one WhatsApp number and a wrong
+# guess meant an existing customer treated as a cold lead. That is over: this harness now owns every
+# conversation on the rail. Explicit and configured rather than a new default, because routing
+# refuses to guess on principle (app/wa/routing.py's own docstring) -- and because the day the split
+# comes back, this is the one line to turn off. It also removes the hard dependency on
+# REAL_SYSTEM_PHONES_FILE: with this on, that export is never consulted.
+OWN_ALL_CHATS = os.environ.get("WA_OWN_ALL_CHATS", "").strip().lower() in ("1", "true", "yes")
+
 # Webhook router (TASK-188, app/wa/router.py): where to forward a 'them'-owned message. Empty
 # means router.route_webhook() raises loudly on any 'them' message rather than silently dropping
 # a real candidate's reply -- this is not registered as Meta's actual webhook URL by anything in
