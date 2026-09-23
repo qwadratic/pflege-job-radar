@@ -56,7 +56,7 @@ from .luna import source_link as SRC
 
 MAX_BUBBLES = 2
 
-# Explicit button-confirmed consent (TASK-80): the real reference system has this same rigor for
+# Explicit button-confirmed consent (TASK-184): the real reference system has this same rigor for
 # its own harder, named-clinic-submission gate (a tappable "Ja, ich bestätige"), never inferred
 # from free text. This harness has no named-submission step, but applies the same discipline to
 # the one consent point it does have -- anonymous_send_consent is set ONLY by a genuine tap on one
@@ -65,7 +65,7 @@ CONSENT_YES_ID = "consent:yes"
 CONSENT_NO_ID = "consent:no"
 CONSENT_BUTTONS = [{"id": CONSENT_YES_ID, "title": "Ja, gerne"}, {"id": CONSENT_NO_ID, "title": "Nein danke"}]
 
-# card.documents[].reuse of a document imported from the candidate's earlier contact (TASK-102).
+# card.documents[].reuse of a document imported from the candidate's earlier contact (TASK-205).
 REUSE_PENDING, REUSE_CONFIRMED, REUSE_DECLINED = ST.REUSE_PENDING, ST.REUSE_CONFIRMED, ST.REUSE_DECLINED
 
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
@@ -78,14 +78,14 @@ _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledg
 # The tools Luna herself may call, as the CLI names an external MCP tool
 # (mcp__<server-name>__<tool-name> -- confirmed live, this is not documented anywhere formal).
 # Three general board queries, four with the filter already preset for a common candidate need
-# (TASK-110: a filter the model has to assemble out of bare parameter names goes unused -- the housing
+# (TASK-213: a filter the model has to assemble out of bare parameter names goes unused -- the housing
 # one did, for a whole task), and the two fallbacks for what the presets do not cover: this repo's own
 # agent docs and an allowlist of public board GET paths. Every one of them is read-only.
 # tools_server.py also defines get_clinic_contact (with its own tests) -- deliberately NOT in this
-# tuple (TASK-91): contact details are for the human handoff after consent (app/wa/queue.py), never
+# tuple (TASK-195): contact details are for the human handoff after consent (app/wa/queue.py), never
 # something the candidate-facing conversation itself should be able to surface.
 # Model-visible (tool names are mcp__<server>__<tool>): a neutral word, never a brand the model could
-# repeat to a candidate (TASK-100: asked who we are, Luna named the repo).
+# repeat to a candidate (TASK-203: asked who we are, Luna named the repo).
 MCP_SERVER_NAME = "jobs"
 MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                        ("search_postings", "get_posting", "list_clinics",
@@ -107,7 +107,7 @@ def _write_atomic(path, text):
 
 def _board_vocabulary_path():
     """Count the board's filter vocabulary HERE, in the process that already holds a warm snapshot, and
-    write it next to the mcp config for the tools server to pick up (TASK-110 review).
+    write it next to the mcp config for the tools server to pick up (TASK-213 review).
 
     The tools server is spawned fresh for every single turn. Counting the vocabulary there meant a cold,
     synchronous Supabase build -- 8-17s measured -- between the CLI starting that process and the MCP
@@ -145,7 +145,14 @@ def _mcp_config_path(ready_path, phone=None):
     WA_LUNA_BOARD_VOCABULARY carries the tool descriptions' vocabulary counted here
     (_board_vocabulary_path), WA_LUNA_TOOLS_READY the file that server stamps once its tools are
     registered -- ``_live_reply`` raises when that stamp is missing after the run, because a tools
-    server that never started is otherwise indistinguishable from a turn that just did not call one."""
+    server that never started is otherwise indistinguishable from a turn that just did not call one.
+
+    WA_BRIDGE_URL/WA_BRIDGE_TOKEN (TASK-131 round 7, Ivan 2026-09-23): show_clinic_photos is the
+    first tool in this server that SENDS something rather than only reading -- it calls
+    app.wa.bridge.Client() itself, which needs these to reach the phone rail's executor. Every other
+    env value here is explicit rather than inherited (this dict, not the parent's os.environ, is the
+    subprocess's whole environment) for the same reason WA_SQLITE_PATH is: a test's own bridge
+    credentials must reach the subprocess the same deliberate way a test board does."""
     C.LUNA_SESSION_DIR.mkdir(parents=True, exist_ok=True)
     path = C.LUNA_SESSION_DIR / "mcp_config.json"
     config = {"mcpServers": {MCP_SERVER_NAME: {"command": sys.executable,
@@ -160,7 +167,9 @@ def _mcp_config_path(ready_path, phone=None):
                                                         # Empty when turn() was called without a thread
                                                         # row (a unit test): that tool then says so and
                                                         # the model answers without it.
-                                                        "WA_LUNA_PHONE": str(phone or "")}}}}
+                                                        "WA_LUNA_PHONE": str(phone or ""),
+                                                        "WA_BRIDGE_URL": C.BRIDGE_URL,
+                                                        "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN}}}}
     _write_atomic(path, json.dumps(config))
     return path
 
@@ -214,7 +223,7 @@ CLOSE_LIMIT = OF.OFFER_LIMIT
 def _city_or_department_satisfied(card):
     """The one predicate for the 'city_or_department' gate -- shared by requirement_scoreboard()
     and market_snapshot() so they cannot silently disagree about what counts as answered (a real
-    bug found live, TASK-82: market_snapshot's ready_to_close used to require BOTH city AND
+    bug found live, TASK-186: market_snapshot's ready_to_close used to require BOTH city AND
     department_pref while requirement_scoreboard told the model this gate was satisfied by EITHER
     -- a candidate who is genuinely flexible on department (a real, valid answer, not a missing
     one) then saw requirement_scoreboard say 'satisfied' while market_snapshot never actually
@@ -223,7 +232,7 @@ def _city_or_department_satisfied(card):
 
 
 def housing_needed(card):
-    """TASK-108: does this candidate need a flat? True/False as they answered it, None when the card does not say.
+    """TASK-211: does this candidate need a flat? True/False as they answered it, None when the card does not say.
 
     ``card["housing_needed"]`` is the answer to the plain yes/no gate question; ``people_count`` is only ever
     recorded as "how many people would live in the flat" (the question is asked only after a yes, here and in the
@@ -242,13 +251,13 @@ def housing_needed(card):
 
 
 def _housing_satisfied(card):
-    """The housing gate: a No settles it on its own, a Yes needs the headcount too (TASK-108).
+    """The housing gate: a No settles it on its own, a Yes needs the headcount too (TASK-211).
 
     A card carrying only ``housing_known`` -- what import_history/migrate_candidates produce for an old-system
     candidate whose facts row says the topic was covered but not what was said -- is NOT settled (review
     2026-09-16). It used to be, and that closed the gate on the answer never existing: the yes/no was never
     asked, while the shortlist and the post-consent handoff both ran unfiltered (housing_needed None), i.e.
-    the exact bug TASK-108 was filed for, for exactly the population the campaigns target. This is not
+    the exact bug TASK-211 was filed for, for exactly the population the campaigns target. This is not
     re-asking an answered question either: the old system asked its own, coarser one and kept no answer we
     can read, so a single plain yes/no here is the first time this gate's question is put to them."""
     needed = housing_needed(card)
@@ -258,7 +267,7 @@ def _housing_satisfied(card):
 
 
 def housing_flexible(card):
-    """TASK-108 review: "wanted a flat, a clinic without one is also an option" -- the answer to the HOUSING
+    """TASK-211 review: "wanted a flat, a clinic without one is also an option" -- the answer to the HOUSING
     rule's follow-up when no matching clinic offers one. True/False as they answered it, None while they did
     not. It never rewrites housing_needed: without a field of its own the only way to record the Ja was
     flipping housing_needed to false, which erased the stated need from the human handoff (queue.py:
@@ -270,18 +279,18 @@ def housing_flexible(card):
 
 
 def _counts_for_gate(doc):
-    """TASK-102: a document imported from the candidate's earlier contact (app/wa/luna/import_history.py) counts
+    """TASK-205: a document imported from the candidate's earlier contact (app/wa/luna/import_history.py) counts
     only once the candidate confirmed it may be reused; everything received on WhatsApp counts as before."""
     return not doc.get("imported") or doc.get("reuse") == REUSE_CONFIRMED
 
 
 def _cv_document_received(card):
-    """TASK-96: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
+    """TASK-199: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
     return any(d["document_type"] == "lebenslauf" and _counts_for_gate(d) for d in card.get("documents", []))
 
 
 def _is_qualification_document(doc, path):
-    """TASK-96: urkunde path -> a non-helfer urkunde; defizit/kenntnispruefung path -> a non-helfer
+    """TASK-199: urkunde path -> a non-helfer urkunde; defizit/kenntnispruefung path -> a non-helfer
     urkunde or a defizitbescheid; any other path (none yet, unknown, reject) -> nothing counts.
     'urkunde' is the German licence only: a home-country diploma is classified auslaendisches_diplom
     (app/cv.py:DOC_TYPES) and never counts, on any path."""
@@ -351,7 +360,7 @@ def keep_settled_qualification_path(card, was_path, at):
 
 
 def _reuse_pending(card, cv_in, qualification_in):
-    """TASK-102: imported documents still waiting for the candidate's reuse answer that would settle a documents
+    """TASK-205: imported documents still waiting for the candidate's reuse answer that would settle a documents
     half still open -- a CV while no CV counts, a qualification document for the path while none counts."""
     path = card.get("qualification_path")
     return [d for d in card.get("documents", []) if d.get("imported") and d.get("reuse") == REUSE_PENDING and
@@ -360,7 +369,7 @@ def _reuse_pending(card, cv_in, qualification_in):
 
 
 def _documents_satisfied(card):
-    """TASK-91, tightened by TASK-96 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent
+    """TASK-195, tightened by TASK-199 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent
     Lebenslauf unlocked the close): BOTH a CV and the qualification document for the candidate's path
     have actually arrived and been classified -- a conversational 'ja, ich habe die Urkunde' never
     counts. Reads only card["documents"]: a legacy/migrated card with cv_text/urkunde_text but no
@@ -375,7 +384,7 @@ _clinic_names = OF.clinic_names
 
 
 def _housing_cities(rows, wanted_city, home_bezirk):
-    """TASK-108: the other cities whose postings the board marks with housing, under the same role/department
+    """TASK-211: the other cities whose postings the board marks with housing, under the same role/department
     filters -- [{city, regierungsbezirk, clinics}], the candidate's own Regierungsbezirk first, then by clinic
     count. Board rows only: this is what lets Luna answer "no flat in your city" with a real alternative instead
     of naming a town she made up, and it stays empty when the data has none.
@@ -406,27 +415,27 @@ def market_snapshot(card):
     same turn has to offer. shortlist is offer["positions"] -- one assembly, so the list the model names
     and the number it says are left over can never be counted from different rows. None until ready to
     close, exactly as shortlist has always been. department_filter
-    (TASK-104) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
+    (TASK-207) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
     filters by department (any of its departments); ambiguous, flexible and unmatched build the shortlist from the
     other criteria. Deliberately thin
-    (TASK-91, after reading how the real reference implementation actually works): open_jobs is
+    (TASK-195, after reading how the real reference implementation actually works): open_jobs is
     the one aggregate number always present -- safe for a first-turn greeting, and the one
     question RULES lets the model answer without a live tool call. There is no per-city/
     per-department preview list here anymore; recon on the real system found it does not use live
     tool calls at all (it eagerly pre-fetches everything into one payload) and that pflege-board's
-    own actual tool-calling (TASK-62 search_postings/list_clinics/get_posting) is already a step
+    own actual tool-calling (TASK-166 search_postings/list_clinics/get_posting) is already a step
     beyond that, not something to downgrade to match it -- so a candidate naming any specific
     city, department, region or clinic is answered by a real tool call (RULES: TOOLS), never by a
     precomputed guess here that could go stale or duplicate what a tool would say more precisely.
     shortlist[] (up to CLOSE_LIMIT distinct clinics) and matching_clinics_count still turn up here,
     deterministically, once qualification, EITHER city or department_pref (see
     _city_or_department_satisfied), housing, AND documents (_documents_satisfied: CV and qualification
-    document both received, TASK-96) are all settled:
+    document both received, TASK-199) are all settled:
     naming the exact clinics a candidate's anonymized profile may reach is compliance-sensitive
     enough (never invent a clinic name) that it stays harness-computed, not left to the model's
     recall of an earlier tool result several turns back.
 
-    housing (TASK-108): {needed, flexible, people_count, filtered, clinics_with_housing,
+    housing (TASK-211): {needed, flexible, people_count, filtered, clinics_with_housing,
     clinics_ignoring_housing, city_regierungsbezirk, cities_with_housing}. Once ``housing_needed`` says a flat
     is wanted, the shortlist and matching_clinics_count come from the postings the board marks with housing
     (app/data.py:offers_housing, the ``housing=1`` filter GET /api/jobs takes) -- only 12 percent of them, so an
@@ -448,8 +457,8 @@ def market_snapshot(card):
         filters["city"] = card["city"]
     department_filter = None
     if card.get("department_pref"):
-        # TASK-96 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
-        # match on its own vocabulary ("Intensiv/IMC"). TASK-104: a flexible word ("egal", "flexibel") or a word
+        # TASK-199 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
+        # match on its own vocabulary ("Intensiv/IMC"). TASK-207: a flexible word ("egal", "flexibel") or a word
         # the board has no department for filtered as written and emptied the shortlist (live, consent asked
         # with no clinic named); only board departments filter now, and department_filter says which. Review
         # 2026-09-15: 'Innere oder Intensiv' filtered on Intensiv alone and emptied the Augsburg shortlist.
@@ -459,7 +468,7 @@ def market_snapshot(card):
     rows = B.jobs_for(filters)
     needed, flexible = housing_needed(card), housing_flexible(card)
     rows_with_housing = [r for r in rows if D.offers_housing(r)]
-    # A candidate who needs a flat is matched against the postings that offer one, nothing else (TASK-108) --
+    # A candidate who needs a flat is matched against the postings that offer one, nothing else (TASK-211) --
     # until they say a clinic without one is also an option (housing_flexible), which opens the search again
     # without unsaying the need itself.
     filter_housing = needed is True and flexible is not True
@@ -473,7 +482,7 @@ def market_snapshot(card):
     city_bezirk = next((r.get("regierungsbezirk") for r in B.jobs_for({"city": filters["city"]})
                         if r.get("regierungsbezirk")), None) if filters.get("city") else None
     # Alternatives only when the filtered search itself found nothing: with a flat available where they asked,
-    # naming other cities is noise the model could turn into a menu question (TASK-97).
+    # naming other cities is noise the model could turn into a menu question (TASK-200).
     housing_cities = []
     if filter_housing and not rows_with_housing:
         wider = B.jobs_for({k: v for k, v in filters.items() if k != "city"}) if filters.get("city") else rows
@@ -483,7 +492,7 @@ def market_snapshot(card):
                           and _housing_satisfied(card) and _documents_satisfied(card))
     # TASK-144: the shortlist IS the offer's positions -- one assembly, one cap, one place the
     # remainder count and the narrowing criteria come from (app/wa/luna/offer.py:build_offer). Still
-    # only once ready to close: TASK-91's rule that the payload carries no per-city preview stands,
+    # only once ready to close: TASK-195's rule that the payload carries no per-city preview stands,
     # and a five-position offer before the gates are settled would be exactly that preview.
     #
     # Which leaves offer null for most of the funnel, where the candidate is actually choosing --
@@ -503,40 +512,40 @@ def market_snapshot(card):
                         "city_regierungsbezirk": city_bezirk, "cities_with_housing": housing_cities}}
 
 
-# Gate-priority order for requirement_scoreboard()'s next_objective (TASK-91): a single computed
+# Gate-priority order for requirement_scoreboard()'s next_objective (TASK-195): a single computed
 # hint naming the ONE gate still open, so the model does not have to infer priority purely from
 # THINK_ORDER prose -- modeled on the real reference implementation's own code-computed per-turn
 # objective (recon: a plain rule tells its model that objective is "the ONLY placement question
 # for this turn," state only, same "the model writes the wording" split pflege-board already
 # uses elsewhere). Never shown to the candidate verbatim.
 _OBJECTIVE_ORDER = (
-    # TASK-97 review: every label names an open or a plain yes/no question, never options joined by "oder"
+    # TASK-200 review: every label names an open or a plain yes/no question, never options joined by "oder"
     # (live: "Gibt es eine Stadt ..., z. B. München ... oder Würzburg?" and "allein, oder ...?" got a bare Ja).
     ("region", "ask as a plain yes/no whether they are looking for a job in Bayern"),
-    ("qualification", "clarify qualification: first a plain yes/no whether the German Urkunde is "   # TASK-97
+    ("qualification", "clarify qualification: first a plain yes/no whether the German Urkunde is "   # TASK-200
                       "already in hand; only on no, the recognition step, again one yes/no at a time"),
     ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
-    # TASK-108: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
+    # TASK-211: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
     ("housing", "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"),
-    ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-96
+    ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-199
                   "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
 )
 
-# TASK-96 review: a rejected qualification ends the checklist -- falling through to the next open gate told
+# TASK-199 review: a rejected qualification ends the checklist -- falling through to the next open gate told
 # the model to ask a not-placeable candidate for documents every turn (prompts.py NOT PLACEABLE says stop).
 _NOT_PLACEABLE_OBJECTIVE = ("not placeable -- no placement item open: no region, city, housing or document ask "
                             "(NOT PLACEABLE)")
 
-# TASK-108: the second housing step, once the candidate said they do need a flat (card.housing_needed true).
+# TASK-211: the second housing step, once the candidate said they do need a flat (card.housing_needed true).
 _HOUSING_HEADCOUNT_OBJECTIVE = ("they need a flat: ask how many people would live in it, as an open question "
                                 "(people_count) -- never as alone-or-with-family options")
 
 
 def _qualification_document_name(path):
     """(name, note) for the qualification document the candidate's path needs, as next_objective says it
-    (TASK-96)."""
+    (TASK-199)."""
     if path == "urkunde":
         return "the German Urkunde", "not a home-country diploma"
     if path in ("defizit", "kenntnispruefung"):
@@ -560,7 +569,7 @@ _HELD_NAMES = {"lebenslauf": "the CV (Lebenslauf)", "urkunde": "the German Urkun
 
 
 def _reuse_objective(card, pending, cv_in, qualification_in):
-    """TASK-102 documents objective while imported documents wait for the reuse answer: one yes/no naming what we
+    """TASK-205 documents objective while imported documents wait for the reuse answer: one yes/no naming what we
     hold, plus the document we do not hold (if any) by name."""
     name, note = _qualification_document_name(card.get("qualification_path"))
     held_cv = any(d["document_type"] == "lebenslauf" for d in pending)
@@ -612,15 +621,15 @@ def funnel_stage(board):
 def requirement_scoreboard(card):
     """State only, never a script (RULES: 'the requirement scoreboard is state only'). One of
     satisfied | open | blocked per gate, so the model can see what is left without being told
-    what to ask next -- except next_objective (TASK-91), a single computed string naming the one
+    what to ask next -- except next_objective (TASK-195), a single computed string naming the one
     gate still open in priority order, purely a hint the model may act on or override (a candidate
     answering something else first is still fine, per the CLOSE SEQUENCE/ONE FORWARD STEP rules).
 
-    TASK-96: cv_document and qualification_document are the two halves of documents (satisfied only
+    TASK-199: cv_document and qualification_document are the two halves of documents (satisfied only
     when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
-    next_objective the not-placeable hint, whatever else is open. TASK-102: an imported document counts only once
+    next_objective the not-placeable hint, whatever else is open. TASK-205: an imported document counts only once
     reuse is confirmed; while one that would settle an open half is pending, the documents objective is the reuse
-    yes/no (_reuse_objective). TASK-108: housing is satisfied by a plain No on its own, or by a Yes plus the
+    yes/no (_reuse_objective). TASK-211: housing is satisfied by a plain No on its own, or by a Yes plus the
     headcount (_housing_satisfied); between the two steps the objective is the headcount, never the yes/no
     again. This ``housing`` value, not card.housing_known, is the gate the prompt rules read: the flag follows
     the yes/no one step earlier, so between the Ja and the headcount the two disagree (review 2026-09-16).
@@ -688,11 +697,11 @@ OUTPUT_SCHEMA = {
         "escalate_reason": {"type": ["string", "null"]},
         "no_send": {"type": "boolean"},
         "next_ask": {"type": ["string", "null"]},
-        # TASK-101: the model flags; the harness sends the fixed ack and owns card.declined (turn()).
+        # TASK-204: the model flags; the harness sends the fixed ack and owns card.declined (turn()).
         "decline": {"type": "boolean"},
         "decline_reason": {"type": ["string", "null"]},
         "re_engaged": {"type": "boolean"},
-        # TASK-102: the candidate's answer on imported documents (card.documents ids); the harness records it.
+        # TASK-205: the candidate's answer on imported documents (card.documents ids); the harness records it.
         "document_reuse": {
             "type": "object",
             "properties": {"confirmed_ids": {"type": "array", "items": {"type": "integer"}},
@@ -702,7 +711,7 @@ OUTPUT_SCHEMA = {
         "card_patch": {
             "type": "object",
             "properties": {
-                "already_placed": {"type": "boolean"},          # TASK-100
+                "already_placed": {"type": "boolean"},          # TASK-203
                 "open_to_new_position": {"type": "boolean"},
                 "region": {"type": "string"},
                 "city": {"type": "string"},
@@ -712,10 +721,10 @@ OUTPUT_SCHEMA = {
                 "qualification_path": {"type": "string",
                                        "enum": ["urkunde", "defizit", "kenntnispruefung", "reject", "unknown"]},
                 "urkunde_status": {"type": "string"},
-                # TASK-108: the yes/no answer itself. housing_known (the flag that it was answered) is the
+                # TASK-211: the yes/no answer itself. housing_known (the flag that it was answered) is the
                 # harness's own, derived from this in turn() -- see CODE_OWNED_CARD_KEYS.
                 "housing_needed": {"type": "boolean"},
-                # TASK-108 review: "a clinic without a flat is also an option" -- the answer to the HOUSING
+                # TASK-211 review: "a clinic without a flat is also an option" -- the answer to the HOUSING
                 # follow-up when nothing in their city offers one. It stands NEXT TO housing_needed; the need
                 # itself is never unsaid, so the human handoff still reads "wanted a flat, accepts without".
                 "housing_flexible": {"type": "boolean"},
@@ -794,7 +803,7 @@ class Client:
     that built-in set, though: ``--mcp-config``/``--strict-mcp-config``/``--allowedTools`` (see
     ``_mcp_config_path``, ``MCP_TOOL_NAMES``) separately load exactly the read-only board tools Luna
     may call in ``app/wa/luna/tools_server.py`` -- the model can look something up mid-turn, and since
-    TASK-110 it can also read this repo's own board docs and one allowlisted public board API path
+    TASK-213 it can also read this repo's own board docs and one allowlisted public board API path
     through that same server; it just still cannot read a file, run a command or fetch a URL (the docs
     tool serves four fixed documents, the API tool an allowlist of GET paths, and neither reaches
     anything but the public board). The user payload goes over
@@ -851,7 +860,7 @@ class Client:
             # empty, the result envelope carries no MCP status (probed, CLI 2.1.270), and the turn
             # answers about the board with no board under it -- worse than any error, because it reads
             # like a checked answer. Same loud failure as a missing CLI: nothing is sent, the pending row
-            # keeps the error and catch-up retries (TASK-99).
+            # keeps the error and catch-up retries (TASK-202).
             if not ready_path.exists():
                 raise RuntimeError("the board tools server never started for this turn (no readiness stamp "
                                    f"at {ready_path}): claude -p ran without {len(MCP_TOOL_NAMES)} board "
@@ -880,7 +889,7 @@ class Client:
         return _validate(out), next_session_id
 
 
-# --- what reached the candidate outside this session (TASK-100) ---------------------------------------
+# --- what reached the candidate outside this session (TASK-203) ---------------------------------------
 # The session only knows what the model itself wrote. Everything else sent to the number since its last
 # turn -- a campaign template, a follow-up nudge, the decline ack, a locked reject/out-of-scope text, a
 # reopen template sent instead of its bubbles, a manual send -- goes into the next payload, so a "Ja" is
@@ -902,9 +911,9 @@ TEST_SOURCES_KEY = "_test_sources"
 # Card keys only code writes; stripped from the model's card_patch.
 CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason", "declined_at", "re_engaged_at",
                         "campaign", LAST_TURN_KEY, "_session_id", "_unread_media",
-                        # TASK-102: the documents gate list (reuse state included) and the imported history
+                        # TASK-205: the documents gate list (reuse state included) and the imported history
                         "documents", "prior_contact", "prior_placement",
-                        # TASK-105: opt-outs, declines and chat Stopps the earlier system recorded
+                        # TASK-208: opt-outs, declines and chat Stopps the earlier system recorded
                         "prior_opt_outs",
                         # TASK-144: the funnel stage and when it was entered are computed from the gates
                         # (funnel_stage), the grounded-clinic memory is written from real tool evidence,
@@ -915,7 +924,7 @@ CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason",
                         # test-thread evidence links -- both are what CODE decided, not a finding
                         # the model may assert about itself.
                         REFUSED_PATCH_KEY, TEST_SOURCES_KEY,
-                        # TASK-108: the housing gate's own flag, derived from housing_needed in turn(). The model
+                        # TASK-211: the housing gate's own flag, derived from housing_needed in turn(). The model
                         # writes the answer (housing_needed), never the flag -- a turn that set housing_known
                         # alone used to close the gate without the fact the shortlist filters on.
                         "housing_known")
@@ -972,7 +981,7 @@ def turn_context(c, t, turn_key):
     makes turn() leave card.campaign out of the payload. ``introduced``: see ``introduced()``.
     reply_context: the inbound's kind, whether it is a template quick-reply tap and its payload, when it
     arrived, and the stored message it replies to (context.id) or ``found: false`` for one we do not hold.
-    voice_note (TASK-107): the inbound message carries a transcript (api._transcribe_voice_note), which the caller
+    voice_note (TASK-210): the inbound message carries a transcript (api._transcribe_voice_note), which the caller
     passes to turn() as the text. Raises when ``turn_key`` is not a stored inbound message.
 
     last_outbound (TASK-157): the single most recent outbound row of ANY kind (campaign template, a
@@ -1038,21 +1047,21 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
     correction from a prior turn), so it is resupplied fresh every time rather than trusted to
-    the model's memory of an earlier turn. is_button_reply (TASK-80) tells the model whether THIS
+    the model's memory of an earlier turn. is_button_reply (TASK-184) tells the model whether THIS
     reply is an actual button tap or typed text -- it cannot otherwise tell the two apart from
     latest_inbound alone, since a button's own title ("Ja, gerne") reads just like free text. This
     is what lets the CLOSE SEQUENCE rule honestly distinguish "the candidate tapped Ja" (consent is
     now recorded, in code, see turn()) from "the candidate typed something that looks like yes"
     (not consent -- the model must ask them to tap one of the two buttons instead).
-    documents_just_received (TASK-96) lists the files that arrived since the last reply
+    documents_just_received (TASK-199) lists the files that arrived since the last reply
     ({id, document_type, certificate_level}, empty on every other turn): a media message has an empty
     latest_inbound, and card.documents alone does not say which entry is new -- this does, wrong
     document types included.
-    TASK-100: outbound_since_last_turn, last_turn_at, reply_context and introduced come from ``turn_context`` ([],
+    TASK-203: outbound_since_last_turn, last_turn_at, reply_context and introduced come from ``turn_context`` ([],
     None, None, None when the caller supplied none, e.g. a test calling turn() directly); fresh_session is true when
     no session exists yet, so the model has no memory of any earlier Valentina message. The card goes without
     LAST_TURN_KEY (bookkeeping, not a fact), and without campaign when Meta reported that template undelivered.
-    voice_note (TASK-107): latest_inbound is the transcript of a voice note the candidate sent (prompts VOICE NOTE)."""
+    voice_note (TASK-210): latest_inbound is the transcript of a voice note the candidate sent (prompts VOICE NOTE)."""
     from .api import TEMPLATE_BUTTON_PREFIX
     context = context or {}
     # TEST_SOURCES_KEY holds full ad URLs (TASK-150). It is hidden from the payload for the same
@@ -1078,7 +1087,7 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
 
 
 def _region_shortcut_applies(card, context):
-    """The locked out-of-scope reply answers a Bundesland the candidate typed, or said in a voice note (TASK-107: the
+    """The locked out-of-scope reply answers a Bundesland the candidate typed, or said in a voice note (TASK-210: the
     transcript is their words, as STOP reads it), on an ordinary thread. Not on a thread opened by our template
     (card.campaign) or a declined one: there a named Land is often a decline ('habe schon eine Stelle in Hessen'),
     silence after a decline, or a yes from someone living elsewhere, and the model decides (DECLINE, CAMPAIGN). Not for
@@ -1198,7 +1207,7 @@ def turn(text, thread, button_id=None, client=None):
 
     ``thread["turn_context"]`` (``turn_context()``, set by api.process_owed_turn) feeds the payload; when
     the model ran with it, the result carries ``luna_turn`` {at, seen_through_id, model_bubbles} for
-    ``turn_marker``. TASK-101: a first ``decline`` from the model, ONLY when app/wa/luna/refusal.py's
+    ``turn_marker``. TASK-204: a first ``decline`` from the model, ONLY when app/wa/luna/refusal.py's
     classifier also agrees the candidate's own text is an unambiguous refusal (TASK-156), sends
     P.DECLINE_ACK_DE and sets card.declined/declined_reason/declined_at; a declined card stays silent
     until the model flags ``re_engaged`` (declined cleared, re_engaged_at set, the model's reply goes
@@ -1206,7 +1215,7 @@ def turn(text, thread, button_id=None, client=None):
     """
     card = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
-    # TASK-96: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
+    # TASK-199: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
     documents_just_received = card.pop("_documents_just_received", [])
     context = dict(thread.get("turn_context") or {})
     seen_through_id = context.pop("seen_through_id", None)
@@ -1251,7 +1260,7 @@ def turn(text, thread, button_id=None, client=None):
     # Never trust the model's own claim of consent, even if an older session or prompt drift still
     # emits the field (OUTPUT_SCHEMA/OUTPUT_INSTRUCTION no longer describe it at all) -- only an
     # actual button tap, below, may set anonymous_send_consent. The decline, campaign and turn-marker
-    # keys are code-owned the same way (TASK-100/101).
+    # keys are code-owned the same way (TASK-203/101).
     for key in CODE_OWNED_CARD_KEYS:
         patch.pop(key, None)
     was_offered = bool(card.get("anonymous_send_offered"))
@@ -1267,7 +1276,7 @@ def turn(text, thread, button_id=None, client=None):
     # the model's reading of their answer, the time it landed is ours.
     if card.get("match_branch") and card.get("match_branch") != was_branch:
         card["match_branch_at"] = turn_at
-    # TASK-108: the housing question counts as answered the moment the answer itself is on the card (the yes/no,
+    # TASK-211: the housing question counts as answered the moment the answer itself is on the card (the yes/no,
     # or a headcount that states a flat is wanted) -- housing_known follows the fact, never stands in for it.
     if housing_needed(card) is not None:
         card["housing_known"] = True
@@ -1276,7 +1285,7 @@ def turn(text, thread, button_id=None, client=None):
         card["re_engaged_at"] = turn_at
     document_reuse = _decide_document_reuse(card, out.get("document_reuse"), turn_at)
 
-    # TASK-80: anonymous_send_consent is never trusted from the model's own card_patch (already
+    # TASK-184: anonymous_send_consent is never trusted from the model's own card_patch (already
     # stripped from OUTPUT_SCHEMA/OUTPUT_INSTRUCTION, but stripped here too in case an older
     # session or prompt drift still emits it) -- it is set ONLY by an actual tap on one of the two
     # CONSENT_BUTTONS attached below, exactly the "decided in code, not by the model" pattern this
@@ -1335,7 +1344,7 @@ def turn(text, thread, button_id=None, client=None):
                             f"model flagged decline=true but the refusal classifier disagreed "
                             f"({verdict.reason}) -- conversation continued")
     if decline_now:
-        # TASK-101: one fixed acknowledgement (Ivan 2026-09-14, the old bot's wording), then silence.
+        # TASK-204: one fixed acknowledgement (Ivan 2026-09-14, the old bot's wording), then silence.
         card.update(declined=True, declined_reason=out.get("decline_reason"), declined_at=turn_at)
         bubbles = [P.DECLINE_ACK_DE]
         action = "decline_ack"
@@ -1456,7 +1465,7 @@ def turn(text, thread, button_id=None, client=None):
     return result
 
 
-# --- reuse of documents imported from the earlier contact (TASK-102) ------------------------------------
+# --- reuse of documents imported from the earlier contact (TASK-205) ------------------------------------
 
 def _decide_document_reuse(card, reuse, at):
     """Apply the model's ``document_reuse`` {confirmed_ids, declined_ids} to the imported entries of
@@ -1504,7 +1513,7 @@ def _remove_segment(value, text):
 def apply_document_reuse(c, t, changes):
     """Record ``_decide_document_reuse``'s changes on the wa_documents rows (reuse_state, reuse_decided_at) and on
     the card text keys: a confirmed document's stored text is appended to its text_key (cv_text/urkunde_text, the
-    TASK-96 key), a confirmation withdrawn removes it again. Called by api.process_owed_turn after the send."""
+    TASK-199 key), a confirmation withdrawn removes it again. Called by api.process_owed_turn after the send."""
     for change in changes:
         row = ST.document_by_id(c, change["id"])
         if row is None or row["phone"] != t["phone"]:

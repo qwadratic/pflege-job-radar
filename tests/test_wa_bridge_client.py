@@ -1,4 +1,4 @@
-"""Offline tests for the phone rail's outbound client (TASK-120).
+"""Offline tests for the phone rail's outbound client (TASK-223).
 
 No network: every client here is built with an injected ``transport=``, the same seam
 ``meta.Client`` has. The tests are written against what a caller observes -- what lands in
@@ -187,7 +187,7 @@ def test_an_answer_for_a_different_key_is_not_a_send():
                                             (422, "failed"), (429, "failed"),
                                             (500, "uncertain"), (503, "uncertain"), (504, "uncertain")])
 def test_the_bridges_own_status_reaches_campaigns_classification(status, verdict):
-    """TASK-120 AC#1/#2: BridgeError is a MetaError carrying .status_code, so campaign.py needs no
+    """TASK-223 AC#1/#2: BridgeError is a MetaError carrying .status_code, so campaign.py needs no
     change to tell "nothing went out, restore ownership" from "we do not know"."""
     exc = BR.BridgeError(f"bridge HTTP {status}", status_code=status, payload={"error": {"code": "x"}})
     cl, fake = reply_client(exc)
@@ -277,7 +277,7 @@ def test_download_media_never_goes_through_the_json_transport():
     assert seen["headers"]["Authorization"] == "Bearer tok" and fake.calls == []
 
 
-# --- one turn, many bubbles, deterministic keys (TASK-114 at the client) ----------------------------
+# --- one turn, many bubbles, deterministic keys (TASK-217 at the client) ----------------------------
 
 def test_the_bubbles_of_one_turn_are_separate_calls_with_separate_keys():
     keys = [BI.reply_key(phone=LEAD, turn_key=TURN, action="reply", bubble_index=i) for i in range(2)]
@@ -468,7 +468,7 @@ def test_a_template_with_buttons_is_refused_not_flattened():
                                  {"type": "BUTTONS", "buttons": [{"type": "QUICK_REPLY", "text": "Ja"}]}]}
     cl, fake = build()
     cl.begin_campaign_attempt("c1", LEAD, 1)
-    with pytest.raises(BR.BridgeError, match="TASK-121") as err:
+    with pytest.raises(BR.BridgeError, match="TASK-224") as err:
         cl.send_template(LEAD, definition=definition)
     assert campaign_verdict(err.value) == "failed" and fake.calls == []
 

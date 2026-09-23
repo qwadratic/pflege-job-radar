@@ -1,4 +1,4 @@
-"""The one place an outbound WhatsApp client is built (TASK-116), and which rail it is built for (TASK-117).
+"""The one place an outbound WhatsApp client is built (TASK-219), and which rail it is built for (TASK-220).
 
 Every send path used to call ``M.Client()`` itself, so the Cloud API was wired into seven call
 sites. They all go through ``get_client`` now: which transport runs is named by the thread's own
@@ -10,7 +10,7 @@ one ``api.process_phones`` resolves per phone and threads through the turn -- is
 back. The test is ``is not None``, not truthiness: a caller that passes a client gets that client,
 never a live one built behind its back.
 
-THE RAIL IS PER THREAD, NOT PER PROCESS (TASK-117). ``wa_threads.rail`` is pinned on a thread's first
+THE RAIL IS PER THREAD, NOT PER PROCESS (TASK-220). ``wa_threads.rail`` is pinned on a thread's first
 successful outbound (``store.pin_rail``) and never changes, because a rail is a sender number: the
 Meta rail writes from the WABA number, the bridge rail from the number on the handset. So
 ``rail_for`` reads that column first and only an unpinned thread follows ``C.TRANSPORT`` -- flipping

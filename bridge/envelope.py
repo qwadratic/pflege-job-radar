@@ -27,7 +27,7 @@ WHAT IS HONESTLY DIFFERENT FROM A REAL META PAYLOAD, and is not papered over:
     staying ``text``, with ``media_kind`` recorded so a human reading the journal knows a file was
     involved.
   * no ``context``, and no ``interactive.button_reply``. A candidate who types "1" typed "1"; the
-    button id is recovered server-side (TASK-121). Rewriting it here would record a tap that never
+    button id is recovered server-side (TASK-224). Rewriting it here would record a tap that never
     happened.
 """
 from __future__ import annotations

@@ -13,11 +13,11 @@ and infrastructure-specific material removed or replaced:
 
 | kept, same substance | genericized | dropped entirely |
 |---|---|---|
-| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-100 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der NDT Group" | interview scheduling (a second, later conversation the source calls "Game 2") |
-| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-67, see note below — no longer entirely dropped) |
+| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-203 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der NDT Group" | interview scheduling (a second, later conversation the source calls "Game 2") |
+| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-171, see note below — no longer entirely dropped) |
 | "not placeable → explain once, then stop" | — | clinic-submission email + human-approval token flow (kept only as a state flag, see `constitution.json:handoff_principle`) |
 | primary-candidate-first (companion mentioned mid-chat) | — | manager WhatsApp call-permission form, WABA approved-template inventory |
-| housing principle (never rooms, never guarantee) | TASK-108: a yes/no whether a flat is needed comes before the people-count here, and a flat is only ever stated for a posting the board marks with housing — the source has no such board field | proactive re-engagement (soft nudges, quiet hours, promise reminders) — this harness only replies to inbound messages |
+| housing principle (never rooms, never guarantee) | TASK-211: a yes/no whether a flat is needed comes before the people-count here, and a flat is only ever stated for a posting the board marks with housing — the source has no such board field | proactive re-engagement (soft nudges, quiet hours, promise reminders) — this harness only replies to inbound messages |
 | live market matching, anonymized-send offer, "never invent a clinic name" | source treats live-market matching as a Bavaria-only special case with a fixed-photo-pack fallback elsewhere; here it is the only mode, because this board only covers Bavaria and has no partner-clinic list | the fixed clinic photo packs themselves (named real partner clinics — a business relationship, not applicable here) |
 | escalate-to-human flag for genuine unknowns / unreadable media | "manager" → "a human" (no manager CRM exists here; the flag is stored on the thread for `GET /api/wa/threads` to surface) | the manager-actions/manager-takeover machinery itself |
 
@@ -35,7 +35,7 @@ SDK, so it rides whatever Claude Code auth already exists on the host instead of
 separate `ANTHROPIC_API_KEY` — the same "the model decides the action and writes the wording;
 the harness only supplies state" design, different provider and a different call path.
 
-**Update (TASK-67):** CV/Urkunde intake is no longer entirely dropped, but it is new
+**Update (TASK-171):** CV/Urkunde intake is no longer entirely dropped, but it is new
 infrastructure written for this repo, not a port of the source's own (unseen) reaction rules --
 nothing from the source was read for this. `app/wa/api.py` now downloads a document/image
 (`app/wa/meta.py:Client.media_url`/`download_media`), extracts its text (`app/cv.py:extract_text`,
@@ -43,7 +43,7 @@ falling through to a Claude-vision path for images and scanned PDFs), and merges
 as `cv_text`/`urkunde_text` before `LB.turn()` runs. `prompts.py:RULES` gained one line telling the
 model how to react to those two fields; everything else in this file's table above still holds.
 
-**Update (TASK-100/101, Ivan 2026-09-14):** identity follows the source again: "Ich bin Valentina von der NDT
+**Update (TASK-203/101, Ivan 2026-09-14):** identity follows the source again: "Ich bin Valentina von der NDT
 Group." and "ein digitaler Assistent der NDT Group" (source: first-touch copy and `HONEST_AI_IDENTITY_DE`).
 The decline acknowledgement is the source's `DECLINE_ACK_DE` verbatim. Proactive messages exist now as fixed
 texts sent by code (follow-up nudges, campaign template); the model sees them afterwards in the payload.

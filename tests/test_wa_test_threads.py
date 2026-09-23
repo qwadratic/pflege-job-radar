@@ -1,4 +1,4 @@
-"""TASK-109 offline: a phone marked as a test number. The flag and its CLI (app/wa/luna/test_threads.py),
+"""TASK-212 offline: a phone marked as a test number. The flag and its CLI (app/wa/luna/test_threads.py),
 the campaign and report exclusions, the reply path still working end to end, and the periodic history wipe
 (app/wa/luna/purge_test_history.py) -- rows, document files, the Claude Code session transcript and the card,
 never anything of another phone. tmp SQLite plus tmp document/session directories, a fake Meta client and a

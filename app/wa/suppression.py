@@ -1,4 +1,4 @@
-"""One number, one do-not-contact decision, across every thread and both rails (TASK-113, TASK-137).
+"""One number, one do-not-contact decision, across every thread and both rails (TASK-216, TASK-137).
 
 WHY A NEW TABLE. Opt-out is learned today from three places, and all three stay exactly as they are:
 ``slots.is_stop`` (whole-word STOP vocabulary), read by both brains and turned into
@@ -48,7 +48,7 @@ from . import store as ST
 REASON_STOP = "inbound stop token"
 
 # payload error code of SuppressedRecipient. Our own slug: a forged Meta numeric code would claim
-# Meta said something it never said (TASK-113).
+# Meta said something it never said (TASK-216).
 ERROR_CODE = "wab-suppressed"
 
 

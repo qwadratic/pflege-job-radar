@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/router.py (TASK-84) -- no real Meta traffic, no network. The forward
+"""Offline tests for app/wa/router.py (TASK-188) -- no real Meta traffic, no network. The forward
 transport is a fake (same swappable-transport seam as app/wa/meta.py), and 'us' messages go
 through the real app.wa.api.handle_payload() against a temp sqlite file, same as tests/test_wa_harness.py.
 """
@@ -165,7 +165,7 @@ def test_a_payload_with_no_messages_at_all_does_nothing(wa):
     assert result == {"us": None, "them_forwarded": False}
 
 
-# --- TASK-99: every object lands in exactly one half; the us half is recorded, turns run in the background --
+# --- TASK-202: every object lands in exactly one half; the us half is recorded, turns run in the background --
 
 US, THEM = "491111111111", "492222222222"
 BUSINESS = "4915550000000"

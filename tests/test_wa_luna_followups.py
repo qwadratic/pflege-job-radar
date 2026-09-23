@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/followups.py (TASK-85) -- fixture threads only, no real CLI, no
+"""Offline tests for app/wa/luna/followups.py (TASK-189) -- fixture threads only, no real CLI, no
 network. Fakes app.wa.meta.Client, same pattern as tests/test_wa_luna_catchup.py."""
 import time
 from datetime import datetime, timedelta, timezone
@@ -39,7 +39,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "FOLLOWUP_TIER_MINUTES", [15, 60, 240])
     monkeypatch.setattr(C, "MAX_FOLLOWUPS_PER_STREAK", 4)
-    # Quiet hours (TASK-92) default to 21->9 Europe/Berlin -- every test in this file below is
+    # Quiet hours (TASK-196) default to 21->9 Europe/Berlin -- every test in this file below is
     # about tier/streak logic, not quiet hours, and must not flake depending on the real wall-clock
     # time the suite happens to run at. Disabled here (start==end, see _in_quiet_hours' own
     # docstring for why that reads as 'disabled'); the dedicated quiet-hours tests below restore
@@ -57,7 +57,7 @@ def _ago(minutes):
 
 def _seed_them(conn, phone, last_outbound_minutes_ago, last_inbound_minutes_ago="just before our reply"):
     """A thread where WE answered last (ball='them') -- the candidate has gone quiet. The candidate wrote
-    first, a minute before our reply, unless last_inbound_minutes_ago=None (never wrote, TASK-101)."""
+    first, a minute before our reply, unless last_inbound_minutes_ago=None (never wrote, TASK-204)."""
     if last_inbound_minutes_ago == "just before our reply":
         last_inbound_minutes_ago = last_outbound_minutes_ago + 1
     t = ST.thread(conn, phone)
@@ -188,7 +188,7 @@ def test_run_can_be_scoped_to_specific_phones(db):
     assert [r["phone"] for r in results] == ["+49222"]
 
 
-# --- quiet hours (TASK-92) -----------------------------------------------------------------------
+# --- quiet hours (TASK-196) -----------------------------------------------------------------------
 
 def _at(hour, tz="Europe/Berlin"):
     """A UTC-aware datetime whose local hour in `tz` is exactly `hour` -- Berlin has no DST
@@ -272,7 +272,7 @@ def test_a_nudge_due_during_quiet_hours_is_not_lost_the_next_tick_sends_it(db, m
     {"qualification_path": "reject", "qualification_ok": False},
 ], ids=["consented", "not_placeable"])
 def test_a_finished_thread_is_never_nudged_even_with_a_tier_due(db, slots):
-    """TASK-94: a consented or not-placeable thread ends with OUR message (ball=them) -- found live,
+    """TASK-197: a consented or not-placeable thread ends with OUR message (ball=them) -- found live,
     a consented candidate got 'sind Sie noch da?' twice the next morning."""
     t = _seed_them(db, "+49111", last_outbound_minutes_ago=300, last_inbound_minutes_ago=301)
     t["slots"] = slots
@@ -284,7 +284,7 @@ def test_a_finished_thread_is_never_nudged_even_with_a_tier_due(db, slots):
 
 
 def test_a_thread_waiting_on_a_requested_document_is_still_nudged(db):
-    """TASK-94: only terminal stages are skipped -- a qualified candidate we asked for a document
+    """TASK-197: only terminal stages are skipped -- a qualified candidate we asked for a document
     who went quiet is exactly who a nudge is for."""
     t = _seed_them(db, "+49111", last_outbound_minutes_ago=20, last_inbound_minutes_ago=21)
     t["slots"] = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,

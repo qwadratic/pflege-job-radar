@@ -27,7 +27,7 @@ HTTP_TIMEOUT_SEC = 30
 
 # WhatsApp Cloud API policy (not this repo's choice): free-form text is only allowed within this
 # many hours of the candidate's last message; outside it, only a pre-approved template message
-# goes through (TASK-70). 24 is Meta's actual rule -- overridable only for testing.
+# goes through (TASK-174). 24 is Meta's actual rule -- overridable only for testing.
 FREEFORM_WINDOW_HOURS = float(os.environ.get("WA_FREEFORM_WINDOW_HOURS", "24") or "24")
 # Must already be approved in Meta Business Manager -- this repo cannot create one. Empty means
 # "not configured yet": a thread whose window has closed then fails loudly (app/wa/api.py) rather
@@ -38,7 +38,7 @@ WA_REOPEN_TEMPLATE_LANG = os.environ.get("WA_REOPEN_TEMPLATE_LANG", "de").strip(
 # The harness keeps its own SQLite file: the board's app.sqlite is rebuilt by crawl/run bookkeeping,
 # and a conversation must outlive that.
 SQLITE_PATH = A.DATA_DIR / "wa.sqlite"
-# Inbound media originals (TASK-95, app/wa/api.py:_store_original): one owner-only subdirectory
+# Inbound media originals (TASK-198, app/wa/api.py:_store_original): one owner-only subdirectory
 # per phone, one file per inbound media message, each linked by a wa_documents row. Candidate PII:
 # gitignored, never commit it.
 DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A.DATA_DIR / "wa_documents")
@@ -47,9 +47,9 @@ DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A
 # not hand anything to Meta, so a webhook can be pointed at a fresh deployment without messaging anyone.
 AUTOSEND = os.environ.get("WA_AUTOSEND", "").strip() in ("1", "true", "yes")
 
-# Which transport carries an outbound message (TASK-116, app/wa/transport.py): "meta" is the Cloud
+# Which transport carries an outbound message (TASK-219, app/wa/transport.py): "meta" is the Cloud
 # API (app/wa/meta.py), "bridge" is the phone rail on the remote machine (app/wa/bridge.py). This is
-# the rail a NEW thread starts on: an existing thread keeps the rail pinned on wa_threads (TASK-117),
+# the rail a NEW thread starts on: an existing thread keeps the rail pinned on wa_threads (TASK-220),
 # so flipping this variable never moves a live conversation to a different sender number. Same
 # discipline as WA_BRAIN below: an unknown value stops the process at import, it never becomes a
 # default that quietly sends.
@@ -57,7 +57,7 @@ TRANSPORT = os.environ.get("WA_TRANSPORT", "meta").strip().lower()
 if TRANSPORT not in ("meta", "bridge"):
     raise RuntimeError(f"WA_TRANSPORT={TRANSPORT!r} is not 'meta' or 'bridge'")
 
-# The phone rail's executor (TASK-120, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
+# The phone rail's executor (TASK-223, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
 # one ssh -R leg -- the executor listens on the remote machine and the tunnel presents it on loopback
 # here, which is also why no secret of Meta's ever travels: the WhatsApp account lives on the handset
 # and this rail holds no credential of its own beyond these two tokens.
@@ -86,7 +86,7 @@ BRIDGE_INBOUND_TOKEN = os.environ.get("WA_BRIDGE_INBOUND_TOKEN", "").strip()
 # make _number_matches accept every number's payload instead of ours.
 BRIDGE_PHONE_NUMBER_ID = os.environ.get("WA_BRIDGE_PHONE_NUMBER_ID", "").strip()
 
-# TASK-122: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-121)
+# TASK-122: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-224)
 # may recover a typed "ja"/"1" into app/wa/luna_brain.CONSENT_YES_ID -- the one place a typed reply
 # stands in for a tap luna_brain.py otherwise requires. Plan ADDENDUM item 5 (Ivan, 2026-09-21):
 # ships ON. Unlike AUTOSEND/INTERNAL_WEBHOOK_ENABLED above, an unrecognized value raises at import
@@ -125,9 +125,9 @@ LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "high").strip() or "high"
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if
 # `claude` is not the right one to invoke on PATH.
 LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "claude"
-# 60s (this repo's original default) started timing out for real once TASK-62 added a tool
+# 60s (this repo's original default) started timing out for real once TASK-166 added a tool
 # call in the loop and bumped effort to "high" -- both add real latency on top of the base
-# reply time, observed live during TASK-68's E2E run (subprocess.TimeoutExpired at 60s on an
+# reply time, observed live during TASK-172's E2E run (subprocess.TimeoutExpired at 60s on an
 # otherwise-ordinary turn). 120s gives that room without hiding a genuinely stuck process forever.
 LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", "120") or "120")
 
@@ -163,7 +163,7 @@ if REFUSAL_TIMEOUT_SEC <= 0:
 # in the wrong place and starts a fresh, memory-less session instead of continuing the real one.
 LUNA_SESSION_DIR = A.DATA_DIR / "wa_luna_sessions"
 # Where the Claude Code CLI keeps those sessions' transcripts: <store>/<a directory name derived from the
-# cwd>/<session id>.jsonl. Not ours to write -- app/wa/luna/purge_test_history.py (TASK-109) only needs to
+# cwd>/<session id>.jsonl. Not ours to write -- app/wa/luna/purge_test_history.py (TASK-212) only needs to
 # find and delete a test number's transcript, which holds the whole conversation in plain text. Default and
 # env var are the CLI's own (CLAUDE_CONFIG_DIR, else ~/.claude); it must be the one the service user runs
 # with, or the purge finds nothing to delete and says so.
@@ -171,30 +171,30 @@ LUNA_SESSION_STORE = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", "").strip(
                                   or pathlib.Path.home() / ".claude") / "projects"
 
 # Backstop against a runaway/abusive loop burning real claude CLI cost, not a conversational
-# throttle (TASK-76, parity with the real system's CATCHUP_MODEL_RUNS_PER_HOUR): a normal
+# throttle (TASK-180, parity with the real system's CATCHUP_MODEL_RUNS_PER_HOUR): a normal
 # back-and-forth never gets near this. Hitting it skips the brain call for that turn without
-# losing the inbound message -- the catch-up driver (TASK-78) backfills the reply shortly after.
+# losing the inbound message -- the catch-up driver (TASK-182) backfills the reply shortly after.
 # 0 disables the cap entirely.
 LUNA_MAX_CALLS_PER_HOUR = int(os.environ.get("WA_LUNA_MAX_CALLS_PER_HOUR", "20") or "20")
 
 # A thread whose ball has been on us longer than this is flagged "stuck_reply" on GET /wa/threads
-# (TASK-79) -- no invented notification channel (no email/Telegram integration exists in this
+# (TASK-183) -- no invented notification channel (no email/Telegram integration exists in this
 # repo), just a durable, discoverable flag a human or the catch-up driver can act on.
 STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 
-# Conversation ownership (TASK-75, app/wa/routing.py): a plain, newline-delimited, operator-
+# Conversation ownership (TASK-179, app/wa/routing.py): a plain, newline-delimited, operator-
 # produced export of phone numbers already known to the real production system -- unset means
 # routing a brand-new phone cannot be decided at all (see routing._is_known_to_real_system), not
 # that everything defaults one way or the other.
 REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip()
 
-# Webhook router (TASK-84, app/wa/router.py): where to forward a 'them'-owned message. Empty
+# Webhook router (TASK-188, app/wa/router.py): where to forward a 'them'-owned message. Empty
 # means router.route_webhook() raises loudly on any 'them' message rather than silently dropping
 # a real candidate's reply -- this is not registered as Meta's actual webhook URL by anything in
 # this repo, that is a separate, explicitly-confirmed production change.
 REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip()
 
-# Local-only internal webhook receiver (TASK-86, app/wa/router.py) -- for the alternative
+# Local-only internal webhook receiver (TASK-190, app/wa/router.py) -- for the alternative
 # architecture where the REAL system stays Meta's primary webhook and forwards a brand-new lead
 # to this harness over a same-host, loopback-only call instead of us receiving Meta directly.
 # Off by default: a fresh/misconfigured deployment must opt in explicitly, since this endpoint
@@ -202,7 +202,7 @@ REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip
 # the network-trust boundary that replaces it).
 INTERNAL_WEBHOOK_ENABLED = os.environ.get("WA_INTERNAL_WEBHOOK_ENABLED", "").strip() in ("1", "true", "yes")
 
-# Proactive follow-up nudges (TASK-85, app/wa/luna/followups.py) -- a scaled-down version of the
+# Proactive follow-up nudges (TASK-189, app/wa/luna/followups.py) -- a scaled-down version of the
 # real system's own tiered (15m/1h/4h) re-engagement. Fixed, reviewable text, not a model call --
 # an unprompted, system-initiated message is not what luna_brain.turn()'s "the candidate just
 # said X" contract was built for.
@@ -211,18 +211,18 @@ MAX_FOLLOWUPS_PER_STREAK = int(os.environ.get("WA_MAX_FOLLOWUPS_PER_STREAK", "4"
 FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
     "Nur zur Sicherheit nachgefragt – sind Sie noch da? Ich helfe gerne weiter, sobald Sie Zeit haben 🙂")
 
-# Quiet hours for follow-up nudges only (TASK-92): the real reference system never sends its own
+# Quiet hours for follow-up nudges only (TASK-196): the real reference system never sends its own
 # proactive nudge during a candidate's likely sleep window -- this scaled-down version lacked that
 # entirely until now. One fixed local-time window in one timezone, not per-candidate, since this
 # board has no per-candidate timezone data (it is Bavaria-only, same reasoning as the rest of this
 # harness). Hours are 0-23; START > END means the window wraps past midnight (default 21 -> 9).
-# Deliberately NOT applied to catchup.py (TASK-78) -- a reply owed to something the candidate
+# Deliberately NOT applied to catchup.py (TASK-182) -- a reply owed to something the candidate
 # already said is never proactive, so it is never delayed by this.
 QUIET_HOURS_START = int(os.environ.get("WA_QUIET_HOURS_START", "21") or "21")
 QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "9") or "9")
 QUIET_HOURS_TZ = os.environ.get("WA_QUIET_HOURS_TZ", "Europe/Berlin").strip() or "Europe/Berlin"
 
-# Voice-note transcription (TASK-107, app/wa/stt.py), WA_BRAIN=luna only. The old system's setup
+# Voice-note transcription (TASK-210, app/wa/stt.py), WA_BRAIN=luna only. The old system's setup
 # (apps/connectors/candidate_audio_stt.py): OpenAI's transcription endpoint, model whisper-1, key from
 # OPENAI_API_KEY. Unset key: every voice note fails loudly and waits for catch-up, never a flat reply.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -244,7 +244,7 @@ def readiness():
            "transport": TRANSPORT,
            # Which rail could send right now, independently of which one is selected: an operator
            # flipping WA_TRANSPORT must be able to see beforehand that the other rail is configured,
-           # and afterwards that the live one is (TASK-120).
+           # and afterwards that the live one is (TASK-223).
            "bridge_ready": checks["bridge_url"] and checks["bridge_token"],
            # The inbound door is a separate readiness: the rail can send while the executor still
            # cannot push a reply back (TASK-123), and an operator has to see which half is missing.

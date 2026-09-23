@@ -37,7 +37,7 @@ classification of one message, not a turn in a remembered conversation.
 THE MISSING INPUT (TASK-157, Ivan, 2026-09-22 -- a same-day regression on the wiring above). Measured
 against the live classifier right after TASK-156 wired this in: a bare "Nein" and "Nein, danke" came
 back NOT a refusal even right after the campaign opener that asks whether the candidate's job search is
-still relevant -- exactly the shape TASK-101/TASK-105 exist to end. The classifier was obeying its own
+still relevant -- exactly the shape TASK-204/TASK-208 exist to end. The classifier was obeying its own
 prompt correctly: a bare "nein" genuinely can be answering a yes/no gate question (a document, a region,
 a city, housing), and with no idea what was asked, "genuinely unsure, answer false" is the only honest
 verdict. The fix is not a policy change -- it is giving the classifier the one fact it was missing:

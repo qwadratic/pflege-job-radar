@@ -1,4 +1,4 @@
-"""Turn-scoped deterministic ``client_msg_id`` for the phone rail (TASK-114).
+"""Turn-scoped deterministic ``client_msg_id`` for the phone rail (TASK-217).
 
 On this rail the id WE mint is the only id an outbound message ever has: the lane behind the
 executor has no message identifier of any kind (decision-8 item 5), so nothing comes back to key a
@@ -35,7 +35,7 @@ acquisition, so a two-bubble reply whose second bubble fails never re-sends the 
 
 KNOWN RESIDUAL, stated not guarded: if a regenerated reply has MORE bubbles than the first attempt,
 the extra index is a new key and sends, so the candidate sees a fragment. Rare, additive, accepted
-(TASK-114); it is measured, not defended against.
+(TASK-217); it is measured, not defended against.
 """
 import hashlib
 import re

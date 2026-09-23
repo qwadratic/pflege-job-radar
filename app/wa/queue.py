@@ -107,7 +107,7 @@ def card_to_candidate(card, cv_profile=None):
     """Maps a Luna card (+ optional CV profile from app.cv.analyse_llm/analyse) into the
     candidate-dict shape app.autopilot.matching.score/rank expect: role_class, city, region,
     qualification, departments, german_level, anerkennung_status -- plus needs_housing/people_count
-    (TASK-108), which matching.score does not read but build_queue_entry and the human who picks the
+    (TASK-211), which matching.score does not read but build_queue_entry and the human who picks the
     queue up do.
 
     needs_housing is luna_brain.housing_needed(card), the same predicate the shortlist Luna named in
@@ -163,12 +163,12 @@ def card_to_candidate(card, cv_profile=None):
 def build_queue_entry(phone, card, cv_profile=None):
     """Ranks this candidate against every clinic in the live snapshot (app.autopilot.matching.rank,
     reused as-is -- job-matching scoring is not something this task reinvents), resolves each
-    ranked clinic's contact via TASK-64's clinic_contacts table, and upserts both the candidate and
+    ranked clinic's contact via TASK-168's clinic_contacts table, and upserts both the candidate and
     its matches into this module's own tables. Idempotent: re-running for the same phone (e.g. a
     later CV upload, or a repeat consent) replaces the candidate row and upserts matches on the
     (phone, clinic_id, posting_id) unique key rather than duplicating rows.
 
-    TASK-108: a candidate who needs a flat is ranked only against the postings the board marks with housing
+    TASK-211: a candidate who needs a flat is ranked only against the postings the board marks with housing
     (app.data.offers_housing -- the same criterion market_snapshot's shortlist uses) and the clinics those
     postings belong to, so the human handoff gets the clinics Luna was allowed to name, not a wider list. Once
     they said a clinic without a flat is also an option (housing_flexible), the filter drops here exactly as it
@@ -217,7 +217,7 @@ def build_queue_entry(phone, card, cv_profile=None):
 
 def queue_rows(conn):
     """(candidates, clinics-subset) view for GET /api/wa/queue: every queued candidate with the
-    clinics they matched, contact included where known. A phone marked as a test number (TASK-109,
+    clinics they matched, contact included where known. A phone marked as a test number (TASK-212,
     wa_threads.is_test) is left out: this list is the handoff a human works from, and an operator's
     own test consent is not a candidate. The entry itself is still written when a test thread
     consents -- the whole path stays exercised end to end -- and purge_test_history.py deletes it."""
@@ -239,9 +239,9 @@ def queue_rows(conn):
 
 
 def mailing_list_rows(conn):
-    """Flattened candidate x clinic x contact-email preview -- the report shape TASK-68's
+    """Flattened candidate x clinic x contact-email preview -- the report shape TASK-172's
     end-to-end test asserts against. Never sends anything; this is a read-only preview. Test
-    numbers (TASK-109) are left out, like in queue_rows: nobody should be preparing an email to a
+    numbers (TASK-212) are left out, like in queue_rows: nobody should be preparing an email to a
     clinic about an operator's test persona."""
     rows = conn.execute(
         """select m.phone, m.clinic_id, m.posting_id, m.score, m.contact_email, m.contact_source

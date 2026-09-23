@@ -1,4 +1,4 @@
-"""Campaign sender (TASK-103): we send one approved Meta template to a lead list ourselves, Luna answers the replies.
+"""Campaign sender (TASK-206): we send one approved Meta template to a lead list ourselves, Luna answers the replies.
 
 Usage:
     python -m app.wa.luna.campaign --campaign-id SLUG --template-id ID --leads FILE.csv|FILE.json
@@ -18,7 +18,7 @@ value counts as not given. Other columns are listed as ignored, their values are
 for every lead (e.g. quick-reply payloads); a key set both there and in the lead file fails that lead. No value is
 ever invented: a missing, extra or invalid variable fails that lead in the plan (meta.validate_template_params).
 
-HISTORY SOURCE (TASK-105). Every dry-run and --send reads the old system through the history import
+HISTORY SOURCE (TASK-208). Every dry-run and --send reads the old system through the history import
 (--import-history-*): its opt_outs records (opt-outs and declines kept outside the chat) and the Stopp messages
 of its chat. A phone with any of them is never sent: skip_opted_out (an opt-out or a Stopp) or skip_declined
 (declines only), the reason naming each record. --override-no-history-source is the only way to run without the
@@ -28,7 +28,7 @@ DRY-RUN (default). Resolves the template by id (GET, must be APPROVED), canonica
 duplicate and conflicting duplicate leads reported, none dropped silently), validates and renders each lead, and
 plans each phone from a read-only in-memory copy of data/wa.sqlite: owner (wa_ownership, else the
 WA_REAL_SYSTEM_PHONES_FILE check), thread stage/ball, stopped, declined, marketing opt-out (user_preferences stop,
-failed status 131050), cross-rail suppression (wa_suppressions, TASK-113), this and other campaigns' claims, history
+failed status 131050), cross-rail suppression (wa_suppressions, TASK-216), this and other campaigns' claims, history
 import preview (import_history dry-run, with its opt-out records and chat Stopps). Writes no database row, sends
 nothing; only the report file.
 
@@ -46,7 +46,7 @@ nothing; only the report file.
    card.campaign (store.record_campaign_send), attempt sent. HTTP 4xx -> attempt failed with code/payload,
    wa_send_failures, ownership restored. Network error, timeout, HTTP 5xx, 2xx without wamid -> attempt uncertain,
    wa_send_failures, ownership stays with us. A crash after step 2 leaves in_progress, reported as uncertain.
-ATTEMPTS (TASK-106). Every claim is its own attempt row (1..n) with its own wamid, error code and delivery status;
+ATTEMPTS (TASK-209). Every claim is its own attempt row (1..n) with its own wamid, error code and delivery status;
 a later attempt never overwrites an earlier one. The phone's claim is its latest attempt. Re-running continues: sent
 is skipped, failed is claimed again, uncertain/in_progress is never resent without --retry-uncertain (check --status
 first); one that did go out (a status for a wamid we never recorded, with the template's category) is recorded with
@@ -57,7 +57,7 @@ since the campaign first claimed it (skip_replied). Once any attempt went out (s
 resend (retry_failed, --retry-uncertain) makes the same skip_replied check. Stopped, declined and opted-out phones
 are never sent, and neither is a suppressed one (skip_suppressed, app/wa/suppression.py: the do-not-contact list is
 keyed on the human and shared by both rails, so a Stopp typed to the phone rail stops a Meta template too; checked
-again right before the POST, where it fails the attempt permanently). A phone marked as a test number (TASK-109,
+again right before the POST, where it fails the attempt permanently). A phone marked as a test number (TASK-212,
 app/wa/luna/test_threads.py) is skip_test_number before any other action, in the dry run and in --send: a campaign
 template never lands in an operator's manual test.
 
@@ -136,7 +136,7 @@ class CampaignError(RuntimeError):
 
 
 class Retry(NamedTuple):
-    """The operator's explicit retry flags: --retry-uncertain, --retry-delivery-failed (TASK-106)."""
+    """The operator's explicit retry flags: --retry-uncertain, --retry-delivery-failed (TASK-209)."""
     uncertain: bool = False
     delivery_failed: bool = False
 
@@ -450,7 +450,7 @@ def phone_state(c, campaign_id, phone):
     this = None
     if attempts:
         # the phone's claim = its latest attempt; every attempt, and what the candidate wrote since the first claim
-        # (TASK-106: a phone that wrote in the meantime is not resent)
+        # (TASK-209: a phone that wrote in the meantime is not resent)
         first = attempts[0]["claimed_at"]
         inbound = [m for m in ST.messages_for(c, phone, direction="in") if m["at"] >= first]
         this = {**attempts[-1], "attempts": attempts, "first_claimed_at": first,
@@ -466,7 +466,7 @@ def decide(state, retry):
     """-> (action, reason) for a phone with a valid lead, from its latest attempt in this campaign."""
     this, thread = state["this_campaign"], state["thread"] or {}
     if thread.get("is_test"):
-        # TASK-109: an operator's own number, marked with app/wa/luna/test_threads.py. Checked before every
+        # TASK-212: an operator's own number, marked with app/wa/luna/test_threads.py. Checked before every
         # other action, so no --retry-* path can post a campaign template into a manual test either.
         return "skip_test_number", (f"test number (marked {thread['test_marked_at']}): campaigns never send to it "
                                     f"(python -m app.wa.luna.test_threads --unmark to make it an ordinary thread)")
@@ -486,7 +486,7 @@ def decide(state, retry):
                              f"out; check --status, then --retry-uncertain" + (f" ({this['error']})" if this["error"]
                                                                                else ""))
     if state["suppressed"]:
-        # TASK-113: the cross-thread, cross-lane list. Planned as a skip, exactly like the three below it, so no
+        # TASK-216: the cross-thread, cross-lane list. Planned as a skip, exactly like the three below it, so no
         # attempt is ever claimed for a number that refused us; send_one's own check is what makes it
         # unbypassable, and that one raises (a suppressed phone that reached the POST is a permanent failure,
         # never an uncertain one).
@@ -502,7 +502,7 @@ def decide(state, retry):
     went_out = [a for a in this["attempts"] if a["state"] == "sent"] if this else []
     if went_out:
         # a template of this campaign went out to the phone (an undelivered one too): no resend of any kind on top of
-        # what the candidate wrote since (TASK-106 AC#3; review 2026-09-15: a rejected --retry-delivery-failed attempt
+        # what the candidate wrote since (TASK-209 AC#3; review 2026-09-15: a rejected --retry-delivery-failed attempt
         # was then planned retry_failed and posted again into Luna's conversation)
         wrote = this["inbound_since_first_claim"]
         if wrote["count"]:
@@ -561,7 +561,7 @@ def plan(c, campaign_id, leads, retry, source=None):
 
 
 def history_skip(source, view):
-    """-> (action, reason) when the history source recorded that this phone wants no contact (TASK-105), else None:
+    """-> (action, reason) when the history source recorded that this phone wants no contact (TASK-208), else None:
     skip_opted_out for any opt-out record or Stopp in its chat, skip_declined when every record is a decline."""
     blocks = view["contact_blocks"]
     if not blocks:
@@ -662,7 +662,7 @@ def send_one(campaign_id, definition, lead, client, clock, retry, window, source
     result.update(attempt=attempt, claimed_at=claimed_at, prior_owner=prior)
 
     try:
-        # TASK-113: the campaign's suppression choke point -- the one send path that never touches
+        # TASK-216: the campaign's suppression choke point -- the one send path that never touches
         # api.send_and_record. decide() already planned a suppressed phone as skip_suppressed, so reaching
         # this means the number refused us between the plan and the POST (a Stopp while the run was pacing,
         # or during a history import that took minutes). Inside this try on purpose: SuppressedRecipient is a
@@ -857,7 +857,7 @@ def run_mark_sent(campaign_id, definition, pairs):
 
 
 def match_replies(attempts, inbound):
-    """The candidate's messages that answer this campaign, each matched to the attempt it answers (TASK-106): the
+    """The candidate's messages that answer this campaign, each matched to the attempt it answers (TASK-209): the
     attempt whose wamid its context names (matched_by context), else the latest attempt that may have reached the
     candidate at or before it (reach_anchor; matched_by time). A message before every such attempt, without context
     naming one, answers none (status_rows: not_answering_an_attempt). -> [{message, attempt, matched_by}] in message

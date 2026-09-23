@@ -1,4 +1,4 @@
-"""Optional external clinic-contact CRM (TASK-69, follow-up to TASK-64) -- unset by default. If
+"""Optional external clinic-contact CRM (TASK-173, follow-up to TASK-168) -- unset by default. If
 an operator has a real, separately-run contact CRM for their clinics (human/agent-collected
 contacts, ideally with a source/evidence trail per contact), pointing WA_EXTERNAL_CONTACT_DB at
 its sqlite file lets `app/wa/luna/contacts.py:discover_contact` prefer a real, role-classified

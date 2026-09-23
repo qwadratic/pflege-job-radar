@@ -1,4 +1,4 @@
-"""TASK-102 through the real claude CLI: a campaign recipient whose earlier contact was imported (facts, CV and
+"""TASK-205 through the real claude CLI: a campaign recipient whose earlier contact was imported (facts, CV and
 Urkunde) is not re-asked known facts, is asked one yes/no whether the earlier documents may be used, and both
 answers are recorded. Marked ``llm`` (real model, real cost); every test runs twice (``run``).
 

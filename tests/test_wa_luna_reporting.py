@@ -36,7 +36,7 @@ _URKUNDE = {"id": 2, "document_type": "urkunde", "certificate_level": "fachkraft
 
 
 def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
-    """TASK-91: 'every non-consent requirement' now includes documents -- TASK-96: the CV and the
+    """TASK-195: 'every non-consent requirement' now includes documents -- TASK-199: the CV and the
     qualification document both received (card.documents), not just a verbal qualification claim."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
             "housing_needed": False, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ... volle Anerkennung",
@@ -46,7 +46,7 @@ def test_stage_ready_once_every_non_consent_requirement_is_satisfied():
 
 @pytest.mark.parametrize("documents", [[_CV], [_URKUNDE], None], ids=["cv_only", "urkunde_only", "legacy_no_list"])
 def test_stage_documents_in_not_ready_until_both_documents_are_in(documents):
-    """TASK-96: one document, or a legacy card with both text keys but no documents list, is not ready."""
+    """TASK-199: one document, or a legacy card with both text keys but no documents list, is not ready."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
             "housing_needed": False, "cv_text": "Lebenslauf ...", "urkunde_text": "Urkunde ..."}
     if documents is not None:
@@ -55,7 +55,7 @@ def test_stage_documents_in_not_ready_until_both_documents_are_in(documents):
 
 
 def test_stage_qualifying_not_ready_without_a_document():
-    """The same card as above, minus a document -- TASK-91's documents gate means this must not
+    """The same card as above, minus a document -- TASK-195's documents gate means this must not
     report 'ready' (it would understate that nothing has actually been verified yet)."""
     card = {"qualification_path": "urkunde", "region": "bayern", "city": "München",
             "housing_needed": False}

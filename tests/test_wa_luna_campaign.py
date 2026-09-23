@@ -1,4 +1,4 @@
-"""TASK-100/101 offline: campaign context on the card, outbound Luna did not write reaching the model,
+"""TASK-203/101 offline: campaign context on the card, outbound Luna did not write reaching the model,
 template button payloads and reply context, the decline acknowledgement and silence, a recorded no_send,
 stages, follow-ups and the free-form window. The model is a fake luna_brain.Client, Meta a fake client;
 synthetic phones only.
@@ -123,7 +123,7 @@ def _rows():
         return ST.messages_for(c, LEAD)
 
 
-# --- parse_message (TASK-100) --------------------------------------------------------------------
+# --- parse_message (TASK-203) --------------------------------------------------------------------
 
 def test_a_template_button_tap_keeps_its_payload_namespaced_and_its_label():
     parsed = WAPI.parse_message(_message("wamid.b", kind="button", text="Ja, interessiert", payload="bayern_yes",
@@ -193,7 +193,7 @@ def test_a_location_naming_another_land_is_no_region_answer(wa, monkeypatch):
     assert "region" not in _thread()["slots"]
 
 
-# --- campaign seed (TASK-100 contract for TASK-103) ------------------------------------------------
+# --- campaign seed (TASK-203 contract for TASK-206) ------------------------------------------------
 
 def test_record_campaign_send_seeds_the_card_contract_and_the_outbound_row(wa):
     campaign = _campaign()
@@ -211,7 +211,7 @@ def test_record_campaign_send_seeds_the_card_contract_and_the_outbound_row(wa):
     assert row["meta"]["action"] == "campaign" and row["meta"]["campaign_id"] == "bayern-2026-09"
 
 
-# --- the payload: campaign, template button, reply context (TASK-100) -----------------------------
+# --- the payload: campaign, template button, reply context (TASK-203) -----------------------------
 
 def test_a_button_tap_on_the_campaign_reaches_the_model_with_the_template_and_reply_context(wa, monkeypatch):
     _campaign()
@@ -359,7 +359,7 @@ def test_shadow_run_hands_the_model_the_same_context(wa, monkeypatch):
     assert [o["action"] for o in seen[0]["outbound_since_last_turn"]] == ["campaign"]
 
 
-# --- decline (TASK-101) ----------------------------------------------------------------------------
+# --- decline (TASK-204) ----------------------------------------------------------------------------
 
 def test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent(wa, monkeypatch):
     _campaign()
@@ -496,7 +496,7 @@ def _media(wamid, kind="video", mime_type="video/mp4"):
 
 def test_a_video_on_a_declined_thread_gets_no_reply_and_is_flagged_for_a_human(wa, monkeypatch, tmp_path):
     """Review 2026-09-14: after the decline ack a voice note got MEDIA_REPLY ('Ein Kollege schaut sie sich an.'),
-    breaking the silence, and nothing flagged it. Since TASK-107 a voice note is transcribed (next test); a video still
+    breaking the silence, and nothing flagged it. Since TASK-210 a voice note is transcribed (next test); a video still
     goes this way."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     _campaign()
@@ -519,7 +519,7 @@ def test_a_video_on_a_declined_thread_gets_no_reply_and_is_flagged_for_a_human(w
 
 def test_a_voice_note_on_a_declined_thread_is_a_model_turn_on_its_transcript_silent_unless_it_re_engages(
         wa, monkeypatch, tmp_path):
-    """TASK-107: the transcript is read like typed text on a declined card (DECLINE): silence, or a re-engagement."""
+    """TASK-210: the transcript is read like typed text on a declined card (DECLINE): silence, or a re-engagement."""
     from tests.test_wa_voice_notes import use_openai
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     openai = use_openai(monkeypatch, {"text": "Okay, danke."}, {"text": "Ich suche jetzt doch eine Stelle in Bayern."})
@@ -574,7 +574,7 @@ def test_a_video_reply_to_the_campaign_is_flagged_for_a_human_and_never_nudged(w
 
 
 def test_a_voice_note_reply_to_the_campaign_is_answered_from_its_transcript(wa, monkeypatch, tmp_path):
-    """TASK-107: a campaign reply spoken as a voice note no longer stalls on MEDIA_REPLY: Luna answers the transcript
+    """TASK-210: a campaign reply spoken as a voice note no longer stalls on MEDIA_REPLY: Luna answers the transcript
     against the template, and the thread is an ordinary conversation after it (a follow-up may nudge)."""
     from tests.test_wa_voice_notes import use_openai
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
@@ -605,7 +605,7 @@ def test_stop_on_a_declined_thread_stops_without_any_ack(wa, monkeypatch):
     assert r["status"] == "stopped" and wa.sent == [LB.P.DECLINE_ACK_DE]
 
 
-# --- recorded no_send (TASK-101) -------------------------------------------------------------------
+# --- recorded no_send (TASK-204) -------------------------------------------------------------------
 
 def test_a_no_send_is_never_re_run_by_catch_up(wa, monkeypatch):
     model = Model(monkeypatch, _out(no_send=True, bubbles=[]))
@@ -630,7 +630,7 @@ def test_a_new_message_after_a_recorded_no_send_is_owed_again(wa, monkeypatch):
         assert REP.ball_for(c, LEAD) == "us" and SR.phones_owed_a_reply(c) == [LEAD]
 
 
-# --- stages, follow-ups, window (TASK-101) ---------------------------------------------------------
+# --- stages, follow-ups, window (TASK-204) ---------------------------------------------------------
 
 @pytest.mark.parametrize("card, stage", [
     ({"declined": True, "anonymous_send_consent": True}, "declined"),
@@ -675,7 +675,7 @@ def test_the_free_form_window_is_closed_for_a_thread_that_never_wrote(wa):
     assert wa.sent == []
 
 
-# --- prompt (TASK-100/101) --------------------------------------------------------------------------
+# --- prompt (TASK-203/101) --------------------------------------------------------------------------
 
 def _rule(prefix):
     return next(r for r in LB.P.RULES if r.startswith(prefix))
@@ -699,22 +699,22 @@ def test_the_prompt_campaign_outbound_template_button_decline_and_already_placed
     assert "EXCEPTION: a thread opened by our template (card.campaign) is never first contact" in think1
     assert "market_snapshot.open_jobs stays unsaid in the reply to the template" in think1
     assert "outbound_since_last_turn holds a message sent after your last turn" in LB.P.THINK_ORDER[3]
-    campaign = _rule("CAMPAIGN (TASK-100)")
+    campaign = _rule("CAMPAIGN (TASK-203)")
     assert "set region=Bayern" in campaign and "never ask" in campaign and "no open-jobs count" in campaign
-    outbound = _rule("OUR OUTBOUND (TASK-100)")
+    outbound = _rule("OUR OUTBOUND (TASK-203)")
     assert "means the candidate is still there" in outbound and "never a card fact" in outbound
     assert "never a word about yourself being there ('ich bin (noch) da/hier'" in outbound
-    assert "is_template_button=true" in _rule("TEMPLATE BUTTON (TASK-100)")
+    assert "is_template_button=true" in _rule("TEMPLATE BUTTON (TASK-203)")
     # TASK-155 split the decline prose in two: what counts as a refusal stays under the DECLINE header,
     # the consequence (silence, re-engagement) moved to its own rule. The behaviour both must state is
     # what this asserts, so read them together rather than pinning the header text.
-    decline = "\n".join(r for r in LB.P.RULES if r.startswith("DECLINE (TASK-101") or r.startswith("decline=true:"))
+    decline = "\n".join(r for r in LB.P.RULES if r.startswith("DECLINE (TASK-204") or r.startswith("decline=true:"))
     assert "A Nein to one of your gate questions" in decline and "re_engaged=true" in decline
     assert "consent button 'Nein danke'" in decline and "is not a decline either" in decline
     assert "After 'Nein danke'" in _rule("CONSENT IS A BUTTON TAP")
     assert "gets no locked out-of-scope text from the harness on this thread" in campaign
     assert "When introduced is false" in campaign and "fresh_session" not in campaign
-    placed = _rule("ALREADY PLACED (TASK-100)")
+    placed = _rule("ALREADY PLACED (TASK-203)")
     assert "ONE plain yes/no" in placed and "never consent" in placed
     assert "look at the positions open in Bayern now" in placed and "Never a later or conditional frame" in placed
     for key in ("decline", "re_engaged", "already_placed", "open_to_new_position"):

@@ -1,4 +1,4 @@
-"""Wipe the history of a test number (TASK-109), so every manual test starts from nothing.
+"""Wipe the history of a test number (TASK-212), so every manual test starts from nothing.
 
 Usage:
     python -m app.wa.luna.purge_test_history [--older-than-hours N] [--phones p1,p2] [--json]   # dry run

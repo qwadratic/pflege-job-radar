@@ -13,7 +13,7 @@ from fastapi import FastAPI
 
 from .api import router
 from .bridge_api import router as bridge_router  # POST /wa/bridge-webhook (TASK-123): the phone rail's inbound door
-from .router import router as router_router  # POST /wa/route-webhook (TASK-84): Meta's live webhook via nginx
+from .router import router as router_router  # POST /wa/route-webhook (TASK-188): Meta's live webhook via nginx
 
 app = FastAPI(title="pflege-board WhatsApp harness", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(router, prefix="/api", tags=["whatsapp"])

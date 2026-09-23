@@ -71,7 +71,7 @@ class FakeMeta:
         return self._next()
 
     def media_url(self, media_id):
-        """Every inbound media original is downloaded and stored (TASK-95), whichever brain answers."""
+        """Every inbound media original is downloaded and stored (TASK-198), whichever brain answers."""
         return {"url": f"https://cdn.example/{media_id}", "mime_type": "application/pdf"}
 
     def download_media(self, url):
@@ -138,7 +138,7 @@ def _route(wa, raw, sig):
         try:
             response = client.post("/api/wa/webhook", content=raw,
                                    headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"})
-            mod.wait_for_background(timeout=60)   # TASK-99: the turn runs in the background worker
+            mod.wait_for_background(timeout=60)   # TASK-202: the turn runs in the background worker
             return response
         finally:
             mod.M.Client = real
@@ -201,7 +201,7 @@ def test_parse_reads_text_buttons_and_media(wa):
 
 
 def test_parse_captures_media_id_mime_type_and_filename(wa):
-    """TASK-67: document/image/audio/video used to drop the media entirely (media_id/mime_type
+    """TASK-171: document/image/audio/video used to drop the media entirely (media_id/mime_type
     both None, no filename) -- these are what app/wa/meta.py's media download needs, captured
     straight from Meta's own `{"<type>": {"id":..., "mime_type":..., "filename":...}}` field."""
     for kind in ("document", "image", "audio", "video"):
@@ -238,7 +238,7 @@ def test_media_is_acknowledged_not_silently_dropped(wa):
     assert out["results"][0]["action"] == "media_ack"
     assert wa.sent[-1]["body"] == WAPI.MEDIA_REPLY
     with ST.db() as c:
-        assert [d["wamid"] for d in ST.documents_for(c, LEAD)] == ["wamid.pdf"], "TASK-95: original kept"
+        assert [d["wamid"] for d in ST.documents_for(c, LEAD)] == ["wamid.pdf"], "TASK-198: original kept"
 
 
 # --- the conversation ----------------------------------------------------------------------------
@@ -561,7 +561,7 @@ def test_health_reports_readiness_without_secrets(wa):
     assert APP_SECRET not in json.dumps(body) and "test-token" not in json.dumps(body)
 
 
-# --- TASK-70: the 24h free-form window --------------------------------------------------------
+# --- TASK-174: the 24h free-form window --------------------------------------------------------
 # _handle_one() always stamps last_inbound_at to "now" for a live inbound turn, so the window can
 # never be closed there by construction -- these test _send()/_freeform_window_open() directly,
 # the way a future catch-up/dry-run tool (operating on a possibly-stale stored thread) would.
@@ -572,7 +572,7 @@ def test_window_is_open_for_a_thread_that_just_wrote(wa):
 
 
 def test_window_is_closed_when_the_candidate_never_wrote(wa):
-    """TASK-101: no inbound ever (a campaign recipient who did not reply) means no free-form window."""
+    """TASK-204: no inbound ever (a campaign recipient who did not reply) means no free-form window."""
     assert WAPI._freeform_window_open({"phone": LEAD}) is False
 
 
@@ -596,7 +596,7 @@ def test_send_uses_the_reopen_template_when_the_window_is_closed(wa, monkeypatch
 
 
 def test_a_sent_reopen_template_flips_ownership_to_us(wa, monkeypatch):
-    """TASK-75: this harness reopening an old conversation with its own template is the one
+    """TASK-179: this harness reopening an old conversation with its own template is the one
     explicit act that hands that phone's ownership to us, regardless of whatever it was before."""
     from datetime import datetime, timedelta, timezone
 
@@ -663,7 +663,7 @@ def test_send_template_with_params_fills_body_components(wa):
 # --- template discovery: what is already approved on this WABA (docs/whatsapp.md) --------------
 
 def test_phone_number_info_asks_only_for_fields_the_phone_number_node_answers(wa):
-    # Live 2026-09-14 (TASK-98): the old default's whatsapp_business_account failed the whole GET with #100.
+    # Live 2026-09-14 (TASK-201): the old default's whatsapp_business_account failed the whole GET with #100.
     calls = []
 
     def transport(method, url, headers=None, data=None, timeout=None):

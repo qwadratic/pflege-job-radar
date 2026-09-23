@@ -1,8 +1,8 @@
-"""Webhook router (TASK-84): Meta supports ONE webhook URL per phone-number-id, so this route receives
+"""Webhook router (TASK-188): Meta supports ONE webhook URL per phone-number-id, so this route receives
 that one call and decides, per object, whether this harness or the real production system gets it.
 nginx on the harness host forwards Meta's registered webhook path to POST /api/wa/route-webhook.
 
-Split (``_split_payload_by_owner``, TASK-99): every object lands in exactly one half, except call objects. First
+Split (``_split_payload_by_owner``, TASK-202): every object lands in exactly one half, except call objects. First
 every message sender gets its route_decision() (app/wa/routing.py, which records a new phone's owner). Then each
 object goes to the recorded owner of its phone: messages (``from``), statuses (``recipient_id``; a status
 of one of our own outbound wamids is always ours), contacts and user preferences (``wa_id``), message echoes
@@ -211,7 +211,7 @@ async def wa_route_webhook(request: Request):
         raise HTTPException(502, "real-system forward failed")
 
 
-# --- local-only internal receiver (TASK-86): the real system stays Meta's primary webhook -------
+# --- local-only internal receiver (TASK-190): the real system stays Meta's primary webhook -------
 # An alternative to the split-and-forward design above: instead of THIS harness receiving Meta's
 # call directly and deciding ownership, the real system's OWN webhook handler gains a small check
 # ("is this phone already one of our candidates?") and forwards only a brand-new lead's payload to
@@ -241,7 +241,7 @@ def _is_local_caller(request):
 async def wa_internal_webhook(request: Request):
     """Receives a payload already vetted and forwarded by the real production system's own
     webhook (see module docstring) -- not Meta directly, so there is nothing to verify here beyond
-    the access checks below. Recorded and answered like POST /wa/webhook (TASK-99): off the event loop,
+    the access checks below. Recorded and answered like POST /wa/webhook (TASK-202): off the event loop,
     turns in the background worker."""
     if not C.INTERNAL_WEBHOOK_ENABLED or not _is_local_caller(request):
         raise HTTPException(403, "local calls only")

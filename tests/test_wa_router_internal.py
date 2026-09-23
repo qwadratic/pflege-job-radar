@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/router.py's local-only internal receiver (TASK-86). Uses Starlette
+"""Offline tests for app/wa/router.py's local-only internal receiver (TASK-190). Uses Starlette
 TestClient's client= override to simulate a real loopback vs. non-local origin end to end."""
 import time
 

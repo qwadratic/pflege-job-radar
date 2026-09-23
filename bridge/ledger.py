@@ -1,4 +1,4 @@
-"""The write-ahead journal and the first-body-wins idempotency store (TASK-130, TASK-114).
+"""The write-ahead journal and the first-body-wins idempotency store (TASK-130, TASK-217).
 
 Lives on the remote machine, next to the phone, because that is where the uncertainty is: the
 window between "keys were pressed" and "a tick was read" is 20-60 s on this rail and it is the

@@ -1,4 +1,4 @@
-"""Clinic contact discovery (TASK-64): the extraction heuristic against fixture HTML/text (no
+"""Clinic contact discovery (TASK-168): the extraction heuristic against fixture HTML/text (no
 network in the default run), the source ordering (enr_contact_emails short-circuits the HTTP
 fetch), the obfuscated-description re-scan, and the clinic_contacts storage round trip. One
 pytest.mark.network test does a real fetch against a real clinic careers page as a sanity check --
@@ -68,7 +68,7 @@ def _no_real_sleep(monkeypatch):
     monkeypatch.setattr(CT.time, "sleep", lambda s: None)
 
 
-# --- source 0: optional external contact CRM (TASK-69) ------------------------------------------
+# --- source 0: optional external contact CRM (TASK-173) ------------------------------------------
 
 def test_external_crm_wins_and_skips_every_other_source(monkeypatch):
     """A hit from the external CRM must short-circuit enr_contact_emails, the website fetch and

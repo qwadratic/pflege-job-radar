@@ -1,4 +1,4 @@
-"""Import a campaign recipient's history from an earlier system (TASK-102): facts, clinic/placement record, prior
+"""Import a campaign recipient's history from an earlier system (TASK-205): facts, clinic/placement record, prior
 messages and document originals, so Luna does not re-ask what the candidate already told, and asks before reusing
 an earlier CV/Urkunde.
 
@@ -11,7 +11,7 @@ Usage:
         [--media-root DIR ...] (--phone +49... ... | --phones-file FILE) [--apply] [--json]
 
 Dry-run by default: reads the source (files included, sha256 checked) and our database read-only, writes nothing,
-calls no LLM and no Meta. ``--apply`` writes. Campaign sender (TASK-103): ``Source.open(...)`` once, then
+calls no LLM and no Meta. ``--apply`` writes. Campaign sender (TASK-206): ``Source.open(...)`` once, then
 ``import_phone(source, phone, apply=True)`` per phone.
 
 QUERIES FILE: five queries, each after a line ``-- query: <name>``. Each runs with the named parameters ``:phone``
@@ -35,7 +35,7 @@ missing required column, an unknown column or a value outside its contract raise
   opt_outs   source_ref (required, unique per record), kind (required: opt_out = no messages wanted: stop,
              unsubscribe, do-not-contact; decline = turned the offer or the contact down), at (required, ISO 8601;
              without an offset it is UTC), reason (required, the source's own words); phone (the phone value the
-             record carries, evidence of the match). Records the source keeps outside the chat text (TASK-105);
+             record carries, evidence of the match). Records the source keeps outside the chat text (TASK-208);
              a source without such records returns no rows, the query is still required.
 
 WHAT --apply WRITES (data/wa.sqlite, C.DOCUMENTS_DIR):
@@ -43,7 +43,7 @@ WHAT --apply WRITES (data/wa.sqlite, C.DOCUMENTS_DIR):
 - card.prior_contact: deterministic summary {source, imported_at, first/last contact, message counts,
   facts_imported, documents_not_recoverable, summary}; card.prior_placement {records, submitted, placed};
 - card.prior_opt_outs: every opt_outs record and every Stopp in the imported chat (stop_messages), once per
-  source label + source_ref. A new one marks the card declined (TASK-101: declined, declined_reason, declined_at =
+  source label + source_ref. A new one marks the card declined (TASK-204: declined, declined_reason, declined_at =
   the latest new record; no acknowledgement is sent, follow-ups stop, Luna stays silent until re-engagement), unless
   the card is already declined or the candidate wrote here (last_inbound_at) or re-engaged (re_engaged_at) after it;
 - wa_imported_messages: one row per source message (never wa_messages: ball, follow-ups and the Luna payload
@@ -113,7 +113,7 @@ def _access_error(path, what, exc):
     return SourceAccessError(
         f"cannot read {what} {path}: {exc}. The user {user!r} needs read access: search (x) on every directory "
         f"down to it and read (r) on the file, e.g. setfacl -m u:{user}:--x <each parent dir>; "
-        f"setfacl -R -m u:{user}:rX,d:u:{user}:rX <media root> (docs/rollout-runbook.md, TASK-102)")
+        f"setfacl -R -m u:{user}:rX,d:u:{user}:rX <media root> (docs/rollout-runbook.md, TASK-205)")
 
 
 def load_queries(path):
@@ -439,14 +439,14 @@ def stop_messages(messages):
 def contact_blocks(report):
     """Everything in an import report that forbids contacting the phone, oldest first: the source's opt_outs records
     and the candidate's Stopp messages (kind stop_message) as {source_ref, kind, at, reason, phone}. The campaign
-    sender skips a phone with any (TASK-105); --apply records them on card.prior_opt_outs."""
+    sender skips a phone with any (TASK-208); --apply records them on card.prior_opt_outs."""
     stops = [{"source_ref": m["source_ref"], "kind": STOP_MESSAGE_KIND, "at": _utc_iso("messages at", m["at"]),
               "reason": f"Stopp in the chat: {m['body']!r}", "phone": None} for m in report["stop_messages"]]
     return sorted(report["opt_outs"] + stops, key=lambda r: (r["at"], r["source_ref"]))
 
 
 def decline_decision(card, last_inbound_at, label, blocks):
-    """What an import does to the card with the phone's contact blocks (TASK-105, TASK-101 semantics). -> {new:
+    """What an import does to the card with the phone's contact blocks (TASK-208, TASK-204 semantics). -> {new:
     blocks not yet on card.prior_opt_outs (with source), marked: bool, declined_at, declined_reason, not_marked}.
     The latest new block marks the card declined, unless the card is already declined, or the candidate wrote here
     (last_inbound_at) or re-engaged (re_engaged_at) after it: a later word from the candidate wins over an older

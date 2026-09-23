@@ -1,4 +1,4 @@
-"""Catch-up driver (TASK-78, TASK-99): finishes inbound messages the webhook did not. Meta delivery is not
+"""Catch-up driver (TASK-182, TASK-202): finishes inbound messages the webhook did not. Meta delivery is not
 guaranteed, the webhook's background worker can fail or be killed mid-turn, and a rate-capped turn waits
 for the next hour -- this is the resilient second path, like the real production system's own 3-minute
 --catchup poller.
@@ -7,17 +7,17 @@ Two passes, one pipeline: app.wa.api.finish_inbound, the same the webhook's back
 1. pending: every phone with wa_inbound_pending rows (recorded by a webhook, not finished yet) is drained
    oldest first (API.process_phones). Media included: a message with no stored original is downloaded again
    with the media_id kept in wa_messages.meta, a stored original that never reached a luna card is re-read
-   and classified, a luna voice note without a transcript is transcribed from its stored original (TASK-107),
+   and classified, a luna voice note without a transcript is transcribed from its stored original (TASK-210),
    media nothing reads gets its flat ack. A phone with a claim in flight (the webhook worker,
    or a still-running earlier pass, is on it) is reported ``claimed_elsewhere`` and left to that process --
    the ``media:<wamid>`` claim covers a running download/ingest, so this never replies to a file it has not
    read.
 2. owed: every other thread whose last message is inbound (shadow_run.phones_owed_a_reply with
-   include_test=True -- only the report leaves a test number out, TASK-109 -- the same
+   include_test=True -- only the report leaves a test number out, TASK-212 -- the same
    reporting.ball_for() == "us" rule, or just ``--phones``) and not stopped: its last inbound message goes
    through finish_inbound once. Covers messages recorded before wa_inbound_pending existed.
 
-Same reply-turn claims (TASK-77), rate cap (TASK-76) and failure recording (TASK-79) as the webhook, and a
+Same reply-turn claims (TASK-181), rate cap (TASK-180) and failure recording (TASK-183) as the webhook, and a
 consent reached here builds its queue entry the same way (API.build_consent_queues). A failing message is
 logged, recorded (pending row, wa_send_failures once per distinct error), reported as status ``error``, and
 the pass goes on; main() exits 1 when any message failed.
@@ -58,7 +58,7 @@ def run(client=None, phones=None):
 
     owed = []
     with ST._lock, ST.db() as c:
-        # include_test: a test number (TASK-109) is answered like every other thread -- only reports leave it out.
+        # include_test: a test number (TASK-212) is answered like every other thread -- only reports leave it out.
         targets = phones if phones is not None else SR.phones_owed_a_reply(c, include_test=True)
         for phone in targets:
             if phone in pending or ST.pending_inbound(c, phone):

@@ -18,7 +18,7 @@ cd /home/claude/repo/pflege-board
   --out /home/claude/repo/pflege-board/data/known-real-system-phones.txt
 ```
 
-Prints `exported N, skipped M`. This is our own tool (TASK-87) -- read-only against the real db
+Prints `exported N, skipped M`. This is our own tool (TASK-191) -- read-only against the real db
 (SQLite `mode=ro`), writes only phone numbers, nothing else.
 
 ## 2. Install our own service + timers
@@ -67,7 +67,7 @@ calls -- `BRIDGE_PUBLIC_BASE_URL=https://jobs.bewerbung-pflege.work` per
 serves that hostname before editing):
 
 ```nginx
-# Meta WhatsApp webhook -- routed through our harness first (app/wa/router.py, TASK-84), which
+# Meta WhatsApp webhook -- routed through our harness first (app/wa/router.py, TASK-188), which
 # decides per-message whether we answer or forward to the real system's own internal address
 # (127.0.0.1:8816, untouched, still running). Must be `location =` (exact match) so it takes
 # precedence over the broader /candidate-action/ prefix block below it, without touching that
@@ -109,9 +109,9 @@ Meta traffic goes back to hitting `candidate-connector-bridge.service` directly,
 step 4 -- that service was never stopped or touched. To also stop our own service from doing
 anything further: `sudo systemctl stop pflege-wa.service pflege-wa-catchup.timer pflege-wa-followups.timer`.
 
-## 6. Campaign recipients: import the old system's history (TASK-102)
+## 6. Campaign recipients: import the old system's history (TASK-205)
 
-Run before the campaign sends (TASK-103 calls the same function per phone, and since TASK-105 every campaign
+Run before the campaign sends (TASK-206 calls the same function per phone, and since TASK-208 every campaign
 dry-run and send needs it). Reads the old system read-only, writes only our `data/wa.sqlite` and
 `data/wa_documents/`. Details: docs/whatsapp.md, "Campaign recipients".
 
@@ -156,32 +156,32 @@ Load `.env` first (`set -a; . ./.env; set +a`): the same `WA_DOCUMENTS_DIR`/data
 `META_WHATSAPP_ACCESS_TOKEN`, which `--apply` needs to download a missing WhatsApp original again by `media_id`. Exit 1 = some document is not recoverable (listed per phone); the
 rest is imported. Re-running is safe.
 
-The `opt_outs` query (TASK-105) reads `candidates`, `job_wohnung_outreach`, `candidate_recruitment_state` and
+The `opt_outs` query (TASK-208) reads `candidates`, `job_wohnung_outreach`, `candidate_recruitment_state` and
 `suppression_list` of `sales_brain.sqlite`, written from code only. A table the live database lacks fails every
 phone loudly (`no such table`, `import_error` in the campaign): fix the query, never drop it. `--apply` marks the
 card of a phone with such a record, or a Stopp in the old chat, declined (Luna stays silent unless the candidate
 re-engages; no follow-ups).
 
-## 7. Campaign: send the template ourselves (TASK-103)
+## 7. Campaign: send the template ourselves (TASK-206)
 
-Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-103)". Deploy state it needs:
+Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-206)". Deploy state it needs:
 
-- **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-99..103:
+- **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-202..103:
   it drops status webhooks (no delivery tracking, a 131042 payment failure stays invisible), parses a template
   tap without its payload and reply context, counts imported documents without the reuse answer, and does not
-  know an imported decline (TASK-101 silence, TASK-105 prompt and code-owned `prior_opt_outs`). The
+  know an imported decline (TASK-204 silence, TASK-208 prompt and code-owned `prior_opt_outs`). The
   catch-up and follow-up timers already run the current tree (new process per run).
 - No new unit, timer or env var. The sender is run by hand from the repo root with `.env` loaded; `--send`
   refuses without `WA_AUTOSEND=1`.
 - Its table `wa_campaign_sends` is created in `data/wa.sqlite` by the first `--send` (not by the service), one
-  row per attempt (TASK-106). A table from the TASK-103 layout (one row per campaign and phone) is rebuilt into
+  row per attempt (TASK-209). A table from the TASK-206 layout (one row per campaign and phone) is rebuilt into
   attempt rows by the first `--send` from this tree, in one transaction; the live database had no such table on
   2026-09-14. Dry-run and `--status` open the database read-only.
 - Reports (phone numbers, names) go to `~/pflege-campaign-reports/` (0700/0600), outside the repo.
 
 ```bash
 cd /home/claude/repo/pflege-board && set -a && . ./.env && set +a
-# history source (TASK-105, step 6 grants first): every dry-run and send needs it, --status does not
+# history source (TASK-208, step 6 grants first): every dry-run and send needs it, --status does not
 H="--import-history-db /opt/clinic-dispatcher/var/sales_brain.sqlite --import-history-queries deploy/import-history.example.sql --import-history-source clinic-dispatcher --import-history-media-root /opt/clinic-dispatcher/data/private/candidate_whatsapp_media --import-history-media-root /opt/clinic-dispatcher-v2-bridge/data/private/candidate_whatsapp_media"
 # probe: operator number only, own campaign id; wait for "delivery delivered" in --status
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09-probe --template-id <ID> --leads probe.csv $H --send
@@ -190,7 +190,7 @@ H="--import-history-db /opt/clinic-dispatcher/var/sales_brain.sqlite --import-hi
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --send
 # Meta reported templates failed after the send (delivery_failed, e.g. 131042 unsettled payments): fix the cause,
-# then resend them in the same campaign (TASK-106): dry-run, send, status until the new attempt is delivered
+# then resend them in the same campaign (TASK-209): dry-run, send, status until the new attempt is delivered
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --retry-delivery-failed
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --template-id <ID> --leads leads.csv $H --send --retry-delivery-failed
 .venv/bin/python -m app.wa.luna.campaign --campaign-id bayern-2026-09 --status
@@ -213,9 +213,9 @@ Rollback of a campaign: stop the run (Ctrl-C). Already flipped phones stay with 
 replies) still reach the old system's call bridge; a template that went out during an uncertain POST is recorded
 with `--mark-sent PHONE=WAMID` (`docs/whatsapp.md` runbook).
 
-## 8. Voice notes (TASK-107)
+## 8. Voice notes (TASK-210)
 
-`WA_BRAIN=luna` transcribes voice notes with OpenAI (`docs/whatsapp.md`, "Voice notes (TASK-107)"). Needs
+`WA_BRAIN=luna` transcribes voice notes with OpenAI (`docs/whatsapp.md`, "Voice notes (TASK-210)"). Needs
 `OPENAI_API_KEY` in `.env` (absent on 2026-09-15); optional `WA_STT_MODEL` (default `whisper-1`). Without the key, a
 service restarted on this tree answers no voice note: each stays pending with `TranscriptionError: OPENAI_API_KEY is
 not set` (`GET /api/wa/threads`: `pending_inbound`, `stuck_reply`) and catch-up retries it every 3 minutes. Add the key
@@ -231,11 +231,11 @@ set -a && . ./.env && set +a
 
 The live test sends only synthetic espeak-ng speech to OpenAI; nothing goes to Meta.
 
-## 9. Test numbers: mark the operator's number, install the nightly wipe (TASK-109)
+## 9. Test numbers: mark the operator's number, install the nightly wipe (TASK-212)
 
 The number the live harness is tested from by hand (Ivan's, ends 8778) must be marked, or it is counted in reports
 like a candidate, can receive a campaign template mid-test, and starts every test from yesterday's card.
-Details: `docs/whatsapp.md`, "Test numbers (TASK-109)".
+Details: `docs/whatsapp.md`, "Test numbers (TASK-212)".
 
 ```bash
 cd /home/claude/repo/pflege-board
@@ -265,7 +265,7 @@ that has a session id -- the conversation would stay readable on disk. The job n
 ## Known gaps going into this rollout (not blockers, but real)
 
 - No Meta-approved reopen template registered (`WA_REOPEN_TEMPLATE_NAME` unset) -- a thread that
-  goes >24h without a reply from us fails loudly instead of sending (TASK-70). Low risk at
+  goes >24h without a reply from us fails loudly instead of sending (TASK-174). Low risk at
   launch (webhook-driven replies are synchronous, so the window is fresh at send time) but will
   matter once catch-up/follow-ups start reaching an older thread.
 - `WA_REAL_SYSTEM_PHONES_FILE` only updates hourly (`known-phones-export.timer`) -- a phone that

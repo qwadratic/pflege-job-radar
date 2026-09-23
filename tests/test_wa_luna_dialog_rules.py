@@ -154,7 +154,7 @@ def test_no_position_carries_a_board_url_or_job_link(hundred):
 
 
 def test_there_is_no_offer_before_every_gate_is_settled(small):
-    """TASK-91 stands: the payload carries no per-city preview, so the offer only exists at the close."""
+    """TASK-195 stands: the payload carries no per-city preview, so the offer only exists at the close."""
     assert LB.market_snapshot({"city": "München"})["offer"] is None
     assert LB.market_snapshot(READY)["offer"] is not None
 
@@ -187,7 +187,7 @@ def test_choosing_the_narrow_branch_is_recorded_too(small):
 # --- 2. NO INVENTION ---------------------------------------------------------------------------
 
 def test_a_reply_naming_a_clinic_no_tool_returned_is_rejected_loudly(small):
-    """The prompt has banned inventing a clinic since TASK-91; this is the check behind it."""
+    """The prompt has banned inventing a clinic since TASK-195; this is the check behind it."""
     with pytest.raises(AssertionError, match="NO INVENTION"):
         GR.check_reply(["Im Klinikum München 63 ist gerade eine Stelle frei."], set())
 
@@ -541,7 +541,7 @@ def test_the_tools_server_is_told_whose_cv_to_match(small, monkeypatch):
     assert no_thread["WA_LUNA_PHONE"] == ""
     assert f"mcp__{LB.MCP_SERVER_NAME}__match_cv_to_postings" in LB.MCP_TOOL_NAMES
     assert f"mcp__{LB.MCP_SERVER_NAME}__get_clinic_contact" not in LB.MCP_TOOL_NAMES, (
-        "TASK-91: clinic contacts are for the human handoff, never the candidate-facing turn")
+        "TASK-195: clinic contacts are for the human handoff, never the candidate-facing turn")
 
 
 def test_the_turn_hands_its_own_number_to_the_client(small):

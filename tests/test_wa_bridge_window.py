@@ -1,4 +1,4 @@
-"""Offline tests for the per-thread rail and the 24 h window gate (TASK-117, TASK-118).
+"""Offline tests for the per-thread rail and the 24 h window gate (TASK-220, TASK-221).
 
 Two rules meet in ``api._send`` and this file is where they are held apart.
 
@@ -97,7 +97,7 @@ def _thread(c, phone=LEAD, *, last_inbound_hours=48, rail=None):
     return t
 
 
-# --- the gate is the client's, not the config's (TASK-118) -----------------------------------------
+# --- the gate is the client's, not the config's (TASK-221) -----------------------------------------
 
 def test_a_bridge_thread_past_the_window_sends_free_text(wa, monkeypatch):
     """The phone rail's entire v1 value: a thread Meta would refuse becomes answerable again. The
@@ -124,7 +124,7 @@ def test_a_meta_thread_past_the_window_still_takes_the_reopen_path(wa):
 
 
 def test_a_meta_thread_that_never_wrote_still_has_no_window_at_all(wa, monkeypatch):
-    """TASK-101's hard return, unchanged: no inbound message ever means no window, so the bubbles
+    """TASK-204's hard return, unchanged: no inbound message ever means no window, so the bubbles
     are not deliverable and an unconfigured template is still a loud failure."""
     monkeypatch.setattr(C, "WA_REOPEN_TEMPLATE_NAME", "")
     cl = FakeMeta()
@@ -176,7 +176,7 @@ def test_inside_the_window_both_rails_send_the_bubbles(wa):
     assert len(bridge.sent) == 1 and len(meta.sent) == 1
 
 
-# --- the turn the key is derived from (TASK-114's call site) ---------------------------------------
+# --- the turn the key is derived from (TASK-217's call site) ---------------------------------------
 
 def test_a_send_with_no_turn_key_is_refused_on_a_rail_that_needs_one(wa):
     """A client that mints its own message ids needs to know which turn it is sending, or a
@@ -201,7 +201,7 @@ def test_the_media_ack_names_its_own_turn(wa):
     assert cl.turns == [{"phone": LEAD, "turn_key": "wab.i.media", "action": "media_ack"}]
 
 
-# --- the pin (TASK-117) -----------------------------------------------------------------------------
+# --- the pin (TASK-220) -----------------------------------------------------------------------------
 
 def test_the_rail_is_pinned_on_the_first_send_and_read_back_by_the_seam(wa, monkeypatch):
     monkeypatch.setattr(C, "TRANSPORT", "bridge")

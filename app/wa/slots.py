@@ -129,7 +129,7 @@ def read_department(text):
     return _first_match(text, DEPT_WORDS)
 
 
-# TASK-104: a Luna card's department_pref is read here, and only here (market_snapshot, search_postings).
+# TASK-207: a Luna card's department_pref is read here, and only here (market_snapshot, search_postings).
 DEPARTMENT_FLEXIBLE = "flexibel"    # the value Luna writes for a flexible answer (prompts.py DEPARTMENT)
 FLEXIBLE_WORDS = ("egal", "flexibel", "flexible", "alles", "alle", "jede", "jeder", "jedes", "offen", "open",
                   "beliebig", "überall", "unwichtig", "any", "keine präferenz", "keine präferenzen",

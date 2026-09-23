@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/choices.py (TASK-121: server-side recovery of a typed reply into a
+"""Offline tests for app/wa/luna/choices.py (TASK-224: server-side recovery of a typed reply into a
 button id; TASK-122: gating WA_BRIDGE_SYNTHETIC_CONSENT). No network, no claude CLI: the matcher is
 pure, and the only I/O is wa_messages rows in a throwaway sqlite file.
 """
@@ -13,7 +13,7 @@ from app.wa.luna import choices as CH
 
 PHONE = "+491701234567"
 
-# The real brain.py qualification ladder (TASK-121 AC#2 names it explicitly).
+# The real brain.py qualification ladder (TASK-224 AC#2 names it explicitly).
 URK_BUTTONS = [{"id": "urk:urkunde", "title": "Urkunde"},
                {"id": "urk:defizit", "title": "Defizitbescheid"},
                {"id": "urk:kenntnispruefung", "title": "Prüfung bestanden"}]

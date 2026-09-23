@@ -1,9 +1,9 @@
-"""Conversation ownership (TASK-75): which system -- this harness ("us") or the real production
+"""Conversation ownership (TASK-179): which system -- this harness ("us") or the real production
 bot ("them") -- currently owns a WhatsApp phone number's conversation.
 
 This is deliberately the safe, in-repo, reversible slice of a bigger idea: route genuinely NEW
 leads to this harness and leave existing/older conversations with the real system, except one an
-operator of this harness reopens themselves (TASK-70's reopen template) -- that one explicit act
+operator of this harness reopens themselves (TASK-174's reopen template) -- that one explicit act
 hands the conversation to us from then on. Actually pointing Meta's webhook at a router that
 consults this table is a separate, production-infrastructure change needing its own coordination
 and sign-off with whoever owns that Meta app; nothing here does that, and nothing here changes
@@ -20,7 +20,7 @@ Three ways a phone gets an owner, and only three -- no other code path may write
 2. flip_to_us_on_reopen(): called from app/wa/api.py's _send_reopen_template the moment THIS
    harness sends a reopen template to a phone -- regardless of whatever owned it before, that is
    the one explicit act that hands the conversation to us.
-3. flip_to_us_for_campaign() / restore_after_campaign_failure() (TASK-103, app/wa/luna/campaign.py):
+3. flip_to_us_for_campaign() / restore_after_campaign_failure() (TASK-206, app/wa/luna/campaign.py):
    the campaign sender hands a phone to us (reason 'campaign:<id>') before it posts the template, and
    puts the prior record back when Meta rejects that send. Neither commits: the sender commits the
    flip together with its send claim, and the restore together with the failed claim.
@@ -54,7 +54,7 @@ def _is_known_to_real_system(phone):
     the one piece of information this harness cannot derive on its own. WA_REAL_SYSTEM_PHONES_FILE
     is a plain, newline-delimited, operator-produced export (an authorized, periodic sync from
     wherever the real system's own data lives) -- same genericize-the-real-system discipline as
-    app/wa/luna/external_contacts.py (TASK-69): this module never names or queries any specific
+    app/wa/luna/external_contacts.py (TASK-173): this module never names or queries any specific
     real system directly."""
     if not C.REAL_SYSTEM_PHONES_FILE:
         raise RuntimeError(
@@ -95,11 +95,11 @@ def route_decision(conn, phone):
 
 def flip_to_us_on_reopen(conn, phone):
     """The one explicit trigger that hands an existing conversation to us regardless of its prior
-    owner: this harness itself just sent that phone a reopen template (TASK-70)."""
+    owner: this harness itself just sent that phone a reopen template (TASK-174)."""
     _set_ownership(conn, phone, "us", reason="reopened_by_us")
 
 
-# --- campaign sends (TASK-103) ---------------------------------------------------------------------
+# --- campaign sends (TASK-206) ---------------------------------------------------------------------
 
 CAMPAIGN_REASON_PREFIX = "campaign:"
 

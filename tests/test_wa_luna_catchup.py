@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/catchup.py (TASK-78) -- fixture threads only, no real subprocess.
+"""Offline tests for app/wa/luna/catchup.py (TASK-182) -- fixture threads only, no real subprocess.
 Fakes app.wa.luna_brain.turn and app.wa.meta.Client, same patterns as
 tests/test_wa_process_owed_turn.py."""
 import time
@@ -125,7 +125,7 @@ def test_run_never_touches_a_phone_with_no_thread_at_all(db):
     assert results == []
 
 
-# --- TASK-96 review 2026-09-14: whoever lost the claim does not write its older thread copy back --------
+# --- TASK-199 review 2026-09-14: whoever lost the claim does not write its older thread copy back --------
 
 def test_catch_up_that_loses_the_claim_does_not_overwrite_the_webhook_save(db, monkeypatch):
     """The webhook saves the ingest result (card.documents) before claiming. A catch-up pass that loaded the

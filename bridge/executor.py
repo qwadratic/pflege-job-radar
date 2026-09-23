@@ -78,7 +78,7 @@ IDENTITY_TIME_WINDOW_SEC = 24 * 3600.0
 EVIDENCE_BEARING_KINDS = frozenset({"audio", "document"})
 
 #: The contract's key prefix (plan section 4). The executor validates, it does not mint: the key is
-#: derived on our VPS from phone|turn_key|action|bubble_index (TASK-114) and an executor that could
+#: derived on our VPS from phone|turn_key|action|bubble_index (TASK-217) and an executor that could
 #: invent one would break the idempotency it exists to provide.
 KEY_PREFIX = "wab.o."
 

@@ -6,7 +6,7 @@ pointing at ``python -m app.wa.luna.tools_server`` using the same interpreter th
 under, so the ``mcp`` package is guaranteed to be on its path) -- this module is never imported by the
 rest of the app, only ever run as that subprocess.
 
-Three kinds of tool (TASK-110, Ivan 2026-09-16, after the housing filter existed for a task and was
+Three kinds of tool (TASK-213, Ivan 2026-09-16, after the housing filter existed for a task and was
 never once used by the model):
 
 1. ``search_postings``/``get_posting``/``list_clinics`` -- the general board queries.
@@ -26,7 +26,7 @@ hardcoded here: a list written into this file rots the first time the board chan
 value silently returns zero rows. The counting happens in the PARENT process, which already holds a
 warm snapshot, and arrives here as a file (``WA_LUNA_BOARD_VOCABULARY``): building it here put a cold
 Supabase build (8-17s measured) on the CLI's 30s MCP connect deadline, on every turn, tool-less ones
-included (TASK-110 review). After the tools are registered this server stamps
+included (TASK-213 review). After the tools are registered this server stamps
 ``WA_LUNA_TOOLS_READY``, which is how ``luna_brain._live_reply`` sees that the turn actually had the
 board tools -- a server that dies or is dropped leaves the CLI exiting 0 with a normal-looking reply.
 
@@ -63,7 +63,11 @@ import difflib
 import json
 import os
 import re
+import subprocess
+import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qsl
 
@@ -73,6 +77,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from ... import data as D
 from ... import search as SE
+from .. import bridge as BR
 from .. import config as C
 from .. import slots as SL
 from .board_vocabulary import LIVE_BASE, city_of, clinic_key, clinic_name_of, vocabulary_lines
@@ -87,7 +92,7 @@ if os.environ.get("WA_SQLITE_PATH"):
     C.SQLITE_PATH = Path(os.environ["WA_SQLITE_PATH"])
 
 try:
-    from . import contacts as CT   # TASK-64, built in parallel -- absent until that task lands
+    from . import contacts as CT   # TASK-168, built in parallel -- absent until that task lands
 except ImportError:
     CT = None
 
@@ -354,8 +359,8 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
     if city:
         town = _resolve_city(city, _cities_with_postings(), "open postings")
     if department:
-        # TASK-96 review: the model passes the candidate's word (live tool log: department="Intensivstation",
-        # 0 rows, "keine passende offene Stelle"). TASK-104: the same reading as luna_brain.market_snapshot; a
+        # TASK-199 review: the model passes the candidate's word (live tool log: department="Intensivstation",
+        # 0 rows, "keine passende offene Stelle"). TASK-207: the same reading as luna_brain.market_snapshot; a
         # flexible word filters nothing, a word the board has no department for raises instead of returning [].
         # ToolError: the model reads its text (any other exception reaches it as a bare "Error executing tool").
         reading = SL.read_department_pref(department)
@@ -392,7 +397,7 @@ def _job_rows(city="", department="", role_class="", regierungsbezirk="", housin
 
 
 # --- vocabulary, read off the live board ----------------------------------------------------
-# AC1 of TASK-110: the model only ever learned the filters from bare parameter names, so it never used
+# AC1 of TASK-213: the model only ever learned the filters from bare parameter names, so it never used
 # them. What it needs is the values a filter takes and how much of the board each covers -- and that
 # has to come from the board, because a list typed into this file is wrong the moment a department
 # disappears or the housing share moves. The counting itself lives in board_vocabulary.py, because the
@@ -404,7 +409,7 @@ def vocabulary_for_this_server():
     (WA_LUNA_BOARD_VOCABULARY, luna_brain._mcp_config_path): this server is spawned fresh for every
     single turn, and counting the board here meant a cold Supabase build -- 8-17s measured -- between
     the CLI starting this process and the MCP handshake, against a 30s connect deadline the parent
-    cannot see being missed (TASK-110 review). A missing or unreadable file is a bug in the parent and
+    cannot see being missed (TASK-213 review). A missing or unreadable file is a bug in the parent and
     raises here rather than serving a board nobody counted; without the variable at all (this module
     run by hand) the board is counted here."""
     path = os.environ.get("WA_LUNA_BOARD_VOCABULARY")
@@ -556,7 +561,7 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
             "housing": housing, "employment_type": employment_type}
     if not any(args.values()):
-        # TASK-110 review: live runs kept calling this with every parameter empty to re-derive a number the
+        # TASK-213 review: live runs kept calling this with every parameter empty to re-derive a number the
         # payload already carries -- two seconds of the turn for nothing, and the prompt rule saying so did
         # not hold across runs (3 runs 2026-09-16, two of them did it). The refusal says where the number is,
         # so the turn just answers; the log keeps the attempt, marked, so a test can see it was not answered.
@@ -650,7 +655,7 @@ def list_clinics(city: str = "", regierungsbezirk: str = "", has_jobs: bool = Tr
 
 
 # --- the candidate's own CV, against the board ------------------------------------------------
-# TASK-145, Ivan 2026-09-21: app/cv.py:match() has ranked postings against a CV since TASK-65, but only
+# TASK-145, Ivan 2026-09-21: app/cv.py:match() has ranked postings against a CV since TASK-169, but only
 # after consent, on the handover path (app/wa/api.py -> queue.py) -- so the conversation itself could
 # never answer "welche davon passt zu meinem Lebenslauf" and fell back to guessing from the chat.
 #
@@ -671,7 +676,7 @@ def _turn_phone():
 
 
 def _stored_cv_text(phone):
-    """This thread's stored CV text (the card key app/wa/api.py's media intake appends to, TASK-96).
+    """This thread's stored CV text (the card key app/wa/api.py's media intake appends to, TASK-199).
 
     Read with a plain select rather than store.thread(): that helper creates the thread row on first
     contact ("an unknown number is a lead, not an error"), and nothing this model calls may write."""
@@ -748,11 +753,11 @@ BOARD_DOCS = {
 # audit of what that key opens. None of it is secret and none of it answers a board question, while
 # the reason the key is stripped applies to all of it unchanged: Luna has no network and no shell, so
 # none of it buys her anything, and a model that has a credential, a host or a brand in context can
-# put it in a WhatsApp bubble -- asked who we are, this model once named the repo (TASK-100), and
+# put it in a WhatsApp bubble -- asked who we are, this model once named the repo (TASK-203), and
 # prompts.py:IDENTITY forbids ever naming another company, brand, website or product. So the served
 # text loses its YAML front matter (skill-loader metadata naming the host and the product), the whole
 # "Where things are" section (host table, project, key, key-scope audit) and every URL; the
-# allowlisted board API below is the whole data door she needs (TASK-110 review).
+# allowlisted board API below is the whole data door she needs (TASK-213 review).
 _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
 _URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:xyz|supabase\.co)\b", re.I)
 _FRONT_MATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.S)
@@ -823,7 +828,7 @@ def _live_only(p):
     München 369 vs 499 -- and the open board carries postings the verifier never confirmed or found
     error/blocked/gone.
 
-    TASK-110 left an explicit ``verify=`` in the query as a deliberate way past that base. Ivan removed it on
+    TASK-213 left an explicit ``verify=`` in the query as a deliberate way past that base. Ivan removed it on
     2026-09-21 (TASK-145): a posting whose liveness is not confirmed may not reach a candidate-facing model at
     all, and one escape hatch in one door is the whole guarantee gone. Not validated, not narrowed to the
     'safe' values -- refused, so the model reads why instead of silently getting a different board."""
@@ -957,6 +962,142 @@ def board_api_get(path: str, query: str = "") -> dict | list:
         return _without_urls(handler(*args, params))
     except HTTPException as exc:      # the app API's own 400s (a non-integer limit, a negative offset)
         raise ToolError(f"GET {path} rejected the query {query!r}: {exc.detail}")
+
+
+# --- show_clinic_photos (TASK-131 round 7, Ivan 2026-09-23): the ONE tool in this server that sends
+# something, rather than only reading -----------------------------------------------------------
+#
+# UNLIKE every tool above, this one is not answered from the in-process snapshot: the photo/blurb
+# data (clinic_photos/clinic_blurbs, app/runs.py) lives wherever the board's own crawler deployment
+# writes it, confirmed live 2026-09-23 to differ from this machine's own data/app.sqlite (that file
+# has neither table yet). GET https://pflege-board.exe.xyz/api/clinics/{id}/expose is the same
+# public, unauthenticated route a browser would hit -- reached the ordinary way, over HTTP, not
+# in-process the way board_api_get's own paths are.
+BOARD_PUBLIC_BASE = "https://pflege-board.exe.xyz"
+#: Where a downloaded photo is staged on the mini before bridge.Client.send_gallery can reach it --
+#: send_gallery's own contract (bridge/adb_driver.py) is a path already on the MINI's filesystem,
+#: never bytes over the HTTP call itself. Kept apart from this session's own manual test staging
+#: (~/wa_outbound_test) so a live tool call and a human poking at the rail by hand never collide.
+MINI_HOST = "macmini"
+MINI_MEDIA_DIR = "/home/cursorworker1/wa_luna_media"
+
+
+def _fetch_clinic_expose(clinic_id):
+    url = f"{BOARD_PUBLIC_BASE}/api/clinics/{clinic_id}/expose"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise ToolError(f"unknown clinic {clinic_id!r} -- the board has no such clinic_id. "
+                            f"Internal tool note, never quote it to the candidate.") from exc
+        raise ToolError(f"the board's own expose endpoint answered HTTP {exc.code} for "
+                        f"clinic {clinic_id!r} -- nothing was sent. Internal tool note.") from exc
+    except urllib.error.URLError as exc:
+        raise ToolError(f"could not reach the board to look up clinic {clinic_id!r} ({exc.reason}) -- "
+                        f"nothing was sent. Internal tool note.") from exc
+
+
+def _download_to_temp(url_path, suffix):
+    url = f"{BOARD_PUBLIC_BASE}{url_path}"
+    try:
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            data = resp.read()
+    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+        raise ToolError(f"could not download {url_path!r} ({exc}) -- nothing was sent. "
+                        f"Internal tool note.") from exc
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="clinic_photo_")
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return path
+
+
+def _stage_on_mini(local_path):
+    """scp local_path to MINI_MEDIA_DIR, ssh mkdir -p first -- the same two-step this session's own
+    manual staging has used all night, just from code instead of a human's shell. -> the remote
+    path send_gallery/send_document expects. Raises ToolError, never partial state the caller has
+    to notice on its own, if either step fails."""
+    basename = os.path.basename(local_path)
+    remote = f"{MINI_MEDIA_DIR}/{basename}"
+    mkdir = subprocess.run(["ssh", MINI_HOST, f"mkdir -p {MINI_MEDIA_DIR}"],
+                           capture_output=True, text=True, timeout=20)
+    if mkdir.returncode != 0:
+        raise ToolError(f"could not prepare the phone rail's staging directory ({mkdir.stderr.strip()[:200]}) "
+                        f"-- nothing was sent. Internal tool note.")
+    scp = subprocess.run(["scp", local_path, f"{MINI_HOST}:{remote}"],
+                         capture_output=True, text=True, timeout=30)
+    if scp.returncode != 0:
+        raise ToolError(f"could not stage the photo on the phone rail ({scp.stderr.strip()[:200]}) -- "
+                        f"nothing was sent. Internal tool note.")
+    return remote
+
+
+@mcp.tool()
+def show_clinic_photos(clinic_id: str) -> dict:
+    """Send this candidate a short visual presentation of ONE clinic -- its real photo(s), captioned
+    with a short researched paragraph about it, as one WhatsApp message -- at the moment their own
+    search has genuinely narrowed to this clinic (a city was named and this is one of the clinics
+    that matches), BEFORE asking for documents. Ivan, 2026-09-23: the funnel's climax moment (a
+    real, specific clinic identified) was underserved by a bare vacancy count; this gives the
+    candidate something real to react to right when interest peaks, instead of only after.
+
+    Call it AT MOST ONCE per clinic per conversation -- calling it again for the same clinic re-sends
+    the same photo, which reads as a mistake, not enthusiasm. Skip it entirely for a clinic this
+    tool already reports nothing available for (do not retry hoping the data appeared mid-turn).
+
+    ONLY sends when there is at least one photo -- {"sent": true, "photos": N} -- in which case do
+    NOT also describe the photo yourself in a bubble; the message already carries the researched
+    paragraph as its caption. A short bubble AFTER calling this (continuing the conversation --
+    asking about an Urkunde, for instance) is expected and normal.
+
+    When this clinic has a researched paragraph but no photo yet, nothing is sent by the tool --
+    {"sent": false, "presentation_text": "..."} -- and you write it into your OWN reply, in your own
+    words or close to verbatim, since there is no photo message for it to ride along with.
+
+    {"sent": false, "reason": "..."} with no presentation_text means there is nothing at all yet for
+    this clinic (both photos and the researched paragraph are still empty -- the collection
+    pipelines are mid-rollout, TASK-223): continue in text as normal, never claiming to have shown
+    something you have not."""
+    _log_call("show_clinic_photos", {"clinic_id": clinic_id})   # no phone number in the log
+    phone = _turn_phone()
+    data = _fetch_clinic_expose(clinic_id)
+    photo_paths = data.get("photos") or []
+    presentation = data.get("presentation") or {}
+    caption = (presentation.get("text_de") or "").strip()
+    if not photo_paths:
+        if caption:
+            return {"sent": False, "presentation_text": caption}
+        return {"sent": False, "reason": "no photos or presentation available yet for this clinic"}
+
+    local_files, remote_files = [], []
+    try:
+        for p in photo_paths[:5]:
+            suffix = os.path.splitext(p)[1] or ".jpg"
+            local = _download_to_temp(p, suffix)
+            local_files.append(local)
+            remote_files.append(_stage_on_mini(local))
+        try:
+            BR.Client().send_gallery(phone, remote_files, caption=caption)
+        except BR.BridgeError as exc:
+            # Same "was the handset actually touched" distinction tools/wa_bridge.py draws for a
+            # human operator (bridge/errors.py's HANDSET_TOUCHED_CODES) -- an uncaught BridgeError
+            # here would otherwise crash this whole tools server mid-turn, which loses every OTHER
+            # tool call already made this turn along with it.
+            if exc.code in BR.HANDSET_TOUCHED_CODES:
+                raise ToolError(
+                    f"the phone rail touched the handset trying to send this but could not confirm "
+                    f"it went out (code {exc.code!r}) -- do not tell the candidate photos are coming; "
+                    f"say nothing about it and continue normally. Internal tool note.") from exc
+            raise ToolError(f"the phone rail refused this send (code {exc.code!r}): {exc} -- nothing "
+                            f"was sent. Internal tool note.") from exc
+    finally:
+        for f in local_files:
+            try:
+                os.unlink(f)
+            except OSError:
+                pass
+    return {"sent": True, "photos": len(remote_files), "has_presentation": bool(caption)}
 
 
 # Captured before any vocabulary is appended, so apply_board_vocabulary() is idempotent (the fixture

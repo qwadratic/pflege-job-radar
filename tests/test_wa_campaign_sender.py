@@ -1,4 +1,4 @@
-"""TASK-103 offline: the campaign sender (app/wa/luna/campaign.py). tmp SQLite, Meta as a fake transport behind the
+"""TASK-206 offline: the campaign sender (app/wa/luna/campaign.py). tmp SQLite, Meta as a fake transport behind the
 real meta.Client, a frozen clock with a recording sleep, a fake Luna model. Synthetic personas and numbers only."""
 import csv
 import hashlib
@@ -145,7 +145,7 @@ def _lead(phone, name="Frau Beispiel"):
 _runs = []
 
 
-NO_SOURCE = "--override-no-history-source"   # tests that are not about the history source (TASK-105)
+NO_SOURCE = "--override-no-history-source"   # tests that are not about the history source (TASK-208)
 
 
 def _run(tmp, graph, leads, *extra, clock=None, window="00-24"):
@@ -454,7 +454,7 @@ def test_a_meta_rejection_restores_the_prior_owner_and_a_rerun_retries_only_it(w
     assert (rows[KNOWN]["action"], rows[LEAD_A]["action"]) == ("retry_failed", "already_sent")
     claim = _claim(KNOWN)
     assert (claim["state"], claim["attempt"], claim["prior_owner"]) == ("sent", 2, "them")
-    first = _attempts(KNOWN)[0]   # TASK-106: the rejected attempt keeps its own error
+    first = _attempts(KNOWN)[0]   # TASK-209: the rejected attempt keeps its own error
     assert (first["attempt"], first["state"], first["error_code"], first["error_payload"], first["wamid"]) == \
         (1, "failed", "131026", payload, None)
 
@@ -942,7 +942,7 @@ def test_a_thumbs_up_on_the_template_is_a_reply_luna_answers(wa, monkeypatch):
 
 def test_a_template_meta_reports_undelivered_is_reported_not_resent_and_goes_out_under_a_new_campaign(wa):
     """Review 2026-09-14: a later failed status (131049) left the claim 'sent', so re-runs planned already_sent. Without
-    --retry-delivery-failed (TASK-106) it stays delivery_failed."""
+    --retry-delivery-failed (TASK-209) it stays delivery_failed."""
     graph = Graph()
     _run(wa, graph, _leads(wa, [_lead(LEAD_A), _lead(LEAD_B)]), "--send")
     wamid_a = _claim(LEAD_A)["wamid"]
@@ -966,7 +966,7 @@ def test_a_template_meta_reports_undelivered_is_reported_not_resent_and_goes_out
     assert _thread_slots(LEAD_A)["campaign"]["campaign_id"] == CAMPAIGN + "-retry"
 
 
-# --- retry of an undelivered template in the same campaign (TASK-106) -----------------------------------------------
+# --- retry of an undelivered template in the same campaign (TASK-209) -----------------------------------------------
 
 RETRY = "--retry-delivery-failed"
 
@@ -1083,7 +1083,7 @@ def test_a_template_undelivered_twice_keeps_every_attempt_and_a_rejected_retry_r
     assert _thread_slots(KNOWN)["campaign"]["wamid"] == wamid_2
 
     graph.fail.clear()
-    code, report = _run(wa, graph, leads, "--send")                # a rejected attempt is claimed again, as in TASK-103
+    code, report = _run(wa, graph, leads, "--send")                # a rejected attempt is claimed again, as in TASK-206
     assert code == CAMP.EXIT_OK and report["phones"][0]["action"] == "retry_failed"
     wamid_4 = f"wamid.camp.{KNOWN[1:]}.4"
     assert _attempt_rows(KNOWN)[3] == (4, "sent", wamid_4, None)
@@ -1250,7 +1250,7 @@ class MediaText(FakeText):
 
 
 def test_a_video_reply_shows_as_unread_media_in_status(wa):
-    """A voice note is transcribed and answered since TASK-107; a video still waits for a colleague."""
+    """A voice note is transcribed and answered since TASK-210; a video still waits for a colleague."""
     graph = Graph()
     _run(wa, graph, _leads(wa, [_lead(LEAD_A)]), "--send")
     replies = MediaText()
@@ -1401,7 +1401,7 @@ def test_an_unreadable_history_source_stops_the_run(wa, monkeypatch):
     assert code == CAMP.EXIT_CONFIG and "cannot read source database" in report["error"] and graph.posts == []
 
 
-# --- the old system's opt-out and decline records (TASK-105) -----------------------------------------------------
+# --- the old system's opt-out and decline records (TASK-208) -----------------------------------------------------
 
 CLEAN = "+4915550103004"
 

@@ -40,7 +40,7 @@ def _jobs():
 
 def _clinics():
     """jobs_fresh/jobs_live are on every real clinic row (app/data.py:_build) -- GET /api/cities reads
-    them, and board_api_get serves that path (TASK-110)."""
+    them, and board_api_get serves that path (TASK-213)."""
     return [{"clinic_id": "c1", "name": "Klinikum München", "town": "München", "regierungsbezirk": "Oberbayern", "beds": 800, "jobs_open": 2, "jobs_fresh": 2, "jobs_live": 2},
             {"clinic_id": "c2", "name": "Klinikum Augsburg", "town": "Augsburg", "regierungsbezirk": "Schwaben", "beds": 600, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1},
             {"clinic_id": "c3", "name": "Klinikum Coburg", "town": "Coburg", "regierungsbezirk": "Oberfranken", "beds": 400, "jobs_open": 1, "jobs_fresh": 1, "jobs_live": 1}]
@@ -72,7 +72,7 @@ def test_search_postings_filters_by_department_and_role(tmp_path, monkeypatch):
 
 
 def test_search_postings_reads_the_candidates_department_word_in_board_vocabulary(tmp_path, monkeypatch):
-    """TASK-96 review: a live persona run called search_postings(city='München', department='Intensivstation'),
+    """TASK-199 review: a live persona run called search_postings(city='München', department='Intensivstation'),
     got 0 rows from the exact board filter ('Intensiv/IMC') and told the candidate nothing was open."""
     board(tmp_path, monkeypatch)
     for word in ("Intensivstation", "ITS", "Intensiv/IMC"):
@@ -85,7 +85,7 @@ def test_search_postings_reads_the_candidates_department_word_in_board_vocabular
 
 
 def test_search_postings_reads_department_like_market_snapshot(tmp_path, monkeypatch):
-    """TASK-104: one reading for both (slots.read_department_pref): a flexible word filters nothing, a word only the
+    """TASK-207: one reading for both (slots.read_department_pref): a flexible word filters nothing, a word only the
     board's title classifier knows filters to that board department."""
     board(tmp_path, monkeypatch)
     for word in ("egal", "flexibel", "keine Präferenz"):
@@ -110,7 +110,7 @@ def test_search_postings_with_a_negated_or_flexible_department_is_an_error_the_m
 
 
 def test_search_postings_with_an_unknown_department_is_an_error_the_model_reads(tmp_path, monkeypatch):
-    """TASK-104: a word the board has no department for returned [] and read as 'nothing open there'."""
+    """TASK-207: a word the board has no department for returned [] and read as 'nothing open there'."""
     board(tmp_path, monkeypatch)
     with pytest.raises(ToolError) as raised:
         asyncio.run(TS.mcp.call_tool("search_postings", {"city": "München", "department": "Urologie"}))
@@ -216,7 +216,7 @@ def test_get_clinic_contact_returns_none_when_the_contacts_module_is_unavailable
 
 
 def test_get_clinic_contact_reads_a_real_saved_contact_end_to_end(tmp_path, monkeypatch):
-    """No mocking of TASK-64's contacts module: a real save through app.wa.luna.contacts, read
+    """No mocking of TASK-168's contacts module: a real save through app.wa.luna.contacts, read
     back through the tool function's own app.wa.store.db() connection -- the actual round trip an
     MCP tool call makes, not just the fake-delegate path below."""
     board(tmp_path, monkeypatch)
@@ -269,7 +269,7 @@ def test_every_call_is_logged_even_when_the_result_is_empty(tmp_path, monkeypatc
                             "board_api_get", "read_board_docs"]
 
 
-# --- TASK-110: the board's own vocabulary, in the tool descriptions the model reads -------------
+# --- TASK-213: the board's own vocabulary, in the tool descriptions the model reads -------------
 # Ivan 2026-09-16: the housing filter existed for a whole task and the model never used it -- the schema
 # named the parameters and nothing said what values they take or how much of the board each covers.
 
@@ -343,7 +343,7 @@ def test_a_board_that_did_not_load_stops_the_server_instead_of_serving_an_empty_
 
 
 def test_a_failed_refresh_over_a_cached_board_still_serves_that_boards_vocabulary(tmp_path, monkeypatch):
-    """TASK-110 review: app/data.py:refresh keeps serving the cached board when a refresh fails (it only
+    """TASK-213 review: app/data.py:refresh keeps serving the cached board when a refresh fails (it only
     records the error and retries in a minute), and market_snapshot answers this same turn from those
     cached rows. Raising on the error flag alone would fail turns over a board that is right there."""
     board(tmp_path, monkeypatch)
@@ -352,7 +352,7 @@ def test_a_failed_refresh_over_a_cached_board_still_serves_that_boards_vocabular
     assert "4 live-verified of 4 open postings" in _description("search_postings")
 
 
-# --- TASK-110: purpose-built tools, the filter already preset -----------------------------------
+# --- TASK-213: purpose-built tools, the filter already preset -----------------------------------
 
 def test_search_postings_with_housing_returns_only_postings_the_board_marks(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
@@ -414,7 +414,7 @@ def test_count_postings_counts_rows_clinics_cities_and_the_ones_with_a_flat(tmp_
 
 
 def test_count_postings_without_a_single_filter_says_where_that_number_already_is(tmp_path, monkeypatch):
-    """TASK-110 review: live runs spent ~2s of a turn calling this with every parameter empty to re-derive
+    """TASK-213 review: live runs spent ~2s of a turn calling this with every parameter empty to re-derive
     market_snapshot.open_jobs, and saying so in the prompt did not hold across runs (3 llm runs
     2026-09-16: two of them did it anyway). The refusal names where the number is, so the turn answers."""
     board(tmp_path, monkeypatch)
@@ -427,7 +427,7 @@ def test_count_postings_without_a_single_filter_says_where_that_number_already_i
     assert [l["tool"] for l in logged] == ["count_postings"], "the refused call is still in the log"
 
 
-# --- TASK-110: the fallback -- the board's own docs, and an allowlist of public GET paths -------
+# --- TASK-213: the fallback -- the board's own docs, and an allowlist of public GET paths -------
 
 def test_board_api_get_answers_an_allowlisted_path_with_the_apis_own_envelope(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
@@ -520,9 +520,9 @@ def test_read_board_docs_never_hands_the_published_anon_key_to_a_candidate_facin
 
 
 def test_read_board_docs_hands_over_no_host_project_or_key_audit(tmp_path, monkeypatch):
-    """TASK-110 review: masking the key alone left the board host (5x), the Supabase project ref (4x) and
+    """TASK-213 review: masking the key alone left the board host (5x), the Supabase project ref (4x) and
     the whole audit of what that key opens in a candidate-facing model's context -- the same threat model
-    that strips the key (prompts.py IDENTITY forbids naming any brand, site or product; TASK-100: asked
+    that strips the key (prompts.py IDENTITY forbids naming any brand, site or product; TASK-203: asked
     who we are, the model named the repo). None of it answers a board question."""
     board(tmp_path, monkeypatch)
     raw = (TS._REPO_ROOT / "skill" / "SKILL.md").read_text(encoding="utf-8")
@@ -549,7 +549,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
     assert allowed <= set(TS.mcp._tool_manager._tools), "the CLI allowlist names a tool the server does not serve"
     assert {"search_postings_with_housing", "list_clinics_with_housing", "list_cities_with_postings",
             "count_postings", "read_board_docs", "board_api_get"} <= allowed
-    # TASK-91: contact details belong to the human handoff after consent, never to the conversation.
+    # TASK-195: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
     # TASK-145: this one IS for the conversation. It is registered here; the CLI reaches it only once
     # luna_brain.MCP_TOOL_NAMES names it and _mcp_config_path passes WA_LUNA_PHONE (that file is another
@@ -557,7 +557,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
     assert "match_cv_to_postings" in TS.mcp._tool_manager._tools
 
 
-# --- TASK-110 review: the vocabulary is counted in the parent, the server only applies it --------
+# --- TASK-213 review: the vocabulary is counted in the parent, the server only applies it --------
 # Ivan's fix round 2026-09-16: counting the board inside this server meant a cold Supabase build
 # (8-17s measured) between the CLI spawning it and the MCP handshake, on every turn, under the CLI's
 # 30s connect deadline -- and nothing upstream could see that deadline being missed.
@@ -613,7 +613,7 @@ def test_a_board_that_did_not_load_leaves_no_readiness_stamp(tmp_path, monkeypat
     assert not ready.exists(), "the parent must be able to see that this turn had no tools"
 
 
-# --- TASK-110 review: one clinic identity, and the fallback door bounded and on the same base ----
+# --- TASK-213 review: one clinic identity, and the fallback door bounded and on the same base ----
 
 def _housing_board(tmp_path, monkeypatch):
     """The live board's two awkward shapes at once (2026-09-16): 26 employer names carry no clinic_id,
@@ -645,7 +645,7 @@ def test_clinics_with_a_flat_are_counted_the_same_way_in_the_schema_and_in_every
 
 
 def test_board_api_get_serves_the_same_re_verified_rows_as_every_other_tool(tmp_path, monkeypatch):
-    """TASK-110 review: this door served every open posting while the tools served the re-verified ones
+    """TASK-213 review: this door served every open posting while the tools served the re-verified ones
     -- live, that was Coburg 2 vs 39 and München 369 vs 499 in one conversation. TASK-145 (Ivan,
     2026-09-21) removed the deliberate way past that base: a posting whose liveness is not confirmed may
     not reach a candidate-facing model at all, and one escape hatch is the whole guarantee gone."""
@@ -698,7 +698,7 @@ def test_one_clinics_postings_are_bounded_too_with_the_real_number_next_to_them(
 
 
 def test_the_fallback_door_says_which_columns_the_board_barely_fills(tmp_path, monkeypatch):
-    """TASK-110 review: board_api_get reaches filters no tool presets (contract, enr_tariff, …) with no
+    """TASK-213 review: board_api_get reaches filters no tool presets (contract, enr_tariff, …) with no
     values anywhere. Live, `contract` is set on 16 of 2624 live-verified postings and UNBEFRISTET does
     not exist at all, so `contract=UNBEFRISTET` answers total=0 and reads as "we have no permanent
     positions" -- a false statement from the fallback added to prevent false statements."""
@@ -720,7 +720,7 @@ def test_the_fallback_door_says_which_columns_the_board_barely_fills(tmp_path, m
 # --- TASK-145: the candidate's own word for a town ----------------------------------------------
 # Ivan 2026-09-21: app/data.py:filter_jobs compares the city lowercased and exactly, so 'Nuernberg',
 # 'Wuerzburg' and a Landkreis each matched nothing and the turn said there was nothing open there --
-# the failure TASK-104 removed for the department word, on the slot candidates lead with.
+# the failure TASK-207 removed for the department word, on the slot candidates lead with.
 
 @pytest.mark.parametrize("word", ["Nuernberg", "Nurnberg", "NÜRNBERG", "Landkreis Nürnberg", "nürnberg"])
 def test_a_city_spelt_the_candidates_way_reaches_the_boards_own_town(tmp_path, monkeypatch, word):
@@ -805,7 +805,7 @@ def test_no_tool_hands_over_a_posting_the_verifier_no_longer_confirms(tmp_path, 
 
 
 # --- TASK-145: the candidate's own CV, ranked against what is open right now ---------------------
-# app/cv.py:match() has ranked postings against a CV since TASK-65, but only after consent, on the
+# app/cv.py:match() has ranked postings against a CV since TASK-169, but only after consent, on the
 # handover path -- so the conversation itself could never answer "welche davon passt zu meinem Lebenslauf".
 
 _CV_PHONE = "491700000000"        # a test number, never a candidate's

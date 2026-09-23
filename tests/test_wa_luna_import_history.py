@@ -1,4 +1,4 @@
-"""TASK-102 offline: importing a campaign recipient's history from an earlier system, and the reuse question for
+"""TASK-205 offline: importing a campaign recipient's history from an earlier system, and the reuse question for
 imported documents.
 
 The source is a synthetic SQLite file with the old system's tables (the columns deploy/import-history.example.sql
@@ -303,7 +303,7 @@ def test_a_stopp_in_the_imported_history_is_reported_in_dry_run_and_apply(env):
                  "body": "Bitte STOPP, keine Nachrichten mehr"}]
     assert _dry(env)["stop_messages"] == expected
     assert _apply(env)["stop_messages"] == expected
-    card = _card()   # TASK-105: a Stopp to the old bot marks the card declined like a recorded opt-out
+    card = _card()   # TASK-208: a Stopp to the old bot marks the card declined like a recorded opt-out
     assert (card["declined"], card["declined_at"]) == (True, "2026-07-10T08:00:00+00:00")
     assert card["declined_reason"] == ("stop_message recorded by the earlier system old-system-test on 2026-07-10: "
                                        "Stopp in the chat: 'Bitte STOPP, keine Nachrichten mehr'")
@@ -598,7 +598,7 @@ def test_an_existing_wa_documents_table_gets_the_import_columns(tmp_path, monkey
         assert ST.imported_document(c, "s", "ref-1")["id"] == a
 
 
-# --- Luna: the reuse question and the gate (TASK-102) ----------------------------------------------------------------
+# --- Luna: the reuse question and the gate (TASK-205) ----------------------------------------------------------------
 
 def _out(**kw):
     base = {"action": "reply_now_conversational", "bubbles": ["Dürfen wir Ihre früheren Unterlagen verwenden?"],
@@ -780,7 +780,7 @@ def test_a_withdrawn_confirmation_takes_the_text_off_the_card_again(env, monkeyp
 
 
 def test_the_prompt_explains_prior_contact_and_the_reuse_question():
-    rules = {r.split(" (TASK-102)")[0]: r for r in LB.P.RULES if "(TASK-102)" in r}
+    rules = {r.split(" (TASK-205)")[0]: r for r in LB.P.RULES if "(TASK-205)" in r}
     assert set(rules) == {"PRIOR CONTACT", "EARLIER DOCUMENTS"}
     earlier = rules["EARLIER DOCUMENTS"]
     for phrase in ("reuse=pending counts for nothing", "ONE plain yes/no", "confirmed_ids", "declined_ids",
@@ -821,7 +821,7 @@ def test_a_phone_the_source_does_not_know_writes_nothing(env):
     assert _dry(env, LEAD)["found"] is True
 
 
-# --- opt-outs and declines the source recorded (TASK-105) -----------------------------------------------------------
+# --- opt-outs and declines the source recorded (TASK-208) -----------------------------------------------------------
 
 OUTREACH_ONLY = "+4915550007001"   # only in the Job+Wohnung blast table (no candidate card there)
 SUPPRESSED = "+4915550007002"      # only on the suppression list, stored there as a national number

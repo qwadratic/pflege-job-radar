@@ -1,6 +1,6 @@
 """The webhook: Meta's two routes, plus a small owner-only read of what the harness has been saying.
 
-Order of business on an inbound POST (TASK-99), and the reason for each step:
+Order of business on an inbound POST (TASK-202), and the reason for each step:
 1. verify the signature over the raw bytes -- everything after this trusts the payload;
 2. check the phone-number id: a change for a second WhatsApp number is stored raw, not answered;
 3. record, inside the request (``accept_payload``): each message by ``wamid`` (UNIQUE, a Meta redelivery
@@ -11,11 +11,11 @@ Order of business on an inbound POST (TASK-99), and the reason for each step:
    on the event loop; steps 1-4 run in the threadpool, so a slow turn never stalls /wa/health or a
    concurrent webhook;
 5. the worker (``drain_pending`` -> ``finish_inbound``) takes each phone's pending messages oldest first:
-   arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-95,
+   arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-198,
    both brains, stopped threads too); a WA_BRAIN=luna document/image is read and classified onto the card
-   before the brain runs (``_ingest_media``, TASK-67/TASK-96); a WA_BRAIN=luna voice note (audio, or a document
+   before the brain runs (``_ingest_media``, TASK-171/TASK-199); a WA_BRAIN=luna voice note (audio, or a document
    with an audio mime type) is transcribed and the transcript is the turn's text (``_transcribe_voice_note``,
-   TASK-107); video, and every kind on the deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the
+   TASK-210); video, and every kind on the deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the
    reply (app/wa/brain.py or app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows;
    delete the pending row.
 
@@ -61,7 +61,7 @@ log = logging.getLogger(__name__)
 def wa_health():
     """Non-secret readiness, for a deploy check. Public like the other self-describing reads.
 
-    ``rails`` is how many threads each rail actually carries (TASK-117). Which rail is configured is
+    ``rails`` is how many threads each rail actually carries (TASK-220). Which rail is configured is
     one question ("transport"), which rail live conversations are pinned to is another -- a thread
     never follows a flipped WA_TRANSPORT, so the second is the one an operator needs after a change.
     No phone numbers: this response is public.
@@ -144,7 +144,7 @@ def _number_matches(value):
     return str((value.get("metadata") or {}).get("phone_number_id") or "") in ours
 
 
-# A template quick-reply tap's button_id is this prefix + Meta's payload (TASK-100), so it can never equal
+# A template quick-reply tap's button_id is this prefix + Meta's payload (TASK-203), so it can never equal
 # an interactive button id this harness sends itself (luna_brain.CONSENT_BUTTONS 'consent:yes', 'dept:OP').
 TEMPLATE_BUTTON_PREFIX = "tpl:"
 
@@ -157,11 +157,11 @@ def parse_message(m):
     WhatsApp marks unsupported, from a text summary (``SUMMARIZED_KINDS``). A template quick-reply tap (type ``button``) keeps Meta's
     payload as button_id ``tpl:<payload>`` (None when Meta sent none) and the label as text. A message
     with a ``context`` object, any kind, keeps it raw (forwarded flags included) plus the message it
-    replies to (``context.id``) as ``reply_to_wamid`` (TASK-100). Media (document/image/audio/video)
+    replies to (``context.id``) as ``reply_to_wamid`` (TASK-203). Media (document/image/audio/video)
     additionally carries ``media_id``/``media_mime_type``/``media_filename`` -- Meta nests those under a field
     keyed by the type name itself, e.g. ``{"image": {"id": "...", "mime_type": "..."}}`` -- so a
     downstream step can fetch and read the actual bytes (app/wa/meta.py:Client.media_url/
-    download_media, TASK-67); by itself this function still only parses the payload, it does not
+    download_media, TASK-171); by itself this function still only parses the payload, it does not
     fetch anything.
     """
     wamid = str(m.get("id") or "").strip()
@@ -239,7 +239,7 @@ def _summarized(kind, m):
 MEDIA_REPLY = ("Danke, angekommen – Dateien kann ich hier noch nicht lesen. Ein Kollege schaut "
                "sie sich an.")
 
-# Media kinds this harness reads, WA_BRAIN=luna only: document/image text (TASK-67), audio transcribed (TASK-107; a
+# Media kinds this harness reads, WA_BRAIN=luna only: document/image text (TASK-171), audio transcribed (TASK-210; a
 # document with an audio mime type too, ``is_voice_note``). Video still gets the flat MEDIA_REPLY ack for both brains,
 # and so does every kind on the deterministic brain -- treating an unread file like "read" would be exactly the
 # silent pretending CLAUDE.md rules out.
@@ -247,7 +247,7 @@ _READ_KINDS = ("document", "image", "audio")
 
 
 def is_voice_note(kind, mime_type):
-    """TASK-107: an audio message, or audio sent as a document (the mime type of the stored original)."""
+    """TASK-210: an audio message, or audio sent as a document (the mime type of the stored original)."""
     return kind == "audio" or (kind == "document" and (mime_type or "").strip().lower().startswith("audio/"))
 
 # A PDF's extract_text() result this short (or shorter) is treated as "no real text layer" (a
@@ -269,12 +269,12 @@ _MIME_SUFFIX = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", 
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx"}
 
 # The only part of an untrusted WhatsApp filename that may reach a path: the vision temp file's extension
-# (_suffix_for). A stored original never uses it (TASK-95 review, _mime_suffix).
+# (_suffix_for). A stored original never uses it (TASK-198 review, _mime_suffix).
 _SAFE_EXTENSION = re.compile(r"\.([A-Za-z0-9]{1,5})\Z")
 
 
 def _mime_suffix(mime_type):
-    """The stored original's extension (TASK-95): the mime type's from _MIME_SUFFIX, else .bin."""
+    """The stored original's extension (TASK-198): the mime type's from _MIME_SUFFIX, else .bin."""
     return _MIME_SUFFIX.get((mime_type or "").split(";")[0].strip().lower(), ".bin")
 
 
@@ -290,8 +290,8 @@ def _suffix_for(filename, mime_type):
 
 def _write_original(phone, media_id, blob, suffix):
     """-> absolute path of ``blob`` stored as <C.DOCUMENTS_DIR>/<phone digits>/<UTC timestamp>-<media
-    id alphanumerics><suffix> (TASK-95). No part of the WhatsApp filename is used: the caller passes
-    ``_mime_suffix`` (TASK-95 review: '../../evil.sh' used to be stored as '.sh').
+    id alphanumerics><suffix> (TASK-198). No part of the WhatsApp filename is used: the caller passes
+    ``_mime_suffix`` (TASK-198 review: '../../evil.sh' used to be stored as '.sh').
 
     Directories are chmod 0700, the file is mkstemp's 0600. Written to a temp file in the same
     directory, then hard-linked to its name: the name never shows a half-written file, and unlike
@@ -319,7 +319,7 @@ def _write_original(phone, media_id, blob, suffix):
 def _store_original(c, m, client=None):
     """Download one inbound media message (Meta's two-step media API, app/wa/meta.py:Client.media_url/
     download_media), store the original bytes (``_write_original``) and link them to the phone and
-    wamid with a wa_documents row (TASK-95). Every media kind, both brains, before any extraction --
+    wamid with a wa_documents row (TASK-198). Every media kind, both brains, before any extraction --
     a failed extraction still leaves the original stored and linked.
 
     -> {"id": wa_documents row id, "blob": bytes, "mime_type": ...}. Raises loudly on any failure (bad
@@ -339,7 +339,7 @@ def _store_original(c, m, client=None):
 def _extract_media_text(kind, blob, filename, mime_type):
     """-> the file's text. A document with its own text layer is read directly (extract_text); a
     bare image, or a scanned PDF with no text layer, goes through the vision path. Which card key the
-    text lands on is decided by the classification, not by this method (TASK-96, ``_ingest_media``).
+    text lands on is decided by the classification, not by this method (TASK-199, ``_ingest_media``).
     """
     mt = (mime_type or "").split(";")[0].strip().lower()
     is_pdf = (filename or "").lower().endswith(".pdf") or mt == "application/pdf" or blob[:5] == b"%PDF-"
@@ -351,9 +351,9 @@ def _extract_media_text(kind, blob, filename, mime_type):
     return text
 
 
-# TASK-96: the card key a file's text lands on, by classify_document()'s document_type. Any other
+# TASK-199: the card key a file's text lands on, by classify_document()'s document_type. Any other
 # type (auslaendisches_diplom/aufenthaltstitel/dienstplan/other) touches neither key -- its text stays on
-# the wa_documents row only. A key's text is appended to, never replaced (TASK-96 review: a two-page CV
+# the wa_documents row only. A key's text is appended to, never replaced (TASK-199 review: a two-page CV
 # sent as two photos, or a Defizitbescheid then a helfer certificate, lost the earlier file's text, and
 # handle_payload feeds only these card keys to CV.analyse_candidate at consent).
 _CARD_TEXT_KEY = {"lebenslauf": "cv_text", "urkunde": "urkunde_text", "defizitbescheid": "urkunde_text"}
@@ -364,8 +364,8 @@ UNREADABLE = "unreadable"
 
 
 def read_and_classify(c, doc_id, kind, blob, filename, mime_type):
-    """The row half of ``_ingest_media``, shared with app/wa/luna/import_history.py (TASK-102): extract the text
-    (``_extract_media_text``), store it on wa_documents row ``doc_id``, classify it (TASK-81: urkunde/lebenslauf/
+    """The row half of ``_ingest_media``, shared with app/wa/luna/import_history.py (TASK-205): extract the text
+    (``_extract_media_text``), store it on wa_documents row ``doc_id``, classify it (TASK-185: urkunde/lebenslauf/
     defizitbescheid/..., fachkraft-vs-helfer for an urkunde) and store the classification with the card key it
     maps to. -> (text, document_type, certificate_level, text_key). No readable text (CV.NoReadableText) is stored
     as document_type UNREADABLE -> (None, UNREADABLE, None, None): reading it again gives the same answer (review
@@ -389,13 +389,13 @@ def _ingest_media(c, t, m, doc):
     Luna card, for WA_BRAIN=luna threads only -- the caller (_handle_one) keeps the deterministic
     brain's flat media ack completely separate from this path.
 
-    Card effects (TASK-96): the text is appended to ``_CARD_TEXT_KEY[document_type]`` (cv_text/urkunde_text,
+    Card effects (TASK-199): the text is appended to ``_CARD_TEXT_KEY[document_type]`` (cv_text/urkunde_text,
     or no key); document_type/certificate_level stay the latest file's (prompts.py DOCUMENT TYPE);
     ``documents`` gains {id, document_type, certificate_level} -- the list luna_brain's documents gate
     reads, no text and no path since the card goes to the model; ``_documents_just_received`` gains the
     same summary, popped by luna_brain.turn() on the reply turn so the model can tell a file arrived
     even when it is the wrong type. The wa_documents row gets the text, then the classification and
-    text_key (TASK-95).
+    text_key (TASK-198).
 
     A file with no readable text lands as document_type UNREADABLE (no text key, counts for no gate), so the
     reply turn tells the candidate. Raises loudly on any other failure -- a failed vision call, a failed
@@ -415,7 +415,7 @@ def _ingest_media(c, t, m, doc):
     slots["_documents_just_received"] = [*slots.get("_documents_just_received", []), summary]
 
 
-# --- webhook intake (TASK-99): record in the request, finish in the background -------------------------
+# --- webhook intake (TASK-202): record in the request, finish in the background -------------------------
 
 _ENVELOPE_KEYS = ("messaging_product", "metadata")
 
@@ -561,8 +561,8 @@ _background_guard = threading.Lock()
 def submit_accepted(accepted, client=None):
     """Queue accept_payload's phones for the background worker. -> the Future, or None with no message.
 
-    No client is built here (TASK-116). This call knows no phone yet -- one payload may carry messages
-    from several candidates -- and the rail is a property of the thread (TASK-117), so a client built
+    No client is built here (TASK-219). This call knows no phone yet -- one payload may carry messages
+    from several candidates -- and the rail is a property of the thread (TASK-220), so a client built
     here would pin every phone in the payload to whichever rail the first lookup happened to pick.
     ``process_phones`` resolves one per phone instead. An injected ``client`` is still passed straight
     through to every phone."""
@@ -596,7 +596,7 @@ def process_phones(phones, client=None, raise_errors=True):
     """``drain_pending`` for each phone under ST._lock, then its consent queue builds outside the lock. ->
     every result. Shared by handle_payload, the background worker and catch-up.
 
-    One client per phone, resolved with that phone (TASK-116): the rail is per-thread (TASK-117), and
+    One client per phone, resolved with that phone (TASK-219): the rail is per-thread (TASK-220), and
     one client threaded through the whole loop would answer the second candidate in a payload over the
     first one's rail. ``meta.Client`` is documented as one instance per request with no state of its
     own ("state lives in SQLite, not here"), so one per phone instead of one per payload is
@@ -612,9 +612,9 @@ def process_phones(phones, client=None, raise_errors=True):
 
 
 def build_consent_queues(results, raise_errors=True):
-    """TASK-66 queue build for every result that flipped consent, popping the internal keys. Called outside
+    """TASK-170 queue build for every result that flipped consent, popping the internal keys. Called outside
     ST._lock: app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table read
-    per ranked clinic, and a CV/Urkunde reasoning pass (TASK-67) is a real claude CLI call -- inside the lock
+    per ranked clinic, and a CV/Urkunde reasoning pass (TASK-171) is a real claude CLI call -- inside the lock
     every other thread would wait behind one candidate's match build. A failure is logged and recorded as a
     send failure (raise_errors re-raises it)."""
     for r in results:
@@ -626,7 +626,7 @@ def build_consent_queues(results, raise_errors=True):
             cv_profile = None
             if card.get("cv_text") or card.get("urkunde_text"):
                 # "use all chat history + CV as matching input": analyse_candidate folds this thread's
-                # own history in alongside whatever was extracted from an upload (TASK-67). No CV/
+                # own history in alongside whatever was extracted from an upload (TASK-171). No CV/
                 # Urkunde text on the card at all -> skip the call rather than feed analyse_llm empty
                 # input (it raises ValueError below ~20 chars) -- a normal, common case, not an error.
                 with ST.db() as cv_conn:
@@ -689,10 +689,10 @@ def finish_inbound(c, m, client=None):
 
     - arrival bookkeeping is derived from the message row (``_note_arrival``), never incremented twice;
     - media runs under the claim ``media:<wamid>``: no wa_documents row yet -> download with the media_id
-      kept in meta and store the original (TASK-95); a WA_BRAIN=luna document/image not on the saved card
+      kept in meta and store the original (TASK-198); a WA_BRAIN=luna document/image not on the saved card
       yet -> read and classify it (from the bytes just downloaded, or the stored original re-read and
       checked against its sha256) and save the card before the claim is released; a WA_BRAIN=luna voice
-      note not transcribed yet -> transcribe it the same way (TASK-107), the transcript stored on its
+      note not transcribed yet -> transcribe it the same way (TASK-210), the transcript stored on its
       wa_documents row and message before the claim is released;
     - the flat media ack and the reply turn run under the reply claim ``<wamid>`` (process_owed_turn); a
       voice note's turn text is its transcript.
@@ -728,7 +728,7 @@ def finish_inbound(c, m, client=None):
         ST.finish_reply_turn_claim(c, phone, media_key, "media_done")
 
     if dirty:
-        # TASK-96 review: bookkeeping and ingest are saved before the reply attempt, so a brain or Meta
+        # TASK-199 review: bookkeeping and ingest are saved before the reply attempt, so a brain or Meta
         # failure below does not lose them; the retry starts from this card.
         ST.save_thread(c, t)
     if t["stopped"]:
@@ -762,7 +762,7 @@ def _note_arrival(c, t, wamid):
 
 def _store_and_read(c, t, m, reads, client):
     """The media half of ``finish_inbound``, caller holds ``media:<wamid>``. -> (card changed, transcript): the
-    voice note's transcript (TASK-107: made now, or the one an earlier attempt stored), None for any other message.
+    voice note's transcript (TASK-210: made now, or the one an earlier attempt stored), None for any other message.
     Nothing is read on a stopped thread or for a kind that is not read (``reads``)."""
     doc = ST.document_for_wamid(c, m["wamid"])
     if doc is None:
@@ -787,7 +787,7 @@ def _store_and_read(c, t, m, reads, client):
 
 
 def _transcribe_voice_note(c, m, doc_id, blob, mime_type):
-    """TASK-107: transcribe a voice note's original (``stt.Client``, OpenAI, C.STT_MODEL) and store the transcript on
+    """TASK-210: transcribe a voice note's original (``stt.Client``, OpenAI, C.STT_MODEL) and store the transcript on
     its wa_documents row and inbound message (``ST.set_voice_transcript``). -> the transcript. The card is not
     touched: no documents entry, no UNREAD_MEDIA_KEY. Raises on every failure (no OPENAI_API_KEY, API error, empty
     transcript): finish_inbound's caller records it on the pending row and in wa_send_failures, nothing is sent,
@@ -813,7 +813,7 @@ def _media_ack(c, t, m, client):
     reply. MEDIA_REPLY promises that a colleague looks at it, so the card records it for a human first
     (UNREAD_MEDIA_KEY, ``_escalated``; GET /wa/threads ``unread_media``, campaign --status). A declined Luna card
     gets no MEDIA_REPLY: the message is stored, the silence recorded (ST.NO_SEND_STATE) like a model no_send
-    (TASK-101; review 2026-09-14: a voice note after the decline ack got MEDIA_REPLY and nobody was flagged)."""
+    (TASK-204; review 2026-09-14: a voice note after the decline ack got MEDIA_REPLY and nobody was flagged)."""
     wamid = m["wamid"]
     if not ST.claim_reply_turn(c, t["phone"], wamid):
         return {"wamid": wamid, "status": "claimed_elsewhere"}
@@ -843,20 +843,20 @@ def _media_ack(c, t, m, client):
 
 # process_owed_turn statuses that leave ``t`` untouched. The caller skips its save: on claimed_elsewhere
 # the other process (webhook or catch-up) saves its own copy, and an earlier copy written over it lost
-# last_outbound_at and _session_id (TASK-96 review).
+# last_outbound_at and _session_id (TASK-199 review).
 TURN_NOT_RUN = ("claimed_elsewhere", "rate_limited")
 # finish_inbound statuses after which the message still owes work: another process holds it, or the rate
-# cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-99).
+# cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-202).
 KEEP_PENDING = ("claimed_elsewhere", "rate_limited")
 
 
 def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     """The core decide-and-send pipeline: claim the reply, dispatch to whichever brain is
     configured, send, and detect a fresh consent. Shared by ``_handle_one`` (the webhook path,
-    ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-78,
+    ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-182,
     ``turn_key`` = the last inbound message a thread is still owed a reply for) -- both must reach
     exactly one reply attempt per inbound message, never two, so both go through the same claim
-    (``ST.claim_reply_turn``, TASK-77) instead of duplicating this logic.
+    (``ST.claim_reply_turn``, TASK-181) instead of duplicating this logic.
 
     Does not touch ``t["last_inbound_at"]``/``t["turns"]`` or run media ingestion -- those are
     "a new message just arrived" bookkeeping that only ``_handle_one`` owns; a catch-up retry is
@@ -866,9 +866,9 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     -> a result dict with at least ``{"status": ...}``. A claim miss or a rate-cap skip returns
     immediately without calling the brain at all -- the caller treats that the same as any other
     "not handled this pass" outcome. An inbound message whose silence is already recorded
-    (ST.NO_SEND_STATE, TASK-101) returns ``no_send_recorded``: answered, no claim, no brain call.
+    (ST.NO_SEND_STATE, TASK-204) returns ``no_send_recorded``: answered, no claim, no brain call.
 
-    WA_BRAIN=luna (TASK-100): the brain gets ``luna_brain.turn_context`` for ``turn_key`` on
+    WA_BRAIN=luna (TASK-203): the brain gets ``luna_brain.turn_context`` for ``turn_key`` on
     ``t["turn_context"]`` (removed again afterwards), and after the send the card's LAST_TURN_KEY marker
     records which outbound rows the model itself wrote. A no_send ends the claim in ST.NO_SEND_STATE.
     """
@@ -879,12 +879,12 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
 
     if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
             ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
-        # The message stays recorded and the claim is left in a reclaimable state (TASK-77) --
-        # the catch-up driver (TASK-78) is what actually answers it once the window rolls over.
+        # The message stays recorded and the claim is left in a reclaimable state (TASK-181) --
+        # the catch-up driver (TASK-182) is what actually answers it once the window rolls over.
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
         return {"status": "rate_limited"}
 
-    # TASK-121: a genuine tap (button_id already set) is left alone; only a bare typed reply, which
+    # TASK-224: a genuine tap (button_id already set) is left alone; only a bare typed reply, which
     # is all the phone rail can ever produce, is recovered against the offer this thread's own last
     # outbound row actually made. Covers both callers (webhook and catchup.py) from this one point.
     button_id = button_id or CH.recover_button_id(c, t["phone"], turn_key, text)
@@ -901,19 +901,19 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
             t.pop("turn_context", None)
     else:
         # The deterministic brain knows only its own button ids; a template tap is read as its label, as
-        # before TASK-100.
+        # before TASK-203.
         is_template_tap = str(button_id or "").startswith(TEMPLATE_BUTTON_PREFIX)
         d = B.turn(text, t, button_id=None if is_template_tap else button_id)
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         # Both brains set this from SL.is_stop(text) and from nothing else (brain.py:332, luna_brain.py:943),
-        # so this is the one place the STOP detector reaches a decision -- and TASK-113 is what makes that
+        # so this is the one place the STOP detector reaches a decision -- and TASK-216 is what makes that
         # decision outlive this thread: wa_threads.stopped answers "not in this conversation", the suppression
         # row answers "not on any rail, ever", keyed on the human rather than on the row. The candidate's own
         # words go in as the audit artefact.
         t["stopped"], t["stopped_reason"] = True, ST.STOPPED
         # The lane is this thread's own rail, not C.TRANSPORT: the record says which number the
-        # candidate typed STOP to, and on a per-thread rail (TASK-117) the process-wide setting is
+        # candidate typed STOP to, and on a per-thread rail (TASK-220) the process-wide setting is
         # not that number. An unpinned thread (a refusal before we ever answered) is recorded on the
         # rail its first answer would have gone out on.
         SUP.suppress(c, t["phone"], SUP.REASON_STOP, T.rail_for(c, t["phone"]), trigger_text=text)
@@ -932,13 +932,13 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
                                ST.NO_SEND_STATE if sent == "nothing_to_send" else "sent")
     if d.get("luna_turn"):   # after the claim is final: a failure here must not make the sent reply retryable
         t["slots"][LB.LAST_TURN_KEY] = LB.turn_marker(c, t["phone"], d["luna_turn"], d["action"])
-    if d.get("document_reuse"):   # TASK-102: the candidate's answer on imported documents -> wa_documents, card text
+    if d.get("document_reuse"):   # TASK-205: the candidate's answer on imported documents -> wa_documents, card text
         LB.apply_document_reuse(c, t, d["document_reuse"])
 
     result = {"status": sent, "action": d["action"],
               "slots": {k: v for k, v in d["slots"].items() if v is not None},
               "matches": [r.get("posting_id") for r in d["matches"]]}
-    # TASK-66: a consent flip is durably saved above before this is ever set, so the caller
+    # TASK-170: a consent flip is durably saved above before this is ever set, so the caller
     # (handle_payload, once the per-message lock is released) can safely build the queue entry --
     # see that function's own comment for why this doesn't happen right here instead.
     now_consented = C.BRAIN == "luna" and bool(d["slots"].get("anonymous_send_consent"))
@@ -949,10 +949,10 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
 
 
 def _freeform_window_open(t):
-    """Meta's own policy, not this repo's choice (TASK-70): free-form text is only deliverable
+    """Meta's own policy, not this repo's choice (TASK-174): free-form text is only deliverable
     within C.FREEFORM_WINDOW_HOURS of the candidate's last message. No message from the candidate
     ever (last_inbound_at unset, e.g. a campaign recipient who never replied) means no window at all
-    (TASK-101): Meta does not deliver free text there. Every reply path sets last_inbound_at before it
+    (TASK-204): Meta does not deliver free text there. Every reply path sets last_inbound_at before it
     sends (finish_inbound -> _note_arrival)."""
     last_inbound = t.get("last_inbound_at")
     if not last_inbound:
@@ -968,14 +968,14 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     same rows, marked for what they are, so a new deployment can be pointed at the live webhook and
     read back what it *would* have said.
 
-    The free-form-vs-template choice (TASK-70) is made here, in code, never by the brain: whichever
+    The free-form-vs-template choice (TASK-174) is made here, in code, never by the brain: whichever
     brain ran still decides *what* to say and produces bubbles normally, but if the 24h window has
     closed since the candidate's last message, those bubbles are not deliverable at all -- Meta
     rejects free-form text outside the window. This swaps in the configured reopen template
     instead of the bubbles, or fails loudly if none is configured, rather than silently trying (and
     having Meta reject it) or silently doing nothing.
 
-    That window is the Cloud API's rule, so it is now the CLIENT's rule (TASK-118): the client is
+    That window is the Cloud API's rule, so it is now the CLIENT's rule (TASK-221): the client is
     built first and the gate reads ``requires_freeform_window`` off it. A consumer chat on the phone
     rail has no such window, so a bridge thread answers free text where Meta would have demanded a
     template -- and a Meta thread keeps today's behaviour byte for byte, including the hard "no
@@ -983,12 +983,12 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     is True, so a test double without the attribute is a Meta client, and two threads on different
     rails in the same process are gated one by one rather than by a process-wide setting.
 
-    The rail is pinned here too (TASK-117), after a send actually went out and never before: a draft
+    The rail is pinned here too (TASK-220), after a send actually went out and never before: a draft
     is not an outbound, and a thread whose first send failed must stay free to start on the rail the
     next attempt resolves.
 
     ``turn_key`` is which inbound message this turn answers, and it is what makes a retry on a rail
-    with no provider ids safe (TASK-114): a client that says ``wants_idempotency_key`` is told the
+    with no provider ids safe (TASK-217): a client that says ``wants_idempotency_key`` is told the
     turn before the first bubble, and derives one deterministic ``client_msg_id`` per bubble from it,
     so the catch-up re-drive of a failed turn replays the bubbles that already went out instead of
     sending them a second time. A send path that cannot name its turn cannot have that guarantee, so
@@ -1017,7 +1017,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
                 f"a {action!r} send on the {T.rail_of_client(cl)} rail carries no turn_key: on a rail "
                 f"whose messages have no "
                 f"provider id, the key derived from the turn is the only thing that stops a retry from "
-                f"delivering this reply twice (TASK-114, app/wa/bridge_ids.py)")
+                f"delivering this reply twice (TASK-217, app/wa/bridge_ids.py)")
         cl.begin_turn(t["phone"], turn_key, action)
     for i, b in enumerate(bubbles):
         last = i == len(bubbles) - 1
@@ -1034,12 +1034,12 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
 
 
 def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
-    """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-79) -- the
+    """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-183) -- the
     loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
     GET /wa/threads) instead of vanishing along with the never-persisted thread state.
 
-    Also the suppression choke point for every free-form send (TASK-113). This is the right point
+    Also the suppression choke point for every free-form send (TASK-216). This is the right point
     because it is the only way into ``_send``: the webhook reply, a catch-up reply, ``_media_ack``,
     the reopen template and the ``luna.followups`` nudge all pass here, on whichever rail
     ``transport.get_client`` resolves -- one check instead of five, and a sixth send path cannot be
@@ -1070,7 +1070,7 @@ def _send_reopen_template(c, t, client=None, action=None):
     ST.record_outbound(c, t["phone"], wamid, label, kind="template",
                        meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
     t["last_outbound_at"] = ST.now_iso()
-    # TASK-75: this harness just reopened a (possibly previously-real-system-owned) conversation
+    # TASK-179: this harness just reopened a (possibly previously-real-system-owned) conversation
     # with its own template -- that single act hands the conversation to us from now on. A fresh
     # connection (routing.db() applies wa_ownership's own schema, same pattern as queue.py/
     # contacts.py) rather than assuming ``c`` already has that table.
@@ -1081,7 +1081,7 @@ def _send_reopen_template(c, t, client=None, action=None):
 
 
 def _is_stuck(c, phone, last_inbound_at, stopped):
-    """True once a thread's ball has been on us (TASK-79) longer than C.STUCK_REPLY_HOURS -- the
+    """True once a thread's ball has been on us (TASK-183) longer than C.STUCK_REPLY_HOURS -- the
     honest, available equivalent of the real system's watchdog: no email/Telegram integration
     exists in this repo, so this is a durable, discoverable flag, not an invented notification."""
     from .luna import reporting as REP   # imported lazily: touches luna_brain, only when read
@@ -1094,7 +1094,7 @@ def _is_stuck(c, phone, last_inbound_at, stopped):
 @router.get("/wa/ownership")
 def wa_ownership(request: Request):
     """Owner-only: which phones this harness currently owns vs. leaves to the real system
-    (app/wa/routing.py, TASK-75). Read-only -- never decides anything itself, only reports what
+    (app/wa/routing.py, TASK-179). Read-only -- never decides anything itself, only reports what
     route_decision()/flip_to_us_on_reopen() already recorded."""
     from . import routing as R
     phone = request.query_params.get("phone")
@@ -1112,24 +1112,24 @@ def wa_threads(request: Request, limit: int = 50):
 
     Gated in app/auth.py the same way /api/autopilot is -- a lead's phone number and what they told
     us is the most personal data this repo holds. Each row also carries ``stuck_reply`` and, when
-    one exists, ``last_send_error`` (TASK-79) -- computed here, not stored on the row itself, so
+    one exists, ``last_send_error`` (TASK-183) -- computed here, not stored on the row itself, so
     they always reflect the current time and the latest failure rather than a stale snapshot.
 
-    ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-95): wa_documents
+    ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-198): wa_documents
     metadata only -- no file bytes, and no extracted ``text`` (what the brain uses is on the card in
     ``thread.slots``; the per-file text stays in the table).
 
-    TASK-109: every row carries ``is_test`` (and ``test_marked_at``) -- a number an operator tests the live
+    TASK-212: every row carries ``is_test`` (and ``test_marked_at``) -- a number an operator tests the live
     harness with, marked with ``python -m app.wa.luna.test_threads``; ``test_threads`` counts them among the
     returned rows, so a count of real candidates is ``total - test_threads``. They stay listed on purpose:
     this is where an operator checks which numbers are flagged.
 
-    TASK-113: a row (and the ``?phone=`` view) carries ``suppression`` when that number is on the
+    TASK-216: a row (and the ``?phone=`` view) carries ``suppression`` when that number is on the
     cross-rail do-not-contact list -- reason, lane, verbatim trigger, time. This is where an operator reads
     why a thread gets no answer even though ``stopped`` is false: the list is keyed on the human, not the
     thread, so it survives a purge and a suppression another rail recorded.
 
-    TASK-99: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
+    TASK-202: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
     and ``stuck_reply`` is also true once the oldest is older than C.STUCK_REPLY_HOURS. ``?phone=`` adds
     ``pending_inbound``, ``message_statuses`` (latest delivery status per wamid, Meta errors included) and
     ``webhook_events`` (the raw objects nothing here acts on: calls, contacts, reactions, ...).
@@ -1164,7 +1164,7 @@ def wa_threads(request: Request, limit: int = 50):
                 row["last_send_error"] = failure
             suppressed = SUP.suppression(c, row["phone"])
             if suppressed:
-                row["suppression"] = suppressed   # TASK-113: this number is refused on every rail, not just here
+                row["suppression"] = suppressed   # TASK-216: this number is refused on every rail, not just here
     return {"total": len(rows), "test_threads": sum(1 for row in rows if row["is_test"]), "rows": rows}
 
 

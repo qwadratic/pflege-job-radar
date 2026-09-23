@@ -1,18 +1,18 @@
-"""Producer for WA_REAL_SYSTEM_PHONES_FILE (TASK-87, follow-up to TASK-75): a fully generic,
+"""Producer for WA_REAL_SYSTEM_PHONES_FILE (TASK-191, follow-up to TASK-179): a fully generic,
 operator-configured export of the phone numbers a real, external system already knows about, into
 the exact plain newline-delimited format app/wa/routing.py's own ``_is_known_to_real_system``
 reads. Nothing else in this repo produces that file; without it, WA_REAL_SYSTEM_PHONES_FILE stays
 an unmet promise and routing.py refuses to route anything at all (by design -- see its own
 docstring).
 
-Same genericize-the-real-system discipline as app/wa/luna/external_contacts.py (TASK-69) and
-app/wa/luna/migrate_candidates.py (TASK-71): this module never names or hardcodes any specific
+Same genericize-the-real-system discipline as app/wa/luna/external_contacts.py (TASK-173) and
+app/wa/luna/migrate_candidates.py (TASK-175): this module never names or hardcodes any specific
 external system's schema, table, or column names. It knows nothing about where the operator's
 data actually lives -- the operator supplies the exact SQL query themselves (``--query``), and this
 module only ever reads the first column of each row it gets back. Nothing here is a description of
 any real product's database.
 
-Two safety properties, matching TASK-87's acceptance criteria:
+Two safety properties, matching TASK-191's acceptance criteria:
 1. The source database is opened strictly read-only -- SQLite URI ``mode=ro``, the same pattern
    app/wa/luna/shadow_run.py's db_copy() uses -- so a typo'd or malicious --query can select but
    never write, and a missing --db path fails loudly instead of silently creating an empty file.

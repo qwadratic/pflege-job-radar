@@ -1,4 +1,4 @@
-"""Dry-run shadow report (TASK-72): "what would the agent say next, without sending" -- the same
+"""Dry-run shadow report (TASK-176): "what would the agent say next, without sending" -- the same
 safety contract the real production team already built and uses for exactly this purpose
 (``wa_shadow_run.py`` on tasker-dispatcher-01): report the proposed next reply for every thread
 that is owed one, always against a copy of the operational database, and never call WhatsApp send
@@ -64,10 +64,10 @@ def _last_inbound(conn, phone):
 
 def phones_owed_a_reply(conn, include_test=False):
     """Every phone whose most recent message (by id, across the whole thread) is inbound and has no
-    recorded no_send (ST.NO_SEND_STATE, TASK-101) -- one query, not N -- the same condition
+    recorded no_send (ST.NO_SEND_STATE, TASK-204) -- one query, not N -- the same condition
     reporting.ball_for() == "us" checks per-phone.
 
-    ``include_test`` decides what a test number (TASK-109) counts as here, because this query has two
+    ``include_test`` decides what a test number (TASK-212) counts as here, because this query has two
     kinds of caller. As a REPORT (this module) it leaves them out: a list of candidates waiting for an
     answer must not count an operator's own manual test; asking for one by name (``--phones``) still
     reports it. As a DRIVER (app/wa/luna/catchup.py, the 3-minute timer's owed pass) it must include
@@ -101,7 +101,7 @@ def shadow_turn(conn, phone, client=None):
     if C.BRAIN == "luna":
         from .. import luna_brain as LB
         if wamid:
-            t["turn_context"] = LB.turn_context(conn, t, wamid)   # TASK-100, before the session id is stripped
+            t["turn_context"] = LB.turn_context(conn, t, wamid)   # TASK-203, before the session id is stripped
         t["slots"] = {k: v for k, v in t["slots"].items() if k != "_session_id"}
         d = LB.turn(text, t, button_id=button_id, client=client)
     else:

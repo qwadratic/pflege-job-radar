@@ -1,4 +1,4 @@
-"""TASK-76/77/79: the shared process_owed_turn pipeline in app/wa/api.py -- reply-turn claims
+"""TASK-180/77/79: the shared process_owed_turn pipeline in app/wa/api.py -- reply-turn claims
 prevent double-answering the same inbound message, the per-candidate rate cap skips the brain
 without losing the message, and a send failure is durably recorded. Fakes app.wa.luna_brain.turn
 (no real CLI) and app.wa.meta.Client (no network), same patterns as
@@ -60,7 +60,7 @@ def wa(tmp_path, monkeypatch):
 
 def _arrived(c, *wamids):
     """The thread after these inbound messages arrived, as finish_inbound hands it over: rows recorded and
-    last_inbound_at set (TASK-100 reads the inbound row; TASK-101: no inbound means no free-form window)."""
+    last_inbound_at set (TASK-203 reads the inbound row; TASK-204: no inbound means no free-form window)."""
     for i, wamid in enumerate(wamids):
         ST.record_inbound(c, LEAD, wamid, f"msg {i}")
     t = ST.thread(c, LEAD)
@@ -98,7 +98,7 @@ def test_two_calls_with_different_turn_keys_both_proceed(wa, monkeypatch):
     assert r1["status"] == "sent" and r2["status"] == "sent"
 
 
-# --- per-candidate rate limit (TASK-76) ----------------------------------------------------------
+# --- per-candidate rate limit (TASK-180) ----------------------------------------------------------
 
 def test_hitting_the_rate_cap_skips_the_brain_without_losing_the_message(wa, monkeypatch):
     monkeypatch.setattr(C, "LUNA_MAX_CALLS_PER_HOUR", 1)
@@ -137,7 +137,7 @@ def test_a_rate_limited_turn_is_reclaimable_by_a_later_catch_up_pass(wa, monkeyp
     assert result["status"] == "sent"
 
 
-# --- send-failure visibility (TASK-79) ------------------------------------------------------------
+# --- send-failure visibility (TASK-183) ------------------------------------------------------------
 
 def test_a_send_failure_is_durably_recorded_before_reraising(wa, monkeypatch):
     monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
@@ -165,7 +165,7 @@ def test_no_failure_is_recorded_on_a_healthy_send(wa, monkeypatch):
         assert ST.recent_send_failure(c, LEAD) is None
 
 
-# --- stuck-reply flag (TASK-79) -------------------------------------------------------------------
+# --- stuck-reply flag (TASK-183) -------------------------------------------------------------------
 
 def test_is_stuck_false_for_a_thread_that_just_wrote(wa):
     with ST.db() as c:

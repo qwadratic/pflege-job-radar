@@ -1,4 +1,4 @@
-"""TASK-107: a WA_BRAIN=luna voice note (audio, or audio sent as a document) is transcribed from its stored original and
+"""TASK-210: a WA_BRAIN=luna voice note (audio, or audio sent as a document) is transcribed from its stored original and
 Luna answers the transcript; a failed transcription is recorded, sends nothing and catch-up retries it. Video and the
 deterministic brain keep the flat ack. Fake OpenAI transport, fake Meta client, fake Luna model, tmp SQLite, synthetic
 phones and audio bytes -- nothing reaches OpenAI, Meta or the claude CLI.
@@ -433,5 +433,5 @@ def test_the_dry_run_answers_a_voice_notes_stored_transcript(wa, monkeypatch):
 
 def test_the_prompt_names_the_payload_marker_the_harness_sends():
     prompt = LB.P.system_prompt("{}", "{}")
-    assert "VOICE NOTE (TASK-107): voice_note=true" in prompt
+    assert "VOICE NOTE (TASK-210): voice_note=true" in prompt
     assert "card._unread_media lists videos" in prompt

@@ -4,7 +4,7 @@ Ten agents audited the 100 largest Bavarian hospitals by beds, one clinic at a t
 database against what each adapter returns live and against what is really published on the
 hospital's own board. Read-only: no writes, no Firecrawl credits, no source edits.
 
-Findings are filed as TASK-80 through TASK-91. This file is the evidence behind them.
+Findings are filed as TASK-184 through TASK-195. This file is the evidence behind them.
 
 # Bavarian Top-100 Clinic Coverage Audit — Consolidated
 
@@ -118,7 +118,7 @@ Kaufbeuren's default board page returns 11 links with **zero nursing**; the 16 P
 | 13 | Route `talention` to the working dedicated API adapter instead of `crawl_wp_jobs` | `crawlers/routing.py:51` → `pflege_jobs/sources/feeds.py:86` | 34→38 rows at 36301 | one line |
 | 14 | Classifier: trace the Hygienefachkraft ingest drop; add an OP/Funktionsdienst leadership rule; let `section_labels` rescue a no-pflege-token title; widen the MFA pattern to `medizinische[nr]? fachangestellte[nr]?` | `pflege_jobs/classify.py`, `patterns.json:77` | **~7 postings**, plus precision | small |
 | 15 | Decide `pflegehelfer` once and enforce it on **every** ingest path, not only seeded-adapter observations | `app/crawl.py:518` | ±12 rows either direction; makes counts comparable | product decision first |
-| 16 | Tighten `_page_hosts_ok` to the registrable domain instead of the TLD (splitting the seed host on the first dot widens `kbo-iak.de` to any `.de` host) | `pflege_jobs/sources/career_crawl.py:286` | stops 108 group rows arriving under one 212-bed clinic's seed (TASK-79) | small |
+| 16 | Tighten `_page_hosts_ok` to the registrable domain instead of the TLD (splitting the seed host on the first dot widens `kbo-iak.de` to any `.de` host) | `pflege_jobs/sources/career_crawl.py:286` | stops 108 group rows arriving under one 212-bed clinic's seed (TASK-183) | small |
 
 **Two non-coverage tickets that cost the auditors real time and will cost production:**
 - `app/data.py:351-355` swallows a `_build()` exception into `_snap["error"]`, keeps the stale/empty snapshot **and resets the TTL**. A transient `v_postings` 500 then surfaces everywhere as "unknown clinic_id \<id\>". Fired on ~1 in 4 adapter runs across three independent batches. This is a silent fallback of exactly the kind CLAUDE.md forbids, and it affects the live API, not just the CLI.
@@ -142,7 +142,7 @@ Kaufbeuren's default board page returns 11 links with **zero nursing**; the 16 P
 ## 5. Flagged for human recheck — disagreements and low confidence
 
 **Auditor disagreements:**
-1. **TASK-77's softgarden `find_host()` claim does not reproduce.** Batch 5 called `find_host` directly: it resolves `gebo-med.softgarden.io` and `klinikum-bayreuth.softgarden.io` correctly. Batch 10 confirms bezirkskliniken-schwaben *is* broken but for a different reason (registered `careers_url` is the wrong host + the board is a Duet SPA whose data is nonetheless in the inline JSON). TASK-77's diagnosis needs rewriting before anyone implements it.
+1. **TASK-181's softgarden `find_host()` claim does not reproduce.** Batch 5 called `find_host` directly: it resolves `gebo-med.softgarden.io` and `klinikum-bayreuth.softgarden.io` correctly. Batch 10 confirms bezirkskliniken-schwaben *is* broken but for a different reason (registered `careers_url` is the wrong host + the board is a Duet SPA whose data is nonetheless in the inline JSON). TASK-181's diagnosis needs rewriting before anyone implements it.
 2. **46101 vs 46103 count the same dvinci board and disagree**: 46101 says 25 nursing, 46103 says 28. Same 126-job board. One of the two counts is wrong.
 3. **46103's "28 missing" may be zero real loss** — its own auditor notes no nursing posting on the board currently names Michelsberg. The risk is an empty clinic page, not lost vacancies. Do not fund a `_pick_site` change on that number alone.
 4. **46201 vs 46204 double-count**: 46204's 4 Hohe Warte rows are a subset of 46201's 36.
@@ -246,7 +246,7 @@ Kaufbeuren's default board page returns 11 links with **zero nursing**; the 16 P
 ### 18402 kbo-Isar-Amper-Klinikum München-Ost (750 beds) — **partial**
 - ours 1 / adapter 108 / live 3 (confidence: medium)
 - root cause: 18402 routes to 'adapter crawlers.vendor_adapters:crawl_wp_jobs' on board https://kbo-iak.de/kbo-karriere/stellenangebote-pflege (board_shared=11), and all 108 rows raw_board_rows() returns are on host kbo.de — the shared kbo group CMS, whose jobs are Garmisch-Partenkirchen / Agatharied / Landsberg / Wolfratshausen / Wasserburg (sibling kbo clinics). Zero rows are on kbo-iak.de or on recruitingapp-5656.de.umantis.com, which is the board the registered careers_url actually links to; confirmed by posting_observations: 39 observations with source_url like kbo.de carry cities München/Garmisch/Landsberg/Agatharied/Wolfratshausen and none carry Haar or Taufkirchen. The real kbo-IAK board (umantis CompanyID=22) currently shows 3 vacancies, all nursing: /Vacancies/3303 and /Vacancies/3304 'Pflegefachhelfer (m/w/d)' (Haar §63 StGB) and /Vacancies/704 (Taufkirchen) — we hold only 704. Mechanism for the host drift is the TLD widening in pflege_jobs/sources/career_crawl.py:286 (_page_hosts_ok splits the seed host on the first dot, so 'kbo-iak.de' widens to any '.de' host).
-- fix: Point 18402 at the umantis board (recruitingapp-5656.de.umantis.com/Jobs/1?CompanyID=22) instead of the kbo.de group CMS, and tighten _page_hosts_ok to the registrable domain rather than the TLD (this is TASK-79).
+- fix: Point 18402 at the umantis board (recruitingapp-5656.de.umantis.com/Jobs/1?CompanyID=22) instead of the kbo.de group CMS, and tighten _page_hosts_ok to the registrable domain rather than the TLD (this is TASK-183).
 - discovered careers_url: https://recruitingapp-5656.de.umantis.com/Jobs/1?CompanyID=22&Reset=G
 
 ### 67308 RHÖN-KLINIKUM Campus Bad Neustadt a.d. Saale (750 beds) — **complete**

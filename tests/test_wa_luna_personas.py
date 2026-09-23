@@ -8,7 +8,7 @@ Every persona below is fully fictional -- invented names, invented specifics -- 
 cases each script triggers) come from a read of two months of the reference implementation's
 real WhatsApp history on tasker-dispatcher-01, aggregated and anonymized into archetype groups
 before a single line of this file was written. No real name, phone number, or verbatim message
-from that history appears here -- see the task history (backlog TASK-60 follow-up notes) for the
+from that history appears here -- see the task history (backlog TASK-164 follow-up notes) for the
 full anonymized group report this was built from.
 
 Run explicitly: ``pytest -q -m llm tests/test_wa_luna_personas.py``. Skipped automatically if the
@@ -26,7 +26,7 @@ from app import data as D
 from app.wa import api as WAPI
 from app.wa import config as C
 from app.wa import luna_brain as LB
-from app.wa.luna import tools_server as TS      # the allowlist itself, for the fallback test (TASK-110)
+from app.wa.luna import tools_server as TS      # the allowlist itself, for the fallback test (TASK-213)
 from tests.luna_fixture_tools_server import use_fixture_board
 
 pytestmark = [
@@ -53,7 +53,7 @@ def _jobs():
     """A small, varied board: three cities, three departments, both city sizes, some housing --
     enough for the market snapshot to have real examples without needing the full live board.
 
-    ``contract`` (TASK-110): a filter GET /api/jobs takes and no Luna tool presets, so a question about it
+    ``contract`` (TASK-213): a filter GET /api/jobs takes and no Luna tool presets, so a question about it
     can only be answered through the board_api_get fallback. It carries the live board's own sparsity
     (review 2026-09-16: 16 of 2624 live-verified postings have any contract value, all BEFRISTET,
     UNBEFRISTET does not exist) -- one row here, so `contract=UNBEFRISTET` answers 0 the way it does live
@@ -71,7 +71,7 @@ def _jobs():
 
 
 def _clinics():
-    """One clinic per fixture city, so list_clinics answers from the same board (TASK-96 repair round 2)."""
+    """One clinic per fixture city, so list_clinics answers from the same board (TASK-199 repair round 2)."""
     open_by_city = Counter((city, bezirk) for city, bezirk, _, _ in _PLAN)
     return [{"clinic_id": _clinic_id(city), "name": f"Klinikum {city}", "town": city, "regierungsbezirk": bezirk,
              "beds": 500, "jobs_open": n, "jobs_fresh": n, "jobs_live": n, "fachrichtungen": []} for (city, bezirk), n in open_by_city.items()]
@@ -93,7 +93,7 @@ def _run(script, thread=None):
     """Play a persona's script turn by turn through the real CLI, returning the full list of
     per-turn results (each the dict app/wa/luna_brain.py:turn() returns).
 
-    TASK-80: the moment Valentina offers the anonymized send, she attaches real Ja/Nein buttons --
+    TASK-184: the moment Valentina offers the anonymized send, she attaches real Ja/Nein buttons --
     a real WhatsApp UI renders those as taps, not free text, and consent is only ever recorded from
     an actual tap (typing "Ja" instead gets a "please tap" nudge, never silent consent). Every
     script in this file is written to be cooperative through to consent, so the moment buttons show
@@ -118,7 +118,7 @@ def _run(script, thread=None):
 
 def _send_document(thread, document_type, text, certificate_level="unknown"):
     """Simulate app/wa/api.py:_ingest_media's effect on the card before the next turn runs
-    (TASK-91/TASK-96) -- tests call LB.turn() directly and never go through the webhook's own media-
+    (TASK-195/TASK-199) -- tests call LB.turn() directly and never go through the webhook's own media-
     download/classification path, so a script that needs 'a document just arrived' (the documents
     gate the CLOSE SEQUENCE requires) sets the same card fields _ingest_media writes: the text key
     chosen by document_type, the latest document_type/certificate_level, and one entry in both
@@ -139,7 +139,7 @@ def _all_bubbles(results):
     return [b for d in results for b in d["bubbles"]]
 
 
-# TASK-96 repair round 2: while the MCP tools read no board, Luna's own München search came back empty and she said
+# TASK-199 repair round 2: while the MCP tools read no board, Luna's own München search came back empty and she said
 # "Für München habe ich aktuell leider keine offene Stelle" two turns before the shortlist named Klinikum München.
 # The fixture board has open München postings, so a bubble naming München with such a denial is false.
 _NO_OPENING_RE = re.compile(r"\bkeine\s+(?:\w+\s+){0,2}(?:stelle|job|angebot)", re.I)
@@ -171,17 +171,17 @@ def test_maria_verified_urkunde_reaches_a_city_and_department_without_a_reject(b
 
 
 def test_the_close_sequence_states_matches_before_recap_and_consent_together(board):
-    """TASK-63, tightened by TASK-90 and TASK-91: once qualification, city, department and
+    """TASK-167, tightened by TASK-194 and TASK-195: once qualification, city, department and
     housing are all settled, the harness must not jump straight to the anonymized-send question in
     the very same turn that first names a clinic -- it states the distinct clinic count and
     shortlist together as one info-only turn, THEN (a later turn) restates the matched criteria and
-    asks for consent together. TASK-90 found the original four-turn spread (count, then shortlist,
+    asks for consent together. TASK-194 found the original four-turn spread (count, then shortlist,
     then recap, each its own turn) read as broken on a real WhatsApp test -- three turns in a row
     with no question at all, so the candidate had to guess they should send a filler reply to keep
-    it moving. TASK-91 additionally requires actual documents (not just a verbal 'ja, ich habe
-    die Urkunde'; TASK-96: the CV and the Urkunde) before the close sequence can start at all --
+    it moving. TASK-195 additionally requires actual documents (not just a verbal 'ja, ich habe
+    die Urkunde'; TASK-199: the CV and the Urkunde) before the close sequence can start at all --
     this script simulates both arriving via _send_document (the persona scripts are pure text; a
-    real document download/classification is TASK-67's own separately-tested path). The defining regression this guards is narrower than
+    real document download/classification is TASK-171's own separately-tested path). The defining regression this guards is narrower than
     "every step its own turn": a shortlist and the consent ask must never land in the same turn as
     the FIRST clinic mention."""
     results = _run([
@@ -225,7 +225,7 @@ def test_the_close_sequence_states_matches_before_recap_and_consent_together(boa
     # the turn after the upload, so its first clinic mention is searched from there.
     first_clinic_turn = next((i for i, d in enumerate(results) if i >= close_start
                               and any(c in " ".join(d["bubbles"]) for c in board_clinics)), None)
-    # TASK-96 review: 2/2 live runs failed here because department_pref='Intensivstation' filtered the harness
+    # TASK-199 review: 2/2 live runs failed here because department_pref='Intensivstation' filtered the harness
     # shortlist to nothing (market_snapshot now reads the word in board vocabulary) -- the card shows which.
     card = {k: v for k, v in results[-1]["slots"].items() if not k.endswith("_text")}
     assert first_clinic_turn is not None, (
@@ -249,7 +249,7 @@ def test_maria_salary_question_is_deferred_never_quoted(board):
     assert not SALARY_RE.search(bubbles), f"a euro figure must never be quoted, got: {bubbles!r}"
 
 
-# --- both documents before the close, the missing one re-asked (TASK-96, Ivan's manual test) -----
+# --- both documents before the close, the missing one re-asked (TASK-199, Ivan's manual test) -----
 
 _CV_RE = re.compile(r"lebenslauf|\bcv\b", re.I)
 _BOARD_CLINICS = ("Klinikum München", "Klinikum Augsburg", "Klinikum Würzburg", "Klinikum Regensburg",
@@ -268,7 +268,7 @@ def _no_close(d, transcript):
 
 
 def test_svetlana_sends_only_her_cv_and_is_asked_for_the_urkunde_until_it_arrives(board):
-    """TASK-96 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the
+    """TASK-199 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the
     close). Fictional persona: Svetlana, Urkunde, München, lives alone -- everything settled but the
     documents. The first document ask names both the CV and the Urkunde; she sends only the CV (Luna
     thanks and asks for the Urkunde, no shortlist/consent); she writes 'schicke ich später' (Luna still
@@ -316,7 +316,7 @@ def _luna_bubbles(transcript):
 
 
 def test_svetlana_wrong_document_types_get_the_missing_documents_named_again(board):
-    """TASK-96 AC3, the wrong-type case (verifier round 2: only an offline prompt-string test and one throwaway
+    """TASK-199 AC3, the wrong-type case (verifier round 2: only an offline prompt-string test and one throwaway
     probe covered it). Same settled card and opener as above. A Dienstplan arrives first (neither document: both
     named again), then the CV (the Urkunde named), then a home-country nursing diploma (not the German Urkunde:
     the German Urkunde named again). No shortlist or consent at any step."""
@@ -353,7 +353,7 @@ def test_svetlana_wrong_document_types_get_the_missing_documents_named_again(boa
     _assert_no_munich_opening_denied(_luna_bubbles(transcript), transcript)
 
 
-# --- soft "ja" to the qualification question (TASK-97, Ivan's manual test) ----------------------
+# --- soft "ja" to the qualification question (TASK-200, Ivan's manual test) ----------------------
 
 _QUALIFICATION_TERMS = ("urkunde", "anerkenn", "defizit", "kenntnisprüfung", "kenntnispruefung")
 _ABBREV_DOT_RE = re.compile(r"\b(?:z\.\s?B|d\.\s?h|u\.\s?a|bzw|ggf|evtl|inkl|ca|usw)\.", re.I)
@@ -402,7 +402,7 @@ _OPENER_OLENA = "Hallo, ich bin Krankenschwester und suche eine Stelle in Bayern
 
 
 def test_olena_bare_ja_to_the_qualification_question_resolves_within_one_re_ask(board):
-    """TASK-97 (Ivan's manual test 2026-09-13): Luna asked 'Urkunde schon, oder noch im
+    """TASK-200 (Ivan's manual test 2026-09-13): Luna asked 'Urkunde schon, oder noch im
     Anerkennungsverfahren (Defizitbescheid/Kenntnisprüfung)?', the candidate answered 'ja' twice and
     only a third, plain yes/no ask resolved it. Fictional persona: Olena, nurse, region already given,
     answers every qualification question with a bare 'ja'. qualification_path=urkunde must land within
@@ -419,7 +419,7 @@ _SEEDED_EITHER_OR = ("Haben Sie schon eine deutsche Pflege-Urkunde, oder sind Si
 
 
 def test_olena_bare_ja_to_a_seeded_either_or_question_gets_a_strict_yes_no_re_ask(board):
-    """TASK-97, the ambiguous path itself: with the current prompt Luna asks the plain yes/no first
+    """TASK-200, the ambiguous path itself: with the current prompt Luna asks the plain yes/no first
     (test above), so the either/or ask from Ivan's thread is seeded. The first turn runs with one
     extra system-prompt line forcing that question; the CLI takes the system prompt per call and
     never stores it in the session, so every later turn runs on the real prompt with only the
@@ -436,8 +436,8 @@ def test_olena_bare_ja_to_a_seeded_either_or_question_gets_a_strict_yes_no_re_as
     _assert_urkunde_from_a_ja_to_a_plain_yes_no(d, asks, transcript)
 
 
-# --- the city and housing questions are open questions too (TASK-97 review 2026-09-14) -----------
-# Live under the first TASK-97 prompt, 3/3 runs per gate: "Gibt es eine Stadt oder Region in Bayern ..., z. B.
+# --- the city and housing questions are open questions too (TASK-200 review 2026-09-14) -----------
+# Live under the first TASK-200 prompt, 3/3 runs per gate: "Gibt es eine Stadt oder Region in Bayern ..., z. B.
 # München, ... oder Würzburg?", "Haben Sie schon eine Stadt im Blick (...) oder ist Ihnen der Fachbereich
 # wichtiger?", "Ziehen Sie allein um, oder würden noch weitere Personen mit Ihnen wohnen?" -- a bare Ja fits all.
 
@@ -461,7 +461,7 @@ def _yes_no_frames_around_options(bubbles):
 
 @pytest.mark.parametrize("card, inbound, topic_re", [
     (_OLENA_CARD, "Ja, die deutsche Urkunde habe ich.", r"stadt|ort|region"),
-    # TASK-108: the housing gate opens with the plain yes/no, so the topic word is the flat itself.
+    # TASK-211: the housing gate opens with the plain yes/no, so the topic word is the flat itself.
     ({**_OLENA_CARD, "city": "München"}, "München wäre gut.", r"wohnung|unterkunft"),
 ], ids=["city_gate", "housing_gate"])
 def test_olena_city_and_housing_questions_are_not_yes_no_frames_around_options(board, card, inbound, topic_re):
@@ -473,7 +473,7 @@ def test_olena_city_and_housing_questions_are_not_yes_no_frames_around_options(b
     _assert_no_munich_opening_denied(d["bubbles"], transcript)
 
 
-# --- TASK-108: housing is asked as a yes/no, and only ever stated from the board -----------------
+# --- TASK-211: housing is asked as a yes/no, and only ever stated from the board -----------------
 # Live board 2026-09-16: 483 of 3905 postings carry enr_housing. The gate used to ask only how many people
 # would live in a flat nobody had confirmed was wanted, the shortlist ignored the board's housing mark, and
 # the constitution told Luna "Most clinics offer a small apartment" (a live run said exactly that).
@@ -531,7 +531,7 @@ def test_svetlana_a_city_without_a_single_housing_posting_gets_an_honest_answer(
     named = [c["city"] for c in snap["housing"]["cities_with_housing"] if c["city"] in said]
     assert honest_no or named, (
         f"neither said there is no flat in Würzburg nor named a city the board marks: {transcript!r}")
-    # TASK-97 still holds here (live 2026-09-16, 2 of the first 3 runs: "Käme für Sie auch eine Klinik ohne
+    # TASK-200 still holds here (live 2026-09-16, 2 of the first 3 runs: "Käme für Sie auch eine Klinik ohne
     # Wohnung in Würzburg infrage, oder wäre alternativ eine Stadt mit Wohnung wie Regensburg interessant?" --
     # a bare Ja answers neither): the follow-up is one plain yes/no, not the two ways out joined by "oder".
     assert _yes_no_frames_around_options(d["bubbles"]) == [], transcript
@@ -636,7 +636,7 @@ def test_yassine_found_another_job_ends_gracefully(board):
         "must not keep chasing the funnel once the candidate has withdrawn")
 
 
-# --- proactive tool use (TASK-62) ---------------------------------------------------------------
+# --- proactive tool use (TASK-166) ---------------------------------------------------------------
 # board's fixture cities are München/Augsburg/Würzburg/Regensburg/Bayreuth -- Coburg is
 # deliberately absent from it, so a question about Coburg cannot be answered from
 # market_snapshot/consult alone and can only be answered honestly via a live search_postings call.
@@ -665,14 +665,14 @@ def test_a_question_about_an_unlisted_city_actually_triggers_a_live_search(board
     final_bubbles = " ".join(results[-1]["bubbles"])
     assert final_bubbles.strip(), "the tool call must still be followed by an actual reply"
     assert "coburg" in final_bubbles.lower(), (
-        f"TASK-73: the reply should name what it checked (Coburg), not just answer generically: {final_bubbles!r}")
+        f"TASK-177: the reply should name what it checked (Coburg), not just answer generically: {final_bubbles!r}")
 
 
 def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_call(board):
     """Proactive is not the same as trigger-happy: a question market_snapshot's own open_jobs
     total already answers should not burn a tool call to re-derive the same number.
 
-    Asserted against every tool that answers from the board, not one tool name (TASK-110 review): the
+    Asserted against every tool that answers from the board, not one tool name (TASK-213 review): the
     guard used to name search_postings only, so it stayed green while the same needless lookup happened
     through count_postings() with every filter empty -- ~2s of the turn, and nine tools now to do it with.
     read_board_docs is deliberately outside the set: it is static documentation, not a board number, and
@@ -690,7 +690,7 @@ def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_cal
     assert results[-1]["bubbles"], "a plain count question should still get an actual reply"
 
 
-# --- TASK-110: the stated need is in the call, and the fallback covers the rest ------------------
+# --- TASK-213: the stated need is in the call, and the fallback covers the rest ------------------
 # Ivan 2026-09-16: the housing filter had existed for a whole task and the model had never once used it --
 # the prompt named three tools and no filter at all. The tools now come with the filter preset
 # (search_postings_with_housing, list_clinics_with_housing, list_cities_with_postings, count_postings) and
@@ -736,7 +736,7 @@ def test_a_question_the_preset_tools_do_not_cover_is_answered_through_the_fallba
     The fixture board carries the live sparsity (one posting with a contract value, none UNBEFRISTET), so
     the honest answer is that the board does not record it -- not "we have no permanent positions", which
     is what the fallback door produced before its description said which columns the board barely fills
-    (TASK-110 review)."""
+    (TASK-213 review)."""
     card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "role_verdict": "accept"}
     inbound = "Eine Frage vorab: wie viele Ihrer offenen Stellen sind unbefristet?"
     d = LB.turn(inbound, {"slots": dict(card), "asked": []})

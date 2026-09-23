@@ -1,4 +1,4 @@
-"""The executor's HTTP surface: loopback only, bearer token (TASK-130, TASK-119, TASK-147).
+"""The executor's HTTP surface: loopback only, bearer token (TASK-130, TASK-222, TASK-147).
 
     POST /v1/messages          one bubble, one deterministic key, one flock acquisition
     GET  /v1/outbox            the durable inbound handover -- the pull is the contract

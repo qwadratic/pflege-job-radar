@@ -1,7 +1,7 @@
-"""Migrate real candidates into this harness's own wa_threads (TASK-71) -- idempotent, from a
+"""Migrate real candidates into this harness's own wa_threads (TASK-175) -- idempotent, from a
 generic JSON export an operator produces from wherever their real candidate data actually lives.
 This module never queries any specific external system directly (same discipline as
-external_contacts.py, TASK-69): it only knows the shape below, which any operator's own export
+external_contacts.py, TASK-173): it only knows the shape below, which any operator's own export
 script can produce.
 
 Usage:
@@ -26,7 +26,7 @@ import json
 from .. import meta as M
 from .. import store as ST
 
-# housing_needed (TASK-108) is the answer to "do you need a flat?"; housing_known only says it was asked.
+# housing_needed (TASK-211) is the answer to "do you need a flat?"; housing_known only says it was asked.
 CARD_FIELDS = ("qualification_path", "city", "department_pref", "housing_known", "housing_needed", "people_count",
                "anonymous_send_consent", "cv_text", "urkunde_text")
 

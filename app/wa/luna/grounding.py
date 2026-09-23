@@ -1,6 +1,6 @@
 """TASK-144/146/151: the evidence a reply must stay inside, and the checks that hold it there.
 
-prompts.py has told the model since TASK-91 to name only a clinic a tool call just returned. Nothing
+prompts.py has told the model since TASK-195 to name only a clinic a tool call just returned. Nothing
 checked it, and a prompt is not a guarantee -- so this module reconstructs what the board tools
 actually returned during a turn and refuses a reply that goes beyond it. Ivan's two rules (2026-09-21)
 and the three things the audit of 2026-09-21 proved were missing from them:

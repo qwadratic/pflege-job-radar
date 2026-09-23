@@ -1,4 +1,4 @@
-"""TASK-66: the queue-build trigger in app/wa/api.py -- fires exactly when anonymous_send_consent
+"""TASK-170: the queue-build trigger in app/wa/api.py -- fires exactly when anonymous_send_consent
 newly flips true on a WA_BRAIN=luna turn, after the thread is durably saved, and never for the
 deterministic brain or an already-consented thread. Fakes app.wa.luna_brain.turn (no real CLI)."""
 import time

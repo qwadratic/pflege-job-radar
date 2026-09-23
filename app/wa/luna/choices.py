@@ -1,4 +1,4 @@
-"""TASK-121/TASK-122: turn a typed reply back into the button id app/wa/brain.py and
+"""TASK-224/TASK-122: turn a typed reply back into the button id app/wa/brain.py and
 app/wa/luna_brain.py already expect from a genuine tap.
 
 Reply buttons do not exist on a phone rail (app/wa/bridge.py:send_buttons renders the titles as
@@ -56,7 +56,7 @@ from datetime import datetime, timedelta
 from .. import config as C
 from .. import store as ST
 
-# TASK-121: an offer answered more than this long after it was made is stale -- read against the
+# TASK-224: an offer answered more than this long after it was made is stale -- read against the
 # reply's own timestamp, not against whenever a delayed catch-up run happens to execute.
 OFFER_TTL = timedelta(hours=48)
 # A shorter typed prefix is too likely to collide with an unrelated button by accident.
@@ -75,7 +75,7 @@ _ORDINAL_RE = re.compile(r"^\(?\s*(\d{1,2})\s*[.)]?\s*\)?$")
 _UMLAUT_FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 _NON_WORD_RE = re.compile(r"[^a-z0-9]+")
 
-# TASK-121: the keyword map applies only when the offer has exactly two buttons, and reads the
+# TASK-224: the keyword map applies only when the offer has exactly two buttons, and reads the
 # choice by POSITION -- buttons[0] for a "yes" word, buttons[-1] for a "no" word -- because every
 # two-button offer in this codebase already lists the affirmative option first (CONSENT_BUTTONS in
 # app/wa/luna_brain.py; housing:ja/nein and ho:ja/nein in app/wa/brain.py) and neither the button id

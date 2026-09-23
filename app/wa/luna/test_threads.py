@@ -1,4 +1,4 @@
-"""Mark a phone as a test number (TASK-109): the operator's own number, used to test the live harness by hand.
+"""Mark a phone as a test number (TASK-212): the operator's own number, used to test the live harness by hand.
 
 Usage:
     python -m app.wa.luna.test_threads --list

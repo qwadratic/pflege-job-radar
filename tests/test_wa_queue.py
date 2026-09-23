@@ -118,7 +118,7 @@ def test_build_queue_entry_resolves_a_known_contact(board):
         conn.close()
 
 
-# --- TASK-108: the handoff uses the same housing criterion as the shortlist Luna named -------------
+# --- TASK-211: the handoff uses the same housing criterion as the shortlist Luna named -------------
 
 _READY_CARD = {"qualification_path": "urkunde", "qualification_ok": True, "department_pref": "egal",
                "documents": [{"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"},

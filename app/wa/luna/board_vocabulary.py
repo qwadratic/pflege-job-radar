@@ -2,7 +2,7 @@
 tool descriptions the model reads on every turn (app/wa/luna/tools_server.py).
 
 Its own module because it is computed on BOTH sides of the tools-server subprocess boundary
-(TASK-110 review, 2026-09-16): the parent (app/wa/luna_brain.py) builds it from the snapshot it
+(TASK-213 review, 2026-09-16): the parent (app/wa/luna_brain.py) builds it from the snapshot it
 already holds for market_snapshot and hands the lines to the spawned server as a file, so starting
 the server costs milliseconds. Building it inside the server meant a cold, synchronous Supabase
 build (measured on this host: 8.3s, 7.7s, 2.7s in three fresh processes, and 8.1/16.5s in the
@@ -45,7 +45,7 @@ def clinic_key(row):
     """One clinic identity for every count and grouping in the tool surface: the board's clinic_id,
     else the employer's name.
 
-    TASK-110 review: the generated housing line counted clinic_id (48 live) while the tools grouped by
+    TASK-213 review: the generated housing line counted clinic_id (48 live) while the tools grouped by
     name (51), so "bei wie vielen Kliniken gibt es eine Wohnung" had two answers in one turn. skill/SKILL.md
     rule 5 ("count clinics by clinic_id, never by employer name") is about the dataset as a whole; here a
     posting whose employer the registry has not linked yet is still a real employer the tools return and
@@ -153,7 +153,7 @@ def vocabulary_lines():
                    f"{v['housing_unspecified']} unspecified (marked, wording says neither: get_posting and "
                    f"read enr_housing_evidence). No posting records rent, size or how long you may stay. A "
                    f"posting without the mark is not a flat.",
-        # TASK-108 gave the board a housing mark and no way to answer the question that always follows it.
+        # TASK-211 gave the board a housing mark and no way to answer the question that always follows it.
         # childcare is the same shape of datum and was exposed by no tool at all (audit 2026-09-21).
         "childcare": f"childcare on every posting row: true = the ad names a Kita/Betriebskindergarten/"
                      f"Kinderbetreuung ({v['childcare_true']} of {v['postings']} live postings), false = the "

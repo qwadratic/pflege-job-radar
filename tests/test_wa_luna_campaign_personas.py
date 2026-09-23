@@ -1,6 +1,6 @@
-"""TASK-100/101 through the real claude CLI: replies to our campaign template, identity, declines, already
-placed, and a "Ja" after a template or a follow-up nudge on a stalled session; TASK-105: a decline imported from the
-old system; TASK-107: a campaign reply spoken as a voice note (fake transcription transport). Marked ``llm`` (real
+"""TASK-203/101 through the real claude CLI: replies to our campaign template, identity, declines, already
+placed, and a "Ja" after a template or a follow-up nudge on a stalled session; TASK-208: a decline imported from the
+old system; TASK-210: a campaign reply spoken as a voice note (fake transcription transport). Marked ``llm`` (real
 model, real cost, several seconds per turn); every test runs twice (``run``).
 
 Each message goes the production way: a signed-shape webhook payload into ``api.handle_payload`` with
@@ -127,7 +127,7 @@ class Chat:
                              f"[reaction {emoji} on the template]")
 
     def voice(self, transcript, monkeypatch):
-        """A voice note (TASK-107): the real webhook path downloads and transcribes it; the transcription transport
+        """A voice note (TASK-210): the real webhook path downloads and transcribes it; the transcription transport
         answers ``transcript`` (tests/test_wa_voice_notes.py:use_openai)."""
         from tests.test_wa_voice_notes import use_openai
         use_openai(monkeypatch, {"text": transcript})
@@ -278,7 +278,7 @@ def test_re_engagement_after_a_decline_resumes_the_funnel(chat, run):
 
 
 def _import_old_opt_out(tmp_path):
-    """TASK-105: the old system closed this candidate as declined_opt_out months ago; the history import (example
+    """TASK-208: the old system closed this candidate as declined_opt_out months ago; the history import (example
     queries, synthetic old-system database) declines the card. No campaign: the sender skips such a phone."""
     import sqlite3
     from app.wa.luna import import_history as IH
@@ -374,7 +374,7 @@ def _full_funnel_to_the_shortlist(chat, city_or_department_answer):
     chat.campaign()
     bubbles, _ = chat.say("Ja")
     _assert_campaign_yes_answer(chat, bubbles)
-    # TASK-108: housing is two gate steps -- the yes/no first, the headcount only after a yes.
+    # TASK-211: housing is two gate steps -- the yes/no first, the headcount only after a yes.
     answers = {"region": "Ja, Bayern.", "qualification": "Ja, ich habe die deutsche Urkunde, volle Anerkennung.",
                "city_or_department": city_or_department_answer, "housing": "Ja, eine Unterkunft brauche ich."}
     for _ in range(12):
@@ -406,14 +406,14 @@ def _full_funnel_to_the_shortlist(chat, city_or_department_answer):
 @RUNS
 def test_full_funnel_after_campaign_ja_reaches_the_shortlist(chat, run):
     dump = _full_funnel_to_the_shortlist(chat, "Am liebsten München.")
-    # TASK-104: the candidate never names a department (live: department_pref "flexibel" emptied the shortlist; the
+    # TASK-207: the candidate never names a department (live: department_pref "flexibel" emptied the shortlist; the
     # CV's "Innere Medizin" or a tool result's department must not become one either).
     assert chat.card().get("department_pref") is None, f"department_pref the candidate never named: {dump}"
 
 
 @RUNS
 def test_full_funnel_flexible_on_city_and_department_reaches_the_shortlist(chat, run):
-    """TASK-104: a flexible answer settles the city/department gate and filters nothing."""
+    """TASK-207: a flexible answer settles the city/department gate and filters nothing."""
     dump = _full_funnel_to_the_shortlist(chat, "Das ist mir egal, ich bin da ganz flexibel.")
     department_filter = LB.market_snapshot(chat.card())["department_filter"]
     assert department_filter and department_filter["status"] == "flexible", dump
@@ -421,7 +421,7 @@ def test_full_funnel_flexible_on_city_and_department_reaches_the_shortlist(chat,
 
 @RUNS
 def test_full_funnel_unknown_department_reaches_the_shortlist(chat, run):
-    """TASK-104: a department the board has no department for (Urologie) filters nothing; the snapshot says so."""
+    """TASK-207: a department the board has no department for (Urologie) filters nothing; the snapshot says so."""
     dump = _full_funnel_to_the_shortlist(chat, "Am liebsten in München, auf der Urologie.")
     department_filter = LB.market_snapshot(chat.card())["department_filter"]
     assert department_filter and department_filter["status"] == "unmatched", dump
@@ -441,7 +441,7 @@ def test_campaign_thumbs_up_reaction_continues_with_the_urkunde_question(chat, r
     _assert_campaign_yes_answer(chat, bubbles)
 
 
-# TASK-107: never a claim that voice messages cannot be heard, never a request to type it instead.
+# TASK-210: never a claim that voice messages cannot be heard, never a request to type it instead.
 CANNOT_LISTEN_RE = re.compile(r"(?:sprachnachricht|audio|voice)\w*[^.!?]*\b(?:nicht|kein\w*)\b[^.!?]*"
                               r"(?:anhören|abspielen|hören|öffnen|lesen)|(?:schreiben|tippen) sie[^.!?]*"
                               r"(?:als text|schriftlich|kurz auf)|schriftlich", re.I)
@@ -449,7 +449,7 @@ CANNOT_LISTEN_RE = re.compile(r"(?:sprachnachricht|audio|voice)\w*[^.!?]*\b(?:ni
 
 @RUNS
 def test_campaign_reply_as_a_voice_note_is_answered_from_its_transcript(chat, run, monkeypatch, tmp_path):
-    """TASK-107: a campaign yes spoken as a voice note used to get the flat MEDIA_REPLY and stall. The transcript
+    """TASK-210: a campaign yes spoken as a voice note used to get the flat MEDIA_REPLY and stall. The transcript
     carries three facts; Luna records them and asks the next open gate, never the Urkunde or the city again."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     chat.campaign()
@@ -469,7 +469,7 @@ def test_campaign_reply_as_a_voice_note_is_answered_from_its_transcript(chat, ru
 
 @RUNS
 def test_a_misheard_town_in_a_voice_note_is_asked_back_not_recorded(chat, run, monkeypatch, tmp_path):
-    """TASK-107 prompt VOICE NOTE: a transcript can mishear a town ('Augsbuch'); the city filter is an exact match, so a
+    """TASK-210 prompt VOICE NOTE: a transcript can mishear a town ('Augsbuch'); the city filter is an exact match, so a
     misheard town recorded as city would empty the shortlist. Luna asks back instead of recording it."""
     monkeypatch.setattr(C, "DOCUMENTS_DIR", tmp_path / "wa_documents")
     chat.campaign()

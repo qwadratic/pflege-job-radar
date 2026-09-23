@@ -1,4 +1,4 @@
-"""Speech-to-text for candidate voice notes (TASK-107), WA_BRAIN=luna only.
+"""Speech-to-text for candidate voice notes (TASK-210), WA_BRAIN=luna only.
 
 The old system's approach (apps/connectors/candidate_audio_stt.py on tasker-dispatcher-01, Ivan 2026-09-14: do it
 like the old system): OpenAI's transcription endpoint, model whisper-1 (C.STT_MODEL), key from OPENAI_API_KEY, no
@@ -7,7 +7,7 @@ the file name, and Meta names a voice note ``audio.bin`` or nothing. No openai S
 with the transport injectable like app/wa/meta.py, so tests use a fake.
 
 Every failure raises TranscriptionError: no key, HTTP or network error, a reply without text, an empty transcript.
-The caller (app/wa/api.py) lets it propagate into the TASK-99 recovery path; nothing here guesses a transcript.
+The caller (app/wa/api.py) lets it propagate into the TASK-202 recovery path; nothing here guesses a transcript.
 """
 import json
 import pathlib

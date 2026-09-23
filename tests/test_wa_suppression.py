@@ -1,4 +1,4 @@
-"""TASK-113/TASK-137 offline: the cross-thread, cross-lane suppression store (app/wa/suppression.py).
+"""TASK-216/TASK-137 offline: the cross-thread, cross-lane suppression store (app/wa/suppression.py).
 
 What is asserted is what the harness does, not how it stores it: the reply that never goes out, the
 campaign template that is never claimed, the Stopp that outlives the thread it was typed in, and the
@@ -46,7 +46,7 @@ class FakeMeta:
 
 class RefusingTransport(FakeMeta):
     """A rail that refuses the recipient itself -- what the phone rail does once its executor holds the
-    same list (TASK-120). Proves campaign.send_one classifies the refusal, not that it produces it."""
+    same list (TASK-223). Proves campaign.send_one classifies the refusal, not that it produces it."""
 
     def __init__(self, record):
         super().__init__()

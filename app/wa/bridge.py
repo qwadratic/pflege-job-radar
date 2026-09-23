@@ -1,4 +1,4 @@
-"""The phone rail's outbound client (TASK-120): same duck shape as ``meta.Client``, different proof.
+"""The phone rail's outbound client (TASK-223): same duck shape as ``meta.Client``, different proof.
 
 Architecture (decision-8, ``/home/claude/plans/2026-09-21-macmini-revision.md`` §4): our own
 executor on the remote Ubuntu box imports the colleague's ``device.py`` / ``whatsapp.py`` /
@@ -10,7 +10,7 @@ swappable without touching a caller.
 WHAT IS DIFFERENT FROM THE META RAIL, and why it is in code rather than in prose:
 
 * **No provider message id, ever.** The lane behind the executor has no message identifier of any
-  kind, so the ``client_msg_id`` we mint (``app/wa/bridge_ids.py``, TASK-114) is the only id an
+  kind, so the ``client_msg_id`` we mint (``app/wa/bridge_ids.py``, TASK-217) is the only id an
   outbound message has, and it is what ``send_text`` returns into ``wa_messages.wamid``.
 * **Proof of delivery is a tick, read once, at send time.** ``VERIFIED_TICKS`` are the three
   content-desc values their UI scraper reads off the bubble (``whatsapp.py:27``:
@@ -315,7 +315,7 @@ class Client:
     ``requires_freeform_window = False`` is this rail's entire v1 value: a consumer chat has no 24 h
     Cloud-API window, so a thread Meta would refuse is answerable here. The gate that reads it is
     ``api.py:936`` (``_freeform_window_open``, ``api.py:907``), via ``getattr(cl, "requires_freeform_window", True)``
-    once TASK-118 lands -- every existing FakeMeta without the attribute keeps Meta semantics.
+    once TASK-221 lands -- every existing FakeMeta without the attribute keeps Meta semantics.
 
     ``supports_buttons = False`` and ``wants_idempotency_key = True`` are the other two capability
     flags: there is no way to compose a TAPPABLE reply button on a phone (a platform limit, not a
@@ -345,7 +345,7 @@ class Client:
         # (TASK-125's ledger reconciliation, TASK-130's audit). Not consulted by this module.
         self.last_send = None
 
-    # --- which turn is being sent (TASK-114) ------------------------------------------------------
+    # --- which turn is being sent (TASK-217) ------------------------------------------------------
 
     def begin_turn(self, phone, turn_key, action):
         """Open a conversational turn: one ``turn_key``, many bubbles, one HTTP call per bubble.
@@ -407,7 +407,7 @@ class Client:
             "no turn is open: call begin_turn(phone, turn_key, action) or begin_campaign_attempt(...) "
             "before a send. On this rail the client_msg_id is the message's only id, and a key that is "
             "not derived from the turn makes the catch-up timer's re-drive a second delivery to a real "
-            "candidate (TASK-114, app/wa/bridge_ids.py).", status_code=CONTRACT_STATUS)
+            "candidate (TASK-217, app/wa/bridge_ids.py).", status_code=CONTRACT_STATUS)
 
     # --- the wire ---------------------------------------------------------------------------------
 
@@ -487,7 +487,7 @@ class Client:
             # No answer at all -> a 4xx, so campaign.py records `failed` with ownership restored and
             # the lead stays retryable. What makes that safe even if the request did reach the
             # executor is the deterministic key: the retry posts the same client_msg_id and the
-            # ledger replays it (TASK-114/TASK-130). A read timeout mid-answer is a different
+            # ledger replays it (TASK-217/TASK-130). A read timeout mid-answer is a different
             # animal and does not arrive here -- it is not a URLError, so it stays uncertain.
             raise BridgeError(f"bridge unreachable on send: {exc}", status_code=UNREACHABLE_SEND_STATUS,
                               code="bridge_unreachable", client_msg_id=client_msg_id) from exc
@@ -535,11 +535,11 @@ class Client:
 
         There is no UI to compose a tappable button in the consumer app, so nothing can automate
         one -- a platform limit, not a gap. What a candidate CAN do is read three options and type
-        one, which is what this sends (TASK-121's rendering half).
+        one, which is what this sends (TASK-224's rendering half).
 
         WHAT IS NOT DONE HERE, and is not papered over either: the typed answer is not turned back
         into a button id. ``api._send`` stores the offered set on the outbound row
-        (``kind='buttons'``), which is the data TASK-121's recovery needs, and until that matcher
+        (``kind='buttons'``), which is the data TASK-224's recovery needs, and until that matcher
         exists a typed "1" reaches the brain as ordinary text and costs one turn. That is the
         deliberate half to leave out -- an ordinal/title/prefix matcher shipped half-written would
         resolve "1" against the wrong offer, and on the consent pair that is the one unacceptable
@@ -646,7 +646,7 @@ class Client:
         the Meta rail). What the recipient sees is the definition's flat text.
 
         A definition whose rendering is not pure text is refused rather than flattened: buttons are
-        TASK-121, and the lane behind the executor has no media send path at all (its ``whatsapp.py``
+        TASK-224, and the lane behind the executor has no media send path at all (its ``whatsapp.py``
         exports ``open_chat, read_thread, send_bubble, go_home, visible_unread`` and nothing else).
         The local first-touch message set that replaces Graph templates here is TASK-124.
         """
@@ -667,7 +667,7 @@ class Client:
                        if present]
         if unsupported:
             raise BridgeError(f"template {definition.get('name')!r} carries {', '.join(unsupported)}: the phone "
-                              f"rail sends text only (buttons are TASK-121, the driver has no media send path)",
+                              f"rail sends text only (buttons are TASK-224, the driver has no media send path)",
                               status_code=CONTRACT_STATUS, payload=definition)
         client_msg_id, trace = self._next_send(to_e164)
         return self._post_message(client_msg_id, to_e164, "text", rendered["text"], trace)

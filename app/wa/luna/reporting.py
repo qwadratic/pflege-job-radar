@@ -1,6 +1,6 @@
-"""Reporting-only view over the Luna card + message history (TASK-71): a stage label and a "ball"
+"""Reporting-only view over the Luna card + message history (TASK-175): a stage label and a "ball"
 (whose turn it is to act), derived from state luna_brain.py already tracks rather than new columns
-to keep in sync. Used by the migration script and the dry-run shadow tool (TASK-72) -- nothing in
+to keep in sync. Used by the migration script and the dry-run shadow tool (TASK-176) -- nothing in
 the live turn() path needs either of these, they exist purely so a human (or a report) can see
 where a thread stands without reading the raw card.
 
@@ -20,7 +20,7 @@ def stage_for(card):
     reads -- new_lead (nothing known yet) through consented (anonymized-send agreed). Does not
     track anything past consented (interview scheduling, clinic submission): this harness's funnel
     intentionally stops there today (VENDORED.md), so there is nothing further to label yet.
-    TASK-101: declined (card.declined, set in code on the model's decline flag) and already_placed
+    TASK-204: declined (card.declined, set in code on the model's decline flag) and already_placed
     (card.already_placed without open_to_new_position) come first -- the candidate ended it."""
     card = card or {}
     if card.get("declined"):
@@ -33,7 +33,7 @@ def stage_for(card):
         return "consented"
     board = requirement_scoreboard(card)
     # Gates only (luna_brain.SCOREBOARD_GATES): the scoreboard also carries computed hints --
-    # next_objective (TASK-91), stage and stage_since (TASK-144) -- which are not satisfied|open|blocked
+    # next_objective (TASK-195), stage and stage_since (TASK-144) -- which are not satisfied|open|blocked
     # statuses at all. handoff_consent is skipped on top of that because this function's own "ready"
     # means "everything except consent".
     if all(board[gate] == "satisfied" for gate in SCOREBOARD_GATES if gate != "handoff_consent"):
@@ -48,7 +48,7 @@ def stage_for(card):
 def ball_for(conn, phone):
     """us: the candidate's last message has no reply behind it yet (a reply is owed). them: we
     already answered. silent: the candidate wrote last and the brain chose silence for that message
-    (claim state ST.NO_SEND_STATE, TASK-101) -- answered, and not waiting on the candidate either, so
+    (claim state ST.NO_SEND_STATE, TASK-204) -- answered, and not waiting on the candidate either, so
     neither catch-up nor a follow-up nudge acts on it. none: no messages at all."""
     row = conn.execute(
         "select direction, wamid from wa_messages where phone=? order by id desc limit 1", (phone,)).fetchone()
@@ -61,7 +61,7 @@ def ball_for(conn, phone):
 
 def report_row(conn, phone):
     """{phone, stage, ball, requirement_scoreboard, stopped, test} for one thread -- the shape a dry-run
-    report or a migration sanity check reads. ``test`` is the TASK-109 flag: a number an operator tests
+    report or a migration sanity check reads. ``test`` is the TASK-212 flag: a number an operator tests
     the live harness with, never a candidate, so any count built from these rows can leave it out.
     None if no thread exists for this phone yet -- checked before
     calling ST.thread(), which would otherwise create one (by design, for a real inbound message;

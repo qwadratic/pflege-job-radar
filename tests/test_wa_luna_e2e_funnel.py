@@ -1,11 +1,11 @@
-"""TASK-68: end-to-end synthetic funnel test. Unlike tests/test_wa_luna_personas.py (a fixed,
+"""TASK-172: end-to-end synthetic funnel test. Unlike tests/test_wa_luna_personas.py (a fixed,
 hand-written candidate script -- deterministic on purpose, for stable regression assertions), BOTH
 sides of every conversation here are live model calls: a small `_CandidateAgent` plays the
 candidate from a short persona brief and improvises its own replies, while `app.wa.luna_brain.turn`
 plays Valentina exactly as in production. This is the harness's answer to "prove it is not just a
 fixed script" for the funnel as a whole, run end-to-end through to a real queue entry.
 
-The candidate agent only types. TASK-96 review: once Valentina asks for the documents with every other
+The candidate agent only types. TASK-199 review: once Valentina asks for the documents with every other
 pre-close gate settled, the persona's next message is the upload of its CV and qualification document
 (PERSONA_DOCUMENTS, written onto the card like app/wa/api.py:_ingest_media) instead of an agent reply.
 
@@ -58,7 +58,7 @@ class _CandidateAgent:
         fresh = self.session_id is None
         this_session_id = self.session_id or str(uuid.uuid4())
         session_flags = ["--session-id", this_session_id] if fresh else ["--resume", this_session_id]
-        # TASK-82 follow-up: this used to key the opening-message prompt off `valentina_bubbles`
+        # TASK-186 follow-up: this used to key the opening-message prompt off `valentina_bubbles`
         # being empty, which also fires on a legitimate mid-conversation no_send turn (Valentina
         # has nothing new to say, e.g. while "waiting" on a promised upload) -- the candidate then
         # got told it was writing to Valentina "for the first time" again and looped its own
@@ -91,7 +91,7 @@ class _CandidateAgent:
         return text
 
 
-# TASK-74: rewritten after comparing these live-improvised personas against aggregate, non-
+# TASK-178: rewritten after comparing these live-improvised personas against aggregate, non-
 # identifying stats from 701 real WhatsApp messages -- the original style here (a "Hallo
 # Valentina!" self-introduction, full sentences, warm sign-offs) read as an organized written
 # email, not a rushed WhatsApp text: real candidates were overwhelmingly short (median ~3 words,
@@ -145,7 +145,7 @@ PERSONAS = {
 }
 
 
-# TASK-96 review: the close needs a CV and the qualification document for the path in card.documents, and the
+# TASK-199 review: the close needs a CV and the qualification document for the path in card.documents, and the
 # candidate agent can only type. Each persona's files as (document_type, text, certificate_level): the
 # kenntnispruefung path asks for the Defizitbescheid too (prompts.py DOCUMENT ASK).
 PERSONA_DOCUMENTS = {
@@ -219,14 +219,14 @@ def _run_persona(name, persona_prompt, session_root):
     uploaded = False
     for turn in range(1, MAX_TURNS + 1):
         if valentina_buttons:
-            # TASK-80: Valentina just offered the anonymized send and attached real Ja/Nein
+            # TASK-184: Valentina just offered the anonymized send and attached real Ja/Nein
             # buttons -- a real WhatsApp UI renders those as taps, not free text, so simulate the
             # tap a cooperative persona (every persona here is written to consent) would make,
             # rather than asking the live candidate LLM to type something a button UI wouldn't.
             yes = next(b for b in valentina_buttons if b["id"] == LB.CONSENT_YES_ID)
             candidate_text, button_id, logged = yes["title"], yes["id"], yes["title"]
         elif not uploaded and _documents_asked(thread["slots"], valentina_bubbles):
-            # TASK-96 review: the reply to the document ask is the upload -- both files land on the card the way
+            # TASK-199 review: the reply to the document ask is the upload -- both files land on the card the way
             # app/wa/api.py:_ingest_media writes them, then the turn runs with empty text, as a media message does.
             for document_type, text, certificate_level in PERSONA_DOCUMENTS[name]:
                 thread = _send_document(thread, document_type, text, certificate_level)
@@ -248,7 +248,7 @@ def _run_persona(name, persona_prompt, session_root):
 
 def _write_report(outcomes, mailing_list):
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    lines = ["# E2E synthetic funnel report (TASK-68)", ""]
+    lines = ["# E2E synthetic funnel report (TASK-172)", ""]
     for o in outcomes:
         status = "CONSENTED" if o["converged"] else "DID NOT CONVERGE"
         lines.append(f"## {o['name']} -- {status} in {o['turns']} turns")

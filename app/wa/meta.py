@@ -15,7 +15,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from . import config as C
-# TASK-115: sender_e164/canonicalize_phone live in app/wa/phones.py now -- a phone number is not a
+# TASK-218: sender_e164/canonicalize_phone live in app/wa/phones.py now -- a phone number is not a
 # Meta concept. Re-exported here, so every existing M.sender_e164 / M.canonicalize_phone caller
 # (and every test that patches through this module) keeps working unchanged.
 from .phones import canonicalize_phone, sender_e164  # noqa: F401
@@ -94,7 +94,7 @@ def _default_binary_transport(method, url, headers=None, timeout=C.HTTP_TIMEOUT_
         raise MetaError(f"Meta network error: {exc.reason}") from exc
 
 
-# --- Templates: definition, send parameters, rendering (TASK-98) -----------------------------------
+# --- Templates: definition, send parameters, rendering (TASK-201) -----------------------------------
 #
 # The definition (Client.get_template / find_template) is the source of truth. The caller supplies
 # values only, as one JSON-shaped mapping:

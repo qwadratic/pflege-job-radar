@@ -12,7 +12,7 @@ app/wa/luna_brain.py:market_snapshot calls ``build_offer`` and hands the result 
 app/wa/luna/grounding.py checks afterwards that the reply stayed inside it.
 
 No position carries a URL. The board's ``external_url`` never leaves this module -- prompts.py has
-banned sending a board URL or job link since TASK-91, and the way to make that a guarantee rather
+banned sending a board URL or job link since TASK-195, and the way to make that a guarantee rather
 than a rule is to keep the link out of the payload the model writes from. That stays true with
 TASK-150: the original-ad link a TEST thread may ask for is looked up by posting_id in
 app/wa/luna/source_link.py, after the model has written its reply, so no link ever passes through

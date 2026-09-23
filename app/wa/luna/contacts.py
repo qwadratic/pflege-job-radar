@@ -1,9 +1,9 @@
-"""Best-effort clinic contact discovery (TASK-64, plan section 3; TASK-69 added a fourth, now
+"""Best-effort clinic contact discovery (TASK-168, plan section 3; TASK-173 added a fourth, now
 first-tried source). A Pflegedirektion/HR contact is found from data the board already has, from an
 optional external contact CRM an operator may run, or by politely reading the clinic's own site,
 tried in order of how confident/cheap each one is:
 
-  0. app/wa/luna/external_contacts.py (TASK-69) -- an optional, operator-configured external
+  0. app/wa/luna/external_contacts.py (TASK-173) -- an optional, operator-configured external
      clinic-contact CRM (WA_EXTERNAL_CONTACT_DB env var; a no-op when unset). When configured with
      a real, human/agent-collected contact database, a role-classified contact from it beats a
      guessed website-scraped address, so it is tried first, not last.
@@ -106,7 +106,7 @@ def get_contact(c, clinic_id):
     return dict(row) if row else None
 
 
-# --- source 0: an optional, operator-configured external contact CRM (TASK-69) ------------------
+# --- source 0: an optional, operator-configured external contact CRM (TASK-173) ------------------
 
 def _from_external_crm(clinic, external_crm_run=None):
     """Best-confidence source when configured, tried first. Broadly caught on purpose, same

@@ -1,5 +1,5 @@
-"""Offline tests for the new store.py primitives: reply-turn claims (TASK-77), the per-candidate
-LLM call log (TASK-76), and send-failure recording (TASK-79)."""
+"""Offline tests for the new store.py primitives: reply-turn claims (TASK-181), the per-candidate
+LLM call log (TASK-180), and send-failure recording (TASK-183)."""
 import pytest
 
 from app.wa import config as C
@@ -38,7 +38,7 @@ def test_a_terminal_sent_claim_is_never_reclaimable(db):
 
 
 def test_a_recorded_no_send_claim_is_never_reclaimable(db):
-    """TASK-101: the brain chose silence for this message; catch-up must not re-run the model on it."""
+    """TASK-204: the brain chose silence for this message; catch-up must not re-run the model on it."""
     ST.claim_reply_turn(db, "+49111", "wamid.1")
     ST.finish_reply_turn_claim(db, "+49111", "wamid.1", ST.NO_SEND_STATE)
     assert ST.claim_reply_turn(db, "+49111", "wamid.1") is False
