@@ -124,11 +124,13 @@ def test_expose_route_404s_for_an_unknown_clinic(fresh, monkeypatch):
     assert r.status_code == 404
 
 
-def test_expose_route_returns_photo_and_presentation_together(fresh, monkeypatch):
+def test_expose_route_returns_photos_array_and_presentation_together(fresh, monkeypatch):
+    # TASK-121 will curate up to 3 photos/clinic -- `photos` is a list from day one so an integration
+    # built against this contract today does not need to change shape once that lands (Ivan, 2026-09-23).
+    R.record_clinic_photo("16104", "/data/clinic_photos/16104/maps.jpg", "maps")
     monkeypatch.setattr(R, "enqueue", lambda rid: None)
     monkeypatch.setattr(D, "clinic", lambda cid: {
         "clinic_id": "16104", "name": "kbo-Heckscher-Klinikum", "town": "Ingolstadt",
-        "photo_url": "/photos/16104",
         "presentation": {"text_de": "Ein Fachkrankenhaus.", "confidence": "high", "sources": ["https://x.example"], "fetched_at": "2026-09-23"}})
     from app.main import app
     with TestClient(app) as c:
@@ -136,16 +138,24 @@ def test_expose_route_returns_photo_and_presentation_together(fresh, monkeypatch
     assert r.status_code == 200
     body = r.json()
     assert body == {"clinic_id": "16104", "name": "kbo-Heckscher-Klinikum", "town": "Ingolstadt",
-                     "photo_url": "/photos/16104",
+                     "photos": ["/photos/16104"],
                      "presentation": {"text_de": "Ein Fachkrankenhaus.", "confidence": "high", "sources": ["https://x.example"]}}
 
 
-def test_expose_route_presentation_is_null_not_missing_when_clinic_has_none(fresh, monkeypatch):
+def test_expose_route_photos_is_an_empty_list_not_null_when_clinic_has_none(fresh, monkeypatch):
     monkeypatch.setattr(R, "enqueue", lambda rid: None)
     monkeypatch.setattr(D, "clinic", lambda cid: {
-        "clinic_id": "36201", "name": "No Blurb Clinic", "town": "Regensburg", "photo_url": None, "presentation": None})
+        "clinic_id": "36201", "name": "No Blurb Clinic", "town": "Regensburg", "presentation": None})
     from app.main import app
     with TestClient(app) as c:
         r = c.get("/api/clinics/36201/expose")
     assert r.status_code == 200
-    assert r.json()["presentation"] is None
+    body = r.json()
+    assert body["photos"] == []
+    assert body["presentation"] is None
+
+
+def test_clinic_photo_urls_round_trip(fresh):
+    assert R.clinic_photo_urls("16104") == []
+    R.record_clinic_photo("16104", "/data/clinic_photos/16104/maps.jpg", "maps")
+    assert R.clinic_photo_urls("16104") == ["/photos/16104"]

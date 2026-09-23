@@ -285,12 +285,18 @@ def api_clinic_expose(clinic_id: str):
     Firecrawl-researched paragraph. Deliberately NOT the full clinic dict (jobs/routing/crawl status
     are a different concern, already served by GET /api/clinics/{clinic_id}) -- a bot integration wants
     a small, stable shape, not the whole board's internals. `presentation` is null until the blurb
-    pipeline has covered this clinic (TASK-120 AC#7, pilot stage: 15 of 407 clinics as of 2026-09-23)."""
+    pipeline has covered this clinic (TASK-120 AC#7, pilot stage: 15 of 407 clinics as of 2026-09-23).
+
+    `photos` is a LIST, not a single field (Ivan, 2026-09-23: TASK-121 will curate up to 3 photos per
+    clinic -- an integration built against this contract today must not need to change once that
+    lands). Holds at most one URL today (R.clinic_photo_urls, distinct from clinic_photo_url()'s
+    single-string shape the main clinic dict/frontend still use) -- an empty list, not null/missing,
+    when there is none yet."""
     c = D.clinic(clinic_id)
     if not c:
         raise HTTPException(404, "unknown clinic")
     p = c.get("presentation") or {}
-    return {"clinic_id": c["clinic_id"], "name": c["name"], "town": c.get("town"), "photo_url": c.get("photo_url"),
+    return {"clinic_id": c["clinic_id"], "name": c["name"], "town": c.get("town"), "photos": R.clinic_photo_urls(clinic_id),
             "presentation": {"text_de": p.get("text_de"), "confidence": p.get("confidence"), "sources": p.get("sources") or []} if p else None}
 
 

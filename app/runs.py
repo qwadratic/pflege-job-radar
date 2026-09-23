@@ -462,6 +462,18 @@ def clinic_photo_path(clinic_id):
     return r["path"] if r else None
 
 
+def clinic_photo_urls(clinic_id):
+    """["/photos/<id>", ...] for every stored photo of this clinic (0, 1, or more once TASK-121's
+    up-to-3-photo curation lands) -- the array-shaped contract GET /api/clinics/{id}/expose returns,
+    kept separate from clinic_photo_url()'s single-string shape (which _build()/the frontend's
+    clinicPhoto() already depend on and must not change). Today every clinic has at most one row
+    (source='maps'), so this returns at most one URL -- the route itself (GET /photos/{clinic_id})
+    still only ever serves that one file; TASK-121 owns teaching it to serve more than one."""
+    with _lock, db() as c:
+        n = c.execute("select count(*) as n from clinic_photos where clinic_id=?", (clinic_id,)).fetchone()["n"]
+    return [f"/photos/{clinic_id}"] if n else []
+
+
 def clinic_photos_map():
     """clinic_id -> "/photos/<id>" for every clinic with a stored photo -- one query for _build()'s
     per-snapshot merge, mirroring career_profiles()'s shape."""

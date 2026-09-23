@@ -299,12 +299,17 @@ the raw filesystem path -- only this route and the `photo_url` field above do.
 
 ### `GET /api/clinics/{clinic_id}/expose`
 A minimal, bot-facing combination of the two fields above (the term "expose" is a real-estate one: a
-ready presentation sheet) -- `{clinic_id, name, town, photo_url, presentation}`, `presentation` shaped as
+ready presentation sheet) -- `{clinic_id, name, town, photos[], presentation}`, `presentation` shaped as
 `{text_de, confidence, sources[]}` or `null`. Meant for a candidate-facing bot integration (e.g. the
 WhatsApp nurse funnel) that wants one small, stable response rather than the full clinic dict `GET
 /api/clinics/{clinic_id}` returns (which also carries jobs, routing, and crawl status). 404 for an
-unknown `clinic_id`; never 404s for a clinic that simply has no photo/presentation yet -- both fields
-are just `null` in that case.
+unknown `clinic_id`; never 404s for a clinic that simply has no photo/presentation yet -- `photos` is
+just `[]` and `presentation` is `null` in that case.
+
+`photos` is a list on purpose, not a single URL like the Clinic row's `photo_url` -- TASK-121 will curate
+up to 3 photos per clinic, and this contract must not change shape when that lands. Today it holds at
+most one entry (`app.runs.clinic_photo_urls`, distinct from `clinic_photo_url()`'s single-string reader
+the Clinic row/frontend still use).
 
 ### Job row
 `posting_id, title, role_class, role_label, department_hint, department_raw, qualification_hint, employer, employer_class, clinic_id, clinic_name, regierungsbezirk, versorgungsstufe, traegerart, clinic_beds, city, plz, lat, lon, employment_types[], contract, start_date, first_published, first_seen, last_seen, status, verify_status, verified_at, source_url, external_url, source_codes[], n_observations, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare, fresh`
