@@ -1613,6 +1613,16 @@ class AdbDriver(D.PhoneDriver):
             self._leave_selection()
 
     # --- housekeeping ------------------------------------------------------------------------------------
+    def focus(self):
+        """-> the foreground activity. TASK-226 added this to PhoneDriver and to FakeDriver but not
+        here, so every caller of the driver-level read -- Executor._recover_if_dirty, which runs on
+        EVERY take_phone, and InboundWatcher's idle self-check, which runs every 5 s -- would have
+        hit PhoneDriver.focus's NotImplementedError the moment this reached the handset. It never
+        did: the mini was still running a pre-TASK-226 executor, so the fault was invisible until
+        the deploy. Tests missed it because FakeDriver implements focus and the real driver is the
+        one layer with no unit test."""
+        return self.adb.focus()
+
     def park(self):
         """Back out of the conversation and onto the launcher, so notifications fire again."""
         self._open_phone = None

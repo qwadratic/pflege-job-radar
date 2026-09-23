@@ -1328,3 +1328,19 @@ def test_delete_paths_removes_exactly_what_it_is_given_and_tolerates_a_missing_f
     removed = driver.delete_paths([a, gone])
     assert removed == 1
     assert not a.exists() and b.exists()
+
+
+# --- the whole class of "the abstract base says it exists, the real driver never wrote it" --------
+
+def test_the_real_driver_implements_every_verb_the_base_only_declares():
+    """AdbDriver is the one layer with no unit test of its own (bridge/driver.py says so in its own
+    header), so a verb added to PhoneDriver and to FakeDriver but never to AdbDriver passes every
+    test in this repo and then raises NotImplementedError on the handset. That is exactly what
+    happened to focus() between TASK-226 and 2026-09-23: it only stayed invisible because the mini
+    was still running a pre-TASK-226 executor, and it would have killed every phone op and the
+    inbound watcher thread on the next deploy. This test is the guard, not that one fix."""
+    missing = [name for name in dir(D.PhoneDriver)
+               if not name.startswith("_")
+               and callable(getattr(D.PhoneDriver, name, None))
+               and getattr(AD.AdbDriver, name, None) is getattr(D.PhoneDriver, name, None)]
+    assert missing == [], f"AdbDriver never overrides {missing} -- they raise NotImplementedError on a real phone"
