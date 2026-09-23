@@ -237,10 +237,15 @@ def compute():
     # was invisible until the next manual audit. 7d, not all-time: a board fixed last week should not
     # keep showing as broken forever.
     incomplete_since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-    incomplete_issues = [i for i in R.list_crawl_issues(since=incomplete_since) if i.get("kind") == "incomplete"]
+    recent_issues = R.list_crawl_issues(since=incomplete_since)
+    incomplete_issues = [i for i in recent_issues if i.get("kind") == "incomplete"]
     incomplete_by_vendor = defaultdict(list)
     for i in incomplete_issues:
         incomplete_by_vendor[i.get("vendor")].append(i)
+    # TASK-92 AC#5: kind='intake' (app/crawl.py's cli-inbox/link-cross/general-intake failure paths)
+    # is a whole-run failure, not a per-board under-read -- a different shape from 'incomplete' above,
+    # surfaced separately rather than folded into the same count.
+    intake_issues = [i for i in recent_issues if i.get("kind") == "intake"]
 
     rows = []
     for key, a in acc.items():
@@ -280,7 +285,13 @@ def compute():
             # that still under-reads updates it in place rather than piling up duplicates).
             "incomplete_boards": sorted(
                 ({"board_url": i["board_url"], "vendor": i.get("vendor"), "day": i["day"], "error": i["error"]}
-                 for i in incomplete_issues), key=lambda x: x["day"], reverse=True)}
+                 for i in incomplete_issues), key=lambda x: x["day"], reverse=True),
+            # TASK-92 AC#5: a whole-run intake failure (cli inbox/link-cross exited nonzero, or the
+            # intake step itself raised) is now visible here instead of only in run_log -- same
+            # 7-day window, same dedupe-by-upsert reasoning as incomplete_boards above.
+            "intake_issues": sorted(
+                ({"board_url": i["board_url"], "vendor": i.get("vendor"), "day": i["day"], "error": i["error"]}
+                 for i in intake_issues), key=lambda x: x["day"], reverse=True)}
 
 
 @router.get("/coverage")

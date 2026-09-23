@@ -46,6 +46,18 @@ def test_coverage_surfaces_incomplete_boards_from_crawl_issues(client):
                                         "day": R.now()[:10], "error": "board reports 57 total but the adapter returned 12 row(s)"}]
 
 
+def test_coverage_surfaces_intake_failures_separately_from_incomplete_boards(client):
+    """TASK-92 AC#5: a whole-run intake failure (cli inbox/link-cross exited nonzero, or the intake
+    step itself raised, app/crawl.py's kind='intake' crawl_issues) was written every time but never
+    read in app/ -- must show up here, and distinctly from a per-board under-read (kind='incomplete',
+    TASK-88), since they mean different things."""
+    R.record_crawl_issue("pflege_jobs.cli link-cross", R.now()[:10], "intake", "link-cross", [], "cli link-cross exited 1", None)
+    d = client.get("/api/coverage").json()
+    assert d["intake_issues"] == [{"board_url": "pflege_jobs.cli link-cross", "vendor": "link-cross",
+                                    "day": R.now()[:10], "error": "cli link-cross exited 1"}]
+    assert d["incomplete_boards"] == []   # an intake-kind issue must not also count as incomplete
+
+
 def test_coverage_last_run_and_credits(client):
     rid = R.create_run("ats_type", "typo3_jobs", "adapter", clinic_ids=["36201"])
     R.update_run(rid, status="done", started_at=R.now(), finished_at=R.now(), n_rows=12, n_new=4, error="2 error(s), see log")
