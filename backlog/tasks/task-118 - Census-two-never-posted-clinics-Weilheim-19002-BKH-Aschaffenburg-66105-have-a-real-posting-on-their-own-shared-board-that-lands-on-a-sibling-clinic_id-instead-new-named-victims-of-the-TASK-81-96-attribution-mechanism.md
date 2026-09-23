@@ -4,10 +4,10 @@ title: >-
   Census: two never-posted clinics (Weilheim 19002, BKH Aschaffenburg 66105)
   have a real posting on their own shared board that lands on a sibling
   clinic_id instead -- new named victims of the TASK-81/96 attribution mechanism
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-22 18:28'
-updated_date: '2026-09-23 02:47'
+updated_date: '2026-09-23 03:15'
 labels: []
 dependencies: []
 ordinal: 118000
@@ -22,8 +22,8 @@ Same 2026-09-22 never-posted census (143/407 registry clinics, zero pflege_jobs.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 66105 (Aschaffenburg) and 66104 (Lohr am Main)'s shared concludis board recognizes explicitly multi-site postings (title names both towns) and either links the posting to both clinic_ids or picks correctly per the town actually meant, instead of defaulting to one site every time
-- [ ] #2 TASK-81 and TASK-96 are updated to reference these two new cases (19001/19002 and 66104/66105) alongside their existing named examples, so a fix validated only against KJF Hochried or the original 21-clinic list doesn't silently miss this shape
-- [x] #3 Re-run confirms 19002 and 66105 each have at least the posting(s) identified here (6267/6268 and 10076 respectively) attributed to their own clinic_id, not just the sibling's
+- [x] #2 TASK-81 and TASK-96 are updated to reference these two new cases (19001/19002 and 66104/66105) alongside their existing named examples, so a fix validated only against KJF Hochried or the original 21-clinic list doesn't silently miss this shape
+- [ ] #3 Re-run confirms 19002 and 66105 each have at least the posting(s) identified here (6267/6268 and 10076 respectively) attributed to their own clinic_id, not just the sibling's
 - [x] #4 19002 (Weilheim) and 19001 (Schongau)'s shared meinkrankenhaus2030.de board postings are re-matched with a fix that lets 19002 keep postings whose JSON-LD city says Weilheim even though the seed/board's stored town is Schongau, without breaking 19001's own correct matches
 <!-- AC:END -->
 
@@ -88,4 +88,14 @@ app/crawl.py), reverting each fix in place, confirming the exact expected failur
 confirming green again -- never git checkout/stash/reset.
 
 Full offline suite pending (running at the end of this session's 96/118/90 batch).
+
+Self-correction 2026-09-23: AC#3 had been checked but its own text requires BOTH 19002 AND 66105 to get their named posting attributed to their own clinic_id. Case 1 (19002/6267,6268) holds. Case 2 (66105/10076) does not and cannot -- live evidence (see CASE 2 note above) shows posting 10076's employer_name is genuinely clinic 66104's own registered name, not 66105's; there is no real-world fact that would make 10076 belong to 66105. AC#3 as literally worded encodes case 2's same wrong premise as AC#1. Unchecked rather than left falsely satisfied; case 1's win is fully preserved in AC#4 (checked) and the notes above.
+
+AC#1 final decision 2026-09-23: live-checked karriere.bezirkskrankenhaus-lohr.de in full -- exactly ONE posting exists on this board (10076), already correctly attributed to 66104 by its own unique employer_name. There is no 'defaults to one site every time' pattern to fix (that would require multiple postings, or an ambiguous one) -- the AC's premise does not hold. Building multi-site clinic_id-splitting logic for a board with a single, correctly-attributed posting would be speculative code for a problem that does not exist (no safety nets / YAGNI). Left unchecked rather than fabricated; revisit only if this board ever grows a second, genuinely ambiguous posting.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Two named census cases, two different outcomes. Case 1 (19001/19002, meinkrankenhaus2030.de): real bug, fixed -- extract_standort_city() reads a Standort mention from body prose when no structured location field exists, wired through crawl_wp_jobs/_wp_job_rows with the pair added to VENDOR_ACCOUNT_POOLS; live-verified both postings now resolve to the correct clinic_id. Case 2 (66104/66105, karriere.bezirkskrankenhaus-lohr.de): investigated and found NOT a bug -- the board's one real posting already correctly names 66104 by its own registered employer name; AC#1 and (for this case) AC#3 left unchecked with live evidence rather than forcing a fix the data doesn't support. AC#2 done: TASK-81 and TASK-96 both updated to reference both cases. Full offline suite green (1411 passed, 0 failed).
+<!-- SECTION:FINAL_SUMMARY:END -->

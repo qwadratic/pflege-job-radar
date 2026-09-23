@@ -3,11 +3,11 @@ id: TASK-96
 title: >-
   R1_exact town gate can refuse a correct match when the posting's city is the
   operator's registered address, not the work site (KJF Klinik Hochried)
-status: To Do
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-22 04:53'
-updated_date: '2026-09-23 02:24'
+updated_date: '2026-09-23 03:15'
 labels: []
 dependencies: []
 references:
@@ -117,4 +117,21 @@ calling _match_content, so a re-run still reports 25, not 24; noted here rather 
 accurate, low priority to fix since its one-time diagnostic job for this task is done).
 
 Full offline suite pending (running alongside TASK-118's work in the same session pass).
+
+Full offline suite: 1411 passed, 0 failed (confirmed 2026-09-23, same run that also validated TASK-118).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-23 03:15
+---
+2026-09-23, TASK-118 follow-up: checked whether TASK-118's two new census cases (19001 Schongau/19002 Weilheim, and 66104/66105 Aschaffenburg) are this task's city-gate mechanism. 19001/19002 is not -- no structured location field at all, fixed as a Standort-prose-extraction bug in crawlers/vendor_adapters.py, unrelated to R1_exact/other_town_disagrees. 66104/66105 is not either -- live-traced, the one real posting on that shared board has a unique employer_name naming clinic 66104 by its own registered name; not a city-disagreement refusal, nothing for this gate to catch. Neither case is a silent miss of this mechanism's shape.
+---
+<!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Named-employer exception (CITY_UNRELIABLE_EMPLOYERS={"kjf klinik hochried"}) added to registry.py's R1_exact other_town_disagrees gate, scoped via a registry-wide 25-case scan proving operator-string match is not a reliable general signal. Live-verified via direct Matcher replay (18006 now resolves via R1_exact instead of refusing) and a real production re-crawl (18006 now shows 2 correctly-attributed open postings). Mutation-tested, full offline suite green.
+<!-- SECTION:FINAL_SUMMARY:END -->

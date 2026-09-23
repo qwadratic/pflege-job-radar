@@ -3,11 +3,11 @@ id: TASK-86
 title: >-
   Registry corrections: ~20 careers_url and ats_type values that point at a
   marketing page, the wrong hospital, or a single job-detail page
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 04:26'
-updated_date: '2026-09-23 01:52'
+updated_date: '2026-09-23 03:12'
 labels: []
 dependencies: []
 ordinal: 86000
@@ -125,6 +125,8 @@ rather than chased further here.
 
 tools/task86_apply_registry_corrections.py checked in, reproducible, documents the 56404 exclusion
 inline.
+
+Full offline suite: 1411 passed, 0 failed (2026-09-23, same run as TASK-96/118).
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -173,33 +175,5 @@ open question, not a guessed answer.
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-2026-09-22 follow-up: the prior round delivered nothing (all 3 owned files sha256-identical to approved commit a5c01d6, confirmed before starting). This round fixes all 7 reviewer findings with real, verified diffs -- see git diff on pflege_jobs/registry_lint.py, pflege_jobs/sinks.py, tests/test_registry_lint.py, data/registry/clinics.csv, and the updated backups/task86-registry-dryrun-2026-09-21.md/.json.
-
-Wired the lint into EdgeSink.write_clinics (pflege_jobs/sinks.py), the one funnel career_discover_exa.py and cli.py's ats-probe both post careers_url through -- it now raises ValueError and refuses the whole batch if any row is job-detail-shaped (mutation-tested: removing the gate turns exactly 1 test red, the rest of test_sinks.py's coverage is unaffected).
-
-Fixed a live regression in clinic 16215 (Rotkreuzklinikum Nymphenburger Str.): this task's own prior CSV correction pointed it at a URL that returns 0 rows today because crawlers/vendor_adapters.py's concludis regex matches only setJobBoard, not this page's setMultiJobBoard (verified live). Reverted the CSV to the URL TASK-77 already made work (17 rows live today, confirmed live, never mutated). Did not touch crawlers/vendor_adapters.py (sibling-owned this round).
-
-Widened the lint's job-uuid pattern to job-slug (any /job/<slug>/, not only a UUID) -- the narrow pattern missed 2 real live single-job-detail URLs (16268, 47102). Ran the lint against all 407 live pflege_jobs.clinics rows, not only the CSV: 6 hits, not the 3 previously reported -- 47601/67201/67601 plus 77901/77902/77903 (measured: clinic 77902 carries 7 live postings and 77901 carries 2 junk rows, all sourced from the same delisted URL still live in production). Replaced the test that asserted the 47601 row is still broken in production data (would go red the moment someone fixes it) with a synthetic-fixture test of lint_csv()'s own behavior. Fixed a report/JSON disagreement over clinic 76301's careers_url+ats_type bucketing, and corrected the dry-run JSON's own staged (wrong) live push for 16215.
-
-Mutation-tested via /tmp copies, restored after, never git: check_careers_url gutted -> 6/10 tests red, 4 correctly-insensitive negative-space tests stayed green; write_clinics gate removed -> exactly 1 (the wiring) test red, 23 stayed green. Both restored, all green after.
-
-Full offline suite, run once (.venv/bin/python -m pytest -m "not network"): 1341 passed, 1 skipped, 1197 deselected, 0 failed, 418.85s (baseline 1336/1/0 at commit 8bf6d63; delta includes concurrent sibling work landing in the same shared tree this round).
-
-AC#1 and AC#4 remain unchecked: no production DB write happened or was permitted this round (explicit instruction). Both need a human to run the now-corrected dry-run payload in backups/task86-registry-dryrun-2026-09-21.json via EdgeSink.write_clinics(), then re-crawl the affected clinics and report recovered postings. AC#2 and AC#3 stay checked from the prior round; AC#3's evidence is now materially stronger (wired into the write path and swept against live, not only unit-tested against the CSV in isolation).
-
-2026-09-22, third round: fixed all 3 concrete problems an independent review found in round 2's registry-lint wiring, re-ran the full suite, corrected the backlog/dry-run numbers the review disproved.
-
-#1 (sinks.py:184, whole-batch abort on a carry-through value): write_clinics now scrubs only the offending careers_url (sends "" so the edge upsert's coalesce keeps whatever is already stored, verified against the actual deployed SQL in edge/pflege-ingest/index.template.ts) instead of raising for the entire batch. Every other column/row still gets written.
-#2 (cli.py:138, cmd_link_clinics bypasses the lint): now routed through sink.write_clinics(...) instead of sink._post directly, closing the second real production funnel (the CSV still carries 5 lint-flagged rows this command would otherwise push ungated).
-#3 (tests/test_registry_lint.py:98, no mixed-batch pin): added a 200-clean+1-carried-over-bad-row test and an end-to-end cmd_link_clinics wiring test; rewrote the old raise-based test for the new scrub behavior. 10 -> 12 tests.
-
-Evidence: all 3 new/rewritten tests reproduced red against the pre-fix code, green after. Two independent /tmp-copy mutation passes (gut the lint logic; disable just the wiring) each killed exactly the tests they should have and nothing else, restored and re-confirmed green both times. Targeted set: 66 passed. Full offline suite, run once: 1352 passed, 1 skipped, 1197 deselected, 0 failed, 404.96s (baseline 1336/1/0; prior round 1341/1/0) -- first attempt this session died with no summary under heavy shared-VM contention (54 concurrent peer sessions via ListAgents), retried once and completed clean.
-
-Corrected backups/task86-registry-dryrun-2026-09-21.md: the live lint sweep it reported (6 hits) excluded 16268/47102 from the live check; a fresh sweep this session finds 8 (matches the reviewer's independent number). CSV sweep unchanged at 5. Re-measured 77901/77902/77903 open-posting counts live (77901 now 3, not the prior pass's 2 -- real crawl movement, flagged not silently reused).
-
-data/registry/clinics.csv and pflege_jobs/registry_lint.py are unchanged this round (confirmed by diff) -- neither of the 3 findings needed changes there.
-
-Discovered, NOT fixed (outside this round's 3 named problems and outside this task's owned files): app/crawl.py:969 (refetch_career(), TASK-95-owned) posts a clinics payload via EdgeSink()._post directly, bypassing write_clinics and this lint -- a fourth real funnel that can carry through an already-bad live careers_url the same way problem #1 did. Flagged for a human/TASK-95 decision (route it through write_clinics, or push the scrub down into EdgeSink._post itself). Also lower-urgency: data/sync_krankenhausplan_2026.py's one-off annual sync posts via raw requests, not EdgeSink at all.
-
-AC#3 stays checked -- its evidence is now materially stronger: the previous wiring, exercised against a real mixed batch (which both real callers routinely produce), would have permanently wedged cli.py's inbox drain (raise before ack_fn, re-raising every retry) -- a production-breaking defect in AC#3's own enforcement, now fixed and covered by red/green tests plus two mutation passes. AC#1 and AC#4 remain unchecked: no production DB write happened or was permitted this round. AC#2 unaffected, stays checked.
+Applied 20 of 21 staged corrections (backups/task86-registry-dryrun-2026-09-21.json) live via EdgeSink().write_clinics; excluded 56404 pending TASK-103's operator-family scope decision. Found+fixed a second bug beyond the dry-run's scope: 66301's ats_type was wrong (softgarden -> wp_jobs, live-verified 0->49 rows, 13 real Pflege postings). Re-crawled all 21 affected clinics with real scoped runs, before/after v_postings counts recorded; concrete wins are 16203 (0->4), 16201 (junk replaced by 14 real postings), 18402 (+1), 66301 (routing fixed for future crawls). 2 runs hit a transient Postgres statement-timeout in link-cross (not data loss, flagged for TASK-92/88). 3 kbo.de-shaped follow-ups (comment #3) handed off, not applied this round.
 <!-- SECTION:FINAL_SUMMARY:END -->
