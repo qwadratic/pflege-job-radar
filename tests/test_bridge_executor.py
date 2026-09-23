@@ -8,6 +8,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -343,6 +344,33 @@ def test_the_phone_lock_is_free_while_the_brain_runs(rig):
     rig.clock.advance(10)
     rig.send(key=KEY2, body="zwei")
     assert seen == [True, True]
+
+
+# --- TASK-226: pre-flight dirty-state recovery ---------------------------------------------------
+def test_take_phone_parks_a_conversation_left_open_before_the_caller_runs(rig):
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    with ExitStack() as stack:
+        rig.executor.take_phone(stack, PHONE)
+        # the caller's own work happens here, holding the lock -- park() already ran before it
+        assert rig.driver.parked == 1
+        assert rig.driver.focus_value != "com.whatsapp/.Conversation"
+    assert rig.executor.dirty_recovered == 1
+    rows = journal(rig, "dirty_state_recovered")
+    assert len(rows) == 1
+    assert json.loads(rows[0]["detail"])["focus"] == "com.whatsapp/.Conversation"
+
+
+def test_take_phone_leaves_a_clean_phone_alone(rig):
+    with ExitStack() as stack:
+        rig.executor.take_phone(stack, PHONE)
+    assert rig.driver.parked == 0
+    assert rig.executor.dirty_recovered == 0
+    assert journal(rig, "dirty_state_recovered") == []
+
+
+def journal(rig, event):
+    return [dict(r) for r in rig.ledger._db.execute(
+        "select * from journal where event=?", (event,)).fetchall()]
 
 
 # --- crash and reconcile ---------------------------------------------------------------------------------
@@ -1285,6 +1313,43 @@ def test_a_phone_that_is_gone_is_counted_and_journalled_and_never_raises(rig):
     assert watch.errors == 1
     assert "adb 'device' state" in watch.last_error
     assert watch.heartbeat()["last_ok_at"] is None
+
+
+# --- TASK-226: the idle self-check, catching drift with nothing queued --------------------------
+def test_a_briefly_dirty_read_is_not_acted_on_yet(rig):
+    """One cycle is not proof: a send still mid-flight can read as a Conversation for a moment
+    too, and its own finally: park() deserves the first chance."""
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
+    watch.cycle()
+    assert rig.driver.parked == 0
+    assert watch.idle_dirty_recovered == 0
+
+
+def test_a_sustained_dirty_conversation_is_parked_by_the_idle_check(rig):
+    rig.driver.focus_value = "com.whatsapp/.Conversation"
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
+    watch.cycle()
+    watch.cycle()
+    assert rig.driver.parked == 1
+    assert watch.idle_dirty_recovered == 1
+    rows = journal(rig, "idle_dirty_recovered")
+    assert len(rows) == 1
+    assert json.loads(rows[0]["detail"])["focus"] == "com.whatsapp/.Conversation"
+
+
+def test_the_idle_check_never_races_a_phone_something_else_holds(rig):
+    """Sustained-dirty is not enough on its own: if the flock is held right now, something else
+    is legitimately using the phone, and this watcher must never touch the UI underneath it."""
+    driver = BusyPhone(inbound=_inbound())
+    driver.focus_value = "com.whatsapp/.Conversation"
+    rig.executor.driver = driver
+    watch = W.InboundWatcher(rig.executor, log=lambda _m: None)
+    watch.cycle()
+    watch.cycle()
+    assert driver.parked == 0
+    assert watch.idle_dirty_recovered == 0
+    assert journal(rig, "idle_dirty_recovered") == []
 
 
 # --- the identity watcher (TASK-131 round 6) --------------------------------------------------------

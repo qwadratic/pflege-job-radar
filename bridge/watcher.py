@@ -29,6 +29,7 @@ import mimetypes
 import re
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,6 +40,12 @@ from . import media as MD
 #: Seconds between polls of the notification shade. Not a cap on anything -- it is how often we ask.
 #: Five seconds is under the pace a human answers at and well above the cost of one dumpsys.
 DEFAULT_INTERVAL_SEC = 5.0
+
+#: Consecutive dirty cycles required before the idle self-check acts (TASK-226). One cycle is not
+#: enough: a legitimate send/read still mid-flight can read as a Conversation for a moment too,
+#: and its own ``finally: park()`` deserves the first chance. Two cycles is one full interval of
+#: patience -- still fast next to TASK-225's incident, which sat dirty for 45+ minutes.
+IDLE_DIRTY_CONFIRM_CYCLES = 2
 
 #: Seconds between passes of the media tree (TASK-131). Its own cadence, not the notification
 #: watcher's: a listing (``find``+``stat`` over the whole tree) and a pull (potentially megabytes
@@ -64,6 +71,11 @@ class InboundWatcher:
         self.last_error_at = None
         self._thread = None
         self._stop = threading.Event()
+        # TASK-226: the idle self-check. dirty_streak counts consecutive cycles that read a
+        # Conversation open; recovered counts how many times that streak crossed the confirm
+        # threshold and this watcher parked the phone itself, with nothing queued.
+        self._dirty_streak = 0
+        self.idle_dirty_recovered = 0
 
     # --- one cycle, so a test can run it without a clock ------------------------------------------
     def cycle(self):
@@ -91,7 +103,39 @@ class InboundWatcher:
         if result["stored"]:
             self._log(f"watcher: {result['stored']} new inbound "
                       f"({result['seen']} seen, {result['unresolved']} unresolved)")
+        self._check_idle_dirty(now)
         return result
+
+    def _check_idle_dirty(self, now):
+        """A chat left open with nothing queued and nobody at the phone is exactly TASK-225's
+        incident: nothing else notices it, because an empty outbox is what a working quiet rail
+        looks like too. Read-only unless it decides to act. ``focus()`` takes no lock, same as the
+        notification read above; the recovery itself, when it fires, briefly takes huawei01.lock
+        -- and only after a NON-BLOCKING probe (``timeout=0``) proves nothing else holds it right
+        now, so a legitimate in-flight send is never interrupted, only ever raced-and-skipped
+        (safe: the send's own ``finally: park()`` still runs, and the next cycle tries again)."""
+        try:
+            focus = self.executor.driver.focus()
+        except D.DriverError:
+            return  # the notification read above already logged this cycle's real failure
+        if not focus.endswith("Conversation"):
+            self._dirty_streak = 0
+            return
+        self._dirty_streak += 1
+        if self._dirty_streak < IDLE_DIRTY_CONFIRM_CYCLES:
+            return
+        self._dirty_streak = 0
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self.executor.driver.lock(timeout=0))
+            except D.DriverError:
+                return  # something else holds the phone right now -- not ours to touch
+            self.idle_dirty_recovered += 1
+            self.executor.ledger.note(now, "idle_dirty_recovered", None, focus=focus)
+            try:
+                self.executor.driver.park()
+            except D.DriverError as exc:
+                self.executor.ledger.note(now, "park_failed", None, error=str(exc))
 
     def run(self):
         self.started_at = L.utc(self.executor.clock())
@@ -115,6 +159,7 @@ class InboundWatcher:
                 "cycles": self.cycles, "errors": self.errors,
                 "last_ok_at": self.last_ok_at, "last_error": self.last_error,
                 "last_error_at": self.last_error_at,
+                "idle_dirty_recovered": self.idle_dirty_recovered,
                 "alive": bool(self._thread and self._thread.is_alive())}
 
 

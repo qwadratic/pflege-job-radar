@@ -215,6 +215,13 @@ class PhoneDriver:
         """Back out to the chat list and onto the launcher, so notifications fire again."""
         raise NotImplementedError
 
+    def focus(self):
+        """-> the foreground activity, ``package/Activity`` (TASK-226). Cheap, read-only (one
+        ``dumpsys activity activities``), no lock required -- ``park()`` already uses it to decide
+        whether a BACK press is needed; this exposes the same read to a caller who only wants to
+        know, not fix."""
+        raise NotImplementedError
+
     def escalation_shot(self, tag):
         """-> path of one screenshot, taken only when a send could not be confirmed."""
         raise NotImplementedError
@@ -268,6 +275,11 @@ class FakeDriver(PhoneDriver):
         self.lock_events = []
         self.lock_held = False
         self.parked = 0
+        # --- pre-flight dirty-state check (TASK-226) ---------------------------------------------
+        # A test that wants a "stuck open chat" scenario sets this to something ending in
+        # "Conversation" before calling whatever it's testing; park() resets it to a clean value,
+        # the same way the real driver's focus() would read the launcher after a real park.
+        self.focus_value = "com.android.launcher/.Home"
         self.shots = []
         self.busy = False         # the other lane holds huawei01.lock
         self.fail_on_open = None
@@ -514,6 +526,10 @@ class FakeDriver(PhoneDriver):
     def park(self):
         self.parked += 1
         self.open_title = None
+        self.focus_value = "com.android.launcher/.Home"
+
+    def focus(self):
+        return self.focus_value
 
     def escalation_shot(self, tag):
         self.shots.append(tag)

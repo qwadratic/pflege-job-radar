@@ -109,6 +109,10 @@ class Executor:
         self.inbound_seen = 0
         self.inbound_unresolved = 0
         self.inbound_last_at = None
+        # TASK-226: how many times take_phone found a conversation already open and had to park
+        # it before the caller's own operation could start -- distinguishes "quiet because clean"
+        # from "quiet because something upstream got stuck" the same way the watcher counters do.
+        self.dirty_recovered = 0
         self.watcher = None
         # Set by server.main when the media watcher starts (TASK-131). Same reason as ``watcher``
         # above: an empty media backlog is what a quiet rail looks like AND what a dead media
@@ -354,7 +358,8 @@ class Executor:
         return {"ok": True, "at": L.utc(now), "clock": clock, "tick": tick}
 
     def take_phone(self, stack, phone, **kw):
-        """Take huawei01.lock, or refuse with 503 ``device_unavailable`` (TASK-146).
+        """Take huawei01.lock, or refuse with 503 ``device_unavailable`` (TASK-146). Recovers a
+        dirty phone before handing the lock to the caller (TASK-226).
 
         The other lane takes the same flock and holds it across its own brain call, so losing the
         race is ordinary, not exceptional -- and it is the one failure class where NOTHING WAS
@@ -362,12 +367,39 @@ class Executor:
         retryable, and it must leave the deterministic key clean: a raw ``DriverError`` escaping
         here reached the server's generic handler as a 500 instead, which is neither retryable nor
         truthful about what happened to the phone.
+
+        DIRTY MEANS "A CONVERSATION IS ALREADY OPEN" -- and nothing broader. That is the one
+        state TASK-225's incident actually proved blinds inbound capture (WhatsApp does not post a
+        notification for the chat that is on screen), and it is exactly what ``park()`` itself
+        checks for before deciding a BACK press is needed (``bridge/adb_driver.py``'s own
+        ``focus().endswith("Conversation")``). A caller reaching this lock never left a chat open
+        on any path that goes through here -- every send/read method parks in its own ``finally``
+        -- so finding one open here means an earlier touch happened OUTSIDE this mediated path (a
+        manual/ad-hoc driver call, most likely), which is precisely the gap a queued caller cannot
+        see any other way.
         """
         try:
-            return stack.enter_context(self.driver.lock(**kw))
+            driver = stack.enter_context(self.driver.lock(**kw))
         except D.DriverError as exc:
             raise E.device_unavailable(f"the handset was not available: {exc}",
                                        thread=L.thread_tag(phone)) from exc
+        self._recover_if_dirty("dirty_state_recovered")
+        return driver
+
+    def _recover_if_dirty(self, note_key):
+        """-> the dirty focus string found, or None when the phone was already clean (TASK-226).
+        Caller already holds the lock. Never raises: a park failure is logged, not escalated --
+        the caller's own operation still deserves its chance to run."""
+        focus = self.driver.focus()
+        if not focus.endswith("Conversation"):
+            return None
+        self.dirty_recovered += 1
+        self.ledger.note(self.clock(), note_key, None, focus=focus)
+        try:
+            self.driver.park()
+        except D.DriverError as exc:
+            self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
+        return focus
 
     def _escalate(self, key, phone, reason, detail=None):
         """One screenshot, only here. Their Device shoots before every input; ours shoots on
@@ -731,7 +763,8 @@ class Executor:
                 "inbound": {**self.ledger.inbound_backlog(),
                             "seen": self.inbound_seen,
                             "unresolved": self.inbound_unresolved,
-                            "last_poll_at": self.inbound_last_at},
+                            "last_poll_at": self.inbound_last_at,
+                            "dirty_recovered": self.dirty_recovered},
                 "watcher": self.watcher.heartbeat() if self.watcher else None,
                 "media_watcher": self.media_watcher.heartbeat() if self.media_watcher else None,
                 "identity_watcher": self.identity_watcher.heartbeat() if self.identity_watcher else None,
