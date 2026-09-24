@@ -210,6 +210,28 @@ except ValueError:
 if REFUSAL_TIMEOUT_SEC <= 0:
     raise RuntimeError(f"WA_REFUSAL_TIMEOUT_SEC={REFUSAL_TIMEOUT_SEC} must be a positive number of seconds")
 
+# The exposé shrinker (app/wa/luna/expose_shrink.py, Ivan 2026-09-24): a small-model rewrite of the
+# board's own Firecrawl-researched clinic paragraph -- shorter, less enumeration, selling the vacancy
+# -- run once per show_clinic_photos call, on the caption a candidate actually receives (whether sent
+# raw as a photo's caption or handed to the main brain to write in its own words). Same reasoning as
+# REFUSAL_MODEL above: a narrow, isolated rewrite, not the conversation itself, so its own cheap Haiku
+# constant rather than LUNA_MODEL. Unlike the refusal classifier this runs on the funnel's CLIMAX
+# moment, not a rare decline path (TASK-287 is literally about turn latency) -- the timeout starts
+# tight on purpose, and a timeout or any other failure falls back to the ORIGINAL, unshortened text
+# rather than blocking or failing the send (see expose_shrink.py's own docstring for the asymmetry).
+EXPOSE_SHRINK_MODEL = os.environ.get("WA_EXPOSE_SHRINK_MODEL", "claude-haiku-4-5").strip()
+if not EXPOSE_SHRINK_MODEL:
+    raise RuntimeError("WA_EXPOSE_SHRINK_MODEL is set but empty -- unset it for the default "
+                       "(claude-haiku-4-5) or give it a real model id")
+_EXPOSE_SHRINK_TIMEOUT_RAW = os.environ.get("WA_EXPOSE_SHRINK_TIMEOUT_SEC", "15").strip() or "15"
+try:
+    EXPOSE_SHRINK_TIMEOUT_SEC = int(_EXPOSE_SHRINK_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_EXPOSE_SHRINK_TIMEOUT_SEC={_EXPOSE_SHRINK_TIMEOUT_RAW!r} is not an integer")
+if EXPOSE_SHRINK_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_EXPOSE_SHRINK_TIMEOUT_SEC={EXPOSE_SHRINK_TIMEOUT_SEC} must be a positive "
+                       "number of seconds")
+
 # Claude Code keys a resumable session by session id *and* the working directory it was started
 # in (session transcripts live under a path derived from cwd). Every luna turn for every phone
 # number must run from this exact directory, or `--resume <id>` from a later turn silently looks

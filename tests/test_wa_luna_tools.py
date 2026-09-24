@@ -55,6 +55,10 @@ def board(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    # show_clinic_photos' expose shrinker (app/wa/luna/expose_shrink.py) spawns a real `claude -p`
+    # subprocess by default -- every test that does not specifically exercise it gets a passthrough
+    # so no test here needs a live model or a network.
+    monkeypatch.setattr(TS.ES, "shrink_expose_text", lambda text, **kw: text)
 
 
 def test_search_postings_filters_by_city_and_logs_the_call(tmp_path, monkeypatch):
@@ -1141,6 +1145,73 @@ def test_show_clinic_photos_refuses_to_send_a_caption_carrying_a_link(tmp_path, 
     with ST.db() as c:
         rows = ST.messages_for(c, _CV_PHONE, direction="out")
     assert rows == []
+
+
+# --- Ivan 2026-09-24: the board's own researched paragraph is shortened before it reaches anyone --
+
+def test_show_clinic_photos_sends_the_shrunk_caption_not_the_original(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    original = "Ein sehr langer, aufzaehlungslastiger Forschungsabsatz ueber diese Klinik."
+    _with_photos(monkeypatch, caption=original)
+    monkeypatch.setattr(TS, "_download_to_temp", lambda url, suffix: f"/tmp/local{suffix}")
+    monkeypatch.setattr(TS, "_staged_already", lambda remote_name: False)
+    monkeypatch.setattr(TS, "_stage_on_mini", lambda local, remote_name: f"/remote/{local}")
+    calls = []
+    monkeypatch.setattr(TS.ES, "shrink_expose_text",
+                        lambda text, **kw: calls.append(text) or "Kurzer Pitch fuer die Klinik.")
+
+    class _FakeSendGalleryClient:
+        def send_gallery(self, phone, remote_files, caption=""):
+            self.caption = caption
+    fake = _FakeSendGalleryClient()
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    out = TS.show_clinic_photos("c1")
+    assert calls == [original], "the shrinker must see the original board text"
+    assert fake.caption == "Kurzer Pitch fuer die Klinik."
+    assert out == {"sent": True, "photos": 1, "has_presentation": True}
+    with ST.db() as c:
+        rows = ST.messages_for(c, _CV_PHONE, direction="out")
+    assert rows[0]["body"] == "Kurzer Pitch fuer die Klinik.", "the recorded outbound is the shrunk text too"
+
+
+def test_show_clinic_photos_shrinks_the_presentation_text_in_the_no_photo_branch(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _with_photos(monkeypatch, photos=(), caption="Ein langer Forschungsabsatz ohne Foto.")
+    monkeypatch.setattr(TS.ES, "shrink_expose_text", lambda text, **kw: "Kurzer Pitch ohne Foto.")
+
+    out = TS.show_clinic_photos("c1")
+    assert out == {"sent": False, "presentation_text": "Kurzer Pitch ohne Foto."}
+
+
+def test_show_clinic_photos_link_gate_checks_the_shrunk_caption_not_the_original(tmp_path, monkeypatch):
+    """A shrinker that happens to drop the clinic's own link must not still refuse the send over
+    text that is no longer what will actually go out -- the LINK gate has to run on the shrunk
+    result, the same text send_gallery/presentation_text actually carries."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    original_with_link = "Bewerben Sie sich hier: https://klinik-x.de/karriere -- tolles Team."
+    _with_photos(monkeypatch, caption=original_with_link)
+    monkeypatch.setattr(TS, "_download_to_temp", lambda url, suffix: f"/tmp/local{suffix}")
+    monkeypatch.setattr(TS, "_staged_already", lambda remote_name: False)
+    monkeypatch.setattr(TS, "_stage_on_mini", lambda local, remote_name: f"/remote/{local}")
+    monkeypatch.setattr(TS.ES, "shrink_expose_text", lambda text, **kw: "Tolles Team, kurz gesagt.")
+
+    class _FakeSendGalleryClient:
+        def send_gallery(self, phone, remote_files, caption=""):
+            self.caption = caption
+    fake = _FakeSendGalleryClient()
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    out = TS.show_clinic_photos("c1")
+    assert out == {"sent": True, "photos": 1, "has_presentation": True}
+    assert fake.caption == "Tolles Team, kurz gesagt."
 
 
 def test_match_cv_to_postings_on_a_server_started_without_the_turns_number_fails_loudly(tmp_path, monkeypatch):

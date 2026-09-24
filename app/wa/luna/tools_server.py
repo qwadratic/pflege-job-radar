@@ -85,6 +85,7 @@ from ... import search as SE
 from .. import bridge as BR
 from .. import config as C
 from .. import slots as SL
+from . import expose_shrink as ES
 from .board_vocabulary import LIVE_BASE, city_of, clinic_key, clinic_name_of, vocabulary_lines
 
 # This process is a fresh subprocess the CLI spawns -- a test's monkeypatch on the *parent*
@@ -1101,8 +1102,8 @@ def show_clinic_photos(clinic_id: str) -> dict:
     the next step (an Urkunde, a start date, a shift preference), never a bare acknowledgement.
 
     When this clinic has a researched paragraph but no photo yet, nothing is sent by the tool --
-    {"sent": false, "presentation_text": "..."} -- and you write it into your OWN reply, SHORTENED to
-    what actually sells this clinic (drop enumerations and secondary detail), then close with the
+    {"sent": false, "presentation_text": "..."} -- already shortened to a sales pitch, not the
+    board's full researched writeup -- and you write it into your OWN reply, then close with the
     same kind of leading question, since there is no photo message for it to ride along with.
 
     {"sent": false, "reason": "..."} with no presentation_text means there is nothing at all yet for
@@ -1115,6 +1116,13 @@ def show_clinic_photos(clinic_id: str) -> dict:
     photo_paths = data.get("photos") or []
     presentation = data.get("presentation") or {}
     caption = (presentation.get("text_de") or "").strip()
+    # Ivan, 2026-09-24: the board's own researched paragraph reads too long and too enumeration-heavy
+    # to sell a vacancy -- shorten it here, once, before it becomes an image caption (sent raw, no
+    # model in the loop) or presentation_text (handed to the model to write in its own words). A
+    # shrinker failure falls back to the original text unchanged (ES.shrink_expose_text's own
+    # contract) -- never blocks or breaks this send over a rewrite that did not happen.
+    if caption:
+        caption = ES.shrink_expose_text(caption)
     if os.environ.get("WA_LUNA_NO_SEND"):
         # A dry run (app/wa/luna/shadow_run.py). The lookup above still runs, because WHICH branch
         # this tool takes is exactly what the report exists to show -- only the handset is spared.
