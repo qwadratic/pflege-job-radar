@@ -1096,12 +1096,14 @@ def show_clinic_photos(clinic_id: str) -> dict:
 
     ONLY sends when there is at least one photo -- {"sent": true, "photos": N} -- in which case do
     NOT also describe the photo yourself in a bubble; the message already carries the researched
-    paragraph as its caption. A short bubble AFTER calling this (continuing the conversation --
-    asking about an Urkunde, for instance) is expected and normal.
+    paragraph as its caption. The bubble you write AFTER calling this is mandatory, not optional
+    small talk -- it must end with one concrete, specific question that carries the candidate to
+    the next step (an Urkunde, a start date, a shift preference), never a bare acknowledgement.
 
     When this clinic has a researched paragraph but no photo yet, nothing is sent by the tool --
-    {"sent": false, "presentation_text": "..."} -- and you write it into your OWN reply, in your own
-    words or close to verbatim, since there is no photo message for it to ride along with.
+    {"sent": false, "presentation_text": "..."} -- and you write it into your OWN reply, SHORTENED to
+    what actually sells this clinic (drop enumerations and secondary detail), then close with the
+    same kind of leading question, since there is no photo message for it to ride along with.
 
     {"sent": false, "reason": "..."} with no presentation_text means there is nothing at all yet for
     this clinic (both photos and the researched paragraph are still empty -- the collection
@@ -1224,55 +1226,170 @@ def show_clinic_photos(clinic_id: str) -> dict:
     return {"sent": True, "photos": len(remote_files), "has_presentation": bool(caption)}
 
 
-# --- look_at_phone (TASK-229, Ivan 2026-09-23): the brain's own eyes on the live handset ------------
-#
-# Everything else this server answers from (the stored thread, the card, requirement_scoreboard) is
-# built once, before the turn starts, from the database -- deliberately kept that way (TASK-229's own
-# scope note: that machinery is deep, already correct, and re-deriving it live every turn would cost
-# real latency for no gain). This is the one tool that steps outside it and asks the handset itself
-# what is on screen right now, for the moments that are specifically about live phone state: whether
-# something actually sent, whether a reply already arrived that the stored history has not caught up
-# with yet. It goes through the same queued, poll-to-terminal BR.Client() every send-type tool uses
-# (TASK-227), so a call here never races whatever the dispatcher is doing for this same number.
+# --- read_history (TASK-290, Ivan 2026-09-24): the DB's own paged history, replacing the abandoned
+# live-screen-read design (TASK-289: the screen and the DB were found drifted apart twice in one
+# night, so the brain must never read the live handset again). Everything here goes through
+# store.py's default deleted_at filter -- a forgotten bubble or document is invisible here exactly
+# like it already is to turn_context.
+_HISTORY_PAGE_MAX = 50
+
+
+def _history_limit(value):
+    return max(1, min(int(value or 20), _HISTORY_PAGE_MAX))
+
+
 @mcp.tool()
-def look_at_phone() -> dict:
-    """Ground-check the live WhatsApp chat on the handset itself -- what is actually on screen right
-    now, not the stored conversation history this turn's prompt was already built from. Call it
-    before an uncertain or high-stakes reply (you are not sure your last message really reached
-    them, or the stored history feels out of step with what they just wrote), and right after
-    show_clinic_photos to confirm the photos actually landed. Takes no arguments -- it reads this
-    conversation's own number, the same way match_cv_to_postings does.
+def read_history(before_id: int | None = None, limit: int = 20) -> dict:
+    """Page this conversation's own history further back than the recent tail already in your
+    context -- call it when the candidate refers to something from an earlier day (yesterday, the
+    day before) that the current turn's context does not cover. Never call it to double-check
+    something already in front of you; the stored tail is already correct and current for that.
 
-    Returns {"chat": {"title", "phone"}, "count": N, "incoming": n, "outgoing": n, "messages": [...]}, oldest
-    first. Each message is {"direction": "in"|"out", "clock": "HH:MM", "tick": "sent"|"delivered"|"read"|null,
-    "body": "..."}. "tick": null on an outgoing bubble means WhatsApp has not drawn a delivery mark for it
-    yet -- treat that message as unconfirmed, never as failed or lost.
+    Returns messages oldest-first within the page, plus every stored attachment's metadata (id,
+    document_type, filename, received_at) for this phone. Call it again with before_id set to this
+    call's own "oldest_id" to keep paging further back; has_more tells you whether anything older
+    is left. A message or attachment marked forgotten never appears here, the same as everywhere
+    else -- treat that as if it was never sent, never mention a gap or a deletion."""
+    _log_call("read_history", {"before_id": before_id, "limit": limit})
+    from .. import store as ST
 
-    Read-only: nothing is sent, nothing on the card or the stored thread changes. An error means the
-    live chat could not be read right now (the handset was busy or unreachable) -- say nothing about
-    this to the candidate and continue from the stored history as normal; a failed call here is never
-    evidence something is wrong with the conversation itself."""
-    _log_call("look_at_phone", {})   # no phone number in the log, same as every tool above
-    if os.environ.get("WA_LUNA_NO_SEND"):
-        # A dry run (app/wa/luna/shadow_run.py, tools/wa_rehearse.py). Unlike show_clinic_photos this
-        # is "read-only" only from Luna's own side: BR.Client().read_thread() opens the real chat on
-        # the real handset and clears its notification (bridge/operations.py:read_thread), so a dry
-        # run reaching for it would touch a real candidate's live thread. No copy to read instead --
-        # this is TASK-240.
-        raise ToolError("the live handset cannot be read in a dry run -- say nothing about this to "
-                        "the candidate and continue from the stored history. Internal tool note.")
     phone = _turn_phone()
+    conn = ST.db()
     try:
-        body = BR.Client().read_thread(phone=phone, include_text=True)
-    except BR.BridgeError as exc:
-        raise ToolError(f"could not read the live chat (code {exc.code!r}): {exc} -- say nothing "
-                        f"about this to the candidate and continue from the stored history. "
-                        f"Internal tool note.") from exc
-    return {"chat": body.get("chat"), "count": body.get("count"),
-            "incoming": body.get("incoming"), "outgoing": body.get("outgoing"),
-            "messages": [{"direction": m.get("direction"), "clock": m.get("clock"),
-                         "tick": m.get("tick"), "body": m.get("body")}
-                        for m in body.get("messages") or []]}
+        messages, has_more = ST.messages_before(conn, phone, before_id=before_id,
+                                                limit=_history_limit(limit))
+        documents = ST.documents_for(conn, phone)
+    finally:
+        conn.close()
+    return {"messages": [{"id": m["id"], "direction": m["direction"], "body": m["body"], "at": m["at"]}
+                         for m in messages],
+            "has_more": has_more,
+            "oldest_id": messages[0]["id"] if messages else None,
+            "documents": [{"id": d["id"], "document_type": d.get("document_type"),
+                          "original_filename": d.get("original_filename"), "received_at": d["received_at"]}
+                         for d in documents]}
+
+
+@mcp.tool()
+def read_document(document_id: int) -> dict:
+    """Open one attachment listed by read_history's "documents" and read its extracted text -- the
+    listing only gives you id/type/filename, this is the "open and read" step for a specific one of
+    them. Raises when the id is unknown, belongs to a different phone, or was forgotten (TASK-289):
+    treat that exactly like the attachment was never sent, never mention a deletion or a gap."""
+    _log_call("read_document", {"document_id": document_id})
+    from .. import store as ST
+
+    phone = _turn_phone()
+    conn = ST.db()
+    try:
+        doc = ST.document_by_id(conn, document_id)
+    finally:
+        conn.close()
+    if doc is None or doc.get("phone") != phone:
+        raise ToolError(f"no attachment {document_id!r} is on file for this conversation (unknown id, "
+                        f"a different phone's document, or it was forgotten). Internal tool note.")
+    return {"document_type": doc.get("document_type"), "original_filename": doc.get("original_filename"),
+            "received_at": doc["received_at"], "text": (doc.get("text") or "").strip()}
+
+
+# --- CV edit assist (TASK-291, Ivan 2026-09-24): find the stored CV, let the model write an updated
+# body from what the candidate asked to change, and send it back as a document -- the send half
+# follows the same staged-artifact shape show_clinic_photos already proved (stage on the mini, send,
+# record the outbound, never crash the tools server on a bridge failure).
+
+def _latest_cv_document(conn, phone):
+    """The most recently received non-deleted wa_documents row classified as a CV for this phone,
+    or None. Reads wa_documents directly (not the card's cached cv_text) so a document an operator
+    has since forgotten (TASK-289) is never found here either, even if the card still holds
+    whatever text was extracted from it before that."""
+    from .. import store as ST
+
+    docs = [d for d in ST.documents_for(conn, phone) if d.get("document_type") == "lebenslauf"]
+    return docs[-1] if docs else None
+
+
+@mcp.tool()
+def find_stored_cv() -> dict:
+    """The text of this candidate's own stored CV (Lebenslauf), read from the original file they
+    sent -- not a summary. Call it when they ask you to help change or update their CV, before
+    writing anything: you need the actual current text to edit from, not what the conversation
+    happens to say about it. Raises when none is on file (none ever sent, or the one they sent was
+    since forgotten) -- ask them to send it first rather than inventing one."""
+    _log_call("find_stored_cv", {})
+    from .. import store as ST
+
+    phone = _turn_phone()
+    conn = ST.db()
+    try:
+        doc = _latest_cv_document(conn, phone)
+    finally:
+        conn.close()
+    if doc is None:
+        raise ToolError("no CV is on file for this candidate (none sent, or it was forgotten) -- "
+                        "ask them to send one before trying to edit it. Internal tool note.")
+    text = (doc.get("text") or "").strip()
+    if not text:
+        raise ToolError("a CV file is on file but it has no extracted text to edit -- ask them to "
+                        "resend it. Internal tool note.")
+    return {"cv_text": text, "received_at": doc["received_at"]}
+
+
+@mcp.tool()
+def send_updated_cv(cv_text: str) -> dict:
+    """Send this candidate an updated version of their CV as a WhatsApp document. Call this only
+    after find_stored_cv(), and only with the FULL updated CV body -- every section, not a diff or
+    a summary -- incorporating just the change(s) they asked for and never inventing qualifications
+    or experience that were not already in their CV or stated by them in this thread. Never call
+    this unless the candidate explicitly asked to change or update their CV in this conversation.
+
+    -> {"sent": true} once delivered and recorded, the same as any other outbound send on this
+    rail. A short bubble AFTER calling this, confirming what changed, is expected and normal."""
+    _log_call("send_updated_cv", {"chars": len(cv_text or "")})
+    phone = _turn_phone()
+    text = (cv_text or "").strip()
+    if not text:
+        raise ToolError("cv_text is empty -- nothing to send. Internal tool note.")
+    if os.environ.get("WA_LUNA_NO_SEND"):
+        return {"sent": False, "dry_run": True}
+
+    from .. import store as ST
+    from .. import transport as T
+    if not C.AUTOSEND:
+        return {"sent": False, "reason": "AUTOSEND is off"}
+    rail = T.rail_for(phone=phone)
+    if rail != "bridge":
+        return {"sent": False, "reason": f"this thread is pinned to the {rail} rail, not the phone "
+                "rail send_updated_cv sends from"}
+
+    fd, local_path = tempfile.mkstemp(suffix=".txt", prefix="updated_cv_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        remote_name = f"cv_{hashlib.sha1(f'{phone}:{time.time()}'.encode()).hexdigest()}.txt"
+        remote_path = _stage_on_mini(local_path, remote_name)
+        try:
+            BR.Client().send_document(phone, remote_path)
+        except BR.BridgeError as exc:
+            # Same "was the handset actually touched" distinction show_clinic_photos already draws.
+            if exc.code in BR.HANDSET_TOUCHED_CODES or exc.code == BR.CODE_ANSWER_TIMEOUT:
+                raise ToolError(
+                    f"the phone rail touched the handset trying to send this but could not confirm "
+                    f"it went out (code {exc.code!r}) -- do not tell the candidate an update is "
+                    f"coming; say nothing about it and continue normally. Internal tool note.") from exc
+            raise ToolError(f"the phone rail refused this send (code {exc.code!r}): {exc} -- nothing "
+                            f"was sent. Internal tool note.") from exc
+        conn = ST.db()
+        try:
+            ST.record_outbound(conn, phone, None, "[updated CV]", kind="document",
+                               meta={"action": "send_updated_cv", "chars": len(text)})
+        finally:
+            conn.close()
+    finally:
+        try:
+            os.unlink(local_path)
+        except OSError:
+            pass
+    return {"sent": True}
 
 
 # Captured before any vocabulary is appended, so apply_board_vocabulary() is idempotent (the fixture

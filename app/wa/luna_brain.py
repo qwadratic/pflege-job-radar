@@ -100,14 +100,14 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                         # number to find that CV, which is why _mcp_config_path passes WA_LUNA_PHONE.
                         "match_cv_to_postings",
                         "read_board_docs", "board_api_get",
-                        # TASK-229: the live-handset ground-check. Also needs WA_LUNA_PHONE, same as
-                        # match_cv_to_postings -- both read this thread's own number, never an argument.
-                        "look_at_phone",
                         # TASK-131 round 7. Missing from this tuple until 2026-09-23 while
                         # prompts.py's SHOW_CLINIC_PHOTOS rule already told the model to call it:
                         # --allowedTools is an allowlist, so every call the model made was denied and
                         # the funnel's climax moment silently degraded to text.
-                        "show_clinic_photos"))
+                        "show_clinic_photos",
+                        # TASK-290/291, Ivan 2026-09-24: paged DB history (replaces the removed
+                        # look_at_phone live-screen read, TASK-289) and CV-edit-assist built on it.
+                        "read_history", "read_document", "find_stored_cv", "send_updated_cv"))
 
 #: How "this turn must not send" reaches the spawned tools server. show_clinic_photos is the one tool
 #: that SENDS, and it sends by calling the phone rail itself -- so shadow_run's own "never call
@@ -214,7 +214,7 @@ def _mcp_config_path(ready_path, phone=None, no_send=False):
     One file per turn, named from ready_path's own uuid stem (TASK-249): the webhook worker, the
     3-minute catch-up poller and a campaign send are separate OS processes sharing this same
     LUNA_SESSION_DIR, so a FIXED filename here let one turn's WA_LUNA_PHONE overwrite another's
-    between this write and the CLI opening the file -- look_at_phone/show_clinic_photos then acted
+    between this write and the CLI opening the file -- show_clinic_photos then acted
     on the wrong candidate's number. _write_atomic only rules out a torn read of one file, not two
     turns racing over the same path.
 

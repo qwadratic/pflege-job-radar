@@ -573,7 +573,7 @@ def test_mcp_config_path_is_not_clobbered_by_a_concurrent_turn(small, monkeypatc
     """TASK-249: the webhook worker, the 3-minute catch-up poller and a campaign send are separate
     OS processes sharing one LUNA_SESSION_DIR. A fixed mcp_config.json filename meant candidate B's
     turn starting mid-A's CLI startup overwrote A's WA_LUNA_PHONE with B's before A's tools server
-    read the file -- look_at_phone/show_clinic_photos would then act on B's number inside A's turn.
+    read the file -- show_clinic_photos would then act on B's number inside A's turn.
     The config path must carry the same per-turn identity ready_path already has."""
     monkeypatch.setattr(LB.BV, "vocabulary_lines", lambda: {})
     path_a = LB._mcp_config_path(small / "ready_a.json", "+49A")

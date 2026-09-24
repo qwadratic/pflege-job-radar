@@ -550,7 +550,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
     allowed = {name.split("__")[-1] for name in LB.MCP_TOOL_NAMES}
     assert allowed <= set(TS.mcp._tool_manager._tools), "the CLI allowlist names a tool the server does not serve"
     assert {"search_postings_with_housing", "list_clinics_with_housing", "list_cities_with_postings",
-            "count_postings", "read_board_docs", "board_api_get", "look_at_phone"} <= allowed
+            "count_postings", "read_board_docs", "board_api_get"} <= allowed
     # TASK-195: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
     # TASK-145: this one IS for the conversation. It is registered here; the CLI reaches it only once
@@ -947,95 +947,6 @@ def test_match_cv_to_postings_without_a_stored_cv_says_so_instead_of_ranking_not
     assert "no CV text stored yet" in str(raised.value) and "Ask them for the Lebenslauf" in str(raised.value)
 
 
-# --- TASK-229: the brain's own eyes on the live handset -------------------------------------------
-class _FakeReadThreadClient:
-    """Stands in for BR.Client() -- look_at_phone's only network call. No real transport, no real
-    handset; a test only needs to prove the tool reads through Client.read_thread and trims what it
-    gets back, the same boundary tests/test_wa_bridge_client.py already covers BR.Client at."""
-
-    def __init__(self, *, body=None, error=None):
-        self._body = body
-        self._error = error
-        self.read_calls = []
-
-    def read_thread(self, *, phone, include_text=True):
-        self.read_calls.append(phone)
-        if self._error is not None:
-            raise self._error
-        return self._body
-
-
-def test_look_at_phone_reads_the_live_chat_and_trims_it_to_what_the_model_needs(tmp_path, monkeypatch):
-    board(tmp_path, monkeypatch)
-    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
-    fake = _FakeReadThreadClient(body={
-        "ok": True, "at": "2026-09-23T03:00:00Z", "visibility": "on_screen",
-        "chat": {"title": "Test", "phone": _CV_PHONE}, "count": 2, "incoming": 1, "outgoing": 1,
-        "oldest_clock": "09:10", "newest_clock": "09:11",
-        "messages": [
-            {"direction": "in", "clock": "09:10", "tick": None, "tick_state": None,
-             "body": "Hallo", "body_sha256": "x", "body_len": 5},
-            {"direction": "out", "clock": "09:11", "tick": "Gelesen", "tick_state": "read",
-             "body": "Guten Tag", "body_sha256": "y", "body_len": 9},
-        ]})
-    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
-
-    out = TS.look_at_phone()
-    assert fake.read_calls == [_CV_PHONE]
-    assert (out["count"], out["incoming"], out["outgoing"]) == (2, 1, 1)
-    assert out["chat"] == {"title": "Test", "phone": _CV_PHONE}
-    assert out["messages"] == [
-        {"direction": "in", "clock": "09:10", "tick": None, "body": "Hallo"},
-        {"direction": "out", "clock": "09:11", "tick": "Gelesen", "body": "Guten Tag"},
-    ]
-    assert "visibility" not in out and "ok" not in out, "internal plumbing, not the model's business"
-
-
-def test_look_at_phone_sends_nothing_and_never_logs_the_number(tmp_path, monkeypatch):
-    board(tmp_path, monkeypatch)
-    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
-    fake = _FakeReadThreadClient(body={"chat": {}, "count": 0, "incoming": 0, "outgoing": 0,
-                                       "messages": []})
-    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
-
-    TS.look_at_phone()
-    logged = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8")
-    assert json.loads(logged.splitlines()[-1]) == {"tool": "look_at_phone", "args": {},
-                                                   "at": pytest.approx(time.time(), abs=60)}
-    assert _CV_PHONE not in logged, "PII: the number is the turn's own context, never an argument or a log line"
-
-
-def test_look_at_phone_on_a_bridge_error_raises_a_tool_error_and_never_crashes_the_server(tmp_path, monkeypatch):
-    board(tmp_path, monkeypatch)
-    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
-    fake = _FakeReadThreadClient(error=TS.BR.BridgeError("phone busy", code="device_unavailable"))
-    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
-
-    with pytest.raises(ToolError) as raised:
-        asyncio.run(TS.mcp.call_tool("look_at_phone", {}))
-    assert not isinstance(raised.value, UnexpectedToolError)
-    assert "say nothing" in str(raised.value) and "device_unavailable" in str(raised.value)
-
-
-def test_look_at_phone_in_a_dry_run_never_touches_the_bridge_client(tmp_path, monkeypatch):
-    """TASK-240: shadow_run/wa_rehearse set WA_LUNA_NO_SEND to keep a dry run off the live handset --
-    show_clinic_photos honours it (tested above via _NO_SEND branch) but look_at_phone did not, so a
-    dry run over a stuck thread could open a real candidate's chat and clear its notification
-    (bridge/operations.py:read_thread). BR.Client is never even constructed once the gate is in."""
-    board(tmp_path, monkeypatch)
-    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
-    monkeypatch.setenv("WA_LUNA_NO_SEND", "1")
-
-    def _must_not_construct():
-        raise AssertionError("BR.Client() must not be constructed in a dry run")
-    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
-
-    with pytest.raises(ToolError) as raised:
-        asyncio.run(TS.mcp.call_tool("look_at_phone", {}))
-    assert not isinstance(raised.value, UnexpectedToolError)
-    assert "dry run" in str(raised.value) and "say nothing" in str(raised.value)
-
-
 # --- TASK-250: show_clinic_photos is the one tool that sends, and it bypassed every discipline
 # api._send applies to every other outbound (AUTOSEND, the thread's pinned rail, a wa_messages row) --
 # it called BR.Client().send_gallery(...) unconditionally instead.
@@ -1240,6 +1151,240 @@ def test_match_cv_to_postings_on_a_server_started_without_the_turns_number_fails
     with pytest.raises(ToolError) as raised:
         asyncio.run(TS.mcp.call_tool("match_cv_to_postings", {}))
     assert "WA_LUNA_PHONE" in str(raised.value)
+
+
+# --- TASK-290: read_history pages the DB's own message/document history, replacing the removed
+# look_at_phone live-screen read (TASK-289: the screen and the DB were found drifted apart twice in
+# one night). Everything here goes through store.py's default deleted_at filter.
+
+def _seed_messages(phone, bodies):
+    """Insert len(bodies) alternating in/out wa_messages rows for phone, oldest first. -> their ids."""
+    conn = ST.db()
+    try:
+        ids = []
+        for i, body in enumerate(bodies):
+            direction = "in" if i % 2 == 0 else "out"
+            wamid = f"wab.t.{phone}.{i}"
+            if direction == "in":
+                ST.record_inbound(conn, phone, wamid, body)
+            else:
+                ST.record_outbound(conn, phone, wamid, body)
+            ids.append(conn.execute("select id from wa_messages where wamid=?", (wamid,)).fetchone()[0])
+        return ids
+    finally:
+        conn.close()
+
+
+def test_read_history_pages_messages_oldest_first_with_a_cursor(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    ids = _seed_messages(_CV_PHONE, [f"msg {i}" for i in range(5)])
+
+    page1 = TS.read_history(limit=2)
+    assert [m["body"] for m in page1["messages"]] == ["msg 3", "msg 4"]
+    assert page1["has_more"] is True and page1["oldest_id"] == ids[3]
+
+    page2 = TS.read_history(before_id=page1["oldest_id"], limit=2)
+    assert [m["body"] for m in page2["messages"]] == ["msg 1", "msg 2"]
+    assert page2["has_more"] is True and page2["oldest_id"] == ids[1]
+
+    page3 = TS.read_history(before_id=page2["oldest_id"], limit=2)
+    assert [m["body"] for m in page3["messages"]] == ["msg 0"]
+    assert page3["has_more"] is False
+
+
+def test_read_history_never_returns_a_forgotten_message(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    ids = _seed_messages(_CV_PHONE, ["keep me", "forget me", "keep me too"])
+    with ST.db() as c:
+        wamid = c.execute("select wamid from wa_messages where id=?", (ids[1],)).fetchone()[0]
+        ST.forget_message(c, wamid)
+
+    out = TS.read_history(limit=10)
+    assert [m["body"] for m in out["messages"]] == ["keep me", "keep me too"]
+
+
+def test_read_history_lists_document_metadata_and_skips_forgotten_ones(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    conn = ST.db()
+    try:
+        kept = ST.record_document(conn, _CV_PHONE, "wab.d.1", "media1", "document", "application/pdf",
+                                  "lebenslauf.pdf", "/tmp/a.pdf", "sha1", 100)
+        gone = ST.record_document(conn, _CV_PHONE, "wab.d.2", "media2", "document", "application/pdf",
+                                  "urkunde.pdf", "/tmp/b.pdf", "sha2", 200)
+        ST.forget_document(conn, gone)
+    finally:
+        conn.close()
+
+    out = TS.read_history(limit=10)
+    assert [d["id"] for d in out["documents"]] == [kept]
+    assert out["documents"][0]["original_filename"] == "lebenslauf.pdf"
+
+
+def test_read_document_returns_its_stored_text(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    conn = ST.db()
+    try:
+        doc_id = ST.record_document(conn, _CV_PHONE, "wab.d.3", "media3", "document", "application/pdf",
+                                    "urkunde.pdf", "/tmp/c.pdf", "sha3", 150)
+        ST.set_document_text(conn, doc_id, "Urkunde ueber die Erlaubnis...")
+    finally:
+        conn.close()
+
+    out = TS.read_document(doc_id)
+    assert out == {"document_type": None, "original_filename": "urkunde.pdf",
+                   "received_at": pytest.approx(out["received_at"]), "text": "Urkunde ueber die Erlaubnis..."}
+
+
+def test_read_document_refuses_an_unknown_or_forgotten_or_other_phones_document(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    conn = ST.db()
+    try:
+        forgotten = ST.record_document(conn, _CV_PHONE, "wab.d.4", "media4", "document", "application/pdf",
+                                       "a.pdf", "/tmp/d.pdf", "sha4", 10)
+        ST.forget_document(conn, forgotten)
+        other_phone = ST.record_document(conn, "491999999999", "wab.d.5", "media5", "document",
+                                         "application/pdf", "b.pdf", "/tmp/e.pdf", "sha5", 10)
+    finally:
+        conn.close()
+
+    for doc_id in (999999, forgotten, other_phone):
+        with pytest.raises(ToolError) as raised:
+            asyncio.run(TS.mcp.call_tool("read_document", {"document_id": doc_id}))
+        assert not isinstance(raised.value, UnexpectedToolError)
+        assert "no attachment" in str(raised.value)
+
+
+def test_read_history_logs_the_call_and_never_logs_the_number(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    _seed_messages(_CV_PHONE, ["one message"])
+
+    TS.read_history(before_id=99, limit=5)
+    logged = (C.LUNA_SESSION_DIR / "tool_calls.jsonl").read_text(encoding="utf-8")
+    assert json.loads(logged.splitlines()[-1]) == {"tool": "read_history", "args": {"before_id": 99, "limit": 5},
+                                                   "at": pytest.approx(time.time(), abs=60)}
+    assert _CV_PHONE not in logged, "PII: the number is the turn's own context, never an argument or a log line"
+
+
+# --- TASK-291: CV edit assist -- find the stored CV, let the model write the updated body, send it
+# back as a document. The send half follows show_clinic_photos's own send-path discipline byte for byte.
+
+def _with_stored_cv_document(monkeypatch, text=_CV_TEXT, phone=_CV_PHONE, forgotten=False):
+    conn = ST.db()
+    try:
+        doc_id = ST.record_document(conn, phone, "wab.d.cv", "media_cv", "document", "application/pdf",
+                                    "lebenslauf.pdf", "/tmp/cv.pdf", "sha_cv", 300)
+        ST.set_document_text(conn, doc_id, text)
+        ST.set_document_classification(conn, doc_id, "lebenslauf", None, "cv_text")
+        if forgotten:
+            ST.forget_document(conn, doc_id)
+    finally:
+        conn.close()
+    monkeypatch.setenv("WA_LUNA_PHONE", phone)
+
+
+def test_find_stored_cv_returns_the_stored_text(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv_document(monkeypatch)
+    out = TS.find_stored_cv()
+    assert out["cv_text"] == _CV_TEXT
+
+
+def test_find_stored_cv_raises_without_any_cv_on_file(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("find_stored_cv", {}))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "no CV is on file" in str(raised.value)
+
+
+def test_find_stored_cv_never_finds_a_forgotten_cv(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    _with_stored_cv_document(monkeypatch, forgotten=True)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("find_stored_cv", {}))
+    assert "no CV is on file" in str(raised.value)
+
+
+def test_send_updated_cv_refuses_empty_text(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool("send_updated_cv", {"cv_text": "   "}))
+    assert "empty" in str(raised.value)
+
+
+def test_send_updated_cv_refuses_to_send_with_autosend_off(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", False)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed with AUTOSEND off")
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    assert TS.send_updated_cv("updated body") == {"sent": False, "reason": "AUTOSEND is off"}
+
+
+def test_send_updated_cv_refuses_a_thread_already_pinned_to_the_meta_rail(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    with ST.db() as c:
+        ST.pin_rail(c, _CV_PHONE, "meta")
+
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed on a thread pinned to meta")
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    out = TS.send_updated_cv("updated body")
+    assert out["sent"] is False and "meta" in out["reason"]
+
+
+def test_send_updated_cv_records_a_wa_messages_row_on_a_real_send(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setattr(C, "TRANSPORT", "bridge")
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    monkeypatch.setattr(TS, "_stage_on_mini", lambda local, remote_name: f"/remote/{remote_name}")
+
+    class _FakeSendDocumentClient:
+        def __init__(self):
+            self.calls = []
+
+        def send_document(self, phone, local_path, caption=""):
+            self.calls.append((phone, local_path, caption))
+
+    fake = _FakeSendDocumentClient()
+    monkeypatch.setattr(TS.BR, "Client", lambda: fake)
+
+    out = TS.send_updated_cv("Lebenslauf\nAktualisiert: neue Adresse")
+    assert out == {"sent": True}
+    assert len(fake.calls) == 1 and fake.calls[0][0] == _CV_PHONE
+    with ST.db() as c:
+        rows = ST.messages_for(c, _CV_PHONE, direction="out")
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "document" and rows[0]["wamid"] is None
+    assert rows[0]["meta"]["action"] == "send_updated_cv"
+
+
+def test_send_updated_cv_in_a_dry_run_never_touches_the_bridge_client(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    monkeypatch.setattr(C, "AUTOSEND", True)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    monkeypatch.setenv("WA_LUNA_NO_SEND", "1")
+
+    def _must_not_construct():
+        raise AssertionError("BR.Client() must not be constructed in a dry run")
+    monkeypatch.setattr(TS.BR, "Client", _must_not_construct)
+
+    assert TS.send_updated_cv("updated body") == {"sent": False, "dry_run": True}
 
 
 # --- requirements audit 2026-09-21: a real Bavarian town with live postings is never refused -----

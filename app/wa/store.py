@@ -858,6 +858,25 @@ def messages_for(c, phone, after_id=0, direction=None, include_deleted=False):
     return [_message_row(r) for r in c.execute(sql + " order by id", args).fetchall()]
 
 
+def messages_before(c, phone, before_id=None, limit=20, include_deleted=False):
+    """Up to ``limit`` of this phone's wa_messages rows older than ``before_id`` (the most recent
+    ``limit`` overall when ``before_id`` is None), returned OLDEST FIRST within the page -- paging
+    further back than turn_context's own recent tail reaches (TASK-290), on the same deleted_at
+    filter as messages_for.
+    -> (rows, has_more): has_more is True when at least one older row exists beyond this page."""
+    sql, args = "select * from wa_messages where phone=?", [phone]
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    if before_id is not None:
+        sql += " and id<?"
+        args.append(before_id)
+    rows = c.execute(sql + " order by id desc limit ?", args + [limit + 1]).fetchall()
+    has_more = len(rows) > limit
+    page = list(rows[:limit])
+    page.reverse()
+    return [_message_row(r) for r in page], has_more
+
+
 def forget_message(c, wamid, at=None):
     """Mark this wa_messages row as forgotten (TASK-289): the model and every ordinary read stop seeing
     it (message_by_wamid/messages_for filter it out by default), but the row itself is never deleted --

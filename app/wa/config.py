@@ -129,10 +129,13 @@ if BRAIN not in ("deterministic", "luna"):
 LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
 # "max" (raised from "high", Ivan 2026-09-23, TASK-229): once tools_server.py is wired in
 # (--mcp-config), deciding whether a turn needs a live lookup, which tool, and with what arguments
-# is real planning work, not just wording a reply -- and TASK-229 added a tool (look_at_phone) whose
-# correct use is itself a judgment call (call it when something is genuinely uncertain, skip it
-# otherwise) rather than a fixed rule a lower effort tier could follow by rote. Accepted values are
-# low/medium/high/xhigh/max (`claude -p --help`).
+# is real planning work, not just wording a reply. STALE HALF OF THE ORIGINAL REASON (TASK-229,
+# 2026-09-24): this was raised partly because look_at_phone's correct use was itself a judgment
+# call -- that tool is now removed (TASK-289: the brain must never read the live phone screen, a
+# stale/desynced read is exactly what caused that night's incidents). Left at "max" for the tool
+# planning that remains (search_postings/show_clinic_photos/... argument choice); worth
+# re-checking against real cold-turn timing (TASK-287) now that the strongest reason for "max"
+# is gone. Accepted values are low/medium/high/xhigh/max (`claude -p --help`).
 LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "max").strip() or "max"
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
