@@ -4,7 +4,7 @@ title: 'First-turn WhatsApp reply latency is ~5 minutes, dominated by cold VPS c
 status: To Do
 assignee: []
 created_date: '2026-09-23 21:18'
-updated_date: '2026-09-23 22:02'
+updated_date: '2026-09-23 23:19'
 labels:
   - whatsapp
   - performance
@@ -29,4 +29,6 @@ Live UAT, 2026-09-23: Ivan flagged the reply speed as a real concern (wants a fa
 
 <!-- SECTION:NOTES:BEGIN -->
 Profiling instrumentation added (Ivan chose 'profile first' over guessing): app/wa/luna_brain.py::_live_reply now reads the tools_ready stamp's 'at' timestamp before deleting it (previously generated and discarded every turn) and logs a single line per turn: fresh/resumed, total wall time, time-to-tools-ready (CLI cold-start + MCP handshake + board_snapshot priming), and the CLI's own duration_ms/duration_api_ms/num_turns from its JSON envelope (already computed by claude -p, previously thrown away). Logged at WARNING (not INFO) because this process sets up no root logging config -- matches the existing convention in router.py/refusal.py/bridge_api.py, confirmed INFO would be silently dropped. Verified firing via tests/test_wa_luna_brain.py --log-cli-level=WARNING. tests/test_wa_luna_brain.py -k live_reply: 10/10 pass. Full lane has 27 pre-existing failures (shortlist/market-snapshot tests) confirmed unrelated via git stash diffing -- present before this change too. No behavior change, read-only. Next step: deploy, then read journalctl -u pflege-wa.service on the next cold turn for a real phase breakdown before picking an optimization.
+
+Deployed 2026-09-23 ~23:15 UTC as part of commit 4fa1b47, pflege-wa restarted and verified healthy. Awaiting the next cold turn on the live rail to read journalctl -u pflege-wa.service for the actual fresh=True luna_turn_timing line.
 <!-- SECTION:NOTES:END -->

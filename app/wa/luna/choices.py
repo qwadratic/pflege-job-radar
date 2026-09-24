@@ -154,8 +154,8 @@ def _offer_before(c, phone, before_id):
     newest message of any kind" rather than "the newest kind='buttons' row": a bubble sent after the
     offer retires it exactly like a newer inbound message would -- in both cases the button question
     is no longer the newest thing said in the thread."""
-    row = c.execute("select * from wa_messages where phone=? and id<? order by id desc limit 1",
-                    (phone, before_id)).fetchone()
+    row = c.execute("select * from wa_messages where phone=? and id<? and deleted_at is null "
+                    "order by id desc limit 1", (phone, before_id)).fetchone()
     return dict(row) if row else None
 
 

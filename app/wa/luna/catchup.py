@@ -37,8 +37,8 @@ log = logging.getLogger(__name__)
 
 
 def _last_inbound(conn, phone):
-    return conn.execute("select * from wa_messages where phone=? and direction='in' order by id desc limit 1",
-                        (phone,)).fetchone()
+    return conn.execute("select * from wa_messages where phone=? and direction='in' and deleted_at is null "
+                        "order by id desc limit 1", (phone,)).fetchone()
 
 
 def run(client=None, phones=None):

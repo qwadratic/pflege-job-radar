@@ -56,7 +56,8 @@ def db_copy(db_path=None):
 
 def _last_inbound(conn, phone):
     row = conn.execute(
-        "select wamid, body, meta from wa_messages where phone=? and direction='in' order by id desc limit 1",
+        "select wamid, body, meta from wa_messages where phone=? and direction='in' and deleted_at is null "
+        "order by id desc limit 1",
         (phone,)).fetchone()
     if row is None:
         return None, "", None
@@ -76,7 +77,7 @@ def phones_owed_a_reply(conn, include_test=False):
     operator's own message unanswered forever whenever the webhook did not finish the turn."""
     rows = conn.execute(f"""
         select m.phone from wa_messages m
-        join (select phone, max(id) as last_id from wa_messages group by phone) latest
+        join (select phone, max(id) as last_id from wa_messages where deleted_at is null group by phone) latest
           on m.phone = latest.phone and m.id = latest.last_id
         left join wa_reply_turn_claims k on k.phone = m.phone and k.turn_key = m.wamid
         left join wa_threads t on t.phone = m.phone

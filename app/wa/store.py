@@ -191,7 +191,12 @@ MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "impor
               ("wa_threads", "is_test", "integer not null default 0"), ("wa_threads", "test_marked_at", "text"),
               # TASK-220: which rail this thread's messages go out on. Null until its first successful
               # outbound; see pin_rail below for why it never changes after that.
-              ("wa_threads", "rail", "text"))
+              ("wa_threads", "rail", "text"),
+              # TASK-289 (Ivan, 2026-09-24): a phone/app-level chat delete let the real WhatsApp screen
+              # and this DB drift apart -- twice, live, the same night. Nothing here ever hard-deletes a
+              # row again: "forget" sets deleted_at instead, and every read the model reaches (messages_for,
+              # message_by_wamid, documents_for, document_for_wamid) filters it out by default.
+              ("wa_messages", "deleted_at", "text"), ("wa_documents", "deleted_at", "text"))
 
 
 def _migrate(c):
@@ -546,16 +551,37 @@ def set_voice_transcript(c, doc_id, wamid, text, model):
     c.commit()
 
 
-def documents_for(c, phone):
-    """Every stored original for this phone, oldest first, all columns (text included)."""
-    rows = c.execute("select * from wa_documents where phone=? order by id", (phone,)).fetchall()
+def documents_for(c, phone, include_deleted=False):
+    """Every stored original for this phone, oldest first, all columns (text included).
+
+    include_deleted=True is for audit/admin tooling only -- the model never reaches a forgotten
+    document this way (TASK-289)."""
+    sql = "select * from wa_documents where phone=?"
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    rows = c.execute(sql + " order by id", (phone,)).fetchall()
     return [dict(r) for r in rows]
 
 
-def document_for_wamid(c, wamid):
-    """The stored original that came with this inbound message, all columns, or None."""
-    row = c.execute("select * from wa_documents where wamid=?", (wamid,)).fetchone()
+def document_for_wamid(c, wamid, include_deleted=False):
+    """The stored original that came with this inbound message, all columns, or None.
+
+    include_deleted=True is for audit/admin tooling only (TASK-289)."""
+    sql = "select * from wa_documents where wamid=?"
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    row = c.execute(sql, (wamid,)).fetchone()
     return dict(row) if row else None
+
+
+def forget_document(c, doc_id, at=None):
+    """Mark this wa_documents row as forgotten (TASK-289): same soft-delete contract as
+    forget_message -- the row stays, every ordinary read stops seeing it.
+    -> True when a row was actually marked (False for an unknown id or one already forgotten)."""
+    cur = c.execute("update wa_documents set deleted_at=? where id=? and deleted_at is null",
+                    (at or now_iso(), doc_id))
+    c.commit()
+    return cur.rowcount > 0
 
 
 # --- imported history (TASK-205, app/wa/luna/import_history.py) -----------------------------------
@@ -586,15 +612,26 @@ def imported_document(c, import_source, import_ref):
     return dict(row) if row else None
 
 
-def document_with_sha256(c, phone, sha256):
-    """The oldest stored original of this phone with these bytes, all columns, or None."""
-    row = c.execute("select * from wa_documents where phone=? and sha256=? order by id limit 1",
-                    (phone, sha256)).fetchone()
+def document_with_sha256(c, phone, sha256, include_deleted=False):
+    """The oldest stored original of this phone with these bytes, all columns, or None.
+
+    include_deleted=False (default) so a forgotten document (TASK-289) never dedupes a fresh
+    upload of the same bytes -- the candidate sending it again is treated as new, not a repeat."""
+    sql = "select * from wa_documents where phone=? and sha256=?"
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    row = c.execute(sql + " order by id limit 1", (phone, sha256)).fetchone()
     return dict(row) if row else None
 
 
-def document_by_id(c, doc_id):
-    row = c.execute("select * from wa_documents where id=?", (doc_id,)).fetchone()
+def document_by_id(c, doc_id, include_deleted=False):
+    """include_deleted=False (default): a forgotten document (TASK-289) is not reachable by id
+    either -- callers that already hold a stale id for it (e.g. a reuse-confirmation candidate the
+    model was shown before it was forgotten) get None, same as an unknown id."""
+    sql = "select * from wa_documents where id=?"
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    row = c.execute(sql, (doc_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -796,18 +833,41 @@ def _message_row(row):
     return {**dict(row), "meta": json.loads(row["meta"] or "{}")}
 
 
-def message_by_wamid(c, wamid):
-    """One wa_messages row (either direction) with meta parsed, or None."""
-    row = c.execute("select * from wa_messages where wamid=?", (wamid,)).fetchone()
+def message_by_wamid(c, wamid, include_deleted=False):
+    """One wa_messages row (either direction) with meta parsed, or None.
+
+    include_deleted=True is for audit/admin tooling only (e.g. tools/wa_bridge.py audit) -- the
+    model never reaches a forgotten message this way (TASK-289)."""
+    sql = "select * from wa_messages where wamid=?"
+    if not include_deleted:
+        sql += " and deleted_at is null"
+    row = c.execute(sql, (wamid,)).fetchone()
     return _message_row(row) if row else None
 
 
-def messages_for(c, phone, after_id=0, direction=None):
-    """This phone's wa_messages rows with id > after_id, oldest first, meta parsed; one direction or both."""
+def messages_for(c, phone, after_id=0, direction=None, include_deleted=False):
+    """This phone's wa_messages rows with id > after_id, oldest first, meta parsed; one direction or both.
+
+    include_deleted=True is for audit/admin tooling only -- the model never reaches a forgotten
+    message this way (TASK-289)."""
     sql, args = "select * from wa_messages where phone=? and id>?", [phone, after_id]
+    if not include_deleted:
+        sql += " and deleted_at is null"
     if direction:
         sql, args = sql + " and direction=?", args + [direction]
     return [_message_row(r) for r in c.execute(sql + " order by id", args).fetchall()]
+
+
+def forget_message(c, wamid, at=None):
+    """Mark this wa_messages row as forgotten (TASK-289): the model and every ordinary read stop seeing
+    it (message_by_wamid/messages_for filter it out by default), but the row itself is never deleted --
+    an operator asking to "forget" something means hide it from the conversation, not destroy the record.
+    ``at``, when given, is the real moment this was forgotten (RFC3339); at=None uses now.
+    -> True when a row was actually marked (False for an unknown wamid or one already forgotten)."""
+    cur = c.execute("update wa_messages set deleted_at=? where wamid=? and deleted_at is null",
+                    (at or now_iso(), wamid))
+    c.commit()
+    return cur.rowcount > 0
 
 
 def last_message_id(c, phone):
