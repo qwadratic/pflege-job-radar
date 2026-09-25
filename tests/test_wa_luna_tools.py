@@ -433,6 +433,33 @@ def test_count_postings_without_a_single_filter_says_where_that_number_already_i
     assert [l["tool"] for l in logged] == ["count_postings"], "the refused call is still in the log"
 
 
+def test_count_postings_role_class_defaults_to_the_cards_own_known_role(tmp_path, monkeypatch):
+    """TASK-302 point 6: a count shown to a candidate must be filtered to the role class the card
+    already knows, so a live turn quoting "345 postings" for a city while only 241 of them are
+    Pflegefachkraft (the measured 2026-09-25 bug) never happens again. The chosen route: an explicit
+    per-turn env var, WA_LUNA_ROLE_CLASS -- the same contract WA_LUNA_PHONE already uses for
+    match_cv_to_postings -- read fresh on every call (_turn_role_class), never cached at import, so a
+    card's role only ever reaches the one turn it was written for."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99, "role_class": "hebamme"})
+
+    # No WA_LUNA_ROLE_CLASS in the environment (every other test here, and every real turn before this
+    # fix): behavior is exactly as before -- all 3 München rows count, both existing tests above stay
+    # green unmodified.
+    monkeypatch.delenv("WA_LUNA_ROLE_CLASS", raising=False)
+    assert TS.count_postings(city="München")["postings"] == 3
+
+    # The card's own role reaches the call without the model naming it, and narrows the count.
+    monkeypatch.setenv("WA_LUNA_ROLE_CLASS", "pflegefachkraft")
+    counted = TS.count_postings(city="München")
+    assert counted["postings"] == 2, "the Hebamme row is filtered out -- scoped to the card's own role"
+    assert counted["filters"]["role_class"] == "pflegefachkraft", "the applied default is never silent"
+
+    # An explicit role_class argument (the model asking about a DIFFERENT role) still wins over the
+    # card's own default.
+    assert TS.count_postings(city="München", role_class="hebamme")["postings"] == 1
+
+
 # --- TASK-213: the fallback -- the board's own docs, and an allowlist of public GET paths -------
 
 def test_board_api_get_answers_an_allowlisted_path_with_the_apis_own_envelope(tmp_path, monkeypatch):

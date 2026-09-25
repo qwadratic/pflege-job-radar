@@ -616,7 +616,8 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
                       themself just named)
       postings        {folded clinic name: posting_id} it was named from THIS turn (TASK-150)
       counts          every truthful market number for this turn: the offer's totals/remainders
-                      (once there is an offer), this turn's own tool-call totals, and -- always,
+                      (once there is an offer), this turn's own tool-call totals, the warming turn's
+                      own role+city-filtered total once it fires (TASK-302 point 5), and -- always,
                       offer or not -- the board-wide open-jobs total and clinic total the harness
                       itself just computed (round-2 audit, 2026-09-22)
       counts_by_city  {folded city: {int}} -- the same tool-call numbers, filed under the city= they
@@ -646,6 +647,24 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
                        offer.get("postings_total"), offer.get("remaining_postings"),
                        offer.get("shown")})
         remaining = max(remaining, int(offer.get("remaining_clinics") or 0))
+
+    # TASK-302 point 5: the warming turn's own code-picked posting and count (luna_brain.build_warming)
+    # are evidence too -- the SAME trust level as the offer/shortlist entries just above (harness-
+    # computed from the live board, never the model's claim), never a loosening of anything else this
+    # module checks. ``posting`` is one OF.position() dict, not a list, so this is a single add rather
+    # than a loop; ``counts_by_city`` is keyed on the posting's OWN city so an approximation marker in
+    # a sentence naming that city (_false_counts) can anchor on it too, not only an exact statement.
+    warming_posting = ((snapshot or {}).get("warming") or {}).get("posting") or {}
+    if warming_posting.get("clinic"):
+        names.add(warming_posting["clinic"])
+        if warming_posting.get("posting_id"):
+            postings.setdefault(fold(warming_posting["clinic"]), warming_posting["posting_id"])
+    warming_total = (snapshot or {}).get("warming", {}).get("matching_postings_total")
+    if isinstance(warming_total, int):
+        counts.add(warming_total)
+        warming_city = fold(warming_posting.get("city") or "")
+        if warming_city:
+            counts_by_city.setdefault(warming_city, set()).add(warming_total)
 
     # THE BOARD-WIDE TOTALS, UNCONDITIONALLY (round-2 audit, 2026-09-22). market_snapshot's
     # open_jobs/matching_clinics_count and this module's own board_clinic_names() are arithmetic

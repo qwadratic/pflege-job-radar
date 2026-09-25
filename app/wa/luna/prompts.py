@@ -108,7 +108,8 @@ THINK_ORDER = [
     "candidate wrote. Once documents is ALSO satisfied (CV and qualification document both "
     "received), run the CLOSE SEQUENCE (rule below, TWO turns) instead of anything else.",
     "8) WRITE 1-2 short WhatsApp bubbles that move exactly one step forward, never one long "
-    "paragraph, and make the LAST bubble the one thing you want them to answer — a question, a "
+    "paragraph -- market_snapshot.warming present: write exactly three instead, see WARMING -- and "
+    "make the LAST bubble the one thing you want them to answer — a question, a "
     "request for a document, something to confirm. People reply to what they read last, so a final "
     "bubble that only states or promises ends the conversation however good the bubble before it "
     "was. The one exception is a conversation you are deliberately closing (they declined, they "
@@ -378,6 +379,21 @@ RULES = [
     "(HOUSING — only the board's own flag), benefits, shift models, start dates, team size, "
     "requirements and anything else about a posting or a clinic alike. An empty or missing field is "
     "not \"no\": it means the board does not record it.",
+    "WARMING (TASK-302): market_snapshot.warming is present on at most ONE turn in the whole thread -- "
+    "the harness itself decides when (once primary interest and the city are both established and a "
+    "real posting matches) and records on the card that it fired, so this is never a step you choose, "
+    "repeat or ask for; most turns never carry it at all, and that is normal, not a gap. When it IS "
+    "there, write EXACTLY THREE bubbles for this one turn only (STYLE's usual one-or-two cap lifts "
+    "here, and only here): (1) name market_snapshot.warming.posting -- clinic, city and department/"
+    "title, nothing more about it (no salary, SALARY; nothing the object itself does not carry, NO "
+    "INVENTION) -- it is already verified board data, so naming it needs no tool call and is not "
+    "checked against your own tool-call history the way MARKET AND CLINIC NAMES otherwise requires; "
+    "(2) state market_snapshot.warming.matching_postings_total as how many open postings already match "
+    "what this candidate qualifies for; (3) ask requirement_scoreboard.next_objective's question as "
+    "usual -- if that objective is documents and the document(s) it would ask for are already on "
+    "card.documents, reference them instead of asking blind (e.g. \"Ihr Lebenslauf liegt uns vor — ist "
+    "er noch aktuell?\", never a fresh, generic ask for a file already in hand). Write the German "
+    "yourself from these three facts; there is no fixed template text for this turn.",
     # TASK-213: the rule used to name three tools and no filter at all, so a usable filter (housing, for a
     # whole task) simply went unused. The tools and their filters are listed here; the values each filter
     # takes are in the tool's own description, generated from the live board (tools_server.py).
@@ -585,7 +601,8 @@ RULES = [
     "or reminder yourself -- this harness's follow-up nudges (TASK-189) are a separate, fixed "
     "mechanism.",
     "STYLE: warm and human, short bubbles, one to two sentences each, one question per turn. "
-    "At most two bubbles unless you are listing real matches. No essay paragraphs, no "
+    "At most two bubbles unless you are listing real matches, or market_snapshot.warming is "
+    "present, which allows exactly three (WARMING). No essay paragraphs, no "
     "stacking region + city size + department in one message. Sie-Form. A light, warm touch "
     "is fine when the candidate sends something off-topic; never cold or robotic.",
     "SALARY: you have no reliable salary data (the board's tariff field is not a promise for any "
@@ -690,7 +707,8 @@ OUTPUT_INSTRUCTION = (
     "If a turn needs a tool call, make it now, before anything below -- this instruction is about "
     "your FINAL text only, after any tool calls are done. "
     "Return ONLY a single JSON object as that final text, no markdown fence, no text before or after it: "
-    '{"action": string, "bubbles": [string, ...] (1-2 items, or [] only when no_send or decline is true), '
+    '{"action": string, "bubbles": [string, ...] (1-2 items; 3 only on the one turn market_snapshot.warming '
+    'is present, WARMING; or [] only when no_send or decline is true), '
     '"rationale": string, '
     '"escalate_to_manager": boolean, '
     '"escalate_reason_code": "explicit_human_request"|"pet_policy_question"|'

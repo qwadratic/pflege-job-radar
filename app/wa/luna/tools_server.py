@@ -584,7 +584,11 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
     market_snapshot.open_jobs, so calling this with every parameter empty only re-derives a number you have.
     For a candidate who needs a flat the honest number is with_accommodation -- ads that offer somewhere to
     live; with_relocation_support counts the ones that only help look or pay towards the move, and
-    with_housing is the two added together, so never quote it as "Stellen mit Wohnung"."""
+    with_housing is the two added together, so never quote it as "Stellen mit Wohnung". role_class defaults to
+    the candidate's own known role (WA_LUNA_ROLE_CLASS) when you leave it empty, so a bare city/department
+    filter already comes back scoped to what this candidate qualifies for -- pass a different role_class only
+    to ask about a role other than theirs."""
+    role_class = role_class or _turn_role_class()
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
             "housing": housing, "employment_type": employment_type}
     if not any(args.values()):
@@ -700,6 +704,17 @@ def _turn_phone():
                         "read (luna_brain._mcp_config_path passes it, like WA_SQLITE_PATH). Answer without "
                         "this tool. Internal tool note, never quote it to the candidate.")
     return phone
+
+
+def _turn_role_class():
+    """TASK-302 point 6: the role class this card already knows (luna_brain._known_role_class), passed
+    through the same explicit per-turn env contract as WA_LUNA_PHONE/_turn_phone above -- read fresh on
+    every call, never cached at import, so a card's role only ever reaches the ONE turn it was written
+    for (the exact leak NO_SEND_ENV's own docstring warns about, in luna_brain.py). "" when the
+    qualification gate has not settled yet, or this process was started without a card behind it at all
+    (a unit test) -- count_postings then falls back to whatever role_class the model itself passed,
+    unchanged from before this fix."""
+    return (os.environ.get("WA_LUNA_ROLE_CLASS") or "").strip()
 
 
 def _stored_cv_text(phone):

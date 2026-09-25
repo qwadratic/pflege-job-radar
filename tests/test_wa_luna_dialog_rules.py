@@ -467,6 +467,127 @@ def test_the_model_cannot_write_the_stage_or_the_grounding_memory_itself(small):
     assert LB.GROUNDED_KEY not in d["slots"]
 
 
+# --- 4. WARMING (TASK-302, "прогревающий ход") -----------------------------------------------------
+# Ivan's build, points 1-4: the trigger, the posting/count pick and the once-per-thread record are all
+# CODE (luna_brain.build_warming), never the model's judgement -- these tests exercise the trigger
+# directly, then once end to end through turn(), then the three-bubble ceiling _check enforces only on
+# that one turn. small's board (5 postings across the 5 _CITIES) puts exactly ONE pflegefachkraft
+# posting in München -- job 5, clinic "Klinikum München 5" -- so a München card has a real match while
+# a card asking about a city not on the board has none.
+
+def test_build_warming_fires_once_primary_interest_and_city_are_known(small):
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    scoreboard = LB.requirement_scoreboard(card)
+    assert scoreboard["region"] == scoreboard["qualification"] == "satisfied"
+    warming = LB.build_warming(card, scoreboard)
+    assert warming is not None
+    assert warming["posting"]["clinic"] == "Klinikum München 5"
+    assert warming["posting"]["city"] == "München"
+    assert warming["matching_postings_total"] == 1
+
+
+@pytest.mark.parametrize("card", [
+    {"qualification_path": "urkunde"},                                # no city at all
+    {"qualification_path": "urkunde", "city": "   "},                 # blank city does not count
+])
+def test_build_warming_does_not_fire_without_a_known_city(small, card):
+    card = {"region": "Bayern", **card}
+    assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
+
+
+@pytest.mark.parametrize("card", [
+    {"city": "München"},                                              # neither region nor qualification
+    {"qualification_path": "urkunde", "city": "München"},             # region still open
+    {"region": "Bayern", "city": "München"},                          # qualification still open
+    {"region": "Bayern", "qualification_path": "reject", "city": "München"},   # qualification blocked
+])
+def test_build_warming_does_not_fire_before_primary_interest_is_established(small, card):
+    assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
+
+
+def test_build_warming_does_not_fire_a_second_time_on_the_same_thread(small):
+    """The card carries its own record (WARMING_KEY) once the turn fired -- this is what makes the
+    trigger fire at most once per thread, checked directly rather than only through a full turn()."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München",
+            LB.WARMING_KEY: "2026-09-25T09:00:00+00:00"}
+    assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
+
+
+def test_build_warming_does_not_fire_without_a_matching_posting(small):
+    """A city the board has no live pflegefachkraft posting in yields an ordinary turn -- nothing
+    invented, per Ivan's own wording for point 1."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "Nirgendwo"}
+    assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
+
+
+def test_the_warming_turn_fires_once_end_to_end_and_never_again(small):
+    """turn() merges build_warming's output into market_snapshot.warming for exactly the one turn it
+    applies to, and records WARMING_KEY on the card so a second turn on the same thread never sees it
+    again. The fake model below only echoes back what the payload itself handed it -- a pass proves the
+    harness's own wiring, not the model's judgement, matches point 1-3."""
+    def reply(system, user, session_id):
+        payload = json.loads(user)
+        warming = payload["market_snapshot"]["warming"]
+        posting = warming["posting"]
+        bubbles = [f"Bei der {posting['clinic']} in {posting['city']} ist aktuell eine Stelle frei.",
+                   f"Insgesamt passen {warming['matching_postings_total']} Stellen zu Ihrer Qualifikation.",
+                   "Brauchen Sie vor Ort eine Wohnung?"]
+        return _out(bubbles=bubbles, next_ask="Brauchen Sie vor Ort eine Wohnung?"), session_id
+
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    d = LB.turn("Ich suche eine Stelle in München.", {"slots": dict(card), "asked": []},
+                client=fake_client(reply))
+    assert len(d["bubbles"]) == 3, "three bubbles, only on this one warming turn (STYLE/WARMING)"
+    assert "Klinikum München 5" in d["bubbles"][0]
+    assert d["slots"][LB.WARMING_KEY], "the harness's own record that it fired, never the model's"
+
+    def second_reply(system, user, session_id):
+        payload = json.loads(user)
+        assert "warming" not in payload["market_snapshot"], "fired once -- never again on this thread"
+        return _out(bubbles=["Danke, notiert."]), session_id
+
+    d2 = LB.turn("Ja, brauche eine Wohnung für 1 Person.", {"slots": d["slots"], "asked": []},
+                 client=fake_client(second_reply))
+    assert d2["bubbles"] == ["Danke, notiert."]
+
+
+# --- 5. THREE BUBBLES ONLY ON THE WARMING TURN (TASK-302 point 4) ----------------------------------
+
+def test_three_bubbles_are_accepted_when_the_warming_ceiling_applies():
+    assert LB._check(["Eins.", "Zwei.", "Drei."], max_bubbles=3) == ["Eins.", "Zwei.", "Drei."]
+
+
+def test_three_bubbles_are_rejected_on_an_ordinary_turn():
+    with pytest.raises(AssertionError, match=r"1-2"):
+        LB._check(["Eins.", "Zwei.", "Drei."])
+
+
+def test_a_warming_turn_that_trips_some_other_rule_keeps_its_three_bubble_ceiling_on_the_retry(small):
+    """The corrective retry (see the bubble-count tests earlier in this file) reads max_bubbles from
+    _checked_reply's own closure -- so a warming turn whose FIRST pass broke a different rule (here: an
+    invented clinic) still gets three bubbles on the rewrite, never silently dropped to two. The retry's
+    own ``user`` argument is only the harness's correction (_corrective_payload) -- market_snapshot is
+    NOT resent, exactly like a real resumed session where the model still has its first-turn context --
+    so the fake model below reads the posting off the FIRST payload and keeps it in its own closure for
+    the rewrite, rather than re-reading a market_snapshot the second call never receives."""
+    attempts = []
+    warming = {}
+
+    def reply(system, user, session_id):
+        attempts.append(user)
+        if len(attempts) == 1:
+            warming.update(json.loads(user)["market_snapshot"]["warming"])
+            return _out(bubbles=["Das Klinikum Erfunden hat eine Stelle frei.", "Zwei.", "Drei."]), session_id
+        posting = warming["posting"]
+        return _out(bubbles=[f"Bei der {posting['clinic']} ist eine Stelle frei.", "Zwei.", "Drei."],
+                    next_ask="Drei."), session_id
+
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    d = LB.turn("Hallo", {"slots": dict(card), "asked": []}, client=fake_client(reply))
+    assert len(attempts) == 2, "a corrective retry, not a raw exception or a silent drop to two bubbles"
+    assert len(d["bubbles"]) == 3
+
+
 # --- the rules are also written down where the model reads them ----------------------------------
 
 def test_the_system_prompt_states_all_three_rules():
@@ -1291,6 +1412,39 @@ def test_the_count_rejection_shows_the_parsed_value_and_the_text_it_came_from(sm
     found live 2026-09-22)."""
     with pytest.raises(AssertionError, match=r"300 \(read off '300' in '300 Stellen'\)"):
         GR.check_reply(["Bayernweit habe ich 300 Stellen im Angebot."], set(), counts={2462})
+
+
+# --- TASK-302 point 5: the warming turn's code-picked posting and its count are evidence too -------
+
+def test_the_warming_posting_and_its_count_are_grounded_without_any_tool_call(small):
+    """The code-provided posting must count as evidence so naming it is never rejected -- checked
+    directly on turn_evidence/check_reply, with no tool call and no offer in play, exactly the shape
+    build_warming hands the model on the one turn it fires."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    assert warming, "small's fixture puts exactly one matching posting in München -- see the WARMING tests above"
+    snap = {**LB.market_snapshot(card), "warming": warming}
+    evidence = GR.turn_evidence(snap, [])
+    posting = warming["posting"]
+    assert posting["clinic"] in evidence["names"]
+    assert warming["matching_postings_total"] in evidence["counts"]
+    bubble1 = f"Bei der {posting['clinic']} in {posting['city']} ist gerade eine Stelle frei."
+    bubble2 = f"Insgesamt passen {warming['matching_postings_total']} Stellen zu Ihrer Qualifikation."
+    # check_reply -> the grounded clinic names the text named (board spelling); no exception at all is
+    # the actual proof the posting counts as evidence -- it legitimately names one clinic, so the
+    # return value is that one name, not empty.
+    assert GR.check_reply([bubble1, bubble2], evidence["names"], counts=evidence["counts"]) == [posting["clinic"]]
+
+
+def test_the_warming_evidence_does_not_widen_beyond_the_one_posting_it_names(small):
+    """The warming block grounds exactly the posting build_warming picked -- never a general licence
+    to name any clinic on this turn."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    snap = {**LB.market_snapshot(card), "warming": warming}
+    evidence = GR.turn_evidence(snap, [])
+    with pytest.raises(AssertionError, match="NO INVENTION"):
+        GR.check_reply(["Das Klinikum Erfunden hat auch eine Stelle frei."], evidence["names"])
 
 
 # --- ROUND 2 (2026-09-22): TASK-151's fix was verified only by hand-injecting ``counts``, never

@@ -173,7 +173,7 @@ def _board_snapshot_path():
     return path
 
 
-def _mcp_config_path(ready_path, phone=None, no_send=False):
+def _mcp_config_path(ready_path, phone=None, no_send=False, role_class=None):
     """Write (once per turn) the --mcp-config file pointing the CLI at tools_server.py,
     launched with the same interpreter this process runs under -- that interpreter is guaranteed
     to have the `mcp` package installed, whereas a bare `python`/`python3` on PATH might be a
@@ -200,6 +200,14 @@ def _mcp_config_path(ready_path, phone=None, no_send=False):
     WA_LUNA_TOOLS_READY the file that server stamps once its tools are
     registered -- ``_live_reply`` raises when that stamp is missing after the run, because a tools
     server that never started is otherwise indistinguishable from a turn that just did not call one.
+
+    WA_LUNA_ROLE_CLASS (TASK-302 point 6): this card's own known role class (_known_role_class), the
+    same explicit per-turn env contract as WA_LUNA_PHONE just above -- count_postings reads it as its
+    own default when the model calls it with role_class empty, so a plain count question is read
+    against the role this candidate already settled on instead of quietly covering every role class at
+    once. Empty when the card has none yet (qualification not settled) or turn() was called without a
+    role at all (a unit test): the tool then falls back to whatever role_class the model itself passed
+    (possibly none, exactly today's behaviour).
 
     WA_BRIDGE_URL/WA_BRIDGE_TOKEN/WA_AUTOSEND (TASK-131 round 7, Ivan 2026-09-23; WA_AUTOSEND added
     TASK-250): show_clinic_photos is the first tool in this server that SENDS something rather than
@@ -244,6 +252,7 @@ def _mcp_config_path(ready_path, phone=None, no_send=False):
                                                         # row (a unit test): that tool then says so and
                                                         # the model answers without it.
                                                         "WA_LUNA_PHONE": str(phone or ""),
+                                                        "WA_LUNA_ROLE_CLASS": str(role_class or ""),
                                                         "WA_BRIDGE_URL": C.BRIDGE_URL,
                                                         "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN,
                                                         "WA_AUTOSEND": "1" if C.AUTOSEND else "",
@@ -758,13 +767,88 @@ def requirement_scoreboard(card):
     return board
 
 
+# --- the warming turn (TASK-302, Ivan's "прогревающий ход") ----------------------------------
+# Once per thread, the first turn after the candidate's primary interest AND their city are both
+# established, the reply opens with a real vacancy instead of another bare question: one bubble
+# naming it, one saying how many matched in total, one asking the next card-advancing question. This
+# is the fourth thing decided in CODE rather than by the model's judgement, in the same spirit as the
+# module docstring's three (opt-out, reject, out-of-scope region): WHICH posting is named, HOW MANY
+# matched, and THAT it happens exactly once are all facts the harness computes from the live board and
+# the card -- never the model's pick, never invented, never repeated. Only the German wording of the
+# three bubbles stays the model's (prompts.py's WARMING rule).
+WARMING_KEY = "_warming_sent_at"   # card: when the warming turn fired -- see build_warming.
+
+
+def _known_role_class(card):
+    """The one role class this card's own counts and searches should already be read against, once
+    the qualification gate has settled on a real path -- the same predicate market_snapshot has used
+    since TASK-195 to add a role filter to its own ``matching`` rows, factored out here so the warming
+    turn's posting pick (build_warming) and count_postings' own explicit default (tools_server.py, via
+    _mcp_config_path's WA_LUNA_ROLE_CLASS env var -- TASK-302 point 6) read exactly the same thing.
+    This board's whole candidate-facing funnel is Pflegefachkraft (app/autopilot/matching.py:score
+    defaults an unknown candidate role to the same constant) -- a settled qualification_path is a
+    finding about THIS one role, never yet a fact about some other role class the candidate might also
+    hold, so this is never anything but that one value or None (qualification not yet settled, or a
+    reject -- QUALIFICATION_PATHS_SETTLED)."""
+    return "pflegefachkraft" if card.get("qualification_path") in QUALIFICATION_PATHS_SETTLED else None
+
+
+def _warming_matching_rows(card):
+    """The live postings this card's known role AND known city already narrow to, newest first -- via
+    B.jobs_for/SL.filters, the SAME live+freshness base (verify=live, sort=-first_published) every
+    board tool searches from (tools_server.LIVE_BASE is the identical pair of defaults). Empty without
+    BOTH a known role and a known city: build_warming below never fires on partial knowledge."""
+    role, city = _known_role_class(card), (card.get("city") or "").strip()
+    if not (role and city):
+        return []
+    return B.jobs_for({"role": role, "city": city})
+
+
+def build_warming(card, scoreboard):
+    """-> {posting, matching_postings_total} on the one turn the warming block should fire, else None.
+
+    THE TRIGGER IS CODE'S, NEVER THE MODEL'S (Ivan, TASK-302 point 1). Every one of these has to hold:
+    * region AND qualification are both already "satisfied" on ``scoreboard`` -- the closest this
+      harness's own gates come to naming "primary interest established" (region: they are genuinely
+      looking for a job in Bayern; qualification: a real, placeable Pflegefachkraft path is already on
+      the card, QUALIFICATION_PATHS_SETTLED) -- decided here rather than reusing funnel_stage's
+      "matching" name because that stage ALSO covers a candidate who cleared both gates but has since
+      said nothing else yet; this predicate only cares that the two gates themselves are settled.
+    * ``card["city"]`` itself is known -- Ivan's own wording, point 1; department_pref alone (the
+      OTHER half of city_or_department, see _city_or_department_satisfied) does not count, and matches
+      the live scenario this was built against (city known, qualification known, next_objective
+      housing).
+    * a live posting actually matches that role+city (_warming_matching_rows) -- "no matching posting
+      -> an ordinary turn, nothing invented" (point 1's own words): never a retry with a looser
+      filter, never a placeholder posting standing in for a real one.
+    * this thread has not already had its one warming turn (``card[WARMING_KEY]``).
+
+    Any one of those missing -> None. ``posting`` is OF.position() of the newest matching row -- the
+    exact shape (and the exact board fields: clinic, city, department, title, employment_types,
+    housing; no salary) every other posting this harness ever hands the model already carries, so
+    prompts.py's existing NO INVENTION/SALARY rules already cover it without a warming-specific
+    carve-out. ``matching_postings_total`` is the count of that SAME row set -- role- AND
+    city-filtered, per TASK-302 point 6/2 -- never the board-wide market_snapshot.open_jobs total,
+    which counts every role and every city."""
+    if (card.get(WARMING_KEY) or scoreboard.get("region") != "satisfied"
+            or scoreboard.get("qualification") != "satisfied" or not (card.get("city") or "").strip()):
+        return None
+    rows = _warming_matching_rows(card)
+    if not rows:
+        return None
+    return {"posting": OF.position(rows[0]), "matching_postings_total": len(rows)}
+
+
 # --- the Claude call -------------------------------------------------------------------------
 
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "action": {"type": "string"},
-        "bubbles": {"type": "array", "items": {"type": "string"}, "maxItems": 2},
+        # 3 only on the warming turn (TASK-302): this schema is documentation, never sent to the CLI
+        # (nothing in this module passes OUTPUT_SCHEMA to the model) -- the real, per-turn enforcement
+        # is _check/_checked_reply's own max_bubbles, which stays at MAX_BUBBLES (2) every other turn.
+        "bubbles": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "rationale": {"type": "string"},
         "escalate_to_manager": {"type": "boolean"},
         # escalate_reason_code is the closed set (app/wa/luna/escalation.py:MODEL_CODES) -- the ONE
@@ -914,6 +998,11 @@ class Client:
         # arguments (tests/test_wa_test_threads.py and five others), and a turn must keep working when
         # nobody set it -- the tool then says it has no number and the model answers without it.
         self.phone = None
+        # TASK-302 point 6: this card's own known role class (_known_role_class), set by turn() the
+        # same way self.phone is -- count_postings reads it as its own default. Same reason as
+        # self.phone: a turn must keep working when nobody set it (the tool then reads whatever
+        # role_class, if any, the model itself passed).
+        self.role_class = None
         # Per-turn dry run, set by turn(no_send=True) on the client it is about to use -- same idiom
         # and same reason as self.phone above. NOT an environment variable: see NO_SEND_ENV.
         self.no_send = False
@@ -935,7 +1024,8 @@ class Client:
                 proc = subprocess.run(
                     [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
                      "--model", C.LUNA_MODEL, "--effort", C.LUNA_EFFORT,
-                     "--mcp-config", str(_mcp_config_path(ready_path, self.phone, self.no_send)), "--strict-mcp-config",
+                     "--mcp-config", str(_mcp_config_path(ready_path, self.phone, self.no_send, self.role_class)),
+                     "--strict-mcp-config",
                      "--allowedTools", ",".join(MCP_TOOL_NAMES),
                      "--system-prompt", system_text, *session_flags],
                     input=user_text, capture_output=True, text=True, timeout=C.LUNA_TIMEOUT_SEC,
@@ -1043,7 +1133,11 @@ CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason",
                         # TASK-211: the housing gate's own flag, derived from housing_needed in turn(). The model
                         # writes the answer (housing_needed), never the flag -- a turn that set housing_known
                         # alone used to close the gate without the fact the shortlist filters on.
-                        "housing_known")
+                        "housing_known",
+                        # TASK-302: whether the warming turn already fired is CODE's own record (build_warming
+                        # decides it, turn() writes it) -- never something the model may claim or clear, or a
+                        # forged/omitted card_patch value would make the one-time vacancy fire again.
+                        WARMING_KEY)
 # Outbound meta.action values no model turn writes; only used to find the last model-turn row on a card from
 # before LAST_TURN_KEY existed.
 NOT_MODEL_ACTIONS = ("followup", "media_ack", "decline_ack", "campaign")
@@ -1227,9 +1321,12 @@ def _region_shortcut_applies(card, context):
     return not card.get("campaign") and not card.get("declined") and spoken_or_typed
 
 
-def _check(bubbles):
-    if not (1 <= len(bubbles) <= MAX_BUBBLES):
-        raise AssertionError(f"{len(bubbles)} bubbles, the style rule allows 1-{MAX_BUBBLES}")
+def _check(bubbles, max_bubbles=MAX_BUBBLES):
+    """max_bubbles is MAX_BUBBLES (2) on every ordinary turn; turn() passes 3 for the one turn
+    build_warming fired on (TASK-302 point 4) -- the schema (OUTPUT_SCHEMA) documents the wider ceiling,
+    this is what actually enforces it, per turn."""
+    if not (1 <= len(bubbles) <= max_bubbles):
+        raise AssertionError(f"{len(bubbles)} bubbles, the style rule allows 1-{max_bubbles}")
     for b in bubbles:
         if not str(b or "").strip():
             raise AssertionError("empty bubble")
@@ -1301,7 +1398,7 @@ class _NotClosed(AssertionError):
         self.reason = reason
 
 
-def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
+def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bubbles=MAX_BUBBLES):
     """The bubbles that may actually be sent. -> {bubbles, named, evidence, action, escalate_reason,
     flagged}. ``bubbles`` is the model's RAW reply, unchecked (TASK-156, F2): the 1-2 bubble/
     non-empty style check (``_check``) now runs INSIDE ``_run``, below, so a violation on the FIRST
@@ -1309,6 +1406,12 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
     guard -- before this it ran ahead of this function, in turn(), and raised straight out of the
     turn uncaught: the one shape in this module that still went silent instead of an answer plus a
     human (the contract every other checked rule here already honours).
+
+    ``max_bubbles`` (TASK-302 point 4): MAX_BUBBLES (2) on every ordinary turn; turn() passes 3 on the
+    one turn build_warming fired on, and ONLY that one -- both the first pass and the corrective retry
+    inside ``_run`` read the same value from this call's own closure, so a warming turn that trips some
+    OTHER rule still gets to keep its three bubbles on the rewrite, and every later turn on the same
+    thread is back to 2 without this function needing to know why.
 
     ``evidence_of()`` rebuilds this turn's evidence from the tool call log (GR.turn_evidence). It is
     called again for the retry rather than reused: the correction tells the model it may look
@@ -1338,7 +1441,7 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
     conversation and not in another."""
 
     def _run(raw_bubbles):
-        text_bubbles = _check(raw_bubbles)
+        text_bubbles = _check(raw_bubbles, max_bubbles)
         evidence = evidence_of()
         flagged = []
         named = GR.check_reply(text_bubbles, evidence["names"], deniable=evidence["deniable"],
@@ -1449,13 +1552,21 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
 
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
+    turn_at = ST.now_iso()
+    # TASK-302: computed and, if it fires, recorded BEFORE the model runs -- see build_warming. Merged
+    # into THIS turn's own snapshot only (market_snapshot's own return value/contract is untouched),
+    # so the model sees market_snapshot.warming on exactly the one turn it applies to.
+    warming = build_warming(card, scoreboard)
+    if warming:
+        snapshot = {**snapshot, "warming": warming}
+        card[WARMING_KEY] = turn_at
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
     user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
 
     cl = client or Client()
     cl.phone = thread.get("phone")   # TASK-145: whose CV match_cv_to_postings may read
+    cl.role_class = _known_role_class(card)   # TASK-302 point 6: count_postings' own explicit default
     cl.no_send = no_send             # a dry run (shadow_run) keeps show_clinic_photos off the handset
-    turn_at = ST.now_iso()
     # TASK-144: where this turn's own board tool calls start in the shared log, read before the model
     # runs -- what it looked up is what its reply may name (app/wa/luna/grounding.py).
     tool_log_offset = GR.log_offset()
@@ -1599,9 +1710,11 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # funnel there is no result set to be put forward to (market_snapshot, offer is null).
         # raw_bubbles goes in unchecked (TASK-156, F2): _checked_reply's own _run() applies the 1-2
         # bubble style check now, so a violation on the first pass is a corrective retry, not an
-        # exception straight out of turn().
+        # exception straight out of turn(). TASK-302 point 4: 3 bubbles, not 2, ONLY on the turn
+        # `warming` fired on -- every other turn (including this thread's very next one) stays at
+        # MAX_BUBBLES.
         checked = _checked_reply(cl, card, system_text, raw_bubbles, evidence_of,
-                                 bool(snapshot.get("offer")))
+                                 bool(snapshot.get("offer")), max_bubbles=3 if warming else MAX_BUBBLES)
         bubbles = model_bubbles = checked["bubbles"]
         named = checked["named"]
         if named:
