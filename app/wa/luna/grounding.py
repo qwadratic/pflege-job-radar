@@ -604,7 +604,7 @@ def _posting_of(rows):
     return out
 
 
-def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_postings=()):
+def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_postings=(), warming_pick_echo=None):
     """Everything this turn's reply is checked against.
 
     -> {names, stale, stale_postings, remembered, deniable, postings, counts, counts_by_city, remaining,
@@ -625,8 +625,9 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
                       were filtered on, for a claim that names one (round-3 audit; see _false_counts).
       remaining       how many more matched beyond what was shown, 0 when nothing was left out
       turn_only       fold()s of words that are evidence only for THIS turn (warming-shortlist title/
-                      description compounds) -- names may claim them, but they must never reach
-                      permanent memory; see the TASK-302 point 5 comment below
+                      description compounds, and -- every later turn -- the same words re-read off
+                      the ONE posting the thread already picked) -- names may claim them, but they
+                      must never reach permanent memory; see the TASK-302 point 5 comment below
 
     STALENESS IS ABOUT THE POSTING, NOT THE HOUSE (TASK-151). Ivan's rule (a) is about the opening.
     The memory used to hold clinic names only, so a house that keeps ANY live posting was never
@@ -669,7 +670,20 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
     # anything). ``turn_only`` collects the fold()s of every such word so the caller
     # (app/wa/luna_brain.py:turn, at the GROUNDED_KEY write site) can subtract them before persisting
     # -- ``names``/``postings`` themselves stay the single evidence set check_reply reads, unchanged.
-    candidates = ((snapshot or {}).get("warming") or {}).get("candidates") or []
+    #
+    # EVERY LATER TURN (fix pass, live 2026-09-25): market_snapshot.warming exists only on the ONE
+    # turn build_warming fires -- so turn 2's "ist die Stelle noch frei" had nothing to re-derive
+    # "Erwachsenenklinik" from, and a title word that was fine to quote on the warming turn itself got
+    # NO INVENTION-rejected on the very next one (a correct rejection under the old rule, since that
+    # word truly was not evidence any more -- the fix is to keep supplying it, not to loosen the
+    # check). ``warming_pick_echo`` is the caller's (luna_brain.turn) fresh re-fetch of that ONE
+    # picked posting, by id, through the same live-verified lookup get_posting uses -- never a cached
+    # copy of what the warming turn saw, and None the moment the posting drops off the live board (a
+    # board state, never an error: add nothing, the candidate's clinic/city/department are still fine
+    # to defend from GROUNDED_KEY alone). Folded into the very same loop below, so it can only ever
+    # widen evidence by the words of that ONE posting -- never any other.
+    candidates = [*(((snapshot or {}).get("warming") or {}).get("candidates") or []),
+                  *([warming_pick_echo] if warming_pick_echo else [])]
     turn_only = set()
     clinic_folds = {fold(c["clinic"]) for c in candidates if c.get("clinic")}
     for candidate in candidates:

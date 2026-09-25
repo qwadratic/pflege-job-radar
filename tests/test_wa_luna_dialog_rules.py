@@ -1682,6 +1682,69 @@ def test_a_title_word_never_poisons_the_next_turn_as_a_lost_house(small, monkeyp
         "must not be rejected as STALE by a title word that leaked into permanent memory")
 
 
+def test_a_picked_postings_title_word_is_still_grounded_on_a_later_turn(tmp_path, monkeypatch):
+    """Live regression, second round (2026-09-25): the test above covers only the STALE false
+    rejection -- it never actually RE-QUOTES the title word on turn 2. A real live run did exactly
+    that ("ist die Stelle noch frei" answered by naming the picked posting's own department,
+    "Erwachsenenklinik") and got NO INVENTION-rejected on the first try, costing a corrective retry
+    (~60s): market_snapshot.warming exists only on the warming turn itself, so turn 2 had nothing left
+    to re-derive that word from. _warming_pick_echo fixes this by re-fetching the ONE picked posting,
+    fresh, every later turn -- checked here against a two-posting board so the fix's own boundary (the
+    picked posting's words are grounded again; the OTHER shown-but-declined posting's are not) is
+    provable, not just the happy path."""
+    picked = _job(10, city="München", clinic="Klinikum Erwachsenenklinik")
+    picked["title"] = "Pflegefachkraft (m/w/d) für die Erwachsenenklinik am Klinikum"
+    other = _job(11, city="München", clinic="Klinikum Kinderklinik")
+    other["title"] = "Pflegefachkraft (m/w/d) für die Kinderklinik am Klinikum"
+    _board([picked, other], monkeypatch)
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+
+    def r1(system, user, session_id):
+        payload = json.loads(user)
+        pick = next(c for c in payload["market_snapshot"]["warming"]["candidates"] if c["posting_id"] == 10)
+        bubbles = [f"Bei der {pick['clinic']} in unserer Erwachsenenklinik ist eine Stelle frei.",
+                   f"Insgesamt {payload['market_snapshot']['warming']['matching_postings_total']} Stellen.",
+                   "Brauchen Sie eine Unterkunft?"]
+        return _out(bubbles=bubbles, next_ask="Brauchen Sie eine Unterkunft?",
+                    warming_pick=10, warming_why="passt am besten zur Erwachsenenklinik"), session_id
+
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    d = LB.turn("Ja, München passt.", {"slots": dict(card), "asked": []}, client=fake_client(r1))
+    assert d["slots"][LB.WARMING_PICK_KEY] == 10
+
+    calls2 = []
+
+    def r2(system, user, session_id):
+        calls2.append(1)
+        return _out(bubbles=["Ja, die Stelle in der Erwachsenenklinik ist noch frei."]), session_id
+
+    d2 = LB.turn("Ist die Stelle noch frei?", {"slots": d["slots"], "asked": []}, client=fake_client(r2))
+    assert len(calls2) == 1, "must pass on the FIRST try -- no corrective retry for the picked posting's own word"
+    assert d2["bubbles"] == ["Ja, die Stelle in der Erwachsenenklinik ist noch frei."]
+
+    # The other half of the fix's own boundary: a word from the shown-but-not-picked posting is still
+    # never evidence -- the echo widens by exactly the one picked posting, never the whole old shortlist.
+    echo = LB._warming_pick_echo(d["slots"])
+    assert echo["posting_id"] == 10
+    evidence = GR.turn_evidence(LB.market_snapshot(d["slots"]), [], warming_pick_echo=echo)
+    assert "erwachsenenklinik" in evidence["turn_only"]
+    assert "kinderklinik" not in evidence["turn_only"]
+    with pytest.raises(AssertionError, match="NO INVENTION"):
+        GR.check_reply(["Auch die Kinderklinik hat noch eine Stelle frei."], evidence["names"])
+
+
+def test_warming_pick_echo_adds_nothing_once_the_picked_posting_leaves_the_live_board(small, monkeypatch):
+    """Ivan's explicit constraint: a picked posting the verifier has since pulled is a board state,
+    never an error -- _warming_pick_echo returns None (no ToolError, no stale word smuggled back in),
+    same as get_posting's own withheld/gone handling."""
+    _stub_descriptions(monkeypatch)
+    card = {LB.WARMING_PICK_KEY: 5}
+    assert LB._warming_pick_echo(card) is not None   # posting 5 is small's one live München posting
+    D._snap["jobs"] = [j for j in D._snap["jobs"] if j.get("posting_id") != 5]
+    assert LB._warming_pick_echo(card) is None
+
+
 def test_an_ansbach_card_warms_from_the_same_rows_search_postings_returns(monkeypatch):
     """Review finding 2: build_warming must resolve the city through the same tools_server pipeline
     search_postings uses (_job_filters/_town_rows, app/data.py:town_of's semantics) -- never

@@ -898,6 +898,27 @@ def _warming_shortlist(rows, nearby, town=None, distances=None):
     return out
 
 
+def _warming_pick_echo(card):
+    """Fix pass (live 2026-09-25, second round): market_snapshot.warming only ever exists on the ONE
+    turn build_warming fires, so a later "ist die Stelle noch frei" had nothing left to re-derive a
+    title/description word (e.g. "Erwachsenenklinik") from -- a correct rejection under the old rule
+    (that word truly was not evidence any more), fixed here by re-supplying it, not by loosening the
+    check. Called on EVERY turn once card[WARMING_PICK_KEY] is set: re-fetches that ONE posting fresh,
+    by id, through the SAME live-verified lookup tools_server.get_posting uses (TS.LIVE_BASE), never a
+    cached copy of what the warming turn itself saw. None without a pick yet, and -- deliberately,
+    without raising -- None the moment that posting is no longer live: a board state (verifier pulled
+    it, ad expired), not an error; the candidate's own clinic/city/department are still fine to defend
+    from GROUNDED_KEY alone, only the free-text title/description words need this per-turn refresh.
+    Feeds grounding.turn_evidence's own candidates loop (never widens beyond this one posting)."""
+    pick = card.get(WARMING_PICK_KEY)
+    if not pick:
+        return None
+    row = next((j for j in D.filter_jobs(dict(TS.LIVE_BASE)) if j.get("posting_id") == pick), None)
+    if row is None:
+        return None
+    return _warming_candidate(row)
+
+
 def build_warming(card, scoreboard):
     """-> the one turn's warming payload, else None. Either {candidates, matching_postings_total,
     nearby, nearby_town?} (a real shortlist to pick from, up to 10) or {no_match: {criteria}} (nothing
@@ -1855,11 +1876,18 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # offer turn, and no link. A violation costs the model its draft, never the candidate their
         # answer (_checked_reply).
         shown_before = list(card.get(GROUNDED_KEY) or [])
+        # Fix pass (live 2026-09-25, second round): computed once, outside the closure below, since
+        # evidence_of() may run twice in one turn (the corrective retry) and this is a live job_detail
+        # call -- no point re-fetching the same posting for both passes. None on the warming turn
+        # itself (WARMING_PICK_KEY is not written until the outcome block, further down, well after
+        # this point) and every turn without a pick at all; see _warming_pick_echo.
+        warming_pick_echo = _warming_pick_echo(card)
 
         def evidence_of():
             return GR.turn_evidence(snapshot, GR.calls_since(tool_log_offset), shown_before,
                                     phone=thread.get("phone"), inbound=text,
-                                    known_postings=list(card.get(GROUNDED_POSTINGS_KEY) or []))
+                                    known_postings=list(card.get(GROUNDED_POSTINGS_KEY) or []),
+                                    warming_pick_echo=warming_pick_echo)
 
         # Both branches are only a real choice once the harness has an offer to narrow or pool; mid
         # funnel there is no result set to be put forward to (market_snapshot, offer is null).
