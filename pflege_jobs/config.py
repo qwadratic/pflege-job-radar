@@ -41,6 +41,11 @@ DEPARTMENT_HINT = []
 # --- Description enrichment
 HOUSING = ""; TARIFF = []; PAY_GRADE = ""; PAY_TEXT = ""; REQ_HEAD = ""; REQ_STOP = ""; EXPERIENCE = ""
 EMAIL = ""; LANGUAGE_REQ = ""; BONUS = ""; CHILDCARE = ""; ANERKENNUNG = ""
+# TASK-97: bounds of the TASKS/RESPONSIBILITIES section (Aufgaben/Tätigkeiten/...), the sibling of
+# REQ_HEAD/REQ_STOP's "Ihr Profil" section -- same head/stop boundary-extraction approach, different
+# section. Used by classify.department_hint() so specialty classification can read a posting's own
+# tasks text without reading page menus/contacts/footer/hospital-wide boilerplate.
+TASK_HEAD = ""; TASK_STOP = ""
 
 
 def validate(p):
@@ -97,6 +102,7 @@ def _apply(p):
     e = p["enrichment"]
     g["HOUSING"], g["PAY_GRADE"], g["PAY_TEXT"] = e["housing"], e["pay_grade"], e["pay_text"]
     g["REQ_HEAD"], g["REQ_STOP"], g["EXPERIENCE"], g["EMAIL"] = e["req_head"], e["req_stop"], e["experience"], e["email"]
+    g["TASK_HEAD"], g["TASK_STOP"] = e["task_head"], e["task_stop"]
     g["LANGUAGE_REQ"], g["BONUS"], g["CHILDCARE"], g["ANERKENNUNG"] = e["language"], e["bonus"], e["childcare"], e["anerkennung"]
     g["TARIFF"] = [(x["label"], x["re"]) for x in e["tariff"]]
 

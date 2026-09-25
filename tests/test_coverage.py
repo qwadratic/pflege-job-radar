@@ -165,6 +165,19 @@ def test_clinic_freshness_reports_the_freshest_last_seen_per_clinic(client, monk
     assert not any(r["clinic_id"] == "36202" for r in d["clinic_freshness"])             # 0 open jobs -> excluded
 
 
+# --- beds_ratio: verified-live postings / beds, ascending (TASK-140 AC#1) ---------------------------------------------
+def test_beds_ratio_ranks_worst_first_and_excludes_small_denominators(client):
+    d = client.get("/api/coverage").json()
+    ids = [r["clinic_id"] for r in d["beds_ratio"]]
+    assert ids == ["36202", "36201"]                       # 36202: 0/400=0.0, 36201: 20/985=20.30 beds -- worst first
+    assert not any(r["clinic_id"] == "16104" for r in d["beds_ratio"])   # beds=0 < 50 -> excluded, too noisy
+    r36202 = next(r for r in d["beds_ratio"] if r["clinic_id"] == "36202")
+    assert r36202["ratio_per_1000_beds"] == 0.0 and r36202["beds"] == 400 and r36202["jobs_live"] == 0
+    r36201 = next(r for r in d["beds_ratio"] if r["clinic_id"] == "36201")
+    assert r36201["ratio_per_1000_beds"] == round(20 / 985 * 1000, 2) and r36201["jobs_live"] == 20
+    assert d["beds_ratio_median"] == r36201["ratio_per_1000_beds"]
+
+
 # --- GET /api/billing/clinics (app/coverage.py): spend per clinic in a window -----------------------------------------
 def _ledger(at, clinic_id, credits, run_id=None, tokens=None, kind="jobs"):
     with R._lock, R.db() as c:

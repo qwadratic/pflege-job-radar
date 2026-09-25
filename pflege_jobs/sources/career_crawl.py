@@ -505,7 +505,7 @@ class Crawler:
             "title": title, "employer_name": emp, "employer_name_norm": employer_norm(emp),
             "employer_class": "clinic" if e_class != "clinic" else e_class, "employer_class_rule": e_rule if e_class == "clinic" else f"registry_seed|{e_rule}",
             "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
-            "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(f"{title} {dept or ''}"),
+            "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, "", desc), "department_hint": department_hint(f"{title} {dept or ''}", desc),
             "department_raw": dept, "city": city, "plz": plz, "region": region, "lat": None, "lon": None, "in_bavaria": in_bavaria(city, plz, region, self.towns),
             "n_locations": 1, "locations": json.dumps([{"adresse": {"ort": city, "plz": plz, "region": region}}], ensure_ascii=False),
             "employment_types": [], "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None, "contract": None, "fixed_term_months": None,
@@ -565,7 +565,16 @@ class Crawler:
         m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
         title = _strip(m.group(1)) if m else ""
         if not title or (anchor and not JOB_TEXT.search(title)):
-            title = anchor or title or _strip(re.search(r"<title>(.*?)</title>", html, re.S | re.I).group(1) if re.search(r"<title>", html, re.I) else "")
+            # A listing card's own anchor can carry the WHOLE multi-field card as one <a> -- title,
+            # employer, city, start date, employment type, each on its own line via _strip()'s own
+            # <br>/</p>/</div> -> "\n" conversion (confirmed live 2026-09-24, TASK-144:
+            # karriere.klinikverbund-allgaeu.de's card markup produced anchor text like "Pflegefachkraft
+            # (m/w/d) fuer unsere neonatologische Intensivstation\nKlinikverbund Allgaeu gGmbH\nKempten\n
+            # ab sofort\nVollzeit; Teilzeit"). Only the FIRST line is ever the job title; storing the
+            # whole blob as the title is what corrupted these postings. A no-op for every board whose
+            # anchor is already a single line (the common case this fallback was written for).
+            anchor_title = anchor.split("\n", 1)[0].strip() if anchor else None
+            title = anchor_title or title or _strip(re.search(r"<title>(.*?)</title>", html, re.S | re.I).group(1) if re.search(r"<title>", html, re.I) else "")
         if not re.search(r"bewerb|apply", html, re.I): return None
         title = re.sub(r"\s*[|–-]\s*(Karriere|Jobs|Stellenangebote).*$", "", title)[:200]
         if not title or re.fullmatch(r"[\w\s\-/&,\.]+\(\d+\)", title.strip()): return None     # category links like "Pflegedienst (5)"

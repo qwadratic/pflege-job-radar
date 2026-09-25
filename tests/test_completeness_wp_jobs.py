@@ -262,6 +262,69 @@ def test_elementor_toggle_accordion_skips_ungendered_titles_and_keeps_the_real_p
     assert "Station" in rows[0]["payload"]["description"]
 
 
+def _tcm_sample():
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples",
+                            "tcm_info_stellenangebote_sample.html"), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_divi_toggle_accordion_reads_all_six_real_postings_gender_gated_on_title_or_body(monkeypatch):
+    """tcm.info shape (TASK-111, confirmed live 2026-09-23: TCM-Klinik Bad Kötzting). The registered
+    careers_url was the ENGLISH translation page, whose postings carry an English-style '(m / f / d)'
+    marker GENDER never matches at all (only the German m/w/d/x/i/gn/a letter set) -- the real German
+    page names itself via the site's own language-switcher link. That German page reads 0 via a plain
+    _wp_job_rows walk too: a bare <h2>Stellenangebote</h2> with no shared wrapper around each posting
+    -- but it turns out (re-verified live, the task's own recon was stale) each posting IS wrapped,
+    just in a Divi 'Toggle' module (<h5 class="et_pb_toggle_title">eq +
+    <div class="et_pb_toggle_content clearfix">), one this codebase had no reader for yet. Half the 6
+    real postings here ('Facharzt/-ärztin...', 'TCM-Therapeut/-in', 'Examinierte Pflegekraft' -- the
+    one real nursing role) carry their '(m/w/d)' marker only in the body paragraph, never in the h5
+    heading -- gating GENDER on title alone (like _elementor_toggle_job_rows) would silently drop
+    them, so _divi_toggle_job_rows checks title-or-body."""
+    cu = "https://tcm.info/tcm-klinik/ueber-die-klinik/stellenangebote-tcmk/"
+    monkeypatch.setattr(va, "get", _router({cu: _R(_tcm_sample(), url=cu, ok=True)}))
+    rows = va.crawl_wp_jobs({"name": "TCM-Klinik Bad Kötzting", "town": "Bad Kötzting", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == [
+        "Facharzt/-ärztin für Psychosomatische Medizin und Psychotherapie",
+        "Psychologische/n Psychotherapeuten/in oder Psychologen/in mit mind. begonnener Weiterbildung",
+        "Psychologe/in",
+        "TCM-Therapeut/-in",
+        "Pharmazeutisch-technische/r Assistent/in (PTA)",
+        "Examinierte Pflegekraft",
+    ]
+    # AC#3: every extracted posting carries a real German (m/w/d)-family marker somewhere (title or
+    # body) -- none of these are the English page's unmatchable '(m / f / d)' form.
+    for r in rows:
+        assert va.GENDER.search(r["payload"]["title"]) or va.GENDER.search(r["payload"]["description"])
+    nursing = next(r for r in rows if r["payload"]["title"] == "Examinierte Pflegekraft")
+    assert "(m/w/d)" in nursing["payload"]["description"]
+
+
+def _augencentrum_sample():
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples",
+                            "augencentrum_karriere_sample.html"), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_single_job_shape_reads_both_postings_directly_off_the_career_page(monkeypatch):
+    """augencentrum.de shape (TASK-135, confirmed live 2026-09-24): a bespoke in-house theme with no
+    shared WP job plugin puts each posting directly on the career page as
+    <div class="single_job"><h2>title</h2><div class="job__content">...</div></div>, no detail page,
+    no sitemap entry -- none of the other 7 inline-shape helpers above match this class name. Frozen
+    fixture is a contiguous real slice (untouched byte order, HR contact name/phone/email redacted)
+    of the live page, which also carries a non-gendered 'wir suchen keine Ärzte' intro line ahead of
+    the first single_job div that must not be mistaken for a posting."""
+    cu = "https://www.augencentrum.de/ueber-uns/karriere/"
+    monkeypatch.setattr(va, "get", _router({cu: _R(_augencentrum_sample(), url=cu, ok=True)}))
+    rows = va.crawl_wp_jobs({"name": "AugenCentrum Rosenheim", "town": "Rosenheim", "careers_url": cu})
+    titles = [r["payload"]["title"] for r in rows]
+    assert titles == ["MFA (m/w/d)", "Pflegefachkraft (m/w/d)"]
+    nursing = rows[1]["payload"]
+    assert "Gesundheits- und Krankenpfleger" in nursing["description"]
+    assert nursing["url"] != rows[0]["payload"]["url"]  # each posting still gets its own url, not the shared page's
+
+
 def test_typo3_eid_dumpfile_pdf_link_uses_anchor_text_like_a_suffixed_pdf(monkeypatch):
     """panorama-fachklinik.de shape (confirmed live 2026-09-22): TYPO3's own eID=dumpFile download
     handler serves a PDF flyer with no ".pdf" anywhere in the URL at all -- the same "anchor text is

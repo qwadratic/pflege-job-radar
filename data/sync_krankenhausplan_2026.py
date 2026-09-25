@@ -111,6 +111,20 @@ def main():
     print(f"  no longer in plan : {len(gone)}  {gone}")
     print(f"  field updates     : {changed} across existing sites")
     print(f"  registry after    : {len(out)} rows")
+
+    # TASK-136 AC#3: report OUT's own error rate before it is ever written -- not `new` (K.parse()'s
+    # raw output): for an EXISTING site TAKE_FROM_2026 never touches name/town/operator/parse_quality
+    # (they keep the trusted old CSV values, see the docstring above), so validating `new` directly
+    # flags hundreds of rows the pipeline never actually uses that parse for. `out` is what the CSV
+    # and Supabase actually receive, so it is what "before the CSV is accepted" has to mean.
+    report = K.validate(out)
+    print(f"  extraction quality: {report['error_rate']*100:.1f}% error rate "
+          f"({len(report['town_missing'])} no town, {len(report['town_implausible'])} implausible town, "
+          f"{len(report['parse_quality_partial'])} parse_quality!=ok)")
+    if report["error_rate"] > 0:
+        print("    flagged ids (review before accepting):",
+              sorted(set(report["town_missing"]) | set(report["town_implausible"]) | set(report["parse_quality_partial"])))
+
     if a.dry_run:
         print("\n--dry-run: nothing written")
         for k in added:

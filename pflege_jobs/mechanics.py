@@ -66,12 +66,12 @@ def _try_role(i):
 
 
 def _try_qualification(i):
-    q = K.qualification_hint(i["title"], i.get("hauptberuf", ""))
+    q = K.qualification_hint(i["title"], i.get("hauptberuf", ""), i.get("description", ""))
     return {"result": {"qualification_hint": q}, "rule": q}
 
 
 def _try_department(i):
-    d = K.department_hint(i["title"])
+    d = K.department_hint(i["title"], i.get("description", ""))
     return {"result": {"department_hint": d}, "rule": d}
 
 
@@ -155,13 +155,15 @@ def cv_profile(text):
                 prof["skills"].append(s["tag"])
         except re.error:
             continue
-    dh = K.department_hint(text[:4000])
-    if dh:
-        prof["departments"].append(dh)
+    # department_hint() may now return several "|"-joined departments (TASK-97) -- split before
+    # appending, or a CV mentioning two wards would file as one bogus compound "department".
+    for dh in (K.department_hint(text[:4000]) or "").split("|"):
+        if dh and dh not in prof["departments"]:
+            prof["departments"].append(dh)
     for tag in prof["skills"]:
-        d = K.department_hint(tag)
-        if d and d not in prof["departments"]:
-            prof["departments"].append(d)
+        for d in (K.department_hint(tag) or "").split("|"):
+            if d and d not in prof["departments"]:
+                prof["departments"].append(d)
     try:
         yrs = [int(m.group(1)) for m in re.finditer(cv.get("experience_years", r"(\d{1,2})\s*(?:jahre?|years?)"), low, re.I) if int(m.group(1)) <= 45]
         prof["experience_years"] = max(yrs) if yrs else None
@@ -221,23 +223,39 @@ REGISTRY = [
               {"name": "offer_kind", "label": _t("Angebotsart (ARBEIT/AUSBILDUNG)", "Offer kind (ARBEIT/AUSBILDUNG)"), "example": "ARBEIT"}],
              _try_role, stage="inbox → observations"),
     Mechanic("qualification", _t("Qualifikations-Hinweis", "Qualification hint"),
-             _t("Erkennt aus Berufsbezeichnung + Titel die geforderte Ausbildung: GKiK (Kinderkrankenpflege), GuK, Altenpflege, generalistisch. "
-                "Geordnete Regexliste patterns.qualification, erster Treffer. null = im Titel nicht genannt, nicht „keine“. Wird für Filter und CV-Matching genutzt.",
-                "Derives the required licence from occupation + title: GKiK (paediatric), GuK, Altenpflege, generalistisch. Ordered regex list "
-                "patterns.qualification, first hit. null = not stated in the title, not \"none\". Used by filters and the CV matcher."),
-             "qualification", [K.qualification_hint],
+             _t("Erkennt aus Berufsbezeichnung + Titel + den eigenen Aufgaben-/Tätigkeiten- und Profil-Abschnitten der Stelle "
+                "(per extract_section(), TASK-97/TASK-104) die geforderte Ausbildung: GKiK (Kinderkrankenpflege), GuK, Altenpflege, "
+                "generalistisch. Geordnete Regexliste patterns.qualification, erster Treffer (kein Mehrfach-Label — Lizenztypen sind "
+                "Alternativen, keine kombinierbaren Fachrichtungen). null = nirgends genannt, nicht „keine“. Wird für Filter, "
+                "Autopilot-Matching (_quali_ok) und CV-Matching genutzt.",
+                "Derives the required licence from occupation + title + the posting's own tasks/responsibilities and profile "
+                "sections (via extract_section(), TASK-97/TASK-104): GKiK (paediatric), GuK, Altenpflege, generalistisch. Ordered "
+                "regex list patterns.qualification, first hit (no multi-label — licence types are alternatives, not combinable "
+                "specialties). null = not stated anywhere, not \"none\". Used by filters, autopilot matching (_quali_ok) and the "
+                "CV matcher."),
+             "qualification", [K.qualification_hint, K.extract_section],
              [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Pflegefachkraft (m/w/d)"},
-              {"name": "hauptberuf", "label": _t("Berufsbezeichnung", "Occupation"), "example": "Gesundheits- und Kinderkrankenpfleger/in"}],
+              {"name": "hauptberuf", "label": _t("Berufsbezeichnung", "Occupation"), "example": "Gesundheits- und Kinderkrankenpfleger/in"},
+              {"name": "description", "label": _t("Anzeigentext (optional)", "Ad text (optional)"),
+               "example": "Ihr Profil: abgeschlossene Ausbildung als Gesundheits- und Krankenpfleger (m/w/d)."}],
              _try_qualification, stage="inbox → observations"),
     Mechanic("department", _t("Fachbereichs-Hinweis", "Department hint"),
-             _t("Titel → einer von 17 Fachbereichen (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …). Geordnete Regexliste patterns.department, "
-                "erster Treffer; Reihenfolge entscheidet bei Mehrfachtreffern („Intensiv“ vor „Innere“). null = nicht genannt. department_raw ist dagegen der Originaltext der Karriereseite. "
-                "Filter „Fachbereich“, CV-Matching (Skills → Fachbereich) und die Chips in der Jobliste hängen daran.",
-                "Title → one of 17 departments (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …). Ordered regex list patterns.department, first hit; "
-                "order decides on multiple hits (\"Intensiv\" before \"Innere\"). null = not stated. department_raw is the career site's own wording. "
-                "The department filter, CV matching (skills → department) and the job-list chips depend on it."),
-             "department", [K.department_hint],
-             [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Pflegefachkraft Intensivstation (m/w/d)"}],
+             _t("Titel + die eigenen Aufgaben-/Tätigkeiten- und Profil-Abschnitte der Stelle (per extract_section(), TASK-97) → "
+                "null, einer oder mehrere von 17 Fachbereichen (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …), „|“-verknüpft. "
+                "NICHT der ganze Anzeigentext: Menüs, Kontakt-/Sekretariats-Telefonlisten je Abteilung und hausweite „verfügt über …“-Sätze "
+                "nennen dieselben Wörter, ohne die Abteilung DIESER Stelle zu sein (live geprüft: eine Neurologie-&-Stroke-Unit-Sekretariats-"
+                "Telefonzeile und ein hausweiter Stroke-Unit-Absatz erzeugen kein Label). department_raw ist dagegen der Originaltext der Karriereseite. "
+                "Filter „Fachbereich“, Suche, CV-Matching (Skills → Fachbereich) und die Chips in der Jobliste hängen daran.",
+                "Title + the posting's own tasks/responsibilities and profile sections (via extract_section(), TASK-97) → "
+                "null, one or several of 17 departments (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …), \"|\"-joined. "
+                "NOT the whole ad text: menus, per-department contact/secretariat phone lists and hospital-wide \"verfügt über …\" sentences "
+                "name the same words without being THIS posting's department (live-checked: a Neurologie & Stroke Unit secretariat phone "
+                "line and a hospital-wide Stroke Unit paragraph produce no label). department_raw is the career site's own wording. "
+                "The department filter, search, CV matching (skills → department) and the job-list chips depend on it."),
+             "department", [K.department_hint, K.extract_section],
+             [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Pflegefachkraft Intensivstation (m/w/d)"},
+              {"name": "description", "label": _t("Anzeigentext (optional)", "Ad text (optional)"),
+               "example": "Ihre Aufgaben: Versorgung von Patienten auf der Intensivstation und in der Anästhesie. Ihr Profil: examinierte Pflegefachkraft."}],
              _try_department, stage="inbox → observations"),
     Mechanic("enrichment", _t("Text-Anreicherung (enr_*)", "Description enrichment (enr_*)"),
              _t("Liest aus dem Anzeigentext: Wohnraum (+ Beleg-Phrase), Tarif (TVöD, TV-L, AVR…), explizite Entgeltgruppe (P8, KR8, EG13) mit Satz, "

@@ -122,9 +122,10 @@ def profile_from_text(text):
         d = _SKILL_TO_DEPT.get(s)
         if d and d not in prof["departments"]:
             prof["departments"].append(d)
-    dh = department_hint(text[:4000])
-    if dh and dh not in prof["departments"]:
-        prof["departments"].append(dh)
+    # department_hint() may return several "|"-joined departments (TASK-97) -- split before appending.
+    for dh in (department_hint(text[:4000]) or "").split("|"):
+        if dh and dh not in prof["departments"]:
+            prof["departments"].append(dh)
     # experience
     try:
         yrs = [int(m.group(1)) for m in re.finditer(pats["experience_years"], low, re.I) if int(m.group(1)) <= 45]
@@ -219,10 +220,15 @@ def match(prof, limit=50):
             near = max((_ROLE_NEAR.get(x, {}).get(r, 0) for x in roles), default=0)
             if near:
                 score += 40 * near; why.append(f"~{j.get('role_label') or r}")
-        d = j.get("department_hint")
+        # department_hint on a live snapshot row is a list (TASK-97: a posting can be Intensiv AND
+        # Anästhesie); tolerate a bare string too (older cached rows / hand-built fixtures) rather than
+        # iterating it character by character.
+        dh = j.get("department_hint") or []
+        d = set(dh) if isinstance(dh, list) else {dh}
         title_low = ((j.get("title") or "") + " " + (j.get("department_raw") or "")).lower()
-        if d and d in depts:
-            score += 30; why.append(d)
+        overlap = d & depts
+        if overlap:
+            score += 30; why.append(sorted(overlap)[0])
         else:
             hits = [s for s in skills if s in title_low]
             if hits:

@@ -46,3 +46,27 @@ def test_rexx_covers_the_canonical_listing_path_even_when_careers_url_is_a_filte
     monkeypatch.setattr(va, "get", _router(mapping, calls))
     va.crawl_rexx({"name": "Schön Klinik", "careers_url": CU})
     assert CANONICAL in calls
+
+
+def test_rexx_skips_the_canonical_merge_when_careers_url_is_a_client_filter(monkeypatch):
+    # A `filter[client_id][]=...` query is not a cosmetic skin variant like ?search_mode= above -- it
+    # is how a shared multi-tenant board (several distinct legal entities under one AG/group) narrows
+    # to one clinic's own jobs. Merging the bare canonical page back in would re-add every sibling
+    # entity's postings (confirmed live 2026-09-23: Gesundheitswelt Chiemgau AG's shared rexx board
+    # lists a spa/wellness resort and Reha centres alongside Simssee Klinik on the unfiltered page).
+    filtered = "https://karriere.gesundheitswelt.de/stellenangebote.html?filter[client_id][]=3"
+    canonical = "https://karriere.gesundheitswelt.de/stellenangebote.html"
+    own_detail = "https://karriere.gesundheitswelt.de/pflegefachkraft-de-j200.html"
+    other_detail = "https://karriere.gesundheitswelt.de/therapeut-de-j999.html"
+    calls = []
+    mapping = {
+        filtered: _R('<a href="/pflegefachkraft-de-j200.html">Pflegefachkraft (m/w/d)</a>', url=filtered, ok=True),
+        canonical: _R('<a href="/pflegefachkraft-de-j200.html">Pflegefachkraft (m/w/d)</a>'
+                       '<a href="/therapeut-de-j999.html">Physiotherapeut (m/w/d)</a>', url=canonical, ok=True),
+        own_detail: _R("<h1>Pflegefachkraft (m/w/d)</h1>", url=own_detail, ok=True),
+        other_detail: _R("<h1>Physiotherapeut (m/w/d)</h1>", url=other_detail, ok=True),
+    }
+    monkeypatch.setattr(va, "get", _router(mapping, calls))
+    rows = va.crawl_rexx({"name": "Simssee Klinik", "careers_url": filtered})
+    assert canonical not in calls                          # the unfiltered sibling-entity page is never even fetched
+    assert len(rows) == 1 and "Pflegefachkraft" in rows[0]["payload"]["title"]   # not the other entity's job

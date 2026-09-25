@@ -701,6 +701,12 @@ def execute(run_id):
     params = run.get("params") or {}
     scope, value, mode = run["scope"], run["value"], run["mode"]
     max_credits = int(params.get("max_credits") or 40)
+    # TASK-94 AC#2: recorded before anything else runs, so a crash anywhere below still leaves the
+    # checkout this run actually executed on the record -- distinguishing "a real bug" from "fired
+    # mid-edit against a half-written module set" (runs 109/118) no longer needs a guess.
+    sha = R.commit_sha()
+    if sha:
+        R.update_run(run_id, commit_sha=sha)
     try:
         plan = plan_for(scope, value, mode, max_credits)
     except Exception as e:
@@ -742,6 +748,11 @@ def execute(run_id):
     # 2026-09-18: kbo.de's group listing was refetchable once per each of its 5+ kbo-branded
     # satellite-domain boards).
     group_cache = {}
+    # TASK-87 AC#1: verify-shaped rows for postings a SUCCESSFUL board walk this run no longer
+    # lists -- accumulated across every board and pushed once at the end (see
+    # pflege_jobs.verify.board_absent_gone's own docstring for why walk_ok is a hard gate and why
+    # a raw-URL key false-positives on some vendors; canonical_job_url as key= closes that gap).
+    retire_candidates = []
 
     def _fetch_board(url, b):
         """One board fetch attempt. Returns (inbox_rows, observations, error_or_None).
@@ -788,6 +799,16 @@ def execute(run_id):
                     R.record_crawl_issue(url, day, "degraded", b.get("vendor"), ids,
                                          f"fell back to a lower-confidence discovery path: {degraded}", run_id)
                     log(f"  WARNING: degraded discovery ({degraded}) for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=degraded")
+                # TASK-82 AC#3: a posting page whose own JSON-LD crashed the parser is skipped, not
+                # silently absorbed into a clean-looking row count -- the board walk still returned
+                # everything else it found (rows above already reflects that), this just says what
+                # was lost and why, same convention as `degraded`.
+                page_crashes = getattr(rows, "page_crashes", None)
+                if page_crashes:
+                    R.record_crawl_issue(url, day, "degraded", b.get("vendor"), ids,
+                                         f"{len(page_crashes)} posting page(s) crashed while parsing and were skipped: "
+                                         f"{page_crashes[0][1]}", run_id)
+                    log(f"  WARNING: {len(page_crashes)} posting page(s) crashed for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=degraded")
                 # TASK-88 AC#2: some adapters (crawl_erecruiter, directly or via crawl_wp_jobs'
                 # delegate loop) read the board's own self-reported total off its embedded JSON and
                 # carry it as .board_total on the same _BoardTotalRows return value -- a plain list
@@ -799,6 +820,27 @@ def execute(run_id):
                                          f"board reports {board_total} total but the adapter returned {len(rows)} row(s)"
                                          + (" (paginated board)" if getattr(rows, "board_paginated", None) else ""), run_id)
                     log(f"  WARNING: under-read {len(rows)}/{board_total} for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=incomplete")
+                # TASK-87 AC#1: a board that returned at least one row this run, with no degraded/
+                # incomplete/truncated/transport-failure crawl_issue recorded above for it today, was
+                # genuinely read in full -- a currently-open posting for one of this board's clinics
+                # that is absent from `rows` really did leave the board. Deliberately gated on `rows`
+                # being non-empty (not just board_walk_ok): a board misconfigured to the WRONG url
+                # also reads 0 rows with no transport error (kind='empty', which board_walk_ok does
+                # NOT block on, per its own documented caller's-judgment-call reasoning) -- retiring
+                # on that signal alone risks wiping out a whole clinic's postings on a registry typo,
+                # the exact M2 risk this task's own notes already named. A non-empty read sidesteps
+                # that specific failure mode without inventing a new cap.
+                if rows and R.board_walk_ok(url, day):
+                    ids_set = {x["clinic_id"] for x in b["clinics"]}
+                    open_rows = [j for j in D.jobs() if j.get("status") == "open" and j.get("clinic_id") in ids_set]
+                    if open_rows:
+                        from pflege_jobs.classify import canonical_job_url
+                        from pflege_jobs.verify import board_absent_gone
+                        board_urls = [r.get("source_url") for r in rows if r.get("source_url")]
+                        gone = board_absent_gone(open_rows, board_urls, True, key=canonical_job_url)
+                        if gone:
+                            retire_candidates.extend(gone)
+                            log(f"  {len(gone)} posting(s) on {b['vendor']} {url[:60]} absent from this board's successful walk — queued for retirement")
                 return rows, [], None
             obs, st = _seed_obs(b, c, towns, log)
             for o in obs:
@@ -990,6 +1032,22 @@ def execute(run_id):
         # TASK-92 AC#5: run 108's intake failure existed only as this log line, so three days of
         # runs crawled thousands of rows and stored none while nothing outside run_log said so.
         R.record_crawl_issue("app.crawl intake", R.now()[:10], "intake", "intake", [], f"{type(e).__name__}: {str(e)[:300]}", run_id)
+    # TASK-87 AC#1: push every retirement candidate accumulated across this run's board walks, once
+    # (not per-board -- same "accumulate, push once" shape TASK-95 already established for
+    # resolve_postings). A push failure here is recorded like any other non-fatal issue, not fatal
+    # to the run: the rows that WERE fetched are already safely on disk regardless.
+    if retire_candidates:
+        try:
+            from pflege_jobs.sinks import EdgeSink
+            sink = EdgeSink(batch=400)
+            retired = 0
+            for i in range(0, len(retire_candidates), 400):
+                retired += sink._post({"verify": retire_candidates[i:i + 400]}).get("verify", 0)
+            log(f"retired {retired} posting(s) absent from a successfully-walked board")
+        except Exception as e:
+            errors += 1
+            log(f"retirement push FAILED {type(e).__name__}: {str(e)[:200]}")
+            R.record_crawl_issue("app.crawl retire", R.now()[:10], "intake", "retire", [], f"{type(e).__name__}: {str(e)[:200]}", run_id)
     # Only a fatal (intake-pipeline) error fails the run -- TASK-72 AC#4 was about the whole intake
     # block (inbox post/drain/link-cross/verify) blowing up silently right after real rows were
     # fetched. A single board or Firecrawl clinic failing (already recorded per-item in crawl_issues

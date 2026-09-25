@@ -23,7 +23,12 @@ if AC.offline():
 
 _DVINCI_BOARDS = [b for b in AC.boards().values() if b.get("vendor") == "dvinci"]
 
-_ID_RX = re.compile(r"/jobs/(\d+)/")
+# No trailing slash required: parse_dvinci() normalizes a crawled row's own URL to the id-only form
+# (strips a trailing /<slug>, see crawl_dvinci's 2026-09-22 dedup comment) -- a stricter r"/jobs/(\d+)/"
+# matched sitemap.xml's own <loc> entries (which keep the slug) but zero normalized row URLs, making
+# every board look 100% incomplete when crawl_dvinci was actually missing nothing (confirmed live
+# 2026-09-23 on all 6 boards: 0 real gaps once the id is matched the same way on both sides).
+_ID_RX = re.compile(r"/jobs/(\d+)")
 
 
 @pytest.mark.parametrize("board", _DVINCI_BOARDS, ids=[b["url"] for b in _DVINCI_BOARDS])

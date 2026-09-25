@@ -77,11 +77,17 @@ JOBS_SCHEMA = {
     "required": ["jobs"],
 }
 
+VERDICTS = ("board_found", "not_a_board", "not_clinic_specific")
+
 CAREER_SCHEMA = {
     "type": "object",
     "properties": {
+        "verdict": {"type": "string", "enum": list(VERDICTS),
+                    "description": "board_found = a real job board exists and belongs to this hospital (or its own operator/group, filterable to it); "
+                                    "not_a_board = no vacancy board reachable at all from the given URL(s); "
+                                    "not_clinic_specific = what was found is a shared/group board with no way to filter to this hospital, or the URL belongs to an unrelated entity"},
         "careers_url": {"type": "string", "description": "The hospital's own careers / Karriere / Stellenangebote page on its website"},
-        "portal_url": {"type": "string", "description": "The actual job board URL where vacancies are listed (may be an external ATS domain)"},
+        "portal_url": {"type": "string", "description": "The actual job board URL where vacancies are listed (may be an external ATS domain); the entry point a page-by-page fetcher should start from"},
         "ats_vendor": {"type": "string", "enum": KNOWN_VENDORS, "description": "Applicant-tracking vendor behind the board, judged from URLs/markup (softgarden.io, jobs.b-ite.com, rexx-systems, umantis.com, mein-check-in.de, dvinci, pi-asp.de, concludis, oracle cloud, personio, smartrecruiters, talention, helixjobs)"},
         "listing_technology": {"type": "string", "enum": ["html", "js", "pdf", "iframe", "unknown"], "description": "How the list renders: plain HTML links, JavaScript app, PDF flyers, embedded iframe"},
         "filters": {"type": "array", "description": "Filter controls the board offers, with ALL their selectable values",
@@ -90,9 +96,16 @@ CAREER_SCHEMA = {
         "visible_job_count": {"type": "integer", "description": "Total vacancies listed (all professions)"},
         "nursing_job_count": {"type": "integer", "description": "Vacancies that are nursing (Pflege) roles"},
         "has_rss_or_json": {"type": "boolean", "description": "Whether a feed / JSON / XML endpoint for the jobs exists"},
+        "crawl_strategy": {"type": "string", "description": "Only when verdict=board_found: concrete, step-by-step instructions a PLAIN page-by-page fetcher "
+                                                              "(no JavaScript, no reasoning) can follow to pull every vacancy -- the exact URL(s) to start from, how pagination "
+                                                              "works (query param, 'mehr laden' button target, numbered pages, infinite scroll's underlying endpoint), whether "
+                                                              "listing links go straight to job detail pages or need another hop, any JSON/XML/RSS endpoint cheaper than HTML"},
+        "alternative_locations": {"type": "array", "items": {"type": "string"},
+                                   "description": "Only when verdict != board_found: concrete places to check instead (a parent operator's own portal, a regional/group HR site, "
+                                                   "a different subdomain, or a plain note that no online board exists at all) -- as many as you can find"},
         "notes": {"type": "string", "description": "Login walls, cookie walls, bot protection, pagination pattern, anything an engineer writing a crawler needs"},
     },
-    "required": ["careers_url", "ats_vendor", "listing_technology"],
+    "required": ["verdict", "careers_url", "ats_vendor", "listing_technology"],
 }
 
 
@@ -139,14 +152,27 @@ def _jobs_prompt(clinic):
 
 
 def _career_prompt(clinic):
-    return (f"Find the careers portal of the hospital \"{clinic.get('name')}\" in {clinic.get('town') or 'Bavaria'}, Germany "
-            f"(operator: {clinic.get('operator') or 'unknown'}; website: {clinic.get('website') or 'unknown'}). "
-            "Locate (1) the careers page on the hospital website and (2) the actual job board where vacancies are listed — often an external "
-            "applicant-tracking system. Identify the ATS vendor from URLs and page markup. Examine the board like an engineer who must crawl it: "
-            "record every filter control with ALL its selectable values (Berufsgruppe, Standort, Fachbereich, Beschäftigungsart ...), the categories "
-            "it groups jobs into, how many jobs are visible in total and how many are nursing (Pflege), whether the list is plain HTML, JavaScript-rendered, "
-            "iframe-embedded or PDF flyers, whether an RSS/JSON/XML feed exists, and any login/cookie/bot wall or pagination pattern. "
-            "Answer strictly in the schema; use 'unknown' when you cannot tell.")
+    return (f"Study the hospital \"{clinic.get('name')}\" in {clinic.get('town') or 'Bavaria'}, Germany "
+            f"(operator: {clinic.get('operator') or 'unknown'}; website: {clinic.get('website') or 'unknown'}) to PLAN a crawl -- "
+            "do not extract jobs yourself.\n"
+            "GOAL: find the OPTIMAL crawl strategy for a plain page-by-page fetcher (no JavaScript, no reasoning) to later pull "
+            "EVERY open vacancy from this hospital's job board.\n"
+            "Decide which of three cases applies and set verdict accordingly:\n"
+            "1. board_found -- a real job board exists and belongs to this hospital (or its own operator/group, filterable to this "
+            "hospital's own listings). Fill careers_url, portal_url, ats_vendor, listing_technology, filters, categories, "
+            "visible_job_count, nursing_job_count, has_rss_or_json, and crawl_strategy: concrete, step-by-step instructions a dumb "
+            "per-page fetcher can follow -- the exact URL(s) to start from, how pagination works (query param, 'mehr laden' button "
+            "target, numbered pages, infinite scroll's underlying endpoint), whether listing links go straight to job detail pages or "
+            "need another hop, and any JSON/XML/RSS endpoint that is cheaper to read than the HTML.\n"
+            "2. not_a_board -- no vacancy board could be found anywhere reachable from the given URL(s) (dead link, no careers "
+            "section, jobs only as PDF flyers or a phone number). Leave portal_url empty and fill alternative_locations with "
+            "concrete places to check instead (a parent operator's own portal, a regional/group HR site, a different subdomain, a "
+            "print/newspaper-only note) -- as many as you can find.\n"
+            "3. not_clinic_specific -- what you found is not this hospital's own board: a nationwide/group portal with no way to "
+            "filter to this hospital, or the given URL belongs to an unrelated entity. Explain in notes and, if you can tell where "
+            "this hospital's OWN listings might be instead, fill alternative_locations.\n"
+            "Also identify the ATS vendor from URLs/markup, and note any login/cookie/bot wall or anything else an engineer writing "
+            "the fetcher needs to know. Answer strictly in the schema; use 'unknown' where you cannot tell.")
 
 
 class AgentFailed(RuntimeError):
@@ -482,8 +508,13 @@ def run_career_agent(clinic, max_credits=DEFAULT_MAX_CREDITS, log=print, session
     profile["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     v = (profile.get("ats_vendor") or "unknown").lower()
     profile["ats_vendor"] = v if v in KNOWN_VENDORS else "other"
+    vd = str(profile.get("verdict") or "").strip().lower()
+    if vd not in VERDICTS:
+        log(f"firecrawl career agent: unrecognised verdict {profile.get('verdict')!r}, treating as not_a_board")
+        vd = "not_a_board"
+    profile["verdict"] = vd
     cost = _cost_of(raw, used)
-    log(f"firecrawl career agent: vendor {profile['ats_vendor']}, tech {profile.get('listing_technology')}, "
+    log(f"firecrawl career agent: verdict {profile['verdict']}, vendor {profile['ats_vendor']}, tech {profile.get('listing_technology')}, "
         f"jobs {profile.get('visible_job_count')} / nursing {profile.get('nursing_job_count')}, credits charged {used} "
         f"(API creditsUsed {cost['credits_api']}, credits delta {cost['credits_delta']}, tokens delta {cost['tokens_delta']})")
     return {"profile": profile, "credits_used": used, "raw": raw, **cost}
@@ -496,3 +527,118 @@ VENDOR_TO_ATS = {v: v for v in KNOWN_VENDORS if v not in ("other", "unknown", "w
 
 def ats_type_for(profile):
     return VENDOR_TO_ATS.get((profile or {}).get("ats_vendor") or "")
+
+
+# --- TASK-128: a raw-fetch fallback rung, no LLM reasoning step ------------------------------------
+# run_jobs_agent() above pays the /v2/agent LLM to both defeat a bot-wall AND invent the extraction
+# (title/city/department/role via JOBS_SCHEMA) -- duplicating what classify.py/registry.py already do
+# for every other adapter. Ivan's idea, 2026-09-23: split the two concerns. /v2/scrape (verified live
+# 2026-09-23: POST {url, formats:["html"]} -> {data: {html, metadata: {sourceURL, statusCode,
+# creditsUsed}}}) is a plain page fetch through Firecrawl's proxy/renderer -- it gets past the SAME
+# wall, at Firecrawl's own reported cost per page (1 credit for a static page in that live check; a
+# JS-rendered board may cost more, unmeasured before TASK-128's own AC#3 cost comparison runs), with
+# no schema and no LLM. Feeding that HTML into career_crawl.Crawler's existing walk means classify_role/
+# classify_employer/fuzzy_key/content_hash (all already inside Crawler._base(), called by every row
+# the walk produces) run unchanged -- nothing new to build downstream of the fetch itself.
+class _ScrapeResponse:
+    """Duck-typed requests.Response substitute (.text/.url/.status_code/.headers) -- the only shape
+    career_crawl.Crawler.fetch()'s callers (_crawl_urls, _section_link, sitemap_job_urls) read."""
+    def __init__(self, html, url):
+        self.text, self.url, self.status_code = html, url, 200
+        self.headers = {"content-type": "text/html"}
+
+
+def scrape(url, session=None, timeout=60):
+    """POST /v2/scrape for one page. Returns (response_or_None, {credits, status, error?}) -- never
+    raises, same tolerant shape run_agent()'s own balance reads use, since a single walled page failing
+    must not abort the whole board walk (Crawler.fetch() already treats a None return as unfetchable)."""
+    s = session or requests.Session()
+    try:
+        r = s.post(API + "/scrape", headers=_headers(), json={"url": url, "formats": ["html"]}, timeout=timeout)
+    except requests.RequestException as e:
+        return None, {"credits": 0, "status": None, "error": f"{type(e).__name__}: {str(e)[:150]}"}
+    if r.status_code >= 300:
+        return None, {"credits": 0, "status": r.status_code, "error": r.text[:200]}
+    j = r.json()
+    d = (j.get("data") or {}) if j.get("success") else {}
+    html = d.get("html")
+    meta = d.get("metadata") or {}
+    if not html:
+        return None, {"credits": meta.get("creditsUsed", 0), "status": meta.get("statusCode"),
+                       "error": (j.get("error") or "no html in response")[:200]}
+    return _ScrapeResponse(html, meta.get("sourceURL") or meta.get("url") or url), \
+        {"credits": meta.get("creditsUsed", 1), "status": meta.get("statusCode")}
+
+
+class ScrapeExhausted(RuntimeError):
+    """max_credits reached mid-walk -- carries what was spent so the caller can still charge the ledger."""
+    def __init__(self, credits_used):
+        super().__init__(f"firecrawl scrape: max_credits reached ({credits_used} spent)")
+        self.credits_used = credits_used
+
+
+def crawl_via_scrape(clinic, towns, max_credits=DEFAULT_MAX_CREDITS, log=print, session=None,
+                      per_site_pages=200, list_pages=80):
+    """AC#1/#2: career_crawl.Crawler's own listing-first walk (section-first + full BFS, JSON-LD +
+    heuristic title extraction, classify_role/classify_employer/fuzzy_key already inside _base()), with
+    fetch() backed by Firecrawl /v2/scrape instead of a direct HTTP GET -- for a board no adapter can
+    otherwise reach. Returns (rows, stats, credits_used); rows are the SAME observation-shaped dicts
+    any other Crawler-based source produces, ready for the existing inbox path unchanged.
+
+    max_credits is a hard stop (mirrors run_jobs_agent's own cap): fetch() raises ScrapeExhausted the
+    moment cumulative spend would exceed it, aborting the walk mid-page rather than silently going
+    over budget -- this is cost control on a paid, unbounded-fanout API call, not an invented crawl-size
+    ceiling (see CLAUDE.md's 'no safety nets': that rule is about truncating what a board itself offers,
+    not about spending without a cap on a per-page-billed external API)."""
+    from pflege_jobs.sources.career_crawl import Crawler
+    s = session or requests.Session()
+    spent = [0]
+
+    class ScrapeCrawler(Crawler):
+        def fetch(self, url):
+            if spent[0] >= max_credits:
+                raise ScrapeExhausted(spent[0])
+            resp, cost = scrape(url, session=s)
+            spent[0] += cost.get("credits") or 0
+            log(f"  firecrawl scrape {url[:80]}: {cost.get('credits', 0)} credit(s), status {cost.get('status')}"
+                + (f", error {cost['error']}" if cost.get("error") else "") + f" (spent {spent[0]}/{max_credits})")
+            return resp
+
+    seed = {"name": clinic["name"], "kez": clinic["clinic_id"], "career": clinic["careers_url"],
+            "town": clinic.get("town"), "operator": clinic.get("operator"), "bavaria_only_operator": True}
+    cr = ScrapeCrawler(towns, per_site_pages=per_site_pages, list_pages=list_pages, sleep=0, log=log)
+    try:
+        rows, stats = cr.crawl(seed)
+    except ScrapeExhausted as e:
+        log(f"firecrawl scrape crawl {clinic['clinic_id']} {clinic['name'][:40]}: aborted, {e.credits_used} credits spent")
+        return [], {"truncated": True, "aborted": "max_credits"}, e.credits_used
+    log(f"firecrawl scrape crawl {clinic['clinic_id']} {clinic['name'][:40]}: {len(rows)} rows, {spent[0]} credits")
+    return rows, stats, spent[0]
+
+
+def discover_then_scrape(clinic, towns, max_credits_recon=DEFAULT_MAX_CREDITS, max_credits_scrape=DEFAULT_MAX_CREDITS,
+                          log=print, session=None, webhook=None, check_webhook=None, **scrape_kw):
+    """Ivan's fix, 2026-09-23, for what crawl_via_scrape() alone cannot tell: a live test against Simssee
+    Klinik (18713) spent its whole 20-credit cap wandering into clinical-department subpages and returned
+    0 rows -- the raw walk has no way to distinguish 'wrong entry URL' from 'slow board', so it just burns
+    the cap. One cheap CAREER_SCHEMA recon call first (run_career_agent(), no job extraction, no full-board
+    pagination) either finds the real board and how to walk it (verdict board_found, portal_url as the
+    entry point, crawl_strategy for a human/future reader) or says so and stops -- not_a_board /
+    not_clinic_specific spend zero scrape credits and return alternative_locations for a human to check,
+    instead of guessing.
+    """
+    recon = run_career_agent(clinic, max_credits=max_credits_recon, log=log, session=session,
+                              webhook=webhook, check_webhook=check_webhook)
+    profile = recon["profile"]
+    verdict = profile["verdict"]
+    result = {"verdict": verdict, "profile": profile, "rows": [], "stats": {"skipped": verdict},
+              "recon_credits": recon["credits_used"], "scrape_credits": 0, "credits_used": recon["credits_used"]}
+    if verdict != "board_found":
+        log(f"firecrawl discover: verdict {verdict} for {clinic.get('name')} -- no scrape credits spent"
+            + (f"; alternatives: {profile.get('alternative_locations')}" if profile.get("alternative_locations") else ""))
+        return result
+    entry = profile.get("portal_url") or clinic.get("careers_url")
+    scrape_clinic = dict(clinic, careers_url=entry)
+    rows, stats, scrape_credits = crawl_via_scrape(scrape_clinic, towns, max_credits=max_credits_scrape, log=log, session=session, **scrape_kw)
+    result.update(rows=rows, stats=stats, scrape_credits=scrape_credits, credits_used=recon["credits_used"] + scrape_credits)
+    return result

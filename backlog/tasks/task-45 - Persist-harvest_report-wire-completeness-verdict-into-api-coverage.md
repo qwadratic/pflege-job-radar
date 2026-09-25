@@ -4,8 +4,10 @@ title: Persist harvest_report + wire completeness verdict into /api/coverage
 status: To Do
 assignee: []
 created_date: '2026-09-11 05:01'
+updated_date: '2026-09-25 00:10'
 labels:
   - harvester
+  - infra
 dependencies: []
 ordinal: 45000
 ---

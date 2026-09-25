@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-22 16:10'
-updated_date: '2026-09-22 19:34'
+updated_date: '2026-09-24 00:24'
 labels: []
 dependencies: []
 references:
@@ -39,6 +39,39 @@ Investigating why data/inbox.sqlite's 463 'loaded (no site match)' rows fail to 
 <!-- SECTION:NOTES:BEGIN -->
 Manual curation chosen over auto-detection by vendor account id (AC#1): 2 confirmed instances is not yet evidence of a large long tail, and auto-clustering by a resolved vendor ident risks silently grouping unrelated clinics that merely share a SaaS reseller. crawlers/vendor_adapters.py VENDOR_ACCOUNT_POOLS + account_pool_for(), wired into app/crawl.py _vendor_rows() right after routing's own per-board clinics grouping (widens board_clinic_ids, never changes which URL gets fetched).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-23 23:08
+---
+2026-09-23 follow-up (TASK-128): the Gesundheitswelt Chiemgau pool entry this task added
+(clinic_ids 18721/18713) was REMOVED from VENDOR_ACCOUNT_POOLS in crawlers/vendor_adapters.py.
+Both clinics now carry their own careers_url pre-filtered by the board's own
+`filter[client_id][]=<id>` query (3 = Simssee, 6 = St. Irmingard, ats_type=rexx), discovered via a
+Firecrawl CAREER_SCHEMA recon call and confirmed live (each filtered URL returns only that one
+entity's jobs, zero cross-contamination from the other 6 non-hospital entities -- Reha centres, a
+spa/wellness resort -- on the same AG's shared board). With the fetch itself now precise, the
+pool's town-based widening became actively harmful (it would let the Matcher's guess override a
+crawl already known with certainty) rather than necessary, so it was deleted, not just left dormant.
+tests/test_vendor_account_pools.py pins account_pool_for("18713"/"18721") == None now; the
+SmartRecruiters/ArtemedSE and Weilheim-Schongau pools this task also added are untouched. See
+TASK-128's implementation notes for the full recon-then-adapter-fix story.
+---
+
+created: 2026-09-24 00:24
+---
+2026-09-24 follow-up (TASK-119, this task's own residual): the 28 api.smartrecruiters.com-shaped
+rows this task's Final Summary flagged as residual are now resolved. Root cause was NOT "a partial
+not-found-on-re-read gap in EdgeSink" as guessed here -- it was an older, now-retired revision of
+crawl_smartrecruiters() (before its per-posting postingUrl enrichment existed) plus a data-entry typo
+on 18872's operator field (duplicated town-name prefix) that broke the Feldafing twin-site tie-break
+for 6 of the 28. Fixed via a direct clinic_links push using this task's own Artemed pool + Matcher,
+not the local-inbox reset mechanism tools/task99_backfill_account_pools.py used (no local inbox rows
+existed for these). See TASK-119's Final Summary for full evidence, including the regression replay
+that found the operator typo was a live latent bug affecting 6 ALREADY-matched postings too.
+---
+<!-- COMMENTS:END -->
 
 ## Final Summary
 

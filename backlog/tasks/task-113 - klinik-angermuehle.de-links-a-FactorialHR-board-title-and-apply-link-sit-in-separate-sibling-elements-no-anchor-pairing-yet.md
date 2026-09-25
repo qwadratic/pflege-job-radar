@@ -3,9 +3,11 @@ id: TASK-113
 title: >-
   klinik-angermuehle.de links a FactorialHR board; title and apply-link sit in
   separate sibling elements, no anchor pairing yet
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@ivan'
 created_date: '2026-09-22 17:12'
+updated_date: '2026-09-23 15:18'
 labels: []
 dependencies: []
 ordinal: 113000
@@ -19,7 +21,27 @@ Run 120 (2026-09-22) zero-yield recon for clinic 27108 (Klinik Angermühle), boa
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Check the registry for other clinics whose careers_url is a factorialhr.de/embed/jobs page or links to one -- if none, this may not be worth building yet
+- [x] #1 Check the registry for other clinics whose careers_url is a factorialhr.de/embed/jobs page or links to one -- if none, this may not be worth building yet
 - [ ] #2 If worth building: a bespoke extractor pairs each .../factorial__headingFontFamily title div with its following .../job_posting/<slug> href (structural sibling-walk, not JOB_PATH/GENDER-gated) and reads real rows, verified live red-green, mutation-tested
 - [ ] #3 Verified: role classification on the resulting rows behaves correctly even though this board's own current postings are not nursing (no false 'Pflege' classification on Reinigungsfachkraft/MFA/Sozialpädagoge)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Grep data/registry/clinics.csv (all columns, all 407 rows) for factorialhr.de / FactorialHR embed patterns per AC#1's gate condition.
+2. If zero other clinics match, stop: document finding, check only AC#1, leave AC#2/#3 unchecked with reason, status Done.
+3. If multiple clinics match, build sibling-walk extractor per AC#2/#3 with frozen live fixture + mutation test.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC#1 verified: grep -in "factorialhr" data/registry/clinics.csv (all columns, all 407 rows, incl. careers_url) -> 0 matches. Clinic 27108's own careers_url is https://www.klinik-angermuehle.de/jobs/ (the clinic's own page, not the factorialhr embed URL), and ats_type for 27108 is blank -- like 232/407 other rows whose ats_type is not yet classified, so the registry doesn't positively rule out FactorialHR elsewhere, but per AC#1's own stated gate (grep the registry for factorialhr.de patterns) the result is unambiguous: 0 other clinics reference it anywhere in the CSV. Genuinely a one-off today. Not worth a bespoke sibling-walk extractor for 3 non-nursing postings on a single board. AC#2/#3 (extractor + role-classification verification) intentionally left unchecked -- they only apply if AC#1 found multiple FactorialHR clinics, which it did not.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Scoping decision, not incomplete work: AC#1's own gate resolved this to a stop. grep -in factorialhr across all 407 rows / all columns of data/registry/clinics.csv found 0 matches besides the one clinic (27108) this task was filed about. Only 1 clinic in the registry links a FactorialHR board today, and its current 3 postings are all non-nursing. Building the sibling-walk extractor (AC#2) would pay off nothing right now, so it was not built. AC#3 (role-classification check) is moot without an extractor. Verified with plain grep against the live registry CSV, no code changes needed.
+<!-- SECTION:FINAL_SUMMARY:END -->

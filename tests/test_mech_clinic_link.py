@@ -204,6 +204,24 @@ def test_r1_exact_falls_through_on_a_known_disagreeing_city():
     assert m.match("Sonnenklinik Fernost GmbH", None) == ("X1", "R1_exact", 1.0)           # unknown city -> unchanged
 
 
+def test_r2_operator_falls_through_on_a_known_disagreeing_city():
+    """TASK-153: R2_operator's single-candidate branch had no town-disagreement guard at all, unlike
+    its R1_exact sibling above -- Augustinum gGmbH has exactly one Krankenhausplan clinic in the
+    registry (München), so a UNIQUE operator-name hit matched every Augustinum-operator posting
+    nationwide to that one site regardless of city. Live evidence (2026-09-24): 11 real postings from
+    OTHER Augustinum facilities (Bischofswiesen, Unterschleißheim, Oberschleißheim, Bad Tölz --
+    Werkstätten/Tagesstätten disability-care roles, a different facility category from the München
+    hospital entirely) were wrongly attributed to München this way. Same gate as R1_exact, same
+    refusal condition (a proven OTHER registry site, not just any known city)."""
+    cl = [{"clinic_id": "Y1", "name": "Augustinum München", "town": "München", "operator": "Augustinum gGmbH"},
+          {"clinic_id": "Y2", "name": "Reha Bischofswiesen", "town": "Bischofswiesen", "operator": None}]
+    m = Matcher(cl)
+    assert m.match("Augustinum gGmbH", "München") == ("Y1", "R2_operator", 0.95)          # agreeing city still matches
+    assert m.match("Augustinum gGmbH", "Bischofswiesen") is None                           # names a DIFFERENT registry site -> refused
+    assert m.match("Augustinum gGmbH", "Deutschlandweit") == ("Y1", "R2_operator", 0.95)   # known city, no registry town at all -> not evidence
+    assert m.match("Augustinum gGmbH", None) == ("Y1", "R2_operator", 0.95)                # unknown city -> unchanged
+
+
 def test_r1_exact_ignores_a_named_city_unreliable_employer():
     """TASK-96: KJF Klinik Hochried (clinic 18006, Murnau) shares josefinum.softgarden.io with its
     sibling Fachklinik KJF Josefinum (76110, Augsburg) -- every Hochried-employer posting on that

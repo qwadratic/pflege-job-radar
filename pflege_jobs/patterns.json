@@ -149,7 +149,7 @@
   },
   {
    "hint": "OP",
-   "re": "\\bop\\b|operations|zentral-?op|opsaal|op-?bereich|op-?pflege"
+   "re": "\\bop\\b|\\boperations|zentral-?op|opsaal|op-?bereich|op-?pflege"
   },
   {
    "hint": "Notaufnahme",
@@ -157,7 +157,7 @@
   },
   {
    "hint": "Psychiatrie",
-   "re": "psychiatr|psychosomat|forensi|sucht|gerontopsych"
+   "re": "psychiatr|psychosomat|forensi|(?<!ge)(?<!be)(?<!er)(?<!ver)(?<!unter)sucht|gerontopsych"
   },
   {
    "hint": "Pädiatrie/Neonatologie",
@@ -189,7 +189,7 @@
   },
   {
    "hint": "Chirurgie/Orthopädie",
-   "re": "chirurg|unfall|orthop|traumatolog|wirbelsäule"
+   "re": "chirurg|unfall(?!vorschrift)|orthop|traumatolog|wirbelsäule"
   },
   {
    "hint": "Innere Medizin",
@@ -240,6 +240,8 @@
   "pay_text": "[^.\\n]{0,80}(?:vergütung|entgelt|gehalt|tarif|tvöd|tv-l|avr)[^.\\n]{0,120}",
   "req_head": "(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit)",
   "req_stop": "(?:wir bieten|unser angebot|was wir bieten|das bieten wir|ihre aufgaben|deine aufgaben|aufgaben|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
+  "task_head": "(?:ihre aufgaben|deine aufgaben|ihr aufgabenbereich|dein aufgabenbereich|ihr aufgabengebiet|dein aufgabengebiet|ihre tätigkeiten|deine tätigkeiten|das erwartet sie|das erwartet dich|was sie erwartet|was dich erwartet)",
+  "task_stop": "(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit|wir bieten|unser angebot|was wir bieten|das bieten wir|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
   "experience": "((?:\\d+|mehrjährig\\w*|langjährig\\w*|erste|einschlägig\\w*|fundiert\\w*)\\s?(?:-?\\s?jahr\\w*)?\\s?(?:berufs|praxis)?erfahrung[^.\\n]{0,60})",
   "email": "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}",
   "language": "\\b(a2|b1|b2|c1)\\b.{0,40}(deutsch|sprach)|deutsch.{0,40}\\b(a2|b1|b2|c1)\\b",
@@ -281,7 +283,7 @@
    },
    {
     "tag": "Psychiatrie",
-    "re": "psychiatr|psychosomat|mental health|forensi|sucht|addiction"
+    "re": "psychiatr|psychosomat|mental health|forensi|(?<!ge)(?<!be)(?<!er)(?<!ver)(?<!unter)sucht|addiction"
    },
    {
     "tag": "Geriatrie",
@@ -337,7 +339,7 @@
    },
    {
     "tag": "Chirurgie",
-    "re": "chirurg|surgery|surgical|orthopäd|orthopaed|unfall|trauma"
+    "re": "chirurg|surgery|surgical|orthopäd|orthopaed|unfall(?!vorschrift)|trauma"
    }
   ]
  },

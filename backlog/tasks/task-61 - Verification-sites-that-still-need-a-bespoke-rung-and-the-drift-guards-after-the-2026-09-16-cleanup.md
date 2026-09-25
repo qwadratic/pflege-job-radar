@@ -3,11 +3,11 @@ id: TASK-61
 title: >-
   Verification: sites that still need a bespoke rung, and the drift guards after
   the 2026-09-16 cleanup
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 22:40'
-updated_date: '2026-09-21 07:31'
+updated_date: '2026-09-23 10:46'
 labels: []
 dependencies: []
 ordinal: 61000
@@ -44,7 +44,7 @@ WATCH ITEMS:
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 regiomed list-membership verification still resolves all of that board's postings (spot-check after any pi_asp change)
-- [ ] #2 No staging/preview host appears as a source_url in postings
+- [x] #2 No staging/preview host appears as a source_url in postings
 - [ ] #3 crawl_issues reviewed daily; a host appearing in bulk is triaged to the rung that broke
 <!-- AC:END -->
 
@@ -153,6 +153,14 @@ session is not permitted to make.
   old P&I branch -> 2 red; no NON_PROD_HOST gate -> 1 red. All green again after restore.
 - tests/test_verify_pi_loga_live.py -m network: 2 passed in 31s against the live boards.
 - Full offline suite: 1259 passed, 1 skipped, 1197 deselected (`pytest -m "not network"`).
+
+2026-09-23 follow-up.
+
+AC#2 -- still blocked on the same production write as before (69 open rows on referral-portal-staging.lmu-klinikum.de, all clinic_id 16290, all verify_status='live' from before the fall-through fix). Re-measured live today: 69 (was 70 on 2026-09-21, one already resolved itself). Prepared the exact fix this round -- /tmp/task61_purge.py (EdgeSink verify op, verify_status='gone', verify_note explaining the staging-host retirement; row list in /tmp/task61_staging_rows.json) -- but the write was denied by the auto-mode classifier as a production mutation. Ready for Ivan to run: `source .venv/bin/activate && python3 /tmp/task61_purge.py`. Not checking AC#2 until that lands.
+
+AC#3 -- today's real schedule 2 fire (run_id=160, 05:17 UTC daily verify) completed status=done, pushed 3017 verdicts (live 2836/gone 65/error 115/blocked 1, 116 unverifiable + 156 city mismatches to crawl_issues) -- live confirmation the run-109 crash fix holds under production conditions, not just the offline replay this task originally shipped with. Reviewed today's crawl_issues as part of this check: largest clusters are 'city' (139) and 'degraded' (56, all pre-existing sitemap_and_wp_json_empty fallbacks across many hosts, not one host newly failing in bulk) -- nothing reads as a rung that broke today. Still not checking AC#3: it names an ongoing daily habit ('reviewed daily; triaged'), and one clean day of evidence doesn't establish a habit, same reasoning as the 2026-09-21 note.
+
+AC#2 CHECKED 2026-09-23. Ivan applied the prepared purge (/tmp/task61_purge.py, EdgeSink verify op): 69 posting_ids -> verify_status='gone', status auto-set 'expired' by the edge function's own coalesce logic. Confirmed live: 0 open rows remain on referral-portal-staging.lmu-klinikum.de. Both entry doors were already closed in the prior round (registry CSV row 16290, NON_PROD_HOST gate on the seeded-adapter load path), so this closes the loop -- no staging host can re-enter and the existing rows are gone.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -179,28 +187,5 @@ ops loop I have no evidence for either way, so I am not checking it.
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Re-verified both bespoke rungs live and fixed three defects the check exposed.
-
-The P&I LOGA rung works (77/45/29/16 titles off the four registered boards; 86 of 91 open postings
-still listed, the 5 misses genuinely delisted), but the rungs BELOW it were allowed to answer for a
-/bewerber-web/ URL -- and since those boards have no detail page, they were judging the board LIST,
-which carries every title including removed ones. 51 Helios rows in the table still show 'title tokens
-3/3 [rendered]' from that fall-through. verify.py now answers a P&I URL from the board list or not at
-all, and a board that renders but lists no titles is recorded as error/method='board_list' so a vendor
-markup change lands in crawl_issues as one labelled block instead of silently freezing 91 rows.
-
-Checking the invariant found it broken and found why: the daily verify (schedule 2) has written no
-verdict since 2026-09-18 and crashed outright on 2026-09-21 with TypeError: unhashable type: 'list'.
-Reproduced live -- 5 www.komm-ins-klinikland.de pages ship JSON-LD address fields as one-item lists,
-which _walk_jsonld put inside a tuple it hashes, and the exception propagated out of
-as_completed().result() and ended the pass for all 2560 open postings. Fixed at the field (_scalar)
-and at the pass (a crashed row is escalated carrying the crash, never absorbed). Re-swept all 2560
-open postings on the http rung afterwards: 0 crashes, was 5.
-
-Also closed the two doors that let staging hosts in on the crawler side (registry CSV row 16290 and
-app/crawl.py _load_observations).
-
-Verified with: live board renders and a live full-table http sweep; 8 new offline regressions plus a
-network-marked live drift guard (2 passed, 31s); every fix mutation-tested red-green; full offline
-suite 1259 passed, 1 skipped.
+Re-verified both bespoke rungs live and fixed three defects (P&I LOGA board-list fall-through, drift-guard on a zero-title board, and the daily-verify crash at _walk_jsonld on list-valued JSON-LD address fields). Closed both staging-host entry doors (registry CSV row 16290, NON_PROD_HOST gate on the seeded-adapter load path). AC#1/AC#2 checked with live evidence: AC#2's remaining 69 open rows on referral-portal-staging.lmu-klinikum.de were purged today via EdgeSink verify (verify_status='gone'), confirmed live -- 0 open rows left on that host. AC#3 stays unchecked on purpose: it names an ongoing daily habit ('crawl_issues reviewed daily; triaged'), and today's clean schedule-2 fire (3017 verdicts, no crash) plus a manual review of today's crawl_issues (nothing reads as a newly-broken rung) is one day of evidence, not a habit -- moving to Done at 2/3, honest about the gap, matching this project's established partial-AC closure convention (TASK-71, TASK-88 and others).
 <!-- SECTION:FINAL_SUMMARY:END -->

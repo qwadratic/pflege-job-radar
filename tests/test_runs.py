@@ -135,3 +135,47 @@ def test_init_migrates_a_pre_task72_database_without_losing_rows(tmp_path, monke
     R.record_crawl_issue("https://old.example/board", "2026-09-17", "empty", "wp_jobs", ["9"], "new issue", 6)
     rows = [i for i in R.list_crawl_issues(day="2026-09-17") if i["board_url"] == "https://old.example/board"]
     assert {i["kind"] for i in rows} == {"vendor", "empty"}
+
+
+# ---------------------------------------------------------------------------
+# TASK-94 AC#2: which checkout a run actually executed on, recorded rather than guessed.
+# ---------------------------------------------------------------------------
+@pytest.fixture()
+def _reset_commit_sha_cache(monkeypatch):
+    monkeypatch.setattr(R, "_commit_sha_cache", None)
+    yield
+    monkeypatch.setattr(R, "_commit_sha_cache", None)
+
+
+def test_commit_sha_reads_the_real_git_head(_reset_commit_sha_cache):
+    """No mocking of git itself -- this process really is running inside the repo's own checkout
+    during a test, same as deploy/pflege-web.service's WorkingDirectory in production."""
+    sha = R.commit_sha()
+    assert sha and len(sha) == 40 and all(ch in "0123456789abcdef" for ch in sha)
+
+
+def test_commit_sha_is_cached_not_reread_on_every_call(_reset_commit_sha_cache, monkeypatch):
+    calls = []
+
+    class _FakeCompleted:
+        returncode, stdout = 0, "deadbeef" * 5 + "\n"
+
+    def fake_run(*a, **k):
+        calls.append(1)
+        return _FakeCompleted()
+
+    import subprocess as _sp
+    monkeypatch.setattr(_sp, "run", fake_run)
+    assert R.commit_sha() == "deadbeef" * 5
+    assert R.commit_sha() == "deadbeef" * 5
+    assert len(calls) == 1
+
+
+def test_commit_sha_returns_none_without_raising_when_git_is_unavailable(_reset_commit_sha_cache, monkeypatch):
+    import subprocess as _sp
+
+    def boom(*a, **k):
+        raise FileNotFoundError("git not found")
+
+    monkeypatch.setattr(_sp, "run", boom)
+    assert R.commit_sha() is None

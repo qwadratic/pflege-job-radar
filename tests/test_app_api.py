@@ -67,6 +67,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(ME, "_FAKE", [FAKE_MECHANIC])
     monkeypatch.setattr(R, "enqueue", lambda rid: None)            # never run a crawl in tests
     monkeypatch.setattr(S, "start", lambda: SC.init())
+    # TASK-130: inbox_summary() (GET /api/inbox) calls these directly against live Postgres,
+    # bypassing D -- unstubbed, they made the "offline" suite hang/fail during a real outage.
+    monkeypatch.setattr(A, "rest_count", lambda path, params=None, timeout=60: 0)
+    monkeypatch.setattr(A, "rest_get_all", lambda path, params=None, page=1000, timeout=120: [])
+    monkeypatch.setattr(A, "rest_get", lambda path, params=None, timeout=120, retries=2: [])
     from app.main import app
     with TestClient(app) as c:
         yield c
@@ -657,6 +662,28 @@ def test_a_validating_document_cannot_silently_drop_a_section(client, patterns_t
     client.put("/api/settings/patterns", json=good)                 # leave the loaded document as it was
 
 
+def test_api_inbox_never_touches_live_postgres(client, monkeypatch):
+    """TASK-130: inbox_summary() (app/data.py) reads the crawler's own backlog from local SQLite
+    (pflege_jobs.inbox_db) but ALSO calls A.rest_count/rest_get_all/rest_get for the anon-key
+    producers' Postgres backlog (TASK-95). The client fixture stubs those three away; this test
+    proves the stub is load-bearing by giving each a distinctive return value and checking the
+    response is built from exactly those values -- if the route reached the real network instead,
+    these numbers could not appear."""
+    from pflege_jobs import inbox_db as IB
+
+    monkeypatch.setattr(A, "rest_count", lambda path, params=None, timeout=60: 4242)
+    monkeypatch.setattr(A, "rest_get_all", lambda path, params=None, page=1000, timeout=120: [
+        {"inbox_id": 1, "kind": "seed", "collector": "browser", "source_host": "x.example", "received_at": "2026-09-20T00:00:00Z"}])
+    monkeypatch.setattr(A, "rest_get", lambda path, params=None, timeout=120, retries=2: [
+        {"inbox_id": 1, "kind": "seed", "collector": "browser", "source_host": "x.example",
+         "source_url": "https://x.example/j", "received_at": "2026-09-20T00:00:00Z", "processed_at": None, "process_note": None}])
+    monkeypatch.setattr(IB, "counts", lambda: {"total": 7, "unprocessed": 3, "oldest_unprocessed_at": "2026-09-19T00:00:00Z"})
+
+    body = client.get("/api/inbox").json()
+    assert body["total"] == 4242 and body["unprocessed"] == 1
+    assert body["local"] == {"total": 7, "unprocessed": 3, "oldest_unprocessed_at": "2026-09-19T00:00:00Z"}
+
+
 def test_rest_get_error_carries_the_servers_own_message_not_just_the_status(monkeypatch):
     """TASK-60: raise_for_status() reports the status and the request URL and throws the response
     body away. A 400 whose body said "inbox: daily limit reached for this client" was logged as a
@@ -676,3 +703,63 @@ def test_rest_get_error_carries_the_servers_own_message_not_just_the_status(monk
     monkeypatch.setattr(A.requests, "get", lambda *a, **kw: R400())
     with pytest.raises(RuntimeError, match="daily limit reached for this client"):
         A.rest_get("inbox", {"select": "source_url"})
+
+
+def test_filter_jobs_by_clinic_status_isolates_the_reha_cohort(monkeypatch):
+    """TASK-148: Ivan wants a shareable /api/jobs?clinic_status=Reha-Einrichtung link so a partner
+    can review just the newly-sourced Reha/Vorsorge postings (clinic_id "RH<id>", clinic.status
+    "Reha-Einrichtung") separately from Krankenhausplan postings. v_postings already carries
+    clinic_status (sql/012_task105_requirements_fields.sql); this pins filter_jobs' equality match
+    on it, isolated from the big shared CLINICS/JOBS fixture used elsewhere in this file."""
+    jobs = [
+        {"posting_id": 101, "clinic_id": "16107", "clinic_status": "Plan-KH", "city": "München", "first_published": "2026-09-01"},
+        {"posting_id": 102, "clinic_id": "RH1847", "clinic_status": "Reha-Einrichtung", "city": "Bad Tölz", "first_published": "2026-09-02"},
+        {"posting_id": 103, "clinic_id": "RH1885", "clinic_status": "Reha-Einrichtung", "city": "Bad Tölz", "first_published": "2026-09-03"},
+    ]
+    monkeypatch.setattr(D, "_snap", {"at": time.time(), "jobs": jobs, "clinics": [{"clinic_id": "x"}], "by_clinic": {},
+                                      "facets": {}, "taxonomy": {}, "loading": False, "error": None})
+    monkeypatch.setattr(D, "refresh", lambda: D._snap)
+    rows = D.filter_jobs({"clinic_status": "Reha-Einrichtung"})
+    assert sorted(r["posting_id"] for r in rows) == [102, 103]
+    assert D.filter_jobs({"clinic_status": "Plan-KH"})[0]["posting_id"] == 101
+    # no filter: all 3 survive (sorted -first_published by default, so compare ids as a set)
+    assert {r["posting_id"] for r in D.filter_jobs({})} == {101, 102, 103}
+
+
+def test_multi_label_department_hint_facet_filter_and_search_agree(monkeypatch):
+    """TASK-97 AC#3/#5: department_hint can carry several departments on one posting ("Intensiv/IMC
+    AND Anästhesie"), and a posting the facet counts under one of them must also be findable by
+    searching q= for that same word -- otherwise the facet and the free-text search disagree about
+    what a department means. _build() parses the DB's "|"-joined department_hint string into a list
+    (mirrors clinics.fachrichtungen); this pins the facet/filter/search layer against that list shape
+    directly, isolated from the big shared CLINICS/JOBS fixture used elsewhere in this file."""
+    jobs = [
+        {"posting_id": 201, "clinic_id": "1", "title": "Pflegefachkraft (m/w/d)", "department_hint": ["Intensiv/IMC", "Anästhesie"],
+         "department_raw": None, "employer": "Klinikum X", "clinic_name": None, "city": "Regensburg", "enr_requirements": None,
+         "first_published": "2026-09-01"},
+        {"posting_id": 202, "clinic_id": "1", "title": "Pflegefachkraft (m/w/d)", "department_hint": ["Anästhesie"],
+         "department_raw": None, "employer": "Klinikum X", "clinic_name": None, "city": "Regensburg", "enr_requirements": None,
+         "first_published": "2026-09-02"},
+        {"posting_id": 203, "clinic_id": "1", "title": "Pflegefachkraft (m/w/d)", "department_hint": [],
+         "department_raw": None, "employer": "Klinikum X", "clinic_name": None, "city": "Regensburg", "enr_requirements": None,
+         "first_published": "2026-09-03"},
+    ]
+    monkeypatch.setattr(D, "_snap", {"at": time.time(), "jobs": jobs, "clinics": [{"clinic_id": "1"}], "by_clinic": {},
+                                      "facets": D._facets(jobs, [{"clinic_id": "1"}], {}), "taxonomy": {}, "loading": False, "error": None})
+    monkeypatch.setattr(D, "refresh", lambda: D._snap)
+
+    # facet: both postings that carry Anästhesie count toward it, the third (no department) does not.
+    facet = D._snap["facets"]["department_hint"]
+    assert {row["v"]: row["n"] for row in facet} == {"Intensiv/IMC": 1, "Anästhesie": 2}
+
+    # filter: a posting with BOTH departments is found by filtering on either one (intersection, not
+    # equality -- the old code did `j.get(key) in vals`, which a list is never a member of).
+    assert {r["posting_id"] for r in D.filter_jobs({"department_hint": "Intensiv/IMC"})} == {201}
+    assert {r["posting_id"] for r in D.filter_jobs({"department_hint": "Anästhesie"})} == {201, 202}
+
+    # search: q=Anästhesie must find exactly the postings the department_hint=Anästhesie facet/filter
+    # finds -- neither posting's title/employer/city/department_raw/clinic_name mentions the word, so
+    # before TASK-97's _q_match widening this search returned nothing at all.
+    facet_ids = {r["posting_id"] for r in D.filter_jobs({"department_hint": "Anästhesie"})}
+    search_ids = {r["posting_id"] for r in D.filter_jobs({"q": "Anästhesie"})}
+    assert search_ids == facet_ids == {201, 202}

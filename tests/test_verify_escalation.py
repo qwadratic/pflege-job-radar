@@ -22,12 +22,22 @@ def test_gone_markers_still_fires_on_the_german_phrases():
     assert GONE_MARKERS.search("Position has been filled")
 
 
-# --- decide(): an empty title-token list is zero evidence, not confirmation ------------------
+# --- decide(): an empty title-token list is zero evidence, not confirmation -------------------
+# TASK-150: the old unconditional "error" here (before this fix) never even looked at the body,
+# so a title made entirely of generic words ("Pflegefachkraft (m/w/d)") could NEVER resolve to
+# anything but 'error', no matter what escalation rung fetched it -- 89/3624 open postings stuck
+# permanently. GONE_MARKERS is now checked against the body even with toks=[].
 
-def test_decide_treats_no_matchable_token_as_undecided_not_live():
-    # the two commonest nursing titles lose every token in _title_tokens
+def test_decide_empty_toks_with_gone_marker_is_gone():
     for title in ("Pflegefachkraft (m/w/d)", "Gesundheits- und Krankenpfleger (m/w/d)"):
-        assert decide(200, "irrelevant body text", title) == ("error", 200, "title has no matchable token")
+        assert decide(200, "Diese Stelle ist leider nicht mehr verfügbar.", title) == (
+            "gone", 200, "200, no title token to confirm, but a gone-marker matched")
+
+
+def test_decide_empty_toks_without_gone_marker_is_live_with_low_confidence_note():
+    for title in ("Pflegefachkraft (m/w/d)", "Gesundheits- und Krankenpfleger (m/w/d)"):
+        assert decide(200, "irrelevant body text", title) == (
+            "live", 200, "200, no title token to confirm, no gone-marker either")
 
 
 def test_decide_with_a_real_token_is_unaffected():

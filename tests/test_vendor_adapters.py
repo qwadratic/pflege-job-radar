@@ -1,6 +1,7 @@
 """crawlers/vendor_adapters.py: every adapter fetches the whole board and tags each job with its
 own vendor-native label (department/category/section) as data -- it never narrows the fetch or
 drops a posting on that label. Mocked HTTP (via the module's own `get` helper), no network."""
+import json
 import os
 import sys
 
@@ -78,6 +79,41 @@ def test_get_meta_refresh_loop_terminates_instead_of_spinning_forever():
     b = _R('<meta http-equiv="refresh" content="0;url=https://x/a">', url="https://x/b", ok=True)
     r = va.get("https://x/a", session=_FakeSession([a, b, a, b]))
     assert r is not None and r.url in ("https://x/a", "https://x/b")
+
+
+class _UAKeyedSession:
+    """Returns a different canned response depending on the User-Agent header get() actually sent
+    -- keyed by header value, not by call order, so this proves the override is *what* unblocks a
+    host, not just that some response comes back (TASK-114 AC#3). A live capture of CleanTalk's
+    real challenge page isn't usable here: re-verified live 2026-09-23, augencentrum.de no longer
+    serves it to any UA (curl default, this repo's UA, and a browser UA all return the same 200
+    with real content today) -- the 2026-09-22 block was real but is not reproducible now, so the
+    two canned bodies below stand in for "challenge" vs "real" rather than a frozen live fixture."""
+    def __init__(self, by_ua):
+        self.by_ua = by_ua
+        self.seen_uas = []
+
+    def get(self, u, headers=None, **kw):
+        ua = (headers or {}).get("User-Agent")
+        self.seen_uas.append(ua)
+        return self.by_ua.get(ua, _R(ok=False, url=u))
+
+
+def test_get_sends_the_override_ua_only_for_augencentrum_de():
+    real = _R("real board content", url="https://www.augencentrum.de/x", ok=True)
+    challenge = _R("CleanTalk challenge page", url="https://www.augencentrum.de/x", ok=True)
+    s = _UAKeyedSession({va.UA_OVERRIDE["augencentrum.de"]: real, va.UA: challenge})
+    r = va.get("https://www.augencentrum.de/x", session=s)
+    assert r.text == "real board content"
+    assert s.seen_uas == [va.UA_OVERRIDE["augencentrum.de"]]
+
+
+def test_get_leaves_the_shared_default_ua_untouched_for_every_other_host():
+    other = _R("other board content", url="https://example.com/x", ok=True)
+    s = _UAKeyedSession({va.UA: other})
+    r = va.get("https://example.com/x", session=s)
+    assert r.text == "other board content"
+    assert s.seen_uas == [va.UA]
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +711,110 @@ def test_parse_dvinci_normalizes_id_slug_url_to_the_bare_id_form():
 
 
 # ---------------------------------------------------------------------------
+# easyhr: <host>/easyhr-proxy.php (TASK-115, reisach-kliniken.de)
+# ---------------------------------------------------------------------------
+def _easyhr_fixture(name):
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples", name)
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_parse_easyhr_maps_the_standard_row_shape():
+    p = {"id": "abc-123", "title": "KOCH (m/w/d) ", "where": "Küche", "category": "Vollzeit",
+         "location": "Stiefenhofen (Hochgrat Klinik) ", "inserted_at": "2026-09-22T09:59:12"}
+    payload = va.parse_easyhr(p, "Hochgrat-Klinik Wolfsried", "www.reisach-kliniken.de")
+    assert payload["title"] == "KOCH (m/w/d)"
+    assert payload["org"] == "Hochgrat-Klinik Wolfsried"
+    assert payload["loc"] == [{"city": "Stiefenhofen", "plz": None, "region": None}]
+    assert payload["url"] == payload["page"] == \
+        "https://www.reisach-kliniken.de/karriere/stellenanzeige.html?job=abc-123"
+    assert payload["employmentType"] == "Vollzeit"
+    assert payload["department"] == "Küche"
+    assert payload["section_labels"] == ["Küche"]
+    assert payload["datePosted"] == "2026-09-22"
+
+
+def test_easyhr_filters_hochgrat_jobgroup_from_the_frozen_live_sample_and_fetches_description(monkeypatch):
+    """TASK-115: reisach-kliniken.de's own widget embed renders every sub-brand's positions with no
+    jobgroup filter of its own (confirmed live 2026-09-23, stellenangebote.html's script fetches the
+    proxy with no query at all) -- jobgroup is the only field telling Hochgrat-Klinik Wolfsried
+    (77607/77672) and Adula-Klinik Oberstdorf (78008/78071) apart. Frozen real sample (2026-09-23):
+    22 live positions, 12 'Hochgrat Klinik' / 8 'Adula Klinik' / 2 'Reisach Kliniken' (group-wide
+    Initiativbewerbung, belongs to neither clinic pair -- must not leak into either board)."""
+    list_data = _easyhr_fixture("easyhr_proxy_reisach_list_sample.json")
+    detail_data = _easyhr_fixture("easyhr_proxy_reisach_detail_sample.json")
+    pflege_id = detail_data["position"]["id"]
+    host = "www.reisach-kliniken.de"
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+
+    def fake_get(u, timeout=30, session=None):
+        if u == "https://%s/easyhr-proxy.php" % host:
+            return _R(json_data=list_data, ok=True)
+        if u == "https://%s/easyhr-proxy.php?id=%s" % (host, pflege_id):
+            return _R(json_data=detail_data, ok=True)
+        if u.startswith("https://%s/easyhr-proxy.php?id=" % host):
+            return _R(json_data={"error": False, "position": {"editor": ""}}, ok=True)
+        return _R(ok=False, url=u)
+
+    monkeypatch.setattr(va, "get", fake_get)
+    c = {"name": "Hochgrat-Klinik Wolfsried", "careers_url": "https://www.reisach-kliniken.de/karriere/stellenangebote.html"}
+    rows = va.crawl_easyhr(c)
+
+    assert len(rows) == 12
+    assert all(r["payload"]["loc"][0]["city"] == "Stiefenhofen" for r in rows)
+    titles = {r["payload"]["title"] for r in rows}
+    assert "FACHARZT ODER ARZT FÜR PSYCHOSOMATISCHE MEDIZIN in Weiterbildung (m/w/d)" not in titles  # Adula-only
+    assert "INITIATIVBEWERBUNG (m/w/d)" not in titles  # Reisach Kliniken group-wide, neither pair
+
+    pflege_rows = [r for r in rows if r["payload"]["department"] == "Pflege"]
+    assert len(pflege_rows) == 1
+    p = pflege_rows[0]["payload"]
+    assert p["title"] == "PFLEGEFACHKRAFT / GESUNDHEITS- und KRANKENPFLEGER (m/w/d)"
+    assert p["url"] == "https://www.reisach-kliniken.de/karriere/stellenanzeige.html?job=%s" % pflege_id
+    assert p["section_labels"] == ["Pflege"]
+    assert "Schichtdienst" in p["description"]  # from the frozen detail fixture's real editor HTML
+    assert "[REDACTED NAME]" in p["description"]  # HR contact redacted in the fixture, carried through _txt
+
+    # AC#3: this posting's own department label must positively confirm nursing downstream, the same
+    # signal dvinci/smartrecruiters thread through classify.classify_role's nursing_section_confirmed.
+    from pflege_jobs import classify as PC, section as PS
+    confirmed = PS.job_confirmed_nursing(p["section_labels"])
+    assert confirmed is True
+    assert PC.classify_role(p["title"], nursing_section_confirmed=confirmed)[0] == "pflegefachkraft"
+
+
+def test_easyhr_filters_adula_jobgroup_from_the_frozen_live_sample(monkeypatch):
+    list_data = _easyhr_fixture("easyhr_proxy_reisach_list_sample.json")
+    host = "www.reisach-kliniken.de"
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+
+    def fake_get(u, timeout=30, session=None):
+        if u == "https://%s/easyhr-proxy.php" % host:
+            return _R(json_data=list_data, ok=True)
+        if u.startswith("https://%s/easyhr-proxy.php?id=" % host):
+            return _R(json_data={"error": False, "position": {"editor": ""}}, ok=True)
+        return _R(ok=False, url=u)
+
+    monkeypatch.setattr(va, "get", fake_get)
+    c = {"name": "Adula-Klinik Oberstdorf", "careers_url": "https://www.reisach-kliniken.de/karriere/azubis-praktikanten-studenten.html"}
+    rows = va.crawl_easyhr(c)
+
+    assert len(rows) == 8
+    assert all(r["payload"]["loc"][0]["city"] == "Oberstdorf" for r in rows)
+    titles = {r["payload"]["title"] for r in rows}
+    assert not any("HAUSWIRTSCHAFTSLEITUNG" in t for t in titles)  # Hochgrat-only
+    pflege_titles = {r["payload"]["title"] for r in rows if r["payload"]["department"] == "Pflege"}
+    assert pflege_titles == {"PFLEGEFACHKRAFT / GESUNDHEITS- und KRANKENPFLEGER (m/w/d)"}
+
+
+def test_easyhr_makes_no_request_for_a_clinic_name_that_names_neither_sub_brand(monkeypatch):
+    calls = []
+    monkeypatch.setattr(va, "get", _router({}, calls))
+    rows = va.crawl_easyhr({"name": "Klinikum Irgendwo", "careers_url": "https://www.reisach-kliniken.de/karriere/x.html"})
+    assert rows == [] and calls == []
+
+
+# ---------------------------------------------------------------------------
 # oracle: prefer the tenant's own jobs.feed.json (softgarden-fronted, e.g. St. Josef), else fall
 # back to crawl_wp_jobs and backfill the fields that fallback's own parser never sets (TASK-31)
 # ---------------------------------------------------------------------------
@@ -755,6 +895,30 @@ def test_wp_job_rows_still_keeps_a_genuine_ungendered_title_with_no_further_job_
     rows = va._wp_job_rows([url], {"name": "Klinikum"}, "klinikum.example.de", None)
 
     assert [r["payload"]["title"] for r in rows] == ["Quereinstieg Pflege"]
+
+
+def test_wp_job_rows_keeps_a_genuine_ungendered_posting_whose_own_page_links_a_facet_nav_widget(monkeypatch):
+    """TASK-90: len(sub) alone (any JOB_PATH-shaped link) falsely read a genuine posting as an index
+    page when its own detail page embeds a department-facet/site-nav widget -- confirmed live
+    2026-09-23, barmherzige-bieten-zukunft.de's 'Examinierte Pflegefachkraft fuer den Springerpool':
+    its own page links >10 department-facet labels and nav pages (Ausbildung, Technik, Bewerberinfos,
+    Ansprechpartner, ...), every one JOB_PATH-shaped (the loose 'stellen*' word) but NONE an actual
+    job title. Counting only sub-links whose own anchor text is itself gender-marked (a real distinct
+    posting title) tells this apart from a genuine index page (csj.de test above, whose two real
+    sub-postings ARE gender-marked)."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    url = "https://klinikum.example.de/stellenmarkt/stellenboerse/detail/pflegefachkraft-springerpool-189552729"
+    html = ('<h1>Examinierte Pflegefachkraft fuer den Springerpool</h1><p>Jetzt bewerben.</p>'
+            '<a href="https://klinikum.example.de/stellenmarkt/stellenboerse">Stellenboerse</a>'
+            '<a href="https://klinikum.example.de/stellenmarkt/bewerberinfos">Bewerberinfos</a>'
+            '<a href="https://klinikum.example.de/stellenmarkt/ansprechpartner">Ansprechpartner</a>'
+            '<a href="https://klinikum.example.de/stellenmarkt/stellenboerse?jobdescription=4">Ausbildung</a>'
+            '<a href="https://klinikum.example.de/stellenmarkt/stellenboerse?jobdescription=9">Technik</a>')
+    monkeypatch.setattr(va, "get", _router({url: _R(html, url)}))
+
+    rows = va._wp_job_rows([url], {"name": "Klinikum"}, "klinikum.example.de", None)
+
+    assert [r["payload"]["title"] for r in rows] == ["Examinierte Pflegefachkraft fuer den Springerpool"]
 
 
 def test_enrich_wp_fallback_fields_does_not_refetch_a_row_whose_date_parse_job_page_already_found(monkeypatch):
@@ -1014,6 +1178,82 @@ def test_txt_handles_the_non_string_json_ld_shapes_that_aborted_whole_board_walk
     assert va._txt(0) == "0"                                    # falsy but real
 
 
+def test_sane_date_handles_the_same_non_string_json_ld_shapes_txt_does():
+    """TASK-82 AC#2: _sane_date's own `(raw or "")[:10]` had the identical class of bug _txt's did --
+    a non-string datePosted (JSON-LD permits a bare epoch number, a list, a typed literal) raised
+    TypeError ('int' object is not subscriptable) or AttributeError (list has no .isdigit()) instead
+    of just reading the date. ~15 call sites across this file feed JSON-LD datePosted straight into
+    this one function, so fixing it here closes all of them at once."""
+    # A bare epoch number used to raise (TypeError: 'int' object is not subscriptable); now it just
+    # doesn't parse as a date -- stringified, its first 4 chars ("1758...") read as an implausible
+    # pre-2000 year and the function's own existing epoch-placeholder guard rejects it, same as any
+    # other malformed non-date string. Not a crash is the fix; a real date out of it was never this
+    # function's job (it slices ISO-8601 strings, it does not interpret Unix epochs).
+    assert va._sane_date(1758585600) is None
+    assert va._sane_date(["2026-09-18"]) == "2026-09-18"
+    assert va._sane_date({"@value": "2026-09-18"}) == "2026-09-18"
+    assert va._sane_date("1970-01-01") is None                   # the epoch placeholder, unchanged behaviour
+    assert va._sane_date("2026-09-18") == "2026-09-18"            # unchanged for the normal case
+    assert va._sane_date(None) is None
+
+
+def test_parse_helix_detail_handles_non_string_json_ld_address_fields():
+    """TASK-82 AC#2: parse_job_page's own address fields were fixed (_txt-wrapped) when the original
+    crash was found, but parse_helix_detail -- a sibling JSON-LD JobPosting reader for helix boards
+    (bezirk-unterfranken.helixjobs.com and others) -- read addressLocality/postalCode/addressRegion
+    raw, unaudited at the time. A numeric postalCode here would not raise inside this function (no
+    re.sub is run on it), but would store a bare int into loc[0]['plz'] instead of a string."""
+    html = ('<script type="application/ld+json">'
+            '{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)",'
+            ' "jobLocation": {"address": {"addressLocality": "Schweinfurt", "postalCode": 97421,'
+            ' "addressRegion": ["Unterfranken"]}},'
+            ' "hiringOrganization": {"name": "Bezirkskrankenhaus"}, "datePosted": 1758585600}'
+            '</script>')
+    j = va.parse_helix_detail(html, "https://bezirk-unterfranken.helixjobs.com/x/jobad?prj=1", "seed org")
+    assert j["loc"][0]["plz"] == "97421"
+    assert j["loc"][0]["region"] == "Unterfranken"
+    assert j["datePosted"] is None  # doesn't crash; see test_sane_date's own note on epoch numbers
+
+
+def test_parse_job_page_ignores_a_non_string_json_ld_url_field():
+    """TASK-82 AC#2: JSON-LD "url" is usually a plain string but can arrive as a list of alternates
+    -- urlparse() on anything else raises TypeError. Falls back to the page actually fetched, same as
+    when "url" names the site root (the existing same_host/is_root guard right below it)."""
+    html = ('<script type="application/ld+json">'
+            '{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", "url": ["a", "b"]}'
+            '</script>')
+    j = va.parse_job_page(html, "https://example.de/stellen/123", "seed org")
+    assert j["url"] == "https://example.de/stellen/123"
+
+
+def test_wp_job_rows_survives_a_single_page_parse_crash(monkeypatch):
+    """TASK-82 AC#3: one posting page's own parse crash (any cause -- this test isolates the
+    containment, not any specific field bug already fixed above) used to raise straight out of
+    _wp_job_rows, losing every row already collected for the WHOLE board, not just this one page.
+    Confirmed live: münchen-klinik.de's numeric postalCode crashed on the board's FIRST posting page,
+    costing all of it."""
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+    urls = ["https://x.example/a", "https://x.example/b"]
+    monkeypatch.setattr(va, "get", _router({
+        "https://x.example/a": _R("<html>a</html>", url="https://x.example/a", ok=True),
+        "https://x.example/b": _R("<html>b</html>", url="https://x.example/b", ok=True),
+    }))
+
+    real_parse = va.parse_job_page
+
+    def flaky_parse(htmltext, url, org):
+        if url.endswith("/a"):
+            raise TypeError("simulated: 'int' object is not subscriptable")
+        return real_parse(htmltext, url, org)
+
+    monkeypatch.setattr(va, "parse_job_page", flaky_parse)
+    crashes = []
+    rows = va._wp_job_rows(urls, {"name": "Seed Clinic", "town": "München"}, "x.example", None, crashes=crashes)
+    assert len(crashes) == 1 and crashes[0][0] == "https://x.example/a"
+    # page b never had a real title in this bare html, so no row either way -- the point proven is
+    # that page a's crash did not raise past the loop and silently drop page b's own attempt too.
+
+
 # ---------------------------------------------------------------------------
 # crawl_erecruiter: the registered careers_url is sometimes only a wrapper page linking out to the
 # real board on a same-domain "jobs." subdomain (TASK-85 AC#4/AC#5)
@@ -1086,3 +1326,83 @@ def test_extract_standort_city_rejects_a_standort_that_names_no_real_town():
     assert va.extract_standort_city(None, towns) is None
     assert va.extract_standort_city("am Standort Weilheim", None) is None
     assert va.extract_standort_city("am Standort Weilheim", set()) is None
+
+
+# ---------------------------------------------------------------------------
+# muenchen-klinik.de: TASK-129 -- one gGmbH, 5 sites sharing one employer_name/operator string on
+# every posting, so Matcher's registry-wide R2_operator tie-break always picked ONE site (16202
+# Harlaching, highest bed count) for the whole board, before board scoping ever runs. The listing
+# page's own `var allJobs` JS array names each job's real Standort -- crawl_muenchen_klinik reads it
+# and sets employer_name to that site's own name when exactly one is named, so Matcher resolves it
+# directly via R1_exact instead of the ambiguous tie-break.
+# ---------------------------------------------------------------------------
+def _mk_fixture(name):
+    with open(f"tests/fixtures/board_samples/{name}", encoding="utf-8") as f:
+        return f.read()
+
+
+def test_crawl_muenchen_klinik_sets_the_specific_site_name_when_exactly_one_location_is_named(monkeypatch):
+    """Frozen real sample (2026-09-23): 4 jobs -- 2 single-site (Schwabing), 1 'Alle Standorte'
+    (all 5 locations, genuinely ambiguous), 1 multi-site list (also genuinely ambiguous). Only the
+    2 single-site jobs should get the specific site name; the other 2 must keep the generic operator
+    string, same as today's behavior -- not a regression, just not (yet) resolvable."""
+    listing_html = _mk_fixture("muenchen_klinik_stellenmarkt_sample.html")
+    detail_htmls = [_mk_fixture(f"muenchen_klinik_detail_{i}_sample.html") for i in range(4)]
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+
+    def fake_get(u, timeout=30, session=None):
+        if u == "https://www.muenchen-klinik.de/stellenmarkt/":
+            return _R(text=listing_html, url=u, ok=True)
+        idx = {"44902": 0, "44890": 1, "44863": 2, "44604": 3}
+        for num, i in idx.items():
+            if num in u:
+                return _R(text=detail_htmls[i], url=u, ok=True)
+        return _R(ok=False, url=u)
+
+    monkeypatch.setattr(va, "get", fake_get)
+    c = {"name": "München Klinik Schwabing", "careers_url": "https://www.muenchen-klinik.de/stellenmarkt/"}
+    rows = va.crawl_muenchen_klinik(c)
+
+    assert len(rows) == 4
+    by_title = {r["payload"]["title"]: r["payload"] for r in rows}
+    assert by_title["MFA (w|m|d) HNO"]["org"] == "München Klinik Schwabing"
+    assert by_title["MFA (w|m|d) HNO"]["org_source"] is None  # a genuine page signal, not seed-inherited
+    assert by_title["Physiotherapeutin / Physiotherapeut (w|m|d)"]["org"] == "München Klinik Schwabing"
+    assert by_title["Klinische Kodierfachkraft (w|m|d)"]["org"] == "München Klinik gGmbH"  # Alle Standorte
+    assert any(o["org"] == "München Klinik gGmbH" for t, o in by_title.items() if "Ausbildung" in t)  # multi-site list
+
+
+def test_crawl_muenchen_klinik_specific_org_resolves_the_right_clinic_via_matcher(monkeypatch):
+    """End-to-end: the specific site name this adapter emits must actually let Matcher.match()
+    resolve R1_exact against the real registry site, not just look right in isolation."""
+    from pflege_jobs.registry import Matcher
+
+    listing_html = _mk_fixture("muenchen_klinik_stellenmarkt_sample.html")
+    detail_html = _mk_fixture("muenchen_klinik_detail_0_sample.html")
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+
+    def fake_get(u, timeout=30, session=None):
+        if u == "https://www.muenchen-klinik.de/stellenmarkt/":
+            return _R(text=listing_html, url=u, ok=True)
+        return _R(text=detail_html, url=u, ok=True)
+
+    monkeypatch.setattr(va, "get", fake_get)
+    c = {"name": "München Klinik Schwabing", "careers_url": "https://www.muenchen-klinik.de/stellenmarkt/"}
+    rows = va.crawl_muenchen_klinik(c)
+    schwabing_row = next(r for r in rows if r["payload"]["title"] == "MFA (w|m|d) HNO")
+
+    clinics = [
+        {"clinic_id": "16201", "name": "München Klinik Schwabing", "operator": "München Klinik gGmbH", "town": "München", "beds": 521},
+        {"clinic_id": "16202", "name": "München Klinik Harlaching", "operator": "München Klinik gGmbH", "town": "München", "beds": 660},
+    ]
+    m = Matcher([dict(x) for x in clinics])
+    p = schwabing_row["payload"]
+    res = m.match(p["org"], p["loc"][0]["city"], board=["16201", "16202"])
+    assert res == ("16201", "R1_exact", 1.0)  # not R6_ambiguous_sites picking 16202's higher bed count
+
+
+def test_crawl_muenchen_klinik_returns_nothing_for_an_unrelated_host(monkeypatch):
+    calls = []
+    monkeypatch.setattr(va, "get", _router({}, calls))
+    rows = va.crawl_muenchen_klinik({"name": "Klinikum Irgendwo", "careers_url": "https://example.org/jobs/"})
+    assert rows == [] and calls == []

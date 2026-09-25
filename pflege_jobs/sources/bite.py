@@ -192,8 +192,8 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         "employer_class": e_class, "employer_class_rule": e_rule,   # clinic attribution happens via registry match, not the seed
         "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None,
         "alle_berufe": [x for x in bg if isinstance(x, str)],
-        "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""),
-        "department_hint": department_hint(f"{title} {(jp.get('custom') or {}).get('untertitel') or ''}"),
+        "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, "", desc),
+        "department_hint": department_hint(f"{title} {(jp.get('custom') or {}).get('untertitel') or ''}", desc),
         "department_raw": (jp.get("custom") or {}).get("untertitel") or None,
         "city": a.get("city"), "plz": a.get("postCode"), "region": a.get("region") or a.get("state"), "lat": a.get("latitude"), "lon": a.get("longitude"),
         "in_bavaria": in_bavaria(a.get("city"), a.get("postCode"), None, towns),

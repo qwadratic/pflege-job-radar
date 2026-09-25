@@ -4,8 +4,10 @@ title: 'Multi-session backlog coordination: verify the protocol actually works'
 status: To Do
 assignee: []
 created_date: '2026-09-08 22:50'
+updated_date: '2026-09-25 00:10'
 labels:
   - harness
+  - infra
 dependencies: []
 ordinal: 5000
 ---

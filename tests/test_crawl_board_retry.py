@@ -32,6 +32,37 @@ def fresh(tmp_path, monkeypatch):
     yield
 
 
+# ---------------------------------------------------------------------------
+# TASK-94 AC#2: which checkout a run actually executed on, recorded rather than guessed.
+# ---------------------------------------------------------------------------
+def test_execute_records_the_commit_sha_it_ran_on(fresh, monkeypatch):
+    monkeypatch.setattr(R, "_commit_sha_cache", None)
+    monkeypatch.setattr(R, "commit_sha", lambda: "cafef00d" * 5)
+
+    def normal(b, c, session, log, **kw):
+        return [{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
+
+    monkeypatch.setattr(CR, "_vendor_rows", normal)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert R.get_run(rid, with_log=False)["commit_sha"] == "cafef00d" * 5
+
+
+def test_execute_does_not_fail_the_run_when_git_is_unavailable(fresh, monkeypatch):
+    monkeypatch.setattr(R, "_commit_sha_cache", None)
+    monkeypatch.setattr(R, "commit_sha", lambda: None)
+
+    def normal(b, c, session, log, **kw):
+        return [{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}]
+
+    monkeypatch.setattr(CR, "_vendor_rows", normal)
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    run = R.get_run(rid, with_log=False)
+    assert run["commit_sha"] is None
+    assert run["status"] == "done"
+
+
 def test_board_recovers_within_3_attempts_no_issue_recorded(fresh, monkeypatch):
     calls = {"n": 0}
 
@@ -510,6 +541,98 @@ def test_a_board_matching_its_own_declared_total_records_no_incomplete_issue(fre
     rid = R.create_run("clinic", "1", "adapter")
     CR.execute(rid)
     assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+
+
+# ---------------------------------------------------------------------------
+# TASK-87 AC#1: a posting absent from a SUCCESSFUL board walk is board-membership evidence it
+# left, and is retired via the existing EdgeSink verify op.
+# ---------------------------------------------------------------------------
+def test_a_posting_absent_from_a_successful_board_walk_is_retired(fresh, monkeypatch):
+    from crawlers import vendor_adapters as VA
+    D._snap["jobs"] = [
+        {"posting_id": 101, "clinic_id": "1", "status": "open", "external_url": "https://x.example/1"},
+        {"posting_id": 102, "clinic_id": "1", "status": "open", "external_url": "https://x.example/gone-now"},
+    ]
+    monkeypatch.setattr(D, "jobs", lambda: D._snap["jobs"])
+
+    def normal(b, c, session, log, **kw):
+        return VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+
+    monkeypatch.setattr(CR, "_vendor_rows", normal)
+    pushed = {}
+    monkeypatch.setattr("pflege_jobs.sinks.EdgeSink._post",
+                        lambda self, body: pushed.update(body) or {"verify": len(body.get("verify") or [])})
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert pushed.get("verify")
+    assert {r["posting_id"] for r in pushed["verify"]} == {102}
+    assert pushed["verify"][0]["verify_status"] == "gone"
+
+
+def test_an_empty_board_read_retires_nothing(fresh, monkeypatch):
+    """Deliberately NOT gated on board_walk_ok alone: a board misregistered to the wrong url also
+    reads 0 rows with no transport error (kind='empty'), which board_walk_ok does not block on --
+    retiring on that signal alone would wipe out a whole clinic's postings on a registry typo, the
+    M2 risk this task's own notes named. Gated on `rows` being non-empty instead."""
+    D._snap["jobs"] = [{"posting_id": 101, "clinic_id": "1", "status": "open", "external_url": "https://x.example/1"}]
+    monkeypatch.setattr(D, "jobs", lambda: D._snap["jobs"])
+
+    def genuinely_empty(b, c, session, log, **kw):
+        session._attempts = getattr(session, "_attempts", 0) + 3
+        session._ok = getattr(session, "_ok", 0) + 3
+        return []
+
+    monkeypatch.setattr(CR, "_vendor_rows", genuinely_empty)
+    pushed = {}
+    monkeypatch.setattr("pflege_jobs.sinks.EdgeSink._post", lambda self, body: pushed.update(body) or {"verify": 0})
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert "verify" not in pushed
+
+
+def test_a_degraded_board_read_retires_nothing(fresh, monkeypatch):
+    """A board that fell through to a lower-confidence discovery path under-read the board by
+    construction -- a posting missing from its result set is not real board-membership evidence,
+    board_walk_ok's own documented reason for including 'degraded' in its blocking kinds."""
+    from crawlers import vendor_adapters as VA
+    D._snap["jobs"] = [
+        {"posting_id": 101, "clinic_id": "1", "status": "open", "external_url": "https://x.example/1"},
+        {"posting_id": 102, "clinic_id": "1", "status": "open", "external_url": "https://x.example/gone-now"},
+    ]
+    monkeypatch.setattr(D, "jobs", lambda: D._snap["jobs"])
+
+    def degraded_but_not_empty(b, c, session, log, **kw):
+        out = VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "https://x.example/1"}, "source_url": "https://x.example/1"}])
+        out.degraded = "sitemap_and_wp_json_empty"
+        return out
+
+    monkeypatch.setattr(CR, "_vendor_rows", degraded_but_not_empty)
+    pushed = {}
+    monkeypatch.setattr("pflege_jobs.sinks.EdgeSink._post", lambda self, body: pushed.update(body) or {"verify": 0})
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert "verify" not in pushed
+
+
+def test_a_cosmetically_different_url_for_the_same_vendor_job_id_is_not_retired(fresh, monkeypatch):
+    """TASK-87's own retirement dry run found raw string-equality false positives on 2 of 4 sampled
+    vendors live (Asklepios, helix -- same vendor job id, cosmetically different URL) -- board_absent_
+    gone's key=canonical_job_url (TASK-83) closes exactly this gap."""
+    from crawlers import vendor_adapters as VA
+    D._snap["jobs"] = [{"posting_id": 101, "clinic_id": "1", "status": "open",
+                        "external_url": "https://bezirk-unterfranken.helixjobs.com/okh/jobad?prj=2618P728"}]
+    monkeypatch.setattr(D, "jobs", lambda: D._snap["jobs"])
+
+    def same_job_different_path(b, c, session, log, **kw):
+        return VA._BoardTotalRows([{"kind": "jobposting", "payload": {"url": "x"},
+                                    "source_url": "https://bezirk-unterfranken.helixjobs.com/bkhwerneck/jobad?prj=2618P728"}])
+
+    monkeypatch.setattr(CR, "_vendor_rows", same_job_different_path)
+    pushed = {}
+    monkeypatch.setattr("pflege_jobs.sinks.EdgeSink._post", lambda self, body: pushed.update(body) or {"verify": 0})
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+    assert "verify" not in pushed
 
 
 def test_a_plain_list_return_value_triggers_neither_new_check(fresh, monkeypatch):

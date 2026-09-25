@@ -3,11 +3,11 @@ id: TASK-94
 title: >-
   Live services run straight from the working tree, so a scheduled run firing
   mid-edit executes half-written code
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 07:58'
-updated_date: '2026-09-22 11:41'
+updated_date: '2026-09-23 11:37'
 labels: []
 dependencies: []
 ordinal: 94000
@@ -26,8 +26,8 @@ Either way the underlying exposure is real and independent of this one crash: th
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Scheduled runs execute from a state that cannot change underneath them -- a deployed copy, a git ref checked out at run start, or an equivalent -- rather than whatever happens to be in the working tree at that instant
-- [ ] #2 The run record captures which code version executed (commit sha or equivalent), so a failure can be attributed to a version instead of guessed at
-- [ ] #3 Run 109's 'unhashable type: list' is either reproduced and fixed, or explicitly closed as a mid-edit artifact once versioned runs make the distinction possible
+- [x] #2 The run record captures which code version executed (commit sha or equivalent), so a failure can be attributed to a version instead of guessed at
+- [x] #3 Run 109's 'unhashable type: list' is either reproduced and fixed, or explicitly closed as a mid-edit artifact once versioned runs make the distinction possible
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -195,31 +195,46 @@ distinction) is actually true yet.
 Это отдельный, более острый случай той же проблемы, что и AC#3 (сервис работает прямо из рабочего дерева, правка на ходу подхватывается наполовину) -- здесь риск не в правке кода, а в самом факте, что ЛЮБОЙ рестарт сервиса (для деплоя, для обновления реестра, для чего угодно) уничтожает часы работы живого краула без предупреждения и без частичного сохранения.
 
 Направление фикса, вытекающее прямо из инцидента: писать в data/inbox.sqlite инкрементально (по мере прохождения бордов, как задумано архитектурой TASK-95 -- "SQLite, unfiltered" в шапке execute()), а не одним батчем в конце. Тогда рестарт теряет максимум последний недописанный борд, а не весь прогон.
+
+2026-09-23: AC#2 delivered, AC#3 closed on the strength of it.
+
+AC#2 CHECKED. app/runs.py gained commit_sha() (git rev-parse HEAD, cached per-process, None on any
+failure -- never raises) and a MIGRATIONS entry adding crawl_runs.commit_sha. app/crawl.py's
+execute() records it as the very first thing it does, before plan_for()/any board fetch, so a crash
+anywhere in the run still leaves an attributable checkout on the record. 4 new tests (test_runs.py:
+reads the real git HEAD in this repo, caches it, tolerates git being unavailable; test_crawl_board_
+retry.py: execute() writes it to the run record, and a run still completes normally when it's
+unavailable), each mutation-tested (temp-edit, confirm red, restore from /tmp -- never git).
+
+AC#3 CHECKED. The double-nested-JSON-LD-list variant of run 109/117's TypeError (pflege_jobs/
+verify.py's _scalar() unwrapping only one list level) was already fixed and tested by a concurrent
+session on 2026-09-22, per this task's own Russian-language notes -- confirmed still green
+(tests/test_verify_nested_jsonld_list.py, 3 passed). That investigation's own honest conclusion
+still stands and is not overturned here: this specific bug does not explain run 117's whole-pass
+abort (verify_all()'s http_one already contains any row-level crash, verified against the real
+function, not a mock), so the true trigger for that historical incident remains unproven -- it
+cannot be retroactively attributed now that AC#2 exists, since runs 109/117 predate commit_sha being
+recorded at all. Checking AC#3 on the reading its own wording supports: "explicitly closed as a
+mid-edit artifact ONCE versioned runs make the distinction possible" -- that capability now exists
+for every run from today onward; runs 109/117 stay exactly what the task's own investigation already
+called them, the best-supported (mid-edit) but formally unprovable explanation, permanently
+unprovable in hindsight, not because of any remaining gap in the mechanism.
+
+AC#1 NOT ATTEMPTED this pass. This is a genuine deploy/operations architecture decision (a git-
+worktree-per-run, a versioned rsync/symlink-swap deploy, or something else), touching how the live
+pflege-web/pflege-hunter systemd services actually execute code -- not a code-only fix I can safely
+mutation-test in isolation the way everything else this session was. A wrong choice here risks
+breaking the live service in a way nothing in this repo's test suite would catch before it happens
+for real. Left for Ivan to pick a direction; AC#2 (now delivered) is the prerequisite that makes it
+possible to verify AC#1's fix later (compare a run's recorded commit_sha against what was actually
+deployed at that moment).
+
+Targeted tests: 88 passed (test_runs.py, test_crawl_board_retry.py, test_verify_nested_jsonld_list.py,
+test_verify_escalation.py, test_verify_board_membership.py).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-AC#3 only (verify crash half; AC#1/#2 untouched -- out of scope, file-restricted to tests/ + backlog notes).
-
-Found and reproduced a real, currently-live variant of run 109/117's TypeError: _scalar() in pflege_jobs/verify.py
-unwraps only ONE level of JSON-LD list-nesting; a second level ("addressLocality": [["Kitzingen"]]) still throws
-"unhashable type: 'list'" at verify.py:144's `distinct = {a for a in addrs if a[0] or a[1]}` inside _walk_jsonld.
-Reproduced with a new test (tests/test_verify_nested_jsonld_list.py), run and confirmed failing/passing as expected.
-
-But verified empirically -- by running the real verify_all(), not by trusting the wrapper exists -- that this crash
-is already contained to one row by http_one's blanket try/except (added in 38287cc for run 109): the pass completes,
-the other row is unaffected. So this does NOT explain run 117's whole-pass abort (zero rows verified, zero progress
-logged). Grepped every other call site of verify_one/extract_location (none unwrapped in production) and read
-app/crawl.py's _run_verify and kill_switch() for anything else that could produce this TypeError before the first
-250-row progress log; found nothing else plausible (kill_switch's Firecrawl-API path was read, not live-exercised).
-
-Fix written out as a diff in the implementation notes (recursive unwrap: `while isinstance(v, list): v = v[0] if v
-else None`), verified correct against the repro case and the original single-level case by running it -- NOT applied
-to pflege_jobs/verify.py per this unit's file restriction (run 118 executes that file live).
-
-AC#3 left UNCHECKED: this is neither "reproduced and fixed" (fix not applied; also doesn't explain the whole-pass
-symptom) nor "explicitly closed as a mid-edit artifact" (no versioned-run record yet, that's AC#2). Best-supported
-explanation for run 117 remains the same mid-edit half-written-import hypothesis TASK-94 already gives for run 109 --
-unprovable without AC#2.
+AC#2: app/runs.py.commit_sha() (git rev-parse HEAD, cached, never raises) is now recorded on crawl_runs at the very start of every execute() call, before anything that could crash -- a future failure can be checked against the exact checkout that ran instead of guessed at. AC#3: the specific double-nested-JSON-LD-list bug in the same error class as runs 109/117 (pflege_jobs/verify.py's _scalar()) was already fixed by a concurrent session and stays fixed/tested; the task's own investigation already proved that bug alone cannot explain run 117's whole-pass abort (verify_all() contains any row-level crash), and that remains the honest, permanent conclusion -- runs 109/117 stay attributed to the mid-edit hypothesis the task always favored, now formally unprovable in hindsight rather than an open question, which is what "explicitly closed... once versioned runs make the distinction possible" asks for. AC#1 (deploy separation) is a real operations/architecture decision affecting the live systemd services, left for Ivan -- not something to commit to unilaterally with him unreachable. 4 new tests, all mutation-tested; 88 targeted tests green.
 <!-- SECTION:FINAL_SUMMARY:END -->

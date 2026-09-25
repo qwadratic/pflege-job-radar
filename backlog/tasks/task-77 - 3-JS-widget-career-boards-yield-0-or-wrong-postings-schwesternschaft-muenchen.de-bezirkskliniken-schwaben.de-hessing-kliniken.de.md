@@ -3,11 +3,11 @@ id: TASK-77
 title: >-
   3 JS-widget career boards yield 0 or wrong postings:
   schwesternschaft-muenchen.de, bezirkskliniken-schwaben.de, hessing-kliniken.de
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-20 19:30'
-updated_date: '2026-09-21 03:16'
+updated_date: '2026-09-23 15:36'
 labels: []
 dependencies: []
 ordinal: 77000
@@ -30,8 +30,8 @@ Same category of defect as TASK-65 (wrong/stale careers_url, aggregator host swa
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 schwesternschaft-muenchen.de: registry ats_type/route change (or a new wired-in crawler) makes the real Stellenangebote list (Pflegefachkraft/Pflegefachhelfer roles etc., ~18 postings as of 2026-09-20) reach the inbox for clinic_id 16215
-- [ ] #2 bezirkskliniken-schwaben.de: careers_url is corrected to (or a new adapter targets) https://jobs.bezirkskliniken-schwaben.de/Jobs so real postings (59 as of 2026-09-20) reach the inbox for clinic_ids 76114/76203/76304/76403/77707/77907
-- [ ] #3 hessing-kliniken.de: careers_url is corrected to https://www.hessing-kliniken.de/karriere/ (or wherever the real listing lives) and pflege_jobs/sources/softgarden.py:find_host() (or a fallback) recognizes this tenant's TYPO3 tx_softgarden_kategorieliste shape so postings reach the inbox for clinic_id 76111
+- [x] #2 bezirkskliniken-schwaben.de: careers_url is corrected to (or a new adapter targets) https://jobs.bezirkskliniken-schwaben.de/Jobs so real postings (59 as of 2026-09-20) reach the inbox for clinic_ids 76114/76203/76304/76403/77707/77907
+- [x] #3 hessing-kliniken.de: careers_url is corrected to https://www.hessing-kliniken.de/karriere/ (or wherever the real listing lives) and pflege_jobs/sources/softgarden.py:find_host() (or a fallback) recognizes this tenant's TYPO3 tx_softgarden_kategorieliste shape so postings reach the inbox for clinic_id 76111
 - [x] #4 Each fix is verified with a live re-crawl showing postings > 0 for the affected clinic_id(s), not just a code-presence check
 <!-- AC:END -->
 
@@ -65,6 +65,10 @@ AC#3 NOT CHECKED -- same reason: the correct listing host is proven live (hessin
 AC#4 CHECKED -- all three verified by live re-crawl, postings > 0 in every case: 18 / 57 / 74.
 
 Offline suite after the change: 1228 passed, 1 skipped, 0 failed (was 1214 passed, 1 skipped; +14 new tests). New tests mutation-tested -- reverting the crawl_wp_jobs delegation, the numeric-employmentType drop, the asklepios repeat-page stop and the JSON-LD entity decode each turns the matching test red.
+
+2026-09-23: prepared the exact registry write for AC#2/AC#3 (data already corrected in data/registry/clinics.csv, only the production DB write is pending) -- /tmp/task77_registry_fix.py, uses pflege_jobs.registry.full_clinic_rows (full rows, no partial-upsert column loss) + EdgeSink.write_clinics. Could not run it or re-verify live this pass: Supabase's authenticated REST path is in a sustained outage this session (same one blocking TASK-84/87/90's live re-checks today, confirmed via direct curl with valid credentials, not a code issue on this side). Ready to apply once connectivity recovers: source .venv/bin/activate && set -a && source .env && set +a && PYTHONPATH=$(pwd) python3 /tmp/task77_registry_fix.py
+
+2026-09-23: Supabase recovered. Ran /tmp/task77_registry_fix.py (fixed to use SUPABASE_SECRET_KEY -- SUPABASE_ANON_KEY in .env is a stale 'implicit' placeholder, unrelated pre-existing issue) -- pushed all 9 clinic rows (8 bezirkskliniken-schwaben.de + hessing-kliniken.de) via EdgeSink.write_clinics: 'clinics upserted 9/9'. Verified live with a real re-crawl (run 169, script /tmp/task77_recrawl_verify.py): hessing-kliniken.softgarden.io/de/vacancies -> 84 rows, jobs.bezirkskliniken-schwaben.de/jobs -> 58 rows, both matching this task's own AC#2/#3 wording ('postings reach the inbox', not just a code-presence check). 142 total rows touched, 10 new postings created and verified live, 1 stale posting retired via TASK-87's mechanism as a side effect. AC#2 and AC#3 checked.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

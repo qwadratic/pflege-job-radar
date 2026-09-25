@@ -137,6 +137,26 @@ def _clinic_freshness(clinics, jobs):
     return sorted(out, key=lambda r: (r["stale_days"] is None, -(r["stale_days"] or 0)))
 
 
+# --- per-clinic (verified-live postings / beds) ratio (TASK-140 AC#1) -----------------------------
+# Ivan's hypothesis 2026-09-23: this ratio should be roughly stable across clinics, so ones well below
+# the median are where a hidden coverage bug (wrong attribution, broken adapter, wrong careers_url) is
+# more likely to be hiding -- a triage signal, not a verdict. beds<50 is excluded: the ratio is too
+# noisy to mean anything for a tiny denominator (one posting swings it wildly). Confirmed on real data
+# the same day: the bottom-20 independently contained the still-open TASK-129 München Klinik family.
+def _beds_ratio(clinics):
+    """[{clinic_id, name, beds, jobs_live, ratio_per_1000_beds}] for clinics with beds>=50, ascending
+    by ratio (worst/most-suspicious first). ratio_per_1000_beds = jobs_live / beds * 1000."""
+    rows = []
+    for c in clinics:
+        beds = c.get("beds") or 0
+        if beds < 50:
+            continue
+        live = c.get("jobs_live") or 0
+        rows.append({"clinic_id": c.get("clinic_id"), "name": c.get("name"), "beds": beds,
+                     "jobs_live": live, "ratio_per_1000_beds": round(live / beds * 1000, 2)})
+    return sorted(rows, key=lambda r: r["ratio_per_1000_beds"])
+
+
 def _add(acc, c):
     acc["clinics_labelled"] += 1
     acc["clinics_routable"] += int(bool(c.get("routable")) and not c.get("walled"))
@@ -276,8 +296,11 @@ def compute():
     totals["fresh_jobs_incl_unattributed"] = totals["fresh_jobs"] + unattributed["fresh_jobs"]
 
     why = Counter(reason for _, reason in unroutable)
+    beds_ratio = _beds_ratio(clinics)
+    median_ratio = beds_ratio[len(beds_ratio) // 2]["ratio_per_1000_beds"] if beds_ratio else None
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "rows": rows, "totals": totals, "unattributed": unattributed, "clinic_freshness": _clinic_freshness(clinics, jobs),
+            "beds_ratio": beds_ratio, "beds_ratio_median": median_ratio,
             "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))],
             # TASK-88 AC#4: which boards, not just a per-adapter count -- one row per still-open
             # under-read, most recent first, deduped by (board_url) at read time (record_crawl_issue's

@@ -4,8 +4,10 @@ title: 'Label vocabulary is ours: rename vendor field names in labels (office ->
 status: To Do
 assignee: []
 created_date: '2026-09-09 11:35'
+updated_date: '2026-09-25 00:10'
 labels:
   - harvester
+  - frontend
 dependencies: []
 ordinal: 21000
 ---

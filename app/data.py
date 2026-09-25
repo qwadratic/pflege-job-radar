@@ -17,7 +17,7 @@ from . import config as A
 from . import runs as R
 
 JOB_COLS = ("posting_id,title,role_class,role_label,department_hint,department_raw,qualification_hint,employer,employer_id,employer_class,"
-            "clinic_id,clinic_name,regierungsbezirk,versorgungsstufe,traegerart,clinic_beds,clinic_match_rule,city,plz,lat,lon,employment_types,contract,"
+            "clinic_id,clinic_name,clinic_status,regierungsbezirk,versorgungsstufe,traegerart,clinic_beds,clinic_match_rule,city,plz,lat,lon,employment_types,contract,"
             "start_date,first_published,first_seen,last_seen,status,verify_status,verified_at,external_url,source_codes,n_observations,"
             "enr_housing,enr_tariff,enr_pay_grade,enr_contact_emails,enr_bonus,enr_childcare,enr_requirements,enr_language_req,enr_experience,provenance")
 TTL = 600
@@ -241,6 +241,12 @@ def _build():
     agg = defaultdict(lambda: {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0})
     for j in jobs:
         j["fresh"] = _fresh(j, cutoff)
+        # department_hint is a "|"-joined string on the wire (TASK-97: classify.department_hint() can
+        # name several departments on one posting, e.g. "Intensiv/IMC|Anästhesie" -- keeping the DB
+        # column plain text was the smaller diff than migrating it to a real array type). Split it into
+        # a list here, once, the same way clinics' own fachrichtungen is parsed below -- every facet /
+        # filter / search consumer of snap["jobs"] then sees a real list, never a delimited string.
+        j["department_hint"] = [x for x in (j.get("department_hint") or "").split("|") if x]
         cid = j.get("clinic_id")
         if cid:
             a = agg[cid]
@@ -317,7 +323,7 @@ def _facets(jobs, clinics, tax):
         "status": _count(clinics, "status", tax.get("status")),
         "fachrichtungen": _count(clinics, "fachrichtungen", fach, split=True),
         "size": _count(clinics, "size", {b["key"]: b.get("label") for b in (tax.get("size_buckets") or _DEFAULT_SIZES)}),
-        "role_class": _count(jobs, "role_class", role_labels), "department_hint": _count(jobs, "department_hint"),
+        "role_class": _count(jobs, "role_class", role_labels), "department_hint": _count(jobs, "department_hint", split=True),
         "employment_types": _count(jobs, "employment_types", split=True), "contract": _count(jobs, "contract"),
         "enr_tariff": _count(jobs, "enr_tariff"), "verify_status": _count(jobs, "verify_status"),
         "beds": {"min": min(beds) if beds else 0, "max": max(beds) if beds else 0},
@@ -465,7 +471,7 @@ def filter_jobs(p):
     if p.get("clinic_id"):
         ids = set(_split(p["clinic_id"]))
         rows = [j for j in rows if j.get("clinic_id") in ids]
-    for key in ("role_class", "department_hint", "regierungsbezirk", "contract", "enr_tariff", "versorgungsstufe", "traegerart", "qualification_hint"):
+    for key in ("role_class", "regierungsbezirk", "contract", "enr_tariff", "versorgungsstufe", "traegerart", "qualification_hint", "clinic_status"):
         vals = set(_split(p.get(key)))
         if vals:
             rows = [j for j in rows if j.get(key) in vals]
@@ -475,6 +481,11 @@ def filter_jobs(p):
     et = set(_split(p.get("employment_types")))
     if et:
         rows = [j for j in rows if et & set(j.get("employment_types") or [])]
+    # department_hint is a list (a posting can be Intensiv AND Anästhesie, TASK-97) -- intersection,
+    # same shape as employment_types just above, not the generic scalar-equality loop above that.
+    dept = set(_split(p.get("department_hint")))
+    if dept:
+        rows = [j for j in rows if dept & set(j.get("department_hint") or [])]
     if p.get("housing") in ("1", "true"):
         rows = [j for j in rows if j.get("enr_housing")]
     if p.get("verify"):
@@ -491,7 +502,13 @@ def filter_jobs(p):
         sz = set(_split(p["size"]))
         rows = [j for j in rows if j.get("clinic_size") in sz]
     if p.get("q"):
-        rows = [j for j in rows if _q_match(p["q"], j.get("title"), j.get("employer"), j.get("city"), j.get("department_raw"), j.get("clinic_name"))]
+        # TASK-97 AC#5: department_hint's own labels (now possibly several) and enr_requirements (the
+        # "Ihr Profil" section text department_hint also reads, already loaded via JOB_COLS) join the
+        # haystack -- otherwise a posting the department facet surfaces for "Neurologie" would not be
+        # findable by searching q=Neurologie, since neither word was in title/employer/city/
+        # department_raw/clinic_name before.
+        rows = [j for j in rows if _q_match(p["q"], j.get("title"), j.get("employer"), j.get("city"), j.get("department_raw"), j.get("clinic_name"),
+                                            " ".join(j.get("department_hint") or []), j.get("enr_requirements"))]
     sort = p.get("sort") or "-first_published"
     desc = sort.startswith("-")
     key = sort.lstrip("-+")

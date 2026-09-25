@@ -97,10 +97,17 @@ def _split_name_block(cell):
         name = merged
         joined = [_dehyphen(x) for x in name]
         cut = None
+        # Keep scanning instead of stopping at the first hit: from the 51. Fortschreibung on, a
+        # Vertrags-KH cell's own site label often repeats the town INSIDE the name block itself
+        # ("Schön Klinik Roseneck / Prien am Chiemsee / Schön Klinik Roseneck SE & Co. KG" -- the
+        # site's flagship town, then the real Standort line, then the operator). The town line is
+        # always the one immediately before the operator's legal-form block, i.e. the LAST match,
+        # not the first -- taking the first one produced a wrong, too-early cut for 17/27 rows in a
+        # 2026-09-23 audit (TASK-136) before this change.
         for i in range(1, len(joined)):
             cand = joined[i]
             if _norm_town(cand) in KNOWN_TOWNS and not LEGAL_TAIL.search(cand):
-                cut = i; break
+                cut = i
         if cut is None:                      # no known town: operator starts at the first legal-form line
             for i in range(1, len(joined)):
                 if LEGAL_TAIL.search(joined[i]):
@@ -130,8 +137,12 @@ def _split_name_block(cell):
     # university hospitals: no 'Träger' line; the last line is 'Freistaat Bayern'
     if name and name[-1] == "Freistaat Bayern":
         operator = ["Freistaat Bayern"]; name = name[:-1]
-    # town = last line of name block that looks like a place (no digits, <= 4 words); repair hyphen/wrap splits via known towns
-    if len(name) >= 2 and not re.search(r"\d", name[-1]) and len(name[-1].split()) <= 4:
+    # town = last line of name block that looks like a place (no digits, <= 4 words); repair hyphen/wrap splits via known towns.
+    # Only when the positional cut above didn't already find one: this block ran unconditionally before
+    # TASK-136, so it silently re-derived and overwrote an already-correct `town` from the cut-based
+    # match any time >=2 name lines were left over -- the actual cause of 8 of the 17/27-row miss rate
+    # this same audit measured, on top of the first-match-vs-last-match bug the loop above now fixes.
+    if town is None and len(name) >= 2 and not re.search(r"\d", name[-1]) and len(name[-1].split()) <= 4:
         town_line = name[-1]; head = " ".join(name[:-1]).split()
         rec, rest = _recover_town(head, town_line)
         if rec:
@@ -198,6 +209,32 @@ def parse(pdf_path, known_towns=None):
     return rows
 
 
+_LEGAL_WORD = re.compile(r"\b(GmbH|gGmbH|mbH|AG|KG|OHG|Stiftung|KdöR|Zweckverband)\b")
+
+
+def validate(rows):
+    """Error-rate report for a parse() result, independent of each row's own `parse_quality` flag --
+    TASK-136 found that flag alone misses real corruption: `quality='ok'` only means _split_name_block
+    found *some* non-empty operator, not that the town it picked is real (a 2026-09-23 audit found 4
+    of 27 known-bad rows still land on a plausible-looking but wrong town after the flag says 'ok').
+    Runs the SAME implausibility check TASK-133 proposes at registry load time, but here -- at
+    extraction time, before the CSV is ever written -- so a corrupted Fortschreibung is caught before
+    it reaches the registry at all, not after. Returns a summary dict; does not raise.
+
+    Deliberately NOT reusing the module's own LEGAL_TAIL: that regex is case-insensitive so it can
+    catch a lowercase-mangled cut line, which also makes it match "stadt" *inside* an ordinary town
+    name ("Ingolstadt", "Neustadt", "Immenstadt") -- a real false positive hit while building this
+    check. _LEGAL_WORD requires the legal-form token as its own capitalized word instead.
+    """
+    town_missing = [r["clinic_id"] for r in rows if not r.get("town")]
+    town_bad = [r["clinic_id"] for r in rows if r.get("town") and
+                (_LEGAL_WORD.search(r["town"]) or re.search(r"\d", r["town"]) or len(r["town"].split()) > 5)]
+    quality_partial = [r["clinic_id"] for r in rows if r.get("parse_quality") != "ok"]
+    return {"total": len(rows), "town_missing": town_missing, "town_implausible": town_bad,
+            "parse_quality_partial": quality_partial,
+            "error_rate": round(len(set(town_missing) | set(town_bad) | set(quality_partial)) / len(rows), 3) if rows else 0.0}
+
+
 if __name__ == "__main__":
     towns = None
     if len(sys.argv) > 3:                       # optional CSV with a `town` column -> town recovery
@@ -205,4 +242,9 @@ if __name__ == "__main__":
     rows = parse(sys.argv[1], towns)
     with open(sys.argv[2], "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
+    report = validate(rows)
+    print(f"validate: {report['error_rate']*100:.1f}% error rate "
+          f"({len(report['town_missing'])} no town, {len(report['town_implausible'])} implausible town, "
+          f"{len(report['parse_quality_partial'])} parse_quality!=ok) -- flagged ids:",
+          sorted(set(report["town_missing"]) | set(report["town_implausible"]) | set(report["parse_quality_partial"])))
     print(f"{len(rows)} sites; per Bezirk:", {b: sum(1 for r in rows if r['regierungsbezirk'] == b) for b in BEZIRKE})

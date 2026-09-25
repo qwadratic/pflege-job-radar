@@ -5,7 +5,7 @@
 #  2. cmd_inbox's re-read of the just-written observations interpolated refs into the URL; a ref with
 #     `&` split the PostgREST filter (400 PGRST100) and the whole batch lost its clinic links / verify
 #     marks (Firecrawl postings 10201-10204 left clinic_id NULL despite 'loaded -> 56202').
-from pflege_jobs.cli import canonical_ref, same_source_variant_pairs, lookup_posting_ids, collapse_merge_chains
+from pflege_jobs.cli import canonical_ref, same_source_variant_pairs, lookup_posting_ids, collapse_merge_chains, source_codes_by_posting
 
 # Real source_refs from the collapsed postings -- each line is a DISTINCT job on its board.
 DISTINCT_JOBS = [
@@ -146,3 +146,25 @@ def test_lookup_posting_ids_skips_error_objects():
     msgs = []
     ids = lookup_posting_ids(bad_get, "https://db", {}, [{"source_id": 20, "source_ref": "https://a.de/1"}], log=msgs.append)
     assert ids == {} and msgs and "ref lookup error" in msgs[0]
+
+
+# --- TASK-124: source_codes computed client-side, not via v_postings' expensive correlated subquery ---
+
+def test_source_codes_by_posting_groups_distinct_codes_per_posting():
+    obs = [{"posting_id": 1, "source_id": 10}, {"posting_id": 1, "source_id": 20},
+           {"posting_id": 1, "source_id": 10},                       # duplicate observation, same source
+           {"posting_id": 2, "source_id": 20}]
+    codes = {10: "krankenhausplan", 20: "employer_ats"}
+    out = source_codes_by_posting(obs, codes)
+    assert out == {1: ["employer_ats", "krankenhausplan"], 2: ["employer_ats"]}
+
+
+def test_source_codes_by_posting_drops_an_unknown_source_id():
+    # A source_id the caller's sources-table read doesn't know about (race with a live insert, or a
+    # stale local map) must not crash or fabricate a code -- that posting just gets no code from it.
+    out = source_codes_by_posting([{"posting_id": 1, "source_id": 99}], {10: "krankenhausplan"})
+    assert out == {}
+
+
+def test_source_codes_by_posting_empty_input_is_empty_output():
+    assert source_codes_by_posting([], {}) == {}

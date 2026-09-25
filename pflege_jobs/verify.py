@@ -69,12 +69,16 @@ def decide(status_code, body, title, exc_name=None):
         return "blocked", 200, "bot wall (200 with a refusal page)"
     toks = _title_tokens(title)
     if not toks:
-        # Zero evidence, not confirmation: the two commonest nursing titles ("Pflegefachkraft
-        # (m/w/d)", "Gesundheits- und Krankenpfleger (m/w/d)") lose every token here, so a 200
-        # response -- including an explicit "nicht mehr verfügbar" page or a bounce to the job
-        # list -- used to be read as "live" outright and skip the render/firecrawl escalation
-        # entirely (confirmed live 2026-09-18: 134/3911 rows, 3.4%, decided this way, all "live").
-        return "error", 200, "title has no matchable token"
+        # Zero evidence FOR a title match, but a 200 body is still in hand -- the pre-2026-09-18
+        # bug was reading this as "live" with NO check at all (not even a gone-marker), which is
+        # what the "return error" replacement above briefly did too (2026-09-24: it returned
+        # 'error' unconditionally, before ever checking GONE_MARKERS, permanently stranding 89/3624
+        # open postings on verify_status='error' since no escalation rung can ever change a title
+        # that has no token to begin with). Checking GONE_MARKERS here even with toks=[] is the
+        # fix: a page that says the posting is gone still says so with zero title tokens.
+        if GONE_MARKERS.search(body):
+            return "gone", 200, "200, no title token to confirm, but a gone-marker matched"
+        return "live", 200, "200, no title token to confirm, no gone-marker either"
     hit = sum(1 for t in toks if t in body)
     if hit == 0 and GONE_MARKERS.search(body):
         return "gone", 200, "200 but title missing + gone marker"

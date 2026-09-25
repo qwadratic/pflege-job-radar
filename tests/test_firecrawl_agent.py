@@ -85,6 +85,22 @@ def test_jobs_schema_has_seniority_and_blocked_reason():
     assert "department" in props
 
 
+def test_career_schema_has_verdict_strategy_and_alternatives():
+    props = FA.CAREER_SCHEMA["properties"]
+    assert set(props["verdict"]["enum"]) == {"board_found", "not_a_board", "not_clinic_specific"} == set(FA.VERDICTS)
+    assert "verdict" in FA.CAREER_SCHEMA["required"]
+    assert "crawl_strategy" in props and "alternative_locations" in props
+    assert props["alternative_locations"]["type"] == "array"
+
+
+def test_career_prompt_asks_for_a_crawl_strategy_and_the_three_verdicts():
+    p = FA._career_prompt(CLINIC)
+    assert CLINIC["name"] in p
+    for must in ("board_found", "not_a_board", "not_clinic_specific", "crawl_strategy", "alternative_locations",
+                 "page-by-page fetcher", "pagination"):
+        assert must in p, f"missing {must!r} from career prompt"
+
+
 def test_build_request_is_capped():
     b = FA.build_request("p", FA.JOBS_SCHEMA, urls=["https://x", None], max_credits=25)
     assert b["maxCredits"] == 25 and b["urls"] == ["https://x"] and b["schema"] is FA.JOBS_SCHEMA and b["model"]
@@ -173,6 +189,40 @@ def test_run_career_agent(monkeypatch):
     res = FA.run_career_agent(CLINIC, max_credits=20, log=lambda *_: None, session=S())
     assert res["credits_used"] == 9 and res["profile"]["ats_vendor"] == "softgarden" and FA.ats_type_for(res["profile"]) == "softgarden"
     assert FA.ats_type_for({"ats_vendor": "other"}) is None
+
+
+def test_run_career_agent_passes_through_a_recognised_verdict(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            t = self._team(url)
+            if t is not None:
+                return t
+            return _Resp(200, {"success": True, "status": "completed", "creditsUsed": 9,
+                               "data": {"verdict": "not_a_board", "alternative_locations": ["https://group-hr.example/jobs"],
+                                        "careers_url": "", "ats_vendor": "unknown", "listing_technology": "unknown"}})
+    res = FA.run_career_agent(CLINIC, max_credits=20, log=lambda *_: None, session=S())
+    assert res["profile"]["verdict"] == "not_a_board"
+    assert res["profile"]["alternative_locations"] == ["https://group-hr.example/jobs"]
+
+
+def test_run_career_agent_normalizes_an_unrecognised_verdict_to_not_a_board(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    logged = []
+
+    class S(_Session):
+        def get(self, url, headers=None, timeout=None):
+            t = self._team(url)
+            if t is not None:
+                return t
+            return _Resp(200, {"success": True, "status": "completed", "creditsUsed": 9,
+                               "data": {"careers_url": "", "ats_vendor": "unknown", "listing_technology": "unknown"}})   # no verdict at all
+    res = FA.run_career_agent(CLINIC, max_credits=20, log=logged.append, session=S())
+    assert res["profile"]["verdict"] == "not_a_board"
+    assert any("unrecognised verdict" in m for m in logged)
 
 
 def test_failed_job_raises(monkeypatch):
@@ -495,3 +545,148 @@ def test_failed_job_carries_job_id_and_delta(monkeypatch):
         FA.run_agent("p", FA.JOBS_SCHEMA, max_credits=30, log=lambda *_: None, session=S())
     assert ei.value.job_id == "job-1" and ei.value.credits_delta == 9 and ei.value.credits_used == 30   # ledger charge stays conservative
     assert ei.value.tokens_delta == 40
+
+
+# --- TASK-128: scrape() + crawl_via_scrape() -- raw-fetch rung, no LLM reasoning -----------------------------------
+class _ScrapeSession:
+    """Fake POST /v2/scrape: dispatches on the requested url to a {html, credits, status} map."""
+    def __init__(self, pages):
+        self.pages, self.calls = pages, []
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append(json["url"])
+        page = self.pages.get(json["url"])
+        if page is None:
+            return _Resp(200, {"success": True, "data": {"html": "", "metadata": {"creditsUsed": 1, "statusCode": 404}}})
+        return _Resp(200, {"success": True, "data": {"html": page["html"],
+                     "metadata": {"sourceURL": json["url"], "statusCode": 200, "creditsUsed": page.get("credits", 1)}}})
+
+
+def test_scrape_returns_a_response_shaped_object_and_reports_credits():
+    s = _ScrapeSession({"https://x.example/a": {"html": "<h1>hi</h1>", "credits": 3}})
+    resp, cost = FA.scrape("https://x.example/a", session=s)
+    assert resp.text == "<h1>hi</h1>" and resp.url == "https://x.example/a" and resp.status_code == 200
+    assert cost == {"credits": 3, "status": 200}
+
+
+def test_scrape_returns_none_with_the_error_when_no_html_comes_back():
+    s = _ScrapeSession({})   # unmapped url -> empty html
+    resp, cost = FA.scrape("https://x.example/missing", session=s)
+    assert resp is None and cost["credits"] == 1 and cost["status"] == 404 and cost["error"]
+
+
+JOBPOSTING_TMPL = """<html><head>
+<script type="application/ld+json">
+{{
+  "@context": "https://schema.org", "@type": "JobPosting",
+  "title": "{title}",
+  "description": "Wir suchen Verstaerkung.",
+  "datePosted": "2026-01-01",
+  "jobLocation": {{"@type": "Place", "address": {{"@type": "PostalAddress",
+    "addressLocality": "Muenchen", "postalCode": "80331", "addressRegion": "Bayern"}}}}
+}}
+</script></head><body><h1>{title}</h1></body></html>"""
+
+SCRAPE_CLINIC = {"clinic_id": "99001", "name": "Walled Test Klinik", "town": "München", "operator": "Walled Test gGmbH",
+                  "careers_url": "https://walled.example/karriere"}
+
+
+def test_crawl_via_scrape_runs_the_existing_pipeline_and_classifies_rows(monkeypatch):
+    listing = '<a href="/karriere/job-1">Pflegefachkraft (m/w/d) Station 3</a>'
+    detail = JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 3")
+    pages = {"https://walled.example/karriere": {"html": listing, "credits": 1},
+             "https://walled.example/karriere/job-1": {"html": detail, "credits": 2}}
+    s = _ScrapeSession(pages)
+    rows, stats, credits_used = FA.crawl_via_scrape(SCRAPE_CLINIC, towns={"münchen"}, max_credits=10,
+                                                      log=lambda *_: None, session=s)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Pflegefachkraft (m/w/d) Station 3"
+    assert rows[0]["role_class"] == "pflegefachkraft"          # classify_role already ran inside Crawler._base()
+    assert rows[0]["fuzzy_key"]                                  # ready for the same Matcher/dedup path as any adapter
+    assert credits_used == 3                                    # 1 (listing) + 2 (detail)
+
+
+def test_crawl_via_scrape_stops_at_max_credits_instead_of_spending_without_a_cap(monkeypatch):
+    listing = '<a href="/karriere/job-1">Pflegefachkraft (m/w/d) Station 3</a>'
+    pages = {"https://walled.example/karriere": {"html": listing, "credits": 5}}
+    s = _ScrapeSession(pages)
+    rows, stats, credits_used = FA.crawl_via_scrape(SCRAPE_CLINIC, towns={"münchen"}, max_credits=0,
+                                                      log=lambda *_: None, session=s)
+    assert rows == [] and stats["aborted"] == "max_credits" and credits_used == 0   # cap hit before even the seed page is fetched
+    assert s.calls == []                                                            # scrape() itself never called -- no spend at all
+
+
+# --- discover_then_scrape(): recon (CAREER_SCHEMA) picks the entry URL/strategy before any scrape spend ------------
+class _DiscoverSession(_Session):
+    """Combines the agent-polling fake (_Session, for run_career_agent's /agent call) with the scrape fake
+    (_ScrapeSession's dispatch, for crawl_via_scrape's /scrape calls) on one object, since discover_then_scrape
+    drives both through the same `session=`."""
+    def __init__(self, career_answer, scrape_pages=None, **kw):
+        super().__init__(**kw)
+        self.career_answer, self.scrape_pages, self.scrape_calls = career_answer, scrape_pages or {}, []
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        if url.endswith("/scrape"):
+            self.scrape_calls.append(json["url"])
+            page = self.scrape_pages.get(json["url"])
+            if page is None:
+                return _Resp(200, {"success": True, "data": {"html": "", "metadata": {"creditsUsed": 1, "statusCode": 404}}})
+            return _Resp(200, {"success": True, "data": {"html": page["html"],
+                         "metadata": {"sourceURL": json["url"], "statusCode": 200, "creditsUsed": page.get("credits", 1)}}})
+        return super().post(url, headers=headers, json=json, timeout=timeout)
+
+    def get(self, url, headers=None, timeout=None):
+        t = self._team(url)
+        if t is not None:
+            return t
+        self.gets += 1
+        if self.gets == 1:
+            return _Resp(200, {"success": True, "status": "processing"})
+        self.balance -= self.cost
+        self.tokens -= self.token_cost
+        return _Resp(200, {"success": True, "status": "completed", "data": self.career_answer, "creditsUsed": self.api_credits})
+
+
+def test_discover_then_scrape_seeds_the_scrape_at_the_recon_portal_url(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    listing = '<a href="/vacancies/job-1">Pflegefachkraft (m/w/d) Station 3</a>'
+    detail = JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 3")
+    scrape_pages = {"https://walled.example/vacancies": {"html": listing, "credits": 1},
+                     "https://walled.example/vacancies/job-1": {"html": detail, "credits": 2}}
+    career_answer = {"verdict": "board_found", "careers_url": SCRAPE_CLINIC["careers_url"],
+                      "portal_url": "https://walled.example/vacancies", "ats_vendor": "other", "listing_technology": "html",
+                      "crawl_strategy": "start at portal_url, listing links go straight to job detail pages"}
+    s = _DiscoverSession(career_answer, scrape_pages, cost=9, api_credits=9)
+    result = FA.discover_then_scrape(SCRAPE_CLINIC, towns={"münchen"}, max_credits_recon=20, max_credits_scrape=10,
+                                      log=lambda *_: None, session=s)
+    assert result["verdict"] == "board_found"
+    assert s.scrape_calls == ["https://walled.example/vacancies", "https://walled.example/vacancies/job-1"]   # NOT the registry's careers_url
+    assert len(result["rows"]) == 1 and result["rows"][0]["role_class"] == "pflegefachkraft"
+    assert result["recon_credits"] == 9 and result["scrape_credits"] == 3 and result["credits_used"] == 12
+
+
+def test_discover_then_scrape_stops_at_not_a_board_verdict_no_scrape_spent(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    career_answer = {"verdict": "not_a_board", "careers_url": "", "ats_vendor": "unknown", "listing_technology": "unknown",
+                      "alternative_locations": ["https://group-hr.example/jobs"]}
+    s = _DiscoverSession(career_answer, cost=5, api_credits=5)
+    result = FA.discover_then_scrape(SCRAPE_CLINIC, towns={"münchen"}, max_credits_recon=20, max_credits_scrape=10,
+                                      log=lambda *_: None, session=s)
+    assert result["verdict"] == "not_a_board" and result["rows"] == []
+    assert result["scrape_credits"] == 0 and result["credits_used"] == 5 == result["recon_credits"]
+    assert s.scrape_calls == []                                          # crawl_via_scrape never even started
+    assert result["profile"]["alternative_locations"] == ["https://group-hr.example/jobs"]
+
+
+def test_discover_then_scrape_stops_at_not_clinic_specific_verdict(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test")
+    monkeypatch.setattr(FA.time, "sleep", lambda *_: None)
+    career_answer = {"verdict": "not_clinic_specific", "careers_url": "", "ats_vendor": "other", "listing_technology": "html",
+                      "notes": "group-wide portal, no per-hospital filter"}
+    s = _DiscoverSession(career_answer, cost=4, api_credits=4)
+    result = FA.discover_then_scrape(SCRAPE_CLINIC, towns={"münchen"}, max_credits_recon=20, max_credits_scrape=10,
+                                      log=lambda *_: None, session=s)
+    assert result["verdict"] == "not_clinic_specific" and result["rows"] == [] and result["scrape_credits"] == 0
+    assert s.scrape_calls == []

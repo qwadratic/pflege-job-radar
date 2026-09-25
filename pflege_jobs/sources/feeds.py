@@ -18,7 +18,7 @@ def _obs(url, title, emp, city, plz, region, desc, published, dept, extra, towns
         "source_id": SOURCE_ID, "source_ref": url, "source_url": url, "observed_at": now, "title": title,
         "employer_name": emp, "employer_name_norm": employer_norm(emp), "employer_class": e_class, "employer_class_rule": e_rule,
         "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
-        "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(f"{title} {dept or ''}"),
+        "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, "", desc), "department_hint": department_hint(f"{title} {dept or ''}", desc),
         "department_raw": dept, "city": city, "plz": plz, "region": region, "lat": extra.get("lat"), "lon": extra.get("lon"),
         "in_bavaria": in_bavaria(city, plz, region, towns), "n_locations": 1,
         "locations": json.dumps([{"adresse": {"ort": city, "plz": plz, "region": region}}], ensure_ascii=False),

@@ -22,6 +22,22 @@ def test_vendor_rows_widens_board_clinic_ids_to_the_full_account_pool(monkeypatc
         ["16228", "16235", "18105", "18802", "18808", "18813", "18872", "76108"]
 
 
+def test_gesundheitswelt_chiemgau_clinics_are_no_longer_in_any_account_pool(monkeypatch):
+    # TASK-128 (2026-09-23): 18713 (Simssee Klinik) and 18721 (Klinik St. Irmingard) each now carry
+    # their own filter[client_id][]=<id>-scoped careers_url on the shared rexx board -- a crawl of
+    # either is already known, by construction, to be that one clinic's own jobs. Widening
+    # board_clinic_ids back to the sibling pool (TASK-99's 2026-09-22 fix, needed while both shared one
+    # unfiltered URL) would silently let the Matcher's town-based guess override a fetch that no longer
+    # needs guessing -- the pool entry was removed, this pins that it does not come back by accident.
+    assert VA.account_pool_for("18713") is None
+    assert VA.account_pool_for("18721") is None
+    clinic = {"clinic_id": "18713", "name": "Simssee Klinik", "town": "Bad Endorf"}
+    board = {"kind": "vendor", "vendor": "rexx", "clinics": [clinic]}
+    monkeypatch.setitem(VA.VENDORS, "rexx", lambda c, session=None: [{"kind": "jobposting", "payload": {"title": "Pflegefachkraft (m/w/d)", "url": "https://x/1"}}])
+    rows = CR._vendor_rows(board, clinic, requests.Session(), print)
+    assert rows[0]["payload"]["board_clinic_ids"] == ["18713"]
+
+
 def test_vendor_rows_leaves_board_clinic_ids_alone_for_a_clinic_outside_any_pool(monkeypatch):
     clinic = {"clinic_id": "99999", "name": "Not In Any Pool", "town": "X"}
     board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [clinic]}

@@ -21,6 +21,7 @@ def _compile():
     g["_TARIFF"] = [(n, C.rx(p)) for n, p in C.TARIFF]
     g["_EMAIL"] = re.compile(C.EMAIL)
     g["_PAY"], g["_PAYTXT"], g["_REQH"], g["_REQS"], g["_EXP"] = C.rx(C.PAY_GRADE), C.rx(C.PAY_TEXT), C.rx(C.REQ_HEAD), C.rx(C.REQ_STOP), C.rx(C.EXPERIENCE)
+    g["_TASKH"], g["_TASKSTOP"] = C.rx(C.TASK_HEAD), C.rx(C.TASK_STOP)
     g["_LANG"], g["_BONUS"], g["_CHILD"], g["_ANERK"] = C.rx(C.LANGUAGE_REQ), C.rx(C.BONUS), C.rx(C.CHILDCARE), C.rx(C.ANERKENNUNG)
 
 
@@ -48,6 +49,12 @@ from .posting_signal import GENDER_MARKER as _POSTING_SHAPED  # noqa: E402
 _SPECULATIVE_APPLICATION_RX = re.compile(r"^\s*(initiativbewerbung(?:en)?|blitzbewerbung)\b", re.I)
 
 _JOB_URL_HOST_RX = re.compile(r"^https?://([^/]+)", re.I)
+
+# TASK-142: a tariff name immediately preceded/followed by one of these phrases is being used as a
+# comparison benchmark ("angelehnt an TVöD", "TVöD angelehnt", "über dem Tarif der TVöD-K"), not stated
+# as the posting's own applied tariff -- see enrich_description()'s _TARIFF selection below.
+_TARIFF_CMP_PRE = re.compile(r"(über dem tarif|orientiert (?:sich )?an|angelehnt an|in anlehnung an|vergleichbar mit|analog (?:zu|zum|zur))\s*(der|dem|des)?\s*$", re.I)
+_TARIFF_CMP_POST = re.compile(r"^\s*(angelehnt|orientiert)\b", re.I)
 
 # Same-vendor identity of a job URL, extracted from the vendor's own job id -- used ONLY to build the
 # posting_observations dedup key (source_ref; unique(source_id, source_ref), sql/001_schema.sql:112),
@@ -187,14 +194,84 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
     return "nicht_pflege", "fallback_no_posting_signal"
 
 
-def qualification_hint(title: str, hauptberuf: str = ""):
-    s = norm_text(f"{hauptberuf} || {title}")
+def qualification_hint(title: str, hauptberuf: str = "", desc: str = ""):
+    """-> the first matching required licence/qualification (GKiK, GuK, Altenpflege, generalistisch), or
+    None when nothing matched -- never a guess. Shares department_hint's TASK-97 fix (TASK-104): the
+    scanned text used to be title + hauptberuf only (hauptberuf is the Arbeitsagentur occupation code,
+    not posting body text -- a real signal when present, but most sources never populate it), missing
+    the qualification whenever a posting states it only in its own Aufgaben/Profil text ("Wir suchen
+    eine examinierte Pflegefachkraft für unsere Intensivstation" with a generic title like "Pflegekraft
+    (m/w/d)"). Now also scans `desc`'s own TASKS section (Aufgaben/Tätigkeiten, via TASK_HEAD/TASK_STOP)
+    and PROFIL section (Ihr Profil/Anforderungen, via REQ_HEAD/REQ_STOP) through extract_section() --
+    the exact same two sections and the same reused helper department_hint() scans, never the rest of
+    the body (page tail/menus/contact text stays excluded for the same reason TASK-97 excluded it there).
+
+    Deliberately kept single-value (first match), unlike department_hint's TASK-97 multi-label change:
+    _QUAL's 4 patterns (GKiK/GuK/Altenpflege/generalistisch) name alternative licence types a real
+    person holds one of, not independently-combinable specialties a posting can genuinely require
+    several of at once -- there is no live evidence (unlike Intensiv+Anästhesie for department_hint)
+    of a posting correctly requiring two different licences simultaneously."""
+    tasks = extract_section(desc, _TASKH, _TASKSTOP)
+    profil = extract_section(desc, _REQH, _REQS)
+    s = norm_text(" || ".join(x for x in (hauptberuf, title, tasks, profil) if x))
     return next((n for n, r in _QUAL if r.search(s)), None)
 
 
-def department_hint(title: str):
-    s = norm_text(title)
-    return next((n for n, r in _DEPT if r.search(s)), None)
+def extract_section(desc: str, head_rx, stop_rx, window: int = 1200, max_len: int = 600):
+    """desc's own text between head_rx's first match and the next stop_rx boundary (or `window` chars,
+    whichever comes first), collapsed to one line and trimmed to `max_len`. None when head_rx never
+    matches desc at all -- that is the whole safety property this gives callers: a posting whose body
+    never states a real "Ihr Profil"/"Ihre Aufgaben"-shaped heading yields no text to scan, rather than
+    a naive caller falling back to the full page (menus, phone directories, "verfügt über"
+    hospital-wide boilerplate -- TASK-97).
+
+    Pulled out of enrich_description()'s inline "Ihr Profil" slicing (REQ_HEAD/REQ_STOP) so a second
+    caller (department_hint(), TASK-97's Aufgaben/Tätigkeiten section) can reuse the identical
+    boundary-extraction logic instead of duplicating it -- and so TASK-104/TASK-107 have one named
+    function to call instead of copying this slicing a third and fourth time.
+
+    head_rx/stop_rx are matched against norm_text(desc) (lowercased) to find offsets, but the returned
+    text is sliced out of the ORIGINAL `desc` at those offsets -- norm_text's whitespace-collapsing can
+    shift offsets by a few characters on irregular whitespace; this is the same trade-off
+    enrich_description's requirements extraction has always made, not a new one."""
+    if not desc:
+        return None
+    h = head_rx.search(norm_text(desc))
+    if not h:
+        return None
+    tail = desc[h.end():h.end() + window]
+    stop = stop_rx.search(norm_text(tail))
+    text = re.sub(r"\s+", " ", tail[: stop.start() if stop else max_len]).strip(" :-–*#\n")[:max_len]
+    return text or None
+
+
+def department_hint(title: str, desc: str = ""):
+    """-> every distinct department/specialty this posting names, "|"-joined in patterns.json's
+    declared department order, or None when nothing matched -- never just the first hit (TASK-97 fixed
+    the old next(...)-based single value: a real posting for Intensiv AND Anästhesie used to lose one
+    of the two). Joined the same way clinics.fachrichtungen is (no department name contains "|"):
+    keeping this a plain string keeps every existing single-department caller/test unchanged
+    (`department_hint(title) == "Intensiv/IMC"` still holds whenever exactly one department matches)
+    and keeps the DB column a plain "text" field -- the smaller schema diff than migrating it to a real
+    array type. Callers that need the individual labels split on "|" themselves (app/data.py's
+    snapshot build does, for the facet/filter/search layer -- see docs there).
+
+    Scanned text = title + this posting's own TASKS section (Aufgaben/Tätigkeiten/Ihre Aufgaben/Das
+    erwartet Sie, via TASK_HEAD/TASK_STOP) + its own PROFIL section (Ihr Profil/Anforderungen/..., via
+    REQ_HEAD/REQ_STOP, the same section enrich_description() already extracts as "requirements") --
+    both through extract_section(), never the rest of the body. A department name is genuinely stated
+    in the title or one of those two sections; everywhere else on a career-site page (menus, phone
+    directories per department, "verfügt über ... eine Stroke Unit" hospital-wide descriptions,
+    initiative-application department lists) shares the same vocabulary without being THIS posting's
+    own department (TASK-97, live-confirmed 2026-09-24: 'Neurologie & Stroke Unit Sekretariat
+    08141/99-6103' -- a phone-directory line entirely outside any Aufgaben/Profil section on that same
+    posting's page -- and 'verfügt über ... eine Chest Pain Unit, eine Stroke Unit, eine Akutgeriatrie'
+    -- a hospital-wide intro paragraph on a Gynäkologie/Geburtshilfe posting, posting_id 10767 -- both
+    produce no department label here, confirmed live)."""
+    tasks = extract_section(desc, _TASKH, _TASKSTOP)
+    profil = extract_section(desc, _REQH, _REQS)
+    s = norm_text(" || ".join(x for x in (title, tasks, profil) if x))
+    return "|".join(n for n, r in _DEPT if r.search(s)) or None
 
 
 def fuzzy_key(title: str, employer: str, city: str) -> str:
@@ -217,7 +294,26 @@ def enrich_description(desc: str) -> dict:
     if not desc:
         return {}
     s = norm_text(desc)
-    tariff = next((n for n, r in _TARIFF if r.search(s)), None)
+    # patterns.json's declared _TARIFF list order still decides ties (it deliberately puts specific AVR
+    # variants before the generic "AVR (unspecified)" catch-all, so the more specific label wins when
+    # both match the same "AVR ..." word -- live-checked 2026-09-24 on 10 open postings whose
+    # description states the specific variant, e.g. "AVR-Caritas", well AFTER an earlier generic "AVR"
+    # mention elsewhere in the same text: position alone would wrongly pick the vaguer one). The one
+    # exception: a match immediately next to a comparison phrase ("angelehnt an", "orientiert an",
+    # "in Anlehnung an", "ueber dem Tarif der/des", "vergleichbar mit", "analog zu/zum/zur") names a
+    # tariff the posting is being compared AGAINST, not applied under, and is skipped in favor of the
+    # next (still list-order) candidate -- confirmed live on 7 open postings across 2 clinics where this
+    # exact pattern (a real tariff stated first, a second, unrelated one used only as a comparison
+    # benchmark) produced a traegerart-implausible result: "unser Haustarif liegt immer garantiert ueber
+    # dem Tarif der TVoeD-K" (posting 5701, Dr. Lubos Kliniken, traegerart=privat, used to report
+    # "TVoeD" instead of "Haustarif") and "Verguetung nach ... Caritasverband (AVR) ... (TVoeD
+    # angelehnt)" (posting 6604, Waldkrankenhaus St. Marien, traegerart=freigemeinnuetzig, used to
+    # report "TVoeD" instead of "AVR Caritas"). If every match is comparison-adjacent (never observed
+    # live), falls back to the first list-order match rather than losing the field to None.
+    _hits = [(i, n, m) for i, (n, r) in enumerate(_TARIFF) if (m := r.search(s))]
+    _direct = [(i, n, m) for i, n, m in _hits if not _TARIFF_CMP_PRE.search(s[max(0, m.start() - 40):m.start()])
+               and not _TARIFF_CMP_POST.search(s[m.end():m.end() + 20])]
+    tariff = (_direct or _hits)[0][1] if _hits else None
     housing_m = _HOUSING.search(s)
     emails = sorted(set(e.lower() for e in _EMAIL.findall(desc)))
     lang = _LANG.search(s)
@@ -227,12 +323,7 @@ def enrich_description(desc: str) -> dict:
         g = pay.group(1) or pay.group(4) or ""
         grade = re.sub(r"\s", "", g.upper()).replace("P0", "P").replace("KR0", "KR").replace("EG0", "EG")
     pt = _PAYTXT.search(desc)
-    req = None
-    h = _REQH.search(s)
-    if h:
-        tail = desc[h.end():h.end() + 1200]
-        stop = _REQS.search(norm_text(tail))
-        req = re.sub(r"\s+", " ", tail[: stop.start() if stop else 600]).strip(" :-–*#\n")[:600] or None
+    req = extract_section(desc, _REQH, _REQS)
     ex = _EXP.search(desc)
     return {
         "pay_grade": grade,
