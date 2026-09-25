@@ -1447,6 +1447,20 @@ def test_the_warming_evidence_does_not_widen_beyond_the_one_posting_it_names(sma
         GR.check_reply(["Das Klinikum Erfunden hat auch eine Stelle frei."], evidence["names"])
 
 
+def test_a_house_name_quoted_from_the_warming_posting_title_is_grounded_and_no_other(small):
+    """Live 2026-09-25: the board title "... in unserer Schlafklinik (m/w/d)" was quoted and
+    "Schlafklinik" was rejected as invented, costing every warming turn a rewrite. The title's own
+    compound house name is evidence; a compound that is not in the title still is not."""
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    warming = {**warming, "posting": {**warming["posting"],
+                                      "title": "Pflegefachkraft für den Nachtdienst in unserer Schlafklinik (m/w/d)"}}
+    evidence = GR.turn_evidence({**LB.market_snapshot(card), "warming": warming}, [])
+    GR.check_reply(["Gesucht wird eine Pflegefachkraft für den Nachtdienst in der Schlafklinik."], evidence["names"])
+    with pytest.raises(AssertionError, match="NO INVENTION"):
+        GR.check_reply(["Auch die Herzklinik sucht gerade Personal."], evidence["names"])
+
+
 # --- ROUND 2 (2026-09-22): TASK-151's fix was verified only by hand-injecting ``counts``, never
 # against a real turn. An Opus reviewer ran it live and found (1) the board-wide total
 # market_snapshot already computes never reached the rule outside an offer turn, and (2) an

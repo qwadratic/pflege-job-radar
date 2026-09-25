@@ -659,6 +659,13 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
         names.add(warming_posting["clinic"])
         if warming_posting.get("posting_id"):
             postings.setdefault(fold(warming_posting["clinic"]), warming_posting["posting_id"])
+    # The posting's own title is the same board data, and the model quotes it: live 2026-09-25 the
+    # title "Pflegefachkraft für den Nachtdienst in unserer Schlafklinik (m/w/d)" of "ProSomno Klinik
+    # für Schlafmedizin" made "Schlafklinik" an invented name and cost every warming turn a rewrite.
+    # Only compound house names from this one title (_seed_compound), never a bare "Klinik".
+    for word in re.findall(r"[^\W\d_]+", warming_posting.get("title") or ""):
+        if _seed_compound(fold(word)):
+            names.add(word)
     warming_total = (snapshot or {}).get("warming", {}).get("matching_postings_total")
     if isinstance(warming_total, int):
         counts.add(warming_total)
