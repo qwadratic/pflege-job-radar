@@ -8,6 +8,25 @@ import pytest
 
 os.environ.setdefault("AUTH_DISABLED", "1")
 
+# No test may reach a live system through credentials it merely inherited (Ivan, 2026-09-25). The
+# wa-harness session was started from a shell with the phone rail's rail.env loaded, so every pytest
+# it ran saw WA_TRANSPORT=bridge and a real WA_BRIDGE_URL/WA_BRIDGE_TOKEN: tests that do not pin their
+# transport posted to the live executor on the Mac mini and got HTTP 422 back (nothing was sent that
+# day -- sent_today stayed 0 -- but only because the executor refused the fake numbers). Ivan asked for
+# the caution to live in the tests rather than in how he starts the session, so it lives here: popped
+# at import time, before any app module is imported, because app/wa/config.py freezes os.environ into
+# module constants on first import and a later monkeypatch.delenv would come too late. A test that
+# needs one of these sets its own fake value. SUPABASE_ANON_KEY is deliberately not on the list: it
+# only reads the public board, and without it 27 tests fail on "PostgREST 401".
+_LIVE_CREDENTIALS = (
+    "WA_TRANSPORT", "WA_BRIDGE_URL", "WA_BRIDGE_TOKEN", "WA_BRIDGE_INBOUND_TOKEN", "WA_BRIDGE_PHONE_NUMBER_ID",
+    "WA_AUTOSEND", "WA_REAL_SYSTEM_WEBHOOK_URL",
+    "META_WHATSAPP_ACCESS_TOKEN", "META_WHATSAPP_APP_SECRET", "META_WHATSAPP_PHONE_NUMBER_ID",
+    "META_WHATSAPP_VERIFY_TOKEN", "OPENAI_API_KEY",
+)
+for _name in _LIVE_CREDENTIALS:
+    os.environ.pop(_name, None)
+
 
 @pytest.fixture(autouse=True)
 def _closing_gate_offline(monkeypatch):
