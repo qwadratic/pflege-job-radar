@@ -121,21 +121,20 @@ BRAIN = os.environ.get("WA_BRAIN", "deterministic").strip().lower()
 if BRAIN not in ("deterministic", "luna"):
     raise RuntimeError(f"WA_BRAIN={BRAIN!r} is not 'deterministic' or 'luna'")
 
-# Claude model + reasoning effort for the luna brain. A per-turn WhatsApp reply is a chat-shaped
-# workload, not a hard reasoning one, so this defaults to Sonnet rather than Opus -- Haiku is the
-# cheaper/faster option (WA_LUNA_MODEL=claude-haiku-4-5) if quality on the turns this repo's own
-# gates already carry (qualification, region) holds up at that tier; raise back to Opus if a
-# quality regression shows up on ambiguous German instead.
-LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-sonnet-5").strip() or "claude-sonnet-5"
-# "max" (raised from "high", Ivan 2026-09-23, TASK-229): once tools_server.py is wired in
-# (--mcp-config), deciding whether a turn needs a live lookup, which tool, and with what arguments
-# is real planning work, not just wording a reply. STALE HALF OF THE ORIGINAL REASON (TASK-229,
-# 2026-09-24): this was raised partly because look_at_phone's correct use was itself a judgment
-# call -- that tool is now removed (TASK-289: the brain must never read the live phone screen, a
-# stale/desynced read is exactly what caused that night's incidents). Left at "max" for the tool
-# planning that remains (search_postings/show_clinic_photos/... argument choice); worth
-# re-checking against real cold-turn timing (TASK-287) now that the strongest reason for "max"
-# is gone. Accepted values are low/medium/high/xhigh/max (`claude -p --help`).
+# Claude model + reasoning effort for the luna brain. Raised to Opus 5 at "max" effort, Ivan
+# 2026-09-24, in direct response to Valentyn's live CONVERGE incident (thread +4366493036780:
+# "Wo ist die Klinik?" asked twice, three non-converging replies, empty card -- see
+# luna_brain.py::_checked_reply's CONVERGE check, added the same day). Ivan's own words: "повысь
+# до опуса 5. повысь thinking." -- an explicit, later override of TASK-287's "high"/Sonnet choice
+# (which was about first-turn latency, a different tradeoff); this one is about reply quality on
+# the dialog-rules gates (CONVERGE, grounding, style) actually holding under real conversation
+# pressure. Known cost: TASK-287's own profiling showed cli_duration_ms scales with num_turns and
+# reasoning depth, so this raises tail latency on cold, multi-tool-call turns -- accepted
+# knowingly, not a regression.
+LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-opus-5").strip() or "claude-opus-5"
+# See LUNA_MODEL's comment just above -- same 2026-09-24 CONVERGE-incident decision, same
+# explicit override of TASK-287's "high". Accepted values are low/medium/high/xhigh/max
+# (`claude -p --help`).
 LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "max").strip() or "max"
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
@@ -230,6 +229,45 @@ except ValueError:
     raise RuntimeError(f"WA_EXPOSE_SHRINK_TIMEOUT_SEC={_EXPOSE_SHRINK_TIMEOUT_RAW!r} is not an integer")
 if EXPOSE_SHRINK_TIMEOUT_SEC <= 0:
     raise RuntimeError(f"WA_EXPOSE_SHRINK_TIMEOUT_SEC={EXPOSE_SHRINK_TIMEOUT_SEC} must be a positive "
+                       "number of seconds")
+
+# The operator-inbox gate (app/wa/luna/agent_note_gate.py, Ivan 2026-09-24). Its own cheap constant for
+# the same reason REFUSAL_MODEL has one: a one-shot, tool-less, history-less classification of a single
+# message, never the conversation itself -- the Haiku tier, never LUNA_MODEL. Same `claude` CLI as
+# LUNA_CLAUDE_BIN; no second model-calling mechanism.
+AGENT_NOTE_MODEL = os.environ.get("WA_AGENT_NOTE_MODEL", "claude-haiku-4-5").strip()
+if not AGENT_NOTE_MODEL:
+    raise RuntimeError("WA_AGENT_NOTE_MODEL is set but empty -- unset it for the default "
+                       "(claude-haiku-4-5) or name a real model id")
+# 30s, not REFUSAL_TIMEOUT_SEC's 90: this call sits in FRONT of a turn someone is waiting on, so its
+# timeout is added to reply latency. It only runs on a test thread whose message actually contains
+# Cyrillic, so no real candidate turn ever pays it, and a timeout falls through to the ordinary turn
+# (the safe direction -- see agent_note_gate.py's own asymmetry note).
+_AGENT_NOTE_TIMEOUT_RAW = os.environ.get("WA_AGENT_NOTE_TIMEOUT_SEC", "30").strip() or "30"
+try:
+    AGENT_NOTE_TIMEOUT_SEC = int(_AGENT_NOTE_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_AGENT_NOTE_TIMEOUT_SEC={_AGENT_NOTE_TIMEOUT_RAW!r} is not an integer")
+if AGENT_NOTE_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_AGENT_NOTE_TIMEOUT_SEC={AGENT_NOTE_TIMEOUT_SEC} must be a positive number "
+                       "of seconds")
+
+# The closing-bubble gate (app/wa/luna/closing_gate.py, Ivan 2026-09-24). Same tier and the same
+# reasoning as AGENT_NOTE_MODEL: one boolean about one short reply, no tools, no history.
+CLOSING_GATE_MODEL = os.environ.get("WA_CLOSING_GATE_MODEL", "claude-haiku-4-5").strip()
+if not CLOSING_GATE_MODEL:
+    raise RuntimeError("WA_CLOSING_GATE_MODEL is set but empty -- unset it for the default "
+                       "(claude-haiku-4-5) or name a real model id")
+# The same 30s as the agent-note gate, for the same reason and one more: this gate runs on EVERY
+# candidate reply, not only on a test thread, so its timeout is added to every candidate's wait. A
+# timeout sends the reply unchecked (closing_gate.py's asymmetry) rather than holding the turn.
+_CLOSING_GATE_TIMEOUT_RAW = os.environ.get("WA_CLOSING_GATE_TIMEOUT_SEC", "30").strip() or "30"
+try:
+    CLOSING_GATE_TIMEOUT_SEC = int(_CLOSING_GATE_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_CLOSING_GATE_TIMEOUT_SEC={_CLOSING_GATE_TIMEOUT_RAW!r} is not an integer")
+if CLOSING_GATE_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_CLOSING_GATE_TIMEOUT_SEC={CLOSING_GATE_TIMEOUT_SEC} must be a positive "
                        "number of seconds")
 
 # Claude Code keys a resumable session by session id *and* the working directory it was started

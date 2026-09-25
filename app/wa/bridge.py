@@ -80,14 +80,14 @@ HEALTH_PATH = "/v1/health"
 
 # --- the handset operations as one-step calls (TASK-147) ------------------------------------------
 # Ivan, 2026-09-21: the handset operations stop being hand-written adb one-liners and become tools a
-# model or an operator calls in one step. These five routes are the executor's half of that contract
+# model or an operator calls in one step. These routes are the executor's half of that contract
 # (``bridge/server.py``); they are constants because the two halves are one agreement, so a rename on
 # that side is one line here. ``tools/wa_bridge.py`` is the operator's front door to them.
+# (clear-chat/delete-chat used to live here too -- removed entirely, TASK-289, see
+# bridge/operations.py's own module docstring for why.)
 CHATS_PATH = "/v1/chats"
 THREAD_PATH = "/v1/thread"
 BROADCASTS_PATH = "/v1/broadcasts"
-CHAT_CLEAR_PATH = "/v1/chats/clear"
-CHAT_DELETE_PATH = "/v1/chats/delete"
 AUDIT_PATH = "/v1/audit"
 # TASK-261: the read-only companion to RECONCILE_PATH -- which ids need one.
 UNRESOLVED_PATH = "/v1/unresolved"
@@ -152,40 +152,15 @@ EXECUTOR_SLOWEST_CHARS_PER_SEC = 3.2
 #: answer once the op is done.
 OP_POLL_INTERVAL_SEC = 0.3
 
-# --- what the OTHER routes cost the handset (the 2026-09-21 delete) -------------------------------
-# A destructive call is not a send and must not inherit a send's budget. On 2026-09-21 Ivan deleted
-# three chats from the handset; the executor's own log times the three POSTs at 110 s, 98 s and
-# 91 s, and the third expired against WA_BRIDGE_TIMEOUT_SEC=90 one second before the executor
-# answered 200. The operator read the timeout as "nothing happened", pressed again, got "no chat
-# with that title", and concluded the tool had matched the wrong chat. It had matched the right one
-# and destroyed it. So these budgets are derived per operation, term by term.
-#
+# --- what the OTHER routes cost the handset ---------------------------------------------------
 # THE UNIT IS A CHAT-LIST PASS, and it is measured rather than guessed: GET /v1/chats (which is
 # bridge/operations.py::list_chats -> driver.list_chats(include_archived=True): the main list and
 # the archive, each scrolled to its own end) answered in 32.5 s and 29.8 s back to back on that
 # handset on 2026-09-21 with 7 conversations on it.
 HANDSET_CHAT_LIST_PASS_SEC = 33
-# bridge/operations.py::_destroy walks the list FOUR times inside ONE flock acquisition:
-#   _match_row         which row is this, and is it the only one carrying that title
-#   _preview -> _open  open_chat_row -> _locate scrolls the list to find the row to tap
-#   the verb           delete_chat_row / clear_chat_history -> _select_row -> _locate, again
-#   the verification   _verify_deleted / _verify_cleared rescan the list off the handset
-DESTROY_LIST_PASSES = 4
-# The waits between those passes, each one a ceiling the driver names itself (bridge/adb_driver.py):
-#   open the chat        12 s wait_for(header) + PAUSE_AFTER_OPEN up to 4 s
-#   long press           LONG_PRESS_HOLD 1.2 s + 0.8 s settle + 8 s wait_for(the selection bar)
-#   menu and dialog      12 s wait_for(the sheet / the alert) + UI_SETTLE 1.5 s, twice for the
-#                        clear_chat scope sheet
-#   leave the selection  up to 3 dumps
-#   park                 up to 4 rounds of focus/back/relaunch at 1.2 s
-DESTROY_TAPS_SEC = 60
 # executor.take_phone waits the other lane out before it refuses: bridge/driver.py LOCK_TIMEOUT_SEC
-# is 30 s, and a destructive call can spend all of it before its first pass.
+# is 30 s, and a slow call can spend all of it before its first pass.
 FLOCK_WAIT_SEC = 30
-# 30 + 4*33 + 60 = 222 s: twice the slowest POST that handset has actually served, with every term
-# named. It is a BUDGET, not a cap on the phone -- the executor stops itself; this is only how long
-# this side is willing to keep listening for the answer.
-DESTROY_BUDGET_SEC = FLOCK_WAIT_SEC + DESTROY_LIST_PASSES * HANDSET_CHAT_LIST_PASS_SEC + DESTROY_TAPS_SEC
 # GET /v1/chats: the flock, one pass, and park. GET /v1/thread: the flock, one pass to find the row
 # (_locate), 12 s + 4 s to open it, a dump to read the bubbles, and park. Both land under the 90 s
 # floor below, so neither changes today -- they are written down so that staying under it is a fact
@@ -256,37 +231,17 @@ HANDSET_ONE_PHOTO_SEC = (HANDSET_SHARE_PICKER_SEC + HANDSET_SHARE_COMPOSE_SEC
 PHOTOS_FLOOR_SEC = FLOCK_WAIT_SEC + HANDSET_OPEN_CHAT_SEC
 
 # --- the codes this client mints when the ANSWER is lost ------------------------------------------
-# Not the executor's taxonomy (bridge/errors.py): these say what we could establish about a
-# destruction whose answer never arrived, by reading the audit row the executor writes BEFORE the
-# destructive verb. The CLI prints them as "the answer was lost", never as "the bridge refused".
+# Not the executor's taxonomy (bridge/errors.py): the CLI prints this as "the answer was lost",
+# never as "the bridge refused" -- the same call may still be running on the handset.
 CODE_ANSWER_TIMEOUT = "answer_timeout"
-# The executor's own slug for "no chat by that identity is on the handset's list"
-# (bridge/errors.py). Named here because this client branches on it.
-CHAT_NOT_FOUND = "chat_not_found"
-CODE_DESTROY_NOT_STARTED = "destroy_not_started"
-CODE_DESTROY_UNVERIFIED = "destroy_unverified"
-CODE_DESTROY_OUTCOME_UNKNOWN = "destroy_outcome_unknown"
-CODE_CHAT_ALREADY_DELETED = "chat_already_deleted"
-LOST_ANSWER_CODES = (CODE_DESTROY_NOT_STARTED, CODE_DESTROY_UNVERIFIED,
-                     CODE_DESTROY_OUTCOME_UNKNOWN, CODE_CHAT_ALREADY_DELETED)
-# The executor's OWN two 504s (bridge/errors.py), the ones whose message says the handset was
-# touched: a destruction that was tapped and could not be proved, and keys pressed with no tick
-# read. They are named here because "the bridge refused" must never be printed over either -- the
-# executor refused nothing, it did the thing and cannot prove how it ended, which is the 2026-09-21
-# sentence in the executor's vocabulary instead of ours.
-CODE_DESTRUCTION_UNVERIFIED = "destruction_unverified"
+# The executor's OWN 504 (bridge/errors.py), whose message says the handset was touched: keys
+# pressed with no tick read. Named here because "the bridge refused" must never be printed over it
+# -- the executor refused nothing, it did the thing and cannot prove how it ended, which is the
+# 2026-09-21 sentence in the executor's vocabulary instead of ours. (clear_chat/delete_chat had
+# their own such code, destruction_unverified, and their own lost-answer recovery machinery below
+# it -- removed with the capability, TASK-289.)
 CODE_SEND_UNCONFIRMED = "send_unconfirmed"
-HANDSET_TOUCHED_CODES = (CODE_DESTRUCTION_UNVERIFIED, CODE_SEND_UNCONFIRMED)
-# The executor's verdict on whether the record's row is about the number the caller named
-# (bridge/operations.py::_not_found). It travels as a word because neither number may leave that
-# machine, and the comparison is the difference between "we already deleted your chat" and "we
-# deleted somebody else's chat that wore the same name".
-NUMBER_SAME = "same"
-NUMBER_DIFFERENT = "different"
-NUMBER_UNRECORDED = "unrecorded"
-# Where a report came from when it did not come from the answer to the call that made it.
-FROM_AUDIT_AFTER_LOSS = "audit_after_lost_answer"
-FROM_AUDIT_ALREADY_GONE = "audit_already_destroyed"
+HANDSET_TOUCHED_CODES = (CODE_SEND_UNCONFIRMED,)
 
 
 class BridgeError(M.MetaError):
@@ -314,26 +269,6 @@ class BridgeAccepted(BridgeError):
     Not an error on the wire; an error *here*, because the only way this client can say "sent" is by
     returning an id. Carries ``client_msg_id`` and the 202 body so TASK-125's reconciliation pass can
     resolve it and TASK-126 can expire it."""
-
-
-def _moment(value):
-    """-> an aware datetime, from the ledger's RFC3339 spelling (``...Z``) or from one we hold.
-
-    Raises on anything else rather than treating an unreadable timestamp as "long ago": these
-    comparisons decide whether an audit row belongs to the call we are asking about.
-    """
-    if isinstance(value, datetime):
-        return value
-    if not isinstance(value, str):
-        raise BridgeError(f"{value!r} is where a timestamp belongs", status_code=UNCERTAIN_STATUS)
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _stamp(moment):
-    """The ledger's own spelling of a moment (``bridge/ledger.py::utc``), so a sentence we print can
-    be compared with an audit row character for character."""
-    return _moment(moment).astimezone(timezone.utc).isoformat(
-        timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _parse(body):
@@ -503,8 +438,8 @@ class Client:
         that do not type anything); a long body raises it by what that body takes to type.
 
         TASK-243: also carries ``FLOCK_WAIT_SEC``, same as every other per-operation budget in
-        this file (``DESTROY_BUDGET_SEC``, ``CHATS_BUDGET_SEC``, ``THREAD_BUDGET_SEC``) -- this
-        was the one that did not, with no comment ever claiming that was on purpose, while
+        this file (``CHATS_BUDGET_SEC``, ``THREAD_BUDGET_SEC``, ...) -- this was the one that did
+        not, with no comment ever claiming that was on purpose, while
         ``executor.take_phone`` waits the same ``LOCK_TIMEOUT_SEC`` for the flock before a send
         even opens the chat.
         """
@@ -538,8 +473,8 @@ class Client:
         status, body = answer
         # TASK-227: a phone-touching route answers 200 {"op_id", "state": "queued"} now, never the
         # result itself -- see OPS_PATH's own comment. Every caller of _request from here up
-        # (_post_message, send_photos, send_gallery, send_document, read_thread, clear_chat,
-        # delete_chat, ...) still expects the ORIGINAL synchronous (status, body) shape, so that is
+        # (_post_message, send_photos, send_gallery, send_document, read_thread, ...) still expects
+        # the ORIGINAL synchronous (status, body) shape, so that is
         # what this unwraps back to before returning -- nothing above this method may ever see
         # "queued" on the wire.
         if status == 200 and isinstance(body, dict) and body.get("state") == "queued" and body.get("op_id"):
@@ -962,10 +897,10 @@ class Client:
 
     def resolve_op(self, op_id):
         """Mark one failed op resolved (TASK-230) -- the human escape hatch for a failed op that
-        minted no client_msg_id to auto-resolve against (clear_chat, delete_chat, read_thread,
-        send_photos/gallery/document -- none of these have an outbound ledger row reconcile can
-        read a verdict off). -> {"ok": True, "op_id", "resolved": True}. A plain ledger write,
-        never queued -- it does not touch the phone."""
+        minted no client_msg_id to auto-resolve against (read_thread, send_photos/gallery/document
+        -- none of these have an outbound ledger row reconcile can read a verdict off). -> {"ok":
+        True, "op_id", "resolved": True}. A plain ledger write, never queued -- it does not touch
+        the phone."""
         path = f"{OPS_PATH}/{op_id}/resolve"
         return self._require_ok(*self._request("POST", path), path)
 
@@ -1058,86 +993,6 @@ class Client:
                                            "code": None, "detail": "the run view does not mention this key"}
                                           for key in sorted(missing)]}
 
-    def clear_chat(self, *, chat, phone=None, archived=False, expect_messages=None, confirm=False,
-                   include_starred=True):
-        """Empty one chat, keep the chat. -> the executor's report (what it destroyed, and its
-        proof). ``include_starred=False`` leaves starred messages where they are."""
-        return self._destroy(CHAT_CLEAR_PATH, "clear_chat", chat=chat, phone=phone, archived=archived,
-                             expect_messages=expect_messages, confirm=confirm,
-                             extra={"include_starred": bool(include_starred)})
-
-    def delete_chat(self, *, chat, phone=None, archived=False, expect_messages=None, confirm=False):
-        """Remove one chat entirely. -> the executor's report (what it destroyed, and its proof)."""
-        return self._destroy(CHAT_DELETE_PATH, "delete_chat", chat=chat, phone=phone, archived=archived,
-                             expect_messages=expect_messages, confirm=confirm)
-
-    def _destroy(self, path, operation, *, chat, phone, archived, expect_messages, confirm, extra=None):
-        """The shared shape of the two destructive operations, and the refusals that make them safe
-        to hand to a model:
-
-        * ``confirm=True`` is required HERE, before any POST -- a destructive call that reads as a
-          read is the one API shape that gets a chat deleted by autocomplete. The executor demands
-          it again on its side; both checks are cheap and neither is the other's excuse.
-        * ``chat`` (the title as the handset draws it) is the identity, and it is required: the
-          executor matches the row, refuses when two rows carry the name, and refuses when the
-          handset's address book ties that name to a different number than ``phone``.
-        * ``expect_messages`` is the caller saying what it saw. A conversation that grew a bubble
-          between the read and the confirm is not the conversation that was approved, and the
-          executor refuses it.
-        * the 200 must be FOR this operation and must carry ``verification.verified``. The executor
-          verifying its own work is the only proof a destruction happened -- a 200 without it is
-          UNCERTAIN, exactly like a send without a tick. (The executor itself raises 504
-          ``destruction_unverified`` in that case; this check is what stops a differently-shaped
-          answer from reading as success.)
-
-        ``BridgeUnreachable`` is deliberately NOT translated into a 4xx here (unlike a send, where
-        the deterministic key makes a retry safe): if the answer to a delete is lost we do not know
-        whether the chat is gone, and the honest next step is to press the executor's own record,
-        not the button again.
-
-        A LOST ANSWER IS A QUESTION WITH AN ANSWER, and asking it is this method's job rather than
-        the caller's. The executor writes its audit row BEFORE the destructive verb
-        (``bridge/operations.py``, ``bridge/ledger.py::append_audit``), so when the transport gives
-        up -- or the executor answers 404 because the row is no longer on the list -- the record
-        says which of four states we are in: destroyed and verified, destroyed and unproved, not
-        started, or unreadable. ``_destroy_outcome`` turns those into an answer and never into a
-        guess.
-        """
-        if confirm is not True:
-            raise BridgeError(f"{path} needs confirm=True: a destructive operation is never the default",
-                              status_code=CONTRACT_STATUS)
-        title = BI.require_text(chat, "chat")
-        payload = {"chat": title, "archived": bool(archived), "confirm": True, **(extra or {})}
-        if phone is not None:
-            payload["phone"] = BI.require_e164(phone)
-        if expect_messages is not None:
-            payload["expect_messages"] = BI.require_index(expect_messages, "expect_messages", 0)
-        asked_at = self.now()
-        try:
-            body = self._require_ok(*self._request("POST", path, payload,
-                                                   timeout=self._timeout_for(DESTROY_BUDGET_SEC)),
-                                    path)
-        except BridgeUnreachable as exc:
-            # The connection died. It may have died after the executor took the phone, so "nothing
-            # happened" is not ours to assume -- the audit says.
-            return self._destroy_outcome(operation, title, asked_at, exc)
-        except BridgeError as exc:
-            if exc.code == CODE_ANSWER_TIMEOUT:
-                return self._destroy_outcome(operation, title, asked_at, exc)
-            if exc.code == CHAT_NOT_FOUND:
-                # "No chat with that title" is two different facts wearing one sentence. The
-                # executor's refusal carries which one this is (bridge/operations.py::_match_row).
-                return self._already_destroyed(operation, title, payload.get("phone"),
-                                               payload["archived"], exc)
-            raise
-        verification = body.get("verification")
-        if body.get("operation") != operation or not isinstance(verification, dict) \
-                or verification.get("verified") is not True:
-            raise BridgeError(f"bridge answered 200 to {path} with operation={body.get('operation')!r} and "
-                              f"verification={verification!r} -- the destruction is unconfirmed",
-                              status_code=UNCERTAIN_STATUS, payload=body, code="destroy_unconfirmed")
-        return body
-
     # --- the destruction record (what a lost answer is asked about) -------------------------------
 
     def audit(self, *, limit=None):
@@ -1196,180 +1051,3 @@ class Client:
                   "phone": BI.require_e164(phone)}
         return self._require_ok(*self._request("POST", MEDIA_ATTACH_PATH, payload), MEDIA_ATTACH_PATH)
 
-    def destructions_of(self, *, chat=None, phone=None, operation=None, since=None):
-        """-> ``(tied, undecidable)``: the audit rows the record ties to one conversation, newest
-        first, and the rows it can neither tie to it nor rule out.
-
-        Identity is the title the handset draws OR the number the executor resolved the row to --
-        both, because an operator names a chat either way and the record has to be findable by what
-        they typed. ``since`` is compared as a moment, not as text: the ledger writes milliseconds
-        and ``datetime.now()`` carries microseconds, so ``>=`` on the strings would sort
-        ``...912345Z`` before ``...912Z``.
-
-        A ROW WITH NO NUMBER IS NOT A ROW ABOUT SOMEBODY ELSE. ``audit.to_phone`` is null whenever
-        the handset could not resolve the chat to one, and the live ledger's first row is exactly
-        that: "Valentyn NDT", a verified delete of five messages, ``to_phone`` null. Dropping such
-        a row from a ``phone=`` lookup made this rail answer "the audit records no destruction of
-        it either" about a chat it had destroyed and proved destroyed -- Ivan's sentence, restored.
-        So they come back in the second list, as the open question they are, and the caller reports
-        them instead of deciding them. ``undecidable`` is empty whenever no number was named:
-        nothing can fail a comparison that was not asked for.
-        """
-        if chat is None and phone is None:
-            raise BridgeError("name the chat to look up by chat= (the title) or phone=",
-                              status_code=CONTRACT_STATUS)
-        floor = _moment(since) if since is not None else None
-        tied, undecidable = [], []
-        for row in self.audit():
-            if chat is not None and row.get("chat_title") != chat:
-                continue
-            if operation is not None and row.get("operation") != operation:
-                continue
-            if floor is not None and _moment(row.get("at")) < floor:
-                continue
-            if phone is not None and row.get("to_phone") != phone:
-                if row.get("to_phone") is None:
-                    undecidable.append(row)
-                continue
-            tied.append(row)
-        return tied, undecidable
-
-    def _report_from_audit(self, row, *, reported_by, note):
-        """-> the same shape ``delete_chat``/``clear_chat`` return on a 200, rebuilt from the audit
-        row, plus where it came from. ``verification`` is the executor's own proof object when the
-        verification ran; when it did not, the row's ``verified`` column is reported as what it is
-        rather than dressed up as a proof."""
-        detail = row.get("detail") or {}
-        proof = detail.get("proof")
-        return {"ok": True, "operation": row.get("operation"), "at": row.get("at"),
-                "chat": {"title": row.get("chat_title"), "phone": row.get("to_phone")},
-                "destroyed": detail.get("destroyed"), "ui": detail.get("ui"),
-                "verification": proof if isinstance(proof, dict) else
-                                {"verified": bool(row.get("verified")), "method": "audit_row",
-                                 "why": f"audit state {detail.get('state')!r}"},
-                "audit_id": row.get("id"), "reported_by": reported_by, "note": note}
-
-    def _destroy_outcome(self, operation, title, asked_at, lost):
-        """The answer to a destructive call never arrived. -> what the executor's record says, or a
-        refusal naming exactly which question stayed open. Never "may still be sending" and stop.
-
-        Four states, and they are the four the write-ahead row can be in:
-          * a verified row -> the destruction HAPPENED and is proved. That is a success and is
-            returned as one: the caller asked for this and got it, and an error here is the lie
-            that cost an hour on 2026-09-21.
-          * an unfinished or unproved row -> the verb started and its result is not proved. 504,
-            same rule as the executor's own ``destruction_unverified``.
-          * no row at all -> the verb had not begun when we looked. Said with the moment we looked,
-            because the executor may still hold the phone and the row can appear a minute later.
-          * the audit itself unreadable -> we cannot tell, and we say so with the command to run.
-        """
-        reason = str(lost)
-        try:
-            # By title, not by number: this call's own write-ahead row is the one being looked for
-            # and ``since`` already pins it to the seconds we were waiting. Filtering by number
-            # here would lose the row whose number the handset never resolved -- the live ledger
-            # holds one -- which is the very report this method exists to make. Nothing lands in
-            # the second list when no number is named.
-            rows, _ = self.destructions_of(chat=title, operation=operation, since=asked_at)
-        except BridgeError as unreadable:
-            raise BridgeError(
-                f"the bridge answer was lost ({reason}) and the audit could not be read either "
-                f"({unreadable}), so whether {title!r} was destroyed is NOT KNOWN from here. "
-                f"Check with: tools/wa_bridge.py audit --title {title!r}",
-                status_code=UNCERTAIN_STATUS, code=CODE_DESTROY_OUTCOME_UNKNOWN) from lost
-        if not rows:
-            raise BridgeError(
-                f"the bridge answer was lost ({reason}) and the executor's audit records no "
-                f"{operation} of {title!r} since {_stamp(asked_at)}: nothing had been destroyed as "
-                f"of {_stamp(self.now())}. The audit row is written before the first tap, so if "
-                f"the executor is still working one will appear -- check with: "
-                f"tools/wa_bridge.py audit --title {title!r}",
-                status_code=UNCERTAIN_STATUS, code=CODE_DESTROY_NOT_STARTED) from lost
-        row = rows[0]
-        if not row.get("verified"):
-            state = (row.get("detail") or {}).get("state")
-            raise BridgeError(
-                f"the bridge answer was lost ({reason}) and the audit says this {operation} of "
-                f"{title!r} DID start at {row.get('at')} (audit {row.get('id')}, state "
-                f"{state!r}): the handset was tapped and the result is not proved. Read the list "
-                f"with: tools/wa_bridge.py chats",
-                status_code=UNCERTAIN_STATUS, code=CODE_DESTROY_UNVERIFIED,
-                payload={"audit": row}) from lost
-        return self._report_from_audit(
-            row, reported_by=FROM_AUDIT_AFTER_LOSS,
-            note=f"the bridge answer was lost ({reason}), and the executor's audit says this "
-                 f"{operation} finished and was verified at {row.get('at')} (audit "
-                 f"{row.get('id')}). The destruction below is the record, not the answer")
-
-    def _already_destroyed(self, operation, title, phone, archived, refusal):
-        """The executor answered 404: that title is not on the handset's list. -> a success report
-        when the reason is that WE removed the caller's conversation, or a refusal naming what
-        cannot be established.
-
-        The evidence travels in the refusal itself (``bridge/operations.py::_match_row`` puts it
-        there), so this costs no second call. A ``delete_chat`` whose target is already gone BY OUR
-        OWN HAND is the outcome the caller asked for and is reported as done. A ``clear_chat`` is
-        not: it promises to empty a conversation and keep it, and there is no conversation left --
-        that stays an error, with the reason named.
-
-        BY OUR OWN HAND, AND ABOUT THIS CONVERSATION. A title is not an identity: two contacts can
-        wear one display name, which is a refusal on every other path in this package
-        (``_match_row``, ``bridge/operations.py``). A row found by title alone therefore answers
-        about the caller's chat only when the executor says the numbers are the same word for word
-        -- and when they are not, or when the row never recorded one, this says so instead of
-        deciding. The comparison happens on the executor because neither number may travel.
-        """
-        detail = ((refusal.payload or {}).get("error") or {}).get("detail") or {}
-        record = detail.get("destroyed_by_us")
-        if not isinstance(record, dict):
-            raise refusal
-        when, audit_id = record.get("at"), record.get("audit_id")
-        named_number = record.get("named_number")
-        if phone is not None and named_number != NUMBER_SAME:
-            why = {NUMBER_DIFFERENT: f"the executor says that row is about a different number than "
-                                     f"{phone}, and two contacts can share one display name",
-                   NUMBER_UNRECORDED: "the handset never resolved that row to a number, so the "
-                                      "record cannot say whose conversation it was"}.get(
-                named_number, f"the executor said nothing about whose number that row is "
-                              f"(named_number={named_number!r})")
-            raise BridgeError(
-                f"no chat titled {title!r} is on the handset's list, and this rail's record cannot "
-                f"be tied to {phone}: it holds a {record.get('operation')} of that title at {when} "
-                f"(audit {audit_id}) and {why}. Whether {phone}'s conversation was destroyed is "
-                f"NOT KNOWN from here. Check with: tools/wa_bridge.py audit --title {title!r}",
-                status_code=UNCERTAIN_STATUS, code=CODE_DESTROY_OUTCOME_UNKNOWN,
-                payload=refusal.payload) from refusal
-        if operation != "delete_chat":
-            raise BridgeError(
-                f"{title!r} is not on the handset because this rail deleted it at {when} (audit "
-                f"{audit_id}): {operation} empties a conversation and keeps it, and there is no "
-                f"conversation left to empty. Nothing was touched",
-                status_code=refusal.status_code, code=CODE_CHAT_ALREADY_DELETED,
-                payload=refusal.payload) from refusal
-        report = self._report_from_audit(
-            {"id": audit_id, "at": when, "operation": record.get("operation"), "chat_title": title,
-             # Never invented from the caller's argument: the executor omits the number from this
-             # detail on purpose, and filling it in here would make a report about one conversation
-             # read as a report about another.
-             "to_phone": record.get("to_phone"), "verified": record.get("verified"),
-             "detail": record.get("detail") or {}},
-            reported_by=FROM_AUDIT_ALREADY_GONE,
-            note=f"{title!r} was already deleted by this rail at {when} (audit {audit_id}, "
-                 f"verified={record.get('verified')}) and is not on the handset's list now. "
-                 f"Nothing was touched by this call"
-                 + (". The audit records no folder, so that row cannot confirm the chat it is "
-                    "about was the archived one named" if archived else ""))
-        # The proof is THIS call's own scan, not the old row's: the executor walked the whole list
-        # -- both folders -- looking for that title and found no row, which is the same evidence
-        # ``_verify_deleted`` accepts. What that proves is the ABSENCE, now. Whether the recorded
-        # destruction itself was ever proved is a different question with its own answer in the
-        # row, and it is carried here rather than overwritten -- an unproved row dressed up as a
-        # proof is the tool asserting an outcome it did not see.
-        report["verification"] = {
-            "verified": True, "method": "chat_list_rescan", "chat_present": False,
-            "proves": "the chat is absent from both folders now, not that the recorded destruction "
-                      "was verified when it ran",
-            "audit_row": {"verified": bool(record.get("verified")),
-                          "state": (record.get("detail") or {}).get("state")},
-            "why": "the list the executor scanned for this call carries no row with that title"}
-        return report

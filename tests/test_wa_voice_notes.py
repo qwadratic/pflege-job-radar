@@ -423,7 +423,8 @@ def test_the_dry_run_answers_a_voice_notes_stored_transcript(wa, monkeypatch):
     def dry_model(system_text, user_text, session_id):
         payloads.append(json.loads(user_text))
         return {"action": "reply_now_conversational", "bubbles": ["ok"], "rationale": "", "escalate_to_manager": False,
-                "escalate_reason": None, "no_send": False, "next_ask": None, "card_patch": {}}, "dry-session"
+                "escalate_reason": None, "no_send": False,
+                "next_ask": "Haben Sie die deutsche Anerkennung (Urkunde) schon?", "card_patch": {}}, "dry-session"
 
     with ST.db() as c:
         report = SR.shadow_turn(c, LEAD, client=real_client(reply=dry_model))

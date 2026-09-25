@@ -50,6 +50,7 @@ from . import config as C
 from . import slots as SL
 from . import store as ST
 from .luna import board_vocabulary as BV
+from .luna import closing_gate as CG
 from .luna import escalation as ESC
 from .luna import grounding as GR
 from .luna import offer as OF
@@ -1056,6 +1057,19 @@ def _legacy_seen_through(c, phone):
     return rows[-1]["id"] if rows else 0
 
 
+# The operator inbox's own two messages (app/wa/api.py, app/wa/luna/agent_notes.py). They go out on
+# the same thread the operator tests the funnel from, but they are the harness talking to a colleague
+# about a work item, not anything the candidate persona said -- so they must not appear as "what we
+# last told this candidate". Live, 2026-09-24: without this the ack "[агент] Принято, заметка #1"
+# becomes last_outbound, and the operator's next German test turn is read as ANSWERING it (prompts.py
+# THINK_ORDER step 4) and handed to the refusal classifier as our_last_message.
+AGENT_NOTE_ACTIONS = ("agent_note_ack", "agent_note_done")
+
+
+def _is_agent_note_message(row):
+    return (row["meta"] or {}).get("action") in AGENT_NOTE_ACTIONS
+
+
 def _delivery(c, wamid):
     """The latest Meta delivery status of an outbound message (wa_message_statuses), or None without one."""
     latest = ST.latest_message_status(c, wamid) if wamid else None
@@ -1110,7 +1124,8 @@ def turn_context(c, t, turn_key):
     inbound = ST.message_by_wamid(c, turn_key)
     if inbound is None or inbound["direction"] != "in" or inbound["phone"] != phone:
         raise RuntimeError(f"turn_context: {turn_key!r} is not a stored inbound message of {phone}")
-    prior_outbound = [r for r in ST.messages_for(c, phone, direction="out") if r["id"] < inbound["id"]]
+    prior_outbound = [r for r in ST.messages_for(c, phone, direction="out")
+                      if r["id"] < inbound["id"] and not _is_agent_note_message(r)]
     last_outbound = (_message_view(prior_outbound[-1], _delivery(c, prior_outbound[-1]["wamid"]))
                      if prior_outbound else None)
     marker = card.get(LAST_TURN_KEY)
@@ -1122,7 +1137,7 @@ def turn_context(c, t, turn_key):
     # (review 2026-09-14: a template failed with 131049, weeks later a spontaneous message was read as its answer).
     outbound = [view for view in (_message_view(r, _delivery(c, r["wamid"]))
                                   for r in ST.messages_for(c, phone, after_id=after_id, direction="out")
-                                  if r["id"] not in own)
+                                  if r["id"] not in own and not _is_agent_note_message(r))
                 if (view["delivery"] or {}).get("status") != "failed"]
     campaign = card.get("campaign") or {}
     campaign_delivery_failed = bool(campaign) and (_delivery(c, campaign.get("wamid")) or {}).get("status") == "failed"
@@ -1241,17 +1256,49 @@ def _check(bubbles):
 
 CORRECTION_INSTRUCTION = (
     "Your reply was NOT sent: it broke one of the harness's checked rules, which are Ivan's own "
-    "(VOLUME, NO INVENTION, COUNT, BRANCHES, LINK, STALE). The violation is below, in the harness's "
-    "words. Write the SAME turn again so that it holds: keep what was true, drop or fix what broke "
-    "the rule, and do not argue with the check. You may call a board tool first if the rule was "
-    "about evidence you do not have yet. Answer with the same single JSON object as always -- only "
-    "your bubbles are used from this attempt, the card was already updated from your first one."
+    "(VOLUME, NO INVENTION, COUNT, BRANCHES, LINK, STALE, CONVERGE). The violation is below, in the "
+    "harness's words. Write the SAME turn again so that it holds: keep what was true, drop or fix "
+    "what broke the rule, and do not argue with the check. You may call a board tool first if the "
+    "rule was about evidence you do not have yet. Answer with the same single JSON object as "
+    "always -- only your bubbles and next_ask are used from this attempt, the card was already "
+    "updated from your first one."
 )
 
 
 def _corrective_payload(violation):
     return json.dumps({"harness_rejected_your_reply": str(violation),
                        "instruction": CORRECTION_INSTRUCTION}, ensure_ascii=False, indent=2)
+
+
+CLOSING_HINT = (
+    "Your reply was NOT sent: its last bubble left the candidate with nothing to answer, so the "
+    "conversation would have stalled there. Write the SAME turn again -- same facts, same tone, "
+    "nothing withdrawn -- but end it with a closing bubble: the one question, request or next step "
+    "the candidate is meant to respond to. If this conversation is genuinely over (they declined, "
+    "they cannot be placed, a colleague takes it from here), say that plainly as the last bubble "
+    "instead. Answer with the same single JSON object as always."
+)
+
+
+def _closing_hint_payload():
+    """Deliberately NOT _corrective_payload: Ivan asked for the same turn attempted once more with a
+    short hint, not the harness's complaint quoted back at the model. The session is the same one, so
+    the model can still see its own first attempt -- nothing needs to be restated here."""
+    return json.dumps({"instruction": CLOSING_HINT}, ensure_ascii=False, indent=2)
+
+
+class _NotClosed(AssertionError):
+    """The closing gate's rejection (app/wa/luna/closing_gate.py). An AssertionError so it travels the
+    same except path every other checked rule here already uses, but its own class because the ending
+    differs: a second grounding failure holds the reply and pulls in a human, a second CLOSING failure
+    sends the reply anyway (Ivan: this gate never escalates). Carries the reply it rejected so that
+    send is possible without running the checks a third time."""
+
+    def __init__(self, reply, reason):
+        super().__init__(f"CLOSING: the last bubble hands the candidate nothing to answer, so the "
+                         f"conversation stalls there (closing gate: {reason})")
+        self.reply = reply
+        self.reason = reason
 
 
 def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
@@ -1274,7 +1321,21 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
     ``flagged`` (ROUND 5, grounding.py's module docstring) is the sentence(s) the exhaustive-claim
     check suspected in whichever bubbles actually went out -- that check no longer blocks, so it
     never causes ``escalate_reason`` to be set here; the caller (turn(), below) records it on the
-    card the same way an escalation is recorded, next to the reply that was actually sent."""
+    card the same way an escalation is recorded, next to the reply that was actually sent.
+
+    CLOSING (Ivan's invariant, 2026-09-24): the last bubble must hand the turn back to the
+    candidate. Checked by ``CG.closes_the_turn`` on the bubbles themselves -- what actually goes out
+    -- with no branch on the conversation's stage, because the gate's own prompt already treats a
+    deliberate ending (declined, not placeable, a colleague takes over) as closing. The version this
+    replaced asserted that the model's self-reported ``next_ask`` was non-empty whenever
+    ``requirement_scoreboard`` had a gate open; Ivan rejected it for checking a field instead of the
+    text, and for exempting every turn with nothing open from the one rule that matters.
+
+    A strictness gradient keyed on requirement_scoreboard briefly lived here and was removed the same
+    day, with Ivan's agreement -- see closing_gate.py's docstring for why softening near the end
+    turned out to switch leniency on at exactly the consent ask. The gate now reads the bubbles and
+    nothing else, which is also what makes it impossible for the same reply to be acceptable in one
+    conversation and not in another."""
 
     def _run(raw_bubbles):
         text_bubbles = _check(raw_bubbles)
@@ -1287,23 +1348,52 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches):
                                stale_postings=evidence["stale_postings"],
                                shown_before=evidence["remembered"], postings=evidence["postings"],
                                flagged=flagged)
-        return {"bubbles": text_bubbles, "named": named, "evidence": evidence, "action": None,
-                "escalate_reason": None, "flagged": flagged}
+        reply = {"bubbles": text_bubbles, "named": named, "evidence": evidence, "action": None,
+                 "escalate_reason": None, "flagged": flagged}
+        # Checked last, deliberately: a grounding violation (invented name, stale posting, ...) is
+        # about what the text CLAIMS and always takes priority over whether it also asked forward.
+        verdict = CG.closes_the_turn(text_bubbles)
+        if not verdict.closes:
+            raise _NotClosed(reply, verdict.reason)
+        return reply
 
     try:
         return _run(bubbles)
     # AssertionError, not GR.ReplyRejected: ReplyRejected already IS an AssertionError (its own class
-    # docstring), and catching the parent here is what lets _check's bare AssertionError (bad bubble
-    # count/shape) share this same contract rather than needing a second except clause for it.
+    # docstring), and catching the parent here is what lets _check's/_NotClosed's bare AssertionError
+    # share this same contract rather than needing a second except clause for it.
     except AssertionError as first:
         violation = first
+        # A closing failure gets a hint, a grounding failure gets the violation: the model can see
+        # its own first attempt either way (same session), so the hint does not need to restate it.
+        payload = _closing_hint_payload() if isinstance(first, _NotClosed) else _corrective_payload(first)
         try:
-            out, session_id = cl.reply(system_text, _corrective_payload(first), card.get("_session_id"))
+            out, session_id = cl.reply(system_text, payload, card.get("_session_id"))
             card["_session_id"] = session_id
             return {**_run(out.get("bubbles") or []), "action": "reply_after_correction"}
-        except AssertionError as second:
-            # Either GR.check_reply rejected the rewrite too, or it came back empty/in too many
-            # bubbles (_check) -- still a turn that cannot be sent.
+        # Exception, not AssertionError (workflow finding, 2026-09-24, confirmed by probe): the retry
+        # is a whole second model call, and it fails in ways that are not rule violations at all --
+        # `claude -p` timing out after LUNA_TIMEOUT_SEC, SessionNotFound, _validate raising on a
+        # reply with no card_patch. Those used to escape turn() entirely and the candidate got
+        # NOTHING, while a perfectly good, already-checked first reply sat in `first.reply`. A
+        # violation costs the model its draft, never the candidate their answer -- that contract has
+        # to hold for the retry's own failures too, not just for the rules it breaks.
+        except Exception as second:
+            # Keyed on FIRST, not second (same finding): what decides whether a human is needed is
+            # what was wrong with the reply we are holding, not what went wrong while rewriting it.
+            # A turn that entered the retry only because its last bubble trailed off has a truthful,
+            # grounded reply in hand; sending it is right even if the rewrite then came back in three
+            # bubbles, empty, or not at all. Ivan, explicit: this gate never pulls in a human ("нет
+            # такого, что мы каждое сообщение проверяем на гейт, а потом зовем человека"). Prefer the
+            # rewrite's own bubbles when the rewrite failed only the closing gate again (_NotClosed
+            # carries them, already grounded), else fall back to the first attempt's.
+            if isinstance(first, _NotClosed):
+                log.error("closing gate rejected the reply and the rewrite did not help (%s); "
+                          "sending a checked reply anyway rather than calling a colleague", second)
+                return {**getattr(second, "reply", first.reply), "action": "reply_after_correction"}
+            # The first reply broke a grounding rule, so it CANNOT be sent whatever happened next: an
+            # invented clinic name is not a weak reply, it is a false one. Holding message + a human,
+            # exactly as before -- now also when the retry failed for a non-rule reason.
             violation = second
     return {"bubbles": [P.BLOCKED_REPLY_DE], "named": [], "evidence": evidence_of(),
             "action": "reply_blocked_escalated", "flagged": [],
@@ -1510,7 +1600,8 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # raw_bubbles goes in unchecked (TASK-156, F2): _checked_reply's own _run() applies the 1-2
         # bubble style check now, so a violation on the first pass is a corrective retry, not an
         # exception straight out of turn().
-        checked = _checked_reply(cl, card, system_text, raw_bubbles, evidence_of, bool(snapshot.get("offer")))
+        checked = _checked_reply(cl, card, system_text, raw_bubbles, evidence_of,
+                                 bool(snapshot.get("offer")))
         bubbles = model_bubbles = checked["bubbles"]
         named = checked["named"]
         if named:

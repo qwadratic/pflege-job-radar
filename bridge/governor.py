@@ -37,6 +37,22 @@ no such number and CLAUDE.md forbids inventing one, so ``per_number_daily_cap`` 
 constructor argument and the server refuses to start without WA_BRIDGE_PER_NUMBER_DAILY_CAP. Ivan
 or TASK-127 names it; this module will not.
 
+THE ONE POPULATION THIS FUSE DOES NOT PROTECT (Ivan, 2026-09-24: "для тестовых юзеров давай
+полностью убираем любые лимиты и governor"). The operators' own two handsets are not people this
+rail could harm: nobody can be spammed at 03:00 who is holding the phone on purpose, and every
+pacing refusal against them costs a test run instead of protecting anyone. So a number in
+``ungoverned`` is granted immediately -- no quiet hours, no Sunday, no caps, no gap -- and its sends
+are left OUT of the counters every other recipient is paced against, because a night of testing that
+eats the day's ten first touches refuses the next morning's real campaign. That happened live the
+evening this was written: first_touches_today 10/10, all ten to the two test handsets.
+
+WHY THE LIST IS CONFIGURATION AND NOT A REQUEST FIELD, and this is the whole safety story: a
+per-request "this one is a test" flag would hand every caller the ability to switch the fuse off,
+which is precisely what the division of labour above forbids ("The request cannot raise a cap or
+shorten a gap; that is the point"). The executor reads the numbers from its own environment, on the
+machine that owns the handset. A bug on the server side still gets 500 refusals at 03:00, because
+the server has no say in who is ungoverned.
+
 WHY THE GAP CHECK USES THE LOW END OF THE JITTER RANGE: a fuse whose threshold is redrawn at
 random can be beaten by asking again until the draw is short. So the refusal threshold is the
 range's floor (240 s between first touches, 4 s between bubbles to one person) and the jitter lives
@@ -56,6 +72,15 @@ from zoneinfo import ZoneInfo
 
 from . import errors as E
 from . import ledger as L
+
+def _digits(phone):
+    """Every non-digit dropped, then the international prefix normalised: a number is its digits, and
+    the fuse must not care whether it was typed +43..., 0043... or 43.... A LEADING SINGLE ZERO IS
+    LEFT ALONE -- that is a national trunk code whose meaning depends on a country this module does
+    not know, and guessing it would be how one number quietly becomes another."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return digits[2:] if digits.startswith("00") else digits
+
 
 FIRST_TOUCH = "first_touch"
 REPLY = "reply"
@@ -132,7 +157,7 @@ class Grant:
 
 
 class Governor:
-    def __init__(self, ledger, *, per_number_daily_cap, pacing=MINI_FLOOR, rng=None):
+    def __init__(self, ledger, *, per_number_daily_cap, pacing=MINI_FLOOR, rng=None, ungoverned=()):
         if per_number_daily_cap is None:
             raise RuntimeError(
                 "per_number_daily_cap has no default: their config.py has no per-recipient cap and "
@@ -142,6 +167,15 @@ class Governor:
         self.cap = int(per_number_daily_cap)
         self.tz = ZoneInfo(pacing.timezone)
         self.rng = rng or random.Random()
+        #: The operators' own handsets (see the module docstring). Kept in BOTH forms on purpose:
+        #: digits for deciding (so +43 670..., 0043670... and 43670... are one number and a
+        #: formatting difference can never quietly re-arm the fuse), and verbatim for the SQL
+        #: exclusion, which can only match the string the ledger actually stored.
+        self.ungoverned_raw = tuple(str(n).strip() for n in ungoverned if str(n).strip())
+        self.ungoverned = frozenset(_digits(n) for n in self.ungoverned_raw)
+
+    def is_ungoverned(self, phone):
+        return bool(phone) and _digits(phone) in self.ungoverned
 
     # --- clock ----------------------------------------------------------------------------------
     def local(self, now):
@@ -192,10 +226,19 @@ class Governor:
             raise E.invalid_request(
                 "constraints.respect_quiet_hours=false is not honoured on the phone rail: the "
                 "window is a shared-handset house rule, not a per-request option")
+        if self.is_ungoverned(phone):
+            # An operator's own handset (module docstring). Granted before a single counter is read:
+            # no window, no caps, no gap, and nothing to reschedule -- next_slot_at is now.
+            return Grant(kind=kind, spent_today=0, spent_today_this_number=0, first_touches_today=0,
+                         effective_min_gap_sec=0.0, effective_per_number_cap=0,
+                         effective_first_touch_daily_cap=0, next_slot_at=L.utc(now))
         day_start, day_end = self.day_bounds(now)
-        spent_today = self.ledger.count_spent(day_start, day_end)
+        # Every count a real recipient is paced against leaves the test handsets out: a night of
+        # testing must not spend the day's allowance for the people this fuse actually protects.
+        spent_today = self.ledger.count_spent(day_start, day_end, exclude_phones=self.ungoverned_raw)
         spent_number = self.ledger.count_spent(day_start, day_end, phone=phone)
-        first_touches = self.ledger.count_spent(day_start, day_end, kind=FIRST_TOUCH)
+        first_touches = self.ledger.count_spent(day_start, day_end, kind=FIRST_TOUCH,
+                                                exclude_phones=self.ungoverned_raw)
 
         # slower-only reconciliation of what the caller asked for
         cap_number = min(self.cap, int(requested.get("daily_cap", self.cap)))
@@ -237,7 +280,8 @@ class Governor:
                     f"first-touch daily cap reached ({first_touches}/{cap_first_touch})",
                     next_slot_at=L.utc(nxt), cap="first_touch_daily", **_grant_detail(grant(nxt)))
             hour_ago = now - timedelta(hours=1)
-            per_hour = self.ledger.count_spent(hour_ago, now, kind=FIRST_TOUCH)
+            per_hour = self.ledger.count_spent(hour_ago, now, kind=FIRST_TOUCH,
+                                               exclude_phones=self.ungoverned_raw)
             if per_hour >= self.pacing.first_touches_per_hour:
                 nxt = now + timedelta(seconds=self.jittered_gap(FIRST_TOUCH))
                 raise E.rail_parked(
@@ -246,8 +290,8 @@ class Governor:
 
         # 4. The gap. Global between first touches (they are different people seeing one number
         #    wake up); per recipient between bubbles.
-        last = (self.ledger.last_spent_at(kind=FIRST_TOUCH) if kind == FIRST_TOUCH
-                else self.ledger.last_spent_at(phone=phone))
+        last = (self.ledger.last_spent_at(kind=FIRST_TOUCH, exclude_phones=self.ungoverned_raw)
+                if kind == FIRST_TOUCH else self.ledger.last_spent_at(phone=phone))
         if last is not None:
             since = (now - _parse(last)).total_seconds()
             if since < min_gap:
@@ -264,8 +308,17 @@ class Governor:
         out = {"window_open": self.window_open(now),
                "timezone": self.pacing.timezone,
                "active_hours": list(self.pacing.active_hours),
-               "sent_today": self.ledger.count_spent(day_start, day_end),
-               "first_touches_today": self.ledger.count_spent(day_start, day_end, kind=FIRST_TOUCH),
+               # The same numbers the fuse decides on, so health and the refusals agree. Test traffic
+               # is reported separately rather than folded in or hidden: "0 of 10 spent" while the
+               # handset sent thirty messages tonight would be a health view that lies.
+               "sent_today": self.ledger.count_spent(day_start, day_end,
+                                                     exclude_phones=self.ungoverned_raw),
+               "first_touches_today": self.ledger.count_spent(day_start, day_end, kind=FIRST_TOUCH,
+                                                              exclude_phones=self.ungoverned_raw),
+               "ungoverned_numbers": len(self.ungoverned),
+               "ungoverned_sent_today": (self.ledger.count_spent(day_start, day_end)
+                                         - self.ledger.count_spent(day_start, day_end,
+                                                                   exclude_phones=self.ungoverned_raw)),
                "first_touch_daily_cap": self.pacing.first_touches_per_day,
                "per_number_daily_cap": self.cap,
                "day_starts_at": L.utc(day_start)}

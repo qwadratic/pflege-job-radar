@@ -489,6 +489,65 @@ def test_a_reply_that_arrives_while_reconcile_scans_the_chat_is_still_recorded(r
     assert [e["payload"]["text"] for e in events] == ["Bin gleich da"]
 
 
+# --- TASK-296-adjacent: a reconcile attempt limit + escalation, Ivan 2026-09-24 ---------------------
+def test_reconcile_escalates_after_the_attempt_limit_and_then_never_touches_the_phone_again(rig):
+    """Two client_msg_ids sat ATTEMPTING for ~14 hours because indeterminate never stopped the
+    watcher from re-enqueueing a real phone scan every 60s. reconcile_attempt_limit=2 here so the
+    test does not need five real scans to prove the boundary."""
+    rig.executor.reconcile_attempt_limit = 2
+    sha = D.body_sha256("Guten Tag")
+    rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
+    rig.driver.thread = [D.BubbleView("out", "alte Nachricht", "08:00", "Gelesen")]
+
+    first = rig.executor.reconcile([KEY])[0]
+    assert first["verdict"] == "indeterminate"
+    assert rig.ledger.get(KEY).reconcile_attempts == 1
+    assert rig.ledger.get(KEY).escalated_at is None
+    assert rig.driver.opened == [PHONE]  # one real scan happened
+
+    second = rig.executor.reconcile([KEY])[0]
+    assert second["verdict"] == "indeterminate"  # the limit-reaching scan still answers its own verdict
+    assert rig.ledger.get(KEY).reconcile_attempts == 2
+    assert rig.ledger.get(KEY).escalated_at is not None
+    assert rig.driver.opened == [PHONE, PHONE]  # the second, limit-reaching scan did touch the phone
+
+    third = rig.executor.reconcile([KEY])[0]
+    assert third["verdict"] == "escalated"
+    assert rig.driver.opened == [PHONE, PHONE]  # NOT a third open: no phone touch past the limit
+
+
+def test_an_escalated_row_is_excluded_from_unresolved_but_still_visible_via_unresolved_sends(rig):
+    """ledger.unresolved() (default) is what UnresolvedSendWatcher polls -- it must stop finding an
+    escalated row, or the whole point of escalating is lost. executor.unresolved_sends() (the CLI's
+    unresolved-list) is an operator's view -- it must keep showing the row, marked escalated, so
+    the visibility Ivan asked for ("возможность узнать") is not just a bigger silence."""
+    rig.executor.reconcile_attempt_limit = 1
+    sha = D.body_sha256("Guten Tag")
+    rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
+    rig.driver.thread = [D.BubbleView("out", "alte Nachricht", "08:00", "Gelesen")]
+    assert rig.executor.reconcile([KEY])[0]["verdict"] == "indeterminate"
+    assert rig.ledger.get(KEY).escalated_at is not None
+
+    assert rig.ledger.unresolved() == []  # the watcher's own view: nothing left to scan
+
+    rows = rig.executor.unresolved_sends()["rows"]
+    assert len(rows) == 1
+    assert rows[0]["client_msg_id"] == KEY
+    assert rows[0]["escalated"] is True
+
+
+def test_health_reports_the_escalated_reconcile_count(rig):
+    rig.executor.reconcile_attempt_limit = 1
+    assert rig.executor.health()["reconcile"] == {"escalated": 0}
+
+    sha = D.body_sha256("Guten Tag")
+    rig.ledger.begin(KEY, phone=PHONE, kind="reply", body_sha256=sha, body_len=9, now=rig.clock())
+    rig.driver.thread = [D.BubbleView("out", "alte Nachricht", "08:00", "Gelesen")]
+    rig.executor.reconcile([KEY])
+
+    assert rig.executor.health()["reconcile"] == {"escalated": 1}
+
+
 # --- inbound handover, health, retention ---------------------------------------------------------------
 def _inbound(text="Ja, gerne", phone=PHONE, clock="10:04", media=None):
     return I.assign_ids([I.InboundMessage(counterparty=phone, title=phone, text=text,
@@ -1602,6 +1661,54 @@ def test_v1_document_answers_200_on_a_real_send(http, tmp_path):
     assert (body["clock"], body["tick"]) == ("09:15", "Gesendet")
 
 
+# --- TASK-296-adjacent: each route's priority classification, Ivan 2026-09-24 -----------------------
+def _enqueued_priority(rig, base, path, payload=None):
+    """POSTs/GETs against ``http_no_dispatch`` (nothing ever claims the row), then reads the
+    priority the route chose straight off the ledger -- the enqueue-time decision under test, not
+    whatever the (unstarted) dispatcher would have done with it."""
+    status, body = _raw_call(base, path, payload=payload)
+    assert status == 200 and body["state"] == "queued", body
+    return rig.ledger.op_status(body["op_id"])["priority"]
+
+
+def test_v1_messages_is_urgent_for_a_reply_and_normal_for_a_first_touch_or_no_trace(http_no_dispatch):
+    rig, base = http_no_dispatch
+    reply = _enqueued_priority(rig, base, "/v1/messages", {
+        "client_msg_id": KEY, "to": PHONE, "kind": "text", "body": "eins",
+        "trace": {"action": "reply"}})
+    assert reply == L.PRIORITY_URGENT
+
+    first_touch = _enqueued_priority(rig, base, "/v1/messages", {
+        "client_msg_id": KEY2, "to": OTHER, "kind": "text", "body": "zwei",
+        "trace": {"action": "first_touch"}})
+    assert first_touch == L.PRIORITY_NORMAL
+
+    no_trace = _enqueued_priority(rig, base, "/v1/messages", {
+        "client_msg_id": "wab.o.0000000000000000000000000000cccc", "to": "+491700000003",
+        "kind": "text", "body": "drei"})
+    assert no_trace == L.PRIORITY_NORMAL, "missing/unknown trace never guesses urgent"
+
+
+def test_v1_photos_gallery_and_document_all_enqueue_urgent(http_no_dispatch, tmp_path):
+    rig, base = http_no_dispatch
+    a = tmp_path / "a.jpg"
+    a.write_bytes(b"a")
+    assert _enqueued_priority(rig, base, "/v1/photos",
+                              {"phone": PHONE, "local_paths": [str(a)]}) == L.PRIORITY_URGENT
+    assert _enqueued_priority(rig, base, "/v1/gallery",
+                              {"phone": PHONE, "local_paths": [str(a)]}) == L.PRIORITY_URGENT
+    assert _enqueued_priority(rig, base, "/v1/document",
+                              {"phone": PHONE, "local_path": str(a)}) == L.PRIORITY_URGENT
+
+
+def test_v1_reconcile_chats_and_thread_all_enqueue_low(http_no_dispatch):
+    rig, base = http_no_dispatch
+    assert _enqueued_priority(rig, base, "/v1/reconcile",
+                              {"client_msg_ids": [KEY]}) == L.PRIORITY_LOW
+    assert _enqueued_priority(rig, base, "/v1/chats") == L.PRIORITY_LOW
+    assert _enqueued_priority(rig, base, f"/v1/thread?phone={PHONE}") == L.PRIORITY_LOW
+
+
 # --- the inbound watcher (TASK-143, lock removed TASK-131 round 6) --------------------------------
 class BusyPhone(D.FakeDriver):
     """The other lane holds huawei01.lock for a send. The shade read must not care."""
@@ -1753,6 +1860,23 @@ def test_ops_run_in_strict_fifo_order(rig):
     assert dispatch.cycle() and dispatch.cycle() and dispatch.cycle()
     assert dispatch.cycle() is False  # nothing left queued
     assert rig.driver.sent == ["eins", "zwei", "drei"]
+
+
+def test_an_urgent_op_queued_after_a_low_op_still_claims_first(rig):
+    """TASK-296-adjacent, Ivan 2026-09-24: the whole point of the priority queue is that a LOW
+    background read queued first does not sit in front of a URGENT reply queued behind it. FIFO
+    stays intact WITHIN a tier -- this is that guarantee, verified against a real dispatch cycle,
+    not just the ledger's own ordering."""
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
+                                      "body": "low-first", "trace": {"action": "reply"}}},
+                     priority=L.PRIORITY_LOW)
+    rig.clock.advance(1)
+    dispatch.enqueue("send", {"req": {"client_msg_id": KEY2, "to": OTHER, "kind": "text",
+                                      "body": "urgent-second", "trace": {"action": "reply"}}},
+                     priority=L.PRIORITY_URGENT)
+    assert dispatch.cycle() and dispatch.cycle()
+    assert rig.driver.sent == ["urgent-second", "low-first"]
 
 
 def test_a_refusal_is_recorded_as_a_failed_op_with_its_own_envelope(rig):
@@ -1969,7 +2093,10 @@ def test_health_reports_phone_ops_queue_depth_and_oldest_queued_at_when_the_disp
     up" shape the finding describes."""
     dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
     rig.executor.ops_dispatcher = dispatch
-    assert rig.executor.health()["phone_ops"] == {"queued": 0, "oldest_queued_at": None}
+    assert rig.executor.health()["phone_ops"] == {
+        "queued": 0, "oldest_queued_at": None,
+        "by_priority": {"urgent": 0, "normal": 0, "low": 0},
+    }
 
     first_at = L.utc(rig.clock())
     dispatch.enqueue("send", {"req": {"client_msg_id": KEY, "to": PHONE, "kind": "text",
@@ -1978,7 +2105,10 @@ def test_health_reports_phone_ops_queue_depth_and_oldest_queued_at_when_the_disp
     dispatch.enqueue("send", {"req": {"client_msg_id": KEY2, "to": OTHER, "kind": "text",
                                       "body": "zwei", "trace": {"action": "reply"}}})
 
-    assert rig.executor.health()["phone_ops"] == {"queued": 2, "oldest_queued_at": first_at}
+    assert rig.executor.health()["phone_ops"] == {
+        "queued": 2, "oldest_queued_at": first_at,
+        "by_priority": {"urgent": 0, "normal": 2, "low": 0},
+    }
 
 
 # --- TASK-264: a windowed journal count that survives a restart, unlike the instance counters ------
@@ -2053,6 +2183,52 @@ def test_a_restart_mid_op_unsticks_the_running_row_it_left_behind(tmp_path):
     restarted.close()
 
 
+# --- TASK-296-adjacent: a priority column ALTERed onto a table the migration itself must not --------
+# break opening (Ivan 2026-09-24; a background agent's own unrelated verification run caught this
+# live: the index on (state, priority, position) was first written straight into the static SCHEMA
+# string, which runs unconditionally before _migrate_phone_ops's ALTER ever adds the column --
+# `no such column: priority` opening any database that predates this change, exactly the live mini's
+# own phone_ops table).
+def test_opening_a_post_task243_pre_priority_database_backfills_normal_and_stays_openable(tmp_path):
+    """Reproduces the shape most likely live on the mini right now: resolved_at and budget_sec
+    already exist (TASK-230/243 shipped), priority does not yet. The ALTER must run before any
+    index referencing the new column does, or opening this exact database raises immediately."""
+    import sqlite3
+
+    path = tmp_path / "pre_priority.sqlite"
+    raw = sqlite3.connect(str(path))
+    raw.executescript("""
+        create table phone_ops (
+          op_id       text primary key,
+          position    integer not null,
+          kind        text not null,
+          args        text not null,
+          state       text not null,
+          result      text,
+          error       text,
+          created_at  text not null,
+          started_at  text,
+          finished_at text,
+          resolved_at text,
+          budget_sec  real
+        );
+        create index idx_phone_ops_state on phone_ops(state, position);
+    """)
+    raw.execute("insert into phone_ops(op_id, position, kind, args, state, created_at) "
+               "values(?,?,?,?,?,?)",
+               ("op.pre_priority", 1, "send", "{}", "queued", "2026-09-24T00:00:00Z"))
+    raw.commit()
+    raw.close()
+
+    ledger = L.Ledger(path)  # must not raise
+    row = ledger._db.execute(
+        "select priority from phone_ops where op_id=?", ("op.pre_priority",)).fetchone()
+    assert row["priority"] == L.PRIORITY_NORMAL, "a pre-existing row backfills NORMAL, never a guess"
+    claimed = ledger.claim_next_op()
+    assert claimed["op_id"] == "op.pre_priority"  # the new priority-ordered index actually works
+    ledger.close()
+
+
 # --- TASK-243: an op nobody is still waiting on must not go on to type ---------------------------
 def test_claim_next_op_expires_a_stale_row_and_serves_the_fresh_one_behind_it(tmp_path):
     """Before this fix, claim_next_op claims the oldest queued row unconditionally, no matter how
@@ -2087,6 +2263,52 @@ def test_claim_next_op_leaves_a_row_with_no_budget_unbounded(tmp_path):
     ledger.enqueue_op("op.old_no_budget", "send", {}, datetime(2000, 1, 1, tzinfo=timezone.utc))
     claimed = ledger.claim_next_op()
     assert claimed["op_id"] == "op.old_no_budget"
+    ledger.close()
+
+
+def test_claim_next_op_orders_by_priority_before_position(tmp_path):
+    """TASK-296-adjacent, Ivan 2026-09-24, at the ledger level (the dispatcher-level proof of the
+    same guarantee is test_an_urgent_op_queued_after_a_low_op_still_claims_first above): a LOW row
+    enqueued first must not be the one claim_next_op hands back once a URGENT row exists behind
+    it, and FIFO must hold within a tier."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    now = datetime.now(timezone.utc)
+    ledger.enqueue_op("op.low", "read_thread", {}, now, priority=L.PRIORITY_LOW)
+    ledger.enqueue_op("op.normal_a", "send", {}, now, priority=L.PRIORITY_NORMAL)
+    ledger.enqueue_op("op.urgent", "send", {}, now, priority=L.PRIORITY_URGENT)
+    ledger.enqueue_op("op.normal_b", "send", {}, now, priority=L.PRIORITY_NORMAL)
+
+    claimed_order = []
+    while True:
+        row = ledger.claim_next_op()
+        if row is None:
+            break
+        claimed_order.append(row["op_id"])
+    assert claimed_order == ["op.urgent", "op.normal_a", "op.normal_b", "op.low"]
+    ledger.close()
+
+
+def test_enqueue_op_with_no_priority_opinion_defaults_to_normal(tmp_path):
+    """An older/direct caller passing priority=None gets the same tier every op got before this
+    column existed -- never a guessed urgent or low."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    ledger.enqueue_op("op.no_opinion", "send", {}, datetime.now(timezone.utc))
+    row = ledger._db.execute(
+        "select priority from phone_ops where op_id=?", ("op.no_opinion",)).fetchone()
+    assert row["priority"] == L.PRIORITY_NORMAL
+    ledger.close()
+
+
+def test_phone_ops_queue_counts_breaks_the_total_down_by_priority_tier(tmp_path):
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    now = datetime.now(timezone.utc)
+    ledger.enqueue_op("op.u", "send", {}, now, priority=L.PRIORITY_URGENT)
+    ledger.enqueue_op("op.n1", "send", {}, now, priority=L.PRIORITY_NORMAL)
+    ledger.enqueue_op("op.n2", "send", {}, now, priority=L.PRIORITY_NORMAL)
+    ledger.enqueue_op("op.l", "send", {}, now, priority=L.PRIORITY_LOW)
+    counts = ledger.phone_ops_queue_counts()
+    assert counts["queued"] == 4
+    assert counts["by_priority"] == {"urgent": 1, "normal": 2, "low": 1}
     ledger.close()
 
 
@@ -2259,6 +2481,21 @@ def test_the_unresolved_send_watcher_queues_and_the_dispatcher_resolves_it(rig):
     status_code, body = rig.send()
     assert (status_code, body["state"]) == (200, "sent")
     assert body["replayed"] is False
+
+
+def test_the_unresolved_send_watcher_enqueues_its_reconcile_as_low_priority(rig):
+    """TASK-296-adjacent, Ivan 2026-09-24: this watcher's own reconcile is exactly the op kind that
+    starved real sends behind it on 2026-09-23/24 -- it must never claim ahead of a URGENT reply
+    sitting in the same queue."""
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal):
+        rig.send()
+
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    watch = W.UnresolvedSendWatcher(rig.ledger, dispatch, log=lambda _m: None, clock=rig.clock)
+    result = watch.cycle()
+
+    assert rig.ledger.op_status(result["op_id"])["priority"] == L.PRIORITY_LOW
 
 
 def test_the_unresolved_send_watcher_cycle_is_a_noop_when_nothing_is_stuck(rig):

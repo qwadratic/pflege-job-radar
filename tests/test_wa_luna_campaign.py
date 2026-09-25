@@ -71,7 +71,7 @@ def wa(tmp_path, monkeypatch):
 def _out(**kw):
     base = {"action": "reply_now_conversational", "bubbles": ["Danke! Haben Sie die deutsche Urkunde schon?"],
             "rationale": "", "escalate_to_manager": False, "escalate_reason": None, "no_send": False,
-            "next_ask": None, "card_patch": {}}
+            "next_ask": "Haben Sie die deutsche Anerkennung (Urkunde) schon?", "card_patch": {}}
     base.update(kw)
     return base
 

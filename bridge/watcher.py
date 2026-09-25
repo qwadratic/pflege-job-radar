@@ -632,8 +632,13 @@ class UnresolvedSendWatcher:
             rows = self.ledger.unresolved()
             op_id = None
             if rows:
+                # LOW (TASK-296-adjacent, 2026-09-24): background sync nobody is waiting on. This
+                # is the exact op kind that starved real sends behind it for ~14 hours on two
+                # forever-indeterminate keys on 2026-09-23/24 -- see ledger.unresolved()'s own
+                # docstring for the other half of that fix (escalation stops the re-enqueue).
                 op_id = self.ops_dispatcher.enqueue(
-                    "reconcile", {"client_msg_ids": [row.client_msg_id for row in rows]})
+                    "reconcile", {"client_msg_ids": [row.client_msg_id for row in rows]},
+                    priority=L.PRIORITY_LOW)
         except Exception as exc:  # a bug in our own code, named as one and never silently swallowed
             self.errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"

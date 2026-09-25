@@ -101,6 +101,16 @@ def meta_envelope(payload, *, phone_number_id, display_phone_number, waba_id):
     else:
         message = {"from": sender, "id": payload["inbound_id"], "timestamp": timestamp(payload),
                    "type": "text", "text": {"body": payload.get("text") or ""}}
+        # A voice note reaches the shade as a placeholder ("🎤 Sprachnachricht (0:21)") whose file is
+        # only pulled and linked ~20s later, as its own second inbound. Both halves are real messages
+        # and both must keep flowing, but the placeholder is not TEXT the sender wrote, and a reader
+        # that cannot tell the difference answers it as one (live, 2026-09-24: a Russian voice note
+        # got "Ihre Sprachnachricht ist hier leider nicht abspielbar angekommen" four seconds before
+        # its own transcript existed). The mini already knows -- payload.media_kind, bridge/inbound.py
+        # -- and this was the one hop that dropped the fact. Named media_pending, not media_kind, so
+        # it can never be mistaken for a message that actually carries a file.
+        if kind:
+            message["media_pending"] = kind
     value = {
         "messaging_product": "whatsapp",
         "metadata": {"display_phone_number": display_phone_number,

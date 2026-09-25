@@ -117,23 +117,27 @@ class Verdict:
                 and self.reason == other.reason)
 
 
-def _live_transport(payload_text):
-    """Runs ``claude -p`` once, statelessly, ``payload_text`` (the JSON envelope
-    ``is_unambiguous_refusal`` builds -- ``our_last_message``/``candidate_reply``) over stdin -- same
-    reasoning as app/wa/luna_brain.Client._live_reply: a long message never risks an argument-length
-    limit or shows up in a process listing. Returns the raw result text; raises RuntimeError on
-    anything that is not a usable answer. Every raise here is turned into Verdict(False, ...) by the
-    caller, never left to propagate -- see the asymmetry in the module docstring."""
+def _run_cli(payload_text, *, model, timeout_sec, system_prompt, what):
+    """One stateless ``claude -p`` classification call: ``payload_text`` over stdin -- same reasoning as
+    app/wa/luna_brain.Client._live_reply, a long message never risks an argument-length limit or shows
+    up in a process listing -- and the raw result text back. Raises RuntimeError on anything that is
+    not a usable answer; every caller turns that into its own "safe direction" verdict rather than
+    letting it propagate. ``what`` names the caller in those errors.
+
+    Shared with app/wa/luna/agent_note_gate.py (2026-09-24): the argv, the stdin envelope and the
+    failure taxonomy are identical for every narrow one-shot classifier on this rail, and only the
+    model, timeout and system prompt differ. ``--restricted --tools ""`` is part of that contract:
+    a classifier reaches nothing, so nothing it reads can instruct it to act."""
     try:
         proc = subprocess.run(
             [C.LUNA_CLAUDE_BIN, "-p", "--restricted", "--tools", "", "--output-format", "json",
-             "--model", C.REFUSAL_MODEL, "--effort", "low", "--system-prompt", SYSTEM_PROMPT],
-            input=payload_text, capture_output=True, text=True, timeout=C.REFUSAL_TIMEOUT_SEC,
+             "--model", model, "--effort", "low", "--system-prompt", system_prompt],
+            input=payload_text, capture_output=True, text=True, timeout=timeout_sec,
         )
     except FileNotFoundError:
         raise RuntimeError(f"{C.LUNA_CLAUDE_BIN!r} is not on PATH")
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"refusal classifier did not answer within {C.REFUSAL_TIMEOUT_SEC}s")
+        raise RuntimeError(f"{what} did not answer within {timeout_sec}s")
     if proc.returncode != 0:
         raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()[:500]}")
     try:
@@ -146,6 +150,16 @@ def _live_transport(payload_text):
     if not isinstance(result, str) or not result.strip():
         raise RuntimeError(f"claude -p returned no result text: {envelope!r}")
     return result
+
+
+def _live_transport(payload_text):
+    """Runs ``claude -p`` once, statelessly, ``payload_text`` (the JSON envelope
+    ``is_unambiguous_refusal`` builds -- ``our_last_message``/``candidate_reply``) over stdin. Returns
+    the raw result text; raises RuntimeError on anything that is not a usable answer. Every raise here
+    is turned into Verdict(False, ...) by the caller, never left to propagate -- see the asymmetry in
+    the module docstring."""
+    return _run_cli(payload_text, model=C.REFUSAL_MODEL, timeout_sec=C.REFUSAL_TIMEOUT_SEC,
+                    system_prompt=SYSTEM_PROMPT, what="refusal classifier")
 
 
 def _extract_verdict_json(text):

@@ -88,16 +88,19 @@ class OpsDispatcher:
         self._thread = None
         self._stop = threading.Event()
 
-    def enqueue(self, kind, args, budget_sec=None):
+    def enqueue(self, kind, args, budget_sec=None, priority=None):
         """-> a fresh, already-durably-queued op_id (TASK-227). The HTTP route that calls this
         answers 200 {"op_id", "state": "queued"} immediately -- see this module's own docstring
         for why that is not the bare-202 lie ``bridge/server.py``'s module docstring warns
         against: the client polls this to a terminal state before its own caller ever sees it.
 
-        ``budget_sec`` (TASK-243) passes straight through to ``ledger.enqueue_op`` -- see that
-        method's own docstring. This file invents no value for it either."""
+        ``budget_sec`` (TASK-243) and ``priority`` (TASK-296-adjacent) both pass straight through
+        to ``ledger.enqueue_op`` -- see that method's own docstring. This file invents no value for
+        either: GENERIC DISPATCH stays generic, the caller that already knows what kind of op this
+        is (a route handler, a watcher) is the one that names its urgency."""
         op_id = mint_op_id()
-        self.ledger.enqueue_op(op_id, kind, args, self.executor.clock(), budget_sec=budget_sec)
+        self.ledger.enqueue_op(op_id, kind, args, self.executor.clock(), budget_sec=budget_sec,
+                               priority=priority)
         return op_id
 
     def _resolve(self, kind):

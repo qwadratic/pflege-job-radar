@@ -88,7 +88,7 @@ class _FakeLBClient:
             self.capture["user"] = json.loads(user_text)
         out = {"action": "reply_now_conversational", "bubbles": ["Danke, angekommen 🙂"], "rationale": "",
                "escalate_to_manager": False, "escalate_reason": None, "no_send": False,
-               "next_ask": None, "card_patch": {}}
+               "next_ask": "Haben Sie die deutsche Anerkennung (Urkunde) schon?", "card_patch": {}}
         out.update(self.out_kw)
         return out, (session_id or "sess-1")
 
@@ -698,12 +698,19 @@ def test_a_failed_reply_after_ingest_keeps_the_file_on_the_card_for_the_catch_up
     monkeypatch.setattr(ST, "STALE_CLAIM_SECONDS", 0)   # the brain case leaves its claim in_progress
     payloads = []
     monkeypatch.setattr(LB, "Client", lambda *a, **k: _PayloadLog(payloads))
-    (result,) = CU.run(client=FakeMetaMedia(), phones=[LEAD])
+    catchup_meta = FakeMetaMedia()
+    (result,) = CU.run(client=catchup_meta, phones=[LEAD])
     assert result["status"] == "sent"
-    (seen,) = payloads
-    assert seen["documents_just_received"] == [summary] and seen["card"]["documents"] == [summary]
-    assert seen["requirement_scoreboard"]["cv_document"] == "satisfied"
-    assert seen["requirement_scoreboard"]["next_objective"].startswith("ask for the still-missing German Urkunde")
+    if failure == "brain":
+        (seen,) = payloads
+        assert seen["documents_just_received"] == [summary] and seen["card"]["documents"] == [summary]
+        assert seen["requirement_scoreboard"]["cv_document"] == "satisfied"
+        assert seen["requirement_scoreboard"]["next_objective"].startswith("ask for the still-missing German Urkunde")
+    else:
+        # TASK-288: the brain succeeded before the send failed, so its decision was already composed and
+        # stored -- the catch-up retry replays that composed reply and never calls the brain again.
+        assert payloads == []
+        assert catchup_meta.sent and catchup_meta.sent[0]["body"] == "Danke, angekommen 🙂"
     t, _, _ = _saved_thread()
     assert "_documents_just_received" not in t["slots"] and t["last_outbound_at"]
 

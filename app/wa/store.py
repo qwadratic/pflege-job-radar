@@ -21,6 +21,10 @@ STOPPED = "opt-out"      # wa_threads.stopped_reason for a lead who asked us to 
 # wa_reply_turn_claims.state when the brain chose silence for that inbound message. Final (TASK-204): the
 # message counts as answered, catch-up never re-runs the model on it.
 NO_SEND_STATE = "skipped_no_send"
+# wa_reply_turn_claims.state when the message was an operator note (wa_agent_notes), not a candidate
+# turn. Final for the same reason NO_SEND_STATE is: the message IS answered (the ack went out) and the
+# work it asks for lives on its own row now -- a catch-up re-drive must never hand it to the brain.
+AGENT_NOTE_STATE = "routed_to_agent_note"
 
 SCHEMA = """
 create table if not exists wa_threads (
@@ -162,6 +166,35 @@ create table if not exists wa_suppressions (
   trigger_text text,
   at text not null
 );
+-- The operator inbox (Ivan, 2026-09-24). A Russian-language instruction that arrives on a TEST thread
+-- is not a candidate turn: it is a note to whoever maintains this system. The gate that decides that
+-- (app/wa/luna/agent_note_gate.py) only ever runs on a thread already marked is_test -- for every real
+-- candidate this feature does not exist at all, which is what makes it safe: no real candidate can be
+-- pulled out of the funnel by it, and no stranger can make this number emit anything.
+-- Detection writes a ROW here and stops. Nothing that implements anything runs in the web process; the
+-- periodic worker reads these rows, never a live re-scan of wa_messages. One row per inbound wamid --
+-- that unique is what makes a redelivered webhook, a catch-up re-drive and a crashed worker idempotent
+-- (no second row, no second ack, no second completion note).
+create table if not exists wa_agent_notes (
+  id integer primary key,
+  wamid text not null unique,
+  phone text not null,
+  kind text not null,
+  body text not null,
+  status text not null,          -- pending | in_progress | done | blocked
+  created_at text not null,
+  acked_at text,
+  claimed_at text,               -- set when a worker takes it; stale after AGENT_NOTE_STALE_SEC
+  attempts integer not null default 0,
+  progress text,                 -- append-only '[<iso>] line' trail, so a worker that dies leaves one
+  outcome_done text,
+  outcome_not_done text,
+  outcome_needed text,
+  blocked_reason text,
+  finished_at text,
+  notified_at text               -- when the one completion note went out; guards a second send
+);
+create index if not exists idx_wa_agent_notes_status on wa_agent_notes(status, created_at);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -196,7 +229,11 @@ MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "impor
               # and this DB drift apart -- twice, live, the same night. Nothing here ever hard-deletes a
               # row again: "forget" sets deleted_at instead, and every read the model reaches (messages_for,
               # message_by_wamid, documents_for, document_for_wamid) filters it out by default.
-              ("wa_messages", "deleted_at", "text"), ("wa_documents", "deleted_at", "text"))
+              ("wa_messages", "deleted_at", "text"), ("wa_documents", "deleted_at", "text"),
+              # TASK-288: the brain's composed decision (turn()'s whole return dict, JSON), written just
+              # before the risky step (send_and_record) so a pure delivery failure's retry can reuse it
+              # instead of paying for a fresh claude -p call. See record_composed_reply/composed_reply.
+              ("wa_reply_turn_claims", "composed", "text"))
 
 
 def _migrate(c):
@@ -381,9 +418,12 @@ def rail_counts(c):
 def claim_reply_turn(c, phone, turn_key):
     """True if the caller may proceed to generate and send a reply for this exact inbound message;
     False if another caller already holds an active claim, or already finished one with state
-    'sent' (a reply for this exact message genuinely went out already -- never reclaimable) or
+    'sent' (a reply for this exact message genuinely went out already -- never reclaimable),
     NO_SEND_STATE (the brain decided to stay silent on it, TASK-204: a retry would re-run the model on
-    the same message). Any other terminal state (skipped_rate_cap / skipped_stopped / skipped_error),
+    the same message) or AGENT_NOTE_STATE (it was an operator note, answered by its ack and now owned
+    by its wa_agent_notes row: a retry would hand a Russian instruction to the candidate brain, which
+    is the exact failure that table exists to prevent). Any other terminal state (skipped_rate_cap /
+    skipped_stopped / skipped_error),
     or a stale in_progress claim from a crashed prior attempt, is reclaimable: those all mean no reply
     decision was made yet, so a later retry (catch-up) must still be allowed to try."""
     now = now_iso()
@@ -399,7 +439,7 @@ def claim_reply_turn(c, phone, turn_key):
     if row is None:
         return True  # vanished between the failed insert and this select -- fail open rather than
                      # silently block an owed reply forever over something that should not happen
-    if row["state"] in ("sent", NO_SEND_STATE):
+    if row["state"] in ("sent", NO_SEND_STATE, AGENT_NOTE_STATE):
         return False
     if row["state"] == "in_progress":
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(row["claimed_at"])).total_seconds()
@@ -415,6 +455,119 @@ def finish_reply_turn_claim(c, phone, turn_key, state):
     c.execute("update wa_reply_turn_claims set state=?, updated_at=? where phone=? and turn_key=?",
               (state, now_iso(), phone, turn_key))
     c.commit()
+
+
+# --- TASK-288: a composed-but-undelivered reply survives a send failure, so a retry can resend it
+# without paying for another claude -p call. Written right before send_and_record, keyed on the same
+# (phone, turn_key) as the claim -- deliberately not cleared on a terminal write: a "sent" or
+# NO_SEND_STATE claim is never reclaimed (claim_reply_turn), so a stale blob on it is never read again.
+
+def record_composed_reply(c, phone, turn_key, d):
+    c.execute("update wa_reply_turn_claims set composed=? where phone=? and turn_key=?",
+              (json.dumps(d, ensure_ascii=False), phone, turn_key))
+    c.commit()
+
+
+def composed_reply(c, phone, turn_key):
+    """-> the brain's decision from a prior attempt on this exact turn (turn()'s return dict), or
+    None when none was ever recorded -- this exact turn is being composed for the first time, or the
+    prior attempt failed before the brain ever answered (nothing to reuse; the caller composes fresh,
+    same as before this existed)."""
+    row = c.execute("select composed from wa_reply_turn_claims where phone=? and turn_key=?",
+                    (phone, turn_key)).fetchone()
+    return json.loads(row["composed"]) if row and row["composed"] else None
+
+
+# --- the operator inbox (Ivan, 2026-09-24) -------------------------------------------------------
+# The two halves never run in the same process. The web process only ever reaches the first three
+# (look up, record, mark acked) -- it decides and records, it never implements. The periodic worker
+# reaches the rest. See the wa_agent_notes comment in SCHEMA for why the split is the point.
+
+# A worker that died mid-note must not hold it forever, but the window has to clear the worst-case
+# tick, not the poll interval: one note can mean an edit, the offline test lane (~2 min) and a
+# service restart. 45 min is generous against that and still bounded.
+AGENT_NOTE_STALE_SEC = 2700
+
+
+def agent_note_for_wamid(c, wamid):
+    return c.execute("select * from wa_agent_notes where wamid=?", (wamid,)).fetchone()
+
+
+def record_agent_note(c, wamid, phone, body, kind):
+    """Insert-or-ignore on the unique wamid, then read back: a redelivered webhook or a catch-up
+    re-drive of the same message gets the row that already exists, never a second one. -> the row."""
+    c.execute("insert or ignore into wa_agent_notes (wamid, phone, kind, body, status, created_at) "
+              "values (?,?,?,?,?,?)", (wamid, phone, kind, body, "pending", now_iso()))
+    c.commit()
+    return agent_note_for_wamid(c, wamid)
+
+
+def mark_agent_note_acked(c, note_id, at=None):
+    c.execute("update wa_agent_notes set acked_at=? where id=?", (at or now_iso(), note_id))
+    c.commit()
+
+
+def open_agent_notes(c):
+    """Notes a worker may still take: pending, in_progress whose claim went stale (the worker that
+    held it died), or finished-but-never-delivered -- a note whose completion send failed cleared its
+    notified_at, and without it showing up here again nothing would ever look at it and the sender
+    would keep an ack he was promised a report for. Oldest first, one note at a time, in arrival
+    order."""
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=AGENT_NOTE_STALE_SEC)).replace(microsecond=0).isoformat()
+    return c.execute("select * from wa_agent_notes where status='pending' "
+                     "or (status='in_progress' and claimed_at<?) "
+                     "or (status in ('done','blocked') and notified_at is null) "
+                     "order by created_at, id", (cutoff,)).fetchall()
+
+
+def claim_agent_note(c, note_id):
+    """True if the caller now owns this note. One conditional UPDATE, so the database decides who won
+    when two workers race -- same shape as claim_reply_turn's insert."""
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=AGENT_NOTE_STALE_SEC)).replace(microsecond=0).isoformat()
+    cur = c.execute("update wa_agent_notes set status='in_progress', claimed_at=?, attempts=attempts+1 "
+                    "where id=? and (status='pending' or (status='in_progress' and claimed_at<?))",
+                    (now_iso(), note_id, cutoff))
+    c.commit()
+    return cur.rowcount == 1
+
+
+def append_agent_note_progress(c, note_id, line):
+    """One timestamped line onto the note's trail. A worker that dies mid-note leaves the next one a
+    record of how far it got, so the retry continues instead of starting over."""
+    row = c.execute("select progress from wa_agent_notes where id=?", (note_id,)).fetchone()
+    trail = f"{row['progress']}\n" if row and row["progress"] else ""
+    c.execute("update wa_agent_notes set progress=? where id=?",
+              (f"{trail}[{now_iso()}] {line}", note_id))
+    c.commit()
+
+
+def finish_agent_note(c, note_id, status, done, not_done, needed, blocked_reason=None):
+    c.execute("update wa_agent_notes set status=?, outcome_done=?, outcome_not_done=?, outcome_needed=?, "
+              "blocked_reason=?, finished_at=?, claimed_at=null where id=?",
+              (status, done, not_done, needed, blocked_reason, now_iso(), note_id))
+    c.commit()
+
+
+def mark_agent_note_notified(c, note_id):
+    """True if this call is the one that gets to send the completion note. Conditional on notified_at
+    still being null, so two workers that both reached the end of the same note still send once."""
+    cur = c.execute("update wa_agent_notes set notified_at=? where id=? and notified_at is null",
+                    (now_iso(), note_id))
+    c.commit()
+    return cur.rowcount == 1
+
+
+def clear_agent_note_notified(c, note_id):
+    """Undo the claim on the completion note after the send itself failed, so a later attempt may try
+    again. Without this, mark-then-send would burn the one delivery on a send that never happened."""
+    c.execute("update wa_agent_notes set notified_at=null where id=?", (note_id,))
+    c.commit()
+
+
+def agent_note(c, note_id):
+    return c.execute("select * from wa_agent_notes where id=?", (note_id,)).fetchone()
 
 
 # --- per-candidate LLM call rate limit (TASK-180) ------------------------------------------------
@@ -863,10 +1016,16 @@ def messages_before(c, phone, before_id=None, limit=20, include_deleted=False):
     ``limit`` overall when ``before_id`` is None), returned OLDEST FIRST within the page -- paging
     further back than turn_context's own recent tail reaches (TASK-290), on the same deleted_at
     filter as messages_for.
-    -> (rows, has_more): has_more is True when at least one older row exists beyond this page."""
+    -> (rows, has_more): has_more is True when at least one older row exists beyond this page.
+
+    The operator inbox's own ack/completion messages are filtered out for the same reason
+    luna_brain.turn_context drops them: on a test thread they sit between the operator's German test
+    turns, and the model paging back through its own history must not read the harness talking to a
+    colleague about a work item as something the candidate persona said."""
     sql, args = "select * from wa_messages where phone=?", [phone]
     if not include_deleted:
         sql += " and deleted_at is null"
+    sql += " and coalesce(json_extract(meta, '$.action'), '') not in ('agent_note_ack','agent_note_done')"
     if before_id is not None:
         sql += " and id<?"
         args.append(before_id)

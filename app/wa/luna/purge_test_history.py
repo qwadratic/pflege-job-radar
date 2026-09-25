@@ -57,7 +57,7 @@ from . import test_threads as TT
 # deliberately absent (see the module docstring).
 CORE_TABLES = ("wa_messages", "wa_imported_messages", "wa_message_statuses", "wa_webhook_events",
                "wa_inbound_pending", "wa_reply_turn_claims", "wa_nudge_claims", "wa_luna_calls",
-               "wa_send_failures", "wa_followups_sent", "wa_documents")
+               "wa_send_failures", "wa_followups_sent", "wa_documents", "wa_agent_notes")
 # Created by the module that first uses them (store.ensure_campaign_schema, queue.db), not by store.SCHEMA:
 # on a database where no campaign ever ran and nobody ever consented they do not exist at all.
 OPTIONAL_TABLES = ("wa_campaign_sends", "wa_queue_candidates", "wa_queue_matches")

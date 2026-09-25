@@ -44,6 +44,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import cv as CV
 from . import brain as B
 from . import config as C
+from .luna import agent_note_gate as GATE
 from .luna import choices as CH
 from .luna import escalation as ESC
 from . import meta as M
@@ -174,7 +175,11 @@ def parse_message(m):
     if isinstance(context, dict):
         base.update(reply_to_wamid=str(context.get("id") or "").strip() or None, context=context)
     if kind == "text":
-        return {**base, "button_id": None, "text": str((m.get("text") or {}).get("body") or "")}
+        # media_pending (bridge/envelope.py): this "text" is the phone rail's own placeholder for a
+        # voice note whose file has not been linked yet, not something the sender typed.
+        pending = str(m.get("media_pending") or "").strip() or None
+        return {**base, "button_id": None, "media_pending": pending,
+                "text": str((m.get("text") or {}).get("body") or "")}
     if kind == "button":                                    # template quick-reply tap
         b = m.get("button") or {}
         payload = str(b.get("payload") or "").strip()
@@ -736,8 +741,21 @@ def finish_inbound(c, m, client=None):
         return {"wamid": wamid, "status": "stopped"}
     if is_media and not reads:
         return _media_ack(c, t, m, client)
+    turn_text = m["text"] if transcript is None else transcript
+    if m.get("media_pending") and not m.get("media_id") and ST.is_test_thread(c, t["phone"]):
+        # The phone rail's placeholder for a voice note whose file has not linked yet (~20s behind,
+        # as its own second inbound carrying the transcript). Answering it means answering
+        # "🎤 Sprachnachricht (0:21)" -- which on a test thread is how an operator's Russian
+        # instruction got a German candidate reply before its transcript even existed. The transcript
+        # row is the one that carries what was actually said, and it arrives on its own.
+        # Scoped to test threads deliberately: a real candidate's voice note keeps today's behaviour
+        # exactly, rather than having it changed as a side effect of an operator feature.
+        return {"wamid": wamid, "status": "media_pending_placeholder"}
+    routed = _route_agent_note(c, t, m, turn_text, client=client)
+    if routed is not None:
+        return routed
     try:
-        result = process_owed_turn(c, t, m["text"] if transcript is None else transcript, m["button_id"], wamid,
+        result = process_owed_turn(c, t, turn_text, m["button_id"], wamid,
                                    client=client)
     except Exception:
         if ST.reply_turn_claim_state(c, phone, wamid) == "in_progress":
@@ -841,6 +859,62 @@ def _media_ack(c, t, m, client):
     return {"wamid": wamid, "status": sent, "action": "media_ack"}
 
 
+AGENT_NOTE_ACK_RU = "[агент] Принято, заметка #{id}. Беру в работу — напишу сюда, когда закончу."
+
+
+def _route_agent_note(c, t, m, text, client=None):
+    """An operator's own instruction, in Russian, on a TEST thread: recorded for the periodic worker
+    and acknowledged, never handed to the candidate brain (Ivan, 2026-09-24 -- see
+    app/wa/luna/agent_note_gate.py for the live incident this exists for).
+
+    -> a result dict when the message was routed, None when it is an ordinary turn. None is the
+    overwhelmingly common answer and costs nothing: a thread that is not marked is_test leaves here on
+    the first line, before any query and any model call, so for every real candidate this feature does
+    not exist at all.
+
+    Detection and action are split deliberately: this decides and RECORDS. Nothing that implements
+    anything runs in this process -- that is the other half, driven off wa_agent_notes rows."""
+    phone, wamid = t["phone"], m["wamid"]
+    if not ST.is_test_thread(c, phone):
+        return None
+    row = ST.agent_note_for_wamid(c, wamid)
+    if row is None:                      # a known wamid skips the classifier entirely: no second call
+        if not GATE.has_cyrillic(text or ""):
+            return None
+        verdict = GATE.is_operator_note(text)
+        log.info("agent-note gate for %s %s: %r", phone, wamid, verdict)
+        if not verdict.is_note:
+            return None
+    # Claimed only on the routed branch, and only after the verdict: claim_reply_turn refuses a live
+    # in_progress claim, so claiming before deciding would make process_owed_turn's own claim fail
+    # against ours and leave the operator waiting out STALE_CLAIM_SECONDS for an ordinary turn.
+    if not ST.claim_reply_turn(c, phone, wamid):
+        return {"wamid": wamid, "status": "claimed_elsewhere"}
+    if row is None:
+        row = ST.record_agent_note(c, wamid, phone, text, m["kind"])
+    if row["acked_at"] is None:
+        try:
+            # NOT turn_key=wamid: bridge_ids.reply_key hashes phone|turn_key|bubble_index and leaves
+            # action out on purpose (TASK-245), so the wamid would mint the same client_msg_id as
+            # bubble 0 of the candidate turn for this same message. That collision is reachable -- a
+            # gate timeout answers the message as an ordinary turn, and a catch-up re-drive that then
+            # classifies it as a note would hit first-body-wins and wedge this message forever (three
+            # such rows exist on the live rail from before this feature). Its own key, like the
+            # completion note's in app/wa/luna/agent_notes.py.
+            send_and_record(c, t, [AGENT_NOTE_ACK_RU.format(id=row["id"])], [], client=client,
+                            action="agent_note_ack", turn_key=f"agent_note:{row['id']}:ack")
+        except Exception:
+            # Reclaimable on purpose: the row is already durable, so the retry finds it, skips the
+            # classifier, and only re-tries the ack that actually failed.
+            ST.finish_reply_turn_claim(c, phone, wamid, "skipped_error")
+            raise
+        ST.mark_agent_note_acked(c, row["id"])
+    ST.finish_reply_turn_claim(c, phone, wamid, ST.AGENT_NOTE_STATE)
+    ST.save_thread(c, t)
+    return {"wamid": wamid, "status": ST.AGENT_NOTE_STATE, "action": "agent_note_ack",
+            "note_id": row["id"]}
+
+
 # process_owed_turn statuses that leave ``t`` untouched. The caller skips its save: on claimed_elsewhere
 # the other process (webhook or catch-up) saves its own copy, and an earlier copy written over it lost
 # last_outbound_at and _session_id (TASK-199 review).
@@ -871,39 +945,56 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     WA_BRAIN=luna (TASK-203): the brain gets ``luna_brain.turn_context`` for ``turn_key`` on
     ``t["turn_context"]`` (removed again afterwards), and after the send the card's LAST_TURN_KEY marker
     records which outbound rows the model itself wrote. A no_send ends the claim in ST.NO_SEND_STATE.
+
+    TASK-288: the brain only runs when ``ST.composed_reply`` has nothing for this ``turn_key`` yet.
+    A retry after a pure delivery failure (send_and_record raised; the brain already answered) finds
+    its own prior decision there and skips straight to re-sending it -- no second claude -p call, no
+    second hit against LUNA_MAX_CALLS_PER_HOUR. A retry after a brain-side failure (nothing was ever
+    recorded) composes fresh, same as before this existed.
     """
     if ST.reply_turn_claim_state(c, t["phone"], turn_key) == ST.NO_SEND_STATE:
         return {"status": "no_send_recorded"}
     if not ST.claim_reply_turn(c, t["phone"], turn_key):
         return {"status": "claimed_elsewhere"}
 
-    if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
-            ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
-        # The message stays recorded and the claim is left in a reclaimable state (TASK-181) --
-        # the catch-up driver (TASK-182) is what actually answers it once the window rolls over.
-        ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
-        return {"status": "rate_limited"}
-
-    # TASK-224: a genuine tap (button_id already set) is left alone; only a bare typed reply, which
-    # is all the phone rail can ever produce, is recovered against the offer this thread's own last
-    # outbound row actually made. Covers both callers (webhook and catchup.py) from this one point.
-    button_id = button_id or CH.recover_button_id(c, t["phone"], turn_key, text)
+    if C.BRAIN == "luna":
+        from . import luna_brain as LB          # imported lazily: only touched when selected
 
     was_consented = C.BRAIN == "luna" and bool((t.get("slots") or {}).get("anonymous_send_consent"))
 
-    if C.BRAIN == "luna":
-        from . import luna_brain as LB          # imported lazily: only touched when selected
-        t["turn_context"] = LB.turn_context(c, t, turn_key)
-        ST.record_luna_call(c, t["phone"])
-        try:
-            d = LB.turn(text, t, button_id=button_id)
-        finally:
-            t.pop("turn_context", None)
-    else:
-        # The deterministic brain knows only its own button ids; a template tap is read as its label, as
-        # before TASK-203.
-        is_template_tap = str(button_id or "").startswith(TEMPLATE_BUTTON_PREFIX)
-        d = B.turn(text, t, button_id=None if is_template_tap else button_id)
+    # TASK-288: a prior attempt on this exact turn may have composed a reply and only failed to
+    # deliver it (send_and_record raised -- a bridge/Meta error, not a brain failure). Reusing it
+    # here means a pure delivery retry never pays for another claude -p call: this is what let a 30s
+    # phone-lock hiccup burn ~19 of one candidate's 20-per-hour LUNA_MAX_CALLS_PER_HOUR budget
+    # composing the identical answer 11 times before this fix (live incident, 2026-09-23 ~21:16-21:19
+    # UTC). None here means either this is the first attempt, or the prior one never got as far as a
+    # composed reply (it failed inside the brain itself) -- either way, compose fresh, same as always.
+    d = ST.composed_reply(c, t["phone"], turn_key)
+    if d is None:
+        if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
+                ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
+            # The message stays recorded and the claim is left in a reclaimable state (TASK-181) --
+            # the catch-up driver (TASK-182) is what actually answers it once the window rolls over.
+            ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
+            return {"status": "rate_limited"}
+
+        # TASK-224: a genuine tap (button_id already set) is left alone; only a bare typed reply, which
+        # is all the phone rail can ever produce, is recovered against the offer this thread's own last
+        # outbound row actually made. Covers both callers (webhook and catchup.py) from this one point.
+        button_id = button_id or CH.recover_button_id(c, t["phone"], turn_key, text)
+
+        if C.BRAIN == "luna":
+            t["turn_context"] = LB.turn_context(c, t, turn_key)
+            ST.record_luna_call(c, t["phone"])
+            try:
+                d = LB.turn(text, t, button_id=button_id)
+            finally:
+                t.pop("turn_context", None)
+        else:
+            # The deterministic brain knows only its own button ids; a template tap is read as its label, as
+            # before TASK-203.
+            is_template_tap = str(button_id or "").startswith(TEMPLATE_BUTTON_PREFIX)
+            d = B.turn(text, t, button_id=None if is_template_tap else button_id)
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         # Both brains set this from SL.is_stop(text) and from nothing else (brain.py:332, luna_brain.py:943),
@@ -922,6 +1013,10 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     if d["matches"]:
         t["matches_sent_at"] = ST.now_iso()
 
+    # TASK-288: durable before the risky step, so a delivery failure below has something for the
+    # next attempt to reuse (see the composed_reply read at the top of this function). Idempotent on
+    # a replay that reaches here again -- same value, harmless second write.
+    ST.record_composed_reply(c, t["phone"], turn_key, d)
     try:
         sent = send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"],
                                turn_key=turn_key)

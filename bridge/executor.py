@@ -90,6 +90,13 @@ EVIDENCE_BEARING_KINDS = frozenset({"audio", "document"})
 #: invent one would break the idempotency it exists to provide.
 KEY_PREFIX = "wab.o."
 
+#: Ivan, 2026-09-24: two client_msg_ids sat ATTEMPTING/UNCONFIRMED for ~14 hours because
+#: ``indeterminate`` never resolved anything, and ``UnresolvedSendWatcher`` re-scanned them every
+#: 60s forever -- real phone time, ~66% of an hour's lock, spent on two rows nothing was ever going
+#: to settle. Five real scans (not five minutes: a scan only happens when this watcher's cycle
+#: still finds the row unresolved) is enough to rule out a fluke without grinding forever.
+DEFAULT_RECONCILE_ATTEMPT_LIMIT = 5
+
 
 def _utcnow():
     return datetime.now(timezone.utc)
@@ -97,10 +104,12 @@ def _utcnow():
 
 class Executor:
     def __init__(self, *, ledger, governor, driver, rail_number=None, clock=_utcnow,
-                 tick_wait_sec=D.TICK_WAIT_SEC, sleep=time.sleep, monotonic=time.monotonic):
+                 tick_wait_sec=D.TICK_WAIT_SEC, sleep=time.sleep, monotonic=time.monotonic,
+                 reconcile_attempt_limit=DEFAULT_RECONCILE_ATTEMPT_LIMIT):
         self.ledger = ledger
         self.governor = governor
         self.driver = driver
+        self.reconcile_attempt_limit = reconcile_attempt_limit
         # Injectable so a test can reach the "no tick was drawn" branch without waiting 30 s of
         # wall clock for a phone that does not exist.
         self.tick_wait_sec = tick_wait_sec
@@ -509,10 +518,15 @@ class Executor:
         which ones" had no answer without opening the ledger's own sqlite file by hand. Never the
         phone number -- ``thread_tag`` is what the logs get (this module's own docstring), and the
         same discipline applies to what an operator reads off this route.
+
+        Includes escalated rows (``escalated: true``, TASK-296-adjacent): the watcher stops touching
+        them, but an operator asking "what's stuck" still needs to see them -- that's the visibility
+        Ivan asked for, not disappearance.
         """
         now = self.clock()
         rows = [{"client_msg_id": e.client_msg_id, "thread_tag": e.thread_tag, "state": e.state,
-                "age_sec": L.age_sec(e.attempted_at, now)} for e in self.ledger.unresolved()]
+                "age_sec": L.age_sec(e.attempted_at, now), "escalated": e.escalated_at is not None}
+                for e in self.ledger.unresolved(include_escalated=True)]
         return {"ok": True, "at": L.utc(now), "count": len(rows), "rows": rows}
 
     # --- POST /v1/reconcile ----------------------------------------------------------------------
@@ -526,6 +540,16 @@ class Executor:
         attempted (there is an outgoing bubble at or after our attempt's clock) and our body is not
         in it. Everything else is ``indeterminate`` and goes to a human. A wrong confirmed_absent
         is a duplicate message to a real candidate; an indeterminate is a question.
+
+        A FOURTH VERDICT, ``escalated`` (Ivan, 2026-09-24): ``indeterminate`` used to be a question
+        asked forever -- two keys sat ATTEMPTING/UNCONFIRMED for ~14 hours because nothing ever
+        stopped ``UnresolvedSendWatcher`` from re-enqueueing a real phone scan for them every 60s.
+        A row already at ``reconcile_attempt_limit`` skips the scan entirely (no phone touch) and
+        answers ``escalated`` instead; a scan that comes back ``indeterminate`` bumps the count and
+        escalates immediately once it reaches the limit, so the NEXT cycle is the one that stops
+        touching the phone. ``ledger.unresolved()`` excludes an escalated row from then on -- it is
+        a human's question now (``reconcile_escalated`` in the journal, an ``escalated`` count in
+        ``/v1/health``), not this watcher's.
         """
         results = []
         for key in client_msg_ids:
@@ -543,7 +567,19 @@ class Executor:
                 results.append({"client_msg_id": key, "verdict": "confirmed_absent",
                                 "evidence": f"ledger state {entry.state}: nothing was typed"})
                 continue
-            results.append(self._scan(entry))
+            if entry.reconcile_attempts >= self.reconcile_attempt_limit:
+                results.append({"client_msg_id": key, "verdict": "escalated",
+                                "evidence": f"{entry.reconcile_attempts} scan(s) all came back "
+                                            f"indeterminate -- not scanned again, see "
+                                            f"`unresolved-list`"})
+                continue
+            result = self._scan(entry)
+            if result["verdict"] == "indeterminate":
+                now = self.clock()
+                attempts = self.ledger.bump_reconcile_attempts(key, now)
+                if attempts >= self.reconcile_attempt_limit:
+                    self.ledger.escalate(key, now)
+            results.append(result)
         return results
 
     def _scan(self, entry):
@@ -914,6 +950,7 @@ class Executor:
                 "queue": self.ledger.queue_counts(),
                 "oldest_unresolved_sec": L.age_sec(unresolved[0].attempted_at, now)
                                         if unresolved else None,
+                "reconcile": {"escalated": self.ledger.escalated_count()},
                 "quota": self.governor.quota(now),
                 "inbound": {**self.ledger.inbound_backlog(),
                             "seen": self.inbound_seen,

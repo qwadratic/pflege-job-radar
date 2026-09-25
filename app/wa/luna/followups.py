@@ -96,6 +96,14 @@ def run(client=None, phones=None):
             t = ST.thread(c, phone)
             if t["stopped"]:
                 continue
+            if t["is_test"] and phones is None:
+                # An operator's own thread is not a candidate going quiet. Since the operator inbox
+                # landed (2026-09-24) it goes quiet on purpose -- an instruction is acked and then
+                # worked on -- and _note_arrival moves last_inbound_at, so every note would start a
+                # fresh nudge streak and ask a colleague in German whether they are still there.
+                # Only the automatic sweep skips it: --phones still nudges one by name, the same
+                # exception candidate_phones' own docstring makes for suppression.
+                continue
             if REP.stage_for(t["slots"]) in TERMINAL_STAGES:
                 continue
             if REP.ball_for(c, phone) != "them":

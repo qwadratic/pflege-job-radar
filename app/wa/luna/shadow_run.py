@@ -65,9 +65,11 @@ def _last_inbound(conn, phone):
 
 
 def phones_owed_a_reply(conn, include_test=False):
-    """Every phone whose most recent message (by id, across the whole thread) is inbound and has no
-    recorded no_send (ST.NO_SEND_STATE, TASK-204) -- one query, not N -- the same condition
-    reporting.ball_for() == "us" checks per-phone.
+    """Every phone whose most recent message (by id, across the whole thread) is inbound and is not
+    already settled -- no recorded no_send (ST.NO_SEND_STATE, TASK-204) and not routed to the operator
+    inbox (ST.AGENT_NOTE_STATE, 2026-09-24: an operator note is answered by its own ack, so a thread
+    whose last inbound was one is not owed a candidate reply and must not be re-driven into the brain)
+    -- one query, not N -- the same condition reporting.ball_for() == "us" checks per-phone.
 
     ``include_test`` decides what a test number (TASK-212) counts as here, because this query has two
     kinds of caller. As a REPORT (this module) it leaves them out: a list of candidates waiting for an
@@ -81,9 +83,9 @@ def phones_owed_a_reply(conn, include_test=False):
           on m.phone = latest.phone and m.id = latest.last_id
         left join wa_reply_turn_claims k on k.phone = m.phone and k.turn_key = m.wamid
         left join wa_threads t on t.phone = m.phone
-        where m.direction = 'in' and (k.state is null or k.state != ?)
+        where m.direction = 'in' and (k.state is null or k.state not in (?, ?))
           {"" if include_test else "and coalesce(t.is_test, 0) = 0"}
-    """, (ST.NO_SEND_STATE,)).fetchall()
+    """, (ST.NO_SEND_STATE, ST.AGENT_NOTE_STATE)).fetchall()
     return [r["phone"] for r in rows]
 
 

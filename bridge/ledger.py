@@ -84,6 +84,17 @@ OP_DONE = "done"        # the executor call returned; ``result`` carries what it
 OP_FAILED = "failed"    # the executor call raised; ``error`` carries the refusal/error envelope
 OP_TERMINAL = frozenset({OP_DONE, OP_FAILED})
 
+#: TASK-296-adjacent, Ivan 2026-09-24: three tiers, lower claims first, FIFO preserved WITHIN a
+#: tier (``claim_next_op`` orders by ``priority, position``). A live, candidate-facing exchange
+#: (a reply, or any photo/gallery/document send -- there is no cold-outreach media path on this
+#: rail) outranks a first-touch/campaign send, which outranks background reading (chat-list/thread
+#: reads, reconcile) that nobody is waiting on. Classified by the caller at enqueue time
+#: (bridge/server.py's route handlers, bridge/watcher.py's UnresolvedSendWatcher) -- never here or
+#: in bridge/dispatcher.py, which is generic dispatch on purpose (its own module docstring).
+PRIORITY_URGENT = 0
+PRIORITY_NORMAL = 1
+PRIORITY_LOW = 2
+
 #: TASK-130 AC#9. Ledger rows and journal lines are kept 30 days; the mini has 457 G free but a
 #: candidate's thread metadata is not something to keep forever in a shared home directory.
 LEDGER_RETENTION_DAYS = 30
@@ -135,7 +146,9 @@ create table if not exists outbound (
   detail        text,
   created_at    text not null,
   attempted_at  text,
-  resolved_at   text
+  resolved_at   text,
+  reconcile_attempts integer not null default 0,
+  escalated_at  text
 );
 create index if not exists idx_outbound_attempt on outbound(attempted_at);
 create index if not exists idx_outbound_phone on outbound(to_phone, attempted_at);
@@ -198,7 +211,8 @@ create table if not exists phone_ops (
   started_at  text,
   finished_at text,
   resolved_at text,
-  budget_sec  real
+  budget_sec  real,
+  priority    integer not null default 1  -- PRIORITY_NORMAL, kept in sync by hand (plain SQL text)
 );
 create index if not exists idx_phone_ops_state on phone_ops(state, position);
 create table if not exists audit (
@@ -299,6 +313,8 @@ class Entry:
     created_at: str
     attempted_at: str | None
     resolved_at: str | None
+    reconcile_attempts: int
+    escalated_at: str | None
 
 
 class Ledger:
@@ -311,6 +327,7 @@ class Ledger:
         self._db.executescript(SCHEMA)
         self._migrate_media_seen()
         self._migrate_phone_ops()
+        self._migrate_outbound_reconcile()
         self._db.commit()
         self._lock = threading.RLock()
         self._recover_stuck_ops(datetime.now(timezone.utc))
@@ -422,6 +439,30 @@ class Ledger:
             self._db.execute("alter table phone_ops add column resolved_at text")
         if "budget_sec" not in cols:
             self._db.execute("alter table phone_ops add column budget_sec real")
+        if "priority" not in cols:
+            # Ivan, 2026-09-24: a flat FIFO let a background chat-list read/reconcile queue ahead
+            # of a reply to someone who had just written in, with no way to tell them apart. A row
+            # enqueued before this shipped gets PRIORITY_NORMAL (the same tier a caller with no
+            # opinion gets going forward) -- never inferred as urgent or low from nothing.
+            self._db.execute(f"alter table phone_ops add column priority integer not null default {PRIORITY_NORMAL}")
+        self._db.execute(
+            "create index if not exists idx_phone_ops_state_priority_position "
+            "on phone_ops(state, priority, position)")
+
+    def _migrate_outbound_reconcile(self):
+        """Ivan, 2026-09-24, same postmortem as the priority migration above: two client_msg_ids
+        sat ATTEMPTING/UNCONFIRMED for ~14 hours because ``reconcile``'s ``indeterminate`` verdict
+        never marks anything resolved, so ``UnresolvedSendWatcher`` re-enqueued a real phone scan
+        for them every 60s forever -- ~66% of an hour's lock time on two rows nothing could ever
+        settle. ``reconcile_attempts`` counts scans (not ``outbound.attempts``, which already means
+        something else: how many times this key was POSTed). ``escalated_at`` is set once the
+        count reaches the limit; ``unresolved()`` excludes it from then on, so the watcher stops
+        spending phone time on a row nothing is going to resolve on its own."""
+        cols = {r["name"] for r in self._db.execute("pragma table_info(outbound)").fetchall()}
+        if "reconcile_attempts" not in cols:
+            self._db.execute("alter table outbound add column reconcile_attempts integer not null default 0")
+        if "escalated_at" not in cols:
+            self._db.execute("alter table outbound add column escalated_at text")
 
     def _recover_stuck_ops(self, now):
         """TASK-232: ``claim_next_op`` is the only writer of ``OP_RUNNING`` and nothing else in
@@ -549,16 +590,63 @@ class Ledger:
         """Only a reconcile calls this, and only this state authorises a resend."""
         return self._resolve(client_msg_id, ABSENT, now, detail=evidence)
 
-    def unresolved(self):
-        """-> entries a reconcile has to answer for, oldest first."""
-        rows = self._db.execute(
-            "select * from outbound where state in (?,?) order by attempted_at",
-            (ATTEMPTING, UNCONFIRMED)).fetchall()
+    def unresolved(self, *, include_escalated=False):
+        """-> entries a reconcile has to answer for, oldest first.
+
+        Excludes ``escalated_at is not null`` by default (TASK-296-adjacent, Ivan 2026-09-24): a row
+        this many times ``indeterminate`` is not going to resolve itself, and re-scanning it forever
+        is what starved everything else behind it on 2026-09-23/24. Once escalated it is a human's
+        question, not this watcher's -- see ``bump_reconcile_attempts``/``escalate`` below.
+        ``UnresolvedSendWatcher`` relies on that default to stop re-enqueueing an escalated row.
+
+        ``include_escalated=True`` is for an operator asking "what's stuck, and why" (``Executor.
+        unresolved_sends``, behind ``tools/wa_bridge.py unresolved-list``) -- escalated rows should
+        stay visible there, just marked, since Ivan asked for the *possibility* of finding out, not
+        for them to vanish once given up on.
+        """
+        query = "select * from outbound where state in (?,?)"
+        if not include_escalated:
+            query += " and escalated_at is null"
+        rows = self._db.execute(query + " order by attempted_at",
+                                (ATTEMPTING, UNCONFIRMED)).fetchall()
         return [Entry(**dict(r)) for r in rows]
 
+    def bump_reconcile_attempts(self, client_msg_id, now):
+        """One more scan spent on this key with no resolution. -> the new count."""
+        with self._lock:
+            self._db.execute(
+                "update outbound set reconcile_attempts = reconcile_attempts + 1 where client_msg_id=?",
+                (client_msg_id,))
+            self._db.commit()
+            return self._db.execute(
+                "select reconcile_attempts from outbound where client_msg_id=?",
+                (client_msg_id,)).fetchone()["reconcile_attempts"]
+
+    def escalate(self, client_msg_id, now):
+        """Stop retrying this key: it has hit the reconcile attempt limit. -> nothing; the caller
+        already knows the count it escalated at. Journalled so a human reading the ledger later can
+        see when and why this row stopped being scanned, not just that it did."""
+        with self._lock:
+            self._db.execute("update outbound set escalated_at=? where client_msg_id=?",
+                             (utc(now), client_msg_id))
+            self._db.commit()
+        self.note(now, "reconcile_escalated", client_msg_id)
+
+    def escalated_count(self):
+        """-> how many outbound rows have given up resolving on their own -- the ``/v1/health``
+        visibility Ivan asked for: a growing number here is exactly what should have been visible
+        during the ~14 hours two keys spent stuck on 2026-09-23/24."""
+        return self._db.execute(
+            "select count(*) c from outbound where escalated_at is not null").fetchone()["c"]
+
     # --- counting, for the governor --------------------------------------------------------------
-    def count_spent(self, start, end, *, phone=None, kind=None):
-        """How many sends this handset spent in [start, end). Counts attempting and unconfirmed."""
+    def count_spent(self, start, end, *, phone=None, kind=None, exclude_phones=()):
+        """How many sends this handset spent in [start, end). Counts attempting and unconfirmed.
+
+        ``exclude_phones`` leaves the operators' own test numbers out of the budget a real candidate
+        is paced against (Ivan, 2026-09-24). Without it a night of testing eats the day's first-touch
+        allowance and the next morning's real campaign is refused -- observed live that evening,
+        first_touches_today 10/10 with every one of them sent to the two test handsets."""
         sql = ["select count(*) c from outbound where attempted_at >= ? and attempted_at < ?",
                "and state in (%s)" % ",".join("?" * len(SPENT))]
         args = [utc(start), utc(end), *sorted(SPENT)]
@@ -568,6 +656,10 @@ class Ledger:
         if kind is not None:
             sql.append("and kind = ?")
             args.append(kind)
+        excluded = [p for p in exclude_phones if p]
+        if excluded:
+            sql.append("and to_phone not in (%s)" % ",".join("?" * len(excluded)))
+            args.extend(excluded)
         return self._db.execute(" ".join(sql), args).fetchone()["c"]
 
     def event_count(self, event, start, end):
@@ -581,8 +673,11 @@ class Ledger:
             (event, utc(start), utc(end))).fetchone()
         return row["c"]
 
-    def last_spent_at(self, *, phone=None, kind=None):
-        """-> RFC3339 string of the most recent attempt, or None."""
+    def last_spent_at(self, *, phone=None, kind=None, exclude_phones=()):
+        """-> RFC3339 string of the most recent attempt, or None. ``exclude_phones`` as in
+        count_spent: the global first-touch GAP is about strangers seeing one number wake up, and a
+        send to an operator's own handset is not that -- without this, one test message parks the
+        next real first touch for four minutes."""
         sql = ["select max(attempted_at) m from outbound where state in (%s)" % ",".join("?" * len(SPENT))]
         args = [*sorted(SPENT)]
         if phone is not None:
@@ -591,6 +686,10 @@ class Ledger:
         if kind is not None:
             sql.append("and kind = ?")
             args.append(kind)
+        excluded = [p for p in exclude_phones if p]
+        if excluded:
+            sql.append("and to_phone not in (%s)" % ",".join("?" * len(excluded)))
+            args.extend(excluded)
         return self._db.execute(" ".join(sql), args).fetchone()["m"]
 
     def queue_counts(self):
@@ -600,8 +699,8 @@ class Ledger:
     # --- the phone-op queue (TASK-227): every HTTP route that touches the phone enqueues here and
     # a single dispatcher thread drains it strictly in ``position`` order. This is what makes two
     # concurrent HTTP requests execute one-after-another instead of racing a bare flock. -----------
-    def enqueue_op(self, op_id, kind, args, now, budget_sec=None):
-        """One row, ``queued``, at the back of the line. -> nothing; ``op_id`` is already minted by
+    def enqueue_op(self, op_id, kind, args, now, budget_sec=None, priority=None):
+        """One row, ``queued``, at the back of ITS TIER. -> nothing; ``op_id`` is already minted by
         the caller (``bridge/server.py``), not here -- the caller needs it before this call returns
         to answer the HTTP request with it.
 
@@ -609,23 +708,32 @@ class Ledger:
         ``app/wa/bridge.py::Client`` sends it as the ``X-Wa-Op-Budget-Sec`` header, the exact
         number it is about to poll ``GET /v1/ops/<id>`` against. Never invented here: ``None``
         (no header, an older client, a direct caller) means ``claim_next_op`` treats the row as
-        unbounded, exactly its behaviour before this column existed."""
+        unbounded, exactly its behaviour before this column existed.
+
+        ``priority`` (TASK-296-adjacent): ``None`` maps to ``PRIORITY_NORMAL`` -- a caller with no
+        opinion gets the tier every op got before this column existed, not a guess at urgency."""
         with self._lock:
             position = self._db.execute(
                 "select coalesce(max(position), 0) + 1 as n from phone_ops").fetchone()["n"]
             self._db.execute(
-                "insert into phone_ops(op_id, position, kind, args, state, created_at, budget_sec) "
-                "values (?,?,?,?,?,?,?)",
+                "insert into phone_ops(op_id, position, kind, args, state, created_at, budget_sec, priority) "
+                "values (?,?,?,?,?,?,?,?)",
                 (op_id, position, kind, json.dumps(args, sort_keys=True), OP_QUEUED, utc(now),
-                 None if budget_sec is None else float(budget_sec)))
+                 None if budget_sec is None else float(budget_sec),
+                 PRIORITY_NORMAL if priority is None else int(priority)))
             self._db.commit()
 
     def claim_next_op(self):
-        """-> the oldest still-``queued`` row that is not past its own budget, marked ``running``,
-        or None once nothing claimable is left. Single-writer via ``self._lock`` same as
-        everything else here -- there is only ever one dispatcher thread calling this, but the
-        guard costs nothing and keeps that an invariant this method enforces rather than one the
-        caller has to remember.
+        """-> the highest-priority, oldest-within-that-tier still-``queued`` row that is not past
+        its own budget, marked ``running``, or None once nothing claimable is left. Single-writer
+        via ``self._lock`` same as everything else here -- there is only ever one dispatcher thread
+        calling this, but the guard costs nothing and keeps that an invariant this method enforces
+        rather than one the caller has to remember.
+
+        TASK-296-adjacent: ``order by priority, position`` -- a lower-numbered tier (URGENT) always
+        claims before a higher-numbered one (NORMAL, LOW) regardless of arrival order, and FIFO is
+        preserved WITHIN a tier exactly as it always was. A LOW background read queued a minute ago
+        does not get to sit in front of a URGENT reply queued this instant.
 
         TASK-243: a row whose ``budget_sec`` has elapsed is not claimed -- the caller that queued
         it already stopped listening (``app/wa/bridge.py::Client._await_op`` raised
@@ -640,7 +748,7 @@ class Ledger:
             now_dt = datetime.now(timezone.utc)
             while True:
                 row = self._db.execute(
-                    "select * from phone_ops where state = ? order by position limit 1",
+                    "select * from phone_ops where state = ? order by priority, position limit 1",
                     (OP_QUEUED,)).fetchone()
                 if row is None:
                     return None
@@ -717,19 +825,31 @@ class Ledger:
         return out
 
     def phone_ops_queue_counts(self):
-        """-> {"queued": count, "oldest_queued_at": timestamp or None} over ``phone_ops`` --
-        ``queue_counts()`` above only ever grouped ``outbound``, so a dispatcher silently falling
-        behind (TASK-260) moved nothing in that number for anyone to see. Same shape as
-        ``inbound_backlog()`` below: a raw timestamp, not an age -- the caller has a clock,
-        this does not."""
+        """-> {"queued": count, "oldest_queued_at": timestamp or None, "by_priority": {...}} over
+        ``phone_ops`` -- ``queue_counts()`` above only ever grouped ``outbound``, so a dispatcher
+        silently falling behind (TASK-260) moved nothing in that number for anyone to see. Same
+        shape as ``inbound_backlog()`` below: a raw timestamp, not an age -- the caller has a
+        clock, this does not.
+
+        ``by_priority`` (TASK-296-adjacent, 2026-09-24) breaks the same total down by tier -- the
+        exact visibility tonight's postmortem had to reconstruct by hand from the journal, built in
+        this time so it never has to be again. Existing callers (``bridge/broadcast.py``'s
+        TASK-268 defer check, ``bridge/dispatcher.py``'s own docstring) only ever read ``queued``,
+        unchanged."""
         row = self._db.execute(
             "select count(*) c, min(created_at) oldest from phone_ops where state = ?",
             (OP_QUEUED,)).fetchone()
-        return {"queued": row["c"], "oldest_queued_at": row["oldest"]}
+        by_priority = {"urgent": 0, "normal": 0, "low": 0}
+        tier_name = {PRIORITY_URGENT: "urgent", PRIORITY_NORMAL: "normal", PRIORITY_LOW: "low"}
+        for r in self._db.execute(
+                "select priority, count(*) c from phone_ops where state = ? group by priority",
+                (OP_QUEUED,)).fetchall():
+            by_priority[tier_name.get(r["priority"], str(r["priority"]))] = r["c"]
+        return {"queued": row["c"], "oldest_queued_at": row["oldest"], "by_priority": by_priority}
 
     # --- retention review (TASK-230, Ivan 2026-09-23): a failed op with no outbound entry to read a
-    # verdict off (clear_chat, delete_chat, read_thread, send_photos/gallery/document -- none of
-    # these mint a client_msg_id) has no automatic way to become safe to delete. This is the manual
+    # verdict off (read_thread, send_photos/gallery/document -- none of these mint a client_msg_id)
+    # has no automatic way to become safe to delete. This is the manual
     # escape hatch: a human looks at the op's own debug-capture artifacts (op_id names them) and
     # marks it resolved once satisfied nothing is owed. Idempotent -- resolving twice, or resolving
     # an op that turned out fine on its own, is harmless.
@@ -1179,70 +1299,20 @@ class Ledger:
             "select count(*) c from broadcast_item where run_id=? and status=?",
             (run_id, ITEM_QUEUED)).fetchone()["c"]
 
-    # --- the destruction audit (TASK-147) ----------------------------------------------------------
-    def append_audit(self, now, *, operation, chat_title, phone, verified, detail):
-        """A row per clear/delete, written BEFORE the destructive verb and finished afterwards.
-
-        NOT SWEPT by ``sweep`` below, and that is the point: the record of a destruction has to
-        outlive the thing it destroyed. It is also the only table here that stores a display name,
-        because "which chat did we delete" is unanswerable without one.
-
-        Write-ahead, like ``begin`` on the send path: operations.py appends this row with
-        ``verified=False`` and a detail saying ``attempted`` before it taps anything, then calls
-        ``finish_audit``. A row still reading ``attempted`` is a destruction whose verification
-        never ran -- which is a state to look at, not one to lose.
-        """
-        with self._lock:
-            cur = self._db.execute(
-                """insert into audit(at, operation, chat_title, chat_tag, to_phone, verified, detail)
-                   values(?,?,?,?,?,?,?)""",
-                (utc(now), operation, chat_title, thread_tag(chat_title), phone,
-                 1 if verified else 0, json.dumps(detail, sort_keys=True)))
-            self._db.commit()
-        self.note(now, f"audit_{operation}", None, chat=thread_tag(chat_title), verified=verified)
-        return cur.lastrowid
-
-    def finish_audit(self, audit_id, now, *, verified, detail):
-        """Write the verification's outcome onto the row appended before the taps. -> the row id.
-
-        ``at`` is left as the moment the destruction was attempted: that is the time the record is
-        about the operation, not the time we finished looking at it.
-        """
-        with self._lock:
-            changed = self._db.execute(
-                "update audit set verified=?, detail=? where id=?",
-                (1 if verified else 0, json.dumps(detail, sort_keys=True), audit_id)).rowcount
-            self._db.commit()
-        if not changed:
-            raise ValueError(f"no audit row {audit_id!r} to finish")
-        self.note(now, "audit_verified", None, audit_id=audit_id, verified=verified)
-        return audit_id
-
+    # --- the destruction audit (TASK-147; write side removed TASK-289 -- see
+    # bridge/operations.py's own module docstring) -------------------------------------------------
     def audit_count(self):
         return self._db.execute("select count(*) c from audit").fetchone()["c"]
 
     def audit_rows(self, limit=None):
+        """-> the destruction record, newest first (history: the capability that wrote it is gone,
+        TASK-289, but the six rows it already wrote stay readable, GET /v1/audit)."""
         sql = "select * from audit order by id desc"
         args = []
         if limit is not None:
             sql += " limit ?"
             args.append(int(limit))
         return [_audit_row(r) for r in self._db.execute(sql, args).fetchall()]
-
-    def audit_for_chat(self, chat_title, *, operation=None):
-        """-> the audit rows about ONE conversation, newest first.
-
-        What this answers is "did we destroy this chat ourselves", which is the difference between
-        a title that was never on the handset and one that is not on it any more BECAUSE OF US.
-        Matched on the title as the handset drew it, which is the identity a caller names a chat by
-        and the one ``append_audit`` stores.
-        """
-        sql = "select * from audit where chat_title=?"
-        args = [chat_title]
-        if operation is not None:
-            sql += " and operation=?"
-            args.append(operation)
-        return [_audit_row(r) for r in self._db.execute(sql + " order by id desc", args).fetchall()]
 
     # --- retention (TASK-130 AC#9) -----------------------------------------------------------------
     def sweep(self, now, *, ledger_days=LEDGER_RETENTION_DAYS, inbound_days=INBOUND_RETENTION_DAYS):
@@ -1303,7 +1373,9 @@ class Ledger:
                 self._db.execute("delete from media_file where media_id=?", (media_id,))
                 media_file_paths.append(row["local_path"])
             # Finished runs take their bodies with them. An unfinished run is never swept: it is
-            # still owed to somebody. The audit table is not here on purpose -- see append_audit.
+            # still owed to somebody. The audit table is not here on purpose: a destruction record
+            # outlives the thing it destroyed (TASK-147; the capability that wrote it is gone,
+            # TASK-289, but its six existing rows are not swept retroactively).
             items = self._db.execute(
                 """delete from broadcast_item where run_id in
                    (select run_id from broadcast_run where finished_at is not null

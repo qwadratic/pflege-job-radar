@@ -97,7 +97,7 @@ class Model:
 def _out(**kw):
     base = {"action": "reply_now_conversational", "bubbles": ["Guten Tag! Wo möchten Sie arbeiten?"],
             "rationale": "", "escalate_to_manager": False, "escalate_reason": None, "no_send": False,
-            "next_ask": None, "card_patch": {}}
+            "next_ask": "Haben Sie die deutsche Anerkennung (Urkunde) schon?", "card_patch": {}}
     base.update(kw)
     return base
 
@@ -135,6 +135,10 @@ def _seed(phone, session_id, **card):
         ST.record_luna_call(c, phone)
         ST.record_send_failure(c, phone, "Meta was unreachable")
         ST.record_followup_sent(c, phone, 0)
+        # The operator inbox (2026-09-24): phone-keyed like everything else here, and it holds the
+        # operator's own Russian text, so a wipe that left it behind would leave the most readable
+        # thing on the thread sitting in an orphan row.
+        ST.record_agent_note(c, f"wamid.note.{phone}", phone, "text", "проверь рассылку")
         ST.claim_nudge(c, phone, "followup:0:anchor")
         ST.claim_reply_turn(c, phone, f"wamid.in.{phone}")
         ST.finish_reply_turn_claim(c, phone, f"wamid.in.{phone}", "sent")

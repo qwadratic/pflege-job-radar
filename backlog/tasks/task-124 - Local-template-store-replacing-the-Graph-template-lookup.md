@@ -6,15 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:22'
-updated_date: '2026-09-22 06:11'
+updated_date: '2026-09-25 00:02'
 labels:
   - wa-transport
 dependencies:
   - TASK-120
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
-priority: medium
+priority: high
 type: feature
+project: whatsapp
 ordinal: 132000
 ---
 
@@ -48,5 +49,5 @@ The 29 APPROVED recruitment_* templates on the Valentyn NDT number are the colle
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Audit 2026-09-22: verified NOT built, exactly as the code itself says. app/wa/bridge.py:566-596 raises citing '(TASK-124)' by name from get_template/send_template when called on the bridge rail -- there is no data/wa_templates/ local store and no first-touch message set. tests/test_wa_bridge_client.py::test_send_template_without_a_definition_says_why_there_is_no_registry and ::test_get_template_refuses_instead_of_inventing_an_approved_definition both assert the refusal names TASK-124. Status and description remain accurate as written.
+REFRAMED 2026-09-25 per Ivan's design point 4: 'только темплейты, темплейт захардкожен, сделать директорию темплейтов'. The narrow first step already shipped on 2026-09-24 as app/wa/broadcast_template.py plus tools/wa_bridge.py --template, after an agent invented a German opener and sent it to Ivan -- that incident is why the template is frozen in code with a provenance docstring, and why this task is now about a directory of them rather than one constant. app/wa/bridge.py:748-778 still raises citing this task for get_template/send_template on the bridge rail, and no data/wa_templates store exists yet.
 <!-- SECTION:NOTES:END -->

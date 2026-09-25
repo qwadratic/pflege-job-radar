@@ -23,9 +23,9 @@ THE THREE WAYS AN ARTEFACT BECOMES SAFE TO DELETE:
      would be, is an inconsistency in this state machine, not a safety margin.
   3. MANUALLY RESOLVED -- a human looked at the artefact (op_id names every file for it) and called
      `resolve_op` (POST /v1/ops/<id>/resolve, tools/wa_bridge.py `ops resolve`). This is the only
-     path for a failed op that never minted a client_msg_id at all (clear_chat, delete_chat,
-     read_thread, send_photos/gallery/document -- TASK-131's own mechanism-proof sends have no
-     idempotency key to reconcile against).
+     path for a failed op that never minted a client_msg_id at all (read_thread,
+     send_photos/gallery/document -- TASK-131's own mechanism-proof sends have no idempotency key
+     to reconcile against).
 
 Anything that is none of the three is HELD, however old -- logged as `retention_held` so a growing
 backlog is visible in the journal, never silently kept or silently dropped. Ivan, 2026-09-23:

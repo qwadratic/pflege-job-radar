@@ -48,15 +48,18 @@ def stage_for(card):
 def ball_for(conn, phone):
     """us: the candidate's last message has no reply behind it yet (a reply is owed). them: we
     already answered. silent: the candidate wrote last and the brain chose silence for that message
-    (claim state ST.NO_SEND_STATE, TASK-204) -- answered, and not waiting on the candidate either, so
-    neither catch-up nor a follow-up nudge acts on it. none: no messages at all."""
+    (claim state ST.NO_SEND_STATE, TASK-204), or that message was an operator note routed to the inbox
+    (ST.AGENT_NOTE_STATE, 2026-09-24: its ack already went out and the work lives on its own row) --
+    answered, and not waiting on the candidate either, so neither catch-up nor a follow-up nudge acts
+    on it. none: no messages at all."""
     row = conn.execute(
         "select direction, wamid from wa_messages where phone=? order by id desc limit 1", (phone,)).fetchone()
     if row is None:
         return "none"
     if row["direction"] != "in":
         return "them"
-    return "silent" if ST.reply_turn_claim_state(conn, phone, row["wamid"]) == ST.NO_SEND_STATE else "us"
+    settled = (ST.NO_SEND_STATE, ST.AGENT_NOTE_STATE)
+    return "silent" if ST.reply_turn_claim_state(conn, phone, row["wamid"]) in settled else "us"
 
 
 def report_row(conn, phone):

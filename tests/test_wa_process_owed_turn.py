@@ -165,6 +165,101 @@ def test_no_failure_is_recorded_on_a_healthy_send(wa, monkeypatch):
         assert ST.recent_send_failure(c, LEAD) is None
 
 
+# --- TASK-288: a pure delivery failure must not re-run the brain on retry --------------------------
+# Live incident, 2026-09-23 ~21:16-21:19 UTC: a 30s phone-lock hiccup made send_and_record raise on
+# every catch-up pass, and because the brain re-ran from scratch each time, two inbound messages
+# burned 19 of 20 LUNA_MAX_CALLS_PER_HOUR composing the identical answer, and a genuinely new turn
+# got skipped_rate_cap for close to an hour.
+
+class FlakyMeta(FakeMeta):
+    """Fails send_text the first ``fail_times`` calls, then behaves like FakeMeta."""
+
+    def __init__(self, fail_times):
+        super().__init__()
+        self.fail_times = fail_times
+        self.attempts = 0
+
+    def send_text(self, to_e164, body):
+        self.attempts += 1
+        if self.attempts <= self.fail_times:
+            raise M.MetaError("Meta HTTP 500", status_code=500, payload={})
+        return super().send_text(to_e164, body)
+
+
+def test_a_send_only_failure_retries_the_send_without_calling_the_brain_again(wa, monkeypatch):
+    calls = []
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None:
+                        calls.append(1) or _fake_turn_result(bubbles=("Guten Tag",)))
+    flaky = FlakyMeta(fail_times=2)
+
+    with ST.db() as c:
+        t = _arrived(c, "wamid.1")
+        ST.save_thread(c, t)   # finish_inbound persists arrival bookkeeping before any turn attempt
+        for _ in range(2):
+            with pytest.raises(M.MetaError):
+                WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=flaky)
+            t = ST.thread(c, LEAD)   # a real retry re-loads the thread fresh, same as catchup.py
+        result = WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=flaky)
+
+    assert result["status"] == "sent"
+    assert len(calls) == 1, "the brain composed once; the other two attempts only retried delivery"
+    assert flaky.attempts == 3
+    assert flaky.sent == [{"to": LEAD, "body": "Guten Tag"}], "the replayed send used the original reply"
+
+
+def test_a_brain_side_failure_still_composes_fresh_on_retry(wa, monkeypatch):
+    """Contrast case: nothing was ever composed, so a retry must not silently send nothing -- the
+    brain runs again, exactly as before TASK-288."""
+    calls = []
+
+    def flaky_brain(text, thread, button_id=None, client=None):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("cli boom")
+        return _fake_turn_result()
+
+    monkeypatch.setattr(LB, "turn", flaky_brain)
+    with ST.db() as c:
+        t = _arrived(c, "wamid.1")
+        ST.save_thread(c, t)
+        # process_owed_turn has no try/except around the brain call itself -- in production it is
+        # finish_inbound's own wrapper that marks a still-in_progress claim skipped_error on any
+        # exception (app/wa/api.py:finish_inbound), which is what makes catch-up's retry possible.
+        # Mirrored here since this test exercises process_owed_turn directly, like its neighbours.
+        with pytest.raises(RuntimeError):
+            WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=wa)
+        ST.finish_reply_turn_claim(c, LEAD, "wamid.1", "skipped_error")
+        t = ST.thread(c, LEAD)
+        result = WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=wa)
+
+    assert result["status"] == "sent"
+    assert len(calls) == 2, "a brain-side failure composed nothing to reuse -- retry recomposes"
+
+
+def test_a_replayed_send_does_not_spend_the_rate_cap_budget_again(wa, monkeypatch):
+    """AC#3: the cap still protects against genuine brain calls (a cap of 1 still blocks a second
+    REAL compose) -- this fix only narrows what counts against it. Before this fix, a failed-send
+    retry was itself a second real compose, so one candidate's delivery hiccup alone could exhaust
+    the whole cap (the live incident: 11 and 8 retries burning 19 of 20 calls). After this fix, the
+    retry's replay spends nothing -- count_recent_luna_calls stays at 1, not 2, after the retry."""
+    monkeypatch.setattr(C, "LUNA_MAX_CALLS_PER_HOUR", 1)
+    monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
+    flaky = FlakyMeta(fail_times=1)
+
+    with ST.db() as c:
+        t = _arrived(c, "wamid.1")
+        ST.save_thread(c, t)
+        with pytest.raises(M.MetaError):
+            WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=flaky)
+        assert ST.count_recent_luna_calls(c, LEAD) == 1
+        t = ST.thread(c, LEAD)
+        retry = WAPI.process_owed_turn(c, t, "Hallo", None, "wamid.1", client=flaky)
+        calls_after_retry = ST.count_recent_luna_calls(c, LEAD)
+
+    assert retry["status"] == "sent"
+    assert calls_after_retry == 1, "the replay must not have counted as a second real compose"
+
+
 # --- stuck-reply flag (TASK-183) -------------------------------------------------------------------
 
 def test_is_stuck_false_for_a_thread_that_just_wrote(wa):

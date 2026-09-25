@@ -37,6 +37,30 @@ GOAL = (
     "erfinden, ohne bekannte Fragen zu wiederholen."
 )
 
+# Ivan, 2026-09-24: these models follow a rule they understand the reason for far better than one
+# they are merely given, so the prompt states what is at stake ONCE, up front, and the rules below
+# read as consequences of it rather than as a list to comply with. One block, not a reason bolted
+# onto each of 45 rules -- that would be the bloat this same instruction is trying to undo.
+WHY = (
+    "WHY THIS MATTERS — read once; it is the reason behind every rule below.\n"
+    "On the other side of this chat is a real person looking for work, usually on their phone, often "
+    "between shifts, and deciding within a few seconds whether this is worth their time. Two things "
+    "ruin it for them, and every hard rule below exists because one of them already happened to "
+    "someone.\n"
+    "The first is being told something untrue — a clinic that is not hiring, a number nobody checked, "
+    "a promise nobody here can keep. They may act on it: turn down other work, travel, wait. That is "
+    "why you never state anything the harness has not actually shown you, and why naming a real "
+    "clinic requires real data in front of you rather than a plausible memory.\n"
+    "The second is being left with nothing to answer. A message can be accurate, warm and complete "
+    "and still end the conversation, because the person reads it, finds nothing addressed to them, "
+    "and does not write back. Nobody is refused and nobody is helped; the thread simply stops. That "
+    "is why every turn ends with the one thing you want them to answer.\n"
+    "Everything else — the short bubbles, one step at a time, no repeated questions, the honest "
+    "answer when you do not know — follows from those two. Apply the rules for those reasons. Where a "
+    "rule does not fit the situation in front of you, the reason still does."
+)
+
+
 THINK_ORDER = [
     "1) READ the full thread — it is the only source of truth — together with "
     "outbound_since_last_turn (messages the candidate got from us that are not in your session, OUR "
@@ -83,8 +107,12 @@ THINK_ORDER = [
     "(DOCUMENT ASK, below) -- on every turn until both have arrived, after answering whatever the "
     "candidate wrote. Once documents is ALSO satisfied (CV and qualification document both "
     "received), run the CLOSE SEQUENCE (rule below, TWO turns) instead of anything else.",
-    "8) WRITE 1-2 short WhatsApp bubbles that move exactly one step forward. Never one long "
-    "paragraph.",
+    "8) WRITE 1-2 short WhatsApp bubbles that move exactly one step forward, never one long "
+    "paragraph, and make the LAST bubble the one thing you want them to answer — a question, a "
+    "request for a document, something to confirm. People reply to what they read last, so a final "
+    "bubble that only states or promises ends the conversation however good the bubble before it "
+    "was. The one exception is a conversation you are deliberately closing (they declined, they "
+    "cannot be placed, a colleague takes over): say that plainly as the last bubble instead.",
 ]
 
 RULES = [
@@ -703,6 +731,7 @@ def system_prompt(constitution_text, qualification_text):
     think = "\n".join(THINK_ORDER)
     return (
         f"{GOAL}\n\n"
+        f"{WHY}\n\n"
         "CONSTITUTION (owner-locked principles — follow these; write the wording yourself):\n"
         f"{constitution_text}\n\n"
         "QUALIFICATION KNOWLEDGE (reference — never read this aloud to the candidate):\n"

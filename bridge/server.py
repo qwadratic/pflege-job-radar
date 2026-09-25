@@ -7,8 +7,8 @@
     POST /v1/reconcile         three-valued verdicts; only confirmed_absent authorises a resend
     GET  /v1/chats             the chat list, read-only
     GET  /v1/thread            the visible bubbles of one chat, read-only
-    POST /v1/chats/clear       empty a conversation, keep it        } confirm + identity + audit
-    POST /v1/chats/delete      remove a conversation                } see bridge/operations.py
+                               (POST /v1/chats/clear and /v1/chats/delete used to live here too --
+                               removed entirely, TASK-289, see bridge/operations.py's own docstring)
     POST /v1/broadcasts        queue a run; the runner sends it, paced by the governor
     GET  /v1/broadcasts        every run and its per-status counts
     GET  /v1/broadcasts/<id>   one run, with every item's status
@@ -120,12 +120,17 @@ class Handler(BaseHTTPRequestHandler):
             raise E.invalid_request("body must be a JSON object")
         return payload
 
-    def _enqueue(self, kind, args):
+    def _enqueue(self, kind, args, priority=L.PRIORITY_NORMAL):
         """-> (200, {"ok", "op_id", "state": "queued"}) for a phone-touching route (TASK-227): the
         route handler's whole job becomes naming which already-existing operations/executor
         method to run and with what arguments -- see bridge/dispatcher.py's own docstring for why
-        this is not the bare-202 lie this file's own module docstring warns against."""
-        op_id = self.server.dispatcher.enqueue(kind, args, budget_sec=self._op_budget_sec())
+        this is not the bare-202 lie this file's own module docstring warns against.
+
+        ``priority`` (TASK-296-adjacent, 2026-09-24) defaults NORMAL; each route below passes what
+        it knows about its own urgency -- this is deliberately the one place that classification
+        happens (bridge/dispatcher.py stays generic dispatch, on purpose, per its own docstring)."""
+        op_id = self.server.dispatcher.enqueue(kind, args, budget_sec=self._op_budget_sec(),
+                                               priority=priority)
         return 200, {"ok": True, "op_id": op_id, "state": "queued"}
 
     def _op_budget_sec(self):
@@ -167,10 +172,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _resolve_op(self, op_id):
         """-> the body for ``POST /v1/ops/<id>/resolve`` (TASK-230): the human escape hatch for a
-        failed op that minted no client_msg_id to auto-resolve against (clear_chat, delete_chat,
-        read_thread, send_photos/gallery/document). Raises 404 for an id this ledger never
-        enqueued, same as ``_op_status``. Never touches the phone -- a plain ledger write, so it
-        answers directly rather than going through the dispatcher."""
+        failed op that minted no client_msg_id to auto-resolve against (read_thread,
+        send_photos/gallery/document). Raises 404 for an id this ledger never enqueued, same as
+        ``_op_status``. Never touches the phone -- a plain ledger write, so it answers directly
+        rather than going through the dispatcher."""
         executor = self.server.executor
         if executor.ledger.op_status(op_id) is None:
             raise E.op_not_found(f"no such op {op_id!r}")
@@ -234,25 +239,41 @@ class Handler(BaseHTTPRequestHandler):
         # in what order, and recovering a dirty phone first (TASK-226) all happen on the
         # dispatcher's one thread now.
         if path == "/v1/messages":
-            self._dispatch(lambda: self._enqueue("send", {"req": self._body()}))
+            # TASK-296-adjacent: URGENT for a reply (app/wa/bridge.py's Client tags every send's
+            # trace.action PACING_REPLY/PACING_FIRST_TOUCH, read here straight off the body this
+            # route already has in hand) -- a candidate waiting on an answer outranks a cold
+            # first-touch/campaign send. Missing/unknown action (an older or direct caller) gets
+            # NORMAL, never guessed urgent. The body is read INSIDE the dispatched call, same as
+            # every other route here, so an unauthenticated request never gets its body parsed
+            # before ``_dispatch``'s own ``_guard()`` has a chance to refuse it.
+            def _enqueue_send():
+                body = self._body()
+                action = (body.get("trace") or {}).get("action")
+                priority = L.PRIORITY_URGENT if action == "reply" else L.PRIORITY_NORMAL
+                return self._enqueue("send", {"req": body}, priority=priority)
+            self._dispatch(_enqueue_send)
         elif path == "/v1/photos":
-            self._dispatch(lambda: self._enqueue("send_photos", _photos_args(self._body())))
+            # URGENT: there is no cold-outreach photo path on this rail, every send here answers
+            # something a candidate is waiting on mid-conversation.
+            self._dispatch(lambda: self._enqueue("send_photos", _photos_args(self._body()),
+                                                 priority=L.PRIORITY_URGENT))
         elif path == "/v1/gallery":
-            self._dispatch(lambda: self._enqueue("send_gallery", _gallery_args(self._body())))
+            self._dispatch(lambda: self._enqueue("send_gallery", _gallery_args(self._body()),
+                                                 priority=L.PRIORITY_URGENT))
         elif path == "/v1/document":
-            self._dispatch(lambda: self._enqueue("send_document", _document_args(self._body())))
+            self._dispatch(lambda: self._enqueue("send_document", _document_args(self._body()),
+                                                 priority=L.PRIORITY_URGENT))
         elif path == "/v1/reconcile":
             # TASK-230: reconcile's own _scan touches the phone (opens the chat, reads bubbles,
             # parks) exactly like every other queued verb -- it was left calling straight through
             # when TASK-227 shipped (a known, documented gap) and is now load-bearing for
             # retention review, so it goes through the same queue as everything else.
+            # LOW (TASK-296-adjacent): background sync nobody is waiting on -- the exact op kind
+            # that starved real sends behind it on 2026-09-23/24 (see bump_reconcile_attempts/
+            # escalate in bridge/ledger.py for the other half of that fix).
             self._dispatch(lambda: self._enqueue(
-                "reconcile", {"client_msg_ids": self._body().get("client_msg_ids") or []}))
-        elif path == "/v1/chats/clear":
-            self._dispatch(lambda: self._enqueue("clear_chat", _chat_args(
-                self._body(), extra=("include_starred",))))
-        elif path == "/v1/chats/delete":
-            self._dispatch(lambda: self._enqueue("delete_chat", _chat_args(self._body())))
+                "reconcile", {"client_msg_ids": self._body().get("client_msg_ids") or []},
+                priority=L.PRIORITY_LOW))
         elif path == "/v1/broadcasts":
             self._dispatch(lambda: (200, self.server.broadcast.create(self._body())))
         elif path == "/v1/media/attach":
@@ -295,13 +316,15 @@ class Handler(BaseHTTPRequestHandler):
             # TASK-230 already fixed for /v1/reconcile -- it could win huawei01.lock ahead of an
             # already-queued op regardless of arrival order, and never showed up as an op_id for a
             # caller to poll. Queued like every other phone-touching route.
+            # LOW (TASK-296-adjacent): background listing -- the live reply path has not read the
+            # phone screen at all since TASK-289; this is catchup/an operator's own `chats`.
             self._dispatch(lambda: self._enqueue("list_chats", {
-                "include_archived": _flag(query, "include_archived", True)}))
+                "include_archived": _flag(query, "include_archived", True)}, priority=L.PRIORITY_LOW))
         elif parsed.path == "/v1/thread":
             self._dispatch(lambda: self._enqueue("read_thread", {
                 "phone": _str(query, "phone"), "chat": _str(query, "chat"),
                 "include_text": _flag(query, "include_text", True),
-                "archived": _flag(query, "archived", False)}))
+                "archived": _flag(query, "archived", False)}, priority=L.PRIORITY_LOW))
         elif parsed.path == "/v1/broadcasts":
             self._dispatch(lambda: (200, self.server.broadcast.list_runs()))
         elif one_run:
@@ -343,24 +366,10 @@ def _flag(query, name, default):
     return values[0] in ("1", "true")
 
 
-def _chat_args(body, *, extra=()):
-    """The destructive routes' arguments, named explicitly rather than **body.
-
-    Spreading a JSON object into a call that can delete a conversation is how an unknown key
-    becomes a silently ignored one -- ``confirm_delete: true`` would sail past a ``confirm``
-    parameter and the operation would refuse or, worse, not.
-    """
-    allowed = ("chat", "phone", "confirm", "expect_messages", "archived") + tuple(extra)
-    unknown = sorted(set(body) - set(allowed))
-    if unknown:
-        raise E.invalid_request(f"unknown field(s) {unknown}; this route takes {list(allowed)}")
-    return {name: body[name] for name in allowed if name in body}
-
-
 def _media_attach_args(body):
-    """``POST /v1/media/attach``'s two fields, named explicitly (TASK-131) -- the same reason
-    ``_chat_args`` does not spread the body: an unknown key silently ignored on a route that ties a
-    document to a person is exactly the mistake this rail's other write routes already refuse."""
+    """``POST /v1/media/attach``'s two fields, named explicitly (TASK-131): an unknown key silently
+    ignored on a route that ties a document to a person is exactly the mistake this rail's other
+    write routes already refuse."""
     allowed = ("queue_id", "phone")
     unknown = sorted(set(body) - set(allowed))
     if unknown:
@@ -618,9 +627,25 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         stamped(f"WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC is set: first-touch pacing narrowed from "
                f"the built-in {G.MINI_FLOOR.first_touch_gap_sec} to {gap}. This is a fuse override "
                f"for one test run -- unset it in bridge.env and restart once the test is done.")
-    governor = G.Governor(ledger, per_number_daily_cap=int(cap), pacing=pacing)
+    # The operators' own handsets: no window, no caps, no gap, and their sends left out of the
+    # budget every real recipient is paced against (bridge/governor.py's own docstring). Configured
+    # HERE, on the machine that owns the phone -- never accepted from a request, or the fuse would be
+    # something any caller could switch off. Empty by default: an unconfigured deploy is governed.
+    ungoverned = [n.strip() for n in
+                  os.environ.get("WA_BRIDGE_UNGOVERNED_NUMBERS", "").split(",") if n.strip()]
+    if ungoverned:
+        stamped(f"WA_BRIDGE_UNGOVERNED_NUMBERS is set: {len(ungoverned)} number(s) bypass the fuse "
+                f"entirely -- no active-window check, no daily or hourly cap, no minimum gap, and "
+                f"their sends do not count against anyone else's budget: {', '.join(ungoverned)}. "
+                f"These must be handsets an operator holds. Remove any number that reaches a real "
+                f"candidate and restart.")
+    governor = G.Governor(ledger, per_number_daily_cap=int(cap), pacing=pacing,
+                          ungoverned=ungoverned)
     executor = X.Executor(ledger=ledger, governor=governor, driver=driver,
-                          rail_number=os.environ.get("WA_BRIDGE_RAIL_NUMBER") or None)
+                          rail_number=os.environ.get("WA_BRIDGE_RAIL_NUMBER") or None,
+                          reconcile_attempt_limit=int(os.environ.get(
+                              "WA_BRIDGE_RECONCILE_ATTEMPT_LIMIT",
+                              X.DEFAULT_RECONCILE_ATTEMPT_LIMIT)))
     stop = threading.Event()
     threading.Thread(target=maintenance_loop, args=(executor, stop), daemon=True).start()
     watcher = W.InboundWatcher(

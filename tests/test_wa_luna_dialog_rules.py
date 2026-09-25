@@ -84,7 +84,7 @@ def small(tmp_path, monkeypatch):
 def _out(**kw):
     base = {"action": "reply_now_conversational", "bubbles": ["Hallo 🙂"], "rationale": "",
             "escalate_to_manager": False, "escalate_reason": None, "no_send": False,
-            "next_ask": None, "card_patch": {}}
+            "next_ask": "Haben Sie die deutsche Anerkennung (Urkunde) schon?", "card_patch": {}}
     base.update(kw)
     return base
 
@@ -216,7 +216,8 @@ def test_the_model_is_told_which_rule_it_broke_and_its_corrected_reply_goes_out(
         if len(attempts) == 1:
             return _out(bubbles=["Im Klinikum München 63 ist gerade eine Stelle frei."]), session_id
         seen.update(json.loads(user))
-        return _out(bubbles=["Dazu habe ich gerade keine passende Stelle."]), session_id
+        return _out(bubbles=["Dazu habe ich gerade keine passende Stelle."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     d = LB.turn("gibt es was in München?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
@@ -249,7 +250,8 @@ def test_a_reply_with_too_many_bubbles_is_a_corrective_retry_not_an_exception(sm
         attempts.append(user)
         if len(attempts) == 1:
             return _out(bubbles=["Eins.", "Zwei.", "Drei."]), session_id
-        return _out(bubbles=["Nur noch eins."]), session_id
+        return _out(bubbles=["Nur noch eins."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     d = LB.turn("wie geht es weiter?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
@@ -325,7 +327,8 @@ def test_a_clinic_the_tools_returned_this_turn_may_be_named(small):
 
     def reply(system, user, session_id):
         TS.search_postings(city="Augsburg")          # logs the call, as it does in a live turn
-        return _out(bubbles=["In Augsburg sucht das Klinikum Augsburg 1 gerade."]), session_id
+        return _out(bubbles=["In Augsburg sucht das Klinikum Augsburg 1 gerade."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     d = LB.turn("und in Augsburg?", thread, client=fake_client(reply))
     assert d["bubbles"] == ["In Augsburg sucht das Klinikum Augsburg 1 gerade."]
@@ -344,7 +347,9 @@ def test_a_clinic_grounded_earlier_on_the_thread_stays_sayable(small):
 def test_the_close_sequence_shortlist_grounds_the_names_it_told_the_model_to_use(small):
     thread = {"slots": dict(READY), "asked": []}
     clinic = LB.market_snapshot(READY)["offer"]["positions"][0]["clinic"]
-    d = LB.turn("ok", thread, client=fake_client(_out(bubbles=[f"Zum Beispiel das {clinic}."])))
+    d = LB.turn("ok", thread, client=fake_client(_out(
+        bubbles=[f"Zum Beispiel das {clinic}."],
+        next_ask="Darf ich Ihr Profil anonymisiert an das Klinikum weiterleiten?")))
     assert d["bubbles"] == [f"Zum Beispiel das {clinic}."]
 
 
@@ -909,7 +914,8 @@ def test_the_same_house_may_still_be_named_in_the_sentence_that_says_it_is_gone(
     thread = {"slots": {"region": "Bayern", LB.GROUNDED_KEY: ["Klinikum Augsburg 1"]}, "asked": []}
     _board([j for j in D.jobs() if j["clinic_name"] != "Klinikum Augsburg 1"], monkeypatch)
     honest = "Die Stelle beim Klinikum Augsburg 1 ist leider nicht mehr frei."
-    d = LB.turn("ist die Stelle noch frei?", thread, client=fake_client(_out(bubbles=[honest])))
+    d = LB.turn("ist die Stelle noch frei?", thread, client=fake_client(_out(
+        bubbles=[honest], next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?")))
     assert d["bubbles"] == [honest] and "_escalated" not in d["slots"]
 
 
@@ -962,7 +968,8 @@ def test_a_reject_the_card_s_own_document_contradicts_is_refused_like_any_other_
     """The same side door, on a card that holds the Urkunde: the document outranks the patch exactly
     as it does for "unknown", and the loud gate (qualification_ok: false) stays the way to say it."""
     d = LB.turn("hm", {"slots": dict(READY), "asked": []},
-                client=fake_client(_out(card_patch={"qualification_path": "reject"})))
+                client=fake_client(_out(card_patch={"qualification_path": "reject"},
+                                        next_ask="Darf ich Ihr Profil anonymisiert an das Klinikum weiterleiten?")))
     assert d["slots"]["qualification_path"] == "urkunde" and d["slots"]["stage"] == "consent"
     assert d["slots"][LB.REFUSED_PATCH_KEY][0]["to"] == "reject"
     assert d["bubbles"] == ["Hallo 🙂"], "the model's own turn still goes out; only the reset is refused"
@@ -988,7 +995,8 @@ def test_the_correction_may_look_the_house_up_and_then_name_it(small):
         if len(attempts) == 1:
             return _out(bubbles=["Das Klinikum Augsburg 1 sucht gerade."]), session_id
         TS.search_postings(city="Augsburg")          # the lookup the correction asked for
-        return _out(bubbles=["Das Klinikum Augsburg 1 sucht gerade."]), session_id
+        return _out(bubbles=["Das Klinikum Augsburg 1 sucht gerade."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     d = LB.turn("was gibt es in Augsburg?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
@@ -1438,7 +1446,8 @@ def test_a_posting_that_is_gone_is_stale_even_while_the_house_keeps_other_openin
 
     def names_the_posting(system, user, session_id):
         TS.search_postings(city="Coburg", department="Onkologie")
-        return _out(bubbles=["Beim Klinikum Bamberg ist eine Stelle in Onkologie frei."]), session_id
+        return _out(bubbles=["Beim Klinikum Bamberg ist eine Stelle in Onkologie frei."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     thread = {"phone": "+4915550001234", "slots": {"region": "Bayern"}, "asked": []}
     first = LB.turn("was gibt es in Coburg?", thread, client=fake_client(names_the_posting))
@@ -1465,7 +1474,8 @@ def test_a_fresh_look_up_makes_the_same_house_confirmable_again(tmp_path, monkey
 
     def looks_again(system, user, session_id):
         TS.search_postings(city="Coburg")
-        return _out(bubbles=["Beim Klinikum Bamberg ist noch eine Stelle frei."]), session_id
+        return _out(bubbles=["Beim Klinikum Bamberg ist noch eine Stelle frei."],
+                    next_ask="Haben Sie die deutsche Anerkennung (Urkunde) schon?"), session_id
 
     d = LB.turn("und jetzt?", {"phone": "+4915550001234", "slots": card, "asked": []},
                 client=fake_client(looks_again))
@@ -1787,7 +1797,8 @@ def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(h
     body = ("Es gibt nur diese 5 Kliniken in Bayern: " + ", ".join(named) +
             f". Es gibt {offer['remaining_clinics']} weitere. "
             "Wollen Sie eingrenzen, oder soll ich Sie allen passenden Kliniken vorschlagen?")
-    d = LB.turn("was gibt es?", thread, client=fake_client(_out(bubbles=[body])))
+    d = LB.turn("was gibt es?", thread, client=fake_client(_out(
+        bubbles=[body], next_ask="Darf ich Ihr Profil anonymisiert an das Klinikum weiterleiten?")))
     assert d["bubbles"] == [body], "the reply is sent as written -- flagging never touches the text"
     assert d["action"] != "reply_blocked_escalated"
     assert not d["slots"].get("_escalated"), "an exhaustive-claim suspicion alone must not escalate"
@@ -1807,7 +1818,8 @@ def test_a_flagged_reply_that_is_also_model_escalated_keeps_both_facts_on_their_
             f". Es gibt {offer['remaining_clinics']} weitere. "
             "Wollen Sie eingrenzen, oder soll ich Sie allen passenden Kliniken vorschlagen?")
     out = _out(bubbles=[body], escalate_to_manager=True, escalate_reason_code=ESC.VISA_OR_IMMIGRATION_SPECIFICS,
-              escalate_reason="candidate asked about a visa")
+              escalate_reason="candidate asked about a visa",
+              next_ask="Darf ich Ihr Profil anonymisiert an das Klinikum weiterleiten?")
     d = LB.turn("was gibt es?", thread, client=fake_client(out))
     assert d["slots"]["_escalated"] is True
     assert d["slots"]["_escalation_codes"] == [ESC.VISA_OR_IMMIGRATION_SPECIFICS]
