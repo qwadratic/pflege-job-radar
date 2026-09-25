@@ -3,10 +3,10 @@ id: TASK-278
 title: >-
   Pulled inbound media -- rows and bytes -- is the one durable store with no
   sweep at all
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 14:49'
+updated_date: '2026-09-25 07:58'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: Verified by grep: the only 'delete from' statements anywhere
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -78,3 +78,9 @@ LEFT OPEN, on purpose: how long a pulled-but-never-attached media_seen row shoul
 itself names this as a decision, not a defect; inventing a cutoff here would be exactly the kind of
 self-invented safety net CLAUDE.md rules out.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The well-specified half of the finding (attached-and-synced media rows/bytes never being swept) is genuinely fixed and covered by tests that exercise real disk/DB state, not mocks alone; the unattached-pull lifetime is explicitly left open as the task's own named open decision, not silently dropped.
+<!-- SECTION:FINAL_SUMMARY:END -->

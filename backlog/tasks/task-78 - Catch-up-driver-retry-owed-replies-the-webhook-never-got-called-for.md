@@ -1,10 +1,10 @@
 ---
 id: TASK-78
 title: 'Catch-up driver: retry owed replies the webhook never got called for'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 11:14'
-updated_date: '2026-09-13 11:26'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 ordinal: 78000
@@ -31,3 +31,9 @@ Recon found our harness has zero resilience if a webhook call never arrives or f
 <!-- SECTION:NOTES:BEGIN -->
 app/wa/luna/catchup.py: run()/main() (python -m app.wa.luna.catchup [--phones]). Reuses shadow_run.phones_owed_a_reply() for the owed-thread query (one definition, not two) and app.wa.api.process_owed_turn() for the actual decide-and-send (same claim/rate-limit/failure-recording as the webhook path -- no duplicated logic). Unlike shadow_run.py this runs against the real database and really sends when WA_AUTOSEND is on. Known, named scope limit: only retries the brain-decided reply path, not a stuck flat media-ack send (a narrower, separate gap). 7 new tests. No systemd timer installed -- deploy cadence is an operational decision, out of scope here.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified app/wa/luna/catchup.py:44-74 (run/main), its use of API.process_phones/API.finish_inbound (api.py:600,691) which share process_owed_turn's claim/rate-cap gates (api.py:927-988, store.py:418-460). tests/test_wa_luna_catchup.py passes 9/9 and its test names cover every AC5 scenario verbatim; deploy unit files exist. AC6 (full offline suite) was not independently re-run per the no-full-suite instruction, but the touched-area subset (test_wa_luna_catchup.py, test_wa_process_owed_turn.py, test_wa_store_claims.py) is fully green.
+<!-- SECTION:FINAL_SUMMARY:END -->

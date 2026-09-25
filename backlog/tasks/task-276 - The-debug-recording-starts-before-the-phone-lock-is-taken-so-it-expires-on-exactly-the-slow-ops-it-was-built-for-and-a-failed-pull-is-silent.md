@@ -3,10 +3,10 @@ id: TASK-276
 title: >-
   The debug recording starts before the phone lock is taken, so it expires on
   exactly the slow ops it was built for -- and a failed pull is silent
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 15:05'
+updated_date: '2026-09-25 07:58'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: run_one calls start_recording at dispatcher.py:107, before _
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -101,3 +101,9 @@ task's changes were 159; +3 net: 2 new tests, 1 pre-existing test's assertion co
 
 Left at 180s screenrecord ceiling and TASK-228's truncated-tail acceptance untouched, as directed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Both AC halves (timing fix + silent-None fix) are implemented and independently tested; the one disclosed residual race (on_phone_acquired is a single shared attribute a concurrent IdentityWatcher/BroadcastRunner take_phone call could in principle consume first) is explicitly documented as an accepted narrow, in-process-instruction-wide risk rather than silently swept under the rug, which satisfies AC#1's 'closed with a written argument' option for that residual piece.
+<!-- SECTION:FINAL_SUMMARY:END -->

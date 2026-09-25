@@ -3,10 +3,10 @@ id: TASK-246
 title: >-
   A replay with a changed body is recorded as sent with the NEW text, so the
   stored thread contains a message the candidate never received
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 10:32'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED end to end. ledger.classify (ledger.py:426-433) re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -54,3 +54,9 @@ Ran narrow: tests/test_wa_bridge_window.py, tests/test_wa_bridge_client.py, test
 
 Status left at In Progress; acceptance criteria not checked -- that's the verification pass, not this one.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified app/wa/api.py:1059-1073 (_refuse_body_mismatch) and its two call sites at 1138/1143, both before ST.record_outbound. tests/test_wa_bridge_window.py::test_a_body_mismatch_replay_is_never_recorded_as_the_new_text passes (ran narrow: 183 tests across the five wa_bridge_* files, all green). Criteria genuinely satisfied.
+<!-- SECTION:FINAL_SUMMARY:END -->

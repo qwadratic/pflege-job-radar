@@ -1,10 +1,10 @@
 ---
 id: TASK-180
 title: Per-candidate LLM call rate limit (parity with CATCHUP_MODEL_RUNS_PER_HOUR)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 11:14'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 project: whatsapp
@@ -32,3 +32,9 @@ Recon found our harness has zero rate limit on how often the claude CLI is invok
 <!-- SECTION:NOTES:BEGIN -->
 app/wa/store.py: wa_luna_calls(phone, at) + record_luna_call/count_recent_luna_calls (rolling 1h window). app/wa/config.py: WA_LUNA_MAX_CALLS_PER_HOUR, default 20 (generous backstop, not a conversational throttle), 0 disables. Checked in process_owed_turn() before dispatching to the brain -- over cap finishes the claim as skipped_rate_cap (reclaimable) and returns status=rate_limited without losing the inbound message.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified app/wa/store.py:63-68,575,580 (table+functions), app/wa/config.py:291 (env-driven cap), app/wa/api.py:975-979 (cap check site, in code not the model, confirmed by absence of the cap symbol anywhere under app/wa/luna_brain.py or app/wa/luna/). tests/test_wa_store_claims.py and tests/test_wa_process_owed_turn.py (33 tests) pass and name-match AC5's three required scenarios exactly.
+<!-- SECTION:FINAL_SUMMARY:END -->

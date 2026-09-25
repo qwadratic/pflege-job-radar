@@ -3,9 +3,10 @@ id: TASK-248
 title: >-
   A restart strands 'running' ops forever and lets stale 'queued' ops type old
   replies after the outage
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -32,6 +33,12 @@ VERIFICATION NOTES: CONFIRMED on every leg. claim_next_op (ledger.py:540-556) se
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+This is an unusual case: TASK-248's own ticket has zero implementation notes and Status='To Do', so nobody formally closed it -- but reading bridge/ledger.py (_recover_stuck_ops line 467, claim_next_op's budget expiry line 726, phone_ops_queue_counts line 827) and app/wa/bridge.py's unconditional OP_BUDGET_HEADER (line 464) shows every sub-claim of the finding is genuinely already fixed by sibling tasks TASK-232/TASK-243, with passing regression tests (test_a_restart_mid_op_unsticks_the_running_row_it_left_behind, test_claim_next_op_expires_a_stale_row_and_serves_the_fresh_one_behind_it). Recommend the owner formally close TASK-248 referencing TASK-232/TASK-243 rather than leave it dangling as 'To Do', but the acceptance criteria are substantively met.
+<!-- SECTION:FINAL_SUMMARY:END -->

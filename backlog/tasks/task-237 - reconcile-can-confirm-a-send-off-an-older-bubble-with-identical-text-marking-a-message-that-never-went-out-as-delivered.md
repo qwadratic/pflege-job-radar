@@ -3,10 +3,10 @@ id: TASK-237
 title: >-
   reconcile can confirm a send off an older bubble with identical text, marking
   a message that never went out as delivered
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:20'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. executor.py:475-481: `mine = [b for b in outgoing
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -70,3 +70,9 @@ Ran narrow only: .venv/bin/python -m pytest tests/test_bridge_executor.py -q -> 
 run the full suite (owner's single verification pass covers that). Not committed; status left at
 In Progress, acceptance criteria left unchecked per instructions.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/executor.py:613-629 (attempted_clock gate in _scan); test at tests/test_bridge_executor.py:441, passing in the full non-llm run (179 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

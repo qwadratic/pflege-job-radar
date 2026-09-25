@@ -3,10 +3,10 @@ id: TASK-266
 title: >-
   The idle self-check parks the phone out from under a human using it, with no
   check that anyone is at the handset
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 12:58'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED with one detail corrected. _check_idle_dirty (watc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -67,3 +67,9 @@ tests/test_bridge_executor.py -q: 157 passed, 1 deselected (test_maintenance_onc
 fails on a FileNotFoundError under /shots/... unrelated to this change -- confirmed failing
 identically with this diff stashed out, pre-existing, not touched).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 (fixed) and AC2 (test) both genuinely satisfied. bridge/watcher.py:132-225 adds the operator-hold check ahead of the park logic, wired in bridge/server.py:654; tests/test_bridge_executor.py:1823 exercises real hold/expiry behavior and passes on the current tree.
+<!-- SECTION:FINAL_SUMMARY:END -->

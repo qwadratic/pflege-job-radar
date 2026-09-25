@@ -3,10 +3,10 @@ id: TASK-269
 title: >-
   GET /v1/chats and the broadcast runner still touch the phone outside the FIFO
   queue, re-creating the flock race TASK-227 says it removed
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 13:14'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED, including the docstring contradiction. server.py:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -60,3 +60,9 @@ Net: the remaining gap (a reply enqueued after a broadcast item has already star
 
 Left at In Progress per instructions; acceptance criteria left unchecked for the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1/AC2 satisfied via a hybrid: /v1/chats mechanically fixed and tested (bridge/server.py:314-322, test at tests/test_bridge_operations.py:593, passes); BroadcastRunner left unqueued with a durable written argument in bridge/dispatcher.py:11-18 resting on TASK-268's already-verified yield mitigation. Flagging as a partial-but-defensible closure rather than a full mechanical fix of both halves.
+<!-- SECTION:FINAL_SUMMARY:END -->

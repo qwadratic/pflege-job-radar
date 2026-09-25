@@ -3,10 +3,10 @@ id: TASK-255
 title: >-
   Nothing anywhere alarms on the watcher heartbeat the design says the alarm
   keys on
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 11:39'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. I grepped every reader of last_ok_at and /v1/heal
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -52,3 +52,9 @@ Test: tests/test_bridge_relay.py, 6 new tests -- test_check_watcher_alarm_is_sil
 
 Left at In Progress; did not check acceptance criteria or write a final summary -- that's the verification pass, not this one. Not committed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/relay_pull.py:287-391 (check_watcher_alarm + its wiring into run()) and the corrected comments at bridge/watcher.py:22-26 / bridge/server.py:5 match the claim exactly; 6 dedicated tests including test_relay_run_asks_the_watcher_alarm_check_on_its_own_cadence pass (38/38 in tests/test_bridge_relay.py).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,10 +3,10 @@ id: TASK-235
 title: >-
   Nothing ever runs reconcile, so one unconfirmed send wedges that conversation
   permanently and burns brain calls every three minutes forever
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:01'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED for the wedge; TWO impact details corrected. The c
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -86,3 +86,9 @@ pass with it restored. Ran narrow: .venv/bin/python -m pytest tests/test_bridge_
 
 Left at "In Progress" per instructions -- not marking Done / checking acceptance criteria here.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/watcher.py:586, bridge/server.py:704-709, executor.py:965-966; test at tests/test_bridge_executor.py:2446, 7 tests passing (-k unresolved_send_watcher).
+<!-- SECTION:FINAL_SUMMARY:END -->

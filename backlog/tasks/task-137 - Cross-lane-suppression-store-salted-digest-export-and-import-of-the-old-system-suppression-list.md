@@ -6,10 +6,11 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 09:10'
+updated_date: '2026-09-25 08:00'
 labels:
   - wa-transport
 dependencies:
-  - TASK-113
+  - TASK-299
 references:
   - /home/claude/plans/2026-09-21-macmini-revision.md
 priority: high
@@ -46,3 +47,9 @@ Ivan re-confirmed on 2026-09-21 that cold first contact stays on the phone rail,
 - [ ] #6 Campaign start refuses outright when the suppression store is empty or unreachable, rather than sending and logging a warning
 - [ ] #7 docs/whatsapp.md documents where the list lives, how a suppression is inspected, and that it gates both rails
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Dependency re-pointed 2026-09-25: TASK-113 closed superseded by TASK-299 (its remaining opt-out-gates-sends criterion moved to TASK-299 AC#9, the per-candidate status column that now gates every send path). This task's cross-lane suppression work still depends on that gate existing; TASK-113's dependency edge is replaced with TASK-299.
+<!-- SECTION:NOTES:END -->

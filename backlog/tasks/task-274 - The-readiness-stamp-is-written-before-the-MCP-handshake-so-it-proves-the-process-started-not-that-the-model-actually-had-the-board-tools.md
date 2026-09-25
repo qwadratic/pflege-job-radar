@@ -3,10 +3,10 @@ id: TASK-274
 title: >-
   The readiness stamp is written before the MCP handshake, so it proves the
   process started, not that the model actually had the board tools
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 14:04'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED mechanically, DOWNGRADED on impact. serve() (tools
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -81,3 +81,9 @@ Ran only tests/test_wa_luna_tools.py (136 passed) per instructions -- did not ru
 Not done: did not touch luna_brain.py, the send path, the ledger, or bridge/dispatcher -- none of them
 needed to change. Left status at In Progress and acceptance criteria unchecked for the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+app/wa/luna/tools_server.py:1408-1461 ties the readiness stamp to the server's first tools/list response via a verified-dynamic mcp.list_tools override, closing the exact gap the task describes; tests/test_wa_luna_tools.py:661 is a real fail-before/pass-after regression test and the full narrow suite (149 tests) is green.
+<!-- SECTION:FINAL_SUMMARY:END -->

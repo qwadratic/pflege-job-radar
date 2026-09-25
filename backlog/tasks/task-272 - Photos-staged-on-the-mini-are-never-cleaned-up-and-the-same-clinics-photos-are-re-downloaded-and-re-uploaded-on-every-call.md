@@ -3,10 +3,10 @@ id: TASK-272
 title: >-
   Photos staged on the mini are never cleaned up, and the same clinic's photos
   are re-downloaded and re-uploaded on every call
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 13:49'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. _stage_on_mini (tools_server.py:1016-1035) scp's 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -101,3 +101,9 @@ Ran only the two touched files: `.venv/bin/python -m pytest tests/test_wa_luna_t
 tests/test_bridge_executor.py -q` -> 293 passed. Did not run the full suite (batch verification
 pass is separate, per instructions). Not committed -- diff is for review.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 and AC2 genuinely satisfied: caching (tools_server.py:1045-1195), config surfacing (config.py:98-99,380), and hourly sweep (bridge/server.py:457-474,520) are all present and correct, each backed by a passing, behavior-asserting test with no regressions in the full touched-file runs.
+<!-- SECTION:FINAL_SUMMARY:END -->

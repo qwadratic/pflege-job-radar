@@ -1,11 +1,11 @@
 ---
 id: TASK-224
 title: Numbered-text button rendering and server-side button-id recovery
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-21 01:21'
-updated_date: '2026-09-23 02:17'
+updated_date: '2026-09-25 07:59'
 labels:
   - wa-transport
 dependencies:
@@ -91,4 +91,6 @@ created: 2026-09-22 07:54
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Added app/wa/luna/choices.py: server-side recovery of a typed phone-rail reply into the button id a genuine tap would have produced, 3 ambiguity-safe tiers (ordinal, folded exact title, folded unique prefix) plus a 2-button-only yes/no keyword tier, reading the offer from the outbound wa_messages row app/wa/api.py already writes. Wired at the single process_owed_turn entry point in one line, covering the webhook worker and catchup.py alike; brain.py and luna_brain.py untouched. Verified: tests/test_wa_luna_choices.py 40/40, tests/test_wa_harness.py 60/60 unchanged. AC#7's real-history corpus check could not run (no real candidate messages exist on this host yet); left unchecked with the reason on record rather than faked.
+
+Closed as superseded. Numbered option lists are banned by the conversation design (_OBJECTIVE_ORDER in app/wa/luna_brain.py: open or plain yes/no questions, never options joined by 'oder'), and Ivan's point of 2026-09-25 removes their reason entirely -- they existed to make answers parseable, but the job search takes several cities/criteria in one call (or two), so answers need no narrowing. Yes/no recovery already works (the two-button keyword tier in app/wa/luna/choices.py, with tests). AC#7 (the 90pct real-history corpus check) is superseded rather than completed: TASK-305 opened as its narrow successor, run once real candidates have answered two-option questions.
 <!-- SECTION:FINAL_SUMMARY:END -->

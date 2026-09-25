@@ -3,10 +3,10 @@ id: TASK-260
 title: >-
   The one thread that can touch the phone has a heartbeat with no progress
   evidence, and an unguarded loop that one sqlite error ends
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 12:02'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: heartbeat() returns exactly {poll_interval_sec, alive, debug
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -86,3 +86,9 @@ verification pass.
 Not committed; left for the owner to review the diff. Status left at In Progress, acceptance
 criteria left unchecked, per instructions -- finalization happens in the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/dispatcher.py:86-87,218-258 add cycles/last_ok_at to the heartbeat and guard the claim step; bridge/ledger.py:827-842 adds phone_ops_queue_counts surfaced at bridge/executor.py:971. tests/test_bridge_executor.py:2065 and :2089 cover exactly this and pass (179/179 in the file).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,7 +4,7 @@ title: Qualification question must not be an either/or that a plain "ja" answers
 status: Done
 assignee: []
 created_date: '2026-09-14 09:44'
-updated_date: '2026-09-14 13:28'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 type: bug
@@ -67,4 +67,6 @@ Validation 2026-09-14: baseline on the old prompt reproduced the bug live (eithe
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Luna now asks qualification as plain yes/no steps (Urkunde in hand? then, only on no, the recognition step), treats a bare Ja to any either/or question as ambiguous with a strict yes/no re-ask, and gate labels no longer invite either/or questions. Verified live against the real model (old prompt reproduced the bug; new prompt passed natural and seeded bare-ja personas repeatedly) and by the full offline suite (1281 passed).
+
+Verified prompts.py:264-273 (QUALIFICATION), prompts.py:128 (YES/NO QUESTIONS) and luna_brain.py:599-611 (_OBJECTIVE_ORDER) carry the plain-yes/no-first ordering the bug required; tests/test_wa_luna_brain.py qualification/objective-order subset (33 tests) passes offline. Live persona re-verification is out of scope for this pass (forbidden CLI spawn) but is documented as done multiple times in the task's own notes; no code regression found.
 <!-- SECTION:FINAL_SUMMARY:END -->

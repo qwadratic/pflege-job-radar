@@ -3,10 +3,10 @@ id: TASK-231
 title: >-
   Every chat-open path except send() clears the notification shade without the
   piggyback thread read — look_at_phone is the worst of them because the br
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 08:25'
+updated_date: '2026-09-25 07:59'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. Operations.read_thread (bridge/operations.py:129-
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -89,3 +89,9 @@ Ran narrowly per the task's instructions, not the full suite:
 
 Not committed -- left for the owner's review of the diff.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified: fix is committed in 4efb70b. Confirmed load-bearing on all four call sites the fix documents -- bridge/watcher.py:186 (idle self-check), bridge/executor.py:676 (reconcile scan) and :993 (_read_evidence_for on the 15s IdentityWatcher cadence), bridge/operations.py:162 (read_thread for operators) all still call driver.read_cold_thread. Nothing to cut. The known residual (a thread whose whole visible window is today, with no earlier-day divider to cut against, mints nothing on a cold read -- exactly a brand-new candidate's first message) is documented in read_cold_thread's own docstring in bridge/adb_driver.py, and a successor task (TASK-304) has been opened for it.
+<!-- SECTION:FINAL_SUMMARY:END -->

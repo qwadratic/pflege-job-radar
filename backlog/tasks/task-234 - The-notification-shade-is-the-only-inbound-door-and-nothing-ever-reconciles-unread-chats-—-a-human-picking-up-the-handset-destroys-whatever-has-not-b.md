@@ -3,10 +3,10 @@ id: TASK-234
 title: >-
   The notification shade is the only inbound door, and nothing ever reconciles
   unread chats — a human picking up the handset destroys whatever has not b
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 08:53'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. pull_inbound (adb_driver.py:1292-1299) is one `du
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -143,3 +143,9 @@ Ran narrowly per the task's instructions, not the full suite:
 
 Not committed -- left for the owner's review of the diff.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/operations.py:94, bridge/watcher.py:180,498, bridge/adb_driver.py:1384; tests/test_bridge_operations.py + test_bridge_adb.py (130 passed) and sustained_dirty tests in test_bridge_executor.py (3 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

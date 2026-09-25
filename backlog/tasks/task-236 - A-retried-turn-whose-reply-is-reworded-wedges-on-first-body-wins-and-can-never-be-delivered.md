@@ -3,10 +3,10 @@ id: TASK-236
 title: >-
   A retried turn whose reply is reworded wedges on first-body-wins and can never
   be delivered
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:17'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. ledger.classify (ledger.py:426-433) compares body
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -82,3 +82,9 @@ Ran tests/test_bridge_executor.py only, per instructions: 135 passed. Did not ru
 suite (that is the separate verification pass). Not committed -- diff is in the working tree in
 bridge/ledger.py and tests/test_bridge_executor.py.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/ledger.py:505-533 (RESENDABLE fallthrough) and :547-562 (hash refresh); tests at tests/test_bridge_executor.py:172,189, both passing, plus full-file run (179 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

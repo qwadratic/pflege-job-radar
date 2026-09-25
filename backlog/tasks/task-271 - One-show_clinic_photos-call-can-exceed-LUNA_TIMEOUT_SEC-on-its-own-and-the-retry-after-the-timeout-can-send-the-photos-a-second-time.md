@@ -3,10 +3,10 @@ id: TASK-271
 title: >-
   One show_clinic_photos call can exceed LUNA_TIMEOUT_SEC on its own, and the
   retry after the timeout can send the photos a second time
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 13:37'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED on the arithmetic, PLAUSIBLE on the duplicate. C.L
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -56,3 +56,9 @@ Tests run (narrow only, per instructions): .venv/bin/python -m pytest tests/test
 
 Status left at In Progress; acceptance criteria left unchecked, both fixes not committed, per instructions -- owner does one verification pass over the whole batch.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 and AC2 both genuinely satisfied by two independent, verified fixes: app/wa/config.py:176-184 (timeout now exceeds gallery budget, confirmed via direct import) and app/wa/luna/tools_server.py:1154-1171 (mechanical DB-side duplicate-send guard), each backed by a passing behavioral test (tests/test_wa_luna_brain.py:1167, tests/test_wa_luna_tools.py:1092).
+<!-- SECTION:FINAL_SUMMARY:END -->

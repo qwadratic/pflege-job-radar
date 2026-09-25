@@ -1,10 +1,10 @@
 ---
 id: TASK-181
 title: 'Durable reply-turn claim (idempotency beyond wamid, cross-process safe)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 11:14'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 project: whatsapp
@@ -33,3 +33,9 @@ Recon found our only dedup primitive is the wamid UNIQUE constraint plus an in-p
 <!-- SECTION:NOTES:BEGIN -->
 app/wa/store.py: wa_reply_turn_claims(phone, turn_key, state, claimed_at, updated_at), PK(phone,turn_key). claim_reply_turn() inserts optimistically, catches IntegrityError, then only blocks on a fresh in_progress row or a terminal 'sent' row -- any skipped_* state or a stale (>300s) in_progress row is reclaimed via UPDATE. finish_reply_turn_claim() records the outcome. Wired into app/wa/api.py's new process_owed_turn() (shared by _handle_one and, next, the catch-up driver).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified app/wa/store.py:55 (table), :418 (claim_reply_turn with the exact reclaim semantics AC3 describes), :454 (finish_reply_turn_claim), and app/wa/api.py:927-988 (process_owed_turn as the single call site used by both the webhook path and catchup.py). tests/test_wa_store_claims.py passes and its 8 claim-related tests map directly onto AC6's four required cases.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-188
 title: 'Webhook router: dispatch inbound Meta messages by conversation ownership'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 13:13'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 project: whatsapp
@@ -39,4 +39,6 @@ app/wa/router.py: route_webhook(raw_body, signature_header, meta_client=None, fo
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The dispatch layer TASK-179 deliberately deferred: a payload can now be split per-message by ownership and routed accordingly, with 'them' messages forwarded re-signed so the real system's own signature check still passes. Fully built and tested as code; deliberately does NOT touch Meta's actual webhook configuration -- that remains a separate, explicit, external step for whoever owns that Meta app.
+
+Verified app/wa/router.py:171 (route_webhook), :158 (loud raise on missing WA_REAL_SYSTEM_WEBHOOK_URL), :199 (new additive route); app/wa/asgi.py:16,20 and app/main.py:57-58 (both mount points, original webhook untouched). tests/test_wa_router.py and test_wa_router_internal.py: 26/26 pass, covering every scenario AC6 names.
 <!-- SECTION:FINAL_SUMMARY:END -->

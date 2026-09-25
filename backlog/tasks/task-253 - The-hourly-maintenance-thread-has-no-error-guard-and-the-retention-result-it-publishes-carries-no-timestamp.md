@@ -3,10 +3,10 @@ id: TASK-253
 title: >-
   The hourly maintenance thread has no error guard, and the retention result it
   publishes carries no timestamp
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 11:28'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: maintenance_loop is literally `while not stop.wait(interval)
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -57,3 +57,9 @@ Grepped app/ and tools/ for any reader of health()["retention"]'s old raw shape 
 
 Left at In Progress per instructions; did not check acceptance criteria or mark Done.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/server.py:492-528 (maintenance_once try/except + last_retention stamping) and bridge/executor.py:972-976 (health()['retention'] heartbeat shape) match the claim exactly; tests/test_bridge_executor.py:1447/1467 cover it and the full 179-test file passes.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,10 +4,10 @@ title: >-
   Every tool-calling turn pays a cold board-snapshot build inside the
   tools-server subprocess; TASK-213 moved only the vocabulary count off that
   path
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 13:57'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -34,8 +34,8 @@ VERIFICATION NOTES: CONFIRMED, with one detail corrected. The tools server is sp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,3 +53,9 @@ Tests added in tests/test_wa_luna_tools.py (offline, no network, no handset):
 
 Ran narrowly: .venv/bin/python -m pytest tests/test_wa_luna_tools.py -q -> 135 passed. Also spot-checked tests/test_wa_luna_dialog_rules.py (173 passed) and the WA_LUNA_BOARD_VOCABULARY-adjacent tests in tests/test_wa_luna_brain.py -k 'vocabulary or mcp_config or tools_server or ready' (9 passed, 1 pre-existing failure confirmed present with or without this change -- a global D._snap test-isolation issue unrelated to TASK-273, left alone per scope). Did not run the full suite (per house rule: one full run happens in the owner's verification pass). Not committed; left status at In Progress for that pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 and AC2 genuinely satisfied. app/wa/luna_brain.py:160-173,240 and app/wa/luna/tools_server.py:412-423,1455-1461 implement the priming end to end; tests/test_wa_luna_tools.py:608 and :625 exercise both the primed and un-primed paths and pass, with the full test file (149 tests) showing no regressions.
+<!-- SECTION:FINAL_SUMMARY:END -->

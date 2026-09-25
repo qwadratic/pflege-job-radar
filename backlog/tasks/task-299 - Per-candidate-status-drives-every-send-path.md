@@ -4,6 +4,7 @@ title: Per-candidate status drives every send path
 status: To Do
 assignee: []
 created_date: '2026-09-25 00:01'
+updated_date: '2026-09-25 08:00'
 labels: []
 dependencies: []
 priority: high
@@ -27,4 +28,5 @@ Ivan, 2026-09-24 design session. Today the harness has exactly one behaviour per
 - [ ] #6 red keeps answering normally and additionally raises the thread for urgent manual close in the operator's own surface
 - [ ] #7 skip answers without engaging the dodged topic and still carries the card's open question
 - [ ] #8 One test per status per send path proves what is sent and what is suppressed
+- [ ] #9 An inbound STOP/opt-out sets the candidate's status to mute through the same status column, and campaign sends read it -- today campaign.py's marketing_opt_out does not read wa_suppressions
 <!-- AC:END -->

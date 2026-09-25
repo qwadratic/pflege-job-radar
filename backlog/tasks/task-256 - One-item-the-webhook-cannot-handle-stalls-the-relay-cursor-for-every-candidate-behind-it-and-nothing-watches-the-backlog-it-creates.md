@@ -3,10 +3,10 @@ id: TASK-256
 title: >-
   One item the webhook cannot handle stalls the relay cursor for every candidate
   behind it, and nothing watches the backlog it creates
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 11:51'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED, and the finder is right that the stop-don't-skip 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -87,3 +87,9 @@ with it. Ran only tests/test_bridge_relay.py: 38 passed. Did not run the full su
 Left at In Progress; did not check acceptance criteria or mark Done, per instructions -- that happens
 in the verification pass. Did not commit.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/relay_pull.py:333-356 (both RelayError messages now include outbox #{item['id']} and inbound_id) matches the claim exactly; tests/test_bridge_relay.py:424 asserts this and the full 38-test file passes. The retained stop-don't-skip design is a legitimate, previously-tested decision, not a gap.
+<!-- SECTION:FINAL_SUMMARY:END -->

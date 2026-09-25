@@ -3,9 +3,10 @@ id: TASK-258
 title: >-
   The hourly maintenance thread has no exception guard and no heartbeat, so one
   bad cycle ends all retention silently
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -32,6 +33,12 @@ VERIFICATION NOTES: REAL in substance, but the finder's specific trigger is BLOC
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+TASK-258 itself was never touched (still Status: To Do, no Implementation Notes, no Updated timestamp) -- the fix lives entirely under TASK-253's implementation notes for the identical location/trigger. The code and a passing regression test (tests/test_bridge_executor.py:1467-1495) genuinely satisfy both ACs, but closing TASK-258 should record that it is a duplicate of TASK-253 rather than closing with zero notes on the task itself. TASK-258's own optional proposals (an explicit 'cycles' counter, tolerating the vanished file inside list_screenshot_candidates) were not implemented, but both were framed as 'not a decision'/'the smaller half' and are not required by the two generic ACs.
+<!-- SECTION:FINAL_SUMMARY:END -->

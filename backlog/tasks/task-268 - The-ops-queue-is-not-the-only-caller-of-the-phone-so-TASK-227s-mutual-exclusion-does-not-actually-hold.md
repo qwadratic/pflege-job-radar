@@ -3,10 +3,10 @@ id: TASK-268
 title: >-
   The ops queue is not the only caller of the phone, so TASK-227's mutual
   exclusion does not actually hold
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 13:05'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. dispatcher.py's docstring claims "Ordering and mu
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -57,3 +57,9 @@ Test run (narrow, as instructed -- not the full suite): .venv/bin/python -m pyte
 
 Status left at In Progress; acceptance criteria not checked, per task-finalization being a separate pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 and AC2 genuinely satisfied. bridge/executor.py:813-821 and bridge/broadcast.py:180-182 add the yield-guard; bridge/dispatcher.py:11-18 corrects the docstring; both cited tests pass with no regressions across the two touched test files.
+<!-- SECTION:FINAL_SUMMARY:END -->

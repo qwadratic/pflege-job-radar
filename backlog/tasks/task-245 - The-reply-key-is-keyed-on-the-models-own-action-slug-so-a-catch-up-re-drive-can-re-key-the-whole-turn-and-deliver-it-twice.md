@@ -3,10 +3,10 @@ id: TASK-245
 title: >-
   The reply key is keyed on the model's own action slug, so a catch-up re-drive
   can re-key the whole turn and deliver it twice
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 10:16'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED, and stronger than the finder states. reply_key's 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -74,3 +74,9 @@ timeout math, not reply_key). Left untouched, out of scope for TASK-245.
 
 Not committed -- leaving the diff for review.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified in code: app/wa/bridge_ids.py:104 reply_key material drops ; the only external call site (app/wa/bridge.py:424 _next_send) still passes/validates action for tracing only. Regression test tests/test_wa_bridge_rail_end_to_end.py:139 passes; genuinely fixed and tested, criteria satisfied.
+<!-- SECTION:FINAL_SUMMARY:END -->

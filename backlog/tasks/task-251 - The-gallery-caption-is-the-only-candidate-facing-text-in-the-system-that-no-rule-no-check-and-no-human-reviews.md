@@ -3,10 +3,10 @@ id: TASK-251
 title: >-
   The gallery caption is the only candidate-facing text in the system that no
   rule, no check and no human reviews
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 11:24'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. tools_server.py:1067 takes caption = presentation
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -88,3 +88,9 @@ Test run (narrow): .venv/bin/python -m pytest tests/test_wa_luna_tools.py -q -> 
 passed. Full suite intentionally not run here (one verification pass over the whole
 batch happens separately). Not committed -- diff left for review.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+app/wa/luna/tools_server.py:1179-1180 adds a link-ban gate before show_clinic_photos ever calls BR.Client().send_gallery with a fetched caption; already in committed HEAD. tests/test_wa_luna_tools.py:1123 covers it and the whole 149-test file passes ().
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,10 +3,10 @@ id: TASK-297
 title: >-
   Standing queue: operator requests arriving in Russian on the WhatsApp test
   threads
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-24 21:25'
-updated_date: '2026-09-24 21:27'
+updated_date: '2026-09-25 08:00'
 labels:
   - whatsapp
   - operator-inbox
@@ -65,3 +65,9 @@ THE HOOK: tools/operator_queue_hook.py, wired in .claude/settings.json (UserProm
 scope). Prints nothing when every criterion is checked, so an idle day costs no tokens. Every
 failure mode exits 0 silently -- an unreadable queue must never cost Ivan a turn.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed as superseded by TASK-303: the standing operator queue now lives in wa_agent_notes with a worker, and the UserPromptSubmit hook reads that table instead of this task. The card never had acceptance criteria, so the old hook (tools/operator_queue_hook.py reading TASK-297) could never have shown anything -- there was nothing to check off.
+<!-- SECTION:FINAL_SUMMARY:END -->

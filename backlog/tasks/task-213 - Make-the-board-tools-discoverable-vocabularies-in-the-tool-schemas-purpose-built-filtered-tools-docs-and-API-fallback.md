@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-16 14:49'
-updated_date: '2026-09-23 02:17'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies:
   - TASK-211
@@ -100,4 +100,6 @@ Final verification 2026-09-16 (review + adversarial verify + fixer, 11 findings 
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The board tools are now discoverable: every tool description carries vocabulary generated from the live board (departments, Regierungsbezirke, role classes, employment types, the housing share), purpose-built tools exist for the common needs (postings with housing, clinics with housing, cities with postings, counts), the prompt lists the tools with their parameters and requires a stated need -- housing above all -- to be in the call, and a fallback serves this repo's own agent docs plus an allowlisted read-only board API (secrets stripped, served in-process). Verified by 41 tool tests, the full offline suite and live llm runs whose tool-call logs show the right tool with the right filter.
+
+Verified tools_server.py:466-609 (vocabulary + 4 preset tools), :811-1000 (read_board_docs/board_api_get fallback with allowlist) and prompts.py:396-432 (CAPABILITIES/TOOLS block) match the ACs; tests/test_wa_luna_tools.py 149/149 pass offline and docs/whatsapp.md:398-420 documents the same numbers. TASK-273's cold-snapshot finding is a separate, still-open latency issue in the child process that AC1-5 never claimed to cover.
 <!-- SECTION:FINAL_SUMMARY:END -->

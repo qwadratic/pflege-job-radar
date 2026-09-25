@@ -3,9 +3,10 @@ id: TASK-252
 title: >-
   An op left running by a restart is never reclaimed, never fails, and never
   expires
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -32,6 +33,12 @@ VERIFICATION NOTES: CONFIRMED on every clause. claim_next_op selects `where stat
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/ledger.py:426-484 (_recover_stuck_ops) and :726-762 (claim_next_op budget expiry) plus bridge/executor.py:971-976 (health()['phone_ops']) genuinely satisfy the finding; tests/test_bridge_executor.py:2161 proves it and 179/179 tests in that file pass. Note: TASK-252 itself has zero Implementation Notes (Status: To Do) -- the fix landed under TASK-232/TASK-260, whose notes explicitly flag TASK-252 as needing this exact re-check, which I performed directly against current code/tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

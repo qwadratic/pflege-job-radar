@@ -3,10 +3,10 @@ id: TASK-264
 title: >-
   The operator's own health command prints none of the liveness fields, and its
   counters reset on every restart
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 12:30'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: cmd_health (tools/wa_bridge.py:290-318) prints version, rail
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -52,3 +52,9 @@ VERIFICATION NOTES: cmd_health (tools/wa_bridge.py:290-318) prints version, rail
 <!-- SECTION:NOTES:BEGIN -->
 Implemented. Files: bridge/ledger.py (Ledger.event_count), bridge/executor.py (HEALTH_JOURNAL_WINDOW_SEC + health()['journal_recent']), tools/wa_bridge.py (cmd_health prints watcher/ops_dispatcher/phone_ops/inbound/retention every call, non-zero exit when watcher dead/stale, ops_dispatcher dead, inbound backlog stale past INBOUND_BACKLOG_STALE_SEC, or retention has errors -- thresholds reused from bridge/relay_pull.py, none invented). Scope kept to the five fields VERIFICATION NOTES names absent (watcher, ops_dispatcher, phone_ops, inbound.oldest_unacked_at, retention); did not add per-field alive checks for media_watcher/identity_watcher/reconcile_watcher/unresolved_send_watcher, which are already partially surfaced and outside what the finding verified as missing. Added tests/test_wa_bridge_cli.py::test_health_prints_the_liveness_fields_when_everything_is_alive and ::test_health_flags_a_dead_watcher_a_stuck_dispatcher_and_a_retention_error, and tests/test_bridge_executor.py::test_ledger_event_count_windows_the_journal_by_name_and_by_moment and ::test_health_reports_a_windowed_journal_count_that_survives_a_restart. Ran narrowly: tests/test_wa_bridge_cli.py (84 passed) and tests/test_bridge_executor.py (157 passed). Did not run the full suite per standing instruction (one full run happens in the separate verification pass). Left status In Progress and acceptance criteria unchecked per the dispatched task's own instruction -- that happens in verification.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+tools/wa_bridge.py:267-356 prints the five named liveness fields every call and exits non-zero on a bad one; bridge/ledger.py:665 plus bridge/executor.py:981-988 give a windowed, restart-surviving counter. tests/test_wa_bridge_cli.py:395-439 assert the exact printed lines and exit codes for both the healthy and the flagged case, and pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

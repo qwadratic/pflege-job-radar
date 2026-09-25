@@ -3,11 +3,11 @@ id: TASK-265
 title: >-
   An artefact held by retention outlives its phone_ops row, after which it is
   held forever under a reason that blames a bug elsewhere
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 12:50'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -34,8 +34,8 @@ VERIFICATION NOTES: CONFIRMED, and the code's own comment is the wrong way round
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,3 +51,9 @@ Tests: added test_a_swept_op_row_is_held_with_the_aged_out_reason_not_the_missin
 
 Ran: .venv/bin/python -m pytest tests/test_bridge_retention.py -q -> 26 passed. Did not run the full suite (owner's one verification pass covers that).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/retention.py:93-104,115-119,160-164 distinguish 'row aged out under LEDGER_RETENTION_DAYS' from 'row missing for no such reason', and review_and_sweep threads / through so the distinction fires on the real sweep path, not just in isolation. tests/test_bridge_retention.py:127 and :366 cover both branches (op row and escalation-shot journal row) and pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

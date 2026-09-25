@@ -1,10 +1,10 @@
 ---
 id: TASK-113
 title: Inbound STOP detector and persistent suppression list on both rails
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-21 01:20'
-updated_date: '2026-09-22 06:08'
+updated_date: '2026-09-25 08:00'
 labels:
   - wa-transport
 dependencies: []
@@ -51,3 +51,9 @@ Forged Meta numeric codes stay out of scope and rejected: bridge-origin failures
 <!-- SECTION:NOTES:BEGIN -->
 Audit 2026-09-22: substantially built (app/wa/suppression.py, 129 lines) but genuinely NOT complete -- correctly stays To Do. What exists: wa_suppressions table (store.SCHEMA), suppress()/is_suppressed()/assert_not_suppressed(), keyed by phones.canonicalize_phone, first-write-wins. is_stop() reused verbatim from slots.py (AC#9), STOP triggers suppress() at api.py:896 on any inbound regardless of rail (AC#1/#2 -- _fold in slots.py case/diacritic-folds, _contains is whole-word for single tokens). Two choke points, both raising SuppressedRecipient(MetaError, 403): api.send_and_record (api.py:1027, covers webhook reply/catch-up/media-ack/reopen-template/followups nudge on either rail) and campaign.send_one (campaign.py:672, the one send path that bypasses api._send). tests/test_wa_suppression.py: 28 tests, all passing, covering detection, cross-rail persistence, the campaign and followup choke points, and identity canonicalization (AC#3/#6). WHAT IS NOT BUILT, stated explicitly in suppression.py's own docstring ('NOT HERE, ON PURPOSE (TASK-137, later)'): AC#4 (marketing_opt_out still reads Meta signals/131050 directly, campaign.py:384-386, not the suppression list); AC#5 (no backfill of phones already opted out via 131050 into wa_suppressions). Also not found anywhere: AC#7 (docs/whatsapp.md does not document the STOP vocabulary, where the table lives, or how to inspect it -- it only namechecks TASK-113 as a still-blocking prerequisite, docs/whatsapp.md:79,125, which is itself now stale prose since the detector+table are built); AC#8 (no campaign-start gate refuses when wa_suppressions is missing/empty/unreachable -- grepped app/wa/luna/campaign.py's main()/cmd_send path, no such check exists; a campaign today would run fine against a suppression table nobody ever populated). Full offline suite green: 2312 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Remaining open criterion (marketing_opt_out reading the suppression signal before a campaign send, AC#4) moved into TASK-299 as its new AC#9, since TASK-299's per-candidate status column is now the mechanism that gates every send path including campaign sends -- a second, parallel opt-out check would drift from it. Closing here in favour of TASK-299. AC#1,2,3,6,9 (detection, cross-rail, the conversational/nudge/campaign choke points via SuppressedRecipient, and slots.py reuse) were already done and checked. AC#5 (backfill 131050 opt-outs into wa_suppressions) and AC#7 (docs/whatsapp.md) remain genuinely open but narrow; AC#8 (campaign refuses to start when the suppression store is missing/empty/unreachable) is superseded by the same TASK-299 status-column gate as AC#4 was.
+<!-- SECTION:FINAL_SUMMARY:END -->

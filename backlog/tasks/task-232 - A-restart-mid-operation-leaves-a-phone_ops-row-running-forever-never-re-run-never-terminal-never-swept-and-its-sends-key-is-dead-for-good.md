@@ -3,11 +3,11 @@ id: TASK-232
 title: >-
   A restart mid-operation leaves a phone_ops row 'running' forever: never
   re-run, never terminal, never swept -- and its send's key is dead for good
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 08:31'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -34,8 +34,8 @@ VERIFICATION NOTES: claim_next_op selects state = queued only (ledger.py:540-556
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -124,3 +124,9 @@ as a sanity check only -- not the full suite; that is the owner's single verific
 
 Not committed -- leaving the diff for review.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/ledger.py:333,467-486 and test at tests/test_bridge_executor.py:2161-2181, full file run (179 passed, -m 'not llm').
+<!-- SECTION:FINAL_SUMMARY:END -->

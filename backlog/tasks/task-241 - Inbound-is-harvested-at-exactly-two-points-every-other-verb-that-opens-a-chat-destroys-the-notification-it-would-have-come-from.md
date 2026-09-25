@@ -3,10 +3,10 @@ id: TASK-241
 title: >-
   Inbound is harvested at exactly two points; every other verb that opens a chat
   destroys the notification it would have come from
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:41'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: Confirmed by grep: record_inbound has exactly two call sites
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -96,3 +96,9 @@ Ran narrowly per instructions, not the full suite:
 
 Not committed -- left for the owner's review of the diff.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/executor.py:601-606 (record_inbound piggyback inside _scan), already in git history at commit 3578e728 (ancestor of HEAD). Test at tests/test_bridge_executor.py:469, run directly and confirmed passing.
+<!-- SECTION:FINAL_SUMMARY:END -->

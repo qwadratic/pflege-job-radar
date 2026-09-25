@@ -3,10 +3,10 @@ id: TASK-242
 title: >-
   A ledger write error kills the ops dispatcher thread for good, and the whole
   rail silently stops sending
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:46'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: Confirmed by reading the code. run_one() (dispatcher.py:108-
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -73,3 +73,9 @@ Ran only tests/test_bridge_executor.py (the file that already covers OpsDispatch
 
 Not committed; left for the owner to review the diff.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/dispatcher.py:129-227 (outer try/except around run_one and cycle) and :252-258 (heartbeat surfacing errors), committed at 3578e72. Tests at tests/test_bridge_executor.py:2016 and :2051, run directly and confirmed passing.
+<!-- SECTION:FINAL_SUMMARY:END -->

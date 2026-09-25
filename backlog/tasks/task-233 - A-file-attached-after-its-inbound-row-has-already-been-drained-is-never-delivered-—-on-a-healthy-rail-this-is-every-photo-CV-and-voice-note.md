@@ -3,10 +3,10 @@ id: TASK-233
 title: >-
   A file attached after its inbound row has already been drained is never
   delivered — on a healthy rail this is every photo, CV and voice note
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 08:40'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -36,8 +36,8 @@ VERIFICATION NOTES: CONFIRMED end to end, and the timing argument is right. brid
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -67,3 +67,9 @@ Scope note: did not touch bridge/envelope.py's docstring/media_kind-on-text-bran
 
 Not committed -- left for owner review.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Confirmed live: bridge/ledger.py:1118-1178 (acked_at gate, AUTO_LINK_INBOUND_PREFIX) and test at tests/test_bridge_executor.py:1352, passing in the full non-llm run (179 passed).
+<!-- SECTION:FINAL_SUMMARY:END -->

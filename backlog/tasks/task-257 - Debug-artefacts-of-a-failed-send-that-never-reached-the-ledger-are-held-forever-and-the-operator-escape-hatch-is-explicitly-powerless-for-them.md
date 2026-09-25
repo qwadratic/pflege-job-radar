@@ -3,10 +3,10 @@ id: TASK-257
 title: >-
   Debug artefacts of a failed send that never reached the ledger are held
   forever, and the operator escape hatch is explicitly powerless for them
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 11:57'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED end to end. executor.send calls validate_send, led
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -58,3 +58,9 @@ Ran narrow suite only: .venv/bin/python -m pytest tests/test_bridge_retention.py
 
 Left at In Progress; did not check acceptance criteria or move to Done -- that's the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/retention.py:136-143 distinguishes a send refused before ledger.begin (no row ever written) from one still open, deleting the former on age alone instead of holding it forever; tests/test_bridge_retention.py:255 and :453 cover it end to end and both pass (34/34 in the file).
+<!-- SECTION:FINAL_SUMMARY:END -->

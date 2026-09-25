@@ -3,10 +3,10 @@ id: TASK-239
 title: >-
   A thread whose Claude Code session transcript has aged out can never be
   answered again: --resume fails, and nothing ever clears _session_id
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 09:25'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - loses-messages
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED. luna_brain.py:851 uses --resume for any non-None 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -54,3 +54,9 @@ Ran narrowly: .venv/bin/python -m pytest tests/test_wa_luna_brain.py -q -> 179 p
 
 Left at In Progress, AC unchecked, not committed, per the batch-verification workflow -- the owner reviews the diff and does one full-suite pass at the end.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+app/wa/luna_brain.py:871-874 (SessionNotFound), :921-953 (_live_reply's narrow catch), :1462-1474 (turn()'s one-shot retry). Tests at tests/test_wa_luna_brain.py:1190 and :1214, verified passing via targeted pytest run (not the full file, per instructions).
+<!-- SECTION:FINAL_SUMMARY:END -->

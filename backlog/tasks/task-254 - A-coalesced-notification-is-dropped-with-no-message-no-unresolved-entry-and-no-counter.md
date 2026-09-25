@@ -3,10 +3,10 @@ id: TASK-254
 title: >-
   A coalesced notification is dropped with no message, no unresolved entry and
   no counter
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 11:32'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED as written, with the severity tempered. Traced lin
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -90,3 +90,9 @@ suite per instruction; a wider verification pass is expected to follow separatel
 
 No other module touched. Did not commit -- owner reviews the diff.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/inbound.py:68 (widened _SUMMARY regex) and :231-243 (suppressed-summary now appended to ) match the claim; traced through executor.py:671-680/957 that this reaches the /v1/health inbound_unresolved counter. tests/test_bridge_relay.py:140/153 cover both the plural and singular cases; 38/38 tests in the file pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

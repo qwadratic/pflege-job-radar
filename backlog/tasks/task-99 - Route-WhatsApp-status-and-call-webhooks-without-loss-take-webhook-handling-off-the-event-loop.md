@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 14:24'
-updated_date: '2026-09-14 21:23'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 type: bug
@@ -66,4 +66,6 @@ Final verification 2026-09-14 20:45-20:57 UTC (after 4-lens review, adversarial 
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Statuses, calls and other webhook fields are no longer dropped: our statuses are stored per wamid (failed ones visible as send failures), calls and everything we do not handle go to the old system, nothing is duplicated into the wrong half. Webhooks are acknowledged after durable recording and turns run on a background worker; catch-up recovers interrupted text and media turns. Deviation for Ivan: statuses follow the recorded owner rather than route_decision. Verified by router/background/recovery tests, the campaign e2e run and the full offline suite.
+
+Verified router.py:102-171 (owner split + call routing), store.py:124-137/836-850 (per-wamid status + send-failure recording), api.py:479-691 (background ThreadPoolExecutor pipeline) exist as described. tests/test_wa_router.py (21 passed) and tests/test_wa_webhook_background.py (14 passed) both green offline; docs/whatsapp.md sections on the router and the background worker are present and match the code.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,9 +3,10 @@ id: TASK-238
 title: >-
   Nothing ever runs reconcile, so an unconfirmed key leaves the thread
   permanently unanswered while catch-up burns a brain call every three minutes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
+updated_date: '2026-09-25 07:56'
 labels:
   - rail-critique
   - loses-messages
@@ -32,6 +33,12 @@ VERIFICATION NOTES: CONFIRMED, and the admission is real. Grepped the whole tree
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Duplicate of TASK-235; same defect, same code path. Closed in favour of TASK-235, which carries the detail.
+<!-- SECTION:FINAL_SUMMARY:END -->

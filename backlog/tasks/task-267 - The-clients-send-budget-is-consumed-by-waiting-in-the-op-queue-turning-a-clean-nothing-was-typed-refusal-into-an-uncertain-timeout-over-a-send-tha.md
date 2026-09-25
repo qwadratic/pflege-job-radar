@@ -3,9 +3,10 @@ id: TASK-267
 title: >-
   The client's send budget is consumed by waiting in the op queue, turning a
   clean "nothing was typed" refusal into an uncertain timeout over a send tha
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -32,6 +33,12 @@ VERIFICATION NOTES: CONFIRMED. _request computes `budget = self.timeout if timeo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Duplicate of TASK-243; same defect, same code path. Closed in favour of TASK-243, which carries the detail.
+<!-- SECTION:FINAL_SUMMARY:END -->

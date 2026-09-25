@@ -6,15 +6,11 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:23'
-updated_date: '2026-09-22 06:09'
+updated_date: '2026-09-25 08:00'
 labels:
   - wa-transport
 dependencies:
-  - TASK-113
-  - TASK-120
-  - TASK-124
-  - TASK-136
-  - TASK-137
+  - TASK-299
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: high
@@ -57,5 +53,5 @@ The quiet-hours house rule is now settled by adoption rather than by asking: the
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Audit 2026-09-22: substantially built in bridge/governor.py (shipped 2026-09-21 as part of TASK-146), correctly stays To Do for two real remaining gaps. Built: the mini-side constants adopted whole as the floor (bridge/governor.py:9-22, read from the colleague's config.py PACING at commit ea82a51: 9-20 Europe/Berlin, 240-600s first-touch gaps, 10/day, 4/hour, Sunday blocked) -- AC#1, tested (tests/test_bridge_executor.py::test_the_first_touch_caps_are_the_colleagues_numbers). Per-number, pacing-timezone-day cap (their two holes fixed, not inherited) -- AC#2, tested (test_the_governor_refuses_past_the_per_number_daily_cap, test_the_daily_cap_is_counted_on_the_pacing_timezone_day). Quiet hours on every outbound including replies -- AC#3, tested (test_the_governor_refuses_a_reply_outside_active_hours, test_asking_to_bypass_quiet_hours_is_refused_not_ignored). Fuse non-overridable, only slower ever honoured -- AC#4, tested (test_a_request_cannot_shorten_the_gap, test_a_request_cannot_raise_the_cap). Loud rail_parked with ownership restored, never silent -- AC#5, tested via bridge/errors.py + campaign.py's 4xx classification (shared with TASK-120). Meta-rail pacing untouched -- AC#7, campaign.py's window/batch pacing (tests/test_wa_campaign_sender.py) was not touched by this work. NOT MET: AC#6, the compound criterion 'suppression consulted before every campaign send on both rails AND a campaign refuses to start when it is unavailable' -- the first half is true (TASK-113: campaign.send_one calls SUP.assert_not_suppressed), the second half is not (same gap as TASK-113 AC#8: no campaign-start refusal on a missing/empty/unreachable suppression store). AC#8, docs recording the adopted house rule with its numbers and the 'stricter, so it wins' reasoning -- docs/whatsapp.md:79 only namechecks TASK-127 in one sentence, no numbers, no subsection. Full offline suite green: 2312 passed.
+Dependency re-pointed 2026-09-25: TASK-113 closed superseded by TASK-299 (its remaining opt-out-gates-sends criterion moved to TASK-299 AC#9). This task's AC#6 (suppression consulted + campaign refuses to start when unavailable) rests on that same status-column gate now, so TASK-113's dependency edge is replaced with TASK-299.
 <!-- SECTION:NOTES:END -->

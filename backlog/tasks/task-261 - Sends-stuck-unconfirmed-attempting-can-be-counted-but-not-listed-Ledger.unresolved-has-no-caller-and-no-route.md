@@ -3,10 +3,10 @@ id: TASK-261
 title: >-
   Sends stuck unconfirmed/attempting can be counted but not listed:
   Ledger.unresolved() has no caller and no route
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 12:20'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - operator-blind
@@ -33,8 +33,8 @@ VERIFICATION NOTES: `unresolved()` is defined at ledger.py:487-493 and called fr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -67,3 +67,9 @@ Ran narrowly: tests/test_bridge_executor.py + tests/test_wa_bridge_cli.py + test
 
 Left at In Progress per instructions; acceptance criteria not checked here, that happens in the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/executor.py:511,951, bridge/server.py:335-336, app/wa/bridge.py:1015, and tools/wa_bridge.py:704,796-800 form a genuinely wired route+CLI path (not a dead-end function); the associated tests in tests/test_bridge_executor.py and tests/test_wa_bridge_cli.py pass (18/18 on a targeted run, no failures on the full files).
+<!-- SECTION:FINAL_SUMMARY:END -->

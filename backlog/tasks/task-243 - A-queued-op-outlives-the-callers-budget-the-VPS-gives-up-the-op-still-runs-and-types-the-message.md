@@ -3,10 +3,10 @@ id: TASK-243
 title: >-
   A queued op outlives the caller's budget: the VPS gives up, the op still runs
   and types the message
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 10:03'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -40,8 +40,8 @@ VERIFICATION NOTES: REAL, but the finder's mechanism needs correcting on one poi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -110,3 +110,9 @@ AttributeError/KeyError/HTTP 500/assertion failures as expected, then restored).
 `.venv/bin/python -m pytest tests/test_wa_bridge_client.py tests/test_bridge_executor.py -q` ->
 211 passed. Did not run the full suite (per instructions; one verification pass covers the batch).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+app/wa/bridge.py:112,440-448,465,484-528; bridge/ledger.py:~726-798; bridge/server.py cancel route + budget header wiring. Ran tests/test_wa_bridge_client.py + tests/test_bridge_executor.py together: 246 passed, 0 failed.
+<!-- SECTION:FINAL_SUMMARY:END -->

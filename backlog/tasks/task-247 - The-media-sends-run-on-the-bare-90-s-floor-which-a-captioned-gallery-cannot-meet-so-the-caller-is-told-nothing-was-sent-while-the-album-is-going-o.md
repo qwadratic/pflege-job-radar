@@ -3,10 +3,10 @@ id: TASK-247
 title: >-
   The media sends run on the bare 90 s floor, which a captioned gallery cannot
   meet, so the caller is told "nothing was sent" while the album is going o
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 10:45'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -33,8 +33,8 @@ VERIFICATION NOTES: CONFIRMED, and it is now candidate-facing. send_photos/send_
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -93,3 +93,9 @@ untouched (TASK-243's own territory, not TASK-247's). main()'s shared BridgeErro
 untouched -- widening it globally would have changed chats/thread/destroy's own answer_timeout
 classification too, which is a different, unasked-for scope.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified app/wa/bridge.py:212-231 (budget constants) and 665/700/730 (timeout=self._timeout_for(budget) wired into all three media routes), app/wa/luna/tools_server.py:1219 (CODE_ANSWER_TIMEOUT folded into the non-refusal branch), tools/wa_bridge.py:415 (_media_sent_or_answer_lost). Ran the cited tests (test_wa_bridge_client.py, test_wa_bridge_cli.py, test_wa_luna_tools.py) -- all pass. Criteria genuinely satisfied.
+<!-- SECTION:FINAL_SUMMARY:END -->

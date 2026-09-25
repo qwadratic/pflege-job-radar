@@ -3,10 +3,10 @@ id: TASK-275
 title: >-
   Screen recordings orphaned on the handset are never pulled, never deleted, and
   nothing watches free space
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:03'
-updated_date: '2026-09-23 14:23'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - degraded
@@ -33,8 +33,8 @@ VERIFICATION NOTES: start_recording spawns screenrecord to /sdcard/{op_id}.mp4 a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,3 +51,9 @@ Deliberately left out (per the sceptic's own reasoning, checked and agreed): the
 
 Ran only the narrow test file: .venv/bin/python -m pytest tests/test_bridge_adb.py -q -> 92 passed. Not committed; not touching acceptance criteria -- leaving both for the verification pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fix and regression test both verified present and correct in the current working tree; the secondary free-space-alarm suggestion in the task's own PROPOSED DIRECTION is explicitly and reasonably scoped out with a written argument, which AC#1 allows.
+<!-- SECTION:FINAL_SUMMARY:END -->

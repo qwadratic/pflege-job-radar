@@ -3,10 +3,10 @@ id: TASK-244
 title: >-
   MediaWatcher pulls whatever bytes exist at that instant and permanently
   freezes a partially written file
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 10:13'
+updated_date: '2026-09-25 07:57'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -36,8 +36,8 @@ VERIFICATION NOTES: REAL in the code, with one external unknown the finder alrea
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
-- [ ] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
+- [x] #1 The finding is either fixed, or closed with a written argument for why it must not be fixed
+- [x] #2 A test fails without the fix and passes with it (or the closing argument explains why no test is possible)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -79,3 +79,9 @@ Left for the verification pass: every fresh pull, not only a growing one, now wa
 extra 5s cycle before it is ever attempted. That latency trade-off is inherent to the fix as scoped
 and was not separately decided by Ivan before this run.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+bridge/watcher.py:279-376 (MediaWatcher stability + short-pull handling). Tests at tests/test_bridge_executor.py:685 and :708; ran the full tests/test_bridge_executor.py file -- 179 passed, 0 failed.
+<!-- SECTION:FINAL_SUMMARY:END -->

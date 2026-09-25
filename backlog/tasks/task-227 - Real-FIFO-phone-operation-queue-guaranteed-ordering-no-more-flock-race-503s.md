@@ -4,7 +4,7 @@ title: 'Real FIFO phone-operation queue: guaranteed ordering, no more flock-race
 status: Done
 assignee: []
 created_date: '2026-09-23 03:11'
-updated_date: '2026-09-23 04:03'
+updated_date: '2026-09-25 07:54'
 labels: []
 dependencies: []
 project: whatsapp
@@ -35,4 +35,6 @@ Implemented: bridge/ledger.py gains a phone_ops table (op_id/position/kind/args/
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Replaced the bare-flock race with a durable FIFO phone_ops queue and one dispatcher thread (bridge/dispatcher.py) that is now the sole caller of every phone-touching executor/operations method. HTTP routes enqueue and answer {op_id, state:queued} immediately (Ivan's explicit choice); app/wa/bridge.py::Client absorbs the poll-to-terminal-state internally so no existing caller anywhere in the codebase ever sees an unconfirmed result. Verified: 4 new dispatcher-level tests plus the pre-existing HTTP-level suites (tests/test_bridge_executor.py, tests/test_bridge_operations.py) rewired to the new async contract, plus tests/test_wa_bridge_client.py's 56 tests unchanged. Full bridge lane (test_bridge_executor.py + test_bridge_adb.py + test_bridge_operations.py) 255 passed, 0 regressions.
+
+Verified bridge/ledger.py:202-858 (phone_ops CRUD), bridge/dispatcher.py (generic single-thread claim loop), bridge/server.py:123-299 (_enqueue + GET /v1/ops/<id>) and app/wa/bridge.py:460-528 (Client._request/_await_op transparent polling) all match the 4 ACs; ran .venv/bin/python -m pytest tests/test_bridge_operations.py tests/test_bridge_executor.py -k 'fifo or ops_queue or dirty' -> 10 passed. TASK-268/269 document real, separately-scoped gaps (BroadcastRunner/IdentityWatcher/GET-/v1/chats bypassing the queue) that TASK-227's own notes already flagged as out-of-scope follow-ups, not violations of this task's 4 ACs.
 <!-- SECTION:FINAL_SUMMARY:END -->
