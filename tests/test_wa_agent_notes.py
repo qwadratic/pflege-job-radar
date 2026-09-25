@@ -340,12 +340,15 @@ def test_a_completion_note_obeys_the_rail_s_own_window_rule(wa, monkeypatch):
         assert ST.agent_note(c, row["id"])["notified_at"] is None, "still retryable"
 
 
-def test_neither_ack_nor_completion_reuses_the_inbound_wamid_as_its_turn_key(wa, monkeypatch):
+def test_neither_ack_nor_completion_reuses_the_bare_inbound_wamid_as_its_turn_key(wa, monkeypatch):
     """bridge_ids.reply_key hashes phone|turn_key|bubble_index and leaves action out on purpose, so
-    the inbound wamid would mint the same client_msg_id as bubble 0 of the candidate turn for that
-    same message. Reachable: a gate timeout answers the message as an ordinary turn, and a catch-up
-    re-drive that then classifies it as a note hits first-body-wins and wedges the message forever --
-    three such rows exist on the live rail. Both of the inbox's own sends need their own key."""
+    the BARE inbound wamid would mint the same client_msg_id as bubble 0 of the candidate turn for
+    that same message. Reachable: a gate timeout answers the message as an ordinary turn, and a
+    catch-up re-drive that then classifies it as a note hits first-body-wins and wedges the message
+    forever -- three such rows exist on the live rail. Both of the inbox's own sends need their own
+    key -- and (TASK-303 item A3, Ivan 2026-09-25) that key is now BUILT FROM the wamid rather than
+    the note's database id, since the wamid is the one thing WhatsApp itself already guarantees is
+    unique to this note forever, independent of this app's own id sequence or purge policy."""
     keys = []
 
     class KeyedMeta(FakeMeta):
@@ -364,8 +367,9 @@ def test_neither_ack_nor_completion_reuses_the_inbound_wamid_as_its_turn_key(wa,
         note_id = ST.agent_note_for_wamid(c, "wamid.keyed")["id"]
         AN._send_completion(c, note_id, AN.DONE_WORD, "fertig", "", "")
 
-    assert keys == [f"agent_note:{note_id}:ack", f"agent_note:{note_id}:done"]
-    assert "wamid.keyed" not in keys
+    assert keys == ["agent_note:wamid.keyed:ack", "agent_note:wamid.keyed:done"]
+    assert "wamid.keyed" not in keys   # never the BARE wamid -- only wrapped inside the two keys above
+    assert keys[0] != keys[1]
 
 
 def test_a_completion_that_was_not_actually_sent_raises_and_stays_retryable(wa, monkeypatch):
@@ -456,9 +460,10 @@ def test_the_operator_thread_is_not_nudged_by_the_automatic_sweep(wa, monkeypatc
 
 def test_the_completion_note_does_not_reuse_the_ack_s_turn_key(wa, monkeypatch):
     """app/wa/bridge_ids.reply_key hashes phone|turn_key|bubble_index and leaves action out on
-    purpose, so reusing the inbound wamid here would mint the ack's own client_msg_id -- the
+    purpose, so reusing the BARE inbound wamid here would mint the ack's own client_msg_id -- the
     executor's ledger would replay it and the completion note would never be delivered while the row
-    read 'done'."""
+    read 'done'. TASK-303 item A3: the completion key is now built from the wamid, not the note's
+    database id -- still a different string from the ack's own agent_note:<wamid>:ack."""
     keys = []
 
     class KeyedMeta(FakeMeta):
@@ -472,4 +477,5 @@ def test_the_completion_note_does_not_reuse_the_ack_s_turn_key(wa, monkeypatch):
     with ST.db() as c:
         row = _note(c, wamid="wamid.keyed")
         AN._send_completion(c, row["id"], AN.DONE_WORD, "fertig", "", "")
-    assert keys == [f"agent_note:{row['id']}:done"] and "wamid.keyed" not in keys
+    assert keys == ["agent_note:wamid.keyed:done"]
+    assert "wamid.keyed" not in keys

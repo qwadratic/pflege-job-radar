@@ -252,6 +252,78 @@ if AGENT_NOTE_TIMEOUT_SEC <= 0:
     raise RuntimeError(f"WA_AGENT_NOTE_TIMEOUT_SEC={AGENT_NOTE_TIMEOUT_SEC} must be a positive number "
                        "of seconds")
 
+# The operator-note WORKER (app/wa/luna/agent_note_worker.py, TASK-303, Ivan 2026-09-24/25): the two
+# claude -p calls it makes per note, decode and hand-off. Model/effort are Ivan's own crystallised
+# choice from the card, not this repo's usual cheap-classifier default -- decode restates a whole note
+# plus conversation/card context into a structured object (more work than AGENT_NOTE_MODEL's single
+# boolean), and the hand-off's ListAgents/SendMessage tool use is the one place this feature can affect
+# another live session, so both get the bigger model. Env-overridable like every model choice in this
+# file, though neither is expected to live in .env -- these are the worker's own knobs, not part of the
+# service's checked-in EnvironmentFile (app/wa/envfile.py).
+#
+# NO DOLLAR-BUDGET KNOB (TASK-303, round-1 review, item E; Ivan 2026-09-25: "лимит бюджета снять" --
+# the CLI has no token cap to use instead). AGENT_NOTE_DECODE_BUDGET_USD/AGENT_NOTE_HANDOFF_BUDGET_USD
+# and the --max-budget-usd flag they fed agent_note_worker.py's two claude -p calls are REMOVED, not
+# just unused: CLAUDE.md's "no safety nets" -- a cap nobody asked for is exactly the thing that rule
+# exists to keep out, and Ivan asked for the opposite of one. What replaces it is visibility, not a
+# limit: every call's real token usage and cost (input, output, cache read/create, total_cost_usd)
+# is written to the note's own progress trail and to worker.log by agent_note_worker.py's own
+# usage-logging helpers -- see that module's WHY comment on _usage_from_stdout for the exact envelope
+# fields this reads.
+AGENT_NOTE_DECODE_MODEL = os.environ.get("WA_AGENT_NOTE_DECODE_MODEL", "sonnet").strip() or "sonnet"
+AGENT_NOTE_DECODE_EFFORT = os.environ.get("WA_AGENT_NOTE_DECODE_EFFORT", "medium").strip() or "medium"
+# 120s: a decode prompt carries up to 20 messages, a compact card and up to 5 earlier notes on top of
+# the note itself -- more input than AGENT_NOTE_TIMEOUT_SEC's single-message classification budgets
+# for, at "medium" effort rather than "low". Measured live 2026-09-25 (TASK-303 build): a real decode
+# call of this shape completed in ~3.3s, so this is headroom, not the expected case.
+_AGENT_NOTE_DECODE_TIMEOUT_RAW = os.environ.get("WA_AGENT_NOTE_DECODE_TIMEOUT_SEC", "120").strip() or "120"
+try:
+    AGENT_NOTE_DECODE_TIMEOUT_SEC = int(_AGENT_NOTE_DECODE_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_AGENT_NOTE_DECODE_TIMEOUT_SEC={_AGENT_NOTE_DECODE_TIMEOUT_RAW!r} is not an "
+                       "integer")
+if AGENT_NOTE_DECODE_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_AGENT_NOTE_DECODE_TIMEOUT_SEC={AGENT_NOTE_DECODE_TIMEOUT_SEC} must be a "
+                       "positive number of seconds")
+
+AGENT_NOTE_HANDOFF_MODEL = os.environ.get("WA_AGENT_NOTE_HANDOFF_MODEL", "sonnet").strip() or "sonnet"
+AGENT_NOTE_HANDOFF_EFFORT = os.environ.get("WA_AGENT_NOTE_HANDOFF_EFFORT", "low").strip() or "low"
+# 60s: a ListAgents + (at most one) SendMessage round trip, nothing else -- measured live 2026-09-25
+# (TASK-303 build): a real ListAgents-only probe of this exact shape completed in ~2.3s.
+_AGENT_NOTE_HANDOFF_TIMEOUT_RAW = os.environ.get("WA_AGENT_NOTE_HANDOFF_TIMEOUT_SEC", "60").strip() or "60"
+try:
+    AGENT_NOTE_HANDOFF_TIMEOUT_SEC = int(_AGENT_NOTE_HANDOFF_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_AGENT_NOTE_HANDOFF_TIMEOUT_SEC={_AGENT_NOTE_HANDOFF_TIMEOUT_RAW!r} is not an "
+                       "integer")
+if AGENT_NOTE_HANDOFF_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_AGENT_NOTE_HANDOFF_TIMEOUT_SEC={AGENT_NOTE_HANDOFF_TIMEOUT_SEC} must be a "
+                       "positive number of seconds")
+
+# The exact session name the hand-off addresses (TASK-303 card, AC#5): pinned with `claude -n
+# wa-harness` on the working session, resolved fresh through ListAgents at send time -- never a
+# pattern, because a restarted session's OLD process can linger under a different display name (see
+# the card's own 2026-09-25 note: 'Pflege Hire: WA Harness' vs the pinned 'wa-harness'). Zero or
+# several exact matches is a failed hand-off, never a guess.
+AGENT_NOTE_TARGET = os.environ.get("WA_AGENT_NOTE_TARGET", "wa-harness").strip() or "wa-harness"
+
+# After this many attempts (claim_agent_note's own counter) a note that still cannot get through the
+# worker's pipeline is closed as blocked rather than retried forever -- AC#8's "after 5 attempts".
+_AGENT_NOTE_ATTEMPTS_CAP_RAW = os.environ.get("WA_AGENT_NOTE_ATTEMPTS_CAP", "5").strip() or "5"
+try:
+    AGENT_NOTE_ATTEMPTS_CAP = int(_AGENT_NOTE_ATTEMPTS_CAP_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_AGENT_NOTE_ATTEMPTS_CAP={_AGENT_NOTE_ATTEMPTS_CAP_RAW!r} is not an integer")
+if AGENT_NOTE_ATTEMPTS_CAP <= 0:
+    raise RuntimeError(f"WA_AGENT_NOTE_ATTEMPTS_CAP={AGENT_NOTE_ATTEMPTS_CAP} must be a positive count")
+
+# Where the worker writes health.json and nothing else touches (tools/agent_note_cron.sh writes here
+# too, directly, only for a failure so early python never ran -- see that script's own comment). Not
+# under DATA_DIR: this is process/health state, not harness data, and (unlike DATA_DIR) it must exist
+# before the database does on a brand new box, since the shell wrapper's own guards write here first.
+AGENT_NOTE_STATE_DIR = pathlib.Path(os.environ.get("WA_AGENT_NOTE_STATE_DIR", "").strip()
+                                    or "/home/claude/.local/state/pflege-wa-agent-notes")
+
 # The closing-bubble gate (app/wa/luna/closing_gate.py, Ivan 2026-09-24). Same tier and the same
 # reasoning as AGENT_NOTE_MODEL: one boolean about one short reply, no tools, no history.
 CLOSING_GATE_MODEL = os.environ.get("WA_CLOSING_GATE_MODEL", "claude-haiku-4-5").strip()

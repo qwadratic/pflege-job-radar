@@ -361,6 +361,30 @@ def test_the_wipe_deletes_history_documents_files_session_and_card_of_a_test_thr
     assert real["document"].exists() and real["transcript"].exists()
 
 
+def test_the_wipe_leaves_wa_agent_notes_untouched(wa):
+    """TASK-303 item A1 (Ivan, 2026-09-25, round-1 review): wa_agent_notes rows are operator
+    instructions to whoever maintains this system, not candidate conversation history -- a wipe that
+    used to empty this table on the same 03:00 schedule silently dropped any note still open past the
+    worker's 09:00-22:00 window, and (on a table with no AUTOINCREMENT) let a reused id adopt an old
+    note's already-closed backlog card. _counts()/CORE_TABLES no longer even look at this table, so this
+    checks the actual row directly rather than relying on the (now silent) absence of a count."""
+    _seed(TEST_PHONE, "session-test")
+    TT.main(["--mark", TEST_PHONE])
+    with ST.db() as c:
+        before = ST.agent_note_for_wamid(c, f"wamid.note.{TEST_PHONE}")
+    assert before is not None, "the seed fixture must have written the row this test checks"
+
+    report = _wipe(apply=True)
+    [row] = report["phones"]
+    assert row["wiped"] is True
+    assert "wa_agent_notes" not in row["deleted"], "wa_agent_notes must never appear in what was deleted"
+
+    with ST.db() as c:
+        after = ST.agent_note_for_wamid(c, f"wamid.note.{TEST_PHONE}")
+    assert after is not None, "wa_agent_notes rows must survive the purge (TASK-303 A1)"
+    assert after["id"] == before["id"] and after["phone"] == TEST_PHONE
+
+
 def _transcript_exists(session_id):
     return bool(PURGE.session_files(session_id))
 

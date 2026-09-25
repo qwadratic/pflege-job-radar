@@ -24,7 +24,12 @@ with --phones that is not marked is a problem, reported and exit 1 -- never a wi
 
 WHAT SURVIVES. The wa_threads row itself, still marked as a test number (is_test, test_marked_at) and not
 stopped, and the ownership record (wa_ownership): deleting that would hand the next test message back to the
-old system instead of this harness. Nothing of any other phone: every delete is keyed by this phone, and a
+old system instead of this harness. wa_agent_notes ALSO survives, on every phone (TASK-303, Ivan 2026-09-25):
+those rows are operator instructions to whoever maintains this system, worked by
+app/wa/luna/agent_note_worker.py on its own days-to-weeks lifecycle, never candidate conversation history --
+see the CORE_TABLES comment for the incident this fixed (a note open past the worker's 09:00-22:00 window
+was silently dropped by the 03:00 purge, and a reused id let a new note adopt an old note's closed card).
+Nothing of any other phone: every delete is keyed by this phone, and a
 document file is only ever unlinked when its wa_documents row names it and the path is inside C.DOCUMENTS_DIR
 (a row pointing outside it fails that phone loudly instead -- nothing of it is deleted).
 
@@ -55,9 +60,26 @@ from . import test_threads as TT
 
 # Every table this harness keys by phone. The card (wa_threads) is reset, not deleted; wa_ownership is
 # deliberately absent (see the module docstring).
+#
+# wa_agent_notes is DELIBERATELY NOT HERE (TASK-303, Ivan 2026-09-25, round-1 review, finding A1 --
+# "correctness of the operator-note state machine" lens). It used to be, and that was a bug, not a
+# feature: those rows are OPERATOR notes -- Ivan/Valentyn instructions to whoever maintains this system,
+# recorded by app/wa/api.py._route_agent_note and worked by app/wa/luna/agent_note_worker.py -- never
+# candidate CONVERSATION history, even though they arrive on a thread this harness marks is_test (the
+# same test threads operators use to reach the worker). Wiping them nightly at 03:00 Europe/Berlin
+# silently dropped any note still open at that hour (a note sent at 22:10 Vienna, after the worker's own
+# 09:00-22:00 window closed, was gone by the 09:00 tick with no trace anywhere -- the ack's own promise
+# broken) and, worse, reset wa_agent_notes.id to start from 1 again on a table declared 'integer primary
+# key' with no AUTOINCREMENT: a reused id let a brand-new note adopt an old, already-closed backlog card,
+# and would independently have let its ack/completion replay an old note's already-delivered message
+# (see store.py's own AUTOINCREMENT-migration comment, and app/wa/luna/agent_notes.py's turn-key
+# docstring, for the rest of that chain). Nothing about test-thread PII lives in this table beyond the
+# operator's own Russian instruction text -- the same category of content this harness already keeps
+# forever in backlog cards and worker.log, not something --older-than-hours or --apply were ever meant
+# to reach.
 CORE_TABLES = ("wa_messages", "wa_imported_messages", "wa_message_statuses", "wa_webhook_events",
                "wa_inbound_pending", "wa_reply_turn_claims", "wa_nudge_claims", "wa_luna_calls",
-               "wa_send_failures", "wa_followups_sent", "wa_documents", "wa_agent_notes")
+               "wa_send_failures", "wa_followups_sent", "wa_documents")
 # Created by the module that first uses them (store.ensure_campaign_schema, queue.db), not by store.SCHEMA:
 # on a database where no campaign ever ran and nobody ever consented they do not exist at all.
 OPTIONAL_TABLES = ("wa_campaign_sends", "wa_queue_candidates", "wa_queue_matches")

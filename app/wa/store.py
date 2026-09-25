@@ -172,16 +172,27 @@ create table if not exists wa_suppressions (
 -- candidate this feature does not exist at all, which is what makes it safe: no real candidate can be
 -- pulled out of the funnel by it, and no stranger can make this number emit anything.
 -- Detection writes a ROW here and stops. Nothing that implements anything runs in the web process; the
--- periodic worker reads these rows, never a live re-scan of wa_messages. One row per inbound wamid --
--- that unique is what makes a redelivered webhook, a catch-up re-drive and a crashed worker idempotent
--- (no second row, no second ack, no second completion note).
+-- periodic worker (app/wa/luna/agent_note_worker.py, TASK-303) reads these rows, never a live re-scan
+-- of wa_messages. One row per inbound wamid -- that unique is what makes a redelivered webhook, a
+-- catch-up re-drive and a crashed worker idempotent (no second row, no second ack, no second completion
+-- note).
+-- TASK-303's own two columns, task_id and handed_off_at, are NOT listed in this create-table block --
+-- same convention as deleted_at/rail/composed and every other column this table or its neighbours
+-- gained after they first shipped (see the MIGRATIONS comment below): they are added by an 'alter
+-- table' that runs unconditionally on every db() call, fresh database included, so this block stays
+-- exactly as first written. status gains a fifth value, handed_off: the worker found or created this
+-- note's backlog card (task_id) and told the working session about it (handed_off_at stamped,
+-- claimed_at cleared) -- from that moment the note belongs to that session, not to this worker, and is
+-- closed only through the existing --done/--blocked CLI (agent_notes.py, finish_agent_note). A row in
+-- this status must never come back from open_agent_notes(): the worker's own claim loop must not
+-- re-claim a note the working session already owns.
 create table if not exists wa_agent_notes (
   id integer primary key,
   wamid text not null unique,
   phone text not null,
   kind text not null,
   body text not null,
-  status text not null,          -- pending | in_progress | done | blocked
+  status text not null,          -- pending | in_progress | handed_off | done | blocked
   created_at text not null,
   acked_at text,
   claimed_at text,               -- set when a worker takes it; stale after AGENT_NOTE_STALE_SEC
@@ -233,7 +244,14 @@ MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "impor
               # TASK-288: the brain's composed decision (turn()'s whole return dict, JSON), written just
               # before the risky step (send_and_record) so a pure delivery failure's retry can reuse it
               # instead of paying for a fresh claude -p call. See record_composed_reply/composed_reply.
-              ("wa_reply_turn_claims", "composed", "text"))
+              ("wa_reply_turn_claims", "composed", "text"),
+              # TASK-303: the operator-note worker's own two columns. task_id is set once
+              # (set_agent_note_task) right after this note's backlog card exists, and release_agent_note
+              # deliberately never clears it -- a retry after a failed hand-off must find the card again
+              # instead of creating a second one for the same note (the card's own AC#6). handed_off_at is
+              # set only by mark_agent_note_handed_off, the moment the working session was actually told;
+              # see the wa_agent_notes comment above for what the handed_off status itself means.
+              ("wa_agent_notes", "task_id", "text"), ("wa_agent_notes", "handed_off_at", "text"))
 
 
 def _migrate(c):
@@ -249,6 +267,86 @@ def _migrate(c):
     # After the columns exist: one wa_documents row per imported source document (import_history.py idempotency).
     c.execute("create unique index if not exists idx_wa_documents_import on wa_documents(import_source, import_ref) "
               "where import_ref is not null")
+    _migrate_agent_notes_autoincrement(c)
+
+
+# TASK-303 (Ivan, 2026-09-25, round-1 review, finding A2 -- "correctness of the operator-note state
+# machine" lens): wa_agent_notes originally shipped as `id integer primary key`, plain SQLite rowid
+# aliasing, which reuses the highest-ever id the moment the table goes empty (verified empirically
+# against a scratch db, 2026-09-25: delete the only row, insert a new one with no explicit id, it comes
+# back as id 1 again). The nightly purge (purge_test_history.py, 03:00 Europe/Berlin,
+# --older-than-hours 0 --apply) did exactly that to this table every night -- until this same review
+# round's finding A1 stopped it (see purge_test_history.py's CORE_TABLES comment) -- and a reused id let
+# a brand-new note's crash-recovery search adopt an OLD, already-closed card by its id-based title alone
+# (agent_note_worker._ensure_card, before this fix), and would independently have let a new note's own
+# ack/completion mint the SAME client_msg_id an old note's already-delivered message used, which the
+# bridge's own ledger (30-day retention, bridge/ledger.py) would then have replayed instead of sending
+# (see app/wa/api.py's _route_agent_note and app/wa/luna/agent_notes.py's turn-key comments). AUTOINCREMENT
+# (SQLite's own guarantee: never reuse a rowid this table has EVER held, not even after it goes empty)
+# closes the id-reuse half of that on its own; A3 (the turn keys built from the note's own wamid instead)
+# closes the rest independently, so the two fixes do not depend on each other.
+#
+# WHY A REBUILD, NOT 'ALTER TABLE ... ADD COLUMN': AUTOINCREMENT is part of a column's declared type in
+# SQLite, not a property that can be bolted on after the fact -- there is no 'alter table add
+# autoincrement'. The only way to add it to an existing table is to build a new table with the right
+# declaration and move the data across (sqlite.org's own documented recipe for exactly this situation).
+#
+# IDEMPOTENT VIA sqlite_master.sql, NOT A MARKER ROW: the table's own CREATE TABLE text is the one
+# source of truth for whether this has already run, and it cannot disagree with reality the way a
+# separate marker could (e.g. a marker written but the rebuild itself rolled back by a crash in between).
+#
+# ONE TRANSACTION: create the new table, copy every row by its own explicit column list (not 'select
+# *' -- so a future column this repo's own MIGRATIONS list adds later fails LOUDLY here, as a mismatched
+# column count, rather than silently copying nothing for it), drop the old table, rename the new one
+# into place, recreate the status index -- commit or nothing, so a crash mid-rebuild leaves the ORIGINAL
+# table exactly as it was, never a half-copied one. The column list is exactly what this file's own
+# MIGRATIONS loop above guarantees exists by the time this function runs (task_id/handed_off_at
+# included), so a database mid-upgrade (columns just added a few lines up, in the very same _migrate()
+# call) and a database that already had them both copy correctly in the same run.
+#
+# SAFE WHILE THE LIVE WEB PROCESS HOLDS ITS OWN CONNECTION: verified empirically against a scratch db,
+# 2026-09-25 -- a second sqlite3 connection opened in WAL mode (this module's own journal_mode) and left
+# open and idle, mirroring pflege-wa.service's own long-lived connection, does not block this
+# transaction's CREATE/INSERT/DROP/ALTER RENAME. Every connection this module opens already carries a
+# 30s busy timeout (db()'s own sqlite3.connect(..., timeout=30)), which is what would absorb a brief
+# collision against a connection that is itself mid-write at the exact same instant -- not a new
+# allowance added for this migration, the same one every other write in this file already relies on.
+#
+# SEEDING sqlite_sequence TO max(id), NOT A SEPARATE STATEMENT: verified empirically, 2026-09-25 --
+# copying every row with its OWN existing id (an explicit 'insert into new (id, ...) select id, ... from
+# old', never a fresh sequential insert) already leaves SQLite's own sqlite_sequence bookkeeping at
+# exactly max(id) of the copied data with zero extra code, and 'alter table ... rename to' carries that
+# bookkeeping over to the renamed table's own name. An empty table copies to an empty table and starts
+# at 1 on its first real insert -- never an invented floor. A follow-up 'insert or replace into
+# sqlite_sequence' seed was deliberately NOT added on top of that: it would only be a redundant,
+# separately-invented floor on top of a value SQLite already derives correctly from the data itself.
+def _migrate_agent_notes_autoincrement(c):
+    row = c.execute("select sql from sqlite_master where type='table' and name='wa_agent_notes'").fetchone()
+    if row is None or "autoincrement" in row[0].lower():
+        return   # no such table yet (a database this old cannot exist -- SCHEMA always creates it), or
+                 # already migrated -- either way, nothing to do; see the sqlite_master.sql comment above
+    cols = ("id", "wamid", "phone", "kind", "body", "status", "created_at", "acked_at", "claimed_at",
+            "attempts", "progress", "outcome_done", "outcome_not_done", "outcome_needed", "blocked_reason",
+            "finished_at", "notified_at", "task_id", "handed_off_at")
+    col_list = ", ".join(cols)
+    c.execute("begin immediate")
+    try:
+        c.execute(
+            "create table wa_agent_notes__autoincrement_new ("
+            "id integer primary key autoincrement, wamid text not null unique, phone text not null, "
+            "kind text not null, body text not null, status text not null, created_at text not null, "
+            "acked_at text, claimed_at text, attempts integer not null default 0, progress text, "
+            "outcome_done text, outcome_not_done text, outcome_needed text, blocked_reason text, "
+            "finished_at text, notified_at text, task_id text, handed_off_at text)")
+        c.execute(f"insert into wa_agent_notes__autoincrement_new ({col_list}) "
+                 f"select {col_list} from wa_agent_notes")
+        c.execute("drop table wa_agent_notes")
+        c.execute("alter table wa_agent_notes__autoincrement_new rename to wa_agent_notes")
+        c.execute("create index if not exists idx_wa_agent_notes_status on wa_agent_notes(status, created_at)")
+    except BaseException:
+        c.rollback()
+        raise
+    c.commit()
 
 
 def thread(c, phone):
@@ -521,6 +619,51 @@ def open_agent_notes(c):
                      "order by created_at, id", (cutoff,)).fetchall()
 
 
+def claimable_agent_notes(c):
+    """Notes a worker may take through the normal claim -> decode -> card -> hand-off pipeline: pending,
+    or in_progress whose claim went stale (the worker that held it died). TASK-303 item B (round-1
+    review, both blocking finding #3/the ops-lens equivalent): split out of what used to be
+    open_agent_notes()'s own first two OR-clauses, so the third (a finished note whose completion never
+    sent) is retried on its own schedule (undelivered_completion_notes, below) and can never sit at the
+    head of THIS queue blocking every claimable note behind it -- the exact bug the review reproduced
+    (a stuck completion retry as rows[0] starves every later note forever). Oldest first, same order
+    open_agent_notes() has always used; open_agent_notes() itself is untouched (still what --list and
+    a human reading the queue want: everything outstanding, retries included)."""
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=AGENT_NOTE_STALE_SEC)).replace(microsecond=0).isoformat()
+    return c.execute("select * from wa_agent_notes where status='pending' "
+                     "or (status='in_progress' and claimed_at<?) order by created_at, id",
+                     (cutoff,)).fetchall()
+
+
+def undelivered_completion_notes(c):
+    """Every finished note (done or blocked) whose one completion send never went out, oldest first, NO
+    LIMIT (TASK-303 item B, Ivan 2026-09-25: 'no cap on completion retries', matching AC#8's own 'until
+    delivered'). agent_note_worker.run_once() retries every one of these independently, every tick: one
+    that can never be delivered (a suppressed test number, a standing bridge outage) must never keep any
+    OTHER finished note's own completion from being retried the same tick, and must never keep a fresh
+    pending note from being decoded and handed off either -- see claimable_agent_notes, above, for the
+    other half of that split."""
+    return c.execute("select * from wa_agent_notes where status in ('done','blocked') and notified_at is null "
+                     "order by created_at, id").fetchall()
+
+
+def orphaned_in_progress_notes(c):
+    """An in_progress note whose claim has NOT yet gone stale, found by a worker run that itself holds
+    the cron lock (tools/agent_note_cron.sh's own 'flock -n' -- in production exactly one tick ever runs
+    at a time). Since nothing else could legitimately be running to have claimed it moments ago, a row
+    like this can only be a CRASHED prior tick's leftover claim: TASK-303 item C, round-1 review finding
+    -- 'the prefilter counts in_progress no matter how stale, so for 45 minutes every tick... writes
+    health ok:true, which hides the crash', because open_agent_notes()/claimable_agent_notes() both
+    deliberately exclude a live (not-yet-stale) in_progress row, so nothing before this function could
+    even SEE one to report it. Oldest first; every row found is reported, not just the first -- see
+    agent_note_worker.write_tick_health."""
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=AGENT_NOTE_STALE_SEC)).replace(microsecond=0).isoformat()
+    return c.execute("select * from wa_agent_notes where status='in_progress' and claimed_at>=? "
+                     "order by claimed_at, id", (cutoff,)).fetchall()
+
+
 def claim_agent_note(c, note_id):
     """True if the caller now owns this note. One conditional UPDATE, so the database decides who won
     when two workers race -- same shape as claim_reply_turn's insert."""
@@ -544,10 +687,60 @@ def append_agent_note_progress(c, note_id, line):
 
 
 def finish_agent_note(c, note_id, status, done, not_done, needed, blocked_reason=None):
+    """Works exactly the same on a note the worker had already handed off (status='handed_off') as on
+    one it never got past claiming (TASK-303): no WHERE on the current status, because the working
+    session -- the only caller of --done/--blocked once a note is handed off -- must always be able to
+    close its own note, whatever the worker last left it as."""
     c.execute("update wa_agent_notes set status=?, outcome_done=?, outcome_not_done=?, outcome_needed=?, "
               "blocked_reason=?, finished_at=?, claimed_at=null where id=?",
               (status, done, not_done, needed, blocked_reason, now_iso(), note_id))
     c.commit()
+
+
+# TASK-303: the worker found or created this note's backlog card and told the working session about it.
+# From this moment the note belongs to that session, not to the worker -- see the wa_agent_notes SCHEMA
+# comment above for the full reasoning. open_agent_notes() must never return a row in this status: none
+# of its three OR-clauses (pending / stale in_progress / undelivered done|blocked) can ever match it, so
+# nothing here re-derives that exclusion -- it is a property of the query, covered by its own test.
+AGENT_NOTE_HANDED_OFF = "handed_off"
+
+
+def set_agent_note_task(c, note_id, task_id):
+    """Record the backlog card this note now has. Called exactly once per note, right after the card is
+    created (or, on crash recovery, right after an existing one for it is found) -- a later retry that
+    reaches the same step always finds task_id already set and skips card creation entirely, which is
+    what keeps a retried hand-off from ever minting a second card for the same note."""
+    c.execute("update wa_agent_notes set task_id=? where id=?", (task_id, note_id))
+    c.commit()
+
+
+def mark_agent_note_handed_off(c, note_id):
+    """status -> handed_off, handed_off_at stamped, claimed_at cleared: the worker's own claim on this
+    note is spent, and nothing about wa_agent_notes belongs to the worker's claim loop from here on.
+    Conditional on the row still being in_progress -- the same shape as claim_agent_note's own
+    conditional UPDATE -- so a note that raced to some other terminal state under this call (should not
+    happen inside one worker's single-threaded run, but this is the row two different worker runs could
+    in principle both be mid-flight on) is not silently overwritten. -> True when this call actually
+    made the transition."""
+    cur = c.execute("update wa_agent_notes set status=?, handed_off_at=?, claimed_at=null "
+                    "where id=? and status='in_progress'", (AGENT_NOTE_HANDED_OFF, now_iso(), note_id))
+    c.commit()
+    return cur.rowcount == 1
+
+
+def release_agent_note(c, note_id):
+    """A worker gave up on this note without finishing it this run (a decode failure, a failed
+    hand-off): back to pending, claimed_at cleared, so the next tick's claim_agent_note can take it
+    again. task_id and attempts are deliberately left untouched -- a card already created must not be
+    created a second time on the retry (see set_agent_note_task), and attempts keeps counting across
+    releases so agent_note_worker.ATTEMPTS_CAP is still reached even when every attempt fails at the
+    same later step, not reset back to looking fresh forever. Conditional on the row still being
+    in_progress, for the same reason mark_agent_note_handed_off's own conditional is. -> True when this
+    call actually released it."""
+    cur = c.execute("update wa_agent_notes set status='pending', claimed_at=null "
+                    "where id=? and status='in_progress'", (note_id,))
+    c.commit()
+    return cur.rowcount == 1
 
 
 def mark_agent_note_notified(c, note_id):
@@ -568,6 +761,25 @@ def clear_agent_note_notified(c, note_id):
 
 def agent_note(c, note_id):
     return c.execute("select * from wa_agent_notes where id=?", (note_id,)).fetchone()
+
+
+def handed_off_agent_notes(c):
+    """Every note currently owned by the working session (status=handed_off), oldest first -- TASK-303:
+    the listing open_agent_notes() deliberately excludes, because this one is the working session's OWN
+    view of what it still owes a --done/--blocked on (app/wa/luna/agent_notes.py --handed-off), not the
+    worker's claim queue."""
+    return c.execute("select * from wa_agent_notes where status=? order by created_at, id",
+                     (AGENT_NOTE_HANDED_OFF,)).fetchall()
+
+
+def recent_agent_notes_for_phone(c, phone, exclude_id, limit=5):
+    """Up to ``limit`` earlier notes from this same phone, most recent first, excluding
+    ``exclude_id`` itself -- the card-decoder's own prior-history context (TASK-303, agent_note_worker
+    step (e)): a repeat instruction ("опять то же самое") reads very differently once the working
+    session can see what the last one asked for and how it ended."""
+    rows = c.execute("select * from wa_agent_notes where phone=? and id!=? order by created_at desc, id desc "
+                     "limit ?", (phone, exclude_id, limit)).fetchall()
+    return [dict(r) for r in rows]
 
 
 # --- per-candidate LLM call rate limit (TASK-180) ------------------------------------------------

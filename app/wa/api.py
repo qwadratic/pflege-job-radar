@@ -894,15 +894,23 @@ def _route_agent_note(c, t, m, text, client=None):
         row = ST.record_agent_note(c, wamid, phone, text, m["kind"])
     if row["acked_at"] is None:
         try:
-            # NOT turn_key=wamid: bridge_ids.reply_key hashes phone|turn_key|bubble_index and leaves
-            # action out on purpose (TASK-245), so the wamid would mint the same client_msg_id as
-            # bubble 0 of the candidate turn for this same message. That collision is reachable -- a
-            # gate timeout answers the message as an ordinary turn, and a catch-up re-drive that then
-            # classifies it as a note would hit first-body-wins and wedge this message forever (three
-            # such rows exist on the live rail from before this feature). Its own key, like the
-            # completion note's in app/wa/luna/agent_notes.py.
+            # NOT turn_key=wamid (bare): bridge_ids.reply_key hashes phone|turn_key|bubble_index and
+            # leaves action out on purpose (TASK-245), so the bare wamid would mint the same
+            # client_msg_id as bubble 0 of the candidate turn for this same message. That collision is
+            # reachable -- a gate timeout answers the message as an ordinary turn, and a catch-up
+            # re-drive that then classifies it as a note would hit first-body-wins and wedge this
+            # message forever (three such rows exist on the live rail from before this feature).
+            #
+            # KEYED ON THE NOTE'S OWN WAMID, NOT ITS DATABASE ID (TASK-303, Ivan 2026-09-25, round-1
+            # review finding A3): wa_agent_notes.id is a database sequence, and even with AUTOINCREMENT
+            # (store.py's own migration) making an id permanent going forward, the wamid is the one
+            # thing that was ALREADY guaranteed unique to this exact inbound message forever, by
+            # WhatsApp itself, independent of anything this app's own id sequence or purge policy ever
+            # do. "agent_note:<wamid>:ack" is still a different STRING from the bare wamid (the
+            # collision above), and from "agent_note:<wamid>:done" (agent_notes.py's own completion
+            # key) -- see that module's own turn-key docstring for the rest of this reasoning.
             send_and_record(c, t, [AGENT_NOTE_ACK_RU.format(id=row["id"])], [], client=client,
-                            action="agent_note_ack", turn_key=f"agent_note:{row['id']}:ack")
+                            action="agent_note_ack", turn_key=f"agent_note:{wamid}:ack")
         except Exception:
             # Reclaimable on purpose: the row is already durable, so the retry finds it, skips the
             # classifier, and only re-tries the ack that actually failed.
