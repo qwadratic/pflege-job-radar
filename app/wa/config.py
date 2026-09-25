@@ -367,6 +367,12 @@ LUNA_MAX_CALLS_PER_HOUR = int(os.environ.get("WA_LUNA_MAX_CALLS_PER_HOUR", "20")
 # repo), just a durable, discoverable flag a human or the catch-up driver can act on.
 STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 
+# TASK-302, Ivan's design update (2026-09-25): the warming turn's radius widening, when the
+# candidate's own city has no matching posting. The knob IS the feature, not a safety cap -- how
+# far "nearby" reaches for a candidate who would otherwise get no warming turn at all
+# (app/wa/luna_brain.py:_warming_candidates).
+LUNA_WARMING_RADIUS_KM = float(os.environ.get("WA_LUNA_WARMING_RADIUS_KM", "30") or "30")
+
 # Conversation ownership (TASK-179, app/wa/routing.py): a plain, newline-delimited, operator-
 # produced export of phone numbers already known to the real production system -- unset means
 # routing a brand-new phone cannot be decided at all (see routing._is_known_to_real_system), not

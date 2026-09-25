@@ -359,9 +359,19 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
     department words read the way the rest of the harness reads them. Shared by every posting tool below so
     the general search and the preset ones can never disagree about what a candidate's word means.
 
+    role_class DEFAULTS TO THE CANDIDATE'S OWN KNOWN ROLE (TASK-302, review finding 4, 2026-09-25) when
+    the caller leaves it empty -- _turn_role_class(), the same WA_LUNA_ROLE_CLASS env contract
+    _mcp_config_path sets from app/wa/luna_brain.py:_known_role_class(card) every turn. One seam here
+    rather than five separate ones: search_postings, search_postings_with_housing,
+    list_cities_with_postings, list_clinics_with_housing and count_postings all route through this
+    function (directly or via _job_rows), so every one of their counts and listings is scoped to what
+    this candidate qualifies for the moment the role is known, with no per-tool default to keep in
+    sync. Pass a real role_class explicitly to ask about a role other than theirs.
+
     The town is returned beside the query rather than inside it because a town is not one string -- see
     _town_rows, which is the other half of every call here."""
     filters, town = dict(LIVE_BASE), None
+    role_class = role_class or _turn_role_class()
     if city:
         town = _resolve_city(city, _cities_with_postings(), "open postings")
     if department:
@@ -585,9 +595,13 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
     For a candidate who needs a flat the honest number is with_accommodation -- ads that offer somewhere to
     live; with_relocation_support counts the ones that only help look or pay towards the move, and
     with_housing is the two added together, so never quote it as "Stellen mit Wohnung". role_class defaults to
-    the candidate's own known role (WA_LUNA_ROLE_CLASS) when you leave it empty, so a bare city/department
-    filter already comes back scoped to what this candidate qualifies for -- pass a different role_class only
-    to ask about a role other than theirs."""
+    the candidate's own known role (WA_LUNA_ROLE_CLASS) when you leave it empty -- not a quirk of this one
+    tool (TASK-302, review finding 4/5, 2026-09-25): _job_filters applies the SAME default to every posting
+    tool (search_postings, search_postings_with_housing, list_cities_with_postings,
+    list_clinics_with_housing too), so a bare city/department filter, on any of them, already comes back
+    scoped to what this candidate qualifies for -- pass a different role_class only to ask about a role
+    other than theirs. Repeated here explicitly only because this tool also needs it BEFORE calling
+    _job_filters, to decide whether any filter was given at all."""
     role_class = role_class or _turn_role_class()
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
             "housing": housing, "employment_type": employment_type}

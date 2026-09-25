@@ -35,8 +35,10 @@ _CITIES = ["München", "Augsburg", "Würzburg", "Coburg", "Regensburg"]
 _BEZIRKE = {"München": "Oberbayern", "Augsburg": "Schwaben", "Würzburg": "Unterfranken",
             "Coburg": "Oberfranken", "Regensburg": "Oberpfalz",
             # Not in _CITIES -- _job()'s own default city cycling stays untouched -- only used where a
-            # test names Straubing explicitly (round-4 audit, 2026-09-22).
-            "Straubing": "Niederbayern"}
+            # test names Straubing explicitly (round-4 audit, 2026-09-22), or Ansbach/Bruckberg (review
+            # finding 2) or Heimatstadt/Nah/Fern (TASK-302's radius-widening tests, 2026-09-25).
+            "Straubing": "Niederbayern", "Ansbach": "Mittelfranken", "Bruckberg": "Mittelfranken",
+            "Heimatstadt": "Mittelfranken", "Nah": "Mittelfranken", "Fern": "Mittelfranken"}
 _DEPARTMENTS = ["Intensiv/IMC", "OP", "Innere Medizin", "Notaufnahme"]
 
 
@@ -61,6 +63,14 @@ def _board(jobs, monkeypatch):
     D._snap.update({"at": time.time(), "jobs": jobs, "clinics": [], "by_clinic": {}, "facets": {},
                     "taxonomy": {}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
+    # TASK-302 fix pass (2026-09-25): build_warming (app/wa/luna_brain.py) now fetches each shortlisted
+    # posting's full description via app/data.py:job_detail -- a LIVE call in production (description
+    # is not in JOB_COLS, TASK-146). Every board fixture posting here is synthetic, so any card that
+    # happens to also satisfy the warming trigger (region+qualification satisfied, a known city -- true
+    # of e.g. READY, used by tests that have nothing to do with warming) would otherwise reach the
+    # network and fail on the missing PostgREST credentials this offline suite never sets up. A test
+    # that cares what the description actually says overrides this afterwards (_stub_descriptions).
+    monkeypatch.setattr(D, "job_detail", lambda pid: {"description": "Wir suchen Verstärkung für unser Team."})
 
 
 @pytest.fixture()
@@ -467,23 +477,38 @@ def test_the_model_cannot_write_the_stage_or_the_grounding_memory_itself(small):
     assert LB.GROUNDED_KEY not in d["slots"]
 
 
-# --- 4. WARMING (TASK-302, "прогревающий ход") -----------------------------------------------------
-# Ivan's build, points 1-4: the trigger, the posting/count pick and the once-per-thread record are all
-# CODE (luna_brain.build_warming), never the model's judgement -- these tests exercise the trigger
-# directly, then once end to end through turn(), then the three-bubble ceiling _check enforces only on
-# that one turn. small's board (5 postings across the 5 _CITIES) puts exactly ONE pflegefachkraft
-# posting in München -- job 5, clinic "Klinikum München 5" -- so a München card has a real match while
-# a card asking about a city not on the board has none.
+# --- 4. WARMING (TASK-302, "прогревающий ход", fix pass 2026-09-25) --------------------------------
+# Ivan's redesign: the trigger and the shortlist are CODE (luna_brain.build_warming), built on the SAME
+# functions the model's own search_postings/count_postings use (tools_server._job_rows -- never
+# app/wa/brain.py:jobs_for's own city= filter, the Ansbach/Bruckberg bug, see below). Up to 10
+# candidates, never one; the model picks (warming_pick/warming_why) and code only checks the pick is
+# one of the ids shown; WARMING_KEY is written only on a genuine success, never before the model runs.
+# small's board (5 postings across the 5 _CITIES) puts exactly ONE pflegefachkraft posting in München
+# -- posting 5, clinic "Klinikum München 5" -- so a München card has a real match while a card asking
+# about a city not on the board has none (and, with no lat/lon on any _job() fixture row, no radius
+# match either -- see the RADIUS section further below for that, on a purpose-built board).
 
-def test_build_warming_fires_once_primary_interest_and_city_are_known(small):
+def _stub_descriptions(monkeypatch, text="Wir suchen Verstärkung für unser Team."):
+    """build_warming fetches each shortlisted posting's full description via app/data.py:job_detail --
+    a live call in production (description is not in JOB_COLS, TASK-146) -- stubbed the same way every
+    other offline test in this repo stubs it (see e.g. the job_detail tests further below)."""
+    monkeypatch.setattr(D, "job_detail", lambda pid: {"description": text})
+
+
+def test_build_warming_fires_once_primary_interest_and_city_are_known(small, monkeypatch):
+    _stub_descriptions(monkeypatch)
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     scoreboard = LB.requirement_scoreboard(card)
     assert scoreboard["region"] == scoreboard["qualification"] == "satisfied"
     warming = LB.build_warming(card, scoreboard)
-    assert warming is not None
-    assert warming["posting"]["clinic"] == "Klinikum München 5"
-    assert warming["posting"]["city"] == "München"
+    assert warming is not None and not warming.get("no_match")
+    assert [c["posting_id"] for c in warming["candidates"]] == [5]
+    pick = warming["candidates"][0]
+    assert pick["clinic"] == "Klinikum München 5" and pick["city"] == "München"
+    assert pick["description"] == "Wir suchen Verstärkung für unser Team."
+    assert pick["link"] == "https://example.org/job/5", "the deliberate link exception, point 2"
     assert warming["matching_postings_total"] == 1
+    assert warming["nearby"] is False
 
 
 @pytest.mark.parametrize("card", [
@@ -506,33 +531,41 @@ def test_build_warming_does_not_fire_before_primary_interest_is_established(smal
 
 
 def test_build_warming_does_not_fire_a_second_time_on_the_same_thread(small):
-    """The card carries its own record (WARMING_KEY) once the turn fired -- this is what makes the
+    """The card carries its own record (WARMING_KEY) once the turn SUCCEEDED -- this is what makes the
     trigger fire at most once per thread, checked directly rather than only through a full turn()."""
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München",
             LB.WARMING_KEY: "2026-09-25T09:00:00+00:00"}
     assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
 
 
-def test_build_warming_does_not_fire_without_a_matching_posting(small):
-    """A city the board has no live pflegefachkraft posting in yields an ordinary turn -- nothing
-    invented, per Ivan's own wording for point 1."""
+def test_build_warming_asks_to_drop_a_criterion_without_any_matching_posting(small):
+    """A city the board has no live pflegefachkraft posting in, and (small's fixture rows carry no
+    lat/lon) nothing to widen the radius from either -- Ivan's second message point 4: nothing in the
+    city, nothing nearby, so the harness itself falls back to a card-advancing question instead of
+    inventing a posting or going silent."""
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "Nirgendwo"}
-    assert LB.build_warming(card, LB.requirement_scoreboard(card)) is None
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    assert warming == {"no_match": {"criteria": {"role": "pflegefachkraft", "city": "Nirgendwo",
+                                                 "department_pref": None, "housing_needed": None}}}
 
 
-def test_the_warming_turn_fires_once_end_to_end_and_never_again(small):
+def test_the_warming_turn_fires_once_end_to_end_and_never_again(small, monkeypatch):
     """turn() merges build_warming's output into market_snapshot.warming for exactly the one turn it
-    applies to, and records WARMING_KEY on the card so a second turn on the same thread never sees it
-    again. The fake model below only echoes back what the payload itself handed it -- a pass proves the
-    harness's own wiring, not the model's judgement, matches point 1-3."""
+    applies to, and records WARMING_KEY/WARMING_PICK_KEY on the card -- only once the checked reply
+    actually went out with a valid pick -- so a second turn on the same thread never sees it again. The
+    fake model below only echoes back what the payload itself handed it -- a pass proves the harness's
+    own wiring, not the model's judgement."""
+    _stub_descriptions(monkeypatch)
+
     def reply(system, user, session_id):
         payload = json.loads(user)
         warming = payload["market_snapshot"]["warming"]
-        posting = warming["posting"]
-        bubbles = [f"Bei der {posting['clinic']} in {posting['city']} ist aktuell eine Stelle frei.",
+        pick = warming["candidates"][0]
+        bubbles = [f"Bei der {pick['clinic']} in {pick['city']} ist aktuell eine Stelle frei.",
                    f"Insgesamt passen {warming['matching_postings_total']} Stellen zu Ihrer Qualifikation.",
                    "Brauchen Sie vor Ort eine Wohnung?"]
-        return _out(bubbles=bubbles, next_ask="Brauchen Sie vor Ort eine Wohnung?"), session_id
+        return _out(bubbles=bubbles, next_ask="Brauchen Sie vor Ort eine Wohnung?",
+                    warming_pick=pick["posting_id"], warming_why="einzige passende Stelle in München"), session_id
 
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     d = LB.turn("Ich suche eine Stelle in München.", {"slots": dict(card), "asked": []},
@@ -540,6 +573,7 @@ def test_the_warming_turn_fires_once_end_to_end_and_never_again(small):
     assert len(d["bubbles"]) == 3, "three bubbles, only on this one warming turn (STYLE/WARMING)"
     assert "Klinikum München 5" in d["bubbles"][0]
     assert d["slots"][LB.WARMING_KEY], "the harness's own record that it fired, never the model's"
+    assert d["slots"][LB.WARMING_PICK_KEY] == 5
 
     def second_reply(system, user, session_id):
         payload = json.loads(user)
@@ -549,6 +583,143 @@ def test_the_warming_turn_fires_once_end_to_end_and_never_again(small):
     d2 = LB.turn("Ja, brauche eine Wohnung für 1 Person.", {"slots": d["slots"], "asked": []},
                  client=fake_client(second_reply))
     assert d2["bubbles"] == ["Danke, notiert."]
+
+
+# --- WARMING: the stamp is spent only on a genuine success (review finding 3 / design point d) -----
+
+def test_warming_stamp_is_not_spent_on_a_no_send_turn(small, monkeypatch):
+    _stub_descriptions(monkeypatch)
+    d = LB.turn("👍", {"slots": {"region": "Bayern", "qualification_path": "urkunde", "city": "München"},
+                       "asked": []},
+                client=fake_client(lambda s, u, sid: (_out(bubbles=[], no_send=True), sid)))
+    assert not d["slots"].get(LB.WARMING_KEY)
+    assert d["slots"][LB.WARMING_NOTE_KEY]["kind"] == "failure"
+
+
+def test_warming_stamp_is_not_spent_on_a_two_strikes_block(small, monkeypatch):
+    _stub_descriptions(monkeypatch)
+
+    def r1(system, user, session_id):
+        return _out(bubbles=["Das Klinikum Erfunden hat eine Stelle.", "Zwei.", "Drei."]), session_id
+
+    d = LB.turn("Ja", {"slots": {"region": "Bayern", "qualification_path": "urkunde", "city": "München"},
+                       "asked": []},
+                client=fake_client(r1))
+    assert d["action"] == "reply_blocked_escalated"
+    assert not d["slots"].get(LB.WARMING_KEY)
+    assert d["slots"][LB.WARMING_NOTE_KEY]["kind"] == "failure"
+
+
+def test_warming_stamp_is_not_spent_on_two_plain_bubbles_that_ignore_the_shortlist(small, monkeypatch):
+    _stub_descriptions(monkeypatch)
+    d = LB.turn("Ja", {"slots": {"region": "Bayern", "qualification_path": "urkunde", "city": "München"},
+                       "asked": []},
+                client=fake_client(_out(bubbles=["Danke!", "Brauchen Sie eine Unterkunft?"])))
+    assert d["bubbles"] == ["Danke!", "Brauchen Sie eine Unterkunft?"]
+    assert not d["slots"].get(LB.WARMING_KEY)
+    assert d["slots"][LB.WARMING_NOTE_KEY]["kind"] == "failure"
+
+
+def test_an_invalid_warming_pick_is_a_failure_not_a_success(small, monkeypatch):
+    """BOARD DATA IS TRUTH still means the PICK itself has to be one of the ids actually shown --
+    everything else is a harness failure, not a silent success."""
+    _stub_descriptions(monkeypatch)
+
+    def r1(system, user, session_id):
+        payload = json.loads(user)
+        pick = payload["market_snapshot"]["warming"]["candidates"][0]
+        bubbles = [f"Bei der {pick['clinic']} ist eine Stelle frei.", "Passt das?",
+                   "Brauchen Sie eine Unterkunft?"]
+        return _out(bubbles=bubbles, warming_pick=99999, warming_why="not actually in the list"), session_id
+
+    d = LB.turn("Ja", {"slots": {"region": "Bayern", "qualification_path": "urkunde", "city": "München"},
+                       "asked": []},
+                client=fake_client(r1))
+    assert not d["slots"].get(LB.WARMING_KEY)
+    assert d["slots"][LB.WARMING_NOTE_KEY]["kind"] == "failure"
+    assert "99999" in d["slots"][LB.WARMING_NOTE_KEY]["reason"]
+
+
+def test_a_genuine_decline_excludes_the_whole_shortlist_from_the_next_fire(small, monkeypatch):
+    """Design point d: a decline (warming_pick null, a reason given) is recorded visibly and never
+    retried -- the declined posting(s) are excluded from every later shortlist on this thread."""
+    _stub_descriptions(monkeypatch)
+
+    def r1(system, user, session_id):
+        return _out(bubbles=["Leider passt keine der Stellen zu Ihrem Profil.", "Wo genau suchen Sie?"],
+                    warming_pick=None, warming_why="keine passt zur Abteilung"), session_id
+
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    d = LB.turn("Ja", {"slots": dict(card), "asked": []}, client=fake_client(r1))
+    assert not d["slots"].get(LB.WARMING_KEY)
+    note = d["slots"][LB.WARMING_NOTE_KEY]
+    assert note["kind"] == "decline" and note["reason"] == "keine passt zur Abteilung"
+    assert d["slots"][LB.WARMING_DECLINED_KEY] == [5]
+    warming2 = LB.build_warming(d["slots"], LB.requirement_scoreboard(d["slots"]))
+    assert warming2 is not None
+    assert 5 not in {c["posting_id"] for c in warming2.get("candidates") or []}, (
+        "the declined posting must never come back on this thread")
+
+
+# --- WARMING: radius widening (Ivan's second message, point 4) -------------------------------------
+# A purpose-built board, never `small` (whose _job() rows carry no lat/lon at all): "Heimatstadt" has
+# no pflegefachkraft posting of its own but does carry board coordinates (an arzt posting, so the
+# candidate's own role filter excludes it from the exact-city search but not from the coordinates
+# search); "Nah" is a real match within the default 30km radius, "Fern" one well outside it.
+
+def test_no_posting_in_the_city_widens_by_radius_to_the_nearest_match(tmp_path, monkeypatch):
+    home = _job(1, city="Heimatstadt", department="OP")
+    home["role_class"] = "arzt"
+    home["lat"], home["lon"] = 49.90, 10.90
+    near = _job(2, city="Nah", department="OP")
+    near["lat"], near["lon"] = 49.95, 10.90        # ~5.5km from home
+    far = _job(3, city="Fern", department="OP")
+    far["lat"], far["lon"] = 51.90, 10.90          # ~220km from home -- outside the default radius
+    _board([home, near, far], monkeypatch)
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    _stub_descriptions(monkeypatch)
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "Heimatstadt"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    assert warming and not warming.get("no_match")
+    assert warming["nearby"] is True and warming["nearby_town"] == "Nah"
+    ids = [c["posting_id"] for c in warming["candidates"]]
+    assert ids == [2], "the far posting must never enter a radius-widened shortlist"
+    assert 0 < warming["candidates"][0]["distance_km"] < C.LUNA_WARMING_RADIUS_KM
+
+
+def test_no_posting_anywhere_within_the_radius_asks_to_drop_a_criterion(tmp_path, monkeypatch):
+    home = _job(1, city="Heimatstadt", department="OP")
+    home["role_class"] = "arzt"
+    home["lat"], home["lon"] = 49.90, 10.90
+    far = _job(2, city="Fern", department="OP")
+    far["lat"], far["lon"] = 51.90, 10.90          # outside the default radius, and the only candidate
+    _board([home, far], monkeypatch)
+    monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
+    monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "Heimatstadt"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    assert warming == {"no_match": {"criteria": {"role": "pflegefachkraft", "city": "Heimatstadt",
+                                                 "department_pref": None, "housing_needed": None}}}
+
+    def reply(system, user, session_id):
+        payload = json.loads(user)
+        note = payload["market_snapshot"]["warming"]["no_match"]
+        assert note["criteria"]["city"] == "Heimatstadt"
+        return _out(bubbles=["Aktuell nichts in Heimatstadt oder in der Nähe.",
+                             "Wäre eine andere Abteilung oder ohne Wohnungswunsch auch okay?"]), session_id
+
+    d = LB.turn("Suche in Heimatstadt", {"slots": dict(card), "asked": []}, client=fake_client(reply))
+    assert len(d["bubbles"]) == 2, "an ordinary turn -- no three-bubble exception without a pick"
+    assert d["slots"][LB.WARMING_NOTE_KEY]["kind"] == "no_match"
+    assert not d["slots"].get(LB.WARMING_KEY)
+
+    # Unchanged criteria: the note blocks an immediate re-fire (no point re-running the same search).
+    assert LB.build_warming(d["slots"], LB.requirement_scoreboard(d["slots"])) is None
+    # A changed criterion re-opens it (design point 4: "fires again ... when those card criteria have
+    # changed") -- whatever the fresh search then finds, it must actually try again, not stay blocked.
+    changed = {**d["slots"], "department_pref": "OP"}
+    assert LB.build_warming(changed, LB.requirement_scoreboard(changed)) is not None
 
 
 # --- 5. THREE BUBBLES ONLY ON THE WARMING TURN (TASK-302 point 4) ----------------------------------
@@ -562,14 +733,15 @@ def test_three_bubbles_are_rejected_on_an_ordinary_turn():
         LB._check(["Eins.", "Zwei.", "Drei."])
 
 
-def test_a_warming_turn_that_trips_some_other_rule_keeps_its_three_bubble_ceiling_on_the_retry(small):
+def test_a_warming_turn_that_trips_some_other_rule_keeps_its_three_bubble_ceiling_on_the_retry(small, monkeypatch):
     """The corrective retry (see the bubble-count tests earlier in this file) reads max_bubbles from
     _checked_reply's own closure -- so a warming turn whose FIRST pass broke a different rule (here: an
     invented clinic) still gets three bubbles on the rewrite, never silently dropped to two. The retry's
     own ``user`` argument is only the harness's correction (_corrective_payload) -- market_snapshot is
     NOT resent, exactly like a real resumed session where the model still has its first-turn context --
-    so the fake model below reads the posting off the FIRST payload and keeps it in its own closure for
-    the rewrite, rather than re-reading a market_snapshot the second call never receives."""
+    so the fake model below reads the shortlist off the FIRST payload and keeps it in its own closure
+    for the rewrite, rather than re-reading a market_snapshot the second call never receives."""
+    _stub_descriptions(monkeypatch)
     attempts = []
     warming = {}
 
@@ -578,9 +750,9 @@ def test_a_warming_turn_that_trips_some_other_rule_keeps_its_three_bubble_ceilin
         if len(attempts) == 1:
             warming.update(json.loads(user)["market_snapshot"]["warming"])
             return _out(bubbles=["Das Klinikum Erfunden hat eine Stelle frei.", "Zwei.", "Drei."]), session_id
-        posting = warming["posting"]
-        return _out(bubbles=[f"Bei der {posting['clinic']} ist eine Stelle frei.", "Zwei.", "Drei."],
-                    next_ask="Drei."), session_id
+        pick = warming["candidates"][0]
+        return _out(bubbles=[f"Bei der {pick['clinic']} ist eine Stelle frei.", "Zwei.", "Drei."],
+                    next_ask="Drei.", warming_pick=pick["posting_id"], warming_why="passt"), session_id
 
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     d = LB.turn("Hallo", {"slots": dict(card), "asked": []}, client=fake_client(reply))
@@ -609,6 +781,19 @@ def test_the_system_prompt_states_what_the_code_now_checks():
     assert "Saying you do NOT have a clinic the candidate named is always allowed" in system
     assert "QUALIFICATION PATH IS A FINDING, NOT A SCRATCHPAD" in system
     assert "http" not in P.BLOCKED_REPLY_DE, "the holding reply is a reply, not a link"
+
+
+def test_the_system_prompt_states_the_redesigned_warming_and_salary_rules():
+    """TASK-302 fix pass (2026-09-25): the shortlist-of-10/pick contract and the salary rule change
+    (the model may now quote a posting's own text) both have to be written down where the model reads
+    them, not only enforced in code."""
+    system = P.system_prompt("{}", "{}")
+    assert "warming.candidates" in system and "up to 10 real postings" in system
+    assert "BOARD DATA IS TRUTH" in system
+    assert "warming_pick" in system and "warming_why" in system
+    assert "warming.no_match" in system
+    assert "SALARY" in system and "say what a posting's own text" in system
+    assert "Never estimate, compute, round or promise a" in system
 
 
 def test_escalation_defaults_to_attempting_an_answer_not_calling_a_human():
@@ -1414,31 +1599,34 @@ def test_the_count_rejection_shows_the_parsed_value_and_the_text_it_came_from(sm
         GR.check_reply(["Bayernweit habe ich 300 Stellen im Angebot."], set(), counts={2462})
 
 
-# --- TASK-302 point 5: the warming turn's code-picked posting and its count are evidence too -------
+# --- TASK-302 point 5 (fix pass 2026-09-25): the warming shortlist and its count are evidence too ---
 
-def test_the_warming_posting_and_its_count_are_grounded_without_any_tool_call(small):
-    """The code-provided posting must count as evidence so naming it is never rejected -- checked
-    directly on turn_evidence/check_reply, with no tool call and no offer in play, exactly the shape
-    build_warming hands the model on the one turn it fires."""
+def test_the_warming_candidates_and_their_count_are_grounded_without_any_tool_call(small, monkeypatch):
+    """The code-provided shortlist must count as evidence so naming any of its clinics is never
+    rejected -- checked directly on turn_evidence/check_reply, with no tool call and no offer in play,
+    exactly the shape build_warming hands the model on the one turn it fires."""
+    _stub_descriptions(monkeypatch)
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     warming = LB.build_warming(card, LB.requirement_scoreboard(card))
-    assert warming, "small's fixture puts exactly one matching posting in München -- see the WARMING tests above"
+    assert warming and not warming.get("no_match"), (
+        "small's fixture puts exactly one matching posting in München -- see the WARMING tests above")
     snap = {**LB.market_snapshot(card), "warming": warming}
     evidence = GR.turn_evidence(snap, [])
-    posting = warming["posting"]
-    assert posting["clinic"] in evidence["names"]
+    pick = warming["candidates"][0]
+    assert pick["clinic"] in evidence["names"]
     assert warming["matching_postings_total"] in evidence["counts"]
-    bubble1 = f"Bei der {posting['clinic']} in {posting['city']} ist gerade eine Stelle frei."
+    bubble1 = f"Bei der {pick['clinic']} in {pick['city']} ist gerade eine Stelle frei."
     bubble2 = f"Insgesamt passen {warming['matching_postings_total']} Stellen zu Ihrer Qualifikation."
     # check_reply -> the grounded clinic names the text named (board spelling); no exception at all is
-    # the actual proof the posting counts as evidence -- it legitimately names one clinic, so the
+    # the actual proof the shortlist counts as evidence -- it legitimately names one clinic, so the
     # return value is that one name, not empty.
-    assert GR.check_reply([bubble1, bubble2], evidence["names"], counts=evidence["counts"]) == [posting["clinic"]]
+    assert GR.check_reply([bubble1, bubble2], evidence["names"], counts=evidence["counts"]) == [pick["clinic"]]
 
 
-def test_the_warming_evidence_does_not_widen_beyond_the_one_posting_it_names(small):
-    """The warming block grounds exactly the posting build_warming picked -- never a general licence
-    to name any clinic on this turn."""
+def test_the_warming_evidence_does_not_widen_beyond_the_shown_candidates(small, monkeypatch):
+    """The warming block grounds exactly the clinics build_warming's shortlist named -- never a general
+    licence to name any clinic on this turn."""
+    _stub_descriptions(monkeypatch)
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     warming = LB.build_warming(card, LB.requirement_scoreboard(card))
     snap = {**LB.market_snapshot(card), "warming": warming}
@@ -1447,18 +1635,71 @@ def test_the_warming_evidence_does_not_widen_beyond_the_one_posting_it_names(sma
         GR.check_reply(["Das Klinikum Erfunden hat auch eine Stelle frei."], evidence["names"])
 
 
-def test_a_house_name_quoted_from_the_warming_posting_title_is_grounded_and_no_other(small):
-    """Live 2026-09-25: the board title "... in unserer Schlafklinik (m/w/d)" was quoted and
-    "Schlafklinik" was rejected as invented, costing every warming turn a rewrite. The title's own
-    compound house name is evidence; a compound that is not in the title still is not."""
+def test_a_house_name_quoted_from_a_candidates_title_is_grounded_for_this_turn_only(small, monkeypatch):
+    """Live 2026-09-25 / review finding 1: the board title "... in unserer Schlafklinik (m/w/d)" was
+    quoted and "Schlafklinik" was rejected as invented, costing every warming turn a rewrite; the FIX
+    for that (commit 5727922) then let the word leak into permanent memory instead and poisoned the
+    NEXT turn's "ist die Stelle noch frei" as a false STALE loss (see the end-to-end regression test
+    further below). The title's own compound house name must be grounded THIS turn -- and only this
+    turn: it lands in evidence["turn_only"], never as a permanent clinic name."""
+    _stub_descriptions(monkeypatch)
     card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
     warming = LB.build_warming(card, LB.requirement_scoreboard(card))
-    warming = {**warming, "posting": {**warming["posting"],
-                                      "title": "Pflegefachkraft für den Nachtdienst in unserer Schlafklinik (m/w/d)"}}
+    warming = {**warming, "candidates": [{**warming["candidates"][0],
+                          "title": "Pflegefachkraft für den Nachtdienst in unserer Schlafklinik (m/w/d)"}]}
     evidence = GR.turn_evidence({**LB.market_snapshot(card), "warming": warming}, [])
     GR.check_reply(["Gesucht wird eine Pflegefachkraft für den Nachtdienst in der Schlafklinik."], evidence["names"])
     with pytest.raises(AssertionError, match="NO INVENTION"):
         GR.check_reply(["Auch die Herzklinik sucht gerade Personal."], evidence["names"])
+    assert "schlafklinik" in evidence["turn_only"]
+    assert GR.fold(warming["candidates"][0]["clinic"]) not in evidence["turn_only"], (
+        "a real clinic name from the shortlist stays permanent evidence, never turn-only")
+
+
+def test_a_title_word_never_poisons_the_next_turn_as_a_lost_house(small, monkeypatch):
+    """The end-to-end regression for review finding 1: a title word grounded this turn must not reach
+    GROUNDED_KEY, so a later "ist die Stelle noch frei" is never falsely rejected as STALE."""
+    _stub_descriptions(monkeypatch)
+
+    def r1(system, user, session_id):
+        payload = json.loads(user)
+        pick = payload["market_snapshot"]["warming"]["candidates"][0]
+        bubbles = [f"Bei der {pick['clinic']} in unserer Schlafklinik ist eine Stelle frei.",
+                   f"Insgesamt {payload['market_snapshot']['warming']['matching_postings_total']} Stellen.",
+                   "Brauchen Sie eine Unterkunft?"]
+        return _out(bubbles=bubbles, next_ask="Brauchen Sie eine Unterkunft?",
+                    warming_pick=pick["posting_id"], warming_why="passt"), session_id
+
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "München"}
+    d = LB.turn("Suche in München", {"slots": dict(card), "asked": []}, client=fake_client(r1))
+    assert "schlafklinik" not in {GR.fold(n) for n in d["slots"].get(LB.GROUNDED_KEY, [])}
+
+    def r2(system, user, session_id):
+        return _out(bubbles=["Ja, die Stelle ist noch frei."]), session_id
+
+    d2 = LB.turn("Ist die Stelle noch frei?", {"slots": d["slots"], "asked": []}, client=fake_client(r2))
+    assert d2["bubbles"] == ["Ja, die Stelle ist noch frei."], (
+        "must not be rejected as STALE by a title word that leaked into permanent memory")
+
+
+def test_an_ansbach_card_warms_from_the_same_rows_search_postings_returns(monkeypatch):
+    """Review finding 2: build_warming must resolve the city through the same tools_server pipeline
+    search_postings uses (_job_filters/_town_rows, app/data.py:town_of's semantics) -- never
+    app/data.py:filter_jobs's own city= filter, which OR-matches a posting's clinic_town too (line 731;
+    town_of's docstring: real Ansbach searches were answered with Bruckberg/Himmelkron/Obernzenn/
+    Erlangen postings, requirements audit 2026-09-21). A posting actually IN Ansbach, and a posting
+    actually in Bruckberg whose clinic is nonetheless registered with clinic_town="Ansbach", tell the
+    two pipelines apart -- the buggy one would pull the Bruckberg row in, the fixed one never does."""
+    ansbach = _job(1, city="Ansbach")
+    bruckberg = _job(2, city="Bruckberg")
+    bruckberg["clinic_town"] = "Ansbach"          # the OR-bug's exact trigger (app/data.py:731)
+    _board([ansbach, bruckberg], monkeypatch)
+    monkeypatch.setattr(D, "job_detail", lambda pid: {"description": "Wir suchen Verstärkung."})
+    card = {"region": "Bayern", "qualification_path": "urkunde", "city": "Ansbach"}
+    warming = LB.build_warming(card, LB.requirement_scoreboard(card))
+    assert warming and not warming.get("no_match")
+    ids = [c["posting_id"] for c in warming["candidates"]]
+    assert ids == [1], "only the posting actually in Ansbach -- never Bruckberg's same-clinic_town row"
 
 
 # --- ROUND 2 (2026-09-22): TASK-151's fix was verified only by hand-injecting ``counts``, never

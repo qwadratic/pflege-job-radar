@@ -1164,6 +1164,29 @@ def test_live_reply_starts_a_fresh_session_with_session_id_flag(luna, monkeypatc
     assert captured["cwd"] == C.LUNA_SESSION_DIR, "resume only finds this session again from the same cwd"
 
 
+def test_turn_puts_the_cards_known_role_into_the_mcp_config_env(luna, monkeypatch):
+    """TASK-302 fix pass (review finding 4, 2026-09-25): WA_LUNA_ROLE_CLASS is the single route every
+    role-scoped tool default reads (_known_role_class -> Client.role_class -> _mcp_config_path -> the
+    MCP subprocess env, tools_server._turn_role_class). This is the missing test the review named --
+    nothing before this proved turn() itself (as opposed to _mcp_config_path in isolation) actually
+    sets it. Goes through the REAL Client()/subprocess.run boundary, not the fake_client() shortcut
+    used everywhere else in this file, because fake_client bypasses _mcp_config_path entirely."""
+    captured = {}
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), captured=captured))
+    thread = {"slots": {"qualification_path": "urkunde"}, "asked": []}
+    LB.turn("Hallo", thread, client=None)
+    env = _server_env(captured["cmd"])
+    assert env["WA_LUNA_ROLE_CLASS"] == "pflegefachkraft"
+
+
+def test_turn_leaves_the_mcp_role_class_env_empty_before_qualification_settles(luna, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), captured=captured))
+    LB.turn("Hallo", luna, client=None)   # luna's own thread: {"slots": {}, "asked": []}
+    env = _server_env(captured["cmd"])
+    assert env["WA_LUNA_ROLE_CLASS"] == ""
+
+
 def test_luna_timeout_sec_exceeds_the_gallery_budget_it_wraps():
     """TASK-271: C.LUNA_TIMEOUT_SEC bounds the whole `claude -p` subprocess, including a
     show_clinic_photos call, whose own send_gallery is separately budgeted at

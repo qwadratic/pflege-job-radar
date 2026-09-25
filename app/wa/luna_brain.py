@@ -37,6 +37,7 @@ escalate -- is the model's call, per turn, from the state this module hands it.
 """
 import json
 import logging
+import math
 import os
 import pathlib
 import re
@@ -57,6 +58,7 @@ from .luna import offer as OF
 from .luna import prompts as P
 from .luna import refusal as RF
 from .luna import source_link as SRC
+from .luna import tools_server as TS
 
 log = logging.getLogger(__name__)
 
@@ -534,12 +536,19 @@ def market_snapshot(card):
     only when the housing-filtered search found no flat at all -- gives the real alternatives from the same
     board instead of an invented one. Every shortlist entry carries its own ``housing`` flag, on every card:
     housing may only be asserted for a posting the board marks."""
-    all_rows = B.jobs_for({})
+    # TASK-302 point 6/f (review finding 4/5, 2026-09-25): the SAME role-class predicate build_warming
+    # and count_postings' own WA_LUNA_ROLE_CLASS default already read (_known_role_class), not the
+    # ad-hoc "qualification_path not in (None, 'reject')" this used to run inline -- which, unlike
+    # _known_role_class, also treated card_patch's own "unknown" enum value as a settled role. One
+    # predicate everywhere means open_jobs, matching_clinics_count and the tools can never disagree
+    # about what this candidate is presumed to want.
+    role = _known_role_class(card)
+    all_rows = B.jobs_for({"role": role} if role else {})
     cities = B.known_cities()[:8]
 
     filters = {}
-    if card.get("qualification_path") not in (None, "reject"):
-        filters["role"] = "pflegefachkraft"
+    if role:
+        filters["role"] = role
     if card.get("city"):
         filters["city"] = card["city"]
     department_filter = None
@@ -776,67 +785,190 @@ def requirement_scoreboard(card):
 # matched, and THAT it happens exactly once are all facts the harness computes from the live board and
 # the card -- never the model's pick, never invented, never repeated. Only the German wording of the
 # three bubbles stays the model's (prompts.py's WARMING rule).
-WARMING_KEY = "_warming_sent_at"   # card: when the warming turn fired -- see build_warming.
+WARMING_KEY = "_warming_sent_at"   # card: when the warming turn SUCCEEDED -- see build_warming/turn().
+# TASK-302 fix pass (review finding 3 / Ivan's design point d, 2026-09-25): the id of the posting the
+# succeeded warming turn actually named, next to WARMING_KEY -- visible proof of WHICH one, not only
+# that one went out.
+WARMING_PICK_KEY = "_warming_picked_posting_id"
+# The posting ids the model has explicitly declined off a shown warming shortlist (warming_pick=null,
+# a reason given) -- excluded from every later shortlist so a re-fire never puts the same declined set
+# back in front of the model (design point d: "do not retry the same shortlist").
+WARMING_DECLINED_KEY = "_warming_declined_postings"
+# The latest non-success outcome, for a human to see: {"kind": "decline"|"failure"|"no_match",
+# "reason": str, "at": iso} -- "no_match" also carries "criteria", the four facts build_warming
+# searched on, so a later turn can tell whether anything actually changed (see build_warming).
+WARMING_NOTE_KEY = "_warming_note"
 
 
 def _known_role_class(card):
     """The one role class this card's own counts and searches should already be read against, once
-    the qualification gate has settled on a real path -- the same predicate market_snapshot has used
-    since TASK-195 to add a role filter to its own ``matching`` rows, factored out here so the warming
-    turn's posting pick (build_warming) and count_postings' own explicit default (tools_server.py, via
-    _mcp_config_path's WA_LUNA_ROLE_CLASS env var -- TASK-302 point 6) read exactly the same thing.
-    This board's whole candidate-facing funnel is Pflegefachkraft (app/autopilot/matching.py:score
-    defaults an unknown candidate role to the same constant) -- a settled qualification_path is a
-    finding about THIS one role, never yet a fact about some other role class the candidate might also
-    hold, so this is never anything but that one value or None (qualification not yet settled, or a
-    reject -- QUALIFICATION_PATHS_SETTLED)."""
+    the qualification gate has settled on a real path. Originally factored out only for
+    build_warming/count_postings; as of the TASK-302 fix pass (review finding 4/5, Ivan's design point
+    f, 2026-09-25) this is now the SINGLE route every role-scoped number reads: market_snapshot's own
+    ``matching``/open_jobs, build_warming's shortlist, and -- via the WA_LUNA_ROLE_CLASS env var
+    _mcp_config_path threads through to the MCP subprocess -- tools_server._turn_role_class()'s
+    default for search_postings, search_postings_with_housing, list_cities_with_postings,
+    list_clinics_with_housing and count_postings alike (centralised in tools_server._job_filters, one
+    seam, not five). This board's whole candidate-facing funnel is Pflegefachkraft
+    (app/autopilot/matching.py:score defaults an unknown candidate role to the same constant) -- a
+    settled qualification_path is a finding about THIS one role, never yet a fact about some other
+    role class the candidate might also hold, so this is never anything but that one value or None
+    (qualification not yet settled, or a reject -- QUALIFICATION_PATHS_SETTLED)."""
     return "pflegefachkraft" if card.get("qualification_path") in QUALIFICATION_PATHS_SETTLED else None
 
 
-def _warming_matching_rows(card):
-    """The live postings this card's known role AND known city already narrow to, newest first -- via
-    B.jobs_for/SL.filters, the SAME live+freshness base (verify=live, sort=-first_published) every
-    board tool searches from (tools_server.LIVE_BASE is the identical pair of defaults). Empty without
-    BOTH a known role and a known city: build_warming below never fires on partial knowledge."""
-    role, city = _known_role_class(card), (card.get("city") or "").strip()
-    if not (role and city):
-        return []
-    return B.jobs_for({"role": role, "city": city})
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km (mean Earth radius 6371) -- TASK-302 point 4's radius widening has
+    nothing else in this repo to reuse (no haversine/distance helper existed anywhere before this)."""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi, dlambda = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _warming_department_filter(card):
+    """The board department string to hand _job_rows, or "" -- department_pref read the SAME way
+    market_snapshot already reads it (SL.read_department_pref), never a second parsing of the
+    candidate's word: only an "applied" reading filters, "unmatched"/"ambiguous"/"flexible" all widen
+    to no department filter rather than raising out of a turn nobody asked to fail."""
+    pref = card.get("department_pref")
+    if not pref:
+        return ""
+    reading = SL.read_department_pref(pref)
+    return ",".join(reading["departments"]) if reading["status"] == "applied" else ""
+
+
+def _warming_filter_housing(card):
+    """Same predicate as market_snapshot's own ``filter_housing``: wanted, and not flexible about it."""
+    return housing_needed(card) is True and housing_flexible(card) is not True
+
+
+def _warming_criteria_signature(card):
+    """The four facts build_warming actually searches on. A no_match note only blocks a re-fire while
+    this is unchanged (Ivan, TASK-302 point 4: 'fires again later only when those card criteria have
+    changed') -- compared by equality, so ANY of role/city/department/housing moving re-opens it."""
+    return {"role": _known_role_class(card), "city": (card.get("city") or "").strip(),
+            "department_pref": card.get("department_pref") or None, "housing_needed": housing_needed(card)}
+
+
+def _city_centre(city):
+    """Mean (lat, lon) of this city's OWN board rows -- any role, department or housing, to maximise
+    the chance of finding coordinates -- or None without at least one posting that carries both. Not
+    the clinic registry: its columns (app/data.py's own comment on the clinics select) carry no
+    lat/lon, so a city's own postings are the only coordinates this board has."""
+    try:
+        rows, _town = TS._job_rows(city=city)
+    except TS.ToolError:
+        return None
+    points = [(r["lat"], r["lon"]) for r in rows if r.get("lat") is not None and r.get("lon") is not None]
+    if not points:
+        return None
+    return (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points))
+
+
+def _warming_candidate(row, distance_km=None):
+    """One shortlist entry as the model gets to see it (Ivan, TASK-302 second message point 2): id,
+    clinic, city, department, title, the ad's FULL description, and -- unlike every other posting
+    payload this harness ever hands the model (OF.position/tools_server._job_row) -- the original
+    link. That is a deliberate, narrow exception to the "no link reaches the model" guarantee
+    app/wa/luna/offer.py and app/wa/luna/source_link.py document elsewhere: it holds because the real
+    enforcement is on the OUTPUT side (grounding.check_reply's LINK rule rejects a URL in any bubble
+    regardless of what the model was handed), and Ivan asked for it explicitly, by name, for this one
+    payload. description comes from app/data.py:job_detail (a live call; description is not in
+    JOB_COLS, TASK-146) -- None when the board holds none, never invented."""
+    posting_id = row.get("posting_id")
+    description = (D.job_detail(posting_id) or {}).get("description")
+    out = {"posting_id": posting_id, "clinic": OF.clinic_name(row), "city": D.town_of(row),
+           "department": row.get("department_hint"), "title": row.get("title"),
+           "description": description, "link": row.get("external_url") or "",
+           "regierungsbezirk": row.get("regierungsbezirk"),
+           "employment_types": list(row.get("employment_types") or []), "housing": D.offers_housing(row)}
+    if distance_km is not None:
+        out["distance_km"] = distance_km
+    return out
+
+
+def _warming_shortlist(rows, nearby, town=None, distances=None):
+    distances = distances or {}
+    candidates = [_warming_candidate(r, distances.get(r.get("posting_id"))) for r in rows[:10]]
+    out = {"candidates": candidates, "matching_postings_total": len(rows), "nearby": nearby}
+    if nearby:
+        out["nearby_town"] = town
+    return out
 
 
 def build_warming(card, scoreboard):
-    """-> {posting, matching_postings_total} on the one turn the warming block should fire, else None.
+    """-> the one turn's warming payload, else None. Either {candidates, matching_postings_total,
+    nearby, nearby_town?} (a real shortlist to pick from, up to 10) or {no_match: {criteria}} (nothing
+    matched even within the radius -- a card-advancing question instead, see prompts.py WARMING).
 
     THE TRIGGER IS CODE'S, NEVER THE MODEL'S (Ivan, TASK-302 point 1). Every one of these has to hold:
     * region AND qualification are both already "satisfied" on ``scoreboard`` -- the closest this
-      harness's own gates come to naming "primary interest established" (region: they are genuinely
-      looking for a job in Bayern; qualification: a real, placeable Pflegefachkraft path is already on
-      the card, QUALIFICATION_PATHS_SETTLED) -- decided here rather than reusing funnel_stage's
-      "matching" name because that stage ALSO covers a candidate who cleared both gates but has since
-      said nothing else yet; this predicate only cares that the two gates themselves are settled.
-    * ``card["city"]`` itself is known -- Ivan's own wording, point 1; department_pref alone (the
-      OTHER half of city_or_department, see _city_or_department_satisfied) does not count, and matches
-      the live scenario this was built against (city known, qualification known, next_objective
-      housing).
-    * a live posting actually matches that role+city (_warming_matching_rows) -- "no matching posting
-      -> an ordinary turn, nothing invented" (point 1's own words): never a retry with a looser
-      filter, never a placeholder posting standing in for a real one.
-    * this thread has not already had its one warming turn (``card[WARMING_KEY]``).
+      harness's own gates come to naming "primary interest established".
+    * ``card["city"]`` itself is known -- Ivan's own wording, point 1; department_pref alone does not
+      count (see _city_or_department_satisfied).
+    * this thread has not already had its one SUCCESSFUL warming turn (``card[WARMING_KEY]`` -- review
+      finding 3 / design point d: this is now written only on success, never before the model runs).
+    * this exact search (_warming_criteria_signature) has not already come back empty this turn's
+      criteria unchanged (``card[WARMING_NOTE_KEY]`` kind "no_match") -- design point 4: a no-match
+      note only blocks a re-fire while role/city/department/housing stay what they were.
 
-    Any one of those missing -> None. ``posting`` is OF.position() of the newest matching row -- the
-    exact shape (and the exact board fields: clinic, city, department, title, employment_types,
-    housing; no salary) every other posting this harness ever hands the model already carries, so
-    prompts.py's existing NO INVENTION/SALARY rules already cover it without a warming-specific
-    carve-out. ``matching_postings_total`` is the count of that SAME row set -- role- AND
-    city-filtered, per TASK-302 point 6/2 -- never the board-wide market_snapshot.open_jobs total,
-    which counts every role and every city."""
+    Any one of those missing -> None: an ordinary turn, nothing invented, nothing recorded.
+
+    THE SAME FUNCTIONS THE TOOLS USE (review finding 2). Built on tools_server._job_rows -- the
+    resolved-town/department/role/housing filtering search_postings and count_postings already run,
+    never app/wa/brain.py:jobs_for's own city= filter (which matches the posting's city OR its
+    clinic's registry town, the Ansbach/Bruckberg bug documented at app/data.py:town_of). department
+    is pre-resolved by _warming_department_filter exactly the way market_snapshot reads it, so the
+    only ToolError _job_rows can still raise here is an unresolvable CITY word -- caught, and treated
+    as no exact-city match rather than a crashed turn.
+
+    ROWS ALREADY DECLINED THIS THREAD (card[WARMING_DECLINED_KEY]) are excluded from every candidate
+    pool, exact-city and widened alike, so a re-fire after a decline never re-offers the same posting
+    (design point d).
+
+    NO MATCH IN THE CITY -> WIDEN BY RADIUS (Ivan, second message point 4). The SAME role/department/
+    housing filters, without the city constraint, ranked by haversine distance from the mean lat/lon
+    of the candidate's own city's postings (_city_centre), kept within config.LUNA_WARMING_RADIUS_KM
+    (WA_LUNA_WARMING_RADIUS_KM, default 30 -- the knob IS the feature, not a safety cap). Still nothing
+    within the radius, or no centre to measure from at all (an unresolvable city, or a city with no
+    coordinates on any of its own rows) -> {no_match: {criteria}}."""
     if (card.get(WARMING_KEY) or scoreboard.get("region") != "satisfied"
             or scoreboard.get("qualification") != "satisfied" or not (card.get("city") or "").strip()):
         return None
-    rows = _warming_matching_rows(card)
-    if not rows:
+    criteria = _warming_criteria_signature(card)
+    note = card.get(WARMING_NOTE_KEY) or {}
+    if note.get("kind") == "no_match" and note.get("criteria") == criteria:
         return None
-    return {"posting": OF.position(rows[0]), "matching_postings_total": len(rows)}
+    exclude = set(card.get(WARMING_DECLINED_KEY) or [])
+    role, city = criteria["role"], criteria["city"]
+    department, housing = _warming_department_filter(card), _warming_filter_housing(card)
+    try:
+        rows, _town = TS._job_rows(city=city, department=department, role_class=role or "", housing=housing)
+    except TS.ToolError:
+        rows = []
+    rows = [r for r in rows if r.get("posting_id") not in exclude]
+    if rows:
+        return _warming_shortlist(rows, nearby=False)
+
+    wide_rows, _town2 = TS._job_rows(department=department, role_class=role or "", housing=housing)
+    wide_rows = [r for r in wide_rows if r.get("posting_id") not in exclude]
+    centre = _city_centre(city)
+    nearby = []
+    if centre and wide_rows:
+        for r in wide_rows:
+            if r.get("lat") is None or r.get("lon") is None:
+                continue
+            d = _haversine_km(centre[0], centre[1], r["lat"], r["lon"])
+            if d <= C.LUNA_WARMING_RADIUS_KM:
+                nearby.append((d, r))
+        nearby.sort(key=lambda pair: pair[0])
+    if nearby:
+        town = D.town_of(nearby[0][1])
+        distances = {r.get("posting_id"): round(d, 1) for d, r in nearby}
+        return _warming_shortlist([r for _, r in nearby], nearby=True, town=town, distances=distances)
+    return {"no_match": {"criteria": criteria}}
 
 
 # --- the Claude call -------------------------------------------------------------------------
@@ -863,6 +995,15 @@ OUTPUT_SCHEMA = {
         "decline": {"type": "boolean"},
         "decline_reason": {"type": ["string", "null"]},
         "re_engaged": {"type": "boolean"},
+        # TASK-302 fix pass (Ivan's design point 2/d, 2026-09-25): present only on the turn
+        # market_snapshot.warming.candidates is shown. warming_pick is the posting_id of the ONE
+        # candidate that fits this card best (code only checks it is one of the ids shown -- BOARD
+        # DATA IS TRUTH, the model's own judgement of fit is not second-guessed), or null when none of
+        # the shown candidates genuinely fit and warming_why then carries that reason instead (a
+        # decline -- turn() records it and never shows this exact shortlist again). warming_why is the
+        # model's own short reason either way -- why this one fits, or why none did.
+        "warming_pick": {"type": ["integer", "null"]},
+        "warming_why": {"type": ["string", "null"]},
         # TASK-205: the candidate's answer on imported documents (card.documents ids); the harness records it.
         "document_reuse": {
             "type": "object",
@@ -1134,10 +1275,12 @@ CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason",
                         # writes the answer (housing_needed), never the flag -- a turn that set housing_known
                         # alone used to close the gate without the fact the shortlist filters on.
                         "housing_known",
-                        # TASK-302: whether the warming turn already fired is CODE's own record (build_warming
-                        # decides it, turn() writes it) -- never something the model may claim or clear, or a
-                        # forged/omitted card_patch value would make the one-time vacancy fire again.
-                        WARMING_KEY)
+                        # TASK-302: whether the warming turn already SUCCEEDED, which posting it named, which
+                        # postings it has already been declined on, and the latest visible note on any other
+                        # outcome are all CODE's own record (build_warming decides the shortlist, turn() judges
+                        # what happened to it) -- never something the model may claim or clear itself, or a
+                        # forged/omitted card_patch value would spend or repeat the thread's one warming turn.
+                        WARMING_KEY, WARMING_PICK_KEY, WARMING_DECLINED_KEY, WARMING_NOTE_KEY)
 # Outbound meta.action values no model turn writes; only used to find the last model-turn row on a card from
 # before LAST_TURN_KEY existed.
 NOT_MODEL_ACTIONS = ("followup", "media_ack", "decline_ack", "campaign")
@@ -1553,13 +1696,24 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     scoreboard = requirement_scoreboard(card)
     snapshot = market_snapshot(card)
     turn_at = ST.now_iso()
-    # TASK-302: computed and, if it fires, recorded BEFORE the model runs -- see build_warming. Merged
-    # into THIS turn's own snapshot only (market_snapshot's own return value/contract is untouched),
-    # so the model sees market_snapshot.warming on exactly the one turn it applies to.
+    # TASK-302: computed BEFORE the model runs -- see build_warming. Merged into THIS turn's own
+    # snapshot only (market_snapshot's own return value/contract is untouched), so the model sees
+    # market_snapshot.warming on exactly the one turn it applies to.
+    #
+    # STAMPING IS NO LONGER HERE (fix pass, review finding 3 / Ivan's design point d, 2026-09-25):
+    # WARMING_KEY used to be written unconditionally the moment a shortlist was computed, before the
+    # model had said a word -- so a no_send turn, a two-strikes block, or a plain reply that never
+    # used the shortlist at all still spent the thread's one warming turn on nothing. It is now
+    # written only after the checked reply actually went out with a valid pick (see the block right
+    # after _checked_reply, below). A no_match payload is different: that IS a fact the harness itself
+    # already knows this turn (the search really came back empty), so its note is recorded here,
+    # unconditionally, same as before -- see build_warming's own no_match/WARMING_NOTE_KEY contract.
     warming = build_warming(card, scoreboard)
     if warming:
         snapshot = {**snapshot, "warming": warming}
-        card[WARMING_KEY] = turn_at
+        if warming.get("no_match"):
+            card[WARMING_NOTE_KEY] = {"kind": "no_match", "criteria": warming["no_match"]["criteria"],
+                                      "at": turn_at}
     system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
     user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
 
@@ -1639,6 +1793,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     raw_bubbles = out.get("bubbles") or []
     buttons = []
     model_bubbles = []
+    checked = None   # set only in the _checked_reply branch below; read by the warming-outcome block
 
     decline_candidate = bool(out.get("decline")) and not was_declined and not consent_no_tap
     decline_now = False
@@ -1713,17 +1868,28 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # exception straight out of turn(). TASK-302 point 4: 3 bubbles, not 2, ONLY on the turn
         # `warming` fired on -- every other turn (including this thread's very next one) stays at
         # MAX_BUBBLES.
+        # TASK-302 point c: 3 bubbles, not 2, ONLY when a real shortlist ("candidates") was shown this
+        # turn -- a no_match turn (an ordinary card-advancing question, no pick to make) stays at
+        # MAX_BUBBLES, same as every turn without market_snapshot.warming at all.
         checked = _checked_reply(cl, card, system_text, raw_bubbles, evidence_of,
-                                 bool(snapshot.get("offer")), max_bubbles=3 if warming else MAX_BUBBLES)
+                                 bool(snapshot.get("offer")),
+                                 max_bubbles=3 if (warming or {}).get("candidates") else MAX_BUBBLES)
         bubbles = model_bubbles = checked["bubbles"]
         named = checked["named"]
-        if named:
-            card[GROUNDED_KEY] = sorted({*(card.get(GROUNDED_KEY) or []), *named})
+        # TASK-302 fix pass (review finding 1 / design point e, 2026-09-25): a word only ALLOWED for
+        # this turn (a compound quoted from a warming candidate's title/description -- grounding.py's
+        # ``turn_only``) must never be written to this permanent memory, or the very next "ist die
+        # Stelle noch frei" reads it back as a house the thread has since LOST (STALE) -- exactly the
+        # live bug commit 5727922 introduced by seeding it into the same set as real clinic names.
+        turn_only = checked["evidence"].get("turn_only") or set()
+        persist_named = [n for n in named if GR.fold(n) not in turn_only]
+        if persist_named:
+            card[GROUNDED_KEY] = sorted({*(card.get(GROUNDED_KEY) or []), *persist_named})
             # TASK-151: the POSTINGS those names were grounded on, so the next turn's STALE re-check
             # is about the opening (Ivan's rule (a)) and not only about the house keeping any
             # opening at all.
             grounded_postings = {checked["evidence"]["postings"][GR.fold(n)]
-                                 for n in named if GR.fold(n) in checked["evidence"]["postings"]}
+                                 for n in persist_named if GR.fold(n) in checked["evidence"]["postings"]}
             if grounded_postings:
                 card[GROUNDED_POSTINGS_KEY] = sorted({*(card.get(GROUNDED_POSTINGS_KEY) or []),
                                                       *grounded_postings})
@@ -1761,6 +1927,43 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
             # The turn where the model just asked for the anonymized send: attach real, tappable
             # buttons rather than leaving consent to however the candidate happens to phrase "yes".
             buttons = list(CONSENT_BUTTONS)
+
+    # TASK-302 fix pass (review finding 3 / Ivan's design point d, 2026-09-25): what THIS turn's
+    # shortlist (if any) actually did, recorded once here rather than in every branch above --
+    # SUCCESS (WARMING_KEY + WARMING_PICK_KEY) only when the checked reply really went out, was
+    # exactly three bubbles, and named a pick from the shown shortlist; DECLINE (a reason, no pick)
+    # excludes the whole shown shortlist from every later one so it is never retried; anything else
+    # -- no_send/empty, the fixed decline/not-placeable text instead of the model's own reply,
+    # blocked/escalated, a missing or invalid pick, the wrong bubble count -- writes only a visible
+    # failure note and nothing permanent, so build_warming fires again next turn unchanged.
+    if warming and warming.get("candidates"):
+        candidate_ids = {c["posting_id"] for c in warming["candidates"]}
+        pick, why = out.get("warming_pick"), out.get("warming_why")
+        note = None
+        if not bubbles:
+            note = {"kind": "failure", "reason": "no_send or empty bubbles", "at": turn_at}
+        elif action in ("decline_ack", "explain_not_placeable"):
+            note = {"kind": "failure", "at": turn_at,
+                    "reason": f"the turn ended in {action!r} (a fixed reply), never the model's own "
+                              f"checked warming bubbles"}
+        elif checked is None:
+            note = {"kind": "failure", "at": turn_at,
+                    "reason": f"action={action!r} never reached the grounding check"}
+        elif checked["escalate_reason"]:
+            note = {"kind": "failure", "reason": checked["escalate_reason"], "at": turn_at}
+        elif pick is not None and pick in candidate_ids and len(checked["bubbles"]) == 3:
+            card[WARMING_KEY] = turn_at
+            card[WARMING_PICK_KEY] = pick
+            card.pop(WARMING_NOTE_KEY, None)
+        elif pick is None and why:
+            card[WARMING_DECLINED_KEY] = sorted({*(card.get(WARMING_DECLINED_KEY) or []), *candidate_ids})
+            note = {"kind": "decline", "reason": why, "at": turn_at}
+        else:
+            note = {"kind": "failure", "at": turn_at,
+                    "reason": f"warming_pick={pick!r} not valid for the shown ids "
+                              f"{sorted(candidate_ids)!r}"}
+        if note is not None:
+            card[WARMING_NOTE_KEY] = note
 
     if out.get("escalate_to_manager"):
         # 2026-09-22 (Ivan's predictable-escalation-list round): the model names WHICH of the

@@ -460,6 +460,58 @@ def test_count_postings_role_class_defaults_to_the_cards_own_known_role(tmp_path
     assert TS.count_postings(city="München", role_class="hebamme")["postings"] == 1
 
 
+def test_search_postings_role_class_defaults_to_the_cards_own_known_role(tmp_path, monkeypatch):
+    """TASK-302 fix pass (review finding 4, 2026-09-25): _job_filters's default is one seam for every
+    posting tool, not only count_postings (which needed its own copy of the line for its no-filter
+    guard, see its docstring) -- this is that seam checked on search_postings directly."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99, "role_class": "hebamme"})
+    monkeypatch.delenv("WA_LUNA_ROLE_CLASS", raising=False)
+    assert TS.search_postings(city="München")["total"] == 3
+    monkeypatch.setenv("WA_LUNA_ROLE_CLASS", "pflegefachkraft")
+    out = TS.search_postings(city="München")
+    assert out["total"] == 2
+    assert 99 not in {r["posting_id"] for r in out["shown"]}
+    # An explicit role_class argument still wins over the card's own default.
+    assert TS.search_postings(city="München", role_class="hebamme")["total"] == 1
+
+
+def test_search_postings_with_housing_role_class_defaults_to_the_cards_own_known_role(tmp_path, monkeypatch):
+    """search_postings_with_housing never has a role_class parameter of its own at all -- it goes
+    through _job_rows with role_class="" every time, so this checks the default reaches it purely via
+    _job_filters, with no per-tool wiring to get wrong."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99, "role_class": "hebamme"})
+    monkeypatch.delenv("WA_LUNA_ROLE_CLASS", raising=False)
+    assert TS.search_postings_with_housing(city="München")["total"] == 2   # postings 1 and 99 both marked
+    monkeypatch.setenv("WA_LUNA_ROLE_CLASS", "pflegefachkraft")
+    out = TS.search_postings_with_housing(city="München")
+    assert out["total"] == 1
+    assert 99 not in {r["posting_id"] for r in out["shown"]}
+
+
+def test_list_clinics_with_housing_role_class_defaults_to_the_cards_own_known_role(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99, "role_class": "hebamme"})
+    monkeypatch.delenv("WA_LUNA_ROLE_CLASS", raising=False)
+    assert TS.list_clinics_with_housing(city="München")[0]["postings_with_housing"] == 2
+    monkeypatch.setenv("WA_LUNA_ROLE_CLASS", "pflegefachkraft")
+    assert TS.list_clinics_with_housing(city="München")[0]["postings_with_housing"] == 1
+
+
+def test_list_cities_with_postings_role_class_defaults_to_the_cards_own_known_role(tmp_path, monkeypatch):
+    """list_cities_with_postings has no city filter of its own -- read München's own row back out of
+    the full ranking instead of narrowing the call itself."""
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99, "role_class": "hebamme"})
+    monkeypatch.delenv("WA_LUNA_ROLE_CLASS", raising=False)
+    munich = next(c for c in TS.list_cities_with_postings() if c["city"] == "München")
+    assert munich["postings"] == 3
+    monkeypatch.setenv("WA_LUNA_ROLE_CLASS", "pflegefachkraft")
+    munich2 = next(c for c in TS.list_cities_with_postings() if c["city"] == "München")
+    assert munich2["postings"] == 2
+
+
 # --- TASK-213: the fallback -- the board's own docs, and an allowlist of public GET paths -------
 
 def test_board_api_get_answers_an_allowlisted_path_with_the_apis_own_envelope(tmp_path, monkeypatch):
