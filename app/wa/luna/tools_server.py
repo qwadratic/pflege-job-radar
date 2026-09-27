@@ -1175,6 +1175,12 @@ def show_clinic_photos(clinic_id: str) -> dict:
     from .. import transport as T
     if not C.AUTOSEND:
         return {"sent": False, "reason": "AUTOSEND is off"}
+    # Send-scope kill switches (Ivan, 2026-09-27) -- same gate api._send crosses, applied here since
+    # this tool sends outside that path. Rail is always "bridge": the pinned-rail check right below
+    # already refuses anything else.
+    refusal = T.scope_refusal(phone=phone, rail="bridge")
+    if refusal:
+        return {"sent": False, "reason": refusal}
     rail = T.rail_for(phone=phone)
     if rail != "bridge":
         return {"sent": False, "reason": f"this thread is pinned to the {rail} rail, not the phone "
@@ -1393,6 +1399,10 @@ def send_updated_cv(cv_text: str) -> dict:
     from .. import transport as T
     if not C.AUTOSEND:
         return {"sent": False, "reason": "AUTOSEND is off"}
+    # Send-scope kill switches (Ivan, 2026-09-27) -- same gate as show_clinic_photos above.
+    refusal = T.scope_refusal(phone=phone, rail="bridge")
+    if refusal:
+        return {"sent": False, "reason": refusal}
     rail = T.rail_for(phone=phone)
     if rail != "bridge":
         return {"sent": False, "reason": f"this thread is pinned to the {rail} rail, not the phone "

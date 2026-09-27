@@ -57,6 +57,21 @@ TRANSPORT = os.environ.get("WA_TRANSPORT", "meta").strip().lower()
 if TRANSPORT not in ("meta", "bridge"):
     raise RuntimeError(f"WA_TRANSPORT={TRANSPORT!r} is not 'meta' or 'bridge'")
 
+# Send-scope kill switches (Ivan, 2026-09-27): a real candidate wrote to the old Meta/WABA number and
+# got answered by this harness via the Cloud API (WA_OWN_ALL_CHATS routes every Meta inbound to us).
+# Both gate through app/wa/transport.py:scope_refusal, which every outbound path crosses -- a test
+# thread (store.is_test_thread) is always allowed regardless of either switch. Same discipline as
+# WA_TRANSPORT above: an unrecognized value stops the process at import.
+# WA_REPLY_SCOPE: both rails. "test_only" mutes every non-test thread everywhere -- the global switch.
+REPLY_SCOPE = os.environ.get("WA_REPLY_SCOPE", "all").strip().lower()
+if REPLY_SCOPE not in ("all", "test_only"):
+    raise RuntimeError(f"WA_REPLY_SCOPE={REPLY_SCOPE!r} is not 'all' or 'test_only'")
+# WA_META_SCOPE: the Meta rail only -- "the Meta channel muted but re-activatable" from Ivan's ask.
+# "test_only" mutes Meta sends to a non-test thread while leaving the bridge (phone) rail alone.
+META_SCOPE = os.environ.get("WA_META_SCOPE", "all").strip().lower()
+if META_SCOPE not in ("all", "test_only"):
+    raise RuntimeError(f"WA_META_SCOPE={META_SCOPE!r} is not 'all' or 'test_only'")
+
 # The phone rail's executor (TASK-223, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
 # one ssh -R leg -- the executor listens on the remote machine and the tunnel presents it on loopback
 # here, which is also why no secret of Meta's ever travels: the WhatsApp account lives on the handset
@@ -444,6 +459,7 @@ def readiness():
            "outbound_ready": checks["access_token"] and checks["phone_number_id"],
            "autosend": AUTOSEND, "graph_api_version": GRAPH_API_VERSION, "brain": BRAIN,
            "transport": TRANSPORT,
+           "reply_scope": REPLY_SCOPE, "meta_scope": META_SCOPE,
            # Which rail could send right now, independently of which one is selected: an operator
            # flipping WA_TRANSPORT must be able to see beforehand that the other rail is configured,
            # and afterwards that the live one is (TASK-223).

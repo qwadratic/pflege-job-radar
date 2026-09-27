@@ -222,6 +222,10 @@ def _mcp_config_path(ready_path, phone=None, no_send=False, role_class=None):
     subprocess's own import of app.wa.config would see WA_AUTOSEND unset and read AUTOSEND as False
     always, which would not gate show_clinic_photos so much as permanently disable it.
 
+    WA_REPLY_SCOPE/WA_META_SCOPE (Ivan, 2026-09-27): the send-scope kill switches ``transport.
+    scope_refusal`` reads -- same explicit-not-inherited reason as WA_AUTOSEND just above, or the
+    subprocess would see them unset and read the "all" default no matter what the parent has.
+
     One file per turn, named from ready_path's own uuid stem (TASK-249): the webhook worker, the
     3-minute catch-up poller and a campaign send are separate OS processes sharing this same
     LUNA_SESSION_DIR, so a FIXED filename here let one turn's WA_LUNA_PHONE overwrite another's
@@ -258,6 +262,13 @@ def _mcp_config_path(ready_path, phone=None, no_send=False, role_class=None):
                                                         "WA_BRIDGE_URL": C.BRIDGE_URL,
                                                         "WA_BRIDGE_TOKEN": C.BRIDGE_TOKEN,
                                                         "WA_AUTOSEND": "1" if C.AUTOSEND else "",
+                                                        # Send-scope kill switches (Ivan, 2026-09-27):
+                                                        # same reason WA_AUTOSEND is passed explicitly
+                                                        # above -- without this the subprocess's own
+                                                        # config import would see these unset and read
+                                                        # the "all" default regardless of the parent's.
+                                                        "WA_REPLY_SCOPE": C.REPLY_SCOPE,
+                                                        "WA_META_SCOPE": C.META_SCOPE,
                                                         NO_SEND_ENV: "1" if no_send else os.environ.get(NO_SEND_ENV, "")}}}}
     _write_atomic(path, json.dumps(config))
     return path

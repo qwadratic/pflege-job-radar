@@ -1152,6 +1152,12 @@ def main(argv=None, client=None, clock=None, sleep=None):
         return fail(str(exc))
     if args.send and not C.AUTOSEND:
         return fail("--send needs WA_AUTOSEND=1 (without it nothing may reach Meta); load .env first")
+    # Send-scope kill switches (Ivan, 2026-09-27): a campaign blasts many real phones, so --send
+    # refuses outright rather than silently drafting one recipient at a time.
+    if args.send and C.REPLY_SCOPE == "test_only":
+        return fail("--send refuses: WA_REPLY_SCOPE=test_only mutes every non-test thread right now")
+    if args.send and C.META_SCOPE == "test_only":
+        return fail("--send refuses: WA_META_SCOPE=test_only mutes the Meta channel right now")
     client = T.get_client(client=client)
     if args.send and (not client.access_token or not client.phone_number_id):
         return fail("--send needs META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID")

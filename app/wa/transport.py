@@ -49,12 +49,44 @@ def rail_of_client(client):
     out on". An injected client -- every test's FakeMeta, the one ``campaign.py`` holds for a whole
     run -- can be a different rail from the thread's pinned one, and an error message that reports
     the thread's rail while holding the other client sends its reader to the wrong machine.
+
+    ``isinstance`` can raise when a caller has replaced ``BR.Client``/``M.Client`` itself with a
+    plain factory function rather than a subclass (tests/test_wa_harness.py's ``_route`` swaps
+    ``mod.M.Client`` for a lambda so the real webhook route hands back its own fake by identity) --
+    neither real rail applies then, so this reads the same as any other client it does not recognise.
     """
-    if isinstance(client, BR.Client):
-        return "bridge"
-    if isinstance(client, M.Client):
-        return "meta"
+    try:
+        if isinstance(client, BR.Client):
+            return "bridge"
+        if isinstance(client, M.Client):
+            return "meta"
+    except TypeError:
+        return "unknown"
     return "unknown"
+
+
+def scope_refusal(conn=None, phone=None, rail=None):
+    """-> None if a send to ``phone`` on ``rail`` is allowed, else the reason it is refused.
+
+    The send-scope kill switches (Ivan, 2026-09-27, ``app/wa/config.py``): a test thread
+    (``store.is_test_thread``) is always allowed, on either rail -- these switches mute real
+    candidates, never the numbers an operator tests the live harness with. Checked in order: the
+    global switch (``WA_REPLY_SCOPE``, both rails) first, then the Meta-only mute (``WA_META_SCOPE``,
+    ``rail == "meta"`` only). ``conn`` is the caller's open connection when it has one, same as
+    ``rail_for`` above; without one a fresh read-only lookup is made.
+    """
+    if conn is not None:
+        is_test = ST.is_test_thread(conn, phone)
+    else:
+        with ST.db() as c:
+            is_test = ST.is_test_thread(c, phone)
+    if is_test:
+        return None
+    if C.REPLY_SCOPE == "test_only":
+        return "WA_REPLY_SCOPE=test_only -- only test threads get an answer right now"
+    if rail == "meta" and C.META_SCOPE == "test_only":
+        return "WA_META_SCOPE=test_only -- the Meta channel is muted except for test threads"
+    return None
 
 
 def build(rail, **kw):

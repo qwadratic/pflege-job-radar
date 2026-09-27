@@ -1088,6 +1088,13 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     same rows, marked for what they are, so a new deployment can be pointed at the live webhook and
     read back what it *would* have said.
 
+    The send-scope kill switches (Ivan, 2026-09-27, ``transport.scope_refusal``) gate the same
+    branch: WA_REPLY_SCOPE=test_only mutes every non-test thread on both rails, WA_META_SCOPE=
+    test_only mutes the Meta rail alone. Either one downgrades a would-be send to a draft exactly
+    like AUTOSEND off -- never a raise, which would make catch-up re-drive the turn every tick -- with
+    the reason recorded on the row (``meta.scope_refusal``) so it reads differently from an ordinary
+    AUTOSEND-off draft.
+
     The free-form-vs-template choice (TASK-174) is made here, in code, never by the brain: whichever
     brain ran still decides *what* to say and produces bubbles normally, but if the 24h window has
     closed since the candidate's last message, those bubbles are not deliverable at all -- Meta
@@ -1123,9 +1130,14 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
         if status == "sent_template":
             ST.pin_rail(c, t["phone"], rail)
         return status
-    if not C.AUTOSEND:
+    client_rail = T.rail_of_client(cl)
+    refusal = T.scope_refusal(conn=c, phone=t["phone"], rail=client_rail if client_rail != "unknown" else rail)
+    if not C.AUTOSEND or refusal:
         for b in bubbles:
-            ST.record_outbound(c, t["phone"], None, b, kind="draft", meta={"action": action})
+            meta = {"action": action}
+            if refusal:
+                meta["scope_refusal"] = refusal
+            ST.record_outbound(c, t["phone"], None, b, kind="draft", meta=meta)
         return "draft"
     if getattr(cl, "wants_idempotency_key", False):
         if not turn_key:
@@ -1177,17 +1189,24 @@ def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=N
 
 
 def _send_reopen_template(c, t, client=None, action=None):
+    """Same send-scope gate as ``_send`` (WA_REPLY_SCOPE / WA_META_SCOPE, TASK note there): a refusal
+    downgrades this to a draft_template exactly like AUTOSEND off, reason on the row."""
     if not C.WA_REOPEN_TEMPLATE_NAME:
         raise RuntimeError(
             f"the WhatsApp free-form window closed for {t['phone']} (last inbound message is over "
             f"{C.FREEFORM_WINDOW_HOURS}h old) and no reopen template is configured -- register a "
             f"template with Meta and set WA_REOPEN_TEMPLATE_NAME before this thread can be reached again")
+    cl = T.get_client(phone=t["phone"], client=client, conn=c)
     label = f"[template:{C.WA_REOPEN_TEMPLATE_NAME}]"
-    if not C.AUTOSEND:
-        ST.record_outbound(c, t["phone"], None, label, kind="draft_template",
-                           meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
+    client_rail = T.rail_of_client(cl)
+    rail = client_rail if client_rail != "unknown" else T.rail_for(c, t["phone"])
+    refusal = T.scope_refusal(conn=c, phone=t["phone"], rail=rail)
+    if not C.AUTOSEND or refusal:
+        meta = {"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME}
+        if refusal:
+            meta["scope_refusal"] = refusal
+        ST.record_outbound(c, t["phone"], None, label, kind="draft_template", meta=meta)
         return "draft_template"
-    cl = T.get_client(phone=t["phone"], client=client)
     wamid = cl.send_template(t["phone"], C.WA_REOPEN_TEMPLATE_NAME, C.WA_REOPEN_TEMPLATE_LANG)
     ST.record_outbound(c, t["phone"], wamid, label, kind="template",
                        meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
