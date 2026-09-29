@@ -891,7 +891,7 @@ def _warming_candidate(row, distance_km=None):
     posting_id = row.get("posting_id")
     description = (D.job_detail(posting_id) or {}).get("description")
     out = {"posting_id": posting_id, "clinic": OF.clinic_name(row), "city": D.town_of(row),
-           "department": row.get("department_hint"), "title": row.get("title"),
+           "department": ", ".join(BV.departments_of(row)) or None, "title": row.get("title"),
            "description": description, "link": row.get("external_url") or "",
            "regierungsbezirk": row.get("regierungsbezirk"),
            "employment_types": list(row.get("employment_types") or []), "housing": D.offers_housing(row)}

@@ -29,13 +29,13 @@ LEAD = "+491701234567"
 def _jobs():
     return [
         {"posting_id": 1, "title": "Pflegefachkraft Intensivstation", "role_class": "pflegefachkraft",
-         "department_hint": "Intensiv/IMC", "city": "München", "clinic_town": "München",
+         "department_hint": ["Intensiv/IMC"], "city": "München", "clinic_town": "München",
          "regierungsbezirk": "Oberbayern", "clinic_name": "Klinikum München Nord",
          "employer": "Klinikum München Nord", "employment_types": ["vollzeit"],
          "enr_housing": True, "verify_status": "live", "status": "open",
          "first_published": "2026-09-01", "fresh": True, "source_url": "https://example.org/job/1"},
         {"posting_id": 2, "title": "Pflegefachkraft OP", "role_class": "pflegefachkraft",
-         "department_hint": "OP", "city": "Würzburg", "clinic_town": "Würzburg",
+         "department_hint": ["OP"], "city": "Würzburg", "clinic_town": "Würzburg",
          "regierungsbezirk": "Unterfranken", "clinic_name": "Klinikum Würzburg",
          "employer": "Klinikum Würzburg", "employment_types": ["teilzeit"],
          "enr_housing": False, "verify_status": "live", "status": "open",
@@ -656,16 +656,21 @@ def test_unknown_department_word_filters_nothing_and_the_snapshot_says_so(luna, 
     assert snap["department_filter"] == {"requested": word, "status": "unmatched", "departments": []}
 
 
-@pytest.mark.parametrize("word, department", [
-    ("Intensivstation", "Intensiv/IMC"), ("ITS", "Intensiv/IMC"), ("Stroke Unit", "Neurologie"),
-    ("Palliativstation", "Onkologie"), ("Kreißsaal", "Geburtshilfe"), ("Kreissaal", "Geburtshilfe"),
-    ("Narkose", "Anästhesie"), ("Kinder", "Pädiatrie/Neonatologie"), ("Neurochirurgie", "Neurologie"),
-    ("Endoskopie", "Ambulanz/Tagesklinik"), ("Kinder- und Jugendpsychiatrie", "Psychiatrie"),
-    ("Chest Pain Unit", "Kardiologie")])
-def test_department_word_is_read_as_the_board_department(word, department):
+@pytest.mark.parametrize("word, departments", [
+    ("Intensivstation", ["Intensiv/IMC"]), ("ITS", ["Intensiv/IMC"]), ("Stroke Unit", ["Neurologie"]),
+    ("Palliativstation", ["Onkologie"]), ("Kreißsaal", ["Geburtshilfe"]), ("Kreissaal", ["Geburtshilfe"]),
+    ("Narkose", ["Anästhesie"]), ("Kinder", ["Pädiatrie/Neonatologie"]),
+    # Genuinely ambiguous words name every department the classifier's own patterns match, "|"-joined
+    # by pflege_jobs.classify.department_hint (TASK-97) and split back out here (app/wa/slots.py:
+    # named_departments): a Neurochirurgie posting is both Neurologie and Chirurgie/Orthopädie.
+    ("Neurochirurgie", ["Neurologie", "Chirurgie/Orthopädie"]),
+    ("Endoskopie", ["Ambulanz/Tagesklinik"]),
+    ("Kinder- und Jugendpsychiatrie", ["Psychiatrie", "Pädiatrie/Neonatologie"]),
+    ("Chest Pain Unit", ["Kardiologie"])])
+def test_department_word_is_read_as_the_board_department(word, departments):
     """The board's own title classifier first (where the board put 'Neurochirurgie' postings), then the production
     alias list ('Narkose', 'Kinder', 'Kreissaal'). An ellipsis hyphen ('Kinder- und') is one department."""
-    assert SL.read_department_pref(word) == {"requested": word, "status": "applied", "departments": [department]}
+    assert SL.read_department_pref(word) == {"requested": word, "status": "applied", "departments": departments}
 
 
 def test_every_board_department_reads_as_itself():
@@ -678,7 +683,7 @@ def test_every_board_department_reads_as_itself():
 
 def test_alias_word_filters_the_shortlist_to_its_board_department(luna):
     D._snap["jobs"].append({**_jobs()[0], "posting_id": 3, "title": "Pflegefachkraft Palliativstation",
-                            "department_hint": "Onkologie", "clinic_name": "Klinikum München Süd",
+                            "department_hint": ["Onkologie"], "clinic_name": "Klinikum München Süd",
                             "employer": "Klinikum München Süd"})
     card = {"qualification_ok": True, "city": "München", "department_pref": "Palliativstation",
             "housing_needed": False, **_DOC}
@@ -690,7 +695,7 @@ def test_alias_word_filters_the_shortlist_to_its_board_department(luna):
 
 def _innere_in_augsburg():
     D._snap["jobs"].append({**_jobs()[0], "posting_id": 3, "title": "Pflegefachkraft Innere Medizin",
-                            "department_hint": "Innere Medizin", "city": "Augsburg", "clinic_town": "Augsburg",
+                            "department_hint": ["Innere Medizin"], "city": "Augsburg", "clinic_town": "Augsburg",
                             "regierungsbezirk": "Schwaben", "clinic_name": "Klinikum Augsburg",
                             "employer": "Klinikum Augsburg"})
 
@@ -722,15 +727,35 @@ def test_several_departments_filter_the_shortlist_to_any_of_them(luna):
     assert [s["clinic"] for s in LB.market_snapshot(card)["shortlist"]] == ["Klinikum München Nord", "Klinikum Augsburg"]
 
 
-@pytest.mark.parametrize("word", ["egal, wo gerade gesucht wird", "ich bin offen, wo Personal gesucht wird",
-                                  "Intensiv, sonst egal", "alles außer OP", "kein OP", "bloß nicht Intensiv"])
-def test_a_department_with_a_flexible_word_or_a_negation_filters_nothing_and_the_snapshot_says_so(luna, word):
-    """Review 2026-09-15 repro: 'egal, wo gerade gesucht wird' filtered to Psychiatrie (the classifier reads 'sucht'
-    in 'gesucht'), 'alles außer OP' and 'kein OP' to OP; each emptied the shortlist."""
+def test_a_multi_label_posting_is_found_by_either_label_and_renders_joined(luna):
+    """TASK-97: a posting's department_hint is a list on the snapshot row (a posting can be Intensiv AND
+    Anästhesie at once) -- a search for either label must find it, and the candidate-facing 'department'
+    field is a joined string, never the row's own list repr."""
+    D._snap["jobs"].append({**_jobs()[0], "posting_id": 3, "title": "Pflegefachkraft Intensiv/Anästhesie",
+                            "department_hint": ["Intensiv/IMC", "Anästhesie"],
+                            "clinic_name": "Klinikum München Ost", "employer": "Klinikum München Ost"})
+    for word in ("Intensiv", "Anästhesie"):
+        card = {"qualification_ok": True, "city": "München", "department_pref": word,
+                "housing_needed": False, **_DOC}
+        snap = LB.market_snapshot(card)
+        match = next(s for s in snap["shortlist"] if s["clinic"] == "Klinikum München Ost")
+        assert match["department"] == "Intensiv/IMC, Anästhesie"
+
+
+@pytest.mark.parametrize("word, status", [
+    # TASK-97 also fixed the classifier's own "sucht" regex (pflege_jobs/patterns.json: a negative
+    # lookbehind now excludes "gesucht"), so these two no longer name a phantom Psychiatrie -- status is
+    # the plain "flexible" a department-less "egal" phrase always was, not "ambiguous".
+    ("egal, wo gerade gesucht wird", "flexible"), ("ich bin offen, wo Personal gesucht wird", "flexible"),
+    ("Intensiv, sonst egal", "ambiguous"), ("alles außer OP", "ambiguous"), ("kein OP", "ambiguous"),
+    ("bloß nicht Intensiv", "ambiguous")])
+def test_a_department_with_a_flexible_word_or_a_negation_filters_nothing_and_the_snapshot_says_so(luna, word, status):
+    """Review 2026-09-15 repro: 'alles außer OP' and 'kein OP' named OP alongside the negation, which is exactly
+    what makes the filter ambiguous rather than applied; each left the shortlist unfiltered."""
     card = {"qualification_ok": True, "department_pref": word, "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert [s["clinic"] for s in snap["shortlist"]] == ["Klinikum Würzburg", "Klinikum München Nord"]
-    assert snap["department_filter"] == {"requested": word, "status": "ambiguous", "departments": []}
+    assert snap["department_filter"] == {"requested": word, "status": status, "departments": []}
 
 
 def test_the_model_receives_the_department_filter(luna):

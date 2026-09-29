@@ -46,7 +46,7 @@ def _job(i, city=None, department=None, housing=None, clinic=None):
     city = city or _CITIES[i % len(_CITIES)]
     department = department or _DEPARTMENTS[i % len(_DEPARTMENTS)]
     return {"posting_id": i, "title": f"Pflegefachkraft {department}", "role_class": "pflegefachkraft",
-            "department_hint": department, "city": city, "clinic_town": city,
+            "department_hint": [department], "city": city, "clinic_town": city,
             "regierungsbezirk": _BEZIRKE[city], "clinic_id": f"c{i}",
             "clinic_name": clinic or f"Klinikum {city} {i}", "employer": clinic or f"Klinikum {city} {i}",
             "employment_types": ["vollzeit" if i % 2 else "teilzeit"],
@@ -1911,7 +1911,7 @@ def test_a_posting_that_is_gone_is_stale_even_while_the_house_keeps_other_openin
     """The memory held clinic NAMES, so the re-check asked "does this house still have anything?"
     -- and a house with 32 other openings answered yes. Ivan's rule (a) is about the opening."""
     jobs = [{**_job(i, city="Coburg", clinic="Klinikum Bamberg"),
-             "department_hint": "Onkologie" if i == 1 else "OP"} for i in (1, 2, 3)]
+             "department_hint": ["Onkologie"] if i == 1 else ["OP"]} for i in (1, 2, 3)]
     _board(jobs, monkeypatch)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")

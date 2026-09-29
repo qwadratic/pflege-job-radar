@@ -220,7 +220,7 @@ from ... import data as D
 from .. import brain as B
 from .. import config as C
 from . import offer as OF
-from .board_vocabulary import city_of, clinic_name_of
+from .board_vocabulary import city_of, clinic_name_of, departments_of
 
 TOOL_LOG_NAME = "tool_calls.jsonl"
 
@@ -810,7 +810,7 @@ def board_job_words():
     words, place = set(), board_place_words()
     for row in B.jobs_for({}):
         values = (row.get("title"), row.get("role_label"), row.get("role_class"),
-                  row.get("department_hint"), row.get("department_raw"),
+                  *departments_of(row), row.get("department_raw"),
                   row.get("qualification_hint"), *(row.get("employment_types") or []))
         for value in values:
             for word in _WORD_RE.findall(str(value or "")):
@@ -1112,7 +1112,7 @@ def board_position_words():
     name vocabulary is: a hand-written list of wards rots the first time the board adds one."""
     words = set()
     for row in B.jobs_for({}):
-        values = [row.get("department_hint"), *(row.get("employment_types") or [])]
+        values = [*departments_of(row), *(row.get("employment_types") or [])]
         for value in values:
             for word in _WORD_RE.findall(str(value or "")):
                 if fold(word):

@@ -25,7 +25,7 @@ THAT CLAIM NEEDED TWO MORE DOORS CLOSED (TASK-380). It was false in production o
 payload on the card itself (luna_brain._user_payload hides them).
 """
 from ... import data as D
-from .board_vocabulary import city_of, clinic_name_of
+from .board_vocabulary import city_of, clinic_name_of, departments_of
 
 # Ivan's cap, 2026-09-21: at most five positions in one message. app/wa/luna_brain.py:CLOSE_LIMIT is
 # this same number under its older name (the close-sequence shortlist was the first place it applied).
@@ -63,7 +63,7 @@ def _values(row, dimension):
     if dimension == "city":
         return (city_of(row),) if city_of(row) else ()
     if dimension == "department":
-        return (row["department_hint"],) if row.get("department_hint") else ()
+        return tuple(departments_of(row))
     if dimension == "employment_type":
         return tuple(t for t in (row.get("employment_types") or []) if t)
     if dimension == "regierungsbezirk":
@@ -109,7 +109,7 @@ def position(row):
     """One position as the candidate may hear it: clinic, city, department and the board facts that
     matter. Board fields only, and no link -- see the module docstring."""
     return {"posting_id": row.get("posting_id"), "clinic": clinic_name(row), "city": city_of(row),
-            "department": row.get("department_hint"), "title": row.get("title"),
+            "department": ", ".join(departments_of(row)) or None, "title": row.get("title"),
             "regierungsbezirk": row.get("regierungsbezirk"),
             "employment_types": list(row.get("employment_types") or []),
             "housing": D.offers_housing(row)}

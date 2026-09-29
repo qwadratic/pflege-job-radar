@@ -152,12 +152,17 @@ def named_departments(value):
     """Every board department the value names, in order: each list part ('Innere oder Intensiv') read on its own,
     the board's title classifier first (pflege_jobs.classify.department_hint, the rules that set
     postings.department_hint: 'Stroke Unit', 'Kreißsaal', 'Neurochirurgie' land where the board put such
-    postings), then the production alias list (read_department: 'Narkose', 'Kinder', 'Kreissaal')."""
+    postings), then the production alias list (read_department: 'Narkose', 'Kinder', 'Kreissaal').
+
+    TASK-97: department_hint() itself may now name several departments for one word, "|"-joined
+    ('Neurochirurgie' -> 'Neurologie|Chirurgie/Orthopädie') -- split them the same way app/data.py's
+    snapshot build does, so a genuinely ambiguous word names all of them instead of one mangled string."""
     found = []
     for part in _DEPARTMENT_LIST.split(str(value or "")):
-        department = K.department_hint(part) or read_department(part)
-        if department and department not in found:
-            found.append(department)
+        raw = K.department_hint(part) or read_department(part)
+        for department in (raw or "").split("|"):
+            if department and department not in found:
+                found.append(department)
     return found
 
 

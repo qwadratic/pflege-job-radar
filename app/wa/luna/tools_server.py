@@ -86,7 +86,7 @@ from .. import bridge as BR
 from .. import config as C
 from .. import slots as SL
 from . import expose_shrink as ES
-from .board_vocabulary import LIVE_BASE, city_of, clinic_key, clinic_name_of, vocabulary_lines
+from .board_vocabulary import LIVE_BASE, city_of, clinic_key, clinic_name_of, departments_of, vocabulary_lines
 
 # This process is a fresh subprocess the CLI spawns -- a test's monkeypatch on the *parent*
 # process's config.SQLITE_PATH/LUNA_SESSION_DIR never reaches this import. luna_brain.py's
@@ -176,7 +176,7 @@ def _job_row(r):
     # no tool at all, so "gibt es eine Kita?" could only be escalated to a human.
     return {"posting_id": r.get("posting_id"), "title": r.get("title"),
             "clinic_id": r.get("clinic_id"), "clinic_name": r.get("clinic_name") or r.get("employer"),
-            "city": D.town_of(r), "department": r.get("department_hint"),
+            "city": D.town_of(r), "department": ", ".join(departments_of(r)) or None,
             "regierungsbezirk": r.get("regierungsbezirk"), "housing": bool(r.get("enr_housing")),
             "housing_kind": D.housing_kind(r), "childcare": r.get("enr_childcare"),
             "employment_types": r.get("employment_types")}

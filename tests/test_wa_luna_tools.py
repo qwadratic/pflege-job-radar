@@ -31,7 +31,7 @@ def _jobs():
             ("Coburg", "Oberfranken", "Notaufnahme", None, "c3")]
     for i, (city, bezirk, dept, evidence, clinic_id) in enumerate(plan):
         rows.append({"posting_id": i + 1, "title": f"Pflegefachkraft {dept}", "role_class": "pflegefachkraft",
-                     "department_hint": dept, "city": city, "clinic_town": city, "regierungsbezirk": bezirk,
+                     "department_hint": [dept], "city": city, "clinic_town": city, "regierungsbezirk": bezirk,
                      "clinic_id": clinic_id, "clinic_name": f"Klinikum {city}", "employer": f"Klinikum {city}",
                      "employment_types": ["vollzeit"], "enr_housing": bool(evidence),
                      "enr_housing_evidence": evidence, "enr_childcare": i == 0, "verify_status": "live",
@@ -310,7 +310,7 @@ def test_the_vocabulary_follows_the_board_and_is_not_a_list_in_the_file(tmp_path
     board(tmp_path, monkeypatch)
     TS.apply_board_vocabulary()
     assert "OP 1" in _description("search_postings")
-    D._snap["jobs"] = [j for j in D._snap["jobs"] if j["department_hint"] != "OP"]
+    D._snap["jobs"] = [j for j in D._snap["jobs"] if "OP" not in j["department_hint"]]
     for job in D._snap["jobs"]:
         job["enr_housing"] = True
     TS.apply_board_vocabulary()
@@ -325,7 +325,7 @@ def test_a_department_value_no_filter_can_apply_is_counted_not_advertised(tmp_pa
     hiding them silently would misstate what a department filter drops."""
     board(tmp_path, monkeypatch)
     D._snap["jobs"].append({**D._snap["jobs"][0], "posting_id": 99,
-                            "department_hint": "Berufsfachschule für Pflege"})
+                            "department_hint": ["Berufsfachschule für Pflege"]})
     TS.apply_board_vocabulary()
     said = _description("search_postings")
     assert "Berufsfachschule" not in said, said
@@ -1013,7 +1013,7 @@ def test_match_cv_to_postings_sends_nothing_and_never_logs_the_number(tmp_path, 
 def test_match_cv_to_postings_caps_the_listing_at_five_with_the_true_count(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
     _with_stored_cv(monkeypatch)
-    _many(40, city="München", clinic_town="München", department_hint="Intensiv/IMC")
+    _many(40, city="München", clinic_town="München", department_hint=["Intensiv/IMC"])
     out = TS.match_cv_to_postings()
     # every live row on this board scores over app/cv.py:match's own threshold for this CV: 41 Intensiv
     # rows in München plus the three other fixture postings -- and five of them may be named.

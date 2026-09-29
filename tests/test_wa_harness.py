@@ -36,7 +36,7 @@ def _jobs():
         city, bezirk = CITIES[i % 3]
         dept = DEPTS[(i // 3) % 3]
         rows.append({"posting_id": i + 1, "title": f"{dept} Stelle {i + 1}", "role_class": ROLES[i % 10],
-                     "department_hint": dept, "qualification_hint": "generalistisch", "city": city,
+                     "department_hint": [dept], "qualification_hint": "generalistisch", "city": city,
                      "clinic_town": city, "regierungsbezirk": bezirk, "clinic_id": f"9000{i % 5}",
                      "clinic_name": f"Klinikum {city} {i % 5}", "employer": f"Klinikum {city}",
                      "employment_types": ["vollzeit"] if i % 2 else ["teilzeit"],
@@ -351,7 +351,7 @@ def test_the_filters_are_the_ones_the_jobs_api_takes(wa):
                  "employment_types": "teilzeit", "housing": "1"}
     assert D.filter_jobs(p) == [j for j in D.jobs()
                                 if j["role_class"] == "fachpflege" and j["city"] == "München"
-                                and j["department_hint"] == "Intensiv/IMC"
+                                and "Intensiv/IMC" in j["department_hint"]
                                 and "teilzeit" in j["employment_types"] and j["enr_housing"]]
 
 

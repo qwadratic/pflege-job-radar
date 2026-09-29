@@ -18,6 +18,7 @@ Stellen" is both terse and true, and it is the one thing a candidate cannot get 
 """
 from .. import data as D
 from . import slots as SL
+from .luna.board_vocabulary import departments_of
 
 MATCH_LIMIT = 3                 # postings named in one bubble; more than three is a wall of text
 ENOUGH = 8                      # at or below this many hits, stop narrowing and show the list
@@ -69,7 +70,7 @@ def _row_values(r, slot):
         v = r.get("city") or r.get("clinic_town")
         return [v] if v else []
     if slot == "department":
-        return [r["department_hint"]] if r.get("department_hint") else []
+        return departments_of(r)
     if slot == "hours":
         return [v for v in (r.get("employment_types") or []) if v]
     if slot == "housing":

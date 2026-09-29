@@ -41,6 +41,17 @@ def clinic_name_of(row):
     return (row.get("clinic_name") or row.get("employer") or "").strip()
 
 
+def departments_of(row):
+    """A row's department_hint as a list (TASK-97: app/data.py:_build splits it once, since a posting
+    can be Intensiv AND Anästhesie at the same time). Every WA reader of department_hint goes through
+    this, so a "|"-joined string -- an older cached row, or a payload built before the split -- is
+    read the same way instead of breaking. None/"" -> []."""
+    v = row.get("department_hint")
+    if isinstance(v, list):
+        return v
+    return [x for x in str(v or "").split("|") if x]
+
+
 def clinic_key(row):
     """One clinic identity for every count and grouping in the tool surface: the board's clinic_id,
     else the employer's name.
