@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:48'
-updated_date: '2026-09-29 10:31'
+updated_date: '2026-09-29 18:32'
 labels:
   - rail
   - reliability
@@ -53,8 +53,8 @@ Folded here: TASK-225 (ACs 1 and 3 done, 2 and 4 open), TASK-259, TASK-262, TASK
 - [ ] #6 [TASK-259] Something polls /v1/health on a schedule, so every subsystem's liveness signal has a consumer; fixed with a failing-then-passing test, or closed with a written argument
 - [ ] #7 [TASK-262] One item the webhook will not handle no longer wedges all inbound behind it, and the wedge raises a real signal; test or written argument
 - [ ] #8 [TASK-263] /v1/health ok and /api/wa/bridge-health ok reflect real subsystem state, not a constant or only 'socket answered'; test or written argument
-- [ ] #9 Phone doctor (Ivan 2026-09-29: 'постоянно устранять всё, что мешает основному сценарию'): a bridge thread that, every minute and only when the phone lock is free, checks the handset and fixes what blocks WhatsApp automation -- low memory (am kill-all), known stray dialogs, WhatsApp not running, leftover recordings -- journals every action with a screenshot and shows counters in /v1/health
-- [ ] #10 Disk janitor on the VPS (Ivan 2026-09-29): cron job that deletes pure caches and moves old Claude transcripts/subagent logs to the Mac mini with a note, never touching /opt, /var/log or Luna brain sessions
+- [x] #9 Phone doctor (Ivan 2026-09-29: 'постоянно устранять всё, что мешает основному сценарию'): a bridge thread that, every minute and only when the phone lock is free, checks the handset and fixes what blocks WhatsApp automation -- low memory (am kill-all), known stray dialogs, WhatsApp not running, leftover recordings -- journals every action with a screenshot and shows counters in /v1/health
+- [x] #10 Disk janitor on the VPS (Ivan 2026-09-29): cron job that deletes pure caches and moves old Claude transcripts/subagent logs to the Mac mini with a note, never touching /opt, /var/log or Luna brain sessions
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -63,4 +63,8 @@ Folded here: TASK-225 (ACs 1 and 3 done, 2 and 4 open), TASK-259, TASK-262, TASK
 2026-09-26 ~09:43 UTC: SmsDefaultAppWarning came back every time WhatsApp opened, because it sat in WhatsApp's task. Fixed by: a tap outside the dialog, then am force-stop com.whatsapp, then relaunch via monkey. Two reopens came up clean on HomeActivity, then HOME to park. Candidate recovery step for the executor: after dismissing, force-stop and relaunch.
 
 2026-09-29 10:15 UTC incident: sends took 30 s-3 min, the bridge's own threads timed out on the phone lock (503) from 08:36; handset had 244 MB free RAM + 1.7 GB swap (ChatGPT, YouTube, Gmail in background). Manual fix: bridge restart + am kill-all -> MemAvailable 1.46 GB. VPS / at 100% (300 MB free); freed by moving 600+ MB of old subagent transcripts to macmini:~/vps-backup/claude-transcripts.
+
+2026-09-29 17:47 UTC: option B (trimmed doctor + janitor fixes) shipped as 1462003, deployed to mini, fork pushed. Live /v1/health doctor: alive, 60s interval, mem 1227 MB, parked on launcher, errors 0. Dismissal of SmsDefaultAppWarning/USB-Nutzung is covered by tests only, no live dialog seen yet, so AC#1 stays open. Janitor cron installed */15 (dry run: 149 sessions + 201 subagent logs older than 3 days, 2 caches, claude 2.1.283; live session and current version untouched).
+
+2026-09-29 18:31 UTC: first janitor --apply ticks done. Disk went from 845 MB to 1253 MB free (262 MB + an earlier partial run moved to macmini:vps-backup/claude-transcripts, noted in ~/.tmp/DISK-NOTES.txt), ok=True. Follow-up: one rsync+ssh per file is slow (~350 files > 15 min, cron flock covers the overlap). Report-only: syslog 1.6 GB, /opt 14.4 GB (the colleague's).
 <!-- SECTION:NOTES:END -->
