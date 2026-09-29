@@ -30,24 +30,37 @@ class FakeCompletedProcess:
 class FakeRunner:
     """Records every command it was called with; never shells out. Scripted
     per-command-prefix failures let a test make exactly one ssh/rsync step
-    fail without touching the filesystem.
+    fail without touching the filesystem; `raise_on` instead makes the
+    call itself blow up (a timeout, a missing binary) to prove _run_step's
+    per-step catch, per TASK-315 review point 12.
     """
 
     def __init__(self):
         self.calls = []
         self.fail_prefixes = []  # list of (argv_prefix_tuple, FakeCompletedProcess)
+        self.raise_prefixes = []  # list of (argv_prefix_tuple, exception instance)
         self.sha256_by_remote_path = {}  # remote path -> hash string, for "ssh ... sha256sum <path>"
 
     def fail_on(self, prefix, result):
         self.fail_prefixes.append((tuple(prefix), result))
 
+    def raise_on(self, prefix, exc):
+        self.raise_prefixes.append((tuple(prefix), exc))
+
     def __call__(self, cmd, **kwargs):
         self.calls.append(list(cmd))
+        for prefix, exc in self.raise_prefixes:
+            if tuple(cmd[: len(prefix)]) == prefix:
+                raise exc
         for prefix, result in self.fail_prefixes:
             if tuple(cmd[: len(prefix)]) == prefix:
                 return result
-        if len(cmd) >= 3 and cmd[0] == "ssh" and cmd[2] == "sha256sum":
-            remote_path = cmd[3]
+        # `cmd[2]` used to be "sha256sum" when ssh took no options; now that every ssh call
+        # carries `-o BatchMode=yes -o ConnectTimeout=10` first (TASK-315 review point 12), the
+        # subcommand has shifted further down the argv -- detect it by membership, and the
+        # remote path is always its last argument, not a fixed index.
+        if cmd[0] == "ssh" and "sha256sum" in cmd:
+            remote_path = cmd[-1]
             h = self.sha256_by_remote_path.get(remote_path)
             if h is None:
                 return FakeCompletedProcess(returncode=1, stderr="no such file")
@@ -117,7 +130,7 @@ def test_dry_run_touches_nothing(tmp_path):
     old_sub.write_text("{}")
     _set_mtime(old_sub, days_ago=10)
 
-    old_session = project / "abc-uuid.jsonl"
+    old_session = project / "11111111-1111-1111-1111-111111111111.jsonl"
     old_session.write_text("{}")
     _set_mtime(old_session, days_ago=30)
 
@@ -260,23 +273,23 @@ def test_stale_session_entry_moved_whole(tmp_path):
     cfg, runner = make_cfg(tmp_path, free_mb=100, apply=True, min_free_mb=3000)
     project = cfg.claude_projects_dir / "myproj"
     project.mkdir(parents=True)
-    old_session = project / "abc-uuid.jsonl"
+    old_session = project / "11111111-1111-1111-1111-111111111111.jsonl"
     old_session.write_text("{}")
     _set_mtime(old_session, days_ago=20)
 
-    recent_session = project / "def-uuid.jsonl"
+    recent_session = project / "22222222-2222-2222-2222-222222222222.jsonl"
     recent_session.write_text("{}")
     _set_mtime(recent_session, days_ago=1)
 
     # a directory-shaped session, stale as a whole
-    old_dir_session = project / "ghi-uuid"
+    old_dir_session = project / "33333333-3333-3333-3333-333333333333"
     old_dir_session.mkdir()
     (old_dir_session / "attachment.bin").write_bytes(b"x" * 100)
     _set_mtime(old_dir_session / "attachment.bin", days_ago=20)
     _set_mtime(old_dir_session, days_ago=20)
 
     # a directory-shaped session with ONE recently touched file inside stays untouched as a whole
-    mixed_dir_session = project / "jkl-uuid"
+    mixed_dir_session = project / "44444444-4444-4444-4444-444444444444"
     mixed_dir_session.mkdir()
     old_file = mixed_dir_session / "old.bin"
     old_file.write_bytes(b"x" * 100)
@@ -284,6 +297,11 @@ def test_stale_session_entry_moved_whole(tmp_path):
     new_file = mixed_dir_session / "new.bin"
     new_file.write_bytes(b"y" * 10)
     _set_mtime(new_file, days_ago=1)
+
+    # NOT a session at all (no uuid shape) -- must be left alone no matter how old, TASK-315 review
+    pointer = project / "bridge-pointer.json"
+    pointer.write_text("{}")
+    _set_mtime(pointer, days_ago=999)
 
     result = DJ.run_janitor(cfg)
 
@@ -293,6 +311,7 @@ def test_stale_session_entry_moved_whole(tmp_path):
     assert mixed_dir_session.exists()
     assert old_file.exists()
     assert new_file.exists()
+    assert pointer.exists()
     assert result["moved_files"] == 2  # old_session + old_dir_session
 
 
@@ -340,6 +359,56 @@ def test_running_or_newest_version_never_moved(tmp_path):
     assert result["ok"] is True
 
 
+def test_version_blocker_real_layout_only_two_old_singlefile_versions_move(tmp_path):
+    """TASK-315 review's exact reproduction case: single-file (not directory) binaries named
+    2.1.270 / 2.1.282 / 2.1.283, a non-version note file with a NEWER mtime than all of them
+    sitting in the same directory, and ~/.local/bin/claude symlinked to 2.1.283 -- with no
+    process running from any of them. Only 2.1.270 and 2.1.282 may move: the note file is never a
+    candidate at all (name doesn't match X.Y.Z), and 2.1.283 is kept both as the pinned symlink
+    target AND as the highest version by version-sort (mtime must play no role in either
+    decision)."""
+    cfg, runner = make_cfg(tmp_path, free_mb=100, apply=True, min_free_mb=3000)
+    versions_dir = cfg.claude_versions_dir
+    versions_dir.mkdir(parents=True)
+
+    v270 = versions_dir / "2.1.270"
+    v270.write_text("binary 270")
+    _set_mtime(v270, days_ago=60)
+
+    v282 = versions_dir / "2.1.282"
+    v282.write_text("binary 282")
+    _set_mtime(v282, days_ago=30)
+
+    v283 = versions_dir / "2.1.283"
+    v283.write_text("binary 283")
+    _set_mtime(v283, days_ago=10)
+
+    # a stray non-version file, deliberately given a NEWER mtime than every real version --
+    # mtime-based "newest" would have picked THIS as the one to keep.
+    note = versions_dir / "MOVED-TO-MACMINI.txt"
+    note.write_text("notes")
+    _set_mtime(note, days_ago=0)
+
+    cfg.claude_bin_path.parent.mkdir(parents=True)
+    cfg.claude_bin_path.symlink_to(v283)
+
+    cfg.running_exes_fn = lambda: set()  # no running process at all
+    runner.sha256_by_remote_path = {
+        "vps-backup/claude-code-versions/2.1.270": DJ._sha256_file(v270),
+        "vps-backup/claude-code-versions/2.1.282": DJ._sha256_file(v282),
+    }
+
+    result = DJ.run_janitor(cfg)
+
+    assert not v270.exists()
+    assert not v282.exists()
+    assert v283.exists()  # pinned symlink target AND highest version -- kept twice over
+    assert note.exists()  # never a candidate: not version-shaped, no matter its mtime
+    assert note.read_text() == "notes"
+    assert result["moved_files"] == 2
+    assert result["ok"] is True
+
+
 # ---------------------------------------------------------------------------
 # 6. rsync failure leaves source in place, health/result ok:false
 # ---------------------------------------------------------------------------
@@ -382,6 +451,49 @@ def test_ssh_mkdir_failure_also_leaves_source_in_place(tmp_path):
     assert "mkdir" in result["problem"]
     rsync_calls = [c for c in runner.calls if c[0] == "rsync"]
     assert rsync_calls == []  # never even attempted once mkdir failed
+
+
+def test_partial_rsync_failure_still_notes_what_did_move(tmp_path):
+    """TASK-315 review point 12: 'after a partial rsync failure, still write the note for what
+    did move.' Two stale subagent files in two different projects; the first project's rsync
+    succeeds, the second's fails -- the note file must still record the first move, and the
+    second file must be left in place."""
+    cfg, runner = make_cfg(tmp_path, free_mb=100, apply=True, min_free_mb=3000)
+
+    proj_a = cfg.claude_projects_dir / "proj-a"
+    (proj_a / "subagents").mkdir(parents=True)
+    ok_file = proj_a / "subagents" / "old-run.jsonl"
+    ok_file.write_text("{}")
+    _set_mtime(ok_file, days_ago=10)
+
+    proj_b = cfg.claude_projects_dir / "proj-b"
+    (proj_b / "subagents").mkdir(parents=True)
+    fail_file = proj_b / "subagents" / "old-run.jsonl"
+    fail_file.write_text("{}")
+    _set_mtime(fail_file, days_ago=10)
+
+    # only the SECOND rsync call (proj-b's) fails; the first (proj-a's) succeeds normally.
+    call_count = {"n": 0}
+    real_call = runner.__call__
+
+    def flaky(cmd, **kwargs):
+        if cmd and cmd[0] == "rsync":
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                return FakeCompletedProcess(returncode=12, stderr="rsync: connection unexpectedly closed")
+        return real_call(cmd, **kwargs)
+
+    cfg.runner = flaky
+
+    result = DJ.run_janitor(cfg)
+
+    assert not ok_file.exists()  # first move succeeded
+    assert fail_file.exists()  # second left in place -- its rsync failed
+    assert result["ok"] is False
+    assert result["moved_files"] == 1
+    notes = (cfg.claude_projects_dir / "MOVED-TO-MACMINI.txt").read_text()
+    assert str(ok_file) in notes
+    assert str(fail_file) not in notes
 
 
 # ---------------------------------------------------------------------------
@@ -436,3 +548,52 @@ def test_version_sha256_mismatch_is_a_problem_and_keeps_local_copy(tmp_path):
     assert oldest.exists()
     assert result["ok"] is False
     assert "sha256 mismatch" in result["problem"]
+
+
+# ---------------------------------------------------------------------------
+# 7. a step that can't even complete (timeout, or anything else) is still just a per-step
+#    problem -- health.json is ALWAYS written (TASK-315 review point 12)
+# ---------------------------------------------------------------------------
+
+
+def test_ssh_timeout_is_caught_per_step_and_health_still_written(tmp_path):
+    import subprocess
+
+    cfg, runner = make_cfg(tmp_path, free_mb=100, apply=True, min_free_mb=3000)
+    project = cfg.claude_projects_dir / "myproj"
+    (project / "subagents").mkdir(parents=True)
+    stale = project / "subagents" / "old-run.jsonl"
+    stale.write_text("{}")
+    _set_mtime(stale, days_ago=10)
+
+    runner.raise_on(["ssh"], subprocess.TimeoutExpired(cmd=["ssh"], timeout=DJ.SSH_TIMEOUT_SEC))
+
+    rc = DJ.main(cfg=cfg)
+
+    assert rc == 0
+    assert stale.exists()  # never removed -- the mkdir step never completed
+    health = __import__("json").loads((cfg.state_dir / "health.json").read_text())
+    assert health["ok"] is False
+    assert "TimeoutExpired" in health["problem"]
+
+
+def test_run_janitor_crash_still_writes_health_via_main(tmp_path):
+    """Last-resort net in main(): even if something climbs out of run_janitor itself (not just
+    an individual ssh/rsync step), health.json must still land."""
+    cfg, runner = make_cfg(tmp_path, free_mb=100, apply=True, min_free_mb=3000)
+
+    def boom(_cfg):
+        raise RuntimeError("unexpected orchestration bug")
+
+    real_run_janitor = DJ.run_janitor
+    DJ.run_janitor = boom
+    try:
+        rc = DJ.main(cfg=cfg)
+    finally:
+        DJ.run_janitor = real_run_janitor
+
+    assert rc == 0
+    health = __import__("json").loads((cfg.state_dir / "health.json").read_text())
+    assert health["ok"] is False
+    assert "run_janitor crashed" in health["problem"]
+    assert (cfg.state_dir / "janitor.log").exists()

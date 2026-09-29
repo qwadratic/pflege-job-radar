@@ -38,9 +38,31 @@ WHAT IT DOES, per run:
         recently-touched file inside is enough to keep the whole entry.
      c. Move to the mini: old Claude Code binaries under
         ~/.local/share/claude/versions/ that are neither the newest (by
-        mtime) nor currently in use by any running process (cross-checked
-        against every /proc/*/exe). Verified by sha256 on both sides
-        before the local copy is removed.
+        VERSION sort, e.g. "2.1.282" < "2.1.283" -- mtime is not trusted
+        here; a copy or a checkout can reorder mtimes without reordering
+        versions) nor pinned by ~/.local/bin/claude (whatever that
+        symlink's realpath resolves to or into is always kept, whether or
+        not a process happens to be running from it at this exact
+        instant) nor currently in use by any running process (cross-
+        checked against every /proc/*/exe). Only entries whose own name
+        matches X.Y.Z (three dot-separated integers) are ever considered
+        -- a note file or anything else living alongside the real version
+        directories is never a candidate. Verified by sha256 on both
+        sides before the local copy is removed.
+
+REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B): the first
+version of this mover picked "newest" by mtime and excluded only a
+running process's own exe, which could move the version
+~/.local/bin/claude actually points at if nothing happened to be running
+from it at that instant -- the next `claude` invocation would then find a
+symlink to a file that no longer exists on this machine. Fixed by (1)
+sorting on the version NUMBER, never a timestamp, and (2) always keeping
+whatever ~/.local/bin/claude resolves to, independently of the running-
+process check. ssh/rsync calls now also carry BatchMode=yes plus a
+connect timeout and a subprocess timeout of their own (60s ssh, 20min
+rsync), and ANY exception at any step -- a timeout included -- is caught
+right at that step so health.json is always written, never skipped
+because something raised past run_janitor entirely.
 
 SAFETY. This script never touches /opt, /var/log, journald, this repo's
 own data/ directory, its .venv, or anything outside the paths named
@@ -76,6 +98,7 @@ import glob as globmod
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -96,6 +119,32 @@ SESSION_STALE_DAYS = 14
 LUNA_EXCLUDE_SUBSTRING = "luna-sessions"
 MEMORY_DIR_NAME = "memory"
 SUBAGENTS_DIR_NAME = "subagents"
+
+#: A session is a `<uuid>.jsonl` file or a `<uuid>/` directory, directly under a project dir --
+#: nothing else (TASK-315 review: a file like "bridge-pointer.json" living alongside them is not
+#: a session and must never be swept just for being old). Not a strict RFC 4122 validator on
+#: purpose -- Claude Code's own session ids are what this matches against, and hyphenated hex in
+#: this exact grouping is what they look like; a stray non-hex-looking name is excluded either way.
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+#: A Claude Code version directory/file's own name: three dot-separated integers, nothing else
+#: (TASK-315 review blocker: the first version of this mover considered EVERY entry under
+#: versions/, which is how a note file living in that same directory could have been "moved" as
+#: if it were a version).
+_VERSION_NAME_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+#: ssh/rsync hardening (TASK-315 review): BatchMode=yes refuses to hang on a password/host-key
+#: prompt this cron job could never answer, and ConnectTimeout bounds how long a dead/unreachable
+#: macmini is allowed to stall a single call before the subprocess timeout below takes over anyway.
+_SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+#: A single ssh call (mkdir -p, or one sha256sum) has nothing to wait on beyond the connection
+#: itself -- 60s is generous next to ConnectTimeout=10 above.
+SSH_TIMEOUT_SEC = 60
+#: A whole version directory or a batch of stale transcripts can be tens to low hundreds of MB
+#: over whatever this VPS's own uplink to the mini happens to be -- 20 minutes, not tuned against
+#: a real transfer, just wide enough that an ordinary run finishes well inside it and a genuinely
+#: stuck connection still gets caught rather than hanging a cron tick forever.
+RSYNC_TIMEOUT_SEC = 20 * 60
 
 # Pure caches: trivially regenerated, safe to delete outright (still noted).
 CACHE_RELATIVE_DIRS = (
@@ -154,6 +203,11 @@ class JanitorConfig:
 
     claude_projects_dir: Optional[Path] = None
     claude_versions_dir: Optional[Path] = None
+    #: ~/.local/bin/claude by default -- whatever this resolves to (or into, if it points at a
+    #: directory) is ALWAYS kept, independent of the running-process check (TASK-315 review
+    #: blocker: nothing may be running from it at the exact instant this script runs, and it is
+    #: still the version every future `claude` invocation on this box will use).
+    claude_bin_path: Optional[Path] = None
     state_dir: Optional[Path] = None
 
     report_syslog_glob: str = "/var/log/syslog*"
@@ -170,6 +224,8 @@ class JanitorConfig:
             self.claude_projects_dir = self.home / ".claude" / "projects"
         if self.claude_versions_dir is None:
             self.claude_versions_dir = self.home / ".local" / "share" / "claude" / "versions"
+        if self.claude_bin_path is None:
+            self.claude_bin_path = self.home / ".local" / "bin" / "claude"
         if self.state_dir is None:
             self.state_dir = self.home / ".local" / "state" / "disk-janitor"
 
@@ -297,17 +353,28 @@ def _find_stale_subagent_files(cfg: JanitorConfig) -> List[Path]:
     return out
 
 
+def _is_session_entry_name(name: str) -> bool:
+    """-> True only for `<uuid>.jsonl` or `<uuid>/` (TASK-315 review: a file like
+    "bridge-pointer.json" sitting next to real sessions is not one and must be left alone no
+    matter how old it is)."""
+    stem = name[:-len(".jsonl")] if name.endswith(".jsonl") else name
+    return bool(_UUID_RE.match(stem))
+
+
 def _find_stale_session_entries(cfg: JanitorConfig) -> List[Path]:
     """Whole top-level session files/dirs untouched for SESSION_STALE_DAYS+.
 
     "Top-level" = a direct child of a project dir, other than its own
-    memory/ or subagents/ subdirs.
+    memory/ or subagents/ subdirs, and only ever a `<uuid>.jsonl` file or a
+    `<uuid>/` directory -- see _is_session_entry_name.
     """
     now = cfg.now_fn()
     out: List[Path] = []
     for project_dir in _iter_project_dirs(cfg):
         for entry in sorted(project_dir.iterdir()):
             if entry.name in (MEMORY_DIR_NAME, SUBAGENTS_DIR_NAME):
+                continue
+            if not _is_session_entry_name(entry.name):
                 continue
             newest = _newest_mtime(entry)
             if newest is None:
@@ -334,15 +401,43 @@ def _prune_empty_dirs(path: Path) -> None:
         pass
 
 
+def _ssh_cmd(cfg: JanitorConfig, *args: str) -> List[str]:
+    return ["ssh", *_SSH_OPTS, cfg.remote_host, *args]
+
+
+def _rsync_cmd(cfg: JanitorConfig, *args: str) -> List[str]:
+    # -e carries the SAME BatchMode/ConnectTimeout hardening into the ssh transport rsync opens
+    # for itself -- passing them only to the bare `ssh` calls above would leave the actual data
+    # transfer free to hang on a prompt neither this cron job nor its own subprocess timeout would
+    # ever see coming (a subprocess timeout kills the whole rsync process either way, but a hung
+    # ssh handshake underneath it is exactly the failure ConnectTimeout exists to cut short first).
+    return ["rsync", "-e", "ssh " + " ".join(_SSH_OPTS), *args]
+
+
+def _run_step(cfg: JanitorConfig, cmd: List[str], *, timeout: float):
+    """One ssh/rsync subprocess call. -> (CompletedProcess, None) on a call that ran (whatever its
+    own returncode is -- that is still the caller's to read), or (None, "<error>") for ANYTHING
+    this call itself could not complete: a real subprocess.TimeoutExpired from a hung connection,
+    a missing binary, anything (TASK-315 review: "any exception in any step is caught per step" --
+    a step that instead let an exception fly out of here used to be able to escape run_janitor
+    entirely and skip writing health.json for the whole run, not just fail the one move it was
+    part of)."""
+    try:
+        return cfg.runner(cmd, capture_output=True, text=True, timeout=timeout), None
+    except Exception as exc:  # noqa: BLE001 -- deliberately broad, see docstring
+        return None, f"{type(exc).__name__}: {exc}"
+
+
 def _move_to_mini(cfg: JanitorConfig, local_path: Path, notes: List[str]) -> Tuple[bool, float, Optional[str]]:
     """rsync one file or directory (whole) to
     macmini:<backup_root>/claude-transcripts/<path relative to
     ~/.claude/projects>, then prune any now-empty local directory husk.
 
-    A failure at either the ssh mkdir or the rsync step leaves the local
-    copy exactly where it was -- nothing is removed until rsync itself
-    reports success (--remove-source-files removes source FILES on
-    success; a source directory's now-empty husk is pruned separately by
+    A failure at either the ssh mkdir or the rsync step -- including one
+    that could not even complete, per _run_step -- leaves the local copy
+    exactly where it was: nothing is removed until rsync itself reports
+    success (--remove-source-files removes source FILES on success; a
+    source directory's now-empty husk is pruned separately by
     _prune_empty_dirs, never removed on failure).
     """
     size_mb = _path_size_mb(local_path)
@@ -351,15 +446,20 @@ def _move_to_mini(cfg: JanitorConfig, local_path: Path, notes: List[str]) -> Tup
     if str(rel.parent) == ".":
         remote_dir = f"{cfg.backup_root}/claude-transcripts"
 
-    mkdir_res = cfg.runner(["ssh", cfg.remote_host, "mkdir", "-p", remote_dir], capture_output=True, text=True)
+    mkdir_res, err = _run_step(cfg, _ssh_cmd(cfg, "mkdir", "-p", remote_dir), timeout=SSH_TIMEOUT_SEC)
+    if err is not None:
+        return False, size_mb, f"ssh mkdir -p {remote_dir} failed: {err}"
     if mkdir_res.returncode != 0:
         return False, size_mb, f"ssh mkdir -p {remote_dir} failed: {(mkdir_res.stderr or '').strip()}"
 
-    rsync_res = cfg.runner(
-        ["rsync", "-a", "--checksum", "--remove-source-files", str(local_path), f"{cfg.remote_host}:{remote_dir}/"],
-        capture_output=True,
-        text=True,
+    rsync_res, err = _run_step(
+        cfg,
+        _rsync_cmd(cfg, "-a", "--checksum", "--remove-source-files", str(local_path),
+                   f"{cfg.remote_host}:{remote_dir}/"),
+        timeout=RSYNC_TIMEOUT_SEC,
     )
+    if err is not None:
+        return False, size_mb, f"rsync {local_path} failed: {err}"
     if rsync_res.returncode != 0:
         return False, size_mb, f"rsync {local_path} failed: {(rsync_res.stderr or '').strip()}"
 
@@ -376,9 +476,36 @@ def _move_to_mini(cfg: JanitorConfig, local_path: Path, notes: List[str]) -> Tup
 
 
 def _list_version_entries(cfg: JanitorConfig) -> List[Path]:
+    """-> every entry directly under claude_versions_dir whose NAME is itself a version number
+    (`_VERSION_NAME_RE`, e.g. "2.1.283") and nothing else. TASK-315 review: a stray non-version
+    file sitting in this same directory (MOVED-TO-MACMINI.txt was the observed case) is not a
+    version no matter how new its mtime is, and must never be considered here at all."""
     if not cfg.claude_versions_dir.exists():
         return []
-    return sorted(cfg.claude_versions_dir.iterdir())
+    return sorted(p for p in cfg.claude_versions_dir.iterdir() if _VERSION_NAME_RE.match(p.name))
+
+
+def _version_key(entry: Path) -> Tuple[int, int, int]:
+    """Parse a `_VERSION_NAME_RE`-shaped name into a sortable (major, minor, patch) tuple.
+    TASK-315 review: "newest" must be decided by the version number, NEVER by mtime -- a
+    non-version file with a bumped mtime (or a version dir touched by an unrelated process)
+    used to be able to outrank the actual highest version under plain mtime sorting."""
+    return tuple(int(part) for part in entry.name.split("."))
+
+
+def _pinned_version_path(cfg: JanitorConfig) -> Optional[Path]:
+    """-> the resolved (symlink-followed) target of ~/.local/bin/claude (cfg.claude_bin_path),
+    or None if that link is missing/broken. This is the version actually in use right now and
+    must always be kept regardless of what version-sort "newest" separately computes -- normally
+    the two agree, but the pin is the one the review calls out by name and is checked
+    independently rather than assumed to coincide with `newest`."""
+    link = cfg.claude_bin_path
+    try:
+        if link is None or not link.exists():
+            return None
+        return link.resolve()
+    except OSError:
+        return None
 
 
 def _is_in_use(entry: Path, running_exes: Set[str]) -> bool:
@@ -393,9 +520,18 @@ def _find_old_versions(cfg: JanitorConfig) -> List[Path]:
     entries = _list_version_entries(cfg)
     if len(entries) <= 1:
         return []
-    newest = max(entries, key=lambda p: p.stat().st_mtime)
+    newest = max(entries, key=_version_key)
+    pinned = _pinned_version_path(cfg)
+    keep = {newest}
+    if pinned is not None:
+        for e in entries:
+            try:
+                if e.resolve() == pinned:
+                    keep.add(e)
+            except OSError:
+                pass
     running = cfg.running_exes_fn()
-    return [e for e in entries if e != newest and not _is_in_use(e, running)]
+    return [e for e in entries if e not in keep and not _is_in_use(e, running)]
 
 
 def _sha256_file(path: Path) -> str:
@@ -415,20 +551,25 @@ def _local_file_list(path: Path) -> List[Path]:
 def _move_version_to_mini(cfg: JanitorConfig, entry: Path, notes: List[str]) -> Tuple[bool, float, Optional[str]]:
     """Copy (never --remove-source-files here -- verify first, remove
     after), sha256 every file on both sides, only THEN remove the local
-    copy. A mismatch or any failed step leaves the local copy in place.
+    copy. A mismatch or any failed step -- including one that could not
+    even complete, per _run_step -- leaves the local copy in place.
     """
     size_mb = _path_size_mb(entry)
     remote_dir = f"{cfg.backup_root}/claude-code-versions"
 
-    mkdir_res = cfg.runner(["ssh", cfg.remote_host, "mkdir", "-p", remote_dir], capture_output=True, text=True)
+    mkdir_res, err = _run_step(cfg, _ssh_cmd(cfg, "mkdir", "-p", remote_dir), timeout=SSH_TIMEOUT_SEC)
+    if err is not None:
+        return False, size_mb, f"ssh mkdir -p {remote_dir} failed: {err}"
     if mkdir_res.returncode != 0:
         return False, size_mb, f"ssh mkdir -p {remote_dir} failed: {(mkdir_res.stderr or '').strip()}"
 
-    rsync_res = cfg.runner(
-        ["rsync", "-a", "--checksum", str(entry), f"{cfg.remote_host}:{remote_dir}/"],
-        capture_output=True,
-        text=True,
+    rsync_res, err = _run_step(
+        cfg,
+        _rsync_cmd(cfg, "-a", "--checksum", str(entry), f"{cfg.remote_host}:{remote_dir}/"),
+        timeout=RSYNC_TIMEOUT_SEC,
     )
+    if err is not None:
+        return False, size_mb, f"rsync {entry} failed: {err}"
     if rsync_res.returncode != 0:
         return False, size_mb, f"rsync {entry} failed: {(rsync_res.stderr or '').strip()}"
 
@@ -436,7 +577,9 @@ def _move_version_to_mini(cfg: JanitorConfig, entry: Path, notes: List[str]) -> 
         local_hash = _sha256_file(lf)
         rel = lf.relative_to(entry.parent)
         remote_path = f"{remote_dir}/{rel}"
-        hash_res = cfg.runner(["ssh", cfg.remote_host, "sha256sum", remote_path], capture_output=True, text=True)
+        hash_res, err = _run_step(cfg, _ssh_cmd(cfg, "sha256sum", remote_path), timeout=SSH_TIMEOUT_SEC)
+        if err is not None:
+            return False, size_mb, f"remote sha256 unavailable for {remote_path}: {err}"
         if hash_res.returncode != 0 or not (hash_res.stdout or "").strip():
             return False, size_mb, f"remote sha256 unavailable for {remote_path}"
         remote_hash = hash_res.stdout.split()[0]
@@ -624,7 +767,25 @@ def main(argv: Optional[Sequence[str]] = None, cfg: Optional[JanitorConfig] = No
             remote_host=args.remote_host,
             backup_root=args.backup_root,
         )
-    result = run_janitor(cfg)
+    try:
+        result = run_janitor(cfg)
+    except Exception as exc:  # noqa: BLE001 -- last-resort net: _run_step already catches every
+        # ssh/rsync step individually, this is only for something else in the orchestration
+        # (TASK-315 review: "health.json is ALWAYS written").
+        now = cfg.now_fn()
+        result = {
+            "ok": False,
+            "at": _iso(now),
+            "apply": cfg.apply,
+            "free_mb_before": None,
+            "free_mb_after": None,
+            "deleted_mb": 0.0,
+            "moved_mb": 0.0,
+            "moved_files": 0,
+            "skipped": [],
+            "problem": f"run_janitor crashed: {type(exc).__name__}: {exc}",
+            "report_only": {"var_log_syslog_mb": 0.0, "var_log_asterisk_mb": 0.0, "opt_mb": 0.0},
+        }
     _write_health(cfg, result)
     _append_log(cfg, _log_line(result))
     return 0
