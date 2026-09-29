@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-09-29 22:51'
+updated_date: '2026-09-29 22:54'
 labels:
   - frontend
   - whatsapp
@@ -38,7 +38,7 @@ Data comes from the WhatsApp harness (app/wa/*, PR #1 qwadratic/pflege-job-radar
 - [x] #4 The Leads nav item shows the number of leads needing a human on every Pro page, the tab title shows it too, and data refreshes by polling (list 15 s, open thread 5 s, nav badge 60 s)
 - [x] #5 When /api/wa/* is unreachable or answers an error, the view says so with the status and what is missing, never an empty list; ?mock=1 renders deterministic synthetic fixtures that cover every state
 - [x] #6 All strings exist in DE and EN, the view is keyboard operable (rows, filters, panel close with Esc) and usable at 375 px width
-- [ ] #7 docs/wa-dashboard.md documents the exact /api/wa/* response shapes the view reads, and the wa-harness session has them
+- [x] #7 docs/wa-dashboard.md documents the exact /api/wa/* response shapes the view reads, and the wa-harness session has them
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -67,4 +67,6 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - Still open, not in this task: the board-side proxy and the /api/wa/threads/{id}, /messages and paged list endpoints (wa-harness, PR #1); exposing the harness host over HTTPS (nginx + sudo, Ivan); an escalated_at timestamp on the card (without it the view says "last message X ago" for escalations); a handoff-done state (today nothing marks a handoff as done, so consented leads stay in the list); the TASK-316 status enum. Task-ID note: the harness branch carries its own task-160..321, which overlaps this task-179 and main's 160-178.
 
 2026-09-29 22:51 UTC, contract hand-off to wa-harness: sent over Remote Control (message 53f68213-128a-4917-aae9-ce6db0e55873). Contents: PR #2 and docs/wa-dashboard.md; what the view counts as needing a human (escalation_codes or lead_status red; stuck_reply / last_send_error / pending_inbound; stage submitted or a handoff row; flags shown but never counted; stopped, suppressed and test threads never counted); the list envelope and row fields, /threads/{id}, /threads/{id}/messages with before_id/after_id, /health; the error codes the proxy should use (404 = proxy missing, 401/403 = owners only, 502-504 = harness not answering). Findings passed on: (A) PR #1 mounts the app/wa routers inside the board app, and on the board VM wa.sqlite would be a fresh empty file, so /api/wa/threads would answer 200 with 0 rows and the view would claim nobody needs a human. Under topology B the board must serve /api/wa/* only through the proxy and answer 503 when WA_API_BASE is unset, and envelope.source should name the harness. (B) Nothing marks a handoff as done (wa_queue_candidates.status is only 'queued'), so consented leads stay listed. (C) Today's /wa/threads clamps the limit to 500 and returns no next_offset, which the view refuses by design, so the paged list must have no cap. Also asked for escalated_at, the TASK-316 status enum, keeping both docs/index.json entries (whatsapp.md first), and a renumbering of one side of the task-ID overlap (harness branch task-160..321 vs main 160-179). The dispatcher machine was offline, so delivery is queued and not confirmed. AC #7 stays open until wa-harness acknowledges.
+
+2026-09-29 ~23:00 UTC, wa-harness acknowledged the contract (AC #7 checked). It will build the harness API against docs/wa-dashboard.md as written. Trap A is confirmed: it removes the unconditional /api/wa/* router mount from app/main.py before Ivan merges PR #1, so on the board /api/wa/* exists only as the proxy (503 when WA_API_BASE is unset, never a local DB), and envelope.source will be "harness@tasker-dispatcher-01". Paging: the new endpoints have no cap, and next_offset is always present and null on the last page. Trap B: no handoff-done status in phase 1, because phase 1 is read-only by Ivan's decision and marking a handoff done is a write. wa-harness asks Ivan; until then a consented lead correctly stays in Needs a human. The lead_status enum follows when P4 lands, and the provisional mapping (red = Manager, other non-green = check) is accepted. docs/index.json: keep both entries, whatsapp.md first. Task IDs: wa-harness's lane is 163, 164, 167, 173, 174, 175, 177, 180 and 181..391, and it asked this branch to take IDs >= 392 on rebase. TASK-179 is outside that lane, so it keeps its number. The real overlap is the board-side tasks 163-178 and 180 (data-quality tasks from other sessions). They are not on origin/main (which ends at 162) and not in any commit in this repo; they sit as files in the shared checkout's working tree. Flagged to Ivan, not renumbered here. The harness fixtures JSON and base URL follow once its endpoints exist; exposing the host (nginx, sudo) is Ivan's step.
 <!-- SECTION:NOTES:END -->
