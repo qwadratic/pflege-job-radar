@@ -58,6 +58,39 @@ IDLE_DIRTY_CONFIRM_CYCLES = 2
 DEFAULT_MEDIA_INTERVAL_SEC = 5.0
 
 
+def operator_hold_until(path, now, ledger, *, event="idle_dirty_hold_unreadable"):
+    """-> the moment an operator-set hold at `path` expires, or None when there is none, the file
+    is missing, or its contents can't be parsed (TASK-266). Shared module-level function so any
+    watcher can honour the same by-hand convention identically -- see
+    ``InboundWatcher._operator_hold_until`` below (which now just delegates here) for the full
+    rationale; TASK-315 review has PhoneDoctor reuse this exact function rather than growing its
+    own second copy of the same file-reading logic.
+
+    Read-only, no lock, no adb -- one local file, the human's own statement of how long they need
+    the handset, written by hand before going hands-on. Its whole content is one RFC3339
+    timestamp, ``ledger.utc``'s own spelling. A file that cannot be read or parsed is logged (via
+    `ledger`, when one is given) and treated as no hold, never trusted silently -- a stuck or
+    mistyped file must never block recovery forever, it must just fall back to behaving as if no
+    hold were set.
+    """
+    if path is None:
+        return None
+    try:
+        raw = path.read_text().strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        if ledger is not None:
+            ledger.note(now, event, None, error=str(exc))
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        if ledger is not None:
+            ledger.note(now, event, None, error=f"unparsable hold_until {raw!r}: {exc}")
+        return None
+
+
 class InboundWatcher:
     """Polls the handset's notification shade and appends to the ledger outbox. Never takes the
     phone lock (TASK-131 round 6) -- see this module's own docstring. One per executor process."""
@@ -196,33 +229,12 @@ class InboundWatcher:
     def _operator_hold_until(self, now):
         """-> the moment an operator-set hold expires, or None when there is none (TASK-266).
 
-        Read-only, no lock, no adb -- one local file, the human's own statement of how long they
-        need the handset, written by hand before going hands-on (the same by-hand, no-tool
-        convention ``docs/whatsapp.md`` already uses for ``WA_AGENT_PAUSED.flag``). Its whole
-        content is one RFC3339 timestamp, ``ledger.utc``'s own spelling. This rail has no signal
-        that tells a human reading a thread from a bug that abandoned one open (dumpsys wakefulness
-        says the screen is on, not who turned it on or since when, and nothing here records the
-        handset's screen-timeout setting) -- so it does not guess; the human states it instead.
-
-        A file that cannot be read or parsed is logged, never trusted silently, and treated as no
-        hold: the idle check falls back to exactly what it did before this existed, rather than a
-        stuck or mistyped file blocking TASK-225's recovery forever.
+        Delegates to the shared module-level ``operator_hold_until`` (see its docstring for the
+        full rationale on why this is read-only/no-lock and why an unreadable file means "no
+        hold" rather than blocking recovery) -- kept as a thin method here only so existing call
+        sites (``self._operator_hold_until(now)``) do not have to change.
         """
-        if self._operator_hold_path is None:
-            return None
-        try:
-            raw = self._operator_hold_path.read_text().strip()
-        except FileNotFoundError:
-            return None
-        except OSError as exc:
-            self.executor.ledger.note(now, "idle_dirty_hold_unreadable", None, error=str(exc))
-            return None
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError as exc:
-            self.executor.ledger.note(now, "idle_dirty_hold_unreadable", None,
-                                      error=f"unparsable hold_until {raw!r}: {exc}")
-            return None
+        return operator_hold_until(self._operator_hold_path, now, self.executor.ledger)
 
     def run(self):
         self.started_at = L.utc(self.executor.clock())

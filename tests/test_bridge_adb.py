@@ -99,6 +99,12 @@ class ScriptedAdb(AD.Adb):
         self.downscaled = []        # paths downscale was asked to shrink, in call order
         self.next_proc = FakeProc()  # what spawn_shell hands back -- one test script sets a fresh
                                      # one per call if it needs to tell two recordings apart
+        # --- PhoneDoctor's orphaned-recordings sweep (TASK-315 review point 10) -----------------
+        # what the `find /sdcard ... -mmin +5` LISTING call answers -- empty by default, same
+        # "script it or nothing happens" shape as media_listing above.
+        self.orphaned_recording_listing = ""
+        # --- PhoneDoctor's screen_size() (TASK-315 review point 3) ------------------------------
+        self.wm_size_output = "Physical size: 1080x2260\n"
 
     # --- what the driver asks of a phone -------------------------------------------------------
     def connected(self):
@@ -131,6 +137,10 @@ class ScriptedAdb(AD.Adb):
             return self.media_listing
         if cmd == "date +%Y%m%d%H%M.%S":
             return self.device_date
+        if cmd.startswith("find /sdcard") and "-mmin +5" in cmd and "-delete" not in cmd:
+            return self.orphaned_recording_listing
+        if cmd == "wm size":
+            return self.wm_size_output
         return ""
 
     def pull(self, remote, local, *, timeout=120):
@@ -1371,10 +1381,26 @@ def test_sweep_orphaned_recordings_removes_whatever_op_mp4s_are_still_on_the_dev
     """TASK-275: the only bookkeeping start_recording/stop_recording keep is the in-memory
     self._recordings dict, so a process restart between the two leaves the mp4 on /sdcard with
     nothing left to name it. A fresh driver -- no recording could possibly be in flight yet --
-    globs it away the same way a fresh Ledger fails a stuck-running row."""
+    finds it via `find` the same way a fresh Ledger fails a stuck-running row.
+
+    TASK-315 review point 10: only files find's own ``-mmin +5`` already calls old enough are ever
+    listed or removed -- never a bare ``rm -f`` glob, which could not express that age floor at
+    all (screenrecord does not even exist as a binary on this Huawei, so this stays minimal)."""
     driver, adb = build_capture(tmp_path)
-    driver.sweep_orphaned_recordings()
-    assert "rm -f /sdcard/op.*.mp4" in adb.commands
+    adb.orphaned_recording_listing = "/sdcard/op.abc123.mp4\n"
+    removed = driver.sweep_orphaned_recordings()
+    assert removed == 1
+    find_calls = [c for c in adb.commands if c.startswith("find /sdcard") and "-mmin +5" in c]
+    assert any("-delete" not in c for c in find_calls)          # the listing call
+    assert any(c.endswith("-delete 2>/dev/null") for c in find_calls)  # the delete call, only
+                                                                        # because something was found
+
+
+def test_sweep_orphaned_recordings_finds_nothing_deletes_nothing(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    removed = driver.sweep_orphaned_recordings()
+    assert removed == 0
+    assert not any("-delete" in c for c in adb.commands)
 
 
 def test_list_screenshot_candidates_names_only_what_is_past_retention(tmp_path):
@@ -1432,3 +1458,104 @@ def test_the_real_driver_implements_every_verb_the_base_only_declares():
                and callable(getattr(D.PhoneDriver, name, None))
                and getattr(AD.AdbDriver, name, None) is getattr(D.PhoneDriver, name, None)]
     assert missing == [], f"AdbDriver never overrides {missing} -- they raise NotImplementedError on a real phone"
+
+
+# --- Adb.screen_size() (TASK-315 review point 3): the REAL display, never the dump's own extent ---
+
+def test_screen_size_parses_physical_size(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    adb.wm_size_output = "Physical size: 1080x2260\n"
+    assert adb.screen_size() == (1080, 2260)
+
+
+def test_screen_size_prefers_an_active_override(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    adb.wm_size_output = "Physical size: 1080x2260\nOverride size: 720x1440\n"
+    assert adb.screen_size() == (720, 1440)
+
+
+def test_screen_size_raises_on_unparseable_output(tmp_path):
+    driver, adb = build_capture(tmp_path)
+    adb.wm_size_output = "nonsense\n"
+    with pytest.raises(D.DriverError):
+        adb.screen_size()
+
+
+# --- _outside_frame_tap (TASK-315 review point 3, Opus reject 2026-09-29) --------------------------
+# Opus's own reject: the old fallback computed its "below the frame" gap against the DUMP's own
+# extent (max(node bounds)), not the real screen -- for a dialog-only window whose dump never
+# reaches the true bottom of the screen, that collapsed the gap and the fallback point landed
+# inside the lowest button. These tests use the REAL, documented reproduction shape: a dialog-only
+# window, EINLADEN/SMS stacked vertically, and a title/message node sitting right at the top.
+
+def _stacked_dialog_nodes():
+    """A dialog-only dump: a title node with NO gap above it (bounds start at y=0 -- 'top node
+    near y=0'), a message node, and two buttons stacked vertically at the bottom -- EINLADEN then
+    SMS, exactly the shape named in the review."""
+    return [
+        AD.Node(cls="android.widget.TextView", rid="", text="WhatsApp Einladung", desc="",
+               bounds=(40, 0, 1040, 120), clickable=False),
+        AD.Node(cls="android.widget.TextView", rid="", text="Diese Nummer ist nicht bei WhatsApp",
+               desc="", bounds=(40, 130, 1040, 400), clickable=False),
+        AD.Node(cls="android.widget.Button", rid="", text="EINLADEN", desc="",
+               bounds=(100, 1900, 980, 2000), clickable=True),
+        AD.Node(cls="android.widget.Button", rid="", text="SMS", desc="",
+               bounds=(100, 2010, 980, 2110), clickable=True),
+    ]
+
+
+def test_outside_frame_tap_gives_up_rather_than_land_inside_the_lowest_button():
+    """The exact reproduction: the real screen height equals the dump's own extent (no genuine gap
+    below the lowest button at all -- a dialog-only window drawn all the way to the true bottom of
+    the screen) and the top node sits at y=0 (no gap above either). The OLD code's fallback would
+    have computed a point inside the SMS button here (min(screen_h-20, y2) lands 20px above y2,
+    well inside a 100px-tall button); the fix must return None instead."""
+    nodes = _stacked_dialog_nodes()
+    result = AD._outside_frame_tap(nodes, screen_w=1080, screen_h=2110)
+    assert result is None
+
+
+def test_outside_frame_tap_never_lands_inside_any_button_even_when_it_finds_a_point():
+    """Same stacked-buttons, top-near-y=0 shape, but now with the REAL screen taller than the
+    dump's own extent (the genuinely common case: a dialog window's dump does not draw all the way
+    to the true screen edge). A safe point below the buttons must exist and must clear every
+    labelled/clickable node's bounds, jitter and margin included."""
+    nodes = _stacked_dialog_nodes()
+    result = AD._outside_frame_tap(nodes, screen_w=1080, screen_h=2260)
+    assert result is not None
+    x, y = result
+    assert 0 <= x < 1080 and 0 <= y < 2260
+    margin_x = AD._TAP_SAFETY_MARGIN_PX + AD._TAP_JITTER_X
+    margin_y = AD._TAP_SAFETY_MARGIN_PX + AD._TAP_JITTER_Y
+    for n in nodes:
+        assert AD._clears(result, n, margin_x=margin_x, margin_y=margin_y), \
+            f"{result} does not clear {n.text!r} bounds {n.bounds}"
+
+
+def test_outside_frame_tap_normal_dump_yields_a_point_outside_the_frame():
+    """A more ordinary dialog: a short title well below the top of the screen, one message, one
+    button -- plenty of clear space above the frame. The point returned must lie above the frame's
+    own top edge, on screen, and clear of every node."""
+    nodes = [
+        AD.Node(cls="android.widget.TextView", rid="", text="USB-Nutzung", desc="",
+               bounds=(60, 900, 1020, 1000), clickable=False),
+        AD.Node(cls="android.widget.TextView", rid="", text="Dieses Gerät als Kamera verwenden?",
+               desc="", bounds=(60, 1010, 1020, 1200), clickable=False),
+        AD.Node(cls="android.widget.Button", rid="", text="ABBRECHEN", desc="",
+               bounds=(700, 1250, 1020, 1350), clickable=True),
+    ]
+    result = AD._outside_frame_tap(nodes, screen_w=1080, screen_h=2260)
+    assert result is not None
+    x, y = result
+    assert y < 900   # strictly above the frame's own top edge
+    assert 0 <= x < 1080 and 0 <= y < 2260
+    margin_x = AD._TAP_SAFETY_MARGIN_PX + AD._TAP_JITTER_X
+    margin_y = AD._TAP_SAFETY_MARGIN_PX + AD._TAP_JITTER_Y
+    for n in nodes:
+        assert AD._clears(result, n, margin_x=margin_x, margin_y=margin_y)
+
+
+def test_outside_frame_tap_returns_none_with_no_labelled_nodes():
+    nodes = [AD.Node(cls="android.view.View", rid="", text="", desc="", bounds=(0, 0, 1080, 2260),
+                     clickable=False)]
+    assert AD._outside_frame_tap(nodes, screen_w=1080, screen_h=2260) is None

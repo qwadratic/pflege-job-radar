@@ -861,6 +861,18 @@ class Ledger:
             (OP_QUEUED, OP_RUNNING)).fetchone()
         return row["c"] > 0
 
+    def oldest_running_op_age_sec(self, now):
+        """-> seconds since the oldest still-``running`` phone_ops row's ``started_at``, or None
+        when nothing is running (TASK-315 review point 9: PhoneDoctor's health must show
+        ``blocked_by_stuck_op`` once a row has been running for more than 10 minutes -- see
+        ``claim_next_op``'s own docstring on ``started_at`` never being cleared by a crash, which
+        is exactly the case this age is meant to surface to a human)."""
+        row = self._db.execute(
+            "select min(started_at) started from phone_ops where state = ?", (OP_RUNNING,)).fetchone()
+        if row is None or row["started"] is None:
+            return None
+        return age_sec(row["started"], now)
+
     # --- retention review (TASK-230, Ivan 2026-09-23): a failed op with no outbound entry to read a
     # verdict off (read_thread, send_photos/gallery/document -- none of these mint a client_msg_id)
     # has no automatic way to become safe to delete. This is the manual

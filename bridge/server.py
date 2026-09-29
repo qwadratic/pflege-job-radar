@@ -718,6 +718,10 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
             executor,
             interval=float(os.environ.get("WA_BRIDGE_DOCTOR_INTERVAL_SEC", PD.DEFAULT_INTERVAL_SEC)),
             min_mem_mb=int(os.environ.get("WA_BRIDGE_DOCTOR_MIN_MEM_MB", PD.DEFAULT_MIN_MEM_MB)),
+            # TASK-315 review point 8: the same by-hand operator escape hatch InboundWatcher
+            # already honours (W._operator_hold_path above) -- a human standing at the handset
+            # must be able to hold PhoneDoctor off exactly the same way.
+            operator_hold_path=os.path.join(root, "operator_hold"),
             log=stamped).start()
         stamped(f"phone doctor: on, every {doctor.interval:.0f}s, kill-all below "
                f"{doctor.min_mem_mb} MB free. WA_BRIDGE_DOCTOR_ENABLED=0 to disable.")

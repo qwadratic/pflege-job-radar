@@ -70,6 +70,13 @@ LOCK_PATH = Path(os.path.expanduser("~/.local/share/wa_phone/huawei01.lock"))
 #: The handset is set to Europe/Berlin and the clock on a bubble is the one a human reads.
 DEVICE_TZ = "Europe/Berlin"
 
+#: TASK-315 review point 6: every adb call PhoneDoctor makes in one cycle has a <=10s budget, so a
+#: hung/slow phone can only ever cost the doctor 10s at a time, never the 40-60s a send path can
+#: reasonably wait -- the doctor is a background sweep, not a candidate-facing op, and must yield
+#: the phone lock quickly either way (see PhoneDoctor's own docstring on "an idle cycle holds the
+#: lock for <= ~1s").
+DOCTOR_ADB_TIMEOUT_SEC = 10
+
 #: Their PACING["chars_per_sec"], adopted. Typing at machine speed is the one tell that cannot be
 #: explained away on a consumer account.
 CHARS_PER_SEC = (3.2, 5.5)
@@ -291,44 +298,67 @@ def covers(node, point):
     return node.bounds[0] <= x <= node.bounds[2] and node.bounds[1] <= y <= node.bounds[3]
 
 
-def _outside_frame_tap(nodes):
-    """-> (x, y) in the dimmed scrim OUTSIDE a dialog's own content, computed from THIS dump's real
-    bounds -- never a fixed coordinate (TASK-315 AC#9: 'never tap Einladen or SMS', and a hardcoded
-    pixel is exactly the kind of guess that rule exists to rule out). None when the dump carries
-    nothing to measure a frame against, so the caller leaves the dialog alone rather than guess.
+#: Adb.tap's own jitter (its docstring: "a few pixels of jitter: never the same pixel twice") --
+#: any point _outside_frame_tap returns must clear a button's bounds by at least this much on
+#: each axis, since the jittered tap that actually lands is not the exact point computed here.
+_TAP_JITTER_X = 6
+_TAP_JITTER_Y = 4
+#: TASK-315 review point 3: "a margin (>= 40 px)" on top of the jitter above -- deliberately
+#: generous next to the jitter's few pixels.
+_TAP_SAFETY_MARGIN_PX = 40
 
-    The scrim itself is drawn as one node spanning the whole screen and is excluded from the
-    'frame' -- every node that actually carries a label or is clickable (the dialog's title,
-    message and buttons) is what the frame is measured from instead. The point returned sits
-    directly above the frame's top edge (or, when the frame already reaches near the top of the
-    screen, directly below its bottom edge) -- outside the frame's own bounds on every dump this
-    could plausibly see, since a dialog is never drawn edge-to-edge on either axis at once.
 
-    UNVERIFIED against a live SmsDefaultAppWarning dump (module docstring: this file's own bounds
-    reading has no way to be captured off-device). Revisit the heuristic the first time
-    ``doctor_sms_default_app_warning``'s own screenshot shows it landed somewhere it should not
-    have -- the decision logic this feeds (bridge/doctor.py) is what tests/test_bridge_doctor.py
-    exercises directly, against FakeDriver, so a wrong point here never reaches "never tap
-    Einladen/SMS": there is no code path from a tap point to a button's own text at all.
+def _clears(point, node, *, margin_x, margin_y):
+    """-> True when a tap AT `point`, widened by `margin_x`/`margin_y` on every side (the jitter
+    plus the safety margin), cannot overlap `node`'s own bounds at all. Two axis-aligned boxes are
+    disjoint the moment they are separated on EITHER axis -- this checks both and OR's them,
+    exactly that rectangle non-overlap test."""
+    x, y = point
+    nx1, ny1, nx2, ny2 = node.bounds
+    return (x + margin_x < nx1 or x - margin_x > nx2
+            or y + margin_y < ny1 or y - margin_y > ny2)
+
+
+def _outside_frame_tap(nodes, screen_w, screen_h, *, margin_px=_TAP_SAFETY_MARGIN_PX):
+    """-> (x, y) that clears EVERY labelled/clickable node in this dump -- widened by the tap's own
+    jitter plus `margin_px` -- and lies on the REAL screen. None when no such point exists in this
+    dump, so the caller does nothing rather than guess (TASK-315 review point 3, Opus reject
+    2026-09-29: the previous version's "below the frame" fallback computed its gap against the
+    DUMP's own extent, i.e. ``max(n.bounds[...] for n in nodes)`` -- for a dialog-only window whose
+    dump never reaches the true bottom of the screen, that extent collapses to the lowest button's
+    own bottom edge, and the fallback point landed inside that button).
+
+    `screen_w`/`screen_h` MUST be the REAL display size (``Adb.screen_size()``, i.e. ``wm size``),
+    never inferred from the dump -- that substitution is exactly what caused the bug above.
+
+    Candidates tried, in order: the midpoint of the gap above the topmost labelled node, then the
+    midpoint of the gap below the bottommost one. Each candidate is verified to clear literally
+    every labelled/clickable node in the dump (not just the two nodes nearest it), so a second
+    dialog element elsewhere on screen can still veto a point that looks clear locally.
     """
     labelled = [n for n in nodes if n.text or n.desc or n.clickable]
     if not labelled:
         return None
-    screen_w = max(n.bounds[2] for n in nodes)
-    screen_h = max(n.bounds[3] for n in nodes)
-    frame = [n for n in labelled
-             if not (n.bounds[0] <= 0 and n.bounds[1] <= 0
-                     and n.bounds[2] >= screen_w and n.bounds[3] >= screen_h)]
-    if not frame:
-        return None
-    x1 = min(n.bounds[0] for n in frame)
-    y1 = min(n.bounds[1] for n in frame)
-    x2 = max(n.bounds[2] for n in frame)
-    x = (x1 + x2) // 2
-    if y1 > 60:
-        return (x, y1 // 2)
-    y2 = max(n.bounds[3] for n in frame)
-    return (x, min(screen_h - 20, y2 + (screen_h - y2) // 2))
+    margin_x = margin_px + _TAP_JITTER_X
+    margin_y = margin_px + _TAP_JITTER_Y
+    x1 = min(n.bounds[0] for n in labelled)
+    x2 = max(n.bounds[2] for n in labelled)
+    y1 = min(n.bounds[1] for n in labelled)
+    y2 = max(n.bounds[3] for n in labelled)
+    x_mid = (x1 + x2) // 2
+    x_mid = min(max(x_mid, margin_x), screen_w - 1 - margin_x)
+    candidates = []
+    if y1 > 0:
+        candidates.append((x_mid, y1 // 2))
+    if screen_h - y2 > 0:
+        candidates.append((x_mid, y2 + (screen_h - y2) // 2))
+    for point in candidates:
+        x, y = point
+        if not (0 <= x < screen_w and 0 <= y < screen_h):
+            continue
+        if all(_clears(point, n, margin_x=margin_x, margin_y=margin_y) for n in labelled):
+            return point
+    return None
 
 
 def parse_contacts(out):
@@ -538,8 +568,33 @@ class Adb:
             raise AdbUnavailable(f"{self.serial} is not in adb 'device' state")
 
     # --- screen ---------------------------------------------------------------------------------
-    def awake(self):
-        return "mWakefulness=Awake" in self.shell("dumpsys power | grep -m1 mWakefulness")
+    def awake(self, *, timeout=40):
+        return "mWakefulness=Awake" in self.shell("dumpsys power | grep -m1 mWakefulness",
+                                                   timeout=timeout)
+
+    def keyguard_up(self, *, timeout=40):
+        """-> True while the lock screen is showing and not occluded by another window (TASK-315
+        review point 7): ``screen_ready()``'s other half, alongside ``awake()`` -- a screen can be
+        woken (``mWakefulness=Awake``) and still be the lock screen, which is not a safe surface
+        for ``dialog_scan`` to read or tap."""
+        out = self.shell("dumpsys window policy | grep -m1 isKeyguardShowingAndNotOccluded",
+                         timeout=timeout)
+        return "true" in out.lower()
+
+    def screen_size(self, *, timeout=15):
+        """-> (width, height) in real pixels, from ``wm size`` -- the REAL display, never inferred
+        from a uiautomator dump's own extent (TASK-315 review point 3: a dialog-only window's dump
+        does not necessarily reach the true screen edge, which is exactly what made the old
+        ``_outside_frame_tap`` fallback unsafe). Prefers an active "Override size" (a resize
+        actually in effect) over "Physical size" when ``wm size`` reports both."""
+        out = self.shell("wm size", timeout=timeout)
+        override = re.search(r"Override size:\s*(\d+)x(\d+)", out or "")
+        if override:
+            return int(override.group(1)), int(override.group(2))
+        physical = re.search(r"Physical size:\s*(\d+)x(\d+)", out or "")
+        if physical:
+            return int(physical.group(1)), int(physical.group(2))
+        raise D.DriverError(f"wm size output not understood: {out!r}")
 
     def wake(self):
         if self.awake():
@@ -549,13 +604,13 @@ class Adb:
         self.shell("input swipe 540 1900 540 900 250")
         time.sleep(0.6)
 
-    def focus(self):
+    def focus(self, *, timeout=40):
         out = self.shell("dumpsys activity activities 2>/dev/null | "
-                         "grep -m1 -E 'ResumedActivity|mFocusedActivity'")
+                         "grep -m1 -E 'ResumedActivity|mFocusedActivity'", timeout=timeout)
         hit = re.search(r"u0 ([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)", out)
         return hit.group(1) if hit else out.strip()[:100]
 
-    def dump(self, *, tries=3, required=True):
+    def dump(self, *, tries=3, required=True, timeout=40):
         """-> [Node] for what is on screen. Raises after ``tries`` unless ``required=False``.
 
         ``required=True`` is the default because of what an empty list means downstream (TASK-146):
@@ -565,15 +620,17 @@ class Adb:
         honest end of it.
 
         ``required=False`` is for the pollers that have a deadline of their own and for which an
-        unreadable frame is just a frame to re-take (``wait_for``).
+        unreadable frame is just a frame to re-take (``wait_for``). ``tries=1`` (PhoneDoctor, TASK-
+        315 review point 6: "the dump gets 1 try") means exactly one attempt, no retry sleep.
         """
-        for _ in range(tries):
+        for attempt in range(tries):
             out = self.shell("uiautomator dump /sdcard/pflege_ui.xml >/dev/null 2>&1; "
-                             "cat /sdcard/pflege_ui.xml", timeout=40)
+                             "cat /sdcard/pflege_ui.xml", timeout=timeout)
             nodes = parse_ui_xml(out)
             if nodes:
                 return nodes
-            time.sleep(0.7)
+            if attempt < tries - 1:
+                time.sleep(0.7)
         if required:
             raise AdbUnavailable(f"uiautomator returned nothing readable {tries} times in a row")
         return []
@@ -590,9 +647,11 @@ class Adb:
             time.sleep(poll)
 
     # --- input ----------------------------------------------------------------------------------
-    def tap(self, x, y):
-        # a few pixels of jitter: never the same pixel twice.
-        self.shell(f"input tap {x + random.randint(-6, 6)} {y + random.randint(-4, 4)}")
+    def tap(self, x, y, *, timeout=40):
+        # a few pixels of jitter: never the same pixel twice. (_TAP_JITTER_X/Y in this module
+        # mirror these same -6..6/-4..4 ranges for _outside_frame_tap's own clearance margin.)
+        self.shell(f"input tap {x + random.randint(-6, 6)} {y + random.randint(-4, 4)}",
+                  timeout=timeout)
         time.sleep(0.7)
 
     def tap_node(self, node):
@@ -610,8 +669,8 @@ class Adb:
     def long_press_node(self, node):
         self.long_press(*node.center)
 
-    def key(self, name):
-        self.shell(f"input keyevent {name}")
+    def key(self, name, *, timeout=40):
+        self.shell(f"input keyevent {name}", timeout=timeout)
         time.sleep(0.5)
 
     def screenshot(self, path):
@@ -1766,57 +1825,79 @@ class AdbDriver(D.PhoneDriver):
         return self.adb.screenshot(self.shots_dir / f"{stamp}_{self._shot_n:03d}_{slug}.png")
 
     # --- PhoneDoctor (TASK-315 AC#9) -----------------------------------------------------------
+    # REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B): every call below now carries
+    # DOCTOR_ADB_TIMEOUT_SEC explicitly rather than the 40s default every other caller of Adb gets
+    # -- see that constant's own docstring, and PhoneDoctor's "an idle cycle holds the lock for
+    # <= ~1s" rule, which this budget exists to make possible.
     def mem_available_mb(self):
-        out = self.adb.shell("cat /proc/meminfo | grep -m1 MemAvailable")
+        out = self.adb.shell("cat /proc/meminfo | grep -m1 MemAvailable", timeout=DOCTOR_ADB_TIMEOUT_SEC)
         hit = re.search(r"MemAvailable:\s*(\d+)\s*kB", out or "")
         if not hit:
             raise D.DriverError(f"MemAvailable not found in /proc/meminfo (got {out!r})")
         return int(hit.group(1)) // 1024
 
     def kill_background(self):
-        self.adb.shell("am kill-all")
+        self.adb.shell("am kill-all", timeout=DOCTOR_ADB_TIMEOUT_SEC)
 
     def whatsapp_running(self):
-        return bool(self.adb.shell(f"pidof {WHATSAPP}").strip())
+        return bool(self.adb.shell(f"pidof {WHATSAPP}", timeout=DOCTOR_ADB_TIMEOUT_SEC).strip())
 
     def resume_whatsapp(self):
-        """See PhoneDriver.resume_whatsapp's own docstring for why this is not ``park()`` -- same
-        monkey LAUNCHER intent ``park()``/``_chat_list`` already use, no BACK loop, no trailing
-        HOME: the caller reads what the task resumed INTO before deciding anything."""
+        """See PhoneDriver.resume_whatsapp's own docstring: TASK-315 review point 1 -- called for
+        exactly one remedy now (a dead WhatsApp process), and the caller (bridge/doctor.py) ALWAYS
+        follows this with home() in the same breath, never inspects what it resumed into, never
+        leaves WhatsApp foregrounded."""
         self.adb.shell(f"monkey -p {WHATSAPP} -c android.intent.category.LAUNCHER 1 "
-                       ">/dev/null 2>&1")
+                       ">/dev/null 2>&1", timeout=DOCTOR_ADB_TIMEOUT_SEC)
         time.sleep(1.2)
-        return self.adb.focus()
-
-    def back(self):
-        self.adb.key("KEYCODE_BACK")
+        return self.adb.focus(timeout=DOCTOR_ADB_TIMEOUT_SEC)
 
     def home(self):
-        self.adb.key("KEYCODE_HOME")
+        self.adb.key("KEYCODE_HOME", timeout=DOCTOR_ADB_TIMEOUT_SEC)
 
     def force_stop_whatsapp(self):
-        self.adb.shell(f"am force-stop {WHATSAPP}")
+        self.adb.shell(f"am force-stop {WHATSAPP}", timeout=DOCTOR_ADB_TIMEOUT_SEC)
         time.sleep(0.3)
+
+    def screen_ready(self):
+        """See PhoneDriver.screen_ready's own docstring (TASK-315 review point 7). An adb failure
+        on either read is treated as NOT ready -- never assume the screen is safe for dialog_scan
+        to read when the read that would have told us so itself failed."""
+        try:
+            awake = self.adb.awake(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            keyguard = self.adb.keyguard_up(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        except D.DriverError:
+            return False
+        return awake and not keyguard
 
     def dialog_scan(self):
         """See PhoneDriver.dialog_scan's own docstring. Identification is by ``focus()`` alone (the
         card's own wording: 'focus contains SmsDefaultAppWarning' / 'focus in com.android.settings')
         -- a dump is only taken, and only turned into a tap point, once the focus already names a
         known dialog, so an ordinary cycle with nothing wrong costs one ``dumpsys`` and nothing
-        more."""
-        focus = self.adb.focus()
+        more. The dump gets exactly one try here (TASK-315 review point 6).
+
+        TASK-315 review: SmsDefaultAppWarning now ALWAYS returns a dialog entry once its focus is
+        seen -- ``tap`` may be None when no safe point exists (_outside_frame_tap's own contract) --
+        so the caller can tell "nothing there" apart from "something there, no safe tap" and give
+        up cleanly rather than loop silently forever. usb_nutzung still requires the ABBRECHEN
+        button to actually be found: plain ``com.android.settings`` focus alone is not specific
+        enough to call "a known dialog" by itself."""
+        focus = self.adb.focus(timeout=DOCTOR_ADB_TIMEOUT_SEC)
         if "SmsDefaultAppWarning" in focus:
-            tap = _outside_frame_tap(self.adb.dump(required=False))
-            if tap is not None:
-                return {"focus": focus, "dialog": {"kind": "sms_default_app_warning", "tap": tap}}
+            nodes = self.adb.dump(tries=1, required=False, timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            screen_w, screen_h = self.adb.screen_size(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            tap = _outside_frame_tap(nodes, screen_w, screen_h)
+            return {"focus": focus, "dialog": {"kind": "sms_default_app_warning", "tap": tap}}
         elif focus.startswith("com.android.settings"):
-            cancel = find(self.adb.dump(required=False), contains="ABBRECHEN", clickable=True)
+            nodes = self.adb.dump(tries=1, required=False, timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            cancel = find(nodes, contains="ABBRECHEN", clickable=True)
             if cancel:
                 return {"focus": focus, "dialog": {"kind": "usb_nutzung", "tap": cancel[0].center}}
         return {"focus": focus, "dialog": None}
 
     def tap_point(self, x, y):
-        self.adb.tap(x, y)
+        self.adb.tap(x, y, timeout=DOCTOR_ADB_TIMEOUT_SEC)
 
     # --- retention (TASK-230): listing is mechanical (mtime), deciding is bridge/retention.py's job
     def list_screenshot_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
@@ -1886,12 +1967,22 @@ class AdbDriver(D.PhoneDriver):
         doctor whether this cycle actually found something to journal.
 
         Listed before it is removed, rather than trusted to ``rm``'s own count, because toybox
-        ``rm`` on this handset prints nothing parseable either way -- ``ls`` first is the only
+        ``rm`` on this handset prints nothing parseable either way -- ``find`` first is the only
         honest way to say how many, and a glob matching nothing is an empty listing, not an error
-        (the same ``2>/dev/null`` shape ``list_media`` already relies on)."""
-        listing = self.adb.shell("ls /sdcard/op.*.mp4 2>/dev/null")
+        (the same ``2>/dev/null`` shape ``list_media`` already relies on).
+
+        REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B, review point 10): only files
+        already older than 5 minutes are ever candidates now, via ``find -mmin +5`` -- a recording
+        still genuinely in progress must never be swept out from under it. ``screenrecord`` does not
+        even exist as a binary on this Huawei, so ``start_recording``'s own shell call is already
+        dead on arrival here; this stays deliberately minimal rather than growing logic for a
+        capability this device does not have."""
+        find_base = "find /sdcard -maxdepth 1 -name 'op.*.mp4' -mmin +5"
+        listing = self.adb.shell(f"{find_base} 2>/dev/null", timeout=DOCTOR_ADB_TIMEOUT_SEC)
         paths = [line.strip() for line in (listing or "").splitlines() if line.strip()]
-        self.adb.shell("rm -f /sdcard/op.*.mp4")
+        if not paths:
+            return 0
+        self.adb.shell(f"{find_base} -delete 2>/dev/null", timeout=DOCTOR_ADB_TIMEOUT_SEC)
         return len(paths)
 
     def describe(self):

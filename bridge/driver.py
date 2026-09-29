@@ -311,19 +311,17 @@ class PhoneDriver:
         raise NotImplementedError
 
     def resume_whatsapp(self):
-        """Bring WhatsApp's own task to the foreground the way ``park()``'s own launch branch does
-        (the monkey LAUNCHER intent), WITHOUT the BACK loop or the trailing HOME ``park()`` always
-        does -- so the caller can read what the task actually resumes INTO before deciding anything,
-        the one thing a focus read taken after ``park()`` already pressed HOME can never show
-        (TASK-315 live incident, 2026-09-29 10:15-10:32 UTC: ArchivedConversationsActivity was left
-        on top of WhatsApp's own task, ``park()`` pressed HOME so ``focus()`` read clean, and every
-        later relaunch kept resuming the archive). -> the resulting ``focus()`` string. Starts
-        WhatsApp fresh when it was not running at all -- there is no separate "launch" verb."""
-        raise NotImplementedError
+        """Bring WhatsApp's own task to the foreground (the monkey LAUNCHER intent), starting it
+        fresh when it was not running at all -- there is no separate "launch" verb. -> the
+        resulting ``focus()`` string.
 
-    def back(self):
-        """One BACK key event. Never a tap -- the caller has nothing sound to tap when it does not
-        know what is on screen."""
+        REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B): this used to be probed
+        periodically with no HOME to follow, specifically so the caller could read what the task
+        resumed INTO. That is exactly the problem -- foregrounding WhatsApp suppresses
+        notifications and can land on/open a Conversation, which sends read receipts. PhoneDoctor
+        now calls this ONLY for the one remedy that needs a dead WhatsApp process relaunched
+        (``dialog_scan``/pidof-empty), and ALWAYS follows it with ``home()`` in the same breath,
+        never inspecting what it resumed into."""
         raise NotImplementedError
 
     def home(self):
@@ -338,13 +336,27 @@ class PhoneDriver:
         does not dismiss it either -- this is what actually clears it, verified live 2026-09-26)."""
         raise NotImplementedError
 
+    def screen_ready(self):
+        """-> True when the screen is awake AND the keyguard is not up (TASK-315 review point 7):
+        ``dialog_scan()`` reads and interprets arbitrary on-screen UI content, which is not a safe
+        thing to do against a locked or asleep screen (nothing meaningful to read, and a tap
+        computed from a dump of the lock screen is a tap on the lock screen). Memory and pidof
+        checks do not call this -- they read ``/proc`` and process state, not screen content, and
+        must keep running regardless of screen state."""
+        raise NotImplementedError
+
     def dialog_scan(self):
-        """-> {"focus": str, "dialog": None | {"kind": str, "tap": (x, y)}} for a KNOWN stray
-        dialog (TASK-315 AC#9): ``kind`` is ``"sms_default_app_warning"`` or ``"usb_nutzung"``,
-        ``tap`` a point computed from the real on-screen bounds of THIS dump, never a fixed
-        coordinate. Returns plain data, not uiautomator Nodes, so the one place bounds are read and
-        turned into a tap point is the driver layer (adb_driver.py's own implementation) and
-        bridge/doctor.py's decision logic runs unchanged against FakeDriver in a test."""
+        """-> {"focus": str, "dialog": None | {"kind": str, "tap": (x, y) | None}} for a KNOWN
+        stray dialog (TASK-315 AC#9): ``kind`` is ``"sms_default_app_warning"`` or
+        ``"usb_nutzung"``, ``tap`` a point computed from the real on-screen bounds of THIS dump,
+        never a fixed coordinate -- and possibly None when a dialog is known to be present but no
+        safe tap point exists (see ``adb_driver._outside_frame_tap``'s TASK-315 review rewrite:
+        the caller must be able to tell "nothing to do" (dialog is None) apart from "something to
+        do but no safe way to do it" (dialog present, tap is None) so it can give up cleanly rather
+        than either silently doing nothing or guessing a point). Returns plain data, not
+        uiautomator Nodes, so the one place bounds are read and turned into a tap point is the
+        driver layer (adb_driver.py's own implementation) and bridge/doctor.py's decision logic
+        runs unchanged against FakeDriver in a test."""
         raise NotImplementedError
 
     def tap_point(self, x, y):
@@ -443,10 +455,6 @@ class FakeDriver(PhoneDriver):
         # shape ``ticks`` already uses on this class.
         self.resume_focus_sequence = []
         self.resume_focus_value = "com.whatsapp/.HomeActivity"
-        self.back_presses = 0
-        # back() pops one focus string per call the same way, so a test can script exactly how many
-        # BACK presses it takes to reach HomeActivity (or that it never does, by leaving this empty).
-        self.back_sequence = []
         self.home_presses = 0
         self.force_stop_calls = 0
         self.doctor_taps = []                 # every (x, y) tap_point() was asked to tap, in order
@@ -454,6 +462,7 @@ class FakeDriver(PhoneDriver):
         # dialog or a foreign focus, the same "one field IS the answer" shape focus_value already is.
         self.dialog_scan_value = {"focus": "com.android.launcher/.Home", "dialog": None}
         self.orphaned_recordings = 0          # how many sweep_orphaned_recordings() should report
+        self.screen_ready_value = True        # what screen_ready() answers
         self.busy = False         # the other lane holds huawei01.lock
         self.fail_on_open = None
         self.fail_on_send = None
@@ -771,11 +780,6 @@ class FakeDriver(PhoneDriver):
         self.focus_value = focus
         return focus
 
-    def back(self):
-        self.back_presses += 1
-        if self.back_sequence:
-            self.focus_value = self.back_sequence.pop(0)
-
     def home(self):
         self.home_presses += 1
         self.focus_value = "com.android.launcher/.Home"
@@ -783,6 +787,9 @@ class FakeDriver(PhoneDriver):
     def force_stop_whatsapp(self):
         self.force_stop_calls += 1
         self.whatsapp_alive = False
+
+    def screen_ready(self):
+        return self.screen_ready_value
 
     def dialog_scan(self):
         return dict(self.dialog_scan_value)
