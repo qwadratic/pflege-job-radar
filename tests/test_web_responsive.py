@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 WEB = pathlib.Path(__file__).resolve().parent.parent / "web"
 ROUTES = [("index.html", r) for r in ["#/", "#/jobs", "#/clinic/16100", "#/job/1"]] + \
-         [("pro.html", r) for r in ["#/", "#/jobs", "#/clawl", "#/billing", "#/settings", "#/plan", "#/clinic/16100"]]
+         [("pro.html", r) for r in ["#/", "#/jobs", "#/leads", "#/clawl", "#/billing", "#/settings", "#/plan", "#/clinic/16100"]]
 
 
 @pytest.fixture(scope="module")
