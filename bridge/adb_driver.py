@@ -291,6 +291,46 @@ def covers(node, point):
     return node.bounds[0] <= x <= node.bounds[2] and node.bounds[1] <= y <= node.bounds[3]
 
 
+def _outside_frame_tap(nodes):
+    """-> (x, y) in the dimmed scrim OUTSIDE a dialog's own content, computed from THIS dump's real
+    bounds -- never a fixed coordinate (TASK-315 AC#9: 'never tap Einladen or SMS', and a hardcoded
+    pixel is exactly the kind of guess that rule exists to rule out). None when the dump carries
+    nothing to measure a frame against, so the caller leaves the dialog alone rather than guess.
+
+    The scrim itself is drawn as one node spanning the whole screen and is excluded from the
+    'frame' -- every node that actually carries a label or is clickable (the dialog's title,
+    message and buttons) is what the frame is measured from instead. The point returned sits
+    directly above the frame's top edge (or, when the frame already reaches near the top of the
+    screen, directly below its bottom edge) -- outside the frame's own bounds on every dump this
+    could plausibly see, since a dialog is never drawn edge-to-edge on either axis at once.
+
+    UNVERIFIED against a live SmsDefaultAppWarning dump (module docstring: this file's own bounds
+    reading has no way to be captured off-device). Revisit the heuristic the first time
+    ``doctor_sms_default_app_warning``'s own screenshot shows it landed somewhere it should not
+    have -- the decision logic this feeds (bridge/doctor.py) is what tests/test_bridge_doctor.py
+    exercises directly, against FakeDriver, so a wrong point here never reaches "never tap
+    Einladen/SMS": there is no code path from a tap point to a button's own text at all.
+    """
+    labelled = [n for n in nodes if n.text or n.desc or n.clickable]
+    if not labelled:
+        return None
+    screen_w = max(n.bounds[2] for n in nodes)
+    screen_h = max(n.bounds[3] for n in nodes)
+    frame = [n for n in labelled
+             if not (n.bounds[0] <= 0 and n.bounds[1] <= 0
+                     and n.bounds[2] >= screen_w and n.bounds[3] >= screen_h)]
+    if not frame:
+        return None
+    x1 = min(n.bounds[0] for n in frame)
+    y1 = min(n.bounds[1] for n in frame)
+    x2 = max(n.bounds[2] for n in frame)
+    x = (x1 + x2) // 2
+    if y1 > 60:
+        return (x, y1 // 2)
+    y2 = max(n.bounds[3] for n in frame)
+    return (x, min(screen_h - 20, y2 + (screen_h - y2) // 2))
+
+
 def parse_contacts(out):
     """-> [(digits, display name)] from ``content query`` on the contacts provider.
 
@@ -1725,6 +1765,59 @@ class AdbDriver(D.PhoneDriver):
         stamp = datetime.now(self.tz).strftime("%Y%m%d_%H%M%S")
         return self.adb.screenshot(self.shots_dir / f"{stamp}_{self._shot_n:03d}_{slug}.png")
 
+    # --- PhoneDoctor (TASK-315 AC#9) -----------------------------------------------------------
+    def mem_available_mb(self):
+        out = self.adb.shell("cat /proc/meminfo | grep -m1 MemAvailable")
+        hit = re.search(r"MemAvailable:\s*(\d+)\s*kB", out or "")
+        if not hit:
+            raise D.DriverError(f"MemAvailable not found in /proc/meminfo (got {out!r})")
+        return int(hit.group(1)) // 1024
+
+    def kill_background(self):
+        self.adb.shell("am kill-all")
+
+    def whatsapp_running(self):
+        return bool(self.adb.shell(f"pidof {WHATSAPP}").strip())
+
+    def resume_whatsapp(self):
+        """See PhoneDriver.resume_whatsapp's own docstring for why this is not ``park()`` -- same
+        monkey LAUNCHER intent ``park()``/``_chat_list`` already use, no BACK loop, no trailing
+        HOME: the caller reads what the task resumed INTO before deciding anything."""
+        self.adb.shell(f"monkey -p {WHATSAPP} -c android.intent.category.LAUNCHER 1 "
+                       ">/dev/null 2>&1")
+        time.sleep(1.2)
+        return self.adb.focus()
+
+    def back(self):
+        self.adb.key("KEYCODE_BACK")
+
+    def home(self):
+        self.adb.key("KEYCODE_HOME")
+
+    def force_stop_whatsapp(self):
+        self.adb.shell(f"am force-stop {WHATSAPP}")
+        time.sleep(0.3)
+
+    def dialog_scan(self):
+        """See PhoneDriver.dialog_scan's own docstring. Identification is by ``focus()`` alone (the
+        card's own wording: 'focus contains SmsDefaultAppWarning' / 'focus in com.android.settings')
+        -- a dump is only taken, and only turned into a tap point, once the focus already names a
+        known dialog, so an ordinary cycle with nothing wrong costs one ``dumpsys`` and nothing
+        more."""
+        focus = self.adb.focus()
+        if "SmsDefaultAppWarning" in focus:
+            tap = _outside_frame_tap(self.adb.dump(required=False))
+            if tap is not None:
+                return {"focus": focus, "dialog": {"kind": "sms_default_app_warning", "tap": tap}}
+        elif focus.startswith("com.android.settings"):
+            cancel = find(self.adb.dump(required=False), contains="ABBRECHEN", clickable=True)
+            if cancel:
+                return {"focus": focus, "dialog": {"kind": "usb_nutzung", "tap": cancel[0].center}}
+        return {"focus": focus, "dialog": None}
+
+    def tap_point(self, x, y):
+        self.adb.tap(x, y)
+
     # --- retention (TASK-230): listing is mechanical (mtime), deciding is bridge/retention.py's job
     def list_screenshot_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
         cutoff = now.timestamp() - days * 86400
@@ -1788,8 +1881,18 @@ class AdbDriver(D.PhoneDriver):
         gone with the process. One dispatcher thread per process, the same fact
         ``bridge/ledger.py``'s ``_recover_stuck_ops`` already relies on for the matching ledger
         row -- so any ``op.*.mp4`` still on the device when a fresh driver starts belongs to a
-        process that no longer exists. Call once, at startup, before anything can be recording."""
+        process that no longer exists. Call once, at startup, before anything can be recording --
+        and again every PhoneDoctor cycle (TASK-315 AC#9), where the return value is what tells the
+        doctor whether this cycle actually found something to journal.
+
+        Listed before it is removed, rather than trusted to ``rm``'s own count, because toybox
+        ``rm`` on this handset prints nothing parseable either way -- ``ls`` first is the only
+        honest way to say how many, and a glob matching nothing is an empty listing, not an error
+        (the same ``2>/dev/null`` shape ``list_media`` already relies on)."""
+        listing = self.adb.shell("ls /sdcard/op.*.mp4 2>/dev/null")
+        paths = [line.strip() for line in (listing or "").splitlines() if line.strip()]
         self.adb.shell("rm -f /sdcard/op.*.mp4")
+        return len(paths)
 
     def describe(self):
         """What the drift monitor reads. Ours is our own file's hash: there is no third party left."""

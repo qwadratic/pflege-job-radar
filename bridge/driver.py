@@ -291,6 +291,77 @@ class PhoneDriver:
         """-> dict identifying the driver code actually loaded (TASK-140 drift monitor)."""
         raise NotImplementedError
 
+    # --- PhoneDoctor (TASK-315 AC#9, Ivan 2026-09-29: "постоянно устранять всё, что мешает
+    # основному сценарию" -- continuously clear away anything that blocks the main scenario).
+    # Deliberately low-level and few verbs, same reasoning as this module's own docstring: the
+    # DECIDING (which dialog, which remedy) lives in bridge/doctor.py so it is testable against
+    # FakeDriver with no phone in the room; these verbs are only the "how" of one primitive touch.
+    def mem_available_mb(self):
+        """-> MemAvailable off ``/proc/meminfo``, in MB. Raises DriverError when it cannot be
+        read/parsed -- never a guessed number."""
+        raise NotImplementedError
+
+    def kill_background(self):
+        """``am kill-all``: background processes only, never the foreground app. No return value;
+        the caller reads ``mem_available_mb()`` again itself to see what it bought."""
+        raise NotImplementedError
+
+    def whatsapp_running(self):
+        """-> True when ``pidof com.whatsapp`` names a live process."""
+        raise NotImplementedError
+
+    def resume_whatsapp(self):
+        """Bring WhatsApp's own task to the foreground the way ``park()``'s own launch branch does
+        (the monkey LAUNCHER intent), WITHOUT the BACK loop or the trailing HOME ``park()`` always
+        does -- so the caller can read what the task actually resumes INTO before deciding anything,
+        the one thing a focus read taken after ``park()`` already pressed HOME can never show
+        (TASK-315 live incident, 2026-09-29 10:15-10:32 UTC: ArchivedConversationsActivity was left
+        on top of WhatsApp's own task, ``park()`` pressed HOME so ``focus()`` read clean, and every
+        later relaunch kept resuming the archive). -> the resulting ``focus()`` string. Starts
+        WhatsApp fresh when it was not running at all -- there is no separate "launch" verb."""
+        raise NotImplementedError
+
+    def back(self):
+        """One BACK key event. Never a tap -- the caller has nothing sound to tap when it does not
+        know what is on screen."""
+        raise NotImplementedError
+
+    def home(self):
+        """One HOME key event. Plain and unconditional, unlike ``park()``: the caller has already
+        decided the phone is safe to leave (bridge/doctor.py's own docstring on why it is never
+        called on an open Conversation)."""
+        raise NotImplementedError
+
+    def force_stop_whatsapp(self):
+        """``am force-stop com.whatsapp``. The last resort once BACK alone will not clear a stuck
+        task (TASK-315: the SmsDefaultAppWarning dialog sits inside WhatsApp's own task and BACK
+        does not dismiss it either -- this is what actually clears it, verified live 2026-09-26)."""
+        raise NotImplementedError
+
+    def dialog_scan(self):
+        """-> {"focus": str, "dialog": None | {"kind": str, "tap": (x, y)}} for a KNOWN stray
+        dialog (TASK-315 AC#9): ``kind`` is ``"sms_default_app_warning"`` or ``"usb_nutzung"``,
+        ``tap`` a point computed from the real on-screen bounds of THIS dump, never a fixed
+        coordinate. Returns plain data, not uiautomator Nodes, so the one place bounds are read and
+        turned into a tap point is the driver layer (adb_driver.py's own implementation) and
+        bridge/doctor.py's decision logic runs unchanged against FakeDriver in a test."""
+        raise NotImplementedError
+
+    def tap_point(self, x, y):
+        """Tap exactly this point. The one verb PhoneDoctor's dialog remedies use to act on
+        ``dialog_scan()``'s own ``tap`` -- never a button found by its label (TASK-315: 'never tap
+        Einladen or SMS' is enforced structurally by there being no way to address a button by text
+        here at all, only a point)."""
+        raise NotImplementedError
+
+    def sweep_orphaned_recordings(self):
+        """Delete any ``/sdcard/op.*.mp4`` left behind by a process that died between
+        ``start_recording`` and ``stop_recording``'s own ``finally`` (TASK-228's own docstring). ->
+        how many were found and removed. Called once at startup (``bridge/server.py::main``) and
+        every PhoneDoctor cycle (TASK-315 AC#9) -- idempotent either way: nothing to remove is 0,
+        never an error."""
+        raise NotImplementedError
+
 
 class FakeDriver(PhoneDriver):
     """The test phone. It exists to make the failure modes reachable, not to be realistic.
@@ -355,6 +426,34 @@ class FakeDriver(PhoneDriver):
         self.screenshot_candidates = []   # [Path], what list_screenshot_candidates() hands back
         self.recording_candidates = []    # [Path], what list_recording_candidates() hands back
         self.deleted_paths = []           # every path delete_paths() was asked to remove, in order
+        # --- PhoneDoctor (TASK-315 AC#9) ----------------------------------------------------------
+        # Every field here is a script the test writes, same convention as the rest of this class.
+        self.mem_available_mb_value = 2000    # what mem_available_mb() answers
+        self.fail_mem_available = False       # raise DriverError instead of answering
+        self.kill_all_calls = 0               # how many times kill_background() ran
+        # A test scripts the MB kill_background() bought by setting this -- None (the default)
+        # means the reading is unchanged, the same "script it or nothing happens" shape as every
+        # other side effect on this class.
+        self.mem_available_after_kill = None
+        self.whatsapp_alive = True            # what whatsapp_running() answers
+        self.whatsapp_resumed = 0             # how many times resume_whatsapp() ran
+        # resume_whatsapp() pops one focus string per call from this list (a test scripts a
+        # sequence -- e.g. the archive first, HomeActivity once force-stopped) and falls back to
+        # resume_focus_value once the list is exhausted, the same "sequence, then a steady default"
+        # shape ``ticks`` already uses on this class.
+        self.resume_focus_sequence = []
+        self.resume_focus_value = "com.whatsapp/.HomeActivity"
+        self.back_presses = 0
+        # back() pops one focus string per call the same way, so a test can script exactly how many
+        # BACK presses it takes to reach HomeActivity (or that it never does, by leaving this empty).
+        self.back_sequence = []
+        self.home_presses = 0
+        self.force_stop_calls = 0
+        self.doctor_taps = []                 # every (x, y) tap_point() was asked to tap, in order
+        # dialog_scan() returns a copy of this dict -- a test sets it directly to script a known
+        # dialog or a foreign focus, the same "one field IS the answer" shape focus_value already is.
+        self.dialog_scan_value = {"focus": "com.android.launcher/.Home", "dialog": None}
+        self.orphaned_recordings = 0          # how many sweep_orphaned_recordings() should report
         self.busy = False         # the other lane holds huawei01.lock
         self.fail_on_open = None
         self.fail_on_send = None
@@ -649,6 +748,51 @@ class FakeDriver(PhoneDriver):
 
     def describe(self):
         return {"kind": "fake", "serial": None, "modules": {}}
+
+    # --- PhoneDoctor (TASK-315 AC#9) --------------------------------------------------------------
+    def mem_available_mb(self):
+        if self.fail_mem_available:
+            raise DriverError("MemAvailable unreadable (scripted)")
+        return self.mem_available_mb_value
+
+    def kill_background(self):
+        self.kill_all_calls += 1
+        if self.mem_available_after_kill is not None:
+            self.mem_available_mb_value = self.mem_available_after_kill
+
+    def whatsapp_running(self):
+        return self.whatsapp_alive
+
+    def resume_whatsapp(self):
+        self.whatsapp_resumed += 1
+        self.whatsapp_alive = True
+        focus = (self.resume_focus_sequence.pop(0) if self.resume_focus_sequence
+                 else self.resume_focus_value)
+        self.focus_value = focus
+        return focus
+
+    def back(self):
+        self.back_presses += 1
+        if self.back_sequence:
+            self.focus_value = self.back_sequence.pop(0)
+
+    def home(self):
+        self.home_presses += 1
+        self.focus_value = "com.android.launcher/.Home"
+
+    def force_stop_whatsapp(self):
+        self.force_stop_calls += 1
+        self.whatsapp_alive = False
+
+    def dialog_scan(self):
+        return dict(self.dialog_scan_value)
+
+    def tap_point(self, x, y):
+        self.doctor_taps.append((x, y))
+
+    def sweep_orphaned_recordings(self):
+        removed, self.orphaned_recordings = self.orphaned_recordings, 0
+        return removed
 
 
 def require_tick(bubble):

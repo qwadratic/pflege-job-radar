@@ -62,6 +62,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from . import adb_driver as AD
 from . import broadcast as B
 from . import dispatcher as OD
+from . import doctor as PD
 from . import driver as D
 from . import errors as E
 from . import executor as X
@@ -707,6 +708,21 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
                                       W.DEFAULT_UNRESOLVED_SEND_INTERVAL_SEC)),
         log=stamped).start()
     executor.unresolved_send_watcher = unresolved_send_watcher
+    # TASK-315 AC#9: PhoneDoctor, default ON -- Ivan 2026-09-29, "постоянно устранять всё, что
+    # мешает основному сценарию" (continuously clear away anything blocking WhatsApp automation).
+    # WA_BRIDGE_DOCTOR_ENABLED=0 is the one off switch, same shape as WA_BRIDGE_DEBUG_CAPTURE's own.
+    doctor_enabled = os.environ.get("WA_BRIDGE_DOCTOR_ENABLED", "1").strip() not in ("0", "false", "no")
+    doctor = None
+    if doctor_enabled:
+        doctor = PD.PhoneDoctor(
+            executor,
+            interval=float(os.environ.get("WA_BRIDGE_DOCTOR_INTERVAL_SEC", PD.DEFAULT_INTERVAL_SEC)),
+            min_mem_mb=int(os.environ.get("WA_BRIDGE_DOCTOR_MIN_MEM_MB", PD.DEFAULT_MIN_MEM_MB)),
+            log=stamped).start()
+        stamped(f"phone doctor: on, every {doctor.interval:.0f}s, kill-all below "
+               f"{doctor.min_mem_mb} MB free. WA_BRIDGE_DOCTOR_ENABLED=0 to disable.")
+    else:
+        stamped("phone doctor: off (WA_BRIDGE_DOCTOR_ENABLED=0)")
     server = BridgeServer(executor, token, port=int(os.environ.get("WA_BRIDGE_PORT", DEFAULT_PORT)),
                           log=stamped, operations=operations, broadcast=broadcast,
                           dispatcher=ops_dispatcher)
@@ -729,6 +745,8 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         unresolved_send_watcher.stop()
         runner.stop()
         ops_dispatcher.stop()
+        if doctor is not None:
+            doctor.stop()
         server.server_close()
         ledger.close()
 

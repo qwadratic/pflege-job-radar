@@ -847,6 +847,20 @@ class Ledger:
             by_priority[tier_name.get(r["priority"], str(r["priority"]))] = r["c"]
         return {"queued": row["c"], "oldest_queued_at": row["oldest"], "by_priority": by_priority}
 
+    def phone_ops_active(self):
+        """-> True when any phone_ops row is still ``queued`` or ``running`` (TASK-315 AC#9): the
+        guard ``bridge/doctor.py::PhoneDoctor`` checks BEFORE it ever tries ``huawei01.lock`` --
+        cheaper than a lock attempt, and it catches a row that is merely queued (the dispatcher has
+        not claimed it yet, so the lock itself is still free right now) the same way
+        ``bridge/watcher.py``'s ``BroadcastRunner``/``IdentityWatcher`` already step aside on
+        ``phone_ops_queue_counts()`` before their own long-patience acquire -- the doctor must never
+        race a dispatched op for the lock the instant it frees up mid-sequence, only ever act when
+        the queue is genuinely empty AND nothing is running."""
+        row = self._db.execute(
+            "select count(*) c from phone_ops where state in (?, ?)",
+            (OP_QUEUED, OP_RUNNING)).fetchone()
+        return row["c"] > 0
+
     # --- retention review (TASK-230, Ivan 2026-09-23): a failed op with no outbound entry to read a
     # verdict off (read_thread, send_photos/gallery/document -- none of these mint a client_msg_id)
     # has no automatic way to become safe to delete. This is the manual

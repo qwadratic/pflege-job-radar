@@ -175,6 +175,10 @@ class Executor:
         # starting at claim time, so its 180s budget covers only this op's own work, never a lock
         # wait or another lane's screen. None whenever debug capture is off or nothing is queued.
         self.on_phone_acquired = None
+        # Set by server.main when PhoneDoctor starts (TASK-315 AC#9). Same reason as every other
+        # watcher slot above: a quiet journal is what a clean handset looks like AND what a dead
+        # doctor looks like, and only its own heartbeat tells them apart.
+        self.doctor = None
 
     # --- POST /v1/messages ---------------------------------------------------------------------
     def send(self, req):
@@ -969,6 +973,7 @@ class Executor:
                     "runner": self.broadcast_runner.heartbeat() if self.broadcast_runner else None},
                 "ops_dispatcher": self.ops_dispatcher.heartbeat() if self.ops_dispatcher else None,
                 "phone_ops": self.ledger.phone_ops_queue_counts(),
+                "doctor": self.doctor.heartbeat() if self.doctor else None,
                 "retention": {"last_ok_at": self.last_retention_ok_at,
                               "errors": self.retention_errors,
                               "last_error": self.last_retention_error,
