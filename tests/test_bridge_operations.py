@@ -1,4 +1,4 @@
-"""Offline proof for the handset operations (TASK-147). FakeDriver only -- no adb, no phone.
+"""Offline proof for the handset operations (TASK-376). FakeDriver only -- no adb, no phone.
 
 What each test here is really about is a thing that would otherwise be found out on the handset:
 a broadcast that re-sends a delivered recipient after a restart, a run that one bad number ends.

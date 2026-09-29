@@ -1,4 +1,4 @@
-"""Producer for WA_REAL_SYSTEM_PHONES_FILE (TASK-191, follow-up to TASK-179): a fully generic,
+"""Producer for WA_REAL_SYSTEM_PHONES_FILE (TASK-336, follow-up to TASK-331): a fully generic,
 operator-configured export of the phone numbers a real, external system already knows about, into
 the exact plain newline-delimited format app/wa/routing.py's own ``_is_known_to_real_system``
 reads. Nothing else in this repo produces that file; without it, WA_REAL_SYSTEM_PHONES_FILE stays
@@ -12,7 +12,7 @@ data actually lives -- the operator supplies the exact SQL query themselves (``-
 module only ever reads the first column of each row it gets back. Nothing here is a description of
 any real product's database.
 
-Two safety properties, matching TASK-191's acceptance criteria:
+Two safety properties, matching TASK-336's acceptance criteria:
 1. The source database is opened strictly read-only -- SQLite URI ``mode=ro``, the same pattern
    app/wa/luna/shadow_run.py's db_copy() uses -- so a typo'd or malicious --query can select but
    never write, and a missing --db path fails loudly instead of silently creating an empty file.

@@ -1,4 +1,4 @@
-"""The Meta-shaped envelope one inbound message travels in (TASK-143).
+"""The Meta-shaped envelope one inbound message travels in (TASK-372).
 
 Shape fidelity is the whole trick and it is not cosmetic: ``app/wa/api.py`` parses
 ``entry[].changes[].value.messages[]`` (``inbound_messages``, ``accept_payload``, ``parse_message``,
@@ -17,10 +17,10 @@ WHAT IS HONESTLY DIFFERENT FROM A REAL META PAYLOAD, and is not papered over:
     far as a candidate is concerned.
   * a media message (document/image/audio/video) carries the id our own executor pulled off the
     handset and can resolve, exactly like a real ``image``/``document`` object Meta would nest under
-    the type name (``app/wa/bridge.Client.media_url``/``download_media``, TASK-131). The id is
+    the type name (``app/wa/bridge.Client.media_url``/``download_media``, TASK-360). The id is
     content-addressed -- ``wab.m.<sha256(bytes)[:20]>`` (``bridge/media.py``) -- so a retried
     ``download_media`` is byte-identical. It is minted ONLY once the file has been linked to THIS
-    message -- automatically (``bridge/identity.py::decide``, TASK-131 round 6) or, when nothing of
+    message -- automatically (``bridge/identity.py::decide``, TASK-360 round 6) or, when nothing of
     the right kind has a candidate at all, by a human (``Executor.attach_media``). Until either
     happens -- or when the kind is one this rail cannot fetch bytes for at all (location/contact) --
     the message still arrives as its notification placeholder text ("\U0001f4f7 Foto"), ``type``
@@ -64,7 +64,7 @@ def _media_object(payload):
     ``media.get("mime_type")``, ``media.get("filename")``). Optional fields are omitted rather than
     sent as ``null`` -- the same shape Meta itself uses when it has nothing to say about one.
 
-    ``link_strength`` is honestly NOT a Meta field (TASK-131 round 6, Ivan's ruling 2026-09-22): it
+    ``link_strength`` is honestly NOT a Meta field (TASK-360 round 6, Ivan's ruling 2026-09-22): it
     is how ``bridge/identity.py::decide`` attributed this file -- 'strong' (sole candidate, or one
     hard attribute confirmed it), 'weak' (nothing distinguished it from another candidate; picked
     deterministically anyway) or 'human' (the escape hatch, a person named the phone directly).

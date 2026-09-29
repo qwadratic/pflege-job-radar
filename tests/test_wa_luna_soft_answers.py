@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/refusal.py (TASK-155, Ivan's rule 2026-09-22): a conversation ends
+"""Offline tests for app/wa/luna/refusal.py (TASK-384, Ivan's rule 2026-09-22): a conversation ends
 only on an unambiguous refusal, decided by a small-model call, never by hand-written German phrase
 matching. Every test here injects a fake transport -- no subprocess, no `claude` CLI, no live model,
 no network (this module is exempt from the `llm` marker in pytest.ini for exactly that reason).
@@ -151,7 +151,7 @@ def test_phrase_table_covers_both_directions():
     assert any(expected is False for _, expected in PHRASE_TABLE)
 
 
-# --- wired into app/wa/luna_brain.py (TASK-156): the decline branch runs the classifier -------------
+# --- wired into app/wa/luna_brain.py (TASK-385): the decline branch runs the classifier -------------
 # Same offline seam as tests/test_wa_luna_brain.py -- a fake luna_brain.Client, no subprocess, no
 # network -- plus ``R._live_transport`` patched so the module's own live-CLI default (used when
 # turn() calls ``RF.is_unambiguous_refusal(text)`` with no explicit transport) never runs here either.

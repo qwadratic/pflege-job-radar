@@ -1,4 +1,4 @@
-"""The write-ahead journal and the first-body-wins idempotency store (TASK-130, TASK-217).
+"""The write-ahead journal and the first-body-wins idempotency store (TASK-359, TASK-217).
 
 Lives on the remote machine, next to the phone, because that is where the uncertainty is: the
 window between "keys were pressed" and "a tick was read" is 20-60 s on this rail and it is the
@@ -23,7 +23,7 @@ WHAT IS NOT STORED: message bodies and nothing derived from them but a sha256. T
 stored because reconcile has to be able to re-open the chat; it is never written to a log line
 (``thread_tag`` is what the logs get).
 
-THE ONE EXCEPTION, AND IT IS DELIBERATE (TASK-147): ``broadcast_item.body`` holds the text of an
+THE ONE EXCEPTION, AND IT IS DELIBERATE (TASK-376): ``broadcast_item.body`` holds the text of an
 outbound message that has not been sent yet. A broadcast that survives a restart has to be able to
 say what it was still going to type, and a queue that forgot its own text would resume by sending
 nothing. These are our own outreach lines, not a candidate's words; they are swept with the rest of
@@ -64,7 +64,7 @@ RESENDABLE = frozenset({ABSENT, NOT_ATTEMPTED})
 #: settles.
 SAFE_OUTBOUND_STATES = frozenset({SENT, ABSENT, NOT_ATTEMPTED})
 
-# --- broadcast states (TASK-147) ---------------------------------------------------------------
+# --- broadcast states (TASK-376) ---------------------------------------------------------------
 RUN_OPEN = "open"                # the runner may pick items out of it
 RUN_STOPPED = "stopped"          # a caller pulled the handle; queued items stay queued
 RUN_DONE = "done"                # nothing queued is left
@@ -95,13 +95,13 @@ PRIORITY_URGENT = 0
 PRIORITY_NORMAL = 1
 PRIORITY_LOW = 2
 
-#: TASK-130 AC#9. Ledger rows and journal lines are kept 30 days; the mini has 457 G free but a
+#: TASK-359 AC#9. Ledger rows and journal lines are kept 30 days; the mini has 457 G free but a
 #: candidate's thread metadata is not something to keep forever in a shared home directory.
 LEDGER_RETENTION_DAYS = 30
 #: Inbound events already acked by our VPS are handed over; 7 days is the batch-result retention.
 INBOUND_RETENTION_DAYS = 7
 
-#: The inbound event minted for a human's attach (TASK-131 round 5 -- decision-9, 2026-09-22:
+#: The inbound event minted for a human's attach (TASK-360 round 5 -- decision-9, 2026-09-22:
 #: automatic attribution removed). There is never a real notification behind it: the file may have
 #: arrived long after its own placeholder message was drained and swept off this ledger, or (the
 #: files already on the live rail before this round) before this ledger even recorded one. A fresh
@@ -124,7 +124,7 @@ AUTO_LINK_INBOUND_PREFIX = "wab.i.autolink."
 ATTACH_PLACEHOLDER_TEXT = {"image": "\U0001f4f7 Foto", "video": "\U0001f3a5 Video",
                           "document": "\U0001f4c4 Dokument", "audio": "\U0001f3a4 Sprachnachricht"}
 
-#: How wide a net "threads that plausibly relate to this file" (the queue listing, TASK-131 round
+#: How wide a net "threads that plausibly relate to this file" (the queue listing, TASK-360 round
 #: 5 requirement 3) casts. Informational only, never a decision: nothing built on this ever
 #: attaches anything, so a wide net costs a human a longer glance, not a wrong attach -- unlike the
 #: deleted link_files' 180s pre-filter, which was a proof obligation for an automatic decision.
@@ -282,7 +282,7 @@ def thread_tag(phone):
     return hashlib.sha256(str(phone).encode("utf-8")).hexdigest()[:12]
 
 
-#: One queue entry per PULL INSTANCE, not per unique content (TASK-131 round 5, requirement 2): two
+#: One queue entry per PULL INSTANCE, not per unique content (TASK-360 round 5, requirement 2): two
 #: people sending byte-identical files are two ``media_seen`` rows sharing one ``media_file`` row
 #: for the bytes, so this has to be keyed on the handset path, never on the content id -- a content
 #: id is exactly what the two rows have in common and would collapse them back into one entry, the
@@ -333,7 +333,7 @@ class Ledger:
         self._recover_stuck_ops(datetime.now(timezone.utc))
 
     def _migrate_media_seen(self):
-        """TASK-131 round 5 (decision-9, 2026-09-22). ``media_seen`` already holds rows on the mini
+        """TASK-360 round 5 (decision-9, 2026-09-22). ``media_seen`` already holds rows on the mini
         that predate the queue columns entirely (six from August) -- ``create table if not exists``
         cannot add a column to a table that already exists, so they need their own explicit step,
         guarded by checking what is already there rather than assuming a bare install. This is also
@@ -346,7 +346,7 @@ class Ledger:
         (``bridge/media.py::kind_for_path`` -- exact, not a guess) -- so both are backfilled from
         facts already on the row, not invented.
         """
-        # A real, named migrations table (TASK-131 round 7, second attempt -- the first attempt
+        # A real, named migrations table (TASK-360 round 7, second attempt -- the first attempt
         # tried to infer "has this database ever seen the legacy column before" from the column's
         # own presence, which broke the moment this code itself was deployed twice in one day: the
         # first deploy's ALTER already added the column with its own DEFAULT applied to every
@@ -367,7 +367,7 @@ class Ledger:
         # pre-round-5 table does not have yet is the same "alter after the rows existed" trap the
         # six live files are already in (this docstring's own opening paragraph).
         self._db.execute("create index if not exists idx_media_seen_queue on media_seen(queue_id)")
-        # TASK-131 round 6 fix (Ivan, 2026-09-22, acceptance-run blocker): these six rows have no
+        # TASK-360 round 6 fix (Ivan, 2026-09-22, acceptance-run blocker): these six rows have no
         # notification, no candidate, no time context left -- whatever inbound message they once
         # belonged to is long past. Round 6's own brief asked for them to be reachable "by a human";
         # leaving them in auto_match_media()'s pool instead let them win as a false "sole candidate"
@@ -924,7 +924,7 @@ class Ledger:
         truncation invented here would silently drop a candidate's message.
 
         A row a file has since been attached to (a human's ``Executor.attach_media``, or an
-        automatic match -- ``Executor.auto_match_media``, TASK-131 round 6, both through
+        automatic match -- ``Executor.auto_match_media``, TASK-360 round 6, both through
         ``link_media`` below) has ``media_id``/``media_mime_type``/``media_filename`` merged into
         the payload the caller already stored fresh from whatever ``media_link``/``media_file`` say
         right now -- the stored payload itself is never rewritten, so a re-poll of the same window
@@ -955,7 +955,7 @@ class Ledger:
                 break
         return out
 
-    # --- inbound media: the unresolved queue (TASK-131 round 5) ----------------------------------
+    # --- inbound media: the unresolved queue (TASK-360 round 5) ----------------------------------
     def media_known_paths(self):
         """-> the handset rel-paths already pulled at least once. A file at one of these paths is
         never fetched a second time (colleague's own ``_known_media`` set, made durable here)."""
@@ -966,7 +966,7 @@ class Ledger:
         """A file just pulled off the handset -> one queue row, always. -> True when these bytes
         are new to the store.
 
-        Content-addressed for the BYTES only (TASK-131): two handset paths carrying the same bytes
+        Content-addressed for the BYTES only (TASK-360): two handset paths carrying the same bytes
         (a resend, or two different people) share one ``media_file`` row and the second pull does
         not re-store a duplicate copy. The QUEUE is keyed on the handset path instead
         (``media_seen``, one row per ``source_rel``) -- on purpose, and it is the fix for the round
@@ -999,7 +999,7 @@ class Ledger:
         """-> every pulled file nobody has attached yet, oldest first -- what a human still sees for
         whatever it cannot place (``auto_only=False``, the default: everything, legacy rows
         included -- ``attach_media`` must still reach them by hand). ``content_pull_count`` is how
-        many pulls (this row included) share this file's bytes (TASK-131 round 6 ALSO FIX): 1 for an
+        many pulls (this row included) share this file's bytes (TASK-360 round 6 ALSO FIX): 1 for an
         ordinary file, >1 when the same content was pulled more than once -- a resend, or two people
         sending one identical template -- made visible here rather than silently folded into
         whichever pull got stored first.
@@ -1024,7 +1024,7 @@ class Ledger:
     def media_backlog(self, now):
         """-> {"unresolved", "oldest_unresolved_sec", "by_kind", "duplicate_content", "weak_links"}
         for /v1/health -- enough for a human to see the queue is growing, or not, and to audit an
-        automatic match (TASK-131 round 6) without opening ``media-list``."""
+        automatic match (TASK-360 round 6) without opening ``media-list``."""
         rows = self._db.execute(
             "select kind, seen_at from media_seen where attached_at is null").fetchall()
         by_kind, oldest = {}, None
@@ -1067,7 +1067,7 @@ class Ledger:
     def unlinked_media_candidates(self, kind):
         """-> [{"phone", "inbound_id", "time_ms"}] for inbound rows of this media kind that no file
         has been linked to yet -- ``bridge/executor.py::Executor.auto_match_media``'s candidate pool
-        (TASK-131 round 6). Never the decision itself, only the pool ``bridge/identity.py::decide``
+        (TASK-360 round 6). Never the decision itself, only the pool ``bridge/identity.py::decide``
         picks from. Read and filtered in Python, like ``media_related_threads`` above: inbound
         volume on this rail is candidates, not rows at any scale that would matter."""
         rows = self._db.execute(
@@ -1102,7 +1102,7 @@ class Ledger:
         return True
 
     def attach_media(self, queue_id, phone, *, now):
-        """THE human escape hatch (TASK-131 round 5, decision-9 2026-09-22): the one way a file
+        """THE human escape hatch (TASK-360 round 5, decision-9 2026-09-22): the one way a file
         leaves the queue. -> the inbound_key minted for it. Raises ``KeyError`` for an unknown
         ``queue_id``, ``ValueError`` when it is already attached -- ``Executor.attach_media`` turns
         both into the wire's own refusal codes.
@@ -1142,7 +1142,7 @@ class Ledger:
         return inbound_key
 
     def link_media_auto(self, queue_id, inbound_id, phone, *, strength, reason, now):
-        """THE automatic path (TASK-131 round 6, Ivan's ruling 2026-09-22, supersedes decision-9):
+        """THE automatic path (TASK-360 round 6, Ivan's ruling 2026-09-22, supersedes decision-9):
         tie a queued file to an EXISTING inbound row -- the real notification-shade message
         ``bridge/identity.py::decide`` picked a candidate for -- unlike ``attach_media`` above,
         which mints a placeholder because a human names only a phone, never a specific message.
@@ -1217,7 +1217,7 @@ class Ledger:
             "select count(*) c, min(received_at) oldest from inbound where acked_at is null").fetchone()
         return {"unacked": row["c"], "oldest_unacked_at": row["oldest"]}
 
-    # --- broadcast runs (TASK-147) -----------------------------------------------------------------
+    # --- broadcast runs (TASK-376) -----------------------------------------------------------------
     def create_run(self, run_id, *, note, pacing, items, now):
         """Write the whole run before a single item is attempted, for the same reason ``begin``
         writes before a keystroke: a run that exists only in a thread's memory is a run that a
@@ -1325,7 +1325,7 @@ class Ledger:
             "select count(*) c from broadcast_item where run_id=? and status=?",
             (run_id, ITEM_QUEUED)).fetchone()["c"]
 
-    # --- the destruction audit (TASK-147; write side removed TASK-289 -- see
+    # --- the destruction audit (TASK-376; write side removed TASK-289 -- see
     # bridge/operations.py's own module docstring) -------------------------------------------------
     def audit_count(self):
         return self._db.execute("select count(*) c from audit").fetchone()["c"]
@@ -1340,7 +1340,7 @@ class Ledger:
             args.append(int(limit))
         return [_audit_row(r) for r in self._db.execute(sql, args).fetchall()]
 
-    # --- retention (TASK-130 AC#9) -----------------------------------------------------------------
+    # --- retention (TASK-359 AC#9) -----------------------------------------------------------------
     def sweep(self, now, *, ledger_days=LEDGER_RETENTION_DAYS, inbound_days=INBOUND_RETENTION_DAYS):
         ledger_cut = utc(now - timedelta(days=ledger_days))
         inbound_cut = utc(now - timedelta(days=inbound_days))
@@ -1400,7 +1400,7 @@ class Ledger:
                 media_file_paths.append(row["local_path"])
             # Finished runs take their bodies with them. An unfinished run is never swept: it is
             # still owed to somebody. The audit table is not here on purpose: a destruction record
-            # outlives the thing it destroyed (TASK-147; the capability that wrote it is gone,
+            # outlives the thing it destroyed (TASK-376; the capability that wrote it is gone,
             # TASK-289, but its six existing rows are not swept retroactively).
             items = self._db.execute(
                 """delete from broadcast_item where run_id in

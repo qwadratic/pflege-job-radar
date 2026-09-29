@@ -1,4 +1,4 @@
-"""Where ledger, governor and driver are sequenced. The HTTP handlers hold no logic (TASK-130).
+"""Where ledger, governor and driver are sequenced. The HTTP handlers hold no logic (TASK-359).
 
 THE FLOCK RULE, written here because this is the only file that can break it:
 
@@ -14,7 +14,7 @@ THE FLOCK RULE, written here because this is the only file that can break it:
     ``send`` and released before the response is written. There is no code path in this package
     that acquires the lock twice, and FakeDriver raises on a re-entrant acquire so a test notices.
 
-    WHAT ONE ACQUISITION ACTUALLY COSTS, measured rather than hoped for (TASK-146). "Nothing slow
+    WHAT ONE ACQUISITION ACTUALLY COSTS, measured rather than hoped for (TASK-375). "Nothing slow
     happens inside it" was wrong and is corrected here: a bubble owns the lock for **90-150 s**.
     open_chat waits up to 12 s for the header, PAUSE_AFTER_OPEN adds up to 4 s, typing runs at the
     handset's own 3.2-5.5 chars/s (a 219-character reply measured at a median 56 s, min 41, max 67
@@ -32,7 +32,7 @@ ORDER OF OPERATIONS IN ``send``, and every step of it is load-bearing:
                       spending quota; a replay is not a send
   3. governor      -- the fuse, before the write-ahead write, so a refusal leaves no row to
                       reconcile and the deterministic key stays usable
-  4. lock          -- BEFORE the write-ahead write (TASK-146). The other lane holds the same flock
+  4. lock          -- BEFORE the write-ahead write (TASK-375). The other lane holds the same flock
                       across its own brain call, so losing the race is the documented normal case,
                       and it is a case where nothing was typed: it has to leave no row at all. A
                       row written first would sit ``attempting``, which is not RESENDABLE, and
@@ -69,7 +69,7 @@ VERSION = "0.1.0"
 #: bridge/relay_pull.py's own WATCHER_STALE_SEC -- long enough to show a repeat across a shift.
 HEALTH_JOURNAL_WINDOW_SEC = 24 * 3600.0
 
-#: How long ``auto_match_media`` waits for huawei01.lock (TASK-131 round 6). This is UI work, the
+#: How long ``auto_match_media`` waits for huawei01.lock (TASK-360 round 6). This is UI work, the
 #: same class of work a send is -- it waits for the phone as long as a send would, not the
 #: notification watcher's short 5 s (which does not take the lock at all any more -- see
 #: ``drain_inbound``). A busy phone delays a match; it must never make one give up and guess.
@@ -115,14 +115,14 @@ class Executor:
         self.tick_wait_sec = tick_wait_sec
         self.sleep = sleep
         self.monotonic = monotonic
-        # UNVERIFIED and blocking (TASK-136): the MSISDN of the WhatsApp account on
+        # UNVERIFIED and blocking (TASK-365): the MSISDN of the WhatsApp account on
         # L2N4C19B14054874 is recorded nowhere on either machine. Health reports None rather than
         # the +49 number our own doc wrongly claims.
         self.rail_number = rail_number
         self.clock = clock
         # Watcher counters. They are in the health body because "the inbound path is alive" is not
         # provable from the outbox being empty -- an empty outbox is also what a dead watcher looks
-        # like (TASK-143).
+        # like (TASK-372).
         self.inbound_seen = 0
         self.inbound_unresolved = 0
         self.inbound_last_at = None
@@ -131,15 +131,15 @@ class Executor:
         # from "quiet because something upstream got stuck" the same way the watcher counters do.
         self.dirty_recovered = 0
         self.watcher = None
-        # Set by server.main when the media watcher starts (TASK-131). Same reason as ``watcher``
+        # Set by server.main when the media watcher starts (TASK-360). Same reason as ``watcher``
         # above: an empty media backlog is what a quiet rail looks like AND what a dead media
         # watcher looks like, and only a heartbeat tells them apart.
         self.media_watcher = None
-        # Set by server.main when the broadcast runner starts (TASK-147). Same reason as the
+        # Set by server.main when the broadcast runner starts (TASK-376). Same reason as the
         # watcher's counters: a run that is not moving and a runner that is dead produce the same
         # queue, and only a heartbeat tells them apart.
         self.broadcast_runner = None
-        # Set by server.main when the identity watcher starts (TASK-131 round 6). Same reason again:
+        # Set by server.main when the identity watcher starts (TASK-360 round 6). Same reason again:
         # an empty unresolved queue is what a fully-caught-up rail looks like AND what a dead
         # matcher looks like.
         self.identity_watcher = None
@@ -247,10 +247,10 @@ class Executor:
                                           tick_state=tick_state, clock=bubble.clock)
             # Opening a chat clears its notification, so anything that arrived since the last
             # watcher poll would vanish from the shade unmentioned. The thread is on screen and the
-            # lock is ours: read it here, where it is free (TASK-143). Same ids as the shade would
+            # lock is ours: read it here, where it is free (TASK-372). Same ids as the shade would
             # have minted -- bridge/inbound.py keys on the local minute for exactly this reason.
             #
-            # The result is journalled whatever it is (TASK-146). "0 messages" used to be the
+            # The result is journalled whatever it is (TASK-375). "0 messages" used to be the
             # answer both to a quiet chat and to a dump that came back unreadable, and those two
             # must not look alike on the one door that can lose a candidate's message: an empty
             # dump is now a DriverError at the Adb boundary and lands in ``thread_read_failed``,
@@ -270,7 +270,7 @@ class Executor:
 
         return _sent_response(entry, self.rail_number, grant)
 
-    # --- POST /v1/photos (TASK-131 round 7, Ivan 2026-09-22): outbound media -----------------------
+    # --- POST /v1/photos (TASK-360 round 7, Ivan 2026-09-22): outbound media -----------------------
     def send_photos(self, phone, local_paths):
         """Share up to D.MAX_PHOTOS_PER_SEND local image files into the thread for ``phone``. ->
         [{"clock", "tick"}, ...], one per photo, in order.
@@ -297,7 +297,7 @@ class Executor:
             # Checked here, before the phone is ever touched, so a bad path is a 400 (nothing
             # attempted) and not a 504 (send_unconfirmed already tells the caller "the handset WAS
             # touched" -- claiming that over a file that was never pushed is the same false
-            # positive TASK-130 exists to refuse). AdbDriver.send_photo keeps its own check too, for
+            # positive TASK-359 exists to refuse). AdbDriver.send_photo keeps its own check too, for
             # a direct driver caller that skips this method.
             raise E.invalid_request(f"{len(missing)} of {len(local_paths)} file(s) do not exist on "
                                     f"this machine -- nothing was sent: {missing!r}")
@@ -339,7 +339,7 @@ class Executor:
                     self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
         return {"ok": True, "at": L.utc(now), "sent": results}
 
-    # --- POST /v1/gallery (TASK-131 round 7 gallery redesign, Ivan 2026-09-22): one message,
+    # --- POST /v1/gallery (TASK-360 round 7 gallery redesign, Ivan 2026-09-22): one message,
     # several photos, a shared caption -------------------------------------------------------------
     def send_gallery(self, phone, local_paths, caption=""):
         """Share up to D.MAX_PHOTOS_PER_SEND local image files as ONE WhatsApp message. ->
@@ -394,7 +394,7 @@ class Executor:
                     self.ledger.note(self.clock(), "park_failed", None, error=str(exc))
         return {"ok": True, "at": L.utc(now), "clock": clock, "tick": tick}
 
-    # --- POST /v1/document (TASK-131 round 7, Ivan 2026-09-23: files, not photos alone) ---------
+    # --- POST /v1/document (TASK-360 round 7, Ivan 2026-09-23: files, not photos alone) ---------
     def send_document(self, phone, local_path, caption=""):
         """Share ONE local file, any type, as WhatsApp's own document attachment. -> {"clock",
         "tick"} the newest outgoing bubble reads after sending.
@@ -434,7 +434,7 @@ class Executor:
         return {"ok": True, "at": L.utc(now), "clock": clock, "tick": tick}
 
     def take_phone(self, stack, phone, **kw):
-        """Take huawei01.lock, or refuse with 503 ``device_unavailable`` (TASK-146). Recovers a
+        """Take huawei01.lock, or refuse with 503 ``device_unavailable`` (TASK-375). Recovers a
         dirty phone before handing the lock to the caller (TASK-226).
 
         The other lane takes the same flock and holds it across its own brain call, so losing the
@@ -496,7 +496,7 @@ class Executor:
 
     def _escalate(self, key, phone, reason, detail=None):
         """One screenshot, only here. Their Device shoots before every input; ours shoots on
-        escalation only (TASK-130 AC#9) -- see the NOTE in driver.py about what the wrap cannot fix.
+        escalation only (TASK-359 AC#9) -- see the NOTE in driver.py about what the wrap cannot fix.
 
         ``reason`` is a slug and becomes a filename: never an exception string, which on their
         wrong-thread path carries the chat header.
@@ -651,7 +651,7 @@ class Executor:
     def drain_inbound(self):
         """Phone -> ledger outbox. -> {"stored", "seen", "unresolved"}.
 
-        NO LOCK (TASK-131 round 6, fixing the root of half the decoy attributions this task's own
+        NO LOCK (TASK-360 round 6, fixing the root of half the decoy attributions this task's own
         brief was written from). ``pull_inbound`` is ``dumpsys notification --noredact`` -- a pure
         read that touches no UI -- and holding ``huawei01.lock`` for it was never load-bearing, only
         inherited from the send path's own discipline. The old shape skipped an entire watcher cycle
@@ -694,7 +694,7 @@ class Executor:
                 "cursor": events[-1]["id"] if events else int(after),
                 "backlog": self.ledger.inbound_backlog()}
 
-    # --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-131) -------------------------------------
+    # --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-360) -------------------------------------
     def media_metadata(self, media_id):
         """-> {"url", "mime_type", "filename", "size"} for a pulled file, or raise 404.
 
@@ -726,7 +726,7 @@ class Executor:
             ) from exc
         return blob, row["mime_type"]
 
-    # --- GET /v1/media, POST /v1/media/attach: the queue and the human escape hatch (TASK-131
+    # --- GET /v1/media, POST /v1/media/attach: the queue and the human escape hatch (TASK-360
     # round 5, decision-9 2026-09-22: automatic attribution removed) ------------------------------
     def unresolved_media(self):
         """-> every pulled file nobody has attached yet, oldest first, with what a human needs to
@@ -750,7 +750,7 @@ class Executor:
                "size": row["size"], "source_dir": row["source_dir"], "pulled_at": row["pulled_at"],
                "age_sec": L.age_sec(row["pulled_at"], now),
                "related_threads": self.ledger.media_related_threads(row["kind"], around),
-               # TASK-131 round 6 ALSO FIX: >1 means this file's bytes were pulled more than once
+               # TASK-360 round 6 ALSO FIX: >1 means this file's bytes were pulled more than once
                # (a resend, or two people sending one identical file) -- visible on the row itself,
                # not just folded into whichever pull got attached or stored first.
                "content_pull_count": row["content_pull_count"]}
@@ -783,7 +783,7 @@ class Executor:
         return {"ok": True, "at": L.utc(now), "queue_id": queue_id, "media_id": row["media_id"],
                "kind": row["kind"], "thread": L.thread_tag(phone), "inbound_id": inbound_key}
 
-    # --- automatic identity matching (TASK-131 round 6, Ivan's ruling 2026-09-22) ------------------
+    # --- automatic identity matching (TASK-360 round 6, Ivan's ruling 2026-09-22) ------------------
     def auto_match_media(self, *, lock_timeout=IDENTITY_LOCK_TIMEOUT_SEC):
         """Work the unresolved queue, attributing what ``bridge/identity.py::decide`` can decide on
         what a file IS. -> {"attached", "weak"}. Never raises: a driver failure reading one
@@ -856,7 +856,7 @@ class Executor:
         return {"attached": attached, "weak": weak}
 
     def _file_facts(self, row):
-        """-> the pulled file's own facts (TASK-131 round 6): size and kind off the queue row
+        """-> the pulled file's own facts (TASK-360 round 6): size and kind off the queue row
         (always known), filename off the store (only meaningful for a document -- the one kind
         WhatsApp keeps the sender's own name for) and, for audio, the duration computed from the
         file's own bytes (``bridge/identity.py::opus_duration_seconds_of_file`` -- no bubble read
@@ -891,7 +891,7 @@ class Executor:
         rather than assume away. One lock acquisition per phone (the same flock discipline the send
         path documents: released between chats, not held across all of them).
 
-        Newest, not oldest (fixed TASK-131 round 6 blocker B1): ``driver.read_media_evidence``
+        Newest, not oldest (fixed TASK-360 round 6 blocker B1): ``driver.read_media_evidence``
         returns bands oldest first, and the file this cycle is trying to place is -- by definition
         of reaching this candidate pool at all -- one nobody has attributed yet, i.e. the newest
         thing on that thread. An older bubble further up the same chat belongs to a file that was
@@ -949,7 +949,7 @@ class Executor:
                 "rail": {"number": self.rail_number,
                          "msisdn_verified": self.rail_number is not None,
                          "note": None if self.rail_number else
-                                 "MSISDN of L2N4C19B14054874 is UNVERIFIED and blocking (TASK-136)",
+                                 "MSISDN of L2N4C19B14054874 is UNVERIFIED and blocking (TASK-365)",
                          "driver": self.driver.describe()},
                 "queue": self.ledger.queue_counts(),
                 "oldest_unresolved_sec": L.age_sec(unresolved[0].attempted_at, now)

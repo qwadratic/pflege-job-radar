@@ -1,4 +1,4 @@
-"""TASK-224/TASK-122: turn a typed reply back into the button id app/wa/brain.py and
+"""TASK-224/TASK-351: turn a typed reply back into the button id app/wa/brain.py and
 app/wa/luna_brain.py already expect from a genuine tap.
 
 Reply buttons do not exist on a phone rail (app/wa/bridge.py:send_buttons renders the titles as
@@ -33,7 +33,7 @@ candidate answered within minutes.
 AN UNMATCHED REPLY IS NOT AN ERROR. ``recover_button_id`` returns None and the caller passes the
 reply through to the brain as ordinary text, which is exactly what happens today without this module.
 
-CONSENT IS THE ONE EXCEPTION (TASK-122, plan ADDENDUM item 5, Ivan 2026-09-21). A false consent
+CONSENT IS THE ONE EXCEPTION (TASK-351, plan ADDENDUM item 5, Ivan 2026-09-21). A false consent
 match is the one unacceptable error in this whole design, so a resolved match against
 ``luna_brain.CONSENT_YES_ID``/``CONSENT_NO_ID`` is only honoured when ``WA_BRIDGE_SYNTHETIC_CONSENT``
 is on AND the match came from the ordinal or exact-title tier -- a prefix or a keyword guess never
@@ -66,7 +66,7 @@ TIER_ORDINAL = "ordinal"
 TIER_EXACT_TITLE = "exact_title"
 TIER_PREFIX = "prefix"
 TIER_KEYWORD = "keyword"
-# TASK-122: the only tiers certain enough to grant consent -- an ordinal or the rendered title
+# TASK-351: the only tiers certain enough to grant consent -- an ordinal or the rendered title
 # itself is an unambiguous echo of what was actually offered; a prefix or a keyword is a guess.
 CONSENT_GRADE_TIERS = (TIER_ORDINAL, TIER_EXACT_TITLE)
 
@@ -175,7 +175,7 @@ def _live_offer(c, phone, target):
 
 def _record(c, wamid, offer, button_id, tier, text):
     """The matched tier and the verbatim typed token, on the inbound message itself -- AC#6's
-    general bookkeeping and TASK-122 AC#4's consent audit artefact are the same write."""
+    general bookkeeping and TASK-351 AC#4's consent audit artefact are the same write."""
     row = c.execute("select meta from wa_messages where wamid=? and direction='in'", (wamid,)).fetchone()
     if row is None:
         raise RuntimeError(f"choices.recover_button_id: no inbound wa_messages row for {wamid!r}")

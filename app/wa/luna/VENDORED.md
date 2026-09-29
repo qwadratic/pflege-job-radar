@@ -14,7 +14,7 @@ and infrastructure-specific material removed or replaced:
 | kept, same substance | genericized | dropped entirely |
 |---|---|---|
 | persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-203 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der NDT Group" | interview scheduling (a second, later conversation the source calls "Game 2") |
-| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-171, see note below — no longer entirely dropped) |
+| qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-327, see note below — no longer entirely dropped) |
 | "not placeable → explain once, then stop" | — | clinic-submission email + human-approval token flow (kept only as a state flag, see `constitution.json:handoff_principle`) |
 | primary-candidate-first (companion mentioned mid-chat) | — | manager WhatsApp call-permission form, WABA approved-template inventory |
 | housing principle (never rooms, never guarantee) | TASK-211: a yes/no whether a flat is needed comes before the people-count here, and a flat is only ever stated for a posting the board marks with housing — the source has no such board field | proactive re-engagement (soft nudges, quiet hours, promise reminders) — this harness only replies to inbound messages |
@@ -35,7 +35,7 @@ SDK, so it rides whatever Claude Code auth already exists on the host instead of
 separate `ANTHROPIC_API_KEY` — the same "the model decides the action and writes the wording;
 the harness only supplies state" design, different provider and a different call path.
 
-**Update (TASK-171):** CV/Urkunde intake is no longer entirely dropped, but it is new
+**Update (TASK-327):** CV/Urkunde intake is no longer entirely dropped, but it is new
 infrastructure written for this repo, not a port of the source's own (unseen) reaction rules --
 nothing from the source was read for this. `app/wa/api.py` now downloads a document/image
 (`app/wa/meta.py:Client.media_url`/`download_media`), extracts its text (`app/cv.py:extract_text`,

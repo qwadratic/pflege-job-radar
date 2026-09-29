@@ -1,4 +1,4 @@
-"""Inbound parsing and the id we mint for a message nobody gave an id to (TASK-142, TASK-143).
+"""Inbound parsing and the id we mint for a message nobody gave an id to (TASK-371, TASK-372).
 
 Pure: no adb, no device, no sqlite. It takes the text of ``dumpsys notification --noredact`` or a
 list of bubbles read off an open chat and returns records with ids. That is why it is a separate
@@ -52,7 +52,7 @@ WHATSAPP_PKG = "com.whatsapp"
 
 
 class Unresolvable(ValueError):
-    """The address book cannot answer for a notification title, and why (TASK-146).
+    """The address book cannot answer for a notification title, and why (TASK-375).
 
     ``resolve(title)`` returning "" already means "no number for this name". This is the other
     case: SEVERAL numbers for it. They need different words in the journal because they need
@@ -79,7 +79,7 @@ _CREATED = re.compile(r"mCreationTimeMs=(\d+)")
 
 #: The media placeholders WhatsApp puts in a notification instead of the bytes. Read off their
 #: MEDIA_HINTS map on the handset; we carry the placeholder verbatim and mark the kind, because the
-#: bytes themselves are TASK-131 and inventing a caption here would put words in a candidate's mouth.
+#: bytes themselves are TASK-360 and inventing a caption here would put words in a candidate's mouth.
 MEDIA_HINTS = {
     "\U0001f4f7": "image", "Foto": "image", "\U0001f3a5": "video", "Video": "video",
     "\U0001f4c4": "document", "Dokument": "document", "\U0001f3a4": "audio",
@@ -268,7 +268,7 @@ def thread_messages(bubbles, *, counterparty, local_date, older=0):
     The same message the shade already gave us mints the same id here, by construction: both doors
     key on the local minute. That is the whole reason the id is not keyed on milliseconds.
 
-    ``local_date`` IS AN ASSERTION ABOUT THESE BUBBLES, NOT A WALL CLOCK (TASK-146). WhatsApp draws
+    ``local_date`` IS AN ASSERTION ABOUT THESE BUBBLES, NOT A WALL CLOCK (TASK-375). WhatsApp draws
     only 'HH:MM' on a bubble, so a message from an earlier day stamped with today's date mints a
     different id from the one the shade minted for it -- a different id passes the UNIQUE column
     and is answered as a fresh message, which on the first send of day two re-answers every one of

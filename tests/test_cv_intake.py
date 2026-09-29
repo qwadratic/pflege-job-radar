@@ -1,7 +1,7 @@
-"""CV/Urkunde intake extraction primitives added for TASK-67: app/cv.py's vision path
+"""CV/Urkunde intake extraction primitives added for TASK-327: app/cv.py's vision path
 (extract_text_vision/VisionClient) for images and scanned (text-layer-less) PDFs, and
 analyse_candidate() for the WhatsApp harness (folds app.wa.store history in alongside
-cv_text/urkunde_text, then reasons over it with analyse_llm -- the extraction path TASK-65
+cv_text/urkunde_text, then reasons over it with analyse_llm -- the extraction path TASK-325
 measured as the winner, see evals/cv/README.md). No network, no real `claude` CLI subprocess in
 the default run: VisionClient/LLMClient are both fakes here, same seam convention as
 tests/test_cv_eval_cases_llm.py. pdf_bytes_with_text() is reused by tests/test_wa_media_intake.py.
@@ -28,7 +28,7 @@ def pdf_bytes_with_text(text):
     operation -- real enough for pdfplumber to extract it back out, small enough to inline in a
     test. ``text=""`` produces a PDF with an empty content stream: pdfplumber returns "" for it,
     the same "no text layer" signal a scanned Urkunde saved as PDF gives (see app/cv.py's own
-    extract_text() docstring / TASK-67 notes)."""
+    extract_text() docstring / TASK-327 notes)."""
     objs = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -102,7 +102,7 @@ def test_extract_text_vision_raises_loudly_on_an_empty_reply():
 
 
 def test_vision_client_uses_restricted_not_tools_empty_and_grants_add_dir(monkeypatch):
-    """Regression guard for the TASK-67 CLI-image-input spike: `--tools ""` was confirmed to also
+    """Regression guard for the TASK-327 CLI-image-input spike: `--tools ""` was confirmed to also
     disable the Read tool the model needs to open the file at all (it answered "I don't have a
     tool available to read local files"), so this path must use `--restricted` alone, plus
     `--add-dir` on the temp file's own directory (Read is confined to cwd + added dirs, confirmed
@@ -139,7 +139,7 @@ def test_vision_client_uses_restricted_not_tools_empty_and_grants_add_dir(monkey
     assert "--no-session-persistence" in cmd
 
 
-# --- analyse_candidate: chat history + cv_text/urkunde_text, TASK-65's winning extraction path ------
+# --- analyse_candidate: chat history + cv_text/urkunde_text, TASK-325's winning extraction path ------
 
 @pytest.fixture()
 def conn(tmp_path, monkeypatch):
@@ -232,7 +232,7 @@ def test_analyse_candidate_does_not_touch_the_public_api_cv_path():
 @pytest.mark.skipif(not shutil.which("claude"),
                     reason="'claude' is not on PATH -- CV vision extraction needs the Claude Code CLI")
 def test_real_cli_vision_extraction_reads_a_real_image(tmp_path):
-    """The TASK-67 spike question, asserted as a real regression test rather than a one-off manual
+    """The TASK-327 spike question, asserted as a real regression test rather than a one-off manual
     check: can `claude -p` actually read image content and transcribe it? Renders a short line of
     text to a real PNG with PIL and asks extract_text_vision (the real VisionClient, real
     subprocess) to read it back."""

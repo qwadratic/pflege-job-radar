@@ -1,4 +1,4 @@
-"""The fuse on the phone side: the last thing between a bug and a real person (TASK-127, TASK-130).
+"""The fuse on the phone side: the last thing between a bug and a real person (TASK-356, TASK-359).
 
 Division of labour, unchanged from the plan: our VPS owns the SCHEDULE (campaign.py's Window and
 its claimed_at-counted batching, which already survives restarts). This owns a FLOOR and a FUSE --
@@ -25,7 +25,7 @@ ea82a51:
     }
     humanize.within_active_hours(): returns False on weekday() == 6 -- Sunday is blocked.
 
-TWO HOLES IN THEIRS THAT WE DO NOT INHERIT (TASK-127):
+TWO HOLES IN THEIRS THAT WE DO NOT INHERIT (TASK-356):
   1. Their daily cap is GLOBAL and counted on a UTC day while pacing runs Europe/Berlin, so the
      window resets at 02:00 local in summer. Ours is counted on the pacing timezone day.
   2. Their quiet hours guard first touches ONLY -- within_active_hours is referenced once, inside
@@ -35,7 +35,7 @@ TWO HOLES IN THEIRS THAT WE DO NOT INHERIT (TASK-127):
 ONE CONSTANT IS NOT THEIRS AND IS NOT OURS TO INVENT: a per-recipient daily cap. Their config has
 no such number and CLAUDE.md forbids inventing one, so ``per_number_daily_cap`` is a required
 constructor argument and the server refuses to start without WA_BRIDGE_PER_NUMBER_DAILY_CAP. Ivan
-or TASK-127 names it; this module will not.
+or TASK-356 names it; this module will not.
 
 THE ONE POPULATION THIS FUSE DOES NOT PROTECT (Ivan, 2026-09-24: "для тестовых юзеров давай
 полностью убираем любые лимиты и governor"). The operators' own two handsets are not people this
@@ -87,7 +87,7 @@ REPLY = "reply"
 KINDS = (FIRST_TOUCH, REPLY)
 
 #: The whole constraint vocabulary ``check`` below reads, and the type each value is read as. It is
-#: a closed list on purpose (TASK-147 review): a constraint this fuse does not read is one the
+#: a closed list on purpose (TASK-376 review): a constraint this fuse does not read is one the
 #: caller believes it asked for, and ``min_gap_sec: 3600`` on a run the governor paces by
 #: ``min_gap_ms`` is a campaign an operator thinks is hourly going out at the 4-second floor. Same
 #: rule as server.py::_chat_args on the destructive routes -- an unknown key is a refusal, never a
@@ -161,7 +161,7 @@ class Governor:
         if per_number_daily_cap is None:
             raise RuntimeError(
                 "per_number_daily_cap has no default: their config.py has no per-recipient cap and "
-                "CLAUDE.md forbids inventing one. Set WA_BRIDGE_PER_NUMBER_DAILY_CAP (TASK-127).")
+                "CLAUDE.md forbids inventing one. Set WA_BRIDGE_PER_NUMBER_DAILY_CAP (TASK-356).")
         self.ledger = ledger
         self.pacing = pacing
         self.cap = int(per_number_daily_cap)
@@ -182,7 +182,7 @@ class Governor:
         return now.astimezone(self.tz)
 
     def day_bounds(self, now):
-        """The pacing-timezone day, not the UTC day. TASK-127 hole #1."""
+        """The pacing-timezone day, not the UTC day. TASK-356 hole #1."""
         start = self.local(now).replace(hour=0, minute=0, second=0, microsecond=0)
         return start.astimezone(timezone.utc), (start + timedelta(days=1)).astimezone(timezone.utc)
 
@@ -254,7 +254,7 @@ class Governor:
                          effective_first_touch_daily_cap=cap_first_touch,
                          next_slot_at=L.utc(next_at))
 
-        # 1. Quiet hours and Sunday, for EVERY outbound including replies (TASK-127 hole #2).
+        # 1. Quiet hours and Sunday, for EVERY outbound including replies (TASK-356 hole #2).
         if not self.window_open(now):
             opens = self.window_opens_at(now)
             raise E.rail_parked(

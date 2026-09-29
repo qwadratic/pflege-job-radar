@@ -1,4 +1,4 @@
-"""TASK-172: end-to-end synthetic funnel test. Unlike tests/test_wa_luna_personas.py (a fixed,
+"""TASK-328: end-to-end synthetic funnel test. Unlike tests/test_wa_luna_personas.py (a fixed,
 hand-written candidate script -- deterministic on purpose, for stable regression assertions), BOTH
 sides of every conversation here are live model calls: a small `_CandidateAgent` plays the
 candidate from a short persona brief and improvises its own replies, while `app.wa.luna_brain.turn`
@@ -91,7 +91,7 @@ class _CandidateAgent:
         return text
 
 
-# TASK-178: rewritten after comparing these live-improvised personas against aggregate, non-
+# TASK-330: rewritten after comparing these live-improvised personas against aggregate, non-
 # identifying stats from 701 real WhatsApp messages -- the original style here (a "Hallo
 # Valentina!" self-introduction, full sentences, warm sign-offs) read as an organized written
 # email, not a rushed WhatsApp text: real candidates were overwhelmingly short (median ~3 words,
@@ -219,7 +219,7 @@ def _run_persona(name, persona_prompt, session_root):
     uploaded = False
     for turn in range(1, MAX_TURNS + 1):
         if valentina_buttons:
-            # TASK-184: Valentina just offered the anonymized send and attached real Ja/Nein
+            # TASK-333: Valentina just offered the anonymized send and attached real Ja/Nein
             # buttons -- a real WhatsApp UI renders those as taps, not free text, so simulate the
             # tap a cooperative persona (every persona here is written to consent) would make,
             # rather than asking the live candidate LLM to type something a button UI wouldn't.
@@ -248,7 +248,7 @@ def _run_persona(name, persona_prompt, session_root):
 
 def _write_report(outcomes, mailing_list):
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    lines = ["# E2E synthetic funnel report (TASK-172)", ""]
+    lines = ["# E2E synthetic funnel report (TASK-328)", ""]
     for o in outcomes:
         status = "CONSENTED" if o["converged"] else "DID NOT CONVERGE"
         lines.append(f"## {o['name']} -- {status} in {o['turns']} turns")

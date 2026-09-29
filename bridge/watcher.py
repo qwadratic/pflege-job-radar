@@ -1,4 +1,4 @@
-"""The inbound watcher: the phone's side of a pull-only rail (TASK-143).
+"""The inbound watcher: the phone's side of a pull-only rail (TASK-372).
 
 An ingress tunnel into our VPS is not available, so nothing on this machine ever connects to our
 server. The shape that falls out of that is the only honest one: the watcher writes what the phone
@@ -10,7 +10,7 @@ WHY A THREAD AND NOT A TIMER. A candidate's message must not wait minutes, and a
 floor is a minute. The loop lives inside the executor process and reads the notification shade
 (``dumpsys notification``) every cycle, a pure read that touches no UI.
 
-NO LOCK, NOT EVEN A SHORT ONE (TASK-131 round 6). It used to take the same flock as a send, timed
+NO LOCK, NOT EVEN A SHORT ONE (TASK-360 round 6). It used to take the same flock as a send, timed
 out short so a long send would not stall a poll -- and a cycle that lost that race was simply
 skipped: half the decoy attributions this round's own brief was written to fix traced back to
 exactly that gap, a notification that arrived during a 90-150 s send and was gone by the next poll.
@@ -25,7 +25,7 @@ a dead watcher looks like. ``last_ok_at`` is the difference -- it is what a heal
 on. Until TASK-255, nothing outside a hand-run ``--probe`` ever read it: ``bridge/relay_pull.py``'s
 ``Relay.run()`` now asks on a slow cadence and logs loudly (``check_watcher_alarm``) when it goes
 stale, but that is one log line on the VPS, not the reviewed conjunction alert with an alert channel
-that TASK-132 (still To Do) is meant to be.
+that TASK-361 (still To Do) is meant to be.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ DEFAULT_INTERVAL_SEC = 5.0
 #: patience -- still fast next to TASK-225's incident, which sat dirty for 45+ minutes.
 IDLE_DIRTY_CONFIRM_CYCLES = 2
 
-#: Seconds between passes of the media tree (TASK-131). Its own cadence, not the notification
+#: Seconds between passes of the media tree (TASK-360). Its own cadence, not the notification
 #: watcher's: a listing (``find``+``stat`` over the whole tree) and a pull (potentially megabytes
 #: over USB tether) are both slower and more variable than one ``dumpsys``, and neither touches the
 #: UI, so there is no reason to share a schedule -- let alone the flock -- with it.
@@ -93,7 +93,7 @@ def operator_hold_until(path, now, ledger, *, event="idle_dirty_hold_unreadable"
 
 class InboundWatcher:
     """Polls the handset's notification shade and appends to the ledger outbox. Never takes the
-    phone lock (TASK-131 round 6) -- see this module's own docstring. One per executor process."""
+    phone lock (TASK-360 round 6) -- see this module's own docstring. One per executor process."""
 
     def __init__(self, executor, *, interval=DEFAULT_INTERVAL_SEC, log=None, sleep=time.sleep,
                  operator_hold_path=None):
@@ -273,9 +273,9 @@ _UNSAFE_PATH_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 class MediaWatcher:
     """The handset's WhatsApp media folders -> pulled, content-addressed files -> the unresolved
-    queue (TASK-131). This watcher only ever PULLS: it never opens a chat and never decides who a
+    queue (TASK-360). This watcher only ever PULLS: it never opens a chat and never decides who a
     file belongs to. Deciding is a separate job, on a separate schedule and a separate lock
-    discipline -- ``IdentityWatcher`` below (TASK-131 round 6) -- because a listing-and-pull pass
+    discipline -- ``IdentityWatcher`` below (TASK-360 round 6) -- because a listing-and-pull pass
     touches no UI and must never be made to wait behind one that does.
 
     Runs on its own thread and its own interval. LISTING AND PULLING NEVER TAKE huawei01.lock.
@@ -413,7 +413,7 @@ class MediaWatcher:
                 "alive": bool(self._thread and self._thread.is_alive())}
 
 
-#: Seconds between passes of the unresolved queue (TASK-131 round 6). Slower than the shade or the
+#: Seconds between passes of the unresolved queue (TASK-360 round 6). Slower than the shade or the
 #: media pass on purpose: this is the one loop that may open a chat, and a cycle that finds nothing
 #: to do (the common case -- most files are the sole candidate of their kind and are decided the
 #: moment MediaWatcher pulls them into a queue this loop sees on its next pass) costs nothing, but a
@@ -425,7 +425,7 @@ DEFAULT_IDENTITY_INTERVAL_SEC = 15.0
 class IdentityWatcher:
     """THE UI work bridge/watcher.py's own module docstring promises: consumes the unresolved
     queue ``MediaWatcher`` fills and decides what ``bridge/identity.py::decide`` can decide
-    (``Executor.auto_match_media``), on its own thread and its own schedule (TASK-131 round 6,
+    (``Executor.auto_match_media``), on its own thread and its own schedule (TASK-360 round 6,
     Ivan's ruling 2026-09-22).
 
     THIS is the one watcher that may take ``huawei01.lock`` -- and when it does, it waits for it

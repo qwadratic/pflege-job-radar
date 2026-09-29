@@ -93,7 +93,7 @@ def _run(script, thread=None):
     """Play a persona's script turn by turn through the real CLI, returning the full list of
     per-turn results (each the dict app/wa/luna_brain.py:turn() returns).
 
-    TASK-184: the moment Valentina offers the anonymized send, she attaches real Ja/Nein buttons --
+    TASK-333: the moment Valentina offers the anonymized send, she attaches real Ja/Nein buttons --
     a real WhatsApp UI renders those as taps, not free text, and consent is only ever recorded from
     an actual tap (typing "Ja" instead gets a "please tap" nudge, never silent consent). Every
     script in this file is written to be cooperative through to consent, so the moment buttons show
@@ -181,7 +181,7 @@ def test_the_close_sequence_states_matches_before_recap_and_consent_together(boa
     it moving. TASK-195 additionally requires actual documents (not just a verbal 'ja, ich habe
     die Urkunde'; TASK-199: the CV and the Urkunde) before the close sequence can start at all --
     this script simulates both arriving via _send_document (the persona scripts are pure text; a
-    real document download/classification is TASK-171's own separately-tested path). The defining regression this guards is narrower than
+    real document download/classification is TASK-327's own separately-tested path). The defining regression this guards is narrower than
     "every step its own turn": a shortlist and the consent ask must never land in the same turn as
     the FIRST clinic mention."""
     results = _run([
@@ -353,7 +353,7 @@ def test_svetlana_wrong_document_types_get_the_missing_documents_named_again(boa
     _assert_no_munich_opening_denied(_luna_bubbles(transcript), transcript)
 
 
-# --- soft "ja" to the qualification question (TASK-200, Ivan's manual test) ----------------------
+# --- soft "ja" to the qualification question (TASK-339, Ivan's manual test) ----------------------
 
 _QUALIFICATION_TERMS = ("urkunde", "anerkenn", "defizit", "kenntnisprüfung", "kenntnispruefung")
 _ABBREV_DOT_RE = re.compile(r"\b(?:z\.\s?B|d\.\s?h|u\.\s?a|bzw|ggf|evtl|inkl|ca|usw)\.", re.I)
@@ -402,7 +402,7 @@ _OPENER_OLENA = "Hallo, ich bin Krankenschwester und suche eine Stelle in Bayern
 
 
 def test_olena_bare_ja_to_the_qualification_question_resolves_within_one_re_ask(board):
-    """TASK-200 (Ivan's manual test 2026-09-13): Luna asked 'Urkunde schon, oder noch im
+    """TASK-339 (Ivan's manual test 2026-09-13): Luna asked 'Urkunde schon, oder noch im
     Anerkennungsverfahren (Defizitbescheid/Kenntnisprüfung)?', the candidate answered 'ja' twice and
     only a third, plain yes/no ask resolved it. Fictional persona: Olena, nurse, region already given,
     answers every qualification question with a bare 'ja'. qualification_path=urkunde must land within
@@ -419,7 +419,7 @@ _SEEDED_EITHER_OR = ("Haben Sie schon eine deutsche Pflege-Urkunde, oder sind Si
 
 
 def test_olena_bare_ja_to_a_seeded_either_or_question_gets_a_strict_yes_no_re_ask(board):
-    """TASK-200, the ambiguous path itself: with the current prompt Luna asks the plain yes/no first
+    """TASK-339, the ambiguous path itself: with the current prompt Luna asks the plain yes/no first
     (test above), so the either/or ask from Ivan's thread is seeded. The first turn runs with one
     extra system-prompt line forcing that question; the CLI takes the system prompt per call and
     never stores it in the session, so every later turn runs on the real prompt with only the
@@ -436,8 +436,8 @@ def test_olena_bare_ja_to_a_seeded_either_or_question_gets_a_strict_yes_no_re_as
     _assert_urkunde_from_a_ja_to_a_plain_yes_no(d, asks, transcript)
 
 
-# --- the city and housing questions are open questions too (TASK-200 review 2026-09-14) -----------
-# Live under the first TASK-200 prompt, 3/3 runs per gate: "Gibt es eine Stadt oder Region in Bayern ..., z. B.
+# --- the city and housing questions are open questions too (TASK-339 review 2026-09-14) -----------
+# Live under the first TASK-339 prompt, 3/3 runs per gate: "Gibt es eine Stadt oder Region in Bayern ..., z. B.
 # München, ... oder Würzburg?", "Haben Sie schon eine Stadt im Blick (...) oder ist Ihnen der Fachbereich
 # wichtiger?", "Ziehen Sie allein um, oder würden noch weitere Personen mit Ihnen wohnen?" -- a bare Ja fits all.
 
@@ -531,7 +531,7 @@ def test_svetlana_a_city_without_a_single_housing_posting_gets_an_honest_answer(
     named = [c["city"] for c in snap["housing"]["cities_with_housing"] if c["city"] in said]
     assert honest_no or named, (
         f"neither said there is no flat in Würzburg nor named a city the board marks: {transcript!r}")
-    # TASK-200 still holds here (live 2026-09-16, 2 of the first 3 runs: "Käme für Sie auch eine Klinik ohne
+    # TASK-339 still holds here (live 2026-09-16, 2 of the first 3 runs: "Käme für Sie auch eine Klinik ohne
     # Wohnung in Würzburg infrage, oder wäre alternativ eine Stadt mit Wohnung wie Regensburg interessant?" --
     # a bare Ja answers neither): the follow-up is one plain yes/no, not the two ways out joined by "oder".
     assert _yes_no_frames_around_options(d["bubbles"]) == [], transcript
@@ -636,7 +636,7 @@ def test_yassine_found_another_job_ends_gracefully(board):
         "must not keep chasing the funnel once the candidate has withdrawn")
 
 
-# --- proactive tool use (TASK-166) ---------------------------------------------------------------
+# --- proactive tool use (TASK-323) ---------------------------------------------------------------
 # board's fixture cities are München/Augsburg/Würzburg/Regensburg/Bayreuth -- Coburg is
 # deliberately absent from it, so a question about Coburg cannot be answered from
 # market_snapshot/consult alone and can only be answered honestly via a live search_postings call.
@@ -894,7 +894,7 @@ def test_a_candidate_naming_bayern_and_an_out_of_scope_land_gets_an_honest_scope
     assert "?" in said, f"the reply must still move the Bavaria funnel forward, not just state scope: {transcript!r}"
 
 
-# --- Group 8: real, non-standard location answers (TASK-131 adjacent, 2026-09-22) --------------
+# --- Group 8: real, non-standard location answers (TASK-360 adjacent, 2026-09-22) --------------
 # Live UAT finding: "München oder Nürnberg" stalled a real thread (the model named a fabricated
 # clinic count, the grounding checker rejected it, two rejections running escalated to a human).
 # The two-city, three-city and Bayern-plus-out-of-scope-state shapes are covered above (Group/TASK

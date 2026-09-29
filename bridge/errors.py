@@ -1,4 +1,4 @@
-"""The refusal taxonomy (TASK-130, plan section 5.1).
+"""The refusal taxonomy (TASK-359, plan section 5.1).
 
 ``.status_code`` is load-bearing on our side: app/wa/luna/campaign.py classifies 4xx as ``failed``
 (ownership restored, the recipient stays claimable) and anything else as ``uncertain`` (never
@@ -11,8 +11,8 @@ raised by us on purpose.
 | invalid_request   | 400  | the request cannot be classified; nothing was attempted           |
 | unauthorized      | 401  | bad or missing bearer token, or a non-loopback peer               |
 | chat_not_found    | 404  | no chat by that identity is on the handset's list                 |
-| media_not_found   | 404  | no media was ever pulled for that id, or no queued file has this id (TASK-131) |
-| already_attached  | 409  | that queued file was already attached to a thread (TASK-131 round 5) |
+| media_not_found   | 404  | no media was ever pulled for that id, or no queued file has this id (TASK-360) |
+| already_attached  | 409  | that queued file was already attached to a thread (TASK-360 round 5) |
 | idempotency_conflict | 409 | a different body under a key whose first body has no result yet |
 | chat_identity_mismatch | 409 | the chat on screen is not the one the caller named           |
 | not_on_whatsapp   | 422  | the chat could not be opened for that number                      |
@@ -23,7 +23,7 @@ raised by us on purpose.
 | destruction_unverified | 504 | a clear/delete was tapped and the result could not be proved  |
 
 THE 4xx CLASSIFICATION IS ABOUT SENDS ONLY. campaign.py reads these codes off ``POST /v1/messages``;
-the three codes added for the chat operations (TASK-147) never reach it, because nothing destroys a
+the three codes added for the chat operations (TASK-376) never reach it, because nothing destroys a
 chat on a campaign's behalf.
 """
 
@@ -60,7 +60,7 @@ def chat_not_found(message, **detail):
 
 
 def media_not_found(message, **detail):
-    # TASK-131. The definite, MetaError-shaped refusal app/wa/bridge.Client.media_url needs
+    # TASK-360. The definite, MetaError-shaped refusal app/wa/bridge.Client.media_url needs
     # status_code to carry: import_history.py:538-539 reads "not None" as "an answer arrived, and
     # it says no" (not the same as an unreachable bridge, where status_code stays None).
     return BridgeRefusal("media_not_found", 404, message, detail=detail)
@@ -68,7 +68,7 @@ def media_not_found(message, **detail):
 
 def op_not_found(message, **detail):
     """TASK-227: ``GET /v1/ops/<id>`` for an ``op_id`` this ledger never enqueued -- a typo, a
-    different executor's id, or (30 days out, TASK-130 AC#9's retention sweep) one old enough to
+    different executor's id, or (30 days out, TASK-359 AC#9's retention sweep) one old enough to
     have been swept. Not device_unavailable: nothing about the phone is in question here."""
     return BridgeRefusal("op_not_found", 404, message, detail=detail)
 
@@ -78,7 +78,7 @@ def idempotency_conflict(message, **detail):
 
 
 def already_attached(message, **detail):
-    # TASK-131 round 5: the human escape hatch (Executor.attach_media) named a queue_id that had
+    # TASK-360 round 5: the human escape hatch (Executor.attach_media) named a queue_id that had
     # already been attached -- an operator input problem (a stale listing, a repeated command), not
     # a system failure, so it is a 409 alongside idempotency_conflict rather than a 500.
     return BridgeRefusal("already_attached", 409, message, detail=detail)

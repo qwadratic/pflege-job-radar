@@ -1,4 +1,4 @@
-"""Offline tests for the handset operator CLI and its client half (TASK-147).
+"""Offline tests for the handset operator CLI and its client half (TASK-376).
 
 No phone, no network: every client here is built with an injected transport, the seam
 ``app/wa/bridge.py`` already has. The tests are written against what an OPERATOR observes -- the exit
@@ -266,7 +266,7 @@ def test_the_destruction_record_is_readable_on_its_own(capsys):
 # --- the timeout each route gets is the one that route costs ------------------------------------------
 
 def test_a_send_budget_covers_the_flock_wait_the_op_queue_makes_it_pay(capsys, autosend):
-    """TASK-146 measured the send itself; TASK-243 added the 30 s the op may spend waiting for the
+    """TASK-375 measured the send itself; TASK-243 added the 30 s the op may spend waiting for the
     handset lock before any of that starts. Every sibling budget in app/wa/bridge.py already
     carried FLOCK_WAIT_SEC -- send was the one that did not, so a send that merely queued behind
     another op timed out as 'nothing was sent' while the executor went on to type it."""
@@ -351,7 +351,7 @@ def test_health_prints_what_the_rail_says_about_itself(capsys):
 
 
 def test_health_says_a_weak_attribution_and_a_duplicate_out_loud(capsys):
-    """TASK-131 round 6: a weak pick is visible in health, not just the row -- Ivan's own
+    """TASK-360 round 6: a weak pick is visible in health, not just the row -- Ivan's own
     requirement that a human can audit one."""
     health = (200, {"ok": True, "version": "1.2.3", "at": "2026-09-21T10:00:00Z",
                     "rail": {"number": None, "driver": {"kind": "adb"}}, "queue": {"pending": 0},
@@ -561,7 +561,7 @@ def test_a_sent_item_the_file_cannot_explain_at_all_is_refused_not_silent(tmp_pa
     assert ST.message_by_wamid(ST.db(), key) is None
 
 
-# --- the human escape hatch (TASK-131 round 5, decision-9 2026-09-22) ----------------------------------
+# --- the human escape hatch (TASK-360 round 5, decision-9 2026-09-22) ----------------------------------
 UNRESOLVED = (200, {"ok": True, "at": "2026-09-22T10:00:00.000Z", "count": 1, "files": [
     {"queue_id": "wab.q.aaaaaaaaaaaaaaaaaaaa", "media_id": "wab.m.aaaaaaaaaaaaaaaaaaaa",
      "kind": "document", "size": 40213, "source_dir": "WhatsApp Documents",

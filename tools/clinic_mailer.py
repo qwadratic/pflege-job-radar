@@ -109,7 +109,7 @@ import mailer_announce  # noqa: E402
 
 ENV = Path(__file__).resolve().parent.parent / ".env"
 DARIA = "daria.s@pflege-connect.work"
-DARIA_INBOX = "/usr/local/sbin/daria-inbox"          # root-owned, the claude user's one sudo command (TASK-111.10)
+DARIA_INBOX = "/usr/local/sbin/daria-inbox"          # root-owned, the claude user's one sudo command (TASK-345.10)
 STEP_AFTER = re.compile(r"^(\d+)(m|h|d|bd)$")
 PLACEHOLDER = re.compile(r"\[[A-ZÄÖÜ_/]+\]")
 

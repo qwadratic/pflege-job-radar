@@ -1,4 +1,4 @@
-"""One number, one do-not-contact decision, across every thread and both rails (TASK-216, TASK-137).
+"""One number, one do-not-contact decision, across every thread and both rails (TASK-347, TASK-366).
 
 WHY A NEW TABLE. Opt-out is learned today from three places, and all three stay exactly as they are:
 ``slots.is_stop`` (whole-word STOP vocabulary), read by both brains and turned into
@@ -31,7 +31,7 @@ overtaken by a queued reply. ``SuppressedRecipient`` is a ``MetaError`` with an 
 ``failed`` attempt -- ownership restored, never resent -- instead of ``uncertain``, which
 ``--retry-uncertain`` would send again.
 
-NOT HERE, ON PURPOSE (TASK-137, later): the salted sha256 digest export that lets a suppression travel
+NOT HERE, ON PURPOSE (TASK-366, later): the salted sha256 digest export that lets a suppression travel
 to the mini without a plaintext do-not-contact list in a shared home, and the read-only import of the
 colleague's ``sales_brain.suppression_list`` (filtered to ``channel_type in ('whatsapp','phone','sms')``
 -- 0 rows today, all 378 are e-mail). Also not here: a backfill of phones already opted out via 131050.
@@ -48,7 +48,7 @@ from . import store as ST
 REASON_STOP = "inbound stop token"
 
 # payload error code of SuppressedRecipient. Our own slug: a forged Meta numeric code would claim
-# Meta said something it never said (TASK-216).
+# Meta said something it never said (TASK-347).
 ERROR_CODE = "wab-suppressed"
 
 

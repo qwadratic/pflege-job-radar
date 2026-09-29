@@ -1,4 +1,4 @@
-"""The handset operations as one-step commands (TASK-147): send, broadcast, read, list.
+"""The handset operations as one-step commands (TASK-376): send, broadcast, read, list.
 
 Usage:
     python tools/wa_bridge.py health
@@ -73,7 +73,7 @@ does not canonicalize, a repeated recipient, a row with no body and no common bo
 is refused, naming the line. Nothing is sent from a file we cannot read completely -- a broadcast
 that silently skips a recipient is a broadcast nobody can audit.
 
-THE HUMAN ESCAPE HATCH (TASK-131 round 5, decision-9 2026-09-22). Automatic attachment is gone:
+THE HUMAN ESCAPE HATCH (TASK-360 round 5, decision-9 2026-09-22). Automatic attachment is gone:
 nothing on this rail can prove who sent a pulled file (four rounds tried; see ``bridge/media.py``'s
 own module docstring for why). Every pulled file sits in the QUEUE until a human attaches it.
 ``media-list`` prints what is known about each queued file -- its id, kind, age, size, the handset
@@ -331,7 +331,7 @@ def cmd_health(args, client):
     print(f"  retention: last_ok_at={retention.get('last_ok_at')!r}  errors={retention.get('errors')}"
           + (f"  last_error={retention.get('last_error')!r} at {retention.get('last_error_at')!r}"
              if retention.get("errors") else ""))
-    # TASK-131: health keeps reporting the queue -- surfaced here rather than only in --json, so an
+    # TASK-360: health keeps reporting the queue -- surfaced here rather than only in --json, so an
     # operator sees it without asking twice.
     backlog = ((health.get("media_watcher") or {}).get("unresolved_backlog")) or {}
     if backlog.get("unresolved"):
@@ -344,7 +344,7 @@ def cmd_health(args, client):
     if backlog.get("weak_links"):
         print(f"  {backlog['weak_links']} attribution(s) marked WEAK -- an automatic pick with "
               f"nothing to confirm it; audit with `--json`")
-    # TASK-131 round 6: the one watcher that opens a chat, so its own count of what it attached
+    # TASK-360 round 6: the one watcher that opens a chat, so its own count of what it attached
     # (strong vs weak) is worth a line an operator does not have to compute from the journal.
     identity = health.get("identity_watcher") or {}
     if identity:
@@ -432,7 +432,7 @@ def _media_sent_or_answer_lost(send, to):
 
 
 def cmd_send_photos(args, client):
-    """TASK-131 round 7, Ivan 2026-09-22: mechanism proof, not production-ready (client.send_photos'
+    """TASK-360 round 7, Ivan 2026-09-22: mechanism proof, not production-ready (client.send_photos'
     own docstring) -- no idempotency key, a re-run sends the photos again. ``--files`` names paths
     already on the MINI's own filesystem, not this machine's."""
     to = canonical_phone(args.to, "--to")
@@ -458,7 +458,7 @@ def cmd_send_photos(args, client):
 
 
 def cmd_send_gallery(args, client):
-    """TASK-131 round 7 gallery redesign, Ivan 2026-09-22: one message, several photos, a shared
+    """TASK-360 round 7 gallery redesign, Ivan 2026-09-22: one message, several photos, a shared
     caption -- mechanism proof, not production-ready (client.send_gallery's own docstring) -- no
     idempotency key, a re-run sends the album again. ``--files`` names paths already on the MINI's
     own filesystem, not this machine's."""
@@ -485,7 +485,7 @@ def cmd_send_gallery(args, client):
 
 
 def cmd_send_document(args, client):
-    """TASK-131 round 7, Ivan 2026-09-23: one file, any type -- mechanism proof, not
+    """TASK-360 round 7, Ivan 2026-09-23: one file, any type -- mechanism proof, not
     production-ready (client.send_document's own docstring) -- no idempotency key, a re-run sends
     the file again. ``--file`` names a path already on the MINI's own filesystem, not this
     machine's."""
@@ -827,7 +827,7 @@ def build_parser():
     send.add_argument("--json", action="store_true")
     send.set_defaults(fn=cmd_send)
 
-    photos = sub.add_parser("send-photos", help="attach up to 5 local images (mechanism proof, TASK-131 round 7)")
+    photos = sub.add_parser("send-photos", help="attach up to 5 local images (mechanism proof, TASK-360 round 7)")
     photos.add_argument("--to", required=True)
     photos.add_argument("--files", required=True, help="comma-separated paths already on the mini's own disk")
     photos.add_argument("--dry-run", action="store_true", help="print the plan, post nothing")
@@ -835,7 +835,7 @@ def build_parser():
     photos.set_defaults(fn=cmd_send_photos)
 
     gallery = sub.add_parser("send-gallery", help="one message: up to 5 local images + a shared caption "
-                                                   "(TASK-131 round 7 gallery redesign)")
+                                                   "(TASK-360 round 7 gallery redesign)")
     gallery.add_argument("--to", required=True)
     gallery.add_argument("--files", required=True, help="comma-separated paths already on the mini's own disk")
     gallery.add_argument("--caption", help="shared caption text")
@@ -845,7 +845,7 @@ def build_parser():
     gallery.set_defaults(fn=cmd_send_gallery)
 
     document = sub.add_parser("send-document", help="one file, any type, as WhatsApp's own document "
-                                                     "attachment (TASK-131 round 7)")
+                                                     "attachment (TASK-360 round 7)")
     document.add_argument("--to", required=True)
     document.add_argument("--file", required=True, help="a path already on the mini's own disk")
     document.add_argument("--caption", help="caption text")

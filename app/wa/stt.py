@@ -7,7 +7,7 @@ the file name, and Meta names a voice note ``audio.bin`` or nothing. No openai S
 with the transport injectable like app/wa/meta.py, so tests use a fake.
 
 Every failure raises TranscriptionError: no key, HTTP or network error, a reply without text, an empty transcript.
-The caller (app/wa/api.py) lets it propagate into the TASK-202 recovery path; nothing here guesses a transcript.
+The caller (app/wa/api.py) lets it propagate into the TASK-341 recovery path; nothing here guesses a transcript.
 """
 import json
 import pathlib

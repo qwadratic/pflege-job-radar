@@ -1,11 +1,11 @@
-"""The driver boundary: what the executor is allowed to ask of a phone (TASK-130, TASK-142).
+"""The driver boundary: what the executor is allowed to ask of a phone (TASK-359, TASK-371).
 
 Two implementations sit behind it: ``bridge/adb_driver.AdbDriver``, which talks adb to the handset,
 and ``FakeDriver`` below, which exists so the failure modes are reachable in a test with no phone in
 the room.
 
 HISTORY, kept because it is the reason for a rule here. This file used to wrap ``apps.wa_phone`` out
-of a colleague's agent worktree on the mini. TASK-142 replaced that with our own adb driver: the
+of a colleague's agent worktree on the mini. TASK-371 replaced that with our own adb driver: the
 worktree is disposable (a ``git worktree remove`` swaps every signature under us) and their send
 path reports an unmatched bubble as "sent (unverified)", which fired on 2 of 23 live sends. We own
 this rail end to end now and import nothing from that tree.
@@ -38,7 +38,7 @@ UNVERIFIED = "unverified"
 LOCK_TIMEOUT_SEC = 30.0
 #: How long the executor waits for a tick to be drawn on a bubble that is already on the thread.
 TICK_WAIT_SEC = 30.0
-#: TASK-130 AC#9: escalation screenshots are kept for 7 days. Raised to 14 for TASK-228 (Ivan,
+#: TASK-359 AC#9: escalation screenshots are kept for 7 days. Raised to 14 for TASK-228 (Ivan,
 #: 2026-09-23) once this same sweep started also covering the debug-capture screenshots below;
 #: bridge/adb_driver.py::AdbDriver.list_recording_candidates shares this constant rather than its
 #: own, same later note. TASK-230: age past this is necessary but no longer sufficient on its own
@@ -58,7 +58,7 @@ class PhoneBusy(DriverError):
     """The flock is held by the other lane. NOTHING WAS TYPED, which is what makes it a 503 on a
     send (``executor.take_phone``) and a counted skip in the watcher rather than an incident.
 
-    Its own class rather than a substring in a message (TASK-146): the watcher used to decide by
+    Its own class rather than a substring in a message (TASK-375): the watcher used to decide by
     ``"lock busy" in str(exc)``, so rewording the refusal would have turned every busy cycle into a
     logged error on a rail where the other lane takes the same lock every 15 s.
     """
@@ -66,7 +66,7 @@ class PhoneBusy(DriverError):
 
 @dataclass(frozen=True)
 class ChatRow:
-    """One row of the handset's chat list, as WhatsApp draws it (TASK-147).
+    """One row of the handset's chat list, as WhatsApp draws it (TASK-376).
 
     ``title`` is the identity the UI offers and therefore the identity a caller has to name; it is a
     display name for a saved contact and the number itself for an unsaved one. ``preview`` is
@@ -125,7 +125,7 @@ class PhoneDriver:
         raise NotImplementedError
 
     def send_photo(self, phone, local_path):
-        """Share one local image file into the thread for ``phone`` (TASK-131 round 7, outbound
+        """Share one local image file into the thread for ``phone`` (TASK-360 round 7, outbound
         media). -> (clock, tick) the newest outgoing bubble reads after sending. Same contract as
         send_bubble: requires an already-open, already-verified thread for ``phone``."""
         raise NotImplementedError
@@ -137,13 +137,13 @@ class PhoneDriver:
 
     def send_gallery(self, phone, local_paths, caption=""):
         """Share up to MAX_PHOTOS_PER_SEND local image files as ONE message -- a photo album with
-        a single shared caption -- via WhatsApp's own in-chat gallery picker (TASK-131 round 7
+        a single shared caption -- via WhatsApp's own in-chat gallery picker (TASK-360 round 7
         gallery redesign). -> (clock, tick) the newest outgoing bubble reads after sending. Same
         contract as send_photo: requires an already-open, already-verified thread for ``phone``."""
         raise NotImplementedError
 
     def send_document(self, phone, local_path, caption=""):
-        """Share ONE local file, any type, as WhatsApp's own document attachment (TASK-131 round 7,
+        """Share ONE local file, any type, as WhatsApp's own document attachment (TASK-360 round 7,
         Ivan 2026-09-23: a future resume-update flow needs files, not photos alone). -> (clock,
         tick) the newest outgoing bubble reads after sending. Same contract as send_photo: requires
         an already-open, already-verified thread for ``phone``."""
@@ -181,7 +181,7 @@ class PhoneDriver:
         raise NotImplementedError
 
     def read_media_evidence(self):
-        """-> [{"clock", "evidence"}] for the chat that is open right now (TASK-131 round 6): one
+        """-> [{"clock", "evidence"}] for the chat that is open right now (TASK-360 round 6): one
         entry per bubble, ``evidence`` the pool of every text and content-desc string in that
         bubble's own node cluster -- not just ``message_text`` (bridge/adb_driver.py's own docstring
         on why a voice note used to be invisible to this reader). ``bridge/identity.py::
@@ -190,7 +190,7 @@ class PhoneDriver:
         ``read_bubbles``."""
         raise NotImplementedError
 
-    # --- inbound media (TASK-131) --------------------------------------------------------------
+    # --- inbound media (TASK-360) --------------------------------------------------------------
     def list_media(self):
         """-> {rel_path: (size, mtime_epoch)} for every file under the handset's WhatsApp media
         tree. Filesystem-level (``find``+``stat``), touches no UI, takes no lock."""
@@ -202,7 +202,7 @@ class PhoneDriver:
         Filesystem-level (``adb pull``), touches no UI, takes no lock."""
         raise NotImplementedError
 
-    # --- the chat list (TASK-147) -------------------------------------------------------------
+    # --- the chat list (TASK-376) -------------------------------------------------------------
     def list_chats(self, *, include_archived=True):
         """-> [ChatRow] as the handset draws them, top row first. Read-only, taps nothing but the
         archive folder when ``include_archived``."""
@@ -253,7 +253,7 @@ class PhoneDriver:
     # belongs here; DECIDING what is safe to delete needs the ledger (bridge/retention.py), so the
     # driver only ever lists candidates and deletes exactly the paths it is given -- it never
     # deletes on its own say-so. This replaced the old combined sweep_screenshots/sweep_recordings
-    # (TASK-130/TASK-228), which decided AND deleted in one call and had no way to hold anything
+    # (TASK-359/TASK-228), which decided AND deleted in one call and had no way to hold anything
     # back for review.
     def list_screenshot_candidates(self, now, *, days=SCREENSHOT_RETENTION_DAYS):
         """-> [Path] of every screenshot (escalation or debug-capture) older than ``days``, oldest
@@ -288,7 +288,7 @@ class PhoneDriver:
         raise NotImplementedError
 
     def describe(self):
-        """-> dict identifying the driver code actually loaded (TASK-140 drift monitor)."""
+        """-> dict identifying the driver code actually loaded (TASK-369 drift monitor)."""
         raise NotImplementedError
 
     # --- PhoneDoctor (TASK-315 AC#9, Ivan 2026-09-29: "постоянно устранять всё, что мешает
@@ -395,11 +395,11 @@ class FakeDriver(PhoneDriver):
         # appends to it from ``read_hook`` to script a message arriving mid-read.
         self.cold_thread = list(cold_thread or [])
         self.unresolved = []
-        # what read_media_evidence() hands back for the chat currently open (TASK-131 round 6) --
+        # what read_media_evidence() hands back for the chat currently open (TASK-360 round 6) --
         # a test scripts it per phone via ``media_evidence_by_phone``, keyed the same way open_chat
         # keys ``chats``.
         self.media_evidence_by_phone = {}
-        # --- media (TASK-131) -------------------------------------------------------------------
+        # --- media (TASK-360) -------------------------------------------------------------------
         # rel_path -> bytes, scriptable per test. mtimes default to 0 for every file and a test
         # that cares about the linking window sets media_mtimes[rel] explicitly.
         self.media_files = dict(media_files or {})
@@ -407,13 +407,13 @@ class FakeDriver(PhoneDriver):
         self.pulled_media = []     # rel paths this driver was asked to pull, in call order
         self.fail_pull = None      # a rel path that raises when pulled, or None
         self.sent = []            # bodies that reached the phone -- the "did it send" assertion
-        # --- outbound media: photos (TASK-131 round 7) ------------------------------------------
+        # --- outbound media: photos (TASK-360 round 7) ------------------------------------------
         self.sent_photos = []     # (phone, local_path) pairs that reached the phone
         self.fail_on_send_photo = None
-        # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign) -------------
+        # --- outbound media: one gallery message (TASK-360 round 7 gallery redesign) -------------
         self.sent_galleries = []  # (phone, local_paths, caption) tuples that reached the phone
         self.fail_on_send_gallery = None
-        # --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23) --------------------
+        # --- outbound media: one document (TASK-360 round 7, Ivan 2026-09-23) --------------------
         self.sent_documents = []  # (phone, local_path, caption) tuples that reached the phone
         self.fail_on_send_document = None
         self.opened = []
@@ -468,7 +468,7 @@ class FakeDriver(PhoneDriver):
         self.fail_on_send = None
         self.hook = None          # called with (driver) inside the lock, before send_bubble
         self.read_hook = None     # called with (driver) before read_bubbles: the phone redrawing
-        # --- the chat book (TASK-147) ---------------------------------------------------------
+        # --- the chat book (TASK-376) ---------------------------------------------------------
         # title -> {"phone", "bubbles", "unread", "archived"}. Empty by default, and while it is
         # empty this driver behaves exactly as it did before: one thread, held in ``thread``. A
         # test that cares about chats fills it, and then the open chat follows the book.
@@ -490,7 +490,7 @@ class FakeDriver(PhoneDriver):
     def lock(self, *, timeout=LOCK_TIMEOUT_SEC):
         if self.busy:
             # The other lane holds the flock. Reachable in a test because it is the documented
-            # normal case on this handset, not an edge (TASK-146).
+            # normal case on this handset, not an edge (TASK-375).
             raise PhoneBusy(f"phone lock busy for {timeout:.0f}s")
         if self.lock_held:
             raise AssertionError("re-entrant lock: a bubble is already holding the phone")
@@ -603,7 +603,7 @@ class FakeDriver(PhoneDriver):
         return self.thread
 
     def pull_inbound(self):
-        # NO lock assertion (TASK-131 round 6): the notification shade is a pure read and
+        # NO lock assertion (TASK-360 round 6): the notification shade is a pure read and
         # bridge/executor.py::Executor.drain_inbound no longer takes huawei01.lock for it -- this
         # must be reachable and correct whether or not something else holds the lock right now.
         out, self.inbound = list(self.inbound), []
@@ -635,7 +635,7 @@ class FakeDriver(PhoneDriver):
             raise AssertionError("read_media_evidence outside the lock")
         return list(self.media_evidence_by_phone.get(self._open_phone) or [])
 
-    # --- media (TASK-131) ------------------------------------------------------------------------
+    # --- media (TASK-360) ------------------------------------------------------------------------
     def list_media(self):
         return {rel: (len(blob), self.media_mtimes.get(rel, 0))
                 for rel, blob in self.media_files.items()}
@@ -651,7 +651,7 @@ class FakeDriver(PhoneDriver):
         self.pulled_media.append(rel_path)
         return dest
 
-    # --- the chat list (TASK-147) -------------------------------------------------------------
+    # --- the chat list (TASK-376) -------------------------------------------------------------
     def list_chats(self, *, include_archived=True):
         if not self.lock_held:
             raise AssertionError("list_chats outside the lock")
@@ -803,7 +803,7 @@ class FakeDriver(PhoneDriver):
 
 
 def require_tick(bubble):
-    """The single line TASK-130 exists for. -> tick state, or a 504 refusal. Never a guess."""
+    """The single line TASK-359 exists for. -> tick state, or a 504 refusal. Never a guess."""
     state = bubble.tick_state
     if state is None:
         raise E.send_unconfirmed(
@@ -821,7 +821,7 @@ def wait_for_tick(driver, want_sha256, *, deadline_sec=TICK_WAIT_SEC, sleep=time
     later would read a thread someone else may have moved.
 
     IT IS THE BOTTOM-MOST MATCH THAT COUNTS, and that is what the reversed scan below is for
-    (TASK-146). Identical bodies do recur on this rail (the media acknowledgement and the follow-up
+    (TASK-375). Identical bodies do recur on this rail (the media acknowledgement and the follow-up
     nudge are constants), and an older identical bubble already carries a tick. This is only ever
     reached after ``AdbDriver._verify`` has established that a bubble with this body appeared that
     was not there before the send tap, so the newest match IS ours; scanning from the top would

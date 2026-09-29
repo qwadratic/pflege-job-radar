@@ -1,4 +1,4 @@
-# The one ssh leg to the handset machine. RUNS ON OUR VPS. TEMPLATE -- TASK-143 does not install it.
+# The one ssh leg to the handset machine. RUNS ON OUR VPS. TEMPLATE -- TASK-372 does not install it.
 #
 # Why it is its own unit and not part of the relay: the rail is TWO directions over ONE forward.
 # Outbound (app/wa/bridge.Client, WA_BRIDGE_URL=http://127.0.0.1:18793) has to work whether or not
@@ -9,7 +9,7 @@
 # -L only. An ssh -R INTO this host is not available and this design needs none: every leg is
 # opened from here.
 [Unit]
-Description=pflege WhatsApp phone-rail ssh forward (TASK-129/143)
+Description=pflege WhatsApp phone-rail ssh forward (TASK-358/372)
 After=network-online.target
 
 [Service]

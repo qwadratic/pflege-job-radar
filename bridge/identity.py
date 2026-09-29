@@ -1,5 +1,5 @@
 """Identity matching: attribute a pulled file to a message by what it IS, not when it arrived
-(TASK-131 round 6, decision-9 superseded 2026-09-22 by Ivan's own ruling).
+(TASK-360 round 6, decision-9 superseded 2026-09-22 by Ivan's own ruling).
 
 FOUR ROUNDS TRIED TIME-PROXIMITY AND FAILED (bridge/media.py's own history, kept there). Round 5's
 answer was to stop deciding at all -- every pulled file sits in a human queue. Ivan's ruling
@@ -143,7 +143,7 @@ def _contradicts(file_facts, evidence):
     """-> True when a candidate's own bubble evidence actively DISAGREES with the file's own facts
     on an attribute both sides have a value for. Never True just because evidence is silent (absence
     is not disagreement -- an image bubble carries none of this, by design, and a sole image
-    candidate stays strong exactly as before). Used only for the sole-candidate path (TASK-131
+    candidate stays strong exactly as before). Used only for the sole-candidate path (TASK-360
     round 6 blocker B2): round 6 shipped 'sole candidate -> strong, no evidence needed' as an
     unconditional rule, which also meant unconditionally UNCHECKED -- a document's own bubble could
     read a flatly different filename and 'strong' would still leak its text to the model."""

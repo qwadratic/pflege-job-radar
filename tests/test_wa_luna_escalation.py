@@ -36,7 +36,7 @@ def test_record_escalation_sets_escalated_and_appends_the_code():
     assert card["_escalate_reason"] == f"{ESC.PET_POLICY_QUESTION}: candidate has a dog"
     ESC.record_escalation(card, ESC.UNREADABLE_ATTACHMENT, "corrupt PDF")
     assert card["_escalation_codes"] == [ESC.PET_POLICY_QUESTION, ESC.UNREADABLE_ATTACHMENT], (
-        "a second real fact about the same turn is appended, never silently overwritten (TASK-156 F1)")
+        "a second real fact about the same turn is appended, never silently overwritten (TASK-385 F1)")
     assert card["_escalate_reason"] == (
         f"{ESC.PET_POLICY_QUESTION}: candidate has a dog; {ESC.UNREADABLE_ATTACHMENT}: corrupt PDF")
 

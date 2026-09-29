@@ -1,4 +1,4 @@
-"""Batch pre-population of clinic_contacts (TASK-168):
+"""Batch pre-population of clinic_contacts (TASK-324):
 
     python -m app.wa.luna.discover_contacts --clinic-id 16104
     python -m app.wa.luna.discover_contacts --all

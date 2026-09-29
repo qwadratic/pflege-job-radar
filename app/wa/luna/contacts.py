@@ -1,4 +1,4 @@
-"""Best-effort clinic contact discovery (TASK-168, plan section 3; TASK-173 added a fourth, now
+"""Best-effort clinic contact discovery (TASK-324, plan section 3; TASK-173 added a fourth, now
 first-tried source). A Pflegedirektion/HR contact is found from data the board already has, from an
 optional external contact CRM an operator may run, or by politely reading the clinic's own site,
 tried in order of how confident/cheap each one is:

@@ -1,4 +1,4 @@
-"""Offline tests for the phone rail's outbound client (TASK-223).
+"""Offline tests for the phone rail's outbound client (TASK-350).
 
 No network: every client here is built with an injected ``transport=``, the same seam
 ``meta.Client`` has. The tests are written against what a caller observes -- what lands in
@@ -177,7 +177,7 @@ def test_the_unverified_refusal_names_the_failure_it_is_refusing():
 
 def test_an_accepted_202_is_uncertain_and_keeps_the_key_for_reconciliation():
     """202-first is the normal answer on a paced rail. It must never read as sent, and the id has to
-    survive the raise or bridge_sync (TASK-125) has nothing to resolve."""
+    survive the raise or bridge_sync (TASK-354) has nothing to resolve."""
     key = BI.reply_key(phone=LEAD, turn_key=TURN, action="reply", bubble_index=0)
     cl, fake = reply_client((202, {"ok": True, "state": "queued", "client_msg_id": key,
                                    "scheduled_at": "2026-09-21T10:05:00Z", "reason": "min_gap"}))
@@ -202,7 +202,7 @@ def test_an_answer_for_a_different_key_is_not_a_send():
                                             (422, "failed"), (429, "failed"),
                                             (500, "uncertain"), (503, "uncertain"), (504, "uncertain")])
 def test_the_bridges_own_status_reaches_campaigns_classification(status, verdict):
-    """TASK-223 AC#1/#2: BridgeError is a MetaError carrying .status_code, so campaign.py needs no
+    """TASK-350 AC#1/#2: BridgeError is a MetaError carrying .status_code, so campaign.py needs no
     change to tell "nothing went out, restore ownership" from "we do not know"."""
     exc = BR.BridgeError(f"bridge HTTP {status}", status_code=status, payload={"error": {"code": "x"}})
     cl, fake = reply_client(exc)
@@ -257,7 +257,7 @@ def test_a_media_lookup_with_no_url_also_aborts_the_run():
 
 
 def test_a_relative_media_url_is_resolved_against_the_clients_own_base_url():
-    """TASK-131: the executor cannot know which local port our ssh tunnel maps it to, so it answers
+    """TASK-360: the executor cannot know which local port our ssh tunnel maps it to, so it answers
     with a path and this client resolves it -- the same base every other route on this rail uses."""
     cl, _ = build((200, {"url": "/v1/media/wab.m.abc/raw", "mime_type": "application/pdf"}))
     info = cl.media_url("wab.m.abc")
@@ -357,7 +357,7 @@ def test_send_buttons_renders_the_titles_as_numbered_text():
     """There is no tappable button on a phone rail, so the candidate gets something they can type
     an answer to. Raising instead made the funnel's close step unreachable on the only rail Ivan
     runs, and a bare NotImplementedError is not a MetaError, so nothing classified the failure and
-    catch-up re-drove the turn forever (TASK-146)."""
+    catch-up re-drove the turn forever (TASK-375)."""
     key = BI.reply_key(phone=LEAD, turn_key=TURN, action="ask_consent", bubble_index=0)
     cl, fake = build(sent(key))
     cl.begin_turn(LEAD, TURN, "ask_consent")
@@ -377,7 +377,7 @@ def test_send_buttons_with_no_title_to_render_is_a_4xx_not_a_bare_exception():
 
 
 def test_send_photos_posts_the_phone_and_local_paths_and_returns_the_body():
-    """TASK-131 round 7 (Ivan, 2026-09-22): mechanism proof, no idempotency key -- unlike send_text/
+    """TASK-360 round 7 (Ivan, 2026-09-22): mechanism proof, no idempotency key -- unlike send_text/
     send_buttons this does not go through begin_turn/begin_campaign_attempt at all, matching the
     executor route it calls (no client_msg_id there either)."""
     cl, fake = build((200, {"ok": True, "at": "2026-09-22T21:00:00.000Z",
@@ -418,7 +418,7 @@ def test_send_photos_carries_the_derived_media_budget_not_the_bare_floor():
 
 
 def test_send_gallery_posts_the_phone_local_paths_and_caption_and_returns_the_body():
-    """TASK-131 round 7 gallery redesign (Ivan, 2026-09-22): one message, several photos, a shared
+    """TASK-360 round 7 gallery redesign (Ivan, 2026-09-22): one message, several photos, a shared
     caption -- same mechanism-proof shape as send_photos, its own route."""
     cl, fake = build((200, {"ok": True, "at": "2026-09-23T02:00:00.000Z",
                             "clock": "02:00", "tick": "Gesendet"}))
@@ -467,7 +467,7 @@ def test_send_gallery_carries_the_derived_media_budget_and_the_captions_typing_t
 
 
 def test_send_document_posts_the_phone_local_path_and_caption_and_returns_the_body():
-    """TASK-131 round 7 (Ivan, 2026-09-23): a file, any type -- same mechanism-proof shape as
+    """TASK-360 round 7 (Ivan, 2026-09-23): a file, any type -- same mechanism-proof shape as
     send_photos/send_gallery, its own route."""
     cl, fake = build((200, {"ok": True, "at": "2026-09-23T02:50:00.000Z",
                             "clock": "02:50", "tick": "Gesendet"}))
@@ -540,14 +540,14 @@ def test_template_parameter_validation_is_the_meta_one_unchanged():
 def test_send_template_without_a_definition_says_why_there_is_no_registry():
     cl, fake = build()
     cl.begin_campaign_attempt("c1", LEAD, 1)
-    with pytest.raises(BR.BridgeError, match="TASK-124"):
+    with pytest.raises(BR.BridgeError, match="TASK-353"):
         cl.send_template(LEAD, template_name="erstkontakt", language="de")
     assert fake.calls == []
 
 
 def test_get_template_refuses_instead_of_inventing_an_approved_definition():
     cl, fake = build()
-    with pytest.raises(BR.BridgeError, match="TASK-124"):
+    with pytest.raises(BR.BridgeError, match="TASK-353"):
         cl.get_template("1234567890")
     assert fake.calls == []
 

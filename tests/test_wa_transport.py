@@ -1,4 +1,4 @@
-"""Offline tests for the transport seam (TASK-219) and the phone helpers it left behind (TASK-218).
+"""Offline tests for the transport seam (TASK-349) and the phone helpers it left behind (TASK-348).
 
 No network: the only client ever built here is app.wa.meta.Client with no token, which is never
 called. The one test that needs a different WA_TRANSPORT in the environment runs a fresh
@@ -125,7 +125,7 @@ def _transport_client_calls(path):
 
 
 def test_only_transport_py_builds_a_transport_client():
-    """TASK-219 AC#1. Every other test in the suite injects a FakeMeta, so a call site that went back
+    """TASK-349 AC#1. Every other test in the suite injects a FakeMeta, so a call site that went back
     to ``M.Client()`` would stay green everywhere else and only surface as a real Cloud API send on a
     deployment configured for the bridge."""
     found = {str(p.relative_to(ROOT)): lines
@@ -136,7 +136,7 @@ def test_only_transport_py_builds_a_transport_client():
 
 
 def test_process_phones_resolves_one_client_per_phone(monkeypatch, tmp_path):
-    """TASK-219 AC#4. One webhook payload can name several candidates, and the rail is per-thread
+    """TASK-349 AC#4. One webhook payload can name several candidates, and the rail is per-thread
     (TASK-220), so the client must be resolved inside the loop with the phone it will answer -- not
     once by ``submit_accepted``, which runs before any phone has been read."""
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
@@ -176,7 +176,7 @@ def test_a_send_without_a_client_resolves_the_rail_and_fails_loudly_when_it_is_u
         assert ST.rail_of(c, LEAD) is None, "a failed send pins no rail"
 
 
-# --- phones.py: same behaviour as the meta.py originals (TASK-218) --------------------------------
+# --- phones.py: same behaviour as the meta.py originals (TASK-348) --------------------------------
 
 def test_meta_still_exports_the_helpers_it_moved_out():
     assert M.sender_e164 is P.sender_e164

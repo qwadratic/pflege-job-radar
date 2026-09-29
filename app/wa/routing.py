@@ -1,4 +1,4 @@
-"""Conversation ownership (TASK-179): which system -- this harness ("us") or the real production
+"""Conversation ownership (TASK-331): which system -- this harness ("us") or the real production
 bot ("them") -- currently owns a WhatsApp phone number's conversation.
 
 This is deliberately the safe, in-repo, reversible slice of a bigger idea: route genuinely NEW
@@ -20,7 +20,7 @@ Three ways a phone gets an owner, and only three -- no other code path may write
 2. flip_to_us_on_reopen(): called from app/wa/api.py's _send_reopen_template the moment THIS
    harness sends a reopen template to a phone -- regardless of whatever owned it before, that is
    the one explicit act that hands the conversation to us.
-3. flip_to_us_for_campaign() / restore_after_campaign_failure() (TASK-206, app/wa/luna/campaign.py):
+3. flip_to_us_for_campaign() / restore_after_campaign_failure() (TASK-343, app/wa/luna/campaign.py):
    the campaign sender hands a phone to us (reason 'campaign:<id>') before it posts the template, and
    puts the prior record back when Meta rejects that send. Neither commits: the sender commits the
    flip together with its send claim, and the restore together with the failed claim.
@@ -108,7 +108,7 @@ def flip_to_us_on_reopen(conn, phone):
     _set_ownership(conn, phone, "us", reason="reopened_by_us")
 
 
-# --- campaign sends (TASK-206) ---------------------------------------------------------------------
+# --- campaign sends (TASK-343) ---------------------------------------------------------------------
 
 CAMPAIGN_REASON_PREFIX = "campaign:"
 

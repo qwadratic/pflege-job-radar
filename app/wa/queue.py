@@ -29,7 +29,7 @@ _ANERKENNUNG_STATUS = {"urkunde": "granted", "defizit": "deficit_notice", "kennt
 
 # How many ranked clinics reach the queue for a card that did NOT choose the pool branch: the
 # narrow branch, and every card from before card.match_branch existed. This is what every consent
-# queued before TASK-144's branches, kept unchanged for those two cases -- it is NOT Ivan's five,
+# queued before TASK-373's branches, kept unchanged for those two cases -- it is NOT Ivan's five,
 # which is app/wa/luna/offer.py:OFFER_LIMIT and caps one MESSAGE, not the handoff list. Nobody has
 # stated a rule for the narrow branch's handoff size; this number is the status quo, not a decision.
 MATCH_TOP_N = 5
@@ -163,7 +163,7 @@ def card_to_candidate(card, cv_profile=None):
 def build_queue_entry(phone, card, cv_profile=None):
     """Ranks this candidate against every clinic in the live snapshot (app.autopilot.matching.rank,
     reused as-is -- job-matching scoring is not something this task reinvents), resolves each
-    ranked clinic's contact via TASK-168's clinic_contacts table, and upserts both the candidate and
+    ranked clinic's contact via TASK-324's clinic_contacts table, and upserts both the candidate and
     its matches into this module's own tables. Idempotent: re-running for the same phone (e.g. a
     later CV upload, or a repeat consent) replaces the candidate row and upserts matches on the
     (phone, clinic_id, posting_id) unique key rather than duplicating rows.
@@ -174,7 +174,7 @@ def build_queue_entry(phone, card, cv_profile=None):
     they said a clinic without a flat is also an option (housing_flexible), the filter drops here exactly as it
     does in the shortlist -- the same rule on both sides, again.
 
-    TASK-144: how many of the ranked clinics are queued is the candidate's own branch choice,
+    TASK-373: how many of the ranked clinics are queued is the candidate's own branch choice,
     ``match_limit(card)`` -- a pool card is queued whole (``n=None``, no cut in matching.rank), a narrow or
     branchless card keeps MATCH_TOP_N. Before this, every consent queued five whatever the card said, so a
     candidate who was told "we put you forward to all 224 matching clinics" got five of them."""
@@ -239,7 +239,7 @@ def queue_rows(conn):
 
 
 def mailing_list_rows(conn):
-    """Flattened candidate x clinic x contact-email preview -- the report shape TASK-172's
+    """Flattened candidate x clinic x contact-email preview -- the report shape TASK-328's
     end-to-end test asserts against. Never sends anything; this is a read-only preview. Test
     numbers (TASK-212) are left out, like in queue_rows: nobody should be preparing an email to a
     clinic about an operator's test persona."""

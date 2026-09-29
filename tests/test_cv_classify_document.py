@@ -1,4 +1,4 @@
-"""Offline tests for app/cv.py:classify_document (TASK-81) -- no real CLI, same LLMClient(call=...)
+"""Offline tests for app/cv.py:classify_document (TASK-334) -- no real CLI, same LLMClient(call=...)
 seam as tests/test_cv_intake.py."""
 import json
 

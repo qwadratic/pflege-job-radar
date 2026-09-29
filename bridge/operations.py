@@ -1,4 +1,4 @@
-"""The handset operations as callable code, not as a script somebody rewrites (TASK-147).
+"""The handset operations as callable code, not as a script somebody rewrites (TASK-376).
 
 WHY THIS MODULE EXISTS. Every time the handset had to be listed, read or tidied up, somebody wrote
 a fresh UI-automation script, ran it once and threw it away. That is a fine way to do a thing once
@@ -12,7 +12,7 @@ operation instead of to whoever is driving it.
                    (send_broadcast is a fourth and lives in bridge/broadcast.py: it needs a
                     ledger-backed run and a runner thread, which is a module's worth of its own.)
 
-clear_chat/delete_chat used to live here too (TASK-147's original four). Ivan's ruling, TASK-289,
+clear_chat/delete_chat used to live here too (TASK-376's original four). Ivan's ruling, TASK-289,
 2026-09-24: a phone-side chat delete let the real WhatsApp screen and the DB drift apart, twice in
 one night, through a mechanism this module's own audit trail could not fully explain. This rail
 never deletes conversation state again, in either direction -- so the capability, not just its use,

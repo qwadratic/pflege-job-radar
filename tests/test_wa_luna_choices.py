@@ -1,5 +1,5 @@
 """Offline tests for app/wa/luna/choices.py (TASK-224: server-side recovery of a typed reply into a
-button id; TASK-122: gating WA_BRIDGE_SYNTHETIC_CONSENT). No network, no claude CLI: the matcher is
+button id; TASK-351: gating WA_BRIDGE_SYNTHETIC_CONSENT). No network, no claude CLI: the matcher is
 pure, and the only I/O is wa_messages rows in a throwaway sqlite file.
 """
 from datetime import datetime, timedelta, timezone
@@ -151,7 +151,7 @@ def test_a_match_records_the_tier_and_the_verbatim_token_in_message_meta(db):
                    "offer_wamid": "wab.o.1", "token": "Pruefung"}
 
 
-# --- consent: tier gating and the flag (TASK-122) --------------------------------------------------
+# --- consent: tier gating and the flag (TASK-351) --------------------------------------------------
 
 @pytest.mark.parametrize("typed", ["1", "1.", "ja", "Ja gerne", "JA GERNE"])
 def test_consent_is_granted_only_by_tier_1_or_2(db, typed, monkeypatch):

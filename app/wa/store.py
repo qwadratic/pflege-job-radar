@@ -3,7 +3,7 @@
 Two invariants carry the whole design. ``wa_messages.wamid`` is UNIQUE, because Meta redelivers a
 webhook for minutes after a non-2xx and the same message must not be answered twice. ``wa_threads.stopped``
 is checked before every send, because an opt-out that can be overtaken by a queued reply is not an opt-out.
-``wa_suppressions`` is that second invariant's cross-thread, cross-lane twin (TASK-216): one row per human
+``wa_suppressions`` is that second invariant's cross-thread, cross-lane twin (TASK-347): one row per human
 rather than per thread, read by app/wa/suppression.py before every send on either rail.
 Slots are a JSON blob: they are the conversation's memory, and their vocabulary lives in app/wa/slots.py.
 """
@@ -154,7 +154,7 @@ create table if not exists wa_inbound_pending (
   last_attempt_at text
 );
 create index if not exists idx_wa_inbound_pending_phone on wa_inbound_pending(phone);
--- One row per suppressed phone: the cross-thread, cross-lane do-not-contact list (TASK-216/TASK-137).
+-- One row per suppressed phone: the cross-thread, cross-lane do-not-contact list (TASK-347/TASK-366).
 -- wa_threads.stopped is per thread and every card save rewrites it; this row is per human (the key is
 -- phones.canonicalize_phone) and nothing but a suppression writes it. The rules, and the choke points
 -- that read it before every send, live in app/wa/suppression.py; the table is declared here because
@@ -227,7 +227,7 @@ def db():
     return c
 
 
-# (table, column, type) added after the table first shipped (TASK-205): SCHEMA's create table only runs on a new
+# (table, column, type) added after the table first shipped (TASK-342): SCHEMA's create table only runs on a new
 # file, so an existing wa.sqlite gets them by 'alter table add column' (same as app/runs.py).
 MIGRATIONS = (("wa_documents", "import_source", "text"), ("wa_documents", "import_ref", "text"),
               ("wa_documents", "import_meta", "text"), ("wa_documents", "reuse_state", "text"),
@@ -515,7 +515,7 @@ def rail_counts(c):
 
 # --- reply-turn claims (TASK-181): durable, cross-process dedup beyond wamid uniqueness ----------
 # The wamid UNIQUE constraint on wa_messages stops a Meta redelivery from being answered twice, but
-# it says nothing about two DIFFERENT entrypoints (the webhook, and the catch-up driver, TASK-182)
+# it says nothing about two DIFFERENT entrypoints (the webhook, and the catch-up driver, TASK-332)
 # both deciding -- at the same moment, in separate processes -- to generate and send a reply for
 # the SAME already-recorded inbound message. turn_key is that message's own wamid; only one caller
 # may hold an active claim on a given (phone, turn_key) at a time.
@@ -834,7 +834,7 @@ def followup_tiers_sent_since(c, phone, since_iso):
 
 def claim_nudge(c, phone, fingerprint):
     """True if this exact (phone, fingerprint) has not been claimed before; False if another
-    caller already claimed it (TASK-93). A durable, cross-process dedup primitive for any
+    caller already claimed it (TASK-337). A durable, cross-process dedup primitive for any
     unprompted, system-initiated send -- today's tiered follow-up nudge (app/wa/luna/followups.py)
     and any future template-driven campaign alike -- so two independent trigger paths (a second
     overlapping run of the same job, or two different campaign types) deciding to message the
@@ -861,7 +861,7 @@ def candidate_phones(c):
     """Every phone with a thread, not stopped and not suppressed -- the pool app.wa.luna.followups/
     catchup-style drivers scan.
 
-    TASK-216: the suppression filter is the identity-scoped twin of ``stopped=0`` right beside it. A
+    TASK-347: the suppression filter is the identity-scoped twin of ``stopped=0`` right beside it. A
     suppressed number that stayed in the pool would reach ``api.send_and_record``, which refuses it by
     raising -- correct for a send somebody asked for, but it would end the whole sweep for every other
     thread. Not sending is not a decision made here: the choke point still refuses these numbers if a
@@ -895,7 +895,7 @@ def set_document_text(c, doc_id, text):
 
 
 def set_document_classification(c, doc_id, document_type, certificate_level, text_key):
-    """app/cv.py:classify_document() result (TASK-185) for this one file, and the card key its text
+    """app/cv.py:classify_document() result (TASK-334) for this one file, and the card key its text
     went to -- chosen by document_type (cv_text/urkunde_text, None for any other type, TASK-199)."""
     c.execute("update wa_documents set document_type=?, certificate_level=?, text_key=? where id=?",
               (document_type, certificate_level, text_key, doc_id))
@@ -956,7 +956,7 @@ def forget_document(c, doc_id, at=None):
     return cur.rowcount > 0
 
 
-# --- imported history (TASK-205, app/wa/luna/import_history.py) -----------------------------------
+# --- imported history (TASK-342, app/wa/luna/import_history.py) -----------------------------------
 # An imported document is a wa_documents row with import_source/import_ref (the source system's own id for it),
 # import_meta (JSON) and no wamid; reuse_state starts 'pending' and only a candidate's answer moves it to
 # 'confirmed' or 'declined' (luna_brain.apply_document_reuse). Prior messages go to wa_imported_messages, never
@@ -1031,7 +1031,7 @@ def imported_messages_for(c, phone):
     return [dict(r) for r in rows]
 
 
-# --- webhook statuses, raw events, pending inbound work (TASK-202) ---------------------------------
+# --- webhook statuses, raw events, pending inbound work (TASK-341) ---------------------------------
 # A status webhook (sent/delivered/read/failed) is one row per (wamid, status, Meta timestamp): a Meta
 # redelivery inserts nothing and records no second failure. Everything else a webhook carries for one of
 # our phones that nothing here acts on (calls, contacts, reactions, unknown fields) is kept raw in
@@ -1287,7 +1287,7 @@ def last_inbound(c, phone):
 
 def record_campaign_send(c, phone, wamid, rendered, campaign_id, sent_at=None, kind="template", template_id=None,
                          variables=None, commit=True):
-    """The one place a campaign template send lands (TASK-203; the sender, TASK-206, calls it after Meta
+    """The one place a campaign template send lands (TASK-203; the sender, TASK-343, calls it after Meta
     returned ``wamid``). ``rendered`` is app/wa/meta.py:render_template's result for the exact definition
     and parameters sent. In one commit: the thread (created when missing), the outbound row (body = rendered
     text, meta = {action: 'campaign', campaign_id, template_id, template, language, variables, buttons}),
@@ -1326,7 +1326,7 @@ def message_statuses_for(c, phone, status=None):
     return [_status_row(r) for r in c.execute(sql + " order by id", args).fetchall()]
 
 
-# --- campaign sends (TASK-206, app/wa/luna/campaign.py; attempts TASK-209) ------------------------------------------
+# --- campaign sends (TASK-343, app/wa/luna/campaign.py; attempts TASK-209) ------------------------------------------
 # One row per attempt (campaign, phone, attempt 1..n): the durable send claim, never overwritten by a later attempt.
 # state: in_progress = claimed, the POST result not recorded (after a crash: uncertain); sent = Meta returned the wamid,
 # recorded in the same commit as the outbound row and card.campaign; failed = Meta answered with an HTTP 4xx error,
@@ -1363,7 +1363,7 @@ _CAMPAIGN_TABLE = """create table {name} (
 CAMPAIGN_SCHEMA = (_CAMPAIGN_TABLE.format(name="if not exists wa_campaign_sends") + ";\n"
                    "create index if not exists idx_wa_campaign_sends_phone on wa_campaign_sends(phone);\n")
 CAMPAIGN_CLAIM_PREFIX = "campaign:"   # wa_reply_turn_claims.turn_key 'campaign:<id>', wa_nudge_claims 'campaign:<id>:<n>'
-# Columns of the TASK-206 layout (one row per campaign and phone, ``attempts`` overwritten by every re-claim).
+# Columns of the TASK-343 layout (one row per campaign and phone, ``attempts`` overwritten by every re-claim).
 _TASK103_COLUMNS = ("campaign_id", "phone", "state", "template_id", "template_name", "template_language", "variables",
                     "rendered_text", "prior_owner", "prior_reason", "prior_since", "ownership_restore", "wamid", "error",
                     "error_code", "error_payload", "claimed_at", "sent_at", "finished_at")
@@ -1374,7 +1374,7 @@ def _campaign_table_is_task103(c):
 
 
 def ensure_campaign_schema(c):
-    """Create wa_campaign_sends, or rebuild a TASK-206 table (pk campaign_id+phone, column ``attempts``) into one row
+    """Create wa_campaign_sends, or rebuild a TASK-343 table (pk campaign_id+phone, column ``attempts``) into one row
     per attempt: each row becomes attempt = its ``attempts`` value (the earlier attempts of such a row were
     overwritten then and are not recoverable). One BEGIN IMMEDIATE transaction, the layout checked again under the
     write lock (another sender may have rebuilt it meanwhile); a crash rolls it back. Idempotent."""

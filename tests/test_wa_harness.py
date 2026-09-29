@@ -138,7 +138,7 @@ def _route(wa, raw, sig):
         try:
             response = client.post("/api/wa/webhook", content=raw,
                                    headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"})
-            mod.wait_for_background(timeout=60)   # TASK-202: the turn runs in the background worker
+            mod.wait_for_background(timeout=60)   # TASK-341: the turn runs in the background worker
             return response
         finally:
             mod.M.Client = real
@@ -201,7 +201,7 @@ def test_parse_reads_text_buttons_and_media(wa):
 
 
 def test_parse_captures_media_id_mime_type_and_filename(wa):
-    """TASK-171: document/image/audio/video used to drop the media entirely (media_id/mime_type
+    """TASK-327: document/image/audio/video used to drop the media entirely (media_id/mime_type
     both None, no filename) -- these are what app/wa/meta.py's media download needs, captured
     straight from Meta's own `{"<type>": {"id":..., "mime_type":..., "filename":...}}` field."""
     for kind in ("document", "image", "audio", "video"):
@@ -316,7 +316,7 @@ def test_a_bare_yes_answers_the_question_just_asked_and_not_an_older_one(wa):
 
 
 def test_matches_name_real_postings_with_clinic_town_and_no_link(wa):
-    """TASK-151: the list names the houses; it does NOT carry the ad URL.
+    """TASK-380: the list names the houses; it does NOT carry the ad URL.
 
     It used to, on every thread. WA_BRAIN defaults to ``deterministic`` (app/wa/config.py), so an
     entry point started without the env var sent real candidates board links -- the one thing Ivan's
@@ -335,7 +335,7 @@ def test_matches_name_real_postings_with_clinic_town_and_no_link(wa):
 
 
 def test_the_deterministic_brain_shows_the_ad_url_only_on_a_test_thread():
-    """TASK-150 AC#6: both brains read the SAME flag, so they cannot disagree about what a test
+    """TASK-379 AC#6: both brains read the SAME flag, so they cannot disagree about what a test
     thread is shown (app/wa/luna/source_link.py is the other half)."""
     rows = B.jobs_for({"department": "Intensiv/IMC", "city": "München"})[:1]
     slots = {"department": "Intensiv/IMC", "city": "München"}
@@ -596,7 +596,7 @@ def test_send_uses_the_reopen_template_when_the_window_is_closed(wa, monkeypatch
 
 
 def test_a_sent_reopen_template_flips_ownership_to_us(wa, monkeypatch):
-    """TASK-179: this harness reopening an old conversation with its own template is the one
+    """TASK-331: this harness reopening an old conversation with its own template is the one
     explicit act that hands that phone's ownership to us, regardless of whatever it was before."""
     from datetime import datetime, timedelta, timezone
 
@@ -663,7 +663,7 @@ def test_send_template_with_params_fills_body_components(wa):
 # --- template discovery: what is already approved on this WABA (docs/whatsapp.md) --------------
 
 def test_phone_number_info_asks_only_for_fields_the_phone_number_node_answers(wa):
-    # Live 2026-09-14 (TASK-201): the old default's whatsapp_business_account failed the whole GET with #100.
+    # Live 2026-09-14 (TASK-340): the old default's whatsapp_business_account failed the whole GET with #100.
     calls = []
 
     def transport(method, url, headers=None, data=None, timeout=None):

@@ -1,4 +1,4 @@
-"""Offline proof for the phone-rail executor (TASK-130). FakeDriver only -- no adb, no phone, no ssh.
+"""Offline proof for the phone-rail executor (TASK-359). FakeDriver only -- no adb, no phone, no ssh.
 
 Every test here asserts something a real candidate would feel: a duplicate message, a silent
 non-delivery recorded as sent, a bubble at 07:53 in the morning. The driver itself is covered in
@@ -577,7 +577,7 @@ def test_an_unresolvable_inbound_is_journalled_and_never_wedges_the_cursor(rig):
     assert rig.executor.health()["inbound"]["unresolved"] == 1
 
 
-# --- inbound media (TASK-131 round 5, decision-9 2026-09-22: automatic attribution removed) -------
+# --- inbound media (TASK-360 round 5, decision-9 2026-09-22: automatic attribution removed) -------
 def test_an_unattached_media_message_is_released_as_its_placeholder_immediately(rig):
     """No hold any more (round 5 deleted MEDIA_HOLD_SEC and the automatic linker it existed for):
     a media message is released exactly like any other message, the moment it is polled."""
@@ -614,7 +614,7 @@ def test_a_text_message_is_never_held_back(rig):
     assert len(rig.executor.outbox()["events"]) == 1
 
 
-# --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-131) -----------------------------------------
+# --- GET /v1/media/<id>, GET /v1/media/<id>/raw (TASK-360) -----------------------------------------
 def test_media_metadata_and_raw_bytes_round_trip(http, tmp_path):
     rig, base = http
     blob = b"%PDF-1.4 fake bytes"
@@ -658,7 +658,7 @@ def test_a_recorded_file_missing_from_disk_is_a_loud_500_not_an_empty_document(h
     assert "missing" in body["error"]["message"] or "could not be read" in body["error"]["message"]
 
 
-# --- the media watcher: pulls into the queue, links nothing (TASK-131 round 5) ----------------------
+# --- the media watcher: pulls into the queue, links nothing (TASK-360 round 5) ----------------------
 def test_the_media_watcher_only_pulls_into_the_queue_and_never_pulls_a_path_twice(rig, tmp_path):
     msg = _inbound(text="\U0001f4c4 Dokument", media="document")
     rig.executor.record_inbound(msg, [], rig.clock())
@@ -821,7 +821,7 @@ def test_health_reports_no_media_watcher_when_none_is_wired(rig):
     assert rig.executor.health()["media_watcher"] is None
 
 
-# --- no automatic attachment exists any more, structurally (TASK-131 round 5 requirement 1) ---------
+# --- no automatic attachment exists any more, structurally (TASK-360 round 5 requirement 1) ---------
 def test_no_ledger_method_left_that_an_automatic_matcher_could_even_call(rig):
     """Delete the inference machinery rather than leave it dormant (round 5's own instruction): a
     dead method still importable would teach the next person something here is still guarded."""
@@ -931,7 +931,7 @@ def test_identical_bytes_from_two_senders_are_two_queue_entries_not_one(rig, tmp
     assert len(remaining) == 1 and remaining[0]["queue_id"] == queue[1]["queue_id"]
 
 
-# --- the human escape hatch (TASK-131 round 6: the fallback, not the front door) --------------------
+# --- the human escape hatch (TASK-360 round 6: the fallback, not the front door) --------------------
 def test_unresolved_media_lists_facts_and_nothing_identifying(rig):
     rig.ledger.record_media(source_rel="WhatsApp Documents/Anna Musterfrau Lebenslauf.pdf", mtime=0,
                             media_id="wab.m.orphan", sha256="9" * 64, local_path="/tmp/orphan.pdf",
@@ -1116,7 +1116,7 @@ def test_the_six_legacy_rows_from_before_the_queue_columns_existed_are_reachable
 
 
 def test_a_database_already_migrated_by_round_6_alone_still_gets_its_rows_flagged_legacy(tmp_path):
-    """Reproduces the EXACT live state found on the mini 2026-09-22 (TASK-131 round 7 fix): round 6
+    """Reproduces the EXACT live state found on the mini 2026-09-22 (TASK-360 round 7 fix): round 6
     already ran once and backfilled queue_id/kind/source_dir for the six pre-round-5 rows -- so by
     the time round 7's ``legacy`` column ships, ``where queue_id is null`` (the only signal the
     original backfill had) finds nothing, and the six rows would silently stay legacy=0, exactly as
@@ -1149,7 +1149,7 @@ def test_a_database_already_migrated_by_round_6_alone_still_gets_its_rows_flagge
         ledger.close()
 
 
-# --- automatic identity matching (TASK-131 round 6, Ivan's ruling 2026-09-22) ----------------------
+# --- automatic identity matching (TASK-360 round 6, Ivan's ruling 2026-09-22) ----------------------
 def _seed_media(rig, *, kind, size, filename, local_path="/tmp/x", media_id="wab.m.x", source_rel=None):
     rig.ledger.record_media(source_rel=source_rel or f"WhatsApp {kind}/{filename}",
                             mtime=int(rig.clock().timestamp()), media_id=media_id, sha256=media_id * 2,
@@ -1242,7 +1242,7 @@ def test_a_voice_note_is_matched_by_duration(rig, tmp_path):
 
 
 def test_the_newest_bubble_in_a_thread_supplies_the_evidence_not_the_oldest(rig, tmp_path):
-    """TASK-131 round 6 blocker B1, fixed: a chat that already holds an OLD voice note (already
+    """TASK-360 round 6 blocker B1, fixed: a chat that already holds an OLD voice note (already
     resolved in an earlier cycle, or just old scrollback) must not answer for today's file with that
     old bubble's duration. PHONE's newest bubble (1:30) does not match; OTHER's newest bubble (0:07)
     does -- OTHER wins, even though PHONE's OLDEST bubble also happened to read 0:07."""
@@ -1266,7 +1266,7 @@ def test_the_newest_bubble_in_a_thread_supplies_the_evidence_not_the_oldest(rig,
 
 
 def test_a_sole_candidate_contradicted_by_its_own_bubble_attaches_weak_not_strong(rig, tmp_path):
-    """TASK-131 round 6 blocker B2, fixed: a sole candidate is no longer unconditionally strong.
+    """TASK-360 round 6 blocker B2, fixed: a sole candidate is no longer unconditionally strong.
     Its own thread reads 2:30 for a file whose bytes are 7 seconds -- that is read (audio is an
     evidence-bearing kind) and disagreed with, so the pick is weak and audited, not silently strong."""
     audio = tmp_path / "v.opus"
@@ -1300,7 +1300,7 @@ def test_a_sole_candidate_confirmed_by_its_own_bubble_stays_strong(rig, tmp_path
 
 
 def test_a_legacy_row_never_wins_a_live_candidate_over_the_fresh_file(rig):
-    """TASK-131 round 6 blocker B3, fixed: a pre-round-5 backfilled row (``legacy=1``) must not
+    """TASK-360 round 6 blocker B3, fixed: a pre-round-5 backfilled row (``legacy=1``) must not
     compete for a live candidate at all -- it stays queued (still reachable by a human via
     ``unresolved_media``/``attach_media``) while the fresh file of the same kind gets the match."""
     old = _seed_media(rig, kind="image", size=999, filename="IMG-OLD.jpg", media_id="wab.m.old")
@@ -1389,7 +1389,7 @@ def test_a_queued_phone_op_defers_the_evidence_read_instead_of_racing_it(rig, tm
     assert len(rig.ledger.media_queue()) == 1
 
 
-# --- active-hours override for a single test run (TASK-131 UAT, Ivan 2026-09-22) -------------------
+# --- active-hours override for a single test run (TASK-360 UAT, Ivan 2026-09-22) -------------------
 def test_active_hours_override_is_none_when_unset_or_blank():
     """The default path -- what every deploy without the env var set gets -- must be bit-for-bit
     unchanged: None, so main() keeps G.MINI_FLOOR exactly as built."""
@@ -1432,7 +1432,7 @@ def test_first_touch_gap_override_rejects_garbage_and_out_of_range():
 def test_health_says_the_msisdn_is_unverified(rig):
     health = rig.executor.health()
     assert health["rail"]["msisdn_verified"] is False
-    assert "TASK-136" in health["rail"]["note"]
+    assert "TASK-365" in health["rail"]["note"]
     assert health["quota"]["window_open"] is True
     assert health["quota"]["active_hours"] == [9, 20]
 
@@ -1709,7 +1709,7 @@ def test_v1_reconcile_chats_and_thread_all_enqueue_low(http_no_dispatch):
     assert _enqueued_priority(rig, base, f"/v1/thread?phone={PHONE}") == L.PRIORITY_LOW
 
 
-# --- the inbound watcher (TASK-143, lock removed TASK-131 round 6) --------------------------------
+# --- the inbound watcher (TASK-372, lock removed TASK-360 round 6) --------------------------------
 class BusyPhone(D.FakeDriver):
     """The other lane holds huawei01.lock for a send. The shade read must not care."""
 
@@ -1733,7 +1733,7 @@ def test_a_watcher_cycle_stores_what_the_phone_saw_and_beats(rig):
 
 
 def test_a_notification_arriving_while_the_lock_is_held_is_still_queued_and_processed(rig):
-    """THE ACCEPTANCE CASE (TASK-131 round 6): the shade read takes no lock at all, so a send in
+    """THE ACCEPTANCE CASE (TASK-360 round 6): the shade read takes no lock at all, so a send in
     flight (or anything else holding huawei01.lock) can never make this watcher skip a cycle -- the
     root of half the decoy attributions this round's brief was written from."""
     driver = BusyPhone(inbound=_inbound())
@@ -2584,7 +2584,7 @@ def test_health_reports_oldest_unresolved_sec_when_a_row_is_stuck(rig):
     assert rig.executor.health()["oldest_unresolved_sec"] == pytest.approx(45, abs=1)
 
 
-# --- the identity watcher (TASK-131 round 6) --------------------------------------------------------
+# --- the identity watcher (TASK-360 round 6) --------------------------------------------------------
 def test_an_identity_watcher_cycle_runs_the_sweep_and_beats(rig):
     _seed_media(rig, kind="image", size=1000, filename="IMG-1.jpg")
     rig.executor.record_inbound(_inbound(media="image", phone=PHONE), [], rig.clock())
@@ -2621,7 +2621,7 @@ def test_health_reports_no_identity_watcher_when_none_is_wired(rig):
     assert rig.executor.health()["identity_watcher"] is None
 
 
-# --- POST /v1/photos: outbound media (TASK-131 round 7, Ivan 2026-09-22) ------------------------
+# --- POST /v1/photos: outbound media (TASK-360 round 7, Ivan 2026-09-22) ------------------------
 def test_send_photos_opens_the_chat_sends_each_file_and_parks(rig, tmp_path):
     a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
     a.write_bytes(b"a"); b.write_bytes(b"b")
@@ -2673,7 +2673,7 @@ def test_send_photos_reads_its_own_thread_back_before_parking(rig, tmp_path):
 
 def test_a_send_photo_failure_partway_through_reports_how_many_actually_sent(rig, tmp_path):
     """The first photo lands, the second raises -- the caller has to know one real send already
-    reached the candidate, not just that the call as a whole failed (TASK-146's own discipline for
+    reached the candidate, not just that the call as a whole failed (TASK-375's own discipline for
     text: keys pressed are keys pressed, never silently retried)."""
     a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
     a.write_bytes(b"a"); b.write_bytes(b"b")
@@ -2693,7 +2693,7 @@ def test_a_send_photo_failure_partway_through_reports_how_many_actually_sent(rig
         "the second attempt still reached the driver -- keys/taps may already have happened")
 
 
-# --- one gallery message (TASK-131 round 7 gallery redesign, Ivan 2026-09-22) -------------------
+# --- one gallery message (TASK-360 round 7 gallery redesign, Ivan 2026-09-22) -------------------
 def test_send_gallery_opens_the_chat_sends_one_message_and_parks(rig, tmp_path):
     a, b = tmp_path / "a.jpg", tmp_path / "b.jpg"
     a.write_bytes(b"a"); b.write_bytes(b"b")
@@ -2760,7 +2760,7 @@ def test_a_send_gallery_failure_is_reported_as_handset_touched_not_a_refusal(rig
         "the attempt still reached the driver -- keys/taps may already have happened")
 
 
-# --- one document (TASK-131 round 7, Ivan 2026-09-23) -------------------------------------------
+# --- one document (TASK-360 round 7, Ivan 2026-09-23) -------------------------------------------
 def test_send_document_opens_the_chat_sends_and_parks(rig, tmp_path):
     a = tmp_path / "Lebenslauf.pdf"
     a.write_bytes(b"a")

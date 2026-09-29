@@ -1,5 +1,5 @@
 """Content-addressed inbound media: ids, the handset's own media folders, and reading a file's own
-kind off its own bytes (TASK-131). WHO a file is from is decided by ``bridge/identity.py``, not here
+kind off its own bytes (TASK-360). WHO a file is from is decided by ``bridge/identity.py``, not here
 -- this module never reads a candidate's identity, only a file's.
 
 FOUR ROUNDS TRIED TO INFER THE SENDER BY TIME AND FAILED, IN ORDER:
@@ -50,7 +50,7 @@ from pathlib import PurePosixPath
 #: the same id on purpose -- it is the same bytes, and re-downloading them twice would be the
 #: harness inventing a distinction the content itself does not have.
 MEDIA_ID_PREFIX = "wab.m."
-#: Matches the backlog's own spec for this task (TASK-131 plan note): enough of the digest to make
+#: Matches the backlog's own spec for this task (TASK-360 plan note): enough of the digest to make
 #: a collision practically impossible for the volume this rail will ever see, short enough to stay
 #: readable in a journal line.
 CONTENT_ID_CHARS = 20

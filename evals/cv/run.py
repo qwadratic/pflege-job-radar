@@ -1,6 +1,6 @@
 """Synthetic CV eval runner: loads evals/cv/cases/*.json and runs each cv_text through one of two
 extraction paths -- app.cv.analyse (deterministic regex, the real POST /api/cv code path) or
-app.cv.analyse_llm (the `claude` CLI reasoning path, TASK-65) -- then checks the extracted profile
+app.cv.analyse_llm (the `claude` CLI reasoning path, TASK-325) -- then checks the extracted profile
 and match reasoning against `expected`, printing PASS/FAIL with why.
 
   python evals/cv/run.py                      # every case, deterministic path (default)
@@ -24,7 +24,7 @@ matches assertions would silently measure network reachability instead of extrac
 `--path=llm` run still spawns the real `claude` CLI subprocess (that part is never mocked), only the
 job-board data it matches against is a fixture.
 
---- TASK-65 result (2026-09-12) -- see evals/cv/README.md for the full write-up ------------------
+--- TASK-325 result (2026-09-12) -- see evals/cv/README.md for the full write-up ------------------
 Ran both paths over the 12-case set below. Deterministic (one run -- it is deterministic by
 construction): 9/12. LLM (sampled across several runs): 11-12/12, but see the non-determinism note
 below. Verdict: lean LLM for profile EXTRACTION -- it won every case that hit a real domain trap
@@ -45,7 +45,7 @@ same output), via the literal "Registered Nurse"/"Anerkennungsverfahren" tokens.
 real, previously-confirmed CLI non-determinism this repo's own planning doc already flagged
 elsewhere (same input, two fresh sessions, two different phrasings, same decision) -- here it is
 reproduced on a structured-extraction task, not just conversational phrasing, and it can flip a
-field, not just the wording around it. Practical takeaway for TASK-67 (CV/Urkunde intake, which
+field, not just the wording around it. Practical takeaway for TASK-327 (CV/Urkunde intake, which
 consumes this result): analyse_llm is the better default for reading free text, but a borderline
 recognition-path candidate is exactly the case worth a human's second look either way, regardless
 of which path produced the profile.

@@ -1,4 +1,4 @@
-# The inbound relay. THIS UNIT RUNS ON OUR VPS (tasker-dispatcher-01). It is a TEMPLATE: TASK-143
+# The inbound relay. THIS UNIT RUNS ON OUR VPS (tasker-dispatcher-01). It is a TEMPLATE: TASK-372
 # deliberately does not install it, because installing a unit that reaches a real WhatsApp
 # conversation is a decision, not a step. The command to install it is in INSTALL.md.
 #
@@ -10,11 +10,11 @@
 # that long. The loop sleeps WA_BRIDGE_RELAY_INTERVAL_SEC (3 s) between drains and backs off to 60 s
 # while the far end is unreachable.
 [Unit]
-Description=pflege WhatsApp phone-rail inbound relay (TASK-143)
+Description=pflege WhatsApp phone-rail inbound relay (TASK-372)
 After=network-online.target pflege-wa.service
 Wants=pflege-wa.service
 # In [Unit], not [Service]: systemd parses the rate limit on the unit and logged "Unknown key name
-# StartLimitIntervalSec in section Service, ignoring" for it here (TASK-146).
+# StartLimitIntervalSec in section Service, ignoring" for it here (TASK-375).
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -29,13 +29,13 @@ WorkingDirectory=/home/claude/repo/pflege-board
 # rail.env is read by pflege-wa.service too, which is what keeps WA_BRIDGE_PHONE_NUMBER_ID equal on
 # both sides: the relay writes it into metadata.phone_number_id and api._number_matches compares
 # against the same variable. Two copies of that value drifting apart makes our own server skip a
-# candidate's message as "another WhatsApp number's change" -- silently (TASK-146).
+# candidate's message as "another WhatsApp number's change" -- silently (TASK-375).
 EnvironmentFile=/home/claude/repo/pflege-board/.env
 EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/rail.env
 EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/relay.env
 # Unbuffered, or nothing this process prints reaches journald until it exits -- and it is a loop
 # that never exits, so "delivered outbox #N" and every RelayError would have been invisible for the
-# life of the unit (TASK-146). The harness unit has carried this for the same reason since rollout.
+# life of the unit (TASK-375). The harness unit has carried this for the same reason since rollout.
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/claude/repo/pflege-board/.venv/bin/python -m bridge.relay_pull
 Restart=always

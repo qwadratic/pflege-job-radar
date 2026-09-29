@@ -18,7 +18,7 @@ cd /home/claude/repo/pflege-board
   --out /home/claude/repo/pflege-board/data/known-real-system-phones.txt
 ```
 
-Prints `exported N, skipped M`. This is our own tool (TASK-191) -- read-only against the real db
+Prints `exported N, skipped M`. This is our own tool (TASK-336) -- read-only against the real db
 (SQLite `mode=ro`), writes only phone numbers, nothing else.
 
 ## 2. Install our own service + timers
@@ -109,9 +109,9 @@ Meta traffic goes back to hitting `candidate-connector-bridge.service` directly,
 step 4 -- that service was never stopped or touched. To also stop our own service from doing
 anything further: `sudo systemctl stop pflege-wa.service pflege-wa-catchup.timer pflege-wa-followups.timer`.
 
-## 6. Campaign recipients: import the old system's history (TASK-205)
+## 6. Campaign recipients: import the old system's history (TASK-342)
 
-Run before the campaign sends (TASK-206 calls the same function per phone, and since TASK-208 every campaign
+Run before the campaign sends (TASK-343 calls the same function per phone, and since TASK-208 every campaign
 dry-run and send needs it). Reads the old system read-only, writes only our `data/wa.sqlite` and
 `data/wa_documents/`. Details: docs/whatsapp.md, "Campaign recipients".
 
@@ -162,11 +162,11 @@ phone loudly (`no such table`, `import_error` in the campaign): fix the query, n
 card of a phone with such a record, or a Stopp in the old chat, declined (Luna stays silent unless the candidate
 re-engages; no follow-ups).
 
-## 7. Campaign: send the template ourselves (TASK-206)
+## 7. Campaign: send the template ourselves (TASK-343)
 
-Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-206)". Deploy state it needs:
+Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-343)". Deploy state it needs:
 
-- **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-202..103:
+- **Restart `pflege-wa.service`** on this tree first. The running process loaded its code before TASK-341..103:
   it drops status webhooks (no delivery tracking, a 131042 payment failure stays invisible), parses a template
   tap without its payload and reply context, counts imported documents without the reuse answer, and does not
   know an imported decline (TASK-204 silence, TASK-208 prompt and code-owned `prior_opt_outs`). The
@@ -174,7 +174,7 @@ Full runbook: `docs/whatsapp.md`, "Campaign sender (TASK-206)". Deploy state it 
 - No new unit, timer or env var. The sender is run by hand from the repo root with `.env` loaded; `--send`
   refuses without `WA_AUTOSEND=1`.
 - Its table `wa_campaign_sends` is created in `data/wa.sqlite` by the first `--send` (not by the service), one
-  row per attempt (TASK-209). A table from the TASK-206 layout (one row per campaign and phone) is rebuilt into
+  row per attempt (TASK-209). A table from the TASK-343 layout (one row per campaign and phone) is rebuilt into
   attempt rows by the first `--send` from this tree, in one transaction; the live database had no such table on
   2026-09-14. Dry-run and `--status` open the database read-only.
 - Reports (phone numbers, names) go to `~/pflege-campaign-reports/` (0700/0600), outside the repo.

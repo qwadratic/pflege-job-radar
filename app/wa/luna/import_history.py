@@ -1,4 +1,4 @@
-"""Import a campaign recipient's history from an earlier system (TASK-205): facts, clinic/placement record, prior
+"""Import a campaign recipient's history from an earlier system (TASK-342): facts, clinic/placement record, prior
 messages and document originals, so Luna does not re-ask what the candidate already told, and asks before reusing
 an earlier CV/Urkunde.
 
@@ -11,7 +11,7 @@ Usage:
         [--media-root DIR ...] (--phone +49... ... | --phones-file FILE) [--apply] [--json]
 
 Dry-run by default: reads the source (files included, sha256 checked) and our database read-only, writes nothing,
-calls no LLM and no Meta. ``--apply`` writes. Campaign sender (TASK-206): ``Source.open(...)`` once, then
+calls no LLM and no Meta. ``--apply`` writes. Campaign sender (TASK-343): ``Source.open(...)`` once, then
 ``import_phone(source, phone, apply=True)`` per phone.
 
 QUERIES FILE: five queries, each after a line ``-- query: <name>``. Each runs with the named parameters ``:phone``
@@ -113,7 +113,7 @@ def _access_error(path, what, exc):
     return SourceAccessError(
         f"cannot read {what} {path}: {exc}. The user {user!r} needs read access: search (x) on every directory "
         f"down to it and read (r) on the file, e.g. setfacl -m u:{user}:--x <each parent dir>; "
-        f"setfacl -R -m u:{user}:rX,d:u:{user}:rX <media root> (docs/rollout-runbook.md, TASK-205)")
+        f"setfacl -R -m u:{user}:rX,d:u:{user}:rX <media root> (docs/rollout-runbook.md, TASK-342)")
 
 
 def load_queries(path):

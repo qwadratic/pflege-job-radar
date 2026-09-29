@@ -1,6 +1,6 @@
 """The webhook: Meta's two routes, plus a small owner-only read of what the harness has been saying.
 
-Order of business on an inbound POST (TASK-202), and the reason for each step:
+Order of business on an inbound POST (TASK-341), and the reason for each step:
 1. verify the signature over the raw bytes -- everything after this trusts the payload;
 2. check the phone-number id: a change for a second WhatsApp number is stored raw, not answered;
 3. record, inside the request (``accept_payload``): each message by ``wamid`` (UNIQUE, a Meta redelivery
@@ -13,7 +13,7 @@ Order of business on an inbound POST (TASK-202), and the reason for each step:
 5. the worker (``drain_pending`` -> ``finish_inbound``) takes each phone's pending messages oldest first:
    arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-198,
    both brains, stopped threads too); a WA_BRAIN=luna document/image is read and classified onto the card
-   before the brain runs (``_ingest_media``, TASK-171/TASK-199); a WA_BRAIN=luna voice note (audio, or a document
+   before the brain runs (``_ingest_media``, TASK-327/TASK-199); a WA_BRAIN=luna voice note (audio, or a document
    with an audio mime type) is transcribed and the transcript is the turn's text (``_transcribe_voice_note``,
    TASK-210); video, and every kind on the deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the
    reply (app/wa/brain.py or app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows;
@@ -133,7 +133,7 @@ def inbound_messages(payload):
 def _number_matches(value):
     """A payload for another WhatsApp number is not ours to answer.
 
-    Both rails answer here (TASK-123): Meta's webhook carries C.PHONE_NUMBER_ID, the executor's
+    Both rails answer here (TASK-352): Meta's webhook carries C.PHONE_NUMBER_ID, the executor's
     envelope carries C.BRIDGE_PHONE_NUMBER_ID -- the phone rail has no Meta number id, so it names
     itself. Neither configured means "this deployment has not said which number is ours" and
     everything still matches, as before; blanking META_WHATSAPP_PHONE_NUMBER_ID to let the bridge in
@@ -162,7 +162,7 @@ def parse_message(m):
     additionally carries ``media_id``/``media_mime_type``/``media_filename`` -- Meta nests those under a field
     keyed by the type name itself, e.g. ``{"image": {"id": "...", "mime_type": "..."}}`` -- so a
     downstream step can fetch and read the actual bytes (app/wa/meta.py:Client.media_url/
-    download_media, TASK-171); by itself this function still only parses the payload, it does not
+    download_media, TASK-327); by itself this function still only parses the payload, it does not
     fetch anything.
     """
     wamid = str(m.get("id") or "").strip()
@@ -195,7 +195,7 @@ def parse_message(m):
     if kind in ("document", "image", "audio", "video"):
         media = m.get(kind) or {}
         # ``link_strength`` is not a Meta field -- it is only ever present on our own phone rail's
-        # envelope (bridge/envelope.py::_media_object, TASK-131 round 6), 'strong'/'weak'/'human'
+        # envelope (bridge/envelope.py::_media_object, TASK-360 round 6), 'strong'/'weak'/'human'
         # depending on how bridge/identity.py::decide attributed the file, or absent for a real Meta
         # payload and for a legacy link that predates the column. finish_inbound reads it to keep a
         # weakly-attributed DOCUMENT's text from ever reaching the model.
@@ -244,7 +244,7 @@ def _summarized(kind, m):
 MEDIA_REPLY = ("Danke, angekommen – Dateien kann ich hier noch nicht lesen. Ein Kollege schaut "
                "sie sich an.")
 
-# Media kinds this harness reads, WA_BRAIN=luna only: document/image text (TASK-171), audio transcribed (TASK-210; a
+# Media kinds this harness reads, WA_BRAIN=luna only: document/image text (TASK-327), audio transcribed (TASK-210; a
 # document with an audio mime type too, ``is_voice_note``). Video still gets the flat MEDIA_REPLY ack for both brains,
 # and so does every kind on the deterministic brain -- treating an unread file like "read" would be exactly the
 # silent pretending CLAUDE.md rules out.
@@ -369,8 +369,8 @@ UNREADABLE = "unreadable"
 
 
 def read_and_classify(c, doc_id, kind, blob, filename, mime_type):
-    """The row half of ``_ingest_media``, shared with app/wa/luna/import_history.py (TASK-205): extract the text
-    (``_extract_media_text``), store it on wa_documents row ``doc_id``, classify it (TASK-185: urkunde/lebenslauf/
+    """The row half of ``_ingest_media``, shared with app/wa/luna/import_history.py (TASK-342): extract the text
+    (``_extract_media_text``), store it on wa_documents row ``doc_id``, classify it (TASK-334: urkunde/lebenslauf/
     defizitbescheid/..., fachkraft-vs-helfer for an urkunde) and store the classification with the card key it
     maps to. -> (text, document_type, certificate_level, text_key). No readable text (CV.NoReadableText) is stored
     as document_type UNREADABLE -> (None, UNREADABLE, None, None): reading it again gives the same answer (review
@@ -420,7 +420,7 @@ def _ingest_media(c, t, m, doc):
     slots["_documents_just_received"] = [*slots.get("_documents_just_received", []), summary]
 
 
-# --- webhook intake (TASK-202): record in the request, finish in the background -------------------------
+# --- webhook intake (TASK-341): record in the request, finish in the background -------------------------
 
 _ENVELOPE_KEYS = ("messaging_product", "metadata")
 
@@ -566,7 +566,7 @@ _background_guard = threading.Lock()
 def submit_accepted(accepted, client=None):
     """Queue accept_payload's phones for the background worker. -> the Future, or None with no message.
 
-    No client is built here (TASK-219). This call knows no phone yet -- one payload may carry messages
+    No client is built here (TASK-349). This call knows no phone yet -- one payload may carry messages
     from several candidates -- and the rail is a property of the thread (TASK-220), so a client built
     here would pin every phone in the payload to whichever rail the first lookup happened to pick.
     ``process_phones`` resolves one per phone instead. An injected ``client`` is still passed straight
@@ -601,7 +601,7 @@ def process_phones(phones, client=None, raise_errors=True):
     """``drain_pending`` for each phone under ST._lock, then its consent queue builds outside the lock. ->
     every result. Shared by handle_payload, the background worker and catch-up.
 
-    One client per phone, resolved with that phone (TASK-219): the rail is per-thread (TASK-220), and
+    One client per phone, resolved with that phone (TASK-349): the rail is per-thread (TASK-220), and
     one client threaded through the whole loop would answer the second candidate in a payload over the
     first one's rail. ``meta.Client`` is documented as one instance per request with no state of its
     own ("state lives in SQLite, not here"), so one per phone instead of one per payload is
@@ -617,9 +617,9 @@ def process_phones(phones, client=None, raise_errors=True):
 
 
 def build_consent_queues(results, raise_errors=True):
-    """TASK-170 queue build for every result that flipped consent, popping the internal keys. Called outside
+    """TASK-326 queue build for every result that flipped consent, popping the internal keys. Called outside
     ST._lock: app.autopilot.matching.rank() walks the whole clinic/posting snapshot plus a contact-table read
-    per ranked clinic, and a CV/Urkunde reasoning pass (TASK-171) is a real claude CLI call -- inside the lock
+    per ranked clinic, and a CV/Urkunde reasoning pass (TASK-327) is a real claude CLI call -- inside the lock
     every other thread would wait behind one candidate's match build. A failure is logged and recorded as a
     send failure (raise_errors re-raises it)."""
     for r in results:
@@ -631,7 +631,7 @@ def build_consent_queues(results, raise_errors=True):
             cv_profile = None
             if card.get("cv_text") or card.get("urkunde_text"):
                 # "use all chat history + CV as matching input": analyse_candidate folds this thread's
-                # own history in alongside whatever was extracted from an upload (TASK-171). No CV/
+                # own history in alongside whatever was extracted from an upload (TASK-327). No CV/
                 # Urkunde text on the card at all -> skip the call rather than feed analyse_llm empty
                 # input (it raises ValueError below ~20 chars) -- a normal, common case, not an error.
                 with ST.db() as cv_conn:
@@ -708,7 +708,7 @@ def finish_inbound(c, m, client=None):
     t = ST.thread(c, phone)
     dirty = _note_arrival(c, t, wamid)
     is_media = m["kind"] in _MEDIA_KINDS
-    # TASK-131 round 6: a WEAK automatic attribution (bridge/identity.py::decide picked this phone
+    # TASK-360 round 6: a WEAK automatic attribution (bridge/identity.py::decide picked this phone
     # over another candidate on no confirming attribute -- our own phone rail's own extension to the
     # Meta shape, app/wa/api.py:parse_message) is acknowledged like any unread kind (the flat
     # MEDIA_REPLY below), never read -- the one place a wrong attachment would otherwise recite one
@@ -928,14 +928,14 @@ def _route_agent_note(c, t, m, text, client=None):
 # last_outbound_at and _session_id (TASK-199 review).
 TURN_NOT_RUN = ("claimed_elsewhere", "rate_limited")
 # finish_inbound statuses after which the message still owes work: another process holds it, or the rate
-# cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-202).
+# cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-341).
 KEEP_PENDING = ("claimed_elsewhere", "rate_limited")
 
 
 def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     """The core decide-and-send pipeline: claim the reply, dispatch to whichever brain is
     configured, send, and detect a fresh consent. Shared by ``_handle_one`` (the webhook path,
-    ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-182,
+    ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-332,
     ``turn_key`` = the last inbound message a thread is still owed a reply for) -- both must reach
     exactly one reply attempt per inbound message, never two, so both go through the same claim
     (``ST.claim_reply_turn``, TASK-181) instead of duplicating this logic.
@@ -982,7 +982,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
         if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
                 ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
             # The message stays recorded and the claim is left in a reclaimable state (TASK-181) --
-            # the catch-up driver (TASK-182) is what actually answers it once the window rolls over.
+            # the catch-up driver (TASK-332) is what actually answers it once the window rolls over.
             ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
             return {"status": "rate_limited"}
 
@@ -1006,7 +1006,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     t["slots"], t["asked"] = d["slots"], d["asked"]
     if d["stopped"]:
         # Both brains set this from SL.is_stop(text) and from nothing else (brain.py:332, luna_brain.py:943),
-        # so this is the one place the STOP detector reaches a decision -- and TASK-216 is what makes that
+        # so this is the one place the STOP detector reaches a decision -- and TASK-347 is what makes that
         # decision outlive this thread: wa_threads.stopped answers "not in this conversation", the suppression
         # row answers "not on any rail, ever", keyed on the human rather than on the row. The candidate's own
         # words go in as the audit artefact.
@@ -1035,13 +1035,13 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
                                ST.NO_SEND_STATE if sent == "nothing_to_send" else "sent")
     if d.get("luna_turn"):   # after the claim is final: a failure here must not make the sent reply retryable
         t["slots"][LB.LAST_TURN_KEY] = LB.turn_marker(c, t["phone"], d["luna_turn"], d["action"])
-    if d.get("document_reuse"):   # TASK-205: the candidate's answer on imported documents -> wa_documents, card text
+    if d.get("document_reuse"):   # TASK-342: the candidate's answer on imported documents -> wa_documents, card text
         LB.apply_document_reuse(c, t, d["document_reuse"])
 
     result = {"status": sent, "action": d["action"],
               "slots": {k: v for k, v in d["slots"].items() if v is not None},
               "matches": [r.get("posting_id") for r in d["matches"]]}
-    # TASK-170: a consent flip is durably saved above before this is ever set, so the caller
+    # TASK-326: a consent flip is durably saved above before this is ever set, so the caller
     # (handle_payload, once the per-message lock is released) can safely build the queue entry --
     # see that function's own comment for why this doesn't happen right here instead.
     now_consented = C.BRAIN == "luna" and bool(d["slots"].get("anonymous_send_consent"))
@@ -1065,7 +1065,7 @@ def _freeform_window_open(t):
 
 
 def _refuse_body_mismatch(cl, wamid, body):
-    """Rule 3 (TASK-130) already refuses to let a regenerated body overwrite a delivered one on the
+    """Rule 3 (TASK-359) already refuses to let a regenerated body overwrite a delivered one on the
     executor's own ledger; a mismatch replay is how that refusal reaches this side -- a 200 whose
     ``client_msg_id`` we recognise, carrying the FIRST body's tick and ``body_mismatch: True``
     (``bridge/executor.py::_mismatch_response``). ``bridge.Client`` already keeps that answer on
@@ -1078,7 +1078,7 @@ def _refuse_body_mismatch(cl, wamid, body):
     if getattr(cl, "last_send", None) and cl.last_send.get("body_mismatch"):
         raise RuntimeError(
             f"{wamid} was already delivered with a different body under this key -- refusing to "
-            f"record {body!r} as sent (first-body-wins, TASK-130)")
+            f"record {body!r} as sent (first-body-wins, TASK-359)")
 
 
 def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
@@ -1144,7 +1144,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
             # The rail named here is the CLIENT's, derived from the object actually in hand, not
             # T.rail_for's answer: an injected client (a test's fake, the one campaign.py holds for
             # a whole run) can be a different rail from the thread's, and a failure row that names
-            # the wrong one sends whoever reads it to the wrong rail (TASK-146).
+            # the wrong one sends whoever reads it to the wrong rail (TASK-375).
             raise RuntimeError(
                 f"a {action!r} send on the {T.rail_of_client(cl)} rail carries no turn_key: on a rail "
                 f"whose messages have no "
@@ -1178,7 +1178,7 @@ def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=N
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
     GET /wa/threads) instead of vanishing along with the never-persisted thread state.
 
-    Also the suppression choke point for every free-form send (TASK-216). This is the right point
+    Also the suppression choke point for every free-form send (TASK-347). This is the right point
     because it is the only way into ``_send``: the webhook reply, a catch-up reply, ``_media_ack``,
     the reopen template and the ``luna.followups`` nudge all pass here, on whichever rail
     ``transport.get_client`` resolves -- one check instead of five, and a sixth send path cannot be
@@ -1216,7 +1216,7 @@ def _send_reopen_template(c, t, client=None, action=None):
     ST.record_outbound(c, t["phone"], wamid, label, kind="template",
                        meta={"action": action, "template": C.WA_REOPEN_TEMPLATE_NAME})
     t["last_outbound_at"] = ST.now_iso()
-    # TASK-179: this harness just reopened a (possibly previously-real-system-owned) conversation
+    # TASK-331: this harness just reopened a (possibly previously-real-system-owned) conversation
     # with its own template -- that single act hands the conversation to us from now on. A fresh
     # connection (routing.db() applies wa_ownership's own schema, same pattern as queue.py/
     # contacts.py) rather than assuming ``c`` already has that table.
@@ -1240,7 +1240,7 @@ def _is_stuck(c, phone, last_inbound_at, stopped):
 @router.get("/wa/ownership")
 def wa_ownership(request: Request):
     """Owner-only: which phones this harness currently owns vs. leaves to the real system
-    (app/wa/routing.py, TASK-179). Read-only -- never decides anything itself, only reports what
+    (app/wa/routing.py, TASK-331). Read-only -- never decides anything itself, only reports what
     route_decision()/flip_to_us_on_reopen() already recorded."""
     from . import routing as R
     phone = request.query_params.get("phone")
@@ -1270,12 +1270,12 @@ def wa_threads(request: Request, limit: int = 50):
     returned rows, so a count of real candidates is ``total - test_threads``. They stay listed on purpose:
     this is where an operator checks which numbers are flagged.
 
-    TASK-216: a row (and the ``?phone=`` view) carries ``suppression`` when that number is on the
+    TASK-347: a row (and the ``?phone=`` view) carries ``suppression`` when that number is on the
     cross-rail do-not-contact list -- reason, lane, verbatim trigger, time. This is where an operator reads
     why a thread gets no answer even though ``stopped`` is false: the list is keyed on the human, not the
     thread, so it survives a purge and a suppression another rail recorded.
 
-    TASK-202: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
+    TASK-341: a row with unfinished inbound messages carries ``pending_inbound`` (count, oldest, last error),
     and ``stuck_reply`` is also true once the oldest is older than C.STUCK_REPLY_HOURS. ``?phone=`` adds
     ``pending_inbound``, ``message_statuses`` (latest delivery status per wamid, Meta errors included) and
     ``webhook_events`` (the raw objects nothing here acts on: calls, contacts, reactions, ...).
@@ -1310,7 +1310,7 @@ def wa_threads(request: Request, limit: int = 50):
                 row["last_send_error"] = failure
             suppressed = SUP.suppression(c, row["phone"])
             if suppressed:
-                row["suppression"] = suppressed   # TASK-216: this number is refused on every rail, not just here
+                row["suppression"] = suppressed   # TASK-347: this number is refused on every rail, not just here
     return {"total": len(rows), "test_threads": sum(1 for row in rows if row["is_test"]), "rows": rows}
 
 

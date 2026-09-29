@@ -91,7 +91,7 @@ def test_search_postings_reads_the_candidates_department_word_in_board_vocabular
 
 
 def test_search_postings_reads_department_like_market_snapshot(tmp_path, monkeypatch):
-    """TASK-207: one reading for both (slots.read_department_pref): a flexible word filters nothing, a word only the
+    """TASK-344: one reading for both (slots.read_department_pref): a flexible word filters nothing, a word only the
     board's title classifier knows filters to that board department."""
     board(tmp_path, monkeypatch)
     for word in ("egal", "flexibel", "keine Präferenz"):
@@ -116,7 +116,7 @@ def test_search_postings_with_a_negated_or_flexible_department_is_an_error_the_m
 
 
 def test_search_postings_with_an_unknown_department_is_an_error_the_model_reads(tmp_path, monkeypatch):
-    """TASK-207: a word the board has no department for returned [] and read as 'nothing open there'."""
+    """TASK-344: a word the board has no department for returned [] and read as 'nothing open there'."""
     board(tmp_path, monkeypatch)
     with pytest.raises(ToolError) as raised:
         asyncio.run(TS.mcp.call_tool("search_postings", {"city": "München", "department": "Urologie"}))
@@ -127,7 +127,7 @@ def test_search_postings_with_an_unknown_department_is_an_error_the_model_reads(
     assert json.loads(log[-1])["args"]["department"] == "Urologie"
 
 
-# --- TASK-145: at most five positions per listing turn, and the true number next to them ---------
+# --- TASK-374: at most five positions per listing turn, and the true number next to them ---------
 # Ivan 2026-09-21, from the first real phone-rail conversation: a candidate must never get a wall of
 # vacancies. The cap is in the result set, not in the prompt, and the count that did match travels with
 # the short list so "und 95 weitere" is sayable.
@@ -168,7 +168,7 @@ def test_the_listing_tools_say_how_many_more_there_are_in_their_own_description(
     assert "never a board link" in said, said
 
 
-# --- TASK-145: one posting, in full -------------------------------------------------------------
+# --- TASK-374: one posting, in full -------------------------------------------------------------
 # The model could read a posting's clinic, city and department and nothing else, so everything a
 # candidate actually asks ("was muss ich mitbringen", "welcher Tarif", "wie ist die Wohnung") was either
 # unanswerable or invented. app/data.py:JOB_COLS does not carry the ad text at all; job_detail does.
@@ -222,7 +222,7 @@ def test_get_clinic_contact_returns_none_when_the_contacts_module_is_unavailable
 
 
 def test_get_clinic_contact_reads_a_real_saved_contact_end_to_end(tmp_path, monkeypatch):
-    """No mocking of TASK-168's contacts module: a real save through app.wa.luna.contacts, read
+    """No mocking of TASK-324's contacts module: a real save through app.wa.luna.contacts, read
     back through the tool function's own app.wa.store.db() connection -- the actual round trip an
     MCP tool call makes, not just the fake-delegate path below."""
     board(tmp_path, monkeypatch)
@@ -636,7 +636,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
             "count_postings", "read_board_docs", "board_api_get"} <= allowed
     # TASK-195: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
-    # TASK-145: this one IS for the conversation. It is registered here; the CLI reaches it only once
+    # TASK-374: this one IS for the conversation. It is registered here; the CLI reaches it only once
     # luna_brain.MCP_TOOL_NAMES names it and _mcp_config_path passes WA_LUNA_PHONE (that file is another
     # lane's -- until it does, the tool is served and never called).
     assert "match_cv_to_postings" in TS.mcp._tool_manager._tools
@@ -798,7 +798,7 @@ def test_clinics_with_a_flat_are_counted_the_same_way_in_the_schema_and_in_every
 
 def test_board_api_get_serves_the_same_re_verified_rows_as_every_other_tool(tmp_path, monkeypatch):
     """TASK-213 review: this door served every open posting while the tools served the re-verified ones
-    -- live, that was Coburg 2 vs 39 and München 369 vs 499 in one conversation. TASK-145 (Ivan,
+    -- live, that was Coburg 2 vs 39 and München 369 vs 499 in one conversation. TASK-374 (Ivan,
     2026-09-21) removed the deliberate way past that base: a posting whose liveness is not confirmed may
     not reach a candidate-facing model at all, and one escape hatch is the whole guarantee gone."""
     board(tmp_path, monkeypatch)
@@ -869,10 +869,10 @@ def test_the_fallback_door_says_which_columns_the_board_barely_fills(tmp_path, m
         "the value the docs list is a legal one the board simply does not carry")
 
 
-# --- TASK-145: the candidate's own word for a town ----------------------------------------------
+# --- TASK-374: the candidate's own word for a town ----------------------------------------------
 # Ivan 2026-09-21: app/data.py:filter_jobs compares the city lowercased and exactly, so 'Nuernberg',
 # 'Wuerzburg' and a Landkreis each matched nothing and the turn said there was nothing open there --
-# the failure TASK-207 removed for the department word, on the slot candidates lead with.
+# the failure TASK-344 removed for the department word, on the slot candidates lead with.
 
 @pytest.mark.parametrize("word", ["Nuernberg", "Nurnberg", "NÜRNBERG", "Landkreis Nürnberg", "nürnberg"])
 def test_a_city_spelt_the_candidates_way_reaches_the_boards_own_town(tmp_path, monkeypatch, word):
@@ -936,7 +936,7 @@ def test_the_tool_descriptions_say_how_a_town_word_is_read(tmp_path, monkeypatch
         "a tool with no city parameter does not spend a line on one"
 
 
-# --- TASK-145: a posting whose liveness is not confirmed reaches nothing -------------------------
+# --- TASK-374: a posting whose liveness is not confirmed reaches nothing -------------------------
 
 def test_no_tool_hands_over_a_posting_the_verifier_no_longer_confirms(tmp_path, monkeypatch):
     board(tmp_path, monkeypatch)
@@ -956,8 +956,8 @@ def test_no_tool_hands_over_a_posting_the_verifier_no_longer_confirms(tmp_path, 
     assert TS.get_posting(posting_id=4242) is None, "withheld and non-existent are different answers"
 
 
-# --- TASK-145: the candidate's own CV, ranked against what is open right now ---------------------
-# app/cv.py:match() has ranked postings against a CV since TASK-169, but only after consent, on the
+# --- TASK-374: the candidate's own CV, ranked against what is open right now ---------------------
+# app/cv.py:match() has ranked postings against a CV since TASK-325, but only after consent, on the
 # handover path -- so the conversation itself could never answer "welche davon passt zu meinem Lebenslauf".
 
 _CV_PHONE = "491700000000"        # a test number, never a candidate's
@@ -1200,7 +1200,7 @@ def test_show_clinic_photos_does_not_resend_a_clinic_already_sent_this_conversat
 
 
 def test_show_clinic_photos_refuses_to_send_a_caption_carrying_a_link(tmp_path, monkeypatch):
-    """TASK-251: check_reply's LINK gate (grounding.has_link, TASK-144) only ever runs on the model's
+    """TASK-251: check_reply's LINK gate (grounding.has_link, TASK-373) only ever runs on the model's
     own bubbles -- this caption goes straight from GET .../expose to send_gallery and never becomes
     one. A blurb carrying the clinic's own careers URL must not go out uncensored; it falls back to
     the same {"sent": False, "presentation_text": ...} branch the no-photo case already uses, so the
@@ -1538,7 +1538,7 @@ def test_send_updated_cv_in_a_dry_run_never_touches_the_bridge_client(tmp_path, 
 
 
 # --- requirements audit 2026-09-21: a real Bavarian town with live postings is never refused -----
-# The audit broke TASK-145's city resolution with four correctly spelled towns that have live
+# The audit broke TASK-374's city resolution with four correctly spelled towns that have live
 # postings -- 'Weißenburg' (3), 'Lohr am Main' (12), 'Neumarkt' (11), 'Landkreis Miesbach' (8) all
 # answered "not a town this board has open postings in" -- and with 'Neuburg an der Donau', which
 # found 1 posting while 50 sat in the same town under the board's other spelling 'Neuburg/Donau'.
@@ -1653,7 +1653,7 @@ def test_count_postings_sums_across_two_named_towns(tmp_path, monkeypatch):
 
 def test_a_single_town_whose_own_board_spelling_contains_a_split_separator_is_not_split(tmp_path,
                                                                                         monkeypatch):
-    """'Neuburg/Donau' is one town's own board spelling (the _audit_board fixture, TASK-145) -- it must
+    """'Neuburg/Donau' is one town's own board spelling (the _audit_board fixture, TASK-374) -- it must
     resolve whole, on the first attempt, never reach the multi-city split fallback."""
     _audit_board(tmp_path, monkeypatch)
     out = TS.search_postings(city="Neuburg/Donau")

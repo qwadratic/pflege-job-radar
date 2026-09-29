@@ -1,4 +1,4 @@
-"""Offline proof for what bridge/media.py does (TASK-131 round 6): content-addressed ids and
+"""Offline proof for what bridge/media.py does (TASK-360 round 6): content-addressed ids and
 reading the handset's own listing -- nothing about WHO a file is from. Identity matching itself
 lives in bridge/identity.py (tests/test_bridge_identity.py); see this module's own docstring for
 the four time-based rounds that failed before it.
@@ -43,7 +43,7 @@ def test_source_dir_is_the_top_level_whatsapp_folder():
     assert MD.source_dir_for_path("WhatsApp Voice Notes/PTT-1.opus") == "WhatsApp Voice Notes"
 
 
-# --- structurally absent (TASK-131 round 5, requirement 1 and 6) -----------------------------------
+# --- structurally absent (TASK-360 round 5, requirement 1 and 6) -----------------------------------
 def test_no_matching_machinery_survives_in_this_module():
     """The inference machinery -- the window as a decision rule, the catch-up gate, the round-3
     confirmation remnants -- is not dormant, it is deleted. A dead guard left importable would teach

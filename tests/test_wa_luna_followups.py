@@ -234,7 +234,7 @@ def test_run_sends_nothing_during_quiet_hours_even_with_an_eligible_thread(db, m
     assert FU.run(client=FakeMeta()) == []
 
 
-# --- dedup claim (TASK-93) -----------------------------------------------------------------------
+# --- dedup claim (TASK-337) -----------------------------------------------------------------------
 
 def test_two_overlapping_runs_do_not_double_nudge_the_same_candidate(db):
     """Simulates two separate processes racing on the same eligible thread (a second campaign
@@ -273,7 +273,7 @@ def test_a_nudge_due_during_quiet_hours_is_not_lost_the_next_tick_sends_it(db, m
     {"qualification_path": "reject", "qualification_ok": False},
 ], ids=["consented", "not_placeable"])
 def test_a_finished_thread_is_never_nudged_even_with_a_tier_due(db, slots):
-    """TASK-197: a consented or not-placeable thread ends with OUR message (ball=them) -- found live,
+    """TASK-338: a consented or not-placeable thread ends with OUR message (ball=them) -- found live,
     a consented candidate got 'sind Sie noch da?' twice the next morning."""
     t = _seed_them(db, "+49111", last_outbound_minutes_ago=300, last_inbound_minutes_ago=301)
     t["slots"] = slots
@@ -285,7 +285,7 @@ def test_a_finished_thread_is_never_nudged_even_with_a_tier_due(db, slots):
 
 
 def test_a_thread_waiting_on_a_requested_document_is_still_nudged(db):
-    """TASK-197: only terminal stages are skipped -- a qualified candidate we asked for a document
+    """TASK-338: only terminal stages are skipped -- a qualified candidate we asked for a document
     who went quiet is exactly who a nudge is for."""
     t = _seed_them(db, "+49111", last_outbound_minutes_ago=20, last_inbound_minutes_ago=21)
     t["slots"] = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,

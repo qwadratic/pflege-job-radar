@@ -34,7 +34,7 @@ paid that same cold build on its own first call, which TASK-213's fix never touc
 that the turn actually had the board tools -- a server that dies or is dropped before that point
 leaves the CLI exiting 0 with a normal-looking reply and no stamp behind it.
 
-What a tool may hand back (TASK-145, Ivan 2026-09-21, after the first real phone-rail conversation):
+What a tool may hand back (TASK-374, Ivan 2026-09-21, after the first real phone-rail conversation):
 
 * At most ``LISTING_LIMIT`` positions per listing call, next to the true number of matches
   (``{shown, total}``). The cap is here, where the result set is assembled, so no prompt edit and no
@@ -98,7 +98,7 @@ if os.environ.get("WA_SQLITE_PATH"):
     C.SQLITE_PATH = Path(os.environ["WA_SQLITE_PATH"])
 
 try:
-    from . import contacts as CT   # TASK-168, built in parallel -- absent until that task lands
+    from . import contacts as CT   # TASK-324, built in parallel -- absent until that task lands
 except ImportError:
     CT = None
 
@@ -111,7 +111,7 @@ mcp = MCPServer("jobs")   # same name as luna_brain.MCP_SERVER_NAME; model-visib
 # harness's own shortlist count the same rows.
 RESULT_LIMIT = 50
 
-# Ivan 2026-09-21 (TASK-145; the dialog side of the same rule is TASK-144): a candidate never gets a wall
+# Ivan 2026-09-21 (TASK-374; the dialog side of the same rule is TASK-373): a candidate never gets a wall
 # of vacancies -- at most five positions in one listing turn. It is a hard number, not a default: the
 # listing tools take no limit argument at all, so nothing the model writes and no prompt edit can raise
 # it. The count of what matched travels next to the rows (_listing) precisely because the list is short:
@@ -148,9 +148,9 @@ def _session_dir():
 
 
 def _log_call(name, args):
-    """Append-only, and it RAISES on a write failure (TASK-146).
+    """Append-only, and it RAISES on a write failure (TASK-375).
 
-    It used to swallow OSError as "best-effort", which was true until TASK-144 made this log the
+    It used to swallow OSError as "best-effort", which was true until TASK-373 made this log the
     sole source of grounding evidence. Since then a failed write leaves the tool returning rows
     normally while ``grounding.calls_since`` sees nothing, so every truthful clinic name in the
     reply is rejected as an invention -- every turn on the service, until someone reads a traceback
@@ -165,7 +165,7 @@ def _log_call(name, args):
 
 
 def _job_row(r):
-    # No source_url / external_url (TASK-146). offer.py deliberately keeps the link out of the
+    # No source_url / external_url (TASK-375). offer.py deliberately keeps the link out of the
     # payload the model writes from -- "the way to make that a guarantee rather than a rule is to
     # keep the link out" -- while every tool-sourced row handed one over, and check_reply does not
     # reject a URL in a bubble. Nothing in the dialog path used it.
@@ -194,7 +194,7 @@ def _listing(rows, project=_job_row, town=None):
     """What a posting listing hands the model: the first LISTING_LIMIT rows, and how many matched in all.
 
     ``total`` is the whole match count, never len(shown): the model has to be able to say "und 95 weitere"
-    and to offer narrowing the search, which it cannot do from a truncated list (TASK-145/TASK-144).
+    and to offer narrowing the search, which it cannot do from a truncated list (TASK-374/TASK-373).
 
     ``town`` rides along whenever a town was asked for, because the board's spelling is regularly not the
     candidate's ('Lohr a. Main' for "Lohr am Main", 'Hausham' for "Landkreis Miesbach") and the reply has
@@ -215,7 +215,7 @@ def _cities_with_postings():
     """The board's own spelling of every town that has an OPEN posting -- both fields
     app/data.py:filter_jobs matches a city against.
 
-    Open, not live-verified, and that is the fix rather than a loosening (TASK-146). The tools
+    Open, not live-verified, and that is the fix rather than a loosening (TASK-375). The tools
     search live-verified rows, but this set answers a different question: is this a town the board
     knows at all? Building it from live rows only meant a town with open postings that the verifier
     no longer confirms was reported to the model as a town the board does not have -- with an error
@@ -229,13 +229,13 @@ def _cities_with_postings():
 
 
 def _live_clinics(rows):
-    """Clinic rows that really have a live-verified open posting (TASK-146).
+    """Clinic rows that really have a live-verified open posting (TASK-375).
 
     ``app/data.py:filter_clinics``'s ``has_jobs`` counts ``jobs_open``, which includes postings the
     verifier no longer confirms -- so a clinic whose only posting is gone reached the model as a
     clinic with openings, and ``grounding.clinics_returned`` then turned its name into valid
     evidence for saying so to a candidate. ``jobs_live`` is aggregated right next to it
-    (app/data.py:249) and was unused. The posting doors have refused withheld rows since TASK-145;
+    (app/data.py:249) and was unused. The posting doors have refused withheld rows since TASK-374;
     this is the same rule on the clinic doors, which that task did not reach.
     """
     return [c for c in rows if (c.get("jobs_live") or 0) > 0]
@@ -260,7 +260,7 @@ def _resolve_one_city(word, known, what):
     -> app/data.py:town_spellings' dict ({asked, spellings, matched}), which is what the tool hands back
     next to the rows so the reply can name the town the way the board writes it.
 
-    TASK-145 resolved a word by asking whether a BOARD spelling occurs inside it (slots.read_city), which
+    TASK-374 resolved a word by asking whether a BOARD spelling occurs inside it (slots.read_city), which
     answered München/Muenchen/Munchen and 'Landkreis Coburg' and nothing else. The requirements audit
     (2026-09-21) broke it four ways with correctly spelled Bavarian towns that have live postings:
     'Weißenburg' (3), 'Lohr am Main' (12), 'Neumarkt' (11) and 'Landkreis Miesbach' (8) were all refused
@@ -300,7 +300,7 @@ def _resolve_city(word, known, what):
     """The candidate's own word -> every board spelling of every town it names, or a ToolError.
 
     A candidate naming two or more towns in one breath ('München oder Nürnberg', 'Augsburg, Ingolstadt')
-    is common and the board genuinely has postings in both -- TASK-131-adjacent live finding, 2026-09-22:
+    is common and the board genuinely has postings in both -- TASK-360-adjacent live finding, 2026-09-22:
     a candidate offered 'München oder Nürnberg' broke the dialog. Before this fix the whole phrase went
     straight to _resolve_one_city, whose own phrase-fallback (slots.read_city, meant for 'in München
     bitte') scans the WHOLE known-town list for any embedded match and keeps the LONGEST one -- for a
@@ -376,7 +376,7 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
         town = _resolve_city(city, _cities_with_postings(), "open postings")
     if department:
         # TASK-199 review: the model passes the candidate's word (live tool log: department="Intensivstation",
-        # 0 rows, "keine passende offene Stelle"). TASK-207: the same reading as luna_brain.market_snapshot; a
+        # 0 rows, "keine passende offene Stelle"). TASK-344: the same reading as luna_brain.market_snapshot; a
         # flexible word filters nothing, a word the board has no department for raises instead of returning [].
         # ToolError: the model reads its text (any other exception reaches it as a bare "Error executing tool").
         reading = SL.read_department_pref(department)
@@ -645,7 +645,7 @@ def get_posting(posting_id: int) -> dict | None:
     row = next((j for j in D.filter_jobs(dict(LIVE_BASE)) if j.get("posting_id") == posting_id), None)
     if row is None:
         # Withheld, not missing, and said so: this used to read the whole open board, so a posting the
-        # verifier had found gone came back looking exactly like a live one (TASK-145, Ivan 2026-09-21).
+        # verifier had found gone came back looking exactly like a live one (TASK-374, Ivan 2026-09-21).
         if any(j.get("posting_id") == posting_id for j in D.jobs()):
             raise ToolError(f"posting {posting_id} is withheld: it is still on the open board, but the verifier "
                             f"no longer confirms it is live, so it must not be named, described or offered. "
@@ -660,7 +660,7 @@ def get_posting(posting_id: int) -> dict | None:
         # came back null -- and this tool's own description tells the model a null field "means this
         # ad did not say it, never that the answer is no". A detail read that failed is then
         # indistinguishable from an ad that genuinely said nothing, and the candidate is told "das
-        # steht bei dieser Stelle nicht dabei" about an ad nobody read (TASK-146). Loud, like the
+        # steht bei dieser Stelle nicht dabei" about an ad nobody read (TASK-375). Loud, like the
         # withheld branch two lines up.
         raise ToolError(f"posting {posting_id} is in the live board but its detail row could not be "
                         f"read, so the ad's own text and requirements are NOT available -- do not "
@@ -680,7 +680,7 @@ def list_clinics(city: str = "", regierungsbezirk: str = "", has_jobs: bool = Tr
     filters, town = {}, None
     if city:
         # The candidate's own spelling, against the registry's towns -- filter_clinics compares the town
-        # exactly too, so 'Nuernberg' answered [] here just as it did for postings (TASK-145). The town is
+        # exactly too, so 'Nuernberg' answered [] here just as it did for postings (TASK-374). The town is
         # applied below rather than as filters["city"] for the same reason as _town_rows: one town regularly
         # has several board spellings, and a town name may itself contain the comma that parameter splits on.
         town = _resolve_city(city, _registry_towns(), "clinics")
@@ -700,7 +700,7 @@ def list_clinics(city: str = "", regierungsbezirk: str = "", has_jobs: bool = Tr
 
 
 # --- the candidate's own CV, against the board ------------------------------------------------
-# TASK-145, Ivan 2026-09-21: app/cv.py:match() has ranked postings against a CV since TASK-169, but only
+# TASK-374, Ivan 2026-09-21: app/cv.py:match() has ranked postings against a CV since TASK-325, but only
 # after consent, on the handover path (app/wa/api.py -> queue.py) -- so the conversation itself could
 # never answer "welche davon passt zu meinem Lebenslauf" and fell back to guessing from the chat.
 #
@@ -773,7 +773,7 @@ def match_cv_to_postings() -> dict:
     live = [r for r in ranked if r.get("verify_status") == LIVE_BASE["verify"]]
     return {**_listing(live, project=lambda r: {**_job_row(r), "score": r["score"], "why": r["why"]}),
             # match() ranks the whole open board; a posting the verifier no longer confirms is dropped here
-            # and said, not silently swallowed (TASK-145).
+            # and said, not silently swallowed (TASK-374).
             "withheld_not_live": len(ranked) - len(live),
             "profile": {k: profile.get(k) for k in CV_PROFILE_KEYS}}
 
@@ -885,7 +885,7 @@ def _live_only(p):
     error/blocked/gone.
 
     TASK-213 left an explicit ``verify=`` in the query as a deliberate way past that base. Ivan removed it on
-    2026-09-21 (TASK-145): a posting whose liveness is not confirmed may not reach a candidate-facing model at
+    2026-09-21 (TASK-374): a posting whose liveness is not confirmed may not reach a candidate-facing model at
     all, and one escape hatch in one door is the whole guarantee gone. Not validated, not narrowed to the
     'safe' values -- refused, so the model reads why instead of silently getting a different board."""
     if p.get("verify"):
@@ -897,7 +897,7 @@ def _live_only(p):
 
 def _withheld_not_live(p, live_rows, town=None):
     """How many postings this query matched on the open board but the verifier no longer confirms. Said in
-    the envelope so a filtered result is never indistinguishable from a small one (TASK-145)."""
+    the envelope so a filtered result is never indistinguishable from a small one (TASK-374)."""
     open_rows = _town_rows(D.filter_jobs({k: v for k, v in p.items() if k != "verify"}), town)
     return len(open_rows) - len(live_rows)
 
@@ -906,7 +906,7 @@ def _api_jobs(p):
     p, town = _bounded(_live_only(p)), None
     if p.get("city"):
         # The same reading as every preset tool (_job_filters): otherwise this door is the way around the
-        # city resolution, and 'city=Nuernberg' is total=0 again -- "nothing open there" (TASK-145). The
+        # city resolution, and 'city=Nuernberg' is total=0 again -- "nothing open there" (TASK-374). The
         # town leaves the query and is applied to the rows, exactly as in _town_rows.
         town = _resolve_city(p["city"], _cities_with_postings(), "open postings")
         p = {k: v for k, v in p.items() if k != "city"}
@@ -929,7 +929,7 @@ def _api_clinics(p):
         keys = {k for s in town["spellings"] for k in D.town_match_keys(s)}
         rows = [c for c in rows if D.town_match_keys(c.get("town") or "") & keys]
     if p.get("has_jobs"):
-        # Same rule as list_clinics: has_jobs on this door counted jobs_open too (TASK-146).
+        # Same rule as list_clinics: has_jobs on this door counted jobs_open too (TASK-375).
         rows = _live_clinics(rows)
     out = D.page(rows, p, BOARD_API_MAX_ROWS)
     out["rows"] = D.redact(out["rows"], None)
@@ -966,11 +966,11 @@ BOARD_API_PATHS = {
 }
 BOARD_API_CLINIC_PREFIX = "/api/clinics/"
 
-# Every key any board row can carry a URL in. TASK-151: ``_job_row`` has kept links out of the
-# PRESET tools since TASK-146, and app/wa/luna/offer.py keeps them out of the payload -- but
+# Every key any board row can carry a URL in. TASK-380: ``_job_row`` has kept links out of the
+# PRESET tools since TASK-375, and app/wa/luna/offer.py keeps them out of the payload -- but
 # board_api_get handed the raw board rows over, so ``/api/jobs`` gave the model ``external_url`` and
 # ``/api/clinics`` gave it ``website``/``careers_url``/``board``. prompts.py tells the model to use
-# that tool, so "the model is never given a posting URL in any payload" (TASK-150 AC#3) was false in
+# that tool, so "the model is never given a posting URL in any payload" (TASK-379 AC#3) was false in
 # production on every thread. Stripped at the door below rather than in each handler, so a path
 # added later cannot reopen it.
 URL_FIELDS = ("external_url", "source_url", "website", "careers_url", "board", "url", "link",
@@ -1020,7 +1020,7 @@ def board_api_get(path: str, query: str = "") -> dict | list:
         raise ToolError(f"GET {path} rejected the query {query!r}: {exc.detail}")
 
 
-# --- show_clinic_photos (TASK-131 round 7, Ivan 2026-09-23): the ONE tool in this server that sends
+# --- show_clinic_photos (TASK-360 round 7, Ivan 2026-09-23): the ONE tool in this server that sends
 # something, rather than only reading -----------------------------------------------------------
 #
 # UNLIKE every tool above, this one is not answered from the in-process snapshot: the photo/blurb
@@ -1137,7 +1137,7 @@ def show_clinic_photos(clinic_id: str) -> dict:
 
     {"sent": false, "reason": "..."} with no presentation_text means there is nothing at all yet for
     this clinic (both photos and the researched paragraph are still empty -- the collection
-    pipelines are mid-rollout, TASK-223): continue in text as normal, never claiming to have shown
+    pipelines are mid-rollout, TASK-350): continue in text as normal, never claiming to have shown
     something you have not."""
     _log_call("show_clinic_photos", {"clinic_id": clinic_id})   # no phone number in the log
     phone = _turn_phone()
@@ -1205,7 +1205,7 @@ def show_clinic_photos(clinic_id: str) -> dict:
     if already_sent:
         return {"sent": False, "reason": "already sent to this candidate"}
 
-    # TASK-251: check_reply's LINK gate (grounding.has_link, TASK-144) runs on the model's own
+    # TASK-251: check_reply's LINK gate (grounding.has_link, TASK-373) runs on the model's own
     # bubbles only -- this caption is sent straight from here and never becomes one, so a researched
     # blurb carrying the clinic's own site went out uncensored. Same rule, same fallback the no-photo
     # branch above already uses: the model gets presentation_text and writes it in its own words,

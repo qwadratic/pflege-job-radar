@@ -13,7 +13,7 @@ NOT THE ONLY CALLER OF THE PHONE (TASK-268, correcting this docstring's own earl
 "exactly one caller left"). ``BroadcastRunner`` (``bridge/broadcast.py``) and ``IdentityWatcher``
 (``bridge/watcher.py``) both take ``huawei01.lock`` directly, on their own threads, outside this
 queue entirely -- routing them through here would force a 90-150 s bubble and a long identity
-evidence read to interleave inside this one thread, which is the latency change TASK-131 round 6
+evidence read to interleave inside this one thread, which is the latency change TASK-360 round 6
 gave ``IdentityWatcher`` its own schedule to avoid. Instead each yields: before its own long-patience
 acquire, it checks ``ledger.phone_ops_queue_counts()`` and steps aside for a cycle when this queue is
 non-empty, rather than racing a dispatched op for the bare flock with the identical

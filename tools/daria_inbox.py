@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -I
 """daria-inbox --since ISO: every message in daria.s@pflege-connect.work received at or after ISO, oldest first, one
 JSON line each on stdout: the Graph metadata, the folder's name, whether it is the Junk folder, and the raw MIME
-(base64). TASK-111.10.
+(base64). TASK-345.10.
 
 Ivan, 2026-09-28, granted the claude user this one command through sudo without a password, so Claude reads daria's
 mail and forwards it to him by hand. tools/daria_inbox_install.sh installs it root-owned as /usr/local/sbin/daria-inbox.

@@ -1,4 +1,4 @@
-"""CV/Urkunde intake for the WhatsApp harness (TASK-171): for WA_BRAIN=luna threads only, a
+"""CV/Urkunde intake for the WhatsApp harness (TASK-327): for WA_BRAIN=luna threads only, a
 document/image message is downloaded (Meta's two-step media API, app/wa/meta.py:Client) and its
 text merged onto the Luna card as cv_text/urkunde_text before the normal LB.turn() call -- instead
 of the flat MEDIA_REPLY acknowledgement every other kind, and every kind on the deterministic
@@ -117,7 +117,7 @@ def luna_wa(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "ACCESS_TOKEN", "test-token")
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "BRAIN", "luna")
-    # TASK-185: every _ingest_media call now also classifies the document -- a fixed, harmless
+    # TASK-334: every _ingest_media call now also classifies the document -- a fixed, harmless
     # default here (individual tests override it via monkeypatch when the classification itself
     # is what they are checking).
     monkeypatch.setattr(CV, "classify_document",
@@ -438,7 +438,7 @@ def test_download_failure_stores_nothing_but_keeps_the_media_id_on_the_message(l
     with ST.db() as c:
         assert ST.documents_for(c, LEAD) == []
         row = c.execute("select meta from wa_messages where wamid='wamid.gone'").fetchone()
-    # media_link_strength (TASK-131 round 6, phone rail only): None here -- this payload came
+    # media_link_strength (TASK-360 round 6, phone rail only): None here -- this payload came
     # through the real Meta client, which never sets it.
     assert json.loads(row["meta"]) == {"button_id": None, "media_id": "gone", "media_mime_type": "application/pdf",
                                        "media_filename": "cv.pdf", "media_link_strength": None}
@@ -766,7 +766,7 @@ def test_a_catch_up_pass_during_the_webhook_ingest_leaves_the_turn_to_the_webhoo
 
 @pytest.mark.parametrize("failing_step", ["vision", "classification"])
 def test_catch_up_rereads_the_stored_original_of_a_media_turn_whose_ingest_raised(luna_wa, monkeypatch, failing_step):
-    """TASK-202: the file never reached the card, so no reply goes out while reading fails; each catch-up pass
+    """TASK-341: the file never reached the card, so no reply goes out while reading fails; each catch-up pass
     re-reads the stored original (no second download) and records the failure once. Once reading works, the
     file lands on the card and the reply knows it arrived."""
     from app.wa.luna import catchup as CU

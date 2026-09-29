@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Forward mail of daria.s@pflege-connect.work to Ivan's Gmail by hand (TASK-111.10; Ivan, 2026-09-28: "а ты разве не
+"""Forward mail of daria.s@pflege-connect.work to Ivan's Gmail by hand (TASK-345.10; Ivan, 2026-09-28: "а ты разве не
 можешь мне пересылать руками?").
 
   list FETCH          the inbound messages of a daria-inbox output file (not sent by daria, not drafts): received,

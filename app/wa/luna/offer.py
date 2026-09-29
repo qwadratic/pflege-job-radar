@@ -1,4 +1,4 @@
-"""TASK-144: what a candidate is shown about open positions, and the cap on how much of it.
+"""TASK-373: what a candidate is shown about open positions, and the cap on how much of it.
 
 Ivan, 2026-09-21, after the first conversation on the phone rail: a candidate never gets a wall of
 vacancies. At most ``OFFER_LIMIT`` positions in one message, each a short description built from
@@ -14,11 +14,11 @@ app/wa/luna/grounding.py checks afterwards that the reply stayed inside it.
 No position carries a URL. The board's ``external_url`` never leaves this module -- prompts.py has
 banned sending a board URL or job link since TASK-195, and the way to make that a guarantee rather
 than a rule is to keep the link out of the payload the model writes from. That stays true with
-TASK-150: the original-ad link a TEST thread may ask for is looked up by posting_id in
+TASK-379: the original-ad link a TEST thread may ask for is looked up by posting_id in
 app/wa/luna/source_link.py, after the model has written its reply, so no link ever passes through
 the model on any thread.
 
-THAT CLAIM NEEDED TWO MORE DOORS CLOSED (TASK-151). It was false in production on every thread:
+THAT CLAIM NEEDED TWO MORE DOORS CLOSED (TASK-380). It was false in production on every thread:
 ``board_api_get`` -- a tool prompts.py tells the model to use -- returned the raw board rows with
 ``external_url`` on /api/jobs and ``website``/``careers_url``/``board`` on /api/clinics
 (tools_server._without_urls closes that), and the remembered test-thread links rode into the next
@@ -80,7 +80,7 @@ def narrowing_criteria(rows):
     us carry, with the clinic and posting count it would leave; a dimension the whole set agrees on
     (one distinct value) narrows nothing and is left out entirely.
 
-    NO CUT ON THE VALUES (TASK-146). They used to be trimmed to OFFER_LIMIT as well. Ivan's five is a
+    NO CUT ON THE VALUES (TASK-375). They used to be trimmed to OFFER_LIMIT as well. Ivan's five is a
     cap on POSITIONS IN ONE MESSAGE; applying the same number to how many values a criterion may list
     was a second ceiling nobody asked for (CLAUDE.md), and it left the model able to suggest only 5 of
     the 20 departments that would actually narrow the set -- chosen by a sort order rather than by the

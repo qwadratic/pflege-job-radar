@@ -1,4 +1,4 @@
-"""The two halves of the phone rail, wired to each other (TASK-146).
+"""The two halves of the phone rail, wired to each other (TASK-375).
 
 ``tests/test_wa_bridge_client.py`` proves the VPS client against a fake executor and
 ``tests/test_bridge_executor.py`` proves the executor against a fake client. Both passed while the
@@ -74,7 +74,7 @@ def rail(tmp_path):
                                     "reply", "matches"])
 def test_every_action_slug_luna_produces_reaches_the_phone(rail, action):
     """Luna names its own actions and the fuse paces in its own vocabulary; the wire has to carry
-    both. Before TASK-146 the slug went into trace.action and the governor answered
+    both. Before TASK-375 the slug went into trace.action and the governor answered
     "trace.action must be one of ('first_touch', 'reply')" to every single one of these."""
     cl = rail.client()
     cl.begin_turn(LEAD, TURN, action)

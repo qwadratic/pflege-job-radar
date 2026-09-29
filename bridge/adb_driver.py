@@ -1,4 +1,4 @@
-"""Our own adb driver for the handset (TASK-142). Stdlib only, and it imports nothing of theirs.
+"""Our own adb driver for the handset (TASK-371). Stdlib only, and it imports nothing of theirs.
 
 WHY THIS EXISTS AT ALL. bridge/driver.py used to wrap ``apps.wa_phone`` out of
 ``~/wa-phone-outreach``, which is a disposable agent worktree: a ``git worktree remove`` or a branch
@@ -92,7 +92,7 @@ RID_DATE = "date"
 RID_STATUS = "status"
 RID_DIALOG_BUTTON = "button1"
 
-#: The chat list, read off L2N4C19B14054874 on 2026-09-21 with WhatsApp 2.26.36.74 (TASK-147).
+#: The chat list, read off L2N4C19B14054874 on 2026-09-21 with WhatsApp 2.26.36.74 (TASK-376).
 RID_CHAT_ROW = "contact_row_container"
 RID_ROW_NAME = "conversations_row_contact_name"
 RID_ROW_DATE = "conversations_row_date"
@@ -121,7 +121,7 @@ RID_ALERT_TITLE = "alertTitle"
 #: no rows, and "no rows" must never be what an unreadable dump looks like.
 RID_NEW_CHAT_FAB = "fab"
 
-#: Sharing a file into WhatsApp via ACTION_SEND (TASK-131 round 7, outbound media): the picker
+#: Sharing a file into WhatsApp via ACTION_SEND (TASK-360 round 7, outbound media): the picker
 #: WhatsApp itself draws (com.whatsapp.contact.ui.picker.ExternalShareAlias), then the compose
 #: screen it opens once exactly one recipient is picked (RID_SEND, already defined, is the send
 #: button on this screen too -- the two screens are never on-screen together). Verified live on
@@ -132,7 +132,7 @@ RID_SHARE_RECIPIENTS = "recipients"
 #: Images/...) so an outbound push can never collide with, or be mistaken for, inbound content.
 OUTBOUND_MEDIA_DIR = "wa_outbound"
 
-#: WhatsApp's in-chat gallery album picker (TASK-131 round 7 gallery redesign, Ivan 2026-09-22:
+#: WhatsApp's in-chat gallery album picker (TASK-360 round 7 gallery redesign, Ivan 2026-09-22:
 #: "галерейкой плюс текстовое сообщение, все это одно сообщение" -- one message, several photos,
 #: one caption, not five separate bubbles). Verified live, this handset, 2026-09-22,
 #: WhatsApp 2.26.36.74: attach -> "Galerie" -> a folder spinner -> a grid of ``media_item_view``/
@@ -147,7 +147,7 @@ RID_CAPTION = "caption"
 RID_SEND_MEDIA_BTN = "send_media_btn"
 RID_SEND_MEDIA_COUNTER = "send_media_counter"
 
-#: A non-image file, sent via the SAME ACTION_SEND mechanism send_photo uses (TASK-131 round 7,
+#: A non-image file, sent via the SAME ACTION_SEND mechanism send_photo uses (TASK-360 round 7,
 #: Ivan 2026-09-23: a future resume-update flow needs this too, not photos alone). Verified live,
 #: this handset, 2026-09-23: WhatsApp's own DocumentPreviewActivity, opened once the share picker's
 #: matched row is tapped (and, for a document specifically, a recipient-confirm screen past that --
@@ -175,7 +175,7 @@ UI_SETTLE_SEC = 1.5
 
 #: How long we re-read the thread looking for the bubble we just typed, before calling it unverified.
 BUBBLE_APPEAR_SEC = 30.0
-#: Same idea, sized for a photo instead of typed text (TASK-131 round 7). A photo bubble is not on
+#: Same idea, sized for a photo instead of typed text (TASK-360 round 7). A photo bubble is not on
 #: screen the instant ``send`` is tapped the way a typed bubble already is -- WhatsApp has to finish
 #: writing/encoding the local copy and lay out the thumbnail before its date/status nodes exist at
 #: all, and that measured slower than 30s at least once live (2026-09-22: a photo verified as
@@ -184,7 +184,7 @@ BUBBLE_APPEAR_SEC = 30.0
 #: that constant too -- text's own 30s budget is separately proven and untouched here.
 PHOTO_APPEAR_SEC = 60.0
 #: How long send_gallery waits for a just-staged file's own stamp to appear in WhatsApp's "Letzte"
-#: pool (TASK-131 round 7 gallery redesign). Raised from an initial 15s after a live refusal,
+#: pool (TASK-360 round 7 gallery redesign). Raised from an initial 15s after a live refusal,
 #: 2026-09-23: a file whose mtime and MediaStore row were BOTH already correct (checked directly,
 #: ``content query``/``stat`` agreed with what was pushed) still had zero matching picker items at
 #: 15s -- refused correctly rather than guess, but WhatsApp's own picker fragment plainly lags a
@@ -223,7 +223,7 @@ class Node:
     pkg: str = ""
     #: uiautomator's own ``checked``. Read so a checkbox is only tapped when tapping it moves it the
     #: way we want: a toggle tapped blind is a coin toss, and one of these toggles is "delete the
-    #: starred messages too" (TASK-147).
+    #: starred messages too" (TASK-376).
     checked: bool = False
 
     @property
@@ -523,13 +523,13 @@ class Adb:
         return self.run("shell", cmd, timeout=timeout).stdout
 
     def pull(self, remote, local, *, timeout=120):
-        """-> the finished process (``.returncode``, ``.stderr``). Filesystem-level (TASK-131):
+        """-> the finished process (``.returncode``, ``.stderr``). Filesystem-level (TASK-360):
         not a shell command, so it is its own method rather than a ``shell()`` string, and its own
         override point in a scripted test (``tests/test_bridge_adb.py::ScriptedAdb``)."""
         return self.run("pull", remote, local, timeout=timeout)
 
     def push(self, local, remote, *, timeout=120):
-        """-> the finished process (``.returncode``, ``.stderr``). ``pull``'s own mirror (TASK-131
+        """-> the finished process (``.returncode``, ``.stderr``). ``pull``'s own mirror (TASK-360
         round 7, outbound media): filesystem-level, its own method for the same reason ``pull`` is
         one, and its own override point in a scripted test."""
         return self.run("push", local, remote, timeout=timeout)
@@ -613,7 +613,7 @@ class Adb:
     def dump(self, *, tries=3, required=True, timeout=40):
         """-> [Node] for what is on screen. Raises after ``tries`` unless ``required=False``.
 
-        ``required=True`` is the default because of what an empty list means downstream (TASK-146):
+        ``required=True`` is the default because of what an empty list means downstream (TASK-375):
         ``uiautomator`` answering "ERROR: could not get idle state." and a chat with nothing in it
         both parse to ``[]``, and on the inbound path those two are a candidate's message being
         lost versus a quiet chat. Three tries is already the retry; failing after them is the
@@ -788,7 +788,7 @@ class AdbDriver(D.PhoneDriver):
     def resolve_counterparty(self, title):
         """-> E.164 for a notification title, or "" when the handset cannot say who that is.
 
-        A display name shared by two contacts is UNRESOLVABLE, not a coin toss (TASK-146). Taking
+        A display name shared by two contacts is UNRESOLVABLE, not a coin toss (TASK-375). Taking
         the first row silently answered candidate A with a reply to candidate B's message and keyed
         the whole opt-out story on the wrong human. It raises rather than returning "", so the
         journal says which of the two things went wrong.
@@ -933,7 +933,7 @@ class AdbDriver(D.PhoneDriver):
 
     def read_media_evidence(self):
         """-> [{"clock", "evidence"}] for the INCOMING bubbles of the open thread (PhoneDriver
-        contract, TASK-131 round 6) -- the file this rail is trying to attribute is always the other
+        contract, TASK-360 round 6) -- the file this rail is trying to attribute is always the other
         party's, never our own reply."""
         bands = self._media_bubble_bands(self.adb.dump())
         return [{"clock": b["clock"], "evidence": b["evidence"]} for b in bands if b["direction"] == "in"]
@@ -986,7 +986,7 @@ class AdbDriver(D.PhoneDriver):
         if not composer:
             raise D.DriverError("composer not found -- the conversation is not on screen")
         # How many bubbles with THIS body are already on the thread before we type a character
-        # (TASK-146). Several send bodies are constants -- api.MEDIA_REPLY fires for every
+        # (TASK-375). Several send bodies are constants -- api.MEDIA_REPLY fires for every
         # unreadable media message and C.FOLLOWUP_NUDGE_DE is identical on every nudge tier -- so
         # "a bubble with this body exists" was never evidence that OUR bubble exists. A previous
         # turn's identical bubble already carries a tick, which made require_tick accept it and the
@@ -1012,7 +1012,7 @@ class AdbDriver(D.PhoneDriver):
         return sum(1 for b in bubbles
                    if b.direction == "out" and D.body_sha256(b.text) == want_sha256)
 
-    # --- outbound media: photos (TASK-131 round 7, Ivan 2026-09-22) ------------------------------
+    # --- outbound media: photos (TASK-360 round 7, Ivan 2026-09-22) ------------------------------
     def _outgoing_bubble_count(self, nodes):
         """How many outgoing bubbles are on screen right now, image or text alike -- banded by their
         own date node the same way _media_bubble_bands is, not by RID_MESSAGE (_placed_bubbles'
@@ -1048,7 +1048,7 @@ class AdbDriver(D.PhoneDriver):
 
     def send_photo(self, phone, local_path):
         """Share ONE local image file into the thread for ``phone``, via Android's own ACTION_SEND
-        (TASK-131 round 7, outbound media) -- there is no compose-time attach button this driver
+        (TASK-360 round 7, outbound media) -- there is no compose-time attach button this driver
         can reach any other way, and this is the exact mechanism a person uses to share a photo
         from their own gallery: verified live, this handset, 2026-09-22, WhatsApp 2.26.36.74. ->
         the (clock, tick) the newest outgoing bubble reads after sending. Raises D.DriverError
@@ -1120,7 +1120,7 @@ class AdbDriver(D.PhoneDriver):
                                 f"{D.MAX_PHOTOS_PER_SEND} at once")
         return [self.send_photo(phone, p) for p in local_paths]
 
-    # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign, Ivan 2026-09-22) --
+    # --- outbound media: one gallery message (TASK-360 round 7 gallery redesign, Ivan 2026-09-22) --
     def _stage_gallery_files(self, local_paths):
         """Push local_paths into MAX_PHOTOS_PER_SEND fixed positional slots under
         OUTBOUND_MEDIA_DIR, each stamped with a distinct, known minute -- so send_gallery can find
@@ -1177,7 +1177,7 @@ class AdbDriver(D.PhoneDriver):
     def send_gallery(self, phone, local_paths, caption=""):
         """Share up to D.MAX_PHOTOS_PER_SEND local image files as ONE WhatsApp message -- a photo
         album with a single shared caption -- via WhatsApp's own in-chat gallery picker (Ivan,
-        2026-09-22: "галерейкой плюс текстовое сообщение, все это одно сообщение"; TASK-131
+        2026-09-22: "галерейкой плюс текстовое сообщение, все это одно сообщение"; TASK-360
         round 7). Android's ``am start`` cannot drive ACTION_SEND_MULTIPLE for this: its own extras
         table has no type for a Uri ArrayList, which is what ACTION_SEND_MULTIPLE's EXTRA_STREAM
         needs (``--eu`` sets exactly one Uri) -- checked against ``am start``'s own extras before
@@ -1289,7 +1289,7 @@ class AdbDriver(D.PhoneDriver):
         self.open_chat(phone)   # the send flow may land anywhere; come back to prove the result
         return self._verify_photo_sent(before)
 
-    # --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23: a future resume-update
+    # --- outbound media: one document (TASK-360 round 7, Ivan 2026-09-23: a future resume-update
     # flow needs files attached too, not only photos) -------------------------------------------
     def send_document(self, phone, local_path, caption=""):
         """Share ONE local file, any type, into the thread for ``phone``, via Android's own
@@ -1433,7 +1433,7 @@ class AdbDriver(D.PhoneDriver):
         The second door. Its ids are identical to the notification door's for the same message, by
         construction (bridge/inbound.py mints on the local minute) -- but ONLY if the date is the
         same, and a bubble carries no date. So which bubbles are from today is derived rather than
-        assumed (TASK-146):
+        assumed (TASK-375):
 
         CALLED ONLY RIGHT AFTER OUR OWN SEND, which is what makes the derivation sound. Our own
         bubble is the newest thing in the chat and it is seconds old, so the bottom of the visible
@@ -1502,7 +1502,7 @@ class AdbDriver(D.PhoneDriver):
             return None
         return resolved or None
 
-    # --- inbound media (TASK-131) -------------------------------------------------------------------------
+    # --- inbound media (TASK-360) -------------------------------------------------------------------------
     def list_media(self):
         """-> {rel_path: (size, mtime_epoch)} for every RECEIVED file under WhatsApp's flat media
         tree. Filesystem-level (``find``+``stat``, both toybox on this handset): touches no UI and
@@ -1538,7 +1538,7 @@ class AdbDriver(D.PhoneDriver):
                                 f"{(result.stderr or '').strip()[:200]}")
         return dest
 
-    # --- the chat list, and the two destructive verbs (TASK-147) -----------------------------------------
+    # --- the chat list, and the two destructive verbs (TASK-376) -----------------------------------------
     def _chat_list(self, *, archived=False):
         """Bring the chat list to the front and -> its nodes, scrolled to the top.
 

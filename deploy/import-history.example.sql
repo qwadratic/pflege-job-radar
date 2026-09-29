@@ -1,4 +1,4 @@
--- Queries file for app/wa/luna/import_history.py (TASK-102, TASK-105): one worked set for the old WhatsApp recruiting
+-- Queries file for app/wa/luna/import_history.py (TASK-342, TASK-208): one worked set for the old WhatsApp recruiting
 -- system on tasker-dispatcher-01 (sales_brain.sqlite). Written from that system's code only (candidate_whatsapp_store.py
 -- DDL, candidate_agent_card.py card slots, candidate_whatsapp_ad_leads.py / candidate_bayern_housing_offer.py
 -- metadata writes, manager_crm/service.py attachment classes, sales_brain/placement stages; opt_outs:

@@ -1,4 +1,4 @@
-"""TASK-205 offline: importing a campaign recipient's history from an earlier system, and the reuse question for
+"""TASK-342 offline: importing a campaign recipient's history from an earlier system, and the reuse question for
 imported documents.
 
 The source is a synthetic SQLite file with the old system's tables (the columns deploy/import-history.example.sql
@@ -598,7 +598,7 @@ def test_an_existing_wa_documents_table_gets_the_import_columns(tmp_path, monkey
         assert ST.imported_document(c, "s", "ref-1")["id"] == a
 
 
-# --- Luna: the reuse question and the gate (TASK-205) ----------------------------------------------------------------
+# --- Luna: the reuse question and the gate (TASK-342) ----------------------------------------------------------------
 
 def _out(**kw):
     base = {"action": "reply_now_conversational", "bubbles": ["Dürfen wir Ihre früheren Unterlagen verwenden?"],
@@ -780,7 +780,7 @@ def test_a_withdrawn_confirmation_takes_the_text_off_the_card_again(env, monkeyp
 
 
 def test_the_prompt_explains_prior_contact_and_the_reuse_question():
-    rules = {r.split(" (TASK-205)")[0]: r for r in LB.P.RULES if "(TASK-205)" in r}
+    rules = {r.split(" (TASK-342)")[0]: r for r in LB.P.RULES if "(TASK-342)" in r}
     assert set(rules) == {"PRIOR CONTACT", "EARLIER DOCUMENTS"}
     earlier = rules["EARLIER DOCUMENTS"]
     for phrase in ("reuse=pending counts for nothing", "ONE plain yes/no", "confirmed_ids", "declined_ids",

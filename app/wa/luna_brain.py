@@ -64,7 +64,7 @@ log = logging.getLogger(__name__)
 
 MAX_BUBBLES = 2
 
-# Explicit button-confirmed consent (TASK-184): the real reference system has this same rigor for
+# Explicit button-confirmed consent (TASK-333): the real reference system has this same rigor for
 # its own harder, named-clinic-submission gate (a tappable "Ja, ich bestätige"), never inferred
 # from free text. This harness has no named-submission step, but applies the same discipline to
 # the one consent point it does have -- anonymous_send_consent is set ONLY by a genuine tap on one
@@ -73,7 +73,7 @@ CONSENT_YES_ID = "consent:yes"
 CONSENT_NO_ID = "consent:no"
 CONSENT_BUTTONS = [{"id": CONSENT_YES_ID, "title": "Ja, gerne"}, {"id": CONSENT_NO_ID, "title": "Nein danke"}]
 
-# card.documents[].reuse of a document imported from the candidate's earlier contact (TASK-205).
+# card.documents[].reuse of a document imported from the candidate's earlier contact (TASK-342).
 REUSE_PENDING, REUSE_CONFIRMED, REUSE_DECLINED = ST.REUSE_PENDING, ST.REUSE_CONFIRMED, ST.REUSE_DECLINED
 
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
@@ -99,11 +99,11 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                        ("search_postings", "get_posting", "list_clinics",
                         "search_postings_with_housing", "list_clinics_with_housing",
                         "list_cities_with_postings", "count_postings",
-                        # TASK-145: ranks the board against this thread's stored CV. Needs the thread's
+                        # TASK-374: ranks the board against this thread's stored CV. Needs the thread's
                         # number to find that CV, which is why _mcp_config_path passes WA_LUNA_PHONE.
                         "match_cv_to_postings",
                         "read_board_docs", "board_api_get",
-                        # TASK-131 round 7. Missing from this tuple until 2026-09-23 while
+                        # TASK-360 round 7. Missing from this tuple until 2026-09-23 while
                         # prompts.py's SHOW_CLINIC_PHOTOS rule already told the model to call it:
                         # --allowedTools is an allowlist, so every call the model made was denied and
                         # the funnel's climax moment silently degraded to text.
@@ -211,7 +211,7 @@ def _mcp_config_path(ready_path, phone=None, no_send=False, role_class=None):
     role at all (a unit test): the tool then falls back to whatever role_class the model itself passed
     (possibly none, exactly today's behaviour).
 
-    WA_BRIDGE_URL/WA_BRIDGE_TOKEN/WA_AUTOSEND (TASK-131 round 7, Ivan 2026-09-23; WA_AUTOSEND added
+    WA_BRIDGE_URL/WA_BRIDGE_TOKEN/WA_AUTOSEND (TASK-360 round 7, Ivan 2026-09-23; WA_AUTOSEND added
     TASK-250): show_clinic_photos is the first tool in this server that SENDS something rather than
     only reading -- it calls app.wa.bridge.Client() itself, which needs the URL/token to reach the
     phone rail's executor, and now reads C.AUTOSEND itself to decide whether to send at all (the same
@@ -253,7 +253,7 @@ def _mcp_config_path(ready_path, phone=None, no_send=False, role_class=None):
                                                         "WA_LUNA_BOARD_VOCABULARY": str(_board_vocabulary_path()),
                                                         "WA_LUNA_BOARD_SNAPSHOT": str(_board_snapshot_path()),
                                                         "WA_LUNA_TOOLS_READY": str(ready_path),
-                                                        # TASK-145: whose CV match_cv_to_postings reads.
+                                                        # TASK-374: whose CV match_cv_to_postings reads.
                                                         # Empty when turn() was called without a thread
                                                         # row (a unit test): that tool then says so and
                                                         # the model answers without it.
@@ -294,7 +294,7 @@ def named_non_bavaria_land(text):
     """The out-of-scope Bundesland named in this message, or None. Whole-word (and not glued to
     a hyphen either), so 'Hessendorf' and 'NRW-Fan-Artikel' do not fire on 'Hessen'/'NRW'.
 
-    None when Bayern is ALSO named in the same message (real bug, TASK-131 adjacent, 2026-09-22 --
+    None when Bayern is ALSO named in the same message (real bug, TASK-360 adjacent, 2026-09-22 --
     found by reading the full real candidate-history corpus): 'In Bayern oder in Baden-Württemberg'
     used to trip this shortcut on 'Baden-Württemberg' alone, sending the canned OUT_OF_SCOPE_REGION_DE
     text (which never even names the state that WAS just asked about) and silently setting
@@ -314,7 +314,7 @@ def named_non_bavaria_land(text):
 # The model writes the sentence; this only supplies what is true right now, from the same
 # filter app/wa/brain.py and GET /api/jobs use, so the harness and the API cannot drift.
 
-# TASK-144: the close-sequence shortlist was the first place Ivan's "at most five" applied; it is now
+# TASK-373: the close-sequence shortlist was the first place Ivan's "at most five" applied; it is now
 # one cap for every place a result set is cut to what a candidate may be shown, and it lives in
 # app/wa/luna/offer.py, next to the assembly it governs.
 CLOSE_LIMIT = OF.OFFER_LIMIT
@@ -379,7 +379,7 @@ def housing_flexible(card):
 
 
 def _counts_for_gate(doc):
-    """TASK-205: a document imported from the candidate's earlier contact (app/wa/luna/import_history.py) counts
+    """TASK-342: a document imported from the candidate's earlier contact (app/wa/luna/import_history.py) counts
     only once the candidate confirmed it may be reused; everything received on WhatsApp counts as before."""
     return not doc.get("imported") or doc.get("reuse") == REUSE_CONFIRMED
 
@@ -406,9 +406,9 @@ def _qualification_document_received(card):
                for d in card.get("documents", []))
 
 
-# TASK-146: the qualification_path values that SETTLE the gate, and the one that ends the funnel.
+# TASK-375: the qualification_path values that SETTLE the gate, and the one that ends the funnel.
 # A card sitting on one of the first three has passed the qualification stage; "reject" is a verdict
-# that ends it loudly (turn() sends P.REJECT_BODY_DE -- TASK-151 made that true rather than assumed,
+# that ends it loudly (turn() sends P.REJECT_BODY_DE -- TASK-380 made that true rather than assumed,
 # see ``says_not_placeable`` below), and every other value -- "unknown", null, anything the schema
 # lets through -- leaves it open.
 QUALIFICATION_PATHS_SETTLED = ("urkunde", "defizit", "kenntnispruefung")
@@ -421,7 +421,7 @@ def keep_settled_qualification_path(card, was_path, at):
     still physically on the card. -> the refusal record, or None.
 
     THE STAGE IS CODE-OWNED THROUGH THE SIDE DOOR TOO (audit F, 2026-09-21). Direct assertion of
-    ``stage`` has been stripped since TASK-144, but one schema-legal ``card_patch
+    ``stage`` has been stripped since TASK-373, but one schema-legal ``card_patch
     {qualification_path: "unknown"}`` dropped a candidate from ``consent`` back to ``qualification``
     with the Urkunde still in card.documents -- and the next turn asked for a document it was holding.
     Five stages, through a field the prompt gave no guidance about.
@@ -432,7 +432,7 @@ def keep_settled_qualification_path(card, was_path, at):
     another (urkunde -> defizit), and any value at all while no qualification document has arrived,
     which is the normal case where the model is the only one who knows what the candidate said.
 
-    "REJECT" IS NOT AN EXCEPTION TO THIS (TASK-151). It used to be waved through here on the grounds
+    "REJECT" IS NOT AN EXCEPTION TO THIS (TASK-380). It used to be waved through here on the grounds
     that it is a verdict rather than a reset -- but a card holding a classified German Urkunde is
     placeable by that document, so "reject" contradicts the card exactly as "unknown" does, and it
     does not merely re-ask for a document: it declares the candidate unplaceable and drops five
@@ -460,7 +460,7 @@ def keep_settled_qualification_path(card, was_path, at):
 
 
 def _reuse_pending(card, cv_in, qualification_in):
-    """TASK-205: imported documents still waiting for the candidate's reuse answer that would settle a documents
+    """TASK-342: imported documents still waiting for the candidate's reuse answer that would settle a documents
     half still open -- a CV while no CV counts, a qualification document for the path while none counts."""
     path = card.get("qualification_path")
     return [d for d in card.get("documents", []) if d.get("imported") and d.get("reuse") == REUSE_PENDING and
@@ -477,7 +477,7 @@ def _documents_satisfied(card):
     return _cv_document_received(card) and _qualification_document_received(card)
 
 
-# One clinic identity for the shortlist, the offer and the grounding check (TASK-144): the board
+# One clinic identity for the shortlist, the offer and the grounding check (TASK-373): the board
 # vocabulary's own, so the three can never disagree about what a clinic is called.
 _clinic_name = OF.clinic_name
 _clinic_names = OF.clinic_names
@@ -509,13 +509,13 @@ def _housing_cities(rows, wanted_city, home_bezirk):
 def market_snapshot(card):
     """-> {open_jobs, cities, matching_clinics_count, offer, shortlist, matches, department_filter, housing}.
 
-    offer (TASK-144, Ivan 2026-09-21) is the whole answer to "never dump many vacancies at a candidate":
+    offer (TASK-373, Ivan 2026-09-21) is the whole answer to "never dump many vacancies at a candidate":
     at most offer.OFFER_LIMIT positions however large the matching set is, the count of how many more
     matched, the criteria that would actually narrow THIS set, and the two branches (narrow / pool) the
     same turn has to offer. shortlist is offer["positions"] -- one assembly, so the list the model names
     and the number it says are left over can never be counted from different rows. None until ready to
     close, exactly as shortlist has always been. department_filter
-    (TASK-207) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
+    (TASK-344) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
     filters by department (any of its departments); ambiguous, flexible and unmatched build the shortlist from the
     other criteria. Deliberately thin
     (TASK-195, after reading how the real reference implementation actually works): open_jobs is
@@ -523,7 +523,7 @@ def market_snapshot(card):
     question RULES lets the model answer without a live tool call. There is no per-city/
     per-department preview list here anymore; recon on the real system found it does not use live
     tool calls at all (it eagerly pre-fetches everything into one payload) and that pflege-board's
-    own actual tool-calling (TASK-166 search_postings/list_clinics/get_posting) is already a step
+    own actual tool-calling (TASK-323 search_postings/list_clinics/get_posting) is already a step
     beyond that, not something to downgrade to match it -- so a candidate naming any specific
     city, department, region or clinic is answered by a real tool call (RULES: TOOLS), never by a
     precomputed guess here that could go stale or duplicate what a tool would say more precisely.
@@ -565,7 +565,7 @@ def market_snapshot(card):
     department_filter = None
     if card.get("department_pref"):
         # TASK-199 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
-        # match on its own vocabulary ("Intensiv/IMC"). TASK-207: a flexible word ("egal", "flexibel") or a word
+        # match on its own vocabulary ("Intensiv/IMC"). TASK-344: a flexible word ("egal", "flexibel") or a word
         # the board has no department for filtered as written and emptied the shortlist (live, consent asked
         # with no clinic named); only board departments filter now, and department_filter says which. Review
         # 2026-09-15: 'Innere oder Intensiv' filtered on Intensiv alone and emptied the Augsburg shortlist.
@@ -589,7 +589,7 @@ def market_snapshot(card):
     city_bezirk = next((r.get("regierungsbezirk") for r in B.jobs_for({"city": filters["city"]})
                         if r.get("regierungsbezirk")), None) if filters.get("city") else None
     # Alternatives only when the filtered search itself found nothing: with a flat available where they asked,
-    # naming other cities is noise the model could turn into a menu question (TASK-200).
+    # naming other cities is noise the model could turn into a menu question (TASK-339).
     housing_cities = []
     if filter_housing and not rows_with_housing:
         wider = B.jobs_for({k: v for k, v in filters.items() if k != "city"}) if filters.get("city") else rows
@@ -597,14 +597,14 @@ def market_snapshot(card):
 
     ready_to_close = bool(card.get("qualification_ok") and _city_or_department_satisfied(card)
                           and _housing_satisfied(card) and _documents_satisfied(card))
-    # TASK-144: the shortlist IS the offer's positions -- one assembly, one cap, one place the
+    # TASK-373: the shortlist IS the offer's positions -- one assembly, one cap, one place the
     # remainder count and the narrowing criteria come from (app/wa/luna/offer.py:build_offer). Still
     # only once ready to close: TASK-195's rule that the payload carries no per-city preview stands,
     # and a five-position offer before the gates are settled would be exactly that preview.
     #
     # Which leaves offer null for most of the funnel, where the candidate is actually choosing --
     # so the VOLUME rule in prompts.py is written against BOTH sources, and mid-funnel it names the
-    # listing tool's own {shown, total} rather than offer.* (TASK-146). Building the offer early
+    # listing tool's own {shown, total} rather than offer.* (TASK-375). Building the offer early
     # instead would have been the preview this comment refuses, so the prompt moved, not this.
     offer = OF.build_offer(matching) if ready_to_close else None
     shortlist = offer["positions"] if offer else []
@@ -626,10 +626,10 @@ def market_snapshot(card):
 # for this turn," state only, same "the model writes the wording" split pflege-board already
 # uses elsewhere). Never shown to the candidate verbatim.
 _OBJECTIVE_ORDER = (
-    # TASK-200 review: every label names an open or a plain yes/no question, never options joined by "oder"
+    # TASK-339 review: every label names an open or a plain yes/no question, never options joined by "oder"
     # (live: "Gibt es eine Stadt ..., z. B. München ... oder Würzburg?" and "allein, oder ...?" got a bare Ja).
     ("region", "ask as a plain yes/no whether they are looking for a job in Bayern"),
-    ("qualification", "clarify qualification: first a plain yes/no whether the German Urkunde is "   # TASK-200
+    ("qualification", "clarify qualification: first a plain yes/no whether the German Urkunde is "   # TASK-339
                       "already in hand; only on no, the recognition step, again one yes/no at a time"),
     ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
@@ -676,7 +676,7 @@ _HELD_NAMES = {"lebenslauf": "the CV (Lebenslauf)", "urkunde": "the German Urkun
 
 
 def _reuse_objective(card, pending, cv_in, qualification_in):
-    """TASK-205 documents objective while imported documents wait for the reuse answer: one yes/no naming what we
+    """TASK-342 documents objective while imported documents wait for the reuse answer: one yes/no naming what we
     hold, plus the document we do not hold (if any) by name."""
     name, note = _qualification_document_name(card.get("qualification_path"))
     held_cv = any(d["document_type"] == "lebenslauf" for d in pending)
@@ -694,7 +694,7 @@ def _reuse_objective(card, pending, cv_in, qualification_in):
     return label
 
 
-# --- the funnel stage (TASK-144) -------------------------------------------------------------
+# --- the funnel stage (TASK-373) -------------------------------------------------------------
 # Ivan, 2026-09-21: the card has to carry which stage the candidate is in, and the next turn has to
 # resume from it instead of restarting. Not a second state machine: a stage is a NAME for the first
 # gate requirement_scoreboard already found open, so the two cannot drift. The order is the harness's
@@ -704,7 +704,7 @@ def _reuse_objective(card, pending, cv_in, qualification_in):
 #
 # The gates a requirement_scoreboard carries, as opposed to the computed hints sitting next to them
 # (next_objective, stage, stage_since). app/wa/luna/reporting.py reads this instead of re-listing the
-# keys it has to skip: TASK-144 added two hints, and its hard-coded skip list went stale on the spot.
+# keys it has to skip: TASK-373 added two hints, and its hard-coded skip list went stale on the spot.
 SCOREBOARD_GATES = ("region", "qualification", "city_or_department", "housing", "cv_document",
                     "qualification_document", "documents", "handoff_consent")
 
@@ -734,14 +734,14 @@ def requirement_scoreboard(card):
 
     TASK-199: cv_document and qualification_document are the two halves of documents (satisfied only
     when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
-    next_objective the not-placeable hint, whatever else is open. TASK-205: an imported document counts only once
+    next_objective the not-placeable hint, whatever else is open. TASK-342: an imported document counts only once
     reuse is confirmed; while one that would settle an open half is pending, the documents objective is the reuse
     yes/no (_reuse_objective). TASK-211: housing is satisfied by a plain No on its own, or by a Yes plus the
     headcount (_housing_satisfied); between the two steps the objective is the headcount, never the yes/no
     again. This ``housing`` value, not card.housing_known, is the gate the prompt rules read: the flag follows
     the yes/no one step earlier, so between the Ja and the headcount the two disagree (review 2026-09-16).
 
-    TASK-144: ``stage`` names the funnel stage these gates put the candidate in (funnel_stage), and
+    TASK-373: ``stage`` names the funnel stage these gates put the candidate in (funnel_stage), and
     ``stage_since`` when the card entered it -- null on the turn it changes. Together they are what the
     FUNNEL CONTINUITY rule resumes from."""
 
@@ -780,7 +780,7 @@ def requirement_scoreboard(card):
         board["next_objective"] = next(
             (_objective(key, label) for key, label in _OBJECTIVE_ORDER if board[key] == "open"),
             "nothing open -- respond naturally, no open placement item left")
-    # TASK-144: the funnel stage, computed from the gates above so there is only ever one of them,
+    # TASK-373: the funnel stage, computed from the gates above so there is only ever one of them,
     # plus when the card entered it (turn() writes card["stage"]/["stage_at"] from this).
     board["stage"] = funnel_stage(board)
     board["stage_since"] = card.get("stage_at") if card.get("stage") == board["stage"] else None
@@ -887,7 +887,7 @@ def _warming_candidate(row, distance_km=None):
     enforcement is on the OUTPUT side (grounding.check_reply's LINK rule rejects a URL in any bubble
     regardless of what the model was handed), and Ivan asked for it explicitly, by name, for this one
     payload. description comes from app/data.py:job_detail (a live call; description is not in
-    JOB_COLS, TASK-146) -- None when the board holds none, never invented."""
+    JOB_COLS, TASK-375) -- None when the board holds none, never invented."""
     posting_id = row.get("posting_id")
     description = (D.job_detail(posting_id) or {}).get("description")
     out = {"posting_id": posting_id, "clinic": OF.clinic_name(row), "city": D.town_of(row),
@@ -1036,7 +1036,7 @@ OUTPUT_SCHEMA = {
         # model's own short reason either way -- why this one fits, or why none did.
         "warming_pick": {"type": ["integer", "null"]},
         "warming_why": {"type": ["string", "null"]},
-        # TASK-205: the candidate's answer on imported documents (card.documents ids); the harness records it.
+        # TASK-342: the candidate's answer on imported documents (card.documents ids); the harness records it.
         "document_reuse": {
             "type": "object",
             "properties": {"confirmed_ids": {"type": "array", "items": {"type": "integer"}},
@@ -1064,7 +1064,7 @@ OUTPUT_SCHEMA = {
                 # itself is never unsaid, so the human handoff still reads "wanted a flat, accepts without".
                 "housing_flexible": {"type": "boolean"},
                 "people_count": {"type": "integer"},
-                # TASK-144: which of the two branches the candidate picked after the offer -- narrow the
+                # TASK-373: which of the two branches the candidate picked after the offer -- narrow the
                 # search, or go into the general pool and be put forward to every matching clinic. The
                 # narrowing itself still lands in city/department_pref/housing_* as usual; this records
                 # WHICH way they chose, so the human taking the thread over sees it.
@@ -1165,7 +1165,7 @@ class Client:
 
     def __init__(self, reply=None):
         self._reply = reply or self._live_reply
-        # TASK-145: the thread's own number, set by turn() on the client it is about to use, and passed
+        # TASK-374: the thread's own number, set by turn() on the client it is about to use, and passed
         # to the tools server so match_cv_to_postings can read this candidate's stored CV. An attribute
         # rather than a constructor argument because tests stand a client up as ``LB.Client()`` with no
         # arguments (tests/test_wa_test_threads.py and five others), and a turn must keep working when
@@ -1219,7 +1219,7 @@ class Client:
             # empty, the result envelope carries no MCP status (probed, CLI 2.1.270), and the turn
             # answers about the board with no board under it -- worse than any error, because it reads
             # like a checked answer. Same loud failure as a missing CLI: nothing is sent, the pending row
-            # keeps the error and catch-up retries (TASK-202).
+            # keeps the error and catch-up retries (TASK-341).
             if not ready_path.exists():
                 raise RuntimeError("the board tools server never started for this turn (no readiness stamp "
                                    f"at {ready_path}): claude -p ran without {len(MCP_TOOL_NAMES)} board "
@@ -1275,31 +1275,31 @@ class Client:
 # read against the message the candidate actually saw last.
 
 LAST_TURN_KEY = "_luna_last_turn"   # card: {at, seen_through_id, own_message_ids}, written by api.process_owed_turn
-# TASK-144: the clinic names this thread has already had in real evidence (a tool result or the
+# TASK-373: the clinic names this thread has already had in real evidence (a tool result or the
 # harness offer). A later turn may name one of them again without re-searching -- see
 # app/wa/luna/grounding.py, WHAT COUNTS AS EVIDENCE.
 GROUNDED_KEY = "_grounded_clinics"
-# TASK-151: the posting ids those names were grounded ON. Ivan's rule (a) is about the opening, and
+# TASK-380: the posting ids those names were grounded ON. Ivan's rule (a) is about the opening, and
 # a memory of clinic names alone let "die Stelle in Onkologie ist noch frei" out after the verifier
 # had removed every Onkologie posting the house had -- the house still had 32 others.
 GROUNDED_POSTINGS_KEY = "_grounded_postings"
-# TASK-150: what the last message on a TEST thread named, as [{clinic, posting_id, url}], so the
+# TASK-379: what the last message on a TEST thread named, as [{clinic, posting_id, url}], so the
 # footnote's offer can be honoured when the candidate takes it up. Written only for a thread
 # wa_threads.is_test marks; a production card never has this key (app/wa/luna/source_link.py).
 TEST_SOURCES_KEY = "_test_sources"
 # Card keys only code writes; stripped from the model's card_patch.
 CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason", "declined_at", "re_engaged_at",
                         "campaign", LAST_TURN_KEY, "_session_id", "_unread_media",
-                        # TASK-205: the documents gate list (reuse state included) and the imported history
+                        # TASK-342: the documents gate list (reuse state included) and the imported history
                         "documents", "prior_contact", "prior_placement",
                         # TASK-208: opt-outs, declines and chat Stopps the earlier system recorded
                         "prior_opt_outs",
-                        # TASK-144: the funnel stage and when it was entered are computed from the gates
+                        # TASK-373: the funnel stage and when it was entered are computed from the gates
                         # (funnel_stage), the grounded-clinic memory is written from real tool evidence,
                         # and match_branch_at timestamps the model's own match_branch -- none of the four
                         # is a fact the model may assert about itself.
                         "stage", "stage_at", "match_branch_at", GROUNDED_KEY, GROUNDED_POSTINGS_KEY,
-                        # TASK-146/150: the record of a card_patch this harness refused, and the
+                        # TASK-375/379: the record of a card_patch this harness refused, and the
                         # test-thread evidence links -- both are what CODE decided, not a finding
                         # the model may assert about itself.
                         REFUSED_PATCH_KEY, TEST_SOURCES_KEY,
@@ -1382,7 +1382,7 @@ def turn_context(c, t, turn_key):
     voice_note (TASK-210): the inbound message carries a transcript (api._transcribe_voice_note), which the caller
     passes to turn() as the text. Raises when ``turn_key`` is not a stored inbound message.
 
-    last_outbound (TASK-157): the single most recent outbound row of ANY kind (campaign template, a
+    last_outbound (TASK-386): the single most recent outbound row of ANY kind (campaign template, a
     model's own bubble, the decline ack, a locked reply, an admin send) strictly before this inbound
     arrived (``id < inbound["id"]``), as one ``_message_view``, or None with no prior outbound at all.
     Deliberately not filtered by the LAST_TURN_KEY marker the way outbound_since_last_turn is: the refusal
@@ -1446,7 +1446,7 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
     correction from a prior turn), so it is resupplied fresh every time rather than trusted to
-    the model's memory of an earlier turn. is_button_reply (TASK-184) tells the model whether THIS
+    the model's memory of an earlier turn. is_button_reply (TASK-333) tells the model whether THIS
     reply is an actual button tap or typed text -- it cannot otherwise tell the two apart from
     latest_inbound alone, since a button's own title ("Ja, gerne") reads just like free text. This
     is what lets the CLOSE SEQUENCE rule honestly distinguish "the candidate tapped Ja" (consent is
@@ -1463,9 +1463,9 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     voice_note (TASK-210): latest_inbound is the transcript of a voice note the candidate sent (prompts VOICE NOTE)."""
     from .api import TEMPLATE_BUTTON_PREFIX
     context = context or {}
-    # TEST_SOURCES_KEY holds full ad URLs (TASK-150). It is hidden from the payload for the same
+    # TEST_SOURCES_KEY holds full ad URLs (TASK-379). It is hidden from the payload for the same
     # reason offer.py strips the board's links: the model must never see one, on any thread, or the
-    # guarantee is a rule it could forget rather than a field it never reads (TASK-151).
+    # guarantee is a rule it could forget rather than a field it never reads (TASK-380).
     hidden = {LAST_TURN_KEY, TEST_SOURCES_KEY}
     hidden |= {"campaign"} if context.get("campaign_delivery_failed") else set()
     return json.dumps({
@@ -1508,7 +1508,7 @@ def _check(bubbles, max_bubbles=MAX_BUBBLES):
     return [str(b).strip() for b in bubbles]
 
 
-# --- a rejected reply must never become silence (TASK-146) ---------------------------------------
+# --- a rejected reply must never become silence (TASK-375) ---------------------------------------
 # Ivan's rules are checked on the outgoing text (app/wa/luna/grounding.py:check_reply). Until now a
 # violation raised straight out of turn(): nothing was sent, the pending row kept the error and
 # catch-up re-drove the same turn into the same wording. Four shapes of TRUTHFUL German hit that
@@ -1575,7 +1575,7 @@ class _NotClosed(AssertionError):
 
 def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bubbles=MAX_BUBBLES):
     """The bubbles that may actually be sent. -> {bubbles, named, evidence, action, escalate_reason,
-    flagged}. ``bubbles`` is the model's RAW reply, unchecked (TASK-156, F2): the 1-2 bubble/
+    flagged}. ``bubbles`` is the model's RAW reply, unchecked (TASK-385, F2): the 1-2 bubble/
     non-empty style check (``_check``) now runs INSIDE ``_run``, below, so a violation on the FIRST
     pass gets the exact same corrective-retry-then-holding-message contract as a GR.check_reply
     guard -- before this it ran ahead of this function, in turn(), and raised straight out of the
@@ -1691,7 +1691,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     ``thread["turn_context"]`` (``turn_context()``, set by api.process_owed_turn) feeds the payload; when
     the model ran with it, the result carries ``luna_turn`` {at, seen_through_id, model_bubbles} for
     ``turn_marker``. TASK-204: a first ``decline`` from the model, ONLY when app/wa/luna/refusal.py's
-    classifier also agrees the candidate's own text is an unambiguous refusal (TASK-156), sends
+    classifier also agrees the candidate's own text is an unambiguous refusal (TASK-385), sends
     P.DECLINE_ACK_DE and sets card.declined/declined_reason/declined_at; a declined card stays silent
     until the model flags ``re_engaged`` (declined cleared, re_engaged_at set, the model's reply goes
     out).
@@ -1713,12 +1713,12 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         return {"bubbles": [P.OUT_OF_SCOPE_REGION_DE], "buttons": [], "slots": card, "asked": asked,
                 "stopped": False, "matches": [], "action": "out_of_scope_region"}
 
-    # TASK-150/151, TEST THREADS ONLY: the candidate took up the footnote's offer, so the original
+    # TASK-379/380, TEST THREADS ONLY: the candidate took up the footnote's offer, so the original
     # ads of the postings the last message named go out -- assembled below from board rows by
     # posting_id, so the only link this harness can ever produce is one the code looked up for a
     # thread an operator marked as a test. A production card never has TEST_SOURCES_KEY.
     #
-    # A FLAG, NOT A RETURN (TASK-151). This used to take the whole turn before the model ran, so a
+    # A FLAG, NOT A RETURN (TASK-380). This used to take the whole turn before the model ran, so a
     # candidate question that merely mentioned "das Original" was never answered at all -- the links
     # were sent INSTEAD of the answer. The model writes its turn either way now and the links are
     # appended to it.
@@ -1750,10 +1750,10 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
 
     cl = client or Client()
-    cl.phone = thread.get("phone")   # TASK-145: whose CV match_cv_to_postings may read
+    cl.phone = thread.get("phone")   # TASK-374: whose CV match_cv_to_postings may read
     cl.role_class = _known_role_class(card)   # TASK-302 point 6: count_postings' own explicit default
     cl.no_send = no_send             # a dry run (shadow_run) keeps show_clinic_photos off the handset
-    # TASK-144: where this turn's own board tool calls start in the shared log, read before the model
+    # TASK-373: where this turn's own board tool calls start in the shared log, read before the model
     # runs -- what it looked up is what its reply may name (app/wa/luna/grounding.py).
     tool_log_offset = GR.log_offset()
     try:
@@ -1783,10 +1783,10 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     was_branch = card.get("match_branch")
     was_path = card.get("qualification_path")
     card.update(patch)
-    # TASK-146 (audit F): the funnel stage is not resettable through a side field while the document
+    # TASK-375 (audit F): the funnel stage is not resettable through a side field while the document
     # that settled the gate is still on the card.
     keep_settled_qualification_path(card, was_path, turn_at)
-    # TASK-144: when the candidate picked one of the two branches, stamp when -- the branch itself is
+    # TASK-373: when the candidate picked one of the two branches, stamp when -- the branch itself is
     # the model's reading of their answer, the time it landed is ours.
     if card.get("match_branch") and card.get("match_branch") != was_branch:
         card["match_branch_at"] = turn_at
@@ -1799,7 +1799,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         card["re_engaged_at"] = turn_at
     document_reuse = _decide_document_reuse(card, out.get("document_reuse"), turn_at)
 
-    # TASK-184: anonymous_send_consent is never trusted from the model's own card_patch (already
+    # TASK-333: anonymous_send_consent is never trusted from the model's own card_patch (already
     # stripped from OUTPUT_SCHEMA/OUTPUT_INSTRUCTION, but stripped here too in case an older
     # session or prompt drift still emits it) -- it is set ONLY by an actual tap on one of the two
     # CONSENT_BUTTONS attached below, exactly the "decided in code, not by the model" pattern this
@@ -1813,7 +1813,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     # (prompts DECLINE; live 2/2 the tap became a terminal decline, review 2026-09-14).
     consent_no_tap = button_id == CONSENT_NO_ID and bool(card.get("anonymous_send_offered"))
 
-    # TASK-151 (audit F, the second side door): a card_patch declaring the candidate unplaceable is
+    # TASK-380 (audit F, the second side door): a card_patch declaring the candidate unplaceable is
     # said out loud whichever field it uses. ``qualification_ok: false`` always was; the schema-legal
     # ``qualification_path: "reject"`` was not wired to anything, so it regressed the stage from
     # consent to qualification in silence while the model's ordinary bubble went out unchanged. The
@@ -1830,7 +1830,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     decline_candidate = bool(out.get("decline")) and not was_declined and not consent_no_tap
     decline_now = False
     if decline_candidate:
-        # TASK-156: a decline flag alone no longer ends the conversation. Ivan's rule: only an
+        # TASK-385: a decline flag alone no longer ends the conversation. Ivan's rule: only an
         # UNAMBIGUOUS refusal does -- a maybe, a qualified yes, a deferral or a question back keeps it
         # alive -- so a second, independent model call judges the candidate's own text first
         # (app/wa/luna/refusal.py, written for exactly this call site; runs only here, never on every
@@ -1839,7 +1839,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # -- and is recorded here either way, so a silent classifier outage is visible on the thread,
         # not only in the logs.
         #
-        # TASK-157: the classifier is stateless -- it never sees this thread's history -- so a bare
+        # TASK-386: the classifier is stateless -- it never sees this thread's history -- so a bare
         # "nein" was indistinguishable from an answer to our own gate question (Urkunde, Bayern, a
         # city, housing) and from a refusal of the campaign opener asking if the search is still on.
         # our_last_message is the one fact that makes the two decidable: the literal text of the last
@@ -1881,7 +1881,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         bubbles = []
         action = str(out.get("action") or "no_send")
     else:
-        # TASK-144/146, the rules a prompt cannot guarantee: at most OFFER_LIMIT POSITIONS in one
+        # TASK-373/375, the rules a prompt cannot guarantee: at most OFFER_LIMIT POSITIONS in one
         # message, every clinic it names really returned by a tool on this thread (or sitting in the
         # harness offer, and still live on the board), how many more matched, both branches on the
         # offer turn, and no link. A violation costs the model its draft, never the candidate their
@@ -1902,7 +1902,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
 
         # Both branches are only a real choice once the harness has an offer to narrow or pool; mid
         # funnel there is no result set to be put forward to (market_snapshot, offer is null).
-        # raw_bubbles goes in unchecked (TASK-156, F2): _checked_reply's own _run() applies the 1-2
+        # raw_bubbles goes in unchecked (TASK-385, F2): _checked_reply's own _run() applies the 1-2
         # bubble style check now, so a violation on the first pass is a corrective retry, not an
         # exception straight out of turn(). TASK-302 point 4: 3 bubbles, not 2, ONLY on the turn
         # `warming` fired on -- every other turn (including this thread's very next one) stays at
@@ -1924,7 +1924,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         persist_named = [n for n in named if GR.fold(n) not in turn_only]
         if persist_named:
             card[GROUNDED_KEY] = sorted({*(card.get(GROUNDED_KEY) or []), *persist_named})
-            # TASK-151: the POSTINGS those names were grounded on, so the next turn's STALE re-check
+            # TASK-380: the POSTINGS those names were grounded on, so the next turn's STALE re-check
             # is about the opening (Ivan's rule (a)) and not only about the house keeping any
             # opening at all.
             grounded_postings = {checked["evidence"]["postings"][GR.fold(n)]
@@ -1945,7 +1945,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
             ESC.record_flag(card, ESC.EXHAUSTIVE_CLAIM_SUSPECTED,
                             "reply may not disclose the full remainder (reply already sent): "
                             + "; ".join(repr(s) for s in checked["flagged"]))
-        # TASK-150: on a test thread only, offer the original ad of what this message named.
+        # TASK-379: on a test thread only, offer the original ad of what this message named.
         sources = SRC.sources_for(named, checked["evidence"]["postings"]) if thread.get("is_test") else []
         if sources:
             bubbles = [*bubbles[:-1], bubbles[-1] + SRC.FOOTNOTE_DE]
@@ -2008,12 +2008,12 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # 2026-09-22 (Ivan's predictable-escalation-list round): the model names WHICH of the
         # closed codes applies (escalate_reason_code) -- a code outside that set is never honoured
         # as a real escalation, so the model cannot invent its own reason to pull a human in. Either
-        # way this is additive, via record_escalation/record_flag (TASK-156 F1's own discipline): a
+        # way this is additive, via record_escalation/record_flag (TASK-385 F1's own discipline): a
         # fact this same turn already recorded above (a refused decline, a demoted exhaustive-claim
         # flag, a two-strikes blocked reply) survives next to whatever this call adds.
         ESC.record_model_escalation(card, out.get("escalate_reason_code"), out.get("escalate_reason"))
 
-    # TASK-150/151: the candidate asked for the original ads, so they go out NEXT TO whatever the
+    # TASK-379/380: the candidate asked for the original ads, so they go out NEXT TO whatever the
     # turn already had to say -- appended in code, from board rows, re-resolved against the live
     # board at this moment. A declined thread stays silent; everything else answers both.
     if wants_sources and not card.get("declined"):
@@ -2022,7 +2022,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         model_bubbles = bubbles
         action = action if model_bubbles[:-1] else "test_source_links"
 
-    # TASK-144: the funnel stage the card is in after this turn, and when it entered it. Recomputed
+    # TASK-373: the funnel stage the card is in after this turn, and when it entered it. Recomputed
     # from the gates (funnel_stage), never carried forward blindly -- a stage that moved backwards
     # because a fact was corrected is a real state change and gets its own timestamp.
     stage = funnel_stage(requirement_scoreboard(card))
@@ -2038,7 +2038,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     return result
 
 
-# --- reuse of documents imported from the earlier contact (TASK-205) ------------------------------------
+# --- reuse of documents imported from the earlier contact (TASK-342) ------------------------------------
 
 def _decide_document_reuse(card, reuse, at):
     """Apply the model's ``document_reuse`` {confirmed_ids, declined_ids} to the imported entries of

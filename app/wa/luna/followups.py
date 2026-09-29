@@ -5,13 +5,13 @@ messages"). This is the scaled-down equivalent: same tiered idea, a much simpler
 fixed reviewable German nudge text rather than a model call. An unprompted, system-initiated
 message is not what app.wa.luna_brain.turn()'s "the candidate just said X" contract was built for,
 and a fixed, reviewable nudge is the safer choice for something nobody asked the model to say. A
-quiet-hours window (TASK-196) and a durable cross-process dedup claim (TASK-93, ST.claim_nudge) ARE
+quiet-hours window (TASK-196) and a durable cross-process dedup claim (TASK-337, ST.claim_nudge) ARE
 ported, though: see _in_quiet_hours and run() below.
 
 A thread is eligible once: not stopped, not finished (reporting.stage_for() not in TERMINAL_STAGES --
-TASK-197, TASK-204), reporting.ball_for()=='them' (we already answered, no reply since; a recorded no_send
+TASK-338, TASK-204), reporting.ball_for()=='them' (we already answered, no reply since; a recorded no_send
 is 'silent', not 'them'), the candidate wrote at least once (TASK-204) and after the latest campaign template
-on the card (TASK-206), their last message is not unread media (card._unread_media: a voice note got the
+on the card (TASK-343), their last message is not unread media (card._unread_media: a voice note got the
 MEDIA_REPLY promise that a colleague looks at it), and enough time has passed since our last outbound message to cross a tier it has
 not already gotten a nudge for in this streak. A streak resets the moment the candidate replies --
 derived from how many nudges have been sent since their own last message, not a separate counter
@@ -34,7 +34,7 @@ from . import reporting as REP
 
 _EPOCH = "0001-01-01T00:00:00+00:00"
 
-# TASK-197: stages where the conversation is over from the candidate's side -- consent given (a
+# TASK-338: stages where the conversation is over from the candidate's side -- consent given (a
 # human takes it from here) or told they are not placeable. Such a thread always ends with our own
 # message, so ball_for()=='them' alone would nudge it; found live on a consented thread that got
 # "sind Sie noch da?" twice the next morning. TASK-204: declined (after the one fixed ack) and
@@ -83,7 +83,7 @@ def run(client=None, phones=None):
     [] immediately, with no thread even looked at, during quiet hours (TASK-196) -- a nudge due
     during that window is not lost, just delayed: _eligible_tier is driven by elapsed time since
     last_outbound_at, so the next 15-min timer tick outside the window finds the same tier still
-    due and sends it then. Every send is additionally gated on ST.claim_nudge (TASK-93) so a
+    due and sends it then. Every send is additionally gated on ST.claim_nudge (TASK-337) so a
     second, overlapping invocation of this same sweep (or, in future, a different campaign trigger
     deciding to message the same candidate) cannot both send -- the in-process ST._lock alone
     would not stop that across two separate processes."""
@@ -114,7 +114,7 @@ def run(client=None, phones=None):
                 continue
             campaign = t["slots"].get("campaign") or {}
             if campaign.get("sent_at") and (t.get("last_inbound_at") or "") < campaign["sent_at"]:
-                # TASK-206: no reply since our campaign template (the candidate wrote only before it) -- a
+                # TASK-343: no reply since our campaign template (the candidate wrote only before it) -- a
                 # non-responder, nothing further.
                 continue
             last_in = ST.last_inbound(c, phone)
@@ -125,13 +125,13 @@ def run(client=None, phones=None):
             tier = _eligible_tier(c, phone, t.get("last_outbound_at"), t.get("last_inbound_at"))
             if tier is None:
                 continue
-            # TASK-93: the streak anchor (same value _eligible_tier's own "since" uses) is part of
+            # TASK-337: the streak anchor (same value _eligible_tier's own "since" uses) is part of
             # the fingerprint so a later, legitimate streak reusing this same tier index is never
             # falsely blocked by an earlier claim.
             since = t.get("last_inbound_at") or _EPOCH
             if not ST.claim_nudge(c, phone, f"followup:{tier}:{since}"):
                 continue
-            # The nudge's own turn key (TASK-146). A rail whose messages have no provider id needs
+            # The nudge's own turn key (TASK-375). A rail whose messages have no provider id needs
             # one per send or ``api._send`` refuses, and every nudge on the phone rail was failing
             # here and writing a wa_send_failures row per phone. This key is the fingerprint the
             # claim two lines up already treats as this nudge's identity -- deterministic, unique

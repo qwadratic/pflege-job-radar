@@ -31,7 +31,7 @@ merely being suspicious, both used to read as "escalated"). Two sources today:
     is missing a real category and belongs back in front of Ivan, not silently expanded by the model.
 
 Both tiers append (never overwrite): several facts about one turn all survive, each under its own
-code, the same discipline TASK-156 already established for the single string field this splits.
+code, the same discipline TASK-385 already established for the single string field this splits.
 """
 from __future__ import annotations
 

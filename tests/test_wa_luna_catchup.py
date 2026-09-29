@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/catchup.py (TASK-182) -- fixture threads only, no real subprocess.
+"""Offline tests for app/wa/luna/catchup.py (TASK-332) -- fixture threads only, no real subprocess.
 Fakes app.wa.luna_brain.turn and app.wa.meta.Client, same patterns as
 tests/test_wa_process_owed_turn.py."""
 import time

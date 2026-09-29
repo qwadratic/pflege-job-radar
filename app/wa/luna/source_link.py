@@ -1,4 +1,4 @@
-"""TASK-150/151: the original ad behind what a TEST thread was told, and nothing else.
+"""TASK-379/380: the original ad behind what a TEST thread was told, and nothing else.
 
 Ivan, 2026-09-21, for the acceptance phase only: his business partner has to be able to check that
 the vacancies this bot names are real. So a message that names a posting carries a footnote offering
@@ -16,7 +16,7 @@ appends the footnote AFTER app/wa/luna/grounding.py:check_reply has passed the m
 LINK rule still holds on everything the model wrote), and appends the answer to the follow-up ask to
 whatever the model wrote that turn.
 
-THE ASK NEVER TAKES THE TURN (TASK-151). It used to: ``asks_for_source`` matched "original" and
+THE ASK NEVER TAKES THE TURN (TASK-380). It used to: ``asks_for_source`` matched "original" and
 "anzeige" as bare substrings next to a question mark, so "Brauchen Sie das Original meiner Urkunde?"
 -- the single gate this funnel exists to close -- was answered with a list of job links and the model
 was never called. The detector now needs an explicit request for the AD, and even then the model

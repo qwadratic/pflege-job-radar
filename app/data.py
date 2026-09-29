@@ -495,7 +495,7 @@ _TOWN_CONNECTORS = {"a", "am", "an", "b", "bei", "d", "das", "dem", "den", "der"
 _TOWN_ABBREV = {"opf": "oberpfalz", "obb": "oberbayern", "ndb": "niederbayern", "ofr": "oberfranken",
                 "mfr": "mittelfranken", "ufr": "unterfranken", "bay": "bayern", "schw": "schwaben",
                 "do": "donau"}
-# 'Landkreis Coburg' has meant the town Coburg since TASK-145 and still does; the prefix is dropped
+# 'Landkreis Coburg' has meant the town Coburg since TASK-374 and still does; the prefix is dropped
 # here so it reaches the town, and town_spellings() only falls through to the registry's Landkreis
 # column when no town answers at all (that is what 'Landkreis Miesbach' needs -- the board has no town
 # of that name, its clinic sits in Hausham).
@@ -655,10 +655,6 @@ def landkreis_towns():
         if lk and town:
             out[lk].add(town)
     return dict(out)
-
-
-def _split(v):
-    return [x.strip() for x in (v or "").split(",") if x.strip()]
 
 
 def _split(v):

@@ -2,16 +2,16 @@
 (pflege_jobs.classify, driven by patterns.json) read the CV, plus a `cv` pattern section for experience,
 languages and skill tags. An OpenAI-compatible LLM (env LLM_API_BASE) may refine the profile when reachable.
 
-analyse_llm() is a second, independent extraction path (TASK-65): the `claude` CLI reads the CV text
+analyse_llm() is a second, independent extraction path (TASK-325): the `claude` CLI reads the CV text
 (+ optional chat history) and reasons the profile directly, instead of regex. Same {profile, matches}
 output shape as analyse() -- both call the same deterministic match() once a profile exists, so the
 compared thing is extraction quality, not job-matching scoring. See evals/cv/run.py --path=llm and
 evals/cv/README.md for the measured comparison and which path is recommended.
 
-extract_text_vision()/VisionClient (TASK-67) is a third extraction primitive, for images and
+extract_text_vision()/VisionClient (TASK-327) is a third extraction primitive, for images and
 scanned (text-layer-less) PDFs: the same `claude` CLI subprocess pattern, but asking the model to
 read a FILE via its own built-in Read tool instead of reasoning over text on stdin. analyse_candidate()
-(TASK-67) is the WhatsApp-harness entry point: analyse_llm() plus this candidate's own chat history
+(TASK-327) is the WhatsApp-harness entry point: analyse_llm() plus this candidate's own chat history
 (app.wa.store.history), for cv_text/urkunde_text the harness extracted from their uploads."""
 import io
 import json
@@ -290,7 +290,7 @@ def _llm_refine(text, prof):
         return prof, False
 
 
-# --- LLM-driven profile extraction (TASK-65: compared against profile_from_text above, not a --------
+# --- LLM-driven profile extraction (TASK-325: compared against profile_from_text above, not a --------
 # --- silent fallback for it -- see evals/cv/README.md for the measured result) ----------------------
 #
 # Calls the real `claude` CLI in non-interactive print mode, the same subprocess pattern as
@@ -452,14 +452,14 @@ class LLMClient:
         return _validate_llm_profile(self._call(system_text, user_text))
 
 
-# --- document-type classification (TASK-81) -----------------------------------------------------
+# --- document-type classification (TASK-334) -----------------------------------------------------
 # A real, qualification-relevant gap the real reference system already closes
 # (candidate_document_vision.py's doc_type taxonomy + explicit Helfer/Fachkraft discrimination):
 # a Pflegehelfer/-fachhelfer/-fachassistent-level certificate must never read as satisfying a
 # Fachkraft qualification path. A separate, small, cheap classification call rather than folding
 # this into profile_from_text_llm -- that call reasons over merged CV+Urkunde text at consent time
 # (analyse_candidate), long after a single upload needs its own type known (app/wa/api.py's media
-# intake, TASK-67).
+# intake, TASK-327).
 
 # auslaendisches_diplom (TASK-96 review 2026-09-14): a home-country nursing diploma used to come back as
 # urkunde/fachkraft (live: Ukrainian "Nurse, Junior Specialist", Philippine BSN, Indian GNM), and the
@@ -546,7 +546,7 @@ def analyse_llm(filename=None, blob=None, text=None, chat_history=None, limit=50
     return {"profile": prof, "matches": match(prof, limit), "used_llm": True, "chars": len(txt)}
 
 
-# --- vision text extraction: images, and scanned (text-layer-less) PDFs (TASK-67) ------------------
+# --- vision text extraction: images, and scanned (text-layer-less) PDFs (TASK-327) ------------------
 #
 # extract_text() has no signal for "scanned PDF, no text layer" vs. "genuinely empty" -- pdfplumber
 # silently returns "" either way -- and has nothing at all for a bare image. This is the fallback for
@@ -554,7 +554,7 @@ def analyse_llm(filename=None, blob=None, text=None, chat_history=None, limit=50
 # subprocess pattern as LLMClient above, but asks the model to read a FILE via its own built-in Read
 # tool rather than reasoning over text handed to it on stdin.
 #
-# A small spike (documented in TASK-67's backlog notes, not repeated here) confirmed this works, with
+# A small spike (documented in TASK-327's backlog notes, not repeated here) confirmed this works, with
 # two things that are NOT obvious from the CLI's own --help:
 #   1. `--tools ""` (used by LLMClient/luna_brain.Client to silence every built-in tool) also removes
 #      the Read tool -- with it, the model reports it has no way to open a local file at all. This
@@ -744,8 +744,8 @@ def analyse(filename=None, blob=None, text=None, limit=50):
 
 
 def analyse_candidate(phone, conn, cv_text=None, urkunde_text=None, limit=50, chat_limit=50, client=None):
-    """CV/Urkunde intake for a WhatsApp candidate (TASK-67) -- the same analyse_llm() extraction
-    path TASK-65 measured as the winner over the deterministic regex path (evals/cv/README.md),
+    """CV/Urkunde intake for a WhatsApp candidate (TASK-327) -- the same analyse_llm() extraction
+    path TASK-325 measured as the winner over the deterministic regex path (evals/cv/README.md),
     but folding in this thread's own chat history (app.wa.store.history) alongside whatever
     cv_text/urkunde_text the harness has already extracted from their uploads (app/wa/api.py's
     media intake merges those onto the Luna card), so the model reasons over everything the

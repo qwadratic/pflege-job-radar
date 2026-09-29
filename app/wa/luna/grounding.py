@@ -1,4 +1,4 @@
-"""TASK-144/146/151: the evidence a reply must stay inside, and the checks that hold it there.
+"""TASK-373/375/380: the evidence a reply must stay inside, and the checks that hold it there.
 
 prompts.py has told the model since TASK-195 to name only a clinic a tool call just returned. Nothing
 checked it, and a prompt is not a guarantee -- so this module reconstructs what the board tools
@@ -8,22 +8,22 @@ and the three things the audit of 2026-09-21 proved were missing from them:
 1. VOLUME -- at most ``offer.OFFER_LIMIT`` POSITIONS in one message. Positions, not name mentions: a
    list of ten jobs without a single clinic name is still ten positions, and it used to pass
    untouched because nothing in it looked like a name (audit A1). A LIST IS NOT A MARKER SHAPE
-   (TASK-151): the same ten jobs as prose, one per line, or under letter markers counted as zero.
+   (TASK-380): the same ten jobs as prose, one per line, or under letter markers counted as zero.
 2. NO INVENTION -- a clinic named in the reply must be one this thread's tools really returned. The
    name has to be the board's own or a prefix of it, never a longer string built around it: writing
    "Kreisklinik Mindelheim Nord" around a real "Kreisklinik Mindelheim" invented a site of a real
-   house and put it in the thread's memory as permanently sayable (TASK-151).
+   house and put it in the thread's memory as permanently sayable (TASK-380).
 3. COUNT / BRANCHES -- when more matched than the message offers, the message says how many more,
    and the offer turn puts both branches (narrow / pool) to the candidate. Prompt-only until
-   TASK-144: a reply naming five with neither branch offered was accepted (audit D). These are the
+   TASK-373: a reply naming five with neither branch offered was accepted (audit D). These are the
    OFFER turn's rules and key on the positions the message offers -- keying on how many names it
    carried let the same falsehood out whenever the positions were listed without naming a house, and
    forced a factual follow-up about two houses it had already offered to recite a total and both
-   branches or die (TASK-151). "Never say these are all there are" rode along in this same rule
-   through TASK-144/151 and round 4 below, as a BLOCK -- ROUND 5 took it off the blocking path
+   branches or die (TASK-380). "Never say these are all there are" rode along in this same rule
+   through TASK-373/380 and round 4 below, as a BLOCK -- ROUND 5 took it off the blocking path
    entirely; see there for why.
 
-   ROUND 2 (2026-09-22, an Opus reviewer live on the real board). TASK-151's fix was verified only by
+   ROUND 2 (2026-09-22, an Opus reviewer live on the real board). TASK-380's fix was verified only by
    hand-injecting ``counts`` -- never against a real turn -- and two holes survived it. First, the
    board-wide open-jobs/clinic totals ``market_snapshot`` already computes never reached ``counts``
    on a real turn (they only entered it inside the offer, i.e. once every funnel gate was settled),
@@ -151,11 +151,11 @@ and the three things the audit of 2026-09-21 proved were missing from them:
    sentence of the same reply still flags.
 4. LINK -- no URL in an outgoing bubble. offer.py keeps the board's links out of the payload the model
    writes from; this is the other half, on the text, so a link the model wrote from its own memory
-   cannot go out either (audit D). Any host shape, not a TLD allowlist (TASK-151).
+   cannot go out either (audit D). Any host shape, not a TLD allowlist (TASK-380).
 5. STALE -- a POSTING this thread grounded on an earlier turn is not evidence that it is still open
    now. Turn 2 confirmed a posting as free after the verifier had marked it gone (audit E); keying
    the re-check on the CLINIC let the same sentence out whenever the house kept any other opening
-   (TASK-151).
+   (TASK-380).
 
 A REJECTED REPLY IS NOT SILENCE (audit C). ``check_reply`` raises for the four BLOCKING rules (NO
 INVENTION, COUNT's figure check, STALE, VOLUME with its remainder/BRANCHES obligation);
@@ -195,7 +195,7 @@ the board no longer has, may appear in any sentence that does not CLAIM a vacanc
 Krankenhaus Coburg-West habe ich leider nicht", "beim Sana Klinikum Coburg ist gerade alles besetzt",
 "die Stelle ist inzwischen weg") and costs no position. The same name in a sentence that says the
 house is hiring is a claim about a house nobody looked up, which is exactly rule 2. The burden sits
-on the sentence OFFERING the position, not on the sentence denying it (TASK-151): requiring a
+on the sentence OFFERING the position, not on the sentence denying it (TASK-380): requiring a
 nicht/kein token in the denial meant ordinary honest German -- there are many ways to say "we have
 nothing there" -- was rejected as an invention and the candidate got the holding message.
 
@@ -226,7 +226,7 @@ TOOL_LOG_NAME = "tool_calls.jsonl"
 
 # The SEED head words: the generic kinds of house, matched as a substring of a token so
 # "Rotkreuzklinikum", "Schön Klinik", "Sana Kliniken", "St. Anna Stift" and "Uniklinikum" are all
-# reached. They are a seed, not the vocabulary (TASK-151): ``board_head_words`` adds every word the
+# reached. They are a seed, not the vocabulary (TASK-380): ``board_head_words`` adds every word the
 # live board's own clinic names are built from, so the detector grows with the board instead of with
 # an edit. Before that this tuple WAS the whole list, and a fabricated house using none of its ten
 # stems -- "Universitätsmedizin Augsburg", "Gesundheitszentrum München Nord" -- was invisible to
@@ -250,7 +250,7 @@ _NOT_A_NAME = {"ihr", "ihre", "ihrer", "ihres", "ihrem", "ihren", "sie", "ihnen"
 # German capitalizes the first word of a sentence, so a span often starts with an article, a
 # preposition or a quantifier that is not part of the name ("Die Schön Klinik München", "Manche
 # Kliniken bieten eine Unterkunft"). They are dropped from the FRONT only, so a failure message
-# names the house rather than the sentence. The quantifiers matter more since TASK-151 widened the
+# names the house rather than the sentence. The quantifiers matter more since TASK-380 widened the
 # head vocabulary: "Manche Kliniken" would otherwise be a span carrying a head word.
 #
 # "über/rund/etwa/ca/knapp/fast/gut/mehr" -- _APPROX_MARKER_RE's own words, sentence-initial
@@ -399,7 +399,7 @@ def replay(calls, phone=None):
     through
     tools_server's own query code.
 
-    WHAT THE TOOL HANDED BACK, NOT WHAT THE QUERY MATCHED (TASK-146). The listing tools show the
+    WHAT THE TOOL HANDED BACK, NOT WHAT THE QUERY MATCHED (TASK-375). The listing tools show the
     first ``tools_server.LISTING_LIMIT`` rows and a total, so those rows are the only ones the model
     ever saw -- and the replay is cut to the same rows, through the same ``_listing``. Replaying
     without the limit used to make every clinic the query matched valid evidence: on a board of 100
@@ -595,7 +595,7 @@ def board_cities():
 
 def _posting_of(rows):
     """{folded clinic name: posting_id} over rows that carry one -- which posting a named house was
-    named FROM, for the test-thread evidence footnote (offer.py, TASK-150)."""
+    named FROM, for the test-thread evidence footnote (offer.py, TASK-379)."""
     out = {}
     for row in rows:
         name = clinic_name_of(row) or (row.get("name") or "").strip()
@@ -615,7 +615,7 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
       remembered      the names this thread had already been shown before this turn
       deniable        folded names the reply may only DENY (stale ones, and the houses the candidate
                       themself just named)
-      postings        {folded clinic name: posting_id} it was named from THIS turn (TASK-150)
+      postings        {folded clinic name: posting_id} it was named from THIS turn (TASK-379)
       counts          every truthful market number for this turn: the offer's totals/remainders
                       (once there is an offer), this turn's own tool-call totals, the warming turn's
                       own role+city-filtered total once it fires (TASK-302 point 5), and -- always,
@@ -629,7 +629,7 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
                       the ONE posting the thread already picked) -- names may claim them, but they
                       must never reach permanent memory; see the TASK-302 point 5 comment below
 
-    STALENESS IS ABOUT THE POSTING, NOT THE HOUSE (TASK-151). Ivan's rule (a) is about the opening.
+    STALENESS IS ABOUT THE POSTING, NOT THE HOUSE (TASK-380). Ivan's rule (a) is about the opening.
     The memory used to hold clinic names only, so a house that keeps ANY live posting was never
     stale -- and "die Stelle in Onkologie ist noch frei" went out after the verifier had removed
     every Onkologie posting the house had (reviewer F7). The posting ids a turn grounded on ride
@@ -726,7 +726,7 @@ def turn_evidence(snapshot, calls, known=(), phone=None, inbound="", known_posti
             found.update({entry["total"], entry["total"] - len(entry["rows"]), len(entry["rows"])})
             remaining = max(remaining, entry["total"] - len(entry["rows"]))
         if entry.get("counts"):
-            # count_postings' own numbers (TASK-146 follow-up, round-3 audit): a scalar result, so
+            # count_postings' own numbers (TASK-375 follow-up, round-3 audit): a scalar result, so
             # nothing above (rows/total) ever saw it -- see _count_rows.
             found.update(v for v in entry["counts"].values() if isinstance(v, int))
         counts.update(found)
@@ -804,7 +804,7 @@ def board_job_words():
 
     This is the domain's ordinary German: "Pflegefachkräfte", "Nachtdienst", "Intensivstation",
     "Vollzeit". A span that is a head word plus one of these is prose, not a house, and reading it as
-    a house failed the whole turn and left the candidate with silence (audit C, TASK-146). Places are
+    a house failed the whole turn and left the candidate with silence (audit C, TASK-375). Places are
     subtracted because a title regularly names the town, and the town is exactly what makes
     "Universitätsmedizin Augsburg" a name."""
     words, place = set(), board_place_words()
@@ -831,7 +831,7 @@ def _inflection_of(word, vocabulary):
 def board_head_words():
     """Every word the live board's own clinic names are built from, minus places and company forms.
 
-    THE DETECTOR GROWS WITH THE BOARD, NOT WITH AN EDIT (TASK-151). ``_CLINIC_STEMS`` is ten hand-
+    THE DETECTOR GROWS WITH THE BOARD, NOT WITH AN EDIT (TASK-380). ``_CLINIC_STEMS`` is ten hand-
     written kinds of house; real German hospital names routinely carry none of them, and the live
     board itself has 26 stem-less entries ("Diakoneo KdöR", "Thoraxzentrum Bezirk Unterfranken",
     "Salus Gesundheitszentrum"). So the board's own naming vocabulary is read off the board the same
@@ -1087,7 +1087,7 @@ def mentions(text, board=None, corroborating=None, heads=None, job_words=None):
 
 # A listed item is a position the candidate can act on, named house or not: "10 Stellen: 1) OP
 # Vollzeit; 2) OP Teilzeit; ..." is ten positions, and the cap saw none of them because it counted
-# detected clinic names (audit A1). TASK-151: a list is not a marker shape. The same ten jobs
+# detected clinic names (audit A1). TASK-380: a list is not a marker shape. The same ten jobs
 # written as prose, one per line, or under letter markers were all counted as ZERO and sent, because
 # only "1)" and "-" were read as a list. So four shapes are read, and the first that yields two or
 # more items decides -- a message offers positions in one layout, not four at once.
@@ -1231,14 +1231,14 @@ _SENTENCE_RE = re.compile(r"[^.!?\n]+[.!?\n]?")
 # A POSITIVE availability claim: this house is hiring, this post is open. What a name in a reply has
 # to be grounded FOR (see DENIABLE NAMES above and ``_shaped``). Everything else a reply says about
 # a house -- that it is in the south, that it is full, that the post is gone -- claims no vacancy and
-# costs no position. Before TASK-151 the burden sat on the DENYING sentence instead, through a
+# costs no position. Before TASK-380 the burden sat on the DENYING sentence instead, through a
 # four-token list, so "Beim Sana Klinikum Coburg ist gerade alles besetzt" was rejected as an
 # invention and the candidate got the holding message (reviewer F10).
 _OFFERS_RE = re.compile(r"\b(sucht|suchen|stellt\s+\w+\s+ein|einstellen|bietet|bieten|frei|offen|"
                         r"verf(ü|u)gbar|ausgeschrieben|vakant|zu\s+haben|hat\s+(noch\s+)?(eine|"
                         r"zwei|drei|mehrere|freie)\b)", re.I)
 
-# "These five are all there is" -- false whenever more matched. TASK-151 stopped enumerating the
+# "These five are all there is" -- false whenever more matched. TASK-380 stopped enumerating the
 # ways to say it: ordinary German ("Damit kennen Sie alle Kliniken", "unser komplettes Angebot",
 # "sonst nichts") walked past the five literal alternatives, and any true number riding along
 # satisfied the COUNT rule, so a false exhaustive claim went out next to a correct remainder
@@ -1249,7 +1249,7 @@ _OFFERS_RE = re.compile(r"\b(sucht|suchen|stellt\s+\w+\s+ein|einstellen|bietet|b
 # "alle", which is ungrammatical before a bare singular ("alle Klinik" is not German), "nur diese
 # Klinik" is ordinary, TRUE, NARROW German -- "only this [one] clinic [in Straubing] answered" -- and
 # the old alternative matched on "nur diese/die" ALONE, no object required at all, so that honest
-# sentence tripped the same rule TASK-151 wrote to catch "nur diese 5 Kliniken" and killed the turn
+# sentence tripped the same rule TASK-380 wrote to catch "nur diese 5 Kliniken" and killed the turn
 # twice in a row (both the reply and its corrective rewrite, reviewer run 11). So this alternative
 # now requires the same kind of PLURAL count noun the exhaustive claim is actually about, immediately
 # the way "alle ... Kliniken" does -- singular "Klinik"/"Haus"/"Stelle" no longer qualifies, only the
@@ -1290,11 +1290,11 @@ _REMAINDER_RE = re.compile(
     r"\b(\d{1,6})\b[^.!?\n]{0,30}?\b(weitere\w*|mehr|insgesamt|andere|zus(ä|a)tzlich\w*)\b", re.I)
 # A number the message ASSERTS as a count of positions or houses. Every one of these has to be true,
 # exactly or as an honest German approximation (see _approx_supported below); hours, years and grades
-# are not counts of anything on the board and are not touched. Before TASK-151 the rule was satisfied
+# are not counts of anything on the board and are not touched. Before TASK-380 the rule was satisfied
 # by the PRESENCE of one true number anywhere, so "über 4000 offene Pflegestellen, davon 27 weitere
 # hier" passed on the 27 (reviewer F7).
 #
-# GERMAN NUMBER LITERALS (defect found 2026-09-22, live board, TASK-144 follow-up). German groups
+# GERMAN NUMBER LITERALS (defect found 2026-09-22, live board, TASK-373 follow-up). German groups
 # thousands with a dot ("2.300") or, less often, a thin (U+2009) or non-breaking (U+00A0/U+202F)
 # space; a decimal, on the rare occasion one sits next to a count, uses a comma. The old pattern read
 # only bare ASCII digits, so "2.300" broke at the dot and the rule saw "300" -- a true "bayernweit
@@ -1371,7 +1371,7 @@ def _approx_supported(marker, n, true):
 # Any link. The payload carries none (offer.py, tools_server), so one in a bubble came out of the
 # model's own memory -- Ivan's standing rule is that a candidate never gets a board link.
 #
-# A GENERIC HOST SHAPE, NOT A TLD ALLOWLIST (TASK-151). The old seven-item list (de|com|org|net|eu|
+# A GENERIC HOST SHAPE, NOT A TLD ALLOWLIST (TASK-380). The old seven-item list (de|com|org|net|eu|
 # io|info) missed the live board's own ad URLs on .pro, .med and .bayern, and every German clinic
 # career domain on .jobs or .health (reviewer F11/F20). So any lowercase dotted host with a 2-24
 # letter last label counts. The trade-off is stated rather than guarded: a German sentence with a
@@ -1424,7 +1424,7 @@ def _resolve(mention, allowed_by_fold, board_folds):
     a reply may write the board's own name or a prefix of it ("Klinikum Nürnberg" for "Klinikum
     Nürnberg - Betriebsstätte Süd"), never a string longer than the evidence.
 
-    CONTAINMENT IS ONE-DIRECTIONAL (TASK-151). It used to go both ways, so a name CONTAINING an
+    CONTAINMENT IS ONE-DIRECTIONAL (TASK-380). It used to go both ways, so a name CONTAINING an
     evidence name was accepted: the model looked up Mindelheim, wrote "Die Kreisklinik Mindelheim
     Nord sucht Pflegefachkräfte", and an invented site of a real house went out AND was written into
     the thread's grounded memory, where it became permanently sayable (reviewer F5).
@@ -1568,7 +1568,7 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
         grounded_spans = [s for s in spans if _resolve(s["text"], allowed_by_fold, board_folds)]
         if has_link(_masked(bubble, grounded_spans)):
             raise ReplyRejected(
-                f"the reply carries a link -- LINK (TASK-144, Ivan's rule): a candidate never gets a "
+                f"the reply carries a link -- LINK (TASK-373, Ivan's rule): a candidate never gets a "
                 f"board URL or a job link. Say it in words instead. Offending bubble: {bubble[:120]!r}")
         kept = []
         for span in spans:
@@ -1603,20 +1603,20 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
             raise ReplyRejected(
                 f"the reply says a position is still open, but this thread already lost "
                 f"{list(stale)!r} / posting(s) {list(stale_postings)!r} and nothing it names "
-                f"({unbacked!r}) was looked up in THIS turn -- STALE (TASK-144, Ivan's rule (a)): "
+                f"({unbacked!r}) was looked up in THIS turn -- STALE (TASK-373, Ivan's rule (a)): "
                 f"what was true last turn is not evidence now. Search again before confirming, or "
                 f"say the position is no longer available")
     ungrounded = [m for m, name in resolved.items() if not name]
     if ungrounded:
         raise ReplyRejected(
             f"the reply names {ungrounded!r}, which no tool call on this thread returned and the "
-            f"harness offer does not contain -- NO INVENTION (TASK-144). Call the tool that would "
+            f"harness offer does not contain -- NO INVENTION (TASK-373). Call the tool that would "
             f"return it and write the turn again, or say plainly that we do not have it. "
             f"In evidence: {sorted(allowed)!r}")
     if total_positions > OF.OFFER_LIMIT:
         raise ReplyRejected(
             f"the reply carries {total_positions} positions, more than the {OF.OFFER_LIMIT} one message "
-            f"may name -- VOLUME (TASK-144): a listed item counts as a position whether or not it "
+            f"may name -- VOLUME (TASK-373): a listed item counts as a position whether or not it "
             f"names a house. Name at most {OF.OFFER_LIMIT}, say how many more matched, and offer the "
             f"two branches")
     # STRUCTURAL, not evidence (round-2 audit, 2026-09-22): facts about THIS bubble (how many
@@ -1629,7 +1629,7 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
         raise ReplyRejected(
             f"the reply states {seen} as a count of positions or clinics, and none of those is a "
             f"number this turn's evidence supports, exactly or as an honest approximation -- COUNT "
-            f"(TASK-144, Ivan's rule (b)). Drop the figure or replace it with one of these: "
+            f"(TASK-373, Ivan's rule (b)). Drop the figure or replace it with one of these: "
             f"{sorted(counts)!r}")
     # "These are all there are" is a FLAG, not a BLOCK (ROUND 5, 2026-09-22 -- module docstring has
     # the asymmetry argument). Read per sentence and gated on ``remaining > 0`` the same way it always
@@ -1641,7 +1641,7 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
     if claim and flagged is not None:
         flagged.append(claim)
     # The remainder and the two branches are the OFFER turn's rules, so they key on the positions
-    # this message OFFERS -- not on how many clinic names it happens to carry (TASK-151). Keying on
+    # this message OFFERS -- not on how many clinic names it happens to carry (TASK-380). Keying on
     # names forced a factual follow-up about two houses it had already offered to recite a total and
     # both branch wordings or die, twice in a row, and the candidate got the holding message
     # (reviewer F11); and it missed a five-item list that named no house at all (reviewer F13).
@@ -1650,7 +1650,7 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
                    for n in m.groups() if n and str(n).isdigit()):
             raise ReplyRejected(
                 f"the reply offers {offered} positions while {remaining} more matched, without "
-                f"saying how many more -- COUNT (TASK-144, Ivan's rule (b)). Write the remainder next "
+                f"saying how many more -- COUNT (TASK-373, Ivan's rule (b)). Write the remainder next "
                 f"to a word like 'weitere' or 'insgesamt', using one of these numbers: {sorted(counts)!r}")
     # The EVIDENCE spelling, never the model's: what goes into the thread's grounded memory has to be
     # a name the board really has (reviewer F5).

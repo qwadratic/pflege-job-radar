@@ -47,7 +47,7 @@ DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A
 # not hand anything to Meta, so a webhook can be pointed at a fresh deployment without messaging anyone.
 AUTOSEND = os.environ.get("WA_AUTOSEND", "").strip() in ("1", "true", "yes")
 
-# Which transport carries an outbound message (TASK-219, app/wa/transport.py): "meta" is the Cloud
+# Which transport carries an outbound message (TASK-349, app/wa/transport.py): "meta" is the Cloud
 # API (app/wa/meta.py), "bridge" is the phone rail on the remote machine (app/wa/bridge.py). This is
 # the rail a NEW thread starts on: an existing thread keeps the rail pinned on wa_threads (TASK-220),
 # so flipping this variable never moves a live conversation to a different sender number. Same
@@ -72,7 +72,7 @@ META_SCOPE = os.environ.get("WA_META_SCOPE", "all").strip().lower()
 if META_SCOPE not in ("all", "test_only"):
     raise RuntimeError(f"WA_META_SCOPE={META_SCOPE!r} is not 'all' or 'test_only'")
 
-# The phone rail's executor (TASK-223, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
+# The phone rail's executor (TASK-350, app/wa/bridge.py). WA_BRIDGE_URL is the server-side end of the
 # one ssh -R leg -- the executor listens on the remote machine and the tunnel presents it on loopback
 # here, which is also why no secret of Meta's ever travels: the WhatsApp account lives on the handset
 # and this rail holds no credential of its own beyond these two tokens.
@@ -83,14 +83,14 @@ BRIDGE_URL = os.environ.get("WA_BRIDGE_URL", "").strip()
 if BRIDGE_URL and not BRIDGE_URL.startswith(("http://", "https://")):
     raise RuntimeError(f"WA_BRIDGE_URL={BRIDGE_URL!r} is not an http(s) URL")
 # Bearer on every /v1 call to the executor. Its counterpart for the other direction (executor ->
-# POST /api/wa/bridge-webhook) is a separate secret, TASK-123: a leak in one direction must not grant
+# POST /api/wa/bridge-webhook) is a separate secret, TASK-352: a leak in one direction must not grant
 # the other.
 BRIDGE_TOKEN = os.environ.get("WA_BRIDGE_TOKEN", "").strip()
 # 90s, not HTTP_TIMEOUT_SEC's 30: a send here is a human-paced sequence of UI actions on a real
 # handset -- open the chat, type at 3-5 characters per second, press send, then poll the bubble for a
 # delivery tick -- and their own verify loop alone runs up to 30s (whatsapp.py:123). Plan §6.
 BRIDGE_TIMEOUT_SEC = int(os.environ.get("WA_BRIDGE_TIMEOUT_SEC", "90") or "90")
-# The other direction's secret (TASK-123): the executor pushes inbound to POST /api/wa/bridge-webhook
+# The other direction's secret (TASK-352): the executor pushes inbound to POST /api/wa/bridge-webhook
 # with this one in X-Pflege-Bridge-Token. Separate from BRIDGE_TOKEN above on purpose -- a leak in one
 # direction must not grant the other. Empty means the door is shut: app/wa/bridge_api.py answers 403
 # rather than accept an unauthenticated payload that would enter a real conversation.
@@ -113,7 +113,7 @@ BRIDGE_PHONE_NUMBER_ID = os.environ.get("WA_BRIDGE_PHONE_NUMBER_ID", "").strip()
 LUNA_MEDIA_HOST = os.environ.get("WA_LUNA_MEDIA_HOST", "").strip() or "macmini"
 LUNA_MEDIA_DIR = os.environ.get("WA_LUNA_MEDIA_DIR", "").strip() or "/home/cursorworker1/wa_luna_media"
 
-# TASK-122: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-224)
+# TASK-351: on the phone rail there is no button to tap at all, so app/wa/luna/choices.py (TASK-224)
 # may recover a typed "ja"/"1" into app/wa/luna_brain.CONSENT_YES_ID -- the one place a typed reply
 # stands in for a tap luna_brain.py otherwise requires. Plan ADDENDUM item 5 (Ivan, 2026-09-21):
 # ships ON. Unlike AUTOSEND/INTERNAL_WEBHOOK_ENABLED above, an unrecognized value raises at import
@@ -156,9 +156,9 @@ LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "max").strip() or "max"
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if
 # `claude` is not the right one to invoke on PATH.
 LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "claude"
-# 60s (this repo's original default) started timing out for real once TASK-166 added a tool
+# 60s (this repo's original default) started timing out for real once TASK-323 added a tool
 # call in the loop and bumped effort to "high" -- both add real latency on top of the base
-# reply time, observed live during TASK-172's E2E run (subprocess.TimeoutExpired at 60s on an
+# reply time, observed live during TASK-328's E2E run (subprocess.TimeoutExpired at 60s on an
 # otherwise-ordinary turn). 120s gave that room for an ordinary turn, but TASK-271 found nobody
 # had ever checked it against the one tool call that costs the most: show_clinic_photos
 # (app/wa/luna/tools_server.py) downloads and stages up to 5 photos and then makes ONE
@@ -184,7 +184,7 @@ LUNA_CLAUDE_BIN = os.environ.get("WA_LUNA_CLAUDE_BIN", "claude").strip() or "cla
 # 15 + 5*70 + 187 = 552s. This adds nothing for the model's own generation time before or after
 # the tool call -- LUNA_TIMEOUT_SEC wraps the whole `claude -p` subprocess, not just one tool --
 # because unlike the figures above there is no measured number for that yet; if it turns out to
-# matter, measure it live the way TASK-172 measured the original 60s overrun, do not guess it
+# matter, measure it live the way TASK-328 measured the original 60s overrun, do not guess it
 # here. Real cost of raising this floor: an ordinary, genuinely hung turn that never calls
 # show_clinic_photos at all now also waits up to 552s before this call gives up on it, where it
 # used to wait 120s -- unavoidable as long as one constant covers every turn shape.
@@ -198,7 +198,7 @@ _LUNA_TIMEOUT_DEFAULT_SEC = (_LUNA_PHOTO_EXPOSE_FETCH_SEC
 LUNA_TIMEOUT_SEC = int(os.environ.get("WA_LUNA_TIMEOUT_SEC", str(_LUNA_TIMEOUT_DEFAULT_SEC))
                       or str(_LUNA_TIMEOUT_DEFAULT_SEC))
 
-# The refusal classifier (app/wa/luna/refusal.py, TASK-155, Ivan 2026-09-22): a small-model second
+# The refusal classifier (app/wa/luna/refusal.py, TASK-384, Ivan 2026-09-22): a small-model second
 # opinion on whether the candidate's own text is an unambiguous refusal to continue the conversation,
 # called only at the one moment the brain is about to end a thread on a decline -- not on every turn,
 # so this stays cheap where it matters. Its own model constant rather than reusing LUNA_MODEL: this is
@@ -210,11 +210,11 @@ if not REFUSAL_MODEL:
     raise RuntimeError("WA_REFUSAL_MODEL is set but empty -- unset it for the default (claude-haiku-4-5) "
                        "or give it a real model id")
 # A one-shot classification with no tools and no session needs none of LUNA_TIMEOUT_SEC's 120s
-# reasons, so this began at 20s. Measured on this host (TASK-157 verification, 2026-09-22): 2 of 6
+# reasons, so this began at 20s. Measured on this host (TASK-386 verification, 2026-09-22): 2 of 6
 # probes exceeded 20s and every one of them completed inside 90s. "Not a refusal" is the safe
 # direction for a WRONG answer, but a TIMEOUT is not free: the decline is then not honoured, so a
 # candidate who typed a terse "Nein" stays in the follow-up nudge population -- the exact harm
-# TASK-157 closed, reached through latency instead. The call runs only on the decline path, which is
+# TASK-386 closed, reached through latency instead. The call runs only on the decline path, which is
 # rare, so waiting costs almost nothing and finishing is worth much more than finishing fast.
 _REFUSAL_TIMEOUT_RAW = os.environ.get("WA_REFUSAL_TIMEOUT_SEC", "90").strip() or "90"
 try:
@@ -373,7 +373,7 @@ LUNA_SESSION_STORE = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", "").strip(
 # Backstop against a runaway/abusive loop burning real claude CLI cost, not a conversational
 # throttle (TASK-180, parity with the real system's CATCHUP_MODEL_RUNS_PER_HOUR): a normal
 # back-and-forth never gets near this. Hitting it skips the brain call for that turn without
-# losing the inbound message -- the catch-up driver (TASK-182) backfills the reply shortly after.
+# losing the inbound message -- the catch-up driver (TASK-332) backfills the reply shortly after.
 # 0 disables the cap entirely.
 LUNA_MAX_CALLS_PER_HOUR = int(os.environ.get("WA_LUNA_MAX_CALLS_PER_HOUR", "20") or "20")
 
@@ -388,7 +388,7 @@ STUCK_REPLY_HOURS = float(os.environ.get("WA_STUCK_REPLY_HOURS", "2") or "2")
 # (app/wa/luna_brain.py:_warming_candidates).
 LUNA_WARMING_RADIUS_KM = float(os.environ.get("WA_LUNA_WARMING_RADIUS_KM", "30") or "30")
 
-# Conversation ownership (TASK-179, app/wa/routing.py): a plain, newline-delimited, operator-
+# Conversation ownership (TASK-331, app/wa/routing.py): a plain, newline-delimited, operator-
 # produced export of phone numbers already known to the real production system -- unset means
 # routing a brand-new phone cannot be decided at all (see routing._is_known_to_real_system), not
 # that everything defaults one way or the other.
@@ -409,7 +409,7 @@ OWN_ALL_CHATS = os.environ.get("WA_OWN_ALL_CHATS", "").strip().lower() in ("1", 
 # this repo, that is a separate, explicitly-confirmed production change.
 REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip()
 
-# Local-only internal webhook receiver (TASK-190, app/wa/router.py) -- for the alternative
+# Local-only internal webhook receiver (TASK-335, app/wa/router.py) -- for the alternative
 # architecture where the REAL system stays Meta's primary webhook and forwards a brand-new lead
 # to this harness over a same-host, loopback-only call instead of us receiving Meta directly.
 # Off by default: a fresh/misconfigured deployment must opt in explicitly, since this endpoint
@@ -433,7 +433,7 @@ FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
 # harness). Hours are 0-23; START > END means the window wraps past midnight (default 21 -> 8).
 # END is 8, not 9: Ivan widened the active window by an hour on 2026-09-23 ("давай начинать с
 # восьми") -- Pflege shift handover is early and a candidate reading at 08:00 is awake, not asleep.
-# Deliberately NOT applied to catchup.py (TASK-182) -- a reply owed to something the candidate
+# Deliberately NOT applied to catchup.py (TASK-332) -- a reply owed to something the candidate
 # already said is never proactive, so it is never delayed by this.
 QUIET_HOURS_START = int(os.environ.get("WA_QUIET_HOURS_START", "21") or "21")
 QUIET_HOURS_END = int(os.environ.get("WA_QUIET_HOURS_END", "8") or "8")
@@ -462,10 +462,10 @@ def readiness():
            "reply_scope": REPLY_SCOPE, "meta_scope": META_SCOPE,
            # Which rail could send right now, independently of which one is selected: an operator
            # flipping WA_TRANSPORT must be able to see beforehand that the other rail is configured,
-           # and afterwards that the live one is (TASK-223).
+           # and afterwards that the live one is (TASK-350).
            "bridge_ready": checks["bridge_url"] and checks["bridge_token"],
            # The inbound door is a separate readiness: the rail can send while the executor still
-           # cannot push a reply back (TASK-123), and an operator has to see which half is missing.
+           # cannot push a reply back (TASK-352), and an operator has to see which half is missing.
            "bridge_inbound_ready": checks["bridge_inbound_token"],
            "bridge_phone_number_id": BRIDGE_PHONE_NUMBER_ID,
            # Neither is a secret (a host alias, a directory path) -- shown directly, the same way

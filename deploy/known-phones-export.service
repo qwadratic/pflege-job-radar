@@ -1,5 +1,5 @@
-# Producer for WA_REAL_SYSTEM_PHONES_FILE (app/wa/luna/export_known_phones.py, TASK-87, follow-up
-# to TASK-75): periodically exports the phone numbers a real, external system already knows about
+# Producer for WA_REAL_SYSTEM_PHONES_FILE (app/wa/luna/export_known_phones.py, TASK-336, follow-up
+# to TASK-331): periodically exports the phone numbers a real, external system already knows about
 # into the plain newline-delimited file app/wa/routing.py reads -- without it that file stays an
 # unmet promise and routing.py refuses to route anything at all (by design, see its own docstring).
 #
@@ -8,7 +8,7 @@
 # KNOWN_PHONES_SOURCE_QUERY (the exact SQL to run against it, first column = phone-like value) are
 # NOT set here -- same discipline as app/wa/luna/external_contacts.py (TASK-69), this repo never
 # names or hardcodes a real external system's schema. The operator supplies both, plus
-# WA_REAL_SYSTEM_PHONES_FILE (the output path, already established by TASK-75), themselves in the
+# WA_REAL_SYSTEM_PHONES_FILE (the output path, already established by TASK-331), themselves in the
 # EnvironmentFile below -- a separate, git-ignored file (.env and .env.* are git-ignored in this
 # repo), never committed here.
 #
@@ -23,7 +23,7 @@
 #   sudo systemctl enable --now known-phones-export.timer
 #   journalctl -u known-phones-export -f
 [Unit]
-Description=Pflege-Board known-phones export (app.wa.luna.export_known_phones, TASK-87)
+Description=Pflege-Board known-phones export (app.wa.luna.export_known_phones, TASK-336)
 After=network-online.target
 Wants=network-online.target
 

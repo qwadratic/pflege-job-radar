@@ -406,14 +406,14 @@ def _full_funnel_to_the_shortlist(chat, city_or_department_answer):
 @RUNS
 def test_full_funnel_after_campaign_ja_reaches_the_shortlist(chat, run):
     dump = _full_funnel_to_the_shortlist(chat, "Am liebsten München.")
-    # TASK-207: the candidate never names a department (live: department_pref "flexibel" emptied the shortlist; the
+    # TASK-344: the candidate never names a department (live: department_pref "flexibel" emptied the shortlist; the
     # CV's "Innere Medizin" or a tool result's department must not become one either).
     assert chat.card().get("department_pref") is None, f"department_pref the candidate never named: {dump}"
 
 
 @RUNS
 def test_full_funnel_flexible_on_city_and_department_reaches_the_shortlist(chat, run):
-    """TASK-207: a flexible answer settles the city/department gate and filters nothing."""
+    """TASK-344: a flexible answer settles the city/department gate and filters nothing."""
     dump = _full_funnel_to_the_shortlist(chat, "Das ist mir egal, ich bin da ganz flexibel.")
     department_filter = LB.market_snapshot(chat.card())["department_filter"]
     assert department_filter and department_filter["status"] == "flexible", dump
@@ -421,7 +421,7 @@ def test_full_funnel_flexible_on_city_and_department_reaches_the_shortlist(chat,
 
 @RUNS
 def test_full_funnel_unknown_department_reaches_the_shortlist(chat, run):
-    """TASK-207: a department the board has no department for (Urologie) filters nothing; the snapshot says so."""
+    """TASK-344: a department the board has no department for (Urologie) filters nothing; the snapshot says so."""
     dump = _full_funnel_to_the_shortlist(chat, "Am liebsten in München, auf der Urologie.")
     department_filter = LB.market_snapshot(chat.card())["department_filter"]
     assert department_filter and department_filter["status"] == "unmatched", dump

@@ -1,10 +1,10 @@
 """Reporting-only view over the Luna card + message history (TASK-175): a stage label and a "ball"
 (whose turn it is to act), derived from state luna_brain.py already tracks rather than new columns
-to keep in sync. Used by the migration script and the dry-run shadow tool (TASK-176) -- nothing in
+to keep in sync. Used by the migration script and the dry-run shadow tool (TASK-329) -- nothing in
 the live turn() path needs either of these, they exist purely so a human (or a report) can see
 where a thread stands without reading the raw card.
 
-Not to be confused with luna_brain.funnel_stage / card["stage"] (TASK-144), which is the funnel stage
+Not to be confused with luna_brain.funnel_stage / card["stage"] (TASK-373), which is the funnel stage
 the CONVERSATION resumes from. STAGES below is the operator's coarser label for a whole thread,
 including the terminal states a funnel stage has no name for (declined, already_placed).
 """
@@ -33,7 +33,7 @@ def stage_for(card):
         return "consented"
     board = requirement_scoreboard(card)
     # Gates only (luna_brain.SCOREBOARD_GATES): the scoreboard also carries computed hints --
-    # next_objective (TASK-195), stage and stage_since (TASK-144) -- which are not satisfied|open|blocked
+    # next_objective (TASK-195), stage and stage_since (TASK-373) -- which are not satisfied|open|blocked
     # statuses at all. handoff_consent is skipped on top of that because this function's own "ready"
     # means "everything except consent".
     if all(board[gate] == "satisfied" for gate in SCOREBOARD_GATES if gate != "handoff_consent"):

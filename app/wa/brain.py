@@ -252,14 +252,14 @@ def _clinic_name(name):
 def match_bubble(rows, slots, is_test=False):
     """The list itself: how many, then at most three, then where to read them.
 
-    THE AD LINK IS A TEST-THREAD AID, NOT A FEATURE OF THE MESSAGE (TASK-151). This bubble used to
+    THE AD LINK IS A TEST-THREAD AID, NOT A FEATURE OF THE MESSAGE (TASK-380). This bubble used to
     append the posting's own URL to every line on every thread, production included, which is the
     same link Ivan's standing rule keeps away from a candidate and which app/wa/luna/offer.py and
     app/wa/luna/source_link.py go to some length to keep structural on the Luna side. WA_BRAIN
     defaults to ``deterministic`` (app/wa/config.py), so any entry point started without the env var
     sent real candidates a list of board URLs. The flag is the thread's own ``is_test``, the same one
     source_link.py reads, so the two brains cannot disagree about what a test thread is shown
-    (TASK-150 AC#6).
+    (TASK-379 AC#6).
     """
     lines = [f"{len(rows)} offene Stellen passen: {describe(slots)}." if len(rows) != 1
              else f"Eine offene Stelle passt: {describe(slots)}."]

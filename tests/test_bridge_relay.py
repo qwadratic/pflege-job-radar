@@ -1,4 +1,4 @@
-"""Offline proof for the inbound id, the Meta envelope and the pull relay (TASK-143).
+"""Offline proof for the inbound id, the Meta envelope and the pull relay (TASK-372).
 
 No phone, no ssh, no webhook. What is asserted here is what a candidate would feel if it were wrong:
 a message that never gets answered because its id collided with someone else's, a message answered
@@ -108,7 +108,7 @@ def test_the_shade_and_the_open_thread_mint_the_same_id_for_one_message():
 def test_a_bubble_from_an_earlier_day_is_unresolved_rather_than_stamped_with_today():
     """WhatsApp draws only HH:MM on a bubble. Stamping yesterday's bubble with today's date minted
     an id the shade never minted, so it passed the UNIQUE column and was answered as a new message
-    -- on the first send of day two, once per still-visible message from day one (TASK-146)."""
+    -- on the first send of day two, once per still-visible message from day one (TASK-375)."""
     yesterday = D.BubbleView("in", "Ja", "20:40", "")
     today = D.BubbleView("in", "Und noch etwas", "09:05", "")
     placed, unresolved = I.thread_messages([yesterday, today], counterparty=ANNA,
@@ -250,9 +250,9 @@ def test_a_number_as_its_own_profile_name_is_not_a_name():
     assert contacts[0]["profile"]["name"] == ""
 
 
-# --- the envelope, once media is linked (TASK-131) --------------------------------------------------
+# --- the envelope, once media is linked (TASK-360) --------------------------------------------------
 def test_a_linked_document_arrives_as_the_meta_shape_the_webhook_already_reads():
-    """Shape fidelity again, now for the branch TASK-131 adds: app/wa/api.py must read this exactly
+    """Shape fidelity again, now for the branch TASK-360 adds: app/wa/api.py must read this exactly
     like a real Cloud API document message without one line of change."""
     from app.wa import api as API
 
@@ -279,7 +279,7 @@ def test_a_linked_document_arrives_as_the_meta_shape_the_webhook_already_reads()
 
 
 def test_a_weakly_attributed_documents_strength_reaches_the_parsed_message():
-    """TASK-131 round 6: the one field that gates a weak document's text from the model
+    """TASK-360 round 6: the one field that gates a weak document's text from the model
     (app/wa/api.py) travels the same wire everything else about a linked file already does."""
     from app.wa import api as API
 
@@ -440,7 +440,7 @@ def test_a_webhook_that_handled_nothing_stops_the_relay_rather_than_walking_past
     assert cursor.position() == 0
 
 
-# --- TASK-146: the relay's own configuration and its log ----------------------------------------
+# --- TASK-375: the relay's own configuration and its log ----------------------------------------
 def test_a_misconfigured_relay_names_every_missing_variable_at_once(monkeypatch):
     """This unit reads three EnvironmentFiles. Stopping at the first missing name meant finding out
     about WA_BRIDGE_TOKEN, then WA_BRIDGE_INBOUND_TOKEN, then WA_BRIDGE_PHONE_NUMBER_ID one restart

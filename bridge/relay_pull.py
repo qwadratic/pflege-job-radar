@@ -1,4 +1,4 @@
-"""The VPS side of the pull: drain the mini's inbound outbox into our webhook (TASK-143).
+"""The VPS side of the pull: drain the mini's inbound outbox into our webhook (TASK-372).
 
 THIS IS THE ONE MODULE IN ``bridge/`` THAT RUNS ON OUR VPS, not on the handset machine. Everything
 else in this package is the executor. It is here because it is the other half of the same contract
@@ -64,7 +64,7 @@ ALARM_CHECK_INTERVAL_SEC = 60.0
 #: How stale InboundWatcher.heartbeat()'s last_ok_at may sit before this counts as dead rather than
 #: quiet (TASK-255). The watcher polls every 5s (bridge/watcher.py::DEFAULT_INTERVAL_SEC); a live
 #: one touches last_ok_at every cycle, so this is several missed cycles' worth of slack. A first
-#: number so the alarm exists at all, not a reviewed one -- TASK-132 (still To Do) is where a
+#: number so the alarm exists at all, not a reviewed one -- TASK-361 (still To Do) is where a
 #: considered threshold and an actual alert channel belong.
 WATCHER_STALE_SEC = 60.0
 #: How old the oldest unacked inbound row may sit before this counts as delivery having stopped
@@ -89,7 +89,7 @@ def env(name, default=None, *, required=False):
 
 
 #: Every variable ``from_env`` needs, and where it is supposed to come from. Named together so a
-#: misconfigured host is one message and not four restarts (TASK-146): this unit reads three
+#: misconfigured host is one message and not four restarts (TASK-375): this unit reads three
 #: EnvironmentFiles and the first version of it stopped at the first missing name, which on this
 #: host meant finding out about WA_BRIDGE_TOKEN, then WA_BRIDGE_INBOUND_TOKEN, then
 #: WA_BRIDGE_PHONE_NUMBER_ID one at a time.
@@ -167,7 +167,7 @@ class SshForward:
         """Is the forward usable? A BORROWED one has no child of ours to poll -- the port is the
         whole answer for it.
 
-        Without that first branch (TASK-146) a borrowed forward was never "up", so every drain went
+        Without that first branch (TASK-375) a borrowed forward was never "up", so every drain went
         through ``close()`` -- which resets ``borrowed`` -- and re-announced "tunnel borrowed" on
         the next line. At a 3 s interval that is a line every 3 s forever, which is how a journal
         stops being readable at the moment someone needs it.

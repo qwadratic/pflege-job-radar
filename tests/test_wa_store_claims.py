@@ -99,7 +99,7 @@ def test_record_send_failure_is_readable_and_keeps_the_latest(db):
     assert failure["error"] == "second error"
 
 
-# --- nudge dedup claim (TASK-93) -------------------------------------------------------------
+# --- nudge dedup claim (TASK-337) -------------------------------------------------------------
 
 def test_first_claim_on_a_fingerprint_succeeds(db):
     assert ST.claim_nudge(db, "+49111", "followup:0:epoch") is True

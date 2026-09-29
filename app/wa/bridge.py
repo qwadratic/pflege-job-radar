@@ -1,4 +1,4 @@
-"""The phone rail's outbound client (TASK-223): same duck shape as ``meta.Client``, different proof.
+"""The phone rail's outbound client (TASK-350): same duck shape as ``meta.Client``, different proof.
 
 Architecture (decision-8, ``/home/claude/plans/2026-09-21-macmini-revision.md`` §4): our own
 executor on the remote Ubuntu box imports the colleague's ``device.py`` / ``whatsapp.py`` /
@@ -23,8 +23,8 @@ WHAT IS DIFFERENT FROM THE META RAIL, and why it is in code rather than in prose
   sent" is the common answer. It leaves this client as ``BridgeAccepted`` (status 504, uncertain),
   never as a returned id: the harness has exactly two outcomes for a send -- an id, which
   ``api.py:943-951`` records as sent, or a raise -- and recording a queued message as sent is the
-  one lie that corrupts a thread. ``bridge_sync`` (TASK-125) is where those actually resolve;
-  TASK-126 expires the ones that never do.
+  one lie that corrupts a thread. ``bridge_sync`` (TASK-354) is where those actually resolve;
+  TASK-355 expires the ones that never do.
 
 ERRORS. ``BridgeError`` subclasses ``M.MetaError`` so every existing ``except M.MetaError`` keeps
 catching, and the two callers whose behaviour depends on ``.status_code`` stay byte-identical:
@@ -38,7 +38,7 @@ this media" and aborts the whole import run. That is why an unreachable bridge i
 | 400/401/409/422/429 from the bridge | BridgeError(that status)      | failed              |
 | 500/503 from the bridge             | BridgeError(that status)      | uncertain           |
 | 200 with no verified tick           | BridgeError(504)              | uncertain, never auto-resent |
-| 202 accepted, not yet sent          | BridgeAccepted(504)           | uncertain, resolved by TASK-125 |
+| 202 accepted, not yet sent          | BridgeAccepted(504)           | uncertain, resolved by TASK-354 |
 | bridge unreachable, send            | BridgeError(424)              | failed              |
 | bridge unreachable, media           | BridgeUnreachable(None)       | aborts the import run |
 
@@ -46,7 +46,7 @@ WIRED IN. ``transport.build`` returns this client for ``rail == "bridge"`` (``tr
 ``WA_TRANSPORT=bridge`` makes it the rail every unpinned thread resolves to, and the executor it
 speaks to runs on the handset machine (``deploy/wa-bridge/INSTALL.md``). Setting that variable is
 therefore a live change, not an inert flag: it builds a client that drives a real handset. What is
-still UNVERIFIED is which number that handset sends FROM (TASK-136), which is why nothing but
+still UNVERIFIED is which number that handset sends FROM (TASK-365), which is why nothing but
 Ivan's own test number is pinned to this rail.
 """
 import json
@@ -78,7 +78,7 @@ MESSAGES_PATH = "/v1/messages"
 MEDIA_PATH = "/v1/media/"
 HEALTH_PATH = "/v1/health"
 
-# --- the handset operations as one-step calls (TASK-147) ------------------------------------------
+# --- the handset operations as one-step calls (TASK-376) ------------------------------------------
 # Ivan, 2026-09-21: the handset operations stop being hand-written adb one-liners and become tools a
 # model or an operator calls in one step. These routes are the executor's half of that contract
 # (``bridge/server.py``); they are constants because the two halves are one agreement, so a rename on
@@ -91,7 +91,7 @@ BROADCASTS_PATH = "/v1/broadcasts"
 AUDIT_PATH = "/v1/audit"
 # TASK-261: the read-only companion to RECONCILE_PATH -- which ids need one.
 UNRESOLVED_PATH = "/v1/unresolved"
-# TASK-131 round 4: the human escape hatch -- an unresolved file's own listing, and attaching one
+# TASK-360 round 4: the human escape hatch -- an unresolved file's own listing, and attaching one
 # to a phone by hand, through the exact path an automatic link takes.
 MEDIA_LIST_PATH = "/v1/media"
 MEDIA_ATTACH_PATH = "/v1/media/attach"
@@ -124,7 +124,7 @@ BROADCAST_NO_ANSWER = "no_answer"
 # an item nothing will ever attempt, not an item still on its way.
 RUN_OPEN = "open"
 
-# --- the wire's pacing vocabulary (TASK-146) ------------------------------------------------------
+# --- the wire's pacing vocabulary (TASK-375) ------------------------------------------------------
 # ``trace.action`` is what the executor's governor paces on, and it has exactly two legal values
 # (``bridge/governor.py:KINDS``). It is NOT Luna's action slug: "ask_question", "media_ack",
 # "ask_consent" and "followup" say what the message is FOR, and the fuse needs to know whether it is
@@ -175,7 +175,7 @@ RECONCILE_PER_ID_SEC = HANDSET_CHAT_LIST_PASS_SEC + 16 + 5
 # --- what the MEDIA routes cost the handset (TASK-247) ---------------------------------------------
 # send_photos/send_gallery/send_document called _request with no timeout= at all, so they inherited
 # the bare WA_BRIDGE_TIMEOUT_SEC floor -- the exact bug DESTROY_BUDGET_SEC above exists to fix, on
-# the three routes that were added (TASK-131 round 7) after TASK-243 fixed it everywhere else. Not a
+# the three routes that were added (TASK-360 round 7) after TASK-243 fixed it everywhere else. Not a
 # tail case: GALLERY_BUDGET_SEC below already exceeds the 90 s floor with an EMPTY caption, so a real
 # captioned gallery times out on every single call while the send is still landing on the handset.
 #
@@ -267,8 +267,8 @@ class BridgeUnreachable(BridgeError):
 class BridgeAccepted(BridgeError):
     """HTTP 202: the executor owns the message and has not sent it yet (paced, queued, quiet hours).
     Not an error on the wire; an error *here*, because the only way this client can say "sent" is by
-    returning an id. Carries ``client_msg_id`` and the 202 body so TASK-125's reconciliation pass can
-    resolve it and TASK-126 can expire it."""
+    returning an id. Carries ``client_msg_id`` and the 202 body so TASK-354's reconciliation pass can
+    resolve it and TASK-355 can expire it."""
 
 
 def _parse(body):
@@ -297,7 +297,7 @@ def _default_transport(method, url, headers=None, data=None, timeout=None):
         # The read timed out with the request already delivered: the executor may well be typing
         # this message on the handset right now. That is UNCERTAIN, not unreachable -- 424 would
         # tell campaign.py the send failed with ownership restored, and the message would then be
-        # sent a second time by the next pass (TASK-146). It is not a URLError, so it used to reach
+        # sent a second time by the next pass (TASK-375). It is not a URLError, so it used to reach
         # send_and_record as a bare TimeoutError that nothing classified at all.
         # "still working", not "still sending": this transport also carries the destructive routes,
         # and telling an operator his delete "may still be sending" is how a finished deletion got
@@ -359,7 +359,7 @@ class Client:
         self._turn = None
         self._campaign = None
         # The last terminal 200 body, for the caller that wants the tick and the replay flags
-        # (TASK-125's ledger reconciliation, TASK-130's audit). Not consulted by this module.
+        # (TASK-354's ledger reconciliation, TASK-359's audit). Not consulted by this module.
         self.last_send = None
 
     # --- which turn is being sent (TASK-217) ------------------------------------------------------
@@ -375,7 +375,7 @@ class Client:
         the bubbles that already went out instead of sending them again.
 
         ``turn_key`` is required and explicit: on this rail there is no inbound provider id to fall
-        back on (TASK-131 mints ours), and a default would key two different turns the same.
+        back on (TASK-360 mints ours), and a default would key two different turns the same.
         """
         self._turn = {"phone": BI.require_e164(phone),
                       "turn_key": BI.require_text(turn_key, "turn_key"),
@@ -431,7 +431,7 @@ class Client:
     def send_timeout(self, body):
         """-> how long to wait for the answer to ONE bubble, from what that bubble costs the phone.
 
-        A fixed number was wrong here (TASK-146): a 219-character reply is 41-67 s of typing alone
+        A fixed number was wrong here (TASK-375): a 219-character reply is 41-67 s of typing alone
         at the handset's own pace, and the fixed 90 s default expired while the executor was still
         working -- the turn was recorded ``skipped_error`` while the message went on to be
         delivered. ``WA_BRIDGE_TIMEOUT_SEC`` stays the floor (and the whole budget for the calls
@@ -532,7 +532,7 @@ class Client:
     def _await_slot(self):
         """Wait out the rail's own inter-bubble gap before the next bubble of the same turn.
 
-        Not a retry and not a cap we invented (TASK-146): the executor's fuse publishes
+        Not a retry and not a cap we invented (TASK-375): the executor's fuse publishes
         ``quota.next_slot_at`` in the 200 body precisely because "nothing here sleeps" on that side
         -- it refuses and tells the caller when to come back, and this is the caller coming back.
         A Luna reply is routinely two or three bubbles and the handset's own floor is 4 s between
@@ -569,7 +569,7 @@ class Client:
             # No answer at all -> a 4xx, so campaign.py records `failed` with ownership restored and
             # the lead stays retryable. What makes that safe even if the request did reach the
             # executor is the deterministic key: the retry posts the same client_msg_id and the
-            # ledger replays it (TASK-217/TASK-130). A read timeout mid-answer is a different
+            # ledger replays it (TASK-217/TASK-359). A read timeout mid-answer is a different
             # animal and does not arrive here -- it is not a URLError, so it stays uncertain.
             raise BridgeError(f"bridge unreachable on send: {exc}", status_code=UNREACHABLE_SEND_STATUS,
                               code="bridge_unreachable", client_msg_id=client_msg_id) from exc
@@ -626,11 +626,11 @@ class Client:
         deliberate half to leave out -- an ordinal/title/prefix matcher shipped half-written would
         resolve "1" against the wrong offer, and on the consent pair that is the one unacceptable
         error in this design. ``luna_brain`` still sets consent from a genuine tap and from nothing
-        else, so this rendering cannot manufacture a consent nobody gave (TASK-122 is where that is
+        else, so this rendering cannot manufacture a consent nobody gave (TASK-351 is where that is
         answered, with its own switch and a confirmation turn).
 
         Raising instead was worse than either: ``NotImplementedError`` is not a ``MetaError``, so
-        nothing classified it, the turn failed and catch-up re-drove it forever (TASK-146).
+        nothing classified it, the turn failed and catch-up re-drove it forever (TASK-375).
         """
         titles = [str((b or {}).get("title") or "").strip() for b in (buttons or [])]
         titles = [t for t in titles if t]
@@ -642,7 +642,7 @@ class Client:
 
     def send_photos(self, to_e164, local_paths):
         """Attach up to ``bridge.driver.MAX_PHOTOS_PER_SEND`` local image files to the thread for
-        ``to_e164`` (TASK-131 round 7, outbound media; Ivan, 2026-09-22).
+        ``to_e164`` (TASK-360 round 7, outbound media; Ivan, 2026-09-22).
 
         ``local_paths`` names files already sitting on the MINI's own filesystem, not this
         machine's -- there is no upload step in this route, the same way ``media_url``/
@@ -674,7 +674,7 @@ class Client:
     def send_gallery(self, to_e164, local_paths, caption=""):
         """Attach up to ``bridge.driver.MAX_PHOTOS_PER_SEND`` local image files to the thread for
         ``to_e164`` as ONE WhatsApp message -- a photo album with a single shared caption -- via
-        the mini's gallery-picker automation (TASK-131 round 7 gallery redesign; Ivan, 2026-09-22:
+        the mini's gallery-picker automation (TASK-360 round 7 gallery redesign; Ivan, 2026-09-22:
         'галерейкой плюс текстовое сообщение, все это одно сообщение').
 
         Same two-step-read shape as send_photos: ``local_paths`` names files already on the
@@ -705,7 +705,7 @@ class Client:
 
     def send_document(self, to_e164, local_path, caption=""):
         """Attach ONE local file, any type, to the thread for ``to_e164`` as WhatsApp's own
-        document attachment (TASK-131 round 7; Ivan, 2026-09-23: a future resume-update flow needs
+        document attachment (TASK-360 round 7; Ivan, 2026-09-23: a future resume-update flow needs
         files, not photos alone).
 
         Same two-step-read shape as send_photos/send_gallery: ``local_path`` names a file already
@@ -745,12 +745,12 @@ class Client:
         A definition whose rendering is not pure text is refused rather than flattened: buttons are
         TASK-224, and the lane behind the executor has no media send path at all (its ``whatsapp.py``
         exports ``open_chat, read_thread, send_bubble, go_home, visible_unread`` and nothing else).
-        The local first-touch message set that replaces Graph templates here is TASK-124.
+        The local first-touch message set that replaces Graph templates here is TASK-353.
         """
         if definition is None:
             raise BridgeError(f"send_template on the phone rail needs definition= (template_name={template_name!r}): "
                               f"a consumer number has no Meta template registry to resolve a name against "
-                              f"(TASK-124)", status_code=CONTRACT_STATUS)
+                              f"(TASK-353)", status_code=CONTRACT_STATUS)
         for label, given, defined in (("template_name", template_name, definition.get("name")),
                                       ("language", language, definition.get("language"))):
             if given is not None and given != defined:
@@ -770,16 +770,16 @@ class Client:
         return self._post_message(client_msg_id, to_e164, "text", rendered["text"], trace)
 
     def get_template(self, template_id, require_approved=False, fields=M.TEMPLATE_FIELDS):
-        """There is no Graph lookup on this rail and no local store yet: TASK-124 is the local
+        """There is no Graph lookup on this rail and no local store yet: TASK-353 is the local
         first-touch message set that takes this over. Raising keeps the caller honest -- a stub
         returning a fabricated APPROVED definition would put unreviewed text in front of a
         candidate."""
         raise BridgeError(f"the phone rail cannot look up template {template_id!r}: a consumer number has no "
-                          f"Meta template registry, and the local set is TASK-124", status_code=CONTRACT_STATUS)
+                          f"Meta template registry, and the local set is TASK-353", status_code=CONTRACT_STATUS)
 
     def media_url(self, media_id):
         """Step 1 of the same two-step download ``meta.Client`` does: the executor answers with the
-        mime type and a URL for its own ``/v1/media/<id>/raw`` route (TASK-131). Unreachable keeps
+        mime type and a URL for its own ``/v1/media/<id>/raw`` route (TASK-360). Unreachable keeps
         ``status_code=None`` so ``import_history.py:538-539`` aborts the run instead of recording the
         document as permanently unrecoverable; a definite refusal (media never pulled) is a 404, so
         ``import_history`` records that one document as not recoverable and keeps going.
@@ -805,7 +805,7 @@ class Client:
         return self.media_transport(method="GET", url=url,
                                     headers={"Authorization": "Bearer " + self.token}, timeout=self.timeout)
 
-    # --- the handset operations (TASK-147) --------------------------------------------------------
+    # --- the handset operations (TASK-376) --------------------------------------------------------
     # One method per operation Ivan named, plus what they need around them. Same transport seam, same
     # error taxonomy, same refusal to call anything "done" that the executor did not verify.
 
@@ -911,7 +911,7 @@ class Client:
         minting a campaign attempt uses, because a broadcast is the same thing: a first touch, one
         message per recipient, keyed on values the caller already holds. That is what makes a re-run
         after a crash a replay instead of a second message: the executor's ledger recognises the key
-        (first-body-wins, TASK-130) and types nothing. Public because a dry run has to be able to
+        (first-body-wins, TASK-359) and types nothing. Public because a dry run has to be able to
         print exactly the keys the real run would use.
         """
         BI.require_text(run_id, "run_id")
@@ -1024,7 +1024,7 @@ class Client:
                               status_code=UNCERTAIN_STATUS, payload=body)
         return rows
 
-    # --- the queue and the human escape hatch (TASK-131 round 6, Ivan's ruling 2026-09-22): most
+    # --- the queue and the human escape hatch (TASK-360 round 6, Ivan's ruling 2026-09-22): most
     # pulled files never reach this queue at all any more -- bridge/identity.py::decide attributes
     # them automatically, strong or weak (bridge/executor.py::Executor.auto_match_media). What is
     # LEFT here is whatever has zero same-kind candidates yet, the genuine fallback. -------------------

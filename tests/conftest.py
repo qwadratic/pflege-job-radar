@@ -42,7 +42,7 @@ def _closing_gate_offline(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _wa_background_idle(monkeypatch):
-    """app.wa.api finishes webhook turns in a background thread (TASK-99). Wait for it before this test's
+    """app.wa.api finishes webhook turns in a background thread (TASK-341). Wait for it before this test's
     monkeypatches (SQLite path, Meta client, tokens) are undone, so no job runs against the real config."""
     yield
     api = sys.modules.get("app.wa.api")

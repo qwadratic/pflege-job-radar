@@ -447,8 +447,8 @@ OWNER_WRITE_RE = re.compile(r"^/api/clinics/[^/]+/refetch-career/?$")
 OWNER_WRITE_PATHS = ("/api/auth/password",)
 # "/api/crawl" (not just "/api/crawl/runs") also covers GET /api/crawl/plan -- it previews the same
 # credits_left / per-clinic routing decision the gated endpoints above protect (2026-09-08 API audit).
-# "/api/wa/threads", "/api/wa/queue" (TASK-66: consenting candidates x matched clinics, same PII
-# class as a thread's own slots) and "/api/wa/ownership" (TASK-75: a phone number is the same PII
+# "/api/wa/threads", "/api/wa/queue" (TASK-326: consenting candidates x matched clinics, same PII
+# class as a thread's own slots) and "/api/wa/ownership" (TASK-331: a phone number is the same PII
 # class again) -- and nothing wider: /api/wa/webhook authenticates with Meta's own signature and
 # /api/wa/health carries no secret, so both stay reachable (docs/whatsapp.md).
 OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl", "/api/crawl", "/api/campaign",

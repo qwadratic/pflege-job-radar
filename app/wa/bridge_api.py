@@ -1,4 +1,4 @@
-"""The phone rail's inbound door: the route that replaces Meta's webhook (TASK-123).
+"""The phone rail's inbound door: the route that replaces Meta's webhook (TASK-352).
 
 There is no webhook on this rail. The executor on the remote machine watches the handset and pushes
 what it saw here, through the ssh tunnel, as a **verbatim Meta envelope** -- so this module parses
@@ -23,7 +23,7 @@ THE TRUST BOUNDARY, since there is no Meta signature to verify:
   grant the other. Unset means the door is shut, not open -- an empty token would otherwise match an
   empty header and let an unauthenticated payload into a real conversation.
 
-Not ``WA_INTERNAL_WEBHOOK_ENABLED`` (``router.py``, TASK-190): that flag belongs to the colleague's
+Not ``WA_INTERNAL_WEBHOOK_ENABLED`` (``router.py``, TASK-335): that flag belongs to the colleague's
 production system forwarding a Meta payload it received, whose own gate is the loopback alone. This
 is our executor with a secret of its own, so it carries its own switch: no token, no door.
 """
@@ -61,7 +61,7 @@ def _authorized(request):
 @router.post("/wa/bridge-webhook", include_in_schema=False)
 async def wa_bridge_webhook(request: Request):
     """Inbound from the phone rail. Checked, then recorded and answered exactly like Meta's webhook
-    (TASK-202): only the body read runs on the event loop, the turns run in the background worker."""
+    (TASK-341): only the body read runs on the event loop, the turns run in the background worker."""
     if not _authorized(request):
         log.warning("bridge-webhook refused: caller=%s delivery=%s",
                     request.client.host if request.client else None,

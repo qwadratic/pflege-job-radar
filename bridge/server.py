@@ -1,9 +1,9 @@
-"""The executor's HTTP surface: loopback only, bearer token (TASK-130, TASK-222, TASK-147).
+"""The executor's HTTP surface: loopback only, bearer token (TASK-359, TASK-222, TASK-376).
 
     POST /v1/messages          one bubble, one deterministic key, one flock acquisition
     GET  /v1/outbox            the durable inbound handover -- the pull is the contract
     GET  /v1/health            polled by relay_pull.py's own slow-cadence alarm (TASK-255); the
-                               3-minute conjunction-alert timer TASK-132 describes is not built
+                               3-minute conjunction-alert timer TASK-361 describes is not built
     POST /v1/reconcile         three-valued verdicts; only confirmed_absent authorises a resend
     GET  /v1/chats             the chat list, read-only
     GET  /v1/thread            the visible bubbles of one chat, read-only
@@ -19,7 +19,7 @@
     GET  /v1/media/<id>/raw    the bytes themselves, at the path the metadata route just answered
     GET  /v1/media             the queue: unattached files, kind/size/age/folder/related threads
     POST /v1/media/attach      the human escape hatch: attach one queued file to a phone by id
-                               (TASK-131 round 5 -- automatic attachment is gone, decision-9)
+                               (TASK-360 round 5 -- automatic attachment is gone, decision-9)
     GET  /v1/ops/<id>          one queued phone op's state/result/error (TASK-227)
     POST /v1/ops/<id>/resolve  mark a failed op reviewed and safe to delete (TASK-230)
     POST /v1/ops/<id>/cancel   the caller gave up: cancel it if still queued, never mid-run (TASK-243)
@@ -192,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def _write_binary(self, status, blob, content_type):
-        """TASK-131: the one route on this surface whose body is not JSON. Bearer-guarded and
+        """TASK-360: the one route on this surface whose body is not JSON. Bearer-guarded and
         loopback-checked exactly like every other route (``_dispatch_binary`` below runs the same
         ``_guard()`` this one skips)."""
         self.send_response(status)
@@ -368,7 +368,7 @@ def _flag(query, name, default):
 
 
 def _media_attach_args(body):
-    """``POST /v1/media/attach``'s two fields, named explicitly (TASK-131): an unknown key silently
+    """``POST /v1/media/attach``'s two fields, named explicitly (TASK-360): an unknown key silently
     ignored on a route that ties a document to a person is exactly the mistake this rail's other
     write routes already refuse."""
     allowed = ("queue_id", "phone")
@@ -382,11 +382,11 @@ def _media_attach_args(body):
 
 
 def _photos_args(body):
-    """``POST /v1/photos``'s two fields, named explicitly (TASK-131 round 7) -- same reason as
+    """``POST /v1/photos``'s two fields, named explicitly (TASK-360 round 7) -- same reason as
     ``_media_attach_args``: an unknown key silently ignored on a route that drives a real send is
     exactly the mistake this rail's other write routes already refuse. ``local_paths`` names files
     already on THIS machine (the mini) -- there is no upload endpoint here, an operator (or a
-    caller with filesystem access, TASK-131 round 7's own scope) puts them there first."""
+    caller with filesystem access, TASK-360 round 7's own scope) puts them there first."""
     allowed = ("phone", "local_paths")
     unknown = sorted(set(body) - set(allowed))
     if unknown:
@@ -491,7 +491,7 @@ def _unlink_swept_media(paths):
 
 
 def maintenance_once(executor, now=None):
-    """TASK-130 AC#9: the retention sweeps ship with the first commit, not later. TASK-230: the
+    """TASK-359 AC#9: the retention sweeps ship with the first commit, not later. TASK-230: the
     screenshot/recording sweep now reviews before it deletes (bridge/retention.py) -- an artefact
     past its 14-day cutoff is held, not removed, until it is either a happy op_done or a resolved
     issue. ``executor.last_retention`` is set here so /v1/health can show whether the held pile is
@@ -544,7 +544,7 @@ def stamped(msg):  # pragma: no cover - journald gets the line, not a test
 def active_hours_override(raw):
     """-> a widened ``(lo, hi)`` for ``bridge/governor.py::MINI_FLOOR.active_hours``, or ``None`` to
     leave the built-in 9-20 fuse untouched -- the caller's default when ``raw`` (from
-    ``WA_BRIDGE_ACTIVE_HOURS_OVERRIDE``) is unset. TASK-131 UAT, Ivan 2026-09-22: 'расширь окно...
+    ``WA_BRIDGE_ACTIVE_HOURS_OVERRIDE``) is unset. TASK-360 UAT, Ivan 2026-09-22: 'расширь окно...
     это рассылка тестовая' -- one explicit, env-only, opt-in override for a single test night, never
     a change to the fuse's own default (governor.py's own docstring: 'the last thing between a bug
     and a real person'). Unset -> behaviour is bit-for-bit what it always was."""
@@ -571,7 +571,7 @@ def first_touch_gap_override(raw):
     first_touch_gap_sec``, or ``None`` to leave the built-in 240-600s (4-10 min) floor untouched --
     the caller's default when ``raw`` (from ``WA_BRIDGE_FIRST_TOUCH_GAP_OVERRIDE_SEC``) is unset.
 
-    Same override shape and same reasoning as ``active_hours_override`` above (TASK-131 UAT
+    Same override shape and same reasoning as ``active_hours_override`` above (TASK-360 UAT
     precedent): one explicit, env-only, opt-in override for a single test night, never a change to
     the fuse's own default. The built-in floor exists to keep a burst of first-contact messages from
     reading as spam to WhatsApp on a consumer number that has no appeals path if it gets banned
@@ -604,7 +604,7 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
     if not cap:
         raise RuntimeError(
             "WA_BRIDGE_PER_NUMBER_DAILY_CAP is unset. There is no per-recipient cap to inherit and "
-            "this code will not invent one (CLAUDE.md). TASK-127 / Ivan names the number.")
+            "this code will not invent one (CLAUDE.md). TASK-356 / Ivan names the number.")
     root = os.path.expanduser(os.environ.get("WA_BRIDGE_STATE", "~/.local/share/pflege-wa-bridge"))
     os.makedirs(root, exist_ok=True)
     ledger = L.Ledger(os.path.join(root, "ledger.sqlite"))
@@ -653,7 +653,7 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
         executor, interval=float(os.environ.get("WA_BRIDGE_WATCH_INTERVAL_SEC",
                                                 W.DEFAULT_INTERVAL_SEC)),
         log=stamped, operator_hold_path=os.path.join(root, "operator_hold")).start()
-    # TASK-131: the handset's WhatsApp media folders -> pulled files -> linked to a message. Its
+    # TASK-360: the handset's WhatsApp media folders -> pulled files -> linked to a message. Its
     # own thread, its own interval, and no flock -- see bridge/watcher.py::MediaWatcher.
     media_watcher = W.MediaWatcher(
         driver, ledger, os.path.join(root, "media"),
@@ -661,14 +661,14 @@ def main():  # pragma: no cover - the entry point on the mini, not exercised off
                                       W.DEFAULT_MEDIA_INTERVAL_SEC)),
         log=stamped).start()
     executor.media_watcher = media_watcher
-    # TASK-131 round 6: the one watcher that may open a chat, on its own schedule -- see
+    # TASK-360 round 6: the one watcher that may open a chat, on its own schedule -- see
     # bridge/watcher.py::IdentityWatcher's own docstring.
     identity_watcher = W.IdentityWatcher(
         executor, interval=float(os.environ.get("WA_BRIDGE_IDENTITY_INTERVAL_SEC",
                                                 W.DEFAULT_IDENTITY_INTERVAL_SEC)),
         log=stamped).start()
     # The broadcast runner sends only what a caller queued: with no run in the ledger it is a
-    # thread that asks a question every few seconds and goes back to sleep (TASK-147).
+    # thread that asks a question every few seconds and goes back to sleep (TASK-376).
     broadcast = B.Broadcast(executor)
     runner = B.BroadcastRunner(
         broadcast, interval=float(os.environ.get("WA_BRIDGE_BROADCAST_POLL_SEC",

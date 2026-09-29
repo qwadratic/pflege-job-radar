@@ -1,4 +1,4 @@
-"""Offline proof for our own adb driver (TASK-142). No adb binary, no handset, no ssh.
+"""Offline proof for our own adb driver (TASK-371). No adb binary, no handset, no ssh.
 
 The driver is the layer that cannot be integration-tested without messaging a real person, so what
 is testable about it is tested here: the parsing, the thread guard, the keyboard restore and the
@@ -85,14 +85,14 @@ class ScriptedAdb(AD.Adb):
         self.taps = []
         self.keys = []
         self.ime_sets = []
-        # --- media (TASK-131) ---------------------------------------------------------------
+        # --- media (TASK-360) ---------------------------------------------------------------
         self.media_listing = ""     # what the find+stat shell command answers, scripted per test
         self.pulls = []             # (remote, local) pairs this test's driver was asked to pull
         self.fail_pull = None       # a remote path whose pull answers rc != 0
-        # --- outbound media: photos (TASK-131 round 7) ----------------------------------------
+        # --- outbound media: photos (TASK-360 round 7) ----------------------------------------
         self.pushes = []            # (local, remote) pairs this test's driver was asked to push
         self.fail_push = None       # a local path whose push answers rc != 0
-        # --- outbound media: one gallery message (TASK-131 round 7 gallery redesign) ----------
+        # --- outbound media: one gallery message (TASK-360 round 7 gallery redesign) ----------
         self.device_date = "202609230200.00"   # what "date +%Y%m%d%H%M.%S" answers, scripted per test
         # --- debug capture (TASK-228) -----------------------------------------------------------
         self.spawned = []           # commands spawn_shell was asked to start, in call order
@@ -253,7 +253,7 @@ def test_bubble_direction_comes_from_the_x_edge_and_the_tick_from_the_content_de
     assert bubbles[1].tick_state == "delivered"
 
 
-# --- media bubble evidence (TASK-131 round 6): reading past message_text ------------------------
+# --- media bubble evidence (TASK-360 round 6): reading past message_text ------------------------
 def test_a_voice_note_bubble_with_no_message_text_node_is_still_found_by_its_date():
     """The bug this round exists to fix: _placed_bubbles anchors on message_text, which a voice
     note never draws. read_media_evidence anchors on the date node every bubble has instead."""
@@ -422,7 +422,7 @@ def test_describe_names_our_own_file_and_no_third_party():
     assert set(described["modules"]) == {"adb_driver.py"}
 
 
-# --- TASK-146: the lies this driver used to be able to tell ------------------------------------
+# --- TASK-375: the lies this driver used to be able to tell ------------------------------------
 def test_an_identical_bubble_from_an_earlier_turn_is_not_proof_of_this_send(monkeypatch):
     """Several send bodies are constants on this rail (the media acknowledgement, the follow-up
     nudge), so "a bubble with this body is on the thread" was never evidence that OUR bubble is.
@@ -565,7 +565,7 @@ def test_current_chat_phone_is_none_for_a_display_name_two_contacts_share():
     assert driver.current_chat_phone() is None
 
 
-# --- the chat list and the two destructive verbs (TASK-147) -------------------------------------
+# --- the chat list and the two destructive verbs (TASK-376) -------------------------------------
 # The screens below are the handset's own, read off L2N4C19B14054874 with WhatsApp 2.26.36.74 on
 # 2026-09-21: the ids, the German labels and the geometry are what the phone drew, not a guess.
 def chat_row(title, y, *, unread=0, stamp="13:36", preview=True):
@@ -836,7 +836,7 @@ def test_an_adb_that_never_returns_is_a_driver_error_not_a_raw_timeout():
         AD.subprocess.run = adb_run
 
 
-# --- inbound media (TASK-131) --------------------------------------------------------------------
+# --- inbound media (TASK-360) --------------------------------------------------------------------
 def test_list_media_parses_the_find_stat_listing_and_scopes_the_shell_command():
     driver, adb = build([[]])
     adb.media_listing = ("1234 1758534000 WhatsApp Documents/Lebenslauf.pdf\n"
@@ -867,7 +867,7 @@ def test_a_failed_pull_is_a_driver_error_and_writes_nothing_useful(tmp_path):
     assert "adb pull" in str(caught.value)
 
 
-# --- outbound media: photos (TASK-131 round 7, Ivan 2026-09-22) ---------------------------------
+# --- outbound media: photos (TASK-360 round 7, Ivan 2026-09-22) ---------------------------------
 def share_picker(*row_texts):
     """WhatsApp's own share-target screen (ExternalShareAlias), one row per candidate text --
     verified live, this handset, 2026-09-22."""
@@ -966,7 +966,7 @@ def test_send_photo_refuses_when_the_compose_screens_recipient_line_disagrees(tm
     assert "does not read back" in str(caught.value)
 
 
-# --- outbound media: one gallery message (TASK-131 round 7 gallery redesign, 2026-09-23) -------
+# --- outbound media: one gallery message (TASK-360 round 7 gallery redesign, 2026-09-23) -------
 def attach_button():
     """The paperclip on the conversation screen itself, verified live this handset, 2026-09-23."""
     return [node("input_attach_button", desc="Anhängen", bounds=(596, 2031, 740, 2107), clickable=True)]
@@ -1175,7 +1175,7 @@ def test_send_gallery_refuses_when_the_selection_counter_disagrees(tmp_path):
     assert "selection counter" in str(caught.value)
 
 
-# --- outbound media: one document (TASK-131 round 7, Ivan 2026-09-23) ---------------------------
+# --- outbound media: one document (TASK-360 round 7, Ivan 2026-09-23) ---------------------------
 def document_recipient_confirm():
     """The intermediate "N ausgewählt" recipient-confirm screen a document share -- unlike a
     photo share -- lands on first: its own confirm control shares the plain send button's own

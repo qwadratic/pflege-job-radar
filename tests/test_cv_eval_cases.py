@@ -1,10 +1,10 @@
-"""Runs evals/cv/cases/*.json (TASK-65's widened case set) through the deterministic extraction
+"""Runs evals/cv/cases/*.json (TASK-325's widened case set) through the deterministic extraction
 path (app.cv.analyse) as part of the offline suite -- reuses evals/cv/run.py's fixture snapshot
 and `_check` logic directly (loaded as a module, not duplicated) rather than inventing a parallel
 case format, per this task's "extend the harness, don't replace it" instruction.
 
 Three cases are known, documented gaps in the deterministic path -- see evals/cv/README.md's
-TASK-65 write-up for why each one fails, and tests/test_cv_eval_cases_llm.py (llm-marked) for the
+TASK-325 write-up for why each one fails, and tests/test_cv_eval_cases_llm.py (llm-marked) for the
 same cases passing through app.cv.analyse_llm instead:
 
   - kenntnispruefung_passed_urkunde_pending: an English "general medicine ward" phrase does not

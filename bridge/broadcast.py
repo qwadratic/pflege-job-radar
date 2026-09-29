@@ -1,4 +1,4 @@
-"""The broadcast primitive: many recipients, one run, resumable (TASK-147).
+"""The broadcast primitive: many recipients, one run, resumable (TASK-376).
 
 WHY IT IS NOT A LOOP IN A SCRIPT. A loop over recipients in somebody's terminal has three defects
 and all three cost real messages: it dies with the terminal, it holds its progress in a local

@@ -1,4 +1,4 @@
-"""Clinic contact discovery (TASK-168): the extraction heuristic against fixture HTML/text (no
+"""Clinic contact discovery (TASK-324): the extraction heuristic against fixture HTML/text (no
 network in the default run), the source ordering (enr_contact_emails short-circuits the HTTP
 fetch), the obfuscated-description re-scan, and the clinic_contacts storage round trip. One
 pytest.mark.network test does a real fetch against a real clinic careers page as a sanity check --

@@ -1,8 +1,8 @@
-"""The phone-rail executor (TASK-130, TASK-142, TASK-143). It runs on the handset machine.
+"""The phone-rail executor (TASK-359, TASK-371, TASK-372). It runs on the handset machine.
 
 This package is the only code of ours that ever touches the handset. It is stdlib-only and imports
 nothing from ``app/`` -- it runs on a machine where our repo's dependencies (fastapi, requests, ...)
-are not installed and must not be. It also imports nothing from anyone else's tree: TASK-142 replaced
+are not installed and must not be. It also imports nothing from anyone else's tree: TASK-371 replaced
 the wrapper around a colleague's package with our own adb driver, because that package lives in a
 disposable agent worktree and its send path reports an unmatched bubble as sent.
 

@@ -139,7 +139,7 @@ def test_disqualification_is_only_overridden_once(luna):
     assert d["bubbles"] == out["bubbles"]
 
 
-# --- explicit button-confirmed consent (TASK-184): decided in code, never by the model ----------
+# --- explicit button-confirmed consent (TASK-333): decided in code, never by the model ----------
 
 def test_offering_the_anonymized_send_attaches_real_buttons(luna):
     out = _out(bubbles=["Darf ich Ihr Profil anonymisiert an diese Kliniken weiterleiten?"],
@@ -489,7 +489,7 @@ def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_tur
     assert "on every turn until both have arrived" in think7
 
 
-# --- TASK-200: no either/or question a bare "ja" answers (Ivan's manual test 2026-09-13: "Urkunde
+# --- TASK-339: no either/or question a bare "ja" answers (Ivan's manual test 2026-09-13: "Urkunde
 # schon, oder noch im Anerkennungsverfahren (Defizitbescheid/Kenntnisprüfung)?" got "ja" twice).
 
 def _rule(prefix):
@@ -513,7 +513,7 @@ def test_prompt_reads_a_bare_ja_as_yes_only_after_a_yes_no_question():
 
 
 def test_prompt_forbids_either_or_questions_and_orders_the_qualification_ask():
-    yes_no = _rule("YES/NO QUESTIONS (TASK-200)")
+    yes_no = _rule("YES/NO QUESTIONS (TASK-339)")
     assert "never ask an either/or question" in yes_no and "for any gate" in yes_no
     assert "ONE option as a plain yes/no question" in yes_no and "only after a Nein" in yes_no
     qual = _rule("QUALIFICATION:")
@@ -536,7 +536,7 @@ def test_the_frozen_system_prompt_carries_no_either_or_example_question():
 
 
 def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_options():
-    """TASK-200 review (live, 3/3 runs each): 'Gibt es eine Stadt ..., z. B. München ... oder Würzburg?',
+    """TASK-339 review (live, 3/3 runs each): 'Gibt es eine Stadt ..., z. B. München ... oder Würzburg?',
     '... Stadt im Blick ... oder ist Ihnen der Fachbereich wichtiger?', 'Ziehen Sie allein um, oder ...?'.
     Sources: the city label 'narrow down a city or department preference', constitution live_market
     'ONE question (city size, department, or a named city)' and housing_principle.ask 'allein vs Familie'."""
@@ -544,7 +544,7 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
     assert labels["region"] == "ask as a plain yes/no whether they are looking for a job in Bayern"
     assert labels["city_or_department"].startswith("ask which city in Bayern they want to work in, as an open question")
     assert "no yes/no frame around a list of cities" in labels["city_or_department"]
-    # TASK-211 split the housing gate in two; both halves keep the TASK-200 shape (a plain yes/no, then an open
+    # TASK-211 split the housing gate in two; both halves keep the TASK-339 shape (a plain yes/no, then an open
     # question), and neither offers options joined by "oder".
     assert labels["housing"] == "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"
     assert "ask how many people would live in it, as an open question" in LB._HOUSING_HEADCOUNT_OBJECTIVE
@@ -555,7 +555,7 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
         assert gone not in system and gone not in json.dumps(LB._OBJECTIVE_ORDER), gone
     assert "the open question how many people would live in it" in LB._CONSTITUTION_TEXT
     assert "never a yes/no frame around a list of cities" in LB._CONSTITUTION_TEXT
-    yes_no = _rule("YES/NO QUESTIONS (TASK-200)")
+    yes_no = _rule("YES/NO QUESTIONS (TASK-339)")
     assert "A yes/no frame around options is the same mistake" in yes_no
     assert "sets a city against a department" in yes_no and "against moving with family" in yes_no
 
@@ -621,7 +621,7 @@ def test_shortlist_department_word_still_filters_to_its_own_department(luna):
     assert LB.market_snapshot({**card, "city": "München"})["shortlist"] == []
 
 
-# --- TASK-207: a flexible or unknown department answer must not empty the shortlist ---------------------------
+# --- TASK-344: a flexible or unknown department answer must not empty the shortlist ---------------------------
 # Live 2026-09-14 (campaign full funnel, 1 of 4): the model wrote department_pref="flexibel", the snapshot filtered
 # the board on that word, the shortlist came back empty and consent was asked with no clinic named.
 
@@ -748,7 +748,7 @@ def test_the_model_receives_the_department_filter(luna):
 
 def test_department_prompt_rule_keeps_department_pref_to_the_candidates_own_words():
     system = LB.P.system_prompt("{}", "{}")
-    rule = next(r for r in LB.P.RULES if r.startswith("DEPARTMENT (TASK-207)"))
+    rule = next(r for r in LB.P.RULES if r.startswith("DEPARTMENT (TASK-344)"))
     for phrase in ("only a department the candidate names in their own message", "Never from a tool result",
                    "a department you mentioned or gave as an example", "the work history in card.cv_text",
                    "a candidate who names only a city gets no department_pref",
@@ -880,7 +880,7 @@ def test_the_model_records_the_housing_answer_and_the_harness_owns_the_flag(luna
 
 
 def test_an_imported_card_with_only_the_flag_is_asked_the_housing_question_once(luna):
-    """TASK-205 import / older cards: housing_known says the question was answered once, never what the
+    """TASK-342 import / older cards: housing_known says the question was answered once, never what the
     answer was. A headcount on the card does say a flat is wanted and settles the gate. The flag ALONE does
     not (review 2026-09-16): it used to, which closed the gate on an answer that never existed and then ran
     the shortlist AND the handoff unfiltered -- the exact bug TASK-211 was filed for, for the population the
@@ -1031,7 +1031,7 @@ def test_card_patch_must_be_an_object(luna):
 
 
 def test_too_many_bubbles_is_a_corrective_retry_not_an_exception(luna):
-    """TASK-156 (F2): a style violation on the first pass no longer raises straight out of turn() --
+    """TASK-385 (F2): a style violation on the first pass no longer raises straight out of turn() --
     it is a corrective retry in the same session, same contract as every other checked dialog rule
     (see tests/test_wa_luna_dialog_rules.py's own coverage of this same check)."""
     attempts = []

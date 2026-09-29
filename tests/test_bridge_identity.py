@@ -1,4 +1,4 @@
-"""Offline proof for bridge/identity.py (TASK-131 round 6, Ivan's ruling 2026-09-22): match a
+"""Offline proof for bridge/identity.py (TASK-360 round 6, Ivan's ruling 2026-09-22): match a
 pulled file to a message on what it IS -- size, duration, filename -- never on when it arrived.
 """
 import struct

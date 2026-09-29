@@ -22,7 +22,7 @@ THE FAILURE CHAIN THIS EXISTS TO FIX, verified in this tree:
 On the Cloud API the window between pressing send and knowing is milliseconds. On a phone-mediated
 send it is 20-60 s and is the dominant failure class, so the key has to be a pure function of the
 turn: same phone, same inbound message, same bubble index -> same key, in any process, after any
-restart, forever. The executor's ledger then applies first-body-wins (TASK-130).
+restart, forever. The executor's ledger then applies first-body-wins (TASK-359).
 
 ``action`` is NOT in that material (TASK-245). It reads like a fact about the turn but it is the
 model's own free-text output for that call (``OUTPUT_SCHEMA["action"]`` has no enum), and the
@@ -36,7 +36,7 @@ material to the key itself.
 
 ``turn_key`` is a REQUIRED, EXPLICIT argument and has no default on purpose. On the Meta rail it is
 the inbound wamid that already scopes the reply-turn claim (``app/wa/store.py:305-309``); on this
-rail there is no provider id at all, so it is the inbound id we mint ourselves (TASK-131). Either
+rail there is no provider id at all, so it is the inbound id we mint ourselves (TASK-360). Either
 way it belongs to the caller who knows which message is being answered -- a default here would
 silently key two different turns the same.
 
@@ -50,7 +50,7 @@ the extra index is a new key and sends, so the candidate sees a fragment. Rare, 
 import hashlib
 import re
 
-# "wab" = WhatsApp bridge, "o" = outbound. The inbound half (TASK-131) mints "wab.i." / "wab.m."
+# "wab" = WhatsApp bridge, "o" = outbound. The inbound half (TASK-360) mints "wab.i." / "wab.m."
 # ids into the same id space, which is why the direction is in the prefix.
 CONVERSATIONAL_PREFIX = "wab.o."
 CAMPAIGN_PREFIX = "wab.o.camp."

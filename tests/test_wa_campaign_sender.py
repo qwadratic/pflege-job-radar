@@ -1,4 +1,4 @@
-"""TASK-206 offline: the campaign sender (app/wa/luna/campaign.py). tmp SQLite, Meta as a fake transport behind the
+"""TASK-343 offline: the campaign sender (app/wa/luna/campaign.py). tmp SQLite, Meta as a fake transport behind the
 real meta.Client, a frozen clock with a recording sleep, a fake Luna model. Synthetic personas and numbers only."""
 import csv
 import hashlib
@@ -897,7 +897,7 @@ def test_status_shows_delivery_statuses_errors_and_replies(wa, monkeypatch):
                          {"id": wamid_b, "status": "failed", "timestamp": "1789400003", "recipient_id": LEAD_B[1:],
                           "errors": [{"code": 131042, "title": "Business eligibility payment issue",
                                       "error_data": {"details": "unsettled payments"}}]}]})
-    # TASK-157: a fake refusal-classifier transport -- the decline branch (app/wa/luna_brain.py) now
+    # TASK-386: a fake refusal-classifier transport -- the decline branch (app/wa/luna_brain.py) now
     # runs app/wa/luna/refusal.is_unambiguous_refusal on the candidate's text before honoring the
     # model's decline flag; without this the offline suite would spawn a real `claude -p` subprocess.
     monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
@@ -1083,7 +1083,7 @@ def test_a_template_undelivered_twice_keeps_every_attempt_and_a_rejected_retry_r
     assert _thread_slots(KNOWN)["campaign"]["wamid"] == wamid_2
 
     graph.fail.clear()
-    code, report = _run(wa, graph, leads, "--send")                # a rejected attempt is claimed again, as in TASK-206
+    code, report = _run(wa, graph, leads, "--send")                # a rejected attempt is claimed again, as in TASK-343
     assert code == CAMP.EXIT_OK and report["phones"][0]["action"] == "retry_failed"
     wamid_4 = f"wamid.camp.{KNOWN[1:]}.4"
     assert _attempt_rows(KNOWN)[3] == (4, "sent", wamid_4, None)

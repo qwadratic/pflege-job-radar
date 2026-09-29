@@ -1,4 +1,4 @@
-# The phone rail, end to end (TASK-130 / TASK-142 / TASK-143)
+# The phone rail, end to end (TASK-359 / TASK-371 / TASK-372)
 
 Two processes on two machines and one ssh connection between them, opened from our side.
 
@@ -40,7 +40,7 @@ ssh macmini 'systemctl --user daemon-reload && systemctl --user enable --now pfl
 | `WA_BRIDGE_WATCH_INTERVAL_SEC` | how often the watcher asks the notification shade. 5. |
 | `WA_BRIDGE_DEBUG_CAPTURE` | pre/post/error screenshots + a screen recording per queued op, under `WA_BRIDGE_STATE/{shots,recordings}`, kept 14 days and reviewed before deletion (TASK-228/230). **On by default** since TASK-230 (review-before-delete made it safe to leave running); set to `0` to disable. |
 | `WA_LUNA_MEDIA_DIR` | where `app/wa/luna/tools_server.py`'s `show_clinic_photos` scp's clinic photos in from the VPS, straight over ssh, never through this executor's own routes. Must equal the VPS's `rail.env` value of the same name (TASK-272). Defaults to `/home/cursorworker1/wa_luna_media` if unset, which is what every deploy before this variable existed already used. Swept hourly by age alone, kept 14 days (`bridge/server.py::LUNA_MEDIA_RETENTION_DAYS`) — these files carry no `phone_ops` row, so they never go through the review-before-delete screenshot/recording sweep above. |
-| `WA_BRIDGE_RAIL_NUMBER` | the msisdn this handset sends from, reported as `rail.number` in `GET /v1/health` and carried into the inbound envelope by `bridge/relay_pull.py`. **Unset on this deploy and that is the honest state** — the number registered to WhatsApp on `huawei_p30_lite_01` is recorded nowhere and two read-only settles both need a human (TASK-136). Unset reads as `null` plus `msisdn_verified: false`, never as a guess. |
+| `WA_BRIDGE_RAIL_NUMBER` | the msisdn this handset sends from, reported as `rail.number` in `GET /v1/health` and carried into the inbound envelope by `bridge/relay_pull.py`. **Unset on this deploy and that is the honest state** — the number registered to WhatsApp on `huawei_p30_lite_01` is recorded nowhere and two read-only settles both need a human (TASK-365). Unset reads as `null` plus `msisdn_verified: false`, never as a guess. |
 | `WA_BRIDGE_OPS_POLL_SEC` | how often the FIFO ops dispatcher claims the next queued row. Defaults to `bridge/dispatcher.py::DEFAULT_POLL_SEC`. |
 | `WA_BRIDGE_RECONCILE_INTERVAL_SEC` | how often `ReconcileWatcher` opens and reads every chat still carrying an unread badge — the third inbound door, the one that catches what the notification shade missed while a human was holding the phone. 180. |
 | `WA_BRIDGE_UNRESOLVED_SEND_INTERVAL_SEC` | how often sends still `ATTEMPTING`/`UNCONFIRMED` are re-checked against the screen. 60. |
@@ -58,14 +58,14 @@ whole reason it can live on a machine we do not own the dependencies of.
 `WA_BRIDGE_PER_NUMBER_DAILY_CAP` has no default and the executor will not start without it. There is
 no per-recipient daily cap to inherit from anywhere, and CLAUDE.md forbids inventing one. The deploy
 put **30** in `bridge.env` so the rail could run; that number is the deploy's, not a decision. Ivan
-or TASK-127 names the real one, and changing it is one line plus
+or TASK-356 names the real one, and changing it is one line plus
 `systemctl --user restart pflege-wa-bridge`.
 
 It is a **fuse, not a schedule**: reaching it is a loud `429 rail_parked` with a `next_slot_at`,
 which our campaign classifier turns into "failed, ownership restored". It never drops a message
 quietly.
 
-## 2. The tunnel and the relay, on the VPS — INSTALLED 2026-09-21 (TASK-146)
+## 2. The tunnel and the relay, on the VPS — INSTALLED 2026-09-21 (TASK-375)
 
 ```bash
 sudo install -m0644 deploy/wa-bridge/pflege-wa-bridge-tunnel.service /etc/systemd/system/
@@ -149,7 +149,7 @@ ssh macmini 'systemctl --user is-active pflege-wa-bridge'
   is not moving and a runner that is dead leave the same queue behind.
 * `audit` — how many chat destructions this handset has on record.
 
-## 4a. The chat operations (TASK-147)
+## 4a. The chat operations (TASK-376)
 
 The handset operations are code, not a script rewritten per occasion. Each one is a function in
 `bridge/operations.py` (the broadcast is `bridge/broadcast.py`) and each is one route:
@@ -214,7 +214,7 @@ is the design, not a workaround.
 ## 6. What this rail cannot do, stated rather than stubbed
 
 * **No media.** A photo or a voice note arrives as the notification's own placeholder text
-  ("📷 Foto") with `media_kind` recorded beside it. The bytes are TASK-131. Synthesising an `image`
+  ("📷 Foto") with `media_kind` recorded beside it. The bytes are TASK-360. Synthesising an `image`
   object with an id nothing can fetch would move the failure later instead of naming it now.
 * **No provider message id, in either direction.** Outbound is keyed by the `client_msg_id` we mint
   (`app/wa/bridge_ids.py`), inbound by the id `bridge/inbound.py` mints. A `sent` row requires a

@@ -3,7 +3,7 @@
 Synthetic-CV regression set for `app/cv.py`: text -> profile -> ranked matches. Not an LLM-judge
 eval (see `harness/` for that kind) -- this is a golden-case check, and it now runs **two**
 extraction paths over the same case set: `CV.analyse()` (deterministic, mostly regex) and
-`CV.analyse_llm()` (the `claude` CLI reasoning over the raw CV text, TASK-65). Both hand their
+`CV.analyse_llm()` (the `claude` CLI reasoning over the raw CV text, TASK-325). Both hand their
 extracted profile to the same `match()` afterwards, so the two runs measure extraction quality,
 not job-matching scoring.
 
@@ -48,7 +48,7 @@ Each case is one file in `cases/*.json`:
 All `expected` keys are optional and independent -- set only the ones this case is actually
 testing. `_any` keys pass if the extracted set intersects; `_all` keys need every listed value
 present; `roles_none` fails if the extracted `roles` include any of the listed (forbidden) values --
-added for TASK-65's Pflegefachhelfer trap case, where the interesting failure mode is an extra,
+added for TASK-325's Pflegefachhelfer trap case, where the interesting failure mode is an extra,
 wrong role rather than a missing one; `experience_years` is exact; `min_matches`/`min_score` check
 the match step against the fixture board above.
 
@@ -57,7 +57,7 @@ directly and re-run -- there's no separate golden store, the case file is the ex
 cases fully synthetic/genericized (no real names, phone numbers, or verbatim text from anyone's
 real CV or chat history), same rule as everywhere else in this repo.
 
-## TASK-65: deterministic vs. LLM-driven extraction -- result
+## TASK-325: deterministic vs. LLM-driven extraction -- result
 
 Widened the case set from 2 to 12 (qualification-path variety: Urkunde/full recognition,
 Defizitbescheid received, Kenntnisprüfung passed/Urkunde pending, plain Pflegehelfer, the
@@ -68,7 +68,7 @@ of the full word, a distractor birth year next to a date-range instead of "X Jah
 `CV.analyse()`, same `claude` CLI subprocess pattern as `app/wa/luna_brain.py:Client` (Sonnet 5,
 `--restricted --tools ""`, stdin payload, `--output-format json`, the `result` field parsed as
 JSON, raises loudly on any bad response -- no fallback to the deterministic path). It reasons over
-the raw CV text (+ an optional `chat_history` argument for TASK-67 to pass through later) and still
+the raw CV text (+ an optional `chat_history` argument for TASK-327 to pass through later) and still
 calls the same deterministic `match()` -- job-matching scoring is out of scope for this comparison.
 
 **Pass rate:** deterministic (one run -- it is deterministic by construction) **9/12**. LLM (sampled
@@ -118,12 +118,12 @@ already confirmed live during this repo's WhatsApp-harness planning session (sam
 sessions, two different phrasings, same underlying decision) -- here it can flip a *field*, not
 just the wording around it.
 
-**Recommendation for TASK-67 (CV/Urkunde intake, which wires up `analyse_candidate`):**
+**Recommendation for TASK-327 (CV/Urkunde intake, which wires up `analyse_candidate`):**
 `CV.analyse_llm()` is the better default for reading free CV text (and, later, chat history) into a
 profile -- it is measurably better at exactly the domain traps and messy real-world phrasing this
 task set out to test, at the cost of occasional non-determinism on genuinely borderline recognition-
 path cases. `match()` (job-matching scoring) is unaffected either way and should stay exactly as it
 is -- this result is about extraction, not matching. A borderline recognition-path candidate is
 worth a human's second look regardless of which extraction path produced the profile; that is a
-product/process question for TASK-67, not something this comparison should paper over with a
+product/process question for TASK-327, not something this comparison should paper over with a
 deterministic tie-breaker rule invented after the fact.

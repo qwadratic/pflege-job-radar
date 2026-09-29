@@ -1,4 +1,4 @@
-"""The one place an outbound WhatsApp client is built (TASK-219), and which rail it is built for (TASK-220).
+"""The one place an outbound WhatsApp client is built (TASK-349), and which rail it is built for (TASK-220).
 
 Every send path used to call ``M.Client()`` itself, so the Cloud API was wired into seven call
 sites. They all go through ``get_client`` now: which transport runs is named by the thread's own
@@ -19,7 +19,7 @@ that variable moves new conversations, never live ones.
 A caller with no phone at all still resolves on ``C.TRANSPORT``: ``campaign.py:1091``/``:1135`` (one
 run spans many numbers, and it opens a per-attempt turn on the client it holds) and
 ``import_history.py:534`` (a media fetch). Both are Meta-rail calls today; a bridge campaign resolves
-its rail per recipient through the same function (TASK-127).
+its rail per recipient through the same function (TASK-356).
 """
 from . import bridge as BR
 from . import config as C
@@ -43,7 +43,7 @@ def rail_for(conn=None, phone=None):
 
 
 def rail_of_client(client):
-    """-> the rail this client object actually is, or 'unknown' (TASK-146).
+    """-> the rail this client object actually is, or 'unknown' (TASK-375).
 
     Not the same question as ``rail_for``, which answers "which rail would a send to this phone go
     out on". An injected client -- every test's FakeMeta, the one ``campaign.py`` holds for a whole

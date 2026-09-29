@@ -1,4 +1,4 @@
-"""Campaign sender (TASK-206): we send one approved Meta template to a lead list ourselves, Luna answers the replies.
+"""Campaign sender (TASK-343): we send one approved Meta template to a lead list ourselves, Luna answers the replies.
 
 Usage:
     python -m app.wa.luna.campaign --campaign-id SLUG --template-id ID --leads FILE.csv|FILE.json
@@ -28,7 +28,7 @@ DRY-RUN (default). Resolves the template by id (GET, must be APPROVED), canonica
 duplicate and conflicting duplicate leads reported, none dropped silently), validates and renders each lead, and
 plans each phone from a read-only in-memory copy of data/wa.sqlite: owner (wa_ownership, else the
 WA_REAL_SYSTEM_PHONES_FILE check), thread stage/ball, stopped, declined, marketing opt-out (user_preferences stop,
-failed status 131050), cross-rail suppression (wa_suppressions, TASK-216), this and other campaigns' claims, history
+failed status 131050), cross-rail suppression (wa_suppressions, TASK-347), this and other campaigns' claims, history
 import preview (import_history dry-run, with its opt-out records and chat Stopps). Writes no database row, sends
 nothing; only the report file.
 
@@ -486,7 +486,7 @@ def decide(state, retry):
                              f"out; check --status, then --retry-uncertain" + (f" ({this['error']})" if this["error"]
                                                                                else ""))
     if state["suppressed"]:
-        # TASK-216: the cross-thread, cross-lane list. Planned as a skip, exactly like the three below it, so no
+        # TASK-347: the cross-thread, cross-lane list. Planned as a skip, exactly like the three below it, so no
         # attempt is ever claimed for a number that refused us; send_one's own check is what makes it
         # unbypassable, and that one raises (a suppressed phone that reached the POST is a permanent failure,
         # never an uncertain one).
@@ -662,7 +662,7 @@ def send_one(campaign_id, definition, lead, client, clock, retry, window, source
     result.update(attempt=attempt, claimed_at=claimed_at, prior_owner=prior)
 
     try:
-        # TASK-216: the campaign's suppression choke point -- the one send path that never touches
+        # TASK-347: the campaign's suppression choke point -- the one send path that never touches
         # api.send_and_record. decide() already planned a suppressed phone as skip_suppressed, so reaching
         # this means the number refused us between the plan and the POST (a Stopp while the run was pacing,
         # or during a history import that took minutes). Inside this try on purpose: SuppressedRecipient is a

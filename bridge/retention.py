@@ -24,7 +24,7 @@ THE THREE WAYS AN ARTEFACT BECOMES SAFE TO DELETE:
   3. MANUALLY RESOLVED -- a human looked at the artefact (op_id names every file for it) and called
      `resolve_op` (POST /v1/ops/<id>/resolve, tools/wa_bridge.py `ops resolve`). This is the only
      path for a failed op that never minted a client_msg_id at all (read_thread,
-     send_photos/gallery/document -- TASK-131's own mechanism-proof sends have no idempotency key
+     send_photos/gallery/document -- TASK-360's own mechanism-proof sends have no idempotency key
      to reconcile against).
 
 Anything that is none of the three is HELD, however old -- logged as `retention_held` so a growing
@@ -59,7 +59,7 @@ def _op_id_from_recording(path):
     return m.group(1) if m else None
 
 
-#: send_photos/send_gallery/send_document (TASK-131, "mechanism proof, not production ready") never
+#: send_photos/send_gallery/send_document (TASK-360, "mechanism proof, not production ready") never
 #: gate on a delivery tick the way send() does -- Executor.send_photos/gallery/document return
 #: normally with whatever tick string the driver read back, even "" (no tick drawn yet). OP_DONE for
 #: these three therefore means only "the driver call returned", not "WhatsApp confirmed delivery" --

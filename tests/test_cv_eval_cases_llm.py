@@ -1,4 +1,4 @@
-"""LLM-driven CV extraction (app.cv.analyse_llm, TASK-65) against the widened evals/cv/cases/*.json
+"""LLM-driven CV extraction (app.cv.analyse_llm, TASK-325) against the widened evals/cv/cases/*.json
 set, through the real `claude` CLI -- costs real money and takes several seconds per case.
 `llm`-marked: excluded from the default run (``-m "not llm"``), same convention as
 tests/test_wa_luna_personas.py. Skipped automatically if the `claude` CLI is not on PATH.

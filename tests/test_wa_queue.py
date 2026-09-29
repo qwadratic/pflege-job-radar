@@ -179,7 +179,7 @@ def test_an_imported_card_with_only_the_housing_flag_is_not_matched_as_if_it_ans
     assert cand["needs_housing"] is None and cand["housing_flexible"] is None
 
 
-# --- TASK-144: the branch the candidate chose decides how many clinics are queued -----------------
+# --- TASK-373: the branch the candidate chose decides how many clinics are queued -----------------
 # "narrow"/"pool" are written on the card verbatim by app/wa/luna_brain.py (the values of
 # app/wa/luna/offer.py:BRANCH_NARROW/BRANCH_POOL), so they are spelled out here as the cards carry them.
 

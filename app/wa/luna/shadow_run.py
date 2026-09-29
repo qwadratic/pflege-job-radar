@@ -1,4 +1,4 @@
-"""Dry-run shadow report (TASK-176): "what would the agent say next, without sending" -- the same
+"""Dry-run shadow report (TASK-329): "what would the agent say next, without sending" -- the same
 safety contract the real production team already built and uses for exactly this purpose
 (``wa_shadow_run.py`` on tasker-dispatcher-01): report the proposed next reply for every thread
 that is owed one, always against a copy of the operational database, and never call WhatsApp send

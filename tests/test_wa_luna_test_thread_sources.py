@@ -1,4 +1,4 @@
-"""TASK-150: the original ad behind what a TEST thread was told -- and never anywhere else.
+"""TASK-379: the original ad behind what a TEST thread was told -- and never anywhere else.
 
 Ivan, 2026-09-21, for the acceptance phase: his business partner must be able to check that the
 vacancies this bot names are real. So on a thread ``wa_threads.is_test`` marks, a message that names
@@ -63,7 +63,7 @@ def test_a_production_thread_gets_no_footnote_and_no_link(board):
 def test_asking_for_the_original_gets_the_url_appended_to_the_answer_not_instead_of_it(board):
     """Assembled in code -- the link line is built from board rows, never written by the model.
 
-    AND IT NEVER TAKES THE TURN (TASK-151). This used to return before the model ran, so the
+    AND IT NEVER TAKES THE TURN (TASK-380). This used to return before the model ran, so the
     candidate's actual question was replaced by a list of links. The model writes its answer and the
     links go out next to it."""
     first = LB.turn("und in Augsburg?", {"phone": "+4915550001234", "is_test": True, "slots": {},
@@ -76,7 +76,7 @@ def test_asking_for_the_original_gets_the_url_appended_to_the_answer_not_instead
 
 
 def test_a_question_about_a_document_is_answered_by_the_model_not_with_job_links(board):
-    """TASK-151: "Original" is the word this funnel uses for the Urkunde. The old detector read any
+    """TASK-380: "Original" is the word this funnel uses for the Urkunde. The old detector read any
     sentence carrying it plus a question mark as a request for the ad, so the single gate the funnel
     exists to close was answered with a list of vacancies."""
     first = LB.turn("und in Augsburg?", {"phone": "+4915550001234", "is_test": True, "slots": {},
@@ -94,7 +94,7 @@ def test_a_question_about_a_document_is_answered_by_the_model_not_with_job_links
 
 
 def test_a_stored_link_the_board_no_longer_confirms_is_said_instead_of_sent(board, monkeypatch):
-    """TASK-151: the stored links were a frozen per-thread allowlist -- audit E's shape, for URLs.
+    """TASK-380: the stored links were a frozen per-thread allowlist -- audit E's shape, for URLs.
     The point of the feature is proving a vacancy is real; a dead ad breaks exactly that."""
     first = LB.turn("und in Augsburg?", {"phone": "+4915550001234", "is_test": True, "slots": {},
                                          "asked": []}, client=fake_client(_names_a_posting))
@@ -156,7 +156,7 @@ def test_a_message_that_names_no_posting_gets_no_footnote(board):
 
 
 def test_a_posting_whose_board_row_has_no_url_is_said_plainly(tmp_path, monkeypatch):
-    """TASK-150 AC#5, made true in TASK-151: a posting with no recorded original used to be dropped
+    """TASK-379 AC#5, made true in TASK-380: a posting with no recorded original used to be dropped
     from the list silently, so the answer had fewer lines than the message had houses and nobody
     could tell which one had no ad. It is named and the reason is given (CLAUDE.md)."""
     rows = [{**_job(i), "external_url": None} for i in range(1, 6)]

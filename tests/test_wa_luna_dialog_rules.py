@@ -1,4 +1,4 @@
-"""TASK-144: the three dialog rules Ivan made explicit on 2026-09-21, tested where they are
+"""TASK-373: the three dialog rules Ivan made explicit on 2026-09-21, tested where they are
 enforced -- in code, not in the prompt.
 
 1. VOLUME -- at most five positions in one message, an accurate remainder count, and the
@@ -53,7 +53,7 @@ def _job(i, city=None, department=None, housing=None, clinic=None):
             "enr_housing": bool(i % 3) if housing is None else housing,
             "verify_status": "live", "status": "open", "first_published": "2026-09-01", "fresh": True,
             # external_url and nothing else, which is the shape a live snapshot row really has: the
-            # board publishes no separate source_url on any posting (TASK-151, measured 2026-09-21),
+            # board publishes no separate source_url on any posting (TASK-380, measured 2026-09-21),
             # and a fixture that invented one made app/wa/luna/source_link.py's documented
             # preference look like it fired.
             "external_url": f"https://example.org/job/{i}"}
@@ -65,7 +65,7 @@ def _board(jobs, monkeypatch):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     # TASK-302 fix pass (2026-09-25): build_warming (app/wa/luna_brain.py) now fetches each shortlisted
     # posting's full description via app/data.py:job_detail -- a LIVE call in production (description
-    # is not in JOB_COLS, TASK-146). Every board fixture posting here is synthetic, so any card that
+    # is not in JOB_COLS, TASK-375). Every board fixture posting here is synthetic, so any card that
     # happens to also satisfy the warming trigger (region+qualification satisfied, a known city -- true
     # of e.g. READY, used by tests that have nothing to do with warming) would otherwise reach the
     # network and fail on the missing PostgREST credentials this offline suite never sets up. A test
@@ -149,7 +149,7 @@ def test_every_criterion_that_would_narrow_the_set_is_offered_whole():
     criterion may list was a second ceiling nobody asked for (CLAUDE.md), and it left the model able
     to suggest 5 of the 20 departments that would actually narrow this set -- picked by a sort
     order, not by the candidate's need. narrow_by is machine-readable context, not message text; the
-    VOLUME rule still governs what goes out (TASK-146)."""
+    VOLUME rule still governs what goes out (TASK-375)."""
     rows = [_job(i, city="München", department=f"Abteilung {i}") for i in range(1, 21)]
     by_criterion = {c["criterion"]: c for c in OF.build_offer(rows)["narrow_by"]}
     assert len(by_criterion["department"]["values"]) == 20
@@ -203,7 +203,7 @@ def test_a_reply_naming_a_clinic_no_tool_returned_is_rejected_loudly(small):
 
 
 def test_an_invented_name_never_reaches_the_candidate_and_never_becomes_silence(small):
-    """TASK-146: the check used to raise straight out of turn(), so nothing was sent at all and
+    """TASK-375: the check used to raise straight out of turn(), so nothing was sent at all and
     catch-up re-drove the same turn into the same wording. The model gets one corrective attempt --
     this fake keeps writing the same invented house -- and then the candidate gets the harness's own
     holding message while the thread is flagged for a colleague. An answer plus a human, never the
@@ -250,7 +250,7 @@ def test_a_second_violation_hands_the_thread_to_a_human_with_an_answer_already_s
 
 
 def test_a_reply_with_too_many_bubbles_is_a_corrective_retry_not_an_exception(small):
-    """TASK-156 (F2): the bubble-count style check (MAX_BUBBLES) used to run OUTSIDE the try/except
+    """TASK-385 (F2): the bubble-count style check (MAX_BUBBLES) used to run OUTSIDE the try/except
     that protects a turn -- three bubbles raised AssertionError straight out of turn() and the
     candidate got nothing at all (F2, verification 2026-09-22, hit 1 of 7 live turns). It now shares
     the same corrective-retry-then-holding-message contract as every other checked rule here."""
@@ -290,7 +290,7 @@ def test_a_persistent_bubble_count_violation_still_ends_in_an_answer_not_silence
     "Das St. Anna Stift Coburg sucht.",
 ])
 def test_an_invented_house_is_caught_even_without_a_head_word_from_a_list(small, bubble):
-    """TASK-146: the detector used to fire only on a fixed list of head words at the FRONT of the
+    """TASK-375: the detector used to fire only on a fixed list of head words at the FRONT of the
     name, so every one of these -- the ordinary shape of a fabricated clinic -- passed NO INVENTION
     untouched, and because the volume cap counts detected mentions, VOLUME did not count them
     either. A reply could have named ten invented houses and cleared both rules."""
@@ -304,7 +304,7 @@ def test_the_residual_the_shape_detector_cannot_reach_is_stated_not_hidden(small
     whole sentence instead of from the name would catch it -- and would bring back the false
     positive that silences a truthful turn ("Im Klinikum Nachtdienst zu arbeiten ist in München
     möglich"), which is the worse of the two. Recorded here so the limit is a decision and not a
-    surprise (TASK-146)."""
+    surprise (TASK-375)."""
     assert GR.check_reply(["Das St. Anna Stift in Coburg sucht."], set()) == []
 
 
@@ -316,7 +316,7 @@ def test_the_residual_the_shape_detector_cannot_reach_is_stated_not_hidden(small
     "Im Krankenhaus Vollzeit zu arbeiten ist der Normalfall.",
 ])
 def test_ordinary_german_after_a_head_word_is_not_a_clinic_name(small, bubble):
-    """TASK-146: an ordinary German compound after "Klinikum"/"Krankenhaus" was read as an invented
+    """TASK-375: an ordinary German compound after "Klinikum"/"Krankenhaus" was read as an invented
     clinic, check_reply raised, the whole turn failed and the candidate got silence -- while
     catch-up re-drove it into the same phrasing. The board's own vocabulary is what tells a name
     from a noun now: 'München' is in it, 'Nachtdienst' is not."""
@@ -379,7 +379,7 @@ def test_a_locked_harness_text_is_never_grounding_checked(small):
 
 
 def _shown(result):
-    """tools_server hands a listing back as {shown, total} (TASK-145); one posting comes back bare."""
+    """tools_server hands a listing back as {shown, total} (TASK-374); one posting comes back bare."""
     return result["shown"] if isinstance(result, dict) and "shown" in result else [result]
 
 
@@ -490,7 +490,7 @@ def test_the_model_cannot_write_the_stage_or_the_grounding_memory_itself(small):
 
 def _stub_descriptions(monkeypatch, text="Wir suchen Verstärkung für unser Team."):
     """build_warming fetches each shortlisted posting's full description via app/data.py:job_detail --
-    a live call in production (description is not in JOB_COLS, TASK-146) -- stubbed the same way every
+    a live call in production (description is not in JOB_COLS, TASK-375) -- stubbed the same way every
     other offline test in this repo stubs it (see e.g. the job_detail tests further below)."""
     monkeypatch.setattr(D, "job_detail", lambda pid: {"description": text})
 
@@ -837,7 +837,7 @@ def test_region_rule_answers_the_bavaria_half_instead_of_escalating_or_dropping_
     assert "there is no board town to resolve for the other Bundesland at all" in rule
 
 
-# --- wiring the CV matcher needs (TASK-145 lives in tools_server.py; this half is luna_brain's) ---
+# --- wiring the CV matcher needs (TASK-374 lives in tools_server.py; this half is luna_brain's) ---
 
 def test_the_tools_server_is_told_whose_cv_to_match(small, monkeypatch):
     """tools_server.match_cv_to_postings reads the stored CV of the thread it is answering, and can
@@ -899,7 +899,7 @@ def test_the_turn_hands_its_own_number_to_the_client(small):
     assert client.phone == "+4915550001234"
 
 
-# --- TASK-146: what the grounding evidence is, and where it comes from --------------------------
+# --- TASK-375: what the grounding evidence is, and where it comes from --------------------------
 def test_evidence_is_what_the_tool_showed_and_not_what_the_query_matched(hundred):
     """A listing tool shows 5 rows and a total. Replaying the query WITHOUT that cut made every
     clinic the query matched valid evidence, so on a 100-clinic board a reply could name row 63 --
@@ -917,10 +917,10 @@ def test_evidence_is_what_the_tool_showed_and_not_what_the_query_matched(hundred
 
 
 def test_a_logging_failure_is_a_logging_failure_and_not_a_false_invention(small, monkeypatch):
-    """Since TASK-144 the call log is the sole source of grounding evidence, so swallowing a write
+    """Since TASK-373 the call log is the sole source of grounding evidence, so swallowing a write
     error left the tools returning rows while the evidence set was empty -- every truthful clinic
     name in the reply was then rejected as an invention, on every turn, with nothing anywhere
-    recording why (TASK-146)."""
+    recording why (TASK-375)."""
     monkeypatch.setattr(TS, "_session_dir", lambda: C.LUNA_SESSION_DIR / "nope")
 
     def refuse(*_a, **_kw):
@@ -935,7 +935,7 @@ def test_a_town_with_nothing_live_answers_zero_instead_of_unknown_town(tmp_path,
     """The error text says in so many words that an unknown town is NOT the same as nothing being
     open there -- and the town set it was built from was the live-verified one, so the two states
     it exists to separate were conflated. A candidate who typed their own town correctly was asked
-    to re-spell it, or offered a spelling-near DIFFERENT town (TASK-146)."""
+    to re-spell it, or offered a spelling-near DIFFERENT town (TASK-375)."""
     gone = {**_job(2, city="Coburg"), "verify_status": "gone"}
     _board([_job(1, city="München"), gone], monkeypatch)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
@@ -949,9 +949,9 @@ def test_a_town_with_nothing_live_answers_zero_instead_of_unknown_town(tmp_path,
 
 
 def test_a_clinic_whose_only_posting_is_gone_is_not_a_clinic_with_openings(tmp_path, monkeypatch):
-    """The posting doors have refused withheld rows since TASK-145; the clinic doors counted
+    """The posting doors have refused withheld rows since TASK-374; the clinic doors counted
     jobs_open and handed them over anyway, and grounding then turned the name into valid evidence
-    for telling a candidate that house has openings (TASK-146)."""
+    for telling a candidate that house has openings (TASK-375)."""
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
     _board([{**_job(1, city="Coburg"), "verify_status": "gone"}], monkeypatch)
@@ -967,7 +967,7 @@ def test_a_posting_whose_detail_cannot_be_read_is_loud_rather_than_all_nulls(sma
     """This tool's own description tells the model a null field "means this ad did not say it,
     never that the answer is no". `or {}` made a failed detail read indistinguishable from an ad
     that genuinely said nothing, so the candidate was told "das steht nicht dabei" about an ad
-    nobody read (TASK-146)."""
+    nobody read (TASK-375)."""
     monkeypatch.setattr(D, "job_detail", lambda _pid: None)
     with pytest.raises(TS.ToolError, match="detail row could not be read"):
         TS.get_posting(1)
@@ -976,7 +976,7 @@ def test_a_posting_whose_detail_cannot_be_read_is_loud_rather_than_all_nulls(sma
 def test_no_tool_row_carries_a_board_url(small):
     """offer.py keeps the link out of the payload the model writes from on purpose -- "the way to
     make that a guarantee rather than a rule is to keep the link out" -- while every tool-sourced
-    row handed one over and check_reply does not reject a URL in a bubble (TASK-146)."""
+    row handed one over and check_reply does not reject a URL in a bubble (TASK-375)."""
     row = TS.search_postings(city="München")["shown"][0]
     assert "source_url" not in row and "external_url" not in row
     assert not any("http" in str(v) for v in row.values())
@@ -989,7 +989,7 @@ def test_no_tool_row_carries_a_board_url(small):
     ("/api/cities", ""),
 ])
 def test_no_board_api_result_carries_a_url_either(small, path, query):
-    """TASK-150 AC#3, made true in TASK-151. The preset tools were clean; ``board_api_get`` -- which
+    """TASK-379 AC#3, made true in TASK-380. The preset tools were clean; ``board_api_get`` -- which
     prompts.py tells the model to use -- was not: /api/jobs returned ``external_url`` on every row
     and /api/clinics returned ``website``/``careers_url``/``board``. Measured on the live board
     2026-09-21: row 0 of ``board_api_get('/api/jobs','city=Augsburg&limit=2')`` carried
@@ -1127,7 +1127,7 @@ def test_the_correct_spelling_of_a_board_record_with_a_scrape_typo_is_accepted(t
 
 def test_saying_these_are_all_there_are_reaches_the_candidate_and_is_flagged_not_blocked(hundred):
     """Audit D: "Es gibt nur diese 5 Kliniken in Bayern" was accepted with a true count of 224,
-    because nothing checked the reply against remaining_clinics -- TASK-144 made it BLOCK. ROUND 5
+    because nothing checked the reply against remaining_clinics -- TASK-373 made it BLOCK. ROUND 5
     (grounding.py's module docstring) took it back off the blocking path: the reply reaches the
     candidate and the sentence is recorded in ``flagged`` instead. The remainder ("95 weitere") is
     stated so the still-BLOCKING remainder-disclosure rule does not fire and mask what this test is
@@ -1257,7 +1257,7 @@ def test_a_real_correction_of_the_qualification_path_still_goes_through(small):
 
 
 def test_declaring_a_candidate_unplaceable_is_said_out_loud_whichever_field_does_it(small):
-    """TASK-151, audit F's second door: qualification_path:"reject" was waved through as "a verdict,
+    """TASK-380, audit F's second door: qualification_path:"reject" was waved through as "a verdict,
     said out loud" while nothing said it. One ordinary bubble went out, the stage dropped from
     consent to qualification, and the next turn treated a candidate holding a German Urkunde as not
     placeable -- without a word to them about it."""
@@ -1315,7 +1315,7 @@ def test_the_replay_covers_what_list_clinics_itself_returned(tmp_path, monkeypat
     """The clinic door reads the candidate's spelling of a town the way the registry writes it
     ("Wuerzburg" -> "Würzburg"). A replay that compared the raw string instead found nothing, so a
     clinic the tool really put in front of the model would have been rejected as an invention. The
-    two sides are pinned to each other here rather than trusted to stay in step (TASK-146)."""
+    two sides are pinned to each other here rather than trusted to stay in step (TASK-375)."""
     _board([_job(1, city="Würzburg", clinic="Klinikum Würzburg 1")], monkeypatch)
     D._snap["clinics"] = [{"clinic_id": "c1", "name": "Klinikum Würzburg 1", "town": "Würzburg",
                            "regierungsbezirk": "Unterfranken", "beds": 300,
@@ -1342,7 +1342,7 @@ def test_a_blocked_turn_does_not_attach_consent_buttons_to_the_holding_message(s
     assert not d["slots"]["anonymous_send_offered"], "the offer was not made"
 
 
-# --- the reviewer counterexamples of 2026-09-21 (TASK-151) ----------------------------------------
+# --- the reviewer counterexamples of 2026-09-21 (TASK-380) ----------------------------------------
 # Every case below was demonstrated against the LIVE board (255 clinics, 2462 live postings) before
 # it was fixed: three ten-position messages the cap read as zero, a fabricated house with no head
 # word from the list, a fabricated site built around a real one, four ways to say "that is all", an
@@ -1765,11 +1765,11 @@ def test_an_ansbach_card_warms_from_the_same_rows_search_postings_returns(monkey
     assert ids == [1], "only the posting actually in Ansbach -- never Bruckberg's same-clinic_town row"
 
 
-# --- ROUND 2 (2026-09-22): TASK-151's fix was verified only by hand-injecting ``counts``, never
+# --- ROUND 2 (2026-09-22): TASK-380's fix was verified only by hand-injecting ``counts``, never
 # against a real turn. An Opus reviewer ran it live and found (1) the board-wide total
 # market_snapshot already computes never reached the rule outside an offer turn, and (2) an
 # approximation marker could anchor on OF.OFFER_LIMIT -- a constant, not a market fact -- and pass
-# with zero real evidence. TASK-152.
+# with zero real evidence. TASK-381.
 
 def test_the_board_wide_total_reaches_the_count_rule_before_any_offer_exists(small):
     """Live bug, 2026-09-22: market_snapshot.open_jobs is computed every turn (it is "the one
@@ -2177,7 +2177,7 @@ def _straubing_board(monkeypatch, tmp_path):
 
 
 # --- ROUND 5 (2026-09-22, Ivan's decision): the exhaustive-claim check stops blocking; grounding.py's
-# module docstring has the full argument, and TASK-154 the plan. Round 4's scoped (city, subject)
+# module docstring has the full argument, and TASK-383 the plan. Round 4's scoped (city, subject)
 # evidence and the preposition split it needed are deleted along with the blocking decision they
 # served -- what is pinned below is that detection is unaffected (both the direct "alle Kliniken" and
 # the distribution "alle bei/beim/im/in KLINIK" shape are still caught, merged back into one regex),
@@ -2257,7 +2257,7 @@ def test_alle_bei_x_is_flagged_not_blocked_when_a_second_clinic_genuinely_matche
 
 
 def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(hundred):
-    """The app/wa/luna_brain.py wiring (TASK-154, retiered 2026-09-22): a flagged (not blocked)
+    """The app/wa/luna_brain.py wiring (TASK-383, retiered 2026-09-22): a flagged (not blocked)
     exhaustive claim still reaches the candidate exactly as the model wrote it -- no corrective
     retry, no holding message -- and the thread is marked on the FLAG tier (card._flags /
     card._flag_codes), so a human can still find the suspected sentence on review, without this
@@ -2279,7 +2279,7 @@ def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(h
 
 
 def test_a_flagged_reply_that_is_also_model_escalated_keeps_both_facts_on_their_own_tier(hundred):
-    """TASK-156 (F1), retiered 2026-09-22: the demoted exhaustive-claim flag and the model's own
+    """TASK-385 (F1), retiered 2026-09-22: the demoted exhaustive-claim flag and the model's own
     valid escalation describe two different real facts about the SAME turn -- both must survive, now
     each on its own field (flags never merge into the escalation reason, or the reverse) rather than
     one shared string an unconditional overwrite used to drop whichever fact was recorded first."""
@@ -2301,7 +2301,7 @@ def test_a_flagged_reply_that_is_also_model_escalated_keeps_both_facts_on_their_
     assert "remainder" in d["slots"]["_flags"], "the demoted flag's own note must survive, on its own tier"
 
 
-# --- the four guards this round leaves BLOCKING and untouched (TASK-154): each already has broader
+# --- the four guards this round leaves BLOCKING and untouched (TASK-383): each already has broader
 # coverage earlier in this file (NO INVENTION/COUNT/VOLUME above, STALE around the Coburg/Bamberg
 # tests) -- pinned here once more, narrowly, as this round's own audit record.
 

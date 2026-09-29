@@ -1,7 +1,7 @@
-"""TASK-155 (Ivan, 2026-09-22): is the candidate's own text an unambiguous refusal to continue the
+"""TASK-384 (Ivan, 2026-09-22): is the candidate's own text an unambiguous refusal to continue the
 conversation?
 
-WIRED IN (TASK-156). The call site this module was built for -- and the only place it runs, never on
+WIRED IN (TASK-385). The call site this module was built for -- and the only place it runs, never on
 every inbound turn (cost shape, decided) -- is app/wa/luna_brain.py, function turn(), the decline
 branch: a ``decline_candidate`` (out.get("decline") and not was_declined and not consent_no_tap) runs
 ``is_unambiguous_refusal(text)`` and only takes the decline branch (P.DECLINE_ACK_DE, card.declined)
@@ -34,8 +34,8 @@ Runs through the same `claude` CLI mechanism app/wa/luna_brain.Client already us
 client this call is stateless (no `--session-id`/`--resume`): a refusal check is a one-shot
 classification of one message, not a turn in a remembered conversation.
 
-THE MISSING INPUT (TASK-157, Ivan, 2026-09-22 -- a same-day regression on the wiring above). Measured
-against the live classifier right after TASK-156 wired this in: a bare "Nein" and "Nein, danke" came
+THE MISSING INPUT (TASK-386, Ivan, 2026-09-22 -- a same-day regression on the wiring above). Measured
+against the live classifier right after TASK-385 wired this in: a bare "Nein" and "Nein, danke" came
 back NOT a refusal even right after the campaign opener that asks whether the candidate's job search is
 still relevant -- exactly the shape TASK-204/TASK-208 exist to end. The classifier was obeying its own
 prompt correctly: a bare "nein" genuinely can be answering a yes/no gate question (a document, a region,
@@ -184,7 +184,7 @@ def _extract_verdict_json(text):
 
 
 def is_unambiguous_refusal(candidate_text, *, our_last_message=None, transport=None):
-    """The one entry point. ``our_last_message`` (TASK-157) is the text of the last WhatsApp message we
+    """The one entry point. ``our_last_message`` (TASK-386) is the text of the last WhatsApp message we
     ourselves sent this candidate -- what the caller's turn_context/``last_outbound`` records, never the
     model's own memory (this call stays stateless) -- or ``None`` when there is none (a first-ever
     inbound with no prior outbound: SYSTEM_PROMPT then reads candidate_text alone, exactly as before this

@@ -282,7 +282,7 @@ Rules: `usd = credits * price_per_credit` (`settings.firecrawl.eur_per_credit`, 
 
 `photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
 `clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key
-`(clinic_id, source)`) -- today exactly one Google-Maps cover photo per clinic (TASK-223 partial pass, no
+`(clinic_id, source)`) -- today exactly one Google-Maps cover photo per clinic (TASK-120 partial pass, no
 scoring/multi-photo curation yet). `app.data._build()` joins it into every clinic row once per snapshot
 rebuild, not per request.
 
@@ -306,7 +306,7 @@ WhatsApp nurse funnel) that wants one small, stable response rather than the ful
 unknown `clinic_id`; never 404s for a clinic that simply has no photo/presentation yet -- `photos` is
 just `[]` and `presentation` is `null` in that case.
 
-`photos` is a list on purpose, not a single URL like the Clinic row's `photo_url` -- TASK-224 will curate
+`photos` is a list on purpose, not a single URL like the Clinic row's `photo_url` -- TASK-121 will curate
 up to 3 photos per clinic, and this contract must not change shape when that lands. Today it holds at
 most one entry (`app.runs.clinic_photo_urls`, distinct from `clinic_photo_url()`'s single-string reader
 the Clinic row/frontend still use).
