@@ -312,7 +312,9 @@ most one entry (`app.runs.clinic_photo_urls`, distinct from `clinic_photo_url()`
 the Clinic row/frontend still use).
 
 ### Job row
-`posting_id, title, role_class, role_label, department_hint, department_raw, qualification_hint, employer, employer_class, clinic_id, clinic_name, regierungsbezirk, versorgungsstufe, traegerart, clinic_beds, city, plz, lat, lon, employment_types[], contract, start_date, first_published, first_seen, last_seen, status, verify_status, verified_at, source_url, external_url, source_codes[], n_observations, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare, fresh`
+`posting_id, title, role_class, role_label, department_hint, department_raw, qualification_hint, employer, employer_id, employer_class, clinic_id, clinic_name, clinic_status, clinic_match_rule, regierungsbezirk, versorgungsstufe, traegerart, clinic_beds, city, plz, lat, lon, employment_types[], contract, start_date, first_published, first_seen, last_seen, status, verify_status, verified_at, source_url, external_url, source_codes[], n_observations, enr_housing, enr_tariff, enr_pay_grade, enr_contact_emails[], enr_bonus, enr_childcare, enr_requirements, enr_language_req, enr_experience, provenance, fresh`
+
+`department_hint` is a list on the wire (a posting can carry more than one specialty, e.g. `["Intensiv/IMC", "Anästhesie"]`); `?department_hint=` filtering matches if the value is any one of them. `clinic_status` distinguishes an acute-care Krankenhausplan clinic from a Reha-/Vorsorgeeinrichtung (see `?clinic_status=Reha-Einrichtung`).
 
 ### CV response
 ```json

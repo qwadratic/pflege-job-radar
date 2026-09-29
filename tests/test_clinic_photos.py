@@ -159,3 +159,22 @@ def test_clinic_photo_urls_round_trip(fresh):
     assert R.clinic_photo_urls("16104") == []
     R.record_clinic_photo("16104", "/data/clinic_photos/16104/maps.jpg", "maps")
     assert R.clinic_photo_urls("16104") == ["/photos/16104"]
+
+
+def test_clear_clinic_photos_removes_every_source_for_that_clinic(fresh):
+    # TASK-120: the Haiku building classifier replaces a naive 'maps' pick with its own 'classified'
+    # winner -- must not leave both rows behind (clinic_photo_path's bare `limit 1` would then pick
+    # between them arbitrarily).
+    R.record_clinic_photo("16104", "/data/clinic_photos/16104/maps.jpg", "maps")
+    R.record_clinic_photo("16104", "/data/clinic_photos/16104/03.jpg", "classified")
+    R.clear_clinic_photos("16104")
+    assert R.clinic_photo_urls("16104") == []
+    assert R.clinic_photo_path("16104") is None
+
+
+def test_clear_clinic_photos_does_not_touch_other_clinics(fresh):
+    R.record_clinic_photo("16104", "/data/clinic_photos/16104/maps.jpg", "maps")
+    R.record_clinic_photo("36201", "/data/clinic_photos/36201/maps.jpg", "maps")
+    R.clear_clinic_photos("16104")
+    assert R.clinic_photo_urls("16104") == []
+    assert R.clinic_photo_urls("36201") == ["/photos/36201"]

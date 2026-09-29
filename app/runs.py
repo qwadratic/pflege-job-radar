@@ -80,7 +80,8 @@ def db():
 # 'alter table add column' when pragma table_info says the column is missing (SQLite has no IF NOT EXISTS for columns).
 MIGRATIONS = (("firecrawl_usage", "job_id", "text"),
               ("firecrawl_usage", "tokens", "integer"),      # Extract-token delta of the run (None = not measured)
-              ("crawl_runs", "cancel_requested", "integer"))  # POST /api/crawl/runs/{id}/cancel; execute() polls it between boards/clinics
+              ("crawl_runs", "cancel_requested", "integer"),  # POST /api/crawl/runs/{id}/cancel; execute() polls it between boards/clinics
+              ("crawl_runs", "commit_sha", "text"))  # TASK-94 AC#2: which checkout actually ran, see commit_sha() below
 
 
 def _migrate(c):
@@ -195,6 +196,34 @@ def _row(r):
         except Exception:
             pass
     return d
+
+
+_commit_sha_cache = None
+
+
+def commit_sha():
+    """The git commit checked out RIGHT NOW, or None if it cannot be read (no .git, git not on
+    PATH, a shallow/detached-oddity). TASK-94 AC#2: deploy/pflege-web.service and pflege-hunter.
+    service both run straight from this working tree (AC#1, unresolved) -- a scheduled run has no
+    way to tell "genuine bug" from "fired mid-edit, imported a half-written module set" (confirmed
+    live 2026-09-21/22: runs 109 and 118 both failed in ways nothing on the current tree
+    reproduces). Recording this at the START of execute() at least turns that from an unprovable
+    hypothesis into a fact a later investigation can check against `git log`/`git show <sha>` --
+    does not by itself stop a mid-edit run from executing (that is AC#1's job), only makes the
+    ambiguity attributable. Cached per-process: the checkout does not change during one run, and a
+    subprocess call on every single run is needless overhead.
+    """
+    global _commit_sha_cache
+    if _commit_sha_cache is None:
+        import subprocess
+        try:
+            # No explicit cwd: both deploy/*.service units set WorkingDirectory to the repo root,
+            # and that is also where every test/CLI invocation of this process already runs from.
+            out = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+            _commit_sha_cache = out.stdout.strip() if out.returncode == 0 else None
+        except Exception:
+            _commit_sha_cache = None
+    return _commit_sha_cache
 
 
 def create_run(scope, value, mode, params=None, clinic_ids=None, trigger="api"):
@@ -446,6 +475,16 @@ def record_clinic_photo(clinic_id, path, source="maps"):
         c.execute("insert into clinic_photos(clinic_id,path,source,fetched_at) values(?,?,?,?) "
                   "on conflict(clinic_id,source) do update set path=excluded.path, fetched_at=excluded.fetched_at",
                   (clinic_id, path, source, now()))
+
+
+def clear_clinic_photos(clinic_id):
+    """Delete every stored row for this clinic, regardless of source -- used by the Haiku building
+    classifier (TASK-120) before recording its own winner, so a clinic never carries both a stale
+    'maps' row and a new 'classified' one (clinic_photo_path()'s bare `limit 1`, no ORDER BY, would
+    pick between them arbitrarily) and so a clinic with no qualifying candidate ends up with zero
+    rows -- no photo shown -- rather than keeping a disqualified one."""
+    with _lock, db() as c:
+        c.execute("delete from clinic_photos where clinic_id=?", (clinic_id,))
 
 
 def clinic_photo_url(clinic_id):

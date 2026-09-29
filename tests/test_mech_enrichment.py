@@ -27,3 +27,17 @@ def test_pay_grade_needs_tariff_context():
 def test_mechanic_try_lists_fired_fields():
     r = get("enrichment").run({"description": "Personalwohnung vorhanden, Vergütung nach AVR Caritas."})
     assert "housing" in r["rule"] and r["result"]["tariff"] == "AVR Caritas"
+
+
+def test_tariff_prefers_earliest_mention_over_a_later_comparison():
+    """TASK-142, live posting 5701 (Dr. Lubos Kliniken, traegerart=privat): the posting's own tariff
+    (Haustarif) is stated first; TVöD only appears later as a comparison benchmark. Picking
+    patterns.json's declared TARIFF list order instead of text position used to report "TVöD" here --
+    wrong, and it contradicted the clinic's traegerart (a plausibility check this task measured)."""
+    e = enrich_description("Ein attraktives Gehalt: unser Haustarif liegt immer garantiert über dem Tarif der TVöD-K.")
+    assert e["tariff"] == "Haustarif"
+
+    # Live posting 6604 (Waldkrankenhaus St. Marien, traegerart=freigemeinnuetzig): pay is AVR
+    # Caritas; TVöD appears later only as a parenthetical alignment note.
+    e2 = enrich_description("Vergütung nach den Arbeitsvertragsrichtlinien des Deutschen Caritasverbandes (AVR) mit zusätzlicher Altersversorgung (TVöD angelehnt).")
+    assert e2["tariff"] == "AVR Caritas"

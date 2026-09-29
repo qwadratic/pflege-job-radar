@@ -10,8 +10,8 @@ updated_date: '2026-09-23 02:17'
 labels:
   - wa-transport
 dependencies:
-  - TASK-147
-  - TASK-148
+  - TASK-376
+  - TASK-377
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: high
@@ -25,9 +25,9 @@ ordinal: 127000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Rescoped 2026-09-21, after the rail went live. Two thirds of this task were overtaken by events and by other tasks, and what it still asks for was written against a contract that no longer exists.
 
-Superseded: the probe CLI (tools/wa_bridge_probe.py) -- tools/wa_bridge.py (TASK-148) drives the real executor over the existing ssh -L and covers every route that exists; a probe for /v1/batches and /v1/media would exercise two routes that were never built. The 202-first framing -- there is no 202 on this rail: 200 is terminal and a paced request is refused 429 rail_parked with a next_slot_at (TASK-146). The rail, pin, id-space, kill-switch and tick-not-id prose -- written and verified in the Transports section (TASK-139, TASK-146, TASK-149).
+Superseded: the probe CLI (tools/wa_bridge_probe.py) -- tools/wa_bridge.py (TASK-377) drives the real executor over the existing ssh -L and covers every route that exists; a probe for /v1/batches and /v1/media would exercise two routes that were never built. The 202-first framing -- there is no 202 on this rail: 200 is terminal and a paced request is refused 429 rail_parked with a next_slot_at (TASK-375). The rail, pin, id-space, kill-switch and tick-not-id prose -- written and verified in the Transports section (TASK-368, TASK-375, TASK-378).
 
-What is genuinely still missing is the reference half: a literal request and response body for each route as it is actually built (including the operations routes from TASK-147), and the error-code table -- code, HTTP status, the exception raised on our side, and how app/wa/luna/campaign.py classifies it -- with the asymmetry that matters spelled out: a send failure with no status is uncertain, while import_history treats a None status as no answer about this media and aborts the run.
+What is genuinely still missing is the reference half: a literal request and response body for each route as it is actually built (including the operations routes from TASK-376), and the error-code table -- code, HTTP status, the exception raised on our side, and how app/wa/luna/campaign.py classifies it -- with the asymmetry that matters spelled out: a send failure with no status is uncertain, while import_history treats a None status as no answer about this media and aborts the run.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,7 +42,7 @@ What is genuinely still missing is the reference half: a literal request and res
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-21 rescope: ACs 1, 7 dropped (a contract that no longer exists, and a probe superseded by tools/wa_bridge.py, TASK-148). ACs 2, 3, 4, 6 are already satisfied in the Transports section by TASK-139, TASK-146 and TASK-149 and were folded out of this task. AC 5 (error-code table) survives and is now the core of it.
+2026-09-21 rescope: ACs 1, 7 dropped (a contract that no longer exists, and a probe superseded by tools/wa_bridge.py, TASK-377). ACs 2, 3, 4, 6 are already satisfied in the Transports section by TASK-368, TASK-375 and TASK-378 and were folded out of this task. AC 5 (error-code table) survives and is now the core of it.
 
-Audit 2026-09-22: description already accurately rescoped (2026-09-21) and status correctly To Do. Confirmed the reference half genuinely does not exist yet: docs/whatsapp.md has the Transports section (TASK-139/146/149) but no literal request/response body table for every route bridge/server.py serves, and no error-code table (code, HTTP status, retryable, exception, campaign.py classification). No changes made.
+Audit 2026-09-22: description already accurately rescoped (2026-09-21) and status correctly To Do. Confirmed the reference half genuinely does not exist yet: docs/whatsapp.md has the Transports section (TASK-368/146/149) but no literal request/response body table for every route bridge/server.py serves, and no error-code table (code, HTTP status, retryable, exception, campaign.py classification). No changes made.
 <!-- SECTION:NOTES:END -->

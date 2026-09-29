@@ -9,7 +9,7 @@ updated_date: '2026-09-23 02:22'
 labels:
   - wa-transport
 dependencies:
-  - TASK-219
+  - TASK-116
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: high
@@ -27,7 +27,7 @@ Two reasons the pin is per-thread and immutable. First, the two rails are two di
 
 A file-based router (WA_BRIDGE_PHONES_FILE and similar) was rejected: it is external state the DB cannot migrate, cannot report and cannot audit.
 
-Use the existing MIGRATIONS tuple in `app/wa/store.py:172-177`, the same mechanism TASK-205 used. No schema rewrite.
+Use the existing MIGRATIONS tuple in `app/wa/store.py:172-177`, the same mechanism TASK-102 used. No schema rewrite.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -69,7 +69,7 @@ Verified: tests/test_wa_bridge_window.py (20 tests) and the full offline suite -
 author: @claude
 created: 2026-09-21 09:15
 ---
-decision-8 (2026-09-21): KEEP as written, and more important than before. Two sender numbers on one handset, and one of them may be a personal number (the MSISDN on L2N4C19B14054874 is unrecorded -- TASK-136). The per-thread pin is what stops a candidate seeing a stranger answer.
+decision-8 (2026-09-21): KEEP as written, and more important than before. Two sender numbers on one handset, and one of them may be a personal number (the MSISDN on L2N4C19B14054874 is unrecorded -- TASK-365). The per-thread pin is what stops a candidate seeing a stranger answer.
 ---
 <!-- COMMENTS:END -->
 

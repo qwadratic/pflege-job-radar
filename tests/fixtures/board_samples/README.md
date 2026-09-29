@@ -11,6 +11,9 @@ phone of the HR contact on each posting) are redacted; everything else is the re
 | `klinikum_passau_offene_stellen_sample.html` | klinikum_passau (`pflege_jobs.sources.klinikum_passau.crawl`) | `https://www.klinikum-passau.de/beruf-karriere/offene-stellen` (Klinikum Passau, clinic_id 26201) | 2026-09-18 |
 | `meinkrankenhaus2030_stellenanzeige_sample.html` | wp_jobs (`crawlers.vendor_adapters.crawl_wp_jobs`) | `https://www.meinkrankenhaus2030.de/stellenanzeige-operations-technischen-assistent-w/m/d-in-vollzeit` (Krankenhaus Weilheim 19002 / Schongau 19001, shared board) | 2026-09-21 |
 | `klinik_feldafing_stellenangebote_sample.html` | smartrecruiters (`crawlers.vendor_adapters.crawl_smartrecruiters`) | `https://www.klinik-feldafing.de/karriere/stellenangebote` (Benedictus Krankenhaus Feldafing, clinic_id 18813) | 2026-09-21 |
+| `easyhr_proxy_reisach_list_sample.json` | easyhr (`crawlers.vendor_adapters.crawl_easyhr`) | `https://www.reisach-kliniken.de/easyhr-proxy.php` (Reisach Kliniken -- Hochgrat-Klinik Wolfsried 77607/77672, Adula-Klinik Oberstdorf 78008/78071), all 22 live positions | 2026-09-23 |
+| `easyhr_proxy_reisach_detail_sample.json` | easyhr (`crawlers.vendor_adapters.crawl_easyhr`) | `https://www.reisach-kliniken.de/easyhr-proxy.php?id=7aee700e-a911-4e73-9079-0b09fa372c20` (the Hochgrat Klinik "PFLEGEFACHKRAFT / GESUNDHEITS- und KRANKENPFLEGER" posting from the list sample above) | 2026-09-23 |
+| `augencentrum_karriere_sample.html` | wp_jobs (`crawlers.vendor_adapters.crawl_wp_jobs`) | `https://www.augencentrum.de/ueber-uns/karriere/` (AugenCentrum Rosenheim, clinic_id 16307), both live postings (MFA, Pflegefachkraft) | 2026-09-24 |
 
 4 entries picked to span the classify buckets a real board mixes: `pflegefachkraft`, `pflegehelfer`
 (the "Pflegehilfskräfte" plural that patterns.json missed until this same session), `nicht_pflege`

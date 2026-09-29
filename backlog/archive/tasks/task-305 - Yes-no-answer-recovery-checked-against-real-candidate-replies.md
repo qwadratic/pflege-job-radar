@@ -8,7 +8,7 @@ updated_date: '2026-09-26 08:48'
 labels:
   - wa-transport
 dependencies:
-  - TASK-153
+  - TASK-382
 project: whatsapp
 ordinal: 258000
 ---
@@ -16,7 +16,7 @@ ordinal: 258000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Successor to TASK-224's AC#7 (superseded, closed 2026-09-25): numbered option lists are gone (_OBJECTIVE_ORDER in app/wa/luna_brain.py bans them; the job search takes several cities/criteria in one call, so answers no longer need narrowing). What remains live is the two-button yes/no keyword tier in app/wa/luna/choices.py, already covered by unit tests against synthetic input. This task is the same corpus-check idea TASK-224's M7 described, narrowed to what still exists: once real candidates have answered two-option (yes/no) questions on the phone rail, run the aggregate-count check from TASK-224's M7 against that message history -- counts only, no candidate content copied into the repo, the task or any report. Depends on TASK-153 (UAT broadcast), the first source of real candidate replies.
+Successor to TASK-224's AC#7 (superseded, closed 2026-09-25): numbered option lists are gone (_OBJECTIVE_ORDER in app/wa/luna_brain.py bans them; the job search takes several cities/criteria in one call, so answers no longer need narrowing). What remains live is the two-button yes/no keyword tier in app/wa/luna/choices.py, already covered by unit tests against synthetic input. This task is the same corpus-check idea TASK-224's M7 described, narrowed to what still exists: once real candidates have answered two-option (yes/no) questions on the phone rail, run the aggregate-count check from TASK-224's M7 against that message history -- counts only, no candidate content copied into the repo, the task or any report. Depends on TASK-382 (UAT broadcast), the first source of real candidate replies.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

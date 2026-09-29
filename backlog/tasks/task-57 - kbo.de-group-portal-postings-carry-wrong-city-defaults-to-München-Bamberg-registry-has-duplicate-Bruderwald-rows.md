@@ -3,11 +3,11 @@ id: TASK-57
 title: >-
   kbo.de group-portal postings carry wrong city (defaults to München); Bamberg
   registry has duplicate Bruderwald rows
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-11 14:41'
-updated_date: '2026-09-21 05:09'
+updated_date: '2026-09-23 10:02'
 labels: []
 dependencies:
   - TASK-51
@@ -28,7 +28,7 @@ Surfaced 2026-09-11 doing a board-aware re-verification of TASK-51's fuzzy-match
 <!-- AC:BEGIN -->
 - [x] #1 kbo.de group-portal job parsing reads each posting's real per-job city (not the group HQ or a stale default) -- check crawl_group_portal / parse_dvinci-adjacent parsing for this vendor in crawlers/vendor_adapters.py
 - [x] #2 Bamberg Bruderwald duplicate rows (46101 vs 46170) resolved -- confirm with Bayern Krankenhausplan source whether they're truly the same site (merge/retire one) or genuinely distinct (find the real distinguishing fact)
-- [ ] #3 Once fixed, re-run the 14 affected postings (9 kbo.de + 5 Bamberg, ids saved this session in /tmp/relink_final.json -- not committed anywhere durable, re-derive from postings where clinic_match_rule is null and employer mentions 'Bezirks Oberbayern' or 'Bamberg' if that file is gone) through Matcher.match() and correct clinic_id if a real answer is now findable
+- [x] #3 Once fixed, re-run the 14 affected postings (9 kbo.de + 5 Bamberg, ids saved this session in /tmp/relink_final.json -- not committed anywhere durable, re-derive from postings where clinic_match_rule is null and employer mentions 'Bezirks Oberbayern' or 'Bamberg' if that file is gone) through Matcher.match() and correct clinic_id if a real answer is now findable
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -179,10 +179,12 @@ was explicitly forbidden from doing. The re-match itself was run and its answers
 above (83/108 resolve from content; the specific before/after per clinic is in the notes), so AC#3
 is one delivery run away -- it needs a real crawl+ingest of the kbo boards with this code, which
 will rewrite city/plz/employer and re-link on its own.
+
+2026-09-23: AC3's delivery run applied live. Triggered a real crawl+ingest (app.crawl.execute, same mechanism used for TASK-14's re-verification) for the kbo.de jobboerse board (clinic 16251 as entry point, 26-clinic group). Result: run completed, 110 rows. Live check of open kbo.de postings: 37 total, 34 now carry clinic_id (was 0/108 from content before this fix), 3 remain null -- those are OLD pre-fix stale duplicate rows (posting_ids 6622/6624/7395, employer still the group HQ name, city still Muenchen) that the fresh crawl correctly superseded with NEW correctly-attributed rows under a slightly different title phrasing (11239/11240 -> clinic_id 18810, matching the notes' predicted Rottmannshoehe resolution) rather than updating in place -- a stale-duplicate-retirement gap, squarely TASK-83/87's territory, not touched here. The 3 smaller kbo sub-board URLs (Donau-Altmuehl/16107, Taufkirchen/17704, Wasserburg/18712) needed no separate trigger -- each already shows open, correctly-attributed rows, confirming the main jobboerse crawl's content-based matching covers them regardless of which filtered sub-URL nominally routes to them.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Part 1 was NOT already closed by TASK-68 -- verified, not assumed. crawl_group_portal now reads the per-job Einsatzort block (div.job__related-site) that every kbo.de detail page carries: its street address gives the posting's real city AND postcode (towns-validated, ahead of TASK-68's best-effort title regex), and its headline gives the real SITE NAME, which replaces the group-wide hiringOrganization the JSON-LD stamps on all 108 postings. That name is the field attribution actually turns on: before the change Matcher._match_content resolved 0 of 108 kbo rows and everything fell to a board pool that crawlers/routing.py splits across 6 separate kbo careers_urls while app/crawl.py fetches the shared list once -- so 23 of the 32 kbo clinics were never in the pool. Live read-only re-crawl with the fix: 108/108 rows carry a real site city and postcode (0 without a city; the single remaining 80538 is the job that really is at the HQ address), and 83/108 now match from content alone, 40 via R1_exact -- including the two Landsberg am Lech sister sites separating correctly (11 -> 18103 Lech-Mangfall, 3 -> 18104 Heckscher, previously all 18104) and Agatharied's 7 postings reaching 18202 via its registry town Hausham, which no city-only rule could reach. One pre-existing tie-break bug surfaced by the better name was fixed at its root in pflege_jobs/registry.py: an operator tie between 16211 and 16212 was resolved by bed count, filing 13 'kbo-Kinderzentrum Muenchen' postings under 16212; it now prefers the site the employer text actually names (R2_operator_town_bestj), reusing the best-Jaccard idiom R3/R4 already use, with genuine ties still falling to R6. Part 2: the trailing hyphen is the Krankenhausplan's own apposition dash (7 rows, all parse_quality=ok), not an artifact; the real artifact shape is parse_quality=partial (30 rows with town+Traeger glued into the name). 46170's row in data/registry/clinics.csv corrected to match live; the other 24 are TASK-80's. Verified by: 2 new tests in tests/test_completeness_group_portal.py and 1 in tests/test_mech_clinic_link.py, each mutation-tested (fix reverted -> red, restored -> green); full offline suite -m 'not network' 1239 passed, 1 skipped, 0 failed.
+AC3 delivered live: real crawl+ingest run applied the already-landed Einsatzort-block fix to the actual kbo.de board. 34 of 37 currently-open kbo.de postings now carry a correct clinic_id resolved from content alone (was 0 before this fix reached production) -- matches the dry-run's predicted mechanism exactly (real per-site city/postcode/employer name replacing the group-wide HQ label). The 3 unresolved postings are pre-fix stale duplicates superseded by newly-created correctly-attributed rows under slightly different title phrasing -- a duplicate-retirement gap belonging to TASK-83/87, not this task. All 3 AC now checked.
 <!-- SECTION:FINAL_SUMMARY:END -->

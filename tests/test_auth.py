@@ -42,6 +42,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(R, "enqueue", lambda rid: None)
     monkeypatch.setattr(S, "start", lambda: SC.init())
+    # TASK-130: inbox_summary() (GET /api/inbox) calls these directly against live Postgres,
+    # bypassing D -- unstubbed, they made the "offline" suite hang/fail during a real outage.
+    monkeypatch.setattr(A, "rest_count", lambda path, params=None, timeout=60: 0)
+    monkeypatch.setattr(A, "rest_get_all", lambda path, params=None, page=1000, timeout=120: [])
+    monkeypatch.setattr(A, "rest_get", lambda path, params=None, timeout=120, retries=2: [])
     return sent
 
 

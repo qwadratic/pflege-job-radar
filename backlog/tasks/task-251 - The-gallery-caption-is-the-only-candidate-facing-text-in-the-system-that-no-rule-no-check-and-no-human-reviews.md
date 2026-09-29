@@ -28,7 +28,7 @@ WHAT IT COSTS: One unreviewed generated paragraph can break the rules the rest o
 
 PROPOSED DIRECTION (not a decision): Run the caption through at least the link ban and the German-only rule before it reaches the rail, and record it as an outbound row. If the expose text cannot be trusted to a mechanical check, use the branch that already exists: return it as {sent: false, presentation_text} and let the model write it in its own words, where every rule applies.
 
-VERIFICATION NOTES: CONFIRMED. tools_server.py:1067 takes caption = presentation["text_de"] from GET /api/clinics/{id}/expose and hands it to send_gallery at 1090 with no transformation. That text is the Firecrawl-researched clinic blurb (app/runs.py:5,486-497, surfaced by app/main.py:306) — generated prose, from a pipeline the tool's own docstring calls mid-rollout (TASK-223). Every model-authored bubble goes through grounding.check_reply (grounding.py:1470) and the bubble-shape guard; prompts.py bans naming another brand or site, quoting a salary figure and sending a URL. The caption passes none of them — note board_api_get's _without_urls (tools_server.py:924) is applied to that tool's payloads only, never to the expose fetch. It is also written to no wa_messages row, so no operator reading the thread later sees what was said (same root as the send-discipline finding). What the finder cannot show, and neither can I without the blurb corpus, is a live blurb that actually carries a URL or a pay figure — so this is a structural hole whose firing rate depends on data I cannot read from here.
+VERIFICATION NOTES: CONFIRMED. tools_server.py:1067 takes caption = presentation["text_de"] from GET /api/clinics/{id}/expose and hands it to send_gallery at 1090 with no transformation. That text is the Firecrawl-researched clinic blurb (app/runs.py:5,486-497, surfaced by app/main.py:306) — generated prose, from a pipeline the tool's own docstring calls mid-rollout (TASK-120). Every model-authored bubble goes through grounding.check_reply (grounding.py:1470) and the bubble-shape guard; prompts.py bans naming another brand or site, quoting a salary figure and sending a URL. The caption passes none of them — note board_api_get's _without_urls (tools_server.py:924) is applied to that tool's payloads only, never to the expose fetch. It is also written to no wa_messages row, so no operator reading the thread later sees what was said (same root as the send-discipline finding). What the finder cannot show, and neither can I without the blurb corpus, is a live blurb that actually carries a URL or a pay figure — so this is a structural hole whose firing rate depends on data I cannot read from here.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,7 +47,7 @@ repro shape by writing a test that fails against the pre-fix tree (caption with 
 verbatim, BR.Client() constructed, send_gallery called, {"sent": True}) and passes after
 the fix. tools_server.py:1067 (`caption = presentation.get("text_de")...`) reaches
 BR.Client().send_gallery(..., caption=caption) at ~1104 with no transformation.
-grounding.check_reply's LINK gate (has_link, grounding.py:1336, TASK-144) is only ever
+grounding.check_reply's LINK gate (has_link, grounding.py:1336, TASK-373) is only ever
 invoked from luna_brain.py on the model's own text_bubbles -- the caption never becomes
 one, so it skips LINK entirely. board_api_get's _without_urls (tools_server.py:924-931)
 strips URLs only from that tool's own dict handlers, never from _fetch_clinic_expose (a

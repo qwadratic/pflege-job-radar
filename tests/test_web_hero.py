@@ -164,3 +164,53 @@ def test_a_signed_in_visitor_gets_the_picker_and_the_matches(browser, base_url):
     pg.wait_for_selector("#view .card")
     assert pg.locator("#view .list .row").count() > 0
     pg.close()
+
+
+def test_reha_only_quick_link_sets_the_shareable_hash_and_a_removable_pill(page, base_url):
+    """TASK-148: a real <a href> (not a JS-state-only control) so clicking it writes location.hash --
+    the address bar is then a copy-paste-shareable link to just the Reha/Vorsorge cohort. Uses a distinct
+    'qtag' class specifically so it does NOT match '.filters .tag' (see test_a_card_lands_on_the_list_it_
+    promised_and_the_chip_clears_it above, which counts that selector to assert every filter pill is gone)."""
+    page.goto(f"{base_url}/index.html?mock=1&lang=en#/jobs")
+    page.wait_for_selector(".list .row")
+    link = page.locator(".filters a.qtag")
+    assert link.count() == 1
+    assert link.get_attribute("href") == "#/jobs?clinic_status=Reha-Einrichtung"
+    link.click()
+    # route() re-runs pageJobs() async (it awaits taxonomy()/facets()), so the pill can land after the
+    # hash already changed -- wait on the pill itself, not just the hash, or this races and flakes.
+    pill = page.locator(".filters .tag.acc", has_text="Reha-Einrichtung")
+    pill.wait_for()
+    assert "clinic_status=Reha-Einrichtung" in page.evaluate("location.hash")
+    assert pill.count() == 1
+    assert page.locator(".filters a.qtag").count() == 0            # link hides once its own filter is active
+
+
+def test_jobs_list_shows_a_total_count_that_updates_with_the_filter(page, base_url):
+    """Ivan 2026-09-24: the jobs list is infinite-scroll, so there is no visible way to tell how many
+    postings matched a filter. paged()'s onTotal callback already carried this (pageClinic's map counter
+    uses it); pageJobs passed null. Wired it to a small .count line above the list.
+
+    The offline mock's /api/jobs only honours q/role_class/city/fresh_days (not clinic_status -- that
+    filter is real against the live API, confirmed separately; the mock was never taught it and doing so
+    is out of scope here), so this drives the count via the role dropdown instead of the reha_only link
+    to prove the wiring generically."""
+    page.goto(f"{base_url}/index.html?mock=1&lang=en#/jobs")
+    page.wait_for_selector(".list .row")
+    cnt = page.locator(".count")
+    assert cnt.count() == 1
+    unfiltered = cnt.inner_text()
+    assert re.search(r"\d", unfiltered), unfiltered       # a real number, not stuck on "loading"
+
+    role = page.locator(".filters .pick").first
+    role.locator(".pk-t").click()
+    role.locator(".dd .o").first.wait_for()
+    role.locator(".pk-t").press("ArrowDown")
+    role.locator(".pk-t").press("Enter")
+    page.wait_for_function(
+        "(t=>t!==%r&&/\\d/.test(t))(document.querySelector('.count').textContent)" % unfiltered)
+    filtered = cnt.inner_text()
+    assert re.search(r"\d", filtered), filtered
+    assert filtered != unfiltered
+    assert int(re.search(r"\d[\d,]*", filtered).group().replace(",", "")) < \
+           int(re.search(r"\d[\d,]*", unfiltered).group().replace(",", ""))

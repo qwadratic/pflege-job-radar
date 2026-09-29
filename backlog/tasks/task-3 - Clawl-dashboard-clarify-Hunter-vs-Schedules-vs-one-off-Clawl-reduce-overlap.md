@@ -1,12 +1,13 @@
 ---
 id: TASK-3
 title: 'Clawl dashboard: clarify Hunter vs Schedules vs one-off Clawl, reduce overlap'
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2026-09-08 22:50'
-updated_date: '2026-09-09 01:24'
+updated_date: '2026-09-25 00:10'
 labels:
   - frontend
+  - infra
 dependencies: []
 ordinal: 3000
 ---
@@ -22,3 +23,14 @@ Opinion from the session: the Clawl page crams 3 different 'get more job data' m
 <!-- SECTION:NOTES:BEGIN -->
 Layout decided with the user (variant A2, mockups in docs/mockups/clawl/): a sub-header of tabs Run/Coverage/Automation/History, with the Run tab in two columns -- run form plus recent runs on the left, coverage and automation summaries on the right. Nothing was removed: Hunter, Schedules and Inbox now sit together under Automation, coverage keeps its full table under Coverage, the full run list under History. Implemented in web/pro.template.html (pageScrape) and rebuilt into web/pro.html; covered by tests/test_web_clawl.py. Still open from the same session: per-run failure triage with fix buttons, wiring GET /api/crawl/estimate into the run form, live-run panel with cancel, one-click adapter-vs-Firecrawl compare, run-this-ATS-vendor from a coverage row, and the mobile layout.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-09-24 01:06
+---
+2026-09-24, Ivan: defer. While the project isn't in an active growth phase, conversational
+crawling/debugging with the agent directly is good enough -- no dashboard consolidation work needed
+right now. Moved back to To Do (not actively worked); revisit once that changes.
+---
+<!-- COMMENTS:END -->

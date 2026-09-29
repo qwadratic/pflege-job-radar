@@ -14,7 +14,7 @@ ordinal: 84000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-TASK-179 built the ownership decision (wa_ownership, route_decision) but explicitly left out the piece that acts on it -- Meta only supports one webhook URL, so something has to receive the real call and dispatch by phone. Build that dispatcher as safe, testable, offline code. Actually pointing Meta's real webhook at it is a separate, external, production-infrastructure change (needs coordination with the real system's team) that this task does not do.
+TASK-75 built the ownership decision (wa_ownership, route_decision) but explicitly left out the piece that acts on it -- Meta only supports one webhook URL, so something has to receive the real call and dispatch by phone. Build that dispatcher as safe, testable, offline code. Actually pointing Meta's real webhook at it is a separate, external, production-infrastructure change (needs coordination with the real system's team) that this task does not do.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,7 +38,7 @@ app/wa/router.py: route_webhook(raw_body, signature_header, meta_client=None, fo
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-The dispatch layer TASK-179 deliberately deferred: a payload can now be split per-message by ownership and routed accordingly, with 'them' messages forwarded re-signed so the real system's own signature check still passes. Fully built and tested as code; deliberately does NOT touch Meta's actual webhook configuration -- that remains a separate, explicit, external step for whoever owns that Meta app.
+The dispatch layer TASK-75 deliberately deferred: a payload can now be split per-message by ownership and routed accordingly, with 'them' messages forwarded re-signed so the real system's own signature check still passes. Fully built and tested as code; deliberately does NOT touch Meta's actual webhook configuration -- that remains a separate, explicit, external step for whoever owns that Meta app.
 
 Verified app/wa/router.py:171 (route_webhook), :158 (loud raise on missing WA_REAL_SYSTEM_WEBHOOK_URL), :199 (new additive route); app/wa/asgi.py:16,20 and app/main.py:57-58 (both mount points, original webhook untouched). tests/test_wa_router.py and test_wa_router_internal.py: 26/26 pass, covering every scenario AC6 names.
 <!-- SECTION:FINAL_SUMMARY:END -->

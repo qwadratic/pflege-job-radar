@@ -91,7 +91,7 @@ Rules learned from practice: no state may be skipped by a document send; `contra
 
 ### 3.3 Ingestion (all identities, one store)
 
-- Sources: Microsoft Graph for M365 boxes (own app, delegated or app-only — TASK-111.2), IMAP for Zoho; **the partner mailbox and every colleague brand must be ingested or replaced** — a send the module cannot see breaks the state model (all 8 held calls ran through it).
+- Sources: Microsoft Graph for M365 boxes (own app, delegated or app-only — TASK-345.2), IMAP for Zoho; **the partner mailbox and every colleague brand must be ingested or replaced** — a send the module cannot see breaks the state model (all 8 held calls ran through it).
 - Per message: dedupe by Message-ID; thread via In-Reply-To/References/conversationId; classify auto vs human (OOO/NDR/calendar/ticket regexes + sender patterns); parse NDR codes (5.7.x policy, 5.1.x unknown user, 5.4.x loop) from body; parse calendar responses (Zugesagt/Abgelehnt/Mit Vorbehalt); extract OOO return dates and named deputies; attachments with name/type/size (M365 needs the attachment call — today absent).
 - Exclusions at ingestion: warm-up tags/domains, non-campaign mailboxes, vendor spam — never in KPIs.
 - Campaign tag and `deal_id` stamped on every outbound; reply/bounce/opt-out computed per campaign and per Deal, never per raw mailbox.
@@ -142,7 +142,7 @@ Detection: keyword + classifier + human confirmation before suppression (the old
 | Decline with date | snooze; dated re-approach quoting their words | breakup |
 | Stop | silence + written confirmation if DSGVO wording | anything |
 
-### 3.9 Documents (templates to build — TASK-111.8)
+### 3.9 Documents (templates to build — TASK-345.8)
 
 German, one name and one version each, generated from Deal + candidate data:
 1. **Erstansprache** (touch 1) with Impressum + opt-out line; evidence-based hook or none.
@@ -220,7 +220,7 @@ Six look-alike personas and warm-up on real identities; contract as the answer t
 2. **Partner mailbox**: ingest (Graph/IMAP, needs the partner's consent) or move calls/contracts into the module.
 3. **Verify the "~20 nurses placed" reference client**: if real, obtain that client's contract, invoices and fee history — it would be the only invoicing practice we have.
 4. **Run the M365 attachment enrichment** (`tools/email_enrich_graph_attachments.py`, sudo) to see the candidate-stage documents sent in August.
-5. **TASK-111.2 own OAuth app** (needed to ingest all mailboxes without the colleague's shared cache); **TASK-111.5** IMAP on boxes 2/4/5 and the dead password.
+5. **TASK-345.2 own OAuth app** (needed to ingest all mailboxes without the colleague's shared cache); **TASK-345.5** IMAP on boxes 2/4/5 and the dead password.
 6. Fee category rule (A/B) and whether Arbeitsantritt may replace signature for tranche 1.
 
 ## 8. Build order

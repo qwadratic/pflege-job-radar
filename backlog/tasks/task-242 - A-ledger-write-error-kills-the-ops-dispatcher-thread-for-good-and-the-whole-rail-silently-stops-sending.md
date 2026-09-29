@@ -52,7 +52,7 @@ surfaces errors/last_error/last_error_at alongside the existing alive/poll_inter
 debug_capture fields.
 
 Did not touch bridge/server.py routes, app/wa/bridge.py, or ledger.py's schema/state machine.
-Did not wire an alarm on ops_dispatcher.alive or the new error fields -- that is TASK-132's surface,
+Did not wire an alarm on ops_dispatcher.alive or the new error fields -- that is TASK-361's surface,
 left alone per the task's own scope note.
 
 Test added: tests/test_bridge_executor.py

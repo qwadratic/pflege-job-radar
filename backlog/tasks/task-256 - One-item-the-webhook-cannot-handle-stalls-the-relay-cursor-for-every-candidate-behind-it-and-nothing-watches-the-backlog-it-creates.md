@@ -59,7 +59,7 @@ api.py:drain_pending/pending_inbound) and confirmed:
   ThreadPoolExecutor (api.py:_process_in_background), never in the synchronous request path
   (bridge_api.py:wa_bridge_webhook -> accept_payload + submit_accepted -> accepted_summary) -- it
   cannot produce a 5xx to relay_pull's POST. The one reachable trigger for the empty-results stall is a
-  WA_BRIDGE_PHONE_NUMBER_ID mismatch via api._number_matches, a real operational event per TASK-146's
+  WA_BRIDGE_PHONE_NUMBER_ID mismatch via api._number_matches, a real operational event per TASK-375's
   REQUIRED_ENV comment.
 - TASK-255's fix (Relay.check_watcher_alarm(), wired into run() on ALARM_CHECK_INTERVAL_SEC=60s,
   reading executor.health().inbound.oldest_unacked_at) is already in this working tree, uncommitted,

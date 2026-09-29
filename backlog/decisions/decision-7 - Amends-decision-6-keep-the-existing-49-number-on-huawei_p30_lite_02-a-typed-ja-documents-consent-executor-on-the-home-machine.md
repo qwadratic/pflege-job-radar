@@ -22,7 +22,7 @@ The CLI has no `decision edit`, so decision-6 keeps its superseded wording ("A N
    candidate-role persona ("Babu22") from the colleague's August soak tests, not the WABA number, so
    decision-6's constraint ("the Valentyn NDT number cannot move") is untouched — Valentyn NDT stays on the
    Cloud API as the rollback rail.
-2. **A typed "ja" documents consent.** `WA_BRIDGE_SYNTHETIC_CONSENT` ships ON (TASK-122), with a tier-1
+2. **A typed "ja" documents consent.** `WA_BRIDGE_SYNTHETIC_CONSENT` ships ON (TASK-351), with a tier-1
    ordinal or tier-2 exact-title match plus a confirmation turn, and the verbatim typed token stored in
    `wa_messages.meta` as the audit artefact. Ivan owns this call; the UWG/DSGVO exposure was stated to him
    and is unchanged. Without it the funnel's close step is unreachable, because the phone rail has no buttons.
@@ -41,10 +41,10 @@ The CLI has no `decision edit`, so decision-6 keeps its superseded wording ("A N
 - M3 changes from "procure SIM + handset" to "prepare the existing account": confirm the account is alive and
   unrestricted (the 2026-08-08 ban-check tasks were cancelled with no result — health is unknown), re-identify
   the profile away from "Babu22", set a two-step PIN **with a recovery e-mail**, fix sleep/battery/autostart,
-  decide the fate of the persona chats. TASK-128 carries this; its ACs were rewritten accordingly.
-- TASK-122 ships the consent flag on by default. Its AC that "off means no typed reply can set consent" stays:
+  decide the fate of the persona chats. TASK-357 carries this; its ACs were rewritten accordingly.
+- TASK-351 ships the consent flag on by default. Its AC that "off means no typed reply can set consent" stays:
   that is still the behaviour the flag must guarantee, it is simply no longer the shipped default.
 - The account's unknown history is now a project risk, not a procurement question. A banned or restricted
-  number is discovered at M3, before anything is built on top of it — TASK-128 is a prerequisite, not paperwork.
+  number is discovered at M3, before anything is built on top of it — TASK-357 is a prerequisite, not paperwork.
 - Nothing in decision-6's other content changes: Coexistence stays rejected, cold outreach still moves to the
-  phone with warm-up pacing (TASK-127) and the suppression list (TASK-113) blocking before any campaign.
+  phone with warm-up pacing (TASK-356) and the suppression list (TASK-347) blocking before any campaign.

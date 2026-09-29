@@ -24,7 +24,7 @@ THE ONE TRAP: app/autopilot/matching.py is NOT dead. app/wa/queue.py imports it 
 rank()/score() against the live app.data snapshot for real candidates on the WhatsApp rail
 (app/wa/queue.py:17, :108, :164), and app/cv.py has a related matcher. app/wa/api.py also names it in
 a lock comment. Deleting the package wholesale takes the live matching engine with it. It has to move
-somewhere honest first -- it was never really autopilot-specific -- and TASK-107 and TASK-207 are
+somewhere honest first -- it was never really autopilot-specific -- and TASK-107 and TASK-104 are
 open findings against that same matching code, so whoever moves it should look at where they land.
 
 Also in the blast radius, to be checked rather than assumed: app/settings.py, app/auth.py (the

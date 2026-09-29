@@ -100,9 +100,13 @@ def _backfill_valid_through(items, session=None, timeout=20):
 
 
 def fetch_feed(hosts, session=None, timeout=30):
-    """Try https://<host>/jobs.feed.json for each host in order -> (items, host_used) for the first host
-    that answers with a non-empty schema.org DataFeed (dataFeedElement[].item), or (None, None) if none do
-    (caller should fall back to BFS).
+    """Try https://<host>/jobs.feed.json for each host in order -> (items, host_used, board_total) for
+    the first host that answers with a non-empty schema.org DataFeed (dataFeedElement[].item), or
+    (None, None, None) if none do (caller should fall back to BFS). board_total is the feed's own
+    top-level numberOfItems (schema.org DataFeed field, confirmed present and equal to
+    len(dataFeedElement) on a live tenant, TASK-88 AC#1) -- a cross-check against len(items) actually
+    parsed, distinct from trusting the array length alone (a malformed element this parser's own
+    isinstance() filter drops would otherwise go unnoticed).
 
     Section-first check (2026-09): this feed's JobPosting items never carry a category/department field
     (schema.org's industry/occupationalCategory/employmentUnit are all absent) on any live tenant checked
@@ -125,5 +129,6 @@ def fetch_feed(hosts, session=None, timeout=30):
         elements = data.get("dataFeedElement") or []
         items = [e["item"] for e in elements if isinstance(e, dict) and isinstance(e.get("item"), dict)]
         if items:
-            return _backfill_valid_through(items, session=s), host
-    return None, None
+            board_total = data.get("numberOfItems") if isinstance(data.get("numberOfItems"), int) else None
+            return _backfill_valid_through(items, session=s), host, board_total
+    return None, None, None

@@ -96,7 +96,7 @@ Ivan decided on 2026-09-21:
 
 - **Is a typed "ja" acceptable as documented consent** for forwarding a candidate profile to a clinic,
   or must the consent turn happen on the Meta rail with a real tap? Today the gate is tap-only by
-  design (TASK-80). Until this is answered, synthetic consent from typed text stays behind
+  design (TASK-333). Until this is answered, synthetic consent from typed text stays behind
   `WA_BRIDGE_SYNTHETIC_CONSENT`, default **off**, and no typed reply can set `anonymous_send_consent`.
   If it is ever turned on it requires a tier-1 or tier-2 match plus an explicit confirmation turn, and
   the verbatim typed token is stored in `wa_messages.meta` as the audit artefact. A prefix or keyword

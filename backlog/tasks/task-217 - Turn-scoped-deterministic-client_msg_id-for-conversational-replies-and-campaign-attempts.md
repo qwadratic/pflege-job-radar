@@ -10,7 +10,7 @@ updated_date: '2026-09-23 02:17'
 labels:
   - wa-transport
 dependencies:
-  - TASK-223
+  - TASK-120
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: high
@@ -48,7 +48,7 @@ Known residual, stated not hidden: if a regenerated reply has MORE bubbles than 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Audit 2026-09-22: this shipped since the task text was last touched, in app/wa/bridge_ids.py (reply_key/campaign_key, require_e164/require_text/require_index), consumed from app/wa/bridge.py Client.begin_turn/begin_campaign_attempt and cited at app/wa/api.py:997. Tests: tests/test_wa_bridge_ids.py (24 tests: same-turn same-process key stability, wab.o. + 32 hex, one key per bubble, every component changing the key, turn_key required with no default, bad turn_key/phone/bubble_index raising, campaign key spelled out literally, a retried campaign attempt keeping its key, module purity) plus tests/test_wa_bridge_client.py::test_the_bubbles_of_one_turn_are_separate_calls_with_separate_keys, ::test_a_regenerated_turn_re_posts_the_same_key_for_a_bubble_that_already_went_out (AC#3/#5 residual), ::test_a_different_body_under_a_live_key_is_a_mismatch_and_sends_nothing / bridge/ledger.py first-body-wins (AC#4). Full offline suite green: 2312 passed. This task's own dependency chain (TASK-223) is also done -- see that task.
+Audit 2026-09-22: this shipped since the task text was last touched, in app/wa/bridge_ids.py (reply_key/campaign_key, require_e164/require_text/require_index), consumed from app/wa/bridge.py Client.begin_turn/begin_campaign_attempt and cited at app/wa/api.py:997. Tests: tests/test_wa_bridge_ids.py (24 tests: same-turn same-process key stability, wab.o. + 32 hex, one key per bubble, every component changing the key, turn_key required with no default, bad turn_key/phone/bubble_index raising, campaign key spelled out literally, a retried campaign attempt keeping its key, module purity) plus tests/test_wa_bridge_client.py::test_the_bubbles_of_one_turn_are_separate_calls_with_separate_keys, ::test_a_regenerated_turn_re_posts_the_same_key_for_a_bubble_that_already_went_out (AC#3/#5 residual), ::test_a_different_body_under_a_live_key_is_a_mismatch_and_sends_nothing / bridge/ledger.py first-body-wins (AC#4). Full offline suite green: 2312 passed. This task's own dependency chain (TASK-120) is also done -- see that task.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

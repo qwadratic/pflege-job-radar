@@ -62,7 +62,7 @@ app.wa.store; broadcast_status()'s run view (app/wa/bridge.py::Client._run_view 
 machine" -- view()'s own comment), only client_msg_id/thread(hashed)/body_sha256/status. So a sent
 broadcast genuinely never reaches wa_messages, and turn_context()/introduced() (both read
 ST.messages_for(c, phone, direction="out") with no rail filter) are blind to it -- confirmed against
-the actual functions, not assumed. Real, reachable (TASK-153 AC#3 depends on Luna answering a
+the actual functions, not assumed. Real, reachable (TASK-382 AC#3 depends on Luna answering a
 broadcast reply correctly), not a stated design tradeoff anywhere in the file's own docstring.
 
 Deviated from the sceptic's fix sketch in one load-bearing way: their plan assumed "the CLI already

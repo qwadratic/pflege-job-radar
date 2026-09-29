@@ -16,7 +16,7 @@ ordinal: 82000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Live e2e persona run (TASK-178 follow-up) found a candidate genuinely flexible on department stalled indefinitely: requirement_scoreboard told the model city_or_department was 'satisfied' (its own OR semantics), but market_snapshot's ready_to_close silently required BOTH city AND department_pref, so the shortlist/count never populated and the close sequence never triggered.
+Live e2e persona run (TASK-74 follow-up) found a candidate genuinely flexible on department stalled indefinitely: requirement_scoreboard told the model city_or_department was 'satisfied' (its own OR semantics), but market_snapshot's ready_to_close silently required BOTH city AND department_pref, so the shortlist/count never populated and the close sequence never triggered.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

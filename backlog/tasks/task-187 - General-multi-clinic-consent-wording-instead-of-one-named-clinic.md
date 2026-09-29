@@ -14,7 +14,7 @@ ordinal: 83000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan: the consent ask (with buttons, TASK-184) currently names one specific clinic when the shortlist happens to have just one entry, but the actual matching step afterward (build_queue_entry) always ranks against the whole live clinic snapshot -- so a candidate's consent scope did not honestly match what the system actually does with it. Reword the consent question to always be general (Bavarian clinics matching the profile), never tied to one named clinic, regardless of shortlist size.
+Ivan: the consent ask (with buttons, TASK-80) currently names one specific clinic when the shortlist happens to have just one entry, but the actual matching step afterward (build_queue_entry) always ranks against the whole live clinic snapshot -- so a candidate's consent scope did not honestly match what the system actually does with it. Reword the consent question to always be general (Bavarian clinics matching the profile), never tied to one named clinic, regardless of shortlist size.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

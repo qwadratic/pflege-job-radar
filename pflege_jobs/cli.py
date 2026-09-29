@@ -267,6 +267,24 @@ def same_source_variant_pairs(observations):
     return collapse_merge_chains(sorted(pairs, key=lambda x: (x["src"], x["dst"])))
 
 
+def source_codes_by_posting(obs_rows, source_code_by_id):
+    """TASK-124: v_postings.source_codes is a per-row correlated subquery Postgres evaluates for every
+    row matching a query's WHERE clause before that query's own ORDER BY/LIMIT/OFFSET apply (confirmed
+    live via EXPLAIN ANALYZE: dropping it from a SELECT cut buffer reads 12x on a 2240-row eligible
+    set, and neither keyset pagination nor a supporting index changed that -- the view's Subquery
+    Scan + a blocking Sort node run it regardless). This computes the same {posting_id: [sorted
+    codes]} shape client-side, from posting_observations rows already fetched for exactly the
+    posting_ids a page needs (not the whole eligible table) and the small, cacheable sources table.
+    Pure: no network, no ordering assumptions on the inputs."""
+    from collections import defaultdict
+    out = defaultdict(set)
+    for o in obs_rows:
+        code = source_code_by_id.get(o["source_id"])
+        if code:
+            out[o["posting_id"]].add(code)
+    return {pid: sorted(codes) for pid, codes in out.items()}
+
+
 def cmd_link_cross(a):
     """Dedupe: (1) same-source URL variants (canonical URL equal) -> merge; (2) cross-source: same clinic_id + city + similar
     title (Jaccard>=0.6 or overlap>=0.9 w/ 3 shared tokens) between two different sources (employer_ats, firecrawl_agent) -> merge."""
@@ -293,9 +311,32 @@ def cmd_link_cross(a):
     # (2) cross-source by title similarity
     rows, off = [], 0
     while True:
-        q = f"{url}/rest/v1/v_postings?select=posting_id,title,city,clinic_id,source_codes,n_observations&status=eq.open&clinic_id=not.is.null&order=posting_id&limit=1000&offset={off}"
+        q = f"{url}/rest/v1/v_postings?select=posting_id,title,city,clinic_id,n_observations&status=eq.open&clinic_id=not.is.null&order=posting_id&limit=1000&offset={off}"
         ch = _rows(rq.get(q, headers=H, timeout=120), "v_postings"); rows += ch; off += len(ch)
         if len(ch) < 1000: break
+    # TASK-124: v_postings.source_codes is a per-row correlated subquery (posting_observations JOIN
+    # sources) -- confirmed live 2026-09-24 via EXPLAIN ANALYZE that Postgres evaluates it for EVERY
+    # row matching this query's WHERE clause before this query's own ORDER BY/LIMIT/OFFSET are applied
+    # (the view sits behind a Subquery Scan + a blocking Sort node, so neither a bigger page, keyset
+    # pagination on posting_id, nor a supporting partial index changes this -- all three were tried
+    # live against the real table and none stopped the subquery from running over the whole eligible
+    # set on every page). Dropping it from this SELECT cut buffer reads 12x on a 2240-row eligible set
+    # (15256 -> 1312) with zero rows removed; fetched here instead as a targeted, index-backed query
+    # scoped to exactly the posting_ids already paginated above, cost O(page) not O(whole table).
+    src_codes = {s["source_id"]: s["code"] for s in _rows(rq.get(f"{url}/rest/v1/sources?select=source_id,code", headers=H, timeout=30), "sources")}
+    obs_rows, ids = [], [r["posting_id"] for r in rows]
+    for i in range(0, len(ids), 300):
+        chunk = ids[i:i + 300]
+        off2 = 0
+        while True:
+            q = (f"{url}/rest/v1/posting_observations?select=posting_id,source_id"
+                 f"&posting_id=in.({','.join(str(x) for x in chunk)})&limit=1000&offset={off2}")
+            ch2 = _rows(rq.get(q, headers=H, timeout=60), "posting_observations")
+            obs_rows += ch2; off2 += len(ch2)
+            if len(ch2) < 1000: break
+    codes_by_posting = source_codes_by_posting(obs_rows, src_codes)
+    for r in rows:
+        r["source_codes"] = codes_by_posting.get(r["posting_id"], [])
     STOP = {"m","w","d","und","oder","für","in","der","die","das","mit","als","im","am","bzw","vollzeit","teilzeit","voll","teil","zeit","ab","sofort","unbefristet","befristet","stunden","std","unser","unsere","unseren","gesucht","zum","nächstmöglichen","zeitpunkt","wir","suchen","sie","eine","einen","ein","mitarbeiter","mitarbeiterin","pflegedienst"}
     def tk(t):
         t = re.sub(r"\((?:m|w|d|x|i|gn|\s|/|\*|:)+\)", " ", norm_text(t)); t = re.sub(r"[^\wäöüß ]", " ", t)
@@ -444,7 +485,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
             mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o))
+                        city_inherited=_city_inherited(o), description=o.get("description"))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
@@ -462,7 +503,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             if o.get("in_bavaria") is False:
                 ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
             mt = m.match(o.get("employer_name"), o.get("city"), board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o))
+                        city_inherited=_city_inherited(o), description=o.get("description"))
             # Unlike the jobposting branch, a seed can already carry its own _kez (e.g. a
             # bavaria_only_operator seed) -- keep it when the registry match itself finds nothing,
             # same as app/crawl.py's retired _load_observations did.

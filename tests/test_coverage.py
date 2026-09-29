@@ -32,6 +32,32 @@ def test_coverage_rows_and_totals(client):
     assert reasons.get("no careers_url") == 1 and reasons.get("no adapter for helios") == 1
 
 
+def test_coverage_surfaces_incomplete_boards_from_crawl_issues(client):
+    """TASK-88 AC#4: crawl_issues kind='incomplete' was written every crawl (app/crawl.py's
+    board_total checks) but read nowhere in app/ -- an under-reading board was invisible until the
+    next manual audit. A kind='empty'/'truncated' issue must not count (different signal)."""
+    R.record_crawl_issue("https://x.example/board", R.now()[:10], "incomplete", "typo3_jobs",
+                          ["36201"], "board reports 57 total but the adapter returned 12 row(s)", None)
+    R.record_crawl_issue("https://y.example/board", R.now()[:10], "empty", "rexx", ["1"], "0 rows", None)
+    d = client.get("/api/coverage").json()
+    assert _row(d, "typo3_jobs")["incomplete_boards_7d"] == 1
+    assert _row(d, "rexx")["incomplete_boards_7d"] == 0
+    assert d["incomplete_boards"] == [{"board_url": "https://x.example/board", "vendor": "typo3_jobs",
+                                        "day": R.now()[:10], "error": "board reports 57 total but the adapter returned 12 row(s)"}]
+
+
+def test_coverage_surfaces_intake_failures_separately_from_incomplete_boards(client):
+    """TASK-92 AC#5: a whole-run intake failure (cli inbox/link-cross exited nonzero, or the intake
+    step itself raised, app/crawl.py's kind='intake' crawl_issues) was written every time but never
+    read in app/ -- must show up here, and distinctly from a per-board under-read (kind='incomplete',
+    TASK-88), since they mean different things."""
+    R.record_crawl_issue("pflege_jobs.cli link-cross", R.now()[:10], "intake", "link-cross", [], "cli link-cross exited 1", None)
+    d = client.get("/api/coverage").json()
+    assert d["intake_issues"] == [{"board_url": "pflege_jobs.cli link-cross", "vendor": "link-cross",
+                                    "day": R.now()[:10], "error": "cli link-cross exited 1"}]
+    assert d["incomplete_boards"] == []   # an intake-kind issue must not also count as incomplete
+
+
 def test_coverage_last_run_and_credits(client):
     rid = R.create_run("ats_type", "typo3_jobs", "adapter", clinic_ids=["36201"])
     R.update_run(rid, status="done", started_at=R.now(), finished_at=R.now(), n_rows=12, n_new=4, error="2 error(s), see log")
@@ -137,6 +163,19 @@ def test_clinic_freshness_reports_the_freshest_last_seen_per_clinic(client, monk
     # zero evidence is not the same claim as "just crawled", so it sorts after every real number.
     assert [r["clinic_id"] for r in d["clinic_freshness"]] == ["36201", "16104"]
     assert not any(r["clinic_id"] == "36202" for r in d["clinic_freshness"])             # 0 open jobs -> excluded
+
+
+# --- beds_ratio: verified-live postings / beds, ascending (TASK-140 AC#1) ---------------------------------------------
+def test_beds_ratio_ranks_worst_first_and_excludes_small_denominators(client):
+    d = client.get("/api/coverage").json()
+    ids = [r["clinic_id"] for r in d["beds_ratio"]]
+    assert ids == ["36202", "36201"]                       # 36202: 0/400=0.0, 36201: 20/985=20.30 beds -- worst first
+    assert not any(r["clinic_id"] == "16104" for r in d["beds_ratio"])   # beds=0 < 50 -> excluded, too noisy
+    r36202 = next(r for r in d["beds_ratio"] if r["clinic_id"] == "36202")
+    assert r36202["ratio_per_1000_beds"] == 0.0 and r36202["beds"] == 400 and r36202["jobs_live"] == 0
+    r36201 = next(r for r in d["beds_ratio"] if r["clinic_id"] == "36201")
+    assert r36201["ratio_per_1000_beds"] == round(20 / 985 * 1000, 2) and r36201["jobs_live"] == 20
+    assert d["beds_ratio_median"] == r36201["ratio_per_1000_beds"]
 
 
 # --- GET /api/billing/clinics (app/coverage.py): spend per clinic in a window -----------------------------------------

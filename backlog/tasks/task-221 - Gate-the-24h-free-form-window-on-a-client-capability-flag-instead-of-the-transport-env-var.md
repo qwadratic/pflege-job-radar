@@ -11,7 +11,7 @@ updated_date: '2026-09-23 02:22'
 labels:
   - wa-transport
 dependencies:
-  - TASK-219
+  - TASK-116
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: medium
@@ -57,7 +57,7 @@ Shipped 2026-09-21.
 
 api._send now resolves the rail, builds the client, and only then asks whether the window matters: 'if getattr(cl, "requires_freeform_window", True) and not _freeform_window_open(t)'. _freeform_window_open is unchanged, including its hard False for a thread that never received a message.
 
-AC#5, precisely: the window change itself edited no test file. Two assertions in tests/test_wa_transport.py were rewritten in the same run, but for TASK-220/TASK-223 (WA_TRANSPORT=bridge now builds bridge.Client instead of raising), not for this gate.
+AC#5, precisely: the window change itself edited no test file. Two assertions in tests/test_wa_transport.py were rewritten in the same run, but for TASK-220/TASK-120 (WA_TRANSPORT=bridge now builds bridge.Client instead of raising), not for this gate.
 
 Verified: tests/test_wa_bridge_window.py -- a bridge thread 72h past its last inbound sends free text with no reopen template configured at all, a Meta thread at 48h still routes to the template, a Meta thread that never wrote still raises without one, and both rails answer in one process in one moment. Full offline suite: 1870 passed, 127 skipped, 70 deselected.
 <!-- SECTION:NOTES:END -->

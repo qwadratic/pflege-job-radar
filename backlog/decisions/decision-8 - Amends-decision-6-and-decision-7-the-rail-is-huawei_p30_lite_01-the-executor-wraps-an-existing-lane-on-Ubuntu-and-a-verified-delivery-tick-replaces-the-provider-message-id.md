@@ -30,7 +30,7 @@ with this file, this one wins. Read the three together.
    construction: `~/wa-phone-outreach/apps/wa_phone/config.py:10
    FORBIDDEN_SERIALS = frozenset({"L2N4C19B14054035"})`, and `device.py` raises `WrongPhone` on it.
    The WhatsApp lane runs on **`huawei_p30_lite_01` = L2N4C19B14054874** (`config.py:9
-   HUAWEI_01_SERIAL`). decision-6 item 2, decision-7 item 1 and item 5, and TASK-128 are **void on this
+   HUAWEI_01_SERIAL`). decision-6 item 2, decision-7 item 1 and item 5, and TASK-357 are **void on this
    point**: they pointed an agent at the colleague's live revenue lane. The "offline since 2026-09-19"
    signal that made `_02` look idle was reassignment, not availability — the on-device agent stopped
    when the farm moved to USB on 2026-09-20.
@@ -50,8 +50,8 @@ with this file, this one wins. Read the three together.
    the colleague to re-run his own proven read-only identify task against `huawei_p30_lite_01`.
    Until both answers are in hand **and differ**, nothing is pinned to the phone rail except Ivan's own
    test number, and no candidate is messaged from that handset. If the answer is Valentyn's personal
-   number, the rail is dead. Whether we still need a SIM is **re-opened, not re-answered**. TASK-136
-   carries this; TASK-128 is closed as obsolete.
+   number, the rail is dead. Whether we still need a SIM is **re-opened, not re-answered**. TASK-365
+   carries this; TASK-357 is closed as obsolete.
 
 3. **The executor is not built from scratch — it wraps an existing live lane.**
    `~/wa-phone-outreach/apps/wa_phone` is 1955 lines across 12 modules, committed 2026-09-21 by "Cursor
@@ -64,14 +64,14 @@ with this file, this one wins. Read the three together.
    Consequence for decision-6's "the executor behind the contract stays swappable": still true, but the
    thing behind it on day one is their code, not ours, and it is a disposable agent worktree
    (`gitdir: …/clinic-dispatcher/.git/worktrees/wa-phone-outreach`, branch `cursor/wa-phone-outreach-7972`)
-   that a `git worktree remove` can swap under us. TASK-140 monitors that drift. TASK-112 (falsify the
+   that a `git worktree remove` can swap under us. TASK-369 monitors that drift. TASK-346 (falsify the
    WhatsApp-Web `data-id` premise) is answered by the ground and closed: there is no WhatsApp Web here,
    the actuator is adb, and there is no message-id space at all.
 
 4. **The machine is not a Mac and macOS supervision is void.**
    `uname -a` → `Linux macmini-worker1 6.8.0-139-generic … x86_64`; Ubuntu 24.04.5 LTS on Apple
    hardware. Every `launchd` / `LaunchDaemon` / `.plist` / `pmset` line in plan §5.8, in decision-7
-   item 3 and in TASK-129 is void. The correct primitive is **`systemd --user` + `loginctl
+   item 3 and in TASK-358 is void. The correct primitive is **`systemd --user` + `loginctl
    enable-linger`**, already proven in that account without sudo by the existing reverse-tunnel unit
    (`~/.config/systemd/user/macmini-reverse-tunnel.service`, `Linger=yes`). `pmset autorestart 1` has
    no Linux analogue: "does the machine power on after a power cut" becomes an Apple EFI question for a
@@ -102,7 +102,7 @@ with this file, this one wins. Read the three together.
    duplicate approach to warm contacts, and there is no opt-out mechanism on either side today).
    ADDENDUM item 2 and decision-6 item 4 therefore **stand**.
    Two hard prerequisites, both blocking **before any first touch on either rail**:
-   - **Cross-lane suppression list and STOP detector first** (TASK-113 + TASK-137). Their stack has
+   - **Cross-lane suppression list and STOP detector first** (TASK-347 + TASK-366). Their stack has
      neither: a grep for `stop|opt.?out|suppress|abmeld|dsgvo|consent|einwillig` over their `*.py` and
      `*.json` returns two hits, one of them `log("daemon stop")`. Ours has a whole-word STOP detector
      (`app/wa/slots.py:97` → `brain.py`, `luna_brain.py`) but **no suppression table at all** — 13
@@ -118,7 +118,7 @@ with this file, this one wins. Read the three together.
 
 7. **Surviving unchanged from decisions 6 and 7.** No Meta Coexistence (decision-6 item 1). A typed
    "ja" counts as documented consent and `WA_BRIDGE_SYNTHETIC_CONSENT` ships **ON** with the verbatim
-   token stored in `wa_messages.meta` as the audit artefact (decision-7 item 2, TASK-122) — with the
+   token stored in `wa_messages.meta` as the audit artefact (decision-7 item 2, TASK-351) — with the
    matcher running **server-side only**, never on the remote machine. The executor runs on the remote
    machine (decision-7 item 3). Buttons stay impossible and are replaced by numbered text (decision-6
    item 5). The Meta rail is not deleted and stays the rollback; rails stay pinned per thread.
@@ -138,26 +138,26 @@ with this file, this one wins. Read the three together.
 
 ## Consequences
 
-- **Closed as obsolete** (terminal status, history kept, reason in the task notes): TASK-112 (the
-  WhatsApp-Web id premise is answered by the ground), TASK-128 (it prepares the ChatGPT farm phone),
-  TASK-133 (a third model lane on an account shared with a cloud-agent worker).
-- **Rescoped**: TASK-119 (contract doc: tick-not-id, 202-first, outbox pull), TASK-120 (`verified.tick`
-  replaces `provider_msg_id` as the 200 requirement), TASK-124 (a consumer number has no Meta template,
+- **Closed as obsolete** (terminal status, history kept, reason in the task notes): TASK-346 (the
+  WhatsApp-Web id premise is answered by the ground), TASK-357 (it prepares the ChatGPT farm phone),
+  TASK-362 (a third model lane on an account shared with a cloud-agent worker).
+- **Rescoped**: TASK-119 (contract doc: tick-not-id, 202-first, outbox pull), TASK-350 (`verified.tick`
+  replaces `provider_msg_id` as the 200 requirement), TASK-353 (a consumer number has no Meta template,
   so it becomes the first-touch message set for the phone rail rather than a Graph replacement),
-  TASK-127 (joint pacing on one handset at the mini-side constants), TASK-129 (systemd user units, and
-  the tunnel flips to a single VPS-initiated `-R` leg under our own key), TASK-130 (the send path
+  TASK-356 (joint pacing on one handset at the mini-side constants), TASK-358 (systemd user units, and
+  the tunnel flips to a single VPS-initiated `-R` leg under our own key), TASK-359 (the send path
   exists; we build the ledger, the deterministic key, the governor fuse and the refusal of
-  `unverified`), TASK-131 (inbound exists; we build the Meta envelope, a collision-free fingerprint and
-  content-addressed media), TASK-132 (the free-space alarm moves from the mini, which has 457 G at 4%
+  `unverified`), TASK-360 (inbound exists; we build the Meta envelope, a collision-free fingerprint and
+  content-addressed media), TASK-361 (the free-space alarm moves from the mini, which has 457 G at 4%
   used, to our VPS at 98%).
-- **New**: TASK-134 (lane ownership, blocking, replaces TASK-112 at the head of the chain), TASK-135
-  (freeze the staged 59-candidate shortlist, move the exporter into our repo), TASK-136 (device → serial
-  → MSISDN map, blocking), TASK-137 (cross-lane suppression store and digest export), TASK-138 (restrict
-  the mini's inbound root key on our VPS), TASK-139 (rewrite plan §5.8 for Ubuntu and correct
-  `docs/whatsapp.md`), TASK-140 (dependency-drift monitor on their three driver modules), TASK-141 (the
+- **New**: TASK-363 (lane ownership, blocking, replaces TASK-346 at the head of the chain), TASK-364
+  (freeze the staged 59-candidate shortlist, move the exporter into our repo), TASK-365 (device → serial
+  → MSISDN map, blocking), TASK-366 (cross-lane suppression store and digest export), TASK-367 (restrict
+  the mini's inbound root key on our VPS), TASK-368 (rewrite plan §5.8 for Ubuntu and correct
+  `docs/whatsapp.md`), TASK-369 (dependency-drift monitor on their three driver modules), TASK-370 (the
   coexistence agreement with the colleague, plus the bug reports as gifts).
-- **TASK-113 and TASK-137 are blocking for any campaign on either rail.** Not a milestone, a gate.
-- **Our shipped documentation was wrong in production-visible ways** and is corrected under TASK-139:
+- **TASK-347 and TASK-366 are blocking for any campaign on either rail.** Not a milestone, a gate.
+- **Our shipped documentation was wrong in production-visible ways** and is corrected under TASK-368:
   the rail table said the phone rail yields no delivery status (it yields ticks, scraped at send time,
   with no webhook), the handset name pointed at the farm phone, and the sender number was written as
   +49.
@@ -165,7 +165,7 @@ with this file, this one wins. Read the three together.
   yes before any of it runs: the flock on Huawei 01, a directory and a user unit in his account, his
   daemon staying reply-only to his own test number until we agree otherwise, freezing his staged
   shortlist, re-running his identify task on `_01`, and read-only sqlite access for reconciliation.
-  We hold no veto on any of them (TASK-141).
+  We hold no veto on any of them (TASK-370).
 - **One entry condition that is a sequencing problem, not a design one**: two automated senders on one
   consumer account is the one thing neither side can observe from its own side. We do not start until
   his daemon is reply-only to his own test number — never bare `--auto-reply`, never
@@ -187,7 +187,7 @@ with this file, this one wins. Read the three together.
   `brain.reply` runs inside the phone lock, so a 180 s Luna turn would hold the handset for 180 s.
 - **Federate: two lanes, two brains, one handset (Option C).** Rejected on candidate experience: it lets
   two lanes message one person by design ("reply is allowed unless suppressed"). Its per-number
-  lane-claim and salted-digest suppression ledger are adopted into TASK-137 regardless.
+  lane-claim and salted-digest suppression ledger are adopted into TASK-366 regardless.
 - **Build our own actuator from scratch as originally planned.** Rejected: ~14–18 days, most of it the
   actuator that already exists and already sends.
 - **Keep `huawei_p30_lite_02`.** Not an option: it is the ChatGPT farm phone, under live automation,

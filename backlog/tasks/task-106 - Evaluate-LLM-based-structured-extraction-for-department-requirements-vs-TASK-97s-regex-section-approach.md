@@ -6,7 +6,9 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-22 16:27'
-labels: []
+updated_date: '2026-09-25 00:10'
+labels:
+  - research
 dependencies: []
 references:
   - pflege_jobs/classify.py

@@ -105,6 +105,22 @@ def jaccard(a, b):
 SITE_PREFERENCE = {("16291", "16292"): "16291",                     # TUM: Rechts der Isar over Deutsches Herzzentrum
                    ("16290", "16291", "16292"): "16290"}            # generic "Klinikum der Universität München": LMU (largest)
 
+# employer_norm() values whose vendor feed reliably states the wrong city -- the operator's
+# registered/legal address, not the posting's real work site -- confirmed live 2026-09-23 (TASK-96):
+# KJF Klinik Hochried (clinic 18006, Murnau) posts through josefinum.softgarden.io, the SAME shared
+# board as its sibling Fachklinik KJF Josefinum (76110, Augsburg); every Hochried-employer posting on
+# that board states city=Augsburg regardless of it being Hochried's own name in the employer field --
+# the Diözese Augsburg's registered address, not Hochried's real site. Not a generalizable gate
+# relaxation: scanned all 25 live other_town_disagrees refusals this session
+# (tools/task96_scan_r1_exact_disagreements.py, backups/task96-r1exact-disagreements-2026-09-23.json)
+# and 13 of 25 are genuine multi-site ambiguity (RoMed Klinikum Rosenheim / Bad Aibling, the gate's
+# own flagship case) or a genuinely wrong employer_name extraction the gate correctly catches (TUM/
+# Klinikum Rechts der Isar mislabelled on Universitätsklinikum Augsburg's own board) -- a blanket
+# "ignore city disagreement" rule would silently readmit those. This is a named, single-employer
+# exception, not a heuristic; add another entry only after the same live-evidence bar (a confirmed
+# per-posting city that the vendor's own feed cannot correct, not just an assumption).
+CITY_UNRELIABLE_EMPLOYERS = {"kjf klinik hochried"}
+
 
 def _pick_site(cands):
     ids = tuple(sorted(x["clinic_id"] for x in cands))
@@ -180,7 +196,7 @@ class Matcher:
         # cost 17 R1_exact matches this way, 4 of them on a city matching no registry town at all).
         if len(c) == 1:
             own_town = city_key(c[0].get("town"))
-            other_town_disagrees = ck and not _town_match(own_town, ck) and \
+            other_town_disagrees = en not in CITY_UNRELIABLE_EMPLOYERS and ck and not _town_match(own_town, ck) and \
                 any(x["clinic_id"] != c[0]["clinic_id"] for x in self._by_town(ck))
             if not other_town_disagrees:
                 return c[0]["clinic_id"], "R1_exact", 1.0
@@ -188,7 +204,20 @@ class Matcher:
             t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R1_exact_town", 0.98
         c = [] if employer_inherited else self.by_op.get(en, [])
-        if len(c) == 1: return c[0]["clinic_id"], "R2_operator", 0.95
+        if len(c) == 1:
+            # Same gate as R1_exact above, mirrored exactly -- a UNIQUE operator-name hit is a wrong
+            # match too when the posting's own city names a DIFFERENT real registry town (TASK-153;
+            # Augustinum gGmbH has exactly one Krankenhausplan site, München, so this branch used to
+            # attribute every Augustinum-operator posting nationwide to it regardless of city,
+            # including real postings from other Augustinum facilities -- Bischofswiesen,
+            # Unterschleißheim, Oberschleißheim, Bad Tölz -- a different facility category entirely,
+            # confirmed live 2026-09-24). See other_town_disagrees's own comment above for why this
+            # only refuses on a proven OTHER registry site, not any known-but-unregistered city.
+            own_town = city_key(c[0].get("town"))
+            other_town_disagrees = en not in CITY_UNRELIABLE_EMPLOYERS and ck and not _town_match(own_town, ck) and \
+                any(x["clinic_id"] != c[0]["clinic_id"] for x in self._by_town(ck))
+            if not other_town_disagrees:
+                return c[0]["clinic_id"], "R2_operator", 0.95
         if len(c) > 1:
             t = [x for x in c if _town_match(city_key(x.get("town")), ck)]
             if len(t) == 1: return t[0]["clinic_id"], "R2_operator_town", 0.9
@@ -270,10 +299,31 @@ class Matcher:
         """Last content-side check before falling back to board: does exactly one clinic's own name or
         operator appear, verbatim as a token set, in the job description? Conservative on purpose --
         a JD mentioning a clinic in passing ("Kooperation mit Klinikum X") is rare enough that requiring
-        a UNIQUE hit across the whole registry is safer than guessing among several mentions."""
+        a UNIQUE hit across the whole registry is safer than guessing among several mentions.
+
+        Unlike R3/R4 (same-town candidates only), this runs against the WHOLE registry -- a name/
+        operator that reduces to one generic word after town-stripping ('Artemed', 'Augenklinik') is
+        common enough nationwide that treating it as a unique hit is a false-positive machine, not a
+        rare coincidence (TASK-101, found the moment this rule's real output was replayed for the
+        first time: Artemed Fachklinik München's own name and Augenklinik Rosenheim's both reduce to
+        one token, so every OTHER site's description that mentions that word in passing -- an
+        Artemed-group sibling, a city district named after an eye clinic -- won registry-wide). Same
+        lesson TASK-51/decision-5 already drew for R3/R4's own now-removed single-token fallback:
+        one leftover token is not evidence, at any scope, but least of all unscoped by town.
+
+        parse_quality='partial' candidates are excluded entirely, not just gated by token count: a
+        row the registry itself already flags as an imperfect Krankenhausplan-PDF extraction (garbled
+        name/operator, or a town field that isn't a real town at all -- 'Co. KG', 'Kliniken', a
+        person's name) breaks the SAME town-stripping this rule leans on, in the specific direction
+        that manufactures false extra tokens instead of removing them (TASK-101, clinic 18872: town
+        field reads 'Co. KG', so 'feldafing' never gets stripped from its operator tokens, and it
+        out-competes its own clean twin 18813 for 48 real Feldafing postings). A full registry scan
+        found 27 more rows with the identical shape (TASK-131) -- this is a systemic property of
+        parse_quality='partial' rows, not one bad row to special-case."""
         if not description: return None
         dt = toks(description[:2000])
-        hits = [c for c in self.clinics if (c["_ntoks"] and c["_ntoks"] <= dt) or (c["_otoks"] and c["_otoks"] <= dt)]
+        hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and
+                ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
         if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
 

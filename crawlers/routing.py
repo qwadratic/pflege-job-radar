@@ -55,6 +55,7 @@ ADAPTERS = {
     # fingerprinted vendor name attached.
     "wp_jobs":         ("vendor", "crawlers.vendor_adapters:crawl_wp_jobs"),
     "dvinci":          ("vendor", "crawlers.vendor_adapters:crawl_dvinci"),
+    "easyhr":          ("vendor", "crawlers.vendor_adapters:crawl_easyhr"),
     # `self_hosted` means discovery found no vendor fingerprint, not that the board is unreadable.
     # Route it through the same generic sitemap/page-link job discovery as unlabelled boards
     # (`wp_jobs` above) -- a 0-row crawl_wp_jobs pass costs a few GETs, and a live probe of the 14
@@ -85,6 +86,12 @@ ADAPTERS = {
     # career_crawl.Crawler -- crawlers.portals:parse_umantis (the old entry here) is unused dead code.
     "umantis":         ("seeded", "pflege_jobs.sources.ats_seeds:umantis"),
 }
+
+# "coveto" (TASK-116 AC#2) is deliberately NOT in ADAPTERS above, so plan() reports it as "no adapter
+# for coveto" rather than silently mis-routing it. Confirmed 2026-09-24: exactly 1 of 407 registry
+# clinics uses it (16262 Algesiologikum Tagesklinik München, k19368.coveto.de), and that board was
+# already checked live 2026-09-22 -- 9 current listings, none nursing. Building a real adapter would
+# serve zero qualifying vacancies for one clinic; not worth it unless a second coveto clinic shows up.
 
 # Boards that reject datacenter traffic outright; a 0-row crawl here means "walled", not "no jobs".
 # simssee-klinik.de confirmed live 2026-09-22: every page 403s, including the bare homepage, from

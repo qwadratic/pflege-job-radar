@@ -45,7 +45,7 @@ app/wa/meta.py:Client.send_template(to_e164, template_name, language, params=Non
 
 app/wa/api.py:_send() now checks _freeform_window_open(t) (pure function of thread.last_inbound_at, code-level, never the model) before the existing autosend branch: closed window -> _send_reopen_template() (draft or real send depending on AUTOSEND, raises RuntimeError loudly if no template configured) instead of the brain's own bubbles. Applies to both brains equally since it's a Meta transport constraint, not brain-specific.
 
-Noted in docs: in the current purely-webhook-driven _handle_one() flow, last_inbound_at is always freshly stamped before _send() runs, so the window is always open in practice today -- this check's real bite starts once TASK-176's dry-run/catch-up tool (or any future proactive-messaging feature) revisits an older, previously-unanswered thread. Tests call _send()/_freeform_window_open() directly with a manually-stale last_inbound_at to exercise the closed-window path, matching how that future caller will actually use it.
+Noted in docs: in the current purely-webhook-driven _handle_one() flow, last_inbound_at is always freshly stamped before _send() runs, so the window is always open in practice today -- this check's real bite starts once TASK-72's dry-run/catch-up tool (or any future proactive-messaging feature) revisits an older, previously-unanswered thread. Tests call _send()/_freeform_window_open() directly with a manually-stale last_inbound_at to exercise the closed-window path, matching how that future caller will actually use it.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

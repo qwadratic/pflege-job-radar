@@ -137,6 +137,26 @@ def _clinic_freshness(clinics, jobs):
     return sorted(out, key=lambda r: (r["stale_days"] is None, -(r["stale_days"] or 0)))
 
 
+# --- per-clinic (verified-live postings / beds) ratio (TASK-140 AC#1) -----------------------------
+# Ivan's hypothesis 2026-09-23: this ratio should be roughly stable across clinics, so ones well below
+# the median are where a hidden coverage bug (wrong attribution, broken adapter, wrong careers_url) is
+# more likely to be hiding -- a triage signal, not a verdict. beds<50 is excluded: the ratio is too
+# noisy to mean anything for a tiny denominator (one posting swings it wildly). Confirmed on real data
+# the same day: the bottom-20 independently contained the still-open TASK-129 München Klinik family.
+def _beds_ratio(clinics):
+    """[{clinic_id, name, beds, jobs_live, ratio_per_1000_beds}] for clinics with beds>=50, ascending
+    by ratio (worst/most-suspicious first). ratio_per_1000_beds = jobs_live / beds * 1000."""
+    rows = []
+    for c in clinics:
+        beds = c.get("beds") or 0
+        if beds < 50:
+            continue
+        live = c.get("jobs_live") or 0
+        rows.append({"clinic_id": c.get("clinic_id"), "name": c.get("name"), "beds": beds,
+                     "jobs_live": live, "ratio_per_1000_beds": round(live / beds * 1000, 2)})
+    return sorted(rows, key=lambda r: r["ratio_per_1000_beds"])
+
+
 def _add(acc, c):
     acc["clinics_labelled"] += 1
     acc["clinics_routable"] += int(bool(c.get("routable")) and not c.get("walled"))
@@ -231,11 +251,28 @@ def compute():
     for c in cells:
         by_adapter[c["adapter"]].append(c)
 
+    # TASK-88 AC#4: crawl_issues kind='incomplete' (an adapter that read its board's own
+    # self-reported total and returned fewer rows than it, see app/crawl.py's board_total checks)
+    # was written every crawl but read nowhere in app/ until now -- a board that starts under-reading
+    # was invisible until the next manual audit. 7d, not all-time: a board fixed last week should not
+    # keep showing as broken forever.
+    incomplete_since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    recent_issues = R.list_crawl_issues(since=incomplete_since)
+    incomplete_issues = [i for i in recent_issues if i.get("kind") == "incomplete"]
+    incomplete_by_vendor = defaultdict(list)
+    for i in incomplete_issues:
+        incomplete_by_vendor[i.get("vendor")].append(i)
+    # TASK-92 AC#5: kind='intake' (app/crawl.py's cli-inbox/link-cross/general-intake failure paths)
+    # is a whole-run failure, not a per-board under-read -- a different shape from 'incomplete' above,
+    # surfaced separately rather than folded into the same count.
+    intake_issues = [i for i in recent_issues if i.get("kind") == "intake"]
+
     rows = []
     for key, a in acc.items():
         a["boards"] = len(fc_boards) if key == FIRECRAWL else board_count.get(key, 0)
         row = {"adapter": key, **a, "coverage_pct": _pct(a), **_feature_score(by_adapter.get(key) or []),
-               "last_run": _last_run(runs, key, members.get(key) or set())}
+               "last_run": _last_run(runs, key, members.get(key) or set()),
+               "incomplete_boards_7d": len(incomplete_by_vendor.get(key) or [])}
         if key == FIRECRAWL:
             row["credits_7d"] = credits_7d
             row["tokens_7d"] = tokens_7d
@@ -259,9 +296,25 @@ def compute():
     totals["fresh_jobs_incl_unattributed"] = totals["fresh_jobs"] + unattributed["fresh_jobs"]
 
     why = Counter(reason for _, reason in unroutable)
+    beds_ratio = _beds_ratio(clinics)
+    median_ratio = beds_ratio[len(beds_ratio) // 2]["ratio_per_1000_beds"] if beds_ratio else None
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "rows": rows, "totals": totals, "unattributed": unattributed, "clinic_freshness": _clinic_freshness(clinics, jobs),
-            "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))]}
+            "beds_ratio": beds_ratio, "beds_ratio_median": median_ratio,
+            "unroutable": [{"reason": k, "count": n} for k, n in sorted(why.items(), key=lambda kv: (-kv[1], kv[0]))],
+            # TASK-88 AC#4: which boards, not just a per-adapter count -- one row per still-open
+            # under-read, most recent first, deduped by (board_url) at read time (record_crawl_issue's
+            # own upsert already keeps one row per (kind, board_url, day), so a re-crawl the same day
+            # that still under-reads updates it in place rather than piling up duplicates).
+            "incomplete_boards": sorted(
+                ({"board_url": i["board_url"], "vendor": i.get("vendor"), "day": i["day"], "error": i["error"]}
+                 for i in incomplete_issues), key=lambda x: x["day"], reverse=True),
+            # TASK-92 AC#5: a whole-run intake failure (cli inbox/link-cross exited nonzero, or the
+            # intake step itself raised) is now visible here instead of only in run_log -- same
+            # 7-day window, same dedupe-by-upsert reasoning as incomplete_boards above.
+            "intake_issues": sorted(
+                ({"board_url": i["board_url"], "vendor": i.get("vendor"), "day": i["day"], "error": i["error"]}
+                 for i in intake_issues), key=lambda x: x["day"], reverse=True)}
 
 
 @router.get("/coverage")

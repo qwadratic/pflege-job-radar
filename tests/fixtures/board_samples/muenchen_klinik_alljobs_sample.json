@@ -1,0 +1,204 @@
+[
+ {
+  "filter": {
+   "families": [
+    7
+   ],
+   "locations": [
+    9
+   ],
+   "divisions": [
+    17
+   ]
+  },
+  "title": "MFA (w|m|d) HNO",
+  "teaser": "HNO-Ambulanz / München Klinik / Standort Schwabing (Nr. 44902)",
+  "uid": 6470,
+  "id": "44902",
+  "families": [
+   {
+    "title": "MFA",
+    "uid": 7,
+    "id": 27,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/praktikum.1787121817.svg"
+   }
+  ],
+  "locations": [
+   {
+    "title": "München Klinik Schwabing",
+    "uid": 9,
+    "id": 8,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/ks.1787121817.svg"
+   }
+  ],
+  "divisions": [
+   {
+    "title": "Hals-, Nasen- und Ohrenheilkunde",
+    "uid": 17,
+    "id": 96
+   }
+  ],
+  "link": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/mfa-w-m-d-hno-stellennummer-44902/",
+  "linkTarget": "_self"
+ },
+ {
+  "filter": {
+   "families": [
+    4
+   ],
+   "locations": [
+    9
+   ],
+   "divisions": [
+    16,
+    40
+   ]
+  },
+  "title": "Physiotherapeutin / Physiotherapeut (w|m|d)",
+  "teaser": "Physikalische Medizin, Frührehabilitation und Geriatrie / München Klinik / Standort Schwabing (Nr. 44890)",
+  "uid": 6469,
+  "id": "44890",
+  "families": [
+   {
+    "title": "Therapeuten",
+    "uid": 4,
+    "id": 19,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/bundesfreiwilligendienst.1787121817.svg"
+   }
+  ],
+  "locations": [
+   {
+    "title": "München Klinik Schwabing",
+    "uid": 9,
+    "id": 8,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/ks.1787121817.svg"
+   }
+  ],
+  "divisions": [
+   {
+    "title": "Geriatrie",
+    "uid": 16,
+    "id": 92
+   },
+   {
+    "title": "Physikalische Medizin / Rehabilitative Medizin",
+    "uid": 40,
+    "id": 188
+   }
+  ],
+  "link": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/physiotherapeutin-physiotherapeut-w-m-d-stellennummer-44890/",
+  "linkTarget": "_self"
+ },
+ {
+  "filter": {
+   "families": [
+    5
+   ],
+   "locations": [
+    13
+   ],
+   "divisions": [
+    52
+   ]
+  },
+  "title": "Klinische Kodierfachkraft (w|m|d)",
+  "teaser": "Medizincontrolling / München Klinik / Standort Neuperlach (Nr. 44863)",
+  "uid": 6464,
+  "id": "44863",
+  "families": [
+   {
+    "title": "Verwaltung",
+    "uid": 5,
+    "id": 23,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/verwaltung.1787121817.svg"
+   }
+  ],
+  "locations": [
+   {
+    "title": "Alle Standorte",
+    "uid": 13,
+    "id": 19,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/kt-kb-kb-ks-kn.1787121817.svg"
+   }
+  ],
+  "divisions": [
+   {
+    "title": "Verwaltung",
+    "uid": 52,
+    "id": 236
+   }
+  ],
+  "link": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/klinische-kodierfachkraft-w-m-d-stellennummer-44863/",
+  "linkTarget": "_self"
+ },
+ {
+  "filter": {
+   "families": [
+    11
+   ],
+   "locations": [
+    6,
+    8,
+    7,
+    9,
+    5
+   ],
+   "divisions": [
+    66
+   ]
+  },
+  "title": "Ausbildung Medizinische Fachangestellte / Medizinischer Fachangestellter | MFA (w|m|d) September 2027",
+  "teaser": "an unseren 5 Standorten der München Klinik (Nr. 44604)",
+  "uid": 6460,
+  "id": "44604",
+  "families": [
+   {
+    "title": "Ausbildung",
+    "uid": 11,
+    "id": 281,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/jobs_divison_education.1787121817.svg"
+   }
+  ],
+  "locations": [
+   {
+    "title": "München Klinik Bogenhausen",
+    "uid": 6,
+    "id": 5,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/kb.1787121817.svg"
+   },
+   {
+    "title": "München Klinik Neuperlach",
+    "uid": 8,
+    "id": 7,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/kn.1787121817.svg"
+   },
+   {
+    "title": "München Klinik Harlaching",
+    "uid": 7,
+    "id": 6,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/kh.1787121817.svg"
+   },
+   {
+    "title": "München Klinik Schwabing",
+    "uid": 9,
+    "id": 8,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/ks.1787121817.svg"
+   },
+   {
+    "title": "München Klinik Thalkirchner Straße",
+    "uid": 5,
+    "id": 9,
+    "icon": "/fileadmin/Corporate/beruf-karriere/icons/kt.1787121817.svg"
+   }
+  ],
+  "divisions": [
+   {
+    "title": "Ausbildung",
+    "uid": 66,
+    "id": 321
+   }
+  ],
+  "link": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/ausbildung-medizinische-fachangestellte-medizinischer-fachangestellter-mfa-w-m-d-september-2027-stellennummer-44604/",
+  "linkTarget": "_self"
+ }
+]

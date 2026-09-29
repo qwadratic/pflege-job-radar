@@ -79,6 +79,11 @@ select.sm{border:1px solid var(--line);background:#fff;padding:5px 8px;font-size
 .row .t{font-weight:500;font-size:14.5px} .row .m{color:var(--ink-3);font-size:12px;margin-top:2px}
 .row .n{text-align:right;font-family:"Archivo Black";font-size:20px;line-height:1} .row .n small{display:block;font-family:"JetBrains Mono";font-size:11px;color:var(--ink-3);font-weight:400;letter-spacing:.1em;text-transform:uppercase}
 .tag{display:inline-block;font-size:11px;padding:0 7px;border:1px solid var(--line);color:var(--ink-2);margin:0 4px 0 0;line-height:18px;background:#fff} .tag.acc{border-color:var(--accent);color:var(--accent)}
+/* Same look as .tag, different class on purpose: a standing quick-filter link (not a removable active-filter
+   pill), so it must not match ".filters .tag" (test_web_hero.py counts that selector to assert every pill
+   cleared after removing the one active filter). */
+.qtag{display:inline-block;font-size:11px;padding:0 7px;border:1px solid var(--line);color:var(--ink-2);margin:0 4px 0 0;line-height:18px;background:#fff;text-decoration:none}
+.count{font-size:12px;color:var(--ink-3);margin:0 0 10px}
 .dot{display:inline-block;width:8px;height:8px;background:var(--neon);margin-right:6px;vertical-align:middle}
 .more{margin-top:14px;text-align:center} .more button{background:#fff;border:1px solid var(--ink);padding:8px 16px}
 /* map */
@@ -246,7 +251,7 @@ const I18N={
   e_clinics:"Kliniken",h_clinics:"Krankenhausplan-Standorte",p_clinics:"Klinik anklicken → alle Stellen dort. Filter: Regierungsbezirk, Ort, nur mit Stellen.",
   e_jobs:"Stellen",h_jobs:"Offene Pflege-Stellen",p_jobs:"Nur qualifizierte, erfahrene Pflegeberufe. Jede Stelle mit Link zur Originalanzeige.",
   e_cities:"Städte",h_cities:"Orte mit Kliniken",p_cities:"Ort anklicken → Kliniken dort.",
-  with_jobs:"nur mit Stellen",fresh_only:"nur neue (7 Tage)",role_all:"alle Rollen",city_ph:"Ort …",more:"Mehr anzeigen",loading:"lädt …",m_hint:"Ort anklicken — die Liste unten wird enger",m_soon:"weitere Länder folgen",m_go:"Kliniken ansehen",m_go_err:"Fehler ansehen",m_err:"Klinikliste nicht geladen",m_on:"Orte auf der Karte",m_off:"Orte außerhalb dieser Karte",m_off_why:"meist außerhalb Bayerns",m_merged:"%d Orte",vs_live:"erreichbar",vs_gone:"entfernt (404)",vs_blocked:"Bot-Sperre",vs_error:"Abruf fehlgeschlagen",vs_none:"nicht geprüft",vs_none_why:"Diese Anzeige wurde noch nicht nachgeprüft.",approx:"ungefährer Treffer",all_jobs:"alle Stellen",jobs:"Stellen",new:"neu",hospitals:"Kliniken",
+  with_jobs:"nur mit Stellen",fresh_only:"nur neue (7 Tage)",reha_only:"nur Reha/Vorsorge",n_results:"%d Treffer",role_all:"alle Rollen",city_ph:"Ort …",more:"Mehr anzeigen",loading:"lädt …",m_hint:"Ort anklicken — die Liste unten wird enger",m_soon:"weitere Länder folgen",m_go:"Kliniken ansehen",m_go_err:"Fehler ansehen",m_err:"Klinikliste nicht geladen",m_on:"Orte auf der Karte",m_off:"Orte außerhalb dieser Karte",m_off_why:"meist außerhalb Bayerns",m_merged:"%d Orte",vs_live:"erreichbar",vs_gone:"entfernt (404)",vs_blocked:"Bot-Sperre",vs_error:"Abruf fehlgeschlagen",vs_none:"nicht geprüft",vs_none_why:"Diese Anzeige wurde noch nicht nachgeprüft.",approx:"ungefährer Treffer",all_jobs:"alle Stellen",jobs:"Stellen",new:"neu",hospitals:"Kliniken",
   add_city:"+ Stadt",radius_on:"Umkreis",radius_off:"Umkreis entfernen",radius_lbl:"Umkreis um %s in Kilometern",radius_hub:"Umkreis um %s",radius_around:"um %s",covered:"%d Orte im Umkreis um %s",covered_1:"1 Ort im Umkreis um %s",covered_plus:"+ %k außerhalb gewählt",geo_mod:"Daten verändert",rm_city:"%s entfernen",e_fach:"Fachrichtung",place:"Ort",places:"Orten",
   s_cities:"%d Orte gewählt",s_radius:"Umkreis aktiv: %d km um %s",s_radius_off:"Umkreis entfernt",s_radius_hub:"Umkreis entfernt: %s war der Mittelpunkt",s_fach:"Fachrichtung: %s",s_fach_off:"Fachrichtung aufgehoben",s_fach_pick:"%d Fachrichtungen unter der Karte",
   cv_login:"Zum Hochladen anmelden",cv_401:"Der Lebenslauf-Abgleich braucht eine Anmeldung.",
@@ -264,7 +269,7 @@ const I18N={
   e_clinics:"Hospitals",h_clinics:"Hospital-plan sites",p_clinics:"Click a hospital → all its jobs. Filters: district, town, with jobs only.",
   e_jobs:"Jobs",h_jobs:"Open nursing jobs",p_jobs:"Qualified, experienced nursing roles only. Every job links to the original posting.",
   e_cities:"Cities",h_cities:"Towns with hospitals",p_cities:"Click a town → its hospitals.",
-  with_jobs:"with jobs only",fresh_only:"new only (7 days)",role_all:"all roles",city_ph:"Town …",more:"Show more",loading:"loading …",m_hint:"click a town — the list below narrows",m_soon:"more Länder to come",m_go:"See hospitals",m_go_err:"See the error",m_err:"Hospital list not loaded",m_on:"towns on the map",m_off:"towns not on this map",m_off_why:"mostly outside Bavaria",m_merged:"%d towns",vs_live:"reachable",vs_gone:"removed (404)",vs_blocked:"bot wall",vs_error:"check failed",vs_none:"not checked",vs_none_why:"This posting has not been checked yet.",approx:"approximate match",all_jobs:"all jobs",jobs:"jobs",new:"new",hospitals:"hospitals",
+  with_jobs:"with jobs only",fresh_only:"new only (7 days)",reha_only:"Reha/Vorsorge only",n_results:"%d results",role_all:"all roles",city_ph:"Town …",more:"Show more",loading:"loading …",m_hint:"click a town — the list below narrows",m_soon:"more Länder to come",m_go:"See hospitals",m_go_err:"See the error",m_err:"Hospital list not loaded",m_on:"towns on the map",m_off:"towns not on this map",m_off_why:"mostly outside Bavaria",m_merged:"%d towns",vs_live:"reachable",vs_gone:"removed (404)",vs_blocked:"bot wall",vs_error:"check failed",vs_none:"not checked",vs_none_why:"This posting has not been checked yet.",approx:"approximate match",all_jobs:"all jobs",jobs:"jobs",new:"new",hospitals:"hospitals",
   add_city:"+ Town",radius_on:"Radius",radius_off:"Remove radius",radius_lbl:"Radius around %s in kilometres",radius_hub:"Radius around %s",radius_around:"around %s",covered:"%d towns inside the radius around %s",covered_1:"1 town inside the radius around %s",covered_plus:"+ %k picked outside it",geo_mod:"data modified",rm_city:"Remove %s",e_fach:"Department",place:"town",places:"towns",
   s_cities:"%d towns selected",s_radius:"Radius active: %d km around %s",s_radius_off:"Radius removed",s_radius_hub:"Radius removed: %s was its centre",s_fach:"Department: %s",s_fach_off:"Department cleared",s_fach_pick:"%d departments below the map",
   cv_login:"Sign in to upload",cv_401:"The CV match needs a signed-in session.",
@@ -646,7 +651,7 @@ function searchBox(){ const box=el("div",{class:"bigq"}); const inp=el("input",{
   inp.addEventListener("input",run); inp.addEventListener("keydown",e=>{if(e.key==="Enter"){nav("/jobs?q="+encodeURIComponent(inp.value.trim()));}}); inp.addEventListener("blur",()=>setTimeout(()=>sr.hidden=true,150));
   box.append(inp,sr); return box; }
 // Every job-level facet the hero board links to is also a filter here, so a card lands on the list it promised.
-const XK=["department_hint","employment_types","qualification_hint","contract","enr_tariff"];
+const XK=["department_hint","employment_types","qualification_hint","contract","enr_tariff","clinic_status"];
 const J={role:"",city:[],fresh:false,q:"",x:{}};
 async function pageJobs(g){ await taxonomy(); const fc=await facets();
   // The same town vocabulary the map speaks, built the same way: one option per resolved town with the
@@ -657,14 +662,22 @@ async function pageJobs(g){ await taxonomy(); const fc=await facets();
   J.q=g.q||""; if(g.city) J.city=[...new Set(g.city.split(",").map(canonTown))]; if(g.role||g.role_class) J.role=g.role||g.role_class; if(g.fresh) J.fresh=true;
   J.x={}; XK.forEach(k=>{ if(g[k]) J.x[k]=g[k]; });
   const head=el("div",{class:"hd"},el("div",{},el("p",{class:"eyebrow",text:t("e_jobs")}),el("h2",{text:t("h_jobs")}),el("p",{text:t("p_jobs")})));
-  const body=el("div"); const draw=()=>{ const sel=dropdown({options:(fc.role_class||[]).map(r=>({v:r.v,label:r.label||roleLabel(r.v),n:r.n})),value:J.role,allLabel:t("role_all"),aria:t("role_all"),onchange:v=>{J.role=v;draw();}});
+  const body=el("div"); const cnt=el("p",{class:"count",text:t("loading")});
+  const draw=()=>{ const sel=dropdown({options:(fc.role_class||[]).map(r=>({v:r.v,label:r.label||roleLabel(r.v),n:r.n})),value:J.role,allLabel:t("role_all"),aria:t("role_all"),onchange:v=>{J.role=v;draw();}});
+    cnt.textContent=t("loading");
     put(body,el("div",{class:"filters"},sel,
       townPicker(townOpts,v=>{ if(!J.city.includes(v)) J.city=[...J.city,v]; draw(); }),
       el("div",{class:"sel"},...J.city.map(c=>el("button",{type:"button","aria-label":t("rm_city").replace("%s",cityLabel(c)),
         onclick:()=>{ J.city=J.city.filter(x=>x!==c); draw(); }},cityLabel(c)+" ×"))),
-      el("label",{class:"tg"},el("input",{type:"checkbox",checked:J.fresh,onchange:e=>{J.fresh=e.target.checked;draw();}}),t("fresh_only")),J.q?el("span",{class:"tag",text:"„"+J.q+"“ ×",style:"cursor:pointer",onclick:()=>{J.q="";draw();}}):null,
+      el("label",{class:"tg"},el("input",{type:"checkbox",checked:J.fresh,onchange:e=>{J.fresh=e.target.checked;draw();}}),t("fresh_only")),
+      !J.x.clinic_status?el("a",{href:"#/jobs?clinic_status="+encodeURIComponent("Reha-Einrichtung"),class:"qtag"},t("reha_only")):null,
+      J.q?el("span",{class:"tag",text:"„"+J.q+"“ ×",style:"cursor:pointer",onclick:()=>{J.q="";draw();}}):null,
       ...Object.entries(J.x).map(([k,v])=>el("span",{class:"tag acc",text:v+" ×",title:k,style:"cursor:pointer",onclick:()=>{delete J.x[k];draw();}}))),
-      ...paged(jobRow,(off,lim)=>api("/api/jobs"+qs({q:J.q,role_class:J.role,city:expandTowns(J.city),...J.x,fresh_days:J.fresh?7:"",sort:"-first_published",limit:lim,offset:off})),25,null,t("e_list_jobs"))); };
+      cnt,
+      // onTotal(n) on success, onTotal(null,message) on a failed page -- match paged()'s own contract
+      // (see pageClinic's map counter above) so a broken /api/jobs shows "–", not a stale or wrong count.
+      ...paged(jobRow,(off,lim)=>api("/api/jobs"+qs({q:J.q,role_class:J.role,city:expandTowns(J.city),...J.x,fresh_days:J.fresh?7:"",sort:"-first_published",limit:lim,offset:off})),25,
+        (n,err)=>{ cnt.textContent=err?num(null):t("n_results").replace("%d",num(n)); },t("e_list_jobs"))); };
   draw(); return [el("section",{class:"block",style:"border-top:0"},head,body)]; }
 // Home: top towns by open postings (facets.job_cities) as chips → #/jobs?city=<town>; every other town lives in the combobox beside them.
 function townChips(fc){ const [gs,off]=townSrc(fc);   // grouped where the table can, raw where it cannot

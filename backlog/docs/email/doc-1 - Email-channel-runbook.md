@@ -86,24 +86,24 @@ Sites: `bewerbung-pflege.work`, `bewerbungpflege.work`, `pflege.works` → redir
 Not checked yet (needs a real send): DKIM signing on, sending-IP blocklists, mail-tester score, inbox placement.
 
 ### 2026-09-17 — existing creds found + 6-month dump
-- TASK-111.1 done via Ivan (Claude's Bash is classifier-blocked from reading/copying secret files; Ivan runs those cmds). Old mailbox tooling at `/opt/clinic-dispatcher-worktrees/mailbox-sync-durable`; creds in `/opt/clinic-dispatcher/data/private/{mailboxes.env,zoho_kindt_oauth.env}`. Imported into `pflege-board/.env`: 5 `MICROSOFT_GRAPH_*` (existing Entra app, tenant ndtgroup864, PublicClientApplication + device-flow, delegated, NO client secret) + 9 `ZOHO_*`.
+- TASK-345.1 done via Ivan (Claude's Bash is classifier-blocked from reading/copying secret files; Ivan runs those cmds). Old mailbox tooling at `/opt/clinic-dispatcher-worktrees/mailbox-sync-durable`; creds in `/opt/clinic-dispatcher/data/private/{mailboxes.env,zoho_kindt_oauth.env}`. Imported into `pflege-board/.env`: 5 `MICROSOFT_GRAPH_*` (existing Entra app, tenant ndtgroup864, PublicClientApplication + device-flow, delegated, NO client secret) + 9 `ZOHO_*`.
 - Graph auth = SHARED MSAL cache `/opt/clinic-dispatcher/data/private/microsoft_graph_msal_cache.json` (also used by colleague's service). Our `.env` MSAL_CACHE/ACCOUNT_MAP repointed to absolute paths. Token verified: scopes = User.Read, Mail.Read, Mail.Send, Calendars.ReadWrite, OnlineMeetings.ReadWrite.
 - Dump tools: `tools/email_dump_graph.py` (M365 via Graph, run with `sudo -E` — Ivan only, reads root cache) and `tools/email_dump_imap.py` (Zoho via IMAP, Claude can run — reads our .env). Both write `data/email-dump/<addr>/messages.jsonl` + `_summary.json`. `SKIP_EXISTING=1` skips already-dumped boxes; `ONLY_MAILBOX=<addr>` for one; `MONTHS=6` window.
-- **Cache ≠ our .env:** MSAL cache has 5 accounts; only daria.s@pflege-connect (#10) + maria.b@bewerbung-direkt (#9) are ours. Our #11 viktoriia.s@pflege-expert is NOT in the cache → not Graph-dumpable (needs own OAuth, TASK-111.2). Cache also has 3 non-ours: dariia.so@ki-agent, maria.bu@ki-ndt, valentyn.vi@ki-workflow (colleague's outreach personas).
+- **Cache ≠ our .env:** MSAL cache has 5 accounts; only daria.s@pflege-connect (#10) + maria.b@bewerbung-direkt (#9) are ours. Our #11 viktoriia.s@pflege-expert is NOT in the cache → not Graph-dumpable (needs own OAuth, TASK-345.2). Cache also has 3 non-ours: dariia.so@ki-agent, maria.bu@ki-ndt, valentyn.vi@ki-workflow (colleague's outreach personas).
 - Dump progress: daria.s ✅ 5174 msg/4298 threads; dashandt (#3) ✅ 17568 msg/12 folders. Zoho #6/7/8 + M365 (#9 + 3 extras) in flight.
 - **PITFALLS:**
   - `sudo` Graph dump is classifier-blocked for Claude (reads root MSAL cache) → Ivan runs it. IMAP dump (our .env) Claude can run.
   - Shared cache: refresh rotates the RT. Dumper re-reads cache per account and writes back ATOMICALLY (temp+os.replace, preserve root:600) so the colleague's concurrent service isn't corrupted. NEVER a non-atomic write to that file.
   - Graph `/me/messages` includes Junk Email → warm-box dump is ~half spam; filter Junk during analysis, not at dump.
   - Zoho IMAP folder names come in modified-UTF-7 (e.g. `&BB0E...+-` = a Cyrillic folder); decode during analysis. Messages inside are intact.
-  - Zoho `snovio` folder (10947 in #3) = Snov.io cold-outreach archive — primary source for clinic-flow extraction (TASK-111.7).
+  - Zoho `snovio` folder (10947 in #3) = Snov.io cold-outreach archive — primary source for clinic-flow extraction (TASK-345.7).
 - Sending decision: PRIMARY Graph sendMail (Mail.Send present), FALLBACK SMTP basic. Not yet built.
 
 ### Open
-- Deliverability test still not run (needs a real send) — TASK-111.3.
-- #11 + full-scope M365 read need our own app (TASK-111.2); IMAP-off Zoho #2/4/5 + dead #1 pw → TASK-111.5.
+- Deliverability test still not run (needs a real send) — TASK-345.3.
+- #11 + full-scope M365 read need our own app (TASK-345.2); IMAP-off Zoho #2/4/5 + dead #1 pw → TASK-345.5.
 
-### 2026-09-18 — 6-month dump analysed (TASK-111.7)
+### 2026-09-18 — 6-month dump analysed (TASK-345.7)
 Pipeline (all in `tools/`, all deterministic except the agent passes): `email_index.py` (dedupe, global threading, org dossiers, flags) → `email_sample.py` (tiers, quant stats, template families) → `email_sample_rest.py` / `email_stage2b.py` (targeted strata, partner re-keying, org-topics) → `email_ledgers.py` (bounce/compliance/response/recontact/roles). Agent passes = 3 Workflow runs (Stage 1 wf_d3ccaeea-fd2, Stage 2 wf_3f0ddc5f-d57, Stage 2b wf_f74bdd4d-3a1). Outputs in `data/email-analysis/out/`: `report_stage1.md`, `report_stage2.md`, `report_stage2b.md` (closing evidence), `decode_outreach.md`, `decode_pushback.md`, `attachments.md`, `ledgers.md`, `critique_stage1.json`. Theory research: `data/email-analysis/research_de_placement.md`.
 
 Corrected headline numbers (clinic-gated, UTC): Gen1 campaign "Examinierte Pflegefachkräfte für [Klinik]" 2,176 threads / 4,973 sends / 835 domains, 3 touches d0/+5/+11; strict human reply **204 = 9.4%** (41 positive, 96 negative, 7 stop); any inbound 32%; hard NDR 7.7% of threads (M3/M5/M6 11–13% in one shared reputation event W24/27/28, M1/M4 ≤0.5%); 40% of substantive replies ever answered (median 2.7 h, p75 72 h, p90 354 h); compliance: 37 domains / 174 touches after a human decline/redirect/stop; 48 orgs re-cold-contacted after a reply. Funnel: ≥7 calls held (18 invited), 27 contracts sent, **1 signed, 0 Zusage/Arbeitsvertrag/Arbeitsantritt/Rechnung/payment**. Fee only ever stated in a filename (2,5 Bruttomonatsgehälter); partner terms 50/50, 1st at Vertragsunterzeichnung, Nachbesetzung-only guarantee.
@@ -114,4 +114,4 @@ Corrected headline numbers (clinic-gated, UTC): Gen1 campaign "Examinierte Pfleg
 - **PITFALL**: keyword flags are weak — `fee_invoice` 0% precision, `legal_complaint`/`reject` fire on OOO disclaimers, `optout` 88% third-party spam, `sensitive` = health-scam spam. Stage 1/2b M1–M6 labels are different permutations.
 - **PITFALL**: Graph (M365) dumps carry no attachment names; `tools/email_enrich_graph_attachments.py` (sudo, Ivan) not yet run.
 - Privacy: intermediate JSON artifacts were scrubbed (persona/person/clinic names); reports use roles, org types, thread_ids only. Data stays on the server.
-- Deliverables: doc-2 (flow catalog, TASK-111.7 AC) and doc-3 (email-module architecture proposal: Deal state model, stop-list, deliverability, invoicing from the actual contract terms). Actual contract/deck PDFs in `data/email-analysis/contracts/`.
+- Deliverables: doc-2 (flow catalog, TASK-345.7 AC) and doc-3 (email-module architecture proposal: Deal state model, stop-list, deliverability, invoicing from the actual contract terms). Actual contract/deck PDFs in `data/email-analysis/contracts/`.

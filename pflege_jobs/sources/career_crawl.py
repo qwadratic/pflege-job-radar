@@ -23,12 +23,15 @@ from .. import config as C
 from ..classify import (canonical_job_url, classify_employer, classify_role, content_hash, department_hint,
                         employer_norm, enrich_description, fuzzy_key, norm_text, qualification_hint)
 from ..section import pick_nursing_link
+# Shared with crawlers.vendor_adapters' own copy of this signal (TASK-123: the two had independently
+# drifted -- this copy never gained the bare-slash suffix form, "Pfleger/in"/"Pfleger/innen"/
+# "Angestellte/r") -- see pflege_jobs/posting_signal.py for the reconciled union.
+from ..posting_signal import GENDER_MARKER as JOB_TEXT
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 pflege-jobs-crawler"
 LINK_OK = re.compile(r"job|stelle|vacanc|position|karriere|career|bewerb|angebot|offer|posting|/p/|/de/", re.I)
 JOB_HREF = re.compile(r"/detail/|/detailansicht/|/job/|/jobad\?|/jobs?/[^/?]*\d|/karriere/jobs/|/stellenangebot|/stellenanzeige|/vacanc|/position/|jobid|job_id|jobdetail|/p/|[?&]id=\d|/de/jobs/\d|/jobs/\d", re.I)
-JOB_TEXT = re.compile(r"\((?:m|w|d|x|i|gn|a)\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a)(?:\s?[/|\\*]\s?(?:m|w|d|x|i|gn|a))?\)|\b[mwd]/[mwd]/[mwdx]\b|\*in\b|:in\b", re.I)
 LIST_NAV = re.compile(r"weiter|nächste|next|mehr laden|alle stellen|page|seite|pflege|krankenpflege|medizin|berufsgruppe|fachbereich|kategorie|filter", re.I)
 LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#|login|logout|datenschutz|impressum|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print"
                        # umantis: /Jobs/<n> is always its own paginated listing (never a posting) --
@@ -502,7 +505,7 @@ class Crawler:
             "title": title, "employer_name": emp, "employer_name_norm": employer_norm(emp),
             "employer_class": "clinic" if e_class != "clinic" else e_class, "employer_class_rule": e_rule if e_class == "clinic" else f"registry_seed|{e_rule}",
             "aa_kundennummer_hash": None, "offer_kind": "AUSBILDUNG" if role == "ausbildung" else "ARBEIT", "hauptberuf": None, "alle_berufe": [],
-            "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, ""), "department_hint": department_hint(f"{title} {dept or ''}"),
+            "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, "", desc), "department_hint": department_hint(f"{title} {dept or ''}", desc),
             "department_raw": dept, "city": city, "plz": plz, "region": region, "lat": None, "lon": None, "in_bavaria": in_bavaria(city, plz, region, self.towns),
             "n_locations": 1, "locations": json.dumps([{"adresse": {"ort": city, "plz": plz, "region": region}}], ensure_ascii=False),
             "employment_types": [], "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None, "contract": None, "fixed_term_months": None,
@@ -562,7 +565,16 @@ class Crawler:
         m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S | re.I)
         title = _strip(m.group(1)) if m else ""
         if not title or (anchor and not JOB_TEXT.search(title)):
-            title = anchor or title or _strip(re.search(r"<title>(.*?)</title>", html, re.S | re.I).group(1) if re.search(r"<title>", html, re.I) else "")
+            # A listing card's own anchor can carry the WHOLE multi-field card as one <a> -- title,
+            # employer, city, start date, employment type, each on its own line via _strip()'s own
+            # <br>/</p>/</div> -> "\n" conversion (confirmed live 2026-09-24, TASK-144:
+            # karriere.klinikverbund-allgaeu.de's card markup produced anchor text like "Pflegefachkraft
+            # (m/w/d) fuer unsere neonatologische Intensivstation\nKlinikverbund Allgaeu gGmbH\nKempten\n
+            # ab sofort\nVollzeit; Teilzeit"). Only the FIRST line is ever the job title; storing the
+            # whole blob as the title is what corrupted these postings. A no-op for every board whose
+            # anchor is already a single line (the common case this fallback was written for).
+            anchor_title = anchor.split("\n", 1)[0].strip() if anchor else None
+            title = anchor_title or title or _strip(re.search(r"<title>(.*?)</title>", html, re.S | re.I).group(1) if re.search(r"<title>", html, re.I) else "")
         if not re.search(r"bewerb|apply", html, re.I): return None
         title = re.sub(r"\s*[|–-]\s*(Karriere|Jobs|Stellenangebote).*$", "", title)[:200]
         if not title or re.fullmatch(r"[\w\s\-/&,\.]+\(\d+\)", title.strip()): return None     # category links like "Pflegedienst (5)"

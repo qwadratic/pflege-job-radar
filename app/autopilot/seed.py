@@ -123,7 +123,10 @@ def load_registry_source(wait=60):
         print("snapshot unavailable:", e, file=sys.stderr)
     if not clinics:
         for r in D.registry_csv_rows():
-            if not (r.get("clinic_id") or "").strip().isdigit():
+            # TASK-148: Reha facilities (data/sync_rhv_reha.py) use "RH<digits>" ids, not bare KeZ
+            # digits. TASK-103: Diakoneo social/elder-care facilities (data/sync_diakoneo_social.py)
+            # use "DK<digits>" the same way.
+            if not re.match(r"^(RH|DK)?\d+$", (r.get("clinic_id") or "").strip()):
                 continue
             clinics.append({**r, "fachrichtungen": [x for x in (r.get("fachrichtungen") or "").replace(",", "|").split("|") if x],
                             "beds": int(r.get("beds") or 0), "jobs_open": 0})
@@ -142,8 +145,10 @@ def cache_registry(c, clinics, jobs):
     for jb in jobs:
         if not jb.get("clinic_id"):
             continue
+        # department_hint on a snapshot job row is a list (TASK-97) -- json-encode it the same way
+        # fachrichtungen is above; sqlite3 rejects a bare Python list as a bind parameter.
         c.execute("insert or replace into registry_postings values(?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (jb["posting_id"], str(jb["clinic_id"]), jb.get("title"), jb.get("role_class"), jb.get("department_hint"), jb.get("qualification_hint"),
+                  (jb["posting_id"], str(jb["clinic_id"]), jb.get("title"), jb.get("role_class"), db.j(jb.get("department_hint") or []), jb.get("qualification_hint"),
                    jb.get("city"), jb.get("external_url"), jb.get("first_published"),
                    jb.get("enr_language_req"), jb.get("enr_requirements"), jb.get("enr_experience")))
 
@@ -154,6 +159,8 @@ def registry(c):
     for cl in clinics:
         cl["fachrichtungen"] = db.uj(cl["fachrichtungen"], [])
     jobs = [dict(r) for r in c.execute("select * from registry_postings order by posting_id")]
+    for jb in jobs:
+        jb["department_hint"] = db.uj(jb["department_hint"], [])
     return clinics, jobs
 
 

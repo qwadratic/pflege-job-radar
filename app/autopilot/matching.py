@@ -53,7 +53,16 @@ def _quali_ok(cand_q, job_q):
 
 
 def _clinic_depts(clinic, jobs):
-    d = {j.get("department_hint") for j in jobs if j.get("department_hint")}
+    # department_hint on a live-snapshot job row is a list (TASK-97: a posting can be Intensiv AND
+    # Anästhesie); a bare string (older cached rows / hand-built test fixtures) is folded in as its one
+    # value rather than iterated character by character.
+    d = set()
+    for j in jobs:
+        dh = j.get("department_hint")
+        if isinstance(dh, list):
+            d.update(dh)
+        elif dh:
+            d.add(dh)
     for code in clinic.get("fachrichtungen") or []:
         if code in FACH_TO_DEPT:
             d.add(FACH_TO_DEPT[code])

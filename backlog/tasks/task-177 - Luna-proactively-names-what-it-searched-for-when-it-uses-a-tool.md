@@ -15,7 +15,7 @@ ordinal: 73000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan asked: whenever the candidate mentions something that lets Luna filter/search (a city, department, housing need, etc.), it should actually call the tool AND say so in its reply when relevant to the conversation -- not just silently use the result. TASK-166 already made tool use proactive; this is a transparency refinement on top, prompt-level not code-level.
+Ivan asked: whenever the candidate mentions something that lets Luna filter/search (a city, department, housing need, etc.), it should actually call the tool AND say so in its reply when relevant to the conversation -- not just silently use the result. TASK-62 already made tool use proactive; this is a transparency refinement on top, prompt-level not code-level.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

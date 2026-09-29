@@ -23,7 +23,7 @@ Ivan confirmed after the TASK-195 comparison report: the real reference implemen
 - [x] #1 followups.py skips its entire sweep (returns [] from run(), no thread checked) when the current time falls inside a configured local quiet-hours window
 - [x] #2 the window is configurable via env vars with sensible defaults (single fixed timezone, since no per-candidate timezone data exists on this board) and a wrap-past-midnight window (e.g. 21:00-09:00) works correctly
 - [x] #3 a nudge due during quiet hours is not lost -- the next 15-min timer tick re-evaluates and sends once outside the window (no missed sends, no separate deferred-send queue)
-- [x] #4 catch-up (app/wa/luna/catchup.py, TASK-182) is unaffected -- quiet hours only gates unprompted proactive nudges, never a reply owed to something the candidate already said
+- [x] #4 catch-up (app/wa/luna/catchup.py, TASK-78) is unaffected -- quiet hours only gates unprompted proactive nudges, never a reply owed to something the candidate already said
 - [x] #5 offline tests cover the boundary (just inside/outside the window, including the midnight wrap) and pass; pflege-wa-followups.timer keeps running unchanged (no service/timer file changes needed)
 <!-- AC:END -->
 

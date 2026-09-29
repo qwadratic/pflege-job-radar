@@ -8,8 +8,8 @@ created_date: '2026-09-14 22:15'
 updated_date: '2026-09-23 02:17'
 labels: []
 dependencies:
-  - TASK-205
-  - TASK-206
+  - TASK-102
+  - TASK-103
 type: feature
 project: whatsapp
 ordinal: 105000

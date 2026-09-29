@@ -93,6 +93,20 @@ def test_asklepios_stops_when_a_page_repeats_ids_instead_of_looping(monkeypatch)
     assert len(rows) == 1
 
 
+def test_asklepios_carries_the_boards_own_declared_count_as_board_total(monkeypatch):
+    """TASK-88 AC#1: `count` was already read to drive the offset walk (see the stop-when-repeats
+    test above) -- carrying it as board_total lets app/crawl.py's existing consumer (TASK-88 AC#2)
+    catch a genuine under-read the same way it already does for crawl_erecruiter."""
+    monkeypatch.setattr(va, "get", _router({ASKL_CU: _R(ASKL_SHELL, url=ASKL_CU)}))
+    monkeypatch.setattr(va, "post_json", _poster([
+        {"count": 3, "items": [_askl_item(1), _askl_item(2)]},
+        {"count": 3, "items": [_askl_item(3)]},
+    ]))
+    rows = va.crawl_asklepios({"name": "seed", "careers_url": ASKL_CU})
+    assert len(rows) == 3
+    assert rows.board_total == 3
+
+
 def test_asklepios_returns_nothing_when_the_page_names_no_search_endpoint(monkeypatch):
     monkeypatch.setattr(va, "get", _router({ASKL_CU: _R("<html>no widget here</html>", url=ASKL_CU)}))
     monkeypatch.setattr(va, "post_json", _poster([{"count": 1, "items": [_askl_item(1)]}]))
@@ -216,6 +230,20 @@ def test_concludis_widget_reads_the_tenant_board_the_clinic_page_names(monkeypat
     assert CO_LIST in calls                              # host+board came off the clinic's own page
     # Without the jsinclude fragment the tenant 302s away from the posting (live 2026-09-21).
     assert CO_JOB + "&jsinclude=1" in calls
+    # TASK-88 AC#1: the widget's own "N Stellen gefunden" header, confirmed live 2026-09-23.
+    assert rows.board_total == 1
+
+
+def test_concludis_widget_carries_a_mismatching_stellensum_as_board_total(monkeypatch):
+    """A board declaring more than the listing actually links (TASK-88 AC#2's under-read case)."""
+    listing = ('<div class="stellensum">3 Stellen gefunden</div>'
+               '<div onclick="cJobboard.openJob(\'%s\');" id="line_9950">'
+               '<span class="headerlink stellenlink">Pflegefachkraft (m/w/d)</span></div>' % CO_JOB)
+    monkeypatch.setattr(va, "get", _router({CO_CU: _R(CO_SHELL, url=CO_CU), CO_LIST: _R(listing, url=CO_LIST),
+                                            CO_JOB + "&jsinclude=1": _R(ok=False, url=CO_JOB)}))
+    rows = va.crawl_concludis_widget({"name": "seed", "careers_url": CO_CU})
+    assert len(rows) == 1
+    assert rows.board_total == 3
 
 
 def test_concludis_widget_ignores_a_page_with_no_loader(monkeypatch):

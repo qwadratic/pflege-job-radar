@@ -12,11 +12,28 @@ d = sys.argv[1] if len(sys.argv) > 1 else "crawl_output"
 
 
 def q(path):
-    return requests.get(f"{U}/rest/v1/{path}", headers=H, timeout=120).json()
+    r = requests.get(f"{U}/rest/v1/{path}", headers=H, timeout=120)
+    if r.status_code != 200:
+        raise RuntimeError(f"GET {path} -> HTTP {r.status_code}: {r.text[:500]}")
+    return r.json()
 
 
 def snapshot():
-    v = q("v_postings?select=posting_id&employer_class=eq.clinic&is_pflege=eq.true&status=eq.open&verify_status=eq.live&limit=100000")
+    # TASK-154: v_postings' employer_class column is a per-row CASE expression that (to resolve its
+    # 'unknown'-downgrade branch) depends on a linked_towns CTE -- a GroupAggregate over every postings
+    # row with clinic_id set, recomputed on every query that filters on employer_class (confirmed live
+    # via EXPLAIN ANALYZE: filtering v_postings on employer_class=eq.clinic cost 8675 buffers/~965ms;
+    # the same result set filtered on the plain postings.clinic_id instead cost 1566 buffers/~6ms --
+    # postgres only prunes that CTE when employer_class isn't referenced at all, per TASK-124). Reading
+    # the base postings table (clinic_id is not null, joined to role_classes for is_pflege) instead of
+    # v_postings avoids that CTE entirely, the same "read the base tables" pattern cmd_link_clinics
+    # already uses for the same reason. Trade-off, measured live: this counts postings.clinic_id IS NOT
+    # NULL rather than the view's employer_class='clinic' (which also counts a small number of postings
+    # whose EMPLOYER is clinic-classified but this specific posting has no clinic_id yet) -- 2488 vs
+    # 2569 rows live on 2026-09-24, ~3% fewer. Acceptable here: snapshot() only powers this script's own
+    # before/after diagnostic counts, not a data write.
+    v = q("postings?select=posting_id,role_classes!inner(is_pflege)"
+          "&clinic_id=not.is.null&status=eq.open&verify_status=eq.live&role_classes.is_pflege=eq.true&limit=100000")
     ats = q("clinics?select=clinic_id,ats_type&ats_type=not.is.null&limit=1000")
     return {"live": {x["posting_id"] for x in v}, "ats": {x["clinic_id"]: x["ats_type"] for x in ats}}
 
