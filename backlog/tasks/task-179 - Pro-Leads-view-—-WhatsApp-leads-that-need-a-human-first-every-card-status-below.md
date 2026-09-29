@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-09-29 22:46'
+updated_date: '2026-09-29 22:51'
 labels:
   - frontend
   - whatsapp
@@ -65,4 +65,6 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - Build note: web/pro.html was rebuilt with SUPABASE_URL=https://supabase.int.exe.xyz, the value the committed build already carried (it only fills the ai-api meta tag). web/.env.build says the public project URL is the right one; that mismatch predates this task and is left alone.
 - Preview for Ivan (invented data): https://claude.ai/artifact/2RcBVgEGx5FYR97sdYjbdH
 - Still open, not in this task: the board-side proxy and the /api/wa/threads/{id}, /messages and paged list endpoints (wa-harness, PR #1); exposing the harness host over HTTPS (nginx + sudo, Ivan); an escalated_at timestamp on the card (without it the view says "last message X ago" for escalations); a handoff-done state (today nothing marks a handoff as done, so consented leads stay in the list); the TASK-316 status enum. Task-ID note: the harness branch carries its own task-160..321, which overlaps this task-179 and main's 160-178.
+
+2026-09-29 22:51 UTC, contract hand-off to wa-harness: sent over Remote Control (message 53f68213-128a-4917-aae9-ce6db0e55873). Contents: PR #2 and docs/wa-dashboard.md; what the view counts as needing a human (escalation_codes or lead_status red; stuck_reply / last_send_error / pending_inbound; stage submitted or a handoff row; flags shown but never counted; stopped, suppressed and test threads never counted); the list envelope and row fields, /threads/{id}, /threads/{id}/messages with before_id/after_id, /health; the error codes the proxy should use (404 = proxy missing, 401/403 = owners only, 502-504 = harness not answering). Findings passed on: (A) PR #1 mounts the app/wa routers inside the board app, and on the board VM wa.sqlite would be a fresh empty file, so /api/wa/threads would answer 200 with 0 rows and the view would claim nobody needs a human. Under topology B the board must serve /api/wa/* only through the proxy and answer 503 when WA_API_BASE is unset, and envelope.source should name the harness. (B) Nothing marks a handoff as done (wa_queue_candidates.status is only 'queued'), so consented leads stay listed. (C) Today's /wa/threads clamps the limit to 500 and returns no next_offset, which the view refuses by design, so the paged list must have no cap. Also asked for escalated_at, the TASK-316 status enum, keeping both docs/index.json entries (whatsapp.md first), and a renumbering of one side of the task-ID overlap (harness branch task-160..321 vs main 160-179). The dispatcher machine was offline, so delivery is queued and not confirmed. AC #7 stays open until wa-harness acknowledges.
 <!-- SECTION:NOTES:END -->
