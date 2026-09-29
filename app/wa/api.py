@@ -1156,12 +1156,17 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
         if last and buttons:
             wamid = cl.send_buttons(t["phone"], b, buttons)
             _refuse_body_mismatch(cl, wamid, b)
-            ST.record_outbound(c, t["phone"], wamid, b, kind="buttons",
-                               meta={"action": action, "buttons": buttons})
+            if not ST.outbound_recorded(c, wamid):
+                ST.record_outbound(c, t["phone"], wamid, b, kind="buttons",
+                                   meta={"action": action, "buttons": buttons})
         else:
             wamid = cl.send_text(t["phone"], b)
             _refuse_body_mismatch(cl, wamid, b)
-            ST.record_outbound(c, t["phone"], wamid, b, kind="text", meta={"action": action})
+            # A re-driven turn replays the bubbles an earlier attempt already delivered and recorded
+            # (same key, same wamid): recording one again hit wa_messages' UNIQUE wamid and failed the
+            # turn before its later bubbles, on every retry, forever (live 2026-09-29, a 503 mid-turn).
+            if not ST.outbound_recorded(c, wamid):
+                ST.record_outbound(c, t["phone"], wamid, b, kind="text", meta={"action": action})
     t["last_outbound_at"] = ST.now_iso()
     ST.pin_rail(c, t["phone"], rail)
     return "sent"

@@ -6,11 +6,10 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:23'
-updated_date: '2026-09-25 08:00'
+updated_date: '2026-09-26 08:49'
 labels:
   - wa-transport
-dependencies:
-  - TASK-299
+dependencies: []
 references:
   - /home/claude/plans/2026-09-20-wa-home-transport-plan.md
 priority: high

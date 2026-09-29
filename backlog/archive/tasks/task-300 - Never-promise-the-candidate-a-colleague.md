@@ -4,6 +4,7 @@ title: Never promise the candidate a colleague
 status: To Do
 assignee: []
 created_date: '2026-09-25 00:01'
+updated_date: '2026-09-26 08:49'
 labels: []
 dependencies:
   - TASK-299
@@ -27,3 +28,9 @@ Ivan, 2026-09-24: 'эскалация для юзера это просто ти
 - [ ] #5 Escalation still records internally and is visible to the operator
 - [ ] #6 Tests assert the exact frozen strings and that no promise-a-human phrasing survives anywhere
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-26: folded into TASK-314 (Ivan's backlog consolidation: fewer tasks, grouped by priority and risk area). Its acceptance criteria and context were carried over. This file keeps the full original text.
+<!-- SECTION:NOTES:END -->

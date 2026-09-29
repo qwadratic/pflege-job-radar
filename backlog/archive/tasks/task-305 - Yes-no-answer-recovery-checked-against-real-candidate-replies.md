@@ -4,6 +4,7 @@ title: Yes/no answer recovery checked against real candidate replies
 status: To Do
 assignee: []
 created_date: '2026-09-25 07:59'
+updated_date: '2026-09-26 08:48'
 labels:
   - wa-transport
 dependencies:
@@ -24,3 +25,9 @@ Successor to TASK-224's AC#7 (superseded, closed 2026-09-25): numbered option li
 - [ ] #2 Report states how often the keyword tier matched, mismatched and fell through to Luna as free text
 - [ ] #3 If the match rate is below what TASK-224's own 90pct-or-escalate rule required, the task stops and escalates rather than adding regex; the keyword tier is adjusted only on a real, observed failure mode
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-26: folded into TASK-313 (Ivan's backlog consolidation: fewer tasks, grouped by priority and risk area). Its acceptance criteria and context were carried over. This file keeps the full original text.
+<!-- SECTION:NOTES:END -->

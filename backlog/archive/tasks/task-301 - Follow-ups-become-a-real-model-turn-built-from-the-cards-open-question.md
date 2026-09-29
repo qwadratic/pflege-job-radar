@@ -4,6 +4,7 @@ title: Follow-ups become a real model turn built from the card's open question
 status: To Do
 assignee: []
 created_date: '2026-09-25 00:01'
+updated_date: '2026-09-26 08:48'
 labels: []
 dependencies:
   - TASK-299
@@ -28,3 +29,9 @@ Ivan, 2026-09-24: the follow-up system needs redesigning, not tuning. Today a nu
 - [ ] #6 The old fixed nudge strings are removed, not merely bypassed
 - [ ] #7 A test proves a conversation that never went silent still receives its cadence turn
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-26: folded into TASK-314 (Ivan's backlog consolidation: fewer tasks, grouped by priority and risk area). Its acceptance criteria and context were carried over. This file keeps the full original text.
+<!-- SECTION:NOTES:END -->

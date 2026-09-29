@@ -312,6 +312,32 @@ def test_a_body_mismatch_replay_is_never_recorded_as_the_new_text(wa):
     assert out == [], "the regenerated wording must never be recorded as a sent message"
 
 
+def test_a_re_driven_turn_records_a_replayed_bubble_once_and_sends_the_rest(wa):
+    """Live 2026-09-29: bubble 1 went out, bubble 2 met a 503 (handset lock busy). Every catch-up
+    re-drive then replayed bubble 1 under its key (same wamid), tried to record it again, hit
+    wa_messages' UNIQUE wamid and failed before bubble 2 -- the question never reached the tester."""
+    class FlakyReplayingBridge(FakeBridge):
+        def __init__(self):
+            super().__init__()
+            self.fail_second = True
+
+        def send_text(self, to_e164, body):
+            if body == "Frage?" and self.fail_second:
+                self.fail_second = False
+                raise BR.BridgeError("bridge answered HTTP 503 to a send")
+            return {"Hallo!": "wab.o.first", "Frage?": "wab.o.second"}[body]
+
+    cl = FlakyReplayingBridge()
+    with ST.db() as c:
+        t = _thread(c, last_inbound_hours=1, rail="bridge")
+        with pytest.raises(BR.BridgeError):
+            WAPI._send(c, t, ["Hallo!", "Frage?"], [], client=cl, action="reply", turn_key=TURN)
+        cl.turns.append({"phone": LEAD, "turn_key": TURN, "action": "reply"})
+        assert WAPI._send(c, t, ["Hallo!", "Frage?"], [], client=cl, action="reply", turn_key=TURN) == "sent"
+        out = [m["body"] for m in ST.history(c, LEAD) if m["direction"] == "out"]
+    assert out == ["Hallo!", "Frage?"], "the replayed bubble once, then the one that failed"
+
+
 def test_a_reopen_template_pins_the_rail_it_went_out_on(wa):
     with ST.db() as c:
         t = _thread(c, last_inbound_hours=48)

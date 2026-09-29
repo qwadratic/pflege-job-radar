@@ -411,6 +411,13 @@ def record_outbound(c, phone, wamid, body, kind="text", meta=None, at=None):
     c.commit()
 
 
+def outbound_recorded(c, wamid):
+    """Whether this provider id is already a stored message. ``None`` (a draft) never is."""
+    if wamid is None:
+        return False
+    return c.execute("select 1 from wa_messages where wamid=?", (wamid,)).fetchone() is not None
+
+
 def history(c, phone, limit=50):
     rows = c.execute("select direction, body, kind, at from wa_messages where phone=? order by id desc limit ?",
                      (phone, limit)).fetchall()

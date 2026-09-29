@@ -7,7 +7,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-23 08:02'
-updated_date: '2026-09-23 11:07'
+updated_date: '2026-09-26 08:49'
 labels:
   - rail-critique
   - wrong-answer-to-candidate
@@ -59,4 +59,6 @@ All four verified by hand to fail against the pre-fix code and pass against the 
 Test results: tests/test_wa_luna_tools.py 130 passed; tests/test_wa_luna_dialog_rules.py 172 passed (ran both in full since luna_brain.py is shared). tests/test_wa_luna_brain.py has 27 pre-existing failures unrelated to this change (network: PostgREST 401 against a live Supabase, no credentials in this sandbox) -- confirmed via an A/B stash comparison that this diff neither adds nor removes any of that set (it incidentally left 2 fewer failing in the "with" run, but that's because stashing the whole file for the A/B check also reverted unrelated pre-existing TASK-239 work sharing luna_brain.py, not something this change caused). Did not run the full suite, per instructions -- narrow files only.
 
 Left undone, flagged for the owner rather than filed as a new task (did not want to take that action unasked): the EXPENSIVE, SHARED tier -- governor.check + ledger idempotency (classify/begin/mark_sent) in bridge/executor.py:send_gallery, mirroring executor.send's sequence. Real and necessary, genuinely higher risk, deserves its own review and its own test against the ledger/governor state machine.
+
+2026-09-26: folded into TASK-314 (Ivan's backlog consolidation: fewer tasks, grouped by priority and risk area). Its acceptance criteria and context were carried over. This file keeps the full original text.
 <!-- SECTION:NOTES:END -->

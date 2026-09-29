@@ -4,7 +4,7 @@ title: Per-candidate status drives every send path
 status: To Do
 assignee: []
 created_date: '2026-09-25 00:01'
-updated_date: '2026-09-25 08:00'
+updated_date: '2026-09-26 08:49'
 labels: []
 dependencies: []
 priority: high
@@ -30,3 +30,11 @@ Ivan, 2026-09-24 design session. Today the harness has exactly one behaviour per
 - [ ] #8 One test per status per send path proves what is sent and what is suppressed
 - [ ] #9 An inbound STOP/opt-out sets the candidate's status to mute through the same status column, and campaign sends read it -- today campaign.py's marketing_opt_out does not read wa_suppressions
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Revised design, Ivan 2026-09-25: a candidate turns green after a broadcast. After every turn an evaluator answers one question: is there a reason to leave green, and which one. The reason is free text, not a fixed list. Statuses have no order; green can move to any non-green. Our reactions (skip / pause / red / mute) are outputs, not reasons. Pick the evaluator model via TASK-308 (Haiku vs others). A dashboard over these columns comes later.
+
+2026-09-26: folded into TASK-316 (Ivan's backlog consolidation: fewer tasks, grouped by priority and risk area). Its acceptance criteria and context were carried over. This file keeps the full original text.
+<!-- SECTION:NOTES:END -->
