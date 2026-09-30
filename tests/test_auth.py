@@ -260,7 +260,12 @@ DENIED = [("POST", "/api/crawl"), ("POST", "/api/schedules"), ("PUT", "/api/sche
           # about the candidate and which clinics it matched.
           ("GET", "/api/wa/queue"), ("GET", "/api/wa/queue/mailing-list"),
           # TASK-331: a phone number again -- which system currently owns that conversation.
-          ("GET", "/api/wa/ownership")]
+          ("GET", "/api/wa/ownership"),
+          # TASK-395: the board-side proxy to the harness's Pro read API (app/wa_proxy.py) -- same
+          # PII class as the entries above, plus the /health forward, gated even though the harness's
+          # own /api/wa/health on 8502 is not (it stays local-only there, docs/whatsapp.md).
+          ("GET", "/api/wa/threads"), ("GET", "/api/wa/threads/t_abc123"),
+          ("GET", "/api/wa/threads/t_abc123/messages"), ("GET", "/api/wa/health")]
 OPEN = [("GET", "/api/me"), ("GET", "/api/stats"), ("GET", "/api/clinics"), ("GET", "/api/jobs"), ("GET", "/api/search?q=x"),
         ("GET", "/api/facets"), ("GET", "/health"), ("GET", "/"), ("GET", "/login"),
         ("GET", "/api/ingest/schemas"), ("GET", "/api/agent/manifest"), ("POST", "/api/auth/magic")]

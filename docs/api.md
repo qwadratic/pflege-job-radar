@@ -43,6 +43,7 @@ the middleware's own route table and `required_role()`, so it cannot drift from 
 | GET | `/api/ingest/schemas` | JSON Schema per envelope type, generated from `pflege_jobs/schema.py`; public |
 | GET | `/api/agent/manifest` | scopes, the scoped routes with side effects and cost, plus `public` and `session_only`: every `/api` route the app serves, in exactly one of the three lists. Envelope types, `paging` (the read routes' page envelope and its end-of-list signal, generated from `app/data.py`), links; public |
 | GET | `/api/schedules/{id}/preview?day=` | what a schedule would do on that day (the stagger slice) without firing it |
+| GET | `/api/wa/threads[/{id}[/messages]]`, `/api/wa/health` | proxy to the WhatsApp harness's Pro read API (TASK-395); owner-only, see below |
 
 List responses: `{"total": N, "limit": L, "offset": O, "next_offset": O2|null, "rows": [...]}`; comma lists for
 multi-value filters. `GET /api/jobs` and `GET /api/clinics` also take `fields=a,b,c` (sparse projection; an
@@ -276,6 +277,18 @@ curl "$B/billing?window=custom&from=2026-09-01&to=2026-09-08T00:00:00Z&granulari
 ```
 
 Rules: `usd = credits * price_per_credit` (`settings.firecrawl.eur_per_credit`, Hobby pricing, USD-derived -- label it USD/credit); a run is booked at `finished_at` (else `started_at` / `queued_at`); `free` = a Firecrawl run with status `done` and 0 credits (Firecrawl's 5 free daily agent runs; the ledger records the balance delta, so free runs carry 0 credits and `credits_free` is only non-zero when Firecrawl bills inside the allowance); `runs_billable` = credits > 0; `runs_failed` = status `failed`; `runs_adapter` = runs without Firecrawl; `new_postings` = `crawl_runs.n_new`; `cost_per_posting_usd = usd / new_postings` (null when 0); `refills` = `hunt_meta '<day>/refills'` summed over the window's days (0 when absent); `tokens` = Extract-token deltas from `firecrawl_usage`; `runs` newest first, at most 500 (totals count every run); ledger rows without a run row appear with `trigger: "ledger"` (free when 0 credits / 0 tokens inside the day's first 5 submissions). `by_kind.exa` and `totals.exa_*` are a whole-cache total (the cache has no timestamps; `exa_note` says so) and are not part of `totals.usd`. `pools` / `hist` come from `FA.credits()`; keys are null with `pools.error` set when the API is unreachable.
+
+### WhatsApp leads proxy (`GET /api/wa/threads[/{id}[/messages]]`, `GET /api/wa/health`)
+Owner session only (`app/auth.py: OWNER_READ_PREFIXES`), no scope opens it. The board holds no WhatsApp data
+itself; each call is a straight server-side forward to `{WA_API_BASE}/api/wa/pro/...` on the harness
+(a separate process, TASK-395, `app/wa_proxy.py`), query string carried over verbatim, `Authorization: Bearer
+WA_API_TOKEN` attached here and never returned to the browser. `WA_API_BASE` unset -> `503` (never a local
+DB, never `200` with empty rows); harness unreachable -> `502`; timeout -> `504`; harness `401`/`403` (bad
+token) -> `502` "harness rejected the board token" (not `401`, which this board's own middleware means as
+"you are not an owner"); harness `404` on an unknown thread -> `404`, body unchanged; harness `5xx` -> `502`
+with its status folded into the message; every other status, `2xx` included, passes through unchanged. Field
+shapes are docs/wa-dashboard.md's contract (pflege-fe), not repeated here — this module forwards bytes, it
+does not interpret them.
 
 ### Clinic row
 `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile, photo_url, presentation`

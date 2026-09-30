@@ -449,10 +449,14 @@ OWNER_WRITE_PATHS = ("/api/auth/password",)
 # credits_left / per-clinic routing decision the gated endpoints above protect (2026-09-08 API audit).
 # "/api/wa/threads", "/api/wa/queue" (TASK-326: consenting candidates x matched clinics, same PII
 # class as a thread's own slots) and "/api/wa/ownership" (TASK-331: a phone number is the same PII
-# class again) -- and nothing wider: /api/wa/webhook authenticates with Meta's own signature and
-# /api/wa/health carries no secret, so both stay reachable (docs/whatsapp.md).
+# class again). "/api/wa/health" joined 2026-09-30 (TASK-395): unlike the *harness's own*
+# /api/wa/health on 8502 (local-only, no session -- docs/whatsapp.md), this is the board-side proxy
+# route (app/wa_proxy.py) that forwards rail/readiness state through the board's own public surface,
+# so it gets the same owner gate as the rest of the proxy rather than staying reachable like the
+# harness original. /api/wa/webhook is unaffected either way -- it is not mounted on the board at
+# all (app/main.py) and authenticates itself with Meta's own signature when it is, on the harness.
 OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl", "/api/crawl", "/api/campaign",
-                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue", "/api/wa/ownership")
+                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue", "/api/wa/ownership", "/api/wa/health")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 # Pages a customer may not read either. /deck is the internal next-steps briefing: unfixed security facts,
 # deploy detail, the open decisions -- it was in GATED_PAGES, which is the level a paying customer reaches
