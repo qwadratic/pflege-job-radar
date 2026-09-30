@@ -122,8 +122,10 @@ def test_only_a_queued_handoff_or_one_needing_attention_waits_for_a_human(leads)
     assert (stage("7340"), stage("5566")) == ("Handed off · in progress", "Handed off · signed")
     leads.locator(".lh", has_text="1180").click()
     leads.wait_for_selector("#ld-chat .bub")
-    assert leads.locator("#lead-dlg ol.ld-cl li").count() == 12
-    assert leads.inner_text("#lead-dlg ol.ld-cl .att") == "asks for the B2 language certificate before an interview"
+    assert leads.locator("#lead-dlg ol.ld-cl.mt li").count() == 12                  # handoff_matches, behind handoff.clinics
+    assert leads.locator("#lead-dlg ol.ld-cl.tg li").count() == 12                  # handoff.targets, the status per clinic
+    flagged = leads.locator("#lead-dlg ol.ld-cl.tg li:has(.att)")
+    assert flagged.count() == 1 and "clinic replied" in flagged.inner_text() and "needs attention" in flagged.inner_text()
 
 
 def test_the_health_strip_says_when_the_rail_was_last_confirmed(leads):
@@ -179,7 +181,7 @@ def test_drawer_shows_card_documents_and_every_message_kind(leads):
     assert leads.locator("#ld-chat .tomb").count() == 1                    # forgotten message: tombstone, no body
     assert leads.locator("#ld-chat .bub .btns span").count() == 2
     assert "voice note" in leads.inner_text("#ld-chat").lower()           # the caption is upper-cased by CSS
-    assert "Den Anpassungslehrgang würde ich machen" in leads.inner_text("#ld-chat")   # meta.transcript of the voice note
+    assert leads.inner_text("#ld-chat").count("Den Anpassungslehrgang würde ich machen") == 1   # body; meta.transcript only marks it
     assert "pflege_bayern_reengage_v2" in leads.inner_text("#ld-chat")                   # meta.template, literal
     before = leads.locator("#ld-chat .bub, #ld-chat .tomb").count()
     assert before == 30

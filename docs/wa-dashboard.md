@@ -101,7 +101,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 | `stuck_reply` | bool | `api.py:_is_stuck` + pending age |
 | `pending_inbound` | `{count, oldest_recorded_at, last_error}` \| null | `store.pending_inbound_summary` |
 | `last_send_error` | `{error, at}` \| null | `store.recent_send_failure` |
-| `handoff` | `{status, consented_at, clinics, targets}` \| null | `wa_queue_candidates`. `status` is `queued` \| `attention` \| `in_progress` \| `signed` \| `closed`, and only `queued` and `attention` need a human. `clinics` is the matched count. `targets` is one row per clinic: `{clinic_id, clinic_name, external_ref, status, ts, attention}`, where `attention` is set when that clinic needs us |
+| `handoff` | `{status, consented_at, clinics, targets}` \| null | `wa_queue_candidates`. `status` is `queued` \| `attention` \| `in_progress` \| `signed` \| `closed`, and only `queued` and `attention` need a human. `clinics` is the matched count (the detail's `handoff_matches` lists them). `targets` is the status each clinic reported back once the profile went out: `{clinic_id, clinic_name, external_ref, status, ts, attention}`. `status` is a closed list: `sent_to_clinic`, `followup_sent`, `clinic_replied`, `interview_scheduled`, `trial_scheduled`, `offer`, `contract_signed`, `declined`, `closed`, `halted`. `attention` is a bool: a reply, interview, trial, offer or halt with no later `contract_signed`, `declined`, `closed` or `sent_to_clinic` |
 | `last_message` | `{direction, kind, preview, at}` | newest `wa_messages` row, `preview` ≤ 140 chars; a deleted row gives `kind: "deleted"` and no preview |
 | `lead_status` | `{status, reason, at}` \| null | TASK-316 (P4). `null` until it ships |
 
@@ -115,6 +115,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
  "documents": [{"id": 12, "kind": "document", "document_type": "lebenslauf", "mime_type": "application/pdf",
                 "size_bytes": 183200, "received_at": "...", "reuse_state": null}],
  "send_failures": [{"error": "...", "at": "..."}],
+ "handoff_matches": [{"clinic_id": "16100", "clinic_name": "...", "town": "...", "score": 87}],
  "synced_at": "...", "synced_source": "bridge"}
 ```
 
@@ -132,7 +133,8 @@ carries metadata only: no bytes, no path, no extracted text.
 
 Rows are in ascending `id` order. Without a cursor the call returns the newest `limit` rows. `before_id` pages
 older rows, and `next_before_id` is `null` at the start of the thread. `after_id` returns everything newer, which is
-the 5 s poll. `kind` is one of `text`, `audio` (`meta.transcript` is the speech-to-text, absent when there is none),
+the 5 s poll. `kind` is one of `text`, `audio` (the body is the transcript; `meta.transcript` only marks it as one,
+and before transcription the body is empty),
 `buttons` (`meta.buttons` holds the titles), `draft` (`meta.scope_refusal` holds the reason), `document`, `image`,
 `template` (`meta.template` names it). `meta` carries only `buttons`, `scope_refusal`, `action`, `template` and
 `transcript`.
