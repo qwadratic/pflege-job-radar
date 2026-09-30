@@ -1,0 +1,2000 @@
+"""Our own adb driver for the handset (TASK-371). Stdlib only, and it imports nothing of theirs.
+
+WHY THIS EXISTS AT ALL. bridge/driver.py used to wrap ``apps.wa_phone`` out of
+``~/wa-phone-outreach``, which is a disposable agent worktree: a ``git worktree remove`` or a branch
+checkout swaps every signature under us without a warning, and our service would stop being able to
+answer a candidate because someone else's agent tidied up. We own this rail end to end, so the adb
+technique is ours to hold. The technique below was read off that tree and reimplemented; nothing is
+imported from it, and this file keeps working if that directory disappears tonight.
+
+WHAT IS DELIBERATELY DIFFERENT FROM WHAT WE READ THERE:
+  * their send path ends in ``Bubble("out", text, "", "unverified", 0)`` -- "composer empty after
+    send but bubble not matched, treating as sent". It fired on 2 of 23 live sends. Here an
+    unmatched bubble is a DriverError; the executor turns that into a 504 that is never auto-resent.
+  * their open_chat accepts a header that is a saved contact's NAME without checking whose name it
+    is (``if not expect_name and _digits(header)`` -- a name has no digits, so the guard is skipped).
+    Here a name header is verified against the handset's own address book, and an unverifiable
+    header refuses before anything is typed.
+  * their Device screenshots before every tap, swipe, key and type, with no off switch (91 MB from
+    16 h of one test chat). Here a screenshot is an escalation artefact, or (TASK-228, opt-in via
+    ``WA_BRIDGE_DEBUG_CAPTURE``) one queued op's own pre/post/error postmortem shot -- never a
+    per-tap flood.
+  * their flock is held across the brain call. Here the lock is taken per bubble by the executor and
+    nothing slow happens inside it.
+
+WHAT IS ADOPTED WHOLE, because one handset means one house rule and theirs is already running on it:
+the pinned serial, the forbidden serial, the lock path, the ADBKeyboard IME, and the typing speed
+range from their PACING (3.2-5.5 chars/sec). The pacing fuse itself lives in bridge/governor.py.
+
+THE IME IS BORROWED PROPERTY. The active keyboard on this phone is SwiftKey and a human picks the
+phone up. Every code path that switches to ADBKeyboard restores the previous IME in a ``finally``,
+including the path where the send raises -- ``adb_keyboard()`` is the only way to type here and it
+is a context manager for exactly that reason.
+"""
+from __future__ import annotations
+
+import base64
+import fcntl
+import mimetypes
+import os
+import random
+import re
+import shlex
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from . import driver as D
+from . import inbound as I
+from . import media as MD
+
+# --- the handset, pinned ------------------------------------------------------------------------
+#: Huawei P30 Lite "01", the phone that holds the WhatsApp account.
+SERIAL = "L2N4C19B14054874"
+#: "02". It runs the ChatGPT farm. Constructing a driver for it raises before adb is even called.
+FORBIDDEN_SERIALS = frozenset({"L2N4C19B14054035"})
+ADB_CANDIDATES = (
+    Path.home() / "agentos-phone/bin/platform-tools/adb",
+    Path("/usr/bin/adb"),
+    Path("/usr/local/bin/adb"),
+)
+WHATSAPP = "com.whatsapp"
+ADB_IME = "com.android.adbkeyboard/.AdbIME"
+#: The same flock their daemon takes, on purpose: two drivers on one phone must queue, not race.
+LOCK_PATH = Path(os.path.expanduser("~/.local/share/wa_phone/huawei01.lock"))
+#: The handset is set to Europe/Berlin and the clock on a bubble is the one a human reads.
+DEVICE_TZ = "Europe/Berlin"
+
+#: TASK-315 review point 6: every adb call PhoneDoctor makes in one cycle has a <=10s budget, so a
+#: hung/slow phone can only ever cost the doctor 10s at a time, never the 40-60s a send path can
+#: reasonably wait -- the doctor is a background sweep, not a candidate-facing op, and must yield
+#: the phone lock quickly either way (see PhoneDoctor's own docstring on "an idle cycle holds the
+#: lock for <= ~1s").
+DOCTOR_ADB_TIMEOUT_SEC = 10
+
+#: Their PACING["chars_per_sec"], adopted. Typing at machine speed is the one tell that cannot be
+#: explained away on a consumer account.
+CHARS_PER_SEC = (3.2, 5.5)
+PAUSE_BEFORE_SEND = (0.8, 2.5)
+PAUSE_AFTER_OPEN = (1.5, 4.0)
+
+#: WhatsApp 2.26.36 (German UI) resource ids, verified on this handset.
+RID_COMPOSER = "entry"
+RID_SEND = "send"
+RID_HEADER = "conversation_contact_name"
+RID_MESSAGE = "message_text"
+RID_DATE = "date"
+RID_STATUS = "status"
+RID_DIALOG_BUTTON = "button1"
+
+#: The chat list, read off L2N4C19B14054874 on 2026-09-21 with WhatsApp 2.26.36.74 (TASK-376).
+RID_CHAT_ROW = "contact_row_container"
+RID_ROW_NAME = "conversations_row_contact_name"
+RID_ROW_DATE = "conversations_row_date"
+RID_ROW_PREVIEW = "single_msg_tv"
+RID_ROW_UNREAD = "conversations_row_message_count"
+RID_ARCHIVE_HEADER = "conversations_archive_header"
+RID_ARCHIVE_COUNT = "archive_row_counter"
+RID_OVERFLOW = "menuitem_overflow"
+#: The selection action bar that a long press raises. The delete verb has its own id, so it is
+#: found without reading a label; "Chat leeren" lives one level down in the overflow and has not.
+RID_CAB_DELETE = "menuitem_conversations_delete"
+RID_CAB_CLOSE = "action_mode_close_button"
+RID_MENU_TITLE = "title"
+LABEL_CLEAR_CHAT = "Chat leeren"
+#: The clear sheet: a radio for the scope and one primary button. "Alle Nachrichten" is the scope
+#: this operation means -- "Nur Mediendateien" would leave the text behind and still say it worked.
+RID_CLEAR_ALL_ROW = "dialog_clear_messages_all_container_layout"
+RID_CLEAR_ALL_RADIO = "dialog_clear_messages_all_text"
+RID_CLEAR_STARRED = "media_clear_chats_bottom_sheet_dialog_item_layout_checkbox"
+RID_CLEAR_STARRED_ROW = "media_clear_chats_bottom_sheet_dialog_starred_messages_checkbox"
+RID_PRIMARY_BUTTON = "primary_button"
+#: The delete dialog: a plain AlertDialog, positive on button1 ("Chat löschen"), negative button2.
+RID_ALERT_TITLE = "alertTitle"
+#: The new-chat button. It is on the chat list and on no other screen, so it is how this code
+#: proves the list is really in front instead of assuming it: a handset with no chats at all draws
+#: no rows, and "no rows" must never be what an unreadable dump looks like.
+RID_NEW_CHAT_FAB = "fab"
+
+#: Sharing a file into WhatsApp via ACTION_SEND (TASK-360 round 7, outbound media): the picker
+#: WhatsApp itself draws (com.whatsapp.contact.ui.picker.ExternalShareAlias), then the compose
+#: screen it opens once exactly one recipient is picked (RID_SEND, already defined, is the send
+#: button on this screen too -- the two screens are never on-screen together). Verified live on
+#: this handset, 2026-09-22, WhatsApp 2.26.36.74.
+RID_SHARE_ROW_NAME = "contactpicker_row_name"
+RID_SHARE_RECIPIENTS = "recipients"
+#: /sdcard/Pictures/<this>/ -- kept apart from a candidate's own received media (WhatsApp
+#: Images/...) so an outbound push can never collide with, or be mistaken for, inbound content.
+OUTBOUND_MEDIA_DIR = "wa_outbound"
+
+#: WhatsApp's in-chat gallery album picker (TASK-360 round 7 gallery redesign, Ivan 2026-09-22:
+#: "галерейкой плюс текстовое сообщение, все это одно сообщение" -- one message, several photos,
+#: one caption, not five separate bubbles). Verified live, this handset, 2026-09-22,
+#: WhatsApp 2.26.36.74: attach -> "Galerie" -> a folder spinner -> a grid of ``media_item_view``/
+#: ``unsupported_media_item_view`` thumbnails (the "unsupported" ones just have no cached
+#: thumbnail bitmap yet -- still real, still selectable) -> a shared ``caption`` field -> one
+#: ``send_media_btn``. Tapping a thumbnail stamps it with a green ordinal badge; the running total
+#: is ``send_media_counter``.
+RID_ATTACH_BUTTON = "input_attach_button"
+RID_GALLERY_HOLDER = "pickfiletype_gallery_holder"
+RID_GALLERY_SPINNER = "gallery_spinner"
+RID_CAPTION = "caption"
+RID_SEND_MEDIA_BTN = "send_media_btn"
+RID_SEND_MEDIA_COUNTER = "send_media_counter"
+
+#: A non-image file, sent via the SAME ACTION_SEND mechanism send_photo uses (TASK-360 round 7,
+#: Ivan 2026-09-23: a future resume-update flow needs this too, not photos alone). Verified live,
+#: this handset, 2026-09-23: WhatsApp's own DocumentPreviewActivity, opened once the share picker's
+#: matched row is tapped (and, for a document specifically, a recipient-confirm screen past that --
+#: send_document's own docstring), draws the chosen file's own name here, alongside the same
+#: caption/send shape the gallery compose screen has (RID_CAPTION, RID_SEND -- the plain
+#: conversation's own send button id, reused).
+RID_DOCUMENT_FILE_NAME = "document_file_name"
+
+#: The bucket WhatsApp's picker files OUTBOUND_MEDIA_DIR's contents under -- NOT that folder's own
+#: name. A Pictures subfolder with no prior bucket metadata merges into the camera roll's own
+#: bucket instead of becoming its own album (a MediaStore quirk, confirmed live on this handset,
+#: 2026-09-22 -- pushed files immediately showed up inside "Kamera", never as a "wa_outbound" album
+#: of their own). One handset, one house rule (module docstring): hardcoded exactly like the
+#: German button labels elsewhere in this file, not detected -- getting this wrong means selecting
+#: from a MIXED pool that, on this handset, also holds a real candidate's CV photo (seen live in
+#: "Letzte" the same session). send_gallery refuses rather than select from it when the count is
+#: off by even one.
+GALLERY_BUCKET_NAME = "Kamera"
+
+#: A long press. ``input swipe x y x y`` is delivered as a tap on this build and raises no
+#: selection, which is why the press is two motion events with a hold between them.
+LONG_PRESS_HOLD_SEC = 1.2
+#: How long a chat-list screen is given to redraw after a tap on a menu or a dialog button.
+UI_SETTLE_SEC = 1.5
+
+#: How long we re-read the thread looking for the bubble we just typed, before calling it unverified.
+BUBBLE_APPEAR_SEC = 30.0
+#: Same idea, sized for a photo instead of typed text (TASK-360 round 7). A photo bubble is not on
+#: screen the instant ``send`` is tapped the way a typed bubble already is -- WhatsApp has to finish
+#: writing/encoding the local copy and lay out the thumbnail before its date/status nodes exist at
+#: all, and that measured slower than 30s at least once live (2026-09-22: a photo verified as
+#: send_unconfirmed at 30s had a real, delivered, read tick on the handset by the time it was
+#: screenshotted a few minutes later). Wider than BUBBLE_APPEAR_SEC on purpose rather than raising
+#: that constant too -- text's own 30s budget is separately proven and untouched here.
+PHOTO_APPEAR_SEC = 60.0
+#: How long send_gallery waits for a just-staged file's own stamp to appear in WhatsApp's "Letzte"
+#: pool (TASK-360 round 7 gallery redesign). Raised from an initial 15s after a live refusal,
+#: 2026-09-23: a file whose mtime and MediaStore row were BOTH already correct (checked directly,
+#: ``content query``/``stat`` agreed with what was pushed) still had zero matching picker items at
+#: 15s -- refused correctly rather than guess, but WhatsApp's own picker fragment plainly lags a
+#: fresh write by more than that. 45s is a first widening, not a measured floor; revisit if a live
+#: send still needs more.
+GALLERY_INDEX_SEC = 45.0
+#: Composer placeholder text on the German UI: an empty composer, not leftover text.
+COMPOSER_EMPTY = ("", "Nachricht")
+
+#: What a bubble's own timestamp looks like. A ``date`` node that is NOT this is a day divider.
+_CLOCK_RE = re.compile(r"\d{1,2}:\d{2}\Z")
+
+#: The one day-divider label that names today by itself, verified on this handset alongside
+#: 'GESTERN' and a bare date (day_separator_y's own docstring). Read literally rather than
+#: matched by position, because a cold read (TASK-231) has no just-sent bubble to anchor
+#: "lowest divider on screen" to today with -- only the divider's own word can say that.
+_TODAY_DIVIDER_LABELS = ("HEUTE", "TODAY")
+
+
+def _is_clock(text):
+    return bool(_CLOCK_RE.match(str(text or "").strip()))
+
+
+class AdbUnavailable(D.DriverError):
+    """adb is missing, or the handset is not in ``device`` state. Nothing was typed."""
+
+
+@dataclass(frozen=True)
+class Node:
+    cls: str
+    rid: str
+    text: str
+    desc: str
+    bounds: tuple
+    clickable: bool
+    pkg: str = ""
+    #: uiautomator's own ``checked``. Read so a checkbox is only tapped when tapping it moves it the
+    #: way we want: a toggle tapped blind is a coin toss, and one of these toggles is "delete the
+    #: starred messages too" (TASK-376).
+    checked: bool = False
+
+    @property
+    def center(self):
+        x1, y1, x2, y2 = self.bounds
+        return (x1 + x2) // 2, (y1 + y2) // 2
+
+    @property
+    def short_rid(self):
+        return self.rid.split("/")[-1] if self.rid else ""
+
+    @property
+    def label(self):
+        return self.text or self.desc
+
+
+def parse_ui_xml(out):
+    """-> [Node] from a uiautomator dump. Junk in, empty list out: the caller retries the dump."""
+    text = out or ""
+    start = text.find("<?xml")
+    if start < 0:
+        start = text.find("<hierarchy")
+    if start < 0:
+        return []
+    try:
+        root = ET.fromstring(text[start:])
+    except ET.ParseError:
+        return []
+    nodes = []
+    for element in root.iter("node"):
+        box = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", element.get("bounds") or "")
+        if not box:
+            continue
+        nodes.append(Node(cls=element.get("class") or "", rid=element.get("resource-id") or "",
+                          text=element.get("text") or "", desc=element.get("content-desc") or "",
+                          bounds=tuple(int(v) for v in box.groups()),
+                          clickable=element.get("clickable") == "true",
+                          pkg=element.get("package") or "",
+                          checked=element.get("checked") == "true"))
+    return nodes
+
+
+def inside(outer, inner):
+    """-> True when ``inner``'s centre lies in ``outer``'s box. A uiautomator dump is flat, so this
+    is how a row's own name, date and badge are told apart from the next row's."""
+    x, y = inner.center
+    return outer.bounds[0] <= x <= outer.bounds[2] and outer.bounds[1] <= y <= outer.bounds[3]
+
+
+def _overlap(have, page):
+    """-> how many of ``page``'s leading rows are the tail of ``have`` already.
+
+    Pure, and the whole of the scroll's identity logic. Rows are matched on (title, date column)
+    POSITIONALLY -- the same pair that is a useless identity on its own is a perfectly good one
+    once it has to line up as a run, which is what makes two chats called Anna, both stamped
+    GESTERN and pages apart, stay two rows.
+    """
+    if not have:
+        return 0
+    key = lambda rows: [(r.title, r.stamp) for r in rows]        # noqa: E731
+    for size in range(min(len(have), len(page)), 0, -1):
+        if key(have[-size:]) == key(page[:size]):
+            return size
+    raise D.DriverError(
+        "the chat list moved further than one screen between swipes: its pages do not overlap and "
+        "which rows have already been read cannot be established")
+
+
+def covers(node, point):
+    """-> True when ``point`` (an x, y we tapped or pressed) lies in ``node``'s box."""
+    x, y = point
+    return node.bounds[0] <= x <= node.bounds[2] and node.bounds[1] <= y <= node.bounds[3]
+
+
+#: Adb.tap's own jitter (its docstring: "a few pixels of jitter: never the same pixel twice") --
+#: any point _outside_frame_tap returns must clear a button's bounds by at least this much on
+#: each axis, since the jittered tap that actually lands is not the exact point computed here.
+_TAP_JITTER_X = 6
+_TAP_JITTER_Y = 4
+#: TASK-315 review point 3: "a margin (>= 40 px)" on top of the jitter above -- deliberately
+#: generous next to the jitter's few pixels.
+_TAP_SAFETY_MARGIN_PX = 40
+
+
+def _clears(point, node, *, margin_x, margin_y):
+    """-> True when a tap AT `point`, widened by `margin_x`/`margin_y` on every side (the jitter
+    plus the safety margin), cannot overlap `node`'s own bounds at all. Two axis-aligned boxes are
+    disjoint the moment they are separated on EITHER axis -- this checks both and OR's them,
+    exactly that rectangle non-overlap test."""
+    x, y = point
+    nx1, ny1, nx2, ny2 = node.bounds
+    return (x + margin_x < nx1 or x - margin_x > nx2
+            or y + margin_y < ny1 or y - margin_y > ny2)
+
+
+def _outside_frame_tap(nodes, screen_w, screen_h, *, margin_px=_TAP_SAFETY_MARGIN_PX):
+    """-> (x, y) that clears EVERY labelled/clickable node in this dump -- widened by the tap's own
+    jitter plus `margin_px` -- and lies on the REAL screen. None when no such point exists in this
+    dump, so the caller does nothing rather than guess (TASK-315 review point 3, Opus reject
+    2026-09-29: the previous version's "below the frame" fallback computed its gap against the
+    DUMP's own extent, i.e. ``max(n.bounds[...] for n in nodes)`` -- for a dialog-only window whose
+    dump never reaches the true bottom of the screen, that extent collapses to the lowest button's
+    own bottom edge, and the fallback point landed inside that button).
+
+    `screen_w`/`screen_h` MUST be the REAL display size (``Adb.screen_size()``, i.e. ``wm size``),
+    never inferred from the dump -- that substitution is exactly what caused the bug above.
+
+    Candidates tried, in order: the midpoint of the gap above the topmost labelled node, then the
+    midpoint of the gap below the bottommost one. Each candidate is verified to clear literally
+    every labelled/clickable node in the dump (not just the two nodes nearest it), so a second
+    dialog element elsewhere on screen can still veto a point that looks clear locally.
+    """
+    labelled = [n for n in nodes if n.text or n.desc or n.clickable]
+    if not labelled:
+        return None
+    margin_x = margin_px + _TAP_JITTER_X
+    margin_y = margin_px + _TAP_JITTER_Y
+    x1 = min(n.bounds[0] for n in labelled)
+    x2 = max(n.bounds[2] for n in labelled)
+    y1 = min(n.bounds[1] for n in labelled)
+    y2 = max(n.bounds[3] for n in labelled)
+    x_mid = (x1 + x2) // 2
+    x_mid = min(max(x_mid, margin_x), screen_w - 1 - margin_x)
+    candidates = []
+    if y1 > 0:
+        candidates.append((x_mid, y1 // 2))
+    if screen_h - y2 > 0:
+        candidates.append((x_mid, y2 + (screen_h - y2) // 2))
+    for point in candidates:
+        x, y = point
+        if not (0 <= x < screen_w and 0 <= y < screen_h):
+            continue
+        if all(_clears(point, n, margin_x=margin_x, margin_y=margin_y) for n in labelled):
+            return point
+    return None
+
+
+def parse_contacts(out):
+    """-> [(digits, display name)] from ``content query`` on the contacts provider.
+
+    One row per line, ``Row: 0 display_name=Ivan, data1=+49 152 ...``. Pure so a test can feed it a
+    captured row without a phone in the room.
+    """
+    book = []
+    for line in (out or "").splitlines():
+        name = re.search(r"display_name=(.*?)(?:, data1=|$)", line)
+        number = re.search(r"data1=(.+?)\s*$", line)
+        if not name or not number:
+            continue
+        cleaned = I.digits(number.group(1))
+        if len(cleaned) >= 8:
+            book.append((cleaned, name.group(1).strip()))
+    return book
+
+
+def parse_chat_rows(nodes, *, archived=False):
+    """-> [(row node, D.ChatRow)] for the chat list on screen, top row first.
+
+    Pure, so the row shape is testable off a captured dump. The preview line (``single_msg_tv``) is
+    read for its EXISTENCE only: it is the last message of the conversation, and a listing call is
+    not a way to read messages.
+
+    The unread badge is a content-desc, "1 ungelesene Nachricht" / "11 ungelesene Nachrichten", and
+    the integer in front of it is the count. The archive folder's own row is not a chat and is not
+    returned here.
+    """
+    rows = []
+    for row in sorted(find(nodes, rid=RID_CHAT_ROW), key=lambda n: n.bounds[1]):
+        mine = [n for n in nodes if n is not row and inside(row, n)]
+        names = [n for n in mine if n.short_rid == RID_ROW_NAME]
+        if not names:
+            continue
+        stamps = [n for n in mine if n.short_rid == RID_ROW_DATE]
+        badges = [n for n in mine if n.short_rid == RID_ROW_UNREAD]
+        unread = re.search(r"(\d+)", badges[0].label) if badges else None
+        rows.append((row, D.ChatRow(
+            title=names[0].text.strip(),
+            unread=int(unread.group(1)) if unread else 0,
+            stamp=stamps[0].text.strip() if stamps else "",
+            archived=archived,
+            has_preview=any(n.short_rid == RID_ROW_PREVIEW and n.text.strip() for n in mine))))
+    return rows
+
+
+def find(nodes, *, rid=None, text=None, contains=None, clickable=None):
+    hits = []
+    for node in nodes:
+        if rid is not None and node.short_rid != rid and node.rid != rid:
+            continue
+        if text is not None and node.text != text:
+            continue
+        if contains is not None and contains.lower() not in node.label.lower():
+            continue
+        if clickable is not None and node.clickable != clickable:
+            continue
+        hits.append(node)
+    return hits
+
+
+#: German month names as WhatsApp's gallery picker draws them in a thumbnail's content-desc
+#: ("Foto, Datum: 22. September 2026 23:52") -- one handset, one locale, same convention as the
+#: rest of this file's hardcoded German UI strings.
+_MONTHS_DE = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4, "mai": 5, "juni": 6,
+    "juli": 7, "august": 8, "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+}
+_PHOTO_DATUM_RE = re.compile(r"Datum:\s*(\d{1,2})\.\s*(\S+)\s+(\d{4})\s+(\d{1,2}):(\d{2})")
+
+
+def _media_item_nodes(nodes):
+    return [n for n in nodes if n.short_rid in ("media_item_view", "unsupported_media_item_view")]
+
+
+def _parse_photo_datum(desc):
+    """-> (year, month, day, hour, minute) parsed from a gallery thumbnail's own content-desc, or
+    None when it does not match at all (a folder tile, an album cover, anything not a dated photo).
+    Tolerant of the leading bidi mark WhatsApp draws ("‎Foto, Datum: ...") and of whichever day
+    padding this build uses, by regex rather than an exact string template -- the exact-tuple
+    comparison this feeds (send_gallery) still refuses on anything but a clean single match."""
+    m = _PHOTO_DATUM_RE.search(desc or "")
+    if not m:
+        return None
+    day, month_name, year, hh, mm = m.groups()
+    month = _MONTHS_DE.get(month_name.lower())
+    if month is None:
+        return None
+    return (int(year), month, int(day), int(hh), int(mm))
+
+
+class PhoneLock:
+    """flock on huawei01.lock. Non-blocking with a deadline, so a stuck holder is a 503, not a hang."""
+
+    def __init__(self, path=LOCK_PATH, timeout=D.LOCK_TIMEOUT_SEC):
+        self.path = Path(path)
+        self.timeout = float(timeout)
+        self._fh = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.path.open("a+")
+        deadline = time.monotonic() + self.timeout
+        while True:
+            try:
+                fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    self._fh.close()
+                    self._fh = None
+                    raise D.PhoneBusy(f"phone lock busy for {self.timeout:.0f}s: {self.path}")
+                time.sleep(0.5)
+        self._fh.seek(0)
+        self._fh.truncate()
+        self._fh.write(f"{datetime.now().astimezone().isoformat()} pflege-wa-bridge pid={os.getpid()}\n")
+        self._fh.flush()
+        return self
+
+    def __exit__(self, *exc):
+        if self._fh:
+            fcntl.flock(self._fh, fcntl.LOCK_UN)
+            self._fh.close()
+            self._fh = None
+
+
+class Adb:
+    """The command surface. One process per call; no persistent shell to go stale."""
+
+    def __init__(self, serial=SERIAL, *, adb=None, log=None):
+        if serial in FORBIDDEN_SERIALS:
+            raise D.DriverError(f"{serial} is the ChatGPT farm handset -- refusing")
+        if serial != SERIAL:
+            raise D.DriverError(f"this rail drives {SERIAL} only, got {serial}")
+        self.serial = serial
+        self.binary = str(adb) if adb else next((str(p) for p in ADB_CANDIDATES if p.exists()), "adb")
+        self._log = log or (lambda msg: None)
+
+    def log(self, msg):
+        self._log(msg)
+
+    def run(self, *args, timeout=60):
+        """-> the finished process. An adb that does not return in ``timeout`` is a DriverError.
+
+        subprocess raises TimeoutExpired, which is nobody's DriverError: it escaped the driver
+        boundary raw and reached the server's generic handler as a 500 executor_error -- wrong on
+        the send path (a timeout on `input text` is send_unconfirmed, keys may have been pressed)
+        and wrong on the destructive path (park() and the verification rescan are both adb calls
+        made after a conversation has already been destroyed). Every failure this class can have
+        is a DriverError, and the callers above already know what to do with one.
+        """
+        try:
+            return subprocess.run([self.binary, "-s", self.serial, *args],
+                                  capture_output=True, text=True, timeout=timeout, check=False)
+        except subprocess.TimeoutExpired as exc:
+            raise D.DriverError(f"adb {args[0]} did not return within {timeout:.0f}s") from exc
+
+    def shell(self, cmd, *, timeout=40):
+        return self.run("shell", cmd, timeout=timeout).stdout
+
+    def pull(self, remote, local, *, timeout=120):
+        """-> the finished process (``.returncode``, ``.stderr``). Filesystem-level (TASK-360):
+        not a shell command, so it is its own method rather than a ``shell()`` string, and its own
+        override point in a scripted test (``tests/test_bridge_adb.py::ScriptedAdb``)."""
+        return self.run("pull", remote, local, timeout=timeout)
+
+    def push(self, local, remote, *, timeout=120):
+        """-> the finished process (``.returncode``, ``.stderr``). ``pull``'s own mirror (TASK-360
+        round 7, outbound media): filesystem-level, its own method for the same reason ``pull`` is
+        one, and its own override point in a scripted test."""
+        return self.run("push", local, remote, timeout=timeout)
+
+    def spawn_shell(self, cmd):
+        """Start a background ``adb shell`` process and return the ``Popen`` immediately, for a
+        job (``screenrecord``) that runs until told to stop rather than a call that returns on its
+        own (TASK-228). Its own method, not ``shell()``, so a test (``ScriptedAdb``) can override
+        it and start nothing real."""
+        return subprocess.Popen([self.binary, "-s", self.serial, "shell", cmd],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def downscale(self, path, *, max_dim=800):
+        """Shrink a screenshot in place with ImageMagick's ``convert`` (present on the mini, no
+        Pillow dependency needed) so postmortem storage is not full-resolution PNGs (TASK-228,
+        Ivan 2026-09-23). Best-effort: a missing binary or a timeout is logged and never raised --
+        a screenshot that could not be shrunk is still a screenshot, and this must not turn into
+        the failure of whatever op it was decorating."""
+        try:
+            subprocess.run(["convert", str(path), "-resize", f"{max_dim}x{max_dim}>", str(path)],
+                           timeout=30, check=False, capture_output=True)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.log(f"downscale of {path} failed: {exc}")
+
+    def connected(self):
+        try:
+            out = subprocess.run([self.binary, "devices"], capture_output=True, text=True,
+                                 timeout=30, check=False).stdout
+        except subprocess.TimeoutExpired as exc:
+            raise AdbUnavailable("adb devices did not return within 30s") from exc
+        return any(line.split("\t")[0] == self.serial and line.strip().endswith("device")
+                   for line in out.splitlines()[1:])
+
+    def require_device(self):
+        if not self.connected():
+            raise AdbUnavailable(f"{self.serial} is not in adb 'device' state")
+
+    # --- screen ---------------------------------------------------------------------------------
+    def awake(self, *, timeout=40):
+        return "mWakefulness=Awake" in self.shell("dumpsys power | grep -m1 mWakefulness",
+                                                   timeout=timeout)
+
+    def keyguard_up(self, *, timeout=40):
+        """-> True while the lock screen is showing and not occluded by another window (TASK-315
+        review point 7): ``screen_ready()``'s other half, alongside ``awake()`` -- a screen can be
+        woken (``mWakefulness=Awake``) and still be the lock screen, which is not a safe surface
+        for ``dialog_scan`` to read or tap."""
+        out = self.shell("dumpsys window policy | grep -m1 isKeyguardShowingAndNotOccluded",
+                         timeout=timeout)
+        return "true" in out.lower()
+
+    def screen_size(self, *, timeout=15):
+        """-> (width, height) in real pixels, from ``wm size`` -- the REAL display, never inferred
+        from a uiautomator dump's own extent (TASK-315 review point 3: a dialog-only window's dump
+        does not necessarily reach the true screen edge, which is exactly what made the old
+        ``_outside_frame_tap`` fallback unsafe). Prefers an active "Override size" (a resize
+        actually in effect) over "Physical size" when ``wm size`` reports both."""
+        out = self.shell("wm size", timeout=timeout)
+        override = re.search(r"Override size:\s*(\d+)x(\d+)", out or "")
+        if override:
+            return int(override.group(1)), int(override.group(2))
+        physical = re.search(r"Physical size:\s*(\d+)x(\d+)", out or "")
+        if physical:
+            return int(physical.group(1)), int(physical.group(2))
+        raise D.DriverError(f"wm size output not understood: {out!r}")
+
+    def wake(self):
+        if self.awake():
+            return
+        self.key("KEYCODE_WAKEUP")
+        time.sleep(0.6)
+        self.shell("input swipe 540 1900 540 900 250")
+        time.sleep(0.6)
+
+    def focus(self, *, timeout=40):
+        out = self.shell("dumpsys activity activities 2>/dev/null | "
+                         "grep -m1 -E 'ResumedActivity|mFocusedActivity'", timeout=timeout)
+        hit = re.search(r"u0 ([A-Za-z0-9_.]+/[A-Za-z0-9_.$]+)", out)
+        return hit.group(1) if hit else out.strip()[:100]
+
+    def dump(self, *, tries=3, required=True, timeout=40):
+        """-> [Node] for what is on screen. Raises after ``tries`` unless ``required=False``.
+
+        ``required=True`` is the default because of what an empty list means downstream (TASK-375):
+        ``uiautomator`` answering "ERROR: could not get idle state." and a chat with nothing in it
+        both parse to ``[]``, and on the inbound path those two are a candidate's message being
+        lost versus a quiet chat. Three tries is already the retry; failing after them is the
+        honest end of it.
+
+        ``required=False`` is for the pollers that have a deadline of their own and for which an
+        unreadable frame is just a frame to re-take (``wait_for``). ``tries=1`` (PhoneDoctor, TASK-
+        315 review point 6: "the dump gets 1 try") means exactly one attempt, no retry sleep.
+        """
+        for attempt in range(tries):
+            out = self.shell("uiautomator dump /sdcard/pflege_ui.xml >/dev/null 2>&1; "
+                             "cat /sdcard/pflege_ui.xml", timeout=timeout)
+            nodes = parse_ui_xml(out)
+            if nodes:
+                return nodes
+            if attempt < tries - 1:
+                time.sleep(0.7)
+        if required:
+            raise AdbUnavailable(f"uiautomator returned nothing readable {tries} times in a row")
+        return []
+
+    def wait_for(self, predicate, *, timeout=10.0, poll=0.7):
+        deadline = time.monotonic() + timeout
+        nodes = []
+        while True:
+            nodes = self.dump(required=False)
+            if predicate(nodes):
+                return nodes
+            if time.monotonic() >= deadline:
+                return nodes
+            time.sleep(poll)
+
+    # --- input ----------------------------------------------------------------------------------
+    def tap(self, x, y, *, timeout=40):
+        # a few pixels of jitter: never the same pixel twice. (_TAP_JITTER_X/Y in this module
+        # mirror these same -6..6/-4..4 ranges for _outside_frame_tap's own clearance margin.)
+        self.shell(f"input tap {x + random.randint(-6, 6)} {y + random.randint(-4, 4)}",
+                  timeout=timeout)
+        time.sleep(0.7)
+
+    def tap_node(self, node):
+        self.tap(*node.center)
+
+    def long_press(self, x, y, *, hold=LONG_PRESS_HOLD_SEC):
+        """A real long press. ``input swipe x y x y`` arrives as a tap on this build -- measured on
+        the handset, 2026-09-21: it opened nothing and raised no selection -- so the press is a DOWN,
+        a hold, and an UP.  A long press on a chat row is what raises the selection action bar."""
+        self.shell(f"input motionevent DOWN {x} {y}")
+        time.sleep(hold)
+        self.shell(f"input motionevent UP {x} {y}")
+        time.sleep(0.8)
+
+    def long_press_node(self, node):
+        self.long_press(*node.center)
+
+    def key(self, name, *, timeout=40):
+        self.shell(f"input keyevent {name}", timeout=timeout)
+        time.sleep(0.5)
+
+    def screenshot(self, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as fh:
+            subprocess.run([self.binary, "-s", self.serial, "exec-out", "screencap", "-p"],
+                           stdout=fh, timeout=30, check=False)
+        return str(path)
+
+    # --- the keyboard, which is borrowed ----------------------------------------------------------
+    def current_ime(self):
+        return self.shell("settings get secure default_input_method").strip()
+
+    def set_ime(self, ime):
+        self.shell(f"ime set {ime}")
+        time.sleep(0.6)
+        return self.current_ime() == ime
+
+    @contextmanager
+    def adb_keyboard(self):
+        """Switch to ADBKeyboard for the body of the ``with``, then put the human's IME back.
+
+        The restore is in a ``finally`` and runs even when the body raises, because the failure mode
+        we are protecting against is exactly "the send blew up and the phone is left with a keyboard
+        that types nothing when a person taps it".
+        """
+        previous = self.current_ime()
+        if previous != ADB_IME:
+            if ADB_IME not in self.shell("ime list -s"):
+                self.shell(f"ime enable {ADB_IME}")
+            if not self.set_ime(ADB_IME):
+                raise D.DriverError(
+                    f"ADBKeyboard ({ADB_IME}) would not activate; refusing to type through "
+                    "`input text`, which mangles German umlauts")
+        try:
+            yield
+        finally:
+            if previous and previous != ADB_IME:
+                self.set_ime(previous)
+
+    def type_verbatim(self, chunk):
+        blob = base64.b64encode(chunk.encode("utf-8")).decode("ascii")
+        self.shell(f"am broadcast -a ADB_INPUT_B64 --es msg '{blob}' >/dev/null", timeout=60)
+
+    def clear_composer(self):
+        self.shell("am broadcast -a ADB_CLEAR_TEXT >/dev/null")
+        time.sleep(0.4)
+
+    def type_human(self, text, *, rng=random):
+        """Word-sized chunks at a speed drawn once per message. Requires the ADBKeyboard context."""
+        speed = rng.uniform(*CHARS_PER_SEC)
+        words = text.split(" ")
+        i = 0
+        while i < len(words):
+            take = rng.choice((1, 1, 2, 2, 3))
+            chunk = " ".join(words[i:i + take])
+            if i + take < len(words):
+                chunk += " "
+            self.type_verbatim(chunk)
+            delay = len(chunk) / speed
+            if chunk.rstrip().endswith((",", ".", "?", "!")):
+                delay += rng.uniform(0.25, 0.9)
+            if rng.random() < 0.07:
+                delay += rng.uniform(0.6, 1.8)
+            time.sleep(max(0.15, delay))
+            i += take
+
+
+class AdbDriver(D.PhoneDriver):
+    """The five verbs of bridge.driver.PhoneDriver, spoken to a real handset."""
+
+    def __init__(self, *, shots_dir, recordings_dir=None, adb=None, serial=SERIAL,
+                 lock_path=LOCK_PATH, device_tz=DEVICE_TZ, log=None, rng=None):
+        self.adb = adb if isinstance(adb, Adb) else Adb(serial, adb=adb, log=log)
+        self.shots_dir = Path(shots_dir)
+        # TASK-228: pulled recordings live next to shots_dir by default -- a sibling directory
+        # under the same WA_BRIDGE_STATE root, not inside shots_dir, since sweep_screenshots only
+        # ever globs *.png there.
+        self.recordings_dir = Path(recordings_dir) if recordings_dir else self.shots_dir.parent / "recordings"
+        self.lock_path = Path(lock_path)
+        self.tz = ZoneInfo(device_tz)
+        self.rng = rng or random.Random()
+        self._log = log or (lambda msg: None)
+        self._shot_n = 0
+        self._recordings = {}   # op_id -> (Popen, remote path), while a recording is in flight
+        self._contacts = None       # address book cache, filled on first name-header
+        self._open_phone = None     # the number of the chat we verified open
+
+    def log(self, msg):
+        self._log(msg)
+
+    # --- the flock ---------------------------------------------------------------------------------
+    @contextmanager
+    def lock(self, *, timeout=D.LOCK_TIMEOUT_SEC):
+        with PhoneLock(self.lock_path, timeout=timeout):
+            yield
+
+    # --- who is on the other side ------------------------------------------------------------------
+    def address_book(self, *, refresh=False):
+        """-> [(full digits, display name)] off the handset's own contacts provider.
+
+        Only read when a notification title or a chat header is a NAME, which is the case this has
+        to answer: the phone knows which number that name belongs to and we do not. Cached for the
+        life of the process and re-read on ``refresh``; a contact added mid-run is a restart away.
+        """
+        if self._contacts is not None and not refresh:
+            return self._contacts
+        out = self.adb.shell(
+            "content query --uri content://com.android.contacts/data/phones "
+            "--projection display_name:data1", timeout=60)
+        self._contacts = parse_contacts(out)
+        return self._contacts
+
+    def resolve_counterparty(self, title):
+        """-> E.164 for a notification title, or "" when the handset cannot say who that is.
+
+        A display name shared by two contacts is UNRESOLVABLE, not a coin toss (TASK-375). Taking
+        the first row silently answered candidate A with a reply to candidate B's message and keyed
+        the whole opt-out story on the wrong human. It raises rather than returning "", so the
+        journal says which of the two things went wrong.
+        """
+        text = str(title or "").strip()
+        if I.looks_like_number(text):
+            return "+" + I.digits(text)
+        if not text:
+            return ""
+        matches = sorted({number for number, name in self.address_book() if name == text})
+        if len(matches) > 1:
+            raise I.Unresolvable(f"{len(matches)} contacts share this display name")
+        return "+" + matches[0] if matches else ""
+
+    def name_for_tail(self, tail):
+        """-> the display name the handset stores for a number ending in ``tail``, or ""."""
+        for number, name in self.address_book():
+            if number.endswith(tail):
+                return name
+        return ""
+
+    # --- open a chat, and prove it is the right one ---------------------------------------------------
+    def open_chat(self, phone):
+        """-> the header WhatsApp drew. Types NOTHING, on any path, including the refusals."""
+        self.adb.require_device()
+        wanted = "+" + I.digits(phone)
+        tail = I.digits(wanted)[-8:]
+        if len(tail) < 8:
+            raise D.DriverError(f"{len(tail)} digits is not enough to identify a thread")
+        self._open_phone = None
+        self.adb.wake()
+        self.adb.shell(f"am start -a android.intent.action.SENDTO "
+                       f"-d smsto:{shlex.quote(wanted)} {WHATSAPP} >/dev/null 2>&1")
+        nodes = self.adb.wait_for(
+            lambda ns: bool(find(ns, rid=RID_HEADER) or find(ns, rid=RID_DIALOG_BUTTON)), timeout=12)
+        if self._dismiss_dialog(nodes):
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_HEADER)), timeout=10)
+        header = find(nodes, rid=RID_HEADER)
+        if not header:
+            raise D.DriverError(f"conversation did not open (focus={self.adb.focus()})")
+        drawn = header[0].text.strip()
+        self._require_thread(drawn, wanted, tail)
+        self._open_phone = wanted
+        time.sleep(self.rng.uniform(*PAUSE_AFTER_OPEN))
+        return drawn
+
+    def _require_thread(self, drawn, wanted, tail):
+        """The guard their version does not have: a NAME header is checked against the address book.
+
+        Three outcomes and no fourth: the header is the number we asked for, the header is the name
+        the handset has stored for that number, or we refuse and type nothing.
+        """
+        if I.digits(drawn) and I.digits(drawn)[-8:] == tail:
+            return
+        if I.digits(drawn):
+            raise D.DriverError("wrong thread: the header is a different number")
+        stored = self.name_for_tail(tail)
+        if stored and stored == drawn:
+            return
+        raise D.DriverError(
+            "wrong thread: the header is a name the address book does not tie to this number "
+            f"(stored={'yes' if stored else 'no'})")
+
+    def _dismiss_dialog(self, nodes):
+        """WhatsApp's 'Chat mit +49...?' confirmation for an unsaved number. Tapping it opens the
+        chat; it types nothing and sends nothing."""
+        for label in ("OK", "Chat", "Fortfahren", "Weiter", "Continue"):
+            hit = (find(nodes, rid=RID_DIALOG_BUTTON, text=label)
+                   or [n for n in find(nodes, text=label, clickable=True) if n.pkg == WHATSAPP])
+            if hit:
+                self.adb.tap_node(hit[0])
+                return True
+        return False
+
+    # --- read what is on screen ---------------------------------------------------------------------
+    def read_bubbles(self):
+        """-> [BubbleView] for the VISIBLE bubbles, oldest first. Does not scroll."""
+        return self._bubbles(self.adb.dump())
+
+    def _bubbles(self, nodes):
+        return [view for _y, view in self._placed_bubbles(nodes)]
+
+    def _placed_bubbles(self, nodes):
+        """-> [(top y, BubbleView)] oldest first. The y is what ``day_separator_y`` is compared to."""
+        width = 1080
+        for node in nodes:
+            if node.short_rid == "conversation_layout" or node.cls.endswith("FrameLayout"):
+                width = max(width, node.bounds[2])
+        texts = [n for n in nodes if n.short_rid == RID_MESSAGE]
+        dates = [n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)]
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        out = []
+        for node in sorted(texts, key=lambda n: n.bounds[1]):
+            x1, y1, x2, y2 = node.bounds
+            # Outgoing bubbles are drawn hard against the right edge; incoming hug the left.
+            direction = "out" if x2 > width * 0.9 else "in"
+            near = [d for d in dates if y1 <= d.bounds[1] <= y2 + 80]
+            clock = min(near, key=lambda d: abs(d.bounds[1] - y2)).text if near else ""
+            tick = ""
+            if direction == "out":
+                close = [s for s in states if abs(s.bounds[1] - y2) < 90]
+                tick = close[0].desc if close else ""
+            out.append((y1, D.BubbleView(direction, node.text, clock, tick)))
+        return out
+
+    def _media_bubble_bands(self, nodes):
+        """-> [{"clock", "direction", "evidence"}] oldest first: one entry per bubble, gathered by
+        proximity to its own ``date`` node the same way ``_placed_bubbles`` groups a date and a tick
+        to a message -- except the band here is read WIDE (every node between this bubble's date
+        and the previous one's), not narrowed to ``message_text``, because a voice note draws no
+        ``message_text`` node at all (this module's own docstring: today's reader is blind to one
+        for exactly that reason). ``evidence`` is every non-empty ``text``/``desc`` string in the
+        band, content-desc included.
+
+        UNVERIFIED against a live voice-note or document bubble (module docstring: uiautomator
+        would not dump this handset's WhatsApp window on 2026-09-22 to confirm it, launcher and
+        Settings both dumped fine the same session, so the block is not WhatsApp-specific and not
+        this code's own doing). Deliberately NOT keyed to a specific resource id the way
+        ``message_text``/``date``/``status`` are -- ``bridge/identity.py::parse_bubble_evidence``
+        pattern-matches the whole pool, so whatever the real node shape turns out to be, a duration,
+        size or filename drawn as text OR content-desc anywhere in the band is still found. Confirm
+        against a real voice note and a real document the first time either is reachable, the same
+        caution this task's own brief applies to a document's filename-preservation claim.
+        """
+        # Direction is a nearby RID_STATUS (delivery-tick) node, not the date node's own
+        # x-position -- see _outgoing_bubble_count's docstring for why a width-fraction threshold
+        # on the date node itself undercounts every outgoing bubble (confirmed live, 2026-09-22,
+        # on a real delivered text bubble). This reader shares the same date node and the same bug
+        # would have shared the same fix.
+        dates = sorted((n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)),
+                      key=lambda n: n.bounds[1])
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        out, prev_bottom = [], 0
+        for d in dates:
+            top, bottom = prev_bottom, d.bounds[3] + 4
+            direction = "out" if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states) else "in"
+            band = [n for n in nodes if n is not d and top <= n.bounds[1] <= bottom]
+            evidence = [t.strip() for n in band for t in (n.text, n.desc) if t and t.strip()]
+            out.append({"clock": d.text.strip(), "direction": direction, "evidence": evidence})
+            prev_bottom = d.bounds[3]
+        return out
+
+    def read_media_evidence(self):
+        """-> [{"clock", "evidence"}] for the INCOMING bubbles of the open thread (PhoneDriver
+        contract, TASK-360 round 6) -- the file this rail is trying to attribute is always the other
+        party's, never our own reply."""
+        bands = self._media_bubble_bands(self.adb.dump())
+        return [{"clock": b["clock"], "evidence": b["evidence"]} for b in bands if b["direction"] == "in"]
+
+    @staticmethod
+    def day_separator_y(nodes):
+        """-> the top y of the LOWEST day separator on screen, or None when none is drawn.
+
+        WhatsApp puts a ``date`` TextView on every bubble (always 'HH:MM' -- verified on this
+        handset, 2026-09-21, including the one that belongs to a voice note rather than to a text
+        row) and the same id on the day divider between two days, where the text is a day name
+        instead ('HEUTE', 'GESTERN', '20. September'). The text is therefore the discriminator, not
+        a resource id we would have to guess at.
+        """
+        ys = [n.bounds[1] for n in nodes if n.short_rid == RID_DATE and not _is_clock(n.text)]
+        return max(ys) if ys else None
+
+    @staticmethod
+    def today_divider_y(nodes):
+        """-> the top y of the divider labelled today ('HEUTE'/'TODAY'), or None when none is on
+        screen (TASK-231).
+
+        ``day_separator_y`` answers "where is the lowest divider" and leaves the caller to decide
+        what it means -- sound only for ``read_open_thread``, which already knows (from its own
+        just-sent bubble) that the bottom of the thread is today, so whichever divider is lowest
+        must be the one marking the entry into today. A cold read has no such bubble to anchor
+        with, so it needs the divider that says so itself rather than the lowest one, whatever it
+        says. A 'GESTERN' divider with nothing below it proves nothing about today one way or the
+        other -- it is not read here.
+        """
+        ys = [n.bounds[1] for n in nodes
+             if n.short_rid == RID_DATE and n.text.strip() in _TODAY_DIVIDER_LABELS]
+        return max(ys) if ys else None
+
+    # --- send one bubble, and prove it landed ---------------------------------------------------------
+    def send_bubble(self, text):
+        """-> the BubbleView we read back off the thread. Raises rather than guess.
+
+        The caller holds the flock and has already had open_chat verify the thread. If the bubble
+        cannot be found in the thread afterwards, that is a DriverError and the executor records it
+        as unconfirmed -- it is never reported as sent.
+        """
+        body = text.strip()
+        if not body:
+            raise D.DriverError("empty body reached the driver")
+        if self._open_phone is None:
+            raise D.DriverError("send_bubble without a verified open chat")
+        nodes = self.adb.dump()
+        composer = find(nodes, rid=RID_COMPOSER)
+        if not composer:
+            raise D.DriverError("composer not found -- the conversation is not on screen")
+        # How many bubbles with THIS body are already on the thread before we type a character
+        # (TASK-375). Several send bodies are constants -- api.MEDIA_REPLY fires for every
+        # unreadable media message and C.FOLLOWUP_NUDGE_DE is identical on every nudge tier -- so
+        # "a bubble with this body exists" was never evidence that OUR bubble exists. A previous
+        # turn's identical bubble already carries a tick, which made require_tick accept it and the
+        # executor write ``sent`` with a clock from an earlier turn. Now the match has to be one
+        # that was not there before.
+        already = self._count_matching(self._bubbles(nodes), D.body_sha256(body))
+        with self.adb.adb_keyboard():
+            if composer[0].text not in COMPOSER_EMPTY:
+                self.adb.tap_node(composer[0])
+                self.adb.clear_composer()
+            self.adb.tap_node(composer[0])
+            self.adb.type_human(body, rng=self.rng)
+            time.sleep(self.rng.uniform(*PAUSE_BEFORE_SEND))
+            nodes = self.adb.dump()
+            button = find(nodes, rid=RID_SEND)
+            if not button:
+                raise D.DriverError("send button not visible after typing")
+            self.adb.tap_node(button[0])
+        return self._verify(body, already)
+
+    @staticmethod
+    def _count_matching(bubbles, want_sha256):
+        return sum(1 for b in bubbles
+                   if b.direction == "out" and D.body_sha256(b.text) == want_sha256)
+
+    # --- outbound media: photos (TASK-360 round 7, Ivan 2026-09-22) ------------------------------
+    def _outgoing_bubble_count(self, nodes):
+        """How many outgoing bubbles are on screen right now, image or text alike -- banded by their
+        own date node the same way _media_bubble_bands is, not by RID_MESSAGE (_placed_bubbles'
+        own way), because an image bubble draws no message_text node at all and would be invisible
+        to that reader.
+
+        Direction is a nearby RID_STATUS (delivery-tick) node, not the date node's own x-position.
+        WhatsApp draws that tick icon on a sent bubble only, so its presence is a direct signal --
+        unlike the date/time text itself, which sits well inside the bubble's true right edge (room
+        for the tick icon) and so undercounts against ANY width-fraction threshold. Confirmed live,
+        2026-09-22: a delivered, read text bubble's own date node measured x2=942 of 1080 (87%),
+        below a 90% floor that was tuned against message_text's/the image's own much wider bounds --
+        this cost the first live photo send test a false send_unconfirmed on a photo that had
+        already landed."""
+        dates = [n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)]
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        return sum(1 for d in dates if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states))
+
+    def _newest_outgoing_tick(self, nodes):
+        """-> (clock, tick) for the bottom-most outgoing bubble on screen, found the same
+        date-banded way _outgoing_bubble_count counts them -- so an image bubble's tick is read
+        back exactly like a text bubble's (RID_STATUS by proximity to the date node), never missed
+        for lack of a message_text node. None if no outgoing bubble is on screen at all."""
+        dates = sorted((n for n in nodes if n.short_rid == RID_DATE and _is_clock(n.text)),
+                      key=lambda n: n.bounds[1])
+        states = [n for n in nodes if n.short_rid == RID_STATUS]
+        out_dates = [d for d in dates if any(abs(s.bounds[1] - d.bounds[1]) < 90 for s in states)]
+        if not out_dates:
+            return None
+        newest = out_dates[-1]
+        close = [s for s in states if abs(s.bounds[1] - newest.bounds[1]) < 90]
+        return (newest.text.strip(), close[0].desc if close else "")
+
+    def send_photo(self, phone, local_path):
+        """Share ONE local image file into the thread for ``phone``, via Android's own ACTION_SEND
+        (TASK-360 round 7, outbound media) -- there is no compose-time attach button this driver
+        can reach any other way, and this is the exact mechanism a person uses to share a photo
+        from their own gallery: verified live, this handset, 2026-09-22, WhatsApp 2.26.36.74. ->
+        the (clock, tick) the newest outgoing bubble reads after sending. Raises D.DriverError
+        rather than guess.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_bubble) -- WhatsApp's own share picker is checked against it, and the code returns to
+        THIS thread afterwards (open_chat again) to read the result back, rather than trusting
+        wherever the share flow itself lands.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_photo without a verified open chat for this phone")
+        if not os.path.exists(local_path):
+            raise D.DriverError(f"{local_path} does not exist locally -- nothing to push")
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        remote = f"{remote_dir}/{os.path.basename(local_path)}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        pushed = self.adb.push(local_path, remote)
+        if pushed.returncode != 0:
+            raise D.DriverError(f"adb push {local_path} failed: {(pushed.stderr or '').strip()[:200]}")
+        before = self._outgoing_bubble_count(self.adb.dump())
+        suffix = os.path.splitext(local_path)[1].lower()
+        mime = "image/png" if suffix == ".png" else "image/jpeg"
+        self.adb.shell(f"am start -a android.intent.action.SEND -t {mime} "
+                       f"--eu android.intent.extra.STREAM file://{remote} -p {WHATSAPP}")
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SHARE_ROW_NAME)), timeout=10)
+        tail = I.digits(phone)[-8:]
+        rows = find(nodes, rid=RID_SHARE_ROW_NAME)
+        match = [r for r in rows if I.digits(r.text)[-8:] == tail]
+        if not match:
+            raise D.DriverError(f"no row in WhatsApp's own share picker matches {phone} -- "
+                                f"seen: {[r.text for r in rows]!r}")
+        if len(match) > 1:
+            raise D.DriverError(f"{len(match)} rows in the share picker match {phone} -- refusing "
+                                f"to guess which one")
+        self.adb.tap_node(match[0])
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SEND)), timeout=10)
+        recipients = find(nodes, rid=RID_SHARE_RECIPIENTS)
+        if not recipients or I.digits(recipients[0].text)[-8:] != tail:
+            raise D.DriverError(f"the share compose screen's own recipient line does not read "
+                                f"back {phone}: {[r.text for r in recipients]!r}")
+        send = find(nodes, rid=RID_SEND)
+        if not send:
+            raise D.DriverError("share compose screen has no send button")
+        self.adb.tap_node(send[0])
+        self.open_chat(phone)   # the share flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
+
+    def _verify_photo_sent(self, before_count):
+        deadline = time.monotonic() + PHOTO_APPEAR_SEC
+        while True:
+            nodes = self.adb.dump()
+            count = self._outgoing_bubble_count(nodes)
+            if count > before_count:
+                return self._newest_outgoing_tick(nodes)
+            if time.monotonic() > deadline:
+                raise D.DriverError(f"no new outgoing bubble appeared after the photo was sent "
+                                    f"(still {count}, was {before_count})")
+            time.sleep(0.5)
+
+    def send_photos(self, phone, local_paths):
+        """send_photo, once per path, in order. -> [(clock, tick), ...], one per photo. Stops at
+        the first failure (raises) rather than silently sending photo 3 after photo 2 failed --
+        a caller that wants best-effort has to call send_photo itself and decide per file."""
+        if not local_paths:
+            raise D.DriverError("send_photos called with no files")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise D.DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                                f"{D.MAX_PHOTOS_PER_SEND} at once")
+        return [self.send_photo(phone, p) for p in local_paths]
+
+    # --- outbound media: one gallery message (TASK-360 round 7 gallery redesign, Ivan 2026-09-22) --
+    def _stage_gallery_files(self, local_paths):
+        """Push local_paths into MAX_PHOTOS_PER_SEND fixed positional slots under
+        OUTBOUND_MEDIA_DIR, each stamped with a distinct, known minute -- so send_gallery can find
+        EXACTLY these files, and never a leftover or a real candidate's own photo sitting in the
+        same "Letzte" pool, by content-desc timestamp rather than by screen position. -> [(remote,
+        (year, month, day, hour, minute)), ...] the expected WALL-CLOCK stamp for each file, in
+        local_paths order.
+
+        THE SLOT NAME IS UNIQUE PER CALL, not fixed (revised live, 2026-09-23, after a fixed
+        ``gallery_1.jpg``-style name self-collided on repeated calls): WhatsApp's own picker cache
+        does not evict an old row when a file at the same path is overwritten with a new mtime --
+        both were still found in "Letzte" minutes apart, sharing that path but not that minute, and
+        a later call whose OWN fresh stamp happened to land on an old call's leftover minute read
+        back "found 2" or "found 3" for one expected stamp, refusing exactly as designed but never
+        completing a send. A path stamped with this call's own ``device_now`` can never collide
+        with a previous call's leftovers this way again. Every ``gallery_*`` file under
+        OUTBOUND_MEDIA_DIR is removed first regardless of length -- not just "slots beyond
+        len(local_paths)", now that the slot name is not fixed there is nothing to leave in place.
+
+        THE TOUCH OFFSET (confirmed live, this handset, 2026-09-23, CEST/DST): this device's
+        toybox ``touch -t`` reads a wall-clock argument as if the zone were CET (UTC+1) while the
+        device is actually running CEST (UTC+2) -- a stamp of 02:03 came back 03:03 on ``stat``,
+        every time this was tried. Subtracting one hour before calling ``touch -t`` is the fix,
+        confirmed the same way. This is a DST bug, not a fixed offset -- re-confirm it once Central
+        Europe leaves DST (routinely late October) rather than trust this constant year-round.
+        """
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        self.adb.shell(f"rm -f {remote_dir}/gallery_*")
+        raw = self.adb.shell("date +%Y%m%d%H%M.%S").strip()
+        device_now = datetime.strptime(raw, "%Y%m%d%H%M.%S")
+        touch_base = device_now - timedelta(hours=1)  # the confirmed DST compensation
+        run_token = device_now.strftime("%H%M%S")
+        n = len(local_paths)
+        staged = []
+        for i, local in enumerate(local_paths):
+            ext = os.path.splitext(local)[1].lower() or ".jpg"
+            remote = f"{remote_dir}/gallery_{run_token}_{i + 1}{ext}"
+            pushed = self.adb.push(local, remote)
+            if pushed.returncode != 0:
+                raise D.DriverError(f"adb push {local} failed: "
+                                    f"{(pushed.stderr or '').strip()[:200]}")
+            # Oldest first, most recent last -- staggered a minute apart so each file gets an
+            # unambiguous stamp of its own (the picker's content-desc has no finer resolution).
+            offset = timedelta(minutes=(n - 1 - i))
+            touch_at = (touch_base - offset).strftime("%Y%m%d%H%M") + ".00"
+            self.adb.shell(f"touch -t {touch_at} {shlex.quote(remote)}")
+            self.adb.shell(f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+                           f"-d file://{remote} >/dev/null")
+            want = device_now - offset
+            staged.append((remote, (want.year, want.month, want.day, want.hour, want.minute)))
+        return staged
+
+    def send_gallery(self, phone, local_paths, caption=""):
+        """Share up to D.MAX_PHOTOS_PER_SEND local image files as ONE WhatsApp message -- a photo
+        album with a single shared caption -- via WhatsApp's own in-chat gallery picker (Ivan,
+        2026-09-22: "галерейкой плюс текстовое сообщение, все это одно сообщение"; TASK-360
+        round 7). Android's ``am start`` cannot drive ACTION_SEND_MULTIPLE for this: its own extras
+        table has no type for a Uri ArrayList, which is what ACTION_SEND_MULTIPLE's EXTRA_STREAM
+        needs (``--eu`` sets exactly one Uri) -- checked against ``am start``'s own extras before
+        writing this. So this drives the same taps a person does: attach -> "Galerie" -> pick a
+        caption -> send. Verified live, this handset, 2026-09-23, WhatsApp 2.26.36.74.
+
+        Selection is matched by each staged file's own timestamp in the "Letzte" pool, never by
+        screen position, and REFUSES rather than guesses when a stamp's count is not exactly one --
+        that pool mixes in whatever else is on this handset, a real candidate's CV photo included
+        (seen live, 2026-09-22). A second album, this handset's "Kamera", looked like a clean,
+        isolated pool at first (it showed only this code's own pushed files) but turned out to
+        cache its own snapshot: files deleted and rescanned through both ``rm`` and a proper
+        ``content delete``, and even a WhatsApp force-stop/relaunch, still left it showing photos
+        that were no longer on disk (confirmed live, 2026-09-23). "Letzte" does not have that
+        problem -- its count tracked every push and delete made against it in the same session --
+        which is why this method matches within "Letzte" instead of switching album.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_bubble/send_photo). -> the (clock, tick) the newest outgoing bubble reads after
+        sending. Raises D.DriverError rather than guess.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_gallery without a verified open chat for this phone")
+        if not local_paths:
+            raise D.DriverError("send_gallery called with no files")
+        if len(local_paths) > D.MAX_PHOTOS_PER_SEND:
+            raise D.DriverError(f"{len(local_paths)} photos requested, this rail sends at most "
+                                f"{D.MAX_PHOTOS_PER_SEND} at once")
+        for p in local_paths:
+            if not os.path.exists(p):
+                raise D.DriverError(f"{p} does not exist locally -- nothing to push")
+
+        staged = self._stage_gallery_files(local_paths)
+        before = self._outgoing_bubble_count(self.adb.dump())
+
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_ATTACH_BUTTON)), timeout=10)
+        attach = find(nodes, rid=RID_ATTACH_BUTTON)
+        if not attach:
+            raise D.DriverError("attach button not visible -- the conversation is not on screen")
+        self.adb.tap_node(attach[0])
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_GALLERY_HOLDER)), timeout=10)
+        gallery = find(nodes, rid=RID_GALLERY_HOLDER)
+        if not gallery:
+            raise D.DriverError("attach menu has no 'Galerie' option")
+        self.adb.tap_node(gallery[0])
+
+        def _all_stamps_present(ns):
+            by_stamp = {}
+            for item in _media_item_nodes(ns):
+                stamp = _parse_photo_datum(item.desc)
+                if stamp is not None:
+                    by_stamp.setdefault(stamp, []).append(item)
+            return all(len(by_stamp.get(want, [])) == 1 for _, want in staged)
+
+        nodes = self.adb.wait_for(_all_stamps_present, timeout=GALLERY_INDEX_SEC)
+        by_stamp = {}
+        for item in _media_item_nodes(nodes):
+            stamp = _parse_photo_datum(item.desc)
+            if stamp is not None:
+                by_stamp.setdefault(stamp, []).append(item)
+        chosen = []
+        for remote, want in staged:
+            hits = by_stamp.get(want, [])
+            if len(hits) != 1:
+                raise D.DriverError(
+                    f"expected exactly one 'Letzte' item timestamped {want!r} for "
+                    f"{os.path.basename(remote)!r}, found {len(hits)} -- refusing to guess")
+            chosen.append(hits[0])
+        for item in chosen:
+            self.adb.tap_node(item)
+            time.sleep(0.3)
+
+        nodes = self.adb.dump()
+        counter = find(nodes, rid=RID_SEND_MEDIA_COUNTER)
+        if not counter or counter[0].text.strip() != str(len(local_paths)):
+            raise D.DriverError(
+                f"selection counter reads {counter[0].text if counter else None!r}, expected "
+                f"{len(local_paths)!r} -- refusing to send an unconfirmed selection")
+
+        if caption:
+            # rid=RID_CAPTION alone is not selective enough (found live, 2026-09-23): WhatsApp
+            # reuses the SAME resource-id for the live, editable caption box on this screen AND
+            # for the read-only caption TEXT drawn under an already-sent gallery bubble further up
+            # the same conversation, which stays in every dump once one such bubble is on screen.
+            # Both are android.widget.TextView in the DOM except the live one, which is the only
+            # EditText -- that is the one signal this handset draws differently between them.
+            # Picking the first RID_CAPTION match blind hit the read-only one at least once, whose
+            # bounds sit outside the picker sheet entirely: the tap landed on the conversation
+            # behind it, which is how a typed caption ended up in the ordinary chat composer and
+            # the "picker" screen right after was WhatsApp's own discard-selection confirmation.
+            cap = [n for n in find(nodes, rid=RID_CAPTION) if n.cls == "android.widget.EditText"]
+            if not cap:
+                raise D.DriverError("gallery compose screen has no caption field")
+            with self.adb.adb_keyboard():
+                self.adb.tap_node(cap[0])
+                self.adb.type_human(caption, rng=self.rng)
+                time.sleep(self.rng.uniform(*PAUSE_BEFORE_SEND))
+                nodes = self.adb.dump()
+                send = find(nodes, rid=RID_SEND_MEDIA_BTN)
+                if not send:
+                    raise D.DriverError("gallery compose screen has no send button")
+                self.adb.tap_node(send[0])
+        else:
+            send = find(nodes, rid=RID_SEND_MEDIA_BTN)
+            if not send:
+                raise D.DriverError("gallery compose screen has no send button")
+            self.adb.tap_node(send[0])
+
+        self.open_chat(phone)   # the send flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
+
+    # --- outbound media: one document (TASK-360 round 7, Ivan 2026-09-23: a future resume-update
+    # flow needs files attached too, not only photos) -------------------------------------------
+    def send_document(self, phone, local_path, caption=""):
+        """Share ONE local file, any type, into the thread for ``phone``, via Android's own
+        ACTION_SEND -- the SAME mechanism send_photo uses, just a general-purpose MIME type instead
+        of an image one, and it works identically: verified live, this handset, 2026-09-23. An
+        EARLIER version of this method drove the in-app attach button -> "Dokument" ->
+        "Dokumente durchsuchen" -> the real Android system file picker instead; abandoned after a
+        live refusal ("found 0") traced to that picker's "Zuletzt verwendet" list not being a
+        simple recent-by-mtime view at all (Android's Storage Access Framework tracks actual past
+        USAGE of a file through a picker, not filesystem freshness) -- a file this driver had only
+        ever pushed, never "used" through any app, was not guaranteed to appear there on any
+        timeline. ACTION_SEND does not go through that picker at all.
+
+        WHAT DIFFERS FROM send_photo, both confirmed live: the share picker's matched row does not
+        land directly on the compose screen for a document the way it does for an image -- it
+        lands on an intermediate "N ausgewählt" recipient-confirm screen with its own send/confirm
+        control (same resource id as the real send button, RID_SEND) that has to be tapped once
+        more first. And the compose screen itself reads the CHOSEN file's own name back
+        (RID_DOCUMENT_FILE_NAME), checked against what was pushed before anything is sent -- a
+        second guard past the phone-number match the share-picker row already gives.
+
+        Requires an already-open, already-verified thread for ``phone`` (same contract as
+        send_photo). -> the (clock, tick) the newest outgoing bubble reads after sending. Raises
+        D.DriverError rather than guess.
+        """
+        if self._open_phone != phone:
+            raise D.DriverError("send_document without a verified open chat for this phone")
+        if not os.path.exists(local_path):
+            raise D.DriverError(f"{local_path} does not exist locally -- nothing to push")
+        remote_dir = f"/sdcard/Pictures/{OUTBOUND_MEDIA_DIR}"
+        basename = os.path.basename(local_path)
+        remote = f"{remote_dir}/{basename}"
+        self.adb.shell(f"mkdir -p {shlex.quote(remote_dir)}")
+        pushed = self.adb.push(local_path, remote)
+        if pushed.returncode != 0:
+            raise D.DriverError(f"adb push {local_path} failed: {(pushed.stderr or '').strip()[:200]}")
+        before = self._outgoing_bubble_count(self.adb.dump())
+        mime = mimetypes.guess_type(local_path)[0] or "application/octet-stream"
+        self.adb.shell(f"am start -a android.intent.action.SEND -t {mime} "
+                       f"--eu android.intent.extra.STREAM file://{remote} -p {WHATSAPP}")
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_SHARE_ROW_NAME)), timeout=10)
+        tail = I.digits(phone)[-8:]
+        rows = find(nodes, rid=RID_SHARE_ROW_NAME)
+        match = [r for r in rows if I.digits(r.text)[-8:] == tail]
+        if not match:
+            raise D.DriverError(f"no row in WhatsApp's own share picker matches {phone} -- "
+                                f"seen: {[r.text for r in rows]!r}")
+        if len(match) > 1:
+            raise D.DriverError(f"{len(match)} rows in the share picker match {phone} -- refusing "
+                                f"to guess which one")
+        self.adb.tap_node(match[0])
+
+        nodes = self.adb.wait_for(
+            lambda ns: bool(find(ns, rid=RID_DOCUMENT_FILE_NAME) or find(ns, rid=RID_SEND)),
+            timeout=10)
+        if not find(nodes, rid=RID_DOCUMENT_FILE_NAME):
+            confirm = find(nodes, rid=RID_SEND)
+            if not confirm:
+                raise D.DriverError("share flow landed on neither the compose screen nor a "
+                                    "recipient-confirm step")
+            self.adb.tap_node(confirm[0])
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_DOCUMENT_FILE_NAME)),
+                                      timeout=10)
+
+        shown = find(nodes, rid=RID_DOCUMENT_FILE_NAME)
+        if not shown or shown[0].text.strip() != basename:
+            raise D.DriverError(
+                f"WhatsApp's own compose screen reads back {shown[0].text if shown else None!r}, "
+                f"expected {basename!r} -- refusing to send an unconfirmed file")
+
+        if caption:
+            cap = [n for n in find(nodes, rid=RID_CAPTION) if n.cls == "android.widget.EditText"]
+            if not cap:
+                raise D.DriverError("document compose screen has no caption field")
+            with self.adb.adb_keyboard():
+                self.adb.tap_node(cap[0])
+                self.adb.type_human(caption, rng=self.rng)
+                time.sleep(self.rng.uniform(*PAUSE_BEFORE_SEND))
+                nodes = self.adb.dump()
+                send = find(nodes, rid=RID_SEND)
+                if not send:
+                    raise D.DriverError("document compose screen has no send button")
+                self.adb.tap_node(send[0])
+        else:
+            send = find(nodes, rid=RID_SEND)
+            if not send:
+                raise D.DriverError("document compose screen has no send button")
+            self.adb.tap_node(send[0])
+
+        self.open_chat(phone)   # the share flow may land anywhere; come back to prove the result
+        return self._verify_photo_sent(before)
+
+    def _verify(self, body, already=0):
+        """Re-read the thread until a bubble with THIS body that was NOT there before is on it.
+
+        ``already`` is the count taken before the send tap. A body hash alone cannot tell
+        "delivered now" from "delivered last Tuesday", and this module exists to refuse exactly
+        that class of lie -- so the test is that the count went up, and the bubble we return is the
+        bottom-most one, which is the one that was just drawn.
+        """
+        want = D.body_sha256(body)
+        deadline = time.monotonic() + BUBBLE_APPEAR_SEC
+        hid_keyboard = False
+        while True:
+            nodes = self.adb.dump()
+            mine = [b for b in self._bubbles(nodes)
+                    if b.direction == "out" and D.body_sha256(b.text) == want]
+            if len(mine) > already:
+                return mine[-1]
+            if not hid_keyboard:
+                # The keyboard covers the bottom of the list, which is where a fresh bubble is.
+                # BACK closes the IME, it does not leave the chat.
+                self.adb.key("KEYCODE_BACK")
+                hid_keyboard = True
+                continue
+            if time.monotonic() >= deadline:
+                raise D.DriverError(
+                    f"the bubble was not on the thread {BUBBLE_APPEAR_SEC:.0f}s after send")
+            time.sleep(1.0)
+
+    # --- inbound ---------------------------------------------------------------------------------------
+    def pull_inbound(self):
+        """-> ([InboundMessage] with ids, [(title, reason)] we could not mint).
+
+        WhatsApp only posts MessagingStyle notifications while it is in the background, which is why
+        park() puts the phone on the launcher after every action. This is the ONLY door that does
+        not depend on some other reason to already have that chat open -- every piggyback read
+        (``read_open_thread``, ``read_cold_thread``, TASK-231) only runs because a send, a read or
+        an evidence check happened to touch that exact chat. A chat nobody sends to, reads from or
+        attaches media for, or a message this poll's own shade drop, revoked notification access
+        or a reboot loses outright, gets neither -- that gap is what
+        ``bridge/watcher.py::ReconcileWatcher`` (TASK-234) exists to close from the other side, on
+        its own slow schedule, off ``list_chats``'s unread badge rather than the shade at all.
+        """
+        dump = self.adb.shell("dumpsys notification --noredact 2>/dev/null", timeout=60)
+        return I.notification_messages(dump, tz=self.tz, resolve=self.resolve_counterparty)
+
+    def read_open_thread(self, phone):
+        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now.
+
+        The second door. Its ids are identical to the notification door's for the same message, by
+        construction (bridge/inbound.py mints on the local minute) -- but ONLY if the date is the
+        same, and a bubble carries no date. So which bubbles are from today is derived rather than
+        assumed (TASK-375):
+
+        CALLED ONLY RIGHT AFTER OUR OWN SEND, which is what makes the derivation sound. Our own
+        bubble is the newest thing in the chat and it is seconds old, so the bottom of the visible
+        thread is today. WhatsApp draws a divider at every day change, so if a divider is visible
+        the bubbles BELOW the lowest one are today's and the ones above it are not; if no divider
+        is visible there was no day change in the visible window at all, so all of it is today.
+        A bubble that cannot be placed on today is reported unresolved -- it is not stamped with a
+        date that would mint an id the shade never minted, and be answered as a new message.
+        """
+        nodes = self.adb.dump()
+        placed = self._placed_bubbles(nodes)
+        cut = self.day_separator_y(nodes)
+        older = 0 if cut is None else sum(1 for y, _view in placed if y < cut)
+        today = datetime.now(self.tz).strftime("%Y-%m-%d")
+        return I.thread_messages([view for _y, view in placed],
+                                 counterparty="+" + I.digits(phone), local_date=today, older=older)
+
+    def read_cold_thread(self, phone):
+        """-> ([InboundMessage], [(title, reason)]) for the chat that is open right now, for a
+        caller that did NOT just send into it (TASK-231): ``Operations.read_thread``,
+        ``Executor._read_evidence_for``. Opening a chat clears its notification and WhatsApp posts
+        no shade record while it is foregrounded (``pull_inbound``'s own docstring), so whatever a
+        candidate sent in the seconds before or during the open is lost for good unless this reads
+        it -- the same reasoning ``read_open_thread`` already acts on for the one path that sent.
+
+        That path's derivation is NOT reused here. It is sound only because its own just-sent
+        bubble proves the bottom of the thread is today; a cold read has no such bubble, so "no
+        divider visible" cannot be read as "so all of it is today" the way it can there -- a chat
+        with nothing but today's messages in it draws no divider at all, and neither does one with
+        nothing but yesterday's. Only the divider that names today (``today_divider_y``) places
+        bubbles below it as today's; with none on screen this places nothing and reports every
+        incoming bubble unresolved rather than guess. KNOWN RESIDUAL, stated and not guarded: a
+        thread whose entire visible window is today's, with no earlier day above it to divide
+        against, mints nothing on a cold read -- exactly the shape of a brand-new candidate's first
+        message. Recovering that needs an independent "is this chat's last activity today" signal
+        (e.g. the chat list's own stamp column) that no caller here reads yet; closing it is
+        further work, not assumed away.
+        """
+        nodes = self.adb.dump()
+        placed = self._placed_bubbles(nodes)
+        cut = self.today_divider_y(nodes)
+        older = len(placed) if cut is None else sum(1 for y, _view in placed if y < cut)
+        today = datetime.now(self.tz).strftime("%Y-%m-%d")
+        return I.thread_messages([view for _y, view in placed],
+                                 counterparty="+" + I.digits(phone), local_date=today, older=older)
+
+    def current_chat_phone(self):
+        """-> E.164 for whatever conversation is on screen right now, or None (TASK-234).
+
+        For ``bridge/watcher.py``'s idle self-check, the one caller that finds a chat open without
+        opening it itself -- ``focus()`` alone only says "some Conversation", never which one.
+        ``open_chat`` is no help here: it is GIVEN the phone and verifies the header against it;
+        this has nothing to verify against, so it reads the header WhatsApp itself drew and
+        resolves it exactly as a notification title is (``resolve_counterparty``). None when
+        nothing sound can be said -- no header on screen, or a display name two contacts share
+        (``I.Unresolvable``) -- because a caller with no anchor of its own has nothing safer to
+        key an inbound id against than reading nothing at all.
+        """
+        nodes = self.adb.dump()
+        header = find(nodes, rid=RID_HEADER)
+        if not header:
+            return None
+        try:
+            resolved = self.resolve_counterparty(header[0].text.strip())
+        except I.Unresolvable:
+            return None
+        return resolved or None
+
+    # --- inbound media (TASK-360) -------------------------------------------------------------------------
+    def list_media(self):
+        """-> {rel_path: (size, mtime_epoch)} for every RECEIVED file under WhatsApp's flat media
+        tree. Filesystem-level (``find``+``stat``, both toybox on this handset): touches no UI and
+        is never taken under ``huawei01.lock`` (bridge/watcher.py::MediaWatcher does not acquire it
+        for exactly this reason).
+
+        The technique is read off a colleague's own solution (``wa_phone/inbox.py::_list_media``),
+        which is the right approach to a flat tree neither ``find`` nor ``stat`` needs the screen
+        for; what is NOT reused is their linking of what this returns to a candidate -- this rail
+        does not link it at all any more (``bridge/media.py``'s own module docstring says why).
+        ``! -path
+        '*/Sent/*'`` drops the outgoing copies WhatsApp keeps of what this number itself sent --
+        their own poller excludes the same tree for the same reason: it is not inbound. Missing
+        folders (a fresh handset that has never received a document) are not an error; ``2>
+        /dev/null`` on both the ``cd`` and the ``find`` makes an empty tree read as an empty listing.
+        """
+        self.adb.require_device()
+        dirs = " ".join(shlex.quote(d) for d in MD.WA_MEDIA_DIRS)
+        out = self.adb.shell(
+            f"cd {shlex.quote(MD.WA_MEDIA_ROOT)} 2>/dev/null && find {dirs} -type f "
+            f"! -path '*/Sent/*' ! -name '.*' -exec stat -c '%s %Y %n' {{}} + 2>/dev/null",
+            timeout=60)
+        return MD.parse_stat_listing(out)
+
+    def pull_media(self, rel_path, dest_path):
+        """``adb pull`` one file off the handset. -> ``dest_path``. Filesystem-level: does not
+        touch the screen and is not taken under the flock, same reason as ``list_media``."""
+        dest = Path(dest_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        result = self.adb.pull(f"{MD.WA_MEDIA_ROOT}/{rel_path}", str(dest), timeout=120)
+        if result.returncode != 0 or not dest.exists():
+            raise D.DriverError(f"adb pull of {rel_path!r} failed (rc={result.returncode}): "
+                                f"{(result.stderr or '').strip()[:200]}")
+        return dest
+
+    # --- the chat list, and the two destructive verbs (TASK-376) -----------------------------------------
+    def _chat_list(self, *, archived=False):
+        """Bring the chat list to the front and -> its nodes, scrolled to the top.
+
+        Proves the screen instead of assuming it. WhatsApp resumes wherever it was left, which may
+        be a conversation, and a dump taken there parses to zero chat rows -- indistinguishable from
+        an empty handset if nobody checks.
+        """
+        self.adb.require_device()
+        self.adb.wake()
+        nodes = []
+        for _ in range(4):
+            focus = self.adb.focus()
+            if focus.endswith("Conversation"):
+                self.adb.key("KEYCODE_BACK")
+                continue
+            if "HomeActivity" not in focus:
+                self.adb.shell(f"monkey -p {WHATSAPP} -c android.intent.category.LAUNCHER 1 "
+                               ">/dev/null 2>&1")
+                time.sleep(1.5)
+                continue
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_NEW_CHAT_FAB)), timeout=12)
+            if find(nodes, rid=RID_NEW_CHAT_FAB):
+                break
+        if not find(nodes, rid=RID_NEW_CHAT_FAB):
+            raise D.DriverError(f"the chat list would not come to the front "
+                                f"(focus={self.adb.focus()})")
+        nodes = self._scroll_to_top(nodes)
+        if archived:
+            nodes = self._enter_archive(nodes)
+        return nodes
+
+    def _scroll_to_top(self, nodes):
+        """Swipe down until the list stops changing. The stop condition is the list's own: a swipe
+        that moves nothing. There is no page count here to invent."""
+        while True:
+            before = [row.title for _n, row in parse_chat_rows(nodes)]
+            self.adb.shell("input swipe 540 700 540 1700 400")
+            time.sleep(0.9)
+            nodes = self.adb.dump()
+            if [row.title for _n, row in parse_chat_rows(nodes)] == before:
+                return nodes
+
+    def _enter_archive(self, nodes):
+        header = find(nodes, rid=RID_ARCHIVE_HEADER)
+        if not header:
+            raise D.DriverError("there is no archive folder on this chat list")
+        self.adb.tap_node(header[0])
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_CHAT_ROW)), timeout=10)
+        if not find(nodes, rid=RID_CHAT_ROW):
+            raise D.DriverError("the archive folder opened and drew no rows")
+        return nodes
+
+    def _rows_everywhere(self, nodes, *, archived):
+        """-> [ChatRow] from here to the end of the list, scrolling.
+
+        THE PAGES ARE STITCHED, NOT DEDUPED. A swipe moves the list by less than a screen, so each
+        page repeats the tail of the one before it, and the pages are joined on that overlap --
+        the longest suffix of what we have that is also the head of the new page. Identity by
+        (title, date) would be the easy key and it is the wrong one: "GESTERN" or "18.08.26" is
+        what every row older than today carries, so two different people with one display name
+        collapse into a single row and the handset silently reports one chat where it has two.
+        That pair is precisely what the destructive path has to see in order to refuse.
+
+        A page that does not overlap at all is a list that moved further than one screen (an
+        inbound message reordering it mid-scroll is the ordinary way) and the rows cannot be joined
+        without guessing where they belong. That is a DriverError, not a best effort.
+        """
+        out = []
+        while True:
+            page = [row for _node, row in parse_chat_rows(nodes, archived=archived)]
+            fresh = page[_overlap(out, page):]
+            out += fresh
+            if not fresh:
+                return out
+            self.adb.shell("input swipe 540 1600 540 700 400")
+            time.sleep(0.9)
+            nodes = self.adb.dump()
+
+    def list_chats(self, *, include_archived=True):
+        nodes = self._chat_list()
+        rows = self._rows_everywhere(nodes, archived=False)
+        if include_archived and find(nodes, rid=RID_ARCHIVE_HEADER):
+            rows += self._rows_everywhere(self._chat_list(archived=True), archived=True)
+            self.adb.key("KEYCODE_BACK")
+        return rows
+
+    def _locate(self, title, *, archived=False):
+        """-> (nodes, row node, ChatRow) for the one row carrying this title, scrolling to find it.
+
+        PII: the title is a contact's name and never reaches a message. The refusals below say how
+        many rows answered, not which.
+        """
+        nodes = self._chat_list(archived=archived)
+        last = None
+        while True:
+            hits = [(n, r) for n, r in parse_chat_rows(nodes, archived=archived) if r.title == title]
+            if len(hits) > 1:
+                raise D.DriverError(f"{len(hits)} rows on screen carry this title: which "
+                                    "conversation is meant is not guessable")
+            if hits:
+                return nodes, hits[0][0], hits[0][1]
+            # The list's own end signal: a swipe that changes nothing. Read as an ordered page and
+            # not as a set of (title, date) pairs -- on a list where every older row is stamped
+            # "GESTERN" a set stops being able to tell one screen from the next.
+            here = [(r.title, r.stamp) for _n, r in parse_chat_rows(nodes, archived=archived)]
+            if here == last:
+                raise D.DriverError("no chat row with this title is on the list")
+            last = here
+            self.adb.shell("input swipe 540 1600 540 700 400")
+            time.sleep(0.9)
+            nodes = self.adb.dump()
+
+    def open_chat_row(self, title, *, archived=False):
+        """Open a chat by tapping its row. -> the header WhatsApp drew.
+
+        ``_open_phone`` stays None on purpose: a chat opened by name is readable and NOT sendable.
+        ``send_bubble`` refuses without a chat opened by number, because the number is the only
+        identity ``_require_thread`` can check a header against.
+        """
+        nodes, node, _row = self._locate(title, archived=archived)
+        self._open_phone = None
+        self.adb.tap_node(node)
+        nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_HEADER)), timeout=12)
+        header = find(nodes, rid=RID_HEADER)
+        if not header:
+            raise D.DriverError(f"the row did not open a conversation (focus={self.adb.focus()})")
+        drawn = header[0].text.strip()
+        if drawn != title:
+            raise D.DriverError("wrong thread: the row opened a conversation whose header is a "
+                                "different name")
+        time.sleep(self.rng.uniform(*PAUSE_AFTER_OPEN))
+        return drawn
+
+    def _selection_up(self, nodes):
+        return bool(find(nodes, rid=RID_CAB_CLOSE) or find(nodes, rid=RID_CAB_DELETE))
+
+    def _leave_selection(self):
+        """Back out of the selection action bar, however this ended. A chat left selected on a
+        handset a human picks up is one stray tap away from being the wrong chat's delete."""
+        for _ in range(3):
+            if not self._selection_up(self.adb.dump(required=False)):
+                return
+            self.adb.key("KEYCODE_BACK")
+
+    def _select_row(self, title, *, archived):
+        """Long press the named row and prove the press landed on it. -> (nodes, ChatRow).
+
+        The press is aimed with bounds from a dump taken a moment ago, and this list reorders on
+        its own: one inbound message moves that chat to the top and shifts every row below it by a
+        row's height. Neither the selection action bar nor the delete dialog ("Diesen Chat
+        löschen?") names a chat, so nothing further down the menu can notice. The answering dump
+        is the evidence and it is already in hand -- the rows are drawn behind the action bar -- so
+        the row under the pressed POINT is read back and has to still be the one that was named.
+        """
+        nodes, node, row = self._locate(title, archived=archived)
+        point = node.center
+        self.adb.long_press(*point)
+        nodes = self.adb.wait_for(self._selection_up, timeout=8)
+        if not self._selection_up(nodes):
+            raise D.DriverError("the long press raised no selection action bar")
+        pressed = [r for n, r in parse_chat_rows(nodes, archived=archived) if covers(n, point)]
+        if [r.title for r in pressed] != [title]:
+            self._leave_selection()
+            raise D.DriverError(
+                f"the long press did not land on the row that was named: {len(pressed)} row(s) "
+                "cover the pressed point now and the list has moved under it")
+        return nodes, row
+
+    def clear_chat_history(self, title, *, archived=False, include_starred=True):
+        """Long press -> overflow -> 'Chat leeren' -> the scope sheet -> confirm. Keeps the chat.
+
+        The scope is chosen rather than accepted: the sheet also offers "Nur Mediendateien", which
+        would leave every word of the conversation on the phone and still look like success.
+        ``include_starred`` ticks the sheet's own "Mit Stern markierte Nachrichten löschen" box,
+        because this verb's caller verifies the chat is EMPTY afterwards and starred messages left
+        behind would fail that check truthfully.
+        """
+        nodes, _row = self._select_row(title, archived=archived)
+        try:
+            overflow = find(nodes, rid=RID_OVERFLOW)
+            if not overflow:
+                raise D.DriverError("the selection action bar has no overflow button")
+            self.adb.tap_node(overflow[-1])
+            nodes = self.adb.wait_for(
+                lambda ns: bool(find(ns, rid=RID_MENU_TITLE, text=LABEL_CLEAR_CHAT)), timeout=8)
+            item = find(nodes, rid=RID_MENU_TITLE, text=LABEL_CLEAR_CHAT)
+            if not item:
+                raise D.DriverError(
+                    f"the selection overflow has no {LABEL_CLEAR_CHAT!r} item; it offers "
+                    f"{[n.text for n in find(nodes, rid=RID_MENU_TITLE)]}")
+            self.adb.tap_node(item[0])
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_PRIMARY_BUTTON)), timeout=12)
+            if not find(nodes, rid=RID_PRIMARY_BUTTON):
+                raise D.DriverError("the clear-chat sheet did not open")
+            nodes = self._choose_all_messages(nodes)
+            starred = self._tick_starred(nodes) if include_starred else False
+            # Re-read: the confirm button carries the chosen scope in its own label
+            # ("CHAT LEEREN (2,0 MB)"), so the node found before the scope was set is stale.
+            confirm = find(self.adb.dump(), rid=RID_PRIMARY_BUTTON)
+            if not confirm:
+                raise D.DriverError("the clear-chat sheet lost its confirm button")
+            label = confirm[0].label
+            self.adb.tap_node(confirm[0])
+            time.sleep(UI_SETTLE_SEC)
+            return {"menu_item": LABEL_CLEAR_CHAT, "scope": "all_messages",
+                    "starred_included": starred, "confirmed_with": label}
+        finally:
+            self._leave_selection()
+
+    def _choose_all_messages(self, nodes):
+        scope = find(nodes, rid=RID_CLEAR_ALL_RADIO)
+        if not scope:
+            raise D.DriverError("the clear-chat sheet offers no 'all messages' scope: refusing to "
+                                "confirm a scope this code did not choose")
+        if scope[0].checked:
+            return nodes
+        self.adb.tap_node((find(nodes, rid=RID_CLEAR_ALL_ROW) or scope)[0])
+        nodes = self.adb.dump()
+        scope = find(nodes, rid=RID_CLEAR_ALL_RADIO)
+        if not scope or not scope[0].checked:
+            raise D.DriverError("the 'all messages' scope would not select")
+        return nodes
+
+    def _tick_starred(self, nodes):
+        box = find(nodes, rid=RID_CLEAR_STARRED)
+        if not box:
+            return False          # this sheet has no starred option: there is nothing to tick
+        if not box[0].checked:
+            self.adb.tap_node((find(nodes, rid=RID_CLEAR_STARRED_ROW) or box)[0])
+            box = find(self.adb.dump(), rid=RID_CLEAR_STARRED)
+        return bool(box and box[0].checked)
+
+    def delete_chat_row(self, title, *, archived=False):
+        """Long press -> 'Chat löschen' -> the confirmation dialog -> confirm. Removes the chat."""
+        nodes, _row = self._select_row(title, archived=archived)
+        try:
+            action = find(nodes, rid=RID_CAB_DELETE)
+            if not action:
+                raise D.DriverError("the selection action bar has no delete button")
+            self.adb.tap_node(action[0])
+            nodes = self.adb.wait_for(lambda ns: bool(find(ns, rid=RID_ALERT_TITLE)), timeout=12)
+            prompt = find(nodes, rid=RID_ALERT_TITLE)
+            button = find(nodes, rid=RID_DIALOG_BUTTON)
+            if not prompt or not button:
+                raise D.DriverError("the delete confirmation did not open")
+            label = button[0].label
+            self.adb.tap_node(button[0])
+            time.sleep(UI_SETTLE_SEC)
+            return {"menu_item": "Chat löschen", "prompt": prompt[0].text.strip(),
+                    "confirmed_with": label}
+        finally:
+            self._leave_selection()
+
+    # --- housekeeping ------------------------------------------------------------------------------------
+    def focus(self):
+        """-> the foreground activity. TASK-226 added this to PhoneDriver and to FakeDriver but not
+        here, so every caller of the driver-level read -- Executor._recover_if_dirty, which runs on
+        EVERY take_phone, and InboundWatcher's idle self-check, which runs every 5 s -- would have
+        hit PhoneDriver.focus's NotImplementedError the moment this reached the handset. It never
+        did: the mini was still running a pre-TASK-226 executor, so the fault was invisible until
+        the deploy. Tests missed it because FakeDriver implements focus and the real driver is the
+        one layer with no unit test."""
+        return self.adb.focus()
+
+    def park(self):
+        """Back out of the conversation and onto the launcher, so notifications fire again."""
+        self._open_phone = None
+        for _ in range(4):
+            focus = self.adb.focus()
+            if focus.endswith("HomeActivity"):
+                break
+            if focus.endswith("Conversation"):
+                self.adb.key("KEYCODE_BACK")
+                continue
+            self.adb.shell(f"monkey -p {WHATSAPP} -c android.intent.category.LAUNCHER 1 "
+                           ">/dev/null 2>&1")
+            time.sleep(1.2)
+        self.adb.key("KEYCODE_HOME")
+
+    def escalation_shot(self, tag):
+        self._shot_n += 1
+        slug = re.sub(r"[^a-z0-9_]+", "_", str(tag).lower())[:40]
+        stamp = datetime.now(self.tz).strftime("%Y%m%d_%H%M%S")
+        return self.adb.screenshot(self.shots_dir / f"{stamp}_{self._shot_n:03d}_{slug}.png")
+
+    # --- PhoneDoctor (TASK-315 AC#9) -----------------------------------------------------------
+    # REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B): every call below now carries
+    # DOCTOR_ADB_TIMEOUT_SEC explicitly rather than the 40s default every other caller of Adb gets
+    # -- see that constant's own docstring, and PhoneDoctor's "an idle cycle holds the lock for
+    # <= ~1s" rule, which this budget exists to make possible.
+    def mem_available_mb(self):
+        out = self.adb.shell("cat /proc/meminfo | grep -m1 MemAvailable", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        hit = re.search(r"MemAvailable:\s*(\d+)\s*kB", out or "")
+        if not hit:
+            raise D.DriverError(f"MemAvailable not found in /proc/meminfo (got {out!r})")
+        return int(hit.group(1)) // 1024
+
+    def kill_background(self):
+        self.adb.shell("am kill-all", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+
+    def whatsapp_running(self):
+        return bool(self.adb.shell(f"pidof {WHATSAPP}", timeout=DOCTOR_ADB_TIMEOUT_SEC).strip())
+
+    def resume_whatsapp(self):
+        """See PhoneDriver.resume_whatsapp's own docstring: TASK-315 review point 1 -- called for
+        exactly one remedy now (a dead WhatsApp process), and the caller (bridge/doctor.py) ALWAYS
+        follows this with home() in the same breath, never inspects what it resumed into, never
+        leaves WhatsApp foregrounded."""
+        self.adb.shell(f"monkey -p {WHATSAPP} -c android.intent.category.LAUNCHER 1 "
+                       ">/dev/null 2>&1", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        time.sleep(1.2)
+        return self.adb.focus(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+
+    def home(self):
+        self.adb.key("KEYCODE_HOME", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+
+    def force_stop_whatsapp(self):
+        self.adb.shell(f"am force-stop {WHATSAPP}", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        time.sleep(0.3)
+
+    def screen_ready(self):
+        """See PhoneDriver.screen_ready's own docstring (TASK-315 review point 7). An adb failure
+        on either read is treated as NOT ready -- never assume the screen is safe for dialog_scan
+        to read when the read that would have told us so itself failed."""
+        try:
+            awake = self.adb.awake(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            keyguard = self.adb.keyguard_up(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        except D.DriverError:
+            return False
+        return awake and not keyguard
+
+    def dialog_scan(self):
+        """See PhoneDriver.dialog_scan's own docstring. Identification is by ``focus()`` alone (the
+        card's own wording: 'focus contains SmsDefaultAppWarning' / 'focus in com.android.settings')
+        -- a dump is only taken, and only turned into a tap point, once the focus already names a
+        known dialog, so an ordinary cycle with nothing wrong costs one ``dumpsys`` and nothing
+        more. The dump gets exactly one try here (TASK-315 review point 6).
+
+        TASK-315 review: SmsDefaultAppWarning now ALWAYS returns a dialog entry once its focus is
+        seen -- ``tap`` may be None when no safe point exists (_outside_frame_tap's own contract) --
+        so the caller can tell "nothing there" apart from "something there, no safe tap" and give
+        up cleanly rather than loop silently forever. usb_nutzung still requires the ABBRECHEN
+        button to actually be found: plain ``com.android.settings`` focus alone is not specific
+        enough to call "a known dialog" by itself."""
+        focus = self.adb.focus(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        if "SmsDefaultAppWarning" in focus:
+            nodes = self.adb.dump(tries=1, required=False, timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            screen_w, screen_h = self.adb.screen_size(timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            tap = _outside_frame_tap(nodes, screen_w, screen_h)
+            return {"focus": focus, "dialog": {"kind": "sms_default_app_warning", "tap": tap}}
+        elif focus.startswith("com.android.settings"):
+            nodes = self.adb.dump(tries=1, required=False, timeout=DOCTOR_ADB_TIMEOUT_SEC)
+            cancel = find(nodes, contains="ABBRECHEN", clickable=True)
+            if cancel:
+                return {"focus": focus, "dialog": {"kind": "usb_nutzung", "tap": cancel[0].center}}
+        return {"focus": focus, "dialog": None}
+
+    def tap_point(self, x, y):
+        self.adb.tap(x, y, timeout=DOCTOR_ADB_TIMEOUT_SEC)
+
+    # --- retention (TASK-230): listing is mechanical (mtime), deciding is bridge/retention.py's job
+    def list_screenshot_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+        cutoff = now.timestamp() - days * 86400
+        return [p for p in sorted(self.shots_dir.rglob("*.png")) if p.stat().st_mtime < cutoff]
+
+    def list_recording_candidates(self, now, *, days=D.SCREENSHOT_RETENTION_DAYS):
+        cutoff = now.timestamp() - days * 86400
+        return [p for p in sorted(self.recordings_dir.rglob("*.mp4")) if p.stat().st_mtime < cutoff]
+
+    def delete_paths(self, paths):
+        removed = 0
+        for path in paths:
+            try:
+                Path(path).unlink()
+                removed += 1
+            except FileNotFoundError:
+                pass
+        return removed
+
+    # --- debug capture (TASK-228) ---------------------------------------------------------------
+    def debug_shot(self, op_id, tag):
+        """One postmortem screenshot for one queued op, named so a postmortem finds every artefact
+        for that op with one glob (``{shots_dir}/{op_id}_*``). Lands in the same directory and the
+        same retention sweep as an escalation shot -- both are debug artefacts of the one rail."""
+        path = self.shots_dir / f"{op_id}_{tag}.png"
+        self.adb.screenshot(path)
+        self.adb.downscale(path)
+        return str(path)
+
+    def start_recording(self, op_id):
+        """Fire-and-forget: ``killall -2 screenrecord`` in ``stop_recording`` is safe to send at
+        any handset with no recording running (it just finds nothing to signal), and the FIFO ops
+        queue (TASK-227) guarantees only one op is ever in flight, so there is never a second
+        recording to collide with this one."""
+        remote = f"/sdcard/{op_id}.mp4"
+        proc = self.adb.spawn_shell(f"screenrecord --size 720x1280 --time-limit 180 {remote}")
+        self._recordings[op_id] = (proc, remote)
+
+    def stop_recording(self, op_id):
+        entry = self._recordings.pop(op_id, None)
+        if entry is None:
+            return None
+        proc, remote = entry
+        # SIGINT, not SIGKILL (signal 9) -- a killed screenrecord leaves the mp4 container
+        # unfinalized and unplayable. -2 is SIGINT's number, which is what a plain Ctrl-C sends.
+        self.adb.shell("killall -2 screenrecord")
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+        self.recordings_dir.mkdir(parents=True, exist_ok=True)
+        local = self.recordings_dir / f"{op_id}.mp4"
+        result = self.adb.pull(remote, str(local))
+        self.adb.shell(f"rm -f {remote}")
+        return str(local) if result.returncode == 0 else None
+
+    def sweep_orphaned_recordings(self):
+        """A process that dies between ``start_recording`` and ``stop_recording``'s ``finally``
+        (a systemd restart, a mini reboot -- ``Restart=always``, TASK-227's own unit) leaves its
+        mp4 on ``/sdcard`` forever: the only record of it was ``self._recordings``, in memory,
+        gone with the process. One dispatcher thread per process, the same fact
+        ``bridge/ledger.py``'s ``_recover_stuck_ops`` already relies on for the matching ledger
+        row -- so any ``op.*.mp4`` still on the device when a fresh driver starts belongs to a
+        process that no longer exists. Call once, at startup, before anything can be recording --
+        and again every PhoneDoctor cycle (TASK-315 AC#9), where the return value is what tells the
+        doctor whether this cycle actually found something to journal.
+
+        Listed before it is removed, rather than trusted to ``rm``'s own count, because toybox
+        ``rm`` on this handset prints nothing parseable either way -- ``find`` first is the only
+        honest way to say how many, and a glob matching nothing is an empty listing, not an error
+        (the same ``2>/dev/null`` shape ``list_media`` already relies on).
+
+        REVIEW FIX (TASK-315, Opus reject 2026-09-29, Ivan's option B, review point 10): only files
+        already older than 5 minutes are ever candidates now, via ``find -mmin +5`` -- a recording
+        still genuinely in progress must never be swept out from under it. ``screenrecord`` does not
+        even exist as a binary on this Huawei, so ``start_recording``'s own shell call is already
+        dead on arrival here; this stays deliberately minimal rather than growing logic for a
+        capability this device does not have."""
+        find_base = "find /sdcard -maxdepth 1 -name 'op.*.mp4' -mmin +5"
+        listing = self.adb.shell(f"{find_base} 2>/dev/null", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        paths = [line.strip() for line in (listing or "").splitlines() if line.strip()]
+        if not paths:
+            return 0
+        self.adb.shell(f"{find_base} -delete 2>/dev/null", timeout=DOCTOR_ADB_TIMEOUT_SEC)
+        return len(paths)
+
+    def describe(self):
+        """What the drift monitor reads. Ours is our own file's hash: there is no third party left."""
+        import hashlib
+        me = Path(__file__)
+        version = ""
+        out = self.adb.shell(f"dumpsys package {WHATSAPP} | grep -m1 versionName")
+        hit = re.search(r"versionName=(\S+)", out)
+        if hit:
+            version = hit.group(1)
+        return {"kind": "adb", "serial": self.adb.serial, "adb": self.adb.binary,
+                "whatsapp_version": version, "connected": self.adb.connected(),
+                "modules": {"adb_driver.py": {"path": str(me),
+                                              "sha256": hashlib.sha256(me.read_bytes()).hexdigest()}}}

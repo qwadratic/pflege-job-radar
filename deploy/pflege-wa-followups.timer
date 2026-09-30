@@ -1,0 +1,20 @@
+# Drives deploy/pflege-wa-followups.service (app.wa.luna.followups, TASK-85) every 15 minutes --
+# this feature's own shortest tier (WA_FOLLOWUP_TIERS_MINUTES default "15,60,240"), so checking
+# more often than that would be pointless; see docs/whatsapp.md's TASK-85 paragraph.
+#
+# Install (not done by the build -- a human decides when proactive nudges go live):
+#   sudo cp deploy/pflege-wa-followups.service deploy/pflege-wa-followups.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-followups.timer
+#   journalctl -u pflege-wa-followups -f
+[Unit]
+Description=Timer for Pflege-Board WhatsApp follow-up nudger (TASK-85)
+
+[Timer]
+Unit=pflege-wa-followups.service
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

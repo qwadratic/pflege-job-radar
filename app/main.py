@@ -50,6 +50,10 @@ app.include_router(_coverage_router, prefix="/api", tags=["coverage"])
 app.include_router(_firecrawl_router, prefix="/api", tags=["firecrawl"])
 from .hunter_api import router as _hunter_router                   # /api/hunter/* (resilient Firecrawl runner)
 app.include_router(_hunter_router, prefix="/api", tags=["hunter"])
+# /api/wa/* is not mounted here. The WhatsApp harness is its own process, app.wa.asgi:app on
+# tasker-dispatcher-01, next to its data/wa.sqlite. Mounted in the board, these routes would answer
+# from a fresh, empty wa.sqlite on the board VM: 200 with 0 threads, i.e. "nobody needs a human".
+# The board reaches the harness only through the Pro read-API proxy (TASK-395).
 from .billing import router as _billing_router                     # GET /api/billing (spend report)
 app.include_router(_billing_router, prefix="/api", tags=["billing"])
 from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)

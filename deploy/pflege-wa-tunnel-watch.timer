@@ -1,0 +1,20 @@
+# Drives deploy/pflege-wa-tunnel-watch.service (app.wa.tunnel_watch, TASK-294) every 30s -- short
+# enough that the default 60s alert threshold (WA_TUNNEL_WATCH_ALERT_AFTER_SEC) triggers within
+# ~90s of a real outage starting, not minutes later.
+#
+# Install:
+#   sudo cp deploy/pflege-wa-tunnel-watch.service deploy/pflege-wa-tunnel-watch.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-tunnel-watch.timer
+#   journalctl -u pflege-wa-tunnel-watch -f
+[Unit]
+Description=Timer for Pflege-Board phone-rail tunnel watch (TASK-294)
+
+[Timer]
+Unit=pflege-wa-tunnel-watch.service
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

@@ -1,8 +1,14 @@
 """career_crawl.Crawler: section-first BFS gate. Pure in-process fake fetch, no network.
 
-Contract under test (see pflege_jobs/section.py + the task note in ats_seeds/career_crawl):
-  - a confident nursing-section link on the seed page -> walk ONLY that subtree first (depth<=2);
-  - if that subtree yields zero jobs -> fall back to the original full board-wide walk;
+Contract under test (see pflege_jobs/section.py + TASK-56 / commit 0ee9828, which rewrote this):
+  - a confident nursing-section link on the seed page -> fetch that subtree first (depth<=2),
+    threading classify_role's nursing_section_confirmed signal into every job found there;
+  - the full board-wide walk ALWAYS runs too and is merged in, deduped by URL -- an earlier version
+    walked ONLY the subtree and returned early, which silently dropped most of a real board (93 of
+    102 postings, Klinikverbund Allgaeu, 2026-09-11) whenever the matched section nav link was
+    narrower than the real nursing section; never do that again;
+  - on a duplicate URL both walks reach, the section walk's row wins (it carries the confirmed
+    signal) -- the full walk only tops up jobs the section subtree missed;
   - no confident section link at all -> full board-wide walk, unchanged from before this feature.
 """
 import os
@@ -77,12 +83,15 @@ def test_section_first_threads_nursing_section_confirmed_into_classify_role():
     assert rows[0]["role_rule"] == "apn_experte:advanced practice"
 
 
-def test_section_first_scopes_walk_to_the_nursing_subtree():
+def test_section_first_still_tops_up_with_the_full_board_walk():
+    """TASK-56 (commit 0ee9828): an earlier version of this crawler returned as soon as the matched
+    section subtree had any rows, and never touched the rest of the board. That silently dropped 93 of
+    102 real postings on a live board (Klinikverbund Allgaeu, 2026-09-11) once the matched nav link was
+    narrower than the real nursing section. So the full board-wide walk always runs too -- a job living
+    outside the confirmed subtree must still come back, alongside the one found through it."""
     seed_url = "https://example-klinik.de/karriere/"
     section_url = "https://example-klinik.de/karriere/pflege/"
     job_url = "https://example-klinik.de/karriere/pflege/job-1"
-    # A full-board listing link is also present on the seed page; if section-first is working, the
-    # crawler must never fetch it (it would otherwise surface a non-nursing job into `job_links`).
     other_board_url = "https://example-klinik.de/karriere/alle-stellen/"
     other_job_url = "https://example-klinik.de/karriere/alle-stellen/facharzt"
 
@@ -111,7 +120,7 @@ def test_section_first_scopes_walk_to_the_nursing_subtree():
     # silently dropped 2 real nursing postings on Klinikum Nuernberg that were filed under another
     # "Jobwelt". Both the section job and the rest of the board are expected now...
     assert {r["title"] for r in rows} == {"Pflegefachkraft (m/w/d) Station 3", "Facharzt (m/w/d) Gefaesschirurgie"}
-    assert other_board_url in cr.calls
+    assert other_board_url in cr.calls and other_job_url in cr.calls
     # ...and the section row still wins the merge, so its confirmed-nursing signal survives.
     assert rows[0]["title"] == "Pflegefachkraft (m/w/d) Station 3"
 
@@ -138,8 +147,9 @@ def test_section_first_falls_back_to_full_walk_when_subtree_is_empty():
     seed = {"name": "Example Klinik", "kez": "1", "career": seed_url, "town": "Muenchen"}
     rows, stats = cr.crawl(seed)
 
-    # the flag records that a nursing section WAS found and tried; the empty subtree simply
-    # contributed nothing and the full walk supplied the posting
+    # section_first reports whether a confident section link was found on the seed page at all
+    # (TASK-56) -- it stays True even when that subtree turns out empty; the full board-wide walk,
+    # which always runs, is what actually recovers the job below.
     assert stats["section_first"] is True
     assert len(rows) == 1
     assert rows[0]["title"] == "Pflegefachkraft (m/w/d) Anaesthesie"
