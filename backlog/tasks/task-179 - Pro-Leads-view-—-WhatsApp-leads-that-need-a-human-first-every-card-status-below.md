@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-09-30 22:57'
+updated_date: '2026-09-30 23:07'
 labels:
   - frontend
   - whatsapp
@@ -82,4 +82,14 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - Verification: tests/test_web_leads.py 17 passed (2 new: the card line of 5 leads against literal expected values incl. partial answers and a blocked gate; green rows ordered consent, documents, CV, matching x3, qualification x2, contact). Mutation check on the built page: 9 of 9 mutations turn the suite red (4 new: no current step, green not ordered by progress, housing_flexible dropped, consent asked dropped). Screenshots at 1440 and 390 px, DE and EN: no horizontal overflow, no page errors. Preview republished at the same URL (version 3).
 
 2026-09-30: client name in the demo data. The first commit on this branch (cd94292, pushed 2026-09-29 to the public repo) had the client name in two mock greetings in web/pro.template.html and web/pro.html. That breaks the rule behind TASK-162. Commit 2c426ef replaces both with 'Luna von Pflege-Stellen Bayern', and web/, docs/ and tests/ on the branch no longer contain it. It stays in cd94292's history on the PR branch, because rewriting history needs a force-push, which is not allowed here. A squash merge of PR #2 keeps it out of main; the old commit stays reachable through the PR on GitHub. Ivan decides. wa-harness was told the same rule applies to PR #1's fixtures and docs.
+
+2026-09-30, wa-harness contract deltas (decided for its TASK-395 deploy, which is paused: tasker-dispatcher-01's disk is at 100% and the phone rail has been down since about 20:30 UTC, waiting on Ivan). Commit f6f4374 follows them:
+- handoff.status queued | attention | in_progress | signed | closed. Only queued and attention count as needs a human. An unknown status counts and is shown raw ('handoff.status: x'). This resolves the old open point that consented leads stayed in Needs a human forever. The later statuses are named in the stage label (Übergeben · läuft / unterschrieben / abgeschlossen), and those leads are green.
+- handoff.targets[] {clinic_id, clinic_name, external_ref, status, ts, attention} replaces the detail's handoff_matches. The drawer lists each target, and an attention note shows in red. The needs-a-human reason for status attention reads 'Übergabe: n Klinik(en) brauchen Aufmerksamkeit'.
+- synced_at / synced_source (the engine's last confirmed rail contact) are shown in the health strip as 'Rail-Kontakt vor X · source', with the exact time in the tooltip. There is no staleness threshold, because none was asked for.
+- meta keeps buttons / scope_refusal / action / template / transcript. The voice note shows meta.transcript, and a template bubble names meta.template literally.
+- The docs now say /api/wa/health is owner-only (it said public) and card.campaign is a campaign_id or null.
+- Demo: 30 threads, with handoffs in all four states (6604 queued, 1180 attention with 12 targets and one note, 7340 in_progress, 5566 signed).
+- Verification: tests/test_web_leads.py 19 passed (2 new: handoff statuses and targets; the rail contact line). The mutation check is 11 of 11 red (2 new: a finished handoff counted, rail contact hidden). Screenshots at 1440 and 390 px, DE: no overflow, no page errors. Preview republished (version 5).
+- Open questions sent to wa-harness: is the audio transcript in meta.transcript with body null; is targets[].attention a string or a bool; is there a closed list for targets[].status.
 <!-- SECTION:NOTES:END -->
