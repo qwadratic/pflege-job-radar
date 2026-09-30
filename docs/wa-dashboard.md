@@ -32,6 +32,26 @@ A Luna reply refused by `WA_REPLY_SCOPE=test_only` is stored as `kind: draft`. I
 and explained in the health strip. It is not a reason by itself, because a non-owned thread is answered by the other
 system (`/api/wa/ownership`).
 
+## Every card in conversation order
+
+Green only says that nobody is needed. It says nothing about how far a lead has got (Ivan 2026-09-30). So every lead
+shows its card as one line, in the needs-a-human list and in the board. The line follows the harness's own gate order
+(`luna_brain.py` `requirement_scoreboard` and `_OBJECTIVE_ORDER`): region, qualification, town or department,
+housing, CV, certificate (Urkunde or Defizitbescheid), consent.
+
+- A satisfied gate shows what we know, for example `Bayern`, `Defizitbescheid`, `München · Intensiv` or
+  `flat for 2 · or without`. The CV, certificate and consent gates have no value to show, so a satisfied one shows its
+  own name with a green square.
+- The current step is the first gate that is not satisfied. `funnel_stage` names it, and Luna asks about it next. The
+  view outlines it. It can already carry part of the answer: `flat yes, for how many?` (`housing_needed` is true and
+  `people_count` is still open) or `consent asked` (`anonymous_send_offered`).
+- The gates after the current step are dim. A blocked gate (`qualification_path: reject`) is red. An ended thread has
+  no current step.
+- Within one status the board lists the lead that has got furthest first, so the green leads run from consent down
+  to first contact.
+
+The side panel shows the same facts next to each gate's name, with the stage stepper and Luna's `next_objective`.
+
 ## Refresh
 
 Polling only, because Pro has no SSE or WebSocket. The list and the health strip refresh every 15 s while the view
@@ -72,7 +92,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 | `stage_since` | time \| null | `requirement_scoreboard().stage_since` |
 | `outcome` | `declined` \| `already_placed` \| `not_placeable` \| null | `luna/reporting.py:stage_for`, the terminal labels only |
 | `gates` | object: gate → `satisfied` \| `open` \| `blocked` | `requirement_scoreboard`, keys `region`, `qualification`, `city_or_department`, `housing`, `cv_document`, `qualification_document`, `handoff_consent` |
-| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city`, `department`, `qualification_path`, `housing_needed`, `people_count`, `campaign`, `match_branch`. Never `cv_text` or any document text |
+| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city` (a string or a list), `department` (`card.department_pref`; `"flexibel"` means any department), `qualification_path`, `housing_needed`, `people_count`, `housing_flexible` (would also take a clinic without a flat), `anonymous_send_offered` (the consent question has gone out), `campaign`, `match_branch`. Never `cv_text` or any document text |
 | `stopped`, `stopped_reason` | bool, string \| null | `wa_threads` |
 | `suppression` | `{reason, lane, at}` \| null | `suppression.py` (no `trigger_text` in the list) |
 | `escalation_codes`, `flag_codes` | string[] | `card._escalation_codes`, `card._flag_codes` |

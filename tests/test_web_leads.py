@@ -82,6 +82,34 @@ def test_checks_are_shown_but_never_counted(leads):
     assert leads.locator("details.lh-flags .lh").count() == 2   # listed inside the collapsed group, not above it
 
 
+def _chain(row):
+    """One lead's card line: [what it shows, its state] per gate, in the harness's gate order."""
+    return row.locator("ol.kc > li").evaluate_all(
+        "els => els.map(li => [li.lastChild.textContent, li.getAttribute('aria-current') ? 'current' : li.className || 'open'])")
+
+
+def test_every_lead_shows_what_we_know_in_conversation_order(leads):
+    assert _chain(leads.locator(".lh", has_text="1180")) == [
+        ["Bayern", "s"], ["Defizitbescheid", "s"], ["Nürnberg, Erlangen, Fürth", "s"], ["flat for 2 · or without", "s"],
+        ["CV", "s"], ["Certificate", "s"], ["Consent", "s"]]
+    board = leads.locator("tbody")
+    assert _chain(board.locator("tr", has_text="2047")) == [
+        ["Bayern", "s"], ["Urkunde", "s"], ["Landshut · Psychiatrie", "s"], ["no flat", "s"],
+        ["CV", "s"], ["Certificate", "s"], ["consent asked", "current"]]
+    assert _chain(board.locator("tr", has_text="4406"))[2:5] == [["Bamberg", "s"], ["flat yes, for how many?", "current"], ["CV", "open"]]
+    assert _chain(board.locator("tr", has_text="8871"))[2] == ["Rosenheim · any department", "s"]
+    assert _chain(board.locator("tr", has_text="5120"))[0] == ["Region", "current"]      # first contact, nothing known yet
+    not_placeable = _chain(board.locator("tr", has_text="1942"))
+    assert not_placeable[1] == ["not recognised", "b"]
+    assert "current" not in [state for _, state in not_placeable]                    # an ended thread has no current step
+
+
+def test_green_leads_run_from_the_furthest_along_down_to_first_contact(leads):
+    stages = leads.locator("tbody tr").evaluate_all(
+        "trs => trs.filter(tr => tr.querySelector('.lb.green')).map(tr => tr.querySelector('.stg').firstChild.textContent)")
+    assert stages == ["Consent", "Documents", "CV", "Matching", "Matching", "Matching", "Qualification", "Qualification", "Contact"]
+
+
 def test_the_green_rule_is_stated_and_the_board_lists_every_real_lead(leads):
     assert "LUNA ACTIVE (green) means" in leads.inner_text(".wa-rule")
     assert leads.locator("tbody tr").count() == 27
