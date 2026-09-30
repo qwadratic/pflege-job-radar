@@ -9,6 +9,7 @@ Slots are a JSON blob: they are the conversation's memory, and their vocabulary 
 """
 import hashlib
 import json
+import secrets
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -206,6 +207,17 @@ create table if not exists wa_agent_notes (
   notified_at text               -- when the one completion note went out; guards a second send
 );
 create index if not exists idx_wa_agent_notes_status on wa_agent_notes(status, created_at);
+-- Pro API (TASK-395/396, Ivan 2026-09-29/30): the opaque id GET /api/wa/pro/* keys a thread on
+-- instead of the raw phone. Minted once, on first sight, by thread_id_for_phone below -- never
+-- derived FROM the phone (an HMAC of a phone number is not actually one-way: the input space of
+-- real phone numbers is small enough to brute-force), so a leaked id cannot be reversed to a real
+-- number. thread_id is UNIQUE (not just indexed) so the reverse lookup, phone_for_thread_id, can
+-- trust a match is the only one.
+create table if not exists wa_thread_ids (
+  phone text primary key,
+  thread_id text unique not null,
+  created_at text not null
+);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -428,6 +440,53 @@ def threads(c, limit=200):
     rows = c.execute("select * from wa_threads order by coalesce(last_inbound_at, opened_at) desc limit ?",
                      (limit,)).fetchall()
     return [_thread_row(r) for r in rows]
+
+
+def all_threads(c):
+    """Every thread, newest activity first, NO limit (GET /api/wa/pro/threads, TASK-395). Its
+    envelope pages through app/data.py:page() itself, whose own docstring is explicit that there is
+    no maximum page size by repo policy -- a SQL-side LIMIT here would be a second, silent cap on
+    top of that, exactly the thing CLAUDE.md's "no safety nets" forbids."""
+    rows = c.execute("select * from wa_threads order by coalesce(last_inbound_at, opened_at) desc").fetchall()
+    return [_thread_row(r) for r in rows]
+
+
+# --- Pro API thread ids (TASK-395): opaque, stable, minted once, never derived from the phone -----
+
+def thread_id_for_phone(c, phone):
+    """This phone's opaque thread_id, minting one on first sight (Ivan 2026-09-29/30). 't_' plus 8
+    random bytes of hex (secrets.token_hex(8), 64 bits of entropy) -- see the wa_thread_ids table
+    comment in SCHEMA above for why this is minted, not derived."""
+    row = c.execute("select thread_id from wa_thread_ids where phone=?", (phone,)).fetchone()
+    if row:
+        return row["thread_id"]
+    thread_id = "t_" + secrets.token_hex(8)
+    c.execute("insert into wa_thread_ids (phone, thread_id, created_at) values (?,?,?)",
+              (phone, thread_id, now_iso()))
+    c.commit()
+    return thread_id
+
+
+def phone_for_thread_id(c, thread_id):
+    """The phone this opaque id was minted for, or None for an id this harness never issued (a 404
+    upstream, in app/wa/pro_api.py)."""
+    row = c.execute("select phone from wa_thread_ids where thread_id=?", (thread_id,)).fetchone()
+    return row["phone"] if row else None
+
+
+def last_message(c, phone):
+    """{direction, kind, preview, at} for this phone's newest wa_messages row, or None without any
+    (GET /api/wa/pro/threads, TASK-395 -- no function built this before, per the field map). preview
+    is body truncated to 140 chars; a forgotten (TASK-289) row is {kind: "deleted", preview: None}
+    with direction/at kept, same tombstone shape the messages endpoint uses."""
+    row = c.execute("select direction, kind, body, at, deleted_at from wa_messages where phone=? "
+                    "order by id desc limit 1", (phone,)).fetchone()
+    if row is None:
+        return None
+    if row["deleted_at"]:
+        return {"direction": row["direction"], "kind": "deleted", "preview": None, "at": row["at"]}
+    return {"direction": row["direction"], "kind": row["kind"], "preview": (row["body"] or "")[:140],
+            "at": row["at"]}
 
 
 # --- test numbers (TASK-212) ---------------------------------------------------------------------
@@ -814,6 +873,13 @@ def recent_send_failure(c, phone):
     row = c.execute("select error, at from wa_send_failures where phone=? order by id desc limit 1",
                     (phone,)).fetchone()
     return dict(row) if row else None
+
+
+def send_failures_for(c, phone):
+    """Every recorded send failure for this phone, oldest first (GET /api/wa/pro/threads/{id},
+    TASK-395 -- recent_send_failure above only ever returns the latest one)."""
+    rows = c.execute("select error, at from wa_send_failures where phone=? order by id", (phone,)).fetchall()
+    return [dict(r) for r in rows]
 
 
 # --- proactive follow-up nudges (TASK-189) --------------------------------------------------------

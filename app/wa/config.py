@@ -447,6 +447,30 @@ STT_MODEL = os.environ.get("WA_STT_MODEL", "whisper-1").strip() or "whisper-1"
 STT_TIMEOUT_SEC = int(os.environ.get("WA_STT_TIMEOUT_SEC", "120") or "120")
 
 
+# --- Pro API (TASK-395/396, Ivan 2026-09-29/30, topology B) ---------------------------------------
+# Read at REQUEST time, not frozen into a module constant like every env var above -- app/wa/pro_api.py
+# checks these on every call, so a token can be rotated (or a test can flip it with monkeypatch.setenv)
+# without restarting/reloading this module. Empty means "not configured": the caller fails closed
+# (503), never open -- see pro_api.py's own auth helper.
+
+def pro_api_token():
+    """WA_API_TOKEN: the bearer every GET under /api/wa/pro/* accepts."""
+    return os.environ.get("WA_API_TOKEN", "").strip()
+
+
+def pro_api_write_token():
+    """WA_API_WRITE_TOKEN: the bearer POST /api/wa/pro/handoffs requires. A read token
+    (pro_api_token above) may never use this path; this one may also read (pro_api.py's auth
+    helper checks it on every GET too)."""
+    return os.environ.get("WA_API_WRITE_TOKEN", "").strip()
+
+
+def sales_brain_path():
+    """The colleague's CRM sqlite (TASK-396, Daria's leads read) -- read-only, never ours to write.
+    Env-overridable for a test's synthetic fixture; the default is the real path on this host."""
+    return os.environ.get("WA_SALES_BRAIN_PATH", "").strip() or "/opt/clinic-dispatcher/var/sales_brain.sqlite"
+
+
 def readiness():
     """Non-secret view of what is configured, for GET /api/wa/health and the webhook's own log."""
     checks = {"access_token": bool(ACCESS_TOKEN), "app_secret": bool(APP_SECRET),

@@ -1290,6 +1290,10 @@ TEST_SOURCES_KEY = "_test_sources"
 # Card keys only code writes; stripped from the model's card_patch.
 CODE_OWNED_CARD_KEYS = ("anonymous_send_consent", "declined", "declined_reason", "declined_at", "re_engaged_at",
                         "campaign", LAST_TURN_KEY, "_session_id", "_unread_media",
+                        # TASK-395 (Pro API contract): the first-escalation timestamp
+                        # (app/wa/luna/escalation.py:record_escalation) -- stamped once by code, never
+                        # something a card_patch may set or clear.
+                        "_escalated_at",
                         # TASK-342: the documents gate list (reuse state included) and the imported history
                         "documents", "prior_contact", "prior_placement",
                         # TASK-208: opt-outs, declines and chat Stopps the earlier system recorded

@@ -35,6 +35,8 @@ code, the same discipline TASK-385 already established for the single string fie
 """
 from __future__ import annotations
 
+from .. import store as ST
+
 # --- ESCALATE: the model's own four judgement calls (gated, see record_model_escalation) -----------
 EXPLICIT_HUMAN_REQUEST = "explicit_human_request"
 PET_POLICY_QUESTION = "pet_policy_question"
@@ -87,7 +89,18 @@ def _append(card, escalated_key, codes_key, reason_key, code, detail):
     card[notes_key] = [*notes, note]
     card[reason_key] = "; ".join(card[notes_key])
     if escalated_key:
+        first_escalation = not card.get(escalated_key)
         card[escalated_key] = True
+        if first_escalation:
+            # TASK-395 (Ivan 2026-09-29/30, Pro API contract): stamped once, the FIRST time this
+            # thread ever escalates -- never overwritten by a later escalation (the guard above is
+            # what makes this "first" rather than "latest"). Also guarded from the model's own
+            # card_patch: "_escalated_at" is in luna_brain.CODE_OWNED_CARD_KEYS, the same protection
+            # every other code-computed timestamp on the card gets. A thread that escalated before
+            # this change has no value here -- the Pro API exposes null for it rather than backfill
+            # a guess (wa-dashboard.md: "without it the view says 'last message X ago', not
+            # 'since'").
+            card[f"{escalated_key}_at"] = ST.now_iso()
 
 
 def record_escalation(card, code, detail=None):

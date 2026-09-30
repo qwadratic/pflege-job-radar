@@ -703,6 +703,59 @@ Stop: Ctrl-C (exit 130). Between sends nothing is in flight; during a POST the c
 
 Tests: `tests/test_wa_campaign_sender.py` (tmp SQLite, fake Meta transport behind the real `meta.Client`, frozen clock with recording sleep, fake Luna model): dry-run writes nothing and plans every lead kind, values and `--params`, not approved, `WA_AUTOSEND`, one template per campaign, flip + record, re-run skips sent, claim idempotency, 4xx restore + retry, uncertain outcomes never resent blindly, crash → in_progress → uncertain with status evidence → deferred on its own claim → retry, webhook worker waits during a send, stopped/declined/opted-out (user_preferences, 131050, resume) never sent, stop during send and during import, batches, window waits (DST), `--no-wait` resume, interrupted run resumes at pace, status with delivered/failed 131042/decline tap, follow-ups skip non-responders, history import order, routing restore leaves a changed record, private report outside the repo; TASK-209: failed (131042) then `--retry-delivery-failed` then delivered (attempt rows with own wamids and statuses, prior owner carried, `card.campaign` and nudge claims per attempt, Luna payload without the undelivered attempt, `replies_to` the delivered one, `--status` attempts and matched replies), failed twice (131042, 131049; a retry rejected 131026 restores the pre-campaign owner, then `retry_failed` sends attempt 4), a message after an undelivered first attempt (`skip_replied`, matched to no attempt: `not_answering_an_attempt`), a message after a flagged retry rejected with 4xx or left uncertain (`skip_replied` for `retry_failed` and `--retry-uncertain`, no POST), stopped/declined/131050 after an undelivered attempt not resent, a crashed attempt superseded by a retry, the store claim rules per attempt, a TASK-343 table rebuilt once (read-only status of it writes nothing, a later send continues at the next attempt); TASK-208: the synthetic old-system database with the example queries (lifecycle opt-out, outreach decline, chat Stopp, a clean lead) planned and sent end to end (only the clean lead posted, the other three cards declined, a later run without the source still skips them), no source without the override stops before any Meta call, the override is printed and recorded; end to end: known phone routed to them → campaign → button tap through `router.route_webhook` → us → Luna payload with `card.campaign`.
 
+## Pro API (TASK-395/396): board proxy + Daria write-back
+
+Bearer-token-gated read API (plus one write route) under `/api/wa/pro/*`, mounted only by `app/wa/asgi.py` — the existing unauthenticated loopback routes (`app/wa/api.py`, `queue_api.py`, ...) are untouched. Topology B (Ivan 2026-09-29/30): the board proxies these server-side (`WA_API_BASE`/`WA_API_TOKEN`), so the token never reaches a browser. `docs/wa-dashboard.md` is the binding field-shape contract; `app/wa/pro_models.py` is that contract as Pydantic (`response_model` on every route, so a dropped/mistyped field fails loudly, not silently).
+
+**Auth.** `Authorization: Bearer <token>`, `hmac.compare_digest`. Read routes accept `WA_API_TOKEN` or `WA_API_WRITE_TOKEN` (the write token may also read); `POST .../handoffs` accepts only `WA_API_WRITE_TOKEN` (a read token can never write). Either env unset for the route it gates → 503 `{"detail": "pro api not configured"}`, fail closed. Read at request time (`app/wa/config.py:pro_api_token/pro_api_write_token`), not frozen at import.
+
+**Thread identity.** `thread_id` is an opaque id (`t_` + 16 hex chars) minted on first sight (`app/wa/store.py:thread_id_for_phone`), stable forever, never derived from the phone. The raw phone never appears in any Pro API response body; `app/wa/phones.py:phone_masked` is the one place a phone appears at all (country code + last 4 digits, middle bulleted, e.g. `+49 ••• •••• 5678`).
+
+**Routes:**
+- `GET /wa/pro/threads` — paged (`app.data.page`, no server-side cap), `include_test=1` to include test threads, envelope `{total, limit, offset, next_offset, test_threads, generated_at, source, rows}`. [read]
+- `GET /wa/pro/threads/{thread_id}` — full detail incl. documents (metadata only), send failures, matched clinics. 404 on an unknown id. [read]
+- `GET /wa/pro/threads/{thread_id}/messages?limit=&before_id=|after_id=` — no cursor = newest `limit` rows; ascending by id; a deleted message is a tombstone (`kind: "deleted"`, `body: null`); never a `wamid` field; delivery `status` batched once per request. [read]
+- `GET /wa/pro/health` — `config.readiness()` + per-rail counts. [read]
+- `POST /wa/pro/handoffs` — Daria's write-back, below. [write]
+- `GET /wa/pro/handoffs?thread_id=|crm_candidate_id=` — a lead's current handoff rows + full event trail. [read]
+- `GET /wa/pro/leads` — Daria's consented-lead read, below. [read]
+
+**Handoff write-back (TASK-396, Daria).** One current row per (lead, target clinic) in `wa_handoffs`, plus an append-only `wa_handoff_events` audit trail everything else derives from.
+
+- **Lead key**: `thread_id` or `crm_candidate_id` (at least one required, 400 otherwise; thread wins when both given; unknown `thread_id` → 404; `crm_candidate_id` is *not* validated against sales_brain — any string is accepted).
+- **Target key**: `clinic_id` (nullable) or `clinic_name` (required when `clinic_id` is null) + optional `external_ref` → `target_key` = `clinic:<id>` / `ext:<ref>` / `name:<casefolded, whitespace-collapsed>`.
+- **Status** (closed list, 400 on anything else): `sent_to_clinic`, `followup_sent`, `clinic_replied`, `interview_scheduled`, `trial_scheduled`, `offer`, `contract_signed`, `declined`, `closed`, `halted`.
+- **`ts`** (ISO-8601, timezone-aware, the sender's clock) is required — 400 if missing or unparseable.
+- **Idempotent**: a re-POST of the same (lead_key, target_key, status, message_id) — a null `message_id` counts as a value, so two null-message_id posts of the same status also dedup — is a no-op: `200 {"applied": false, "duplicate": true, ...}`. No uniqueness on `message_id`/`batch_id` alone: one letter can cover several clinics.
+- **Transitions**: any status is accepted from any other; the event always records `prev_status`. The **current** row is whichever event has the latest `ts` (a tie goes to the later arrival, `>=`); an older event (by `ts`) arriving after a newer one is still recorded, but only to the audit trail — response `{"applied": true, "current": false}`.
+- `who` defaults `"daria"`.
+
+**Sticky attention** (`handoff.clinics[].attention`, per target): derived from the *full* event trail, never the current row alone, so out-of-order arrival still resolves. Open when some event with status in `{clinic_replied, interview_scheduled, trial_scheduled, offer, halted}` has no *later*-`ts` event with status in `{contract_signed, declined, closed, sent_to_clinic}`. `followup_sent` is neutral: it neither opens nor clears attention.
+
+**Thread-level `handoff.status`** (`ThreadRow.handoff`, `null` until the candidate has consented at all) — this is what "needs a human" means from here on:
+
+| status | meaning | needs a human? |
+|---|---|---|
+| `queued` | consented, no handoff row yet | yes |
+| `attention` | some target clinic's attention is open | yes |
+| `signed` | no attention open, ≥1 target `contract_signed` | no |
+| `in_progress` | no attention open, ≥1 target `sent_to_clinic`/`followup_sent`, none signed | no |
+| `closed` | every target is `declined` or `closed` | no |
+
+**Daria's leads read (`GET /wa/pro/leads`).** Every consented candidate (`wa_queue_candidates`), keyed by `thread_id`:
+- `crm_candidate_id`/`crm_match` — resolved via `candidate_whatsapp_messages.phone_e164` → `candidate_id` in the colleague's sales_brain; `crm_match` is `null` for an unambiguous match, `"ambiguous"` for more than one distinct candidate_id, `"none"` for zero, `"unavailable"` when sales_brain's sqlite file is not found (`WA_SALES_BRAIN_PATH`, default `/opt/clinic-dispatcher/var/sales_brain.sqlite`) — **loud in the response, never an exception**.
+- `crm_cases` — `candidate_clinic_cases` × `placement_case_state`, read-only, columns as sales_brain has them.
+- `crm_freshness` — that sqlite file's own mtime (ISO), not request time.
+- `consent` — best-effort recovery from `wa_messages` (nearest inbound button tap at/before `consented_at`, nearest outbound buttons bubble before that) — a heuristic, not a guarantee; `scope` is always `null` (not recorded anywhere).
+- `documents` — metadata only, same whitelist as the thread detail route.
+- Top-level `gaps: [...]` names fields Daria's spec asked for that genuinely do not exist in any source here or in sales_brain (structured per-role CV history, employers, a document-verified flag, consent scope, per-field card provenance) — named, never silently missing.
+
+The colleague's sales_brain sqlite is opened `mode=ro` only, never written; tests use a synthetic tmp copy, never the real file.
+
+**Documents whitelist** (every route that serializes a `wa_documents` row): `id, kind, document_type, mime_type, size_bytes, received_at, reuse_state` only — never `path`, `sha256`, `media_id`, `original_filename`, `text`, `text_key`, or any `import_*` column.
+
+**Fixtures.** `tests/fixtures/wa_pro_api/threads.json` — a 7-row synthetic `ThreadsEnvelope` (test thread, escalated, stuck reply, suppressed/stopped, consented lead with handoffs across several statuses, deleted-message tombstone, declined/terminal outcome), all synthetic phone numbers and thread_ids. `tests/test_wa_pro_fixtures.py` validates it against `pro_models` on every run so it cannot silently drift from the contract.
+
 ## Deliberately missing
 
 - **No LLM by default.** The question ladder above is deterministic so every rule has a test. `WA_BRAIN=luna` (above) switches to Claude when the full persona/conversation is needed.
