@@ -19,7 +19,6 @@ through the pflege-ingest edge function (EdgeSink). Reads are keyless.
   python data/repair_split_merged.py               # apply
 """
 import argparse
-import csv
 import json
 import os
 import sys
@@ -73,11 +72,8 @@ def insert(sec, table, rows):
     return r.json()
 
 
-def load_matcher(path):
-    clinics = list(csv.DictReader(open(path, encoding="utf-8")))
-    for c in clinics:
-        c["beds"] = int(c["beds"]) if c.get("beds") else None
-    return Matcher([dict(c) for c in clinics])
+def load_matcher():
+    return Matcher(page("clinics?select=*&order=clinic_id"))      # the registry: the live clinics table
 
 
 def victims_of(posts, obs_by_post):
@@ -97,7 +93,6 @@ def victims_of(posts, obs_by_post):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--clinics", default=os.path.join(os.path.dirname(__file__), "registry", "clinics.csv"))
     ap.add_argument("--app", default="http://localhost:8501", help="running dashboard; cache refreshed after the repair ('' to skip)")
     a = ap.parse_args()
 
@@ -193,7 +188,7 @@ def main():
 
     # 5. clinic links for every touched posting (registry Matcher on the resolved employer + city)
     touched = sorted(set(victims) | set(created.values()) | {h for _, h, _, _ in plan if h is not None})
-    m = load_matcher(a.clinics)
+    m = load_matcher()
     rows = []
     for i in range(0, len(touched), 200):
         chunk = ",".join(map(str, touched[i:i + 200]))

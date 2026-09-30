@@ -17,7 +17,6 @@ CRAWL_OUT = ROOT / "crawl_output"
 SQLITE_PATH = DATA_DIR / "app.sqlite"
 PATTERNS_PATH = pathlib.Path(os.environ.get("PFLEGE_PATTERNS", ROOT / "pflege_jobs" / "patterns.json"))
 TAXONOMY_PATH = DATA_DIR / "registry" / "taxonomy.json"
-CLINICS_CSV = DATA_DIR / "registry" / "clinics.csv"
 FALLBACK_DIR = ROOT / "app" / "fallback"
 VENV_PY = ROOT / ".venv" / "bin" / "python"
 PYTHON = str(VENV_PY if VENV_PY.exists() else sys.executable)

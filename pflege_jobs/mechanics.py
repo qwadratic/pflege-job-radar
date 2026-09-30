@@ -5,8 +5,6 @@ explanation of what it does and where it is applied. The backend (`GET /api/mech
 (`inspect.getsource` on `functions`), runs `try_(inputs)` for the "try it" box and executes `tests/test_mech_<id>.py`.
 Nothing here changes behaviour: the registry only points at the functions the pipeline already uses.
 """
-import csv
-import os
 import re
 from dataclasses import dataclass, field
 
@@ -15,9 +13,6 @@ from . import classify as K
 from . import registry as R
 from . import verify as V
 from .sources import career_crawl as CC
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REGISTRY_CSV = os.path.join(ROOT, "data", "registry", "clinics.csv")
 
 
 @dataclass
@@ -87,41 +82,22 @@ def _try_dedupe(i):
                        "title_norm": K.norm_text(i["title"])}, "rule": "sha1(title_norm|employer_norm|city)"}
 
 
-_MATCHER = None
-
-
-def _matcher():
-    global _MATCHER
-    if _MATCHER is None:
-        rows = list(csv.DictReader(open(REGISTRY_CSV, encoding="utf-8")))
-        for r in rows:
-            r["beds"] = int(r["beds"]) if (r.get("beds") or "").isdigit() else None
-        _MATCHER = R.Matcher(rows)
-    return _MATCHER
-
-
 def _try_clinic_link(i):
-    m = _matcher().match(i["employer"], i.get("city", ""))
-    if not m:
+    # The live registry: the app's clinics snapshot (app/data.py, the rows the board serves), not a copy.
+    from app import data as D
+    m = R.Matcher([dict(c) for c in D.clinics()])
+    hit = m.match(i["employer"], i.get("city", ""))
+    if not hit:
         return {"result": {"clinic_id": None, "score": None}, "rule": None}
-    cid, rule, score = m
-    site = next((c for c in _matcher().clinics if c["clinic_id"] == cid), {})
+    cid, rule, score = hit
+    site = m.by_id.get(cid, {})
     return {"result": {"clinic_id": cid, "clinic_name": site.get("name"), "town": site.get("town"), "score": score}, "rule": rule}
 
 
-_TOWNS = None
-
-
-def _towns():
-    global _TOWNS
-    if _TOWNS is None:
-        _TOWNS = {K.norm_text(r["town"]) for r in csv.DictReader(open(REGISTRY_CSV, encoding="utf-8")) if r.get("town")}
-    return _TOWNS
-
-
 def _try_bavaria(i):
+    from app import data as D
     plz = (i.get("plz") or "").strip() or None
-    v = CC.in_bavaria(i.get("city") or None, plz, i.get("region") or None, _towns())
+    v = CC.in_bavaria(i.get("city") or None, plz, i.get("region") or None, D.towns())
     why = ("region" if i.get("region") else "plz" if plz else "town list") if v is not None else "undecidable"
     return {"result": {"in_bavaria": v}, "rule": why}
 
@@ -210,11 +186,11 @@ REGISTRY = [
              _try_employer, stage="inbox → observations"),
     Mechanic("role_class", _t("Rollen-Klassifikation", "Role classification"),
              _t("Titel (+ Berufsbezeichnung) → eine von 12 role_class. Reihenfolge: 1) Pflege-Gate (patterns.role.pflege_gate) — ohne Pflege-Token ist es nicht_pflege; "
-                "2) nicht_pflege-Regex (Arzt, MFA, Rettungsdienst…) gewinnt, außer der Titel trägt ein starkes Pflege-Token; 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
+                "2) nicht_pflege-Regex (Arzt, MFA, Rettungsdienst…) gewinnt, außer der Titel trägt ein starkes Pflege-Token (nicht innerhalb eines nicht_pflege-Worts wie Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
                 "4) geordnete Regeln (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — erster Treffer gewinnt; "
                 "5) Fallback sonstige_pflege. Klassen in excluded_role_classes werden beim Import verworfen (nur erfahrene Pflege). Regel → postings.role_rule.",
                 "Title (+ occupation) → one of 12 role_class values. Order: 1) nursing gate (patterns.role.pflege_gate) — no nursing token means nicht_pflege; "
-                "2) the nicht_pflege regex (physician, MFA, paramedic…) wins unless the title carries a strong nursing token; 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
+                "2) the nicht_pflege regex (physician, MFA, paramedic…) wins unless the title carries a strong nursing token (not inside a nicht_pflege word such as Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
                 "4) ordered rules (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — first hit wins; "
                 "5) fallback sonstige_pflege. Classes in excluded_role_classes are refused at ingest (experienced nursing only). Rule → postings.role_rule."),
              "role", [K.classify_role],

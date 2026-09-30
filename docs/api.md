@@ -85,8 +85,8 @@ rows are inserted ahead of your position, page two starts three rows later than 
 detects that for you. What you can do: compare `GET /api/stats → snapshot_at` before and after the sweep (it
 changes exactly when the underlying list was rebuilt) and redo the sweep if it moved, or ask for everything in
 one call — there is no maximum page size precisely so that a whole-list read is one consistent answer.
-`/api/plan` reads the registry CSV and `/api/autopilot/*` read SQLite, so both have the same hazard against
-their own writers rather than against the snapshot clock.
+`/api/plan` is served from the same snapshot (the clinics table); `/api/autopilot/*` read SQLite, so they have the
+same hazard against their own writers rather than against the snapshot clock.
 
 ### Query patterns
 ```bash

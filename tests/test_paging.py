@@ -28,11 +28,6 @@ CLINICS = [{"clinic_id": "36201", "name": "Krankenhaus Barmherzige Brüder", "to
             "ats_type": "", "jobs_open": N, "jobs_fresh": N, "jobs_live": N, "routable": False, "walled": False,
             "board": None, "vendor": None, "route_reason": "x", "fetch": "firecrawl", "fetch_label": "Firecrawl",
             "last_crawl_at": None, "last_crawl_status": None, "last_crawl_mode": None, "career_profile": None}]
-CSV_ROWS = [{"clinic_id": "36201", "name": "Krankenhaus Barmherzige Brüder", "town": "Regensburg", "operator": "BB",
-             "landkreis": "Stadt Regensburg", "regierungsbezirk": "Oberpfalz", "status": "Plan-KH",
-             "versorgungsstufe": "Maximalversorgung (III)", "traegerart": "freigemeinnuetzig", "beds": "985",
-             "day_places": "27", "fachrichtungen": "CHI", "parse_quality": "ok", "source": "Krankenhausplan",
-             "website": "", "careers_url": "", "ats_type": ""}]
 
 
 @pytest.fixture()
@@ -43,7 +38,6 @@ def client(tmp_path, monkeypatch):
                     "by_clinic": {c["clinic_id"]: c for c in CLINICS}, "facets": {}, "taxonomy": {},
                     "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
-    monkeypatch.setattr(D, "registry_csv_rows", lambda: CSV_ROWS)
     monkeypatch.setattr(R, "enqueue", lambda rid: None)            # never run a crawl in tests
     monkeypatch.setattr(S, "start", lambda: SC.init())
     from app.main import app

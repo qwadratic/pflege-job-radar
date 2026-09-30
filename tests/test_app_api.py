@@ -39,10 +39,6 @@ JOBS = [
     {"posting_id": 3, "title": "Pflegefachkraft München-Zweigstelle", "clinic_id": "16104", "city": "München", "fresh": True, "first_published": "2026-09-10", "status": "open",
      "verify_status": "live", "role_class": "fachpflege", "employer": "kbo", "clinic_town": "Ingolstadt", "clinic_size": "S"},
 ]
-CSV_ROWS = [{"clinic_id": c["clinic_id"], "name": c["name"], "town": c["town"], "operator": c["operator"], "landkreis": c["landkreis"], "regierungsbezirk": c["regierungsbezirk"],
-             "status": c["status"], "versorgungsstufe": c["versorgungsstufe"], "traegerart": c["traegerart"], "beds": str(c["beds"]), "day_places": str(c["day_places"]),
-             "fachrichtungen": "|".join(c["fachrichtungen"]), "parse_quality": "ok", "source": "Krankenhausplan Bayern 2026 (51. Fortschreibung), StMGP",
-             "website": c["website"], "careers_url": c["careers_url"], "ats_type": c["ats_type"]} for c in CLINICS]
 
 
 def _classify(title):
@@ -63,7 +59,6 @@ def client(tmp_path, monkeypatch):
     D._snap.update({"at": time.time(), "jobs": JOBS, "clinics": CLINICS, "by_clinic": {c["clinic_id"]: c for c in CLINICS},
                     "facets": {"cities": []}, "taxonomy": {"ats_types": {"typo3_jobs": {"label": "TYPO3 jobs"}}}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
-    monkeypatch.setattr(D, "registry_csv_rows", lambda: CSV_ROWS)
     monkeypatch.setattr(ME, "_FAKE", [FAKE_MECHANIC])
     monkeypatch.setattr(R, "enqueue", lambda rid: None)            # never run a crawl in tests
     monkeypatch.setattr(S, "start", lambda: SC.init())

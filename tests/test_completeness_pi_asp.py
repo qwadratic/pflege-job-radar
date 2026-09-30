@@ -15,15 +15,19 @@ locks in fixes the live investigation found that the generic checks can't exerci
                 line / calendar-icon date), not stay hardcoded None -- the source exposes them for
                 every row without any click at all.
 """
+import json
 import os
 import re
 import sys
+from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pflege_jobs.sources import pi_asp  # noqa: E402
 
-GM = pi_asp.GM
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # --- _parse_pi_date -------------------------------------------------------------------------------
@@ -61,20 +65,12 @@ class _FakeItemLocator:
         self.page._click(self.index)
 
 
-class _FakeFilteredLocator:
+class _FakeRootLocator:
     def __init__(self, page):
         self.page = page
 
     def nth(self, i):
         return _FakeItemLocator(self.page, i)
-
-
-class _FakeRootLocator:
-    def __init__(self, page):
-        self.page = page
-
-    def filter(self, has_text=None):
-        return _FakeFilteredLocator(self.page)
 
 
 class _FakeMouse:
@@ -95,13 +91,14 @@ class _FakePage:
     def wait_for_load_state(self, *a, **k): pass
     def go_back(self): self.url = self.base_url
 
-    def evaluate(self, script):
-        if "querySelectorAll('.LG-Label" in script:
+    def evaluate(self, script, arg=None):
+        if arg == pi_asp.TITLE_LABEL:                    # _list_rows
             return [{"title": p["title"], "dept": p["dept"], "city": p["city"], "date": p["date"]}
                     for p in self.postings]
         return None
 
     def locator(self, selector):
+        assert selector == pi_asp.TITLE_LABEL, "click targets must be the rows _list_rows read"
         return _FakeRootLocator(self)
 
     def _click(self, i):
@@ -236,3 +233,103 @@ def test_crawl_snapshots_the_list_and_every_real_detail(monkeypatch):
     assert len(fake_save.calls) == 2
     assert any(c[2] == "text/html" and "position,id=" not in c[1] for c in fake_save.calls)
     assert any("position,id=" in c[1] for c in fake_save.calls)
+
+
+# --- TASK-178: Klinikum Ingolstadt, wirkzvin.pi-asp.de/bewerber-web/?companyEid=* --------------------
+# The fixture is that board's own rendered list, captured live 2026-09-29: 65 postings, one
+# div.B3-Web-Responsive-Row each. The board prints no count of its own, so its list is the oracle.
+
+FIXTURE = ROOT / "tests" / "fixtures" / "board_samples" / "pi_asp_klinikum_ingolstadt_list_sample.html"
+GENDER = re.compile(r"\((?:m|w|d)/(?:m|w|d)/(?:m|w|d)\)", re.I)
+HEIM = ["Pflegefachhelfer (m/w/d) Psychiatrischer Wohn- und Pflegebereich",
+        "Pflegefachhelfer oder Heilerziehungspflegehelfer (m/w/d) für die psychiatrische Eingliederungshilfe"]
+# Krankenhausplan 2026 rows as the registry holds them (16101 as parsed, TASK-178; ZPG 16107 and
+# Eichstätt 17606 are kbo-Donau-Altmühl-Kliniken gGmbH's since 2026-01-01, their jobs are on kbo.de)
+CLINICS = [{"clinic_id": "16101", "name": "Klinikum Ingolstadt", "town": "Ingolstadt", "operator": "Klinikum Ingolstadt GmbH", "beds": 798},
+           {"clinic_id": "16107", "name": "Zentrum für psychische Gesundheit (ZPG) Ingolstadt", "town": "Ingolstadt",
+            "operator": "kbo-Donau-Altmühl-Kliniken gGmbH", "beds": 275},
+           {"clinic_id": "17606", "name": "Tagesklinik für Psychiatrie Eichstätt", "town": "Eichstätt",
+            "operator": "kbo-Donau-Altmühl-Kliniken gGmbH", "beds": 0},
+           {"clinic_id": "16104", "name": "kbo-Heckscher-Klinikum Ingolstadt", "town": "Ingolstadt",
+            "operator": "kbo-Heckscher-Klinikum gGmbH", "beds": 0}]
+
+
+@pytest.fixture(scope="module")
+def ingolstadt_page():
+    pw_api = pytest.importorskip("playwright.sync_api")
+    with pw_api.sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch()
+        except Exception as exc:                                  # no browser binary in this env
+            pytest.skip(f"chromium unavailable: {exc}")
+        pg = b.new_page()
+        pg.set_content(FIXTURE.read_text(encoding="utf-8"))
+        yield pg
+        b.close()
+
+
+@pytest.fixture(scope="module")
+def ingolstadt_rows(ingolstadt_page):
+    return pi_asp._list_rows(ingolstadt_page)
+
+
+def _ingolstadt_crawl(monkeypatch, rows):
+    seed = next(s for s in json.loads((ROOT / "data" / "registry" / "pi_seeds.json").read_text(encoding="utf-8"))
+                if s["host"] == "wirkzvin.pi-asp.de")
+    _page, fake_save = _wire_fake_playwright(monkeypatch, [dict(r, navigates=False) for r in rows])
+    out, stats = pi_asp.crawl(seed, set())
+    return out, stats, fake_save
+
+
+def test_list_rows_reads_every_posting_the_board_lists(ingolstadt_page, ingolstadt_rows):
+    assert ingolstadt_page.locator("div.B3-Web-Responsive-Row").count() == 65
+    assert len(ingolstadt_rows) == 65
+    # a title without "(m/w/d)" is a posting too -- the old filter dropped these 38
+    assert sum(not GENDER.search(r["title"]) for r in ingolstadt_rows) == 38
+    assert {"title": "Flexpool", "dept": "Pflege- und Funktionsbereiche", "city": "Flexpool", "date": None} in ingolstadt_rows
+    assert {"title": "Famulatur - Apotheke", "dept": "Medizin-Technischer Dienst", "city": "Klinikumsapotheke", "date": None} in ingolstadt_rows
+
+
+def test_list_rows_and_click_targets_are_the_same_rows(ingolstadt_page, ingolstadt_rows):
+    labels = ingolstadt_page.locator(pi_asp.TITLE_LABEL)
+    assert [labels.nth(i).inner_text().strip() for i in range(labels.count())] == [r["title"] for r in ingolstadt_rows]
+
+
+def test_crawl_ingolstadt_returns_every_row_with_the_unit_as_unit_not_as_town(monkeypatch, ingolstadt_rows):
+    rows, stats, fake_save = _ingolstadt_crawl(monkeypatch, ingolstadt_rows)
+    assert fake_save.calls[0][0] == "https://wirkzvin.pi-asp.de/bewerber-web/?companyEid=*"
+    assert len(rows) == stats["listed"] == 65
+    # the pin line names the org unit on this board ("Zentral OP PO40"), never a town
+    assert {(r["city"], r["plz"]) for r in rows} == {("Ingolstadt", "85049")}
+    units = [json.loads(r["payload"])["pi"]["unit"] for r in rows]
+    assert units == [r["city"] for r in ingolstadt_rows]
+
+
+def test_crawl_ingolstadt_files_the_nursing_home_under_no_site(monkeypatch, ingolstadt_rows):
+    rows, _stats, _save = _ingolstadt_crawl(monkeypatch, ingolstadt_rows)
+    heim = [r for r in rows if json.loads(r["payload"])["pi"]["unit"] == "Alten- und Pflegeheim"]
+    assert sorted(r["title"] for r in heim) == HEIM
+    assert all((r["employer_name"], r["_kez"], r["_board"]) == ("Alten- und Pflegeheim Klinikum Ingolstadt GmbH", None, [])
+               for r in heim)
+    hospital = [r for r in rows if r not in heim]
+    assert len(hospital) == 63
+    assert all((r["employer_name"], r["_kez"], "_board" in r) == ("Klinikum Ingolstadt", "16101", False) for r in hospital)
+
+
+def test_ingolstadt_rows_link_to_16101_and_the_nursing_home_to_no_clinic(monkeypatch, ingolstadt_rows):
+    from pflege_jobs.registry import Matcher
+    rows, _stats, _save = _ingolstadt_crawl(monkeypatch, ingolstadt_rows)
+    m = Matcher([dict(c) for c in CLINICS])
+    got = {}
+    for r in rows:   # app/crawl.py: an adapter's own pool, else the board's clinics
+        mt = m.match(r["employer_name"], r["city"], board=r.get("_board", ["16101"]))
+        got.setdefault(mt and mt[0], []).append(r["title"])
+    assert {k: len(v) for k, v in got.items()} == {"16101": 63, None: 2}
+    assert sorted(got[None]) == HEIM
+
+
+def test_routing_sends_16101_and_only_16101_to_the_ingolstadt_board():
+    from crawlers.routing import seed_overlays
+    ov = seed_overlays()
+    assert ov["16101"] == ("pi_asp", "https://wirkzvin.pi-asp.de/bewerber-web/?companyEid=*")
+    assert "16107" not in ov and "17606" not in ov

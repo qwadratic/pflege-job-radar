@@ -72,5 +72,25 @@
       "town": "München"
     },
     "sites": {}
+  },
+  {
+    "name": "Klinikum Ingolstadt",
+    "host": "wirkzvin.pi-asp.de",
+    "companyEid": "*",
+    "pin_line": "unit",
+    "default": {
+      "kez": "16101",
+      "town": "Ingolstadt",
+      "plz": "85049",
+      "employer": "Klinikum Ingolstadt"
+    },
+    "sites": {
+      "Alten- und Pflegeheim$": {
+        "kez": null,
+        "town": "Ingolstadt",
+        "plz": "85049",
+        "employer": "Alten- und Pflegeheim Klinikum Ingolstadt GmbH"
+      }
+    }
   }
 ]

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-24 11:34'
-updated_date: '2026-09-24 16:12'
+updated_date: '2026-09-28 07:06'
 labels: []
 dependencies: []
 ordinal: 153000
@@ -46,26 +46,27 @@ Found 2026-09-24 while resolving TASK-103's Augustinum gGmbH postings. pflege_jo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-CODE FIX (pflege_jobs/registry.py, _match_content, ~line 206-220): R2_operator's single-candidate branch (self.by_op.get(en, [])) now runs the identical other_town_disagrees gate R1_exact already had two rungs above -- same helpers (city_key, _town_match, self._by_town), same refusal condition (en not in CITY_UNRELIABLE_EMPLOYERS and ck and not _town_match(own_town, ck) and any(x['clinic_id']!=c[0]['clinic_id'] for x in self._by_town(ck))), same fallthrough behavior (no return -> proceeds to len(c)>1 branch, then same-town R3_tokens/R4_tokens_op/R5_loose, then _match_jd -- exactly R1_exact's own documented path). Mirrors, does not generalize: still only refuses on a PROVEN other registered Krankenhausplan town, same accepted limitation R1_exact's own test documents (a known-but-unregistered city is 'not evidence').
+REGRESSION FOUND AND FIXED (2026-09-28), same systemic bug as TASK-163's follow-up:
 
-REGRESSION TEST (tests/test_mech_clinic_link.py::test_r2_operator_falls_through_on_a_known_disagreeing_city): mirrors test_r1_exact_falls_through_on_a_known_disagreeing_city's exact structure. 2-clinic fixture (Y1 Augustinum München, Y2 Reha Bischofswiesen). 4 assertions: agreeing city (München) still matches R2_operator/0.95; a city naming a DIFFERENT real registry town (Bischofswiesen) is refused (None); a known city naming NO registry town at all (Deutschlandweit) is still trusted (not evidence -- rule must not become useless, per AC#2); unknown city (None) unchanged. All 4 pass green.
+Live spot-check (prompted by TASK-163's own regression) found the 5 manual-locked postings from
+this task (7011, 7012, 7014, 12712, 12713 -- Unterschleißheim/Oberschleißheim/Deutschland/
+Deutschlandweit, no registered Krankenhausplan town) had been silently reverted back to
+clinic_id=RH2100/clinic_match_rule=R2_operator, updated_at=2026-09-28T07:02:23Z -- almost certainly
+by a scheduled full-scope crawl (the "Daily full pass" schedule, cron 0 3 * * *, scope=all) re-observing
+these postings and re-matching them via the same unguarded path TASK-163 root-caused: cli.py's
+_process_rows/cmd_inbox clinic_links push had no check against an existing clinic_match_rule='manual'
+before overwriting it.
 
-MUTATION TEST: saved registry.py to /tmp/task153_mut/registry.py.orig, reverted the new guard to the exact prior one-line `if len(c) == 1: return c[0]['clinic_id'], 'R2_operator', 0.95`. New test went RED: AssertionError on the Bischofswiesen-refusal assertion (`('Y1', 'R2_operator', 0.95) is None` failed -- old code returned Y1 instead of refusing). Restored registry.py from the /tmp copy (never via git), diff -q confirmed byte-identical, re-ran: 24/24 green in test_mech_clinic_link.py.
+Root-cause fix already landed as part of TASK-163's follow-up (pflege_jobs/cli.py: new
+manual_posting_ids() check at the clinic_links push chokepoint, tests in
+tests/test_cli_manual_override.py, mutation-tested). That fix protects these 5 postings from any
+future re-crawl too -- not Augustinum-specific.
 
-TEST SWEEP: targeted (registry/clinic_link/inherited/match_board/match_jd/autopilot_seed_registry): 79 passed. Full suite (.venv, -m 'not network'): 1525 passed, 18 skipped, 0 failed, 412s -- no regressions anywhere in the repo from this change.
-
-LIVE RE-CHECK (AC#3, live SUPABASE_URL/ANON_KEY, paginated where relevant): confirmed the 2026-09-24 finding had ALREADY SHIFTED by the time this ran (same day) -- TASK-148's Reha registry rollout added clinic RH2100 (Vorsorgeklinik Berchtesgadener Land Bischofswiesen, operator 'Augustinum gemeinnützige GmbH', employer_norm -> 'augustinum'), which is the SAME normalized bucket as employer_id=156's own name_display 'Augustinum gGmbH' -- but 16217 (Augustinum Klinik München)'s own operator string 'Augustinum Wohnstifte gGmbH' normalizes to a DIFFERENT bucket ('augustinum wohnstifte'). So by the time of this re-check, R2_operator's single-candidate by_op['augustinum'] bucket had flipped to RH2100 as its ONLY member -- the live bug was now wrongly funneling every Augustinum gGmbH posting to Bischofswiesen instead of München (same defect, opposite wrong clinic). Queried all 17 live postings for employer_id=156 ('Augustinum gGmbH'): 14 currently clinic_match_rule=R2_operator, all 14 pointing at RH2100. Backed up all 14 to backups/task153-augustinum-r2operator-2026-09-24.json BEFORE any write (tools/task153_fix_augustinum_r2_operator.py --dry-run, re-run again immediately before --push).
-
-Re-derived each of the 14 with the FIXED Matcher (live clinics, same m.match(employer_text, city) call shape link_postings() itself uses, no board/description): 3 GENUINELY AGREE and were left untouched (postings 7016/7017/7018, city=Bischofswiesen, correctly RH2100 via R2_operator -- confirms AC#3's 'Bischofswiesen-city rows should already be RH2100' by direct live verification, not assumption). 11 needed correction -- exactly matching the original 2026-09-24 count of 11, independently re-derived, not assumed:
-  - 5 München postings (5578, 5580, 5581, 7022, 7023): fixed Matcher's own other_town_disagrees now correctly refuses R2_operator (München has 58 other real registry clinics, so a proven disagreement exists) and falls through to R3_tokens, which uniquely re-matches them to 16217 (Augustinum Klinik München) on token 'augustinum' -- pushed with their own genuinely re-derived clinic_id=16217/rule=R3_tokens/score=0.8 (no 'manual' lock; a future link-clinics run will independently re-derive the same result).
-  - 1 Bad Tölz posting (12938): other_town_disagrees correctly refuses (Bad Tölz has 7 real registry clinics, none Augustinum-named) and falls all the way through to unmatched (None) -- pushed clinic_id=null/rule=null (a future run agrees with itself, no lock needed).
-  - 5 postings with NO registered Krankenhausplan town at all (Unterschleißheim x2: 7011, 7014; Oberschleißheim x1: 7012; Deutschland x1: 12712; Deutschlandweit x1: 12713): the fixed Matcher's own conservative gate (mirroring R1_exact exactly, per AC#1) still cannot refuse these -- same accepted limitation as R1_exact's own 'Bielefeld' case (a known city naming no registry town is not proof). Per AC#3's explicit instruction these must end up unmatched anyway -- verified directly against RH2100's own town (Bischofswiesen) via the same _town_match()/city_key() helpers the algorithm itself uses (not a new heuristic), confirmed genuine disagreement, and pushed clinic_id=null with clinic_match_rule='manual' (registry.py's own documented override mechanism, line 9's docstring: 'Manual overrides: set postings.clinic_match_rule=manual (untouched by re-runs)') -- required because the fixed Matcher would otherwise keep re-deriving RH2100 for these specific 5 on every future link-clinics run, silently re-breaking the correction.
-
-Pushed all 11 via the same clinic_links ingest op cmd_link_clinics itself uses (pflege_jobs.sinks.EdgeSink._post({'clinic_links': [...]})). Verified live immediately after: 11/11 confirmed matching pushed clinic_id+clinic_match_rule exactly (re-queried postings table by posting_id).
-
-FINAL LIVE STATE (re-queried, all 17 employer_id=156 postings): 5 open München postings -> 16217/R3_tokens/0.8 (correct). 3 open Bischofswiesen postings -> RH2100/R2_operator/0.9 (correct, untouched). 5 open non-Krankenhausplan-town postings (2x Unterschleißheim, 1x Oberschleißheim, Deutschland, Deutschlandweit) -> clinic_id=null/rule=manual (correctly unmatched, protected from future mis-re-derivation). 1 open Bad Tölz posting -> clinic_id=null/rule=null (correctly unmatched, self-consistent with the algorithm). 3 unrelated EXPIRED postings (10709 Kassel, 12711 no-city, 7013 München) untouched -- already correctly on 16217 via R0_board/R3_tokens, a different rule than the R2_operator bug this task fixes, out of scope and expired anyway.
-
-SCOPE CHECK: git diff --stat confirms exactly 2 tracked files changed by this session -- pflege_jobs/registry.py (+40/-3) and tests/test_mech_clinic_link.py (+18) -- plus 1 new untracked file tools/task153_fix_augustinum_r2_operator.py. backups/task153-augustinum-r2operator-2026-09-24.json is gitignored (backups/ pattern) but present on disk with the pre-write snapshot of all 14 rows. Every other modified/untracked path in git status (PLAN.md, docs/*, pflege_jobs/sources/*, skill/*, web/skill/*, tests/test_ats_seeds.py, backlog/, crawlers/routing.py, crawlers/vendor_adapters.py, crawlers/render_probe.py, harness/) was already present/modified before this session started (confirmed against the conversation's initial git-status snapshot) and belongs to concurrent sessions working other tasks in this same tree -- left entirely untouched.
+Re-applied the null/manual override to all 5 postings via EdgeSink clinic_links push at
+2026-09-28T07:06:05.646Z (live-verified: all 5 back to clinic_id=null/clinic_match_rule=manual).
+Not re-verified yet against a deliberate re-crawl of RH2100/Augustinum specifically (TASK-163's own
+re-crawl of clinics 56404/56406 already proved the fix holds in general), but the fix is
+clinic-agnostic so no further clinic-specific proof was done here.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

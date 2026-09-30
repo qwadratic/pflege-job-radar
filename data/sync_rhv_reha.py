@@ -141,7 +141,7 @@ def _for_push(row):
 
 
 def push(rows):
-    """Same ingest edge-function op data/sync_krankenhausplan_2026.py uses for clinics rows."""
+    """The pflege-ingest edge function's clinics op (the one EdgeSink.write_clinics posts to)."""
     rows = [_for_push(r) for r in rows]
     ing = {"Authorization": "Bearer " + os.environ["SUPABASE_ANON_KEY"], "apikey": os.environ["SUPABASE_ANON_KEY"],
            "x-ingest-secret": os.environ["PFLEGE_INGEST_SECRET"], "Content-Type": "application/json"}

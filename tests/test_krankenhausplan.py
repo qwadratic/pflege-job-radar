@@ -97,3 +97,79 @@ def test_validate_does_not_false_positive_on_town_names_ending_in_stadt():
     report = K.validate(rows)
     assert report["town_implausible"] == []
     assert report["error_rate"] == 0.0
+
+
+# TASK-167: frozen "zugelassene Betten stationär zum 01.01.2026" cells from krankenhausplan_2026.pdf.
+# The PDF prints counts >= 1000 with a German thousands dot; the old isdigit() check turned all 7 of
+# them (LMU 2.062, Augsburg 1.699, Würzburg 1.523, Erlangen 1.462, Nürnberg Nord 1.276, TUM 1.176,
+# Bogenhausen 1.020) into beds=None -- the biggest hospitals fell out of the per-bed metric.
+def test_count_cells_read_the_german_thousands_separator():
+    assert K._int("2.062") == 2062        # 16290 LMU, p.245
+    assert K._int("1.020") == 1020        # 16205 München Klinik Bogenhausen, p.21
+    assert K._int("911") == 911           # 46101 Klinikum Bamberg, p.114
+    assert K._int("0") == 0               # day-clinic-only sites: 0 beds is the source value
+    assert K._int("-") is None
+    assert K._int("") is None
+
+
+def test_count_cell_in_an_unknown_format_fails_loudly():
+    import pytest
+    for bad in ("1,020", "ca. 50", "10.20"):
+        with pytest.raises(ValueError):
+            K._int(bad)
+
+
+# TASK-178: frozen first lines of krankenhausplan_2026.pdf table pages. p.15 opens Teil II Abschnitt A,
+# so its Bezirk heading is line 2; reading line 1 only left bezirk=None and skipped the page, and with it
+# 16101 Klinikum Ingolstadt (798 beds) and 16102 Privatklinik Dr. Maul.
+def test_bezirk_heading_is_found_on_the_page_that_opens_the_part():
+    p15 = "Teil II Abschnitt A - Plankrankenhäuser\nOberbayern\nLandkreis / KeZ Krankenhaus Status VSt."
+    p16 = "Oberbayern\nLandkreis / KeZ Krankenhaus Status VSt. Träger-zugelassene"
+    assert K._bezirk(p15) == "Oberbayern"
+    assert K._bezirk(p16) == "Oberbayern"
+    assert K._bezirk("Verzeichnis\nder Abkürzungen mit Erläuterungen\n1. KeZ = Kennzahl") is None
+    assert K._bezirk("Teil II Abschnitt A\nLandkreis / KeZ\nOberbayern") is None   # only the two heading lines count
+
+
+# TASK-175: frozen Landkreis cells (pdfplumber column 0) of krankenhausplan_2026.pdf p.15-18. The 51.
+# Fortschreibung names the Landkreis on the first row of each group only; the rows below read '-' or ''.
+def test_blank_landkreis_cells_take_the_name_from_the_row_above_in_the_same_group():
+    rows = [{"clinic_id": k, "landkreis": lk} for k, lk in (
+        ("16101", "Kreisfreie Stadt Ingolstadt"), ("16102", "-"), ("16104", "-"),
+        ("16201", "Landeshauptstadt München"), ("16202", ""), ("16203", ""))]
+    assert [r["landkreis"] for r in K._carry_landkreis(rows)] == [
+        "Kreisfreie Stadt Ingolstadt", "Kreisfreie Stadt Ingolstadt", "Kreisfreie Stadt Ingolstadt",
+        "Landeshauptstadt München", "Landeshauptstadt München", "Landeshauptstadt München"]
+
+
+def test_a_blank_landkreis_cell_that_opens_a_group_fails_loudly():
+    import pytest
+    rows = [{"clinic_id": "16101", "landkreis": "Kreisfreie Stadt Ingolstadt"}, {"clinic_id": "16201", "landkreis": "-"}]
+    with pytest.raises(ValueError):
+        K._carry_landkreis(rows)
+    with pytest.raises(ValueError):
+        K._carry_landkreis([{"clinic_id": "16102", "landkreis": ""}])
+
+
+def test_parse_hands_its_rows_through_the_landkreis_carry(monkeypatch):
+    """parse() over a stand-in for pdfplumber (two frozen p.15 rows), so the wiring is pinned without the PDF."""
+    class _Page:
+        def __init__(self, text, tables):
+            self.text, self.tables = text, tables
+
+        def extract_text(self):
+            return self.text
+
+        def extract_tables(self):
+            return self.tables
+
+    def row(lk, kez, cell):
+        return [lk, kez, cell, "Plan-\nKH", "I", "Ö", "798", "-", "", "", "", "", "INN"]
+    pages = [_Page("Stand: 1. Januar 2026 (51. Fortschreibung)", []),
+             _Page("Teil II Abschnitt A - Plankrankenhäuser\nOberbayern\nLandkreis / KeZ Krankenhaus",
+                   [[row("Kreisfreie Stadt\nIngolstadt", "16101", "Klinikum Ingolstadt\nIngolstadt\nKlinikum Ingolstadt GmbH"),
+                     row("-", "16102", "Privatklinik Dr. Maul,\nDon Bosconeum\nIngolstadt\nPrivatklinik Dr. Maul GmbH")]])]
+    monkeypatch.setattr(K.pdfplumber, "open", lambda path: type("PDF", (), {"pages": pages})())
+    rows = K.parse("krankenhausplan_2026.pdf")
+    assert [(r["clinic_id"], r["landkreis"], r["regierungsbezirk"]) for r in rows] == [
+        ("16101", "Kreisfreie Stadt Ingolstadt", "Oberbayern"), ("16102", "Kreisfreie Stadt Ingolstadt", "Oberbayern")]

@@ -226,7 +226,7 @@ spending twice (in flight → 409, same key with a different body → 422).
 | GET | `/facets` | `{cities[{v,n}], job_cities, regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fachrichtungen[{v,label,n}], size[{v,label,n}], role_class[{v,label,n}], department_hint, employment_types, contract, enr_tariff, verify_status, beds{min,max}, size_buckets}` |
 | GET | `/clinics` | `{total, limit, offset, next_offset, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, fetch, routable, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, sort, limit, offset` (`routable=1|0`) |
 | GET | `/cities?q=` | `[{city, regierungsbezirk, landkreis, clinics, jobs_open, jobs_fresh, ats_known}]` |
-| GET | `/plan?q=&regierungsbezirk=&sort=` | `{total, limit, offset, next_offset, rows[every clinics.csv column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
+| GET | `/plan?q=&regierungsbezirk=&sort=` | `{total, limit, offset, next_offset, rows[every registry column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
 | GET | `/clinics/{kez}` | clinic + `jobs[]` + `runs[]` + `career_profile` |
 | GET | `/jobs` | `{total, limit, offset, next_offset, rows[job]}` — filters: `clinic_id, q, role_class, department_hint, city, regierungsbezirk, employment_types, contract, housing, fresh_days, verify, sort, limit, offset` |
 | GET | `/jobs/{id}` | job + `description`, `enr_*`, `observations[{source_code, source_url, observed_at}]` |
@@ -468,7 +468,7 @@ Not covered: 11 sites with no adapter match (`coveto` and a few unlabeled) → F
 `POST https://api.firecrawl.dev/v2/agent {urls:[careers_url|website], prompt, schema, maxCredits}` → poll `GET /v2/agent/{id}` → rows with `collector=firecrawl-agent` (source 25). Two prompts/schemas: jobs (list every open nursing vacancy of the site, Bavarian locations only, follow pagination, open PDFs) and career discovery (portal URL, ATS vendor, filters + values, categories, job count, listing type). Every call capped; `creditsUsed` logged to `firecrawl_usage`; credits in `/api/stats`.
 
 ## Registry (Krankenhausplan)
-`python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2026.pdf out.csv` → `python data/sync_krankenhausplan_2026.py [--dry-run]` (structured columns from 2026, names/towns from the trusted parse; sites leaving the plan → `nicht_mehr_im_plan`). Legend → `data/registry/taxonomy.json`. `python -m pflege_jobs.cli link-clinics` after every load.
+The registry is the `clinics` table. `python tools/registry_build.py --report deviations.json --proposals proposals.json` parses the sources (Krankenhausplan PDF, RHV XLSX, Diakoneo list), marks every DB deviation explained (a `pflege_jobs.corrections` row) or not, and writes the unexplained ones as proposals (sites leaving the plan → `nicht_mehr_im_plan`); review them, then `python tools/apply_clinic_corrections.py proposals.json --push --by <who>`. Legend → `data/registry/taxonomy.json`. `python -m pflege_jobs.cli link-clinics` after every load.
 
 ## Adding an adapter
 Write a function returning inbox rows for a clinic row (`crawlers/vendor_adapters.py` style) or a seeded module (`pflege_jobs/sources/<x>.py`), register it in `crawlers/routing.py:ADAPTERS` (a test pins every label to an importable callable), add the label to `taxonomy.json.ats_types`.

@@ -4,14 +4,13 @@
 
 Anchored on the virtual clock db.DEFAULT_POLICY['sim_now'] and random.Random(42): two machines produce the same demo.
 Candidate names, phones and e-mails are invented (nationalities that are actually recruited into German nursing);
-clinic names, towns, KeZ ids and open postings come from the real registry (app.data snapshot, fallback: registry CSV)
+clinic names, towns, KeZ ids and open postings come from the real registry (app.data snapshot)
 and are cached in two extra tables (registry_clinics, registry_postings) so the console never depends on the
 Supabase load being finished.
 """
 import argparse
 import random
 import re
-import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -114,22 +113,12 @@ def init():
 
 # --- registry ------------------------------------------------------------------------------------------
 def load_registry_source(wait=60):
-    """(clinics, jobs) from the live snapshot; falls back to the registry CSV (no postings) when the snapshot is empty."""
-    clinics, jobs = [], []
-    try:
-        snap = D.snapshot(wait=wait)
-        clinics, jobs = list(snap.get("clinics") or []), list(snap.get("jobs") or [])
-    except Exception as e:                                                   # network down: keep the seed working
-        print("snapshot unavailable:", e, file=sys.stderr)
+    """(clinics, jobs) from the live snapshot. No fallback: the registry is the clinics table (TASK-175 removed
+    the CSV copy this used to fall back to), so an unavailable or empty snapshot fails the seed loudly."""
+    snap = D.snapshot(wait=wait)
+    clinics, jobs = list(snap.get("clinics") or []), list(snap.get("jobs") or [])
     if not clinics:
-        for r in D.registry_csv_rows():
-            # TASK-148: Reha facilities (data/sync_rhv_reha.py) use "RH<digits>" ids, not bare KeZ
-            # digits. TASK-103: Diakoneo social/elder-care facilities (data/sync_diakoneo_social.py)
-            # use "DK<digits>" the same way.
-            if not re.match(r"^(RH|DK)?\d+$", (r.get("clinic_id") or "").strip()):
-                continue
-            clinics.append({**r, "fachrichtungen": [x for x in (r.get("fachrichtungen") or "").replace(",", "|").split("|") if x],
-                            "beds": int(r.get("beds") or 0), "jobs_open": 0})
+        raise RuntimeError("registry snapshot has no clinics -- nothing to seed from")
     clinics.sort(key=lambda c: str(c["clinic_id"]))
     jobs.sort(key=lambda j: j.get("posting_id") or 0)
     return clinics, jobs

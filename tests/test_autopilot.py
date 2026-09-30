@@ -50,10 +50,6 @@ JOBS = [
      "department_hint": "Psychiatrie", "qualification_hint": "generalistisch", "city": "Muenchen",
      "external_url": "https://klinikum-muenchen.example/jobs/3", "first_published": "2026-08-10"},
 ]
-CSV_ROWS = [{"clinic_id": c["clinic_id"], "name": c["name"], "town": c["town"], "operator": "", "landkreis": c["landkreis"],
-             "regierungsbezirk": c["regierungsbezirk"], "status": "Plan-KH", "versorgungsstufe": c["versorgungsstufe"],
-             "traegerart": c["traegerart"], "beds": str(c["beds"]), "day_places": "0", "fachrichtungen": "|".join(c["fachrichtungen"]),
-             "parse_quality": "ok", "source": "test", "website": "", "careers_url": c["careers_url"], "ats_type": ""} for c in CLINICS]
 
 
 def _classify(title):
@@ -73,7 +69,6 @@ def client(tmp_path, monkeypatch):
     D._snap.update({"at": time.time(), "jobs": JOBS, "clinics": CLINICS, "by_clinic": {c["clinic_id"]: c for c in CLINICS},
                     "facets": {"cities": []}, "taxonomy": {}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
-    monkeypatch.setattr(D, "registry_csv_rows", lambda: CSV_ROWS)
     monkeypatch.setattr(ME, "_FAKE", [FAKE_MECHANIC])
     monkeypatch.setattr(R, "enqueue", lambda rid: None)
     monkeypatch.setattr(S, "start", lambda: SC.init())

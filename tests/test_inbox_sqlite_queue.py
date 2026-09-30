@@ -200,11 +200,10 @@ def test_historical_raw_rows_can_be_reprocessed_after_a_rule_change(queue, monke
     assert sorted(o["title"] for o in second) == sorted([TITLES[0], TITLES[3], TITLES[4]])
 
 
-def test_cmd_inbox_drains_the_postgres_queue_too(queue, monkeypatch, tmp_path, capsys):
+def test_cmd_inbox_drains_the_postgres_queue_too(queue, monkeypatch, capsys):
     """AC#3. The Postgres inbox stays for the producers that hold only the anon key (the browser
     collector, POST /api/ingest, the Firecrawl webhook); one command drains both."""
-    clinics = tmp_path / "clinics.csv"
-    clinics.write_text("clinic_id,name,town,beds\n1,Test Clinic,München,100\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_live_clinics", lambda url, H: [{"clinic_id": "1", "name": "Test Clinic", "town": "München", "beds": 100}])
     monkeypatch.setenv("SUPABASE_URL", "https://db"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
     IB.enqueue([_row(0, TITLES[0])], run_id=7, path=queue)
     _FakeSink.posted, _FakeSink.written = [], []
@@ -214,7 +213,7 @@ def test_cmd_inbox_drains_the_postgres_queue_too(queue, monkeypatch, tmp_path, c
     seen = []
     monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: seen.append("postgres") or 0)
 
-    cli.cmd_inbox(argparse.Namespace(clinics=str(clinics), no_ack=False, max_batches=10, inbox_db=queue,
+    cli.cmd_inbox(argparse.Namespace(no_ack=False, max_batches=10, inbox_db=queue,
                                      reprocess_run=None, reprocess_all=False))
 
     assert seen == ["postgres"]
@@ -244,6 +243,20 @@ def test_a_failed_intake_is_recorded_as_a_crawl_issue(crawl_run, monkeypatch):
     issues = [i for i in R.list_crawl_issues() if i["kind"] == "intake"]
     assert len(issues) == 1 and "P0001" in issues[0]["error"] and issues[0]["run_id"] == rid
     assert R.get_run(rid, with_log=False)["status"] == "failed"
+
+
+def test_a_seeded_adapters_own_board_pool_is_kept(seeded_crawl_run, queue, monkeypatch):
+    """TASK-178: pi_asp gives a posting of a unit that is no registry site (Alten- und Pflegeheim
+    Klinikum Ingolstadt GmbH) the pool [] -- overwriting it with the board's clinics made the
+    drain's board fallback file it under the board's only clinic. Rows without one still get the
+    board's clinics."""
+    own = dict(_seed_observation(0, "Pflegefachhelfer (m/w/d) Psychiatrischer Wohn- und Pflegebereich", "pflegehelfer"), _board=[])
+    plain = _seed_observation(1, "Gesundheits- und Krankenpfleger (m/w/d)", "pflegefachkraft")
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: ([own, plain], {"truncated": False}))
+    CR.execute(R.create_run("clinic", "1", "adapter"))
+
+    assert [r["payload"].get("_board") for r in IB.pending(path=queue)] == [[], ["1"]]
+    assert IB.pending_board_pools(path=queue) == {"https://x.example/job/0": set(), "https://x.example/job/1": {"1"}}
 
 
 def test_seeded_adapter_observations_are_queued_too_not_sent_straight_to_edgesink(seeded_crawl_run, queue):
@@ -281,13 +294,12 @@ def test_seeded_adapter_observations_are_filtered_by_the_drain_not_at_crawl_time
     assert notes[0].startswith("loaded") and "not an experienced nursing role" in notes[1]
 
 
-def test_cmd_inbox_resolves_postings_once_per_run_not_once_per_page(queue, monkeypatch, tmp_path):
+def test_cmd_inbox_resolves_postings_once_per_run_not_once_per_page(queue, monkeypatch):
     """2026-09-21 review: the queue used to be tens of rows (1-2 pages); at ~9,000 rows a drain pages
     10x, and sink.write(obs, resolve=True) on every page fired resolve_postings() -- the heaviest
     server-side call in the log -- 10x a night instead of once. cmd_inbox must resolve exactly once,
     after the last page of both queues, and only when something was actually written."""
-    clinics = tmp_path / "clinics.csv"
-    clinics.write_text("clinic_id,name,town,beds\n1,Test Clinic,München,100\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_live_clinics", lambda url, H: [{"clinic_id": "1", "name": "Test Clinic", "town": "München", "beds": 100}])
     monkeypatch.setenv("SUPABASE_URL", "https://db"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
     IB.enqueue([_row(i, TITLES[0]) for i in range(1500)], run_id=7, path=queue)   # forces 2 local pages
     _FakeSink.posted, _FakeSink.written, _FakeSink.write_resolve_kwargs = [], [], []
@@ -296,7 +308,7 @@ def test_cmd_inbox_resolves_postings_once_per_run_not_once_per_page(queue, monke
                         type("R", (), {"json": lambda self: []})())
     monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: 0)
 
-    cli.cmd_inbox(argparse.Namespace(clinics=str(clinics), no_ack=False, max_batches=10, inbox_db=queue,
+    cli.cmd_inbox(argparse.Namespace(no_ack=False, max_batches=10, inbox_db=queue,
                                      reprocess_run=None, reprocess_all=False))
 
     assert len(_FakeSink.written) == 1500
@@ -305,7 +317,7 @@ def test_cmd_inbox_resolves_postings_once_per_run_not_once_per_page(queue, monke
     assert len(resolve_calls) == 1, resolve_calls                   # ... and fired exactly once, at the end
 
 
-def test_cmd_inbox_links_brand_new_postings_after_the_deferred_resolve(queue, monkeypatch, tmp_path):
+def test_cmd_inbox_links_brand_new_postings_after_the_deferred_resolve(queue, monkeypatch):
     """2026-09-21 review, problem #1: resolve now fires once at the end of the whole drain (previous
     test), but the posting-id lookup + clinic_links push used to still happen per page, inside
     _process_rows, right after sink.write(obs, resolve=False) -- before that end-of-run resolve had
@@ -313,8 +325,7 @@ def test_cmd_inbox_links_brand_new_postings_after_the_deferred_resolve(queue, mo
     does -- sql/002_task73_migration.sql). Every posting created this run got 0 clinic_links, every
     night. Stub models the server precisely: a posting_id lookup returns nothing until a
     {'resolve': True} POST has actually happened, exactly like the review's own repro."""
-    clinics = tmp_path / "clinics.csv"
-    clinics.write_text("clinic_id,name,town,beds\n1,Test Clinic,München,100\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_live_clinics", lambda url, H: [{"clinic_id": "1", "name": "Test Clinic", "town": "München", "beds": 100}])
     monkeypatch.setenv("SUPABASE_URL", "https://db"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
     IB.enqueue([_row(0, TITLES[0]), _row(4, TITLES[4])], run_id=7, path=queue)   # 2 nursing rows, both new
     _FakeSink.posted, _FakeSink.written, _FakeSink.write_resolve_kwargs = [], [], []
@@ -338,7 +349,7 @@ def test_cmd_inbox_links_brand_new_postings_after_the_deferred_resolve(queue, mo
     monkeypatch.setattr(requests, "get", fake_get)
     monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: 0)
 
-    cli.cmd_inbox(argparse.Namespace(clinics=str(clinics), no_ack=False, max_batches=10, inbox_db=queue,
+    cli.cmd_inbox(argparse.Namespace(no_ack=False, max_batches=10, inbox_db=queue,
                                      reprocess_run=None, reprocess_all=False))
 
     resolve_calls = [b for b in _FakeSink.posted if b.get("resolve") is True]
@@ -348,17 +359,16 @@ def test_cmd_inbox_links_brand_new_postings_after_the_deferred_resolve(queue, mo
     assert all(l["clinic_id"] == "1" for l in links)
 
 
-def test_cmd_inbox_does_not_resolve_when_nothing_was_written(queue, monkeypatch, tmp_path):
+def test_cmd_inbox_does_not_resolve_when_nothing_was_written(queue, monkeypatch):
     """The other half: an empty run (or a run where every row was filtered out) must not call
     resolve_postings() at all -- it is the heaviest server-side call in the log, not a heartbeat."""
-    clinics = tmp_path / "clinics.csv"
-    clinics.write_text("clinic_id,name,town,beds\n1,Test Clinic,München,100\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "_live_clinics", lambda url, H: [{"clinic_id": "1", "name": "Test Clinic", "town": "München", "beds": 100}])
     monkeypatch.setenv("SUPABASE_URL", "https://db"); monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
     _FakeSink.posted, _FakeSink.written = [], []
     monkeypatch.setattr(cli, "EdgeSink", _FakeSink)
     monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: 0)
 
-    cli.cmd_inbox(argparse.Namespace(clinics=str(clinics), no_ack=False, max_batches=10, inbox_db=queue,
+    cli.cmd_inbox(argparse.Namespace(no_ack=False, max_batches=10, inbox_db=queue,
                                      reprocess_run=None, reprocess_all=False))
 
     assert not any(b.get("resolve") is True for b in _FakeSink.posted)

@@ -2,7 +2,8 @@
 Source: https://www.stmgp.bayern.de/wp-content/uploads/2025/02/bayerischer-krankenhausplan-2025.pdf (Stand 1.1.2025)
 Only Teil II Abschnitt A (Plankrankenhäuser, per Regierungsbezirk) is parsed. KeZ = 5-digit site key = clinic_id.
 Usage: python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2026.pdf out.csv [towns.csv]
-(optional 3rd arg: a CSV with a `town` column -- e.g. the current clinics.csv -- used for town recovery)"""
+(inspection dump; optional 3rd arg: a CSV with a `town` column used for town recovery. The registry build,
+tools/registry_build.py, passes the live clinics table's towns.)"""
 import csv
 import re
 import sys
@@ -167,6 +168,18 @@ def _split_name_block(cell):
     return name_s, town, op_s or None, quality
 
 
+def _int(cell):
+    """'1.020' -> 1020. The PDF prints counts >= 1000 with a German thousands dot; a bare isdigit() check
+    turned every such cell into None, i.e. exactly the biggest hospitals lost their beds (TASK-167).
+    '-' / '' -> None; anything else non-numeric raises, so a new cell format is loud, not silently NULL."""
+    t = _clean(cell)
+    if t in ("", "-"):
+        return None
+    if not re.fullmatch(r"\d{1,3}(\.\d{3})*", t):
+        raise ValueError(f"unexpected count cell {cell!r}")
+    return int(t.replace(".", ""))
+
+
 def _edition(pdf):
     """Read 'Stand: 1. Januar <year> (<n>. Fortschreibung)' off the cover so `source` is never stale."""
     head = (pdf.pages[0].extract_text() or "") + (pdf.pages[1].extract_text() or "" if len(pdf.pages) > 1 else "")
@@ -177,6 +190,30 @@ def _edition(pdf):
     return "Krankenhausplan Bayern, StMGP"
 
 
+def _bezirk(text):
+    """Regierungsbezirk heading of a table page: its first line, or its second when the page also opens
+    the part -- the first Oberbayern page starts 'Teil II Abschnitt A - Plankrankenhäuser' (TASK-178:
+    reading only line 1 skipped that page, and with it 16101 Klinikum Ingolstadt and 16102)."""
+    return next((line.strip() for line in text.split("\n", 2)[:2] if line.strip() in BEZIRKE), None)
+
+
+def _carry_landkreis(rows):
+    """The 51. Fortschreibung (2026) prints the Landkreis only on the first row of each Landkreis group and
+    '-' or nothing on the rows below it (281 of 401 rows; the 2025 edition left 12 blank). A blank row takes
+    the name of the row above, but only inside its own group -- the KeZ's first three digits, which map to
+    exactly one Landkreis name in both editions (95 groups in 2026). A blank row that opens a group has no
+    name to take and fails loudly (TASK-175: the blanks read as 260 DB deviations)."""
+    last = None
+    for r in rows:
+        if r["landkreis"] in ("", "-"):
+            if not last or last[0] != r["clinic_id"][:3]:
+                raise ValueError(f"KeZ {r['clinic_id']}: blank Landkreis cell and no row above it in its group")
+            r["landkreis"] = last[1]
+        else:
+            last = (r["clinic_id"][:3], r["landkreis"])
+    return rows
+
+
 def parse(pdf_path, known_towns=None):
     if known_towns: KNOWN_TOWNS.update(_norm_town(t) for t in known_towns if t)
     pdf = pdfplumber.open(pdf_path)
@@ -185,8 +222,7 @@ def parse(pdf_path, known_towns=None):
     for page in pdf.pages:
         text = page.extract_text() or ""
         head = text.split("\n", 1)[0].strip()
-        if head in BEZIRKE:
-            bezirk = head
+        bezirk = _bezirk(text) or bezirk
         if not bezirk or "KeZ" not in text[:400]:
             continue
         if "Abschnitt B" in text[:200] or "Berufsfachschulen" == head:
@@ -197,16 +233,16 @@ def parse(pdf_path, known_towns=None):
                     continue
                 name, town, operator, quality = _split_name_block(r[2])
                 status = _status(r[3]); vst = _clean(r[4]); tr = _clean(r[5])
-                beds = _clean(r[6]); places = _clean(r[7]); fach = _clean(r[12])
+                beds = _int(r[6]); places = _int(r[7]); fach = _clean(r[12])
                 rows.append({
                     "clinic_id": _clean(r[1]), "name": name, "town": town, "operator": operator,
                     "landkreis": _clean(r[0]), "regierungsbezirk": bezirk,
                     "status": status, "versorgungsstufe": VST.get(vst, vst or None), "traegerart": TRAEGER.get(tr, tr or None),
-                    "beds": int(beds) if beds.isdigit() else None, "day_places": int(places) if places.isdigit() else None,
+                    "beds": beds, "day_places": places,
                     "fachrichtungen": fach.replace(" ", "").replace(",", "|") if fach and fach != "-" else None,
                     "parse_quality": quality, "source": source,
                 })
-    return rows
+    return _carry_landkreis(rows)
 
 
 _LEGAL_WORD = re.compile(r"\b(GmbH|gGmbH|mbH|AG|KG|OHG|Stiftung|KdöR|Zweckverband)\b")

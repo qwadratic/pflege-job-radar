@@ -378,12 +378,20 @@ def test_every_csv_row_plz_resolves_to_its_own_land():
 # ==================== 9. live-data regression against career_crawl.in_bavaria =======================
 
 def _load_towns():
-    # Same construction as pflege_jobs/cli.py:370, so the OLD detector is exercised exactly as it
-    # runs in production (polluted towns set and all) -- reproducing the second half of the bug this
-    # module fixes, not a cleaned-up strawman.
+    # Same construction as pflege_jobs/cli.py's cmd_inbox (the live clinics table's towns), so the OLD
+    # detector is exercised exactly as it runs in production (polluted towns set and all) -- reproducing
+    # the second half of the bug this module fixes, not a cleaned-up strawman.
     from pflege_jobs.classify import norm_text
-    with open("data/registry/clinics.csv", newline="", encoding="utf-8") as f:
-        return {norm_text(c["town"]) for c in csv.DictReader(f) if c.get("town")}
+    towns, offset = set(), 0
+    while True:
+        r = requests.get("https://supabase.int.exe.xyz/rest/v1/clinics", headers={"Accept-Profile": "pflege_jobs"},
+                         params={"select": "town", "order": "clinic_id", "limit": 1000, "offset": offset}, timeout=30)
+        r.raise_for_status()
+        batch = r.json()
+        towns |= {norm_text(c["town"]) for c in batch if c.get("town")}
+        offset += len(batch)
+        if len(batch) < 1000:
+            return towns
 
 
 def _fetch_live_city_plz_pairs():

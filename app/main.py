@@ -74,7 +74,7 @@ _install_auth(app)
 # img-src is the other loose one, and for a reason that is in the page, not in this file: clinicPhoto()
 # (web/index.template.html:357, web/pro.template.html) shows each hospital's own favicon/apple-touch-icon,
 # read off that hospital's website -- 399 third-party origins that change as the register does. `https:`
-# there is the honest value; an origin list built from clinics.csv is on the open list. Verified in Chromium
+# there is the honest value; an origin list built from the clinics table is on the open list. Verified in Chromium
 # against /?mock=1: with `img-src 'self' data:` every clinic mark fell back to its initials.
 # The strict version (per-response nonce, or sha256 hashes of every inline block, and dropping
 # 'unsafe-inline') needs the build to emit the hashes and the server to read them -- it is on the open list,

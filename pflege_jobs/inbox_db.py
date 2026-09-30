@@ -126,6 +126,28 @@ def loaded_refs(run_id, path=None):
         return out
 
 
+def pending_board_pools(path=None):
+    """source_ref -> union of the board pools (clinic_ids) of every pending copy of that posting.
+
+    One real board is often reached through several registry careers_urls (Mainkofen's mein-check-in
+    tenant via 3 URLs, karriere.medicalpark.de via 9, karriere.passauerwolf.de via 3 -- run 217,
+    2026-09-29). crawlers.routing groups boards by exact URL, so each fetch tags its copy of a posting
+    with a narrower pool, each copy was matched on its own, and the pflege-ingest clinic_links
+    `update ... from` then applied an arbitrary one of the conflicting links (TASK-166). The posting
+    was served by all of those boards, so all of their clinics are candidates. Key = the identity the
+    drain writes under: payload.source_ref (seeded observations), else the jobposting's url, else
+    source_url."""
+    out = {}
+    with connect(path) as c:
+        for r in c.execute(
+                "select coalesce(json_extract(payload,'$.source_ref'), json_extract(payload,'$.url'), source_url) k,"
+                " coalesce(json_extract(payload,'$._board'), json_extract(payload,'$.board_clinic_ids')) b"
+                " from inbox where processed_at is null"):
+            if r["b"]:
+                out.setdefault(r["k"], set()).update(str(x) for x in json.loads(r["b"]))
+    return out
+
+
 def known_urls(urls, path=None):
     """Which of these source_urls the local queue has already seen (any state)."""
     urls = list(urls)

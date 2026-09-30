@@ -34,7 +34,7 @@ spending twice (in flight → 409, same key with a different body → 422).
 | GET | `/facets` | `{cities[{v,n}], job_cities, regierungsbezirk, landkreis, ats_type, traegerart, versorgungsstufe, status, fachrichtungen[{v,label,n}], size[{v,label,n}], role_class[{v,label,n}], department_hint, employment_types, contract, enr_tariff, verify_status, beds{min,max}, size_buckets}` |
 | GET | `/clinics` | `{total, limit, offset, next_offset, rows[clinic]}` — filters: `q, city, regierungsbezirk, landkreis, ats_type, fetch, routable, traegerart, versorgungsstufe, status, fach, beds_min, beds_max, size, has_jobs, sort, limit, offset` (`routable=1|0`) |
 | GET | `/cities?q=` | `[{city, regierungsbezirk, landkreis, clinics, jobs_open, jobs_fresh, ats_known}]` |
-| GET | `/plan?q=&regierungsbezirk=&sort=` | `{total, limit, offset, next_offset, rows[every clinics.csv column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
+| GET | `/plan?q=&regierungsbezirk=&sort=` | `{total, limit, offset, next_offset, rows[every registry column], pdf_url, source, source_url}` — the Krankenhausplan as a table |
 | GET | `/clinics/{kez}` | clinic + `jobs[]` + `runs[]` + `career_profile` |
 | GET | `/jobs` | `{total, limit, offset, next_offset, rows[job]}` — filters: `clinic_id, q, role_class, department_hint, city, regierungsbezirk, employment_types, contract, housing, fresh_days, verify, sort, limit, offset` |
 | GET | `/jobs/{id}` | job + `description`, `enr_*`, `observations[{source_code, source_url, observed_at}]` |

@@ -193,3 +193,75 @@ def test_speculative_application_titles_never_classify_as_a_real_role():
     # this check must not swallow real postings, only speculative-application titles.
     assert classify_role("Pflegefachkraft (m/w/d)", "")[0] == "pflegefachkraft"
     assert classify_role("Pflegefachkraft Intensivstation (m/w/d)", "")[0] == "pflegefachkraft"
+
+
+# TASK-177 (Ivan, 2026-09-29): Kinderpfleger/-in (Kita), Heilerziehungspfleger/-in (HEP) and Landschafts-/
+# Garten-/Parkpfleger are not nursing. strong_pflege's "pfleger\b|pflegerin\b|pflegerisch" matched inside
+# those very words, so their nicht_pflege hit was overridden and _ROLES filed them as pflegefachkraft /
+# apn_experte / leitung -- 110 open postings on 2026-09-29. Every title below is a real live posting title.
+def test_hep_kinderpfleger_and_gardening_pfleger_titles_are_not_nursing():
+    for title, rule in [
+        ("Heilerziehungspfleger (m/w/d)", "nicht_pflege:heilerziehung"),                                 # 7274
+        ("Heilerziehungspflegerin (m/w/d)", "nicht_pflege:heilerziehung"),                               # 7011
+        ("Heilerziehungspflegerinnen und -pfleger (m/w/d)", "nicht_pflege:heilerziehung"),               # 14978
+        ("Kinderpfleger (m/w/d) - Nürnberg", "nicht_pflege:kinderpfleger"),                              # 7063
+        ("Kinderpfleger/in (m/w/d)", "nicht_pflege:kinderpfleger"),                                      # 14543
+        ("Kinderpflegerin (m/w/d) für unsere neue Kinderwohngruppe", "nicht_pflege:kinderpfleger"),      # 14150
+        ("Erzieher, Kinderpfleger, Sozialpädagoge (o. ä. Abschlüsse) (m/w/d)", "nicht_pflege:erzieher"),  # 13592, was apn_experte
+        ("Heilerziehungspfleger / Erzieher / Heilpädagoge als Gruppenleitung Tagesförderstätte m/w/d",
+         "nicht_pflege:heilerziehung"),                                                                  # 14355, was leitung
+        ("Garten-und Landschaftspfleger (m/w/d)", "nicht_pflege:landschaftspflege"),                     # 14947
+    ]:
+        assert classify_role(title, "") == ("nicht_pflege", rule), title
+    # Only helper roles left once "Kinderpfleger" no longer reads as pflegefachkraft (13937).
+    assert classify_role("Heilerziehungspflegehelfer / Kinderpfleger / Altenpflegehelfer (m/w/d) für unsere "
+                         "Wohneinrichtung Kloster Holzen", "") == ("pflegehelfer", "pflegehelfer:altenpflegehelfer")
+
+
+def test_real_nursing_titles_next_to_hep_or_kinder_words_stay_nursing():
+    for title, want in [
+        ("Gesundheits- und Kinderkrankenpfleger (w/m/d)", "pflegefachkraft"),
+        ("Kinderkrankenschwester (m/w/d)", "pflegefachkraft"),
+        ("Kinderintensivpfleger (m/w/d)", "fachpflege"),
+        ("Kinderkrankenpflegerinnen und -pfleger (m/w/d)", "pflegefachkraft"),                            # 14970
+        ("Krankenschwester (m/w/d) Kinderpflege", "pflegefachkraft"),
+        ("Altenpfleger (m/w/d)", "pflegefachkraft"),
+        ("Pflegefachkraft (m/w/d)", "pflegefachkraft"),
+        ("Pflegehelfer (m/w/d)", "pflegehelfer"),
+        # a posting that also takes nurses stays a nursing posting (7091, 14989, 14011)
+        ("Pflegefachkraft (m/w/d) / Heilerziehungspfleger (m/w/d) auf geringfügiger Basis - Wohnen Rothenburg",
+         "pflegefachkraft"),
+        ("Heilerziehungspfleger, Erzieher, Gesundheits- und Krankenpfleger, Altenpfleger oder Pflegefachmann*",
+         "pflegefachkraft"),
+        ("Sozial- oder Sonderpädagoge, Pfleger mit Schwerpunkt Psychiatrie, Heilerziehungspfleger (m/w/d)",
+         "apn_experte"),
+    ]:
+        assert classify_role(title, "")[0] == want, title
+
+
+# TASK-177 extension ("nursing jobs only"): catering, grounds, animal-keeper, cleaning, foot-care/cosmetics and
+# childminder titles that the "pfleg" gate let in and the -pfleger precedence or the fallback kept. Live titles.
+def test_catering_grounds_animal_cleaning_cosmetic_and_childminder_titles_are_not_nursing():
+    for title, rule in [
+        ("Servicemitarbeiter (m/w/d) in unserer Patientenverpflegung", "nicht_pflege:verpflegung"),           # 15315
+        ("Betriebsassistenz (m/w/d) für Patientenbeherbergung und -verpflegung", "nicht_pflege:verpflegung"),  # 15316
+        ("Beschäftigung im Zuverdienst – Garten- und Anlagepflege (w/m/d)", "nicht_pflege:anlagepflege"),      # 15317
+        ("Tierpfleger (m/w/d) für die Keimfrei-Tierhaltung", "nicht_pflege:tierpfleg"),                        # 12297
+        ("Examinierter Tierpfleger für die Forschung (m/w/d)", "nicht_pflege:tierpfleg"),                      # 12814
+        ("Raumpfleger (m/w/d)", "nicht_pflege:raumpfleg"),                                                     # 12186
+        ("Zimmermädchen / Roomboy / Raumpfleger (m/w/d)", "nicht_pflege:raumpfleg"),                           # 14880
+        ("Kosmetiker und Fußpfleger (m/w/d) - Ganzjahresstelle", "nicht_pflege:kosmetik"),                     # 14963
+        ("Kosmetikerin (m/w/d) medizinische Fußpflege und medizinische Kosmetik", "nicht_pflege:kosmetik"),    # 15071
+        ("Qualifizierte Tagespflegeperson (m/w/d) für unsere nach Kneipp zertifizierte Kita in Kombination "
+         "mit unserer Manufaktur", "nicht_pflege:tagespflegeperson"),                                          # 14946
+    ]:
+        assert classify_role(title, "") == ("nicht_pflege", rule), title
+    # a nursing-section label skips the gate, the nicht_pflege terms still decide (live inbox titles)
+    assert classify_role("Fußpflege - Klinikum Main-Spessart", "", nursing_section_confirmed=True) == ("nicht_pflege", "nicht_pflege:fußpfleg")
+    assert classify_role("Podologe (m/w/d)", "", nursing_section_confirmed=True) == ("nicht_pflege", "nicht_pflege:podolog")
+    # elderly day care ("Tagespflege") is nursing work and stays in its class
+    for title, want in [("Pflegefachkraft (m/w/d) Tagespflege", "pflegefachkraft"),
+                        ("Krankenpfleger in Stockstadt am Main, Tagespflege Am Hübnerwald", "pflegefachkraft"),
+                        ("Pflegedienstleitung für die Tagespflege (m/w/d) als Krankheitsvertretung", "leitung"),
+                        ("Betreuungskraft (m/w/d) Tagespflege", "pflegehelfer")]:
+        assert classify_role(title, "")[0] == want, title

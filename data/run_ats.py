@@ -1,13 +1,13 @@
-import json, sys, csv, time
+import json, sys, time
 sys.path.insert(0,'.')
+from app import config as A
 from pflege_jobs.sources.ats_seeds import BUILDERS
 from pflege_jobs.sources.career_crawl import Crawler
 from pflege_jobs.classify import norm_text
 from pflege_jobs.registry import Matcher
 ats=sys.argv[1]; budget=int(sys.argv[2]) if len(sys.argv)>2 else 120
-towns={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
-clinics=list(csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')))
-for c in clinics: c['beds']=int(c['beds']) if c.get('beds') else None
+towns={norm_text(r['town']) for r in A.rest_get_all('clinics',{'select':'town','order':'clinic_id'}) if r['town']}
+clinics=A.rest_get_all('clinics',{'select':'*','order':'clinic_id'})
 m=Matcher([dict(c) for c in clinics]); byid={c['clinic_id']:c for c in clinics}
 cen=[v for v in json.load(open('data/registry/ats_census.json')).values() if v['ats']==ats and v['career']]
 path=f'data/ats_{ats}_done.json'
