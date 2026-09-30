@@ -4,6 +4,7 @@ title: 'Console: phone-ops queue view, and scheduling your own task into it'
 status: To Do
 assignee: []
 created_date: '2026-09-23 16:23'
+updated_date: '2026-09-30 20:02'
 labels: []
 dependencies:
   - TASK-283.1
@@ -41,3 +42,9 @@ an expected message count on the CLI (tools/wa_bridge.py) precisely because they
 - [ ] #4 A human-scheduled task is distinguishable in the queue and in the ledger journal from one a watcher enqueued
 - [ ] #5 Scheduling never bypasses the FIFO: a human task waits its turn like every other row
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Ivan, 2026-09-30 (see the TASK-283 notes): send IS an allowed human kind from Pro, as a queued task with a visible state; no Luna pause; the live queue view is the intervention point. The queue view and task status go through the Pro API (TASK-395 harness routes plus the board proxy, owner-gated).
+<!-- SECTION:NOTES:END -->

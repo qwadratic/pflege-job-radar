@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-23 16:23'
+updated_date: '2026-09-30 20:02'
 labels: []
 dependencies:
   - TASK-281
@@ -47,3 +48,14 @@ https://pflege-board.exe.xyz.
 - [ ] #2 The console has no HTTP route that can send, edit or delete a WhatsApp message, and a test asserts that
 - [ ] #3 The only write path reaching the rail is the task-scheduling one from its own subtask
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Ivan, 2026-09-30, amends THE ONE RULE above for the Pro view (the board frontend, pflege-fe): "когда человек написал в про, то это уходит в очередь, и видно статус, что сообщение в очереди, и вообще видно статус этой очереди, как она разгребается в реальном времени, чтобы в случае чего сразу можно было вмешаться".
+- A human message typed in Pro is ALLOWED. It is a queued send task, never a direct send, and it joins the same phone_ops FIFO that Luna uses.
+- Luna is NOT paused when a human writes (Ivan explicitly rejected the pause).
+- The message shows its queue state (queued/running/sent/failed). The whole queue is visible live as it drains, so a human can intervene at once.
+- Also asked the same day: a "refresh" task (re-read the chat from the phone into SQLite, engine-side; the brain still never sees the screen), and a visible last-update time. Reads come from SQLite only; the engine keeps SQLite current.
+- Delivery path: harness /api/wa/pro/* (TASK-395) plus the board proxy, not a separate console app.
+<!-- SECTION:NOTES:END -->
