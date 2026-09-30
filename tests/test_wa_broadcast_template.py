@@ -80,8 +80,8 @@ def _tool():
 
 
 def test_template_mode_renders_every_recipient_from_their_name():
-    rows = [{"line": 1, "to": "+436704048778", "body": None, "name": "Ivan"},
-            {"line": 2, "to": "+4366493036780", "body": None, "name": "Valentyn"},
+    rows = [{"line": 1, "to": "+436600000001", "body": None, "name": "Ivan"},
+            {"line": 2, "to": "+436600000002", "body": None, "name": "Valentyn"},
             {"line": 3, "to": "+491709990589", "body": None, "name": None}]
     items = _tool().plan_broadcast(rows, None, template=True)
     assert [i["body"] for i in items] == [IVAN, VALENTYN, NO_NAME], (
@@ -91,13 +91,13 @@ def test_template_mode_renders_every_recipient_from_their_name():
 def test_template_mode_refuses_a_recipient_who_also_carries_their_own_body():
     """Not "the template wins" and not "the body wins": a file carrying both was written by someone
     who expected one of them to win, and guessing which is how the wrong text reaches a stranger."""
-    rows = [{"line": 1, "to": "+436704048778", "body": "etwas anderes", "name": "Ivan"}]
+    rows = [{"line": 1, "to": "+436600000001", "body": "etwas anderes", "name": "Ivan"}]
     with pytest.raises(ValueError, match="which --template would override"):
         _tool().plan_broadcast(rows, None, template=True)
 
 
 def test_without_template_mode_nothing_changes():
-    rows = [{"line": 1, "to": "+436704048778", "body": "eigener Text", "name": "Ivan"},
-            {"line": 2, "to": "+4366493036780", "body": None, "name": "Valentyn"}]
+    rows = [{"line": 1, "to": "+436600000001", "body": "eigener Text", "name": "Ivan"},
+            {"line": 2, "to": "+436600000002", "body": None, "name": "Valentyn"}]
     items = _tool().plan_broadcast(rows, "gemeinsamer Text")
     assert [i["body"] for i in items] == ["eigener Text", "gemeinsamer Text"]

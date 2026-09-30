@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-24 21:33'
-updated_date: '2026-09-24 22:24'
+updated_date: '2026-09-30 18:28'
 labels:
   - whatsapp
   - handover
@@ -116,7 +116,7 @@ at 10/10, which is the end-to-end proof the ungoverned path works.
 
 EARLIER RUNS, left in place deliberately:
 - uat-2026-09-24-fresh-start: STOPPED. Its first item delivered an INVENTED German opener to
-  +436704048778 before the stop; the second recipient was never attempted. That message is still
+  +436…8778 before the stop; the second recipient was never attempted. That message is still
   visible in the chat on the handset -- it was removed from the DB but not from the phone, because
   phone-side deletions are what drove the screen/DB desync in TASK-289. Ivan to decide.
 - uat-2026-09-24-restart: both items send_unconfirmed. Do NOT re-record them.

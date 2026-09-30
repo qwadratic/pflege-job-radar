@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-23 19:44'
+updated_date: '2026-09-30 18:28'
 labels: []
 dependencies:
   - TASK-235
@@ -17,7 +18,7 @@ ordinal: 238000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Found live during the 2026-09-23 UAT, on Ivans own test thread (+436704048778). The SAME
+Found live during the 2026-09-23 UAT, on Ivans own test thread (+436…8778). The SAME
 physical WhatsApp bubble -- "Ich habe Interesse an einer Stelle in München", never answered because
 of a same-day Supabase outage and a separately-broken catchup unit -- was captured into
 wa_messages as three DISTINCT inbound rows:

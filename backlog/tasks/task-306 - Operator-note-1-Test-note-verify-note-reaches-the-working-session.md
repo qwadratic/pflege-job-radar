@@ -4,7 +4,7 @@ title: 'Operator note #1: Test note: verify note reaches the working session'
 status: Done
 assignee: []
 created_date: '2026-09-25 10:30'
-updated_date: '2026-09-25 13:59'
+updated_date: '2026-09-30 18:28'
 labels:
   - operator-note
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 259000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Origin
-- Operator note #1, test thread +436704048778
+- Operator note #1, test thread +436…8778
 - Received: 2026-09-25T10:30:20+00:00 UTC / 2026-09-25 12:30 CEST
 - Typed message
 - Note wamid: e2e.task303.2026-09-25T1035Z
@@ -32,12 +32,12 @@ This is a test note for checking the worker. The operator asks to make sure the 
 - none
 
 ## Database context
-### Recent messages (+436704048778)
+### Recent messages (+436…8778)
 (no prior messages on this thread)
 
 ### Thread card
 ```json
-{"asked": [], "is_test": true, "last_inbound_at": null, "last_outbound_at": null, "matches_sent_at": null, "opened_at": "2026-09-13T21:11:04+00:00", "phone": "+436704048778", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T19:11:05+00:00", "turns": 0}
+{"asked": [], "is_test": true, "last_inbound_at": null, "last_outbound_at": null, "matches_sent_at": null, "opened_at": "2026-09-13T21:11:04+00:00", "phone": "+436…8778", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T19:11:05+00:00", "turns": 0}
 ```
 
 ### Earlier notes from this phone

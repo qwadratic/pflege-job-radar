@@ -3,6 +3,12 @@
 .env.*
 !.env.example
 !.env.kindt.example
+# real WhatsApp test-handset numbers (Ivan/Valentyn); see config/wa-test-numbers.example.json
+config/wa-test-numbers.json
+config/wa-test-numbers-reset.csv
+# same reason -- old recipient-file location, kept gitignored so an existing local copy on a
+# checkout that has not moved to config/wa-test-numbers.json yet stays untracked
+data/uat-*
 # public build config (project URL + anon key, both public by design) -- needed to reproduce the build
 !web/.env.build
 

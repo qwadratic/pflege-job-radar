@@ -17,8 +17,8 @@ from bridge import errors as E
 from bridge import governor as G
 from bridge import ledger as L
 
-TEST_PHONE = "+436704048778"
-OTHER_TEST = "+4366493036780"
+TEST_PHONE = "+436600000001"
+OTHER_TEST = "+436600000002"
 REAL = "+491709990589"
 
 # 03:00 Berlin on a Thursday: outside active hours (9-20), which refuses every governed send
@@ -68,16 +68,16 @@ def test_no_cap_and_no_gap_applies_to_a_test_handset(led):
     assert gov.check(now=DAY, phone=TEST_PHONE, kind="reply") is not None
 
 
-@pytest.mark.parametrize("spelling", ["+436704048778", "436704048778", "0043670 4048778",
-                                      "+43-670-4048778"])
+@pytest.mark.parametrize("spelling", ["+436600000001", "436600000001", "0043660 0000001",
+                                      "+43-660-0000001"])
 def test_the_exemption_does_not_care_how_the_number_was_typed(led, spelling):
     assert _gov(led).is_ungoverned(spelling) is True
 
 
 def test_a_national_trunk_zero_is_not_silently_stripped(led):
-    """0670... is an Austrian national spelling whose country this module cannot know. Refusing to
+    """0660... is an Austrian national spelling whose country this module cannot know. Refusing to
     guess means it stays GOVERNED -- the safe direction -- rather than matching the wrong person."""
-    assert _gov(led).is_ungoverned("0670 4048778") is False
+    assert _gov(led).is_ungoverned("0660 0000001") is False
 
 
 def test_nothing_is_exempt_by_default(led):

@@ -237,8 +237,8 @@ def test_a_running_broadcast_is_read_back_and_stopped_without_sending_anything(c
     assert "stopped" in capsys.readouterr().out
 
 
-GONE = "+43 670 4048778"
-DELETED_GONE = audit_row(chat_title=GONE, to_phone="+436704048778")
+GONE = "+43 660 0000001"
+DELETED_GONE = audit_row(chat_title=GONE, to_phone="+436600000001")
 
 
 def test_a_media_sends_answer_timeout_is_never_printed_as_a_refusal(capsys, autosend):
@@ -259,7 +259,7 @@ def test_the_destruction_record_is_readable_on_its_own(capsys):
     out = capsys.readouterr().out
     assert code == 0 and [c["method"] for c in fake.calls] == ["GET"], "reading it touches no phone"
     assert "1 destruction(s) recorded" in out, "--title is the chat asked about, not every row"
-    assert ("  3  2026-09-21T17:26:16.912Z  delete_chat  '+43 670 4048778'  verified=True  "
+    assert ("  3  2026-09-21T17:26:16.912Z  delete_chat  '+43 660 0000001'  verified=True  "
             "state='verified'  3 message(s)  chat_list_rescan") in out
 
 

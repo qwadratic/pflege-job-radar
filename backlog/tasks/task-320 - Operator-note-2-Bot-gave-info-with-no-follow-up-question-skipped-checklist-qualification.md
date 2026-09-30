@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-29 10:00'
-updated_date: '2026-09-29 10:12'
+updated_date: '2026-09-30 18:28'
 labels:
   - operator-note
 dependencies: []
@@ -19,7 +19,7 @@ ordinal: 265000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Origin
-- Operator note #2, test thread +4366493036780
+- Operator note #2, test thread +436…6780
 - Received: 2026-09-29T09:55:04+00:00 UTC / 2026-09-29 11:55 CEST
 - Transcribed voice note
 - Note wamid: wab.i.autolink.c6e5c570c6e891ef9c39dbba51f6b4bf
@@ -36,7 +36,7 @@ Operator reports that the bot replied to the inbound message with information bu
 - Is there an existing checklist document, or does one need to be created before it can be sent to the operator?
 
 ## Database context
-### Recent messages (+4366493036780)
+### Recent messages (+436…6780)
 - [2026-09-29T09:45:27+00:00] in text: Hallo, suche eine Stelle
 - [2026-09-29T09:52:42+00:00] out text: Hallo! Schön, dass Sie sich melden. 😊 Ich bin Valentina von der NDT Group – aktuell haben wir 2.878 offene Pflegestellen an bayerischen Kliniken.
 - [2026-09-29T09:54:18+00:00] in text: 🎤 Sprachnachricht (0:53)
@@ -44,7 +44,7 @@ Operator reports that the bot replied to the inbound message with information bu
 
 ### Thread card
 ```json
-{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T09:54:45+00:00", "last_outbound_at": "2026-09-29T09:55:53+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "+4366493036780", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 3}
+{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T09:54:45+00:00", "last_outbound_at": "2026-09-29T09:55:53+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "+436…6780", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 3}
 ```
 
 ### Earlier notes from this phone

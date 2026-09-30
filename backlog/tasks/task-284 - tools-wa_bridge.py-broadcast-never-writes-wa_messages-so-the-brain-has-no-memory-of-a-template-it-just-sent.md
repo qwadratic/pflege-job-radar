@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-23 19:43'
-updated_date: '2026-09-23 20:16'
+updated_date: '2026-09-30 18:28'
 labels: []
 dependencies: []
 priority: high
@@ -17,7 +17,7 @@ ordinal: 237000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Found live during the 2026-09-23 UAT broadcast to Valentyn (+4366493036780). Sequence, all
+Found live during the 2026-09-23 UAT broadcast to Valentyn (+436…6780). Sequence, all
 confirmed against the actual rows:
 
   19:21:19  broadcast sends the approved opening template. bridge/broadcast.py records it on the

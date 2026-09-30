@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-24 00:32'
-updated_date: '2026-09-25 07:59'
+updated_date: '2026-09-30 18:29'
 labels:
   - whatsapp
   - reliability
@@ -25,7 +25,7 @@ Live incident, 2026-09-23/24: on BOTH test numbers, wa_messages recorded a real,
 - [x] #1 app/wa/store.py has deleted_at columns on wa_messages and wa_documents (nullable, via the existing MIGRATIONS pattern), plus forget_message/forget_document that set it without ever deleting the row
 - [x] #2 Every read the live bot reaches (messages_for, message_by_wamid, documents_for, document_for_wamid, document_with_sha256, document_by_id, and the raw queries in shadow_run.py/catchup.py/choices.py that decide the last inbound / an offer still live) filters deleted_at is null by default; admin/audit tooling can still pass include_deleted=True
 - [x] #3 delete_chat/clear_chat capability (bridge/operations.py, bridge/server.py's /v1/chats/clear and /v1/chats/delete routes, app/wa/bridge.py's Client methods, tools/wa_bridge.py's clear-chat/delete-chat CLI commands, and their bridge/ledger.py audit plumbing) is removed from the codebase entirely
-- [x] #4 Removal in the prior AC happens only after both live test threads (+436704048778, +4366493036780) have had their corrupted phone-side chats cleared through the existing tool one last time -- do not remove the capability out from under an in-progress manual cleanup
+- [x] #4 Removal in the prior AC happens only after both live test threads (+436…8778, +436…6780) have had their corrupted phone-side chats cleared through the existing tool one last time -- do not remove the capability out from under an in-progress manual cleanup
 <!-- AC:END -->
 
 ## Implementation Notes
