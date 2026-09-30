@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-29 23:08'
-updated_date: '2026-09-30 18:23'
+updated_date: '2026-09-30 18:26'
 labels:
   - pro-api
   - email-lane
@@ -40,3 +40,35 @@ Shape, to agree with the email-harness session:
 - [ ] #3 Pro API rows expose the handoff status, and a closed handoff no longer counts as needing a human
 - [ ] #4 Daria sends Ivan and Valentyn a lead report built from the API; the first one is reviewed by Ivan
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-30, the email-harness session's spec for Daria (full reply, summarised):
+
+**READ, per consented lead, keyed by candidate_id; the phone stays masked:**
+- structured CV JSON (roles with from/to, employer, ward, tasks, languages, Anerkennung, city);
+- CV/Urkunde metadata (present, verified, date); the files themselves are never needed;
+- CONSENT: verbatim text, timestamp, channel, message id, scope (one named clinic vs generic). This is a must, because nurse-79's recorded consent named one clinic only;
+- named towns, all of them, verbatim with message ids;
+- housing, ward wish, qualification path, German level plus proof, household size;
+- IN-PROCESS clinics: submissions, interviews, trial days, offers, manager-takeover flags with reason (a must);
+- candidate status: placed / signed / withdrawn / unreachable, with ts;
+- current and past employers (hard exclusion);
+- updated_at on every row and a source-freshness stamp per response;
+- message history with ids.
+
+**WRITE-BACK, keyed by (candidate_id, clinic)**, since one lead fans out to 10-20 clinics:
+- fields: board clinic_id + name, status, sender box, Message-ID, batch_id, note, ts; audit trail kept;
+- statuses: sent_to_clinic | followup_sent | clinic_replied | interview_scheduled | trial_scheduled | offer | contract_signed | declined | closed | halted;
+- contract_signed is the goal state;
+- needs-a-human: sent_to_clinic/followup_sent clear it; clinic_replied, interview_scheduled, trial_scheduled, offer and halted raise it again.
+
+**REPORTS:** a Russian plain-text mail from daria.s@ via tools/clinic_mailer.py to Valentyn, Cc Ivan (or Ivan alone), with the nurse-79 sections.
+- Cadence is ad hoc for now. Ivan prefers an evening summary but has not picked a trigger: no timer or cron until he does.
+- Fields per lead: candidate_id, qualification + Anerkennung, wards, towns, housing, consent scope/date, in-process clinics with stage, planned clinics, latest clinic replies, open questions.
+
+**SPLIT:**
+- consent, card, CV, documents and messages come from wa.sqlite;
+- in-process clinics, placement status and candidate_id live in sales_brain (the colleague's CRM, read-only for us) plus Daria's send log. The join design is still to decide.
+<!-- SECTION:NOTES:END -->
