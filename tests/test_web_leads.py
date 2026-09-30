@@ -1,7 +1,8 @@
 """Leads view (web/pro.html#/leads, docs/wa-dashboard.md): who needs a human comes first, every card below.
 
-Most tests run the built page against its own offline mock (`?mock=1`): 28 invented threads that cover every
-escalation code, every "reply stuck" signal, two handoffs, the checks (flags), the ended states and one test number.
+Most tests run the built page against its own offline mock (`?mock=1`): 30 invented threads that cover every
+escalation code, every "reply stuck" signal, every handoff status, the checks (flags), the ended states and one test
+number.
 The last two tests leave the mock and route /api/* by hand, to prove a missing or broken WhatsApp API is said out
 loud instead of rendering as "0 leads".
 """
@@ -11,7 +12,8 @@ pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 WEB = pathlib.Path(__file__).resolve().parent.parent / "web"
-# The mock's 27 real threads: 8 escalated (7 codes + an evaluator "red"), 3 with a stuck reply, 2 handoffs.
+# The mock's 29 real threads: 8 escalated (7 codes + an evaluator "red"), 3 with a stuck reply, 2 handoffs that wait
+# for a human (queued, attention). Two more handoffs are past that point (in_progress, signed) and do not count.
 NEEDS_HUMAN = 13
 
 
@@ -107,15 +109,33 @@ def test_every_lead_shows_what_we_know_in_conversation_order(leads):
 def test_green_leads_run_from_the_furthest_along_down_to_first_contact(leads):
     stages = leads.locator("tbody tr").evaluate_all(
         "trs => trs.filter(tr => tr.querySelector('.lb.green')).map(tr => tr.querySelector('.stg').firstChild.textContent)")
-    assert stages == ["Consent", "Documents", "CV", "Matching", "Matching", "Matching", "Qualification", "Qualification", "Contact"]
+    assert stages == ["Handed off · in progress", "Handed off · signed", "Consent", "Documents", "CV",
+                      "Matching", "Matching", "Matching", "Qualification", "Qualification", "Contact"]
+
+
+def test_only_a_queued_handoff_or_one_needing_attention_waits_for_a_human(leads):
+    need = leads.inner_text(".lh-list")
+    assert "send the anonymised profile to 5 clinics" in need                       # 6604, queued
+    assert "Handoff: 1 clinic(s) need attention" in need                             # 1180, one target flagged
+    assert "7340" not in need and "5566" not in need                                 # in_progress and signed wait for nobody
+    stage = lambda ph: leads.locator("tbody tr", has_text=ph).locator(".stg").evaluate("s => s.firstChild.textContent")
+    assert (stage("7340"), stage("5566")) == ("Handed off · in progress", "Handed off · signed")
+    leads.locator(".lh", has_text="1180").click()
+    leads.wait_for_selector("#ld-chat .bub")
+    assert leads.locator("#lead-dlg ol.ld-cl li").count() == 12
+    assert leads.inner_text("#lead-dlg ol.ld-cl .att") == "asks for the B2 language certificate before an interview"
+
+
+def test_the_health_strip_says_when_the_rail_was_last_confirmed(leads):
+    assert re.search(r"rail contact\s+2 min ago · bridge", leads.inner_text(".wa-strip").lower())
 
 
 def test_the_green_rule_is_stated_and_the_board_lists_every_real_lead(leads):
     assert "LUNA ACTIVE (green) means" in leads.inner_text(".wa-rule")
-    assert leads.locator("tbody tr").count() == 27
+    assert leads.locator("tbody tr").count() == 29
     leads.locator("label.toggle", has_text="Show test numbers").click()
     leads.wait_for_timeout(100)
-    assert leads.locator("tbody tr").count() == 28
+    assert leads.locator("tbody tr").count() == 30
     assert leads.locator("tbody .lb.test").count() == 1
     assert leads.inner_text("h1").startswith(f"{NEEDS_HUMAN} ")    # showing the test number does not count it
 
@@ -123,7 +143,7 @@ def test_the_green_rule_is_stated_and_the_board_lists_every_real_lead(leads):
 def test_funnel_status_and_search_filter_the_board(leads):
     leads.locator(".wa-funnel button", has_text="Handed off").click()
     leads.wait_for_timeout(100)
-    assert leads.locator("tbody tr").count() == 2
+    assert leads.locator("tbody tr").count() == 4
     assert "stage=submitted" in leads.url
     leads.locator(".wa-funnel button", has_text="Handed off").click()   # a second click clears it
     leads.locator(".seg .sg", has_text="Ended").click()
@@ -159,6 +179,8 @@ def test_drawer_shows_card_documents_and_every_message_kind(leads):
     assert leads.locator("#ld-chat .tomb").count() == 1                    # forgotten message: tombstone, no body
     assert leads.locator("#ld-chat .bub .btns span").count() == 2
     assert "voice note" in leads.inner_text("#ld-chat").lower()           # the caption is upper-cased by CSS
+    assert "Den Anpassungslehrgang würde ich machen" in leads.inner_text("#ld-chat")   # meta.transcript of the voice note
+    assert "pflege_bayern_reengage_v2" in leads.inner_text("#ld-chat")                   # meta.template, literal
     before = leads.locator("#ld-chat .bub, #ld-chat .tomb").count()
     assert before == 30
     leads.locator("#ld-chat button", has_text="Load older messages").click()

@@ -5,8 +5,8 @@
 own that data. It proxies `/api/wa/*` server-side to the harness. The harness serves a token-gated read API, and the
 board holds `WA_API_BASE` / `WA_API_TOKEN` (topology B, Ivan 2026-09-29). The token never reaches the browser.
 **Access:** owner only. `/api/wa/threads` (which also covers `/threads/{id}` and `/threads/{id}/messages`) is in
-`OWNER_READ_PREFIXES` in `app/auth.py` (PR #1), and no agent-key scope opens it. `/api/wa/health` carries no secret
-and stays public.
+`OWNER_READ_PREFIXES` in `app/auth.py` (PR #1), and no agent-key scope opens it. `/api/wa/health` is owner-only too
+(wa-harness, 2026-09-30).
 **Status:** phase 1, read-only. There are no writes (reply, pause, note) until Ivan asks for them.
 **Code:** `web/pro.template.html` (`pageLeads`, `WA_*`), demo data in its `mockApi` (`?mock=1#/leads`).
 
@@ -18,7 +18,7 @@ The view invents no reason of its own. It sorts and shows what the harness alrea
 |---|---|---|---|
 | escalated | **MANAGER** (red) | `escalation_codes`: `card._escalation_codes`, the closed list in `app/wa/luna/escalation.py` (Ivan 2026-09-22). A code outside the list is shown raw, never hidden. `lead_status.status == "red"` (TASK-316) lands here too | yes |
 | reply stuck | **ANTWORT NÖTIG** (amber) | `stuck_reply` (ball on us longer than `WA_STUCK_REPLY_HOURS`), `last_send_error` (`wa_send_failures`), `pending_inbound` (`wa_inbound_pending`) | yes |
-| handoff | **ÜBERGABE** (sky) | funnel stage `submitted` (every gate incl. consent), or a `handoff` row (`wa_queue_candidates`). `app/wa/queue.py` hands it to a human, and nothing records the handoff as done yet, so it stays here | yes |
+| handoff | **ÜBERGABE** (sky) | `handoff.status` `queued` (the anonymised profile waits to be sent) or `attention` (a clinic target needs us), or funnel stage `submitted` with no `handoff` yet. `in_progress`, `signed` and `closed` wait for nobody; the stage label names them ("Übergeben · unterschrieben"). An unknown status counts and is shown raw | yes |
 | check | **HINWEIS** (amber outline) | `flag_codes` (`card._flag_codes`: worth a look, never pulls a human in), any non-green, non-red `lead_status` | **no** |
 | ended | grey | `stopped` (STOP), `suppression` (do-not-contact, any rail), `outcome` declined / already_placed / not_placeable | no |
 | green | **LUNA AKTIV** | none of the above | no |
@@ -73,7 +73,8 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 
 ```json
 {"total": 27, "limit": 500, "offset": 0, "next_offset": null, "test_threads": 1,
- "generated_at": "2026-09-29T14:32:05+00:00", "source": "harness",
+ "generated_at": "2026-09-29T14:32:05+00:00", "source": "harness@tasker-dispatcher-01",
+ "synced_at": "2026-09-29T14:31:40+00:00", "synced_source": "bridge",
  "rows": [ThreadRow]}
 ```
 
@@ -92,7 +93,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 | `stage_since` | time \| null | `requirement_scoreboard().stage_since` |
 | `outcome` | `declined` \| `already_placed` \| `not_placeable` \| null | `luna/reporting.py:stage_for`, the terminal labels only |
 | `gates` | object: gate → `satisfied` \| `open` \| `blocked` | `requirement_scoreboard`, keys `region`, `qualification`, `city_or_department`, `housing`, `cv_document`, `qualification_document`, `handoff_consent` |
-| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city` (a string or a list), `department` (`card.department_pref`; `"flexibel"` means any department), `qualification_path`, `housing_needed`, `people_count`, `housing_flexible` (would also take a clinic without a flat), `anonymous_send_offered` (the consent question has gone out), `campaign`, `match_branch`. Never `cv_text` or any document text |
+| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city` (a string or a list), `department` (`card.department_pref`, passed raw; the view shows `"flexibel"` as any department), `qualification_path`, `housing_needed`, `people_count`, `housing_flexible` (would also take a clinic without a flat), `anonymous_send_offered` (the consent question has gone out), `campaign` (a campaign_id or null), `match_branch`. Never `cv_text` or any document text |
 | `stopped`, `stopped_reason` | bool, string \| null | `wa_threads` |
 | `suppression` | `{reason, lane, at}` \| null | `suppression.py` (no `trigger_text` in the list) |
 | `escalation_codes`, `flag_codes` | string[] | `card._escalation_codes`, `card._flag_codes` |
@@ -100,7 +101,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 | `stuck_reply` | bool | `api.py:_is_stuck` + pending age |
 | `pending_inbound` | `{count, oldest_recorded_at, last_error}` \| null | `store.pending_inbound_summary` |
 | `last_send_error` | `{error, at}` \| null | `store.recent_send_failure` |
-| `handoff` | `{status, consented_at, clinics}` \| null | `wa_queue_candidates` + count of `wa_queue_matches` |
+| `handoff` | `{status, consented_at, clinics, targets}` \| null | `wa_queue_candidates`. `status` is `queued` \| `attention` \| `in_progress` \| `signed` \| `closed`, and only `queued` and `attention` need a human. `clinics` is the matched count. `targets` is one row per clinic: `{clinic_id, clinic_name, external_ref, status, ts, attention}`, where `attention` is set when that clinic needs us |
 | `last_message` | `{direction, kind, preview, at}` | newest `wa_messages` row, `preview` ≤ 140 chars; a deleted row gives `kind: "deleted"` and no preview |
 | `lead_status` | `{status, reason, at}` \| null | TASK-316 (P4). `null` until it ships |
 
@@ -114,7 +115,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
  "documents": [{"id": 12, "kind": "document", "document_type": "lebenslauf", "mime_type": "application/pdf",
                 "size_bytes": 183200, "received_at": "...", "reuse_state": null}],
  "send_failures": [{"error": "...", "at": "..."}],
- "handoff_matches": [{"clinic_id": "16100", "clinic_name": "...", "town": "...", "score": 87}]}
+ "synced_at": "...", "synced_source": "bridge"}
 ```
 
 `escalation_notes` / `flag_notes` are `card._escalate_reason_notes` / `card._flags_notes`. `next_objective` is the
@@ -131,15 +132,19 @@ carries metadata only: no bytes, no path, no extracted text.
 
 Rows are in ascending `id` order. Without a cursor the call returns the newest `limit` rows. `before_id` pages
 older rows, and `next_before_id` is `null` at the start of the thread. `after_id` returns everything newer, which is
-the 5 s poll. `kind` is one of `text`, `audio` (the body is the transcript, if there is one), `buttons`
-(`meta.buttons` holds the titles), `draft` (`meta.scope_refusal` holds the reason), `document`, `image`, `template`.
+the 5 s poll. `kind` is one of `text`, `audio` (`meta.transcript` is the speech-to-text, absent when there is none),
+`buttons` (`meta.buttons` holds the titles), `draft` (`meta.scope_refusal` holds the reason), `document`, `image`,
+`template` (`meta.template` names it). `meta` carries only `buttons`, `scope_refusal`, `action`, `template` and
+`transcript`.
 An unknown kind is shown with its raw name. `deleted: true` is a tombstone with `body: null`. `status` is the latest
 delivery status of an outbound row (`sent`, `delivered`, `read`, `failed`), and there is no `wamid`.
 
 ### `GET /api/wa/health`
 
-This is the harness's own `/wa/health` (`config.readiness()` + `rails`), proxied unchanged. The view reads
-`webhook_ready`, `outbound_ready`, `checks`, `reply_scope`, `autosend`, `transport`, `brain` and `rails`.
+This is the harness's own `/wa/health` (`config.readiness()` + `rails`), proxied unchanged and owner-only. The view
+reads `webhook_ready`, `outbound_ready`, `checks`, `reply_scope`, `autosend`, `transport`, `brain`, `rails`, and
+`synced_at` / `synced_source`: the engine's last confirmed contact with a rail, shown as "Rail contact 2 min ago ·
+bridge". The list envelope and the thread detail carry the same two fields.
 
 ## Errors the view distinguishes
 

@@ -296,7 +296,7 @@ ol.wsteps li{font-size:10px;letter-spacing:.04em;text-transform:uppercase;text-a
 ol.wsteps li.done{color:var(--ink-2);border-top-color:var(--neon)} ol.wsteps li.cur{color:var(--ink);border-top-color:var(--sky);background:rgba(200,241,255,.08)}
 .gl{display:grid;grid-template-columns:12px minmax(96px,max-content) minmax(0,1fr);gap:6px 10px;font-size:12.5px;align-items:baseline} .gl .k{color:var(--ink-3)} .gl i{width:9px;height:9px;display:inline-block;border:1px solid var(--ink-3)} .gl i.s{background:var(--neon);border-color:var(--neon)} .gl i.b{background:var(--red);border-color:var(--red)}
 .ld-next{margin-top:12px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line)} .ld-next .eyebrow{margin-bottom:2px}
-ol.ld-cl{margin:10px 0 0;padding-left:20px;font-size:12.5px} ol.ld-cl li{margin:2px 0}
+ol.ld-cl{margin:10px 0 0;padding-left:20px;font-size:12.5px} ol.ld-cl li{margin:2px 0} ol.ld-cl .att{color:var(--red);font-size:12px;overflow-wrap:anywhere}
 .ld-chat{display:flex;flex-direction:column;gap:6px;padding:14px 18px 22px;flex:1 0 auto}
 .bub{max-width:84%;padding:7px 10px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .bub.in{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line)} .bub.out{align-self:flex-end;background:var(--blue);color:#fff} .bub.draft{align-self:flex-end;background:transparent;border:1px dashed #E1A33F;color:var(--ink)}
@@ -415,7 +415,7 @@ const I18N={
   wa_needs:"Braucht einen Menschen",wa_needs_none:"Niemand wartet auf einen Menschen.",wa_needs_none_sub:"Alle {n} laufenden Leads sind bei Luna.",wa_g_manager:"Eskaliert",wa_g_reply:"Antwort hängt",wa_g_handoff:"Übergabe an Kliniken",wa_g_flag:"Hinweise – nur zur Kontrolle, kein Eingriff nötig",
   wa_all:"Alle Leads",wa_rule:"LUNA AKTIV (grün) heißt: keine Eskalation, keine überfällige oder fehlgeschlagene Antwort, kein unverarbeiteter Eingang, keine offene Übergabe. Grün sagt nichts über den Fortschritt: den zeigt die Karte. Hinweise (gelb) zählen nicht als Eingriff. Gestoppte und gesperrte Nummern zählen nie.",
   wa_st_manager:"Manager",wa_st_reply:"Antwort nötig",wa_st_handoff:"Übergabe",wa_st_green:"Luna aktiv",wa_st_flag:"Hinweis",wa_st_stopped:"Gestoppt",wa_st_suppressed:"Gesperrt",wa_st_declined:"Abgesagt",wa_st_already_placed:"Hat schon Stelle",wa_st_not_placeable:"Nicht vermittelbar",wa_st_ended:"Beendet",wa_st_all:"Alle",wa_st_need:"Mensch nötig",wa_test:"Test",
-  wa_r_stuck:"Antwort überfällig – der Ball liegt bei uns",wa_r_senderr:"Senden fehlgeschlagen",wa_r_pending:"{n} eingehende Nachricht(en) nicht verarbeitet",wa_r_handoff:"Einwilligung erteilt – anonymes Profil an {n} Kliniken senden",wa_r_handoff0:"Einwilligung erteilt – anonymes Profil an Kliniken senden",wa_r_ls:"Evaluator: {s}",
+  wa_r_stuck:"Antwort überfällig – der Ball liegt bei uns",wa_r_senderr:"Senden fehlgeschlagen",wa_r_pending:"{n} eingehende Nachricht(en) nicht verarbeitet",wa_r_handoff:"Einwilligung erteilt – anonymes Profil an {n} Kliniken senden",wa_r_handoff0:"Einwilligung erteilt – anonymes Profil an Kliniken senden",wa_r_ls:"Evaluator: {s}",wa_r_handoff_att:"Übergabe: {n} Klinik(en) brauchen Aufmerksamkeit",wa_r_handoff_att0:"Übergabe braucht Aufmerksamkeit",wa_hs_queued:"wartet auf Versand",wa_hs_attention:"braucht Aufmerksamkeit",wa_hs_in_progress:"läuft",wa_hs_signed:"unterschrieben",wa_hs_closed:"abgeschlossen",
   wa_c_explicit_human_request:"will einen Menschen sprechen",wa_c_pet_policy_question:"Frage zu Haustieren in der Unterkunft (keine Daten im Board)",wa_c_visa_or_immigration_specifics:"Visum / Aufenthalt im Detail",wa_c_legal_or_contract_policy_question:"Rechts- oder Vertragsfrage",wa_c_unreadable_attachment:"Anhang nicht lesbar",wa_c_prior_application_status_question:"fragt nach dem Stand einer früheren Bewerbung",wa_c_unread_media:"Nachrichtentyp wird nicht verarbeitet",wa_c_grounding_rule_violated_twice:"zwei Antworten in Folge brachen eine Dialogregel",wa_c_decline_classifier_disagreement:"Absage erkannt, Klassifikator widerspricht",wa_c_exhaustive_claim_suspected:"Antwort klang evtl. nach „alle Stellen“",wa_c_unrecognized_escalation_attempt:"Modell wollte mit einem Grund außerhalb der Liste eskalieren (abgelehnt)",
   wa_since:"seit {d}",wa_lastmsg:"letzte Nachricht vor {d}",wa_now:"gerade eben",wa_min:"{n} min",wa_h:"{n} h",wa_hm:"{h} h {m} min",wa_d:"{n} T",
   wa_ball_us:"wir",wa_ball_them:"Kandidatin",wa_ball_silent:"bewusst still",wa_ball_none:"–",wa_from:"von der Kandidatin",wa_to:"an die Kandidatin",wa_who_in:"Kandidatin",wa_who_out:"Luna",
@@ -424,9 +424,9 @@ const I18N={
   wa_q_urkunde:"Urkunde",wa_q_defizit:"Defizitbescheid",wa_q_kenntnispruefung:"Kenntnisprüfung",wa_q_reject:"nicht anerkannt",
   wa_c_status:"Status",wa_c_phone:"Nummer",wa_c_stage:"Stufe",wa_c_card:"Karte",wa_c_ball:"Am Zug",wa_c_last:"Letzte Nachricht",wa_c_act:"Aktivität",
   wa_f_q:"Suche: Nummer-Endung, Ort, Fach, Code …",wa_f_test:"Testnummern zeigen",wa_none:"Keine Leads für diese Filter.",
-  wa_hh:"Harness",wa_h_ready:"bereit",wa_h_incomplete:"unvollständig",wa_h_missing:"fehlt",wa_h_scope:"Antworten an",wa_h_scope_all:"alle",wa_h_scope_test:"nur Testnummern",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: echte Leads bekommen Lunas Antwort nur als Entwurf.",wa_h_autosend:"Autosend",wa_h_on:"an",wa_h_off:"aus",wa_h_off_x:"WA_AUTOSEND aus: Antworten landen als Entwurf, nichts erreicht Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_refresh:"Aktualisieren",wa_h_err:"Health nicht abrufbar",
+  wa_hh:"Harness",wa_h_ready:"bereit",wa_h_incomplete:"unvollständig",wa_h_missing:"fehlt",wa_h_scope:"Antworten an",wa_h_scope_all:"alle",wa_h_scope_test:"nur Testnummern",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: echte Leads bekommen Lunas Antwort nur als Entwurf.",wa_h_autosend:"Autosend",wa_h_on:"an",wa_h_off:"aus",wa_h_off_x:"WA_AUTOSEND aus: Antworten landen als Entwurf, nichts erreicht Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail-Kontakt",wa_ago:"vor {d}",wa_h_refresh:"Aktualisieren",wa_h_err:"Health nicht abrufbar",
   wa_e_title:"WhatsApp-Daten nicht verfügbar",wa_e_404:"Dieses Board ist noch nicht mit dem Harness verbunden: /api/wa/threads antwortet 404. Es fehlt der Proxy (WA_API_BASE / WA_API_TOKEN).",wa_e_auth:"Nur für Betreiber – bitte als Owner anmelden.",wa_e_up:"Der Harness antwortet nicht ({s}): {m}",wa_e_other:"Fehler {s}: {m}",wa_e_contract:"Antwort ohne next_offset – verletzt den Vertrag in docs/wa-dashboard.md, die Liste wäre unvollständig.",wa_e_demo:"Demo mit Beispieldaten",wa_e_stale:"Aktualisierung fehlgeschlagen ({m}) – angezeigt ist der Stand von {t}.",wa_demo:"Demo-Daten (?mock=1): erfundene Nummern und Gespräche, keine echten Kandidatinnen.",
-  wa_d_close:"Schließen",wa_d_why:"Warum ein Mensch gefragt ist",wa_d_green:"Nichts zu tun – Luna führt das Gespräch.",wa_d_card:"Karte",wa_d_next:"Luna fragt als Nächstes (intern)",wa_d_branch:"Übergabe-Umfang",wa_b_narrow:"Top 5",wa_b_pool:"alle passenden Kliniken",wa_d_handoff:"Übergabe",wa_d_consented:"Einwilligung",wa_d_clinics:"Kliniken",wa_d_docs:"Dokumente",wa_d_nodocs:"Keine Dokumente.",wa_d_chat:"Verlauf",wa_d_older:"Ältere Nachrichten laden",wa_d_new:"Neue Nachrichten ↓",wa_d_readonly:"Nur lesen – Antworten, Pausieren und Notizen kommen in Phase 2.",wa_d_opened:"Erster Kontakt",wa_d_turns:"Runden",wa_d_campaign:"Kampagne",wa_d_stopped:"STOP erhalten – nie wieder schreiben",wa_d_suppressed:"Auf der Sperrliste (alle Rails)",wa_d_id:"Thread-ID",wa_d_poll_err:"Aktualisierung fehlgeschlagen",
+  wa_d_close:"Schließen",wa_d_why:"Warum ein Mensch gefragt ist",wa_d_green:"Nichts zu tun – Luna führt das Gespräch.",wa_d_card:"Karte",wa_d_next:"Luna fragt als Nächstes (intern)",wa_d_branch:"Übergabe-Umfang",wa_b_narrow:"Top 5",wa_b_pool:"alle passenden Kliniken",wa_d_handoff:"Übergabe",wa_d_consented:"Einwilligung",wa_d_clinics:"Kliniken",wa_d_docs:"Dokumente",wa_d_nodocs:"Keine Dokumente.",wa_attention:"braucht Aufmerksamkeit",wa_d_chat:"Verlauf",wa_d_older:"Ältere Nachrichten laden",wa_d_new:"Neue Nachrichten ↓",wa_d_readonly:"Nur lesen – Antworten, Pausieren und Notizen kommen in Phase 2.",wa_d_opened:"Erster Kontakt",wa_d_turns:"Runden",wa_d_campaign:"Kampagne",wa_d_stopped:"STOP erhalten – nie wieder schreiben",wa_d_suppressed:"Auf der Sperrliste (alle Rails)",wa_d_id:"Thread-ID",wa_d_poll_err:"Aktualisierung fehlgeschlagen",
   wa_m_draft:"Entwurf – nicht gesendet",wa_m_deleted:"Nachricht vergessen (Operator)",wa_m_audio:"Sprachnachricht",wa_m_notranscript:"(kein Transkript)",wa_m_document:"Dokument",wa_m_image:"Bild",wa_m_video:"Video",wa_m_template:"Vorlage",wa_m_buttons:"Buttons",wa_m_empty:"Noch keine Nachrichten.",wa_ms_sent:"gesendet",wa_ms_delivered:"zugestellt",wa_ms_read:"gelesen",wa_ms_failed:"fehlgeschlagen",
   wa_v_housing_yes:"ja, {n} Personen",wa_v_housing_yes1:"ja, 1 Person",wa_v_housing_q:"ja, Personenzahl offen",wa_v_housing_no:"nein",wa_v_received:"erhalten",wa_v_flex:" · auch ohne",wa_v_dept_any:"Fach egal",wa_v_asked:"angefragt",
   wa_k_house:"Wohnung für {n}",wa_k_house_q:"Wohnung ja, für wie viele?",wa_k_nohouse:"ohne Wohnung",wa_k_asked:"Einwilligung angefragt",
@@ -481,7 +481,7 @@ const I18N={
   wa_needs:"Needs a human",wa_needs_none:"Nobody is waiting for a human.",wa_needs_none_sub:"All {n} running leads are with Luna.",wa_g_manager:"Escalated",wa_g_reply:"Reply stuck",wa_g_handoff:"Handoff to clinics",wa_g_flag:"Checks – for review only, no action needed",
   wa_all:"All leads",wa_rule:"LUNA ACTIVE (green) means: no escalation, no overdue or failed reply, no unprocessed inbound message, no open handoff. Green says nothing about progress: the card shows that. Checks (amber) do not count as needing a human. Stopped and do-not-contact numbers never count.",
   wa_st_manager:"Manager",wa_st_reply:"Reply needed",wa_st_handoff:"Handoff",wa_st_green:"Luna active",wa_st_flag:"Check",wa_st_stopped:"Stopped",wa_st_suppressed:"Do not contact",wa_st_declined:"Declined",wa_st_already_placed:"Already placed",wa_st_not_placeable:"Not placeable",wa_st_ended:"Ended",wa_st_all:"All",wa_st_need:"Needs a human",wa_test:"Test",
-  wa_r_stuck:"Reply overdue – the ball is with us",wa_r_senderr:"Send failed",wa_r_pending:"{n} inbound message(s) not processed",wa_r_handoff:"Consent given – send the anonymised profile to {n} clinics",wa_r_handoff0:"Consent given – send the anonymised profile to clinics",wa_r_ls:"Evaluator: {s}",
+  wa_r_stuck:"Reply overdue – the ball is with us",wa_r_senderr:"Send failed",wa_r_pending:"{n} inbound message(s) not processed",wa_r_handoff:"Consent given – send the anonymised profile to {n} clinics",wa_r_handoff0:"Consent given – send the anonymised profile to clinics",wa_r_ls:"Evaluator: {s}",wa_r_handoff_att:"Handoff: {n} clinic(s) need attention",wa_r_handoff_att0:"Handoff needs attention",wa_hs_queued:"queued",wa_hs_attention:"needs attention",wa_hs_in_progress:"in progress",wa_hs_signed:"signed",wa_hs_closed:"closed",
   wa_c_explicit_human_request:"asked for a human",wa_c_pet_policy_question:"pet policy in staff housing (no board data)",wa_c_visa_or_immigration_specifics:"visa / immigration specifics",wa_c_legal_or_contract_policy_question:"legal or contract question",wa_c_unreadable_attachment:"an attachment could not be read",wa_c_prior_application_status_question:"asks about an earlier application's real status",wa_c_unread_media:"a message type the harness does not process",wa_c_grounding_rule_violated_twice:"two replies in a row broke a dialog rule",wa_c_decline_classifier_disagreement:"decline flagged, classifier disagrees",wa_c_exhaustive_claim_suspected:"reply may have implied 'all of them'",wa_c_unrecognized_escalation_attempt:"model tried to escalate for an unlisted reason (refused)",
   wa_since:"for {d}",wa_lastmsg:"last message {d} ago",wa_now:"just now",wa_min:"{n} min",wa_h:"{n} h",wa_hm:"{h} h {m} min",wa_d:"{n} d",
   wa_ball_us:"us",wa_ball_them:"candidate",wa_ball_silent:"deliberately silent",wa_ball_none:"–",wa_from:"from the candidate",wa_to:"to the candidate",wa_who_in:"Candidate",wa_who_out:"Luna",
@@ -490,9 +490,9 @@ const I18N={
   wa_q_urkunde:"Urkunde",wa_q_defizit:"Defizitbescheid",wa_q_kenntnispruefung:"Kenntnisprüfung",wa_q_reject:"not recognised",
   wa_c_status:"Status",wa_c_phone:"Number",wa_c_stage:"Stage",wa_c_card:"Card",wa_c_ball:"Whose turn",wa_c_last:"Last message",wa_c_act:"Activity",
   wa_f_q:"Search: number ending, town, department, code …",wa_f_test:"Show test numbers",wa_none:"No leads for these filters.",
-  wa_hh:"Harness",wa_h_ready:"ready",wa_h_incomplete:"incomplete",wa_h_missing:"missing",wa_h_scope:"Replies to",wa_h_scope_all:"everyone",wa_h_scope_test:"test numbers only",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: real leads get Luna's reply as a draft only.",wa_h_autosend:"Autosend",wa_h_on:"on",wa_h_off:"off",wa_h_off_x:"WA_AUTOSEND off: replies land as drafts, nothing reaches Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_refresh:"Refresh",wa_h_err:"Health unavailable",
+  wa_hh:"Harness",wa_h_ready:"ready",wa_h_incomplete:"incomplete",wa_h_missing:"missing",wa_h_scope:"Replies to",wa_h_scope_all:"everyone",wa_h_scope_test:"test numbers only",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: real leads get Luna's reply as a draft only.",wa_h_autosend:"Autosend",wa_h_on:"on",wa_h_off:"off",wa_h_off_x:"WA_AUTOSEND off: replies land as drafts, nothing reaches Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail contact",wa_ago:"{d} ago",wa_h_refresh:"Refresh",wa_h_err:"Health unavailable",
   wa_e_title:"WhatsApp data unavailable",wa_e_404:"This board is not connected to the harness yet: /api/wa/threads answers 404. The proxy (WA_API_BASE / WA_API_TOKEN) is missing.",wa_e_auth:"Owners only – sign in as owner.",wa_e_up:"The harness is not answering ({s}): {m}",wa_e_other:"Error {s}: {m}",wa_e_contract:"Response without next_offset – breaks the contract in docs/wa-dashboard.md, the list would be incomplete.",wa_e_demo:"Demo with sample data",wa_e_stale:"Refresh failed ({m}) – showing data from {t}.",wa_demo:"Demo data (?mock=1): invented numbers and conversations, no real candidates.",
-  wa_d_close:"Close",wa_d_why:"Why a human is needed",wa_d_green:"Nothing to do – Luna is running the conversation.",wa_d_card:"Card",wa_d_next:"Luna asks next (internal)",wa_d_branch:"Handoff scope",wa_b_narrow:"top 5",wa_b_pool:"every matching clinic",wa_d_handoff:"Handoff",wa_d_consented:"Consent",wa_d_clinics:"Clinics",wa_d_docs:"Documents",wa_d_nodocs:"No documents.",wa_d_chat:"Conversation",wa_d_older:"Load older messages",wa_d_new:"New messages ↓",wa_d_readonly:"Read-only – reply, pause and notes come in phase 2.",wa_d_opened:"First contact",wa_d_turns:"Turns",wa_d_campaign:"Campaign",wa_d_stopped:"STOP received – never write again",wa_d_suppressed:"On the do-not-contact list (every rail)",wa_d_id:"Thread ID",wa_d_poll_err:"Refresh failed",
+  wa_d_close:"Close",wa_d_why:"Why a human is needed",wa_d_green:"Nothing to do – Luna is running the conversation.",wa_d_card:"Card",wa_d_next:"Luna asks next (internal)",wa_d_branch:"Handoff scope",wa_b_narrow:"top 5",wa_b_pool:"every matching clinic",wa_d_handoff:"Handoff",wa_d_consented:"Consent",wa_d_clinics:"Clinics",wa_d_docs:"Documents",wa_d_nodocs:"No documents.",wa_attention:"needs attention",wa_d_chat:"Conversation",wa_d_older:"Load older messages",wa_d_new:"New messages ↓",wa_d_readonly:"Read-only – reply, pause and notes come in phase 2.",wa_d_opened:"First contact",wa_d_turns:"Turns",wa_d_campaign:"Campaign",wa_d_stopped:"STOP received – never write again",wa_d_suppressed:"On the do-not-contact list (every rail)",wa_d_id:"Thread ID",wa_d_poll_err:"Refresh failed",
   wa_m_draft:"Draft – not sent",wa_m_deleted:"Message forgotten (operator)",wa_m_audio:"Voice note",wa_m_notranscript:"(no transcript)",wa_m_document:"Document",wa_m_image:"Image",wa_m_video:"Video",wa_m_template:"Template",wa_m_buttons:"Buttons",wa_m_empty:"No messages yet.",wa_ms_sent:"sent",wa_ms_delivered:"delivered",wa_ms_read:"read",wa_ms_failed:"failed",
   wa_v_housing_yes:"yes, {n} people",wa_v_housing_yes1:"yes, 1 person",wa_v_housing_q:"yes, headcount open",wa_v_housing_no:"no",wa_v_received:"received",wa_v_flex:" · or without",wa_v_dept_any:"any department",wa_v_asked:"asked",
   wa_k_house:"flat for {n}",wa_k_house_q:"flat yes, for how many?",wa_k_nohouse:"no flat",wa_k_asked:"consent asked",
@@ -1529,6 +1529,7 @@ const WA={rows:null,env:null,health:null,healthErr:null,at:null,err:null,errAt:n
 const WA_STAGES=["contact","qualification","matching","cv","documents","consent","submitted"];
 const WA_GATES=["region","qualification","city_or_department","housing","cv_document","qualification_document","handoff_consent"];
 const WA_TIERS=["manager","reply","handoff"];
+const WA_HO_DONE=["in_progress","signed","closed"];   // handoff.status past the point where a human has to act (wa-harness 2026-09-30)
 const WA_RANK={manager:0,reply:1,handoff:2,green:3,declined:4,already_placed:4,not_placeable:4,stopped:5,suppressed:5};
 const TITLE0=document.title;
 let WA_PARAMS=()=>({});
@@ -1565,7 +1566,11 @@ function waReasons(r){ if(r._rs) return r._rs; const out=[], ls=r.lead_status;
   if(r.stuck_reply) out.push({tier:"reply",code:"stuck_reply",since:r.last_inbound_at});
   if(r.last_send_error) out.push({tier:"reply",code:"send_error",text:r.last_send_error.error,since:r.last_send_error.at});
   if(r.pending_inbound) out.push({tier:"reply",code:"pending_inbound",n:r.pending_inbound.count,text:r.pending_inbound.last_error,since:r.pending_inbound.oldest_recorded_at});
-  if(r.stage==="submitted"||r.handoff) out.push({tier:"handoff",code:"handoff",n:r.handoff?.clinics,since:r.handoff?.consented_at||r.stage_since});
+  // a handoff needs a human while it is queued or a clinic target needs attention; an unknown status counts and shows raw
+  const ho=r.handoff, hs=ho?.status, att=(ho?.targets||[]).filter(x=>x.attention);
+  if(ho?!WA_HO_DONE.includes(hs):r.stage==="submitted") out.push(hs==="attention"
+    ?{tier:"handoff",code:"handoff_attention",n:att.length,since:att.map(x=>x.ts).filter(Boolean).sort()[0]||ho.consented_at}
+    :{tier:"handoff",code:"handoff",n:ho?.clinics,text:hs&&hs!=="queued"?"handoff.status: "+hs:null,since:ho?.consented_at||r.stage_since});
   (r.flag_codes||[]).forEach(c=>out.push({tier:"flag",code:c}));
   if(ls&&ls.status!=="red"&&ls.status!=="green") out.push({tier:"flag",code:"lead_status",status:ls.status,text:ls.reason,since:ls.at});
   Object.defineProperty(r,"_rs",{value:out}); return out; }
@@ -1583,6 +1588,7 @@ function waWhy(x){ switch(x.code){
   case "stuck_reply": return t("wa_r_stuck"); case "send_error": return t("wa_r_senderr");
   case "pending_inbound": return t("wa_r_pending",{n:x.n??"?"});
   case "handoff": return x.n!=null?t("wa_r_handoff",{n:x.n}):t("wa_r_handoff0");
+  case "handoff_attention": return x.n?t("wa_r_handoff_att",{n:x.n}):t("wa_r_handoff_att0");
   case "lead_status": return t("wa_r_ls",{s:x.status});
   default: return waCode(x.code); } }
 // What the card summary says per gate, in the harness's own gate order (luna_brain.py requirement_scoreboard), or null.
@@ -1602,6 +1608,8 @@ function waChain(r){ const g=r.gates||{}, f=waFacts(r,true), cur=waEnded(r)?-1:W
   return el("ol",{class:"kc","aria-label":t("wa_c_card")},...WA_GATES.map((k,i)=>{ const s=g[k]||"open", st=i===cur&&s!=="blocked"?"current":s;
     return el("li",{class:{satisfied:"s",blocked:"b",current:"cur"}[st]||null,"aria-current":st==="current"?"step":null,"data-tip":t("wa_g_"+k)+" · "+t("wa_gs_"+st)},
       el("span",{class:"vh",text:t("wa_gs_"+st)+": "}),f[k]||t("wa_g_"+k)); })); }
+// the funnel stage, and after the handoff how far it has got ("Übergeben · unterschrieben")
+const waStageLbl=r=>t("wa_s_"+r.stage)+(r.handoff?.status&&WA_HO_DONE.includes(r.handoff.status)?" · "+t("wa_hs_"+r.handoff.status):"");
 const waBadgeEl=st=>el("span",{class:"lb "+({manager:"manager",reply:"reply",handoff:"handoff",green:"green"}[st]||"ended"),text:waLbl("wa_st_"+st,st)});
 function waLastMsg(lm){ if(!lm) return "–"; const k=lm.kind||"text", inb=lm.direction==="in";
   return [el("span",{class:"dir","aria-hidden":"true",title:t(inb?"wa_from":"wa_to"),text:inb?"←":"→"}),el("span",{class:"vh",text:t(inb?"wa_from":"wa_to")+": "}),
@@ -1650,7 +1658,7 @@ function waRow(r){ const st=waStatus(r), fl=waReasons(r).filter(x=>x.tier==="fla
   const tr=el("tr",{class:"lnk"+(LD.id===r.thread_id?" hl":""),"data-id":r.thread_id},
     el("td",{"data-l":t("wa_c_status")},waBadgeEl(st),fl.length?el("span",{class:"lb flag","data-tip":t("wa_st_flag")+"\n"+fl.map(x=>waWhy(x)+(x.text?" — "+x.text:"")).join("\n"),text:t("wa_st_flag")}):null,r.is_test?el("span",{class:"lb test",text:t("wa_test")}):null),
     el("td",{"data-l":t("wa_c_phone")},el("a",{class:"pn",href:waHref(r.thread_id),text:r.phone_masked}),r.rail?el("div",{class:"m",text:r.rail}):null),
-    el("td",{"data-l":t("wa_c_card")},el("span",{class:"stg"},t("wa_s_"+r.stage),r.stage_since?el("span",{class:"m",text:" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null),waChain(r)),
+    el("td",{"data-l":t("wa_c_card")},el("span",{class:"stg"},waStageLbl(r),r.stage_since?el("span",{class:"m",text:" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null),waChain(r)),
     el("td",{"data-l":t("wa_c_ball")},el("span",{text:waLbl("wa_ball_"+(r.ball||"none"),r.ball)}),r.ball==="us"&&r.last_inbound_at?el("div",{class:"m",text:t("wa_since",{d:waAgo(r.last_inbound_at)})}):null),
     el("td",{class:"lastm","data-l":t("wa_c_last")},waLastMsg(r.last_message)),
     el("td",{class:"num","data-l":t("wa_c_act")},waTime(waLast(r))));
@@ -1666,7 +1674,8 @@ function waStrip(){ const h=WA.health, grp=(l,v,cls,tip)=>el("div",{class:"grp"}
       grp(t("wa_h_scope"),test?t("wa_h_scope_test"):t("wa_h_scope_all"),test?"warn":null,test?"WA_REPLY_SCOPE\n"+t("wa_h_scope_test_x"):null),
       grp(t("wa_h_autosend"),h.autosend?t("wa_h_on"):t("wa_h_off"),h.autosend?null:"warn",h.autosend?null:"WA_AUTOSEND\n"+t("wa_h_off_x")),
       grp(t("wa_h_transport"),[h.transport,h.brain].filter(Boolean).join(" · ")||"–"),
-      grp(t("wa_h_rails"),Object.entries(h.rails||{}).map(([k,v])=>k+" "+v).join(" · ")||"–")); }
+      grp(t("wa_h_rails"),Object.entries(h.rails||{}).map(([k,v])=>k+" "+v).join(" · ")||"–"),
+      grp(t("wa_h_synced"),h.synced_at?t("wa_ago",{d:waAgo(h.synced_at)})+(h.synced_source?" · "+h.synced_source:""):"–",null,h.synced_at?fmtDT(h.synced_at):null)); }
   kids.push(el("span",{class:"sp"}),el("div",{class:"grp"},el("span",{class:"live","aria-hidden":"true"}),
     el("span",{class:"sub"},t("wa_updated")+" ",WA.at?el("time",{datetime:new Date(WA.at).toISOString(),text:waClock(WA.at)}):"–",WA.env?.source?" · "+t("wa_src")+" "+WA.env.source:null),
     el("button",{class:"btn s",type:"button",onclick:e=>waNow(e.currentTarget),text:"⟳ "+t("wa_h_refresh")})));
@@ -1746,7 +1755,7 @@ function waPaintTop(){ const box=$("#ld-top"); if(!box||!LD.detail) return; cons
   hd?.replaceChildren(el("h2",{class:"pn",id:"lead-dlg-h",text:r.phone_masked}),waBadgeEl(waStatus(r)),
     r.is_test?el("span",{class:"lb test",text:t("wa_test")}):"",r.rail?el("span",{class:"lb ended",text:r.rail}):"",waCloseBtn(),
     el("p",{class:"meta m",text:[t("wa_d_opened")+" "+fmtD(r.opened_at),t("wa_d_turns")+" "+num(r.turns),r.card?.campaign?t("wa_d_campaign")+" "+r.card.campaign:null].filter(Boolean).join(" · ")}));
-  box.replaceChildren(...[waWhySec(d),waCardSec(d),r.handoff||(d.handoff_matches||[]).length?waHandoffSec(d):null,waDocsSec(d)].filter(Boolean));
+  box.replaceChildren(...[waWhySec(d),waCardSec(d),r.handoff?waHandoffSec(d):null,waDocsSec(d)].filter(Boolean));
   if(hadX) hd.querySelector(".x")?.focus(); }
 function waWhySec(d){ const r=d.thread||{}, rs=waReasons(r), notes={}, items=[];
   [...(d.escalation_notes||[]),...(d.flag_notes||[])].forEach(n=>{ n=String(n); const i=n.indexOf(": "), c=i>0?n.slice(0,i):n; (notes[c]||(notes[c]=[])).push(i>0?n.slice(i+2):""); });
@@ -1761,17 +1770,19 @@ function waCardSec(d){ const r=d.thread||{}, c=r.card||{}, g=r.gates||{}, idx=WA
     handoff_consent:ok("handoff_consent")&&r.handoff?.consented_at?fmtDT(r.handoff.consented_at):f.handoff_consent};
   return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_card")}),
     el("ol",{class:"wsteps","aria-label":t("wa_c_stage")},...WA_STAGES.map((s,i)=>el("li",{class:i<idx?"done":i===idx?"cur":null,"aria-current":i===idx?"step":null,title:t("wa_s_"+s),text:t("wa_s_"+s)}))),
-    r.stage_since?el("p",{class:"m",style:"margin:-4px 0 10px",text:t("wa_s_"+r.stage)+" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null,
+    r.stage_since?el("p",{class:"m",style:"margin:-4px 0 10px",text:waStageLbl(r)+" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null,
     el("div",{class:"gl"},...WA_GATES.flatMap(k=>{ const s=g[k]||"open"; return [el("i",{class:s==="satisfied"?"s":s==="blocked"?"b":null,role:"img","aria-label":t("wa_gs_"+s)}),
       el("span",{class:"k",text:t("wa_g_"+k)}),el("span",{class:s==="satisfied"?null:"m",text:val[k]||t("wa_gs_"+s)})]; })),
     d.next_objective?el("div",{class:"ld-next"},el("span",{class:"eyebrow",text:t("wa_d_next")}),el("div",{class:"m",text:d.next_objective})):null,
     c.match_branch?el("p",{class:"m",style:"margin:10px 0 0",text:t("wa_d_branch")+": "+waLbl("wa_b_"+c.match_branch,c.match_branch)}):null); }
-function waHandoffSec(d){ const h=d.thread?.handoff||{}, ms=d.handoff_matches||[];
+// handoff.targets: one row per clinic the anonymised profile goes to; a target's own status is shown raw (no enum yet)
+function waHandoffSec(d){ const h=d.thread?.handoff||{}, ts=h.targets||[];
   return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_handoff")}),
     el("div",{class:"kv"},el("span",{text:t("wa_d_consented")}),el("span",{text:h.consented_at?fmtDT(h.consented_at)+" · "+t("wa_since",{d:waAgo(h.consented_at)}):"–"}),
-      el("span",{text:"Status"}),el("span",{text:h.status||"–"}),el("span",{text:t("wa_d_clinics")}),el("span",{text:h.clinics!=null?num(h.clinics):"–"})),
-    ms.length?el("ol",{class:"ld-cl"},...ms.map(x=>el("li",{},el("a",{href:"#/clinic/"+encodeURIComponent(x.clinic_id),text:x.clinic_name||x.clinic_id}),
-      x.town?el("span",{class:"m",text:" · "+x.town}):null,x.score!=null?el("span",{class:"score",text:" · "+x.score}):null))):null); }
+      el("span",{text:"Status"}),el("span",{text:h.status?waLbl("wa_hs_"+h.status,h.status):"–"}),el("span",{text:t("wa_d_clinics")}),el("span",{text:h.clinics!=null?num(h.clinics):"–"})),
+    ts.length?el("ol",{class:"ld-cl"},...ts.map(x=>el("li",{},el("a",{href:"#/clinic/"+encodeURIComponent(x.clinic_id),text:x.clinic_name||x.clinic_id}),
+      el("span",{class:"m",text:" · "+[x.status,x.ts?fmtDT(x.ts):null,x.external_ref].filter(Boolean).join(" · ")}),
+      x.attention?el("div",{class:"att"},typeof x.attention==="string"?x.attention:t("wa_attention")):null))):null); }
 function waDocsSec(d){ const docs=d.documents||[];
   return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_docs")+" · "+num(docs.length)}),docs.length?el("div",{class:"kv"},...docs.flatMap(x=>[
       el("span",{text:waLbl("wa_dt_"+(x.document_type||""),x.document_type||waKind(x.kind||"document"))}),
@@ -1781,8 +1792,9 @@ const waDay=s=>new Date(s).toLocaleDateString(LANG==="de"?"de-DE":"en-GB",{weekd
 function waBubble(m){ const at=el("time",{datetime:m.at,title:fmtDT(m.at),text:hhmm(m.at)});
   if(m.deleted) return el("div",{class:"tomb"},t("wa_m_deleted")+" · ",at);
   const k=m.kind||"text", draft=k==="draft", out=m.direction==="out", meta=m.meta||{};
-  const cap=draft?[t("wa_m_draft"),meta.scope_refusal?[" · ",el("code",{text:meta.scope_refusal})]:null]:k==="text"?null:waKind(k);   // the refusal is a literal env value: never upper-cased
-  const body=m.body==null||m.body===""?(k==="audio"?t("wa_m_notranscript"):null):m.body;
+  // the refusal and the template name are literal values: in <code>, never upper-cased
+  const cap=draft?[t("wa_m_draft"),meta.scope_refusal?[" · ",el("code",{text:meta.scope_refusal})]:null]:k==="text"?null:[waKind(k),meta.template?[" · ",el("code",{text:meta.template})]:null];
+  const body=k==="audio"?[meta.transcript||t("wa_m_notranscript"),m.body?"\n"+m.body:""].join(""):m.body==null||m.body===""?null:m.body;
   const btns=(meta.buttons||[]).map(b=>el("span",{text:typeof b==="string"?b:(b.title||b.id||"?")}));
   const tick=out&&!draft&&m.status?el("span",{class:m.status==="read"?"rd":m.status==="failed"?"fl":null,title:waLbl("wa_ms_"+m.status,m.status),
     text:m.status==="failed"?" ✕ "+waLbl("wa_ms_failed","failed"):m.status==="sent"?" ✓":" ✓✓"}):null;
@@ -2000,17 +2012,20 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
       documents:msgs.filter(x=>x.direction==="in"&&(x.kind==="document"||x.kind==="image")).map((x,i)=>({id:900+mid+i,kind:x.kind,
         document_type:/leben|cv/i.test(x.body||"")?"lebenslauf":/urkunde/i.test(x.body||"")?"urkunde":/defizit/i.test(x.body||"")?"defizitbescheid":null,
         mime_type:x.kind==="image"?"image/jpeg":/heic/i.test(x.body||"")?"image/heic":"application/pdf",size_bytes:140000+i*52000,received_at:x.at,reuse_state:null})),
-      send_failures:o.senderr?[o.senderr]:[],
-      handoff_matches:o.handoff?clinics.slice(0,Math.min(o.handoff.clinics,6)).map((c,i)=>({clinic_id:c.clinic_id,clinic_name:c.name,town:c.town,score:92-i*7})):[]}; };
-  const august=[["out","template","Hallo! Wir haben neue Pflege-Stellen in Bayern. Möchten Sie mehr erfahren?"],["in","text","Später vielleicht, ich warte noch auf meinen Bescheid."],["out","text","Alles klar – melden Sie sich gern, sobald er da ist."]];
+      send_failures:o.senderr?[o.senderr]:[]}; };
+  // handoff.targets: the clinics the anonymised profile goes to, `status` per target, `attention` when a clinic needs us
+  const targets=(n,after,status,att={})=>clinics.slice(0,n).map((c,i)=>({clinic_id:c.clinic_id,clinic_name:c.name,external_ref:"cand-"+(4100+i*37),
+    status:att[i]?.status||status,ts:iso(after-(i+1)*mi),attention:att[i]?.note||null}));
+  const august=[["out","template","Hallo! Wir haben neue Pflege-Stellen in Bayern. Möchten Sie mehr erfahren?",{meta:{template:"pflege_bayern_reengage_v2"}}],
+    ["in","text","Später vielleicht, ich warte noch auf meinen Bescheid."],["out","text","Alles klar – melden Sie sich gern, sobald er da ist."]];
   // escalated: every code in app/wa/luna/escalation.py appears at least once
   add({ph:"+40 ••• ••• 3318",escAt:34*mi,esc:["explicit_human_request"],notes:["explicit_human_request: asked to talk to a person about Probezeit and Kündigungsfrist before sending the Defizitbescheid"],
     card:{region:"Bayern",city:"München",department:"Intensiv",qualification_path:"defizit",housing_needed:true,people_count:1,campaign:"meta-ro-intensiv-09",cv:true},
-    msgs:[...Array.from({length:18},(_,i)=>{ const x=august[i%3]; return [x[0],x[1],x[2],40*d-i*6*h]; }),
+    msgs:[...Array.from({length:18},(_,i)=>{ const x=august[i%3]; return [x[0],x[1],x[2],40*d-i*6*h,x[3]]; }),
       ["in","text","Hallo, ich habe Ihre Anzeige gesehen.",2*d+3*h],["out","text","Hallo, hier ist Luna – ich bin die digitale Assistentin von Pflege-Stellen Bayern.",2*d+3*h-mi],
       ["out","buttons","Suchen Sie eine Stelle als Pflegefachkraft in Bayern?",2*d+3*h-2*mi,{meta:{buttons:["Ja","Nein"]}}],["in","text","Ja",2*d+2*h],
       ["out","text","Haben Sie schon die deutsche Berufsurkunde?",2*d+2*h-mi],
-      ["in","audio","Nein, ich habe einen Defizitbescheid von der Regierung von Oberbayern, seit März. Den Anpassungslehrgang würde ich machen. Eine Wohnung bräuchte ich auch, nur für mich.",2*d+h],
+      ["in","audio",null,2*d+h,{meta:{transcript:"Nein, ich habe einen Defizitbescheid von der Regierung von Oberbayern, seit März. Den Anpassungslehrgang würde ich machen. Eine Wohnung bräuchte ich auch, nur für mich."}}],
       ["out","text","Danke! In München passen gerade 31 offene Stellen auf Intensiv, 12 davon mit Wohnung.",2*d+h-mi],["out","text","Schicken Sie mir bitte Ihren Lebenslauf und Ihren Defizitbescheid als Foto oder PDF.",2*d+h-2*mi],
       ["in","document","Lebenslauf_2026.pdf",d+5*h],["out","draft","Danke, Ihr Lebenslauf ist angekommen. Es fehlt noch der Defizitbescheid.",d+5*h-mi,{meta:{scope_refusal:"WA_REPLY_SCOPE=test_only"}}],
       ["out","text","",d+4*h+10*mi,{deleted:true}],["out","text","Danke, Ihr Lebenslauf ist da. Es fehlt noch der Defizitbescheid – ein Foto reicht.",d+4*h],
@@ -2034,10 +2049,18 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
   add({ph:"+90 ••• ••• 3386",stuck:true,pending:{count:2,oldest_recorded_at:iso(2*h+40*mi),last_error:"stt: OPENAI_API_KEY is not set"},card:{region:"Bayern",city:"Ingolstadt",qualification_path:"kenntnispruefung"},
     last:3*h+10*mi,after:[["in","audio","",2*h+40*mi],["in","audio","",2*h+38*mi]]});
   // handoff: consent given, app/wa/queue.py hands the thread to a human
-  add({ph:"+40 ••• ••• 6604",handoff:{status:"queued",consented_at:iso(d+3*h+17*mi),clinics:5},last:d+3*h,
+  add({ph:"+40 ••• ••• 6604",handoff:{status:"queued",consented_at:iso(d+3*h+17*mi),clinics:5,targets:targets(5,d+3*h,"queued")},last:d+3*h,
     card:{region:"Bayern",city:"München",department:"Intensiv",qualification_path:"urkunde",housing_needed:false,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true}});
-  add({ph:"+91 ••• ••• 1180",handoff:{status:"queued",consented_at:iso(4*h+17*mi),clinics:12},last:4*h,
+  add({ph:"+91 ••• ••• 1180",last:4*h,handoff:{status:"attention",consented_at:iso(4*h+17*mi),clinics:12,
+      targets:targets(12,4*h,"sent",{2:{status:"replied",note:"asks for the B2 language certificate before an interview"}})},
     card:{region:"Bayern",city:["Nürnberg","Erlangen","Fürth"],qualification_path:"defizit",housing_needed:true,people_count:2,housing_flexible:true,match_branch:"pool",cv:true,qdoc:true,anonymous_send_consent:true}});
+  // after the handoff: a human already has it (in_progress) or it ended well (signed) -- nobody is needed any more
+  add({ph:"+49 ••• ••• 7340",last:2*d,handoff:{status:"in_progress",consented_at:iso(2*d+17*mi),clinics:3,targets:targets(3,2*d-h,"interview",{1:{status:"sent"},2:{status:"sent"}})},
+    card:{region:"Bayern",city:"Erlangen",department:"Kinderklinik",qualification_path:"urkunde",housing_needed:true,people_count:1,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true},
+    after:[["in","text","Wann ist das Vorstellungsgespräch in Erlangen?",3*h],["out","text","Eine Kollegin meldet sich heute mit dem Termin bei Ihnen.",3*h-mi]]});
+  add({ph:"+40 ••• ••• 5566",last:12*d,handoff:{status:"signed",consented_at:iso(12*d+17*mi),clinics:4,targets:targets(4,12*d-h,"declined",{0:{status:"signed"}})},
+    card:{region:"Bayern",city:"Würzburg",department:"Geriatrie",qualification_path:"defizit",housing_needed:false,cv:true,qdoc:true,anonymous_send_consent:true},
+    after:[["in","text","Ich habe den Vertrag in Würzburg unterschrieben, vielen Dank!",3*d],["out","text","Herzlichen Glückwunsch und einen guten Start!",3*d-mi]]});
   // green at every funnel stage: green only says nobody is needed, the card says how far each lead has got
   add({ph:"+43 ••• •••• 5120",last:8*mi,card:{campaign:"meta-at-pflege-09"}});
   add({ph:"+40 ••• ••• 9934",last:40*mi,card:{region:"Bayern"}});
@@ -2061,7 +2084,7 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
   // a test number (TASK-212): hidden by default, never counted, even escalated
   add({ph:"+43 ••• •••• 4242",test:true,rail:"bridge",escAt:12*mi,esc:["explicit_human_request"],ball:"us",last:12*mi,card:{region:"Bayern",qualification_path:"urkunde"}});
   const health={checks:{access_token:true,app_secret:true,verify_token:true,phone_number_id:true,openai_api_key:false,bridge_url:true,bridge_token:true,bridge_inbound_token:true},
-    webhook_ready:true,outbound_ready:true,autosend:true,brain:"luna",transport:"bridge",reply_scope:"test_only",meta_scope:"all",bridge_ready:true,bridge_inbound_ready:true,stt_ready:false,stt_model:"whisper-1",rails:{}};
+    webhook_ready:true,outbound_ready:true,autosend:true,brain:"luna",transport:"bridge",synced_at:iso(2*mi),synced_source:"bridge",reply_scope:"test_only",meta_scope:"all",bridge_ready:true,bridge_inbound_ready:true,stt_ready:false,stt_model:"whisper-1",rails:{}};
   T.forEach(r=>health.rails[r.rail]=(health.rails[r.rail]||0)+1);
   return waMock.W={threads:T,msgs:MSG,detail:DET,health,t0:now}; }
 // Eight seconds in, Luna answers the thread whose reply is owed -- the open drawer's 5 s poll has something to pick up.
