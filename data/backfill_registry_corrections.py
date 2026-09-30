@@ -28,7 +28,6 @@ import pdfplumber
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from app import config as A                           # noqa: E402
 from pflege_jobs.sources import krankenhausplan as K  # noqa: E402
 
 CSV = "data/registry/clinics.csv"
@@ -166,8 +165,7 @@ def main():
     devs = [d for d in json.load(open(report, encoding="utf-8"))["deviations"]
             if d["source"] == "krankenhausplan_2026" and not d["explained"]]
     hist, cell = history(), cells(PDF_2026)
-    towns = {r["town"] for r in A.rest_get_all("clinics", {"select": "town", "order": "clinic_id"}) if r["town"]}
-    p25 = {r["clinic_id"]: r for r in K.parse(PDF_2025, towns)}      # the same town lexicon registry_build uses
+    p25 = {r["clinic_id"]: r for r in K.parse(PDF_2025)}   # raises since TASK-183: the 2025 layout is not read
     rows, unexplained = [], []
     for d in devs:
         row, why = explain(d, hist.get((d["id"], d["field"])), cell.get(d["id"]), (p25.get(d["id"]) or {}).get(d["field"]))

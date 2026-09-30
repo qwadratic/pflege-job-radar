@@ -147,7 +147,7 @@ def main():
     conn = L.connect()
     conn.set_session(readonly=True)
     db, cor = read_db(conn)
-    plan = K.parse(PDF, {r["town"] for r in db.values() if r.get("town")})
+    plan = K.parse(PDF)
     sources = {"krankenhausplan_2026": (plan, plan[0]["source"], PDF),
                "rhv_2024": (RHV.parse(XLSX), RHV.SOURCE, XLSX),
                "diakoneo": (list(csv.DictReader(open(DIAKONEO, encoding="utf-8"))), "Diakoneo Einrichtungsverzeichnis", DIAKONEO)}
