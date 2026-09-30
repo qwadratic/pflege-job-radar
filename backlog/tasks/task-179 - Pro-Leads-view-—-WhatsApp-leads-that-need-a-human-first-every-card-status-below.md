@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-09-30 22:54'
+updated_date: '2026-09-30 22:57'
 labels:
   - frontend
   - whatsapp
@@ -80,4 +80,6 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - Contract (docs/wa-dashboard.md): new section 'Every card in conversation order'; the card summary gains housing_flexible and anonymous_send_offered, and department is card.department_pref with 'flexibel' = any. Sent to wa-harness.
 - Demo data (?mock=1): each thread is now its card. Gates are derived from the card the way requirement_scoreboard does, the stage is the first open gate, and the conversation is built from the card in Luna's order with one plain yes/no or open question per gate (the old script asked an either/or qualification question, which TASK-200 forbids). The old demo let cards and chats disagree (card Passau, chat Nürnberg).
 - Verification: tests/test_web_leads.py 17 passed (2 new: the card line of 5 leads against literal expected values incl. partial answers and a blocked gate; green rows ordered consent, documents, CV, matching x3, qualification x2, contact). Mutation check on the built page: 9 of 9 mutations turn the suite red (4 new: no current step, green not ordered by progress, housing_flexible dropped, consent asked dropped). Screenshots at 1440 and 390 px, DE and EN: no horizontal overflow, no page errors. Preview republished at the same URL (version 3).
+
+2026-09-30: client name in the demo data. The first commit on this branch (cd94292, pushed 2026-09-29 to the public repo) had the client name in two mock greetings in web/pro.template.html and web/pro.html. That breaks the rule behind TASK-162. Commit 2c426ef replaces both with 'Luna von Pflege-Stellen Bayern', and web/, docs/ and tests/ on the branch no longer contain it. It stays in cd94292's history on the PR branch, because rewriting history needs a force-push, which is not allowed here. A squash merge of PR #2 keeps it out of main; the old commit stays reachable through the PR on GitHub. Ivan decides. wa-harness was told the same rule applies to PR #1's fixtures and docs.
 <!-- SECTION:NOTES:END -->
