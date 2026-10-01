@@ -1,0 +1,769 @@
+[
+ {
+  "posting_id": 5537,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under ARBERLANDKlinik Viechtach (27602) by R0_board_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 27602 by R0_board_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://bewerbung.arberlandkliniken.de/jobposting/0f7242114690d434e60442602c8f20b01c2a55820 (replay of run 225, 2026-10-01): the judge read: OTA or Pflegefachmann for OR assistance; heading names Arberlandklinik Zwiesel"
+   ]
+  }
+ },
+ {
+  "posting_id": 5543,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under ARBERLANDKlinik Viechtach (27602) by R0_board_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 27602 by R0_board_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://bewerbung.arberlandkliniken.de/jobposting/23cc4e848a56363bbb358743afe77b455a7560ef0 (replay of run 225, 2026-10-01): the judge read: OP nursing at Arberlandklinik Zwiesel; GKP or OTA; pre/intra/post-operative care and assistance"
+   ]
+  }
+ },
+ {
+  "posting_id": 6041,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Landkreis Erding (17701) by R0_board_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 17701 by R0_board_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.mein-check-in.de/klinikum-erding/position-482672 (replay of run 225, 2026-10-01): the judge read: General nursing tasks and Pflegefachkraft profile; no ward or place named"
+   ]
+  }
+ },
+ {
+  "posting_id": 6209,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kliniken an der Paar Krankenhaus Aichach (77101) by R0_board_name; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 77102 by R3_tokens. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://klipa.softgarden.io/job/62177999/Pflegefachkraft-m-w-d-Intensiv?jobDbPVId=282822945&amp%3Bl=de&l=de (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft interdisziplinäre Intensivstation, Standort Friedberg (registry site Aichach)"
+   ]
+  }
+ },
+ {
+  "posting_id": 6619,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under WolfartKlinik (18401) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18401 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://wolfartklinik.de/karriere/stellenangebote/ota-op-fachkraft-gesundheits-und-krankenpfleger-mfa-im-op-m-w-d-fuer-unser-ambulantes-op-zentrum-in-vollzeit-oder-teilzeit/ (replay of run 225, 2026-10-01): the judge read: OTA/OP-Fachkraft: Instrumentieren, Springertätigkeit, OP assistance, outpatient surgery"
+   ]
+  }
+ },
+ {
+  "posting_id": 6626,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under kbo-Isar-Amper-Klinikum München-Ost (18402) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18402 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://recruitingapp-5656.de.umantis.com/Vacancies/704/Description/1 (replay of run 225, 2026-10-01): the judge read: Psychiatric nursing at kbo forensic psychiatry clinic Taufkirchen (Vils)"
+   ]
+  }
+ },
+ {
+  "posting_id": 6636,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Ilmtalklinik Pfaffenhofen (18601) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18601 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.ilmtalkliniken.de/jobposting/ffaecca35e5bdcebb6a54e78d6fbf84bfabf25d60 (replay of run 225, 2026-10-01): the judge read: Krankenpfleger/Notfallsanitäter in Notaufnahme, Einrichtung Mainburg (posting site Pfaffenhofen)"
+   ]
+  }
+ },
+ {
+  "posting_id": 6947,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under DONAUISAR Klinikum Landau (27904) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 27904 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://stelle.pro/jobposting/c037299f8359794b33650d02fc65b9a44f7b7efb0 (replay of run 225, 2026-10-01): the judge read: Pflegefachkräfte and Pflegefachhelfer for pulmonology at Deggendorf; tasks text mentions acute geriatrics"
+   ]
+  }
+ },
+ {
+  "posting_id": 6989,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Stiftungsklinik Weißenhorn (77503) by R0_board_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 77503 by R0_board_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.suavia.de/jobposting/323d009d6bf156ec083c8e7b52d175941601c6020 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft or Notfallsanitäter in ZNA; currently only Neu-Ulm location"
+   ]
+  }
+ },
+ {
+  "posting_id": 7289,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Passauer Wolf Nittenau - Klinik für Neurologie (37609) by R3_tokens; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 37609 by R3_tokens. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.passauerwolf.de/jobs/56838428/Pflegefachkraft-m-w-d-im-Senioren-Zentrum-/ (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft for care and nursing of residents in Senioren-Zentrum Nittenau"
+   ]
+  }
+ },
+ {
+  "posting_id": 7412,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Martha-Maria St. Theresien, Standort Martha-Maria (56403) by R3_tokens; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 56403 by R6_ambiguous_sites:56402,56403. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://sz-nuernberg.martha-maria.de/stellenangebote/detailansicht/pflegefachkraft-m-w-d-28 (replay of run 225, 2026-10-01): the judge read: Nurse in inpatient care at Seniorenzentrum Martha-Maria Nürnberg (care home), not hospital"
+   ]
+  }
+ },
+ {
+  "posting_id": 10080,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-altenpfleger-gerontopsychiatrische-pflege-mwd-51132008/ (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft/Altenpfleger with gerontopsychiatric Weiterbildung, care home St. Elisabeth Teisendorf"
+   ]
+  }
+ },
+ {
+  "posting_id": 10081,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-mwd-64472843/ (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft in Senioren- und Pflegeeinrichtung St. Hildegard, Siegsdorf; residents' care"
+   ]
+  }
+ },
+ {
+  "posting_id": 10082,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-mwd-63106899/ (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft in Pflegeheim St. Elisabeth, Teisendorf (elderly care home)"
+   ]
+  }
+ },
+ {
+  "posting_id": 10084,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegestudent-mwd-62899799/ (stored posting, in no replayed run; 2026-10-01): the judge read: Nursing student at Altenheim St. Michael (Barmherzige Schwestern), resident care, Abitur required"
+   ]
+  }
+ },
+ {
+  "posting_id": 10087,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-palliativ-care-mwd-weiterbildung-m%C3%B6glich-50412033/ (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft palliative care in senior care home Waldsanatorium near Planegg, symptom management"
+   ]
+  }
+ },
+ {
+  "posting_id": 10089,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-palliativ-care-mwd-weiterbildung-m%C3%B6glich-50413343/ (stored posting, in no replayed run; 2026-10-01): the judge read: Palliative-care nurse at Altenheim St. Michael (Barmherzige Schwestern), training possible"
+   ]
+  }
+ },
+ {
+  "posting_id": 10091,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/gerontopsychiatrische-pflegefachkraft-mwd-weiterbildung-m%C3%B6glich-50426308/ (stored posting, in no replayed run; 2026-10-01): the judge read: Gerontopsychiatric ward of Pflegeheim St. Michael (Barmherzige Schwestern); training funded"
+   ]
+  }
+ },
+ {
+  "posting_id": 10092,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-altenpfleger-mwd-43209250/ (stored posting, in no replayed run; 2026-10-01): the judge read: Nurse in senior and care home Waldsanatorium near Planegg, Krailling"
+   ]
+  }
+ },
+ {
+  "posting_id": 10093,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-praxisanleiter-mwd-weiterbildung-m%C3%B6glich-50410943/ (stored posting, in no replayed run; 2026-10-01): the judge read: Care plus trainee instruction at senior home Waldsanatorium; Praxisanleiter training funded"
+   ]
+  }
+ },
+ {
+  "posting_id": 10095,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-praxisanleiter-mwd-weiterbildung-m%C3%B6glich-50414033/ (stored posting, in no replayed run; 2026-10-01): the judge read: Praxisanleiter at Alten- und Pflegeheim St. Michael (Barmherzige Schwestern); only offer visible"
+   ]
+  }
+ },
+ {
+  "posting_id": 10100,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/pflegefachkraft-springer-mwd-46165213/ (stored posting, in no replayed run; 2026-10-01): the judge read: Float nurse across 5 Alten- und Pflegeheime of Barmherzige Schwestern; Pflegefachkraft/Altenpfleger"
+   ]
+  }
+ },
+ {
+  "posting_id": 10429,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 77401 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/33-pflegerische-leitung-zentrale-notaufnahme-m-w-d?cHash=40e1d7f7b97ad91f9f64f2342e08dc62 (stored posting, in no replayed run; 2026-10-01): the judge read: ZNA nursing lead with Notfallpflege Weiterbildung; Einsatzort Krumbach, not Günzburg"
+   ]
+  }
+ },
+ {
+  "posting_id": 10496,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under ANregiomed Klinikum Ansbach (56101) by R0_board_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 56101 by R0_board_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://recruitingapp-5511.de.umantis.com/Vacancies/312/Description/1?lang=ger (replay of run 225, 2026-10-01): the judge read: Multi-site ad (Ansbach, Dinkelsbühl, Rothenburg); listing line says Klinik Rothenburg; no tasks"
+   ]
+  }
+ },
+ {
+  "posting_id": 10591,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Mindelheim/MFA-mwd-oder-Pflegefachkraft-mwd-fr-unsere-Funktionsabteilung---Schwerpunkt-Herzkatheter/2518?cHash=bfe4884244428fa4ec1e97710184f368 (stored posting, in no replayed run; 2026-10-01): the judge read: MFA or Pflegefachkraft for cath lab at Standort Mindelheim, fixed-term"
+   ]
+  }
+ },
+ {
+  "posting_id": 10613,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kreiskrankenhaus Schrobenhausen (18504) by R3_tokens; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18504 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://kkh-sob.de/karriere/stellenangebote/pflegefachkraft-m-w-d-in-voll-oder-teilzeit-2 (replay of run 225, 2026-10-01): the judge read: Nursing home Steingriff is application address; no tasks or profile visible"
+   ]
+  }
+ },
+ {
+  "posting_id": 10711,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Barmherzige Brüder München (16214) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 16219 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.barmherzige.net/jobs/fachkraft-pflege%C3%BCberleitung-mwd-67329445/ (stored posting, in no replayed run; 2026-10-01): the judge read: Role at nursing home St. Michael; blurb and offer only"
+   ]
+  }
+ },
+ {
+  "posting_id": 12330,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Ottobeuren/Pflegefachkraft--Gesundheits--und-Krankenpflegerin-mwd/2612?cHash=63c3a0291250a5f9933fb2e185cb4693 (stored posting, in no replayed run; 2026-10-01): the judge read: Pflegefachkraft at Standort Ottobeuren on internal and geriatric wards, not Kempten"
+   ]
+  }
+ },
+ {
+  "posting_id": 12335,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Mindelheim/Pflegepdagogen-Medizinpdagogen-BachelorMasterDiplom-oder-Lehrer-fr-Pflegeberufe-mwd-in-Teilzeit-/2561?cHash=930d05105d2b9ade5ed61edda41cf5d3 (stored posting, in no replayed run; 2026-10-01): the judge read: Teaching job at nursing school, Standort Mindelheim, part-time"
+   ]
+  }
+ },
+ {
+  "posting_id": 12343,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Immenstadt/Pflegefachkraft-mwd-oder-Notfallsanitter-mwd-fr-die-Zentrale-Interdisziplinre-Notaufnahme/1531?cHash=9a6979b0d4f40daafdd2df63820f0266 (stored posting, in no replayed run; 2026-10-01): the judge read: Emergency department nurse or paramedic, Standort Immenstadt; posting site is Klinikum Kempten"
+   ]
+  }
+ },
+ {
+  "posting_id": 12346,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Immenstadt-Oberstdorf/Pflegefachkraft-mwd-Notfallsanitter-mwd-und-Ansthesietechnische-Assistenz-ATA-fr-die-Ansthesie-an-den-Standorten-Immenstadt--Oberstdorf/856?cHash=99bd54e1ae6bf22fc2d7ecdaebdbde06 (stored posting, in no replayed run; 2026-10-01): the judge read: GKP, ATA or Notfallsanitäter for anaesthesia, deployment in Kliniken Oberstdorf and Immenstadt"
+   ]
+  }
+ },
+ {
+  "posting_id": 12382,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/ambulanter-pflegedienst-schoentalhoefe/pflegefachkraft-bei-uns-startet-ihre-karriere-103 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft in Pflegezentrum/ambulanter Dienst Schöntal-Höfe Aschaffenburg, Führerschein erforderlich"
+   ]
+  }
+ },
+ {
+  "posting_id": 12383,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/sanitaetshaus-krueger/examinierte-r-krankenpfleger-in-oder-examinierte-r-altenpfleger-in-100 (replay of run 225, 2026-10-01): the judge read: Homecare nurse at Sanitätshaus Krüger Aschaffenburg: aids advice, enteral nutrition, incontinence care"
+   ]
+  }
+ },
+ {
+  "posting_id": 12384,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/care-mobiler-pflegedienst-nicole-englert/pflegefachkraft-fuer-die-ausserklinische-intensivpflege-eo-11-versorgung-inten (replay of run 225, 2026-10-01): the judge read: Stub: Care - Mobiler Pflegedienst Aschaffenburg/Hösbach; Krankenpfleger, Vollzeit, unbefristet"
+   ]
+  }
+ },
+ {
+  "posting_id": 12600,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Martha-Maria St. Theresien, Standort Martha-Maria (56403) by R3_tokens; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 56403 by R6_ambiguous_sites:56402,56403. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://sz-nuernberg.martha-maria.de/stellenangebote/detailansicht/pflegefachkraft-m-w-d-38 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft in full-stay nursing home Luisenheim, residents, Grund- und Behandlungspflege, AVR-EmK"
+   ]
+  }
+ },
+ {
+  "posting_id": 12610,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kreisklinik Trostberg (18902) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18902 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://jobs.kliniken-suedostbayern.de/Pflegefachkraft-wmd-Akutgeriatrie-de-j2360.html (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft in acute geriatrics at Klinikum Traunstein; GKP, Altenpfleger or Pflegefachhelfer"
+   ]
+  }
+ },
+ {
+  "posting_id": 12702,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Tagesklinik für KJP Würzburg (66310) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66310 by R_jd_text. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://diakonie-wuerzburg.de/diakonisches-werk-wuerzburg/arbeiten-in-der-diakonie/aktuelle-jobs/pflegefachkraft-stp.html (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft at Evang. Wohnstift St. Paul (elderly care), Würzburg-Heidingsfeld"
+   ]
+  }
+ },
+ {
+  "posting_id": 12703,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Tagesklinik für KJP Würzburg (66310) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66310 by R_jd_text. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://diakonie-wuerzburg.de/diakonisches-werk-wuerzburg/arbeiten-in-der-diakonie/aktuelle-jobs/pflegefachkraft-(m-w-d).html (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft at Matthias-Claudius-Heim, gerontopsychiatric care facility, Würzburg"
+   ]
+  }
+ },
+ {
+  "posting_id": 12704,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Tagesklinik für KJP Würzburg (66310) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66310 by R_jd_text. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://diakonie-wuerzburg.de/diakonisches-werk-wuerzburg/arbeiten-in-der-diakonie/aktuelle-jobs/pflegefachkraft.html (replay of run 225, 2026-10-01): the judge read: Ambulatory care nurse at Evangelische Sozialstation Würzburg and outposts (SGB V/XI)"
+   ]
+  }
+ },
+ {
+  "posting_id": 12730,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 76301 by R_jd_text. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://recruitingapp-5556.de.umantis.com/Vacancies/2245/Description/1 (replay of run 225, 2026-10-01): the judge read: GKP, MFA or OTA for endoscopy assistance and patient care, Kempten"
+   ]
+  }
+ },
+ {
+  "posting_id": 12951,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kulmbach (47701) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 47701 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://klinikumkulmbach.softgarden.io/job/52865964/Pflegefachkraft-m-w-d-oder-Pflegefachhelfer-m-w-d-f%C3%BCr-unsere-Station-S1-Akutgeriatrie-an-der-Fachklinik-Stadtsteinach-in-Voll-Teilzeit?l=de (replay of run 225, 2026-10-01): the judge read: Grund- und Behandlungspflege; Pflegefachkraft or Pflegefachhelfer training; weekend shifts"
+   ]
+  }
+ },
+ {
+  "posting_id": 13591,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Tagesklinik Süd für Psychiatrie und Psychotherapie (16254) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 16254 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://brkm.pi-asp.de/bewerber-web/?company=123-FIRMA-ID#position,id=7f480fc9-7b34-473f-8311-dd55ebe16a4b (replay of run 225, 2026-10-01): the judge read: Pflegefachkräfte for BRK care home Haus Römerschanz, Grünwald, not psychiatric day clinic"
+   ]
+  }
+ },
+ {
+  "posting_id": 13674,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum der Ludwig-Maximilians-Universität München (16290) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 16290 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://ea-kum1.external-pages-kum1.de/stellenanzeigen/gkp-endoskopie-inkl-aufwachraum-teilzeit-80/a7aca38ff652bdc2 (replay of run 225, 2026-10-01): the judge read: GKP endoscopy incl. recovery room, Campus Innenstadt, Med. Klinik II, 80% part-time"
+   ]
+  }
+ },
+ {
+  "posting_id": 14925,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kurhotel Wiedemann KG (RH1206) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to RH1206 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://allgaeuer-jobs.de/job/pflegefachkraft-mwd-fuer-den-dauernachtdienst-fuessen-1977720 (replay of run 225, 2026-10-01): the judge read: Night-shift Pflegefachkraft at BRK Seniorenzentrum St. Martin, Füssen (care home)"
+   ]
+  }
+ },
+ {
+  "posting_id": 14928,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kurhotel Wiedemann KG (RH1206) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to RH1206 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://allgaeuer-jobs.de/job/pflegefachkraefte-mwd-fuessen-1984622 (replay of run 225, 2026-10-01): the judge read: Nurses for BRK Seniorenzentrum St. Martin (elderly care), not Kurhotel Wiedemann"
+   ]
+  }
+ },
+ {
+  "posting_id": 14930,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kurhotel Wiedemann KG (RH1206) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to RH1206 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://allgaeuer-jobs.de/job/wohnbereichsleitung-mwd-fuessen-1992768 (replay of run 225, 2026-10-01): the judge read: Wohnbereichsleitung at BRK Seniorenzentrum St. Martin Füssen, 82 places"
+   ]
+  }
+ },
+ {
+  "posting_id": 15152,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/tatenwerk-gemeinnuetzige-gmbh/heilerziehungspfleger-erzieher-gesundheits-und-krankenpfleger-altenpfleger-116 (replay of run 225, 2026-10-01): the judge read: Tatenwerk gGmbH listing, Krankenpfleger, no tasks; not the Frauenklinik"
+   ]
+  }
+ },
+ {
+  "posting_id": 15211,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Mindelheim/Stellvertretende-Bereichsleitung-Pflege-mwd--Gynkologie-und-Chirurgie/2635?cHash=07c2fb8ccebd826fd463e6190fd8efb0 (stored posting, in no replayed run; 2026-10-01): the judge read: Deputy Bereichsleitung Pflege gyn/surgery at Standort Mindelheim, not Kempten"
+   ]
+  }
+ },
+ {
+  "posting_id": 15225,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/bayernstift-gmbh-seniorenwohnzentrum-stift-rosengarten/pflegefachkraft-im-qualitaets-prozessmanagement-101 (replay of run 225, 2026-10-01): the judge read: Job-board page: BayernStift Seniorenwohnzentrum Stift Rosengarten Aschaffenburg, 'Krankenpfleger', no tasks"
+   ]
+  }
+ },
+ {
+  "posting_id": 15229,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Krankenhaus Agatharied (18201) by R1_exact; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18201 by R1_exact. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://oberland-jobs.de/job/op-fachkraefte-mwd-fuer-das-aoz-holzkirchen-1937269 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft, OTA or MFA for outpatient OP; employer Krankenhaus Agatharied (Hausham)"
+   ]
+  }
+ },
+ {
+  "posting_id": 15267,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Mindelheim/Stellvertretende-Bereichsleitung-Pflege-mwd--GynkologieGeburtshilfe-und-Chirurgie/2635?cHash=d86ba37b851bec61accc027a54e270e3 (stored posting, in no replayed run; 2026-10-01): the judge read: Deputy area nursing lead gynecology and surgery, Standort Mindelheim, start 01.01.2027"
+   ]
+  }
+ },
+ {
+  "posting_id": 15268,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Immenstadt-Oberstdorf/Pflegefachkraft-mwd-Notfallsanitter-mwd-und-Ansthesietechnische-Assistenz-ATA-fr-die-Ansthesie/856?cHash=6fb0e37d27b092b60de6598a7e9be611 (stored posting, in no replayed run; 2026-10-01): the judge read: GKP/ATA/paramedic for anaesthesia; flexible deployment at Kliniken Oberstdorf and Immenstadt"
+   ]
+  }
+ },
+ {
+  "posting_id": 15270,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kurhotel Wiedemann KG (RH1206) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to RH1206 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://allgaeuer-jobs.de/job/pflegefachkraft-mwd-im-st-michael-fuessen-2006978 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft im BRK-Seniorenwohn- und Pflegeheim St. Michael Füssen, Grund- und Behandlungspflege"
+   ]
+  }
+ },
+ {
+  "posting_id": 15339,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Artemed Fachklinik München (16235) by R3_tokens_full; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 16235 by R3_tokens_full. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://jobs.smartrecruiters.com/ArtemedSE/744000152332499-operationstechnischer-assistent-ota- (replay of run 225, 2026-10-01): the judge read: OTA or nurse with OP Fachweiterbildung; instrumenting, Springer, OP care"
+   ]
+  }
+ },
+ {
+  "posting_id": 15359,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinik am Ziegelberg Frauenklinik Aschaffenburg (66103) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 66103 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://www.krankenpflegejobs24.de/aschaffenburg/krankenpflege/wohnei-und-pflegezentrum-brentanostift/pflegefachkraft-im-qualitaets-prozessmanagement-102 (replay of run 225, 2026-10-01): the judge read: Krankenpfleger, Vollzeit, Wohn- und Pflegezentrum Brentanostift Aschaffenburg; no tasks"
+   ]
+  }
+ },
+ {
+  "posting_id": 15360,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Klinikum Kempten (76301) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: no replayed run holds a row of it, so the drain never re-evaluates it; the nightly link stage matches the stored employer and city and links it to 76301 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://karriere.klinikverbund-allgaeu.de/karriere-detail/Ottobeuren/OP-PflegefachkraftOTA-mwd-in-Teilzeit/2640?cHash=a7c992ac2929e5ee78b03c9da013a925 (stored posting, in no replayed run; 2026-10-01): the judge read: OR nurse/OTA at Standort Ottobeuren: instrumenting, assisting, preparing theatres"
+   ]
+  }
+ },
+ {
+  "posting_id": 15361,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Kurhotel Wiedemann KG (RH1206) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to RH1206 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://allgaeuer-jobs.de/job/pflegefachkraft-praxisanleitung-mwd-fuessen-2007010 (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft/Praxisanleiter at BRK Seniorenwohn- und Pflegeheim St. Michael Füssen; gerontopsychiatric residents"
+   ]
+  }
+ },
+ {
+  "posting_id": 15379,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under Tagesklinik Süd für Psychiatrie und Psychotherapie (16254) by R0_board; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 16254 by R0_board. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://brkm.pi-asp.de/bewerber-web/?company=123-FIRMA-ID#position,id=aec41673-a9e5-4fc2-970f-da4d9ca0b69b (replay of run 225, 2026-10-01): the judge read: Pflegefachkraft in Senioren- und Pflegeheim Haus Alt-Lehel, 154 Plätze"
+   ]
+  }
+ },
+ {
+  "posting_id": 15380,
+  "action": "unlink",
+  "lock": true,
+  "_why": {
+   "code": "wrong_clinic",
+   "reason": "Filed under kbo-Isar-Amper-Klinikum München-Ost (18402) by R2_operator_town; the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: the replayed drain still attaches it to 18402 by R2_operator_town. Pinned to no clinic so the nightly stages leave it; relink by hand once the posting's own place is read.",
+   "task": "TASK-185",
+   "evidence": [
+    "https://recruitingapp-5656.de.umantis.com/Vacancies/3339/Description/1 (replay of run 225, 2026-10-01): the judge read: Gerontopsychiatry ward Nord 1 at Schwabing (Munich-North), same profession list"
+   ]
+  }
+ }
+]
