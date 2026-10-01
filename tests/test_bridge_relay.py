@@ -563,3 +563,64 @@ def test_relay_run_asks_the_watcher_alarm_check_on_its_own_cadence(cursor, monke
     relay.check_watcher_alarm = lambda: checks.append(1)
     relay.run(stop=_StopAfterOnePass())
     assert checks == [1]
+
+
+# --- rail freshness heartbeat (review item 13, 2026-09-30) -----------------------------------------
+# sync_writer is opt-in (None by default, see Relay.__init__): every test above builds a FakeRelay
+# without one, so none of them ever touch a database for this. These tests pass an explicit fake
+# writer to prove run() actually calls it, on both outcomes, without pulling in app.wa.store at all.
+
+def test_relay_run_marks_synced_on_a_successful_pass(cursor, monkeypatch):
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    calls = []
+    relay.sync_writer = lambda ok, error=None: calls.append((ok, error))
+    relay.run(stop=_StopAfterOnePass())
+    assert calls == [(True, None)]
+
+
+def test_relay_run_marks_sync_error_on_a_relay_error_without_losing_the_cursor(cursor, monkeypatch):
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    relay.fetch = lambda: (_ for _ in ()).throw(RP.RelayError("webhook answered 502"))
+    calls = []
+    relay.sync_writer = lambda ok, error=None: calls.append((ok, error))
+    relay.run(stop=_StopAfterOnePass())
+    assert len(calls) == 1
+    assert calls[0][0] is False
+    assert "502" in calls[0][1]
+    assert cursor.position() == 0   # the cursor never moved for a failed pass
+
+
+def test_a_broken_sync_writer_never_takes_down_the_drain_loop(cursor, monkeypatch):
+    """The heartbeat is a supplement, never load-bearing: a sync_writer that itself raises must only
+    be logged, not propagate out of run() and kill the relay process over a disk-full/locked-db
+    heartbeat write."""
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    lines = []
+    relay.log = lines.append
+
+    def _boom(ok, error=None):
+        raise RuntimeError("disk full")
+
+    relay.sync_writer = _boom
+    relay.run(stop=_StopAfterOnePass())   # must not raise
+    assert any("disk full" in line for line in lines)
+
+
+def test_production_relay_wires_the_real_rail_sync_writer(monkeypatch):
+    """from_env is the only caller that may build a Relay with a real (non-None) sync_writer --
+    every direct Relay()/FakeRelay() construction in this file defaults to None (review item 13)."""
+    for name, where in RP.REQUIRED_ENV.items():
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setenv("WA_BRIDGE_RELAY_STATE", "/dev/shm/pflege-wa-test-relay-cursor.sqlite")
+    relay = RP.from_env()
+    try:
+        assert relay.sync_writer is RP._write_rail_sync
+    finally:
+        relay.close()
+        relay.cursor.close()

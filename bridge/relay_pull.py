@@ -77,6 +77,30 @@ class RelayError(RuntimeError):
     """The relay stopped on purpose. The cursor did not move."""
 
 
+def _write_rail_sync(ok, error=None):
+    """The real freshness heartbeat (review item 13, Ivan 2026-09-30): a successful drain_once() is
+    the strongest available signal that "the harness has current phone state" -- it is the literal
+    mechanism that pulls fresh inbound WhatsApp data into our webhook, stronger than
+    app/wa/tunnel_watch.py's own TCP probe (which only proves the ssh port is open, not that
+    anything was drained through it). Writes into the SAME wa.sqlite the harness itself reads: this
+    module is the one file in ``bridge/`` that runs on our own VPS, in the harness's own checkout and
+    venv (module docstring above) -- see deploy/wa-bridge/pflege-wa-bridge-relay.service and
+    deploy/pflege-wa.service, both ``User=claude``, ``WorkingDirectory=/home/claude/repo/pflege-board``
+    on the live host (checked 2026-09-30; the checked-in templates' ``exedev``/``/home/exedev/repo``
+    are placeholders an install script rewrites at deploy time).
+
+    Imported lazily, inside the function, so importing this module -- and every test of it -- never
+    pays for pulling in app.wa.store/config unless a Relay is actually built with this as its
+    sync_writer (only from_env's production Relay is, below; Relay()/FakeRelay() built directly, as
+    every existing test does, default sync_writer to None and never call this at all)."""
+    from app.wa import store as ST
+    with ST.db() as c:
+        if ok:
+            ST.record_rail_sync_ok(c, ST.RAIL_SYNC_SOURCE)
+        else:
+            ST.record_rail_sync_error(c, ST.RAIL_SYNC_SOURCE, error or "unknown error")
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -258,7 +282,7 @@ def http_json(method, url, *, headers=None, body=None, timeout=30.0):
 class Relay:
     def __init__(self, *, host, token, webhook_url, inbound_token, cursor, phone_number_id,
                  display_phone_number, waba_id, remote_port=REMOTE_PORT, local_port=LOCAL_PORT,
-                 log=print, fetch_limit=None):
+                 log=print, fetch_limit=None, sync_writer=None):
         self.tunnel = SshForward(host, remote_port=remote_port, local_port=local_port, log=log)
         self.token = token
         self.webhook_url = webhook_url
@@ -271,6 +295,21 @@ class Relay:
         self.log = log
         self.delivered = 0
         self.duplicates = 0
+        # Review item 13: opt-in only (None = no heartbeat at all), so every existing test that
+        # builds a Relay/FakeRelay directly keeps writing nothing to any database -- only
+        # from_env's production Relay (below) ever passes the real _write_rail_sync.
+        self.sync_writer = sync_writer
+
+    def _mark_synced(self, ok, error=None):
+        """Call self.sync_writer, if any, and never let it take the drain loop down with it -- a
+        heartbeat write failing (disk full, a locked db past its own busy_timeout) must not be
+        confused with the drain itself failing."""
+        if self.sync_writer is None:
+            return
+        try:
+            self.sync_writer(ok, error)
+        except Exception as exc:  # the heartbeat is a supplement to the drain loop, never load-bearing for it
+            self.log(f"relay: could not record rail sync heartbeat: {type(exc).__name__}: {exc}")
 
     # --- the mini side --------------------------------------------------------------------------
     def executor(self, path, *, timeout=30.0):
@@ -376,16 +415,19 @@ class Relay:
             try:
                 self.drain_once()
                 backoff = interval
+                self._mark_synced(True)
             except RelayError as exc:
                 # Loud, and it keeps trying: the mini rebooting and our webhook being restarted are
                 # both normal, and both look like this. The cursor has not moved either way.
                 self.log(f"relay: {exc}")
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
+                self._mark_synced(False, str(exc))
             except Exception as exc:  # our own bug, named as one
                 self.log(f"relay: {type(exc).__name__}: {exc}")
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
+                self._mark_synced(False, f"{type(exc).__name__}: {exc}")
             if time.monotonic() >= next_alarm_check:
                 self.check_watcher_alarm()
                 next_alarm_check = time.monotonic() + ALARM_CHECK_INTERVAL_SEC
@@ -412,6 +454,7 @@ def from_env(**override):
         remote_port=int(env("WA_BRIDGE_REMOTE_PORT", REMOTE_PORT)),
         local_port=int(env("WA_BRIDGE_LOCAL_PORT", LOCAL_PORT)),
         cursor=Cursor(state),
+        sync_writer=_write_rail_sync,   # review item 13: only the production Relay gets a real writer
     )
     kwargs.update(override)
     return Relay(**kwargs)

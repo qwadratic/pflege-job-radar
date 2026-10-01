@@ -20,10 +20,25 @@
       "stage": "qualification",
       "stage_since": "2026-09-20T08:05:00+00:00",
       "outcome": null,
-      "gates": {"region": "satisfied", "qualification": "open", "city_or_department": "open", "housing": "open",
-                "cv_document": "open", "qualification_document": "open", "handoff_consent": "open"},
-      "card": {"region": "Oberbayern", "city": null, "department": null, "qualification_path": null,
-               "housing_needed": null, "people_count": null, "campaign": null, "match_branch": null},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "open",
+        "city_or_department": "open",
+        "housing": "open",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": "Oberbayern",
+        "city": null,
+        "department": null,
+        "qualification_path": null,
+        "housing_needed": null,
+        "people_count": null,
+        "campaign": "camp-winter-2026",
+        "match_branch": null
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
@@ -34,8 +49,12 @@
       "pending_inbound": null,
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "out", "kind": "text", "preview": "Willkommen bei Pflege Job Radar!",
-                       "at": "2026-09-20T08:05:30+00:00"},
+      "last_message": {
+        "direction": "out",
+        "kind": "text",
+        "preview": "Willkommen bei Pflege Job Radar!",
+        "at": "2026-09-20T08:05:30+00:00"
+      },
       "lead_status": null
     },
     {
@@ -51,24 +70,43 @@
       "stage": "documents",
       "stage_since": "2026-09-21T10:00:00+00:00",
       "outcome": null,
-      "gates": {"region": "satisfied", "qualification": "satisfied", "city_or_department": "satisfied",
-                "housing": "satisfied", "cv_document": "open", "qualification_document": "open",
-                "handoff_consent": "open"},
-      "card": {"region": "Schwaben", "city": "Augsburg", "department": "Intensiv/IMC",
-               "qualification_path": "urkunde", "housing_needed": true, "people_count": 1, "campaign": null,
-               "match_branch": "narrow"},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "satisfied",
+        "city_or_department": "satisfied",
+        "housing": "satisfied",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": "Schwaben",
+        "city": "Augsburg",
+        "department": "Intensiv/IMC",
+        "qualification_path": "urkunde",
+        "housing_needed": true,
+        "people_count": 1,
+        "campaign": null,
+        "match_branch": "narrow"
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
-      "escalation_codes": ["explicit_human_request"],
+      "escalation_codes": [
+        "explicit_human_request"
+      ],
       "flag_codes": [],
       "escalated_at": "2026-09-22T14:10:05+00:00",
       "stuck_reply": false,
       "pending_inbound": null,
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "in", "kind": "text", "preview": "Kann ich bitte mit einem Menschen sprechen?",
-                       "at": "2026-09-22T14:10:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "text",
+        "preview": "Kann ich bitte mit einem Menschen sprechen?",
+        "at": "2026-09-22T14:10:00+00:00"
+      },
       "lead_status": null
     },
     {
@@ -84,10 +122,25 @@
       "stage": "qualification",
       "stage_since": "2026-09-25T07:40:00+00:00",
       "outcome": null,
-      "gates": {"region": "satisfied", "qualification": "open", "city_or_department": "open", "housing": "open",
-                "cv_document": "open", "qualification_document": "open", "handoff_consent": "open"},
-      "card": {"region": "Niederbayern", "city": null, "department": null, "qualification_path": null,
-               "housing_needed": null, "people_count": null, "campaign": null, "match_branch": null},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "open",
+        "city_or_department": "open",
+        "housing": "open",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": "Niederbayern",
+        "city": null,
+        "department": null,
+        "qualification_path": null,
+        "housing_needed": null,
+        "people_count": null,
+        "campaign": null,
+        "match_branch": null
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
@@ -95,12 +148,19 @@
       "flag_codes": [],
       "escalated_at": null,
       "stuck_reply": true,
-      "pending_inbound": {"count": 1, "oldest_recorded_at": "2026-09-27T06:00:00+00:00",
-                          "last_error": "claude CLI timeout after 552s"},
+      "pending_inbound": {
+        "count": 1,
+        "oldest_recorded_at": "2026-09-27T06:00:00+00:00",
+        "last_error": "claude CLI timeout after 552s"
+      },
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "in", "kind": "audio", "preview": "[Sprachnachricht, 0:42]",
-                       "at": "2026-09-27T06:00:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "audio",
+        "preview": "[Sprachnachricht, 0:42]",
+        "at": "2026-09-27T06:00:00+00:00"
+      },
       "lead_status": null
     },
     {
@@ -116,13 +176,32 @@
       "stage": "contact",
       "stage_since": "2026-09-10T11:05:00+00:00",
       "outcome": null,
-      "gates": {"region": "open", "qualification": "open", "city_or_department": "open", "housing": "open",
-                "cv_document": "open", "qualification_document": "open", "handoff_consent": "open"},
-      "card": {"region": null, "city": null, "department": null, "qualification_path": null,
-               "housing_needed": null, "people_count": null, "campaign": null, "match_branch": null},
+      "gates": {
+        "region": "open",
+        "qualification": "open",
+        "city_or_department": "open",
+        "housing": "open",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": null,
+        "city": null,
+        "department": null,
+        "qualification_path": null,
+        "housing_needed": null,
+        "people_count": null,
+        "campaign": null,
+        "match_branch": null
+      },
       "stopped": true,
       "stopped_reason": "opt-out",
-      "suppression": {"reason": "inbound stop token", "lane": "meta", "at": "2026-09-12T09:00:05+00:00"},
+      "suppression": {
+        "reason": "inbound stop token",
+        "lane": "meta",
+        "at": "2026-09-12T09:00:05+00:00"
+      },
       "escalation_codes": [],
       "flag_codes": [],
       "escalated_at": null,
@@ -130,7 +209,12 @@
       "pending_inbound": null,
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "in", "kind": "text", "preview": "STOP", "at": "2026-09-12T09:00:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "text",
+        "preview": "STOP",
+        "at": "2026-09-12T09:00:00+00:00"
+      },
       "lead_status": null
     },
     {
@@ -146,12 +230,25 @@
       "stage": "submitted",
       "stage_since": "2026-09-15T10:00:00+00:00",
       "outcome": null,
-      "gates": {"region": "satisfied", "qualification": "satisfied", "city_or_department": "satisfied",
-                "housing": "satisfied", "cv_document": "satisfied", "qualification_document": "satisfied",
-                "handoff_consent": "satisfied"},
-      "card": {"region": "Oberbayern", "city": "München", "department": "Innere Medizin",
-               "qualification_path": "urkunde", "housing_needed": false, "people_count": 1, "campaign": null,
-               "match_branch": "pool"},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "satisfied",
+        "city_or_department": "satisfied",
+        "housing": "satisfied",
+        "cv_document": "satisfied",
+        "qualification_document": "satisfied",
+        "handoff_consent": "satisfied"
+      },
+      "card": {
+        "region": "Oberbayern",
+        "city": "München",
+        "department": "Innere Medizin",
+        "qualification_path": "urkunde",
+        "housing_needed": false,
+        "people_count": 1,
+        "campaign": null,
+        "match_branch": "pool"
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
@@ -164,15 +261,32 @@
       "handoff": {
         "status": "attention",
         "consented_at": "2026-09-15T10:30:00+00:00",
-        "clinics": [
-          {"clinic_id": "16100", "clinic_name": "Klinikum München", "external_ref": null,
-           "status": "sent_to_clinic", "ts": "2026-09-20T09:00:00+00:00", "attention": false},
-          {"clinic_id": "16250", "clinic_name": "Klinikum Augsburg", "external_ref": null,
-           "status": "interview_scheduled", "ts": "2026-09-28T13:00:00+00:00", "attention": true}
+        "clinics": 2,
+        "targets": [
+          {
+            "clinic_id": "16100",
+            "clinic_name": "Klinikum München",
+            "external_ref": null,
+            "status": "sent_to_clinic",
+            "ts": "2026-09-20T09:00:00+00:00",
+            "attention": false
+          },
+          {
+            "clinic_id": "16250",
+            "clinic_name": "Klinikum Augsburg",
+            "external_ref": null,
+            "status": "interview_scheduled",
+            "ts": "2026-09-28T13:00:00+00:00",
+            "attention": true
+          }
         ]
       },
-      "last_message": {"direction": "in", "kind": "text", "preview": "Danke, bis dann!",
-                       "at": "2026-09-29T10:00:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "text",
+        "preview": "Danke, bis dann!",
+        "at": "2026-09-29T10:00:00+00:00"
+      },
       "lead_status": null
     },
     {
@@ -188,10 +302,25 @@
       "stage": "qualification",
       "stage_since": "2026-09-24T09:01:00+00:00",
       "outcome": null,
-      "gates": {"region": "satisfied", "qualification": "open", "city_or_department": "open", "housing": "open",
-                "cv_document": "open", "qualification_document": "open", "handoff_consent": "open"},
-      "card": {"region": "Unterfranken", "city": null, "department": null, "qualification_path": null,
-               "housing_needed": null, "people_count": null, "campaign": null, "match_branch": null},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "open",
+        "city_or_department": "open",
+        "housing": "open",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": "Unterfranken",
+        "city": null,
+        "department": null,
+        "qualification_path": null,
+        "housing_needed": null,
+        "people_count": null,
+        "campaign": null,
+        "match_branch": null
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
@@ -202,7 +331,12 @@
       "pending_inbound": null,
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "in", "kind": "deleted", "preview": null, "at": "2026-09-24T09:05:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "deleted",
+        "preview": null,
+        "at": "2026-09-24T09:05:00+00:00"
+      },
       "lead_status": null
     },
     {
@@ -218,10 +352,25 @@
       "stage": "qualification",
       "stage_since": "2026-09-06T08:31:00+00:00",
       "outcome": "declined",
-      "gates": {"region": "satisfied", "qualification": "open", "city_or_department": "open", "housing": "open",
-                "cv_document": "open", "qualification_document": "open", "handoff_consent": "open"},
-      "card": {"region": "Oberpfalz", "city": null, "department": null, "qualification_path": null,
-               "housing_needed": null, "people_count": null, "campaign": null, "match_branch": null},
+      "gates": {
+        "region": "satisfied",
+        "qualification": "open",
+        "city_or_department": "open",
+        "housing": "open",
+        "cv_document": "open",
+        "qualification_document": "open",
+        "handoff_consent": "open"
+      },
+      "card": {
+        "region": "Oberpfalz",
+        "city": null,
+        "department": null,
+        "qualification_path": null,
+        "housing_needed": null,
+        "people_count": null,
+        "campaign": null,
+        "match_branch": null
+      },
       "stopped": false,
       "stopped_reason": null,
       "suppression": null,
@@ -232,8 +381,12 @@
       "pending_inbound": null,
       "last_send_error": null,
       "handoff": null,
-      "last_message": {"direction": "in", "kind": "text", "preview": "Nein danke, ich habe schon eine Stelle gefunden.",
-                       "at": "2026-09-06T08:30:00+00:00"},
+      "last_message": {
+        "direction": "in",
+        "kind": "text",
+        "preview": "Nein danke, ich habe schon eine Stelle gefunden.",
+        "at": "2026-09-06T08:30:00+00:00"
+      },
       "lead_status": null
     }
   ]

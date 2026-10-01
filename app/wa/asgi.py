@@ -11,6 +11,7 @@ lock the operator out of GET /api/wa/threads on the harness host. Local reads st
 """
 from fastapi import FastAPI
 
+from . import pro_api as PA  # also used below for PA.db() -- the one-time schema-creation startup hook
 from .api import router
 from .bridge_api import router as bridge_router  # POST /wa/bridge-webhook (TASK-352): the phone rail's inbound door
 from .pro_api import router as pro_router  # GET/POST /wa/pro/* (TASK-395/396): the board's token-gated proxy target
@@ -28,6 +29,16 @@ app.include_router(bridge_router, prefix="/api", tags=["whatsapp"])
 # is its own bearer-token gate (pro_api._authorize), unlike every other route in this file, which
 # stays open on the strength of this process binding 127.0.0.1 only (see the module docstring above).
 app.include_router(pro_router, prefix="/api", tags=["whatsapp"])
+
+
+@app.on_event("startup")
+def _create_wa_schema():
+    """Eager, once, before this process serves its first request (review item 7, Ivan 2026-09-30):
+    every Pro API GET route now reads over a ``mode=ro`` connection (pro_api.db_ro), which cannot run
+    CREATE TABLE/ALTER TABLE -- so the schema (store.py's own, queue.py's, and pro_api's own
+    wa_handoffs/wa_handoff_events) must already exist by then. ``PA.db()`` is exactly the call every
+    write route already made per-request; doing it once here, at startup, is the only change."""
+    PA.db()
 
 
 @app.get("/healthz")

@@ -52,10 +52,13 @@ def test_fixture_covers_a_suppressed_stopped_thread():
 
 
 def test_fixture_covers_a_consented_lead_with_handoffs_in_several_statuses():
+    """Review item 5: handoff.clinics is the matched-clinics COUNT (an int); the per-target list
+    moved to its own key, handoff.targets."""
     data = _load()
     handoff_rows = [row for row in data["rows"] if row["handoff"]]
     assert handoff_rows
-    statuses_seen = {clinic["status"] for row in handoff_rows for clinic in row["handoff"]["clinics"]}
+    assert all(isinstance(row["handoff"]["clinics"], int) for row in handoff_rows)
+    statuses_seen = {clinic["status"] for row in handoff_rows for clinic in row["handoff"]["targets"]}
     assert len(statuses_seen) >= 2
     assert any(row["handoff"]["status"] == "attention" for row in handoff_rows)
 

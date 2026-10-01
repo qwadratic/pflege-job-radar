@@ -218,6 +218,17 @@ create table if not exists wa_thread_ids (
   thread_id text unique not null,
   created_at text not null
 );
+-- Freshness for the Pro/Daria dashboard (review item 13, Ivan 2026-09-30): one row per periodic
+-- process whose success means "the harness has current phone state". Written ONLY by the engine
+-- (bridge/relay_pull.py's own successful drain pass -- see that module's _write_rail_sync), never by
+-- a Pro API read; GET routes only read this table. source is a short fixed name (RAIL_SYNC_SOURCE
+-- below), not a phone or any other PII, so it is safe to serialize as-is.
+create table if not exists wa_rail_sync (
+  source text primary key,
+  last_ok_at text,
+  last_error text,
+  last_error_at text
+);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -236,6 +247,18 @@ def db():
     c.execute("pragma journal_mode=wal")
     c.executescript(SCHEMA)
     _migrate(c)
+    return c
+
+
+def db_ro():
+    """Read-only connection (review item 7, Ivan 2026-09-30): the Pro/Daria API's GET routes must
+    never take ``_lock`` and must never be able to write, not even by accident -- WAL mode already
+    gives any reader a consistent snapshot without either. ``mode=ro`` cannot run CREATE TABLE/ALTER
+    TABLE, so this assumes the schema already exists: app/wa/asgi.py's startup hook calls db() (and
+    pro_api.db()) once, eagerly, before this is ever opened. Raises if the file does not exist yet --
+    that startup hook is what is supposed to prevent that, not this function."""
+    c = sqlite3.connect(f"file:{C.SQLITE_PATH}?mode=ro", uri=True, timeout=30)
+    c.row_factory = sqlite3.Row
     return c
 
 
@@ -280,6 +303,7 @@ def _migrate(c):
     c.execute("create unique index if not exists idx_wa_documents_import on wa_documents(import_source, import_ref) "
               "where import_ref is not null")
     _migrate_agent_notes_autoincrement(c)
+    _backfill_thread_ids(c)
 
 
 # TASK-303 (Ivan, 2026-09-25, round-1 review, finding A2 -- "correctness of the operator-note state
@@ -367,6 +391,7 @@ def thread(c, phone):
     row = c.execute("select * from wa_threads where phone=?", (phone,)).fetchone()
     if row is None:
         c.execute("insert into wa_threads (phone, opened_at) values (?,?)", (phone, now_iso()))
+        _ensure_thread_id(c, phone)   # same transaction (review item 7): the engine mints, never a Pro read
         c.commit()
         row = c.execute("select * from wa_threads where phone=?", (phone,)).fetchone()
     return _thread_row(row)
@@ -452,19 +477,51 @@ def all_threads(c):
 
 
 # --- Pro API thread ids (TASK-395): opaque, stable, minted once, never derived from the phone -----
+# Review item 7 (Ivan 2026-09-30): minting moved from a lazy "on first Pro API read" write into the
+# ENGINE -- the same transaction that first creates a phone's wa_threads row (thread/pin_rail/
+# record_campaign_send, via _ensure_thread_id below) -- so a Pro API read never needs to write, and
+# can run over a read-only connection (db_ro) that could not write even if it tried.
+
+def _ensure_thread_id(c, phone):
+    """Mint this phone's opaque thread_id if it does not have one yet, in the SAME (uncommitted)
+    transaction as the wa_threads row that is about to exist for it. 't_' plus 8 random bytes of hex
+    (secrets.token_hex(8), 64 bits of entropy) -- see the wa_thread_ids table comment in SCHEMA above
+    for why this is minted, not derived from the phone. insert-or-ignore: a second caller racing the
+    same phone (two engine processes on the same inbound message, say) mints nothing a second time."""
+    c.execute("insert or ignore into wa_thread_ids (phone, thread_id, created_at) values (?,?,?)",
+              (phone, "t_" + secrets.token_hex(8), now_iso()))
+
+
+def _backfill_thread_ids(c):
+    """One-time migration (review item 7): every wa_threads row from before this fix -- or from a
+    path that, before it, relied on a Pro API read to lazily mint the id and was never actually read
+    -- gets a wa_thread_ids row now, so thread_id_for_phone can be a plain, fail-loud SELECT from here
+    on. Cheap to run on every db() call (an indexed anti-join over what is, in production, a few
+    thousand rows at most); only ever does real work once per phone, ever."""
+    missing = c.execute(
+        "select phone from wa_threads where phone not in (select phone from wa_thread_ids)").fetchall()
+    if not missing:
+        return
+    for row in missing:
+        _ensure_thread_id(c, row["phone"])
+    c.commit()
+
 
 def thread_id_for_phone(c, phone):
-    """This phone's opaque thread_id, minting one on first sight (Ivan 2026-09-29/30). 't_' plus 8
-    random bytes of hex (secrets.token_hex(8), 64 bits of entropy) -- see the wa_thread_ids table
-    comment in SCHEMA above for why this is minted, not derived."""
+    """This phone's opaque thread_id. Read-only (review item 7, Ivan 2026-09-30): minting is the
+    engine's job (_ensure_thread_id, called wherever a wa_threads row is first created), never a Pro
+    API read's -- a read must never write, not even to mint an id it was only asked to look up.
+    Raises for a phone with no thread yet: every caller reaches this phone through a wa_threads-
+    derived source already (all_threads, phone_for_thread_id, wa_queue_candidates joined to
+    wa_threads), plus _backfill_thread_ids covers everything that predates this fix, so a miss here
+    is a genuine invariant break, not a 404 case to swallow quietly (CLAUDE.md: no silent fallbacks).
+    """
     row = c.execute("select thread_id from wa_thread_ids where phone=?", (phone,)).fetchone()
-    if row:
-        return row["thread_id"]
-    thread_id = "t_" + secrets.token_hex(8)
-    c.execute("insert into wa_thread_ids (phone, thread_id, created_at) values (?,?,?)",
-              (phone, thread_id, now_iso()))
-    c.commit()
-    return thread_id
+    if row is None:
+        raise RuntimeError(f"no wa_thread_ids row for {phone!r} -- thread_id is minted by the engine "
+                           f"(thread()/pin_rail()/record_campaign_send(), via _ensure_thread_id), "
+                           f"never lazily by a Pro API read")
+    return row["thread_id"]
 
 
 def phone_for_thread_id(c, thread_id):
@@ -472,6 +529,18 @@ def phone_for_thread_id(c, thread_id):
     upstream, in app/wa/pro_api.py)."""
     row = c.execute("select phone from wa_thread_ids where thread_id=?", (thread_id,)).fetchone()
     return row["phone"] if row else None
+
+
+def existing_thread(c, phone):
+    """The thread row for this phone -- unlike thread(), never creates one, so it is safe to call
+    over a read-only connection. Raises when the row does not exist (review item 7): every caller in
+    the Pro API resolves this phone from a wa_threads-derived source first, so a miss here is an
+    invariant break, not something to paper over with a silent insert."""
+    row = c.execute("select * from wa_threads where phone=?", (phone,)).fetchone()
+    if row is None:
+        raise RuntimeError(f"no wa_threads row for {phone!r} -- caller resolved this phone from a "
+                           f"wa_threads-derived source, so this should be unreachable")
+    return _thread_row(row)
 
 
 def last_message(c, phone):
@@ -552,6 +621,7 @@ def pin_rail(c, phone, rail):
     # A message just went out to this number, so it has a thread: same rule as thread() ("an unknown
     # number is a lead, not an error"), written the same way record_campaign_send writes it.
     c.execute("insert or ignore into wa_threads (phone, opened_at) values (?,?)", (phone, now_iso()))
+    _ensure_thread_id(c, phone)   # same transaction (review item 7): the engine mints, never a Pro read
     cur = c.execute("update wa_threads set rail=? where phone=? and rail is null", (rail, phone))
     c.commit()
     if cur.rowcount == 1:
@@ -570,6 +640,50 @@ def rail_counts(c):
     rows = c.execute("select coalesce(rail, 'unpinned') as rail, count(*) as n from wa_threads "
                      "group by coalesce(rail, 'unpinned') order by rail").fetchall()
     return {r["rail"]: r["n"] for r in rows}
+
+
+# --- rail freshness (review item 13, Ivan 2026-09-30) ----------------------------------------------
+# "synced_at" for the Pro/Daria dashboard: when the harness last actually pulled fresh state from the
+# phone rail, not merely when this database was last written to by anything. Written ONLY by
+# bridge/relay_pull.py's own successful drain_once() pass (see that module's _write_rail_sync) -- the
+# literal mechanism that pulls fresh inbound WhatsApp data into this harness's webhook, and so the
+# strongest available signal of "current phone state", stronger than app/wa/tunnel_watch.py's TCP
+# probe (which only proves the ssh tunnel's port is open, not that anything was drained through it).
+# A Pro API read only ever calls rail_sync() below, never either writer.
+
+RAIL_SYNC_SOURCE = "bridge_relay_pull"
+
+
+def record_rail_sync_ok(c, source):
+    """A successful drain pass just now -- clears any earlier error (a later success means the error
+    is stale), never touches last_error_at's own row for a DIFFERENT source."""
+    now = now_iso()
+    c.execute("""insert into wa_rail_sync (source, last_ok_at, last_error, last_error_at) values (?,?,null,null)
+                on conflict(source) do update set last_ok_at=excluded.last_ok_at, last_error=null, last_error_at=null""",
+             (source, now))
+    c.commit()
+
+
+def record_rail_sync_error(c, source, error):
+    """A failed drain pass -- leaves last_ok_at exactly as it was (the last time it DID work), so a
+    reader can still show "synced 4 minutes ago" alongside the new error rather than losing that
+    entirely the moment one pass fails."""
+    now = now_iso()
+    c.execute("""insert into wa_rail_sync (source, last_ok_at, last_error, last_error_at) values (?,null,?,?)
+                on conflict(source) do update set last_error=excluded.last_error, last_error_at=excluded.last_error_at""",
+             (source, error, now))
+    c.commit()
+
+
+def rail_sync(c, source=RAIL_SYNC_SOURCE):
+    """{source, synced_at, last_error, last_error_at} for this source, or None when nothing has ever
+    written a row (a fresh database, or the writer has never run) -- callers must show that as "no
+    freshness known", never invent a time (CLAUDE.md: no silent fallbacks)."""
+    row = c.execute("select * from wa_rail_sync where source=?", (source,)).fetchone()
+    if row is None:
+        return None
+    return {"source": row["source"], "synced_at": row["last_ok_at"], "last_error": row["last_error"],
+            "last_error_at": row["last_error_at"]}
 
 
 # --- reply-turn claims (TASK-181): durable, cross-process dedup beyond wamid uniqueness ----------
@@ -1369,6 +1483,7 @@ def record_campaign_send(c, phone, wamid, rendered, campaign_id, sent_at=None, k
     campaign = {"campaign_id": campaign_id, "template_name": rendered["name"], "language": rendered["language"],
                 "rendered_text": rendered["text"], "buttons": rendered["buttons"], "sent_at": at, "wamid": wamid}
     c.execute("insert or ignore into wa_threads (phone, opened_at) values (?,?)", (phone, at))
+    _ensure_thread_id(c, phone)   # same transaction (review item 7): the engine mints, never a Pro read
     t = thread(c, phone)
     c.execute("insert into wa_messages (phone, direction, wamid, body, kind, meta, at) values (?,?,?,?,?,?,?)",
               (phone, "out", wamid, rendered["text"], kind,
