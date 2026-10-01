@@ -227,6 +227,20 @@ def test_straubing_portal_ad_that_names_no_site_is_unmatched():
 OSNABRUECK_TEXT = "Das AMEOS Klinikum Osnabrück ist ein modernes Fachkrankenhaus für Psychiatrie, Psychotherapie und psychosomatische Medizin."
 
 
+def test_a_posting_that_stays_unmatched_says_why_in_its_note():
+    m = Matcher([dict(NEUBURG), dict(PARSBERG)])
+    notes = []
+    assert m.match("AMEOS Klinikum St. Elisabeth Neuburg", "Neuburg/Donau", employer_inherited=True, city_inherited=True, board=["18501"],
+                   foreign={"kiel"}, note=notes) is None
+    assert len(notes) == 1 and notes[0].startswith("R0_board refused")                      # a refusal already says why: not overwritten
+    for kwargs, why in (({"employer_inherited": True, "city_inherited": True}, "no evidence: its place and employer are the seed clinic's own copy, nothing else names a site"),
+                        ({"city_inherited": True}, "no evidence: its place is the seed clinic's own copy, nothing else names a site"),
+                        ({}, "no rule names a registry site for this employer and place")):
+        notes = []
+        assert m.match("Unbekannte Praxis GmbH", "Berlin", note=notes, **kwargs) is None
+        assert notes == [why]
+
+
 def test_r_jd_text_needs_the_clinics_town_in_the_text_too():
     m = Matcher([dict(NEUBURG), dict(PARSBERG)])
     assert m.match(None, None, description=OSNABRUECK_TEXT) is None          # was R_jd_text -> 37304 (cf_ameos: 5 new wrong matches)

@@ -220,7 +220,7 @@ class Matcher:
 
         title is the posting's own title, read with the description for R6/_match_jd. foreign is what the
         posting's board names beyond the towns of its own clinics (Matcher.foreign_places); note, a list, is
-        filled with why a posting that reached a rule stays unmatched. sites is the posting's own listing of
+        filled with why a posting stays unmatched. sites is the posting's own listing of
         its locations (München Klinik's allJobs[i].locations[].title, verbatim): when there is one it names
         the site for R6 in place of the free text, whose group boilerplate lists every site."""
         notes = [] if note is None else note
@@ -232,8 +232,13 @@ class Matcher:
         if board:
             en = "" if employer_inherited else employer_norm(employer or "")
             et = set() if employer_inherited else toks(employer)
-            return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, city_key(city),
-                                     foreign=foreign, texts=texts, note=notes)
+            r = self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, city_key(city),
+                                  foreign=foreign, texts=texts, note=notes)
+            if r: return r
+        if not notes:
+            copied = [what for what, flag in (("place", city_inherited), ("employer", employer_inherited)) if flag]
+            notes.append(f"no evidence: its {' and '.join(copied)} {'is' if len(copied) == 1 else 'are'} the seed clinic's own copy, nothing else names a site"
+                         if copied else "no rule names a registry site for this employer and place")
         return None
 
     def foreign_places(self, pool, places):
