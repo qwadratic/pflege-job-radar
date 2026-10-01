@@ -11,31 +11,35 @@ content match it finds, whatever the drain decided: it is replayed over the stor
 replayed rows write, through the same cli.link_rows. A network call from inside a drain raises.
 
   set -a; source .env; set +a
-  .venv/bin/python tools/replay_matcher.py --runs 225 223 217 --out data/relink_task185_set.json --report /tmp/replay.json
+  .venv/bin/python tools/replay_matcher.py --runs 225 --out data/relink_task185_set.json --report /tmp/replay.json \
+      --pipeline-out /tmp/pipeline.json --pins-out data/pins_task185_set.json --verdicts verdicts.json
 
 --runs, newest first: a posting is judged by the first run that observed it (a board the last run did not reach is
-judged by an earlier one). --out: the proposed changes of the OPEN postings as a tools/apply_posting_changes.py file,
-for review; this tool never applies it. --report: every posting with its stored and replayed link. --verdicts: an
-optional judge file ({posting_id: {issue, body_says, evidence}}) whose reading is quoted as the evidence of a
-posting it judged a site mismatch. --hold: posting ids whose proposed change a reviewer judged wrong; they are
-left out of --out and listed. --overlay: the rows a newer crawl returned for some boards (say, recorded from changed
-adapters), in the raw-row format of the queue: they take the place of those boards' rows in the newest run, and the
-older runs lose the boards' rows too, so the replay shows the state after that crawl -- a posting the new crawl no
-longer lists is judged by no run (not_replayed), as it would be by the next nightly drain.
+judged by an earlier one). --report: every posting with its stored and replayed link. --verdicts: an optional judge
+file ({posting_id: {issue, body_says, evidence}}) whose reading is quoted as the evidence of a posting it judged a
+site mismatch. --hold: posting ids whose proposed change a reviewer judged wrong; they are left out of every change
+file and listed. --overlay: the rows a newer crawl returned for some boards (say, recorded from changed adapters), in
+the raw-row format of the queue: they take the place of those boards' rows in the newest run, and the older runs lose
+the boards' rows too, so the replay shows the state after that crawl -- a posting the new crawl no longer lists is
+judged by no run (not_replayed), as it would be by the next nightly drain.
 
-Rows with clinic_match_rule 'manual' are skipped (the nightly code never touches them). What the set does, and its lock:
-  unlink, lock=false  the replayed pipeline (drain + link stage) leaves the posting without a clinic by itself, so the
-                      NULL needs no pin, and a pin would also keep the row from the right link once an adapter reads
-                      the posting's own place
-  relink              the replayed pipeline attaches another clinic on the posting's own place or text (apply_posting_changes
-                      writes rule 'manual'); a clinic only the link stage's stored employer and city name is not proposed
-  unlink, lock=true   (pin; only with --verdicts and --pin) the judge read a wrong site and the final state still carries a
-                      clinic nothing supports (the drain still attaches it, its copies disagree, or the link stage links it
-                      from the stored employer and city): only 'manual' stops the nightly stages putting it back. A pin also
-                      keeps the row from the right link once an adapter reads the posting's own place, so it is not written
-                      unless asked: regenerate after the adapters ran and pin what still carries the wrong clinic
-  unlink, lock=false  also the judge-read wrong site that no run re-evaluates and no stage matches: nothing puts a clinic back
-Apply the set only after the pipeline change is deployed: the old `link-clinics` stage re-creates the unlinked
+The changes of the OPEN postings go to three tools/apply_posting_changes.py files, for review; this tool never applies
+them. Rows with clinic_match_rule 'manual' are skipped (the nightly code never touches them).
+  --out           what only this tool can make, no lock:
+                    unlink  the judge read a wrong site, and no run re-evaluates the posting (or its copies disagree, so
+                            the drain pushes nothing) and no nightly stage matches it: nothing puts a clinic back
+  --pipeline-out  what the fixed pipeline makes by itself the next time the posting is loaded -- not to be applied: it
+                  only changes the timing, and a relink by hand writes rule 'manual':
+                    unlink  the replayed pipeline (drain + link stage) leaves the posting without a clinic; no lock,
+                            which would also keep the row from the right link once an adapter reads its own place
+                    relink  the replayed pipeline attaches another clinic on the posting's own place or text; a clinic
+                            only the link stage's stored employer and city name is not proposed
+  --pins-out      unlink with lock=true (a pin; needs --verdicts): the judge read a wrong site and the final state still
+                  carries a clinic nothing supports (the drain still attaches it, its copies disagree, or the link stage
+                  links it from the stored employer and city): only 'manual' stops the nightly stages putting it back. A
+                  pin also keeps the row from the right link once an adapter reads the posting's own place: replay the
+                  state after the adapters ran (--overlay) and pin what still carries the wrong clinic
+Apply the files only after the pipeline change is deployed: the old `link-clinics` stage re-creates the unlinked
 R1_exact links from the seed name and town the same night.
 """
 import argparse
@@ -207,11 +211,12 @@ def main():
     ap.add_argument("--runs", type=int, nargs="+", required=True, help="run ids, newest first")
     ap.add_argument("--inbox", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "inbox.sqlite"))
     ap.add_argument("--hosts", nargs="*", default=[], help="replay only the raw rows of these source_host values (default: all)")
-    ap.add_argument("--out", help="write the proposed changes (apply_posting_changes format) here")
+    ap.add_argument("--out", help="write the changes only this tool can make (apply_posting_changes format) here")
+    ap.add_argument("--pipeline-out", help="write the changes the nightly pipeline makes by itself on the postings' next load here (not to be applied)")
+    ap.add_argument("--pins-out", help="write the unlink lock=true entries (rule 'manual': no nightly stage touches the row again) here")
     ap.add_argument("--report", help="write every posting with its stored and replayed link here")
     ap.add_argument("--verdicts", help="judge file: {posting_id: {issue, body_says, evidence}}")
-    ap.add_argument("--hold", type=int, nargs="*", default=[], help="posting ids to leave out of --out")
-    ap.add_argument("--pin", action="store_true", help="also write the unlink lock=true entries (rule 'manual': no nightly stage touches the row again)")
+    ap.add_argument("--hold", type=int, nargs="*", default=[], help="posting ids to leave out of every change file")
     ap.add_argument("--overlay", help="JSON list of raw rows (kind, collector, client_id, source_host, source_url, payload) a newer crawl returned "
                                       "for some boards: in the first run they replace every row of the boards they hold, and the older runs lose those "
                                       "boards' rows too (a posting the new crawl no longer lists is not re-evaluated by any run)")
@@ -266,7 +271,7 @@ def main():
         conflict = bool(run) and (any(d["conflict"] for d in ds) or len({d["clinic_id"] for d in ds}) > 1)   # the drain pushes nothing: the stored link stays
         inbox = ds[0] if run and not conflict else {}
         lm = linked.get(p["posting_id"])
-        new = {**inbox, "inbox_clinic": inbox.get("clinic_id"), "conflict": conflict}
+        new = {**inbox, "inbox_clinic": inbox.get("clinic_id"), "inbox_rule": inbox.get("rule"), "conflict": conflict}
         if lm:
             new.update(clinic_id=lm["clinic_id"], rule=lm["clinic_match_rule"], note=(inbox.get("note") or "")
                        + ("" if lm["clinic_id"] == inbox.get("clinic_id") else f" | link stage: {lm['clinic_match_rule']} -> {lm['clinic_id']}"))
@@ -303,25 +308,26 @@ def main():
     for status in sorted({s for s, _ in count if s != "action"}):
         print(f"{status} postings:", dict(sorted((k, n) for (s, k), n in count.items() if s == status)))
     print("proposed actions on open postings:", dict(sorted((k or "-", n) for (s, k), n in count.items() if s == "action")))
+    # Who makes the change: the fixed pipeline unmatches a posting or attaches the clinic its place or text names the next time the
+    # posting is loaded again ("pipeline": applying it would only change the timing, and a relink by hand would write rule 'manual'),
+    # a pin is the lock that keeps a nightly stage from putting the clinic back ("pin"), the rest only this tool can do ("tool").
+    who = lambda action, kind: "pin" if action == "pin" else "pipeline" if action == "relink" or kind == "unlink" else "tool"
     print("proposed changes by board:")
-    by_board = collections.Counter((board(p["external_url"]), action) for p, _, _, action, _, _ in proposed)
-    for (b, k), n in sorted(by_board.items(), key=lambda kv: (-kv[1], kv[0])):
-        print(f"  {n:>4} {k:6} {b}")
+    by_board = collections.Counter((board(p["external_url"]), who(action, kind), action) for p, _, _, action, kind, _ in proposed)
+    for (b, w, k), n in sorted(by_board.items(), key=lambda kv: (-kv[1], kv[0])):
+        print(f"  {n:>4} {w:8} {k:6} {b}")
     missing = collections.Counter(r["board"] for r in report if r["status"] == "open" and r["change"] == "not_replayed")
     print(f"open postings with no raw row in any run, not replayed: {sum(missing.values())}", dict(missing.most_common(8)))
 
     if a.report:
         json.dump(report, open(a.report, "w", encoding="utf-8"), ensure_ascii=False)
-    if not a.out:
-        print(f"{len(proposed)} proposed changes (pass --out to write them)")
+    if not (a.out or a.pipeline_out or a.pins_out):
+        print(f"{len(proposed)} proposed changes (pass --out, --pipeline-out or --pins-out to write them)")
         return
     held = [p["posting_id"] for p, *_ in proposed if p["posting_id"] in a.hold]
-    out, pins = [], 0
+    sets = {"tool": [], "pipeline": [], "pin": []}
     for p, run, new, action, kind, quote in proposed:
         if p["posting_id"] in a.hold:
-            continue
-        if action == "pin" and not a.pin:
-            pins += 1
             continue
         old, v = by_id.get(str(p["clinic_id"])) or {}, verdicts.get(str(p["posting_id"]))
         judged = f"the judge read: {scrub(v['body_says'])}" if v and v.get("issue") == "site_mismatch" else None
@@ -329,7 +335,9 @@ def main():
         if action == "unlink":
             act = {"action": "unlink", "lock": False}
             reason = filed + ("the replayed pipeline finds no evidence that the posting belongs to any registry clinic." if kind == "unlink" else
-                              "the judge read the text and it names another site; no replayed run re-evaluates the posting and no nightly stage matches it.")
+                              "the judge read the text and it names another site; "
+                              + ("its copies disagree, so the drain pushes nothing, and no nightly stage matches it." if run else
+                                 "no replayed run re-evaluates the posting and no nightly stage matches it."))
             says = judged or f"no clinic evidence: {new['note'] or 'the replayed rules find none'}"
         elif action == "relink":
             to = by_id[new["clinic_id"]]
@@ -340,7 +348,7 @@ def main():
             act = {"action": "unlink", "lock": True}
             why = ["no replayed run holds a row of it, so the drain never re-evaluates it" if not run else
                    "its copies disagree, so the drain pushes nothing" if new["conflict"] else
-                   "the replayed drain still attaches it (no adapter marks the stamp yet)" if new["inbox_clinic"] else None,
+                   f"the replayed drain still attaches it to {new['inbox_clinic']} by {new['inbox_rule']}" if new["inbox_clinic"] else None,
                    f"the nightly link stage matches the stored employer and city and links it to {new['clinic_id']} by {new['rule']}"
                    if "link stage" in (new.get("note") or "") else None]
             reason = filed + "the judge read the text and it names another site, and nothing in the fixed pipeline puts that right: " \
@@ -348,10 +356,14 @@ def main():
                              "relink by hand once the posting's own place is read."
             says = judged
         where = f"replay of run {run['run']}, {run['date']}" if run else f"stored posting, in no replayed run; {datetime.date.today()}"
-        out.append({"posting_id": p["posting_id"], **act,
-                    "_why": {"code": "wrong_clinic", "reason": reason, "task": TASK, "evidence": [f"{p['external_url']} ({where}): {says}"]}})
-    json.dump(out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"{len(out)} proposed changes written to {a.out}; held back by --hold: {held}; pins not written (pass --pin): {pins}")
+        sets[who(action, kind)].append({"posting_id": p["posting_id"], **act,
+                                        "_why": {"code": "wrong_clinic", "reason": reason, "task": TASK, "evidence": [f"{p['external_url']} ({where}): {says}"]}})
+    for name, path in (("tool", a.out), ("pipeline", a.pipeline_out), ("pin", a.pins_out)):
+        if path:
+            json.dump(sets[name], open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"changes only this tool can make: {len(sets['tool'])} -> {a.out or 'not written (pass --out)'}; "
+          f"made by the nightly pipeline itself: {len(sets['pipeline'])} -> {a.pipeline_out or 'not written (pass --pipeline-out)'}; "
+          f"pins (lock=true): {len(sets['pin'])} -> {a.pins_out or 'not written (pass --pins-out)'}; held back by --hold: {held}")
 
 
 if __name__ == "__main__":

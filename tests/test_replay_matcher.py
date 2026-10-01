@@ -3,6 +3,7 @@ change set it proposes loads in tools/apply_posting_changes.py. Synthetic rows a
 postings, posting_observations, and the rows the nightly link stage matches) are stubbed, the local queue is a temp file."""
 import json
 import sys
+import types
 
 import pytest
 
@@ -70,47 +71,55 @@ def replay(tmp_path, monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
 
-    def run(*extra):
-        out, rep = tmp_path / "set.json", tmp_path / "report.json"
-        monkeypatch.setattr(sys, "argv", ["replay_matcher.py", "--runs", "7", "--inbox", queue, "--out", str(out), "--report", str(rep), *extra])
+    def run(*extra, pins=False):
+        files = {n: tmp_path / f"{n}.json" for n in ("set", "pipeline", "pins", "report")}
+        argv = ["replay_matcher.py", "--runs", "7", "--inbox", queue, "--out", str(files["set"]), "--pipeline-out", str(files["pipeline"]),
+                "--report", str(files["report"]), *extra]
+        monkeypatch.setattr(sys, "argv", argv + (["--pins-out", str(files["pins"])] if pins else []))
         RM.main()
-        return json.loads(out.read_text()), {r["posting_id"]: r for r in json.loads(rep.read_text())}, out
+        read = lambda f: json.loads(files[f].read_text()) if files[f].exists() else None
+        return types.SimpleNamespace(tool=read("set"), pipeline=read("pipeline"), pins=read("pins"), path=files["set"],
+                                     report={r["posting_id"]: r for r in read("report")}, files=files)
     return run
 
 
+def acts(changes):
+    return {c["posting_id"]: (c["action"], c.get("clinic_id"), c.get("lock")) for c in changes}
+
+
 def test_the_replay_proposes_the_changes_the_pipeline_would_make_to_the_stored_links(replay):
-    changes, report, path = replay()
-    assert {c["posting_id"]: (c["action"], c.get("clinic_id"), c.get("lock")) for c in changes} == {
-        102: ("unlink", None, False), 105: ("unlink", None, False), 106: ("relink", "1", None)}
-    assert {pid: r["change"] for pid, r in report.items()} == {
+    r = replay()
+    # 102, 105 and 106 are what the nightly drain makes by itself when it loads the postings again: they are not the tool's to make
+    assert r.tool == []
+    assert acts(r.pipeline) == {102: ("unlink", None, False), 105: ("unlink", None, False), 106: ("relink", "1", None)}
+    assert {pid: x["change"] for pid, x in r.report.items()} == {
         101: "same", 102: "unlink", 103: "manual", 104: "unlink", 105: "unlink", 106: "relink", 107: "not_replayed", 108: "same", 109: "relink",
         110: "not_replayed"}
-    why = changes[0]["_why"]
+    why = r.pipeline[0]["_why"]
     assert why["code"] == "wrong_clinic" and why["task"] == "TASK-185" and why["evidence"][0].startswith(f"{BOARD}/stamped (replay of run 7")
-    assert len(load_changes(str(path), {"wrong_clinic"})) == 3         # the file format apply_posting_changes reads
+    assert len(load_changes(str(r.files["pipeline"]), {"wrong_clinic"})) == 3         # the file format apply_posting_changes reads
 
 
-def test_a_wrong_link_nothing_in_the_pipeline_repairs_is_pinned_only_when_asked_with_the_judges_reading(replay, tmp_path, capsys):
+def test_a_wrong_link_nothing_in_the_pipeline_repairs_is_the_tools_and_a_pin_only_when_asked_with_the_judges_reading(replay, tmp_path, capsys):
     verdict = lambda issue: {"issue": issue, "body_says": "names Gammastadt, contact Frau Beispiel, Tel. 0123 456789", "evidence": "Standort: Gammastadt"}
     judge = tmp_path / "judge.json"
     judge.write_text(json.dumps({"101": verdict("ok"), "107": verdict("site_mismatch"), "108": verdict("site_mismatch"),
                                  "109": verdict("site_mismatch"), "110": verdict("site_mismatch")}))
     # 107 is in no run and the link stage links it to its stored clinic, 108 is unmatched by the drain but linked again by the link stage,
     # 109 would be moved by the link stage to a clinic nothing in the posting names: a lock is the only thing that keeps the NULL.
-    # 110 is in no run and no stage matches it: the NULL stays without one.
-    changes, _, _ = replay("--verdicts", str(judge))
-    assert {c["posting_id"]: (c["action"], c.get("lock")) for c in changes} == {
-        102: ("unlink", False), 105: ("unlink", False), 106: ("relink", None), 110: ("unlink", False)}
-    assert "pins not written (pass --pin): 3" in capsys.readouterr().out
-    assert "no nightly stage matches it" in changes[-1]["_why"]["reason"]
-    changes, _, path = replay("--verdicts", str(judge), "--pin")
-    by_id = {c["posting_id"]: c for c in changes}
-    assert {pid: (c["action"], c.get("lock")) for pid, c in by_id.items()} == {
-        102: ("unlink", False), 105: ("unlink", False), 106: ("relink", None), 107: ("unlink", True), 108: ("unlink", True), 109: ("unlink", True),
-        110: ("unlink", False)}
+    # 110 is in no run and no stage matches it: the NULL stays without one, and only the tool can clear it.
+    r = replay("--verdicts", str(judge))
+    assert acts(r.tool) == {110: ("unlink", None, False)}
+    assert acts(r.pipeline) == {102: ("unlink", None, False), 105: ("unlink", None, False), 106: ("relink", "1", None)}
+    assert r.pins is None and "pins (lock=true): 3 -> not written (pass --pins-out)" in capsys.readouterr().out
+    assert "no nightly stage matches it" in r.tool[0]["_why"]["reason"]
+    r = replay("--verdicts", str(judge), pins=True)
+    by_id = {c["posting_id"]: c for c in r.pins}
+    assert acts(r.pins) == {107: ("unlink", None, True), 108: ("unlink", None, True), 109: ("unlink", None, True)}
+    assert acts(r.tool) == {110: ("unlink", None, False)}
     assert "no replayed run" in by_id[107]["_why"]["reason"] and "link stage" in by_id[108]["_why"]["reason"] and "link stage" in by_id[109]["_why"]["reason"]
     assert "the judge read: names Gammastadt, contact [contact removed], [contact removed]" in by_id[107]["_why"]["evidence"][0]   # the file is public
-    assert len(load_changes(str(path), {"wrong_clinic"})) == 7
+    assert len(load_changes(str(r.files["pins"]), {"wrong_clinic"})) == 3 and len(load_changes(str(r.path), {"wrong_clinic"})) == 1
 
 
 def test_an_overlay_replaces_the_rows_of_the_boards_it_holds_and_the_replay_shows_the_state_after_that_crawl(replay, tmp_path, capsys):
@@ -121,16 +130,16 @@ def test_an_overlay_replaces_the_rows_of_the_boards_it_holds_and_the_replay_show
     overlay = tmp_path / "overlay.json"
     overlay.write_text(json.dumps([row("stamped", "Pflegefachkraft (m/w/d) Intensiv", "Alphastadt", stamped=False),
                                    row("wrong", "Pflegefachkraft (m/w/d) Station", "Alphastadt", stamped=False)]))
-    changes, report, _ = replay("--overlay", str(overlay))
+    r = replay("--overlay", str(overlay))
     assert "overlay: 2 rows of 1 boards replace those boards' rows in run 7" in capsys.readouterr().out
-    assert {pid: r["change"] for pid, r in report.items() if pid in (101, 102, 106, 108)} == {
+    assert {pid: x["change"] for pid, x in r.report.items() if pid in (101, 102, 106, 108)} == {
         101: "not_replayed", 102: "same", 106: "relink", 108: "not_replayed"}
-    assert [(c["posting_id"], c["action"], c.get("clinic_id")) for c in changes] == [(106, "relink", "1")]
+    assert r.tool == [] and acts(r.pipeline) == {106: ("relink", "1", None)}
 
 
-def test_a_held_posting_is_left_out_of_the_set(replay):
-    changes, _, _ = replay("--hold", "102")
-    assert [c["posting_id"] for c in changes] == [105, 106]
+def test_a_held_posting_is_left_out_of_every_change_file(replay):
+    r = replay("--hold", "102")
+    assert sorted(acts(r.pipeline)) == [105, 106] and r.tool == []
 
 
 def test_names_quotes_the_text_around_the_word_that_names_the_site_and_not_its_sibling():
