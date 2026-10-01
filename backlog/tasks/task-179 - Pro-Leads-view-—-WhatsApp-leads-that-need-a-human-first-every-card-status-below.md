@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 14:24'
+updated_date: '2026-10-01 16:27'
 labels:
   - frontend
   - whatsapp
@@ -102,4 +102,15 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - /api/wa/pro is owner-only, with deny tests on the harness side.
 - wa-harness was asked to put the contract in its own doc (e.g. docs/wa-pro-activity.md) so PR #1 and PR #2 do not collide add/add on docs/wa-dashboard.md.
 - Placement: there is no view named 'activity board'. The proposal is a second tab on #/leads (?tab=rail), and Ivan was asked whether he meant Clawl instead. It gets built here (a new AC on this task, no new task ID while the ID lanes overlap) once the fixtures land.
+
+2026-10-01, contract check against the harness's generated fixtures (tests/fixtures/wa_pro_api/{threads,thread_detail,messages,health}.json at 2177afe on PR #1). wa-harness generates them from the real routes, and a drift test guards them. In a scratch Playwright run with /api/wa/* routed to them, the built view renders with no page errors in DE and EN:
+- 4 leads need a human (2222 escalated, 6666 send error, 3333 stuck plus pending, 5555 handoff attention), 6 rows, test 0001 hidden.
+- 2222's draft, 3333's voice note transcript shown once, 6666's tombstone and failed tick, and 5555's targets and matches all render.
+- The strip shows the rail contact.
+- 52df1da drops the city-list branch, since the harness confirmed card.city is always a string.
+Data issues reported to wa-harness:
+1. targets[].clinic_name is null while handoff_matches has the names, so the drawer shows the bare id.
+2. A stopped thread has ball 'us', where it should be 'silent'.
+3. health.json carries a local username/path (luna_media_dir) and hostname (luna_media_host). That is in a fixture committed to the public repo, and it reaches the browser.
+Earlier the same day, a28806b changed the error card to 'Keine Verbindung zum Harness (status): message' for 502/503/504, because the board proxy (app/wa_proxy.py) answers 503 when WA_API_BASE is unset and 502 when the harness rejects the token. Leads + responsive tests: 43 passed.
 <!-- SECTION:NOTES:END -->
