@@ -176,22 +176,35 @@ def test_browser():
 
 # --------------------------------------------------------------------------------------------- web fonts of our own pages
 FONT_URL = "https://fonts.googleapis.com/css2?family=Test"
+FILE_URL = "https://fonts.gstatic.com/s/test/v1/t.css"   # the second font host (the real ones serve woff2 files here)
 PAGE_WITH_FONT = '''
 import pytest
 from playwright.sync_api import sync_playwright
 
-def test_page():
+def _check(pg):
+    pg.set_content('<link rel=stylesheet href="%s"><link rel=stylesheet href="%s"><p id=x>hi</p>')
+    pg.wait_for_load_state("load")
+    assert pg.eval_on_selector("#x", "e => getComputedStyle(e).color") == "rgb(1, 2, 3)"
+    assert pg.eval_on_selector("#x", "e => getComputedStyle(e).backgroundColor") == "rgb(4, 5, 6)"
+
+def test_page_of_the_browser():
     with sync_playwright() as pw:
         try:
             b = pw.chromium.launch(args=["--no-sandbox"])
         except Exception as e:
             pytest.skip(f"chromium unavailable: {e}")
-        pg = b.new_page()
-        pg.set_content('<link rel=stylesheet href="%s"><p id=x>hi</p>')
-        pg.wait_for_load_state("load")
-        assert pg.eval_on_selector("#x", "e => getComputedStyle(e).color") == "rgb(1, 2, 3)"
+        _check(b.new_page())
         b.close()
-''' % FONT_URL
+
+def test_page_of_a_context():
+    with sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as e:
+            pytest.skip(f"chromium unavailable: {e}")
+        _check(b.new_context().new_page())
+        b.close()
+''' % (FONT_URL, FILE_URL)
 
 
 def test_a_web_font_is_answered_from_the_fonts_mirror(tmp_path, monkeypatch):
@@ -200,15 +213,16 @@ def test_a_web_font_is_answered_from_the_fonts_mirror(tmp_path, monkeypatch):
     monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
     s = M.Store.new(M.FONTS_BOARD)
     s.add("fonts", "playwright", "GET", FONT_URL, None, 200, "OK", [("Content-Type", "text/css")], b"p{color:rgb(1,2,3)}")
+    s.add("fonts", "playwright", "GET", FILE_URL, None, 200, "OK", [("Content-Type", "text/css")], b"p{background-color:rgb(4,5,6)}")
     s.save()
     rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "mirror")})
-    assert rc == 0 and "network guard hits: 0" in out, out
+    assert rc == 0 and "2 passed" in out and "network guard hits: 0" in out, out
 
 
 def test_a_web_font_the_mirror_lacks_fails_the_test_and_names_the_url(tmp_path):
     pytest.importorskip("playwright.sync_api")
     rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "empty-mirror")})  # no fonts board at all
-    assert rc == 1 and "network guard" in out and FONT_URL in out and "MIRROR_RECORD=1 pytest" in out
+    assert rc == 1 and "network guard" in out and FONT_URL in out and FILE_URL in out and "MIRROR_RECORD=1 pytest" in out
 
 
 # the stand-in for the CDN is a loopback server on a port the outer test picked; the replay session starts none, so only the recording can answer
