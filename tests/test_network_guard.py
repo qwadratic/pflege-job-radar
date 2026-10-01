@@ -15,7 +15,7 @@ def _session(tmp_path, body, *, env=None, extra=()):
     (tmp_path / "conftest.py").write_text(CONFTEST.read_text(encoding="utf-8"), encoding="utf-8")
     (tmp_path / "test_inner.py").write_text(body, encoding="utf-8")
     e = {k: v for k, v in os.environ.items() if k != "MIRROR_RECORD"}
-    e.update(env or {})
+    e.update({"PYTHONPATH": str(CONFTEST.parent.parent), **(env or {})})   # the copied conftest imports tests.mirror
     r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--color=no", "--rootdir", str(tmp_path), *extra],
                        cwd=tmp_path, env=e, capture_output=True, text=True, timeout=120)
     return r.returncode, r.stdout + r.stderr
@@ -172,3 +172,89 @@ def test_browser():
         b.close()
 ''')
     assert rc == 0, out
+
+
+# --------------------------------------------------------------------------------------------- web fonts of our own pages
+FONT_URL = "https://fonts.googleapis.com/css2?family=Test"
+PAGE_WITH_FONT = '''
+import pytest
+from playwright.sync_api import sync_playwright
+
+def test_page():
+    with sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as e:
+            pytest.skip(f"chromium unavailable: {e}")
+        pg = b.new_page()
+        pg.set_content('<link rel=stylesheet href="%s"><p id=x>hi</p>')
+        pg.wait_for_load_state("load")
+        assert pg.eval_on_selector("#x", "e => getComputedStyle(e).color") == "rgb(1, 2, 3)"
+        b.close()
+''' % FONT_URL
+
+
+def test_a_web_font_is_answered_from_the_fonts_mirror(tmp_path, monkeypatch):
+    pytest.importorskip("playwright.sync_api")
+    from tests import mirror as M
+    monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
+    s = M.Store.new(M.FONTS_BOARD)
+    s.add("fonts", "playwright", "GET", FONT_URL, None, 200, "OK", [("Content-Type", "text/css")], b"p{color:rgb(1,2,3)}")
+    s.save()
+    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "mirror")})
+    assert rc == 0 and "network guard hits: 0" in out, out
+
+
+def test_a_web_font_the_mirror_lacks_fails_the_test_and_names_the_url(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "empty-mirror")})  # no fonts board at all
+    assert rc == 1 and "network guard" in out and FONT_URL in out and "MIRROR_RECORD=1 pytest" in out
+
+
+# the stand-in for the CDN is a loopback server on a port the outer test picked; the replay session starts none, so only the recording can answer
+SERVE = '''
+import http.server, os, re, threading
+import pytest
+from playwright.sync_api import sync_playwright
+from tests import mirror as M
+
+PORT = int(os.environ["FONT_PORT"])
+M._FONT_URL = re.compile(r"http://127\\.0\\.0\\.1:%d/fonts/" % PORT)
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/css"); self.end_headers(); self.wfile.write(b"p{color:rgb(1,2,3)}")
+    def log_message(self, *a): pass
+
+def test_page():
+    srv = None
+    if os.environ.get("FONT_SERVER"):
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    with sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as e:
+            pytest.skip(f"chromium unavailable: {e}")
+        pg = b.new_page()
+        pg.set_content('<link rel=stylesheet href="http://127.0.0.1:%d/fonts/a.css"><p id=x>hi</p>' % PORT)
+        pg.wait_for_load_state("load")
+        assert pg.eval_on_selector("#x", "e => getComputedStyle(e).color") == "rgb(1, 2, 3)"
+        b.close()
+    if srv:
+        srv.shutdown()
+        srv.server_close()
+'''
+
+
+def test_a_run_with_mirror_record_records_the_fonts_it_loads_and_a_later_run_replays_them(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = str(s.getsockname()[1])
+    root = tmp_path / "mirror"
+    rc, out = _session(tmp_path, SERVE, env={"MIRROR_ROOT": str(root), "MIRROR_RECORD": "1", "FONT_PORT": port, "FONT_SERVER": "1"})
+    assert rc == 0 and (root / "infra__web-fonts.sqlite.xz").exists(), out
+    rc, out = _session(tmp_path, SERVE, env={"MIRROR_ROOT": str(root), "FONT_PORT": port})  # nothing listens on that port any more
+    assert rc == 0 and "network guard hits: 0" in out, out

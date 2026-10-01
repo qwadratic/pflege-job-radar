@@ -90,6 +90,30 @@ if not _RECORDING:
     except ImportError:
         pass
 
+try:  # the web fonts our own pages load come from the mirror too (tests/mirror.py web_fonts), in both modes: a recording run fills it
+    from playwright.sync_api import Browser
+
+    _new_context, _new_page = Browser.new_context, Browser.new_page
+
+    def _font_miss(url):
+        _refuse("font (not in the mirror; MIRROR_RECORD=1 pytest <this web test> records it)", url, None)
+
+    def _context_with_fonts(self, *a, **k):
+        from tests import mirror as M
+        ctx = _new_context(self, *a, **k)
+        M.route_web_fonts(ctx, _font_miss)
+        return ctx
+
+    def _page_with_fonts(self, *a, **k):
+        from tests import mirror as M
+        page = _new_page(self, *a, **k)
+        M.route_web_fonts(page.context, _font_miss)
+        return page
+
+    Browser.new_context, Browser.new_page = _context_with_fonts, _page_with_fonts
+except ImportError:
+    pass
+
 _ADVICE = ("a test never talks to a clinic site or to our own infrastructure. Clinic sites: replay the mirror "
            "(tests/mirror.py; record it with tools/mirror.py). Supabase, the ingest endpoint, Firecrawl, LLM APIs: fake them.")
 
@@ -98,7 +122,7 @@ def _failure(mark, where):
     hits = _hits[mark:]
     if not hits:
         return None
-    what = ", ".join(dict.fromkeys(f"{k} {h}:{p}" if k == "connect" else f"dns {h}" for k, h, p in hits))
+    what = ", ".join(dict.fromkeys(f"{k} {h}:{p}" if k == "connect" else f"{k} {h}" for k, h, p in hits))
     return f"network guard: {where} reached {len(set(h for _, h, _ in hits))} non-local host(s): {what}\n  {_ADVICE}"
 
 
@@ -158,5 +182,8 @@ def pytest_report_header(config):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    if not _RECORDING:
+    if _RECORDING:
+        from tests import mirror as M
+        M.save_web_fonts()
+    else:
         print(f"\nnetwork guard hits: {len(_hits)}")

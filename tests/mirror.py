@@ -649,6 +649,52 @@ def _pw_new_page(self, *a, **k):
     return page
 
 
+# -- the web fonts of OUR OWN pages: the Chromium of the web tests (tests/test_web_*.py) renders pages served from localhost that load their
+# fonts from Google Fonts; the page layout (print pagination, line breaks) depends on them. A test does not reach that CDN either:
+# the two hosts are answered from the mirror board FONTS_BOARD, recorded once by running a web test with MIRROR_RECORD=1.
+FONTS_BOARD = "infra__web-fonts"
+_FONT_URL = re.compile(r"https://fonts\.(?:googleapis|gstatic)\.com/")
+_fonts = {}
+
+
+def web_fonts():
+    """The Mirror that answers Google Fonts for the browsers of the tests (one per process): replay, or MIRROR_RECORD=1 to go live for what
+    it lacks. None when there is no recording yet and nothing is being recorded."""
+    if "m" not in _fonts:
+        through = os.environ.get("MIRROR_RECORD") == "1"
+        if not through and not board_file(FONTS_BOARD).exists():
+            return None
+        m = Mirror(FONTS_BOARD, Store.load(FONTS_BOARD) if board_file(FONTS_BOARD).exists() else Store.new(FONTS_BOARD), "through" if through else "replay")
+        m.scope = "fonts"
+        _fonts["m"], _fonts["handler"] = m, _route_handler(m)
+    return _fonts["m"]
+
+
+def route_web_fonts(ctx, on_miss=None):
+    """Answer the font hosts of a Chromium context from the web-fonts mirror. What it does not hold is refused, and `on_miss(url)` lets the
+    guard fail the test that asked."""
+    def handle(route, request):
+        m = web_fonts()
+        if m is None or (m.mode == "replay" and not m.store.lookup(m.scope, "playwright", request.method, request.url, None)):
+            if on_miss:
+                on_miss(request.url)
+            route.abort()
+            return
+        _fonts["handler"](route, request)
+    ctx.route(_FONT_URL, handle)
+
+
+def save_web_fonts():
+    """Through mode only: keep what was fetched live (called once, at the end of the session)."""
+    m = _fonts.get("m")
+    if m and m.mode == "through" and m.live_requests:
+        e = {"board_id": FONTS_BOARD, "kind": "infra", "url": "https://fonts.googleapis.com/", "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+             "recorder_sha": git_sha(), **m.store.stats(), "rows": m.store.count(), "error": None}
+        m.store.set_meta("index", e)
+        path = m.save()
+        update_index(dict(e, bytes_file=path.stat().st_size), section="infra")
+
+
 def _install():
     _REAL["send"], _REAL["do_open"], _REAL["sleep"] = requests.adapters.HTTPAdapter.send, urllib.request.AbstractHTTPHandler.do_open, time.sleep
     requests.adapters.HTTPAdapter.send = _send
