@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 17:14'
+updated_date: '2026-10-01 17:33'
 labels:
   - frontend
   - whatsapp
@@ -115,4 +115,6 @@ Data issues reported to wa-harness:
 Earlier the same day, a28806b changed the error card to 'Keine Verbindung zum Harness (status): message' for 502/503/504, because the board proxy (app/wa_proxy.py) answers 503 when WA_API_BASE is unset and 502 when the harness rejects the token. Leads + responsive tests: 43 passed.
 
 2026-10-01: Ivan decided the phone-rail board goes into the Leads view as a second tab ('Rail & Jobs', #/leads?tab=rail), not Clawl. He also said the file with WA_API_BASE / WA_API_TOKEN is readable by user claude over SSH on tasker-dispatcher-01. Fetching it from this session was blocked by the permission classifier ('Credential Exploration', three attempts: the SSH login, finding the board's service unit, finding how the app loads its env). It was not worked around. The commands went to Ivan instead. Order note: the live board runs main without app/wa_proxy.py (PR #1), so the env has no effect until PR #1 is merged and the board redeployed.
+
+2026-10-01, the board-side WA_API_* step does not exist yet (wa-harness checked): no WA_API_TOKEN has been generated (Ivan's step), and WA_API_BASE will be https://ki-workflow.agency once Ivan adds the nginx location /api/wa/pro/. Today /api/wa/pro/health there answers 404, and once it is live the healthy answer without a token is 401. The board's env file is /home/exedev/repo/.env (pflege-web.service EnvironmentFile; gitignored; no WA_API_* keys yet). The board VM's egress IP is 67.213.121.209 (api.ipify.org). wa-harness planned to allow only 161.210.92.90 in the location, which would give the board 403, so the allow line needs 67.213.121.209. wa-harness declined to give the board VM SSH access to the claude account, because its .env holds every harness secret. Ivan copies the token himself.
 <!-- SECTION:NOTES:END -->
