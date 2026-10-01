@@ -26,9 +26,12 @@ Rows with clinic_match_rule 'manual' are skipped (the nightly code never touches
                       the posting's own place
   relink              the replayed pipeline attaches another clinic on the posting's own place or text (apply_posting_changes
                       writes rule 'manual'); a clinic only the link stage's stored employer and city name is not proposed
-  unlink, lock=true   only with --verdicts: the judge read a wrong site and the final state still carries a clinic nothing
-                      supports (no run re-evaluates the row, its copies disagree, the drain still attaches it, or the link
-                      stage links it from the stored employer and city): only 'manual' stops the nightly stages putting it back
+  unlink, lock=true   (pin; only with --verdicts and --pin) the judge read a wrong site and the final state still carries a
+                      clinic nothing supports (the drain still attaches it, its copies disagree, or the link stage links it
+                      from the stored employer and city): only 'manual' stops the nightly stages putting it back. A pin also
+                      keeps the row from the right link once an adapter reads the posting's own place, so it is not written
+                      unless asked: regenerate after the adapters ran and pin what still carries the wrong clinic
+  unlink, lock=false  also the judge-read wrong site that no run re-evaluates and no stage matches: nothing puts a clinic back
 Apply the set only after the pipeline change is deployed: the old `link-clinics` stage re-creates the unlinked
 R1_exact links from the seed name and town the same night.
 """
@@ -191,6 +194,7 @@ def main():
     ap.add_argument("--report", help="write every posting with its stored and replayed link here")
     ap.add_argument("--verdicts", help="judge file: {posting_id: {issue, body_says, evidence}}")
     ap.add_argument("--hold", type=int, nargs="*", default=[], help="posting ids to leave out of --out")
+    ap.add_argument("--pin", action="store_true", help="also write the unlink lock=true entries (rule 'manual': no nightly stage touches the row again)")
     a = ap.parse_args()
 
     clinics = get_all("clinics", "*", "clinic_id.asc")
@@ -252,15 +256,17 @@ def main():
         # would also keep the row from the right link once an adapter reads the posting's own place) and a relink the text or
         # the place supports. Where the judge read a wrong site and the final state still carries a clinic nothing supports
         # -- no run re-evaluates the row, its copies disagree, the drain still attaches it, or the link stage links it from
-        # the stored employer and city -- only the lock stops the nightly stages putting it back: pinned.
+        # the stored employer and city -- the link is cleared: with lock=true (pin) when a nightly stage would put a clinic
+        # back, with lock=false when none does.
         action, wrong = None, bool((verdicts.get(str(p["posting_id"])) or {}).get("issue") == "site_mismatch")
         old, to = by_id.get(str(stored)) or {}, by_id.get(str(new.get("clinic_id"))) or {}
         quote = names(f"{p['title']} {new.get('description') or ''}", to, old) if to else None
         via_stage = "link stage" in (new.get("note") or "")
+        holds = bool(inbox.get("clinic_id") or lm)          # a nightly stage puts a clinic on the posting again
         if p["status"] == "open" and kind != "manual":
             if kind == "unlink": action = "unlink"
             elif kind in ("relink", "link") and (quote or not via_stage): action = "relink"
-            elif wrong and ((kind in ("same", "conflict", "not_replayed") and stored) or (kind in ("relink", "link") and via_stage)): action = "pin"
+            elif wrong and stored and (kind in ("same", "conflict", "not_replayed") or via_stage): action = "pin" if holds else "unlink"
         count[("action", action)] += 1
         report.append({"posting_id": p["posting_id"], "status": p["status"], "board": board(p["external_url"]), "title": p["title"],
                        "url": p["external_url"], "stored_clinic": stored, "stored_rule": p["clinic_match_rule"], "change": kind,
@@ -285,16 +291,20 @@ def main():
         print(f"{len(proposed)} proposed changes (pass --out to write them)")
         return
     held = [p["posting_id"] for p, *_ in proposed if p["posting_id"] in a.hold]
-    out = []
+    out, pins = [], 0
     for p, run, new, action, kind, quote in proposed:
         if p["posting_id"] in a.hold:
+            continue
+        if action == "pin" and not a.pin:
+            pins += 1
             continue
         old, v = by_id.get(str(p["clinic_id"])) or {}, verdicts.get(str(p["posting_id"]))
         judged = f"the judge read: {scrub(v['body_says'])}" if v and v.get("issue") == "site_mismatch" else None
         filed = f"Filed under {old.get('name')} ({p['clinic_id']}) by {p['clinic_match_rule']}; " if p["clinic_id"] else "Filed under no clinic; "
         if action == "unlink":
             act = {"action": "unlink", "lock": False}
-            reason = filed + "the replayed pipeline finds no evidence that the posting belongs to any registry clinic."
+            reason = filed + ("the replayed pipeline finds no evidence that the posting belongs to any registry clinic." if kind == "unlink" else
+                              "the judge read the text and it names another site; no replayed run re-evaluates the posting and no nightly stage matches it.")
             says = judged or f"no clinic evidence: {new['note'] or 'the replayed rules find none'}"
         elif action == "relink":
             to = by_id[new["clinic_id"]]
@@ -316,7 +326,7 @@ def main():
         out.append({"posting_id": p["posting_id"], **act,
                     "_why": {"code": "wrong_clinic", "reason": reason, "task": TASK, "evidence": [f"{p['external_url']} ({where}): {says}"]}})
     json.dump(out, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"{len(out)} proposed changes written to {a.out}; held back by --hold: {held}")
+    print(f"{len(out)} proposed changes written to {a.out}; held back by --hold: {held}; pins not written (pass --pin): {pins}")
 
 
 if __name__ == "__main__":
