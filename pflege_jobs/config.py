@@ -48,6 +48,11 @@ EMAIL = ""; LANGUAGE_REQ = ""; BONUS = ""; CHILDCARE = ""; ANERKENNUNG = ""
 # section. Used by classify.department_hint() so specialty classification can read a posting's own
 # tasks text without reading page menus/contacts/footer/hospital-wide boilerplate.
 TASK_HEAD = ""; TASK_STOP = ""
+# TASK-186: the phrases of a posting's own recruiting statement or board header that name its ward -- "... sucht für
+# die Station M62 (Dialyse) ab sofort ...", "Die neurologische Allgemeinstation 6 West ... sucht ab sofort",
+# "Bereich Akutgeriatrie Einstiegsdatum ..." -- each regex's group 1 is the phrase. classify.department_hint() reads
+# them only when title and the Aufgaben/Profil sections name no department.
+DEPT_ANCHOR = []
 
 
 def validate(p):
@@ -106,6 +111,7 @@ def _apply(p):
     g["HOUSING"], g["PAY_GRADE"], g["PAY_TEXT"] = e["housing"], e["pay_grade"], e["pay_text"]
     g["REQ_HEAD"], g["REQ_STOP"], g["EXPERIENCE"], g["EMAIL"] = e["req_head"], e["req_stop"], e["experience"], e["email"]
     g["TASK_HEAD"], g["TASK_STOP"] = e["task_head"], e["task_stop"]
+    g["DEPT_ANCHOR"] = [x["re"] for x in e["dept_anchor"]]
     g["LANGUAGE_REQ"], g["BONUS"], g["CHILDCARE"], g["ANERKENNUNG"] = e["language"], e["bonus"], e["childcare"], e["anerkennung"]
     g["TARIFF"] = [(x["label"], x["re"]) for x in e["tariff"]]
 

@@ -167,7 +167,7 @@
   },
   {
    "hint": "Pädiatrie/Neonatologie",
-   "re": "pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend"
+   "re": "pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend|säugling|kinderspital"
   },
   {
    "hint": "Geburtshilfe",
@@ -175,7 +175,7 @@
   },
   {
    "hint": "Onkologie",
-   "re": "onkolog|hämatolog|haematolog|strahlen|palliativ"
+   "re": "onkolog|hämatolog|haematolog|strahlen|palliativ|knochenmarks?transplant|stammzell"
   },
   {
    "hint": "Kardiologie",
@@ -248,6 +248,20 @@
   "req_stop": "(?:wir bieten|unser angebot|was wir bieten|das bieten wir|ihre aufgaben|deine aufgaben|aufgaben|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
   "task_head": "(?:ihre aufgaben|deine aufgaben|ihr aufgabenbereich|dein aufgabenbereich|ihr aufgabengebiet|dein aufgabengebiet|ihre tätigkeiten|deine tätigkeiten|das erwartet sie|das erwartet dich|was sie erwartet|was dich erwartet)",
   "task_stop": "(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit|wir bieten|unser angebot|was wir bieten|das bieten wir|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
+  "dept_anchor": [
+   {
+    "name": "bereich_field",
+    "re": "\\bbereich\\s+([^|]{2,90}?)\\s+einstiegsdatum"
+   },
+   {
+    "name": "recruiting_statement",
+    "re": "\\b(?:suchen|sucht)\\b[^.]{0,80}?\\bfür\\s+(?:die|den|unsere)\\s+([^.]{2,140})"
+   },
+   {
+    "name": "ward_as_subject",
+    "re": "\\b(?:die|das)\\s+([^.]{2,100}?)\\s+sucht\\s+ab sofort"
+   }
+  ],
   "experience": "((?:\\d+|mehrjährig\\w*|langjährig\\w*|erste|einschlägig\\w*|fundiert\\w*)\\s?(?:-?\\s?jahr\\w*)?\\s?(?:berufs|praxis)?erfahrung[^.\\n]{0,60})",
   "email": "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}",
   "language": "\\b(a2|b1|b2|c1)\\b.{0,40}(deutsch|sprach)|deutsch.{0,40}\\b(a2|b1|b2|c1)\\b",

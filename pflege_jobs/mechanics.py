@@ -222,13 +222,17 @@ REGISTRY = [
                 "null, einer oder mehrere von 17 Fachbereichen (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …), „|“-verknüpft. "
                 "NICHT der ganze Anzeigentext: Menüs, Kontakt-/Sekretariats-Telefonlisten je Abteilung und hausweite „verfügt über …“-Sätze "
                 "nennen dieselben Wörter, ohne die Abteilung DIESER Stelle zu sein (live geprüft: eine Neurologie-&-Stroke-Unit-Sekretariats-"
-                "Telefonzeile und ein hausweiter Stroke-Unit-Absatz erzeugen kein Label). department_raw ist dagegen der Originaltext der Karriereseite. "
+                "Telefonzeile und ein hausweiter Stroke-Unit-Absatz erzeugen kein Label). Nennt weder Titel noch Abschnitt einen Fachbereich, wird zusätzlich "
+                "die Station gelesen, die die Stelle selbst im Einstellungssatz nennt („… sucht für die Station M62 (Dialyse) ab sofort“, „Bereich Akutgeriatrie "
+                "Einstiegsdatum“; patterns.enrichment.dept_anchor). department_raw ist dagegen der Originaltext der Karriereseite. "
                 "Filter „Fachbereich“, Suche, CV-Matching (Skills → Fachbereich) und die Chips in der Jobliste hängen daran.",
                 "Title + the posting's own tasks/responsibilities and profile sections (via extract_section(), TASK-97) → "
                 "null, one or several of 17 departments (Intensiv/IMC, Anästhesie, OP, Notaufnahme, Psychiatrie …), \"|\"-joined. "
                 "NOT the whole ad text: menus, per-department contact/secretariat phone lists and hospital-wide \"verfügt über …\" sentences "
                 "name the same words without being THIS posting's department (live-checked: a Neurologie & Stroke Unit secretariat phone "
-                "line and a hospital-wide Stroke Unit paragraph produce no label). department_raw is the career site's own wording. "
+                "line and a hospital-wide Stroke Unit paragraph produce no label). When neither title nor section names a department, the ward the posting "
+                "itself names in its recruiting sentence is read too (\"… sucht für die Station M62 (Dialyse) ab sofort\", \"Bereich Akutgeriatrie "
+                "Einstiegsdatum\"; patterns.enrichment.dept_anchor). department_raw is the career site's own wording. "
                 "The department filter, search, CV matching (skills → department) and the job-list chips depend on it."),
              "department", [K.department_hint, K.extract_section],
              [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Pflegefachkraft Intensivstation (m/w/d)"},

@@ -23,6 +23,7 @@ def _compile():
     g["_EMAIL"] = re.compile(C.EMAIL)
     g["_PAY"], g["_PAYTXT"], g["_REQH"], g["_REQS"], g["_EXP"] = C.rx(C.PAY_GRADE), C.rx(C.PAY_TEXT), C.rx(C.REQ_HEAD), C.rx(C.REQ_STOP), C.rx(C.EXPERIENCE)
     g["_TASKH"], g["_TASKSTOP"] = C.rx(C.TASK_HEAD), C.rx(C.TASK_STOP)
+    g["_DANCHOR"] = [C.rx(p) for p in C.DEPT_ANCHOR]
     g["_LANG"], g["_BONUS"], g["_CHILD"], g["_ANERK"] = C.rx(C.LANGUAGE_REQ), C.rx(C.BONUS), C.rx(C.CHILDCARE), C.rx(C.ANERKENNUNG)
 
 
@@ -302,11 +303,23 @@ def department_hint(title: str, desc: str = ""):
     08141/99-6103' -- a phone-directory line entirely outside any Aufgaben/Profil section on that same
     posting's page -- and 'verfügt über ... eine Chest Pain Unit, eine Stroke Unit, eine Akutgeriatrie'
     -- a hospital-wide intro paragraph on a Gynäkologie/Geburtshilfe posting, posting_id 10767 -- both
-    produce no department label here, confirmed live)."""
+    produce no department label here, confirmed live).
+
+    One addition (TASK-186): when title, Aufgaben and Profil name no department at all, the ward the posting
+    names in its own recruiting statement is read (see the comment below)."""
     tasks = extract_section(desc, _TASKH, _TASKSTOP)
     profil = extract_section(desc, _REQH, _REQS)
     s = norm_text(" || ".join(x for x in (title, tasks, profil) if x))
-    return "|".join(n for n, r in _DEPT if r.search(s)) or None
+    found = [n for n, r in _DEPT if r.search(s)]
+    if not found:
+        # TASK-186: a generic title ("Pflegefachkraft (m/w/d)") with the ward named only in the posting's own
+        # recruiting statement ("... sucht für die Station M62 (Dialyse) ab sofort ...") or in a board's "Bereich ...
+        # Einstiegsdatum" header: read those phrases (patterns.json enrichment.dept_anchor), nothing else of the
+        # body -- and only when title and sections named no department, so an answer that exists is never widened.
+        d = norm_text(desc)
+        s = " || ".join(m.group(1) for r in _DANCHOR for m in r.finditer(d))
+        found = [n for n, r in _DEPT if r.search(s)]
+    return "|".join(found) or None
 
 
 def fuzzy_key(title: str, employer: str, city: str) -> str:
