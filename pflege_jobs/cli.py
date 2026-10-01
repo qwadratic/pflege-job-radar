@@ -102,6 +102,11 @@ def link_rows(rq, url, H):
         # jobposting_to_obs and _process_rows): matching them here, without the stamps _process_rows
         # passes, re-created R1_exact links the drain had just refused (Rottal-Inn 12, AMEOS, Straubing).
         # A posting counts as stamped when any of its observations is: a missed link is the cheaper error.
+        # "employer" below is the one the posting is filed under, not the newest observation's. The newest
+        # differs on 297 of 4,456 rows; reading it instead was replayed over the 3,870 open postings of
+        # 2026-10-01 (TASK-185): 40 links the judge read as right on the TUM board are lost (the newest name
+        # does not tell the TUM sites apart), 2 wrong Hessing relinks are avoided, and the 12 wrong
+        # karriere.barmherzige.net relinks stay wrong either way. Left as it is.
         stamped = lambda r, field: any(_marker(o, field) == "seed" for o in r["posting_observations"])
         listed = lambda r: next(filter(None, (_marker(o, "sites") for o in r["posting_observations"])), None)   # the crawler's own listing of the posting's locations
         rows += [{"posting_id": r["posting_id"], "title": r["title"], "city": r["city"],
@@ -536,7 +541,24 @@ def _board_foreign(m, towns, pools, path=None):
     Neuburg (Matcher._match_board: such a board is not the clinic's own single-site board). A row's place is
     what jobposting_to_obs reads off it (the description, its slow part, left out) or, for a seeded adapter's
     finished observation, its city; a place that is only the seed clinic's own town copied on (city_source
-    'seed') is not one the posting names. A posting's pool is the union over all of its copies (`pools`)."""
+    'seed') is not one the posting names. A posting's pool is the union over all of its copies (`pools`).
+
+    What this rests on is the rows the queue holds tonight, and the attach decision of a one-clinic pool
+    (Matcher._match_board) is "no row names another place". A board read short can therefore look single-site
+    and attach postings a whole read would refuse; it never goes the other way, a place a row names stays
+    foreign. Measured on the local queue (2026-10-01): of the 233 one-clinic pools in both runs 225 and 223, 66
+    were read with another number of rows, 7 name another number of foreign places, and none changed from
+    foreign to not foreign or back. The 10 pools of any size that changed between runs 217 and 225 were adapter
+    changes (nine on karriere.medicalpark.de: 103 rows all carrying the seed's town, then 105 rows naming 10 or
+    11 places beyond the pool's own; one DRV Bund pool: the unfiltered portal of 134 rows, then its own clinic's
+    row), and the crawl recorded no issue on any of them.
+
+    Nothing here guards against a short read, on purpose. The crawl's issue 'degraded' sits on 57 of the 235
+    one-clinic pools of run 225 (on 40 of them no place is foreign and 379 rows wait for this rule), so
+    abstaining on a flag costs far more than it catches; a persisted memory of the places a board once named
+    would outlive the adapter change that made its rows name them; and the open postings attached by R0_board on
+    a host other registry clinics share are 66 judged right against 1 judged wrong. A guard is the owner's call
+    (TASK-185)."""
     from .registry import city_key
     from .sources.inbox import jobposting_to_obs, NON_PROD_HOST
     from urllib.parse import urlparse
