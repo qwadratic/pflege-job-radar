@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 16:27'
+updated_date: '2026-10-01 17:14'
 labels:
   - frontend
   - whatsapp
@@ -113,4 +113,6 @@ Data issues reported to wa-harness:
 2. A stopped thread has ball 'us', where it should be 'silent'.
 3. health.json carries a local username/path (luna_media_dir) and hostname (luna_media_host). That is in a fixture committed to the public repo, and it reaches the browser.
 Earlier the same day, a28806b changed the error card to 'Keine Verbindung zum Harness (status): message' for 502/503/504, because the board proxy (app/wa_proxy.py) answers 503 when WA_API_BASE is unset and 502 when the harness rejects the token. Leads + responsive tests: 43 passed.
+
+2026-10-01: Ivan decided the phone-rail board goes into the Leads view as a second tab ('Rail & Jobs', #/leads?tab=rail), not Clawl. He also said the file with WA_API_BASE / WA_API_TOKEN is readable by user claude over SSH on tasker-dispatcher-01. Fetching it from this session was blocked by the permission classifier ('Credential Exploration', three attempts: the SSH login, finding the board's service unit, finding how the app loads its env). It was not worked around. The commands went to Ivan instead. Order note: the live board runs main without app/wa_proxy.py (PR #1), so the env has no effect until PR #1 is merged and the board redeployed.
 <!-- SECTION:NOTES:END -->
