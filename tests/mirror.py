@@ -72,6 +72,10 @@ _COLS = "seq, scope, via, method, url, query_norm, req_body_sha256, status, reas
 Row = namedtuple("Row", "seq scope via method url norm req_sha status reason headers body_sha exc fetched_at")
 # transport framing of the connection that carried the body, not part of the content
 _FRAMING = {"content-encoding", "transfer-encoding", "content-length"}
+# analytics beacons a page fires on its own (measured on the Klinikum Ingolstadt P&I board: a Matomo POST whose URL carries a
+# random id, a clock and timings, new on every run, so a replay could never match it). The browser's answer is an empty 204 in
+# every mode: nothing is sent to the clinic's analytics while recording, nothing is stored, nothing can miss.
+_BEACON = re.compile(r"(^|[.-])(matomo|piwik|google-analytics|doubleclick|hotjar|clarity|plausible)\b|/(matomo|piwik)\.php$", re.I)
 # our own infrastructure and paid APIs: a recording talks to clinic sites only (no DB, no Firecrawl, no LLM)
 _INFRA = re.compile(r"(^|\.)(supabase\.co|supabase\.com|supabase\.int\.exe\.xyz|firecrawl\.dev|anthropic\.com|openai\.com|exa\.ai|stripe\.com)$", re.I)
 
@@ -552,6 +556,10 @@ def _route_handler(m):
     last response. Every hop is a row of its own either way."""
     def handle(route, request):
         nav, method, url, body = request.is_navigation_request(), request.method, request.url, request.post_data_buffer or b""
+        u = urlparse(url)
+        if _BEACON.search(u.hostname or "") or _BEACON.search(u.path):
+            route.fulfill(status=204)
+            return
         while True:
             try:
                 row = m.serve("playwright", method, url, body)
@@ -561,11 +569,13 @@ def _route_handler(m):
             if row is None:
                 try:
                     resp = route.fetch(url=url, method=method, post_data=body or None, max_redirects=0)
+                    status, headers, data = resp.status, [(h["name"], h["value"]) for h in resp.headers_array], resp.body()  # (properties on APIResponse)
                 except Exception as e:
+                    if "closed" in str(e) or "disposed" in str(e):  # still in flight when the adapter closed its browser: nobody is waiting
+                        return
                     m.record("playwright", method, url, body, None, None, None, None, _exc_row(e))
                     route.abort()
                     return
-                status, headers, data = resp.status, [(h["name"], h["value"]) for h in resp.headers_array], resp.body()  # (properties on APIResponse)
                 m.record("playwright", method, url, body, status, resp.status_text, headers, data)
             elif row.exc:
                 route.abort()

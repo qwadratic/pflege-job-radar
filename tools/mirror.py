@@ -63,7 +63,9 @@ def registry():
         ids.append(bid)
     towns = sorted({norm_text(c["town"]) for c in clinics if c.get("town")})
     id_of = {b["url"]: bid for b, bid in zip(boards, ids)}
-    candidates = {id_of[b["url"]] for fam in H.family_boards(boards).values() for b in fam[:H.CANDIDATES]}
+    # the order the tests use (biggest first, ties by id): the first CANDIDATES boards of a family may be its mutation representative
+    ordered = sorted(boards, key=lambda b: (-len(b["clinics"]), id_of[b["url"]]))
+    candidates = {id_of[b["url"]] for fam in H.family_boards(ordered).values() for b in fam[:H.CANDIDATES]}
     return boards, ids, towns, candidates
 
 
