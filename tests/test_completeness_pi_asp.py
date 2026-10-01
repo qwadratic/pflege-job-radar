@@ -174,8 +174,7 @@ class _FakePage:
 
     def _click(self, i):
         self._clicked.append(i)
-        p = self.postings[i]
-        self.url = self.base_url
+        p = self.postings[i]           # the URL stays what it was: only go_back() takes it off a form page
         if p.get("popup") is not None:
             popup = _FakePopup(f"https://x.test/bewerber-web?company=*-FIRMA-ID#position,id={p['pid']},popup=y",
                                p["popup"], ready=p.get("ready", True))
@@ -346,6 +345,16 @@ def test_the_application_form_a_helios_click_opens_is_not_stored_as_a_descriptio
     assert [r["source_ref"] for r in rows] == [f"https://x.test/bewerber-web/?companyEid=1#position,id={'a' * 20}-{i}" for i in range(3)]
     assert stats == {"listed": 3, "opened": 3, "pflege": 3}
     assert len(fake_save.calls) == 4                              # list + the form page of each row
+
+
+def test_a_click_that_opens_nothing_after_a_form_page_does_not_inherit_its_position_id(monkeypatch):
+    # the list is restored (history back) after each form page; without that the next row, whose click opens
+    # nothing, would read the previous row's '#position,id=' off this window's URL and be stored under its ref
+    postings = [_posting(0, navigates=True), _posting(1, navigates=False)]
+    _wire_fake_playwright(monkeypatch, postings)
+    rows, stats = pi_asp.crawl(_seed(), set())
+    assert [r["title"] for r in rows] == ["Pflegefachkraft 0 (m/w/d)"]
+    assert "1 of 2" in stats["error"] and "Pflegefachkraft 1 (m/w/d)" in stats["error"]
 
 
 def test_crawl_reads_department_and_date_straight_from_the_list_no_click_needed(monkeypatch):
