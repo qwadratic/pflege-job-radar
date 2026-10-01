@@ -43,8 +43,8 @@ import json
 import lzma
 import os
 import sqlite3
+import re
 import subprocess
-import sys
 import threading
 import time
 import urllib.error
@@ -71,6 +71,8 @@ _COLS = "seq, scope, via, method, url, query_norm, req_body_sha256, status, reas
 Row = namedtuple("Row", "seq scope via method url norm req_sha status reason headers body_sha exc fetched_at")
 # transport framing of the connection that carried the body, not part of the content
 _FRAMING = {"content-encoding", "transfer-encoding", "content-length"}
+# our own infrastructure and paid APIs: a recording talks to clinic sites only (no DB, no Firecrawl, no LLM)
+_INFRA = re.compile(r"(^|\.)(supabase\.co|supabase\.com|supabase\.int\.exe\.xyz|firecrawl\.dev|anthropic\.com|openai\.com|exa\.ai|stripe\.com)$", re.I)
 
 
 class MirrorMiss(AssertionError):
@@ -234,7 +236,7 @@ class Store:
 class Mirror:
     def __init__(self, board_id, store, mode):
         self.board_id, self.store, self.mode = board_id, store, mode
-        self.scope, self.misses, self.live_requests, self.last_live = "adapter", [], 0, True
+        self.scope, self.misses, self.refused, self.live_requests, self.last_live = "adapter", [], [], 0, True
         self._n, self._lock = {}, threading.Lock()
 
     def serve(self, via, method, url, body):
@@ -250,6 +252,10 @@ class Mirror:
                 return rows[min(i, len(rows) - 1)]
             if self.mode == "replay":
                 self.miss(via, method, url, sha)
+        host = urlparse(url).hostname or ""
+        if _INFRA.search(host):
+            self.refused.append(url)
+            raise RuntimeError(f"the recorder talks to clinic sites only; refusing {method.upper()} {url}")
         with self._lock:
             self.live_requests += 1
         self.last_live = True
@@ -294,6 +300,11 @@ def _top():
     return _STACK[-1] if _STACK else None
 
 
+def active():
+    """The mirror in use right now (None outside any `with`)."""
+    return _top()
+
+
 @contextlib.contextmanager
 def scope(name):
     """Label the requests made inside the block (the harness names which part of a board's scenario it is running)."""
@@ -322,12 +333,8 @@ def _activate(m):
 
 
 @contextlib.contextmanager
-def mirror_board(board_id, scope="adapter"):
-    """Replay `board_id` for the block. Raises MirrorMiss at the end when anything inside asked for a page the mirror lacks."""
-    through = os.environ.get("MIRROR_RECORD") == "1"
-    store = Store.load(board_id) if (board_file(board_id).exists() or not through) else Store.new(board_id)
-    m = Mirror(board_id, store, "through" if through else "replay")
-    m.scope = scope
+def _run(m):
+    """Activate `m` for the block; MirrorMiss at the end when anything inside asked for a page the mirror lacks."""
     try:
         with _activate(m):
             yield m
@@ -336,9 +343,30 @@ def mirror_board(board_id, scope="adapter"):
         raise
     else:
         m.raise_misses()
+
+
+@contextlib.contextmanager
+def mirror_board(board_id, scope="adapter"):
+    """Replay `board_id` for the block. MIRROR_RECORD=1 (a person, on purpose): go live for the requests the mirror lacks and store them."""
+    through = os.environ.get("MIRROR_RECORD") == "1"
+    store = Store.load(board_id) if (board_file(board_id).exists() or not through) else Store.new(board_id)
+    m = Mirror(board_id, store, "through" if through else "replay")
+    m.scope = scope
+    try:
+        with _run(m):
+            yield m
     finally:
         if through and m.live_requests:
             m.save()
+
+
+@contextlib.contextmanager
+def replaying(store, scope="adapter"):
+    """Replay a store that is still in memory (the recorder checks its own recording before saving it)."""
+    m = Mirror(store.board_id, store, "replay")
+    m.scope = scope
+    with _run(m):
+        yield m
 
 
 @contextlib.contextmanager
