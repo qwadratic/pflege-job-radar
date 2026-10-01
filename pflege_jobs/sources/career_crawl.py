@@ -493,7 +493,7 @@ class Crawler:
         # for every OTHER site's postings on that same hub -- see ats_seeds.py's umantis() docstring.
         emp = employer or seed.get("operator") or seed["name"]
         e_class, e_rule = classify_employer(emp)
-        role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
+        role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed, desc=desc)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
         return {
             # source_ref is the (source_id, source_ref)-unique DEDUP identity (sql/001_schema.sql:112)

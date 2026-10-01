@@ -14,6 +14,7 @@ def _compile():
     g["_PFLEGE"] = C.rx(C.PFLEGE_TOKEN)
     g["_NICHT"] = C.rx(C.NICHT_PFLEGE)
     g["_STRONG_T"] = C.rx(C.STRONG_PFLEGE_TITLE)
+    g["_AUSB_BODY"] = C.rx(C.AUSBILDUNG_BODY)
     g["_ROLES"] = [(n, C.rx(p)) for n, p in C.ROLE_RULES]
     g["_QUAL"] = [(n, C.rx(p)) for n, p in C.QUALIFICATION_HINT]
     g["_DEPT"] = [(n, C.rx(p)) for n, p in C.DEPARTMENT_HINT]
@@ -146,7 +147,7 @@ def classify_employer(name: str):
     return "unknown", "no_match"
 
 
-def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursing_section_confirmed: bool = False):
+def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursing_section_confirmed: bool = False, desc: str = ""):
     """-> (role_class, rule). Evaluated on title + hauptberuf; offer_kind AUSBILDUNG forces ausbildung.
 
     nursing_section_confirmed: True when the job's OWN vendor-provided category/department label
@@ -171,6 +172,12 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
       - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
         detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
 
+    desc (TASK-186): the posting's own body, when the caller has it. An Ausbildung is often posted under a
+    plain staff title ("Operationstechnische Assistenten (m/w/d)") and only its body says so: the school-leaving
+    certificate it asks of a school leaver, its Ausbildungsbeginn (patterns.json role.ausbildung_body). Such a
+    body classifies as ausbildung right after the offer_kind steps. "abgeschlossene Ausbildung als ..." in a
+    staff profile is not a marker. No desc = title only, as before.
+
     Checked before all of that: a speculative-application title ("Initiativbewerbung Pflegefachkraft
     (m/w/d)", "Blitzbewerbung Ärzte (m/w/d)") is never a genuine open posting, no matter which role it
     names or whether a section confirms it -- the _ROLES loop below matches on a bare substring
@@ -189,6 +196,9 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
         return "ausbildung", "offer_kind:AUSBILDUNG"
     if offer_kind == "PRAKTIKUM_TRAINEE":
         return "werkstudent_praktikum", "offer_kind:PRAKTIKUM_TRAINEE"
+    m = _AUSB_BODY.search(norm_text(desc))
+    if m:
+        return "ausbildung", f"ausbildung_body:{m.group(0)}"
     s = _drop_nicht_pfleg_words(s)
     for name, r in _ROLES:
         m = r.search(s)

@@ -1,3 +1,5 @@
+import pytest
+
 from pflege_jobs.classify import classify_role
 from pflege_jobs.config import EXCLUDED_ROLE_CLASSES
 from pflege_jobs.mechanics import get
@@ -265,3 +267,82 @@ def test_catering_grounds_animal_cleaning_cosmetic_and_childminder_titles_are_no
                         ("Pflegedienstleitung für die Tagespflege (m/w/d) als Krankheitsvertretung", "leitung"),
                         ("Betreuungskraft (m/w/d) Tagespflege", "pflegehelfer")]:
         assert classify_role(title, "")[0] == want, title
+
+
+# TASK-186 problem 1 (judge verdicts 2026-09-30): an Ausbildung offered under a plain staff title. The title
+# says "Operationstechnische Assistenten (m/w/d)"; only the body says it is a training place, so the title-only
+# classifier filed it as a kept class (ota_ata, pflegefachkraft) and the board listed it as a job. The markers
+# are what a training-place page states and a staff posting does not: the school-leaving certificate a school
+# leaver needs, and a training start date. Each excerpt is the real body text of a live posting (posting id in
+# the comment), abridged to the one passage that carries the marker, names and contact data dropped.
+_TRAINING_PAGE_EXCERPTS = [
+    ("ausbildungsbeginn", "Operationstechnischer Assistent (m/w/d)",                                # 12990
+     "Ausbildungsbeginn Die Ausbildung beginnt immer am zweiten Dienstag im September und die Ausbildungszeit "
+     "beträgt drei Jahre. Wir bieten… Eine abwechslungsreiche und umfassende Ausbildung Ein angenehmes "
+     "Arbeitsklima in einem aufgeschlossenen Team"),
+    ("hauptschulabschluss", "Operationstechnische Assistenten (m/w/d)",                             # 7376
+     "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig) zusammen "
+     "mit: einer erfolgreich abgeschlossenen, mindestens zweijährigen Berufsausbildung - oder- der Erlaubnis zur "
+     "Führung der Berufsbezeichnung Krankenpflegehelfer/-in"),
+    ("realschulabschluss", "Operationstechnischer Assistent (OTA) (m/w/d)",                         # 12327
+     "Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung Belastbarkeit und "
+     "Teamfähigkeit, um den Anforderungen im OP-Saal gerecht zu werden Interesse für den medizinischen Bereich"),
+    ("mittelschulabschluss", "Pflegefachkraft (m/w/d)",                                             # 12646
+     "Zulassungsvoraussetzungen Mindestalter 17 Jahre oder Mittelschulabschluss mit einer erfolgreich "
+     "abgeschlossenen zweijährigen Berufsausbildung bzw. mit einjähriger Ausbildung zur staatlich anerkannten "
+     "Pflegefachhilfe Gesundheitliche Eignung"),
+    ("mittlere reife", "Pflegefachmann/-frau (m/d/w)",                                              # 12641
+     "Persönliche Voraussetzungen Abgeschlossene 10-jährige Schulbildung (Mittlere Reife, Fachschulhochreife)"),
+    ("mittlerer schulabschluss", "Ausbildungsplätze zur Pflegefachkraft (m/w/d)",                   # 15347
+     "Aufnahmevoraussetzungen Gesundheitliche Eignung zur Ausübung des Pflegeberufes Mittlerer Schulabschluss "
+     "oder eine andere gleichwertige, abgeschlossene Schulbildung"),
+]
+
+# Staff postings and boilerplate that mention "Ausbildung" without being one (all real, posting id in the comment).
+_STAFF_PAGE_EXCERPTS = [
+    ("profil", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",              # 12953
+     "Ihr Profil Abgeschlossene Ausbildung zum Gesundheits- und Krankenpfleger (m/w/d) oder zur "
+     "Pflegefachkraft (m/w/d) Hohe Sozialkompetenz und Kommunikationsfähigkeit Zuverlässigkeit und Teamfähigkeit"),
+    ("ota_profil", "Operationstechnische Assistenz (OTA), OP-Kraft oder MFA mit Weiterbildung",       # 15244
+     "Ihr Profil Abgeschlossene Ausbildung zur OTA, OP-Schwester/OP-Pfleger oder MFA mit entsprechender "
+     "Weiterbildung oder Erfahrung im OP-Dienst Idealerweise einige Jahre Berufserfahrung"),
+    ("praxisanleitung", "Freigestellte Praxisanleitung (m/w/d)",                                      # 5959
+     "Ab 01.09.2026 ist mit Beginn des neuen Ausbildungsjahres eine Teilzeitstelle (30 Std./Woche) als "
+     "Freigestellte Praxisanleitung (m/w/d) zu besetzen. Bitte bewerben Sie sich über den untenstehenden Link."),
+    ("arbeitgeber", "Examinierte Pflegefachkraft (m/w/d) - Erlangen",                                 # 7036
+     "Bei uns wird Ausbildung und Weiterbildung großgeschrieben: aktuell haben wir 22 Schüler*innen in drei "
+     "Ausbildungsjahren. Für kostenlose Getränke (Wasser) ist natürlich jederzeit gesorgt."),
+    ("hochschulabschluss", "Advanced Practice Nurse – (Endo-)Vaskuläre Chirurgie",                    # 6140
+     "eine abgeschlossene dreijährige Pflegeausbildung Engagement und Begeisterung für die Pflege und deren "
+     "Weiterentwicklung Dem Hochschulabschluss entsprechende gute Fach-, Methoden- und Sozialkompetenzen"),
+    ("navigation", "Operationstechnischen Assistenten (m/w/d) sowie OP Fachkraft",                    # 6620
+     "Jobs-mit Herz – Pflegekraft Initiativbewerbung Initiativbewerbung Ausbildungsplatz Kontakt Impressum"),
+    ("bildungsinstitut", "Pflegefachkraft (m/w/d) für unsere interdisziplinäre Intensivstation",      # 6610
+     "Das zugehörige Bildungsinstitut für Gesundheitsberufe bietet 120 Ausbildungsplätze für junge Menschen an."),
+]
+
+
+@pytest.mark.parametrize("marker, title, body", _TRAINING_PAGE_EXCERPTS, ids=[x[0] for x in _TRAINING_PAGE_EXCERPTS])
+def test_an_ausbildung_under_a_staff_title_is_read_from_the_body(marker, title, body):
+    assert classify_role(title, "")[0] != "ausbildung"                    # the title alone does not give it away
+    role, rule = classify_role(title, "", desc=body)
+    assert role == "ausbildung" and rule.startswith("ausbildung_body:"), (role, rule)
+
+
+@pytest.mark.parametrize("why, title, body", _STAFF_PAGE_EXCERPTS, ids=[x[0] for x in _STAFF_PAGE_EXCERPTS])
+def test_a_staff_posting_that_mentions_ausbildung_stays_what_its_title_says(why, title, body):
+    role, rule = classify_role(title, "", desc=body)
+    assert (role, rule) == classify_role(title, ""), (role, rule)
+
+
+def test_without_a_body_the_title_alone_decides_as_before():
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "")[0] == "ota_ata"
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "", desc="")[0] == "ota_ata"
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "", desc=None)[0] == "ota_ata"
+
+
+def test_mechanic_try_reads_the_ad_text():
+    r = get("role_class").run({"title": "Operationstechnische Assistenten (m/w/d)", "hauptberuf": "", "offer_kind": "",
+                               "description": "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss"})
+    assert r["result"] == {"role_class": "ausbildung", "excluded": True}
+    assert r["rule"].startswith("ausbildung_body:")

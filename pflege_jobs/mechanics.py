@@ -56,7 +56,7 @@ def _try_employer(i):
 
 
 def _try_role(i):
-    role, rule = K.classify_role(i["title"], i.get("hauptberuf", ""), i.get("offer_kind", ""))
+    role, rule = K.classify_role(i["title"], i.get("hauptberuf", ""), i.get("offer_kind", ""), desc=i.get("description", ""))
     return {"result": {"role_class": role, "excluded": role in C.EXCLUDED_ROLE_CLASSES}, "rule": rule}
 
 
@@ -186,17 +186,19 @@ REGISTRY = [
              _try_employer, stage="inbox → observations"),
     Mechanic("role_class", _t("Rollen-Klassifikation", "Role classification"),
              _t("Titel (+ Berufsbezeichnung) → eine von 12 role_class. Reihenfolge: 1) Pflege-Gate (patterns.role.pflege_gate) — ohne Pflege-Token ist es nicht_pflege; "
-                "2) nicht_pflege-Regex (Arzt, MFA, Rettungsdienst…) gewinnt, außer der Titel trägt ein starkes Pflege-Token (nicht innerhalb eines nicht_pflege-Worts wie Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
+                "2) nicht_pflege-Regex (Arzt, MFA, Rettungsdienst…) gewinnt, außer der Titel trägt ein starkes Pflege-Token (nicht innerhalb eines nicht_pflege-Worts wie Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM, danach der Anzeigentext: nennt er Haupt-/Realschulabschluss, Mittlere Reife oder einen Ausbildungsbeginn, ist es eine Ausbildungsstelle unter normalem Titel (patterns.role.ausbildung_body); "
                 "4) geordnete Regeln (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — erster Treffer gewinnt; "
                 "5) Fallback sonstige_pflege. Klassen in excluded_role_classes werden beim Import verworfen (nur erfahrene Pflege). Regel → postings.role_rule.",
                 "Title (+ occupation) → one of 12 role_class values. Order: 1) nursing gate (patterns.role.pflege_gate) — no nursing token means nicht_pflege; "
-                "2) the nicht_pflege regex (physician, MFA, paramedic…) wins unless the title carries a strong nursing token (not inside a nicht_pflege word such as Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM; "
+                "2) the nicht_pflege regex (physician, MFA, paramedic…) wins unless the title carries a strong nursing token (not inside a nicht_pflege word such as Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM, then the ad text: if it names a Hauptschul-/Realschulabschluss, Mittlere Reife or an Ausbildungsbeginn it is a training place under a plain title (patterns.role.ausbildung_body); "
                 "4) ordered rules (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — first hit wins; "
                 "5) fallback sonstige_pflege. Classes in excluded_role_classes are refused at ingest (experienced nursing only). Rule → postings.role_rule."),
              "role", [K.classify_role],
              [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Fachkrankenpfleger Intensiv (m/w/d)"},
               {"name": "hauptberuf", "label": _t("Berufsbezeichnung (optional)", "Occupation (optional)"), "example": "Gesundheits- und Krankenpfleger/in"},
-              {"name": "offer_kind", "label": _t("Angebotsart (ARBEIT/AUSBILDUNG)", "Offer kind (ARBEIT/AUSBILDUNG)"), "example": "ARBEIT"}],
+              {"name": "offer_kind", "label": _t("Angebotsart (ARBEIT/AUSBILDUNG)", "Offer kind (ARBEIT/AUSBILDUNG)"), "example": "ARBEIT"},
+              {"name": "description", "label": _t("Anzeigentext (optional)", "Ad text (optional)"),
+               "example": "Ihr Profil: abgeschlossene Ausbildung als Gesundheits- und Krankenpfleger (m/w/d)."}],
              _try_role, stage="inbox → observations"),
     Mechanic("qualification", _t("Qualifikations-Hinweis", "Qualification hint"),
              _t("Erkennt aus Berufsbezeichnung + Titel + den eigenen Aufgaben-/Tätigkeiten- und Profil-Abschnitten der Stelle "

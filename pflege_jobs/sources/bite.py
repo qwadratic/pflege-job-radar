@@ -180,9 +180,9 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
     e_class, e_rule = classify_employer(emp)
     title = jp.get("title") or ""
     bg = (jp.get("custom") or {}).get("berufsgruppe") or []
-    role, rule = classify_role(title, "", "AUSBILDUNG" if any(BERUF_AUSB.search(x) for x in bg) else "",
-                               nursing_section_confirmed=section_confirmed)
     desc = _strip(desc_html) if desc_html else None
+    role, rule = classify_role(title, "", "AUSBILDUNG" if any(BERUF_AUSB.search(x) for x in bg) else "",
+                               nursing_section_confirmed=section_confirmed, desc=desc)
     enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
     et = jp.get("employmentType") or []
     befr = (jp.get("custom") or {}).get("befristung")

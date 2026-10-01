@@ -333,3 +333,13 @@ def test_routing_sends_16101_and_only_16101_to_the_ingolstadt_board():
     ov = seed_overlays()
     assert ov["16101"] == ("pi_asp", "https://wirkzvin.pi-asp.de/bewerber-web/?companyEid=*")
     assert "16107" not in ov and "17606" not in ov
+
+
+def test_crawl_classifies_a_training_place_from_the_opened_detail_text(monkeypatch):
+    # TASK-186: the detail text of a row that opened (real excerpt of a live posting) reaches classify_role.
+    postings = [_posting(0, navigates=True)]
+    page, _save = _wire_fake_playwright(monkeypatch, postings)
+    page.inner_text = lambda sel: "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)"
+    seed = {"name": "Board", "host": "x.test", "companyEid": 1, "default": {"kez": "K5", "town": "Coburg"}}
+    rows, _stats = pi_asp.crawl(seed, set())
+    assert rows[0]["role_class"] == "ausbildung"

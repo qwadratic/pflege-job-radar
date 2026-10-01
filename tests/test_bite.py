@@ -187,3 +187,16 @@ def test_external_url_falls_back_to_apply_url_when_url_is_empty():
     seed = {"name": "Klinik Hallerwiese Nürnberg", "kez": "K1", "career": "https://example.de/karriere"}
     obs = to_observation(jp, seed, {"nürnberg"})
     assert obs["external_url"] == "https://jobs.example.de/apply/1"
+
+
+# --- TASK-186: the ad text reaches classify_role ------------------------------------------------------------
+# An Ausbildung posted as "Operationstechnische Assistenten (m/w/d)" says so only in its body (real excerpt of a
+# live posting). to_observation runs a second time with the fetched detail page, and that pass must read it.
+
+def test_the_ad_text_reaches_the_role_classifier():
+    jp = _jp("Operationstechnische Assistenten (m/w/d)")
+    seed = {"name": "Klinik Hallerwiese Nürnberg", "kez": "K1", "career": "https://example.de/karriere"}
+    assert to_observation(jp, seed, {"nürnberg"})["role_class"] == "ota_ata"           # list pass: title only
+    html = "<p>Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)</p>"
+    obs = to_observation(jp, seed, {"nürnberg"}, html)
+    assert obs["role_class"] == "ausbildung" and obs["role_rule"].startswith("ausbildung_body:")

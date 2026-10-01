@@ -143,7 +143,7 @@ def crawl(seed, towns, log=print):
             city = pin.split(",")[0].strip() if pin else site.get("town")
             plz = site.get("plz")
             desc = _strip(body)[:20000] if body else None
-            role, rule = classify_role(title, "")
+            role, rule = classify_role(title, "", desc=desc)
             enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
             e_class, e_rule = classify_employer(emp)
             ref = f"{url}#position,id={pid}" if pid else f"{url}#title={re.sub(r'[^a-z0-9]+','-',title.lower())[:80]}"

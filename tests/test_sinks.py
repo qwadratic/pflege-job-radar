@@ -179,3 +179,22 @@ def test_edge_sink_post_retries_transport_exception(monkeypatch):
     monkeypatch.setattr("pflege_jobs.sinks.time.sleep", lambda s: None)
     assert sink._post({"x": 1}) == {"ok": True}
     assert len(calls) == 2
+
+
+def test_the_inbox_row_description_reaches_the_role_classifier():
+    # TASK-186: an Ausbildung posted as "Operationstechnische Assistenten (m/w/d)" says so only in its body
+    # (real excerpt of a live posting), so the inbox row's description must reach classify_role.
+    o = obs(payload={"title": "Operationstechnische Assistenten (m/w/d)",
+                     "description": "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss "
+                                    "(oder gleichwertig) zusammen mit: einer erfolgreich abgeschlossenen Berufsausbildung"})
+    assert o["role_class"] == "ausbildung" and o["role_rule"].startswith("ausbildung_body:")
+
+
+def test_feed_adapters_hand_the_ad_text_to_the_role_classifier():
+    # TASK-186: pflege_jobs/sources/feeds.py builds its observations through _obs (personio, smartrecruiters,
+    # talention); the same training-place body as above must classify as ausbildung there too.
+    from pflege_jobs.sources import feeds
+    o = feeds._obs("https://x/1", "Operationstechnische Assistenten (m/w/d)", "Klinikum Nürnberg", "Nürnberg", "90419",
+                   "Bayern", "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)",
+                   "2026-08-31", None, {}, TOWNS, {})
+    assert o["role_class"] == "ausbildung" and o["role_rule"].startswith("ausbildung_body:")
