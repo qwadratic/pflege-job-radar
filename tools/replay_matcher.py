@@ -266,7 +266,7 @@ def main():
         holds = bool(inbox.get("clinic_id") or lm)          # a nightly stage puts a clinic on the posting again
         if p["status"] == "open" and kind != "manual":
             if kind == "unlink": action = "unlink"
-            elif kind in ("relink", "link") and (quote or not via_stage): action = "relink"
+            elif kind in ("relink", "link") and not via_stage: action = "relink"
             elif wrong and stored and (kind in ("same", "conflict", "not_replayed") or via_stage): action = "pin" if holds else "unlink"
         count[("action", action)] += 1
         report.append({"posting_id": p["posting_id"], "status": p["status"], "board": board(p["external_url"]), "title": p["title"],

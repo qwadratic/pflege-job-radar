@@ -49,7 +49,8 @@ def replay(tmp_path, monkeypatch):
                 posting(106, "wrong", "2", "R3_tokens"),                      # names Alphastadt: relink to Alpha Klinik
                 posting(107, "gone", "1", "R0_board"),                        # in no run: not replayed
                 posting(108, "stale", "1", "R0_board"),                       # the page names Gammastadt, the stored employer is still Alpha's
-                posting(109, "lagging", "2", "R3_tokens"),                    # in no run; the stored employer is Alpha's, so only the link stage reaches Alpha
+                posting(109, "lagging-alphastadt", "2", "R3_tokens"),         # in no run; the stored employer is Alpha's, so only the link stage reaches Alpha
+                                                                              # (and its title names Alphastadt: a word is no reason to propose what a stage reaches)
                 posting(110, "orphan", "2", "R3_tokens")]                     # in no run, and the stored employer is a stranger's: no stage matches it
     observations = [{"observation_id": i, "posting_id": p["posting_id"], "source_id": SRC, "source_ref": p["external_url"]}
                     for i, p in enumerate(postings, 1) if p["posting_id"] not in (107, 109, 110)]
