@@ -172,6 +172,12 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
       - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
         detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
 
+    TASK-186: patterns.json's role.rules carries one nicht_pflege rule right after ausbildung -- teaching staff
+    and school administration (Pflegepädagoge, Lehrkraft, Lehrsekretariat) plus a few occupations that only reach
+    this function through a nursing-looking word ("Laborant ... ATA", "Verkäufer Stationsleitung"). It lives in the
+    ordered rules, not in the nicht_pflege regex, because those titles carry a word strong_pflege would otherwise
+    honour (Pflegepädagoge, Stationsleitung, ATA) and the rule has to beat ota_ata/hebamme/apn_experte/leitung.
+
     desc (TASK-186): the posting's own body, when the caller has it. An Ausbildung is often posted under a
     plain staff title ("Operationstechnische Assistenten (m/w/d)") and only its body says so: the school-leaving
     certificate it asks of a school leaver, its Ausbildungsbeginn (patterns.json role.ausbildung_body). Such a

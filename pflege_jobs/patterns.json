@@ -74,7 +74,7 @@
  },
  "role": {
   "pflege_gate": "pfleg|betreuungskraft|betreuungskräfte|alltagsbegleit|\\bstation(en)?\\b|op-bereich|op-fachkr|op-kraft|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|\\bapn\\b|\\bnurses?\\b|stationsleit|bereichsleit|praxisanleit|nachtwache|hygienefachkraft|hygienebeauftragte|advanced practice|fachweiterbildung|critical care|kinderintensiv|intensivfachkr|\\bgkp\\b|\\bguk\\b|\\bop[- ]?leit(?:ung|er)\\b",
-  "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|medizinische[nr]?/?r? fachangestellte[nr]?|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|kinderpfleger|tierpfleg|\\braumpfleg|fu(?:ß|ss)pfleg|podolog|kosmetik|tagespflegeperson|verpflegung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik|buchhalt|controlling|(?:park|garten|grünflächen|grünanlagen|landschafts|anlagen?)pflege",
+  "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|(?:medizinische[nr]?|med\\.)(?:\\s*/\\s*-?r)?\\s+fachangestellte[nr]?|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|kinderpfleger|tierpfleg|\\braumpfleg|fu(?:ß|ss)pfleg|podolog|kosmetik|tagespflegeperson|verpflegung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik|buchhalt|controlling|(?:park|garten|grünflächen|grünanlagen|landschafts|anlagen?)pflege|(?:ä|ae)rzt[:*_/]in|(?:ä|ae)rztliche[rnms]?\\b|arztsekret|\\bedv\\b|anwendungsbetreu|^\\s*fachweiterbildung|frischetheke|standortmanager|steine\\s*&\\s*erden|beratung\\s*&\\s*verkauf|computertomographie|\\bmrt\\b|\\bmtl\\b",
   "strong_pflege": "pflegefach|pflegekr[aä]ft|pfleger\\b|pflegerin\\b|pflegerisch|pflegedienst|pflegeexpert|pflegepädagog|op-pflege|krankenpfleg|altenpfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\\bnurse\\b|\\bapn\\b",
   "ausbildung_body": "ausbildungsbeginn|(?:haupt|real|mittel)schulabschluss|mittlere[rn]? (?:reife|schulabschluss)",
   "rules": [
@@ -85,6 +85,10 @@
    {
     "role_class": "ausbildung",
     "re": "\\bausbildung\\b|\\bazubi|auszubildende|\\(ausbildung\\)|duales studium|dualstudium"
+   },
+   {
+    "role_class": "nicht_pflege",
+    "re": "(?:pflege|medizin)p(?:ä|ae)dagog|lehrkr[aä]ft|lehrer(?:in)?\\b|\\bdozent|lehrsekretariat|unterrichtsplanung|leitung[^|]{0,15}der akademie|(?:verwaltungskraft|teamassistenz)[^|]{0,60}(?:schule|akademie)|laborant|pharmaberater|verkäufer"
    },
    {
     "role_class": "hebamme",

@@ -46,7 +46,8 @@ def test_audit_fixes():
              ("Pflegeunterstützungskraft (w/m/d)", "Bürokaufmann/-frau", "pflegehelfer"),
              ("Mitarbeiter (m/w/d) im Hol- u. Bringedienst", "Schwestern-/Pflegediensthelfer/in", "nicht_pflege"),
              ("Stellvertretende AEMP-Leitung (m/w/d)", "Gesundheits- und Krankenpfleger/in", "nicht_pflege"),
-             ("Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)", "Lehrkraft - Schulen im Gesundheitswesen", "apn_experte"),
+             # TASK-186: teaching staff is not nursing (this row said apn_experte until 2026-09-30)
+             ("Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)", "Lehrkraft - Schulen im Gesundheitswesen", "nicht_pflege"),
              ("Kommissarische Funktionsleitung Anästhesiepflege (m/w/d)", "Gesundheits- und Krankenpfleger/in", "leitung"),
              ("Leiter - Pflege (m/w/d)", "Pflegedienstleiter/in", "leitung")]
     for title, hb, want in cases:
@@ -346,3 +347,90 @@ def test_mechanic_try_reads_the_ad_text():
                                "description": "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss"})
     assert r["result"] == {"role_class": "ausbildung", "excluded": True}
     assert r["rule"].startswith("ausbildung_body:")
+
+
+# TASK-186 problem 2 (judge verdicts 2026-09-30, "nonnursing_job"): clear non-nursing clusters that sat on the
+# board as nursing roles because their title carries a nursing token ("Pflegepädagoge", "Pflege", "ATA", "Station")
+# or a leadership word the pflege_gate accepts ("Bereichsleitung"). Every title is a real live posting title (posting
+# id in the comment); a (title, hauptberuf) pair is given where the Arbeitsagentur occupation took part.
+_NOT_NURSING_TITLES = [
+    # teaching staff and school administration: patterns.json role.rules, ahead of ota_ata / hebamme / apn_experte
+    ("teach_pflegepaedagoge", "Pflegepädagoge (m/w/d)", ""),                                                     # 10140
+    ("teach_pflegepaedagoge_lehrkraft", "Pflegepädagoge / Lehrkraft für Pflegeberufe (m/w/d)", ""),               # 15087
+    ("teach_lehrkraft", "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3", ""),     # 10517
+    ("teach_lehrkraft_ota", "Lehrkraft für OTA: Pflegepädagoge/ Medizinpädagoge/ Berufspädagoge (m/w/d)", ""),    # 12331
+    ("teach_lehrkraft_ata", "Lehrkraft Berufsfachschule ATA-OTA - Bereich OTA (m/w/d)", ""),                     # 15358
+    ("teach_medizinpaedagoge", "Pflege-/Medizinpädagoge (m/w/d)", ""),                                           # 6748
+    ("teach_pflegepaedagoge_oder_lehrer", "Pflegepädagoge oder Lehrer für Pflegeberufe (w/m/d)", ""),            # 7331
+    # the shape the brief names; no live posting carries it without a Pflegepädagoge next to it yet
+    ("teach_lehrer_alone", "Lehrer für Pflegeberufe (m/w/d)", ""),
+    ("teach_dozent", "Dozent:in (m/w/d) Basis Pflege", ""),                                                      # 15073
+    ("teach_hauptberuf", "Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)",
+     "Lehrkraft - Schulen im Gesundheitswesen"),                                                                 # 10707
+    ("school_lehrsekretariat", "Lehrsekretariat Hebammenwissenschaft", ""),                                      # 10519
+    ("school_teamassistenz", "Teamassistenz ATA-OTA-Berufsfachschule", ""),                                      # 12834
+    ("school_verwaltungskraft", "Verwaltungskraft (m/w/d) für die Berufsfachschule der Evangelischen PflegeAkademie", ""),  # 14911
+    ("school_stundenplan", "Koordinator Unterrichtsplanung / Zentrale Stundenplanung Berufsfachschule Pflege (m/w/d)", ""),  # 6847
+    ("school_leitung_der_akademie", "Leitung (m/w/d) der Akademie - Dienstleistungszentrum Bildung / Pflegeschulen", ""),     # 10503
+    ("school_teamassistenz_akademie", "Teamassistenz der Akademieleitung für Gesundheits- und Pflegeberufe (m/w/d)", ""),   # 15243
+    # medical assistants in the spellings the old pattern missed, physicians, doctors' secretaries
+    ("mfa_slash_dash", "Medizinische/-r Fachangestellte/-r (m/w/d) für die Zentrale Notaufnahme", ""),            # 10446
+    ("mfa_abbreviated", "Med. Fachangestellte (w/m/d) - für den Stützpunkt Notaufnahme", ""),                     # 10124
+    ("mfa_funktionsdienst", "med. Fachangestellte/r im Funktionsdienst", ""),                                    # 14769
+    ("arzt_gender_colon", "Ärzt:in in Weiterbildung - für die Station", ""),                                     # 12311
+    ("arzt_leitung", "Stellvertretende ärztliche Leitung (m/w/d) für die Zentrale Notaufnahme", ""),              # 10440
+    ("arzt_bereichsleitung", "Ärztliche Bereichsleitung MVZ Rheumatologie", ""),                                 # 14819
+    ("arztsekretaer", "Arztsekretär (m/w/d)  Vorzimmer Station 34", ""),                                         # 12718
+    # IT / EDV
+    ("it_anwendungsbetreuer", "ORBIS Anwendungsbetreuer (m/w/d) - Schnittstelle Pflege & IT", ""),               # 10441
+    ("it_edv", "Mitarbeiter in der Stabstelle EDV Pflege (m/w/d)", ""),                                          # 13636
+    # DKG Fachweiterbildung course pages (the title is the course name, not a job)
+    ("course_dkg_op", "Fachweiterbildung (DKG) Pflege im Operationsdienst", ""),                                 # 6931
+    ("course_dkg_onko", "Fachweiterbildung (DKG) Pflege in der Onkologie", ""),                                  # 6932
+    ("course_intensiv", "Fachweiterbildung für Intensiv- und Anästhesiepflege", ""),                             # 6635
+    # not hospital work at all: aggregator boards, laboratory and sales titles that only pass the gate on a
+    # leadership or ATA/OTA token
+    ("retail_frischetheke", "Bereichsleiter Frischetheke (m/w/d)", ""),                                          # 15006
+    ("retail_frischetheke_bereichsleitung", "Bereichsleitung Frischetheke (m/w/d)", ""),                         # 15000
+    ("industry_steine_erden", "Bereichsleiter (m/w/d) Steine & Erden", ""),                                      # 14984
+    ("industry_standortmanager", "Bereichsleiter Produktion / Standortmanager (m/w/d)", ""),                     # 14986
+    ("sales_beratung_verkauf", "Fachbereichsleitung Beratung & Verkauf", ""),                                    # 15020
+    ("petrol_station", "Verkäufer Stationsleitung (m/w/d) Tankstelle", ""),                                      # 14942
+    ("radiology_ct", "Bereichsleitung Computertomographie (m/w/d)", ""),                                         # 6740
+    ("radiology_mrt", "Bereichsleitung MRT (m/w/d)", ""),                                                        # 6741
+    ("laboratory_blutbank", "MTL / Bereichsleitung Blutbank (m/w/d)", ""),                                       # 6864
+    ("laboratory_laborant", "Laborant - Milchwirtschaftlicher Laborant, CTA, ATA, MTLA, PTA (m/w/d)", ""),       # 14944
+    ("pharma_berater", "PTA, BTA, CTA, OTA oder MTLA als Pharmaberater / Pharmareferent im Innendienst (m/w/x)", ""),  # 14493
+]
+
+# Neighbours that name the same words and are nursing (or at least not part of the clusters above).
+_STILL_NURSING_TITLES = [
+    ("praxisanleiter_paedagogisch", "Praxisanleiter (m/w/d) - Pädagogisches Kompetenzzentrum", "praxisanleitung"),            # 7379
+    ("practical_instruction_nurse", "Pflegefachkraft (m/w/d) für den Schwerpunkt Praxisbegleitung und fachpraktischem Unterricht",
+     "pflegefachkraft"),                                                                                                       # 6428
+    ("ward_team_assistant", "Teamassistentin (m/w/d) der Station 3 mit den Fachbereichen Geburtshilfe und Gynäkologie",
+     "sonstige_pflege"),                                                                                                       # 13004
+    # an office clerk outside a school: not part of the school cluster, left as it was for the owner (no body text)
+    ("clerk_in_nursing_service", "Verwaltungskraft im Pflegedienst (m/w/d)", "sonstige_pflege"),                              # 14307
+    ("job_with_fachweiterbildung", "Pflegefachkraft (m/w/d) mit Fachweiterbildung in der Psychiatrie, Psychosomatik und Psychotherapie",
+     "fachpflege"),                                                                                                            # 11299
+    ("job_with_fachweiterbildung_notfall", "Gesundheits- und Krankenpfleger (m/w/d) mit Fachweiterbildung Notfallpflege", "fachpflege"),  # 6082
+    ("nursing_bereichsleitung", "Stellvertretende Bereichsleitung 5/6 (w/d/m)", "leitung"),                                   # 7326
+    ("wohnbereichsleitung", "Wohnbereichsleitung (m/w/d)", "leitung"),                                                        # 13595
+    ("nurse_or_mtra", "Gesundheits- und Krankenpfleger (m/w/d) oder MTRA (m/w/d) im Herzkatheter-Labor in Voll- oder Teilzeit",
+     "pflegefachkraft"),                                                                                                       # 5858
+    ("mfa_or_nurse", "MFA oder Pflegefachkraft (m/w/d) für die Ambulanz", "pflegefachkraft"),                                 # TASK-89
+    ("hygienefachkraft", "Hygienefachkraft (m/w/d)", "apn_experte"),                                                          # 13200, owner decision
+    ("stationsleitung", "Stationsleitung (m/w/d) Dialyse", "leitung"),                                                        # 6064
+]
+
+
+@pytest.mark.parametrize("why, title, hauptberuf", _NOT_NURSING_TITLES, ids=[x[0] for x in _NOT_NURSING_TITLES])
+def test_clear_non_nursing_titles_are_not_nursing(why, title, hauptberuf):
+    role, rule = classify_role(title, hauptberuf)
+    assert role == "nicht_pflege" and rule.startswith("nicht_pflege:"), (role, rule)
+
+
+@pytest.mark.parametrize("why, title, want", _STILL_NURSING_TITLES, ids=[x[0] for x in _STILL_NURSING_TITLES])
+def test_neighbours_of_the_non_nursing_clusters_stay_nursing(why, title, want):
+    assert classify_role(title, "")[0] == want, title

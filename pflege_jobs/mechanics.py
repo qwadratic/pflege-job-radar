@@ -187,11 +187,11 @@ REGISTRY = [
     Mechanic("role_class", _t("Rollen-Klassifikation", "Role classification"),
              _t("Titel (+ Berufsbezeichnung) → eine von 12 role_class. Reihenfolge: 1) Pflege-Gate (patterns.role.pflege_gate) — ohne Pflege-Token ist es nicht_pflege; "
                 "2) nicht_pflege-Regex (Arzt, MFA, Rettungsdienst…) gewinnt, außer der Titel trägt ein starkes Pflege-Token (nicht innerhalb eines nicht_pflege-Worts wie Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM, danach der Anzeigentext: nennt er Haupt-/Realschulabschluss, Mittlere Reife oder einen Ausbildungsbeginn, ist es eine Ausbildungsstelle unter normalem Titel (patterns.role.ausbildung_body); "
-                "4) geordnete Regeln (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — erster Treffer gewinnt; "
+                "4) geordnete Regeln (werkstudent, ausbildung, nicht_pflege für Lehrkräfte/Pflegepädagogen und Schulverwaltung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — erster Treffer gewinnt; "
                 "5) Fallback sonstige_pflege. Klassen in excluded_role_classes werden beim Import verworfen (nur erfahrene Pflege). Regel → postings.role_rule.",
                 "Title (+ occupation) → one of 12 role_class values. Order: 1) nursing gate (patterns.role.pflege_gate) — no nursing token means nicht_pflege; "
                 "2) the nicht_pflege regex (physician, MFA, paramedic…) wins unless the title carries a strong nursing token (not inside a nicht_pflege word such as Heilerziehungspfleger, Kinderpfleger); 3) offer_kind AUSBILDUNG/PRAKTIKUM, then the ad text: if it names a Hauptschul-/Realschulabschluss, Mittlere Reife or an Ausbildungsbeginn it is a training place under a plain title (patterns.role.ausbildung_body); "
-                "4) ordered rules (werkstudent, ausbildung, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — first hit wins; "
+                "4) ordered rules (werkstudent, ausbildung, nicht_pflege for teaching staff and school administration, hebamme, ota_ata, praxisanleitung, leitung, apn_experte, fachpflege, pflegehelfer, pflegefachkraft) — first hit wins; "
                 "5) fallback sonstige_pflege. Classes in excluded_role_classes are refused at ingest (experienced nursing only). Rule → postings.role_rule."),
              "role", [K.classify_role],
              [{"name": "title", "label": _t("Stellentitel", "Job title"), "example": "Fachkrankenpfleger Intensiv (m/w/d)"},
