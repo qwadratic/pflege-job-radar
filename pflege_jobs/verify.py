@@ -16,6 +16,7 @@ decide three shapes at all, so those escalate rather than being recorded as a ve
 Only a verdict that came from a request that could actually see the posting is written back; `method`
 records which rung produced it, so "verified" is never an assertion.
 """
+import html as _html
 import json as _json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -114,7 +115,10 @@ def verify_url(session, url, title):
 # already open.
 _LD_BLOCK = re.compile(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.S | re.I)
 _PLZ_ORT = re.compile(r"\b(\d{5})\s+([A-ZÄÖÜ][\wäöüß.\-]+(?:\s+[A-ZÄÖÜa-zäöüß.\-]+){0,2})")
-_EINSATZORT = re.compile(r"(?:Einsatzort|Arbeitsort|Standort|Dienstort)\s*[:\-–]?\s*([A-ZÄÖÜ][\wäöüß.\-]+(?:\s+[A-ZÄÖÜa-zäöüß.\-]+){0,2})")
+# The label is matched in any case ("EINSATZORT: Krumbach", kliniken-gz-kru.de) but only as a word of its own: matched in any
+# case it would also be the tail of "Hauptstandort" (kbo.de prose). The value stays capitalised. Its words are joined by
+# blanks only, never by a line break: the value ends where its own block ends (see extract_location's text).
+_EINSATZORT = re.compile(r"\b(?i:Einsatzort|Arbeitsort|Standort|Dienstort)\s*[:\-–]?\s*([A-ZÄÖÜ][\wäöüß.\-]+(?:[ \t]+[A-ZÄÖÜa-zäöüß.\-]+){0,2})")
 # A site-directory idiom ("Besuchen Sie zum Standort Bremen", "unsere/weitere/alle/andere Standort...")
 # names a DIFFERENT site than the one this page is actually about -- _EINSATZORT's bare (no colon/
 # dash) form cannot tell that shape from a genuine "Standort: Bremen" label by punctuation alone, and
@@ -186,25 +190,31 @@ def _clean_city(s):
     # _CITY_STOP and not lowercase) and rides along as if it were part of the place name, which
     # then never matches the plain city name stored on the posting and inverts every mismatch check.
     s = re.sub(r"^\d{5}\s+", "", s)
-    out = []
+    out, prev = [], ""
     for i, p in enumerate(s.split()):
         w = p.strip(",.;:|–-")
         if not w:
             break
         if i and (_CITY_STOP.match(w) or (w[:1].islower() and w.lower() not in _CITY_CONNECT)):
             break
+        # A capitalised word after a period starts the next sentence ("am Standort Eggenfelden. Sie sind verantwortlich" read as
+        # the place "Eggenfelden Sie", karriere.rottalinnkliniken.de) -- unless the period belongs to "St." (16 names in
+        # data/geo/gemeinden_de.csv, "St. Englmar"); the other period-ended words inside real place names are lowercase.
+        if i and w[:1].isupper() and prev.endswith(".") and prev != "St.":
+            break
         out.append(w)
+        prev = p.rstrip(",;:|–-")
     city = " ".join(out) or None
     if city and city.lower() in _CITY_JUNK:
         return None
     return city
 
 
-# Only these two sources SAY what the job's location is. A bare '12345 Ort' found anywhere on the page
+# Only these three sources SAY what the job's location is. A bare '12345 Ort' found anywhere on the page
 # is just the first address on it -- regularly the operator's head office in the footer, a sister site
 # in a group listing, or plain prose. Trusting it produced "Viechtach -> Ulm (89077)" and cities called
 # 'Ich' and 'Klinik' (2026-09-16), so plz_ort is returned but is only ever CONFIRMING evidence.
-TRUSTED_LOC = ("jsonld", "einsatzort")
+TRUSTED_LOC = ("jsonld", "microdata", "einsatzort")
 _CITY_JUNK = {"ich", "wir", "sie", "die", "der", "das", "klinik", "kliniken", "klinikum", "krankenhaus",
               "unser", "unsere", "haus", "team", "stelle", "pflege", "bewerbung", "kontakt", "adresse"}
 
@@ -221,9 +231,42 @@ def _placeable(city, plz, towns):
     return in_bavaria(city, plz, None, towns) is not None
 
 
+# schema.org microdata states the same JobPosting field JSON-LD does, in the markup itself: karriere.ameos.eu as a flat
+# <meta itemprop="jobLocation" content="Osnabrück" />, krankenpflegejobs24.de as an itemprop="jobLocation" element holding
+# a PostalAddress (postalCode / addressLocality). Read only inside that element: a ContactPoint or Organization address
+# elsewhere on the page is the employer's office, not the job's place.
+_JOBLOC_META = re.compile(r"<meta\b[^>]*\bitemprop=[\"']jobLocation[\"'][^>]*>", re.I)
+_JOBLOC_ELEMENT = re.compile(r"<(?!meta\b)(\w+)\b[^>]*\bitemprop=[\"']jobLocation[\"'][^>]*>", re.I)
+_CONTENT_ATTR = re.compile(r"\bcontent=[\"']([^\"']*)[\"']", re.I)
+
+
+def _microdata_prop(scope, name):
+    m = re.search(r"itemprop=[\"']%s[\"'][^>]*>([^<]*)" % name, scope, re.I)
+    return (_html.unescape(m.group(1)).strip() or None) if m else None
+
+
+def _microdata_job_location(html):
+    """(city, plz) of the page's microdata jobLocation, (None, None) when it has none."""
+    m = _JOBLOC_META.search(html)
+    if m:
+        c = _CONTENT_ATTR.search(m.group(0))
+        return ((_html.unescape(c.group(1)).strip() or None) if c else None), None
+    m = _JOBLOC_ELEMENT.search(html)
+    if not m:
+        return None, None
+    depth, end = 1, len(html)
+    for t in re.finditer(r"<(/?)%s\b[^>]*>" % m.group(1), html[m.end():], re.I):
+        depth += -1 if t.group(1) else 1
+        if not depth:
+            end = m.end() + t.start()
+            break
+    scope = html[m.end():end]
+    return _microdata_prop(scope, "addressLocality"), _microdata_prop(scope, "postalCode")
+
+
 def extract_location(html, towns=None):
     """(city, plz, source) straight off the posting page. JSON-LD first (a real JobPosting field),
-    then an 'Einsatzort:' label, then a bare '12345 Ort' pair -- see TRUSTED_LOC for which of those a
+    then schema.org microdata, then an 'Einsatzort:' label, then a bare '12345 Ort' pair -- see TRUSTED_LOC for which of those a
     caller may act on. Pass `towns` to have the two label-scraped sources validated as real places;
     without it they are returned unchecked. (None, None, None) when the page says nothing."""
     if not html:
@@ -240,8 +283,15 @@ def extract_location(html, towns=None):
             plz = str(plz).strip() if plz else None
             if city or plz:
                 return _clean_city(city), plz or None, "jsonld"
-    text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"\s+", " ", text)
+    city, plz = _microdata_job_location(html)
+    if city or plz:
+        return _clean_city(city), plz, "microdata"
+    # A labelled value ends where its own block ends: the closing tag of a block element becomes a line break (source
+    # whitespace stays a blank), so "<li>Einsatzort: Rödental</li><li>Einrichtung: AWO ..." is not read as "Rödental
+    # Einrichtung", and a label whose value sits in the next block ("<p>EINSATZORT:</p><p>Krumbach</p>") still pairs with it.
+    text = re.sub(r"\s+", " ", html)
+    text = re.sub(r"<br\s*/?>|</(?:p|li|ul|ol|div|h\d|td|th|tr|dd|dt|section|address)>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
     m = next((x for x in _EINSATZORT.finditer(text)
               if not _EINSATZORT_IDIOM.search(text[max(0, x.start() - 20):x.start()])), None)
     if m:

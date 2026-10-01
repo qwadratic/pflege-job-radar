@@ -464,6 +464,37 @@ def test_a_truncated_seeded_read_is_recorded_as_crawl_issue_kind_truncated(fresh
     assert "180" in issues[0]["error"]   # the count reached, not just the fact of the stop
 
 
+def test_a_seeded_walk_with_pages_that_did_not_answer_is_recorded_as_crawl_issue_kind_incomplete(fresh, monkeypatch):
+    """TASK-185 F4: karriere.klinikverbund-allgaeu.de's job module answers HTTP 500, the walk read 19 rows instead of
+    84 and the run read as success. Every page the walk asked for and did not get is carried in stats["failed_pages"]
+    ("HTTP <status> <url>"); a walk that read less of the board than it asked for is kind='incomplete' (no new kind),
+    so board_walk_ok is False for the day and nothing absent from it counts as gone."""
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        obs, {"truncated": False, "failed_pages": ["HTTP 500 https://x.example/?id=49&type=9818", "ConnectionError https://x.example/p2"]}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "HTTP 500 https://x.example/?id=49&type=9818" in issues[0]["error"]     # status and url, every one of them
+    assert "ConnectionError https://x.example/p2" in issues[0]["error"]
+    assert R.board_walk_ok("https://x.example/board", R.now()[:10]) is False
+
+
+def test_a_seeded_walk_whose_every_page_answered_records_no_incomplete_issue(fresh, monkeypatch):
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (obs, {"truncated": False, "failed_pages": []}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+
+
 def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
     """The other side of the same check: a board that stopped at its own end of pagination must not
     be reported as truncated, or the flag means nothing."""

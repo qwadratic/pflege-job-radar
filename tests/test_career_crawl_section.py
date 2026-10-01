@@ -466,3 +466,121 @@ def test_the_description_of_a_crawled_posting_reaches_the_role_classifier():
     cr = _crawler({seed_url: R(seed_html, seed_url), job_url: R(job_html, job_url)})
     rows, _stats = cr.crawl({"name": "Example Klinik", "kez": "1", "career": seed_url, "town": "Muenchen"})
     assert [(r["role_class"], r["role_rule"].split(":")[0]) for r in rows] == [("ausbildung", "ausbildung_body")]
+
+
+# --- TASK-185 / F8: LINK_BAD names a page TYPE, never the words of a job's own title slug ----------------------
+# LINK_BAD substring-matched the whole URL, so a posting whose slug merely CONTAINS a bad word was dropped with no
+# stat and no crawl issue. Frozen real URLs: UKA softgarden job 67659167 (sitemap, JobPosting JSON-LD, datePosted
+# 2026-09-25) has "Datenschutz" in its slug; every "-ologin" profession noun contains "login"
+# (Technologin: kliniken-gz-kru.de, klinikum-nuernberg.de, klinikum-straubing.de; Psychologin: diakonie-wuerzburg.de).
+UKA_SLUG_URL = ("https://uk-augsburg.softgarden.io/job/67659167/Jurist-m-w-d-für-Datenschutz-und-IT-Recht-mit-"
+                "vorgesehener-Übernahme-der-Funktion-als-Datenschutzbeauftragter-m-w-d-")
+TECHNOLOGIN_URL = "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/23-medizinische-r-technologe-technologin-fuer-radiologie-mtr-m-w-d"
+
+
+def test_link_bad_does_not_read_the_words_of_a_job_slug():
+    from pflege_jobs.sources.career_crawl import LINK_BAD
+    assert not LINK_BAD.search(UKA_SLUG_URL)
+    assert not LINK_BAD.search(TECHNOLOGIN_URL)
+    assert not LINK_BAD.search("https://diakonie-wuerzburg.de/aktuelle-jobs/psychologin-(m-w-d)-beim-sozialpsychiatrischen-dienst.html")
+
+
+def test_link_bad_still_names_the_page_types_it_always_did():
+    from pflege_jobs.sources.career_crawl import LINK_BAD
+    for u in ("https://www.klinikum-ab-alz.de/datenschutz",
+              "https://www.klinikum-ab-alz.de/impressum",
+              "https://karriere.ameos.eu/datenschutz/cookie-erklaerung",
+              "https://uk-augsburg.softgarden.io/de/imprint",
+              "https://jobs.klinikum-ab-alz.de/Login/3439",
+              "https://recruitingapp-5545.de.umantis.com/Vacancies/Register/CheckLogin/1",
+              "https://www.facebook.com/klinikum.ab.alz/",
+              "https://twitter.com/KlinikumNbg",
+              "https://www.addtoany.com/add_to/xing?linkurl=https%3A%2F%2Fkarriere.rottalinnkliniken.de%2Fjob%2Fx",
+              "https://vk.com/share.php?url=https%3A%2F%2Fdongku.de%2Fstellenangebote%2Fx",
+              "https://www.innklinikum.de/aerzteportal?tx_felogin_login%5Baction%5D=recovery&cHash=29768bf1",
+              "https://www.jaegerwinkel.de/wGlobal/content/privacy/redirect-external.php?url=https://www.youtube.com/channel/x"):
+        assert LINK_BAD.search(u), u
+
+
+def test_a_sitemap_job_whose_slug_contains_a_bad_word_is_walked_not_dropped_silently():
+    seed_url = "https://uk-augsburg.softgarden.io/"
+    page = JOBPOSTING_TMPL.format(title="Jurist (m/w/d) für Datenschutz und IT-Recht")
+    cr = _crawler({seed_url: R("<html></html>", seed_url), UKA_SLUG_URL: R(page, UKA_SLUG_URL)})
+    cr.sitemap_job_urls = lambda sm: [UKA_SLUG_URL]
+    rows, stats = cr._crawl_urls({"name": "UKA", "kez": "1", "career": seed_url, "town": "Augsburg"}, {"uk-augsburg.softgarden.io"},
+                                 [seed_url], ["https://uk-augsburg.softgarden.io/sitemap.xml"])
+    assert [r["source_url"] for r in rows] == [UKA_SLUG_URL]
+    assert stats["job_pages"] == 1
+
+
+def test_a_listed_job_whose_slug_contains_a_bad_word_passes_the_link_gate():
+    cr = _crawler({})
+    assert cr._page_hosts_ok(UKA_SLUG_URL, {"uk-augsburg.softgarden.io"}) is True
+    assert cr._page_hosts_ok("https://uk-augsburg.softgarden.io/de/imprint", {"uk-augsburg.softgarden.io"}) is False
+
+
+# --- TASK-185 / F4: a page the walk asked for and did not get is recorded, with its status and URL ------------------
+# Crawler.fetch returned None for every non-200 and the walk reported truncated False: karriere.klinikverbund-allgaeu.de's
+# job module answers with an HTTP 500 "TYPO3 Exception" (and, between 500s, a 200 shell with no jobs) -- the board read 84
+# rows on run 225 and 19 on the next walk, and nothing said so.
+class _HttpResp:
+    def __init__(self, url, status, text="", ctype="text/html; charset=utf-8"):
+        self.url, self.status_code, self.text, self.headers = url, status, text, {"content-type": ctype}
+
+
+def _live_crawler(pages):
+    """A Crawler with its REAL fetch over a fake session: pages = {url: (status, text)}; anything else answers 404."""
+    cr = Crawler(towns={"muenchen"}, sleep=0, log=lambda *a, **k: None)
+    cr.s.get = lambda url, timeout=40, allow_redirects=True: _HttpResp(url, *pages.get(url, (404,)))
+    return cr
+
+
+def test_fetch_records_a_non_200_with_its_status_and_url():
+    cr = _live_crawler({"https://x.example/?id=49&type=9818": (500, "TYPO3 Exception")})
+    assert cr.fetch("https://x.example/?id=49&type=9818") is None
+    assert cr.failed == ["HTTP 500 https://x.example/?id=49&type=9818"]
+
+
+def test_fetch_records_a_transport_failure_with_its_error_and_url():
+    import requests
+    cr = _live_crawler({})
+    def boom(url, timeout=40, allow_redirects=True):
+        raise requests.ConnectionError("reset")
+    cr.s.get = boom
+    assert cr.fetch("https://x.example/jobs") is None
+    assert cr.failed == ["ConnectionError https://x.example/jobs"]
+
+
+def test_fetch_does_not_record_a_robots_refusal_or_a_non_html_200():
+    cr = _live_crawler({"https://x.example/a.pdf": (200, "%PDF", "application/pdf")})
+    assert cr.fetch("https://x.example/a.pdf") is None
+    cr.allowed = lambda url: False
+    assert cr.fetch("https://x.example/private") is None
+    assert cr.failed == []
+
+
+def test_a_sitemap_that_does_not_answer_200_is_recorded_too():
+    cr = _live_crawler({"https://x.example/sitemap.xml": (500, "TYPO3 Exception")})
+    assert cr.sitemap_job_urls("https://x.example/sitemap.xml") == []
+    assert cr.failed == ["HTTP 500 https://x.example/sitemap.xml"]
+
+
+def test_crawl_reports_every_page_it_could_not_read_in_its_stats():
+    seed_url = "https://x.example/karriere"
+    listing = "https://x.example/?id=49&type=9818"
+    job = "https://x.example/stelle/1"
+    cr = _live_crawler({
+        seed_url: (200, '<a href="%s">Stellenangebote</a><a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % (listing, job)),
+        listing: (500, "TYPO3 Exception"),
+        job: (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))})
+    rows, stats = cr.crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen"})
+    assert [r["source_url"] for r in rows] == [job]              # what could be read is still returned
+    assert stats["failed_pages"] == ["HTTP 500 " + listing]
+
+
+def test_crawl_with_every_page_answering_reports_no_failed_pages():
+    seed_url = "https://x.example/karriere"
+    job = "https://x.example/stelle/1"
+    cr = _live_crawler({seed_url: (200, '<a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % job),
+                        job: (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))})
+    assert cr.crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen"})[1]["failed_pages"] == []

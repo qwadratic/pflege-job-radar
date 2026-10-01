@@ -1400,6 +1400,30 @@ def test_crawl_muenchen_klinik_sets_the_specific_site_name_when_exactly_one_loca
     assert any(o["org"] == "München Klinik gGmbH" for t, o in by_title.items() if "Ausbildung" in t)  # multi-site list
 
 
+def test_crawl_muenchen_klinik_passes_every_listed_site_with_the_posting(monkeypatch):
+    """TASK-185 F5: the listing names each posting's sites in `locations[]`, but only a posting with exactly one real
+    site used to keep any of it (as its org) -- the other 32 of 57 rows lost the list, and the detail-page boilerplate
+    names all five sites on every posting, so nothing downstream could tell them apart. payload["sites"] = the listed
+    titles verbatim, in listing order (non-clinic entries such as "Alle Standorte" included)."""
+    listing_html = _mk_fixture("muenchen_klinik_stellenmarkt_sample.html")
+    detail_html = _mk_fixture("muenchen_klinik_detail_0_sample.html")
+    monkeypatch.setattr(va.time, "sleep", lambda *a: None)
+
+    def fake_get(u, timeout=30, session=None):
+        if u == "https://www.muenchen-klinik.de/stellenmarkt/":
+            return _R(text=listing_html, url=u, ok=True)
+        return _R(text=detail_html, url=u, ok=True)
+
+    monkeypatch.setattr(va, "get", fake_get)
+    rows = va.crawl_muenchen_klinik({"name": "München Klinik Schwabing", "careers_url": "https://www.muenchen-klinik.de/stellenmarkt/"})
+    sites = {r["payload"]["title"]: r["payload"]["sites"] for r in rows}
+    assert sites["MFA (w|m|d) HNO"] == ["München Klinik Schwabing"]
+    assert sites["Klinische Kodierfachkraft (w|m|d)"] == ["Alle Standorte"]
+    multi = next(v for t, v in sites.items() if t.startswith("Ausbildung Medizinische Fachangestellte"))
+    assert multi == ["München Klinik Bogenhausen", "München Klinik Neuperlach", "München Klinik Harlaching",
+                     "München Klinik Schwabing", "München Klinik Thalkirchner Straße"]
+
+
 def test_crawl_muenchen_klinik_specific_org_resolves_the_right_clinic_via_matcher(monkeypatch):
     """End-to-end: the specific site name this adapter emits must actually let Matcher.match()
     resolve R1_exact against the real registry site, not just look right in isolation."""

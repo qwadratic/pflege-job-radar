@@ -762,6 +762,12 @@ NOT_JOB_TITLE_RX = re.compile(r"^(Impressum|Datenschutzerkl.rung|Barrierefreihei
 STELLENANGEBOT_IN_RX = re.compile(r"<h[1-6][^>]*>\s*Stellenangebot in\s+([^<]+?)\s*</h[1-6]>", re.I)
 
 
+def _body_text(htmltext):
+    """The page's own text without its scripts, styles, nav, header and footer -- what the posting says when the JSON-LD
+    does not (an empty description: eRecruiter, jobs.klinikum-ab-alz.de; kbo.de's facts-only one)."""
+    return _txt(re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or ""))
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -817,7 +823,9 @@ def parse_job_page(htmltext, url, org):
                         # _enrich_wp_fallback_fields to re-fetch the page just to find it.
                         "datePosted": _sane_date(n.get("datePosted")) or _page_meta_date(htmltext),
                         "employmentType": n.get("employmentType"),
-                        "description": _txt(n.get("description"))}
+                        # an empty JSON-LD description (TASK-185 F6: 29 of 64 eRecruiter jobs on jobs.klinikum-ab-alz.de) is
+                        # not the posting having no text -- the ad is in the page body
+                        "description": _txt(n.get("description")) or _body_text(htmltext)}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
     # TASK-170: a cookie-consent dialog can be the page's first <h1> (kurpark.mutter-kind.de: "Diese
@@ -863,7 +871,6 @@ def parse_job_page(htmltext, url, org):
                 return None
     if not title:
         return None
-    body = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or "")
     # No JSON-LD JobPosting anywhere (confirmed live: karriere.barmherzige.net) -- but the page still
     # states employmentType/city plainly next to a schedule/location icon; read that instead of
     # leaving fields the source does expose empty.
@@ -879,7 +886,7 @@ def parse_job_page(htmltext, url, org):
     return {"title": title, "org": org, "org_source": "seed",
             "loc": [{"city": facts.get("location") or (_txt(stelle_in.group(1), 200) if stelle_in else None),
                      "plz": None, "region": None}],
-            "url": url, "page": url, "description": _txt(body),
+            "url": url, "page": url, "description": _body_text(htmltext),
             "employmentType": facts.get("schedule"),
             # TASK-85 AC#6: this is the branch a JSON-LD-less TYPO3 board (AMEOS: itemprop meta, no
             # JobPosting block at all, see ITEMPROP_DATE_RX) always took, so datePosted was always
@@ -943,7 +950,7 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
         # The two shapes that answer 200 but are not the posting, decided by the same helpers the
         # verifier uses so a row cannot enter here and be expired hours later by the verify pass:
         # a bot wall's own refusal page, and a slug that redirected to the board's list.
-        from pflege_jobs.verify import WALL_MARKERS, _bounced_to_list
+        from pflege_jobs.verify import TRUSTED_LOC, WALL_MARKERS, _bounced_to_list, extract_location
         if WALL_MARKERS.search(r.text[:4000]) or _bounced_to_list(u, r.url, None):
             continue
         m = ALLJOBS_RX.search(r.text)
@@ -1018,17 +1025,27 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
                 # board can link these same standard German legal-notice pages from its careers page.
                 continue
         if not j["loc"][0]["city"]:
-            # TASK-118: a shared board with no structured location field at all can still state the
-            # real work site in plain body prose ("am Standort Weilheim") -- confirmed live
-            # 2026-09-23, meinkrankenhaus2030.de. Try that BEFORE the single-clinic seed-town
-            # fallback, so a board this function's own caller has widened to more than one clinic
-            # (crawlers.vendor_adapters.account_pool_for) does not get every row stamped with
-            # whichever clinic happened to trigger this fetch.
-            standort = extract_standort_city(j.get("description"), towns) if towns else None
-            if standort:
-                j["loc"] = [{"city": standort, "plz": None, "region": None}]
-            elif c.get("town"):
-                j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
+            # TASK-185: the page can state its own place without a JSON-LD jobLocation -- schema.org
+            # microdata (karriere.ameos.eu, krankenpflegejobs24.de) or an "Einsatzort" block
+            # (kliniken-gz-kru.de, awo-omf.de, innklinikum.de) -- read it the way pflege_jobs.verify
+            # does, BEFORE any stamp: 404 judged postings sat under a seed clinic whose town their own
+            # text contradicts. A label is believed only against `towns` (nothing to check it with
+            # otherwise); a place read here is never marked a stamp.
+            city, plz, src = extract_location(r.text, towns)
+            if city and src in TRUSTED_LOC and (towns or src != "einsatzort"):
+                j["loc"] = [{"city": city, "plz": plz, "region": None}]
+            else:
+                # TASK-118: a shared board with no structured location field at all can still state the
+                # real work site in plain body prose ("am Standort Weilheim") -- confirmed live
+                # 2026-09-23, meinkrankenhaus2030.de. Try that BEFORE the single-clinic seed-town
+                # fallback, so a board this function's own caller has widened to more than one clinic
+                # (crawlers.vendor_adapters.account_pool_for) does not get every row stamped with
+                # whichever clinic happened to trigger this fetch.
+                standort = extract_standort_city(j.get("description"), towns) if towns else None
+                if standort:
+                    j["loc"] = [{"city": standort, "plz": None, "region": None}]
+                elif c.get("town"):
+                    j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
@@ -2662,6 +2679,7 @@ def crawl_muenchen_klinik(c, session=None, cu_resp=None):
             continue
         locs = [_txt(x.get("title"), 200) for x in (j.get("locations") or [])]
         sites = [MK_SITES[x.lower()] for x in locs if x and x.lower() in MK_SITES]
+        listed = [x for x in locs if x]        # payload["sites"]: every listed location, in listing order, for the matcher
         confident = len(sites) == 1 and len(locs) == 1
         org = sites[0] if confident else "München Klinik gGmbH"
         d = get(url, session=session)
@@ -2673,7 +2691,7 @@ def crawl_muenchen_klinik(c, session=None, cu_resp=None):
         payload = {"title": title, "org": org if confident else ((full or {}).get("org") or org),
                    "org_source": None if confident else (full or {}).get("org_source"),
                    "loc": (full or {}).get("loc") or [{"city": "München", "plz": None, "region": None}],
-                   "url": url, "page": url,
+                   "url": url, "page": url, "sites": listed,
                    "description": (full or {}).get("description"),
                    "datePosted": (full or {}).get("datePosted"),
                    "employmentType": (full or {}).get("employmentType")}
@@ -3010,6 +3028,11 @@ GROUP_PORTALS = [
      # address every time; still true 2026-09-18). crawl_group_portal must never carry that address
      # through as the posting's own location -- see hq_location_untrusted below.
      "hq_location_untrusted": True,
+     # The JSON-LD `description` is the page's "job-details" facts partial (Eintrittsdatum / Arbeitszeit), never the
+     # ad: measured 2026-10-01 on the 105 distinct postings of the board -- 13 empty, 91 that facts line (83 of 29-163
+     # chars, 8 repeated up to 20,000 chars), 1 "Arbeitszeit nach Vereinbarung". The ad (3.2-5.2k chars) is only in the
+     # page body -- crawl_group_portal reads it from there (a length test would miss the 20k blobs).
+     "jsonld_description_is_facts": True,
      # ...but each detail page DOES carry a structured "Einsatzort" block naming the real kbo site
      # and its street address (confirmed live 2026-09-21: present on all 108 job pages on the
      # board). That block is the posting's own site of work -- both its city/postcode and the site
@@ -3243,6 +3266,8 @@ def crawl_group_portal(c, g, session=None, towns=None):
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if j and j.get("title"):
+            if g.get("jsonld_description_is_facts"):
+                j["description"] = _body_text(r.text)
             from pflege_jobs.verify import _EINSATZORT, _PLZ_ORT, _clean_city, _placeable
             site_city = site_plz = None
             site_block_rx = g.get("site_block_rx")
@@ -3410,6 +3435,7 @@ def main():
             locs = r["payload"].get("loc") or [{}]
             if c.get("town") and not any((l or {}).get("city") for l in locs):
                 r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+                r["payload"]["city_source"] = "seed"      # TASK-185: a copy of the seed clinic's town is marked as one
         n = save(rows, "vendor_" + c["ats_type"])
         total += n
         print("  %-44s %-16s jobs %3d" % (c["name"][:44], c["ats_type"], n))

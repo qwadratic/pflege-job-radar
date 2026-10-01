@@ -183,6 +183,31 @@ def test_erecruiter_falls_back_to_the_list_row_when_a_detail_page_is_gone(monkey
     assert p["datePosted"] == "2026-09-21"               # from the list row's "21.09.2026"
 
 
+def _fx(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples", name), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_erecruiter_reads_the_pages_own_ad_when_the_json_ld_description_is_empty(monkeypatch):
+    """TASK-185 F6, jobs.klinikum-ab-alz.de/Job/3146 frozen (fixtures/board_samples/README.md): 29 of the board's 64 jobs
+    ship a JobPosting JSON-LD whose description is "" -- no location, no employer either -- while the ad sits in the page's
+    own jobBlock divs. The adapter had no HTML fallback, so those rows stored no text (10 stored postings)."""
+    jobs = [{"Id": 3146, "Title": "Gesundheits- und Krankenpfleger / Altenpfleger Geriatrische Rehabilitation (m/w/d)",
+             "SubTitle": "", "Location": "Alzenau", "Date": "20.02.2025"}]
+    cu, u = "https://jobs.klinikum-ab-alz.de/Jobs", "https://jobs.klinikum-ab-alz.de/Job/3146"
+    monkeypatch.setattr(va, "get", _router({cu: _R(_erecruiter_page(jobs), url=cu),
+                                            u: _R(_fx("erecruiter_klinikum_ab_alz_job_3146_sample.html"), url=u)}))
+    p = va.crawl_erecruiter({"name": "Klinikum Aschaffenburg-Alzenau", "careers_url": cu})[0]["payload"]
+    assert "Berufserfahrung von Vorteil" in p["description"]
+    assert "Koordination aller Maßnahmen im Rahmen des Pflegeprozesses" in p["description"]
+
+
+def test_parse_job_page_keeps_a_non_empty_json_ld_description_over_the_page_text():
+    html = ('<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", '
+            '"description": "Die Stelle laut Anzeige."}</script><h1>Pflegefachkraft (m/w/d)</h1><p>Seitentext drumherum.</p>')
+    assert va.parse_job_page(html, "https://x.example/j/1", "X")["description"] == "Die Stelle laut Anzeige."
+
+
 def test_crawl_wp_jobs_delegates_to_erecruiter_by_capability(monkeypatch):
     """No registry label exists for this engine -- the generic dispatcher must recognise it on the
     careers page it has already fetched, the same contract beesite/hr4you use (TASK-40 AC#3)."""

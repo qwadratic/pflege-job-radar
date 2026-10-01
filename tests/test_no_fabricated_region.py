@@ -52,6 +52,20 @@ def test_no_source_hardcodes_a_bavarian_region_or_flag():
     ("Bad Bayersoien", None, None),                   # must not read as "Bayern"
     ("34537 Bad Wildungen", None, False),             # PLZ carried inside the city string
     ("München", None, True),
+    # TASK-185 F7c: a municipality the repo's own table (data/geo, pflege_jobs.geo) places in another Land is not Bavaria, which
+    # the hand list NON_BAV_CITIES did not know (26 AMEOS slug cities, 213 rows)
+    ("Osnabrück", None, False),
+    ("Neustadt in Holstein", None, False),
+    ("Stralsund", None, False),
+    ("Giengen", None, False),                         # BW, the PLZ range 89xxx overreaches into it but a bare name does not
+    # ...and only that direction: the table never makes a city Bavarian here, and an ambiguous name stays undecided
+    ("Brunnen", None, None),                          # a Bavarian Gemeinde AND Brunnen SZ (AMEOS Switzerland, 8 rows)
+    ("Petershagen", None, None),                      # BB and NW
 ])
 def test_in_bavaria_decides_on_evidence(city, plz, expected):
     assert in_bavaria(city, plz, None, TOWNS) is expected
+
+
+def test_a_registry_town_stays_bavarian_even_when_another_land_has_a_municipality_of_that_name():
+    # the table is consulted last: a registry clinic town (towns) decides before it
+    assert in_bavaria("Osnabrück", None, None, TOWNS | {"osnabrück"}) is True
