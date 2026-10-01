@@ -9,6 +9,7 @@ the CONVERSATION resumes from. STAGES below is the operator's coarser label for 
 including the terminal states a funnel stage has no name for (declined, already_placed).
 """
 from .. import store as ST
+from .. import suppression as SUP
 from ..luna_brain import SCOREBOARD_GATES, requirement_scoreboard
 
 STAGES = ("new_lead", "declined", "already_placed", "not_placeable", "qualifying", "documents_in", "ready",
@@ -51,11 +52,20 @@ def ball_for(conn, phone):
     (claim state ST.NO_SEND_STATE, TASK-204), or that message was an operator note routed to the inbox
     (ST.AGENT_NOTE_STATE, 2026-09-24: its ack already went out and the work lives on its own row) --
     answered, and not waiting on the candidate either, so neither catch-up nor a follow-up nudge acts
-    on it. none: no messages at all."""
+    on it; OR the thread is stopped (wa_threads.stopped) or the phone is cross-rail suppressed
+    (wa_suppressions, SUP.is_suppressed -- the one canonical "is this number do-not-contact" check,
+    the same one api.send_and_record/campaign.send_one raise on) -- neither path ever writes to this
+    phone again on any rail, so "us"/"them" (someone's turn to act) would misreport a thread nobody
+    is waiting on either side of. none: no messages at all (checked first: a thread with no messages
+    yet still reads "none" even if, somehow, already marked stopped/suppressed -- "no messages" is
+    the more specific fact)."""
     row = conn.execute(
         "select direction, wamid from wa_messages where phone=? order by id desc limit 1", (phone,)).fetchone()
     if row is None:
         return "none"
+    stopped_row = conn.execute("select stopped from wa_threads where phone=?", (phone,)).fetchone()
+    if (stopped_row and bool(stopped_row["stopped"])) or SUP.is_suppressed(conn, phone):
+        return "silent"
     if row["direction"] != "in":
         return "them"
     settled = (ST.NO_SEND_STATE, ST.AGENT_NOTE_STATE)

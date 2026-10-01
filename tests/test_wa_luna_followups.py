@@ -154,6 +154,22 @@ def test_a_stopped_thread_is_never_nudged(db):
     assert FU.run(client=FakeMeta()) == []
 
 
+def test_a_suppressed_thread_explicitly_targeted_is_never_nudged(db):
+    """ball_for fix (pflege-fe review, 2026-10-01): before it, a suppressed-but-not-stopped thread
+    whose last message was ours read ball()=='them' here just like any ordinary quiet thread -- only
+    the default sweep's ST.candidate_phones filter (store.py, TASK-347) kept it out of harm's way.
+    An operator running --phones against this exact number by name must still never nudge it (and,
+    before this fix, this run() call did not cleanly return [] either -- getting as far as
+    api.send_and_record's own suppression choke point raised SuppressedRecipient straight out of
+    run(), uncaught)."""
+    from app.wa import suppression as SUP
+
+    t = _seed_them(db, "+49111", last_outbound_minutes_ago=300)
+    SUP.suppress(db, "+49111", SUP.REASON_STOP, "meta", trigger_text="Stopp (another rail)")
+    db.close()
+    assert FU.run(client=FakeMeta(), phones=["+49111"]) == []
+
+
 def test_a_thread_where_the_candidate_owes_us_nothing_is_not_nudged(db):
     """ball_for()=='us' (candidate wrote last, WE owe a reply) is catchup.py's job, not a nudge."""
     t = ST.thread(db, "+49111")

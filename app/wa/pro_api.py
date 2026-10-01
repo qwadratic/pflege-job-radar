@@ -363,11 +363,21 @@ def _attention_open(events):
 
 def _clinic_statuses(rows, events):
     """[{clinic_id, clinic_name, external_ref, status, ts, attention}] for a lead's current handoff
-    rows -- the shape both ThreadHandoff.clinics and LeadRow.handoffs share."""
+    rows -- the shape both ThreadHandoff.clinics and LeadRow.handoffs share.
+
+    ``clinic_name``: the write-back's own value always wins (Daria may hold a name the live board
+    registry no longer carries, e.g. a clinic pulled from the board after the handoff was already
+    recorded). Only when the write-back gave no name AND a ``clinic_id`` is on the row does this fall
+    back to ``D.clinic()`` -- the exact same live app.data lookup ``_matched_clinics`` above already
+    joins on, never a second registry path. Neither source having a name leaves it null, never
+    invented (a bare ``clinic_id`` the board has never heard of, e.g. a Daria-only id)."""
     out = []
     for row in rows:
         target_events = [e for e in events if e["target_key"] == row["target_key"]]
-        out.append({"clinic_id": row["clinic_id"], "clinic_name": row["clinic_name"],
+        clinic_name = row["clinic_name"]
+        if not clinic_name and row["clinic_id"]:
+            clinic_name = (D.clinic(row["clinic_id"]) or {}).get("name")
+        out.append({"clinic_id": row["clinic_id"], "clinic_name": clinic_name,
                     "external_ref": row["external_ref"], "status": row["status"], "ts": row["ts"],
                     "attention": _attention_open(target_events)})
     return out
@@ -564,13 +574,27 @@ def pro_thread_messages(thread_id: str, request: Request, limit: int = 50,
 
 # --- GET /api/wa/pro/health -------------------------------------------------------------------------
 
+#: Infrastructure details C.readiness() carries for the harness's own, loopback-only GET /wa/health
+#: (an operator's own tool) but that must never reach the board/browser through this route: a local
+#: home path (luna_media_dir), a hostname (luna_media_host), a Meta API version string and the phone
+#: rail's own device identifier (bridge_phone_number_id). HealthResponse (pro_models.py) no longer
+#: NAMES these either -- dropped here too, not just left undeclared, because HealthResponse is
+#: extra="allow" (readiness()'s own key set already varies with WA_BRAIN) and an unnamed field still
+#: passes an extra="allow" model through unchanged. The rest of C.readiness() was read end-to-end for
+#: this same leak (checks/stt_model/brain/transport/reply_scope/meta_scope/luna_model/refusal_model
+#: are all bare booleans or model-name/mode strings, never a path, hostname, username or token) --
+#: nothing else qualified.
+_HEALTH_DROP_KEYS = ("graph_api_version", "bridge_phone_number_id", "luna_media_host", "luna_media_dir")
+
+
 @router.get("/wa/pro/health", response_model=M.HealthResponse)
 def pro_health(request: Request):
     _authorize(request, SCOPE_BOARD)
     with db_ro() as c:
         rails = ST.rail_counts(c)
         synced = _rail_sync_summary(c)
-    return _scrub_wamids({**C.readiness(), "rails": rails, **synced})
+    readiness = {k: v for k, v in C.readiness().items() if k not in _HEALTH_DROP_KEYS}
+    return _scrub_wamids({**readiness, "rails": rails, **synced})
 
 
 # --- handoff write-back (TASK-396) ------------------------------------------------------------------

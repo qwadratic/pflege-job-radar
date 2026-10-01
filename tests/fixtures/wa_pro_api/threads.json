@@ -38,7 +38,7 @@
           {
             "attention": false,
             "clinic_id": "c1",
-            "clinic_name": null,
+            "clinic_name": "Klinikum Test",
             "external_ref": null,
             "status": "sent_to_clinic",
             "ts": "2026-09-20T09:00:00+00:00"
@@ -46,7 +46,7 @@
           {
             "attention": true,
             "clinic_id": "c2",
-            "clinic_name": null,
+            "clinic_name": "Klinikum Zwei",
             "external_ref": null,
             "status": "interview_scheduled",
             "ts": "2026-09-28T13:00:00+00:00"
@@ -296,7 +296,7 @@
       "turns": 1
     },
     {
-      "ball": "us",
+      "ball": "silent",
       "card": {
         "anonymous_send_offered": null,
         "campaign": null,

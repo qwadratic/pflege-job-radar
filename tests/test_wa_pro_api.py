@@ -569,6 +569,26 @@ def test_health_ok(client):
     assert "rails" in r.json()
 
 
+def test_health_never_leaks_infra_paths_hosts_or_ids(client):
+    """pflege-fe review (2026-10-01): luna_media_dir (a local home path), luna_media_host (a
+    hostname), graph_api_version and bridge_phone_number_id reached the board/browser through this
+    route and sat in a public-repo fixture. Dropped outright, not merely left undeclared on
+    HealthResponse -- that model is extra="allow" (readiness()'s own key set varies with WA_BRAIN),
+    so an undeclared field would otherwise still pass straight through unchanged. The rest of the
+    payload is scanned the same way, so a future field cannot reintroduce the same leak unnoticed."""
+    body = client.get("/api/wa/pro/health", headers=RH).json()
+    for key in ("graph_api_version", "bridge_phone_number_id", "luna_media_host", "luna_media_dir"):
+        assert key not in body, f"{key} must never reach the Pro API"
+    for key, value in body.items():
+        if not isinstance(value, str):
+            continue
+        low = value.lower()
+        assert "/" not in value, f"{key}={value!r} looks like a path"
+        assert "home" not in low, f"{key}={value!r} looks like a path"
+        assert "macmini" not in low, f"{key}={value!r} looks like a hostname"
+        assert "cursorworker" not in low, f"{key}={value!r} looks like a username"
+
+
 # --- escalated_at: stamped once, never overwritten --------------------------------------------------
 
 def test_escalated_at_stamped_once_and_never_overwritten(monkeypatch):
@@ -916,6 +936,91 @@ def test_thread_handoff_clinics_is_the_matched_count_not_the_target_list(client)
     assert row["handoff"]["targets"][0]["clinic_id"] == "c1"
 
 
+# --- targets[].clinic_name: filled from the live registry when the write-back omits it --------------
+
+def test_handoff_target_clinic_name_filled_from_the_registry_when_write_back_omits_it(client):
+    """pflege-fe review (2026-10-01): a write-back carrying only clinic_id must not leave
+    targets[].clinic_name null when the live board registry (app.data, the same D.clinic() lookup
+    _matched_clinics already joins on above) knows this clinic's name."""
+    phone = "+491706666665"
+    with ST.db() as c:
+        ST.thread(c, phone)
+    _consent(phone)
+    with ST.db() as c:
+        tid = ST.thread_id_for_phone(c, phone)
+    client.post("/api/wa/pro/handoffs", headers=WH,
+               json={"thread_id": tid, "clinic_id": "c1", "status": "sent_to_clinic",
+                     "ts": "2026-09-30T10:00:00+00:00"})
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["handoff"]["targets"][0]["clinic_name"] == "Klinikum Test"
+
+
+def test_handoff_target_clinic_name_from_the_write_back_wins_over_the_registry(client):
+    """The write-back's own name always wins, even when it disagrees with the live registry (Daria
+    may hold a name the board no longer carries)."""
+    phone = "+491706666666"
+    with ST.db() as c:
+        ST.thread(c, phone)
+    _consent(phone)
+    with ST.db() as c:
+        tid = ST.thread_id_for_phone(c, phone)
+    client.post("/api/wa/pro/handoffs", headers=WH,
+               json={"thread_id": tid, "clinic_id": "c1", "clinic_name": "Klinikum Wie Daria Sie Kennt",
+                     "status": "sent_to_clinic", "ts": "2026-09-30T10:00:00+00:00"})
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["handoff"]["targets"][0]["clinic_name"] == "Klinikum Wie Daria Sie Kennt"
+
+
+def test_handoff_target_clinic_name_stays_null_when_neither_source_has_it(client):
+    phone = "+491706666667"
+    with ST.db() as c:
+        ST.thread(c, phone)
+    _consent(phone)
+    with ST.db() as c:
+        tid = ST.thread_id_for_phone(c, phone)
+    client.post("/api/wa/pro/handoffs", headers=WH,
+               json={"thread_id": tid, "clinic_id": "c-unknown-to-the-board", "status": "sent_to_clinic",
+                     "ts": "2026-09-30T10:00:00+00:00"})
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["handoff"]["targets"][0]["clinic_name"] is None
+
+
+# --- ball: a stopped or suppressed thread never reads "us" or "them" --------------------------------
+
+def test_thread_ball_is_silent_for_a_stopped_thread(client):
+    """pflege-fe review (2026-10-01): a STOP thread showed ball "us" (the candidate's STOP is the
+    last message, and it settles nothing in app.wa.luna.reporting.ball_for's own claim-state sense),
+    labelling it "our turn" even though nobody may write to it again on any rail."""
+    phone = "+491706666668"
+    with ST.db() as c:
+        ST.thread(c, phone)
+        ST.record_inbound(c, phone, "wamid.stop.in", "Stopp")
+        t = ST.thread(c, phone)
+        t["stopped"], t["stopped_reason"] = True, ST.STOPPED
+        ST.save_thread(c, t)
+        tid = ST.thread_id_for_phone(c, phone)
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["ball"] == "silent" and row["stopped"] is True
+
+
+def test_thread_ball_is_silent_for_a_suppressed_thread(client):
+    """Suppressed via wa_suppressions (TASK-347) without wa_threads.stopped ever being set -- the
+    cross-rail list is keyed on the human, not the thread, so this is the "stopped" column's own
+    thread-scoped opt-out catching up, not a dupe of the test above."""
+    from app.wa import suppression as SUP
+
+    phone = "+491706666669"
+    with ST.db() as c:
+        ST.thread(c, phone)
+        ST.record_inbound(c, phone, "wamid.supp.in", "Hallo")
+        ST.record_outbound(c, phone, "wamid.supp.out", "Willkommen")
+        tid = ST.thread_id_for_phone(c, phone)
+        SUP.suppress(c, phone, SUP.REASON_STOP, "meta", trigger_text="Stopp (another rail)")
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["ball"] == "silent" and row["stopped"] is False
+    assert row["suppression"] is not None
+
+
 # --- leads endpoint (Daria, TASK-396) --------------------------------------------------------------
 
 def _sales_brain_fixture(path, phone_e164, candidate_id=1, ambiguous=False):
@@ -1025,6 +1130,23 @@ def test_leads_matched_clinics_and_handoffs(client):
     assert row["matched_clinics"] == [{"clinic_id": "c1", "clinic_name": "Klinikum Test",
                                        "town": "Testort", "score": 77}]
     assert row["handoffs"][0]["status"] == "sent_to_clinic"
+
+
+def test_leads_handoffs_clinic_name_also_filled_from_the_registry(client):
+    """Same _clinic_statuses() backfill as the thread-detail targets tests above -- LeadRow.handoffs
+    shares that same function, so the fix is not thread-detail-only."""
+    phone = "+491707777775"
+    with ST.db() as c:
+        ST.thread(c, phone)
+    _consent(phone)
+    with ST.db() as c:
+        tid = ST.thread_id_for_phone(c, phone)
+    client.post("/api/wa/pro/handoffs", headers=WH,
+               json={"thread_id": tid, "clinic_id": "c2", "status": "sent_to_clinic",
+                     "ts": "2026-09-30T10:00:00+00:00"})
+    body = client.get("/api/wa/pro/leads", headers=WH).json()
+    row = body["rows"][0]
+    assert row["handoffs"][0]["clinic_name"] == "Klinikum Zwei"
 
 
 def test_leads_card_values_come_from_the_live_card_not_the_consent_snapshot(client):

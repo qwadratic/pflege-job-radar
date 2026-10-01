@@ -2,7 +2,6 @@
   "autosend": false,
   "brain": "deterministic",
   "bridge_inbound_ready": false,
-  "bridge_phone_number_id": "",
   "bridge_ready": false,
   "checks": {
     "access_token": false,
@@ -14,9 +13,6 @@
     "phone_number_id": false,
     "verify_token": false
   },
-  "graph_api_version": "v25.0",
-  "luna_media_dir": "/home/cursorworker1/wa_luna_media",
-  "luna_media_host": "macmini",
   "meta_scope": "all",
   "outbound_ready": false,
   "rails": {

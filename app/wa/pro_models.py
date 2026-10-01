@@ -218,24 +218,26 @@ class MessagesEnvelope(_Strict):
 # --- GET /api/wa/pro/health -------------------------------------------------------------------------
 
 class HealthResponse(BaseModel):
-    """Proxied unchanged from config.readiness() + rails (same body as the harness's own, public
-    GET /wa/health) -- extra="allow" because readiness()'s key set grows by three (luna_model,
-    luna_ready, refusal_model) only when WA_BRAIN=luna."""
+    """Proxied from config.readiness() + rails, MINUS the infrastructure-leak fields pflege-fe found
+    sitting in a public-repo fixture (graph_api_version, bridge_phone_number_id, luna_media_host,
+    luna_media_dir -- a local home path and a hostname, dropped by the route itself, not merely
+    unlisted here: extra="allow" means an undeclared field would otherwise still pass through
+    unchanged). The harness's own, public GET /wa/health is a DIFFERENT route (app/wa/api.py) that
+    still proxies config.readiness() unchanged -- out of scope, loopback-only, never reaches the
+    board. extra="allow" because readiness()'s key set grows by three (luna_model, luna_ready,
+    refusal_model) only when WA_BRAIN=luna -- none of those three is a path/hostname/username/token,
+    just a model name or a bool, so they are left as-is."""
     model_config = ConfigDict(extra="allow")
     checks: dict[str, bool]
     webhook_ready: bool
     outbound_ready: bool
     autosend: bool
-    graph_api_version: str
     brain: str
     transport: str
     reply_scope: str
     meta_scope: str
     bridge_ready: bool
     bridge_inbound_ready: bool
-    bridge_phone_number_id: str
-    luna_media_host: str
-    luna_media_dir: str
     stt_ready: bool
     stt_model: str
     rails: dict[str, int]

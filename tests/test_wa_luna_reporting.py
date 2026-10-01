@@ -4,6 +4,7 @@ import pytest
 
 from app.wa import config as C
 from app.wa import store as ST
+from app.wa import suppression as SUP
 from app.wa.luna import reporting as REP
 
 
@@ -81,6 +82,51 @@ def test_ball_them_when_the_last_message_is_outbound(db):
     ST.record_inbound(db, "+49123", "wamid.1", "Hallo")
     ST.record_outbound(db, "+49123", "wamid.2", "Willkommen!")
     assert REP.ball_for(db, "+49123") == "them"
+
+
+# --- silent for a stopped or suppressed thread (pflege-fe review, 2026-10-01) -----------------------
+# A STOP thread used to read "us" (the candidate's own STOP is the last message, and it settles
+# nothing in the claim-state sense above) -- labelling it "our turn" even though nobody may write to
+# it again on any rail. Same for a cross-rail suppression (wa_suppressions, TASK-347) that never
+# touched wa_threads.stopped at all.
+
+def test_ball_silent_for_a_stopped_thread_even_when_the_candidate_wrote_last(db):
+    ST.record_inbound(db, "+49123", "wamid.1", "Stopp")
+    t = ST.thread(db, "+49123")
+    t["stopped"], t["stopped_reason"] = True, ST.STOPPED
+    ST.save_thread(db, t)
+    assert REP.ball_for(db, "+49123") == "silent"
+
+
+def test_ball_silent_for_a_stopped_thread_even_when_we_wrote_last(db):
+    ST.record_inbound(db, "+49123", "wamid.1", "Stopp")
+    ST.record_outbound(db, "+49123", "wamid.2", "Alles klar.")
+    t = ST.thread(db, "+49123")
+    t["stopped"], t["stopped_reason"] = True, ST.STOPPED
+    ST.save_thread(db, t)
+    assert REP.ball_for(db, "+49123") == "silent"
+
+
+def test_ball_silent_for_a_suppressed_phone_even_when_the_candidate_wrote_last(db):
+    ST.record_inbound(db, "+49123", "wamid.1", "Hallo")
+    SUP.suppress(db, "+49123", SUP.REASON_STOP, "meta", trigger_text="Stopp (another rail)")
+    assert REP.ball_for(db, "+49123") == "silent"
+
+
+def test_ball_silent_for_a_suppressed_phone_even_when_we_wrote_last(db):
+    ST.record_inbound(db, "+49123", "wamid.1", "Hallo")
+    ST.record_outbound(db, "+49123", "wamid.2", "Willkommen!")
+    SUP.suppress(db, "+49123", SUP.REASON_STOP, "meta", trigger_text="Stopp (another rail)")
+    assert REP.ball_for(db, "+49123") == "silent"
+
+
+def test_ball_none_still_wins_when_a_stopped_thread_has_no_messages_at_all(db):
+    """"none" (no messages at all) is checked first -- more specific than "silent", and the only one
+    of the two actually possible before any message exists."""
+    t = ST.thread(db, "+49123")
+    t["stopped"] = True
+    ST.save_thread(db, t)
+    assert REP.ball_for(db, "+49123") == "none"
 
 
 def test_report_row_is_none_for_a_phone_with_no_thread_and_creates_nothing(db):
