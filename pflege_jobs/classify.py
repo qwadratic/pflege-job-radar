@@ -50,6 +50,18 @@ _SPECULATIVE_APPLICATION_RX = re.compile(r"^\s*(initiativbewerbung(?:en)?|blitzb
 
 _JOB_URL_HOST_RX = re.compile(r"^https?://([^/]+)", re.I)
 
+# TASK-177: a "-pfleg-" word that itself contains a nicht_pflege term IS that non-nursing occupation --
+# Heilerziehungspfleger, Kinderpflegerin, Landschaftspfleger, Tierpfleger, Raumpfleger (Ivan, 2026-09-29).
+# strong_pflege's generic "pfleger\b|pflegerin\b|pflegerisch" matched inside exactly those words, so their
+# own nicht_pflege hit was always overridden (and _ROLES' "pfleger\b" filed them as pflegefachkraft).
+# Such a word, with an elided partner ("Heilerziehungspflegerinnen und -pfleger"), is not nursing
+# evidence for the strong_pflege check or the _ROLES loop; the nicht_pflege check itself still sees it.
+_PFLEG_WORD_RX = re.compile(r"\w*pfleg\w*(?:\s*(?:und|oder|/)\s*-\w+)?")
+
+
+def _drop_nicht_pfleg_words(s):
+    return _PFLEG_WORD_RX.sub(lambda m: " " if _NICHT.search(m.group(0)) else m.group(0), s)
+
 # TASK-142: a tariff name immediately preceded/followed by one of these phrases is being used as a
 # comparison benchmark ("angelehnt an TVöD", "TVöD angelehnt", "über dem Tarif der TVöD-K"), not stated
 # as the posting's own applied tariff -- see enrich_description()'s _TARIFF selection below.
@@ -154,7 +166,8 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
         für DRG/PEPP") even inside a confirmed "Pflege, Patientenmanagement & Dokumentation"/
         "Pflegedienst" bucket -- both HR groupings that also carry MFAs, Kodierfachkräfte,
         Physiotherapeuten etc. Leaving step 2 active is what keeps those correctly excluded even
-        though step 1 no longer blocks them on the way in.
+        though step 1 no longer blocks them on the way in. A strong token only counts outside a
+        "-pfleg-" word that is itself a nicht_pflege term (TASK-177, _drop_nicht_pfleg_words).
       - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
         detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
 
@@ -170,12 +183,13 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
     if not _PFLEGE.search(s):                      # gate first: Ausbildung Elektroniker is not nursing
         if not nursing_section_confirmed:
             return "nicht_pflege", "no_pflege_token"
-    if _NICHT.search(s) and not _STRONG_T.search(norm_text(title)):
+    if _NICHT.search(s) and not _STRONG_T.search(_drop_nicht_pfleg_words(norm_text(title))):
         return "nicht_pflege", f"nicht_pflege:{_NICHT.search(s).group(0)}"
     if offer_kind == "AUSBILDUNG":
         return "ausbildung", "offer_kind:AUSBILDUNG"
     if offer_kind == "PRAKTIKUM_TRAINEE":
         return "werkstudent_praktikum", "offer_kind:PRAKTIKUM_TRAINEE"
+    s = _drop_nicht_pfleg_words(s)
     for name, r in _ROLES:
         m = r.search(s)
         if m:

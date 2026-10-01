@@ -93,7 +93,7 @@ Schema (columns, indexes, the RLS-off note, retention policy for the guarded pur
 |---|---|
 | `pflege_jobs/patterns.json` | every regex: employer class, role class, department, qualification, enrichment, CV skills. Editable in Settings; `config.reload()` |
 | `data/registry/taxonomy.json` | code → label for Fachrichtungen, Versorgungsstufe, Trägerart, status, size buckets, ats_type |
-| `data/registry/clinics.csv` | the register as CSV (regenerable from the PDF) |
+| `tools/registry_build.py` | the register is the `clinics` table; this parses its sources (Krankenhausplan PDF, RHV XLSX, Diakoneo list), reports every DB deviation as explained by `pflege_jobs.corrections` or not, and proposes changes for `tools/apply_clinic_corrections.py` |
 | `data/app.sqlite` | backend state: scrape runs + logs, schedules (cron / presets, targets, on/off), career profiles, Firecrawl usage |
 | `pflege_jobs/mechanics.py` | registry of the ten rule mechanics (employer_class, role_class, qualification, department, enrichment, dedupe_key, clinic_link, bavaria_filter, verify_title, cv_profile): explanation, source, patterns section, try-it, one test file each (`tests/test_mech_<id>.py`) — rendered in Settings |
 
@@ -156,7 +156,7 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 | helix | yes | `/joblist` HTML |
 | dvinci | yes | public GET `<tenant>.dvinci-easy.com/jobPublication/list.json` |
 | self_hosted | yes | no vendor fingerprint (47 sites) — routed through the generic `crawl_wp_jobs` reader, same as unlabelled boards |
-| coveto | no | discovery labelled it, no adapter yet (1 site) — Firecrawl agent fallback |
+| coveto | yes | `<tenant>.coveto.de/public/jobs/` server-rendered list, `?page=N` paging, JobPosting detail pages — read by the generic `crawl_wp_jobs` |
 | `""` (unknown) | — | ~113 sites; discovery / Firecrawl "refetch career" |
 
 ## Freshness & proof

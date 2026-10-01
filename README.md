@@ -34,7 +34,7 @@ sql/                schema + migrations
 edge/               Supabase ingest function
 docs/               concise docs + ontology.json (rendered in the app)
 skill/              agent skill (Claude skill format), served at /skill/
-data/registry/      clinics.csv, taxonomy.json, seeds
+data/registry/      primary sources (Krankenhausplan PDFs, RHV XLSX, Diakoneo list), taxonomy.json, seeds -- the registry itself is the clinics table
 tests/              no network; one file per mechanic (tests/test_mech_<id>.py)
 ```
 

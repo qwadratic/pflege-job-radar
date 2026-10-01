@@ -24,7 +24,9 @@ from datetime import datetime, timezone
 import requests
 
 from .classify import norm_text
+from .user_agent import ua_override
 
+# Default only: a host in user_agent.UA_OVERRIDE gets the same UA the crawler sends it (TASK-173).
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 GONE_MARKERS = re.compile(r"nicht mehr verfügbar|nicht mehr online|nicht gefunden|stelle wurde bereits besetzt|"
                           r"job is no longer|no longer available|position has been filled|page not found|"
@@ -33,6 +35,11 @@ GONE_MARKERS = re.compile(r"nicht mehr verfügbar|nicht mehr online|nicht gefund
                           # on a host where a stray "404" is present on nearly every page) -- only a
                           # real "error 404"/"404 ... not found/Fehler/Seite" phrase counts.
                           r"error\s*404\b|404\s*(?:[-–:]\s*)?(?:not\s*found|fehler|seite)", re.I)
+# A gone-marker counts only in text a reader sees: script/style blocks (one the 400 KB slice cut open
+# included) and markup are dropped first. The Next.js job pages on *.mutter-kind.de ship their site's
+# not-found boundary ("Die Seite wurde leider nicht gefunden.") in the RSC <script> of every LIVE page,
+# which expired live postings 15113/15114/15314 (TASK-176, 2026-09-29); a dead one there answers 404.
+_NOT_VISIBLE = re.compile(r"<(script|style)\b[^>]*>.*?(?:</\1\s*>|\Z)", re.S | re.I)
 # A bot wall answers 200 with its own refusal page. Without this it lands in the 'error: 200 but title
 # not found' bucket and reads like a broken adapter, when the honest verdict is "we were refused"
 # (confirmed live 2026-09-16: every www.helios-gesundheit.de posting -- 556 rows, the biggest single
@@ -64,7 +71,11 @@ def decide(status_code, body, title, exc_name=None):
         return "blocked", status_code, None
     if status_code >= 500 or status_code != 200:
         return "error", status_code, None
-    body = norm_text((body or "")[:400000])
+    raw = (body or "")[:400000]
+    # Wall and title-token checks keep the whole page: a wall is fingerprinted by its markup, and many
+    # boards carry the posting title only in a JSON-LD <script>.
+    body = norm_text(raw)
+    visible = norm_text(re.sub(r"<[^>]+>", " ", _NOT_VISIBLE.sub(" ", raw)))
     if WALL_MARKERS.search(body[:4000]):
         return "blocked", 200, "bot wall (200 with a refusal page)"
     toks = _title_tokens(title)
@@ -76,11 +87,11 @@ def decide(status_code, body, title, exc_name=None):
         # open postings on verify_status='error' since no escalation rung can ever change a title
         # that has no token to begin with). Checking GONE_MARKERS here even with toks=[] is the
         # fix: a page that says the posting is gone still says so with zero title tokens.
-        if GONE_MARKERS.search(body):
+        if GONE_MARKERS.search(visible):
             return "gone", 200, "200, no title token to confirm, but a gone-marker matched"
         return "live", 200, "200, no title token to confirm, no gone-marker either"
     hit = sum(1 for t in toks if t in body)
-    if hit == 0 and GONE_MARKERS.search(body):
+    if hit == 0 and GONE_MARKERS.search(visible):
         return "gone", 200, "200 but title missing + gone marker"
     if hit == 0:
         return "error", 200, "200 but title not found (JS-rendered or list page)"
@@ -89,7 +100,7 @@ def decide(status_code, body, title, exc_name=None):
 
 def verify_url(session, url, title):
     try:
-        r = session.get(url, headers={"User-Agent": UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"}, timeout=40, allow_redirects=True)
+        r = session.get(url, headers={"User-Agent": ua_override(url) or UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"}, timeout=40, allow_redirects=True)
     except requests.RequestException as e:
         return decide(None, None, title, exc_name=type(e).__name__)
     return decide(r.status_code, r.text, title)
@@ -417,7 +428,7 @@ def verify_one(session, url, title, rungs=("http", "render"), towns=None):
     if "http" in rungs and not forced:
         method = "http"
         try:
-            r = session.get(url, headers={"User-Agent": UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"},
+            r = session.get(url, headers={"User-Agent": ua_override(url) or UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.8"},
                             timeout=40, allow_redirects=True)
             code, out["final_url"] = r.status_code, r.url
             if IS_PDF.search(url or "") or "application/pdf" in (r.headers.get("content-type") or "").lower():

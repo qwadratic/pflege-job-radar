@@ -34,6 +34,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app import config as A  # noqa: E402
 from pflege_jobs.classify import employer_norm, norm_text  # noqa: E402
 from pflege_jobs.sources.career_crawl import in_bavaria  # noqa: E402
 from pflege_jobs.verify import TRUSTED_LOC, VERIFY_FIELDS, _placeable, verify_all, verify_one  # noqa: E402
@@ -67,9 +68,8 @@ def _save(name, obj):
 
 
 def towns():
-    import csv
-    p = Path(__file__).resolve().parent.parent / "data" / "registry" / "clinics.csv"
-    return {norm_text(r["town"]) for r in csv.DictReader(p.open(encoding="utf-8")) if r.get("town")}
+    """The registry's towns -- the live clinics table, the same town list cmd_inbox places cities with."""
+    return {norm_text(r["town"]) for r in A.rest_get_all("clinics", {"select": "town", "order": "clinic_id"}) if r.get("town")}
 
 
 # --- phases ---------------------------------------------------------------------------------------

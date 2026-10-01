@@ -85,8 +85,8 @@ Chromium against `/?mock=1`: with `img-src 'self' data:` every clinic mark fell 
 mock board renders **zero** clinic marks, so that run measured a page with nothing to block.
 
 **What the header actually does.** `clinicPhoto()` builds its candidates from the stored
-`clinics.website || careers_url` (`web/index.template.html:376`, `web/pro.template.html:664`). In
-`data/registry/clinics.csv`: **161 of 407** rows have an `http://` website, 139 `https://`, 107 empty — so
+`clinics.website || careers_url` (`web/index.template.html:376`, `web/pro.template.html:664`). In the
+registry (then `data/registry/clinics.csv`): **161 of 407** rows have an `http://` website, 139 `https://`, 107 empty — so
 for 161 clinics every candidate URL is `http://` and `img-src … https:` refuses it **before the request
 leaves the browser**.
 

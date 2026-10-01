@@ -1,6 +1,9 @@
-"""P&I LOGA bewerber-web (GWT) adapter -- used by Helios (pi-asp.de) and Sana Oberfranken/Regiomed
-(logaallin.regiomed-kliniken.de). Seed: {name, host, companyEid, sites: {regex-on-title-or-city:
-{kez, town}}, default: {kez, town}}
+"""P&I LOGA bewerber-web (GWT) adapter -- used by Helios (pi-asp.de), Sana Oberfranken/Regiomed
+(logaallin.regiomed-kliniken.de), BRK München and Klinikum Ingolstadt (wirkzvin.pi-asp.de). Seed:
+{name, host, companyEid, param?, pin_line?, default: {kez, town, plz?, employer?},
+sites: {regex-on-"title pin-line": {kez, town, plz?, employer?}}}. A site with "kez": null is a unit
+the board lists that is no registry site; "pin_line": "unit" says the pin line names an org unit,
+not a town (both TASK-178, see crawl()).
 
 Live re-verification 2026-09-10 (TASK-39), each finding reproduced directly against the real boards:
 
@@ -43,8 +46,10 @@ from .. import config as C
 from .career_crawl import UA, _strip
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
-GM = re.compile(r"\((?:m|w|d)/(?:m|w|d)/(?:m|w|d)\)", re.I)
 _DATE_RX = re.compile(r"^(\d{4})/(\d{1,2})/(\d{1,2})$")
+# Each posting's title label (tr[0] of its <tbody>). One selector for both the list read and the
+# click targets in crawl(), so list row i is click target i by construction.
+TITLE_LABEL = "tbody > tr:first-child > td > div.LG-Label"
 
 
 def _parse_pi_date(raw):
@@ -54,31 +59,25 @@ def _parse_pi_date(raw):
 
 def _list_rows(pg):
     """Title/department-line/city/date for every posting, straight from the rendered list -- see
-    module docstring. One <tbody> per posting: tr[0]=title, tr[1]=dept line, tr[2]=pin(+cal) line."""
-    return pg.evaluate(r"""() => {
-        const marker = /\((m|w|d)\/(m|w|d)\/(m|w|d)\)/i;
-        const labels = Array.from(document.querySelectorAll('.LG-Label.col-style'));
-        const seen = new Set(); const out = [];
-        for (const el of labels) {
-            const tb = el.closest('tbody');
-            if (!tb || seen.has(tb)) continue;
-            seen.add(tb);
-            const trs = Array.from(tb.children);
-            const title = trs[0] ? trs[0].innerText.trim() : '';
-            if (!marker.test(title)) continue;
-            const dept = trs[1] ? trs[1].innerText.trim() : null;
-            const locRow = trs[2] || null;
-            let city = null, date = null;
-            if (locRow) {
-                const pin = locRow.querySelector('[data-uin="ic-pinlocation"]');
-                const cal = locRow.querySelector('[data-uin="ic-calendaralt"]');
-                if (pin && pin.closest('.items')) city = (pin.closest('.items').querySelector('.LG-Label') || {}).innerText || null;
-                if (cal && cal.closest('.items')) date = (cal.closest('.items').querySelector('.LG-Label') || {}).innerText || null;
-            }
-            out.push({title, dept, city, date});
+    module docstring. One <tbody> per posting: tr[0]=title, tr[1]=dept line, tr[2]=pin(+cal) line.
+
+    Every such row is read. TASK-178: a "(m/w/d) in the title" test here skipped rows as if they
+    were not postings -- 38 of the 65 on the Klinikum Ingolstadt board (Flexpool, Famulatur,
+    Hospitation, Praktisches Jahr, ...) and 3 of 18 on BRK München. On all 6 seeded boards every
+    such <tbody> sits in the vendor's own clickable posting row (div.B3-Web-Responsive-Row,
+    role=button): 255 rows, no non-posting one (live 2026-09-29)."""
+    return pg.evaluate(r"""(sel) => Array.from(document.querySelectorAll(sel)).map(el => {
+        const trs = Array.from(el.closest('tbody').children);
+        const locRow = trs[2] || null;
+        let city = null, date = null;
+        if (locRow) {
+            const pin = locRow.querySelector('[data-uin="ic-pinlocation"]');
+            const cal = locRow.querySelector('[data-uin="ic-calendaralt"]');
+            if (pin && pin.closest('.items')) city = (pin.closest('.items').querySelector('.LG-Label') || {}).innerText || null;
+            if (cal && cal.closest('.items')) date = (cal.closest('.items').querySelector('.LG-Label') || {}).innerText || null;
         }
-        return out;
-    }""")
+        return {title: trs[0].innerText.trim(), dept: trs[1] ? trs[1].innerText.trim() : null, city, date};
+    })""", TITLE_LABEL)
 
 
 def crawl(seed, towns, log=print):
@@ -101,7 +100,7 @@ def crawl(seed, towns, log=print):
         save(url, pg.url, pg.content(), 200, "text/html")
         meta = _list_rows(pg)
         stats["listed"] = len(meta)
-        clickable = pg.locator("tbody > tr:first-child > td > div.LG-Label").filter(has_text=GM)
+        clickable = pg.locator(TITLE_LABEL)
         dead_streak = 0
         for i, m in enumerate(meta):
             title = m["title"]
@@ -123,7 +122,7 @@ def crawl(seed, towns, log=print):
                         pg.go_back(); pg.wait_for_timeout(1200)  # only real navigations push history
                         try: pg.wait_for_load_state("networkidle", timeout=6000)
                         except Exception: pass
-                        clickable = pg.locator("tbody > tr:first-child > td > div.LG-Label").filter(has_text=GM)
+                        clickable = pg.locator(TITLE_LABEL)
                     else:
                         dead_streak += 1
                         if dead_streak == 3:
@@ -137,7 +136,11 @@ def crawl(seed, towns, log=print):
             for rx, s in (seed.get("sites") or {}).items():
                 if re.search(rx, title + " " + (m["city"] or ""), re.I): site = s; break
             emp = site.get("employer") or seed["name"]
-            city = m["city"].split(",")[0].strip() if m["city"] else site.get("town")
+            # TASK-178: wirkzvin.pi-asp.de (Klinikum Ingolstadt) puts the org unit behind the pin icon
+            # ("Zentral OP PO40", "Alten- und Pflegeheim"), never a town -- its seed says so with
+            # "pin_line": "unit": the town comes from the seed site, the unit stays in the payload.
+            unit, pin = (m["city"], None) if seed.get("pin_line") == "unit" else (None, m["city"])
+            city = pin.split(",")[0].strip() if pin else site.get("town")
             plz = site.get("plz")
             desc = _strip(body)[:20000] if body else None
             role, rule = classify_role(title, "")
@@ -159,8 +162,12 @@ def crawl(seed, towns, log=print):
                 "first_published": _parse_pi_date(m["date"]), "last_modified": None, "valid_until": None, "external_url": ref, "description": desc, **enr,
                 "details_fetched_at": now if desc else None, "details_error": None,
                 "fuzzy_key": fuzzy_key(title, emp, city), "content_hash": content_hash(title, emp, city, (desc or "")[:200]),
-                "payload": json.dumps({"crawl": {"seed": url, "kez": site.get("kez"), "parse": "pi_asp_browser"}, "pi": {"companyEid": seed["companyEid"], "position_id": pid}}, ensure_ascii=False),
+                "payload": json.dumps({"crawl": {"seed": url, "kez": site.get("kez"), "parse": "pi_asp_browser"}, "pi": {"companyEid": seed["companyEid"], "position_id": pid, "unit": unit}}, ensure_ascii=False),
                 "_kez": site.get("kez"),
+                # A seed site with "kez": null is no registry site (TASK-178: Alten- und Pflegeheim Klinikum
+                # Ingolstadt GmbH): an empty board pool, so the drain's board fallback cannot file its
+                # postings under the board's only clinic. app/crawl.py keeps an adapter's own pool.
+                **({} if site.get("kez") else {"_board": []}),
             })
             stats["pflege"] += 1
         b.close()

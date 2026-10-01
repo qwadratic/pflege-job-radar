@@ -5,13 +5,20 @@ live rows, merging changed fields, pushing via EdgeSink, reading back to verify.
 time -- only the corrections differ. This tool takes the corrections as a JSON file instead of a new
 .py file per task.
 
-Corrections file shape: {"<clinic_id>": {"<field>": <new_value>, ...}, ...} -- any subset of
-pflege_jobs.schema.CLINIC_SPEC's columns per clinic; every other column is preserved from the live
-row untouched.
+Corrections file shape:
+  {"<clinic_id>": {"<field>": <new_value>, ...,
+                   "_why": {"code": "<reason code>", "reason": "...",
+                            "evidence": ["url + what it showed + date", ...], "task": "TASK-n"}}}
+Fields are any subset of pflege_jobs.schema.CLINIC_SPEC's columns; every other column is preserved from
+the live row. `_insert: true` adds a clinic that is not in the DB yet (refused if it already is); its
+correction row has field '*' and the whole new row as its value. `_why` is required for every clinic,
+its code one of pflege_jobs.correction_reasons for clinics: each verified field change is recorded in
+pflege_jobs.corrections (tools/ledger.py) with its old and new value, so the DB's deviations from the
+primary sources stay explainable.
 
   set -a; source .env; set +a
   .venv/bin/python tools/apply_clinic_corrections.py corrections.json --dry-run
-  .venv/bin/python tools/apply_clinic_corrections.py corrections.json --push
+  .venv/bin/python tools/apply_clinic_corrections.py corrections.json --push --by "<who>"
 """
 import argparse
 import datetime
@@ -23,10 +30,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import config as A                # noqa: E402
 from pflege_jobs.schema import CLINIC_SPEC  # noqa: E402
 from pflege_jobs.sinks import EdgeSink      # noqa: E402
+from tools import ledger as L               # noqa: E402
 
 
-def load_corrections(path):
-    return json.load(open(path, encoding="utf-8"))
+def load_corrections(path, codes):
+    """-> ({clinic_id: {field: value}}, {clinic_id: why}, {inserted clinic_ids}); stops on any clinic
+    without a complete _why."""
+    raw = json.load(open(path, encoding="utf-8"))
+    changes, whys, inserts = {}, {}, set()
+    for cid, entry in raw.items():
+        entry = dict(entry)
+        whys[cid] = L.require_why(entry.pop("_why", None), f"clinic {cid}", codes)
+        if entry.pop("_insert", False):
+            inserts.add(cid)
+        unknown = set(entry) - {col for col, _ in CLINIC_SPEC}
+        if unknown:
+            raise SystemExit(f"clinic {cid}: not clinic columns: {sorted(unknown)}")
+        changes[cid] = entry
+    return changes, whys, inserts
 
 
 def fetch_live(clinic_ids):
@@ -50,49 +71,72 @@ def merged_row(live_row, changes):
 
 
 def diff_lines(clinic_id, live_row, changes):
-    return [f"  {clinic_id} {str(live_row.get('name'))[:34]:34} {col} {live_row.get(col)!r} -> {new!r}"
+    return [f"  {clinic_id} {str(live_row.get('name') or changes.get('name'))[:34]:34} {col} {live_row.get(col)!r} -> {new!r}"
             for col, new in changes.items()]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("corrections", help="JSON file: {clinic_id: {field: value, ...}, ...}")
+    ap.add_argument("corrections", help="JSON file: {clinic_id: {field: value, ..., _why: {...}}, ...}")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--push", action="store_true")
+    ap.add_argument("--by", help="who makes the change (required with --push), e.g. 'claude session 663542db'")
     a = ap.parse_args()
+    if a.push and not (a.by or "").strip():
+        sys.exit("--push needs --by: pflege_jobs.corrections records who made the change")
 
-    corrections = load_corrections(a.corrections)
+    conn = L.connect()
+    corrections, whys, inserts = load_corrections(a.corrections, L.reason_codes("clinics", conn))
     ids = sorted(corrections)
     live_by_id = fetch_live(ids)
-    missing = [i for i in ids if i not in live_by_id]
+    missing = [i for i in ids if i not in live_by_id and i not in inserts]
     if missing:
         sys.exit(f"{len(missing)} clinic_id(s) not found live: {missing}")
+    present = sorted(inserts & set(live_by_id))
+    if present:
+        sys.exit(f"_insert for clinic(s) already live: {present}")
+    for cid in inserts:
+        corrections[cid]["clinic_id"] = cid
 
     for cid in ids:
-        for line in diff_lines(cid, live_by_id[cid], corrections[cid]):
+        for line in diff_lines(cid, live_by_id.get(cid, {}), corrections[cid]):
             print(line)
+        print(f"      why ({whys[cid]['code']}, {whys[cid]['task']}): {whys[cid]['reason'][:110]}")
 
     if not a.push:
-        print("\n--dry-run (pass --push to write)" if not a.dry_run else "\n--dry-run: nothing written")
+        print("\n--dry-run (pass --push --by <who> to write)" if not a.dry_run else "\n--dry-run: nothing written")
         return
 
     tag = os.path.splitext(os.path.basename(a.corrections))[0]
     path = backup(live_by_id, tag)
     print(f"backup: {path}")
 
-    rows = [merged_row(live_by_id[cid], corrections[cid]) for cid in ids]
+    rows = [merged_row(live_by_id.get(cid, {}), corrections[cid]) for cid in ids]
     n = EdgeSink().write_clinics(rows)
     print(f"rows written: {n}")
 
     back = fetch_live(ids)
-    ok = True
+    ok, at, lines = True, L.now(), []
     for cid in ids:
         row = back.get(cid, {})
         good = all(row.get(col) == new for col, new in corrections[cid].items())
         ok &= good
         print(f"  {'OK ' if good else 'NO '} {cid} " +
               ", ".join(f"{col}={row.get(col)!r}" for col in corrections[cid]))
+        if good and cid in inserts:
+            lines += L.entries("clinics", cid, {}, {"*": merged_row({}, corrections[cid])}, whys[cid], a.by.strip(), at, backup=path)
+        elif good:
+            lines += L.entries("clinics", cid, live_by_id[cid], corrections[cid], whys[cid], a.by.strip(), at, backup=path)
+    try:
+        print(f"corrections: {L.record(lines, conn)} row(s) -> pflege_jobs.corrections")
+    except Exception:
+        # the data change is already live: keep its reasons so they can be recorded by hand
+        json.dump(lines, open(path + ".corrections.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        print(f"NOT RECORDED -- correction rows saved to {path}.corrections.json", file=sys.stderr)
+        raise
     print("result:", f"all {len(ids)} row(s) applied" if ok else "NOT ALL APPLIED, see above")
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ class _FakeSink:
         return {k: len(v) for k, v in body.items()}
 
 
+REGISTRY_TOWNS = [{"town": "München"}, {"town": "Nürnberg"}, {"town": None}]   # rows of the clinics table
+
+
 def _seed(tmp_path, **files):
     for name, obj in files.items():
         (tmp_path / f"{name}.json").write_text(json.dumps(obj, ensure_ascii=False))
@@ -46,6 +49,7 @@ def _seed(tmp_path, **files):
 # --- AC1: towns=towns() must reach verify_all/verify_one, or _placeable() never rejects page furniture
 def test_cmd_verify_passes_towns_so_placeability_is_enforced(tmp_path, monkeypatch):
     monkeypatch.setattr(rc, "STATE", tmp_path)
+    monkeypatch.setattr(rc.A, "rest_get_all", lambda path, params=None, **kw: REGISTRY_TOWNS if path == "clinics" else [])
     _seed(tmp_path, postings=[{"posting_id": 1, "external_url": "https://x.de/job/1", "title": "Pflegefachkraft"}])
     captured = {}
 
@@ -58,13 +62,14 @@ def test_cmd_verify_passes_towns_so_placeability_is_enforced(tmp_path, monkeypat
     rc.cmd_verify(argparse.Namespace(limit=0, workers=3, no_render=True, restart=True))
 
     assert captured.get("towns") == rc.towns()
-    assert "münchen" in captured["towns"]   # towns() actually loaded the real registry, not an empty/None placeholder
+    assert "münchen" in captured["towns"]   # towns() actually loaded the registry (clinics table), not an empty/None placeholder
 
 
 # --- AC1 + AC5: cmd_firecrawl must pass towns= AND must not KeyError on an id verified.json has that
 # postings.json (fetched in an earlier/later generation) no longer carries.
 def test_cmd_firecrawl_drops_stale_ids_and_passes_towns(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rc, "STATE", tmp_path)
+    monkeypatch.setattr(rc.A, "rest_get_all", lambda path, params=None, **kw: REGISTRY_TOWNS if path == "clinics" else [])
     _seed(tmp_path,
           postings=[{"posting_id": 1, "external_url": "https://x.de/job/1", "title": "Pflegefachkraft"}],
           verified=[{"posting_id": 1, "verify_status": "blocked", "verify_http": 403, "verify_note": "wall",
@@ -129,6 +134,9 @@ def test_cmd_relink_routes_through_matcher_ladder(tmp_path, monkeypatch):
             return _Resp(CLINICS)
         raise AssertionError(f"unexpected GET {u}")
     monkeypatch.setattr(requests, "get", fake_get)
+    # towns() = the registry's town list (placeability); Wolfratshausen is a registry town with no clinic here
+    monkeypatch.setattr(rc.A, "rest_get_all", lambda path, params=None, **kw: [{"town": c["town"]} for c in CLINICS]
+                        + [{"town": "Wolfratshausen"}] if path == "clinics" else [])
     _FakeSink.posted = []
     monkeypatch.setattr("pflege_jobs.sinks.EdgeSink", _FakeSink)
 

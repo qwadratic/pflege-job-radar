@@ -2,7 +2,7 @@
 Sources are hospital career sites only (employer_ats 20, firecrawl_agent 25); crawlers write inbox rows.
 
   python -m pflege_jobs.cli inbox                                                   # inbox rows -> observations (+ KeZ link, verify=live)
-  python -m pflege_jobs.cli link-clinics                                            # registry push + posting -> KeZ links
+  python -m pflege_jobs.cli link-clinics                                            # posting -> KeZ links (live clinics table)
   python -m pflege_jobs.cli link-cross                                              # merge the same job seen twice (url variants, title similarity)
   python -m pflege_jobs.cli verify --workers 6                                      # web-liveness check of all open postings
   python -m pflege_jobs.cli load  --inp data/obs.json --sink csv|sql|edge [--no-resolve]   # load a json {"observations":[...]} dump
@@ -88,15 +88,18 @@ def cmd_verify(a):
 
 
 def cmd_link_clinics(a):
-    """Load registry CSV (Krankenhausplan) and link postings to sites; pushes clinics + clinic_links via ingest."""
-    import csv, requests as rq
-    from .registry import link_postings, merge_discovered
+    """Link postings to sites against the live clinics table and push clinic_links via ingest.
+
+    The registry is the clinics table itself (TASK-175): this used to load data/registry/clinics.csv and
+    push every row of it back into the table first, which reverted any fix made in the DB since the CSV
+    was last written. Registry changes go through tools/apply_clinic_corrections.py (tools/registry_build.py
+    proposes them from the sources); nothing here writes clinics."""
+    import requests as rq
+    from .registry import link_postings
     from .sinks import EdgeSink
-    clinics = list(csv.DictReader(open(a.csv, encoding="utf-8")))
-    for c in clinics:
-        for k in ("beds", "day_places"): c[k] = int(c[k]) if c.get(k) not in (None, "") else None
     url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
     H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
+    clinics = _live_clinics(url, H)
     rows, off = [], 0
     while True:
         # Read the base tables, not v_postings: the view adds a per-row "most authoritative source_url"
@@ -118,28 +121,10 @@ def cmd_link_clinics(a):
     if a.dry_run:
         json.dump(links, open(a.out, "w")); return
     sink = EdgeSink(batch=400)
-    # `ats_type` / `careers_url` are discovered asynchronously (crawlers/ats_discover2.py) and also
-    # live in this CSV. The edge upsert assigns every column it receives, and a column that is simply
-    # *omitted* still arrives as NULL from json_to_recordset -- so omitting them (the previous guard)
-    # erased the discovered labels just as surely as sending blanks did. Send the CSV value when we
-    # have one, else whatever is already in the DB, so a registry push is never lossy.
-    # (The deployed edge function still lacks the coalesce fix; see PLAN.md item 1.)
-    try:
-        live = _rows(rq.get(f"{url}/rest/v1/clinics?select=clinic_id,ats_type,careers_url&limit=2000",
-                            headers=H, timeout=60), "clinics")
-    except Exception as e:
-        live = []
-        print(f"  warning: could not read current ATS labels ({e}); sending CSV values as-is")
-    merge_discovered(clinics, live)
-    # TASK-86 review finding #2: this registry push is a real production write of careers_url (the
-    # CSV can still carry a known job-detail-page URL a human hasn't corrected yet -- lint_csv flags
-    # it), so it must go through the same sanctioned gate as career_discover_exa.py's and this file's
-    # own ats-probe write-back, not straight through sink._post.
-    n = sink.write_clinics([{k: v for k, v in c.items() if not k.startswith("_")} for c in clinics])
     m = 0
     for i in range(0, len(links), 400):
         m += sink._post({"clinic_links": links[i:i+400]}).get("clinic_links", 0)
-    print(f"pushed clinics {n}, links {m}")
+    print(f"pushed links {m}")
 
 
 CANON = [
@@ -413,20 +398,41 @@ def lookup_posting_ids(get, url, H, observations, chunk=50, log=print):
     return ids
 
 
-def _drain_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None):
+def manual_posting_ids(get, url, H, posting_ids, chunk=200):
+    """Which of posting_ids currently carry clinic_match_rule='manual' live.
+
+    registry.py's own contract: manual overrides are "untouched by re-runs". cmd_link_clinics already
+    honors this by filtering its input rows before matching -- but a live crawl's inbox processing
+    (_process_rows) re-matches every re-observed posting unconditionally and has no such check, so a
+    re-crawl of an already-corrected clinic silently overwrote the override (2026-09-28, clinic
+    56404/56406). Checked here, right before the clinic_links push, since that's the one place both
+    paths converge and a posting_id is finally known.
+    """
+    manual = set()
+    ids = sorted(set(posting_ids))
+    for i in range(0, len(ids), chunk):
+        batch = ids[i:i + chunk]
+        q = ",".join(str(x) for x in batch)
+        resp = get(f"{url}/rest/v1/postings", params={"select": "posting_id", "posting_id": f"in.({q})",
+                                                        "clinic_match_rule": "eq.manual"}, headers=H, timeout=120)
+        manual.update(x["posting_id"] for x in _rows(resp, "postings manual check"))
+    return manual
+
+
+def _drain_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None):
     """Fetch and process one page (<=1000 rows) of the Postgres inbox queue -- the queue for
     producers that hold only the anon key (web/collect.html, POST /api/ingest, the Firecrawl
     webhook). The crawler's own rows go through the local queue below. Returns rows read."""
     import requests as rq
     rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
-    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres", resolve=resolve, stats=stats, link_candidates=link_candidates)
+    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools)
 
 
-def _drain_local_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None):
+def _drain_local_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None):
     """Same processing over one page of the local SQLite queue (pflege_jobs.inbox_db), where the
     crawler now puts every row it finds, unfiltered. Returns rows read."""
     rows = IB.pending(1000, path=a.inbox_db)
-    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite", resolve=resolve, stats=stats, link_candidates=link_candidates)
+    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools)
 
 
 def _ack_postgres(acks):
@@ -454,7 +460,15 @@ def _city_inherited(o):
     return False
 
 
-def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=True, stats=None, link_candidates=None):
+def _pooled(board, key, pools):
+    """This copy's own board pool widened by every other queued copy's (inbox_db.pending_board_pools,
+    TASK-166): the same posting served by several boards may belong to any of their clinics."""
+    if not pools or key not in pools:
+        return board
+    return sorted(pools[key] | {str(x) for x in (board or [])})
+
+
+def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=True, stats=None, link_candidates=None, pools=None):
     """One page of queued rows -> observations in Postgres. This is where filtering, matching and
     conversion happen for every queue: the crawler stores raw rows and nothing else decides what is
     kept, so a rule change can be replayed over the stored rows (inbox_db.reset).
@@ -484,7 +498,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o["employer_name"], o["city"], board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
+            mt = m.match(o["employer_name"], o["city"], board=_pooled(o.pop("_board", None), o["source_ref"], pools), employer_inherited=o.pop("_emp_inherited", False),
                         city_inherited=_city_inherited(o), description=o.get("description"))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
@@ -502,13 +516,16 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o.get('role_class')} (not an experienced nursing role)"}); continue
             if o.get("in_bavaria") is False:
                 ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o.get("employer_name"), o.get("city"), board=o.pop("_board", None), employer_inherited=o.pop("_emp_inherited", False),
+            mt = m.match(o.get("employer_name"), o.get("city"), board=_pooled(o.pop("_board", None), o.get("source_ref"), pools), employer_inherited=o.pop("_emp_inherited", False),
                         city_inherited=_city_inherited(o), description=o.get("description"))
-            # Unlike the jobposting branch, a seed can already carry its own _kez (e.g. a
-            # bavaria_only_operator seed) -- keep it when the registry match itself finds nothing,
-            # same as app/crawl.py's retired _load_observations did.
-            o["_kez"] = (mt[0] if mt else None) or o.get("_kez")
-            o["_rule"] = (mt[1] if mt else None) or ("seed_kez" if o.get("_kez") else None)
+            # A seed's own preset _kez is NOT a fallback for a refused match (TASK-166): with the
+            # board pool passed above, the Matcher only returns None here when the posting's own
+            # city names a town no board clinic is in, or the pool stays ambiguous -- so falling back
+            # to the seed clinic was a wrong guess by construction (all 22 open seed_kez postings on 2026-09-29 sat in a
+            # town other than their clinic's, e.g. Passauer Wolf Bad Gögging's Neustadt a.d. Donau
+            # postings on Reha-Zentrum Ingolstadt RH1892). No match beats a wrong match.
+            o["_kez"] = mt[0] if mt else None
+            o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + (o.get("employer_class_rule") or "")
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
         elif r["kind"] == "probe" and (r["payload"] or {}).get("probe") == "ats_discovery":
@@ -601,27 +618,20 @@ def cmd_inbox(a):
     nothing for every posting created this run and silently dropped its clinic_links (2026-09-21
     review). _process_rows only accumulates matched observations into link_candidates now.
 
-    Registry source (TASK-80): --clinics defaults to None, which reads the live clinics table --
-    the same source of truth app/data.py's D.clinics() and crawlers.routing.plan() already use to
-    plan crawls. Every production call (app/crawl.py's `_cli(["inbox"])`) passes no --clinics, so it
-    always got this. Before this fix the default was data/registry/clinics.csv, a hand-maintained
-    copy that ATS/career discovery (the 'probe' branch below, and pflege_jobs/mechanics.py) writes
-    straight to the live table and never back to -- 117 of 399 active clinics had drifted to a blank
+    Registry source: the live clinics table -- the same one app/data.py's D.clinics() and
+    crawlers.routing.plan() plan crawls from. Until TASK-80 the default was data/registry/clinics.csv, a
+    hand-maintained copy that ATS/career discovery (the 'probe' branch below, and pflege_jobs/mechanics.py)
+    writes straight to the live table and never back to -- 117 of 399 active clinics had drifted to a blank
     careers_url in the CSV while live had the real one, so the Matcher's board rules (R0_board*,
-    pflege_jobs/registry.py) could not fire for postings on those clinics' boards. --clinics still
-    accepts an explicit CSV path (tests use this to stay off the network).
+    pflege_jobs/registry.py) could not fire for postings on those clinics' boards. The CSV is gone
+    (TASK-175); tests stub _live_clinics to stay off the network.
     """
-    import csv
     import requests as rq
     from .registry import Matcher
     from .classify import norm_text
     url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
     H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
-    if a.clinics:
-        clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
-        for c in clinics: c["beds"] = int(c["beds"]) if c.get("beds") else None
-    else:
-        clinics = _live_clinics(url, H)
+    clinics = _live_clinics(url, H)
     towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
     m = Matcher([dict(c) for c in clinics])
     if a.reprocess_all or a.reprocess_run is not None:
@@ -631,9 +641,11 @@ def cmd_inbox(a):
     total = 0
     stats = {"wrote": False}
     link_candidates = []
+    # Read before the first page is acked: a posting's copies can sit on different pages (TASK-166).
+    pools = IB.pending_board_pools(path=a.inbox_db)
     for drain in (_drain_local_once, _drain_once):
         for _ in range(a.max_batches):
-            n = drain(a, url, H, m, towns, resolve=False, stats=stats, link_candidates=link_candidates)
+            n = drain(a, url, H, m, towns, resolve=False, stats=stats, link_candidates=link_candidates, pools=pools)
             total += n
             if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
                 break
@@ -653,6 +665,22 @@ def cmd_inbox(a):
                  for o in link_candidates if key_fn(o) in ids]
         if len(ids) < len(link_candidates):
             print(f"  warning: {len(link_candidates) - len(ids)} of {len(link_candidates)} written observations not found on re-read; their clinic links are skipped")
+        manual = manual_posting_ids(rq.get, url, H, [l["posting_id"] for l in links]) if links else set()
+        if manual:
+            print(f"  manual override kept: {len(manual)} posting(s) skipped (clinic_match_rule=manual)")
+            links = [l for l in links if l["posting_id"] not in manual]
+        # One link per posting. Several copies of one posting (one per board that served it) reach
+        # here; pflege-ingest's clinic_links `update ... from` applies an unpredictable one of
+        # duplicate posting_ids, so copies that disagree used to decide the clinic by chance (TASK-166).
+        # Board pooling above makes copies agree; where they still don't, nothing is pushed.
+        by_pid = {}
+        for l in links:
+            by_pid.setdefault(l["posting_id"], []).append(l)
+        conflicts = {p: sorted({l["clinic_id"] for l in ls}) for p, ls in by_pid.items() if len({l["clinic_id"] for l in ls}) > 1}
+        if conflicts:
+            print(f"  CONFLICT: {len(conflicts)} posting(s) matched to different clinics by different copies, not linked: "
+                  + "; ".join(f"{p}->{'/'.join(c)}" for p, c in sorted(conflicts.items())))
+        links = [ls[-1] for p, ls in by_pid.items() if p not in conflicts]
         sink = EdgeSink(batch=200)
         for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
         print(f"clinic links pushed: {len(links)}")
@@ -693,11 +721,9 @@ def main(argv=None):
     lb.add_argument("--out-dir", default="data/out"); lb.add_argument("--no-resolve", action="store_true"); lb.set_defaults(fn=cmd_load_board)
     v = sp.add_parser("verify"); v.add_argument("--workers", type=int, default=6); v.add_argument("--limit", type=int, default=0)
     v.add_argument("--out", default="data/verify.json"); v.add_argument("--only-status", default=""); v.add_argument("--dry-run", action="store_true"); v.set_defaults(fn=cmd_verify)
-    lc = sp.add_parser("link-clinics"); lc.add_argument("--csv", default="data/registry/clinics.csv"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
+    lc = sp.add_parser("link-clinics"); lc.add_argument("--dry-run", action="store_true"); lc.add_argument("--out", default="data/clinic_links.json"); lc.set_defaults(fn=cmd_link_clinics)
     lx = sp.add_parser("link-cross"); lx.add_argument("--dry-run", action="store_true"); lx.add_argument("--out", default="data/cross_merge_pairs.json"); lx.set_defaults(fn=cmd_link_cross)
     ib = sp.add_parser("inbox")
-    ib.add_argument("--clinics", default=None, help="registry CSV to match against instead of the live clinics table "
-                     "(default: live, the same source crawl planning uses -- see cmd_inbox's docstring, TASK-80)")
     ib.add_argument("--no-ack", action="store_true")
     ib.add_argument("--max-batches", type=int, default=100_000)  # loop-safety ceiling, not a queue-size cap
     ib.add_argument("--inbox-db", default=None, help="local raw queue (default pflege_jobs/inbox_db.PATH)")

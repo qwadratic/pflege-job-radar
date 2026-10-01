@@ -1,12 +1,12 @@
-import json, sys, csv, time
+import json, sys, time
 sys.path.insert(0,'.')
+from app import config as A
 from pflege_jobs.sources.softgarden import seed_for
 from pflege_jobs.sources.career_crawl import Crawler
 from pflege_jobs.classify import norm_text
 from pflege_jobs.registry import Matcher
-towns={norm_text(r['town']) for r in csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')) if r['town']}
-clinics=list(csv.DictReader(open('data/registry/clinics.csv',encoding='utf-8')))
-for c in clinics: c['beds']=int(c['beds']) if c.get('beds') else None
+towns={norm_text(r['town']) for r in A.rest_get_all('clinics',{'select':'town','order':'clinic_id'}) if r['town']}
+clinics=A.rest_get_all('clinics',{'select':'*','order':'clinic_id'})
 m=Matcher([dict(c) for c in clinics]); byid={c['clinic_id']:c for c in clinics}
 sites=json.load(open('data/registry/softgarden_sites.json'))
 try: done=json.load(open('data/softgarden_done.json'))

@@ -134,6 +134,6 @@ Open questions, not decided here:
   cannot be added (no new dependencies). Until it is, no report exists to fold. `--junit-xml` is
   built into pytest and carries the same node ids and messages — adding a second input format to
   the tool is a one-time ~6 lines, but nobody asked for it.
-- The ~232 clinics with a blank `ats_type` in `data/registry/clinics.csv` have no board column at
+- The ~232 clinics with a blank `ats_type` in the clinics table have no board column at
   all, because they have no adapter to run the harness against. Filling them is the swarm job the
   brief describes, gated on the Firecrawl budget; every budget stop there lands as `truncated`.

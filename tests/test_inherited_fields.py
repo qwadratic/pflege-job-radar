@@ -6,8 +6,6 @@ passed the Bavaria gate precisely because the substituted town IS Bavarian. Acro
 rows sat there as Bavarian while their URL named a non-Bavarian city, and 1438 clinic links rested
 on an employer name the crawler itself had written.
 """
-import csv
-
 import pytest
 
 from crawlers.vendor_adapters import parse_job_page
@@ -16,7 +14,8 @@ from pflege_jobs.registry import Matcher
 from pflege_jobs.sources.career_crawl import Crawler, city_from_url
 from pflege_jobs.sources.inbox import NON_PROD_HOST, jobposting_to_obs
 
-TOWNS = {norm_text(r["town"]) for r in csv.DictReader(open("data/registry/clinics.csv", encoding="utf-8")) if r.get("town")}
+# The registry towns these cases need, spelled as pflege_jobs.clinics spells them (2026-09-29).
+TOWNS = {norm_text(t) for t in ("Neuburg/Donau", "Garmisch-Partenkirchen", "Fürth")}
 
 
 def _obs(url, city, org, city_source=None, org_source=None):

@@ -142,3 +142,47 @@ def test_vendor_rows_still_falls_back_to_seed_town_for_a_single_clinic_board(mon
     assert rows[0]["payload"]["board_clinic_ids"] == ["99999"]          # no pool, unwidened
     assert rows[0]["payload"]["loc"][0]["city"] == "Regensburg"         # no real signal, but a lone clinic -> seed fallback stands
     assert rows[0]["payload"]["city_source"] == "seed"
+
+
+# --- TASK-170: hessing-kliniken.softgarden.io is ONE board for the acute house and both Reha houses ---
+# Every posting's hiringOrganization is "Hessing Stiftung" (live, 2026-09-29), which content matching
+# (R3_tokens_bestj) files under 76111 whatever the board pool says -- the two Reha houses sat at 0 while
+# their own nursing postings were stored on the acute clinic. The title is the only per-posting signal
+# naming the house. Registry rows below are the live DB values for the three Hessing sites.
+HESSING_POOL = [
+    {"clinic_id": "76111", "name": "Orthopädische Fachkliniken der Hessing Stiftung", "town": "Augsburg-Göggingen", "operator": "", "beds": 150},
+    {"clinic_id": "RH1585", "name": "Orthopädische Rehabilitationsklinik der Hessing Stiftung", "town": "Augsburg",
+     "operator": "Hofrat Friedrich Hessing’sche orthopädische Heilanstalt in Göggingen-Augsburg", "beds": 60},
+    {"clinic_id": "RH2724", "name": "Geriatrische Rehabilitation der Hessing Stiftung", "town": "Augsburg",
+     "operator": "Hofrat Friedrich Hessing’sche orthopädische Heilanstalt in Göggingen-Augsburg", "beds": 140}]
+
+
+def test_vendor_rows_files_hessing_reha_postings_under_their_own_house(monkeypatch):
+    from pflege_jobs.registry import Matcher
+    expected = {  # real titles off hessing-kliniken.softgarden.io/de/vacancies, 2026-09-29
+        "Pflegefachkräfte (m/w/d) für die orthopädische Rehabilitationsklinik": "RH1585",
+        "Gesundheits- und Krankenpfleger/Altenpflegekraft/Pflegefachkraft (m/w/d) für die geriatrische Rehabilitationsklinik": "RH2724",
+        "Pflegefachkräfte (m/w/d) für die orthopädische Fachklinik": "76111",
+        "Organisatorische Teamleitung (m/w/d) für die orthopädische Station mit Schwerpunkt Akutgeriatrie": "76111",
+        # names both Reha houses -> no single house; left to content matching, same as before
+        "Physiotherapeut (m/w/d) für den Einsatz in der orthopädische Rehabilitation, geriatrische Rehabilitation, "
+        "multimodalen Schmerztherapie und im ambulanten Therapiezentrum": "76111"}
+    fake_rows = [{"kind": "jobposting", "payload": {"title": t, "org": "Hessing Stiftung", "url": "https://x/%d" % i,
+                                                      "loc": [{"city": "Augsburg", "plz": None, "region": None}]}}
+                 for i, t in enumerate(expected)]
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", lambda c, session=None: list(fake_rows))
+    board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": HESSING_POOL}
+    rows = CR._vendor_rows(board, HESSING_POOL[0], requests.Session(), print)
+    m = Matcher([dict(c) for c in HESSING_POOL])
+    got = {r["payload"]["title"]: m.match(r["payload"]["org"], "Augsburg", board=r["payload"]["board_clinic_ids"])[0] for r in rows}
+    assert got == expected
+
+
+def test_vendor_rows_leaves_a_non_hessing_board_org_alone(monkeypatch):
+    clinic = {"clinic_id": "99999", "name": "Not Hessing", "town": "X"}
+    board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [clinic]}
+    fake = [{"kind": "jobposting", "payload": {"title": "Pflegefachkräfte (m/w/d) für die orthopädische Rehabilitationsklinik",
+                                                "org": "Klinik X", "url": "https://x/1"}}]
+    monkeypatch.setitem(VA.VENDORS, "wp_jobs", lambda c, session=None: list(fake))
+    rows = CR._vendor_rows(board, clinic, requests.Session(), print)
+    assert rows[0]["payload"]["org"] == "Klinik X"

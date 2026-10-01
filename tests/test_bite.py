@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pflege_jobs.sources.bite import _has_label, find_nursing_taxonomy, crawl   # noqa: E402
+from pflege_jobs.sources.bite import _has_label, find_nursing_taxonomy, crawl, to_observation   # noqa: E402
 
 
 def _jp(title, custom=None, city="München", plz="80331", **extra):
@@ -167,3 +167,23 @@ def test_crawl_falls_back_to_full_list_when_no_taxonomy_signal(monkeypatch):
     assert stats["total"] == 2
     assert len(rows) == 2   # both kept; classify_role only labels
     assert sorted(r["role_class"] for r in rows) == ["nicht_pflege", "pflegefachkraft"]
+
+
+# --- to_observation: external_url must prefer the real ad page over a broken apply-form host -----
+# 2026-09-28, clinic 56404/56406 (Diakoneo): applyUrl pointed at a JS-only application form with no
+# server-rendered content, while url (the same field source_url/source_ref already trust) was the
+# real, content-bearing ad -- every posting on this tenant got a dead link as its external_url.
+
+def test_external_url_prefers_url_over_a_diverging_apply_url():
+    jp = _jp("Pflegefachkraft (m/w/d)", url="https://jobs.diakoneo.de/jobposting/abc123",
+             applyUrl="https://jobs.diakoneo.de/de/jobposting/abc1230/apply")
+    seed = {"name": "Klinik Hallerwiese Nürnberg", "kez": "K1", "career": "https://example.de/karriere"}
+    obs = to_observation(jp, seed, {"nürnberg"})
+    assert obs["external_url"] == "https://jobs.diakoneo.de/jobposting/abc123"
+
+
+def test_external_url_falls_back_to_apply_url_when_url_is_empty():
+    jp = _jp("Pflegefachkraft (m/w/d)", url="", applyUrl="https://jobs.example.de/apply/1")
+    seed = {"name": "Klinik Hallerwiese Nürnberg", "kez": "K1", "career": "https://example.de/karriere"}
+    obs = to_observation(jp, seed, {"nürnberg"})
+    assert obs["external_url"] == "https://jobs.example.de/apply/1"

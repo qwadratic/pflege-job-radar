@@ -24,7 +24,10 @@ def test_every_mechanic_has_test_file_and_texts(m):
 
 
 @pytest.mark.parametrize("m", M.REGISTRY, ids=lambda m: m.id)
-def test_examples_run(m):
+def test_examples_run(m, monkeypatch):
+    from app import data as D
+    # clinic_link / bavaria_filter read the app's registry snapshot; one row keeps this offline
+    monkeypatch.setattr(D, "clinics", lambda: [{"clinic_id": "56301", "name": "Klinikum Fürth", "town": "Fürth", "beds": 771}])
     out = m.run({i["name"]: i["example"] for i in m.inputs})
     assert set(out) == {"result", "rule"}
 

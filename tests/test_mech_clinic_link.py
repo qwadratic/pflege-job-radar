@@ -39,6 +39,58 @@ def test_rules_r1_r2_r6():
     assert r[1].startswith("R6_ambiguous_sites:16201,16202")
 
 
+def test_hyphen_and_space_spellings_of_one_operator_are_one_operator():
+    """TASK-168, live registry 2026-09-29: one RHÖN-KLINIKUM campus in Bad Neustadt a. d. Saale has four
+    rows -- the Krankenhausplan's three spell the operator 'RHÖN KLINIKUM AG', the RHV Reha row RH1962
+    'RHÖN-KLINIKUM AG', which is also what every posting's own JSON-LD hiringOrganization says. Keyed
+    hyphen-sensitively, RH1962 was that operator's only site, so R2_operator filed all 18 open Bad
+    Neustadt nursing postings (Intensivstation, Notaufnahme, Kreißsaal, Herzchirurgie ...) under the Reha
+    row and the 750-bed acute hospital 67308 showed 0."""
+    cl = [{"clinic_id": "67307", "name": "Psychosomatische Klinik Bad Neustadt a.d. Saale", "town": "Bad Neustadt a.d. Saale", "operator": "RHÖN KLINIKUM AG", "beds": 200},
+          {"clinic_id": "67308", "name": "RHÖN-KLINIKUM Campus Bad Neustadt a.d. Saale", "town": "Bad Neustadt a. d. Saale", "operator": "RHÖN KLINIKUM AG", "beds": 750},
+          {"clinic_id": "67370", "name": "Psychosomatische Klinik Bad Neustadt a.d. Saale", "town": "Bad Neustadt a.d. Saale", "operator": "RHÖN KLINIKUM AG", "beds": 51},
+          {"clinic_id": "RH1962", "name": "RHÖN-KLINIKUM Campus Bad Neustadt", "town": "Bad Neustadt a. d. Saale", "operator": "RHÖN-KLINIKUM AG", "beds": 407},
+          {"clinic_id": "RH2129", "name": "Saaletalklinik, Klinik Neumühle, Adaption", "town": "Bad Neustadt a. d. Saale", "operator": "Haus Saaletal GmbH", "beds": 242}]
+    m = Matcher(cl)
+    r = m.match("RHÖN-KLINIKUM AG", "Bad Neustadt an der Saale", board=[c["clinic_id"] for c in cl])
+    assert r == ("67308", "R6_ambiguous_sites:67307,67308,67370,RH1962", 0.5)
+
+
+def test_public_law_legal_forms_do_not_split_one_operator():
+    """TASK-169, live registry 2026-09-29: the Krankenhausplan spells the operator 'KU Bezirkskliniken
+    Mittelfranken, AöR', the RHV Reha rows and every posting on jobs.bezirkskliniken-mfr.de
+    'Bezirkskliniken Mittelfranken'. Keyed apart, R2_operator saw only the Reha rows: 7 Erlangen nursing
+    postings sat on RH2720 (40 beds) and 3 Ansbach ones on RH2398 (28), while the acute sites 56202 (363)
+    and 56102 (377) showed 0. Rows as live, trimmed to the matched fields."""
+    ku = "KU Bezirkskliniken Mittelfranken, AöR"
+    cl = [{"clinic_id": "56102", "name": "Bezirksklinikum Ansbach", "town": "Ansbach", "operator": ku, "beds": 377},
+          {"clinic_id": "56202", "name": "Klinikum am Europakanal", "town": "Erlangen", "operator": ku, "beds": 363},
+          {"clinic_id": "57407", "name": "Frankenalb-Klinik Engelthal", "town": "Engelthal", "operator": ku, "beds": 191},
+          {"clinic_id": "RH2272", "name": "Bezirksklinikum Ansbach Rehabilitation für Suchtkranke", "town": "Ansbach",
+           "operator": "Bezirkskliniken Mittelfranken", "beds": 20},
+          {"clinic_id": "RH2398", "name": "Bezirksklinikum Ansbach Klinik für Geriatrische Rehabilitation Hs. 15", "town": "Ansbach",
+           "operator": "Bezirkskliniken Mittelfranken", "beds": 28},
+          {"clinic_id": "RH2720", "name": "Klinikum am Europakanal Neurologische Rehabilitation", "town": "Erlangen",
+           "operator": "Bezirkskliniken Mittelfranken", "beds": 40}]
+    m = Matcher(cl)
+    board = ["56102", "56202", "57407", "RH2398"]
+    assert m.match("Bezirkskliniken Mittelfranken", "Erlangen", board=board) == ("56202", "R6_ambiguous_sites:56202,RH2720", 0.5)
+    assert m.match("Bezirkskliniken Mittelfranken", "Ansbach", board=board) == ("56102", "R6_ambiguous_sites:56102,RH2272,RH2398", 0.5)
+    assert m.match("Bezirkskliniken Mittelfranken", "Engelthal", board=board) == ("57407", "R2_operator_town", 0.9)
+
+
+def test_a_spaced_hyphen_and_an_en_dash_spell_one_employer_name():
+    """TASK-168 replay of run 217: RH2968's own board gro.jobs.personio.de names its employer
+    'Geriatrische Rehabilitation Oberbayern - Bruckmühl GmbH', the RHV row writes an en dash there, and
+    the posting city 'Stationäre Reha, Bruckmühl' names no registry town -- 4 nursing postings stayed
+    unmatched on their own clinic's board."""
+    cl = [{"clinic_id": "RH2968", "name": "Geriatrische Rehabilitation Oberbayern – Bruckmühl GmbH", "town": "Bruckmühl",
+           "operator": "Gesundheitsbetriebe Dr. N. Netzer GmbH", "beds": 60}]
+    m = Matcher(cl)
+    r = m.match("Geriatrische Rehabilitation Oberbayern - Bruckmühl GmbH", "Stationäre Reha, Bruckmühl", board=["RH2968"])
+    assert r == ("RH2968", "R1_exact", 1.0)
+
+
 def test_never_links_ambiguous_or_non_clinic():
     m = Matcher(CL)
     assert m.match("Kliniken Südostbayern AG", "Rosenheim") is None          # ambiguous operator, unknown town
@@ -130,9 +182,19 @@ def test_town_match_is_prefix_aware_but_not_over_permissive():
     assert not _town_match("", "neuburg") and not _town_match("neuburg", "")
 
 
-def test_mechanic_try_uses_real_registry():
+# The live Fürth rows of pflege_jobs.clinics (2026-09-29). The try-it box matches against the app's clinics
+# snapshot -- the registry itself (TASK-175: it read data/registry/clinics.csv before).
+FUERTH = [{"clinic_id": "56301", "name": "Klinikum Fürth", "town": "Fürth", "operator": "Klinikum Fürth, AöR der Stadt Fürth", "beds": 771},
+          {"clinic_id": "56304", "name": "Medic-Center Klinik Fürth", "town": "Fürth", "operator": "Medic-Center Klinik GmbH & Co. KG", "beds": 6},
+          {"clinic_id": "RH2496", "name": "Klinikum Fürth Geriatrische Rehabilitation", "town": "Fürth",
+           "operator": "Klinikum Fürth AdöR der Stadt Fürth", "beds": 36}]
+
+
+def test_mechanic_try_matches_against_the_registry_snapshot(monkeypatch):
+    from app import data as D
+    monkeypatch.setattr(D, "clinics", lambda: FUERTH)
     r = get("clinic_link").run({"employer": "Klinikum Fürth Personalabteilung", "city": "Fürth"})
-    assert r["result"]["clinic_id"] and r["rule"].startswith("R")
+    assert r["result"]["clinic_id"] == "56301" and r["result"]["clinic_name"] == "Klinikum Fürth" and r["rule"].startswith("R")
     assert get("clinic_link").run({"employer": "AWO Seniorenzentrum", "city": "Fürth"})["result"]["clinic_id"] is None
 
 
@@ -322,9 +384,9 @@ def test_cli_inbox_default_reads_live_clinics_not_the_csv(monkeypatch):
     branch, pflege_jobs/mechanics.py) writes discovered careers_url straight to the live clinics
     table and never back to the CSV. app/crawl.py's production call (`_cli(["inbox"])`) passes no
     --clinics, so pflege_jobs/cli.py's default used to silently hand the Matcher that stale copy,
-    where board rules (R0_board*) keyed on a clinic missing here could never fire. Pin: with no
-    --clinics, cmd_inbox's Matcher registry comes from the live table (stubbed requests.get, no CSV
-    file involved at all) and carries a clinic's real careers_url."""
+    where board rules (R0_board*) keyed on a clinic missing here could never fire. Pin: cmd_inbox's
+    Matcher registry comes from the live table (stubbed requests.get; the CSV and the --clinics option
+    are gone since TASK-175) and carries a clinic's real careers_url."""
     import argparse
     import requests
     from pflege_jobs import cli
@@ -351,7 +413,7 @@ def test_cli_inbox_default_reads_live_clinics_not_the_csv(monkeypatch):
     monkeypatch.setattr(cli, "_drain_local_once", lambda a, url, H, m, towns, **kw: seen.setdefault("m", m) and 0)
     monkeypatch.setattr(cli, "_drain_once", lambda a, url, H, m, towns, **kw: 0)
 
-    a = argparse.Namespace(clinics=None, no_ack=False, max_batches=1, inbox_db=None,
+    a = argparse.Namespace(no_ack=False, max_batches=1, inbox_db=None,
                            reprocess_run=None, reprocess_all=False)
     cli.cmd_inbox(a)
 

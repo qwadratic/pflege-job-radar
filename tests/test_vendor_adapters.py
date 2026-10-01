@@ -1028,6 +1028,34 @@ def test_not_job_path_excludes_a_news_detail_page_nested_a_folder_deeper_than_th
         assert va.NOT_JOB_PATH.search(path), f"should be excluded as a non-job detail page: {path}"
 
 
+# TASK-170: every DRV clinic site runs the federal Government Site Builder, whose careers page links
+# its own job SEARCH FORM (/SiteGlobals/Forms/Stellenanagebotssuche/...?search_coordinates.HASH=<a
+# new token per request>) twice or three times. JOB_PATH's "stellen*" matched it, the form's first
+# listed job became the row's title, and the per-request token made it a brand-new posting every
+# night -- 6 open duplicates of one Pflegefachkraft posting on RH1901/RH2954 on 2026-09-29, 35 phantom
+# rows across 9 DRV boards in one live A/B, with zero real SharedDocs postings lost by excluding it.
+def test_gsb_search_form_links_on_a_drv_careers_page_are_not_postings():
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples",
+                           "gsb_drv_reha_klinik_saale_karriere_sample.html"), encoding="utf-8") as f:
+        pairs = va._job_link_pairs(f.read(), "https://www.reha-klinik-saale.de/klinik/saale/karriere")
+    assert sorted(pairs) == ["https://www.reha-klinik-saale.de/SharedDocs/Stellenangebote/klinik/saale/Ergotherapeut_in",
+                             "https://www.reha-klinik-saale.de/SharedDocs/Stellenangebote/klinik/saale/PFK"]
+
+
+# TASK-170: kurpark.mutter-kind.de (Reha-Klinik Am Kurpark RH1138) renders its cookie-consent dialog
+# as the page's FIRST <h1> on every job page; the job's own <h1> comes after it. parse_job_page took
+# the first one: 2 of the board's 6 postings (the ungendered Initiativbewerbung / Praktikumsplaetze)
+# were stored as "Diese Website verwendet Cookies", the gendered 4 fell back to the <title> and kept
+# its "Stellenangebot:" label. Fixtures: the <title> and both <h1> of two live pages, 2026-09-29.
+def test_parse_job_page_skips_a_cookie_consent_h1_for_the_jobs_own_h1():
+    fx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples")
+    for name, title in [("kurpark_initiativbewerbung_sample.html", "Initiativbewerbung"),
+                        ("kurpark_diaetassistent_sample.html", "Diätassistent (m/w/d)")]:
+        with open(os.path.join(fx, name), encoding="utf-8") as f:
+            page = va.parse_job_page(f.read(), "https://kurpark.mutter-kind.de/stellenangebote/x", "Reha-Klinik Am Kurpark")
+        assert page["title"] == title, name
+
+
 def test_find_job_urls_drops_typo3_news_detail_pages_confirmed_klinikum_memmingen(monkeypatch):
     base = "https://www.klinikum-memmingen.de"
     sitemap = _R(

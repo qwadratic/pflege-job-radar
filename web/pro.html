@@ -771,7 +771,7 @@ async function pagePlan(p){
 // transparent PNG reads on either theme. Initials when nothing loads; the API has no photo field yet.
 //
 // Every candidate is asked for over https, whatever the register stored. 161 of the 407 clinics carry an
-// `http://` website in data/registry/clinics.csv, and an http image candidate cannot paint here for two
+// `http://` website in the clinics registry, and an http image candidate cannot paint here for two
 // independent reasons: the CSP this app sends (`img-src 'self' data: https:`, app/main.py:82) refuses it
 // before the request leaves -- measured against the real board, not ?mock=1: 0 of those 161 marks painted
 // and the console carried 322 violations -- and on https://pflege-board.exe.xyz it would be mixed content

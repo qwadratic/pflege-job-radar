@@ -1,8 +1,8 @@
 """Bayerischer Krankenhausplan (StMGP, PDF) -> clinics registry rows.
-Source: https://www.stmgp.bayern.de/wp-content/uploads/2025/02/bayerischer-krankenhausplan-2025.pdf (Stand 1.1.2025)
+Source: data/registry/krankenhausplan_2026.pdf, the 51. Fortschreibung (Stand 1.1.2026), from www.stmgp.bayern.de.
 Only Teil II Abschnitt A (Plankrankenhäuser, per Regierungsbezirk) is parsed. KeZ = 5-digit site key = clinic_id.
-Usage: python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2026.pdf out.csv [towns.csv]
-(optional 3rd arg: a CSV with a `town` column -- e.g. the current clinics.csv -- used for town recovery)"""
+Usage: python -m pflege_jobs.sources.krankenhausplan data/registry/krankenhausplan_2026.pdf out.csv (inspection dump;
+the registry build is tools/registry_build.py)."""
 import csv
 import re
 import sys
@@ -15,156 +15,96 @@ VST = {"I": "Grundversorgung (I)", "II": "Schwerpunkt (II)", "III": "Maximalvers
 
 
 def _dehyphen(t):
-    """PDF line-break hyphens: 'Heckscher- Klinikum' -> 'Heckscher-Klinikum', 'psychia- trie' -> 'psychiatrie'."""
-    t = re.sub(r"(\w)- (?=[a-zäöüß])", r"\1", t)
-    return re.sub(r"(\w)- (?=[A-ZÄÖÜ])", r"\1-", t)
+    """Line-break hyphens in pdfplumber's cell text: 'Aichach-\\nFriedberg' -> 'Aichach-Friedberg', 'psychia-\\ntrie' ->
+    'psychiatrie'. Only at a line break: a hyphen inside a line is text ('für Kinder- und', 18002/26204 -- TASK-183
+    found this rule turning it into 'Kinderund' after the line breaks had already become spaces)."""
+    t = re.sub(r"(\w)-\n(?=[a-zäöüß])", r"\1", t)
+    return re.sub(r"(\w)-\n(?=[A-ZÄÖÜ])", r"\1-", t)
 
 
 def _clean(c):
-    return _dehyphen(re.sub(r"\s+", " ", (c or "").replace("\n", " ")).strip())
+    return re.sub(r"\s+", " ", _dehyphen(c or "")).strip()
 
 
 STATUS = {"plan-kh": "Plan-KH", "vertrags-kh": "Vertrags-KH", "hs-klinik": "HS-Klinik", "bedarfsfeststellung": "Bedarfsfeststellung"}
 
 
 def _status(cell):
-    """PDF cells break mid-word ('Vertra gs-KH', 'Bedarf sfests t.', 'icPhlaen - KH' = 'Plan-KH' with a wrapped
-    footnote). Canonical values only; anything else is kept verbatim so a new status is visible, not silently mapped."""
+    """The Status column wraps mid-word ('Vertra gs-KH', 'Bedarf sfests t.'). Canonical values only; anything else is
+    kept verbatim so a new status is visible, not silently mapped."""
     t = re.sub(r"[\s\-]", "", (cell or "")).lower().replace("feststt", "feststellung").replace("festst.", "feststellung")
-    t = re.sub(r"(gen|aft|ie)$", "", t)                  # wrapped footnote fragments glued to the cell
-    if t == "icphlaenkh":                               # column-interleaved 'Plan-KH'
-        t = "plankh"
     for k, v in STATUS.items():
         if t.startswith(k.replace("-", "")):
             return v
     return _clean(cell)
 
 
-KNOWN_TOWNS = set()   # optional: normalized AA city names for town recovery (set by parse())
+def _paragraphs(words):
+    """Words of a 'Krankenhaus / Standort' cell -> its paragraphs as text.
 
-
-def _norm_town(t):
-    t = re.sub(r"\s+", " ", t.replace("a.d.", "an der").replace("a. d.", "an der").replace("a. d. ", "an der ").replace("i.d.", "in der").replace(" b. ", " bei ")).strip().lower()
-    return t
-
-
-def _recover_town(name_words, town_line):
-    """Try suffixes of name+townline (1-4 words) against known towns: 'Bad Neustadt a.d. Saale' etc."""
-    words = name_words + ([town_line] if town_line else [])
-    for n in (5, 4, 3, 2, 1):
-        if len(words) >= n:
-            cand = re.sub(r"-\s+", "-", " ".join(words[-n:])).rstrip("-")
-            for variant in (cand, re.sub(r"\ba\.\s*(d\.)?\s*", "an der ", cand)):
-                if _norm_town(variant) in KNOWN_TOWNS:
-                    return variant, words[:-n]
-    return None, None
-
-
-LEGAL_TAIL = re.compile(r"(GmbH|gGmbH|mbH|AG|KG|OHG|e\.\s?V\.|KdöR|K\.d\.ö\.R\.|Stiftung|Kommunalunternehmen|"
-                        r"Freistaat Bayern|Bezirk\b|Landkreis\b|Stadt\b|Zweckverband|gemeinnützige)", re.I)
-
-
-def _split_name_block(cell):
-    """'Name / Standort / [Träger] / <Trägername> / EIN-Krankenhaus ...' -> name, town, operator.
-
-    Two layouts in the wild: up to the 50. Fortschreibung (2025) a literal 'Träger' line separates
-    the operator; from the 51. (2026) that separator is gone and the block is purely positional
-    (name lines, then the town, then the operator lines). Detect the separator, and when it is
-    absent fall back to splitting on the town line — which _split_after_town resolves below.
-    """
-    lines = [l.strip() for l in (cell or "").split("\n") if l.strip()]
-    name, town, operator = [], None, []
-    has_sep = "Träger" in lines
-    mode = "name"
-    for l in lines:
-        if l == "Träger":
-            mode = "traeger"; continue
-        if l.startswith("EIN-Krankenhaus") or l.startswith("Sinne des KHG") or re.match(r"^[\d, ]+$", l):
-            mode = "skip"; continue
-        if mode == "name":
-            name.append(l)
-        elif mode == "traeger":
-            operator.append(l)
-    if not has_sep and len(name) >= 2:
-        # positional layout. Re-join lines the PDF wrapped mid-word first ("kbo-Heckscher-" +
-        # "Klinikum Ingolstadt"), otherwise the town search below sees fragments, not lines.
-        merged = []
-        for l in name:
-            if merged and merged[-1].endswith("-"):
-                merged[-1] = merged[-1] + l
-            else:
-                merged.append(l)
-        name = merged
-        joined = [_dehyphen(x) for x in name]
-        cut = None
-        # Keep scanning instead of stopping at the first hit: from the 51. Fortschreibung on, a
-        # Vertrags-KH cell's own site label often repeats the town INSIDE the name block itself
-        # ("Schön Klinik Roseneck / Prien am Chiemsee / Schön Klinik Roseneck SE & Co. KG" -- the
-        # site's flagship town, then the real Standort line, then the operator). The town line is
-        # always the one immediately before the operator's legal-form block, i.e. the LAST match,
-        # not the first -- taking the first one produced a wrong, too-early cut for 17/27 rows in a
-        # 2026-09-23 audit (TASK-136) before this change.
-        for i in range(1, len(joined)):
-            cand = joined[i]
-            if _norm_town(cand) in KNOWN_TOWNS and not LEGAL_TAIL.search(cand):
-                cut = i
-        if cut is None:                      # no known town: operator starts at the first legal-form line
-            for i in range(1, len(joined)):
-                if LEGAL_TAIL.search(joined[i]):
-                    cut = max(1, i - 1) if _norm_town(joined[i - 1]) in KNOWN_TOWNS else i
-                    break
-        if cut is not None and joined:
-            standort = joined[cut] if _norm_town(joined[cut]) in KNOWN_TOWNS else None
-            if standort:
-                # The line between name and operator is the *Standort*. For multi-site operators it
-                # is a site label that happens to be a place ("München Klinik" / "Schwabing"), and
-                # the site belongs in the name; the actual town then comes from the operator line's
-                # leading place ("Ingolstadt Danuvius Klinik GmbH") or from the Landkreis column.
-                name, operator, town = name[:cut], name[cut + 1:], standort
-                if operator:
-                    lead = _dehyphen(operator[0])
-                    for n_words in (3, 2, 1):
-                        head = " ".join(lead.split()[:n_words])
-                        if _norm_town(head) in KNOWN_TOWNS and not LEGAL_TAIL.search(head):
-                            # operator line starts with the real town -> Standort was a site label
-                            name = name + [standort]
-                            town = head
-                            # the town prefixes the operator's own name ("München Klinik gGmbH"):
-                            # keep the full operator string, it is not a duplicate of the town
-                            break
-            else:
-                name, operator = name[:cut], name[cut:]
-    # university hospitals: no 'Träger' line; the last line is 'Freistaat Bayern'
-    if name and name[-1] == "Freistaat Bayern":
-        operator = ["Freistaat Bayern"]; name = name[:-1]
-    # town = last line of name block that looks like a place (no digits, <= 4 words); repair hyphen/wrap splits via known towns.
-    # Only when the positional cut above didn't already find one: this block ran unconditionally before
-    # TASK-136, so it silently re-derived and overwrote an already-correct `town` from the cut-based
-    # match any time >=2 name lines were left over -- the actual cause of 8 of the 17/27-row miss rate
-    # this same audit measured, on top of the first-match-vs-last-match bug the loop above now fixes.
-    if town is None and len(name) >= 2 and not re.search(r"\d", name[-1]) and len(name[-1].split()) <= 4:
-        town_line = name[-1]; head = " ".join(name[:-1]).split()
-        rec, rest = _recover_town(head, town_line)
-        if rec:
-            town = rec; name = [" ".join(rest)]
-        elif head and head[-1].endswith("-") and (head[-1] + town_line) in " ".join(head):
-            town = head[-1] + town_line; name = [" ".join(head[:-1])]
+    pdfplumber words with keep_blank_chars=True, so a run carries the PDF's own space characters: a line whose source
+    text went on after a space ends in one, a line broken inside a compound ('kbo-Heckscher-' / 'Klinikum') or after
+    a bracketing dash ('Klinikum Nürnberg -' / 'Betriebsstätte Nord-') does not, and ''.join puts the lines back
+    together exactly as typed. One line per 3pt band of `top`: 26103 mixes two font subsets whose tops differ by
+    0.8pt ('Kinderk' + 'linik'); runs that touch (gap < 1.5pt) are one word. A paragraph break is a line gap > 14pt:
+    lines sit 9.7pt apart, the paragraphs of the 2026 plan (name, Standort, Träger, the EIN-Krankenhaus note) 17.7-29pt
+    (measured over all 401 rows, TASK-183). Blank-only runs are the PDF's empty lines between paragraphs."""
+    lines = []
+    for w in sorted((w for w in words if w["text"].strip()), key=lambda w: w["top"]):
+        if lines and w["top"] - lines[-1][0]["top"] < 3:
+            lines[-1].append(w)
         else:
-            town = town_line; name = [" ".join(head).rstrip("- ")]
-    elif len(name) == 1 and operator == ["Freistaat Bayern"]:
-        for t in ("München", "Regensburg", "Erlangen", "Würzburg", "Augsburg"):
-            if t in name[0]: town = t
-    name_s, op_s = _dehyphen(" ".join(name)), _dehyphen(" ".join(operator))
-    quality = "ok"
-    if not operator:                       # Vertrags-KH layout: no 'Träger' separator; try to split legal form
-        m = re.search(r"^(.*?)\s+((?:\S+\s+){0,4}\S+\s+(?:GmbH|gGmbH|AG|KG|e\.V\.|KdöR|K\.d\.ö\.R\.|Stiftung).*)$", name_s)
-        if m: name_s, op_s = m.group(1), m.group(2)
-        quality = "partial"
-        if town and re.fullmatch(r"(GmbH|gGmbH|AG|KG|e\.V\.|KdöR)", town): town = None
-        w = name_s.split()
-        if len(w) >= 2 and w[-1] == w[-2]: name_s = " ".join(w[:-1])   # 'Adula-Klinik Oberstdorf Oberstdorf'
-        if not town and len(w) >= 2 and not re.search(r"\d", w[-1]): town = w[-1]
-    return name_s, town, op_s or None, quality
+            lines.append([w])
+    paras, prev = [], None
+    for line in lines:
+        line.sort(key=lambda w: w["x0"])
+        text = line[0]["text"]
+        for a, b in zip(line, line[1:]):
+            text += ("" if b["x0"] - a["x1"] < 1.5 else " ") + b["text"]
+        if prev is None or line[0]["top"] - prev > 14:
+            paras.append("")
+        paras[-1] += text
+        prev = line[0]["top"]
+    return [_clean(p) for p in paras]
+
+
+def _dash_bracket(name):
+    """The plan sets a sub-site in a dash bracket and its typesetting drops the spaces: 'Klinikum Nürnberg
+    -Betriebsstätte Nord-', 'Schön Klinik Roseneck - Haus Rosenheim -'. Typography only, the words stay the
+    plan's (Ivan 2026-10-01, TASK-183): ' -X' -> ' - X' and the bracket's closing dash is dropped ->
+    'Klinikum Nürnberg - Betriebsstätte Nord'. Only after a space: hyphenated words ('Garmisch-Partenkirchen')
+    and suspended hyphens ('Kinder- und') have none before the dash."""
+    if " -" not in name:
+        return name
+    return re.sub(r"\s*-$", "", re.sub(r" -(?=\S)", " - ", name))
+
+
+def _cell(words, name_x1, status_x1):
+    """Words of one table row from the name column's left edge to the page edge -> (name, town, operator, status).
+
+    The 51. Fortschreibung (2026) prints name, Standort and Träger as separate paragraphs of the 'Krankenhaus /
+    Standort' cell, an 'EIN-Krankenhaus im Sinne des KHG mit <KeZ>' note as a 4th; a cell of any other shape fails
+    loudly (older editions are not read: the 50. Fortschreibung sets 3 cells without paragraph gaps; in the 49.
+    pdfplumber's table finder cuts KeZ 18802's row into sub-rows). A word belongs to the column it starts in: long
+    words run past the name column's edge into the Status column, where pdfplumber's cell text cut them
+    ('Berufsgenossenschaftl' + 'icPhlaen', 18007) -- TASK-183."""
+    paras = _paragraphs([w for w in words if w["x0"] < name_x1])
+    if not (len(paras) == 3 or len(paras) == 4 and paras[3].startswith("EIN-Krankenhaus")):
+        raise ValueError(f"name cell is not name / Standort / Träger [/ EIN-Krankenhaus] paragraphs: {paras}")
+    status = _status(" ".join(w["text"] for w in words if name_x1 <= w["x0"] < status_x1))
+    return _dash_bracket(paras[0]), paras[1], paras[2], status
+
+
+def _int(cell):
+    """'1.020' -> 1020. The PDF prints counts >= 1000 with a German thousands dot; a bare isdigit() check
+    turned every such cell into None, i.e. exactly the biggest hospitals lost their beds (TASK-167).
+    '-' / '' -> None; anything else non-numeric raises, so a new cell format is loud, not silently NULL."""
+    t = _clean(cell)
+    if t in ("", "-"):
+        return None
+    if not re.fullmatch(r"\d{1,3}(\.\d{3})*", t):
+        raise ValueError(f"unexpected count cell {cell!r}")
+    return int(t.replace(".", ""))
 
 
 def _edition(pdf):
@@ -177,54 +117,72 @@ def _edition(pdf):
     return "Krankenhausplan Bayern, StMGP"
 
 
-def parse(pdf_path, known_towns=None):
-    if known_towns: KNOWN_TOWNS.update(_norm_town(t) for t in known_towns if t)
+def _bezirk(text):
+    """Regierungsbezirk heading of a table page: its first line, or its second when the page also opens
+    the part -- the first Oberbayern page starts 'Teil II Abschnitt A - Plankrankenhäuser' (TASK-178:
+    reading only line 1 skipped that page, and with it 16101 Klinikum Ingolstadt and 16102)."""
+    return next((line.strip() for line in text.split("\n", 2)[:2] if line.strip() in BEZIRKE), None)
+
+
+def _carry_landkreis(rows):
+    """The 51. Fortschreibung (2026) prints the Landkreis only on the first row of each Landkreis group and
+    '-' or nothing on the rows below it (281 of 401 rows; the 2025 edition left 12 blank). A blank row takes
+    the name of the row above, but only inside its own group -- the KeZ's first three digits, which map to
+    exactly one Landkreis name in both editions (95 groups in 2026). A blank row that opens a group has no
+    name to take and fails loudly (TASK-175: the blanks read as 260 DB deviations)."""
+    last = None
+    for r in rows:
+        if r["landkreis"] in ("", "-"):
+            if not last or last[0] != r["clinic_id"][:3]:
+                raise ValueError(f"KeZ {r['clinic_id']}: blank Landkreis cell and no row above it in its group")
+            r["landkreis"] = last[1]
+        else:
+            last = (r["clinic_id"][:3], r["landkreis"])
+    return rows
+
+
+def parse(pdf_path):
     pdf = pdfplumber.open(pdf_path)
     source = _edition(pdf)
     rows, bezirk = [], None
     for page in pdf.pages:
         text = page.extract_text() or ""
         head = text.split("\n", 1)[0].strip()
-        if head in BEZIRKE:
-            bezirk = head
+        bezirk = _bezirk(text) or bezirk
         if not bezirk or "KeZ" not in text[:400]:
             continue
         if "Abschnitt B" in text[:200] or "Berufsfachschulen" == head:
             break
-        for t in page.extract_tables():
-            for r in t:
+        for table in page.find_tables():
+            for row, r in zip(table.rows, table.extract()):
                 if not r or len(r) < 13 or not re.fullmatch(r"\d{5}", _clean(r[1])):
                     continue
-                name, town, operator, quality = _split_name_block(r[2])
-                status = _status(r[3]); vst = _clean(r[4]); tr = _clean(r[5])
-                beds = _clean(r[6]); places = _clean(r[7]); fach = _clean(r[12])
+                n, s = row.cells[2], row.cells[3]
+                words = page.crop((n[0], n[1], page.width, n[3])).extract_words(
+                    x_tolerance=1.5, y_tolerance=0.5, keep_blank_chars=True)
+                name, town, operator, status = _cell(words, n[2], s[2])
+                vst = _clean(r[4]); tr = _clean(r[5])
+                beds = _int(r[6]); places = _int(r[7]); fach = _clean(r[12])
                 rows.append({
                     "clinic_id": _clean(r[1]), "name": name, "town": town, "operator": operator,
                     "landkreis": _clean(r[0]), "regierungsbezirk": bezirk,
                     "status": status, "versorgungsstufe": VST.get(vst, vst or None), "traegerart": TRAEGER.get(tr, tr or None),
-                    "beds": int(beds) if beds.isdigit() else None, "day_places": int(places) if places.isdigit() else None,
+                    "beds": beds, "day_places": places,
                     "fachrichtungen": fach.replace(" ", "").replace(",", "|") if fach and fach != "-" else None,
-                    "parse_quality": quality, "source": source,
+                    "parse_quality": "ok", "source": source,
                 })
-    return rows
+    return _carry_landkreis(rows)
 
 
 _LEGAL_WORD = re.compile(r"\b(GmbH|gGmbH|mbH|AG|KG|OHG|Stiftung|KdöR|Zweckverband)\b")
 
 
 def validate(rows):
-    """Error-rate report for a parse() result, independent of each row's own `parse_quality` flag --
-    TASK-136 found that flag alone misses real corruption: `quality='ok'` only means _split_name_block
-    found *some* non-empty operator, not that the town it picked is real (a 2026-09-23 audit found 4
-    of 27 known-bad rows still land on a plausible-looking but wrong town after the flag says 'ok').
-    Runs the SAME implausibility check TASK-133 proposes at registry load time, but here -- at
-    extraction time, before the CSV is ever written -- so a corrupted Fortschreibung is caught before
-    it reaches the registry at all, not after. Returns a summary dict; does not raise.
-
-    Deliberately NOT reusing the module's own LEGAL_TAIL: that regex is case-insensitive so it can
-    catch a lowercase-mangled cut line, which also makes it match "stadt" *inside* an ordinary town
-    name ("Ingolstadt", "Neustadt", "Immenstadt") -- a real false positive hit while building this
-    check. _LEGAL_WORD requires the legal-form token as its own capitalized word instead.
+    """Error-rate report for a parse() result, independent of each row's own `parse_quality` flag (TASK-136).
+    Runs the SAME implausibility check TASK-133 proposes at registry load time, but here -- at extraction time --
+    so a corrupted Fortschreibung is caught before it reaches the registry. Returns a summary dict; does not raise.
+    _LEGAL_WORD requires the legal-form token as its own capitalized word, so the "stadt" inside an ordinary town
+    name ("Ingolstadt", "Neustadt", "Immenstadt") is not one.
     """
     town_missing = [r["clinic_id"] for r in rows if not r.get("town")]
     town_bad = [r["clinic_id"] for r in rows if r.get("town") and
@@ -236,10 +194,7 @@ def validate(rows):
 
 
 if __name__ == "__main__":
-    towns = None
-    if len(sys.argv) > 3:                       # optional CSV with a `town` column -> town recovery
-        towns = {r.get("town") for r in csv.DictReader(open(sys.argv[3], encoding="utf-8"))}
-    rows = parse(sys.argv[1], towns)
+    rows = parse(sys.argv[1])
     with open(sys.argv[2], "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
     report = validate(rows)

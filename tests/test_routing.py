@@ -73,6 +73,17 @@ def test_unlabelled_vendor_with_a_careers_url_defaults_to_wp_jobs():
     assert board["vendor"] == "wp_jobs" and board["clinics"][0]["ats_type"] == "wp_jobs"
 
 
+def test_a_coveto_label_routes_to_the_generic_reader():
+    # TASK-172: six registry sites carry ats_type=coveto; with no ADAPTERS entry every one of them was
+    # skipped each night ("no adapter for coveto"). A coveto board is server-rendered (see tests/test_coveto.py).
+    clinics = [{"clinic_id": "RH1802", "name": "Klinik Maximilian GmbH & Co. KG", "ats_type": "coveto",
+                "careers_url": "https://www.klinik-maximilian.de/jobs"}]
+    boards, unroutable = plan(clinics)
+    assert unroutable == []
+    board = next(iter(boards.values()))
+    assert (board["vendor"], board["adapter"]) == ("coveto", "crawlers.vendor_adapters:crawl_wp_jobs")
+
+
 def test_every_advertised_adapter_is_importable():
     """A vendor label with a dead adapter reference is worse than no label: the scheduler would keep
     handing it work that silently returns nothing. This pins every entry to a real callable."""
