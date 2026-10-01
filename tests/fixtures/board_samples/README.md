@@ -5,6 +5,14 @@ just enough shape to write or debug an adapter/classify test against without hit
 (and without depending on it staying online or unchanged). Personal contact fields (name, e-mail,
 phone of the HR contact on each posting) are redacted; everything else is the real response.
 
+These slices are the only third-party page content that is committed (the repo is public), and they stay: offline,
+stable, one file per case. The full recordings are the local mirror (`tests/mirror.py`, `data/mirror/`, git-ignored, never
+committed: they carry unredacted HR names, e-mails and phone numbers). Tests of the whole board -- every request an adapter makes,
+the oracle's page and script fetches, a posting's round trip -- replay the mirror; no test talks to a live site. A new page shape or
+board: `.venv/bin/python tools/mirror.py record <board_id | host | clinic_id>`, write the red test on the mirror, fix, green. A
+committed test may quote a slice only in the redacted form this README describes; when the case is a page shape worth
+freezing for a unit test, cut the slice here (redact first) and add its row below.
+
 | file | vendor | source | fetched |
 |---|---|---|---|
 | `dvinci_list_json_sample.json` | dvinci (`crawlers.vendor_adapters.crawl_dvinci`) | `https://sozialstiftung-bamberg.dvinci-easy.com/jobPublication/list.json` (Klinikum Bamberg, clinic_id 46101) | 2026-09-09 |

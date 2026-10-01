@@ -15,14 +15,14 @@ render of it and is never the source of truth.
 5. **Verify by re-deriving.** A second pass sees only `evidence` and re-derives `verdict`; a
    mismatch reopens the cell. For the five pytest rows the stronger form already exists:
    `pytest tests/test_adapter_completeness.py -m mutation` proves each check can go red
-   (`tests/adapter_contract.py:265-271`).
+   (`tests.adapter_contract.MUTATIONS`, applied by `tests/adapter_harness.py`).
 6. **Score last.** The weighted score is a computed column (`app/coverage.py`), so re-weighting
    costs zero crawls.
 7. **Persist as JSONL in git**, one line per cell, so a diff is readable.
 
 ## Rows (`feature_id`)
 
-The vocabulary is the five live checks in `tests/test_adapter_completeness.py:265-300`, each with a
+The vocabulary is the five checks of `tests/adapter_harness.py` (`check_*`, run by `tests/test_adapter_completeness.py` against the local mirror of the boards), each with a
 matching breakage in `tests.adapter_contract.MUTATIONS`:
 
 | `feature_id` | what a `supported` cell means | weight |
@@ -125,8 +125,9 @@ The Clawl coverage table (`web/pro.template.html`) renders `feature_score` besid
 **Everything.** `data/feature_cells.jsonl` is empty. 5 rows × every board = 0 cells filled, so
 every `feature_score` is `null`.
 
-The completeness harness is `-m network -m completeness` and needs live boards; nothing here was
-run against a live board, and no number was invented to fill the gap.
+The completeness harness replays the local mirror of the boards (`-m completeness`, no network:
+`tests/mirror.py`, recorded by `tools/mirror.py`, TASK-197), so a run no longer needs live boards; no
+run has been folded into cells yet, and no number was invented to fill the gap.
 
 Open questions, not decided here:
 
