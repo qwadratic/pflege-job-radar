@@ -30,6 +30,7 @@ PFLEGE_TOKEN = ""               # gate: no nursing token at all -> nicht_pflege
 STRONG_PFLEGE_TITLE = ""        # a strong token in the *title* overrides a nicht_pflege hit
 NICHT_PFLEGE = ""
 AUSBILDUNG_BODY = ""            # a training-place page states these in its body, a staff posting does not (TASK-186)
+NO_VACANCY_BODY = ""            # "keine offenen Stellen": the page itself says nothing is open (TASK-186)
 ROLE_RULES = []                 # [(role_class, regex), ...]
 ROLE_FALLBACK = "sonstige_pflege"
 # --- Intake policy: which role_classes are allowed into the database at all (experienced nursing only).
@@ -63,7 +64,7 @@ def validate(p):
         for i, x in enumerate(p["employer"][grp]):
             chk(x["re"], f"employer.{grp}[{i}]")
     chk(p["employer"].get("legal_forms", ""), "employer.legal_forms")
-    for k in ("pflege_gate", "nicht_pflege", "strong_pflege", "ausbildung_body"):
+    for k in ("pflege_gate", "nicht_pflege", "strong_pflege", "ausbildung_body", "no_vacancy_body"):
         chk(p["role"][k], f"role.{k}")
     for i, x in enumerate(p["role"]["rules"]):
         chk(x["re"], f"role.rules[{i}]")
@@ -95,7 +96,7 @@ def _apply(p):
     g["LEGAL_FORMS"] = p["employer"]["legal_forms"]
     r = p["role"]
     g["PFLEGE_TOKEN"], g["NICHT_PFLEGE"], g["STRONG_PFLEGE_TITLE"] = r["pflege_gate"], r["nicht_pflege"], r["strong_pflege"]
-    g["AUSBILDUNG_BODY"] = r["ausbildung_body"]
+    g["AUSBILDUNG_BODY"], g["NO_VACANCY_BODY"] = r["ausbildung_body"], r["no_vacancy_body"]
     g["ROLE_RULES"] = [(x["role_class"], x["re"]) for x in r["rules"]]
     g["ROLE_FALLBACK"] = r.get("fallback", "sonstige_pflege")
     g["EXCLUDED_ROLE_CLASSES"] = set(p.get("excluded_role_classes", ["nicht_pflege", "ausbildung", "werkstudent_praktikum"]))

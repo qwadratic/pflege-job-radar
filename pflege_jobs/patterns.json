@@ -77,6 +77,7 @@
   "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|(?:medizinische[nr]?|med\\.)(?:\\s*/\\s*-?r)?\\s+fachangestellte[nr]?|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|kinderpfleger|tierpfleg|\\braumpfleg|fu(?:ß|ss)pfleg|podolog|kosmetik|tagespflegeperson|verpflegung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik|buchhalt|controlling|(?:park|garten|grünflächen|grünanlagen|landschafts|anlagen?)pflege|(?:ä|ae)rzt[:*_/]in|(?:ä|ae)rztliche[rnms]?\\b|arztsekret|\\bedv\\b|anwendungsbetreu|^\\s*fachweiterbildung|frischetheke|standortmanager|steine\\s*&\\s*erden|beratung\\s*&\\s*verkauf|computertomographie|\\bmrt\\b|\\bmtl\\b",
   "strong_pflege": "pflegefach|pflegekr[aä]ft|pfleger\\b|pflegerin\\b|pflegerisch|pflegedienst|pflegeexpert|pflegepädagog|op-pflege|krankenpfleg|altenpfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\\bnurse\\b|\\bapn\\b",
   "ausbildung_body": "ausbildungsbeginn|(?:haupt|real|mittel)schulabschluss|mittlere[rn]? (?:reife|schulabschluss)",
+  "no_vacancy_body": "keine\\s+(?:offenen\\s+|passenden\\s+)?(?:stellen\\b|stellenangebote|stellenanzeigen)",
   "rules": [
    {
     "role_class": "werkstudent_praktikum",
@@ -88,7 +89,7 @@
    },
    {
     "role_class": "nicht_pflege",
-    "re": "(?:pflege|medizin)p(?:ä|ae)dagog|lehrkr[aä]ft|lehrer(?:in)?\\b|\\bdozent|lehrsekretariat|unterrichtsplanung|leitung[^|]{0,15}der akademie|(?:verwaltungskraft|teamassistenz)[^|]{0,60}(?:schule|akademie)|laborant|pharmaberater|verkäufer"
+    "re": "(?:pflege|medizin)p(?:ä|ae)dagog|lehrkr[aä]ft|lehrer(?:in)?\\b|\\bdozent|lehrsekretariat|unterrichtsplanung|leitung[^|]{0,15}der akademie|(?:verwaltungskraft|teamassistenz)[^|]{0,60}(?:schule|akademie)|laborant|pharmaberater|verkäufer|\\bstellenangebote\\b"
    },
    {
     "role_class": "hebamme",

@@ -198,3 +198,13 @@ def test_feed_adapters_hand_the_ad_text_to_the_role_classifier():
                    "Bayern", "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)",
                    "2026-08-31", None, {}, TOWNS, {})
     assert o["role_class"] == "ausbildung" and o["role_rule"].startswith("ausbildung_body:")
+
+
+def test_a_page_that_says_nothing_is_open_is_classified_as_such_at_intake():
+    # TASK-186: the observation carries the reason (role_rule), the intake gate then refuses it like any excluded class.
+    from pflege_jobs.sinks import only_pflege
+    o = obs(payload={"title": "Gesundheits- / Krankenpfleger",
+                     "description": "Patientenportal Derzeit haben wir keine offenen Stellen im Stationsbereich zu "
+                                    "besetzen. Wir freuen uns aber über jede Initiativbewerbung."})
+    assert (o["role_class"], o["role_rule"]) == ("nicht_pflege", "no_vacancy_page")
+    assert only_pflege([o]) == []

@@ -14,7 +14,7 @@ def _compile():
     g["_PFLEGE"] = C.rx(C.PFLEGE_TOKEN)
     g["_NICHT"] = C.rx(C.NICHT_PFLEGE)
     g["_STRONG_T"] = C.rx(C.STRONG_PFLEGE_TITLE)
-    g["_AUSB_BODY"] = C.rx(C.AUSBILDUNG_BODY)
+    g["_AUSB_BODY"], g["_NO_VACANCY"] = C.rx(C.AUSBILDUNG_BODY), C.rx(C.NO_VACANCY_BODY)
     g["_ROLES"] = [(n, C.rx(p)) for n, p in C.ROLE_RULES]
     g["_QUAL"] = [(n, C.rx(p)) for n, p in C.QUALIFICATION_HINT]
     g["_DEPT"] = [(n, C.rx(p)) for n, p in C.DEPARTMENT_HINT]
@@ -182,7 +182,10 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
     plain staff title ("Operationstechnische Assistenten (m/w/d)") and only its body says so: the school-leaving
     certificate it asks of a school leaver, its Ausbildungsbeginn (patterns.json role.ausbildung_body). Such a
     body classifies as ausbildung right after the offer_kind steps. "abgeschlossene Ausbildung als ..." in a
-    staff profile is not a marker. No desc = title only, as before.
+    staff profile is not a marker. A body that says nothing is open ("Derzeit haben wir keine offenen Stellen",
+    role.no_vacancy_body) and has no Aufgaben/Profil section of its own is a page with no job: nicht_pflege /
+    no_vacancy_page, right after the speculative-application title (a real vacancy that says so about ANOTHER
+    department states its own sections and is left alone). No desc = title only, as before.
 
     Checked before all of that: a speculative-application title ("Initiativbewerbung Pflegefachkraft
     (m/w/d)", "Blitzbewerbung Ärzte (m/w/d)") is never a genuine open posting, no matter which role it
@@ -192,6 +195,8 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
     """
     if _SPECULATIVE_APPLICATION_RX.search(title or ""):
         return "nicht_pflege", "speculative_application"
+    if _NO_VACANCY.search(norm_text(desc)) and not (extract_section(desc, _TASKH, _TASKSTOP) or extract_section(desc, _REQH, _REQS)):
+        return "nicht_pflege", "no_vacancy_page"
     s = norm_text(f"{title} || {hauptberuf}")
     if not _PFLEGE.search(s):                      # gate first: Ausbildung Elektroniker is not nursing
         if not nursing_section_confirmed:

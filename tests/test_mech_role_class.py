@@ -434,3 +434,70 @@ def test_clear_non_nursing_titles_are_not_nursing(why, title, hauptberuf):
 @pytest.mark.parametrize("why, title, want", _STILL_NURSING_TITLES, ids=[x[0] for x in _STILL_NURSING_TITLES])
 def test_neighbours_of_the_non_nursing_clusters_stay_nursing(why, title, want):
     assert classify_role(title, "")[0] == want, title
+
+
+# TASK-186 problem 3 (judge verdicts 2026-09-30, "no_job_text"): a page that is not a vacancy was stored as one. The
+# mechanism that already exists for that is the speculative-application check: the row is classified nicht_pflege
+# with a rule that names the reason (raw inbox row stays, the ack says "skipped: nicht_pflege"), never dropped
+# silently. The pages below say there is nothing open; each excerpt is real body text of a live page (posting id in
+# the comment), contact data and the clinic name dropped.
+_NO_VACANCY_PAGES = [
+    ("career_page_none_open", "Gesundheits- / Krankenpfleger",                                      # 12173
+     "Patientenportal Derzeit haben wir keine offenen Stellen im Stationsbereich zu besetzen. Wir freuen uns aber "
+     "über jede Initiativbewerbung."),
+    ("filtered_list_none", "Gesundheits- und Krankenpfleger Intensivstation Neurochirurgie (m/w/d)",   # 12307
+     "Suchen X Filter zurücksetzen 108 offene Stellenausschreibungen Leider sind derzeit keine passenden "
+     "Stellenangebote in diesem Bereich vorhanden. Bitte passen Sie die Suchfilter an. Alle Stellenangebote anzeigen "
+     "Der verwendete Link enthält keine Treffer."),
+    ("search_empty", "Stellvertretende Stationsleitung (m/w/d) für die Intensivstation",            # 11892
+     "Atmungstherapeut (m/w/d) Vollzeit | Standort: an beiden Standorten ›› Mehr Informationen Für Ihre Suche wurden "
+     "leider keine Stellenanzeigen gefunden."),
+]
+
+# The same words in a real vacancy, or other words that only look alike (all real, id in the comment).
+_VACANCY_PAGES = [
+    ("housing_sentence", "Pflegefachkraft Innere Medizin (w|m|d)",                                   # 6384
+     "Die Tätigkeit ist entsprechend Ihrer Qualifikation mit P7 TVöD-K/VKA bewertet. Derzeit haben wir leider keine "
+     "Möglichkeit, Wohnraum im Rahmen des Einstellungsprozesses zu vermitteln. Wir freuen uns über Ihre Online-Bewerbung."),
+    ("faq_initiative", "Akademisierte Pflegefachkraft (m/w/d) B.A. oder B.Sc.",                      # 13142
+     "Kann ich mich initiativ bewerben? Sollten Sie aktuell keine passende Stelle auf unserem Stellenportal finden, "
+     "können Sie uns sehr gern auch initiativ eine Bewerbung zukommen lassen."),
+    ("initiative_footer", "Examinierte Pflegefachkraft (m/w/d)",                                    # 14876
+     "Wir freuen uns über Initiativbewerbungen von examinierten Pflegefachkräften ( m/w/d ) für eine Voll- oder "
+     "Teilzeitbeschäftigung. Sofern wir aktuell keine geeignete Stelle anbieten können, nehmen wir Ihre Bewerbung "
+     "gerne in unseren Bewerberpool auf."),
+    # Composed, not frozen: a real vacancy (12953) that also says there is nothing open for ANOTHER department. The
+    # sentence is the one from 12174; a vacancy states its own Aufgabengebiet or Profil, and either one is enough.
+    ("none_elsewhere_with_both_sections", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Aufgabengebiet Ganzheitliche Pflege "
+     "und zugewandte Betreuung der Patienten Verantwortlichkeit für die Umsetzung des Pflegeprozesses Ihr Profil "
+     "Abgeschlossene Ausbildung zum Gesundheits- und Krankenpfleger (m/w/d) oder zur Pflegefachkraft (m/w/d) Hohe "
+     "Sozialkompetenz und Kommunikationsfähigkeit Wir bieten Ihnen: Unbefristeter Arbeitsvertrag"),
+    ("none_elsewhere_with_tasks_only", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Aufgabengebiet Ganzheitliche Pflege "
+     "und zugewandte Betreuung der Patienten Verantwortlichkeit für die Umsetzung des Pflegeprozesses"),
+    ("none_elsewhere_with_profile_only", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Profil Abgeschlossene Ausbildung zum "
+     "Gesundheits- und Krankenpfleger (m/w/d) oder zur Pflegefachkraft (m/w/d) Hohe Sozialkompetenz und Kommunikationsfähigkeit"),
+]
+
+
+@pytest.mark.parametrize("why, title, body", _NO_VACANCY_PAGES, ids=[x[0] for x in _NO_VACANCY_PAGES])
+def test_a_page_that_says_nothing_is_open_is_not_a_vacancy(why, title, body):
+    assert classify_role(title, "")[0] not in EXCLUDED_ROLE_CLASSES          # the title alone reads like a job
+    assert classify_role(title, "", desc=body) == ("nicht_pflege", "no_vacancy_page")
+
+
+@pytest.mark.parametrize("why, title, body", _VACANCY_PAGES, ids=[x[0] for x in _VACANCY_PAGES])
+def test_a_vacancy_that_only_mentions_nothing_open_elsewhere_stays_a_vacancy(why, title, body):
+    assert classify_role(title, "", desc=body) == classify_role(title, "")
+    assert classify_role(title, "")[0] not in EXCLUDED_ROLE_CLASSES
+
+
+def test_a_listing_page_titled_stellenangebote_is_not_a_vacancy():
+    # 12681: the career portal's landing page; a plural "Stellenangebote" cannot name one job, whatever else
+    # the title says ("Pflegefachkräfte" is a strong nursing word, hence a rule in role.rules, not the nicht_pflege list)
+    role, rule = classify_role("Pflegejobs: Stellenangebote für Pflegefachkräfte", "")
+    assert role == "nicht_pflege" and rule.startswith("nicht_pflege:"), (role, rule)
+    # a real posting whose title says "Stellenangebot" in the singular stays one (14875)
+    assert classify_role("Stellenangebot als Gesundheits- und Krankenpfleger / Altenpfleger (m/w/d)", "")[0] == "pflegefachkraft"
