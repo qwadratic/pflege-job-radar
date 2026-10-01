@@ -287,13 +287,15 @@ def cmd_status(a):
         tot["pages"] += e["pages"]
         tot["raw"] += e["bytes_raw"]
         tot["file"] += e.get("bytes_file", 0)
+        gap = [k for k, ok in (e.get("checks") or {}).items() if not ok]
         flags = [f for f, on in (("ERROR", e.get("error")), ("REPLAY-DIFFERS", e.get("replay_identical") is False), ("EXC", e.get("n_exc")),
-                                 (f"OLD>{a.older_than}d", age > a.older_than)) if on]
+                                 ("GAP:" + ",".join(gap), gap), (f"OLD>{a.older_than}d", age > a.older_than)) if on]
         rows.append(f"{bid:56.56} {e['kind']:6} clin {e['n_clinics']:2} pages {e['pages']:5} raw {e['bytes_raw'] / 1e6:7.1f} MB "
                     f"xz {e.get('bytes_file', 0) / 1e6:6.2f} MB rows {str(e['rows']):>5} age {age:3}d {e['recorded_at'][:10]}  {' '.join(flags)}")
     _log("\n".join(rows))
     _log(f"{len(idx)} boards, {tot['pages']} pages, {tot['raw'] / 1e9:.2f} GB raw bodies, {tot['file'] / 1e6:.1f} MB on disk; "
-         f"'OLD' is information only: nothing refreshes a mirror but a person running `record`")
+         f"'OLD' is information only: nothing refreshes a mirror but a person running `record`; "
+         f"GAP = a check already red at recording (an explicit xfail in the suite, a finding about the adapter)")
 
 
 def cmd_list_urls(a):

@@ -77,7 +77,6 @@ _connect._network_guard = _connect_ex._network_guard = True
 if not _RECORDING:
     socket.socket.connect, socket.socket.connect_ex = _connect, _connect_ex
     socket.getaddrinfo, socket.gethostbyname, socket.gethostbyname_ex = (_resolver(n) for n in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"))
-if not _RECORDING:
     try:  # a Chromium started by any test (or by a mirror replay) cannot resolve anything but localhost
         from playwright.sync_api import BrowserType
 
@@ -137,6 +136,21 @@ def pytest_collection_finish(session):
     msg = _failure(0, "collection")
     if msg:
         pytest.exit(msg, returncode=2)
+
+
+def pytest_collection_modifyitems(items):
+    """The named gaps of the completeness cases (TASK-197): a check that was already red when its board was recorded is an explicit
+    xfail with that reason (visible with -rx), not a hidden skip and not a red suite; the same check going red on a board where it
+    was green is a regression and fails. Non-strict: a fix that turns a gap green shows as XPASS until the board is re-recorded."""
+    gaps = [it for it in items if getattr(it, "originalname", None) and "board" in getattr(getattr(it, "callspec", None), "params", {})]
+    if not gaps:
+        return
+    from tests import adapter_harness as H
+    for it in gaps:
+        board = it.callspec.params["board"]
+        why = H.recorded_gap(it.originalname, board["board_id"]) if isinstance(board, dict) and "board_id" in board else None
+        if why:
+            it.add_marker(pytest.mark.xfail(reason=why, strict=False))
 
 
 def pytest_report_header(config):

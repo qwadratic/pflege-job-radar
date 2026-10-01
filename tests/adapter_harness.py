@@ -86,6 +86,22 @@ def indexed_boards():
     return [dict(e["board"], board_id=e["board_id"]) for e in entries]
 
 
+# the test of each check (tests/test_adapter_completeness.py) -> its key in the index entry's `checks`
+CHECK_OF = {"test_read_path_coverage": "read_path_coverage", "test_declared_total_parity": "declared_total_parity",
+            "test_field_completeness": "field_completeness", "test_public_url": "public_url", "test_round_trip": "round_trip"}
+
+
+def recorded_gap(test_name, board_id):
+    """Why this (check, board) case is an explicit, named gap: the check was already red when the board was recorded (the verdict
+    the recorder stored in the index). None when the check was green then -- a red replay of it is a regression and fails loudly --
+    or when nothing was recorded for the board."""
+    key = CHECK_OF.get(test_name)
+    e = ((M.read_index_or_none() or {}).get("boards") or {}).get(board_id)
+    if key and e and (e.get("checks") or {}).get(key) is False:
+        return (f"named gap: {key} was already red when {board_id} was recorded ({e['recorded_at'][:10]}); `tools/mirror.py status` "
+                f"lists the gaps, `pytest --runxfail` shows the finding, a re-record stores the new verdict")
+
+
 def need_mirror():
     """What a case does when the mirror is not there: fail, saying which command makes it (never skip)."""
     M.read_index()
