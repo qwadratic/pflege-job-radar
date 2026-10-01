@@ -11,28 +11,26 @@ Live re-verification 2026-09-10 (TASK-39), each finding reproduced directly agai
   free-text internal reference like "OA Gyn", not a taxonomy; regiomed: a real department taxonomy
   like "Aerztlicher Dienst"/"Pflegedienst"), and a location line (pin icon + city, sometimes also a
   calendar icon + date). Reading that DOM is exposed for every row and far more reliable than the
-  previous title/body regex guess against `seed["sites"]` -- especially for regiomed, where the
-  click below never fires, so the old code's `body` used for that regex was always "".
-- Clicking a title on Helios does NOT open a job description -- it jumps straight into the
-  application FORM (Anrede/Vorname/Lebenslauf...); its only free text is one line ("Bewerbung auf
-  die Stellenausschreibung "<title>" <ref> in <city>"). That's the closest thing to a description
-  this source exposes there, and is still captured (real content, not invented).
-- Clicking a title on the regiomed wildcard board (companyEid=%2a) does NOTHING -- confirmed live
-  with console/network/DOM diffing: zero requests, zero DOM bytes changed, zero URL change, even
-  with raw mouse coordinates and dblclick, from the item's natural on-load position (no scrolling
-  needed or at fault). %2a is not a guess either: www.sana.de/karriere/coburg/ itself links to this
-  exact URL. No employer-scoped companyEid exists to try instead. So regiomed rows genuinely carry
-  no description -- a source gap, flagged for the Oracle phase, not papered over (the previous code
-  stored the *entire list's* rendered body as every single row's "description" here, since an inert
-  click leaves `body` holding whatever was already on screen -- a real bug this version fixes by
-  only trusting `body` when the click actually navigated to a `#position,id=` hash).
+  previous title/body regex guess against `seed["sites"]`.
+- A title click opens the position in one of two ways, and crawl() reads whichever happens
+  (live 2026-10-01, TASK-184: regiomed 77/77 and wirkzvin 62/62 rows popup, Helios 94/94 and BRK München 20/20 form):
+  - regiomed and wirkzvin: the click window.open()s a POPUP, ".../bewerber-web?company=*-FIRMA-ID&...
+    #position,id=<uuid>,popup=y", and leaves this window's URL alone. The popup is the ad: rich-text
+    blocks, then the application form. TASK-39 watched only this window's URL, saw "nothing" and
+    concluded the regiomed click is dead (so did the later wirkzvin seed); both boards stored no text
+    and a '#title=<slug>' ref, which merged two vacancies sharing a title into one posting. The
+    position id in the popup URL is the stable ref; the description is what the popup shows above its
+    application form (AD_JS), read once the form has rendered -- before that the page holds only its
+    header line.
+  - Helios and BRK München: the click goes straight into the application FORM in this window ('#position,id=<uuid>').
+    That page holds no ad (Helios shows it on its own site) -- only form labels -- so the position id is
+    taken and no description: the stored "description" of these rows used to be the form's labels (and, for 4
+    Helios rows, a 79-char header line read before the form had rendered).
+  A click that opens neither is no "dead board" and ends nothing early: that row has no stable ref, is
+  not stored, and is counted in the stats' "error" (every row is still tried).
 - employmentType (Vollzeit/Teilzeit) is not exposed anywhere checked: 0 of 43+90 sampled list rows
   carry a type icon, and the application-form text never mentions it either. Cross-board source gap,
   also flagged for the Oracle phase.
-- After 3 consecutive clicks land no `#position,id=` hash, the rest of that board's clicks are
-  skipped (list data for every row is already captured without clicking -- see above); this is a
-  same-run efficiency decision once the board has proven its click is dead, not a row cap: every
-  listed posting is still returned.
 
 department_raw carries the source's own second line unlabelled -- vendor field names never become
 our labels, so Helios's free-text codes and regiomed's real taxonomy both land there as-is, with no
@@ -50,6 +48,19 @@ _DATE_RX = re.compile(r"^(\d{4})/(\d{1,2})/(\d{1,2})$")
 # Each posting's title label (tr[0] of its <tbody>). One selector for both the list read and the
 # click targets in crawl(), so list row i is click target i by construction.
 TITLE_LABEL = "tbody > tr:first-child > td > div.LG-Label"
+# A position page is rich-text blocks (the ad) followed by the application form, a .LG-BoxPanel. The form
+# is the last thing the page renders: once its box exists the ad above it is complete. The ad is the
+# text of everything above that box.
+FORM_BOX = ".BW-WebPositionPage .LG-BoxPanel"
+POSITION_ID = re.compile(r"position,id=([0-9a-f\-]{20,})")
+AD_JS = r"""() => {
+    const ad = [];
+    for (const el of document.querySelector('.BW-WebPositionPage').children) {
+        if (el.matches('.LG-BoxPanel') || el.querySelector('.LG-BoxPanel')) break;
+        ad.push(el.innerText);
+    }
+    return ad.join('\n');
+}"""
 
 
 def _parse_pi_date(raw):
@@ -80,6 +91,43 @@ def _list_rows(pg):
     })""", TITLE_LABEL)
 
 
+def _open_position(pg, ctx, i, board_url, save):
+    """Click list row i and read the position page it opens -> (position id, ad text or None). See the
+    module docstring for the two ways a board opens it. Raises when the click opens no position page."""
+    from playwright.sync_api import TimeoutError as PWTimeout
+    it = pg.locator(TITLE_LABEL).nth(i)
+    it.evaluate("el => el.scrollIntoView({block: 'center'})")
+    try:
+        with ctx.expect_page(timeout=3000) as opened:     # a popup board opens the position within ~0.3 s
+            it.click(timeout=6000)
+        pop = opened.value
+    except PWTimeout:
+        pop = None
+    if pop:
+        try:
+            pop.wait_for_selector(FORM_BOX, state="attached", timeout=15000)
+            pm = POSITION_ID.search(pop.url)
+            if not pm:
+                raise RuntimeError(f"the popup is no position page ({pop.url[-60:]})")
+            ad = pop.evaluate(AD_JS)
+            save(board_url, f"{board_url}#position,id={pm.group(1)}", pop.content(), 200, "text/html")
+        finally:
+            pop.close()
+        return pm.group(1), ad
+    pm = POSITION_ID.search(pg.url)
+    if not pm:
+        raise RuntimeError(f"the click opened no position page (this window: ...{pg.url[-40:]})")
+    try:
+        try: pg.wait_for_load_state("networkidle", timeout=6000)
+        except Exception: pass
+        save(board_url, f"{board_url}#position,id={pm.group(1)}", pg.content(), 200, "text/html")
+    finally:
+        pg.go_back(); pg.wait_for_timeout(1200)  # only real navigations push history
+        try: pg.wait_for_load_state("networkidle", timeout=6000)
+        except Exception: pass
+    return pm.group(1), None
+
+
 def crawl(seed, towns, log=print):
     from playwright.sync_api import sync_playwright
     from tests.adapter_contract import save
@@ -89,7 +137,7 @@ def crawl(seed, towns, log=print):
     # override, defaulting to the param every existing seed (Helios, Regiomed) already relies on.
     param = seed.get("param", "companyEid")
     url = f"https://{seed['host']}/bewerber-web/?{param}={seed['companyEid']}"
-    rows, stats = [], {"listed": 0, "opened": 0, "pflege": 0, "dead_click": False}
+    rows, failed, stats = [], [], {"listed": 0, "opened": 0, "pflege": 0}
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True, args=["--no-sandbox"])
         ctx = b.new_context(user_agent=UA, ignore_https_errors=True, locale="de-DE", viewport={"width": 1280, "height": 2400})
@@ -100,38 +148,16 @@ def crawl(seed, towns, log=print):
         save(url, pg.url, pg.content(), 200, "text/html")
         meta = _list_rows(pg)
         stats["listed"] = len(meta)
-        clickable = pg.locator(TITLE_LABEL)
-        dead_streak = 0
         for i, m in enumerate(meta):
             title = m["title"]
-            body, pid = "", None
-            if dead_streak < 3:
-                try:
-                    it = clickable.nth(i)
-                    it.evaluate("el => el.scrollIntoView({block: 'center'})")
-                    it.click(timeout=6000); pg.wait_for_timeout(1500)
-                    try: pg.wait_for_load_state("networkidle", timeout=6000)
-                    except Exception: pass
-                    hash_ = pg.url.split("#", 1)[1] if "#" in pg.url else ""
-                    pm = re.search(r"id=([0-9a-f\-]{20,})", hash_)
-                    if pm:
-                        pid = pm.group(1); dead_streak = 0
-                        body = pg.inner_text("body")
-                        save(url, f"{url}#{hash_}", pg.content(), 200, "text/html")
-                        stats["opened"] += 1
-                        pg.go_back(); pg.wait_for_timeout(1200)  # only real navigations push history
-                        try: pg.wait_for_load_state("networkidle", timeout=6000)
-                        except Exception: pass
-                        clickable = pg.locator(TITLE_LABEL)
-                    else:
-                        dead_streak += 1
-                        if dead_streak == 3:
-                            stats["dead_click"] = True
-                            log(f"  {seed['name'][:34]}: title click opens nothing on this board "
-                                f"(companyEid={seed['companyEid']}) -- confirmed dead after 3 tries, "
-                                f"no description available from this source")
-                except Exception as e:
-                    log(f"  click failed for '{title[:50]}': {str(e)[:60]}"); dead_streak += 1
+            try:
+                pid, ad = _open_position(pg, ctx, i, url, save)
+            except Exception as e:
+                # no position id = no stable ref to store the row under; the board's error says so
+                log(f"  position page of '{title[:50]}' did not open: {str(e)[:80]}")
+                failed.append(title)
+                continue
+            stats["opened"] += 1
             site = seed.get("default", {})
             for rx, s in (seed.get("sites") or {}).items():
                 if re.search(rx, title + " " + (m["city"] or ""), re.I): site = s; break
@@ -142,11 +168,11 @@ def crawl(seed, towns, log=print):
             unit, pin = (m["city"], None) if seed.get("pin_line") == "unit" else (None, m["city"])
             city = pin.split(",")[0].strip() if pin else site.get("town")
             plz = site.get("plz")
-            desc = _strip(body)[:20000] if body else None
+            desc = _strip(ad)[:20000] if ad else None
             role, rule = classify_role(title, "", desc=desc)
             enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
             e_class, e_rule = classify_employer(emp)
-            ref = f"{url}#position,id={pid}" if pid else f"{url}#title={re.sub(r'[^a-z0-9]+','-',title.lower())[:80]}"
+            ref = f"{url}#position,id={pid}"
             now = datetime.now(timezone.utc).isoformat()
             rows.append({
                 "source_id": SOURCE_ID, "source_ref": ref, "source_url": ref, "observed_at": now, "title": title,
@@ -171,5 +197,8 @@ def crawl(seed, towns, log=print):
             })
             stats["pflege"] += 1
         b.close()
+    if failed:
+        stats["error"] = (f"position page did not open for {len(failed)} of {stats['listed']} listed rows, "
+                          f"not stored (no position id): " + "; ".join(t[:60] for t in failed[:3]))
     log(f"{seed['name'][:34]:<34} companyEid {seed['companyEid']} listed {stats['listed']} opened {stats['opened']} -> Pflege {stats['pflege']}")
     return rows, stats
