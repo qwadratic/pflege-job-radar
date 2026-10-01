@@ -418,7 +418,7 @@ class Matcher:
             # registry town starts with that word -- _town_match's own prefix rule; "Bad" alone names none of the Bad towns
             return bool(k) and (set(k.split()) <= words or
                                 k.split()[0] in words and len({city_key(x.get("town")) for x in self._by_town(k.split()[0])}) == 1)
-        hits =[c for c in self.clinics if c.get("parse_quality") != "partial" and town_named(c) and
+        hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and town_named(c) and
                 ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
         if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
