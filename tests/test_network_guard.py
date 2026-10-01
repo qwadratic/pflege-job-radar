@@ -32,6 +32,7 @@ def test_swallowed():
 ''')
     assert rc == 1 and "1 failed" in out
     assert "network guard" in out and "192.0.2.1:80" in out and "test_inner.py::test_swallowed" in out
+    assert "tests/mirror.py" in out and "tools/mirror.py" in out  # the failure says what to do instead
     assert "network guard hits: 1" in out
 
 
@@ -40,17 +41,17 @@ def test_a_dns_lookup_fails_the_test_and_names_the_host(tmp_path):
 import socket, urllib.request
 def test_lookup():
     try:
-        urllib.request.urlopen("https://supabase.int.exe.xyz/rest/v1/clinics", timeout=1)
+        urllib.request.urlopen("https://registry-read-proxy.invalid/rest/v1/clinics", timeout=1)
     except Exception:
         pass
 def test_gethostbyname():
     try:
-        socket.gethostbyname("klkxfvieaxpjlplloljn.supabase.co")
+        socket.gethostbyname("project-rest.supabase.invalid")
     except OSError:
         pass
 ''')
     assert rc == 1 and "2 failed" in out
-    assert "dns supabase.int.exe.xyz" in out and "dns klkxfvieaxpjlplloljn.supabase.co" in out
+    assert "dns registry-read-proxy.invalid" in out and "dns project-rest.supabase.invalid" in out
 
 
 def test_loopback_is_allowed(tmp_path):
@@ -109,9 +110,22 @@ def test_the_guard_is_on_by_default_and_says_so(tmp_path):
     assert rc == 0 and "network guard: ON" in out
 
 
+def _hosts_file_name():
+    """A name /etc/hosts resolves without any network (the VM's own), other than localhost -- Chromium resolves it through the
+    system resolver, so only the guard's resolver rule can make it fail. (A *.invalid name would fail either way.)"""
+    for line in Path("/etc/hosts").read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            names = [n for n in line.split()[1:] if n != "localhost"]
+            if names:
+                return names[0]
+
+
 def test_chromium_cannot_resolve_anything_but_localhost(tmp_path):
     pytest.importorskip("playwright.sync_api")
-    rc, out = _session(tmp_path, '''
+    name = _hosts_file_name()
+    if not name:
+        pytest.skip("/etc/hosts names nothing but localhost here: no locally resolvable name to prove the resolver rule with")
+    rc, out = _session(tmp_path, f'''
 import pytest
 from playwright.sync_api import sync_playwright
 def test_browser():
@@ -119,10 +133,10 @@ def test_browser():
         try:
             b = pw.chromium.launch(args=["--no-sandbox"])
         except Exception as e:
-            pytest.skip(f"chromium unavailable: {e}")
+            pytest.skip(f"chromium unavailable: {{e}}")
         pg = b.new_page()
-        with pytest.raises(Exception, match="ERR_NAME_NOT_RESOLVED"):
-            pg.goto("https://example.invalid/", timeout=10000)
+        with pytest.raises(Exception, match="ERR_NAME_NOT_RESOLVED"):   # without the rule: ERR_CONNECTION_REFUSED (the name resolves)
+            pg.goto("http://{name}:59999/", timeout=10000)
         b.close()
 ''')
     assert rc == 0, out
