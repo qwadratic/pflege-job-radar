@@ -3,6 +3,7 @@
     "name": "Helios Klinikum München West",
     "host": "helios-gesundheit.pi-asp.de",
     "companyEid": 1134,
+    "ad_on_page": false,
     "default": {
       "kez": "16207",
       "town": "München",
@@ -14,6 +15,7 @@
     "name": "Helios Klinik München Perlach",
     "host": "helios-gesundheit.pi-asp.de",
     "companyEid": 1135,
+    "ad_on_page": false,
     "default": {
       "kez": "16208",
       "town": "München",
@@ -25,6 +27,7 @@
     "name": "Helios Amper-Klinikum Dachau",
     "host": "helios-gesundheit.pi-asp.de",
     "companyEid": 1130,
+    "ad_on_page": false,
     "default": {
       "kez": "17401",
       "town": "Dachau",

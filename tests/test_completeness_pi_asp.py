@@ -12,8 +12,10 @@ locks in fixes the live investigation found that the generic checks can't exerci
                 the position id (the stable ref, so two vacancies sharing a title stay two rows) and the
                 ad above the application form. No stop-after-N guard: a click that opens nothing is a
                 recorded failure, never a silent "dead board".
-  form page     on Helios the click goes straight into the application FORM in this window; that page holds
-                no ad (the ad lives on the Helios site), so its text is never stored as a description.
+  this window   on Helios and BRK München the click navigates this window to the position and the list is
+                restored afterwards. BRK's page is an ad above the application form (read like a popup's, its
+                empty boxes between the ad blocks are no end of the ad); Helios's is the FORM only (the ad
+                lives on the Helios site), so its seeds say "ad_on_page": false and its text is never stored.
   list fields   department_raw and first_published must come straight from the list's own DOM (dept
                 line / calendar-icon date), not stay hardcoded None -- the source exposes them for
                 every row without any click at all.
@@ -49,8 +51,8 @@ def test_parse_pi_date_none_when_absent_or_unparseable():
 
 # --- fake Playwright: enough of the API surface pi_asp.crawl() drives ------------------------------
 
-# What the three boards really show (live 2026-10-01). Ad text: the first lines of the regiomed OTA ad above
-# its application form, contact line left out. Form page: Helios 1134's whole body text after a title click.
+# What the boards really show (live 2026-10-01). Ad text: the first lines of the regiomed OTA ad above its
+# application form, contact line left out. Helios 1134's position page: all that AD_JS finds above its form.
 REGIOMED_AD = (
     "Coburg geht in die Zukunft – und du kannst Teil davon sein!\n"
     "Mit der Neuintegration der Neurochirurgie und Gefäßchirurgie bauen wir unser OP-Portfolio gezielt weiter aus.\n"
@@ -61,15 +63,17 @@ REGIOMED_AD = (
     "Assistenz bei operativen Eingriffen, konventionell wie auch roboterassistiert\n"
     "Dein Profil:\n"
     "Abgeschlossene Ausbildung als OTA oder Pflegefachkraft (m/w/d) mit OP-Erfahrung")
-HELIOS_FORM_PAGE = (
-    "Sie haben bereits ein Profil bei uns? Dann können Sie die Daten hier übernehmen\n"
-    "Bewerbung auf die Stellenausschreibung \"Facharzt Radiologie (m/w/d)\" 1134_000113 in München\n"
-    "Hinweis: Mit einem * markierte Felder sind Pflichtfelder. \n"
-    "Anrede* \nTitel / akad. Grad \nVorname* \nNachname* \nE-Mail* \nE-Mail Bestätigung* \nTelefon \nWohnort \n"
-    "Anschreiben \nLebenslauf* \nArbeitszeugnisse \nAbschlusszeugnis \nSonstige Bewerbungsunterlagen \n"
-    "Frühester Arbeitsbeginn \nIch bin auf die Ausschreibung aufmerksam geworden durch* \n"
-    "Möchten Sie uns sonst noch etwas mitteilen? \nIch habe die Datenschutzhinweise gelesen und verstanden.* \n"
-    "Hier geht es zu den Datenschutzhinweisen.\nJETZT BEWERBEN")
+HELIOS_FORM_HEAD = (
+    "\n\n\nBewerbung auf die Stellenausschreibung \"Facharzt Radiologie (m/w/d)\" 1134_000113 in München\n\n\n\n"
+    "Hinweis: Mit einem * markierte Felder sind Pflichtfelder.")
+# BRK München's position page: the ad of the real Pflegefachkräfte posting (contact line left out)
+BRK_AD = (
+    "Pflegefachkräfte (m/w/d) - Senioren- und Pflegeheim Römerschanz\n"
+    "Für unser Senioren- und Pflegeheim Haus Römerschanz, eine Einrichtung mit 77 Plätzen in Grünwald, suchen wir ab sofort:\n"
+    "Was bieten wir:\nFlexiblen Diensteinsatz: Früh-, Spät-, oder Nachtdienste möglich.\n"
+    "Unterstützung bei der Wohnungssuche (Werksdienstwohnungen)\n"
+    "Ihre Aufgaben:\nDigitale Dokumentation der Pflege\n"
+    "Informationen zum Datenschutz: Datenschutzerklärung")
 
 
 class _FakeSave:
@@ -110,13 +114,13 @@ class _FakePopup:
         self.url, self.ad, self.ready, self.closed = url, ad, ready, False
 
     def wait_for_selector(self, selector, state=None, timeout=None):
-        assert selector == pi_asp.FORM_BOX, "the form box is the signal that the ad above it has rendered"
+        assert selector == pi_asp.FORM_WAIT, "a form control is the signal that the ad above it has rendered"
         if not self.ready:
             from playwright.sync_api import TimeoutError as PWTimeout
             raise PWTimeout("Timeout 15000ms exceeded.")
 
-    def evaluate(self, script):
-        assert script == pi_asp.AD_JS
+    def evaluate(self, script, arg=None):
+        assert (script, arg) == (pi_asp.AD_JS, pi_asp.FORM_CONTROL)
         return self.ad
 
     def content(self):
@@ -147,25 +151,39 @@ class _FakeExpectPage:
 
 
 class _FakePage:
-    """postings[i] = {title, dept, city, date, pid, navigates | popup}. `navigates` = clicking the row puts a
-    #position,id= hash on this page's URL (Helios-shaped: straight into the application form); `popup` = the
-    ad text a popup window shows (regiomed / wirkzvin-shaped); neither = the click opens nothing."""
+    """postings[i] = {title, dept, city, date, pid, navigates | popup, ad?, ready?}. `navigates` = clicking the row
+    puts a #position,id= hash on this page's URL (Helios / BRK-shaped: the position page is shown in this window,
+    `ad` is what AD_JS finds above its form, `ready` False = the form never renders); `popup` = the ad text a popup
+    window shows (regiomed / wirkzvin-shaped); neither = the click opens nothing."""
     def __init__(self, base_url, postings):
         self.base_url, self.postings = base_url, postings
         self.url = base_url
         self.mouse = _FakeMouse()
         self.ctx = None
-        self._clicked, self.popups = [], []
+        self._clicked, self.popups, self.ad_reads = [], [], 0
 
     def goto(self, *a, **k): pass
     def wait_for_timeout(self, *a): pass
     def wait_for_load_state(self, *a, **k): pass
     def go_back(self): self.url = self.base_url
 
+    def _shown(self):
+        return next(p for p in self.postings if p.get("pid") and p["pid"] in self.url)
+
+    def wait_for_selector(self, selector, state=None, timeout=None):
+        assert selector == pi_asp.FORM_WAIT, "a form control is the signal that the ad above it has rendered"
+        if not self._shown().get("ready", True):
+            from playwright.sync_api import TimeoutError as PWTimeout
+            raise PWTimeout("Timeout 15000ms exceeded.")
+
     def evaluate(self, script, arg=None):
         if arg == pi_asp.TITLE_LABEL:                    # _list_rows
             return [{"title": p["title"], "dept": p["dept"], "city": p["city"], "date": p["date"]}
                     for p in self.postings]
+        if script == pi_asp.AD_JS:                       # the position page shown in this window
+            assert arg == pi_asp.FORM_CONTROL
+            self.ad_reads += 1
+            return self._shown().get("ad")
         return None
 
     def locator(self, selector):
@@ -182,9 +200,6 @@ class _FakePage:
             self.ctx.opened = popup
         elif p.get("navigates"):
             self.url = f"{self.base_url}#position,id={p['pid']}"
-
-    def inner_text(self, sel):
-        return HELIOS_FORM_PAGE if "position,id=" in self.url else ""
 
     def content(self):
         return "<html></html>"
@@ -240,8 +255,8 @@ def _wire_fake_playwright(monkeypatch, postings, base_url="https://x.test/bewerb
     return page, fake_save
 
 
-def _posting(i, navigates, dept="Pflegedienst", city="Coburg, Bayern, Deutschland", date=None):
-    return {"title": f"Pflegefachkraft {i} (m/w/d)", "dept": dept, "city": city, "date": date,
+def _posting(i, navigates, dept="Pflegedienst", city="Coburg, Bayern, Deutschland", date=None, ad=None, ready=True):
+    return {"title": f"Pflegefachkraft {i} (m/w/d)", "dept": dept, "city": city, "date": date, "ad": ad, "ready": ready,
             "navigates": navigates, "pid": f"{'a' * 20}-{i}" if navigates else None}
 
 
@@ -301,13 +316,14 @@ def test_a_popup_with_no_ad_text_is_a_row_without_a_description(monkeypatch):
     assert "error" not in stats
 
 
-def test_a_board_whose_click_opens_nothing_is_tried_row_by_row_and_reported(monkeypatch):
+@pytest.mark.parametrize("seed_extra", [{}, {"ad_on_page": False}])
+def test_a_board_whose_click_opens_nothing_is_tried_row_by_row_and_reported(monkeypatch, seed_extra):
     # No "3 dead clicks, the rest is skipped" guard: every row is clicked, and since a row without a
     # position id has no stable ref, none is stored -- the failure is the board's recorded error
     n = 8
     postings = [_posting(i, navigates=False) for i in range(n)]
     page, _save = _wire_fake_playwright(monkeypatch, postings)
-    rows, stats = pi_asp.crawl(_seed(), set())
+    rows, stats = pi_asp.crawl(_seed(**seed_extra), set())
     assert page._clicked == list(range(n))
     assert rows == []
     assert stats["listed"] == n and stats["opened"] == 0
@@ -334,17 +350,44 @@ def test_a_popup_whose_form_never_renders_is_not_read_half_way(monkeypatch):
     assert all(p.closed for p in page.popups)
 
 
-# --- Helios: the click goes straight into the application form --------------------------------------
+# --- Helios and BRK München: the click shows the position in this window ------------------------------
 
 def test_the_application_form_a_helios_click_opens_is_not_stored_as_a_description(monkeypatch):
-    postings = [_posting(i, navigates=True) for i in range(3)]
-    page, fake_save = _wire_fake_playwright(monkeypatch, postings)   # the fake page's body after a click is HELIOS_FORM_PAGE
-    rows, stats = pi_asp.crawl(_seed(), set())
+    # live 2026-10-01: Helios's position page is the application form only; the ad is on Helios's own site. Its
+    # seeds say so, and no text is read from the page (what AD_JS would find there is the form's title and hint)
+    postings = [_posting(i, navigates=True, ad=HELIOS_FORM_HEAD) for i in range(3)]
+    page, fake_save = _wire_fake_playwright(monkeypatch, postings)
+    rows, stats = pi_asp.crawl(_seed(ad_on_page=False), set())
+    assert page.ad_reads == 0
     assert [r["description"] for r in rows] == [None, None, None]
     assert [r["details_fetched_at"] for r in rows] == [None, None, None]
     assert [r["source_ref"] for r in rows] == [f"https://x.test/bewerber-web/?companyEid=1#position,id={'a' * 20}-{i}" for i in range(3)]
     assert stats == {"listed": 3, "opened": 3, "pflege": 3}
     assert len(fake_save.calls) == 4                              # list + the form page of each row
+
+
+def test_a_position_page_shown_in_this_window_carries_its_ad_like_a_popup_does(monkeypatch):
+    # live 2026-10-01: BRK München's click navigates this window, and its position page is ad then form. Reading
+    # nothing from it (as for Helios) dropped the 2.6-4.2 kB ads of its stored postings; a seed without
+    # "ad_on_page" reads the ad
+    postings = [_posting(i, navigates=True, ad=BRK_AD) for i in range(3)]
+    page, fake_save = _wire_fake_playwright(monkeypatch, postings)
+    rows, stats = pi_asp.crawl(_seed(), set())
+    assert [r["description"] for r in rows] == [BRK_AD] * 3
+    assert all(r["details_fetched_at"] for r in rows)
+    assert [r["source_ref"] for r in rows] == [f"https://x.test/bewerber-web/?companyEid=1#position,id={'a' * 20}-{i}" for i in range(3)]
+    assert page.ad_reads == 3
+    assert page.url == page.base_url                              # the list is restored after each position page
+    assert stats == {"listed": 3, "opened": 3, "pflege": 3}
+
+
+def test_a_position_page_in_this_window_whose_form_never_renders_is_not_read_half_way(monkeypatch):
+    page, _save = _wire_fake_playwright(monkeypatch, [_posting(0, navigates=True, ad=BRK_AD[:60], ready=False), _posting(1, navigates=True, ad=BRK_AD)])
+    rows, stats = pi_asp.crawl(_seed(), set())
+    assert [r["title"] for r in rows] == ["Pflegefachkraft 1 (m/w/d)"]
+    assert page.ad_reads == 1                                     # the half-rendered page was never read
+    assert "1 of 2" in stats["error"] and "Pflegefachkraft 0 (m/w/d)" in stats["error"]
+    assert page.url == page.base_url
 
 
 def test_a_click_that_opens_nothing_after_a_form_page_does_not_inherit_its_position_id(monkeypatch):
@@ -389,10 +432,10 @@ def test_crawl_defaults_to_companyeid_when_no_param_override_is_given(monkeypatc
     assert fake_save.calls[0][0] == "https://helios-gesundheit.pi-asp.de/bewerber-web/?companyEid=1134"
 
 
-# --- the ad a popup shows, read off the real DOM (live 2026-10-01) ----------------------------------
-# The fixtures are the position screen of one regiomed and one wirkzvin popup as rendered by headless
-# Chromium: share bar, buttons, the ad's rich-text blocks, the form's lead-in, then the first rows of the
-# application form. Contact lines are redacted.
+# --- the ad a position page shows, read off the real DOM (live 2026-10-01) --------------------------
+# The fixtures are the position screen of one regiomed popup, one wirkzvin popup and one BRK München page
+# (shown in the main window) as rendered by headless Chromium: share bar, buttons, the ad's rich-text blocks,
+# the form's lead-in, then the first rows of the application form. Contact lines are redacted.
 
 @pytest.fixture(scope="module")
 def chromium_browser():
@@ -410,7 +453,7 @@ def _ad_of(browser, sample):
     pg = browser.new_page()
     try:
         pg.set_content((SAMPLES / sample).read_text(encoding="utf-8"))
-        return pg.evaluate(pi_asp.AD_JS)
+        return pg.evaluate(pi_asp.AD_JS, pi_asp.FORM_CONTROL)
     finally:
         pg.close()
 
@@ -438,6 +481,37 @@ def test_the_ad_is_what_a_wirkzvin_popup_shows_above_its_application_form(chromi
         assert line in ad
     assert not any(label in ad for label in FORM_LABELS)
     assert "WEITERLEITEN" not in ad
+
+
+def test_the_ad_is_what_a_brk_position_page_shows_between_its_empty_boxes_and_its_form(chromium_browser):
+    # BRK München puts an empty .LG-BoxPanel in front of its ad blocks and between them: "the text above the first
+    # box" is nothing at all there (0 chars), the ad ends where the first form control starts
+    ad = pi_asp._strip(_ad_of(chromium_browser, "pi_asp_brkm_position_sample.html"))
+    assert ad.startswith("Pflegefachkräfte (m/w/d) - Senioren- und Pflegeheim Römerschanz")
+    for line in ("Was bieten wir:", "Unterstützung bei der Wohnungssuche (Werksdienstwohnungen)", "Ihre Aufgaben:",
+                 "Was wir uns wünschen:", "Informationen zum Datenschutz: Datenschutzerklärung"):
+        assert line in ad
+    assert not any(label in ad for label in FORM_LABELS)
+    assert "HERUNTERLADEN" not in ad
+
+
+@pytest.mark.parametrize("sample", ["pi_asp_regiomed_position_popup_sample.html", "pi_asp_wirkzvin_position_popup_sample.html",
+                                    "pi_asp_brkm_position_sample.html"])
+def test_the_wait_for_the_form_finds_the_form_of_each_real_position_page(chromium_browser, sample):
+    pg = chromium_browser.new_page()
+    try:
+        pg.set_content((SAMPLES / sample).read_text(encoding="utf-8"))
+        assert pg.locator(pi_asp.FORM_WAIT).count() > 0
+    finally:
+        pg.close()
+
+
+def test_the_helios_seeds_say_their_position_page_carries_no_ad_and_no_other_seed_does():
+    seeds = json.loads((ROOT / "data" / "registry" / "pi_seeds.json").read_text(encoding="utf-8"))
+    flagged = {(s["host"], s["companyEid"]) for s in seeds if s.get("ad_on_page") is False}
+    assert flagged == {("helios-gesundheit.pi-asp.de", 1134), ("helios-gesundheit.pi-asp.de", 1135),
+                       ("helios-gesundheit.pi-asp.de", 1130)}
+    assert all("ad_on_page" not in s for s in seeds if (s["host"], s["companyEid"]) not in flagged)
 
 
 # --- TASK-178: Klinikum Ingolstadt, wirkzvin.pi-asp.de/bewerber-web/?companyEid=* --------------------

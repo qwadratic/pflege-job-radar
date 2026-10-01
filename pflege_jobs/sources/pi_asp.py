@@ -1,9 +1,10 @@
 """P&I LOGA bewerber-web (GWT) adapter -- used by Helios (pi-asp.de), Sana Oberfranken/Regiomed
 (logaallin.regiomed-kliniken.de), BRK München and Klinikum Ingolstadt (wirkzvin.pi-asp.de). Seed:
-{name, host, companyEid, param?, pin_line?, default: {kez, town, plz?, employer?},
+{name, host, companyEid, param?, pin_line?, ad_on_page?, default: {kez, town, plz?, employer?},
 sites: {regex-on-"title pin-line": {kez, town, plz?, employer?}}}. A site with "kez": null is a unit
 the board lists that is no registry site; "pin_line": "unit" says the pin line names an org unit,
-not a town (both TASK-178, see crawl()).
+not a town (both TASK-178, see crawl()); "ad_on_page": false says the tenant's position page is the
+application form only, so no text is read from it (TASK-184: Helios, see below).
 
 Live re-verification 2026-09-10 (TASK-39), each finding reproduced directly against the real boards:
 
@@ -22,10 +23,12 @@ Live re-verification 2026-09-10 (TASK-39), each finding reproduced directly agai
     position id in the popup URL is the stable ref; the description is what the popup shows above its
     application form (AD_JS), read once the form has rendered -- before that the page holds only its
     header line.
-  - Helios and BRK München: the click goes straight into the application FORM in this window ('#position,id=<uuid>').
-    That page holds no ad (Helios shows it on its own site) -- only form labels -- so the position id is
-    taken and no description: the stored "description" of these rows used to be the form's labels (and, for 4
-    Helios rows, a 79-char header line read before the form had rendered).
+  - Helios and BRK München: the click navigates this window to the position ('#position,id=<uuid>'),
+    then the page is taken off again (history back). BRK's page is the same ad-then-form page a popup
+    shows, read the same way. Helios's is the application form ONLY (the ad is on Helios's own site):
+    its seeds say "ad_on_page": false, no text is read, the row keeps its position id and no description --
+    the stored "description" of these rows used to be the form's labels (and, for 4 Helios rows, a 79-char
+    header line read before the form had rendered).
   A click that opens neither is no "dead board" and ends nothing early: that row has no stable ref, is
   not stored, and is counted in the stats' "error" (every row is still tried).
 - employmentType (Vollzeit/Teilzeit) is not exposed anywhere checked: 0 of 43+90 sampled list rows
@@ -48,15 +51,17 @@ _DATE_RX = re.compile(r"^(\d{4})/(\d{1,2})/(\d{1,2})$")
 # Each posting's title label (tr[0] of its <tbody>). One selector for both the list read and the
 # click targets in crawl(), so list row i is click target i by construction.
 TITLE_LABEL = "tbody > tr:first-child > td > div.LG-Label"
-# A position page is rich-text blocks (the ad) followed by the application form, a .LG-BoxPanel. The form
-# is the last thing the page renders: once its box exists the ad above it is complete. The ad is the
-# text of everything above that box.
-FORM_BOX = ".BW-WebPositionPage .LG-BoxPanel"
+# A position page is rich-text blocks (the ad) followed by the application form. The form is the last thing
+# the page renders: once one of its controls exists the ad above it is complete. The ad is the text of every
+# block above the first one holding a control. (Not "above the first .LG-BoxPanel": BRK München puts empty
+# boxes between its ad blocks.)
+FORM_CONTROL = "input, select, textarea"
+FORM_WAIT = f".BW-WebPositionPage :is({FORM_CONTROL})"
 POSITION_ID = re.compile(r"position,id=([0-9a-f\-]{20,})")
-AD_JS = r"""() => {
+AD_JS = r"""(controls) => {
     const ad = [];
     for (const el of document.querySelector('.BW-WebPositionPage').children) {
-        if (el.matches('.LG-BoxPanel') || el.querySelector('.LG-BoxPanel')) break;
+        if (el.matches(controls) || el.querySelector(controls)) break;
         ad.push(el.innerText);
     }
     return ad.join('\n');
@@ -91,9 +96,10 @@ def _list_rows(pg):
     })""", TITLE_LABEL)
 
 
-def _open_position(pg, ctx, i, board_url, save):
-    """Click list row i and read the position page it opens -> (position id, ad text or None). See the
-    module docstring for the two ways a board opens it. Raises when the click opens no position page."""
+def _open_position(pg, ctx, i, board_url, save, read_ad):
+    """Click list row i and read the position page it opens -> (position id, ad text or None). The ad is not read
+    when the seed says the tenant's position page holds none ("ad_on_page": false). See the module docstring for
+    the two ways a board opens the page. Raises when the click opens no position page or its form never renders."""
     from playwright.sync_api import TimeoutError as PWTimeout
     it = pg.locator(TITLE_LABEL).nth(i)
     it.evaluate("el => el.scrollIntoView({block: 'center'})")
@@ -105,11 +111,11 @@ def _open_position(pg, ctx, i, board_url, save):
         pop = None
     if pop:
         try:
-            pop.wait_for_selector(FORM_BOX, state="attached", timeout=15000)
+            pop.wait_for_selector(FORM_WAIT, state="attached", timeout=15000)
             pm = POSITION_ID.search(pop.url)
             if not pm:
                 raise RuntimeError(f"the popup is no position page ({pop.url[-60:]})")
-            ad = pop.evaluate(AD_JS)
+            ad = pop.evaluate(AD_JS, FORM_CONTROL) if read_ad else None
             save(board_url, f"{board_url}#position,id={pm.group(1)}", pop.content(), 200, "text/html")
         finally:
             pop.close()
@@ -118,14 +124,19 @@ def _open_position(pg, ctx, i, board_url, save):
     if not pm:
         raise RuntimeError(f"the click opened no position page (this window: ...{pg.url[-40:]})")
     try:
-        try: pg.wait_for_load_state("networkidle", timeout=6000)
-        except Exception: pass
+        if read_ad:
+            pg.wait_for_selector(FORM_WAIT, state="attached", timeout=15000)
+            ad = pg.evaluate(AD_JS, FORM_CONTROL)
+        else:
+            ad = None
+            try: pg.wait_for_load_state("networkidle", timeout=6000)
+            except Exception: pass
         save(board_url, f"{board_url}#position,id={pm.group(1)}", pg.content(), 200, "text/html")
     finally:
         pg.go_back(); pg.wait_for_timeout(1200)  # only real navigations push history
         try: pg.wait_for_load_state("networkidle", timeout=6000)
         except Exception: pass
-    return pm.group(1), None
+    return pm.group(1), ad
 
 
 def crawl(seed, towns, log=print):
@@ -151,7 +162,7 @@ def crawl(seed, towns, log=print):
         for i, m in enumerate(meta):
             title = m["title"]
             try:
-                pid, ad = _open_position(pg, ctx, i, url, save)
+                pid, ad = _open_position(pg, ctx, i, url, save, seed.get("ad_on_page", True))
             except Exception as e:
                 # no position id = no stable ref to store the row under; the board's error says so
                 log(f"  position page of '{title[:50]}' did not open: {str(e)[:80]}")
