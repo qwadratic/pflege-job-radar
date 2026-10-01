@@ -87,6 +87,32 @@ def cmd_verify(a):
         print(f"pushed {n} verification results")
 
 
+def link_rows(rq, url, H):
+    """Every posting of a clinic-or-unknown employer, as cmd_link_clinics hands it to link_postings."""
+    rows, off = [], 0
+    while True:
+        # Read the base tables, not v_postings: the view adds a per-row "most authoritative source_url"
+        # subquery over posting_observations that pushes this scan past the statement timeout as the
+        # table grows. Nothing here needs that column.
+        q = (f"{url}/rest/v1/postings?select=posting_id,title,city,clinic_match_rule,employers!inner(name_display,employer_class),"
+             f"posting_observations(payload)&employers.employer_class=in.(clinic,unknown)&order=posting_id&limit=1000&offset={off}")
+        chunk = _rows(rq.get(q, headers=H, timeout=120), "postings+employers")
+        # The posting's employer and city are the crawler's own copy of the seed clinic's name and town
+        # when an observation says so (employer_source / city_source 'seed', written into the payload by
+        # jobposting_to_obs and _process_rows): matching them here, without the stamps _process_rows
+        # passes, re-created R1_exact links the drain had just refused (Rottal-Inn 12, AMEOS, Straubing).
+        # A posting counts as stamped when any of its observations is: a missed link is the cheaper error.
+        stamped = lambda r, field: any(_marker(o, field) == "seed" for o in r["posting_observations"])
+        rows += [{"posting_id": r["posting_id"], "title": r["title"], "city": r["city"],
+                  "clinic_match_rule": r.get("clinic_match_rule"),
+                  "employer": (r.get("employers") or {}).get("name_display"),
+                  "employer_class": (r.get("employers") or {}).get("employer_class"),
+                  "employer_inherited": stamped(r, "employer_source"), "city_inherited": stamped(r, "city_source")} for r in chunk]
+        off += len(chunk)
+        if len(chunk) < 1000: break
+    return rows
+
+
 def cmd_link_clinics(a):
     """Link postings to sites against the live clinics table and push clinic_links via ingest.
 
@@ -100,21 +126,7 @@ def cmd_link_clinics(a):
     url, key = os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"]
     H = {"apikey": key, "Accept-Profile": "pflege_jobs"}
     clinics = _live_clinics(url, H)
-    rows, off = [], 0
-    while True:
-        # Read the base tables, not v_postings: the view adds a per-row "most authoritative source_url"
-        # subquery over posting_observations that pushes this scan past the statement timeout as the
-        # table grows. Nothing here needs that column.
-        q = (f"{url}/rest/v1/postings?select=posting_id,city,clinic_match_rule,employers!inner(name_display,employer_class)"
-             f"&employers.employer_class=in.(clinic,unknown)&order=posting_id&limit=1000&offset={off}")
-        chunk = _rows(rq.get(q, headers=H, timeout=120), "postings+employers")
-        rows += [{"posting_id": r["posting_id"], "city": r["city"],
-                  "clinic_match_rule": r.get("clinic_match_rule"),
-                  "employer": (r.get("employers") or {}).get("name_display"),
-                  "employer_class": (r.get("employers") or {}).get("employer_class")} for r in chunk]
-        off += len(chunk)
-        if len(chunk) < 1000: break
-    rows = [r for r in rows if r.get("clinic_match_rule") != "manual"]
+    rows = [r for r in link_rows(rq, url, H) if r.get("clinic_match_rule") != "manual"]
     links = link_postings(rows, clinics)
     from collections import Counter
     print(f"postings considered {len(rows)}; linked {len(links)} ({100*len(links)/max(1,len(rows)):.0f}%); rules {dict(Counter(l['clinic_match_rule'] for l in links))}")
@@ -419,20 +431,32 @@ def manual_posting_ids(get, url, H, posting_ids, chunk=200):
     return manual
 
 
-def _drain_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None):
+def linked_posting_ids(get, url, H, posting_ids, chunk=200):
+    """Which of posting_ids currently carry a clinic link live (clinic_id not null)."""
+    linked = set()
+    ids = sorted(set(posting_ids))
+    for i in range(0, len(ids), chunk):
+        resp = get(f"{url}/rest/v1/postings", params={"select": "posting_id", "clinic_id": "not.is.null",
+                                                        "posting_id": f"in.({','.join(str(x) for x in ids[i:i + chunk])})"},
+                   headers=H, timeout=120)
+        linked.update(x["posting_id"] for x in _rows(resp, "postings link check"))
+    return linked
+
+
+def _drain_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None, boards=None):
     """Fetch and process one page (<=1000 rows) of the Postgres inbox queue -- the queue for
     producers that hold only the anon key (web/collect.html, POST /api/ingest, the Firecrawl
     webhook). The crawler's own rows go through the local queue below. Returns rows read."""
     import requests as rq
     rows = _rows(rq.get(f"{url}/rest/v1/inbox?select=*&processed_at=is.null&order=inbox_id&limit=1000", headers=H, timeout=120), "inbox")
-    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools)
+    return _process_rows(rows, a, url, H, m, towns, _ack_postgres, "postgres", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools, boards=boards)
 
 
-def _drain_local_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None):
+def _drain_local_once(a, url, H, m, towns, resolve=True, stats=None, link_candidates=None, pools=None, boards=None):
     """Same processing over one page of the local SQLite queue (pflege_jobs.inbox_db), where the
     crawler now puts every row it finds, unfiltered. Returns rows read."""
     rows = IB.pending(1000, path=a.inbox_db)
-    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools)
+    return _process_rows(rows, a, url, H, m, towns, lambda acks: IB.ack(acks, path=a.inbox_db), "sqlite", resolve=resolve, stats=stats, link_candidates=link_candidates, pools=pools, boards=boards)
 
 
 def _ack_postgres(acks):
@@ -442,22 +466,40 @@ def _ack_postgres(acks):
     return acked
 
 
-def _city_inherited(o):
-    """True when this observation's city was copied from the seed clinic's own registry town rather
-    than read off the posting (TASK-81 mechanism #3), so Matcher.match must not let it fabricate
-    agreement with that seed via R0_board_name/R0_board_town. pflege_jobs/sources/inbox.py buries the
-    city_source='seed' marker inside the jobposting branch's serialized payload; a seeded-adapter
-    observation that sets it would carry it as a plain top-level key, the same as _emp_inherited
-    already does for that branch."""
-    if o.get("city_source") == "seed":
-        return True
+def _marker(o, key):
+    """The crawler's provenance marker `key` ('city_source', 'employer_source') of an observation, wherever
+    the producer put it: pflege_jobs/sources/inbox.py writes both inside the jobposting branch's serialized
+    payload, a seeded adapter sets them as plain top-level keys (the way it sets _emp_inherited) or inside a
+    payload that is a JSON string or a dict. The same reader serves the queue and stored posting_observations."""
+    if o.get(key) is not None:
+        return o[key]
     payload = o.get("payload")
     if isinstance(payload, str):
         try:
-            return json.loads(payload).get("city_source") == "seed"
+            payload = json.loads(payload)
         except ValueError:
-            return False
-    return False
+            return None
+    return payload.get(key) if isinstance(payload, dict) else None
+
+
+def _city_inherited(o):
+    """True when this observation's city was copied from the seed clinic's own registry town rather
+    than read off the posting (TASK-81 mechanism #3), so Matcher.match must not let it fabricate
+    agreement with that seed in any rule."""
+    return _marker(o, "city_source") == "seed"
+
+
+def _persist_markers(o, employer_inherited, city_inherited):
+    """Write the stamps into the observation's payload, where the stored posting keeps them for later
+    stages (cmd_link_clinics reads them back with _marker). jobposting_to_obs already does for raw job
+    pages; a seeded adapter's finished observation gets them here. Only what is known is written: the
+    city marker only when the adapter set it."""
+    p = o.get("payload")
+    d = json.loads(p) if isinstance(p, str) else dict(p or {})
+    d.setdefault("employer_source", "seed" if employer_inherited else "page")
+    if city_inherited:
+        d.setdefault("city_source", "seed")
+    o["payload"] = d if isinstance(p, dict) else json.dumps(d, ensure_ascii=False)
 
 
 def _pooled(board, key, pools):
@@ -468,7 +510,50 @@ def _pooled(board, key, pools):
     return sorted(pools[key] | {str(x) for x in (board or [])})
 
 
-def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=True, stats=None, link_candidates=None, pools=None):
+def _employer_inherited(o):
+    """True when the employer of this observation is the seed clinic's own name, not read off the posting:
+    _emp_inherited (set by jobposting_to_obs and the seeded adapters, consumed here) or the stored marker."""
+    return bool(o.pop("_emp_inherited", False)) or _marker(o, "employer_source") == "seed"
+
+
+def _loaded_note(o, why):
+    """The inbox process_note of a loaded row: the clinic it was linked to, or why it was not."""
+    if o["_kez"]:
+        return f"loaded -> {o['_kez']}"
+    return "loaded (no site match" + (f": {'; '.join(why)}" if why else "") + ")"
+
+
+def _board_foreign(m, towns, pools, path=None):
+    """What each board names beyond the towns of its own clinics: {sorted pool of clinic ids: places}.
+
+    Measured over every row waiting in the local queue, including the ones the drain will skip -- a Kiel ad on
+    karriere.ameos.eu is out of Bavaria and never loaded, but it is what shows that board serves more than
+    Neuburg (Matcher._match_board: such a board is not the clinic's own single-site board). A row's place is
+    what jobposting_to_obs reads off it (the description, its slow part, left out) or, for a seeded adapter's
+    finished observation, its city; a place that is only the seed clinic's own town copied on (city_source
+    'seed') is not one the posting names. A posting's pool is the union over all of its copies (`pools`)."""
+    from .registry import city_key
+    from .sources.inbox import jobposting_to_obs, NON_PROD_HOST
+    from urllib.parse import urlparse
+    named = {}
+    with IB.connect(path) as c:
+        for r in c.execute("select kind, collector, source_host, source_url, payload from inbox"
+                           " where processed_at is null and kind in ('jobposting', 'observation')"):
+            p = json.loads(r["payload"]) if r["payload"] else {}
+            key = p.get("source_ref") or p.get("url") or r["source_url"]
+            if key not in pools or NON_PROD_HOST.search(urlparse(r["source_url"] or "").netloc):
+                continue
+            if r["kind"] == "jobposting":
+                o = jobposting_to_obs({"inbox_id": 0, "source_host": r["source_host"], "source_url": r["source_url"],
+                                       "collector": r["collector"], "payload": {**p, "description": ""}}, towns)
+            else:
+                o = p
+            if not _city_inherited(o) and city_key(o.get("city")):
+                named.setdefault(tuple(sorted(pools[key])), set()).add(city_key(o["city"]))
+    return {pool: m.foreign_places(pool, places) for pool, places in named.items()}
+
+
+def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=True, stats=None, link_candidates=None, pools=None, boards=None):
     """One page of queued rows -> observations in Postgres. This is where filtering, matching and
     conversion happen for every queue: the crawler stores raw rows and nothing else decides what is
     kept, so a rule change can be replayed over the stored rows (inbox_db.reset).
@@ -479,8 +564,10 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
     the log. stats, if given, is set stats['wrote']=True the first time this (or an earlier) page
     actually had observations to write, so the caller knows whether a final resolve is needed at all.
 
-    link_candidates, if given, collects matched observations instead of looking up their posting_id
-    and pushing clinic_links here. A brand-new posting has posting_id=NULL in posting_observations
+    link_candidates, if given, collects the loaded observations -- matched or not: an unmatched one is a
+    posting whose stored link, if any, no longer rests on evidence (cmd_inbox clears it) -- instead of
+    looking up their posting_id and pushing clinic_links here. boards is what each board names beyond its
+    own clinics' towns (_board_foreign), keyed by the sorted pool. A brand-new posting has posting_id=NULL in posting_observations
     until resolve_postings() runs (sql/002_task73_migration.sql assigns it there); with resolve now
     deferred to one call at the end of the whole drain (both queues, every page), looking up the
     posting_id per-page here -- before that resolve has happened -- found nothing for every
@@ -498,11 +585,13 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o["employer_name"], o["city"], board=_pooled(o.pop("_board", None), o["source_ref"], pools), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o), description=o.get("description"))
+            pool, why = _pooled(o.pop("_board", None), o["source_ref"], pools), []
+            mt = m.match(o["employer_name"], o["city"], board=pool, employer_inherited=_employer_inherited(o),
+                        city_inherited=_city_inherited(o), description=o.get("description"), title=o.get("title"),
+                        foreign=(boards or {}).get(tuple(pool or ())), note=why)
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
-            obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
+            obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": _loaded_note(o, why)})
         elif r["kind"] == "observation":
             # Seeded adapters (softgarden/bite/umantis/pi_asp) already return a finished observation,
             # not a raw jobposting -- app/crawl.py._obs_row wraps it as-is so it is queued and
@@ -516,8 +605,11 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o.get('role_class')} (not an experienced nursing role)"}); continue
             if o.get("in_bavaria") is False:
                 ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o.get("employer_name"), o.get("city"), board=_pooled(o.pop("_board", None), o.get("source_ref"), pools), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o), description=o.get("description"))
+            emp_inh, city_inh = _employer_inherited(o), _city_inherited(o)
+            pool, why = _pooled(o.pop("_board", None), o.get("source_ref"), pools), []
+            mt = m.match(o.get("employer_name"), o.get("city"), board=pool, employer_inherited=emp_inh, city_inherited=city_inh,
+                        description=o.get("description"), title=o.get("title"), foreign=(boards or {}).get(tuple(pool or ())), note=why)
+            _persist_markers(o, emp_inh, city_inh)
             # A seed's own preset _kez is NOT a fallback for a refused match (TASK-166): with the
             # board pool passed above, the Matcher only returns None here when the posting's own
             # city names a town no board clinic is in, or the pool stays ambiguous -- so falling back
@@ -527,7 +619,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             o["_kez"] = mt[0] if mt else None
             o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + (o.get("employer_class_rule") or "")
-            obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
+            obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": _loaded_note(o, why)})
         elif r["kind"] == "probe" and (r["payload"] or {}).get("probe") == "ats_discovery":
             pl = r["payload"]; cid = pl.get("clinic_id")
             if not cid and pl.get("employer"):
@@ -568,7 +660,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             stats["wrote"] = True
         print("load:", sink.write(obs, resolve=resolve, log=lambda *_: None))
         if link_candidates is not None:
-            link_candidates.extend(o for o in obs if o.get("_kez"))
+            link_candidates.extend(obs)
         # No collector writing to this inbox is an actual browser that fetched *this* URL and got 200 --
         # every one is a crawler/adapter/agent (vendor-*, playwright-*, firecrawl-agent, ats-discover2,
         # career-discover-exa). Stamping verify_status=live/200 here was fabricated (248 rows in the
@@ -616,7 +708,14 @@ def cmd_inbox(a):
     per page inside _process_rows: a brand-new posting has posting_id=NULL in posting_observations
     until resolve_postings() runs, so a per-page lookup -- before resolve had happened -- found
     nothing for every posting created this run and silently dropped its clinic_links (2026-09-21
-    review). _process_rows only accumulates matched observations into link_candidates now.
+    review). _process_rows only accumulates the loaded observations into link_candidates now.
+
+    A stored link is re-evaluated every time its posting is loaded again, and cleared (clinic_id and rule
+    NULL) when the evaluation finds no evidence for it: the link of a posting is what today's rules say, not
+    what the first load that matched it said (2026-10-01: 52 stored links were not reproducible by the code
+    that had written them, 22 of them judged to name another site). Rows with clinic_match_rule='manual'
+    (tools/apply_posting_changes.py relink, unlink with lock) are never touched here. Before the drain, the
+    queue is read once to find what each board names beyond its own clinics' towns (_board_foreign).
 
     Registry source: the live clinics table -- the same one app/data.py's D.clinics() and
     crawlers.routing.plan() plan crawls from. Until TASK-80 the default was data/registry/clinics.csv, a
@@ -643,9 +742,10 @@ def cmd_inbox(a):
     link_candidates = []
     # Read before the first page is acked: a posting's copies can sit on different pages (TASK-166).
     pools = IB.pending_board_pools(path=a.inbox_db)
+    boards = _board_foreign(m, towns, pools, path=a.inbox_db)
     for drain in (_drain_local_once, _drain_once):
         for _ in range(a.max_batches):
-            n = drain(a, url, H, m, towns, resolve=False, stats=stats, link_candidates=link_candidates, pools=pools)
+            n = drain(a, url, H, m, towns, resolve=False, stats=stats, link_candidates=link_candidates, pools=pools, boards=boards)
             total += n
             if n < 1000 or a.no_ack:      # --no-ack never acks, so the same page would repeat forever
                 break
@@ -661,7 +761,8 @@ def cmd_inbox(a):
     if link_candidates:
         ids = lookup_posting_ids(rq.get, url, H, link_candidates)
         key_fn = lambda o: (o["source_id"], o["source_ref"])
-        links = [{"posting_id": ids[key_fn(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"], "clinic_match_score": 0.9}
+        links = [{"posting_id": ids[key_fn(o)], "clinic_id": o["_kez"], "clinic_match_rule": o["_rule"],
+                  "clinic_match_score": 0.9 if o["_kez"] else None}
                  for o in link_candidates if key_fn(o) in ids]
         if len(ids) < len(link_candidates):
             print(f"  warning: {len(link_candidates) - len(ids)} of {len(link_candidates)} written observations not found on re-read; their clinic links are skipped")
@@ -672,18 +773,26 @@ def cmd_inbox(a):
         # One link per posting. Several copies of one posting (one per board that served it) reach
         # here; pflege-ingest's clinic_links `update ... from` applies an unpredictable one of
         # duplicate posting_ids, so copies that disagree used to decide the clinic by chance (TASK-166).
-        # Board pooling above makes copies agree; where they still don't, nothing is pushed.
+        # Board pooling above makes copies agree; where they still don't, nothing is pushed. A copy that found
+        # no evidence abstains: it neither conflicts with a copy that did nor undoes its link.
         by_pid = {}
         for l in links:
             by_pid.setdefault(l["posting_id"], []).append(l)
-        conflicts = {p: sorted({l["clinic_id"] for l in ls}) for p, ls in by_pid.items() if len({l["clinic_id"] for l in ls}) > 1}
+        matched = {p: sorted({l["clinic_id"] for l in ls if l["clinic_id"]}) for p, ls in by_pid.items()}
+        conflicts = {p: c for p, c in matched.items() if len(c) > 1}
         if conflicts:
             print(f"  CONFLICT: {len(conflicts)} posting(s) matched to different clinics by different copies, not linked: "
                   + "; ".join(f"{p}->{'/'.join(c)}" for p, c in sorted(conflicts.items())))
-        links = [ls[-1] for p, ls in by_pid.items() if p not in conflicts]
+        links = [next((l for l in reversed(ls) if l["clinic_id"]), ls[-1]) for p, ls in by_pid.items() if p not in conflicts]
+        # An unmatched posting is only written when it has a link to clear; writing NULL over NULL would just
+        # touch updated_at on every unmatched posting every night.
+        unmatched = [l["posting_id"] for l in links if not l["clinic_id"]]
+        linked = linked_posting_ids(rq.get, url, H, unmatched) if unmatched else set()
+        cleared = [l for l in links if not l["clinic_id"] and l["posting_id"] in linked]
+        links = [l for l in links if l["clinic_id"]] + cleared
         sink = EdgeSink(batch=200)
         for i in range(0, len(links), 400): sink._post({"clinic_links": links[i:i + 400]})
-        print(f"clinic links pushed: {len(links)}")
+        print(f"clinic links pushed: {len(links)} ({len(cleared)} of them clear a link the posting no longer has evidence for)")
     print(f"inbox drained {total} rows")
 
 

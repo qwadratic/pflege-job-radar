@@ -123,10 +123,6 @@ def jaccard(a, b):
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
-# Explicit tie-breaks for multi-site operators where bed counts mislead (HS-Kliniken have no Plan beds).
-SITE_PREFERENCE = {("16291", "16292"): "16291",                     # TUM: Rechts der Isar over Deutsches Herzzentrum
-                   ("16290", "16291", "16292"): "16290"}            # generic "Klinikum der Universität München": LMU (largest)
-
 # employer_norm() values whose vendor feed reliably states the wrong city -- the operator's
 # registered/legal address, not the posting's real work site -- confirmed live 2026-09-23 (TASK-96):
 # KJF Klinik Hochried (clinic 18006, Murnau) posts through josefinum.softgarden.io, the SAME shared
@@ -144,11 +140,36 @@ SITE_PREFERENCE = {("16291", "16292"): "16291",                     # TUM: Recht
 CITY_UNRELIABLE_EMPLOYERS = {"kjf klinik hochried"}
 
 
-def _pick_site(cands):
-    ids = tuple(sorted(x["clinic_id"] for x in cands))
-    pref = SITE_PREFERENCE.get(ids)
-    if pref: return next(x for x in cands if x["clinic_id"] == pref)
-    return max(cands, key=lambda x: x.get("beds") or 0)
+def _named(tokens, key):
+    """True when `tokens` (what a posting says) cover `key` (what a site is called): the acceptance the
+    R3/R4 rungs below apply."""
+    o = overlap(tokens, key)
+    return o >= 0.8 or (o >= 0.6 and len(tokens & key) >= 2)
+
+
+def _pick_site(cands, texts, note):
+    """Which of several same-operator sites a posting belongs to (rule R6) has to come from the posting,
+    not from bed counts (2026-10-01: München Klinik ads for Harlaching + Schwabing sat on Bogenhausen, the
+    biggest; Nürnberg Campus Süd ads on Nord). A site is named when the words that set it apart from the
+    other candidates occur in the employer text, title or description. Candidates with the same name are one
+    site entered twice (Plan-KH row and its RHV Reha twin, a Vertrags-KH placeholder): no text can tell them
+    apart, the one with most beds stands for the group (decision-4).
+      the text names one site -> that site
+      it names none, and one candidate is the plain name the others only extend ('Klinikum am Europakanal'
+      next to '... Neurologische Rehabilitation') -> that one
+      it names several, or none and no plain candidate -> None: the posting stays unmatched and `note` says why."""
+    groups = defaultdict(list)
+    for x in cands: groups[frozenset(x["_ntoks"])].append(x)
+    biggest = lambda g: max(groups[g], key=lambda x: x.get("beds") or 0)
+    if len(groups) == 1: return biggest(next(iter(groups)))
+    common = frozenset.intersection(*groups)
+    text = toks(" ".join(t for t in texts if t))
+    named = [g for g in groups if g - common and _named(text, g - common)]
+    pick = named or [g for g in groups if not g - common]
+    if len(pick) == 1: return biggest(pick[0])
+    why = ("R6 refused: sites " + ",".join(sorted(x["clinic_id"] for x in cands)) + " tie and the text names "
+           + ("several of them" if named else "none of them"))
+    if why not in note: note.append(why)
 
 
 class Matcher:
@@ -170,12 +191,17 @@ class Matcher:
         if not ck: return []
         return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
 
-    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False):
+    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False,
+              title=None, foreign=None, note=None):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
         Board-first was tried and reverted: it forced a guess on shared boards that host non-Bavaria
         entities too (Artemed/smartrecruiters), instead of correctly leaving them unmatched.
+
+        A posting is attached to a clinic only on evidence that it belongs there: its own place or facility,
+        read off the posting, agrees with the clinic; or its board is demonstrably that clinic's own
+        single-site board (_match_board). A value the crawler copied from the seed clinic is none of that.
 
         employer_inherited=True means the crawler did not read that employer off the posting -- it
         substituted the seed clinic's own registry name (pflege_jobs/sources/inbox.py records this as
@@ -185,24 +211,41 @@ class Matcher:
         with the marker it can finally be enforced here). Such a row must earn its clinic from the
         city/tokens/board instead.
 
-        city_inherited=True is the same problem for the OTHER half of a board-fallback match
-        (pflege_jobs/sources/inbox.py's city_source='seed', set when a job page names no location at
-        all and the crawler substituted the seed clinic's own registry town, TASK-81 mechanism #3):
-        R0_board_town then "agrees" with the seed by construction, and R0_board_name/_tokens can hit
-        the same way when employer is ALSO inherited (city_inherited and employer_inherited commonly
-        travel together, but are gated independently here since either alone is enough to fabricate a
-        false agreement with the seed). A copied city/name is dropped for the board fallback only --
-        content-side matching (_match_content, above) is unaffected."""
-        r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
+        city_inherited=True is the same problem for the place (pflege_jobs/sources/inbox.py's
+        city_source='seed', set when a job page names no location at all and the crawler substituted the
+        seed clinic's own registry town, TASK-81 mechanism #3): every rule that compares the posting's town
+        with the registry then "agrees" with the seed by construction. The copied town is dropped before any
+        rule sees it -- until 2026-10-01 only the board fallback dropped it, and the content rules (R3_tokens:
+        klinikum-straubing.de, 34 rows) re-admitted the seed clinic with a seed employer plus a seed town.
+
+        title is the posting's own title, read with the description for R6/_match_jd. foreign is what the
+        posting's board names beyond the towns of its own clinics (Matcher.foreign_places); note, a list, is
+        filled with why a posting that reached a rule stays unmatched."""
+        notes = [] if note is None else note
+        if city_inherited: city = None
+        texts = (None if employer_inherited else employer, title, description)
+        r = self._match_content(employer, city, description, employer_inherited=employer_inherited, texts=texts, note=notes)
         if r: return r
+        if r is False: return None         # sites of one operator tie and the text names no single one: the board cannot say either
         if board:
             en = "" if employer_inherited else employer_norm(employer or "")
             et = set() if employer_inherited else toks(employer)
-            ck = None if city_inherited else city_key(city)
-            return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
+            return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, city_key(city),
+                                     foreign=foreign, texts=texts, note=notes)
         return None
 
-    def _match_content(self, employer, city, description=None, employer_inherited=False):
+    def foreign_places(self, pool, places):
+        """The places (city_key strings) a board's postings name that are none of its clinics' towns. A board
+        that names such a place serves more than its own clinics (a group portal, an aggregator, a regional job
+        pool): a posting of it that names no place of its own proves nothing about the clinics in its pool."""
+        towns = {city_key(self.by_id[str(i)].get("town")) for i in pool if str(i) in self.by_id}
+        return {p for p in places if p and not any(_town_match(t, p) for t in towns)}
+
+    def _match_content(self, employer, city, description=None, employer_inherited=False, texts=(), note=None):
+        """(clinic_id, rule, score); None when employer, place and text name no site (the board may still decide);
+        False when several sites of one operator tie and the text does not single one out (R6 refused: a board
+        registered for one of those sites, typically the group's whole job market, cannot decide it either)."""
+        note = [] if note is None else note
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
         if not en: return self._match_jd(description)
         c = [] if employer_inherited else self.by_name.get(en, [])
@@ -254,8 +297,9 @@ class Matcher:
                 js = sorted(((jaccard(et, x["_ntoks"]), x) for x in t), key=lambda kv: -kv[0])
                 if js[0][0] - js[1][0] >= 0.1:
                     return js[0][1]["clinic_id"], "R2_operator_town_bestj", 0.85
-                top = _pick_site(t)
-                return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in t)), 0.5
+                top = _pick_site(t, texts, note)
+                if top: return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in t)), 0.5
+                return False
         same_town = self._by_town(ck)
         et = et - set(ck.split()); ek = kinds(employer)
         # R1/R2 above only skip the DIRECT by_name/by_op lookups on employer_inherited -- et/ek below
@@ -277,13 +321,12 @@ class Matcher:
         # site outright (TASK-170: "RehaZentren der Deutschen Rentenversicherung" ties two DRV Bund houses
         # in Bad Kissingen by name, only RH2467's operator -- DRV Baden-Wuerttemberg's "Reha Zentren" --
         # carries it). Replayed over run 217's 3529 matched rows: exactly those 2 postings change.
-        r6 = None
-        for rule, key, thr, score in (("R3_tokens", "_ntoks", 0.6, 0.8), ("R4_tokens_op", "_otoks", 0.6, 0.75)):
+        r6 = tied = None
+        for rule, key, score in (("R3_tokens", "_ntoks", 0.8), ("R4_tokens_op", "_otoks", 0.75)):
             cands = []
             for x in same_town:
                 if x[key]:
-                    o = overlap(et, x[key]); shared = len(et & x[key])
-                    ok = o >= 0.8 or (o >= thr and shared >= 2)
+                    ok = _named(et, x[key])
                 else:                                   # site name is just kind + town ("Klinikum Fürth"): need matching kind
                     ok = bool(ek & x["_kinds"]) and not et - ek  # employer carries no other distinguishing tokens
                     # A former extra fallback here (`or (ek & x["_kinds"] and len(et) <= 1)`) treated
@@ -315,9 +358,11 @@ class Matcher:
                 if len(real) == 1: return real[0]["clinic_id"], rule + "_realsite", score - 0.1
                 ops = {employer_norm(x.get("operator") or x["name"]) for x in best}
                 if len(ops) == 1:
-                    top = _pick_site(best)
-                    r6 = r6 or (top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in best)), 0.5)
+                    top = _pick_site(best, texts, note)
+                    if top: r6 = r6 or (top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in best)), 0.5)
+                    else: tied = True
         if r6: return r6
+        if tied: return False
         cands = [(overlap(et, x["_ntoks"] | x["_otoks"]), x) for x in same_town]
         best = [x for j, x in cands if j >= 0.5]
         if len(best) == 1 and len(same_town) == 1: return best[0]["clinic_id"], "R5_loose", 0.6
@@ -347,18 +392,30 @@ class Matcher:
         field reads 'Co. KG', so 'feldafing' never gets stripped from its operator tokens, and it
         out-competes its own clean twin 18813 for 48 real Feldafing postings). A full registry scan
         found 27 more rows with the identical shape (TASK-131) -- this is a systemic property of
-        parse_quality='partial' rows, not one bad row to special-case."""
+        parse_quality='partial' rows, not one bad row to special-case.
+
+        The clinic's own town has to stand in the same text. A name that is only specialty words matches
+        any ad that describes the specialty: 'Klinik für Psychosomatische Medizin und Psychotherapie'
+        (Parsberg) is {psychosomatische, medizin, psychotherapie}, which an AMEOS Osnabrück ad for a
+        'Fachkrankenhaus für Psychiatrie, Psychotherapie und psychosomatische Medizin' contains. Name and
+        town together are the facility and its place; the name alone is not (of the 15 R_jd_text links
+        stored on 2026-10-01, 7 lack the town: Klinikum Seefeld for Herrsching ads, Urologische Klinik
+        München-Planegg for a Straubing ad, Therapiezentrum Wolkersdorf for a Nürnberg one)."""
         if not description: return None
-        dt = toks(description[:2000])
-        hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and
+        text = norm_text(description[:2000])
+        dt = toks(text)
+        words = set(re.sub(r"[^\wäöüß ]", " ", text).split())
+        town_named = lambda c: bool(city_key(c.get("town"))) and set(city_key(c.get("town")).split()) <= words
+        hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and town_named(c) and
                 ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
         if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
 
-    def _match_board(self, pool, en, et, ck):
+    def _match_board(self, pool, en, et, ck, foreign=None, texts=(), note=None):
         """The board a posting was fetched from is provenance, not a guess: the site must be one of the
         clinics sharing that board, so the candidate set is that board and nothing else. Undecidable
         within the board stays unmatched rather than falling back to a repo-wide search."""
+        note = [] if note is None else note
         if not pool: return None
         # A single-clinic pool used to win outright with no city check at all -- but a group
         # portal whose registry pool collapsed to one clinic (e.g. a shared board where every
@@ -368,10 +425,23 @@ class Matcher:
         # Diessen). Same rule as the name/tokens rungs below: an unknown city (ck falsy) still
         # passes through unchanged, but a known, disagreeing city refuses the match -- decision-5's
         # "no match beats a wrong match" applied to the one board rule it didn't yet cover.
+        #
+        # A posting that names no place (ck falsy: nothing read, or only the seed's own town copied onto
+        # it) belongs to this clinic only if the board is the clinic's own single-site board -- and a board
+        # is demonstrably not that when its other postings name places beyond the clinic's town (`foreign`,
+        # Matcher.foreign_places, measured over the board's rows in the queue). Without it, every posting
+        # of a group portal, aggregator or regional job pool whose registry pool collapsed to one clinic
+        # was filed there (2026-10-01: karriere.ameos.eu 54 rows on Neuburg, krankenpflegejobs24.de 181 on
+        # a Frauenklinik in Aschaffenburg, allgaeuer-jobs.de on a Kurhotel). A board whose postings never
+        # name a place at all (the common own board: csj.de, klinikum-memmingen.de ...) has no counter-
+        # evidence and keeps attaching.
         if len(pool) == 1:
-            if not ck or _town_match(city_key(pool[0].get("town")), ck):
-                return pool[0]["clinic_id"], "R0_board", 0.9
-            return None
+            if ck: return (pool[0]["clinic_id"], "R0_board", 0.9) if _town_match(city_key(pool[0].get("town")), ck) else None
+            if foreign:
+                note.append(f"R0_board refused: the posting names no place of its own and its board names {len(foreign)} "
+                            f"places beyond the town of {pool[0]['clinic_id']}, so it is not that clinic's own single-site board")
+                return None
+            return pool[0]["clinic_id"], "R0_board", 0.9
         # R0_board_name/_tokens match on employer text alone, which a crawler's own org-defaulting
         # bug can make IDENTICAL for every posting on a shared multi-site board regardless of the
         # real site (confirmed live 2026-09-11: karriere.ameos.eu's crawl_wp_jobs sets every row's
@@ -397,15 +467,19 @@ class Matcher:
                 # correctly staying unmatched.
                 ops = {employer_norm(x.get("operator") or x["name"]) for x in hit}
                 if len(ops) == 1:
-                    return _pick_site(hit)["clinic_id"], rule + "_bestsite", score - 0.1
+                    top = _pick_site(hit, texts, note)
+                    if top: return top["clinic_id"], rule + "_bestsite", score - 0.1
         return None
 
 
 def link_postings(postings, clinics):
+    """postings: dicts of employer, city, title and the crawler's stamps (employer_inherited, city_inherited) as
+    stored with the posting -- the same inputs pflege_jobs.cli._process_rows gives the Matcher, minus the board."""
     m = Matcher(clinics)
     out = []
     for p in postings:
-        r = m.match(p.get("employer"), p.get("city"))
+        r = m.match(p.get("employer"), p.get("city"), title=p.get("title"), employer_inherited=bool(p.get("employer_inherited")),
+                    city_inherited=bool(p.get("city_inherited")))
         if r:
             out.append({"posting_id": p["posting_id"], "clinic_id": r[0], "clinic_match_rule": r[1], "clinic_match_score": r[2]})
     return out

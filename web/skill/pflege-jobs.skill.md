@@ -396,7 +396,7 @@ unscheduled `stage_verify`) and is removed. The only thing that closes a posting
 pass writing `verify_status='gone'`.
 
 ## link-clinics (postings → KeZ)
-Six ordered rules: R1 exact name, R2 operator, R3/R4 token overlap + town, R5 loose, R6 operator with several sites in one town → preferred/largest site, rule stored as `R6_ambiguous_sites:…`. `clinic_match_rule='manual'` is never touched.
+Six ordered rules: R1 exact name, R2 operator, R3/R4 token overlap + town, R5 loose, R6 operator with several sites in one town → the site the posting's own text names (none or several named: unlinked; same-name duplicates: the one with most beds), rule stored as `R6_ambiguous_sites:…`. A town or employer the crawler copied from the seed clinic is not evidence, and `cli inbox` clears the link of a re-loaded posting that no longer has any. `clinic_match_rule='manual'` is never touched.
 
 ## link-cross (dedupe)
 Same-source URL variants (canonical_ref) merge; cross-source within the same `clinic_id` + city when titles are similar (Jaccard ≥ 0.6 or overlap ≥ 0.9 with ≥ 3 shared tokens). Observations move, earliest `first_seen` kept.

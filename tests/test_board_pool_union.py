@@ -54,6 +54,7 @@ def _drain(monkeypatch):
     monkeypatch.setattr(cli, "lookup_posting_ids", lambda get, url, H, obs: {
         (o["source_id"], o["source_ref"]): refs.setdefault(o["source_ref"], len(refs) + 1) for o in obs})
     monkeypatch.setattr(cli, "manual_posting_ids", lambda get, url, H, ids: set())
+    monkeypatch.setattr(cli, "linked_posting_ids", lambda get, url, H, ids: set())   # nothing stored yet: nothing to clear
     cli.cmd_inbox(argparse.Namespace(no_ack=False, max_batches=10, inbox_db=None,
                                      reprocess_run=None, reprocess_all=False))
     by_ref = {pid: ref for ref, pid in refs.items()}
@@ -87,7 +88,7 @@ def test_every_copy_of_a_posting_served_by_several_boards_links_to_the_same_site
     assert links == {deg: ["27105"], pas: ["26205"]}
 
 
-def _sg_copy(seed_kez, board, city):
+def _sg_copy(seed_kez, board, city, description=""):
     """A seeded softgarden observation as app/crawl.py queues it (_obs_row): the seed's own _kez
     preset, the board pool in _board, the page-stated employer and city."""
     ref = "softgarden:64935176"
@@ -96,7 +97,7 @@ def _sg_copy(seed_kez, board, city):
             "payload": {"source_id": 20, "source_ref": ref, "source_url": "https://karriere.passauerwolf.de/jobs/64935176/x/",
                         "title": "Pflegefachkraft (m/w/d) im Dauernachtdienst", "employer_name": "PASSAUER WOLF Medizin fürs Leben",
                         "employer_class_rule": "x", "role_class": "pflegefachkraft", "in_bavaria": True,
-                        "city": city, "description": "", "_kez": seed_kez, "_board": board}}
+                        "city": city, "description": description, "_kez": seed_kez, "_board": board}}
 
 
 def test_a_refused_match_is_not_filled_in_with_the_seed_clinic(monkeypatch):
@@ -109,8 +110,11 @@ def test_a_refused_match_is_not_filled_in_with_the_seed_clinic(monkeypatch):
 
 
 def test_observation_copies_are_pooled_too(monkeypatch):
-    IB.enqueue([_sg_copy("27307", ["27307", "RH2733"], "Neustadt an der Donau"),
-                _sg_copy("RH1892", ["RH1892"], "Neustadt an der Donau")], run_id=1)
+    # 27307 (Klinik für Neurologie) and RH2733 (Rehabilitation) are two sites of one operator in one town:
+    # the text has to name the one it is (R6/_bestsite no longer take the bigger on bed count).
+    text = "Pflegefachkraft in der Rehabilitation"
+    IB.enqueue([_sg_copy("27307", ["27307", "RH2733"], "Neustadt an der Donau", text),
+                _sg_copy("RH1892", ["RH1892"], "Neustadt an der Donau", text)], run_id=1)
 
     assert _drain(monkeypatch) == {"softgarden:64935176": ["RH2733"]}
 

@@ -267,11 +267,11 @@ REGISTRY = [
     Mechanic("clinic_link", _t("Klinik-Zuordnung (KeZ)", "Clinic linking (KeZ)"),
              _t("Hängt ein Posting an einen Krankenhausplan-Standort. Sechs geordnete, konservative Regeln: R1 exakter Name, R2 Träger (eindeutig oder Ort = Stadt), "
                 "R3 Token-Überlappung mit Standortname + gleicher Ort, R4 dasselbe gegen den Träger, R5 lockere Überlappung, wenn der Ort nur einen Standort hat, "
-                "R6 mehrere Standorte desselben Trägers in einer Stadt → größter (Betten) und als ambiguous markiert. Überlebt mehr als ein Kandidat eine Regel, wird nicht verlinkt. "
+                "R6 mehrere Standorte desselben Trägers in einer Stadt → der Standort, den Titel, Arbeitgeber oder Beschreibung nennen (gleichnamige Dubletten: die mit den meisten Betten), als ambiguous markiert; nennt der Text keinen oder mehrere, wird nicht verlinkt. Überlebt mehr als ein Kandidat eine Regel, wird nicht verlinkt. Ein vom Crawler aus dem Seed kopierter Ort oder Arbeitgeber ist kein Beleg. "
                 "Kein Regex — Tokenmengen, Stoppwörter und Aliase (LMU, TUM, FAU) in registry.py. Läuft in `cli link-clinics`; Regel → postings.clinic_match_rule.",
                 "Attaches a posting to a Krankenhausplan site. Six ordered, conservative rules: R1 exact name, R2 operator (unique, or site town = city), "
                 "R3 token overlap with the site name + same town, R4 the same against the operator, R5 loose overlap when the town has one site only, "
-                "R6 several sites of one operator in one town → largest (beds), flagged ambiguous. If more than one candidate survives a rule, nothing is linked. "
+                "R6 several sites of one operator in one town → the site the title, employer or description names (same-name duplicates: the one with most beds), flagged ambiguous; if the text names none or several, nothing is linked. If more than one candidate survives a rule, nothing is linked. A town or employer the crawler copied from the seed clinic is not evidence. "
                 "No regex — token sets, stop words and aliases (LMU, TUM, FAU) live in registry.py. Runs in `cli link-clinics`; rule → postings.clinic_match_rule."),
              "", [R.Matcher.match, R.toks, R.city_key],
              [{"name": "employer", "label": _t("Arbeitgeber (wie im Posting)", "Employer (as posted)"), "example": "Klinikum Fürth Personalabteilung"},

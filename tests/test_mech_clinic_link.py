@@ -35,8 +35,11 @@ def test_rules_r1_r2_r6():
     assert m.match("Klinikum Ingolstadt GmbH", "Ingolstadt")[1] in ("R1_exact", "R2_operator")
     assert m.match("Klinikum Fürth", "Fürth")[0] == "58101"
     assert m.match("Kliniken Südostbayern AG", "Traunstein") == ("18701", "R2_operator_town", 0.9)
-    r = m.match("München Klinik gGmbH", "München")
-    assert r[1].startswith("R6_ambiguous_sites:16201,16202")
+    # The operator names no site, so nothing says which of its two Munich sites the posting is: a bed count
+    # is not an answer (until 2026-10-01 the bigger one, Harlaching, won). A text that names one is.
+    assert m.match("München Klinik gGmbH", "München") is None
+    r = m.match("München Klinik gGmbH", "München", description="Werden Sie Teil unserer Stationen in Schwabing.")
+    assert r[0] == "16201" and r[1].startswith("R6_ambiguous_sites:16201,16202")
 
 
 def test_hyphen_and_space_spellings_of_one_operator_are_one_operator():
