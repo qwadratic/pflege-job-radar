@@ -205,8 +205,9 @@ def _seed_escalated_thread(c, client, clock):
     truthfully: cv_document must be satisfied for funnel_stage to reach "documents" at all
     (app/wa/luna_brain.py:_STAGE_GATES puts cv_document BEFORE qualification_document), unlike the
     hand-written fixture this replaces, which paired stage "documents" with cv_document "open" -- a
-    combination the real funnel_stage() cannot produce (see the report). Ends on an explicit human
-    request, escalated exactly once."""
+    combination the real funnel_stage() cannot produce (see the report). Also the one card with
+    housing_flexible true (docs/wa-dashboard.md's board-scope contract, 2026-10-01). Ends on an
+    explicit human request, escalated exactly once."""
     from app.wa.luna import escalation as ESC
     from app.wa import store as ST
 
@@ -249,11 +250,15 @@ def _seed_escalated_thread(c, client, clock):
     clock.set("2026-09-20T11:00:00+00:00")
     ST.record_inbound(c, phone, "wamid.esc-in3",
                       "Ich moechte am liebsten in Augsburg arbeiten, und ja, ich brauche eine Wohnung "
-                      "fuer eine Person.", kind="text")
+                      "fuer eine Person, aber eine Klinik ohne Wohnung waere auch in Ordnung.", kind="text")
     t = ST.thread(c, phone)
     t["slots"]["city"] = "Augsburg"
     t["slots"]["housing_needed"] = True
     t["slots"]["people_count"] = 1
+    # docs/wa-dashboard.md's board-scope card contract (Ivan, 2026-10-01): housing_flexible is "wanted
+    # a flat, a clinic without one is also an option" (luna_brain.housing_flexible's own docstring) --
+    # it never unsets housing_needed (TASK-211), both are true on this card at once.
+    t["slots"]["housing_flexible"] = True
     t["slots"]["match_branch"] = "narrow"
     t["last_inbound_at"] = clock.value
     t["turns"] = 3
@@ -394,7 +399,9 @@ def _seed_consented_thread(c, client, clock):
     """A fully-qualified, consented lead: both documents in, a real button-tap consent, two matched
     clinics (wa_queue_matches) with handoffs POSTed through the real write route in two different
     statuses -- one of them opens "attention" -- so this thread's detail carries a non-empty
-    handoff_matches and its list row carries a non-empty handoff.targets in more than one status."""
+    handoff_matches and its list row carries a non-empty handoff.targets in more than one status.
+    Also the one card with anonymous_send_offered true (docs/wa-dashboard.md's board-scope contract,
+    2026-10-01)."""
     from app.wa import store as ST
 
     phone = PHONE_CONSENTED
@@ -477,6 +484,10 @@ def _seed_consented_thread(c, client, clock):
                                         {"id": "consent:no", "title": "Nein"}]})
     t = ST.thread(c, phone)
     t["last_outbound_at"] = clock.value
+    # The model's own card_patch flips this the turn it actually asks (app/wa/luna_brain.py line
+    # ~1811: only a real button tap may then set anonymous_send_consent -- that is still a separate,
+    # code-owned field, set below on the tap). docs/wa-dashboard.md's board-scope contract (2026-10-01).
+    t["slots"]["anonymous_send_offered"] = True
     _save(c, t)
 
     clock.set("2026-09-15T10:30:00+00:00")

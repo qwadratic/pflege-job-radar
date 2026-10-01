@@ -11,9 +11,11 @@
     "thread": {
       "ball": "them",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": "camp-winter-2026",
         "city": null,
         "department": null,
+        "housing_flexible": null,
         "housing_needed": null,
         "match_branch": null,
         "people_count": null,
@@ -83,9 +85,11 @@
     "thread": {
       "ball": "them",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": null,
         "city": "Augsburg",
         "department": "Intensiv/IMC",
+        "housing_flexible": true,
         "housing_needed": true,
         "match_branch": "narrow",
         "people_count": 1,
@@ -155,9 +159,11 @@
     "thread": {
       "ball": "us",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": null,
         "city": null,
         "department": null,
+        "housing_flexible": null,
         "housing_needed": null,
         "match_branch": null,
         "people_count": null,
@@ -219,9 +225,11 @@
     "thread": {
       "ball": "us",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": null,
         "city": null,
         "department": null,
+        "housing_flexible": null,
         "housing_needed": null,
         "match_branch": null,
         "people_count": null,
@@ -288,9 +296,11 @@
     "thread": {
       "ball": "us",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": null,
         "city": null,
         "department": null,
+        "housing_flexible": null,
         "housing_needed": null,
         "match_branch": null,
         "people_count": null,
@@ -351,9 +361,11 @@
     "thread": {
       "ball": "them",
       "card": {
+        "anonymous_send_offered": null,
         "campaign": null,
         "city": null,
         "department": null,
+        "housing_flexible": null,
         "housing_needed": null,
         "match_branch": null,
         "people_count": null,
@@ -443,9 +455,11 @@
     "thread": {
       "ball": "silent",
       "card": {
+        "anonymous_send_offered": true,
         "campaign": null,
         "city": "München",
         "department": "Innere Medizin",
+        "housing_flexible": null,
         "housing_needed": false,
         "match_branch": "pool",
         "people_count": null,

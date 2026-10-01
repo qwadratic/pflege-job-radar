@@ -371,6 +371,25 @@ def test_card_campaign_is_the_campaign_id_string_not_the_stored_dict(client):
     assert row2["card"]["campaign"] == "bayern-2026-09"
 
 
+def test_thread_card_carries_housing_flexible_and_anonymous_send_offered(client):
+    """docs/wa-dashboard.md's board-scope card contract (Ivan, 2026-10-01) names
+    housing_flexible/anonymous_send_offered on CardSummary itself, not only on the Daria-scope
+    /leads route's LeadCardValues (see test_leads_card_values_come_from_the_live_card_not_the_
+    consent_snapshot below) -- both routes read the same live card (t["slots"])."""
+    phone = "+491701111115"
+    with ST.db() as c:
+        t = ST.thread(c, phone)
+        t["slots"].update(housing_flexible=True, anonymous_send_offered=True)
+        ST.save_thread(c, t)
+        tid = ST.thread_id_for_phone(c, phone)
+    row = client.get(f"/api/wa/pro/threads/{tid}", headers=RH).json()["thread"]
+    assert row["card"]["housing_flexible"] is True
+    assert row["card"]["anonymous_send_offered"] is True
+    row2 = client.get("/api/wa/pro/threads", headers=RH).json()["rows"][0]
+    assert row2["card"]["housing_flexible"] is True
+    assert row2["card"]["anonymous_send_offered"] is True
+
+
 def test_thread_id_for_phone_is_minted_by_the_engine_not_by_a_lazy_read(client):
     """Review item 7: thread_id_for_phone is a plain, fail-loud read -- minting happens wherever a
     wa_threads row is first created (thread/pin_rail/record_campaign_send), in the SAME transaction,

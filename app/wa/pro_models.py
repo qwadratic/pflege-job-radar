@@ -54,6 +54,10 @@ class CardSummary(_Strict):
     #: dict carries a wamid, and the frontend already renders this as "Campaign " + campaign.
     campaign: str | None = None
     match_branch: str | None = None
+    #: docs/wa-dashboard.md's board-scope contract (Ivan, 2026-10-01): both belong on every board
+    #: card (not only the Daria-scope /leads one's LeadCardValues, which already had them).
+    housing_flexible: bool | None = None
+    anonymous_send_offered: bool | None = None
 
 
 class Gates(_Strict):

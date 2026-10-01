@@ -442,6 +442,11 @@ def _thread_row_dict(c, t):
             # wamid (store.record_campaign_send's own card.campaign shape).
             "campaign": (card.get("campaign") or {}).get("campaign_id"),
             "match_branch": card.get("match_branch"),
+            # docs/wa-dashboard.md's own board-scope contract (Ivan, 2026-10-01): these two belong on
+            # every board card, not only on the Daria-scope /leads one (_lead_row below reads the same
+            # two live-card keys). Never cv_text or any document text, per that same contract line.
+            "housing_flexible": card.get("housing_flexible"),
+            "anonymous_send_offered": card.get("anonymous_send_offered"),
         },
         "stopped": bool(t.get("stopped")),
         "stopped_reason": t.get("stopped_reason"),
