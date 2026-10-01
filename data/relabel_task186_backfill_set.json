@@ -1,0 +1,4747 @@
+{
+ "_about": [
+  "TASK-186 relabel backfill change set: every posting whose stored role_class / role_rule / department_hint would change under the TASK-186 classifier, old to new.",
+  "Computed offline from the vacancy-landscape export (all 3870 status=open postings, golden postings.description, 2026-10-01) by replaying classify_role(title, desc=description) and department_hint(title, description) with the base code (9c6f158) and with this branch. hauptberuf, offer_kind and nursing_section_confirmed are not in the export and were replayed as empty.",
+  "'postings' = rows the script writes: role_class/role_rule where 'role' is present, department_hint where 'department' is present. 'quote' = at most 160 chars of the posting that made the rule fire (emails and phone numbers scrubbed).",
+  "'not_pushed' = rows the script never touches: drift_role / drift_department are rows whose stored value already differs from the replay WITHOUT this change (stored by the crawler with signals the export lacks, e.g. nursing_section_confirmed or the board CSV 'board:*' rules, or by older code); listed so they are not mistaken for TASK-186 changes. department_already_at_new_value = stored hint already equals the new one.",
+  "'reading' = hand reading of every row that is outside its own judge positive set (S1 Ausbildung, S2 non-nursing job, S3 not a vacancy, S4 specialty hidden)."
+ ],
+ "counts": {
+  "postings_in_set": 166,
+  "role_changes": 125,
+  "department_only": 41,
+  "by_group": {
+   "nicht_pflege": 93,
+   "department_hint": 41,
+   "ausbildung_body": 26,
+   "no_vacancy_page": 6
+  },
+  "role_stored_to_new": {
+   "apn_experte -> nicht_pflege": 40,
+   "leitung -> nicht_pflege": 20,
+   "sonstige_pflege -> nicht_pflege": 18,
+   "ota_ata -> ausbildung": 14,
+   "ota_ata -> nicht_pflege": 11,
+   "pflegefachkraft -> ausbildung": 9,
+   "pflegefachkraft -> nicht_pflege": 5,
+   "fachpflege -> nicht_pflege": 3,
+   "sonstige_pflege -> ausbildung": 3,
+   "hebamme -> nicht_pflege": 1,
+   "praxisanleitung -> nicht_pflege": 1
+  },
+  "role_new_rule": {
+   "nicht_pflege:pflegepädagog": 37,
+   "nicht_pflege:lehrkraft": 10,
+   "ausbildung_body:mittlerer schulabschluss": 8,
+   "ausbildung_body:realschulabschluss": 8,
+   "ausbildung_body:hauptschulabschluss": 6,
+   "no_vacancy_page": 6,
+   "nicht_pflege:standortmanager": 5,
+   "nicht_pflege:frischetheke": 4,
+   "nicht_pflege:med. fachangestellte": 4,
+   "nicht_pflege:medizinpädagog": 4,
+   "ausbildung_body:mittlere reife": 3,
+   "nicht_pflege:fachweiterbildung": 3,
+   "nicht_pflege:laborant": 2,
+   "nicht_pflege:ärzt:in": 2,
+   "nicht_pflege:ärztliche": 2,
+   "ausbildung_body:ausbildungsbeginn": 1,
+   "nicht_pflege:anwendungsbetreu": 1,
+   "nicht_pflege:arztsekret": 1,
+   "nicht_pflege:beratung & verkauf": 1,
+   "nicht_pflege:computertomographie": 1,
+   "nicht_pflege:dozent": 1,
+   "nicht_pflege:edv": 1,
+   "nicht_pflege:lehrsekretariat": 1,
+   "nicht_pflege:leitung (m/w/d) der akademie": 1,
+   "nicht_pflege:medizinische/-r fachangestellte": 1,
+   "nicht_pflege:mrt": 1,
+   "nicht_pflege:mtl": 1,
+   "nicht_pflege:pflegepaedagog": 1,
+   "nicht_pflege:pharmaberater": 1,
+   "nicht_pflege:steine & erden": 1,
+   "nicht_pflege:stellenangebote": 1,
+   "nicht_pflege:teamassistenz ata-ota-berufsfachschule": 1,
+   "nicht_pflege:teamassistenz der akademie": 1,
+   "nicht_pflege:unterrichtsplanung": 1,
+   "nicht_pflege:verkäufer": 1,
+   "nicht_pflege:verwaltungskraft (m/w/d) für die berufsfachschule der evangelischen pflegeakademie": 1
+  },
+  "board_visible_now": 166,
+  "judge_membership": {
+   "S2": 73,
+   "S4": 31,
+   "OK": 16,
+   "S1": 16,
+   "S3": 16,
+   "NOJUDGE": 9,
+   "NEG": 4,
+   "S3+OK": 1
+  },
+  "outside_own_positive_set": 41,
+  "not_pushed": {
+   "drift_role": 114,
+   "drift_department": 81,
+   "department_already_at_new_value": 1
+  },
+  "drift_role_by_stored": {
+   "sonstige_pflege / fallback": 84,
+   "fachpflege / board": 13,
+   "leitung / leitung": 7,
+   "pflegefachkraft / board": 6,
+   "apn_experte / apn_experte": 3,
+   "leitung / board": 1
+  },
+  "role_rows_whose_stored_class_also_differed_from_the_old_replay": [
+   6013
+  ]
+ },
+ "postings": [
+  {
+   "posting_id": 5868,
+   "title": "Pflegepädagoge / Berufspädagoge (m/w/d) „Schule für Gesundheitsberufe Tutzing“ Starnberger See",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Berufspädagoge (m/w/d) „Schule für Gesundheitsberufe Tutzing“ Starnberger See",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 5953,
+   "title": "Pflegefachkraft (m/w/d) für die interdisziplinäre Säuglingsstation",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "Pflegefachkraft (m/w/d) für die interdisziplinäre Säuglingsstation",
+   "judge": "OK",
+   "reading": "title names the Säuglingsstation: true positive (new ward word)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 5954,
+   "title": "Praxisanleiter (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "…Zeitpunkt einen freigestellten Praxisanleiter (m/w/d) (für die Kinderklinik) in Vollzeit oder Teilzeit Das bieten wir Ihnen: Fundierte…",
+   "judge": "OK",
+   "reading": "Praxisanleiter 'für die Kinderklinik' in the recruiting statement: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 5960,
+   "title": "Gesundheits- und Krankenpfleger bzw. Pflegefachkräfte (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": "Kardiologie",
+    "new": "Kardiologie|Chirurgie/Orthopädie|Innere Medizin"
+   },
+   "department_quote": "…sucht für die Erweiterung der bettenführenden Stationen der inneren, kardiologischen und chirurgischen Fachrichtungen am Standort Marktredwitz…",
+   "judge": "OK",
+   "reading": "stored 'Kardiologie' only; statement names the inner, cardiological and surgical stations of the new building: the three labels are right",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6008,
+   "title": "Pflegepädagoge (m/w/d) in unserer Pflegeschule",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge (m/w/d) in unserer Pflegeschule",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6013,
+   "title": "s057dea0c 81fb 4208 bb97 2ef0d25759a9 pflegepaedagoge lehrkraft fuer pflegeberufe mwd",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "board:leitung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepaedagog"
+    ]
+   },
+   "quote": "s057dea0c 81fb 4208 bb97 2ef0d25759a9 pflegepaedagoge lehrkraft fuer pflegeberufe mwd",
+   "judge": "NOJUDGE",
+   "reading": "teaching job (Pflegepädagoge / Lehrkraft für Pflegeberufe), title is a slug: true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6043,
+   "title": "Pflegefachkräfte (m/w/d) für verschiedene Bereiche:",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Kardiologie|Innere Medizin"
+   },
+   "department_quote": "…Sie als: Pflegefachkräfte (m/w/d) für die Bereiche: Innere Medizin, Kardiologie, Gastroenterologie und Pulmologie Gynäkologie und Urologie Worauf…",
+   "judge": "OK",
+   "reading": "'für die Bereiche: Innere Medizin, Kardiologie, Gastroenterologie und Pulmologie, Gynäkologie und Urologie': Kardiologie|Innere Medizin right, Gynäkologie/Urologie unlabelled by design",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6127,
+   "title": "Berufs- oder Pflegepädagoge (m/w/d) - ATA-Berufsfachschule",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Berufs- oder Pflegepädagoge (m/w/d) - ATA-Berufsfachschule",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6332,
+   "title": "Berufspädagogische Lehrkraft (ATA) (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Berufspädagogische Lehrkraft (ATA) (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6353,
+   "title": "Pflegepädagogen oder Medizinpädagogen (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen oder Medizinpädagogen (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6488,
+   "title": "Pflegefachkräfte (m/w/d) / Altenpflegefachkräfte (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Geriatrie|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…und Patienten einsetzt. Wir suchen für den Bereich Geriatrie und orthopädische Krankenhausabteilung der Simssee Klinik Pflegefachkräfte /…",
+   "judge": "OK",
+   "reading": "'Wir suchen für den Bereich Geriatrie und orthopädische Krankenhausabteilung': true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6635,
+   "title": "Fachweiterbildung für Intensiv- und Anästhesiepflege",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "fachpflege",
+     "fachpflege:fachweiterbildung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:fachweiterbildung"
+    ]
+   },
+   "quote": "Fachweiterbildung für Intensiv- und Anästhesiepflege",
+   "judge": "S3+OK",
+   "reading": "DKG Fachweiterbildung course page (costs, entry requirements), not a vacancy: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6659,
+   "title": "Pflegepädagogen, Medizinpädagogen oder Berufspädagogen Fachrichtung Gesundheit (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen, Medizinpädagogen oder Berufspädagogen Fachrichtung Gesundheit (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6740,
+   "title": "Bereichsleitung Computertomographie (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:computertomographie"
+    ]
+   },
+   "quote": "Bereichsleitung Computertomographie (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6741,
+   "title": "Bereichsleitung MRT (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:mrt"
+    ]
+   },
+   "quote": "Bereichsleitung MRT (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6748,
+   "title": "Pflege-/Medizinpädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:medizinpädagog"
+    ]
+   },
+   "quote": "Pflege-/Medizinpädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6800,
+   "title": "Pflegefachkraft (m/w/d) für ein Studium der Pflegepädagogik (Medizinpädagogik) (B.Sc.)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegefachkraft (m/w/d) für ein Studium der Pflegepädagogik (Medizinpädagogik) (B.Sc.)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6832,
+   "title": "Berufs-/Pflegepädagoge (m/w/d) Berufsfachschule",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Berufs-/Pflegepädagoge (m/w/d) Berufsfachschule",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6833,
+   "title": "Berufs-/Pflegepädagoge für Gesundheitsberufe (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Berufs-/Pflegepädagoge für Gesundheitsberufe (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6847,
+   "title": "Koordinator Unterrichtsplanung / Zentrale Stundenplanung Berufsfachschule Pflege (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:unterrichtsplanung"
+    ]
+   },
+   "quote": "Koordinator Unterrichtsplanung / Zentrale Stundenplanung Berufsfachschule Pflege (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6850,
+   "title": "Pflegepädagoge / Berufspädagoge / Berufsschullehrer oder Lehrer für Pflegeberufe (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Berufspädagoge / Berufsschullehrer oder Lehrer für Pflegeberufe (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6864,
+   "title": "MTL / Bereichsleitung Blutbank (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:mtl"
+    ]
+   },
+   "quote": "MTL / Bereichsleitung Blutbank (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6905,
+   "title": "Pflegepädagoge (m/w/d) in Vollzeit",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge (m/w/d) in Vollzeit",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6931,
+   "title": "Fachweiterbildung (DKG) Pflege im Operationsdienst",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "fachpflege",
+     "fachpflege:fachweiterbildung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:fachweiterbildung"
+    ]
+   },
+   "quote": "Fachweiterbildung (DKG) Pflege im Operationsdienst",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 6932,
+   "title": "Fachweiterbildung (DKG) Pflege in der Onkologie",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "fachpflege",
+     "fachpflege:fachweiterbildung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:fachweiterbildung"
+    ]
+   },
+   "quote": "Fachweiterbildung (DKG) Pflege in der Onkologie",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7221,
+   "title": "Pflegepädagoge m/w/d",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge m/w/d",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7331,
+   "title": "Pflegepädagoge oder Lehrer für Pflegeberufe (w/m/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge oder Lehrer für Pflegeberufe (w/m/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7375,
+   "title": "Anästhesietechnische Assistenten (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…für die Ausbildung Schulbildung: Sie verfügen über einen Realschulabschluss (oder gleichwertig). Alternativ haben Sie einen…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7376,
+   "title": "Operationstechnische Assistenten (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…bei. Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig) zusammen mit: einer erfolgreich…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7377,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…die Ausbildung: Gesundheitliche Eignung zur Ausübung des Berufes Realschulabschluss oder eine gleichwertige, abgeschlossene Schulbildung oder…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7414,
+   "title": "Ausbildungsplatz zur Pflegefachfrau / zum Pflegefachmann (m/w/d) ab 01.04.2027",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…und Empfehlungen für die Ausbildung: Voraussetzungen : Mittlerer Schulabschluss oder Hauptschulabschluss + eine erfolgreich abgeschlossene…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 7523,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie|Kardiologie|Chirurgie/Orthopädie|Innere Medizin"
+   },
+   "department_quote": "…allgemeine Chirurgie, Gefäßchirurgie, Kardiologie, Innere Medizin, Onkologie, Augenheilkunde und HNO. Sie sind Pflegefachfrau/-mann (m/w/d) und…",
+   "judge": "OK",
+   "reading": "'Pflegeteams der verschiedenen Stationen: Orthopädie, allgemeine Chirurgie, Gefäßchirurgie, Kardiologie, Innere Medizin, Onkologie, Augenheilkunde ...': multi-ward posting, four labels right",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10074,
+   "title": "Pflegepädagogin / Pflegepädagoge (w|m|d) für Anerkennungsverfahren",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogin / Pflegepädagoge (w|m|d) für Anerkennungsverfahren",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10116,
+   "title": "Lehrkraft / Pflegepädagoge (m/w/d) Berufsfachschule für Pflege- und Krankenpflegehilfe - Wasserburg am Inn",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft / Pflegepädagoge (m/w/d) Berufsfachschule für Pflege- und Krankenpflegehilfe - Wasserburg am Inn",
+   "judge": "NOJUDGE",
+   "reading": "teaching job at a nursing school (Lehrkraft / Pflegepädagoge): true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10124,
+   "title": "Med. Fachangestellte (w/m/d) - für den Stützpunkt Notaufnahme",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:med. fachangestellte"
+    ]
+   },
+   "quote": "Med. Fachangestellte (w/m/d) - für den Stützpunkt Notaufnahme",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10140,
+   "title": "Pflegepädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10335,
+   "title": "Pflegepädagoge / Berufspädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Berufspädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10336,
+   "title": "Lehrkraft für die praktische Pflegeausbildung (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft für die praktische Pflegeausbildung (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10415,
+   "title": "Medizinpädagoge (m/w/d) für unsere Berufsfachschule für Pflege",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:medizinpädagog"
+    ]
+   },
+   "quote": "Medizinpädagoge (m/w/d) für unsere Berufsfachschule für Pflege",
+   "judge": "NOJUDGE",
+   "reading": "teaching job at a nursing school (Medizinpädagoge): true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10440,
+   "title": "Stellvertretende ärztliche Leitung (m/w/d) für die Zentrale Notaufnahme",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:ärztliche"
+    ]
+   },
+   "quote": "Stellvertretende ärztliche Leitung (m/w/d) für die Zentrale Notaufnahme",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10441,
+   "title": "ORBIS Anwendungsbetreuer (m/w/d) - Schnittstelle Pflege & IT",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:anwendungsbetreu"
+    ]
+   },
+   "quote": "ORBIS Anwendungsbetreuer (m/w/d) - Schnittstelle Pflege & IT",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10446,
+   "title": "Medizinische/-r Fachangestellte/-r (m/w/d) für die Zentrale Notaufnahme",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:medizinische/-r fachangestellte"
+    ]
+   },
+   "quote": "Medizinische/-r Fachangestellte/-r (m/w/d) für die Zentrale Notaufnahme",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10464,
+   "title": "Medizin- oder Pflegepädagoge (M.A. / M.Sc. oder B.A. / B.Sc.)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Medizin- oder Pflegepädagoge (M.A. / M.Sc. oder B.A. / B.Sc.)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10503,
+   "title": "Leitung (m/w/d) der Akademie - Dienstleistungszentrum Bildung / Pflegeschulen",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:leitung (m/w/d) der akademie"
+    ]
+   },
+   "quote": "Leitung (m/w/d) der Akademie - Dienstleistungszentrum Bildung / Pflegeschulen",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10517,
+   "title": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10519,
+   "title": "Lehrsekretariat Hebammenwissenschaft",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "hebamme",
+     "hebamme:hebamme"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrsekretariat"
+    ]
+   },
+   "quote": "Lehrsekretariat Hebammenwissenschaft",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10524,
+   "title": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10525,
+   "title": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10641,
+   "title": "Pflegefachfrau oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie"
+   },
+   "department_quote": "Bewerbungsfrist: 31.12.2026 Die neurologische Allgemeinstation 5 West Ost im Kopfklinikum des UKW sucht ab sofort in Vollzeit (38,5 Wochenstunden)…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10642,
+   "title": "Pflegefachfrau oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie"
+   },
+   "department_quote": "Bewerbungsfrist: 31.12.2026 Die neurologische Allgemeinstation 6 West im Kopfklinikum des UKW sucht ab sofort in Vollzeit (38,5 Wochenstunden) oder…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10643,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC"
+   },
+   "department_quote": "…Universitätsklinikum Würzburg sucht für die NL Intensivstation im Kopfklinikum ab sofort in Vollzeit (38,5 Wochenstunden) oder Teilzeit…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10644,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Neurologie|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Das Uniklinikum Würzburg sucht für die neurochirurgische IMC Station 4 Ost im Kopfklinikum ab sofort in Vollzeit (38,5 Wochenstunden) oder…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10645,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Universitätsklinikum Würzburg sucht für die neurologische und neurochirurgische Privatstation 2 Süd/Nord ab sofort in Vollzeit (38,5…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10647,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC"
+   },
+   "department_quote": "…31.12.2026 Das pflegerische Team der HNO Intensivstation im Universitätsklinikum Würzburg sucht ab sofort zur Verstärkung eine/n Das…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10651,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Neurologie|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Würzburg sucht für die neurochirurgischen Intensivstation im Kopfklinikum ab sofort in Vollzeit (38,5 Wochenstunden) oder Teilzeit…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10652,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Universitätsklinikum Würzburg sucht für die neurochirurgische Allgemeinstation 3 West ab sofort in Vollzeit (38,5 Wochenstunden) oder Teilzeit…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10653,
+   "title": "Pflegefachfrauen und/-männer oder Fachkrankenpflegekräfte A&I (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Innere Medizin"
+   },
+   "department_quote": "Bewerbungsfrist: 15.12.2026 Die internistische Intensivstation M51 des Universitätsklinikum Würzburgs sucht ab sofort Auf der internistischen…",
+   "judge": "OK",
+   "reading": "'Die internistische Intensivstation M51 ... sucht ab sofort': true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10654,
+   "title": "Pflegefachfrauen und/-männer oder Fachkrankenpflegekräfte A&I (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Chirurgie/Orthopädie"
+   },
+   "department_quote": "Bewerbungsfrist: 15.12.2026 Wir suchen für unsere Intensivstation der Herz- und Thorax-Chirurgie im Zentrum für operative Medizin des…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10655,
+   "title": "Pflegefachfrauen und/-männer oder Fachkrankenpflegekräfte A&I (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…15.12.2026 Wir suchen für unsere allgemeinchirurgische Intensivstation im Zentrum für operative Medizin am Universitätsklinikum Würzburg…",
+   "judge": "OK",
+   "reading": "'allgemeinchirurgische Intensivstation im Zentrum für operative Medizin': true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10656,
+   "title": "Pflegefachfrauen und/-männer* oder Fachkrankenpflegekräfte A&I (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Intensiv/IMC|Chirurgie/Orthopädie"
+   },
+   "department_quote": "…15.12.2026 Wir suchen für unsere chirurgische IMC im ZOM des Universitätsklinkum Würzburgs Pflegefachfrauen und/-männer (m, w, d) oder…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10657,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie"
+   },
+   "department_quote": "…Das Universitätsklinikum Würzburg sucht für die Stroke Unit ab sofort in Voll- oder Teilzeit eine Das pflegerische Team der Stroke Unit versorgt auf…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10661,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie"
+   },
+   "department_quote": "Bewerbungsfrist: 31.12.2026 Die Stammzelle M52 sucht ab sofort in Vollzeit oder Teilzeit eine/-n Die Station M52 verfügt über 14 Patientenbetten mit…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10662,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie"
+   },
+   "department_quote": "…Würzburg sucht für die Station M41 (Hämatologie) der Medizinischen Klinik II ab sofort eine/n Die Station M41 verfügt über 29…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10663,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Innere Medizin"
+   },
+   "department_quote": "…Universitätsklinikum Würzburg sucht für die internistische Kurzliegerstation M66 ab sofort in Voll- oder Teilzeit eine Auf unserer neuen…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10668,
+   "title": "Stellvertretende Stationsleitung (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie"
+   },
+   "department_quote": "Bewerbungsfrist: 31.12.2026 Wir suchen für unsere neurologische Normalstation NL 6 West im Kopfklinikum des UKW ab sofort in Vollzeit (38,5…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10707,
+   "title": "Pflege-oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:medizinpädagog"
+    ]
+   },
+   "quote": "Pflege-oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 10768,
+   "title": "Freiwilliger (m/w/d) in der Pflege",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Notaufnahme"
+   },
+   "department_quote": "Wir suchen für unsere Notaufnahme am Standort Friedberg (Bayern) zum nächstmöglichen Zeitpunkt einen Freiwilligen (m/w/d) in der Pflege…",
+   "judge": "OK",
+   "reading": "'Notaufnahme am Standort Friedberg ... einen Freiwilligen (m/w/d) in der Pflege (Bundesfreiwilligendienst)': department right; the role class of this posting is not touched here",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11149,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Notaufnahme|Innere Medizin"
+   },
+   "department_quote": "…Würzburg sucht für die Internistische Notaufnahme mit integrierter Notaufnahmestation (M61) und CPU (Chest-Pain-Unit) der…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11150,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Würzburg sucht für die Stationen der Chirurgie I (Gefäß-, Allgemein- und Private Allgemeinchirurgische Station) ab sofort in Voll-…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11410,
+   "title": "Pflegepädagoge (w/m/d) oder Medizinpädagoge (w/m/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge (w/m/d) oder Medizinpädagoge (w/m/d)",
+   "judge": "S3",
+   "reading": "teaching job (Pflegepädagoge / Medizinpädagoge); judge saw no job text: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11416,
+   "title": "Pflegepädagogen (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11716,
+   "title": "Pflegepädagoge Bildungszentrum (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge Bildungszentrum (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11767,
+   "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Wahlleistungsstation (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Kardiologie"
+   },
+   "department_quote": "…Helios Klinik am Standort München West (Pasing) für unsere Abteilung Kardiologie Sie als Gesundheits- und Krankenpfleger / Pflegefachkraft für die…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 11892,
+   "title": "Stellvertretende Stationsleitung (m/w/d) für die Intensivstation",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:stationsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…Standorten ›› Mehr Informationen Für Ihre Suche wurden leider keine Stellenanzeigen gefunden. --> Wir arbeiten im Auftrag von: Stiftung…",
+   "judge": "S3",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12154,
+   "title": "Pflegepädagoge B.A. / M.A. (w/m/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge B.A. / M.A. (w/m/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12173,
+   "title": "Job Gesundheits- / Krankenpfleger-Fridolfing",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:krankenpfleger"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…Patientenportal Derzeit haben wir keine offenen Stellen im Stationsbereich zu besetzen. Wir freuen uns aber über jede…",
+   "judge": "NEG",
+   "reading": "body says 'Derzeit haben wir keine offenen Stellen im Stationsbereich zu besetzen', about the very nursing area the title names: true positive (judge's crude set missed it: issue generic_title)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12174,
+   "title": "Gesundheits- / Krankenpfleger-Fridolfing",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:krankenpfleger"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…Patientenportal Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Wir freuen uns aber über jede…",
+   "judge": "S3",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12307,
+   "title": "Gesundheits- und Krankenpfleger Intensivstation Neurochirurgie (m/w/d)",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:gesundheits- und"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…108 offene Stellenausschreibungen Leider sind derzeit keine passenden Stellenangebote in diesem Bereich vorhanden. Bitte passen Sie die…",
+   "judge": "S3",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12309,
+   "title": "Ausbildungsplätze zur Pflegefachhilfe (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…dem 16. Lebensjahr (mit Zustimmung der Erziehungsberechtigten) Hauptschulabschluss/ Mittelschulabschluss Ungelernte Pflegefachhelfer (m/w/d) mit…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12310,
+   "title": "Ausbildungsplätze zur/zum Pflegefachfrau / Pflegefachmann (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…(Feststellung durch den Betriebsarzt des Klinikums Passau) Mittlerer Schulabschluss oder eine andere gleichwertige, abgeschlossene Schulbildung…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12311,
+   "title": "Ärzt:in in Weiterbildung - für die Station",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:ärzt:in"
+    ]
+   },
+   "quote": "Ärzt:in in Weiterbildung - für die Station",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12320,
+   "title": "Pflegepädagoge, Medizinpädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge, Medizinpädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12324,
+   "title": "Pflegefachfrau/-mann (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…Spektrum des Klinikverbundes Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung (Mittlerer Schulabschluss)…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12325,
+   "title": "Pflegefachfrau/-mann | Vertiefung Kinderkrankenpflege (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…sowie Lehrkräften ausgebildet Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung (Mittlerer Schulabschluss)…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12326,
+   "title": "Anästhesietechnischer Assistent (ATA) (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…mit Ärzten und anderen Berufsgruppen Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung Belastbarkeit und…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12327,
+   "title": "Operationstechnischer Assistent (OTA) (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…mit Ärzten und anderen Berufsgruppen Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung Belastbarkeit und…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12331,
+   "title": "Lehrkraft für OTA: Pflegepädagoge/ Medizinpädagoge/ Berufspädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ota"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft für OTA: Pflegepädagoge/ Medizinpädagoge/ Berufspädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12335,
+   "title": "Pflegepädagogen/ Medizinpädagogen (Bachelor/Master/Diplom) oder Lehrer für Pflegeberufe (m/w/d) in Teilzeit",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen/ Medizinpädagogen (Bachelor/Master/Diplom) oder Lehrer für Pflegeberufe (m/w/d) in Teilzeit",
+   "judge": "NEG",
+   "reading": "teaching job at a nursing school, Mindelheim (judge issue: site_mismatch): true positive for the class",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12340,
+   "title": "Pflegepädagogen/ Medizinpädagogen (Bachelor/Master/Diplom) oder Lehrer für Pflegeberufe (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen/ Medizinpädagogen (Bachelor/Master/Diplom) oder Lehrer für Pflegeberufe (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12640,
+   "title": "Operationstechnische- oder Anästhesietechnische Assistenten (m/d/w)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlere reife"
+    ]
+   },
+   "quote": "…vor, bringen sie durch die OP-Schleuse (OTA) Sterilgutaufbereitung/Gerätewartung (OTA) Persönliche Voraussetzungen mittlere Reife ggf. Praktikum",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12641,
+   "title": "Pflegefachmann/-frau (m/d/w)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachmann"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlere reife"
+    ]
+   },
+   "quote": "…Voraussetzungen Abgeschlossene 10-jährige Schulbildung (Mittlere Reife, Fachschulhochreife) oder Mittelschulabschluss mit mindestens…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12644,
+   "title": "Anästhesietechnischer Assistent (ATA) (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…Zulassungsvoraussetzungen Vollendung des 16. Lebensjahres Hauptschulabschluss und abgeschlossene 2-jährige Berufsausbildung oder mittlere…",
+   "judge": "S3",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found (judge: no job text)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12645,
+   "title": "Operationstechnischer Assistent (OTA) (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…Zulassungsvoraussetzungen Vollendung des 16. Lebensjahres Hauptschulabschluss und abgeschlossene 2-jährige Berufsausbildung oder mittlere…",
+   "judge": "S3",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found (judge: no job text)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12646,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlere reife"
+    ]
+   },
+   "quote": "…von unserer zentralen Praxisanleitung. Zulassungsvoraussetzungen Mittlere Reife (oder gleichwertige Schulbildung) oder Abitur oder…",
+   "judge": "S3",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found (judge: no job text)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12647,
+   "title": "Pflegefachhilfe (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:ausbildungsbeginn"
+    ]
+   },
+   "quote": "…die kirchlich-karitative Zielsetzung unseres Hauses mittragen. Ausbildungsbeginn Die einjährige Ausbildung zur Pflegefachhilfe beginnt am 1.…",
+   "judge": "S3",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found (judge: no job text)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12677,
+   "title": "Operationstechnischer Assistent (OTA) für unser FlexTEAM (m/w/d)",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…111 offene Stellenausschreibungen Leider sind derzeit keine passenden Stellenangebote in diesem Bereich vorhanden. Bitte passen Sie die…",
+   "judge": "S3",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12681,
+   "title": "Pflegejobs: Stellenangebote für Pflegefachkräfte",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkräfte"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:stellenangebote"
+    ]
+   },
+   "quote": "Pflegejobs: Stellenangebote für Pflegefachkräfte",
+   "judge": "S3",
+   "reading": "listing page 'Pflegejobs: Stellenangebote für Pflegefachkräfte', not a posting: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12718,
+   "title": "Arztsekretär (m/w/d)  Vorzimmer Station 34",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:arztsekret"
+    ]
+   },
+   "quote": "Arztsekretär (m/w/d) Vorzimmer Station 34",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12719,
+   "title": "Pflegepädagoge als stellvertretende Schulleitung Berufsfachschule für Pflege (m/w/d) Teilzeit (50 %)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge als stellvertretende Schulleitung Berufsfachschule für Pflege (m/w/d) Teilzeit (50 %)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12834,
+   "title": "Teamassistenz ATA-OTA-Berufsfachschule",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:teamassistenz ata-ota-berufsfachschule"
+    ]
+   },
+   "quote": "Teamassistenz ATA-OTA-Berufsfachschule",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12861,
+   "title": "Pflegepädagogen (m/w/d) BFS Würzburg",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen (m/w/d) BFS Würzburg",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12895,
+   "title": "Pflegepädagoge oder Medizinpädagoge (w/m/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge oder Medizinpädagoge (w/m/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12912,
+   "title": "Ärzt:in in Weiterbildung - für die Station",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:ärzt:in"
+    ]
+   },
+   "quote": "Ärzt:in in Weiterbildung - für die Station",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12957,
+   "title": "Stellvertretende Schulleitung (Medizin- oder Pflegepädagoge)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Stellvertretende Schulleitung (Medizin- oder Pflegepädagoge)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12990,
+   "title": "Operationstechnischer Assistent (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…Zulassungsvoraussetzungen: Vollendung des 16. Lebensjahres und Hauptschulabschluss und abgeschlossene 2-jährige Berufsausbildung oder Mittlere…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 12992,
+   "title": "Pflegepädagoge / Lehrkraft (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Lehrkraft (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13015,
+   "title": "Pflegepädagoge / Lehrkraft Pflegeschule (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Lehrkraft Pflegeschule (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13032,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Psychiatrie"
+   },
+   "department_quote": "…(60%), unbefristet Wir suchen für die Klinik für Psychiatrie, Psychotherapie und Psychosomatik am Standort Kempten zum nächstmöglichen Zeitpunkt…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13095,
+   "title": "Pflegepädagogen (m/w/d) Berufsfachschule München",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen (m/w/d) Berufsfachschule München",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13096,
+   "title": "Pflegepädagogen (m/w/d) Berufsfachschule Würzburg",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagogen (m/w/d) Berufsfachschule Würzburg",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13474,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Dialyse/Nephrologie"
+   },
+   "department_quote": "…Würzburg sucht für die Station M62 (Dialyse) ab sofort in Teilzeit (19,25h) eine/n Auf der M62 erwartet Sie ein breites Spektrum…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13580,
+   "title": "Pflege- /Medizinpädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:medizinpädagog"
+    ]
+   },
+   "quote": "Pflege- /Medizinpädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13604,
+   "title": "Operationstechnischer Assistent (OTA) für unser FlexTEAM (m/w/d)",
+   "group": "no_vacancy_page",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "nicht_pflege",
+     "no_vacancy_page"
+    ]
+   },
+   "quote": "…111 offene Stellenausschreibungen Leider sind derzeit keine passenden Stellenangebote in diesem Bereich vorhanden. Bitte passen Sie die…",
+   "judge": "S3",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13636,
+   "title": "Mitarbeiter in der Stabstelle EDV Pflege (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:edv"
+    ]
+   },
+   "quote": "Mitarbeiter in der Stabstelle EDV Pflege (m/w/d)",
+   "judge": "NEG",
+   "reading": "'Stabstelle EDV Pflege' (IT); the judge found the body to be a neurosurgery outpatient front desk (patient admission, phone): non-nursing either way, true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13642,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "…Durchführung der Grund- und Behandlungspflege bei Säuglingen bis 1 Jahr nach aktuellen wissenschaftlichen Erkenntnissen…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13657,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie"
+   },
+   "department_quote": "…und pflegerische Versorgung von Patienten die im Rahmen einer Stammzell-/Knochenmarktransplantation mehrere Wochen auf unserer Station…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13667,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "…| Kinderkrankenpflege Bereich Dr. v. Haunersches Kinderspital Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist Nächstmöglich…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13670,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "…Allgemeinstationen Bereich Augenklinik Privat- und Kinderstation Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist Nächstmöglich…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13676,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Neurologie"
+   },
+   "department_quote": "…| Intensiv-Pflege und IMC Bereich Station G8 / Stroke Unit Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist Nächstmöglich…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13678,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie|Onkologie"
+   },
+   "department_quote": "…| Kinderkrankenpflege Bereich Pädiatrische Onkologie Stationen KIIS3, KIIKMT und KIITONKO Einstiegsdatum Zum nächstmöglichen…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13691,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Chirurgie/Orthopädie"
+   },
+   "department_quote": "…Dr. von Haunerschen Kinderspital Bereich Kinderchirurgische Allgemeinstation KIISC2 Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13699,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Geriatrie"
+   },
+   "department_quote": "…| Pflege Allgemeinstationen Bereich Akutgeriatrie Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist Nächstmöglich Referenz-Nr.…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 13703,
+   "title": "Pflegefachkraft oder Altenpfleger (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Pädiatrie/Neonatologie"
+   },
+   "department_quote": "…| Kinderkrankenpflege Bereich Pädiatrische Stationen KIIS1, KIIS4 und KIIS5 Einstiegsdatum Zum nächstmöglichen Zeitpunkt…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14493,
+   "title": "PTA, BTA, CTA, OTA oder MTLA als Pharmaberater / Pharmareferent im Innendienst (m/w/x) - Homeoffice",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ota"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pharmaberater"
+    ]
+   },
+   "quote": "PTA, BTA, CTA, OTA oder MTLA als Pharmaberater / Pharmareferent im Innendienst (m/w/x) - Homeoffice",
+   "judge": "NOJUDGE",
+   "reading": "Pharmaberater / Pharmareferent for lab professions: sales, true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14609,
+   "title": "Laborant - ATA / PhyTA / CTA / PTA und Quereinsteiger (w/m/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:laborant"
+    ]
+   },
+   "quote": "Laborant - ATA / PhyTA / CTA / PTA und Quereinsteiger (w/m/d)",
+   "judge": "NOJUDGE",
+   "reading": "Laborant (lab technician): non-nursing, true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14643,
+   "title": "Pflegepädagoge oder Berufspädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge oder Berufspädagoge (m/w/d)",
+   "judge": "NOJUDGE",
+   "reading": "teaching job (Pflegepädagoge / Berufspädagoge): true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14655,
+   "title": "Pflegepädagoge / Medizinpädagoge oder Praxisanleiter in der Pflege (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "praxisanleitung",
+     "praxisanleitung:praxisanleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Medizinpädagoge oder Praxisanleiter in der Pflege (m/w/d)",
+   "judge": "NOJUDGE",
+   "reading": "EDGE, possible false positive: 'Pflegepädagoge / Medizinpädagoge oder Praxisanleiter in der Pflege' is a teaching job that also accepts a Praxisanleiter; flipped from praxisanleitung because the teaching token wins. Owner to decide",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14746,
+   "title": "Anästhesietechnische/r Assistent/in (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…Narkose. Die schulische Voraussetzung für die Ausbildung ist ein Realschulabschluss. Falls du einen Hauptschulabschluss mit einer erfolgreich…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14747,
+   "title": "Operationstechnische/r Assistent/in (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…Zugangsvoraussetzungen Mindestalter 17 Jahre Sprachniveau B2+ mittlerer Schulabschluss Hauptschulabschluss oder gleichwertige Schulbildung in…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14749,
+   "title": "Anästhesietechnische/r Assistent/in (ATA) - Barmherzige Straubing",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…in Wort und Schrift, mindestens Sprachniveau B2 Mittlerer Schulabschluss (Realschule) oder höherer Schulabschluss (Qualifizierender)…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14750,
+   "title": "Operationstechnische/r Assistent/in (OTA) - Barmherzige Straubing",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…zur Auswahl, inklusive vegetarischer Version. Dein Profil Mittlerer Schulabschluss (Realschule) oder höheren Schulabschluss oder…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14751,
+   "title": "Anästhesietechnische/r Assistent/in (ATA) - Barmherzige Straubing",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…in Wort und Schrift, mindestens Sprachniveau B2 Mittlerer Schulabschluss (Realschule) oder höherer Schulabschluss (Qualifizierender)…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14752,
+   "title": "Operationstechnische/r Assistent/in (OTA) - Barmherzige Straubing",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:operationstechnische"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…zur Auswahl, inklusive vegetarischer Version. Dein Profil Mittlerer Schulabschluss (Realschule) oder höheren Schulabschluss oder…",
+   "judge": "S1",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14769,
+   "title": "med. Fachangestellte/r im Funktionsdienst",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:med. fachangestellte"
+    ]
+   },
+   "quote": "med. Fachangestellte/r im Funktionsdienst",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14814,
+   "title": "med. Fachangestellte/r im Funktionsdienst",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:med. fachangestellte"
+    ]
+   },
+   "quote": "med. Fachangestellte/r im Funktionsdienst",
+   "judge": "S3",
+   "reading": "med. Fachangestellte/r im Funktionsdienst: MFA is not nursing (same as the existing mfa token); judge saw no job text: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14819,
+   "title": "Ärztliche Bereichsleitung MVZ Rheumatologie",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:ärztliche"
+    ]
+   },
+   "quote": "Ärztliche Bereichsleitung MVZ Rheumatologie",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14837,
+   "title": "med. Fachangestellte/r im Funktionsdienst",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:med. fachangestellte"
+    ]
+   },
+   "quote": "med. Fachangestellte/r im Funktionsdienst",
+   "judge": "S3",
+   "reading": "med. Fachangestellte/r im Funktionsdienst: MFA is not nursing (same as the existing mfa token); judge saw no job text: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14860,
+   "title": "Pflegepädagoge/Pflegepädagogin – Pflegelehrer/in (m/w/d) Akademie Klinikum Nürnberg",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge/Pflegepädagogin – Pflegelehrer/in (m/w/d) Akademie Klinikum Nürnberg",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14911,
+   "title": "Verwaltungskraft (m/w/d) für die Berufsfachschule der Evangelischen PflegeAkademie in München",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:verwaltungskraft (m/w/d) für die berufsfachschule der evangelischen pflegeakademie"
+    ]
+   },
+   "quote": "Verwaltungskraft (m/w/d) für die Berufsfachschule der Evangelischen PflegeAkademie in München",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14914,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Ambulanz/Tagesklinik"
+   },
+   "department_quote": "…Das Uniklinikum Würzburg sucht für die Endoskopie der Medizinischen Klinik und Poliklinik II ab sofort eine/n In unserer interdisziplinären…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14915,
+   "title": "Pflegefachkraft (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie"
+   },
+   "department_quote": "…Würzburg sucht für die Stationen M84 (Onkologie und Hepatologie) ab sofort in Vollzeit oder Teilzeit eine Die Station M84 verfügt…",
+   "judge": "S4",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14942,
+   "title": "Verkäufer Stationsleitung (m/w/d) Tankstelle",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:stationsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:verkäufer"
+    ]
+   },
+   "quote": "Verkäufer Stationsleitung (m/w/d) Tankstelle",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14944,
+   "title": "Laborant - Milchwirtschaftlicher Laborant, CTA, ATA, MTLA, PTA (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:laborant"
+    ]
+   },
+   "quote": "Laborant - Milchwirtschaftlicher Laborant, CTA, ATA, MTLA, PTA (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14984,
+   "title": "Bereichsleiter (m/w/d) Steine & Erden",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:steine & erden"
+    ]
+   },
+   "quote": "Bereichsleiter (m/w/d) Steine & Erden",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 14986,
+   "title": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:standortmanager"
+    ]
+   },
+   "quote": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15000,
+   "title": "Bereichsleitung Frischetheke (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:frischetheke"
+    ]
+   },
+   "quote": "Bereichsleitung Frischetheke (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15006,
+   "title": "Bereichsleiter Frischetheke (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:frischetheke"
+    ]
+   },
+   "quote": "Bereichsleiter Frischetheke (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15020,
+   "title": "Fachbereichsleitung Beratung & Verkauf",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:beratung & verkauf"
+    ]
+   },
+   "quote": "Fachbereichsleitung Beratung & Verkauf",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15032,
+   "title": "Generalistische Pflegeausbildung zum Pflegefachmann (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachmann"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:realschulabschluss"
+    ]
+   },
+   "quote": "…Praxisanleiter/innen begleitet. Dein Profil Du besitzt einen Realschulabschluss oder hast einen Hauptschulabschluss sowie eine erfolgreich…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15051,
+   "title": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:standortmanager"
+    ]
+   },
+   "quote": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "judge": "NEG",
+   "reading": "Bereichsleiter Produktion / Standortmanager at a non-hospital firm (judge: Austrian job list): true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15062,
+   "title": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:standortmanager"
+    ]
+   },
+   "quote": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "judge": "S3",
+   "reading": "Bereichsleiter Produktion / Standortmanager at a non-hospital firm: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15063,
+   "title": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:standortmanager"
+    ]
+   },
+   "quote": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "judge": "S3",
+   "reading": "Bereichsleiter Produktion / Standortmanager at a non-hospital firm: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15064,
+   "title": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:standortmanager"
+    ]
+   },
+   "quote": "Bereichsleiter Produktion / Standortmanager (m/w/d)",
+   "judge": "S3",
+   "reading": "Bereichsleiter Produktion / Standortmanager at a non-hospital firm: true positive",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15072,
+   "title": "Pflegepädagoge / Pflegepädagogin (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Pflegepädagogin (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15073,
+   "title": "Dozent:in (m/w/d) Basis Pflege",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:dozent"
+    ]
+   },
+   "quote": "Dozent:in (m/w/d) Basis Pflege",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15087,
+   "title": "Pflegepädagoge / Lehrkraft für Pflegeberufe (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge / Lehrkraft für Pflegeberufe (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15146,
+   "title": "Pflegefachmann Knochenmarktransplantation (m/w/d)",
+   "group": "department_hint",
+   "department": {
+    "stored": null,
+    "new": "Onkologie"
+   },
+   "department_quote": "Pflegefachmann Knochenmarktransplantation (m/w/d)",
+   "judge": "OK",
+   "reading": "title names Knochenmarktransplantation: true positive (new ward word)",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15210,
+   "title": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15243,
+   "title": "Teamassistenz der Akademieleitung für Gesundheits- und Pflegeberufe (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:gesundheits- und"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:teamassistenz der akademie"
+    ]
+   },
+   "quote": "Teamassistenz der Akademieleitung für Gesundheits- und Pflegeberufe (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15245,
+   "title": "Pflegepädagoge (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:pflegepädagog"
+    ]
+   },
+   "quote": "Pflegepädagoge (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15346,
+   "title": "Ausbildungsplätze zur Pflegefachassisitenz (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:hauptschulabschluss"
+    ]
+   },
+   "quote": "…dem 16. Lebensjahr (mit Zustimmung der Erziehungsberechtigten) Hauptschulabschluss/ Mittelschulabschluss Ungelernte Pflegefachhelfer (m/w/d) mit…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15347,
+   "title": "Ausbildungsplätze zur Pflegefachkraft (m/w/d)",
+   "group": "ausbildung_body",
+   "role": {
+    "stored": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ],
+    "new": [
+     "ausbildung",
+     "ausbildung_body:mittlerer schulabschluss"
+    ]
+   },
+   "quote": "…(Feststellung durch den Betriebsarzt des Klinikums Passau) Mittlerer Schulabschluss oder eine andere gleichwertige, abgeschlossene Schulbildung…",
+   "judge": "OK",
+   "reading": "training place or school-admission page stored under a staff class; the judge read title and body as consistent (or saw no job text), but the body is the admission text of an Ausbildung: true positive, newly found",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15358,
+   "title": "Lehrkraft Berufsfachschule ATA-OTA - Bereich OTA (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:ata"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft Berufsfachschule ATA-OTA - Bereich OTA (m/w/d)",
+   "judge": "NOJUDGE",
+   "reading": "teaching job (Lehrkraft Berufsfachschule ATA-OTA): true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15362,
+   "title": "Bereichsleiter Frischetheke (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:frischetheke"
+    ]
+   },
+   "quote": "Bereichsleiter Frischetheke (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15367,
+   "title": "Lehrkraft (m/w/d) für den Fachbereich Anästhesietechnische Assistenz in Teilzeit",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "ota_ata",
+     "ota_ata:anästhesietechnische"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:lehrkraft"
+    ]
+   },
+   "quote": "Lehrkraft (m/w/d) für den Fachbereich Anästhesietechnische Assistenz in Teilzeit",
+   "judge": "NOJUDGE",
+   "reading": "teaching job (Lehrkraft Fachbereich Anästhesietechnische Assistenz): true positive, not judged",
+   "board_visible_now": true
+  },
+  {
+   "posting_id": 15419,
+   "title": "Bereichsleiter Frischetheke (m/w/d)",
+   "group": "nicht_pflege",
+   "role": {
+    "stored": [
+     "leitung",
+     "leitung:bereichsleit"
+    ],
+    "new": [
+     "nicht_pflege",
+     "nicht_pflege:frischetheke"
+    ]
+   },
+   "quote": "Bereichsleiter Frischetheke (m/w/d)",
+   "judge": "S2",
+   "board_visible_now": true
+  }
+ ],
+ "not_pushed": {
+  "department_already_at_new_value": [
+   7538
+  ],
+  "drift_role": [
+   {
+    "posting_id": 5680,
+    "title": "Zum Jobangebot: Endoskopieschwester/-pfleger",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pfleger"
+    ]
+   },
+   {
+    "posting_id": 5812,
+    "title": "s2588c344 fd26 4d2a 95ef 58a08bfe8bc3 praxisanleiter mwd anerkennung und integration",
+    "stored": [
+     "leitung",
+     "board:leitung"
+    ],
+    "replay": [
+     "praxisanleitung",
+     "praxisanleitung:praxisanleit"
+    ]
+   },
+   {
+    "posting_id": 5826,
+    "title": "1531",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 5848,
+    "title": "856",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 5852,
+    "title": "Pflegefachkraft / MFA / OTA (m/w/d) Endoskopie",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "ota_ata",
+     "ota_ata:ota"
+    ]
+   },
+   {
+    "posting_id": 6018,
+    "title": "1581",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6019,
+    "title": "1586",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6020,
+    "title": "2128",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6022,
+    "title": "2245",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6023,
+    "title": "2324",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6025,
+    "title": "2619",
+    "stored": [
+     "pflegefachkraft",
+     "board:pflegefachkraft"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 6026,
+    "title": "Pain Nurse (m/w/d) Klinikverbund Allgäu gGmbH Kempten ab sofort Vollzeit; Teilzeit",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:nurse"
+    ]
+   },
+   {
+    "posting_id": 6086,
+    "title": "Pflegefachfrau/Pflegefachmann für die Anästhesie / ATA",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "ota_ata",
+     "ota_ata:ata"
+    ]
+   },
+   {
+    "posting_id": 6087,
+    "title": "Pflegefachfrau/Pflegefachmann für die Intensivstation",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachfrau"
+    ]
+   },
+   {
+    "posting_id": 6240,
+    "title": "Pflegefachkraft (w/m/d) für die Intensivstation",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ]
+   },
+   {
+    "posting_id": 6290,
+    "title": "Pflegefachkraft / Gesundheits- und Krankenpflegerin (m/w/d) mit Weiterbildung zur Diabetesberaterin DDG oder Diabetesberaterin DDG (m/w/d)",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ]
+   },
+   {
+    "posting_id": 6382,
+    "title": "OP-Schwester, Krankenschwester mit OP-Erfahrung oder OTA (m/w/d)",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "ota_ata",
+     "ota_ata:ota"
+    ]
+   },
+   {
+    "posting_id": 6457,
+    "title": "Pflegefachkraft (m/w/d) Anästhesie",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ]
+   },
+   {
+    "posting_id": 6609,
+    "title": "Pflegefachkraft (m/w/d) für Notfallpflege und Praxisanleitung",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "praxisanleitung",
+     "praxisanleitung:praxisanleit"
+    ]
+   },
+   {
+    "posting_id": 6641,
+    "title": "Pflegefachkraft (m/w/d) Anästhesie",
+    "stored": [
+     "fachpflege",
+     "board:fachweiterbildung"
+    ],
+    "replay": [
+     "pflegefachkraft",
+     "pflegefachkraft:pflegefachkraft"
+    ]
+   },
+   {
+    "posting_id": 10352,
+    "title": "Fachkraft (m/w/d) Erwachsenenbereich für den Wohnbereich Haus Gottessegen - Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10353,
+    "title": "Fachkraft (m/w/d) Erwachsenenbereich für den Wohnbereich in der Alten Poststraße 25 - Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10354,
+    "title": "Fachkraft (m/w/d) Erwachsenenbereich für den Wohnbereich Sandhof - Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10355,
+    "title": "Fachkraft (m/w/d) Erwachsenenbereich für den Wohnbereich Schloss - Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10356,
+    "title": "Fachkraft (m/w/d) Erwachsenen-Wohngruppe Hasen - Neuendettelsau",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10357,
+    "title": "Fachkraft (m/w/d) Förderstätte Obernzenn",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10358,
+    "title": "Fachkraft (m/w/d) für den Wohnbereich Erlangen",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10359,
+    "title": "Fachkraft (m/w/d) für unsere neue Wohngruppe im Kinder- und Jugendbereich Sonnenhof in Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10360,
+    "title": "Fachkraft (m/w/d) im Nachtdienst - Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10361,
+    "title": "Fachkraft (m/w/d) im Nachtdienst - Wohnen Oettingen",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10362,
+    "title": "Fachkraft (m/w/d) im Wohnen - Dinkelsbühl",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10363,
+    "title": "Fachkraft (m/w/d) im Wohnen - Gunzenhausen",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10364,
+    "title": "Fachkraft (m/w/d) im Wohnen - Polsingen",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10365,
+    "title": "Fachkraft (m/w/d) Kinder-/Jugend-Wohngruppe Dachse - Neuendettelsau",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10366,
+    "title": "Fachkraft (m/w/d) Kinder- und Jugendbereich Wohnbereich Akazienhof 1 in Bruckberg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10367,
+    "title": "Fachkraft (m/w/d) Wohnbereich Erlangen",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10368,
+    "title": "Gerontopsychiatrische Fachkraft (m/w/d) Kompetenzzentrum Forchheim",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10369,
+    "title": "Gruppenhelfer (m/w/d) Werkstatt Rothenburg",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10370,
+    "title": "Heilpädagoge (m/w/d) - Neuendettelsau",
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10372,
+    "title": "Leitung (m/w/d) Soziale Betreuung - Forchheim",
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10374,
+    "title": "Gerontofachkraft (w/m/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10377,
+    "title": "Stellvertretende Teamleitung für unsere Endoskopie (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:teamleit"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10379,
+    "title": "stellvertretende Teamleitung der ZNA (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:teamleit"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10382,
+    "title": "Technische/-r Sterilisationsassistent/-in (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10442,
+    "title": "Organisationsassistent (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10444,
+    "title": "Organisationsassistent (m/w/d) Murnau",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10461,
+    "title": "Architekt - stellv. Leiter Bau & Technik (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:leiter"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10463,
+    "title": "Krankenhaushygieniker (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10468,
+    "title": "Leitung Kommunikation und Marketing (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10469,
+    "title": "Mitarbeiter (m/w/d) der administrativen Aufnahme",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10470,
+    "title": "Medizinischer Technologe für Laboratoriumsanalytik (MT-L) (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10473,
+    "title": "Projektmanager (m/w/d) im Bereich Anwendungsbetreuung",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10475,
+    "title": "Ehrenamtlicher Patientenfürsprecher (m/w/d) für ANregiomed",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10486,
+    "title": "Leitung Einkauf & Logistik (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10487,
+    "title": "Personalsachbearbeiter (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10488,
+    "title": "Schnittstellenbetreuung / Projektmanagement (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10489,
+    "title": "Geschäftsführer MVZ (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10491,
+    "title": "Elektroniker/Elektriker/Elektroinstallateur (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10492,
+    "title": "Mitarbeiter (m/w/d) Zentrallager",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10493,
+    "title": "Anwendungsbetreuer (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10498,
+    "title": "Medizinstudenten im Praktischen Jahr (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10501,
+    "title": "Sektionsleitung (m/w/d) Nephrologie",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10502,
+    "title": "Personalsachbearbeiter (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10580,
+    "title": "Stellvertretende Laborleitung (m/w/d) mit perspektivischer Übernahme der Laborleitung zum 01.04.2027",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10593,
+    "title": "Mitarbeiter (m/w/d) Patientenmanagement in München",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10672,
+    "title": "Technische Sterilisationsassistenten (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10718,
+    "title": "Sterilisationsassistent (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 10821,
+    "title": "OP-Koordinator (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 11250,
+    "title": "Behandlungsassistenz (m/w/d) in Vogtareuth",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 11259,
+    "title": "Mitarbeiter (m/w/d) Patientenmanagement in Rosenheim",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12671,
+    "title": "Meister/Techniker für Sanitär- und Heizungstechnik (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12673,
+    "title": "Anlagenmechaniker für Sanitär-, Heizungs- und Klimatechnik (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12727,
+    "title": "Kaufleute für Gesundheitswesen (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12728,
+    "title": "Kaufleute für Büromanagement (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12729,
+    "title": "Fachinformatiker (m/w/d) mit Fachrichtung Systemintegration",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12746,
+    "title": "Teamassistenz Augenklinik (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12747,
+    "title": "Bürofachkraft (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12748,
+    "title": "Augenoptiker Funktionsdiagnostik Augenklinik (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12754,
+    "title": "Rezeptionsfachkraft (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12829,
+    "title": "Dein Platz im Team (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12877,
+    "title": "Medizinische Fachkraft (w/m/d) Zentrale Patientenaufnahme",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12878,
+    "title": "Tumordokumentar (w/m/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12884,
+    "title": "OP Gesamtleitung (w/m/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 12893,
+    "title": "Onkologische Fachkraft (w/m/d) für pneumologische Onkologie",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 13327,
+    "title": "Projekt-Koordinator (m/w/d) Technologiepartnerschaft Medizintechnik",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 13361,
+    "title": "Sozialarbeiter (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14785,
+    "title": "medizinische/n Fachangestellte/n (m/w/d) in VZ und TZ",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14786,
+    "title": "Mitarbeiter/in für die Aufbereitungseinheit für Medizinprodukte",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14787,
+    "title": "med. Fachangestellte/r (m/w/d) in VZ o. TZ",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14788,
+    "title": "medizinische/r Technologe/in für Laboratoriumsanalytik",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14789,
+    "title": "Medizinisch-technische/n Radiologie-Assistenten/in",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14790,
+    "title": "Medizinische/-r Technologe/-in für Radiologie (MTR)(m/w/d) in Teilzeit für unser MVZ in Cham",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14791,
+    "title": "Mitarbeiter/in Information (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14792,
+    "title": "Berufs-/ Medizinpädagog/in in Voll-/Teilzeit für den Standort Schwandorf",
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14801,
+    "title": "medizinische/n Fachangestellte/n (m/w/d) in VZ und TZ",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14802,
+    "title": "Mitarbeiter/in für die Aufbereitungseinheit für Medizinprodukte",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14803,
+    "title": "med. Fachangestellte/r (m/w/d) in VZ o. TZ",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14805,
+    "title": "medizinische/r Technologe/in für Laboratoriumsanalytik",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14806,
+    "title": "Medizinisch-technische/n Radiologie-Assistenten/in",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14807,
+    "title": "Medizinische/-r Technologe/-in für Radiologie (MTR)(m/w/d) in Teilzeit für unser MVZ in Cham",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14808,
+    "title": "Mitarbeiter/in Information (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14809,
+    "title": "Berufs-/ Medizinpädagog/in in Voll-/Teilzeit für den Standort Schwandorf",
+    "stored": [
+     "apn_experte",
+     "apn_experte:pädagog"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 14859,
+    "title": "Sachbearbeiter für Rechnungsangelegenheiten/Rechnungsprüfung (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15115,
+    "title": "Mitarbeiter Endoskopie (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15159,
+    "title": "Mitarbeiter (m/w/d) Labor",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15241,
+    "title": "Assistenz Klinikmanagement in der nuklearmedizinischen Klinik (m/w/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15242,
+    "title": "Sekretär (m/w/d) in der Chirurgischen Klinik",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15258,
+    "title": "Studienkoordinator (w/m/d)",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15262,
+    "title": "Mitarbeiter (m/w/d) Anmeldung und Patientenmanagement \"Radiologie\"",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15333,
+    "title": "Mitarbeiter (m/w/d) Therapieplanung in Bad Aibling",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15348,
+    "title": "Mitarbeiter (m/w/d) Endoskopie, Herzkatheterlabor und Funktionsdiagnostik",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15354,
+    "title": "Teamassistenz für die Palliativmedizinische Abteilung (m/w/d) in Elternzeitvertretung",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15409,
+    "title": "Leitung OP-Augenklinik (m/w/d)",
+    "stored": [
+     "leitung",
+     "leitung:leitung"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   },
+   {
+    "posting_id": 15423,
+    "title": "Mitarbeiter (m/w/d) für die Beschäftigungstherapie",
+    "stored": [
+     "sonstige_pflege",
+     "fallback"
+    ],
+    "replay": [
+     "nicht_pflege",
+     "no_pflege_token"
+    ]
+   }
+  ],
+  "drift_department": [
+   {
+    "posting_id": 1033,
+    "title": "Pflegefachfrau/Pflegefachmann",
+    "stored": "Intensiv/IMC",
+    "replay": null
+   },
+   {
+    "posting_id": 4927,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) für Intensiveinheiten",
+    "stored": "Intensiv/IMC|Neurologie|Chirurgie/Orthopädie|Innere Medizin",
+    "replay": "Intensiv/IMC"
+   },
+   {
+    "posting_id": 5563,
+    "title": "Atmungstherapeuten (DGP) (w/m/d) oder Gesundheits- und Krankenpfleger (w/m/d)",
+    "stored": "Intensiv/IMC",
+    "replay": null
+   },
+   {
+    "posting_id": 5564,
+    "title": "Gesundheits- und Krankenpfleger (w/m/d) als Dauernachtwache",
+    "stored": "Innere Medizin",
+    "replay": null
+   },
+   {
+    "posting_id": 5789,
+    "title": "Gesundheits- und Krankenpfleger / Co Therapeut (m/w/d) - Schlemmer Klinik",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 5809,
+    "title": "Pflegefachkraft (m/w/d) für die Geriatrische Reha – Station 5.2",
+    "stored": "Geriatrie",
+    "replay": "Geriatrie|Reha"
+   },
+   {
+    "posting_id": 5826,
+    "title": "1531",
+    "stored": "Notaufnahme",
+    "replay": null
+   },
+   {
+    "posting_id": 5848,
+    "title": "856",
+    "stored": "Anästhesie",
+    "replay": null
+   },
+   {
+    "posting_id": 5942,
+    "title": "Pflegefachkraft (m/w/d) Therapie-Centrum für Essstörungen Kinder- und Jugendteam",
+    "stored": "Pädiatrie/Neonatologie",
+    "replay": "Intensiv/IMC|Psychiatrie|Pädiatrie/Neonatologie"
+   },
+   {
+    "posting_id": 5974,
+    "title": "Job Krankenpfleger und Gesundheitspfleger",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 6018,
+    "title": "1581",
+    "stored": "Intensiv/IMC",
+    "replay": null
+   },
+   {
+    "posting_id": 6022,
+    "title": "2245",
+    "stored": "Ambulanz/Tagesklinik",
+    "replay": null
+   },
+   {
+    "posting_id": 6023,
+    "title": "2324",
+    "stored": "Kardiologie",
+    "replay": null
+   },
+   {
+    "posting_id": 6025,
+    "title": "2619",
+    "stored": "OP",
+    "replay": null
+   },
+   {
+    "posting_id": 6080,
+    "title": "MFA/MTR oder Pflegefachmann/-frau (m/w/d) in Vollzeit",
+    "stored": "Medizinisch-technischer Dienst",
+    "replay": null
+   },
+   {
+    "posting_id": 6209,
+    "title": "Pflegefachkraft (m/w/d) Intensiv",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 6213,
+    "title": "Pflegefachfrau / Pflegefachmann (m/w/d) Innere Medizin, Kardiologie und Geriatrie",
+    "stored": "Kardiologie",
+    "replay": "Kardiologie|Geriatrie|Innere Medizin"
+   },
+   {
+    "posting_id": 6251,
+    "title": "Pflegefachkraft (m/w/d)",
+    "stored": "Chirurgie/Orthopädie",
+    "replay": null
+   },
+   {
+    "posting_id": 6288,
+    "title": "Pflegefachkraft / Gesundheits- und Krankenpflegerin (m/w/d)",
+    "stored": "Geriatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 6507,
+    "title": "Pflegefachkraft Neo- und pädiatrische Intensivstation m/w/d",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Pädiatrie/Neonatologie"
+   },
+   {
+    "posting_id": 6509,
+    "title": "Pflegefachkraft im Kreissaal m/w/d",
+    "stored": "Geburtshilfe",
+    "replay": null
+   },
+   {
+    "posting_id": 6511,
+    "title": "Pflegefachperson Pädiatrie mit Schwerpunkt Chirurgie m/w/d",
+    "stored": "Pädiatrie/Neonatologie",
+    "replay": "Pädiatrie/Neonatologie|Chirurgie/Orthopädie"
+   },
+   {
+    "posting_id": 6602,
+    "title": "Gesundheits- und Krankenpfleger, Altenpfleger oder Gesundheits- und Krankenpflegehelfer (m/w/d) für die Station der Geriatrischen Rehabilitation",
+    "stored": "Geriatrie",
+    "replay": "Geriatrie|Reha"
+   },
+   {
+    "posting_id": 6637,
+    "title": "Gesundheits- und Krankenpfleger / Co-Therapeut (m/w/d) - Tagesklinik Am Rosenaupark",
+    "stored": "Psychiatrie",
+    "replay": "Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 6786,
+    "title": "Heilerziehungspfleger (w/m/d)",
+    "stored": null,
+    "replay": "Psychiatrie"
+   },
+   {
+    "posting_id": 6827,
+    "title": "Duale Studenten Pflege B. Sc. (m/w/d)",
+    "stored": null,
+    "replay": "Intensiv/IMC|Pädiatrie/Neonatologie|Chirurgie/Orthopädie|Innere Medizin"
+   },
+   {
+    "posting_id": 6864,
+    "title": "MTL / Bereichsleitung Blutbank (m/w/d)",
+    "stored": null,
+    "replay": "Onkologie"
+   },
+   {
+    "posting_id": 6934,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) für verschiedene stationäre Bereiche",
+    "stored": "Chirurgie/Orthopädie|Innere Medizin",
+    "replay": null
+   },
+   {
+    "posting_id": 6942,
+    "title": "Praxisanleiter/Lernbegleiter (m/w/d) für die interprofessionelle Ausbildungseinheit",
+    "stored": "Innere Medizin",
+    "replay": null
+   },
+   {
+    "posting_id": 7530,
+    "title": "Fachkrankenpfleger I/A (m/w/d), Gesundheits- und Krankenpfleger (m/w/d), ATA (m/w/d)",
+    "stored": "Ambulanz/Tagesklinik",
+    "replay": null
+   },
+   {
+    "posting_id": 7536,
+    "title": "Pflegefachkraft für Wunschdienstzeiten gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 10280,
+    "title": "Pflegefachkräfte (m/w/d) für die bettenführenden Bereiche",
+    "stored": null,
+    "replay": "Chirurgie/Orthopädie|Innere Medizin"
+   },
+   {
+    "posting_id": 10438,
+    "title": "Praxisanleitung (m/w/d) Anästhesie – Weiterbildungsstätte Intensiv- und Anästhesiepflege",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 10520,
+    "title": "Advanced Practice Nurse (M. Sc.) (w/m/d) Transitional-Care-Modell",
+    "stored": null,
+    "replay": "Kardiologie"
+   },
+   {
+    "posting_id": 10523,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) für unsere Herzchirurgie Station 8.1",
+    "stored": "Kardiologie",
+    "replay": "Kardiologie|Chirurgie/Orthopädie"
+   },
+   {
+    "posting_id": 10526,
+    "title": "Pflegefachkraft (m/w/d) Nuklearmedizinische Therapiestation",
+    "stored": null,
+    "replay": "Onkologie"
+   },
+   {
+    "posting_id": 10532,
+    "title": "Notfallsanitäter (m/w/d) / Pflegefachperson (m/w/d) oder Anästhesietechnischer Assistent (ATA) (m/w/d) für unseren qualifizierten innerklinischen Patiententransportdienst",
+    "stored": "Anästhesie",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 10534,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) oder Altenpfleger (m/w/d) Akutgeriatrie",
+    "stored": "Geriatrie",
+    "replay": "Geriatrie|Innere Medizin"
+   },
+   {
+    "posting_id": 10537,
+    "title": "Pflegefachkraft (m/w/d) Pädiatrie",
+    "stored": "Pädiatrie/Neonatologie",
+    "replay": "Intensiv/IMC|Pädiatrie/Neonatologie|Onkologie|Chirurgie/Orthopädie"
+   },
+   {
+    "posting_id": 10538,
+    "title": "Gesundheits- und Kinderkrankenpfleger (m/w/d) / Pflegefachmann (m/w/d) mit Vertiefung Pädiatrie",
+    "stored": "Pädiatrie/Neonatologie",
+    "replay": "Intensiv/IMC|Pädiatrie/Neonatologie"
+   },
+   {
+    "posting_id": 10539,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) der Neurochirurgie",
+    "stored": "Neurologie",
+    "replay": "Neurologie|Chirurgie/Orthopädie"
+   },
+   {
+    "posting_id": 10545,
+    "title": "Pflegefachperson (m/w/d) Neurologische Internistische Intermediate Care/Intensivstation",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Neurologie|Innere Medizin"
+   },
+   {
+    "posting_id": 10547,
+    "title": "Pflegefachperson (m/w/d) Internistische Intermediate Care (IMC)",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Innere Medizin"
+   },
+   {
+    "posting_id": 10548,
+    "title": "Pflegefachkraft (m/w/d) Stroke Unit / Zentrum für Intensivtherapie",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Neurologie"
+   },
+   {
+    "posting_id": 10549,
+    "title": "Mitarbeiter (m/w/d) Anästhesie Funktionsdienst",
+    "stored": "Anästhesie",
+    "replay": "Anästhesie|OP|Notaufnahme|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 10550,
+    "title": "Mitarbeiter (m/w/d) im OP-Funktionsdienst",
+    "stored": "OP",
+    "replay": "OP|Springerpool|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 10551,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) / Operationstechnischer Assistent (m/w/d) für den Bereich Uro-Endo-OP",
+    "stored": "OP",
+    "replay": "Anästhesie|OP|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 10555,
+    "title": "ATA Praxisanleiterkoordinator (m/w/d) für den Anästhesie Funktionsdienst",
+    "stored": "Anästhesie",
+    "replay": "Intensiv/IMC|Anästhesie|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 10556,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) / Pflegefachmann (m/w/d) / Medizinischer Fachangestellter (m/w/d) Endoskopie",
+    "stored": "Ambulanz/Tagesklinik",
+    "replay": "Pädiatrie/Neonatologie|Dialyse/Nephrologie|Innere Medizin|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 10561,
+    "title": "Pflegefachperson (m/w/d) Stammzelltransplantationseinheit (SZT)",
+    "stored": null,
+    "replay": "Intensiv/IMC|Onkologie"
+   },
+   {
+    "posting_id": 10563,
+    "title": "Pflegefachperson (m/w/d) für unser Pool-Team im Zentrum für Intensivtherapie",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Springerpool"
+   },
+   {
+    "posting_id": 10564,
+    "title": "Pflegefachperson (m/w/d) Zentrum für Intensivtherapie",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Kardiologie|Innere Medizin"
+   },
+   {
+    "posting_id": 11173,
+    "title": "Gesundheits- und Krankenpfleger (m/w/d) Nuklearmedizinische Therapiestation 5.6",
+    "stored": null,
+    "replay": "Onkologie"
+   },
+   {
+    "posting_id": 11523,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Intensivstation / IMC (m/w/d)",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 11568,
+    "title": "Stellvertretende Stationsleitung Geriatrie und Innere Medizin (m/w/d)",
+    "stored": "Geriatrie",
+    "replay": "Geriatrie|Innere Medizin"
+   },
+   {
+    "posting_id": 11760,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Intermediate Care (IMC) (m/w/d)",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 11766,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Beobachtungsstation | Notaufnahmestation (m/w/d)",
+    "stored": "Notaufnahme",
+    "replay": "Intensiv/IMC|Notaufnahme"
+   },
+   {
+    "posting_id": 11768,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Intensivstation (m/w/d)",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Anästhesie"
+   },
+   {
+    "posting_id": 11773,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft mit Weiterbildung Notfallpflege (m/w/d)",
+    "stored": "Notaufnahme",
+    "replay": "Intensiv/IMC|Notaufnahme"
+   },
+   {
+    "posting_id": 11778,
+    "title": "Gesundheits- und Krankenpfleger / Pflegefachkraft Herzkatheterlabor - HKL (m/w/d)",
+    "stored": "Kardiologie",
+    "replay": "Kardiologie|Ambulanz/Tagesklinik"
+   },
+   {
+    "posting_id": 11871,
+    "title": "Gesundheits- und Krankenpfleger Privatstation (m/w/d) gesucht!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 12307,
+    "title": "Gesundheits- und Krankenpfleger Intensivstation Neurochirurgie (m/w/d)",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Neurologie|Chirurgie/Orthopädie"
+   },
+   {
+    "posting_id": 12308,
+    "title": "Examinierte Gesundheits- und Krankenpfleger für die Dialyseabteilung (m/w/d) in Voll- und Teilzeit",
+    "stored": "Pflege",
+    "replay": "Dialyse/Nephrologie"
+   },
+   {
+    "posting_id": 12309,
+    "title": "Ausbildungsplätze zur Pflegefachhilfe (m/w/d)",
+    "stored": "Berufsfachschule für Pflege",
+    "replay": null
+   },
+   {
+    "posting_id": 12310,
+    "title": "Ausbildungsplätze zur/zum Pflegefachfrau / Pflegefachmann (m/w/d)",
+    "stored": "Berufsfachschule für Pflege",
+    "replay": null
+   },
+   {
+    "posting_id": 12333,
+    "title": "SAPV Pflegefachkraft in Teilzeit (m/w/d)\n Klinikverbund Allgäu gGmbH\n Kempten\n ab sofort\n Teilzeit",
+    "stored": null,
+    "replay": "Onkologie"
+   },
+   {
+    "posting_id": 12334,
+    "title": "Study Nurse/Studienassistenz (m/w/d) für die Klinik für Pneumologie, Thoraxonkologie, Schlaf- und Beatmungsmedizin\n Klinikverbund Allgäu gGmbH\n Immenstadt; Kempten\n ab sofort\n Vollzeit; Teilzeit",
+    "stored": "Intensiv/IMC",
+    "replay": "Intensiv/IMC|Onkologie|Innere Medizin"
+   },
+   {
+    "posting_id": 13777,
+    "title": "Pflegedienstleitung PDL (m/w/d) für ambulanten Pflegedienst in München und Straßlach gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13778,
+    "title": "Stellvertretende Pflegedienstleitung PDL (m/w/d) für ambulanten Pflegedienst in München und Straßlach gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13786,
+    "title": "Stellvertretende Pflegedienstleitung (m/w/d) für ambulanten Pflegedienst in München gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13885,
+    "title": "Stellvertretende Pflegedienstleitung (m/w/d) im Ambulanten Pflegedienst gesucht!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13933,
+    "title": "Pflegefachkraft, m/w/d, als stellv. PDL, ab sofort n. Klosterlechfeld, amb. PD, gesucht (Pflegefachmann/-frau (Altenpflege))",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13938,
+    "title": "Helfer in der Pflege gesucht! (m/w/d) Quereinsteiger sind WILLKOMMEN!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 13947,
+    "title": "Pflegefachkraft (m/w/d) für ein Wohnheim für Menschen mit Behinderung gesucht!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 14506,
+    "title": "Pflegefachkraft (m/w/d) in Vollzeit oder Teilzeit gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 14516,
+    "title": "Pflegefachkraft (w/m/d) / Pflegefachfrau /-mann für Altenpflege in Vollzeit oder Teilzeit gesucht",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 14519,
+    "title": "Pflegefachkräfte (m/w/d) gesucht!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 14540,
+    "title": "Gerontofachkraft (m/w/d) für die Pflege gesucht!",
+    "stored": "Psychiatrie",
+    "replay": null
+   },
+   {
+    "posting_id": 14689,
+    "title": "Pflegefachkraft (m/w/d) für Springer-Pool in Voll- oder Teilzeit gesucht!",
+    "stored": "Psychiatrie|Springerpool",
+    "replay": "Springerpool"
+   },
+   {
+    "posting_id": 15346,
+    "title": "Ausbildungsplätze zur Pflegefachassisitenz (m/w/d)",
+    "stored": "Berufsfachschule für Pflege",
+    "replay": null
+   },
+   {
+    "posting_id": 15347,
+    "title": "Ausbildungsplätze zur Pflegefachkraft (m/w/d)",
+    "stored": "Berufsfachschule für Pflege",
+    "replay": null
+   }
+  ]
+ }
+}
