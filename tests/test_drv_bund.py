@@ -103,10 +103,15 @@ def test_a_drv_bw_posting_in_bad_kissingen_reaches_its_own_house_not_a_drv_bund_
          "name": "Frankenklinik Deutsche Rentenversicherung Nordbayern"}]
     m = Matcher(rows)
     assert m.match("RehaZentren der Deutschen Rentenversicherung", town, board=["RH2467"]) == ("RH2467", "R4_tokens_op", 0.75)
-    # a posting that names a DRV Bund house ties the two Bund houses on BOTH rungs: still their bed-count guess
-    assert m.match("Reha-Zentrum Bad Kissingen der Deutschen Rentenversicherung Bund", town) == \
-        ("RH1901", "R6_ambiguous_sites:RH1901,RH2954", 0.5)
-    # when the operator rung only guesses too (a second, hypothetical DRV BW house in town), the name
-    # rung's guess stands exactly as before this change
+    # a posting that names a DRV Bund house ties the two Bund houses on BOTH rungs: the text has to name the one it is
+    # (until 2026-10-01 their bed-count guess, RH1901, answered for every such ad)
+    notes = []
+    assert m.match("Reha-Zentrum Bad Kissingen der Deutschen Rentenversicherung Bund", town, note=notes) is None
+    assert notes == ["R6 refused: sites RH1901,RH2954 tie and the text names none of them"]
+    assert m.match("Reha-Zentrum Bad Kissingen der Deutschen Rentenversicherung Bund", town, title="Pflegefachkraft (m/w/d) in der Klinik Rhön") == \
+        ("RH2954", "R6_ambiguous_sites:RH1901,RH2954", 0.5)
+    # when the operator rung ties too (a second, hypothetical DRV BW house in town), the text has to name the house there as well
     two_bw = Matcher(rows + [{"clinic_id": "X", "town": town, "beds": 300, "name": "Rehaklinik Am Park", "operator": bw}])
-    assert two_bw.match("RehaZentren der Deutschen Rentenversicherung", town) == ("RH1901", "R6_ambiguous_sites:RH1901,RH2954", 0.5)
+    assert two_bw.match("RehaZentren der Deutschen Rentenversicherung", town) is None
+    assert two_bw.match("RehaZentren der Deutschen Rentenversicherung", town, title="Pflegefachkraft (m/w/d) Rehaklinik Am Park") == \
+        ("X", "R6_ambiguous_sites:RH2467,X", 0.5)
