@@ -236,6 +236,81 @@ tr.hl>td{background:rgba(157,225,70,.08);box-shadow:inset 3px 0 0 var(--neon)} t
   .strip{padding:10px 12px} .strip .grp{width:100%} .tiles{grid-template-columns:repeat(2,1fr)} .bl-hero b{font-size:40px}
 }
 body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
+/* leads (WhatsApp harness, docs/wa-dashboard.md) */
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+nav.main a .bd.hot{background:var(--red);color:#fff} nav.main a .bd.off{background:var(--surface-2);color:var(--ink-3);box-shadow:inset 0 0 0 1px var(--line)}
+h1 .n.bad{color:var(--red)}
+.lb{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:0 7px;line-height:19px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap;vertical-align:middle}
+.lb.manager{background:var(--red);border-color:var(--red);color:#fff} .lb.reply{background:#E1A33F;border-color:#E1A33F;color:#0B0D12} .lb.handoff{background:var(--sky);border-color:var(--sky);color:#0B0D12}
+.lb.green{color:var(--neon);border-color:rgba(157,225,70,.45)} .lb.green::before{content:"";width:6px;height:6px;background:var(--neon);box-shadow:0 0 6px var(--neon)}
+.lb.flag{color:#E1A33F;border-color:rgba(225,163,63,.55)} .lb.ended{color:var(--ink-3)} .lb.test{border-style:dashed;color:var(--ink-3)} .lb+.lb{margin-left:4px}
+.wa-note{border:1px dashed var(--sky);color:var(--sky);padding:6px 12px;font-size:12.5px;margin:0 0 14px} .wa-note.bad{border:1px solid var(--red);color:var(--red)}
+.card.wa-strip{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;padding:10px 14px;margin-bottom:14px}
+.wa-strip .grp{display:flex;gap:8px;align-items:baseline;min-width:0} .wa-strip .lbl{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.wa-strip .val{font-weight:500} .wa-strip .val.ok{color:var(--neon)} .wa-strip .val.warn{color:#E1A33F} .wa-strip .val.bad{color:var(--red)} .wa-strip .sub{color:var(--ink-3);font-size:12px}
+.wa-strip .live{display:inline-block;width:7px;height:7px;background:var(--neon);box-shadow:0 0 6px var(--neon);animation:pulse 2s infinite;align-self:center}
+.wa-count{color:var(--ink-3);font-size:12.5px;margin:-6px 0 14px}
+.wa-h2{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:22px 0 10px} .wa-h2 h2{margin:0} .wa-h2 .m{margin:0}
+.lh-list{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
+.lh-g{background:var(--bg);padding:12px 14px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)} .lh-g b{color:var(--ink);font-weight:500;margin-left:8px}
+.lh{--tier:var(--line);display:grid;grid-template-columns:132px minmax(0,1fr) auto;gap:4px 14px;align-items:baseline;padding:11px 16px 11px 14px;background:var(--surface);color:var(--ink);text-decoration:none;box-shadow:inset 3px 0 0 var(--tier)}
+.lh.manager{--tier:var(--red)} .lh.reply{--tier:#E1A33F} .lh.handoff{--tier:var(--sky)} .lh.flag{--tier:rgba(225,163,63,.55)}
+.lh:hover{background:var(--surface-2);color:var(--ink)} .lh:focus-visible{outline:2px solid var(--neon);outline-offset:-2px} .lh.on{background:var(--surface-2)}
+.lh>.lb{justify-self:start} .lh .who{display:flex;gap:4px 12px;align-items:baseline;flex-wrap:wrap;min-width:0} .pn{font-weight:500;white-space:nowrap;letter-spacing:.02em}
+.lh .when{color:var(--ink-3);font-size:12px;white-space:nowrap;text-align:right}
+.lh .why{grid-column:2/4;display:flex;flex-direction:column;gap:2px;font-size:13px;min-width:0} .lh .why .d{color:var(--ink-2);font-size:12px;overflow-wrap:anywhere}
+.lh .why .w::before{content:"";display:inline-block;width:7px;height:7px;margin-right:8px;vertical-align:1px;background:var(--ink-3)}
+.w.manager::before{background:var(--red)!important} .w.reply::before{background:#E1A33F!important} .w.handoff::before{background:var(--sky)!important} .w.flag::before{background:transparent!important;box-shadow:inset 0 0 0 1px #E1A33F}
+.lh .last{grid-column:2/4;color:var(--ink-3);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.lh-none{background:var(--surface);padding:20px 18px} .lh-none b{display:block;font-family:var(--head);font-weight:400;font-size:20px;color:var(--neon);margin-bottom:4px}
+details.lh-flags{background:var(--bg)} details.lh-flags>summary{list-style:none;cursor:pointer;padding:12px 14px 8px;margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)} details.lh-flags>summary::-webkit-details-marker{display:none}
+details.lh-flags>summary::before{content:"▸ ";color:#E1A33F} details.lh-flags[open]>summary::before{content:"▾ "} details.lh-flags>summary b{color:var(--ink);font-weight:500;margin-left:8px} details.lh-flags .lh{margin-top:1px}
+.wa-funnel{display:flex;gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 12px;overflow-x:auto}
+.wa-funnel button{flex:1 0 92px;display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:var(--surface);border:0;color:var(--ink-3);padding:9px 12px 10px;font:inherit;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;position:relative;text-align:left}
+.wa-funnel button b{font-family:var(--head);font-weight:400;font-size:22px;line-height:1.1;color:var(--ink);letter-spacing:0}
+.wa-funnel button i{position:absolute;left:0;bottom:0;height:3px;background:var(--neon);opacity:.5}
+.wa-funnel button:hover{color:var(--ink-2)} .wa-funnel button[aria-pressed=true]{background:var(--surface-2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--neon)}
+.wa-funnel button .c{display:flex;align-items:center;gap:7px} .wa-funnel button .hot{background:var(--red);color:#fff;font-size:10.5px;line-height:16px;padding:0 5px;letter-spacing:0}
+.wa-funnel button.end{flex-basis:104px;margin-left:3px} .wa-funnel button.end i{background:var(--ink-3)}
+.wa-rule{color:var(--ink-3);font-size:12px;margin:0 0 12px;max-width:120ch}
+.wa-fl{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:0 0 12px} .wa-fl input[type=search]{flex:1 1 240px;max-width:420px;min-height:32px} .wa-fl .toggle{padding-top:0}
+/* the card in conversation order (luna_brain.py requirement_scoreboard): what we know per step, the step Luna is on */
+ol.kc{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:1px 13px;font-size:12.5px;line-height:1.5;min-width:0}
+ol.kc li{display:flex;align-items:flex-start;gap:6px;color:var(--ink-3);min-width:0;overflow-wrap:anywhere} ol.kc li[data-tip]{text-decoration:none;cursor:inherit}
+ol.kc li::before{content:"";flex:none;width:7px;height:7px;margin-top:6px;border:1px solid var(--ink-3)}
+ol.kc li.s{color:var(--ink-2)} ol.kc li.s::before{background:var(--neon);border-color:var(--neon)}
+ol.kc li.cur{color:var(--ink);font-weight:500;padding:0 6px;background:rgba(200,241,255,.08);box-shadow:inset 0 0 0 1px rgba(200,241,255,.4)} ol.kc li.cur::before{border:2px solid var(--sky)}
+ol.kc li.b{color:var(--red)} ol.kc li.b::before{background:var(--red);border-color:var(--red)}
+td .stg{font-weight:500} td .stg .m{font-weight:400;color:var(--ink-3)} td .stg+ol.kc{margin-top:4px}
+td .dir{color:var(--ink-3);margin-right:6px} td .pv{color:var(--ink-2)} td.lastm{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} td a.pn{color:var(--ink);text-decoration:none} td a.pn:hover{color:var(--neon)}
+/* lead drawer */
+dialog.side.wide{max-width:640px;width:640px;z-index:50} @media(max-width:680px){dialog.side.wide{width:100%;max-width:100%}}   /* non-modal: not in the top layer, so it has to clear the sticky topbar (z 20) itself */
+#lead-dlg .d{padding:0;max-height:none;height:100%;overflow:auto;display:flex;flex-direction:column}
+.ld-hd{position:sticky;top:0;z-index:4;background:var(--surface);border-bottom:1px solid var(--line);padding:14px 18px 12px;display:flex;gap:8px 10px;align-items:center;flex-wrap:wrap}
+.ld-hd h2{margin:0;font-size:18px} .ld-hd .x{margin-left:auto} .ld-hd .meta{flex-basis:100%;margin:0}
+.ld-sec{padding:14px 18px;border-bottom:1px solid var(--line)} .ld-sec h3{margin:0 0 10px;font-size:11px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em}
+.ld-why{display:flex;flex-direction:column;gap:10px} .ld-why .w{padding:1px 0 1px 10px;border-left:3px solid var(--line)} .ld-why .w.manager{border-left-color:var(--red)} .ld-why .w.reply{border-left-color:#E1A33F} .ld-why .w.handoff{border-left-color:var(--sky)} .ld-why .w.flag{border-left-color:rgba(225,163,63,.55)}
+.ld-why .w b{font-weight:500} .ld-why .w .m{overflow-wrap:anywhere}
+ol.wsteps{list-style:none;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin:0 0 12px;padding:0}
+ol.wsteps li{font-size:10px;letter-spacing:.04em;text-transform:uppercase;text-align:center;padding:6px 2px 5px;background:var(--surface-2);color:var(--ink-3);border-top:2px solid var(--line);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ol.wsteps li.done{color:var(--ink-2);border-top-color:var(--neon)} ol.wsteps li.cur{color:var(--ink);border-top-color:var(--sky);background:rgba(200,241,255,.08)}
+.gl{display:grid;grid-template-columns:12px minmax(96px,max-content) minmax(0,1fr);gap:6px 10px;font-size:12.5px;align-items:baseline} .gl .k{color:var(--ink-3)} .gl i{width:9px;height:9px;display:inline-block;border:1px solid var(--ink-3)} .gl i.s{background:var(--neon);border-color:var(--neon)} .gl i.b{background:var(--red);border-color:var(--red)}
+.ld-next{margin-top:12px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line)} .ld-next .eyebrow{margin-bottom:2px}
+ol.ld-cl{margin:10px 0 0;padding-left:20px;font-size:12.5px} ol.ld-cl li{margin:2px 0} ol.ld-cl .att{color:var(--red);font-size:12px;overflow-wrap:anywhere} .ld-cl-h{margin:14px 0 0} .ld-cl-h+ol.ld-cl{margin-top:4px}
+.ld-chat{display:flex;flex-direction:column;gap:6px;padding:14px 18px 22px;flex:1 0 auto}
+.bub{max-width:84%;padding:7px 10px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.bub.in{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line)} .bub.out{align-self:flex-end;background:var(--blue);color:#fff} .bub.draft{align-self:flex-end;background:transparent;border:1px dashed #E1A33F;color:var(--ink)}
+.bub .cap{font-size:10px;letter-spacing:.05em;text-transform:uppercase;opacity:.75;margin-bottom:2px} .bub.draft .cap{color:#E1A33F;opacity:1} .bub .cap code{text-transform:none;letter-spacing:0;font-size:10.5px}
+.bub .ft{font-size:10.5px;opacity:.75;margin-top:3px;text-align:right} .bub .ft .rd{color:var(--neon)} .bub .ft .fl{color:#FF8A80}
+.bub .btns{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px} .bub .btns span{border:1px solid currentColor;padding:0 7px;font-size:11.5px;opacity:.85}
+.tomb{align-self:center;font-size:11.5px;color:var(--ink-3);font-style:italic;border:1px dashed var(--line);padding:2px 10px}
+.daysep{align-self:center;font-size:10.5px;color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase;margin:8px 0 2px}
+.newpill{position:sticky;bottom:12px;align-self:center;z-index:3;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+@media (max-width:720px){
+  .lh{grid-template-columns:minmax(0,1fr) auto;padding:10px 12px} .lh>.lb{grid-column:1/-1;justify-self:start} .lh .why,.lh .last{grid-column:1/-1}
+  .wa-funnel button{flex-basis:84px} td.lastm{max-width:none;white-space:normal} .wa-fl input[type=search]{max-width:none}
+  ol.wsteps li{font-size:9px;letter-spacing:0}
+}
 </style>
 </head>
 <body>
@@ -258,6 +333,7 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 <main class="wrap" id="view" aria-live="polite"></main>
 <dialog id="dlg"><div class="d" id="dlg-body"></div></dialog>
 <dialog id="plan-dlg" class="side"><div class="d" id="plan-dlg-body"></div></dialog>
+<dialog id="lead-dlg" class="side wide" aria-labelledby="lead-dlg-h"><div class="d" id="lead-dlg-body"></div></dialog>
 <div id="toasts" aria-live="polite"></div>
 <div id="tip" hidden role="tooltip"></div>
 
@@ -334,7 +410,28 @@ const I18N={
   st_h:"Crawling",st_auto:"Auto-Modus",st_auto_x:"Hunter: ein Firecrawl-Lauf je Klinik und UTC-Tag",st_parser:"Parser",st_parser_x:"Zeitpläne: Adapter-Läufe nach Cron",st_on:"an",st_off:"aus",st_paused:"pausiert",st_free:"freie Läufe heute",st_spark:"Kosten 7 T je Klinik",st_nospark:"noch keine Kosten je Klinik",st_parser_on:"Zeitpläne laufen wieder",st_parser_off:"Zeitpläne pausiert",st_credits_err:"Firecrawl nicht erreichbar",
   r_cost:"Kosten",r_log:"Log",
   g_title:"Pro-Zugang",g_lead:"Das Pro-Dashboard ist für Betreiber und Kunden. Mit Benutzername und Passwort anmelden.",g_user:"Benutzername",g_pass:"Passwort",g_signin:"Anmelden",g_signing:"melde an …",g_bad:"Ungültige Zugangsdaten.",g_login:"Zur Anmeldeseite",g_or:"oder",g_simple:"Zur einfachen Ansicht →",
-  g_agent_toggle:"Ich bin ein Agent →",g_agent_lead:"Agent-Key eingeben, um die Skill-Doku statt des Dashboards zu öffnen.",g_agent_ph:"Agent-Key",g_agent_send:"Öffnen",g_agent_bad:"Ungültiger Agent-Key."},
+  g_agent_toggle:"Ich bin ein Agent →",g_agent_lead:"Agent-Key eingeben, um die Skill-Doku statt des Dashboards zu öffnen.",g_agent_ph:"Agent-Key",g_agent_send:"Öffnen",g_agent_bad:"Ungültiger Agent-Key.",
+  n_leads:"Leads",wa_h0:"Kein Lead braucht gerade einen Menschen",wa_h1:"Lead braucht einen Menschen",wa_hn:"Leads brauchen einen Menschen",wa_lead:"WhatsApp-Harness (Luna). Oben steht, wer einen Menschen braucht, mit dem Grund aus der festen Liste des Harness. Darunter jede Karte in der Reihenfolge des Gesprächs: was wir wissen, woran Luna gerade ist und wer am Zug ist.",wa_sub_leads:"Leads",wa_sub_green:"grün",wa_ended_n:"beendet",wa_sub_test:"Test",wa_updated:"Stand",wa_src:"Quelle",
+  wa_needs:"Braucht einen Menschen",wa_needs_none:"Niemand wartet auf einen Menschen.",wa_needs_none_sub:"Alle {n} laufenden Leads sind bei Luna.",wa_g_manager:"Eskaliert",wa_g_reply:"Antwort hängt",wa_g_handoff:"Übergabe an Kliniken",wa_g_flag:"Hinweise – nur zur Kontrolle, kein Eingriff nötig",
+  wa_all:"Alle Leads",wa_rule:"LUNA AKTIV (grün) heißt: keine Eskalation, keine überfällige oder fehlgeschlagene Antwort, kein unverarbeiteter Eingang, keine offene Übergabe. Grün sagt nichts über den Fortschritt: den zeigt die Karte. Hinweise (gelb) zählen nicht als Eingriff. Gestoppte und gesperrte Nummern zählen nie.",
+  wa_st_manager:"Manager",wa_st_reply:"Antwort nötig",wa_st_handoff:"Übergabe",wa_st_green:"Luna aktiv",wa_st_flag:"Hinweis",wa_st_stopped:"Gestoppt",wa_st_suppressed:"Gesperrt",wa_st_declined:"Abgesagt",wa_st_already_placed:"Hat schon Stelle",wa_st_not_placeable:"Nicht vermittelbar",wa_st_ended:"Beendet",wa_st_all:"Alle",wa_st_need:"Mensch nötig",wa_test:"Test",
+  wa_r_stuck:"Antwort überfällig – der Ball liegt bei uns",wa_r_senderr:"Senden fehlgeschlagen",wa_r_pending:"{n} eingehende Nachricht(en) nicht verarbeitet",wa_r_handoff:"Einwilligung erteilt – anonymes Profil an {n} Kliniken senden",wa_r_handoff0:"Einwilligung erteilt – anonymes Profil an Kliniken senden",wa_r_ls:"Evaluator: {s}",wa_r_handoff_att:"Übergabe: {n} Klinik(en) brauchen Aufmerksamkeit",wa_r_handoff_att0:"Übergabe braucht Aufmerksamkeit",wa_hs_queued:"wartet auf Versand",wa_hs_attention:"braucht Aufmerksamkeit",wa_hs_in_progress:"läuft",wa_hs_signed:"unterschrieben",wa_hs_closed:"abgeschlossen",
+  wa_c_explicit_human_request:"will einen Menschen sprechen",wa_c_pet_policy_question:"Frage zu Haustieren in der Unterkunft (keine Daten im Board)",wa_c_visa_or_immigration_specifics:"Visum / Aufenthalt im Detail",wa_c_legal_or_contract_policy_question:"Rechts- oder Vertragsfrage",wa_c_unreadable_attachment:"Anhang nicht lesbar",wa_c_prior_application_status_question:"fragt nach dem Stand einer früheren Bewerbung",wa_c_unread_media:"Nachrichtentyp wird nicht verarbeitet",wa_c_grounding_rule_violated_twice:"zwei Antworten in Folge brachen eine Dialogregel",wa_c_decline_classifier_disagreement:"Absage erkannt, Klassifikator widerspricht",wa_c_exhaustive_claim_suspected:"Antwort klang evtl. nach „alle Stellen“",wa_c_unrecognized_escalation_attempt:"Modell wollte mit einem Grund außerhalb der Liste eskalieren (abgelehnt)",
+  wa_since:"seit {d}",wa_lastmsg:"letzte Nachricht vor {d}",wa_now:"gerade eben",wa_min:"{n} min",wa_h:"{n} h",wa_hm:"{h} h {m} min",wa_d:"{n} T",
+  wa_ball_us:"wir",wa_ball_them:"Kandidatin",wa_ball_silent:"bewusst still",wa_ball_none:"–",wa_from:"von der Kandidatin",wa_to:"an die Kandidatin",wa_who_in:"Kandidatin",wa_who_out:"Luna",
+  wa_s_contact:"Kontakt",wa_s_qualification:"Qualifikation",wa_s_matching:"Matching",wa_s_cv:"Lebenslauf",wa_s_documents:"Nachweise",wa_s_consent:"Einwilligung",wa_s_submitted:"Übergeben",
+  wa_g_region:"Region",wa_g_qualification:"Qualifikation",wa_g_city_or_department:"Ort / Fach",wa_g_housing:"Wohnung",wa_g_cv_document:"Lebenslauf",wa_g_qualification_document:"Nachweis",wa_g_handoff_consent:"Einwilligung",wa_gs_satisfied:"erledigt",wa_gs_open:"offen",wa_gs_blocked:"blockiert",wa_gs_current:"aktueller Schritt",
+  wa_q_urkunde:"Urkunde",wa_q_defizit:"Defizitbescheid",wa_q_kenntnispruefung:"Kenntnisprüfung",wa_q_reject:"nicht anerkannt",
+  wa_c_status:"Status",wa_c_phone:"Nummer",wa_c_stage:"Stufe",wa_c_card:"Karte",wa_c_ball:"Am Zug",wa_c_last:"Letzte Nachricht",wa_c_act:"Aktivität",
+  wa_f_q:"Suche: Nummer-Endung, Ort, Fach, Code …",wa_f_test:"Testnummern zeigen",wa_none:"Keine Leads für diese Filter.",
+  wa_hh:"Harness",wa_h_ready:"bereit",wa_h_incomplete:"unvollständig",wa_h_missing:"fehlt",wa_h_scope:"Antworten an",wa_h_scope_all:"alle",wa_h_scope_test:"nur Testnummern",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: echte Leads bekommen Lunas Antwort nur als Entwurf.",wa_h_autosend:"Autosend",wa_h_on:"an",wa_h_off:"aus",wa_h_off_x:"WA_AUTOSEND aus: Antworten landen als Entwurf, nichts erreicht Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail-Kontakt",wa_ago:"vor {d}",wa_h_refresh:"Aktualisieren",wa_h_err:"Health nicht abrufbar",
+  wa_e_title:"WhatsApp-Daten nicht verfügbar",wa_e_404:"Dieses Board ist noch nicht mit dem Harness verbunden: /api/wa/threads antwortet 404. Es fehlt der Proxy (WA_API_BASE / WA_API_TOKEN).",wa_e_auth:"Nur für Betreiber – bitte als Owner anmelden.",wa_e_up:"Keine Verbindung zum Harness ({s}): {m}",wa_e_other:"Fehler {s}: {m}",wa_e_contract:"Antwort ohne next_offset – verletzt den Vertrag in docs/wa-dashboard.md, die Liste wäre unvollständig.",wa_e_demo:"Demo mit Beispieldaten",wa_e_stale:"Aktualisierung fehlgeschlagen ({m}) – angezeigt ist der Stand von {t}.",wa_demo:"Demo-Daten (?mock=1): erfundene Nummern und Gespräche, keine echten Kandidatinnen.",
+  wa_d_close:"Schließen",wa_d_why:"Warum ein Mensch gefragt ist",wa_d_green:"Nichts zu tun – Luna führt das Gespräch.",wa_d_card:"Karte",wa_d_next:"Luna fragt als Nächstes (intern)",wa_d_branch:"Übergabe-Umfang",wa_b_narrow:"Top 5",wa_b_pool:"alle passenden Kliniken",wa_d_handoff:"Übergabe",wa_d_consented:"Einwilligung",wa_d_clinics:"Kliniken",wa_d_docs:"Dokumente",wa_d_nodocs:"Keine Dokumente.",wa_attention:"braucht Aufmerksamkeit",wa_d_targets:"Stand je Klinik",wa_d_matches:"Passende Kliniken",wa_ts_sent_to_clinic:"an Klinik gesendet",wa_ts_followup_sent:"nachgefasst",wa_ts_clinic_replied:"Klinik hat geantwortet",wa_ts_interview_scheduled:"Gespräch vereinbart",wa_ts_trial_scheduled:"Probetag vereinbart",wa_ts_offer:"Angebot",wa_ts_contract_signed:"Vertrag unterschrieben",wa_ts_declined:"abgesagt",wa_ts_closed:"abgeschlossen",wa_ts_halted:"angehalten",wa_d_chat:"Verlauf",wa_d_older:"Ältere Nachrichten laden",wa_d_new:"Neue Nachrichten ↓",wa_d_readonly:"Nur lesen – Antworten, Pausieren und Notizen kommen in Phase 2.",wa_d_opened:"Erster Kontakt",wa_d_turns:"Runden",wa_d_campaign:"Kampagne",wa_d_stopped:"STOP erhalten – nie wieder schreiben",wa_d_suppressed:"Auf der Sperrliste (alle Rails)",wa_d_id:"Thread-ID",wa_d_poll_err:"Aktualisierung fehlgeschlagen",
+  wa_m_draft:"Entwurf – nicht gesendet",wa_m_deleted:"Nachricht vergessen (Operator)",wa_m_audio:"Sprachnachricht",wa_m_notranscript:"(kein Transkript)",wa_m_document:"Dokument",wa_m_image:"Bild",wa_m_video:"Video",wa_m_template:"Vorlage",wa_m_buttons:"Buttons",wa_m_empty:"Noch keine Nachrichten.",wa_ms_sent:"gesendet",wa_ms_delivered:"zugestellt",wa_ms_read:"gelesen",wa_ms_failed:"fehlgeschlagen",
+  wa_v_housing_yes:"ja, {n} Personen",wa_v_housing_yes1:"ja, 1 Person",wa_v_housing_q:"ja, Personenzahl offen",wa_v_housing_no:"nein",wa_v_received:"erhalten",wa_v_flex:" · auch ohne",wa_v_dept_any:"Fach egal",wa_v_asked:"angefragt",
+  wa_k_house:"Wohnung für {n}",wa_k_house_q:"Wohnung ja, für wie viele?",wa_k_nohouse:"ohne Wohnung",wa_k_asked:"Einwilligung angefragt",
+  wa_dt_lebenslauf:"Lebenslauf",wa_dt_urkunde:"Urkunde",wa_dt_defizitbescheid:"Defizitbescheid",wa_dt_sprachzertifikat:"Sprachzertifikat",
+  wa_nav_tip:"{n} Leads brauchen einen Menschen",wa_nav_err:"WhatsApp-API nicht erreichbar"},
  en:{search_ph:"Search hospital, job, town, ATS … or upload a CV",cv_btn:"CV ↑",k_credits:"credits",k_credits_low:"low — a run can fall below MIN_VIABLE_CAP",nav_agents:"For agents",nav_simple:"Simple →",
   n_clinics:"Hospitals",n_cities:"Cities",n_jobs:"Jobs",n_scrape:"Clawl",n_docs:"Docs",n_settings:"Settings",n_plan:"Hospital plan",
   today:"today",yesterday:"yesterday",days_ago:"days ago",reset:"Reset",more:"More filters",less:"Less",all:"all",loading:"Loading …",err_load:"Failed to load",page:"Page",of:"of",total:"total",
@@ -379,7 +476,28 @@ const I18N={
   st_h:"Crawling",st_auto:"Auto mode",st_auto_x:"Hunter: one Firecrawl run per hospital per UTC day",st_parser:"Parser",st_parser_x:"Schedules: adapter runs by cron",st_on:"on",st_off:"off",st_paused:"paused",st_free:"free runs left today",st_spark:"Cost 7 d per hospital",st_nospark:"no cost per hospital yet",st_parser_on:"Schedules running again",st_parser_off:"Schedules paused",st_credits_err:"Firecrawl unreachable",
   r_cost:"Cost",r_log:"Log",
   g_title:"Pro access",g_lead:"The Pro dashboard is for operators and customers. Sign in with a username and password.",g_user:"Username",g_pass:"Password",g_signin:"Sign in",g_signing:"signing in …",g_bad:"Invalid credentials.",g_login:"Go to the sign-in page",g_or:"or",g_simple:"Simple view →",
-  g_agent_toggle:"I'm an agent →",g_agent_lead:"Enter the agent key to open the skill doc instead of the dashboard.",g_agent_ph:"Agent key",g_agent_send:"Open",g_agent_bad:"Invalid agent key."}};
+  g_agent_toggle:"I'm an agent →",g_agent_lead:"Enter the agent key to open the skill doc instead of the dashboard.",g_agent_ph:"Agent key",g_agent_send:"Open",g_agent_bad:"Invalid agent key.",
+  n_leads:"Leads",wa_h0:"No lead needs a human right now",wa_h1:"lead needs a human",wa_hn:"leads need a human",wa_lead:"WhatsApp harness (Luna). At the top: who needs a human, with the reason from the harness's fixed list. Below: every card in conversation order: what we know, the step Luna is on and whose turn it is.",wa_sub_leads:"leads",wa_sub_green:"green",wa_ended_n:"ended",wa_sub_test:"test",wa_updated:"as of",wa_src:"source",
+  wa_needs:"Needs a human",wa_needs_none:"Nobody is waiting for a human.",wa_needs_none_sub:"All {n} running leads are with Luna.",wa_g_manager:"Escalated",wa_g_reply:"Reply stuck",wa_g_handoff:"Handoff to clinics",wa_g_flag:"Checks – for review only, no action needed",
+  wa_all:"All leads",wa_rule:"LUNA ACTIVE (green) means: no escalation, no overdue or failed reply, no unprocessed inbound message, no open handoff. Green says nothing about progress: the card shows that. Checks (amber) do not count as needing a human. Stopped and do-not-contact numbers never count.",
+  wa_st_manager:"Manager",wa_st_reply:"Reply needed",wa_st_handoff:"Handoff",wa_st_green:"Luna active",wa_st_flag:"Check",wa_st_stopped:"Stopped",wa_st_suppressed:"Do not contact",wa_st_declined:"Declined",wa_st_already_placed:"Already placed",wa_st_not_placeable:"Not placeable",wa_st_ended:"Ended",wa_st_all:"All",wa_st_need:"Needs a human",wa_test:"Test",
+  wa_r_stuck:"Reply overdue – the ball is with us",wa_r_senderr:"Send failed",wa_r_pending:"{n} inbound message(s) not processed",wa_r_handoff:"Consent given – send the anonymised profile to {n} clinics",wa_r_handoff0:"Consent given – send the anonymised profile to clinics",wa_r_ls:"Evaluator: {s}",wa_r_handoff_att:"Handoff: {n} clinic(s) need attention",wa_r_handoff_att0:"Handoff needs attention",wa_hs_queued:"queued",wa_hs_attention:"needs attention",wa_hs_in_progress:"in progress",wa_hs_signed:"signed",wa_hs_closed:"closed",
+  wa_c_explicit_human_request:"asked for a human",wa_c_pet_policy_question:"pet policy in staff housing (no board data)",wa_c_visa_or_immigration_specifics:"visa / immigration specifics",wa_c_legal_or_contract_policy_question:"legal or contract question",wa_c_unreadable_attachment:"an attachment could not be read",wa_c_prior_application_status_question:"asks about an earlier application's real status",wa_c_unread_media:"a message type the harness does not process",wa_c_grounding_rule_violated_twice:"two replies in a row broke a dialog rule",wa_c_decline_classifier_disagreement:"decline flagged, classifier disagrees",wa_c_exhaustive_claim_suspected:"reply may have implied 'all of them'",wa_c_unrecognized_escalation_attempt:"model tried to escalate for an unlisted reason (refused)",
+  wa_since:"for {d}",wa_lastmsg:"last message {d} ago",wa_now:"just now",wa_min:"{n} min",wa_h:"{n} h",wa_hm:"{h} h {m} min",wa_d:"{n} d",
+  wa_ball_us:"us",wa_ball_them:"candidate",wa_ball_silent:"deliberately silent",wa_ball_none:"–",wa_from:"from the candidate",wa_to:"to the candidate",wa_who_in:"Candidate",wa_who_out:"Luna",
+  wa_s_contact:"Contact",wa_s_qualification:"Qualification",wa_s_matching:"Matching",wa_s_cv:"CV",wa_s_documents:"Documents",wa_s_consent:"Consent",wa_s_submitted:"Handed off",
+  wa_g_region:"Region",wa_g_qualification:"Qualification",wa_g_city_or_department:"Town / department",wa_g_housing:"Housing",wa_g_cv_document:"CV",wa_g_qualification_document:"Certificate",wa_g_handoff_consent:"Consent",wa_gs_satisfied:"done",wa_gs_open:"open",wa_gs_blocked:"blocked",wa_gs_current:"current step",
+  wa_q_urkunde:"Urkunde",wa_q_defizit:"Defizitbescheid",wa_q_kenntnispruefung:"Kenntnisprüfung",wa_q_reject:"not recognised",
+  wa_c_status:"Status",wa_c_phone:"Number",wa_c_stage:"Stage",wa_c_card:"Card",wa_c_ball:"Whose turn",wa_c_last:"Last message",wa_c_act:"Activity",
+  wa_f_q:"Search: number ending, town, department, code …",wa_f_test:"Show test numbers",wa_none:"No leads for these filters.",
+  wa_hh:"Harness",wa_h_ready:"ready",wa_h_incomplete:"incomplete",wa_h_missing:"missing",wa_h_scope:"Replies to",wa_h_scope_all:"everyone",wa_h_scope_test:"test numbers only",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: real leads get Luna's reply as a draft only.",wa_h_autosend:"Autosend",wa_h_on:"on",wa_h_off:"off",wa_h_off_x:"WA_AUTOSEND off: replies land as drafts, nothing reaches Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail contact",wa_ago:"{d} ago",wa_h_refresh:"Refresh",wa_h_err:"Health unavailable",
+  wa_e_title:"WhatsApp data unavailable",wa_e_404:"This board is not connected to the harness yet: /api/wa/threads answers 404. The proxy (WA_API_BASE / WA_API_TOKEN) is missing.",wa_e_auth:"Owners only – sign in as owner.",wa_e_up:"No connection to the harness ({s}): {m}",wa_e_other:"Error {s}: {m}",wa_e_contract:"Response without next_offset – breaks the contract in docs/wa-dashboard.md, the list would be incomplete.",wa_e_demo:"Demo with sample data",wa_e_stale:"Refresh failed ({m}) – showing data from {t}.",wa_demo:"Demo data (?mock=1): invented numbers and conversations, no real candidates.",
+  wa_d_close:"Close",wa_d_why:"Why a human is needed",wa_d_green:"Nothing to do – Luna is running the conversation.",wa_d_card:"Card",wa_d_next:"Luna asks next (internal)",wa_d_branch:"Handoff scope",wa_b_narrow:"top 5",wa_b_pool:"every matching clinic",wa_d_handoff:"Handoff",wa_d_consented:"Consent",wa_d_clinics:"Clinics",wa_d_docs:"Documents",wa_d_nodocs:"No documents.",wa_attention:"needs attention",wa_d_targets:"Status per clinic",wa_d_matches:"Matching clinics",wa_ts_sent_to_clinic:"sent to clinic",wa_ts_followup_sent:"follow-up sent",wa_ts_clinic_replied:"clinic replied",wa_ts_interview_scheduled:"interview scheduled",wa_ts_trial_scheduled:"trial day scheduled",wa_ts_offer:"offer",wa_ts_contract_signed:"contract signed",wa_ts_declined:"declined",wa_ts_closed:"closed",wa_ts_halted:"halted",wa_d_chat:"Conversation",wa_d_older:"Load older messages",wa_d_new:"New messages ↓",wa_d_readonly:"Read-only – reply, pause and notes come in phase 2.",wa_d_opened:"First contact",wa_d_turns:"Turns",wa_d_campaign:"Campaign",wa_d_stopped:"STOP received – never write again",wa_d_suppressed:"On the do-not-contact list (every rail)",wa_d_id:"Thread ID",wa_d_poll_err:"Refresh failed",
+  wa_m_draft:"Draft – not sent",wa_m_deleted:"Message forgotten (operator)",wa_m_audio:"Voice note",wa_m_notranscript:"(no transcript)",wa_m_document:"Document",wa_m_image:"Image",wa_m_video:"Video",wa_m_template:"Template",wa_m_buttons:"Buttons",wa_m_empty:"No messages yet.",wa_ms_sent:"sent",wa_ms_delivered:"delivered",wa_ms_read:"read",wa_ms_failed:"failed",
+  wa_v_housing_yes:"yes, {n} people",wa_v_housing_yes1:"yes, 1 person",wa_v_housing_q:"yes, headcount open",wa_v_housing_no:"no",wa_v_received:"received",wa_v_flex:" · or without",wa_v_dept_any:"any department",wa_v_asked:"asked",
+  wa_k_house:"flat for {n}",wa_k_house_q:"flat yes, for how many?",wa_k_nohouse:"no flat",wa_k_asked:"consent asked",
+  wa_dt_lebenslauf:"CV",wa_dt_urkunde:"Urkunde",wa_dt_defizitbescheid:"Defizitbescheid",wa_dt_sprachzertifikat:"Language certificate",
+  wa_nav_tip:"{n} leads need a human",wa_nav_err:"WhatsApp API unreachable"}};
 let LANG=localStorage.getItem("lang")||(navigator.language||"de").slice(0,2); if(!I18N[LANG]) LANG="de";
 const t=(k,v)=>{let s=(I18N[LANG]||I18N.de)[k]??I18N.de[k]??k; if(v) for(const[a,b] of Object.entries(v)) s=String(s).replace("{"+a+"}",b); return s;};
 function setLang(l){ if(!I18N[l]) return; LANG=l; localStorage.setItem("lang",l); applyLang(); if(GATE.on) renderGate(GATE.me); else route(); }
@@ -405,7 +523,8 @@ async function api(path,opt={}){
   if(MOCK_ON) return mockApi(path,opt);
   const r=await fetch(path,opt); const ct=r.headers.get("content-type")||"";
   const body=ct.includes("json")?await r.json():await r.text();
-  if(!r.ok) throw new Error((body&&body.error)||(body&&body.detail&&JSON.stringify(body.detail))||("HTTP "+r.status));
+  // .status rides along so a page can tell "not wired yet" (404) from "not allowed" (401/403) from "upstream down" (502-504).
+  if(!r.ok) throw Object.assign(new Error((body&&body.error)||(body&&body.detail&&JSON.stringify(body.detail))||("HTTP "+r.status)),{status:r.status});
   return body;
 }
 const post=(path,body)=>api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
@@ -497,16 +616,16 @@ function rangeSlider({min=0,max=2000,lo,hi,onchange}){
 }
 
 // ---- router -------------------------------------------------------------------------------------
-const NAV=[["/","n_clinics"],["/jobs","n_jobs"],["/clawl","n_scrape"],["/billing","n_billing"]], NAV2=[["/docs","n_docs"],["/settings","n_settings"]];
+const NAV=[["/","n_clinics"],["/jobs","n_jobs"],["/leads","n_leads"],["/clawl","n_scrape"],["/billing","n_billing"]], NAV2=[["/docs","n_docs"],["/settings","n_settings"]];
 function parseHash(){ const h=location.hash.replace(/^#/,"")||"/"; const [p,q]=h.split("?"); const params={}; new URLSearchParams(q||"").forEach((v,k)=>params[k]=v); return {path:p||"/",params}; }
 function nav(path,params){ location.hash=path+qs(params||{}); }
 function setParams(params){ const {path}=parseHash(); history.replaceState(null,"","#"+path+qs(params)); }
 function renderNav(){ const {path}=parseHash(); const on=p=>p==="/"?(path==="/"||path.startsWith("/clinic")||path==="/plan"):p==="/jobs"?(path.startsWith("/job")||path==="/cv"):p==="/clawl"?(path==="/clawl"||path==="/scrape"||path==="/runs"):p==="/billing"?(path==="/billing"||path==="/kosten"):path.startsWith(p);
-  $("#nav").replaceChildren(...NAV.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":""},t(k),p==="/jobs"&&STATS?.fresh_jobs?el("span",{class:"bd",title:t("f_fresh")+" ≤ 7d: "+num(STATS.fresh_jobs),text:compact(STATS.fresh_jobs)}):null,p==="/billing"&&BILL_TODAY!=null?el("span",{class:"bd",title:t("b_usd_in")+" · "+t("b_today"),text:usd(BILL_TODAY)}):null)));
+  $("#nav").replaceChildren(...NAV.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":""},t(k),p==="/jobs"&&STATS?.fresh_jobs?el("span",{class:"bd",title:t("f_fresh")+" ≤ 7d: "+num(STATS.fresh_jobs),text:compact(STATS.fresh_jobs)}):null,p==="/billing"&&BILL_TODAY!=null?el("span",{class:"bd",title:t("b_usd_in")+" · "+t("b_today"),text:usd(BILL_TODAY)}):null,p==="/leads"?waNavBadge():null)));
   $("#nav2").replaceChildren(...NAV2.map(([p,k])=>el("a",{href:"#"+p,class:on(p)?"on":"",text:t(k)}))); }
 let ROUTE_TOKEN=0;
 async function route(){
-  if(GATE.on) return; stopPolling(); clearPageTimers(); hideTip(); const {path,params}=parseHash(); const token=++ROUTE_TOKEN; const v=$("#view"); renderNav();
+  if(GATE.on) return; stopPolling(); clearPageTimers(); hideTip(); waClose(true); const {path,params}=parseHash(); const token=++ROUTE_TOKEN; const v=$("#view"); renderNav();
   if(path==="/cities"){ location.replace("#/"+(params.q?qs({city:params.q}):"")); return; }
   v.replaceChildren(el("p",{class:"lead",text:t("loading")}));
   try{
@@ -516,6 +635,7 @@ async function route(){
     else if(path==="/billing"||path==="/kosten") page=await pageBilling(params);
     else if(path==="/plan") page=await pagePlan(params);
     else if(path==="/jobs") page=await pageJobs(params);
+    else if(path==="/leads") page=await pageLeads(params);
     else if((m=path.match(/^\/job\/(\d+)/))) page=await pageJob(m[1]);
     else if(path.startsWith("/docs")) page=await pageDocs(path.split("/")[2]||"");
     else if(path==="/clawl"||path==="/scrape"||path==="/runs") page=await pageScrape(params);
@@ -1400,6 +1520,314 @@ function crawlStrip({onHunter}={}){
   return el("div",{class:"card hud strip"},el("span",{class:"lbl",text:t("st_h")}),el("div",{class:"grp"},hunt,parser),grp(t("k_credits"),cred,credSub),grp(t("st_spark"),spark),el("div",{class:"grp",style:"margin-left:auto"},kostenLink("today"))); }
 
 // ---- gate: GET /api/me → owner | customer render the dashboard; anonymous gets the Pro-Zugang card -------------------
+// ---- leads (WhatsApp harness, docs/wa-dashboard.md) ---------------------------------------------
+// Why a thread needs a human is the harness's call, never this page's: a code from the closed escalation list
+// (app/wa/luna/escalation.py, Ivan 2026-09-22), a reply stuck on us, a failed send, unprocessed inbound, and consent
+// (app/wa/queue.py hands the thread to a human). The page sorts and shows those signals and adds none of its own.
+// Flags are shown, never counted; a stopped or suppressed thread never counts, because nobody may write to it.
+const WA={rows:null,env:null,health:null,healthErr:null,at:null,err:null,errAt:null,p:null,view:null};
+const WA_STAGES=["contact","qualification","matching","cv","documents","consent","submitted"];
+const WA_GATES=["region","qualification","city_or_department","housing","cv_document","qualification_document","handoff_consent"];
+const WA_TIERS=["manager","reply","handoff"];
+const WA_HO_DONE=["in_progress","signed","closed"];   // handoff.status past the point where a human has to act (wa-harness 2026-09-30)
+const WA_RANK={manager:0,reply:1,handoff:2,green:3,declined:4,already_placed:4,not_placeable:4,stopped:5,suppressed:5};
+const TITLE0=document.title;
+let WA_PARAMS=()=>({});
+const waLbl=(k,fb)=>{ const s=t(k); return s===k?fb:s; };
+const waCode=c=>waLbl("wa_c_"+c,c);                              // an unknown code is shown raw, never hidden
+const waKind=k=>waLbl("wa_m_"+k,k);
+const waMs=s=>s?+new Date(s):NaN;
+const waEnc=id=>encodeURIComponent(id);
+const waHref=id=>"#/leads"+qs({...WA_PARAMS(),t:id});
+function waDur(ms){ const m=Math.max(0,Math.floor(ms/6e4)); if(m<1) return t("wa_now"); if(m<60) return t("wa_min",{n:m});
+  const h=Math.floor(m/60); if(h<24) return h<6&&m%60?t("wa_hm",{h,m:m%60}):t("wa_h",{n:h}); return t("wa_d",{n:Math.floor(h/24)}); }
+const waAgo=s=>s?waDur(Date.now()-waMs(s)):"–";
+const waTime=(s,txt)=>s?el("time",{datetime:s,title:fmtDT(s),text:txt??waAgo(s)}):el("span",{text:"–"});
+const waClock=ms=>new Date(ms).toLocaleTimeString(LANG==="de"?"de-DE":"en-GB");
+const hhmm=s=>new Date(s).toLocaleTimeString(LANG==="de"?"de-DE":"en-GB",{hour:"2-digit",minute:"2-digit"});
+const waLast=r=>[r.last_message?.at,r.last_inbound_at,r.last_outbound_at,r.opened_at].filter(Boolean).sort((a,b)=>waMs(b)-waMs(a))[0]||null;
+
+// Every page of the list, following next_offset to the end -- the source's own end signal is the only stop. A page
+// without next_offset breaks the contract, and stopping there would pass a truncated list off as the whole board.
+async function waFetchAll(){ const rows=[]; let off=0, env;
+  for(;;){ env=await api("/api/wa/threads"+qs({include_test:1,offset:off||""}));
+    if(!env||!("next_offset" in env)) throw Object.assign(new Error(t("wa_e_contract")),{status:"contract"});
+    rows.push(...(env.rows||[])); if(env.next_offset==null) break; off=env.next_offset; }
+  return {env,rows}; }
+function waRefresh(){ return WA.p||(WA.p=(async()=>{
+    try{ const {env,rows}=await waFetchAll(); Object.assign(WA,{env,rows,at:Date.now(),err:null}); }
+    catch(e){ Object.assign(WA,{err:e,errAt:Date.now()}); }
+    waBadge(); })().finally(()=>{ WA.p=null; })); }
+async function waHealth(){ try{ WA.health=await api("/api/wa/health"); WA.healthErr=null; }catch(e){ WA.healthErr=e; } }
+
+function waReasons(r){ if(r._rs) return r._rs; const out=[], ls=r.lead_status;
+  (r.escalation_codes||[]).forEach(c=>out.push({tier:"manager",code:c,since:r.escalated_at||null}));
+  if(ls&&ls.status==="red") out.push({tier:"manager",code:"lead_status",status:ls.status,text:ls.reason,since:ls.at});
+  if(r.stuck_reply) out.push({tier:"reply",code:"stuck_reply",since:r.last_inbound_at});
+  if(r.last_send_error) out.push({tier:"reply",code:"send_error",text:r.last_send_error.error,since:r.last_send_error.at});
+  if(r.pending_inbound) out.push({tier:"reply",code:"pending_inbound",n:r.pending_inbound.count,text:r.pending_inbound.last_error,since:r.pending_inbound.oldest_recorded_at});
+  // a handoff needs a human while it is queued or a clinic target needs attention; an unknown status counts and shows raw
+  const ho=r.handoff, hs=ho?.status, att=(ho?.targets||[]).filter(x=>x.attention);
+  if(ho?!WA_HO_DONE.includes(hs):r.stage==="submitted") out.push(hs==="attention"
+    ?{tier:"handoff",code:"handoff_attention",n:att.length,since:att.map(x=>x.ts).filter(Boolean).sort()[0]||ho.consented_at}
+    :{tier:"handoff",code:"handoff",n:ho?.clinics,text:hs&&hs!=="queued"?"handoff.status: "+hs:null,since:ho?.consented_at||r.stage_since});
+  (r.flag_codes||[]).forEach(c=>out.push({tier:"flag",code:c}));
+  if(ls&&ls.status!=="red"&&ls.status!=="green") out.push({tier:"flag",code:"lead_status",status:ls.status,text:ls.reason,since:ls.at});
+  Object.defineProperty(r,"_rs",{value:out}); return out; }
+const waEnded=r=>!!(r.stopped||r.suppression||r.outcome);
+function waStatus(r){ if(r.stopped) return "stopped"; if(r.suppression) return "suppressed";
+  const tiers=new Set(waReasons(r).map(x=>x.tier)); return WA_TIERS.find(k=>tiers.has(k))||r.outcome||"green"; }
+const waNeeds=r=>WA_TIERS.includes(waStatus(r));
+const waGroup=r=>{ const s=waStatus(r); return WA_TIERS.includes(s)?"need":s==="green"?"green":"ended"; };
+const waCount=()=>WA.rows?WA.rows.filter(r=>!r.is_test&&waNeeds(r)).length:null;
+function waBadge(){ const n=waCount(); document.title=(n?"("+n+") ":"")+TITLE0; renderNav(); }
+function waNavBadge(){ const n=waCount();
+  if(WA.err&&!(WA.at>WA.errAt)) return el("span",{class:"bd off",title:t("wa_nav_err")+" · "+(WA.err.status??"")+" "+WA.err.message,text:"!"});
+  return n?el("span",{class:"bd hot",title:t("wa_nav_tip",{n}),text:compact(n)}):null; }
+function waWhy(x){ switch(x.code){
+  case "stuck_reply": return t("wa_r_stuck"); case "send_error": return t("wa_r_senderr");
+  case "pending_inbound": return t("wa_r_pending",{n:x.n??"?"});
+  case "handoff": return x.n!=null?t("wa_r_handoff",{n:x.n}):t("wa_r_handoff0");
+  case "handoff_attention": return x.n?t("wa_r_handoff_att",{n:x.n}):t("wa_r_handoff_att0");
+  case "lead_status": return t("wa_r_ls",{s:x.status});
+  default: return waCode(x.code); } }
+// What the card summary says per gate, in the harness's own gate order (luna_brain.py requirement_scoreboard), or null.
+// `chain` words each value so it names its own step: the one-line chain has no gate labels next to it, the drawer has.
+function waFacts(r,chain){ const c=r.card||{}, city=c.city, n=c.people_count;
+  const house=c.housing_needed===false?t(chain?"wa_k_nohouse":"wa_v_housing_no"):c.housing_needed!==true?null
+    :n?(chain?t("wa_k_house",{n}):t(n===1?"wa_v_housing_yes1":"wa_v_housing_yes",{n})):t(chain?"wa_k_house_q":"wa_v_housing_q");
+  return {region:typeof c.region==="string"?c.region:null,
+    qualification:c.qualification_path&&c.qualification_path!=="unknown"?waLbl("wa_q_"+c.qualification_path,c.qualification_path):null,
+    city_or_department:[city,c.department==="flexibel"?t("wa_v_dept_any"):c.department].filter(Boolean).join(" · ")||null,
+    housing:house&&c.housing_flexible?house+t("wa_v_flex"):house,
+    cv_document:null,qualification_document:null,
+    handoff_consent:r.gates?.handoff_consent!=="satisfied"&&c.anonymous_send_offered?t(chain?"wa_k_asked":"wa_v_asked"):null}; }
+// The card as one line: each gate with what we know, else its name; the current step is the first gate not yet
+// satisfied (the harness's funnel_stage), and an ended thread has none.
+function waChain(r){ const g=r.gates||{}, f=waFacts(r,true), cur=waEnded(r)?-1:WA_GATES.findIndex(k=>g[k]!=="satisfied");
+  return el("ol",{class:"kc","aria-label":t("wa_c_card")},...WA_GATES.map((k,i)=>{ const s=g[k]||"open", st=i===cur&&s!=="blocked"?"current":s;
+    return el("li",{class:{satisfied:"s",blocked:"b",current:"cur"}[st]||null,"aria-current":st==="current"?"step":null,"data-tip":t("wa_g_"+k)+" · "+t("wa_gs_"+st)},
+      el("span",{class:"vh",text:t("wa_gs_"+st)+": "}),f[k]||t("wa_g_"+k)); })); }
+// the funnel stage, and after the handoff how far it has got ("Übergeben · unterschrieben")
+const waStageLbl=r=>t("wa_s_"+r.stage)+(r.handoff?.status&&WA_HO_DONE.includes(r.handoff.status)?" · "+t("wa_hs_"+r.handoff.status):"");
+const waBadgeEl=st=>el("span",{class:"lb "+({manager:"manager",reply:"reply",handoff:"handoff",green:"green"}[st]||"ended"),text:waLbl("wa_st_"+st,st)});
+function waLastMsg(lm){ if(!lm) return "–"; const k=lm.kind||"text", inb=lm.direction==="in";
+  return [el("span",{class:"dir","aria-hidden":"true",title:t(inb?"wa_from":"wa_to"),text:inb?"←":"→"}),el("span",{class:"vh",text:t(inb?"wa_from":"wa_to")+": "}),
+    k!=="text"?el("span",{class:"lb "+(k==="draft"?"flag":"ended"),text:k==="deleted"?t("wa_m_deleted"):waKind(k)}):null,
+    k!=="deleted"&&lm.preview?el("span",{class:"pv",text:" "+lm.preview}):null]; }
+
+// needs-a-human list: one row per thread, every named reason on it, longest waiting first within a tier
+const waWait=r=>{ const st=waStatus(r), ts=waReasons(r).filter(x=>x.tier===st&&x.since).map(x=>waMs(x.since)); return ts.length?Math.min(...ts):waMs(waLast(r)); };
+function waNeedItem(r){ const st=waStatus(r), rs=waReasons(r), key=rs.find(x=>x.tier===st&&x.since)||(st==="green"?rs.find(x=>x.since):null), last=waLast(r);
+  const a=el("a",{class:"lh "+(WA_TIERS.includes(st)?st:"flag")+(LD.id===r.thread_id?" on":""),href:waHref(r.thread_id),"data-id":r.thread_id},
+    waBadgeEl(st),
+    el("div",{class:"who"},el("span",{class:"pn",text:r.phone_masked}),r.is_test?el("span",{class:"lb test",text:t("wa_test")}):null,waChain(r)),
+    el("span",{class:"when"},key?waTime(key.since,t("wa_since",{d:waAgo(key.since)})):waTime(last,t("wa_lastmsg",{d:waAgo(last)}))),
+    el("div",{class:"why"},...rs.map(x=>el("div",{class:"w "+x.tier},el("span",{text:waWhy(x)}),x.text?el("span",{class:"d",text:" — "+x.text}):null))),
+    r.last_message?el("div",{class:"last"},waLastMsg(r.last_message)):null);
+  a.addEventListener("click",e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button) return; e.preventDefault(); waOpen(r.thread_id); });
+  return a; }
+function waNeedList(rows){ const need=rows.filter(waNeeds), flagged=rows.filter(r=>waStatus(r)==="green"&&waReasons(r).some(x=>x.tier==="flag")), kids=[];
+  if(!need.length) kids.push(el("div",{class:"lh-none"},el("b",{text:t("wa_needs_none")}),el("span",{class:"m",text:t("wa_needs_none_sub",{n:num(rows.filter(r=>!r.is_test&&!waEnded(r)).length)})})));
+  WA_TIERS.forEach(k=>{ const g=need.filter(r=>waStatus(r)===k).sort((a,b)=>waWait(a)-waWait(b));
+    if(g.length) kids.push(el("div",{class:"lh-g"},t("wa_g_"+k),el("b",{text:num(g.length)})),...g.map(waNeedItem)); });
+  if(flagged.length) kids.push(el("details",{class:"lh-flags"},el("summary",{},t("wa_g_flag"),el("b",{text:num(flagged.length)})),...flagged.map(waNeedItem)));
+  return el("div",{class:"lh-list"},...kids); }
+
+// all leads: funnel, status filter, search, table
+function waHay(r){ return [r.phone_masked,(r.phone_masked||"").replace(/\D/g,""),...Object.values(waFacts(r,true)),r.card?.campaign,r.rail,t("wa_s_"+r.stage),waLbl("wa_st_"+waStatus(r),""),
+  ...(r.escalation_codes||[]),...(r.flag_codes||[]),...waReasons(r).map(waWhy),r.last_message?.preview].filter(Boolean).join(" ").toLowerCase(); }
+function waFilter(rows,F){ const q=F.q.trim().toLowerCase();
+  return rows.filter(r=>(!F.stage||(F.stage==="ended"?waEnded(r):!waEnded(r)&&r.stage===F.stage))
+    &&(!F.status||(F.status==="flag"?waReasons(r).some(x=>x.tier==="flag"):waGroup(r)===F.status))
+    &&(!q||waHay(r).includes(q))); }
+function waSort(rows,s){ const k=s.replace("-",""), dir=s.startsWith("-")?-1:1;
+  const v=r=>k==="act"?waMs(waLast(r)):k==="stage"?WA_STAGES.indexOf(r.stage):(WA_RANK[waStatus(r)]??9);
+  const far=r=>WA_STAGES.indexOf(r.stage);   // within one status, the lead furthest along first: green is not one state
+  return rows.slice().sort((a,b)=>(v(a)-v(b))*dir||(k==="status"?far(b)-far(a):0)||waMs(waLast(b))-waMs(waLast(a))); }
+function waFunnel(rows,F,upd){ const act=rows.filter(r=>!waEnded(r)), cnt={}, hot={};
+  act.forEach(r=>{ cnt[r.stage]=(cnt[r.stage]||0)+1; if(waNeeds(r)) hot[r.stage]=(hot[r.stage]||0)+1; });
+  const ended=rows.length-act.length, max=Math.max(1,...WA_STAGES.map(s=>cnt[s]||0),ended);
+  const btn=(key,label,n,h,cls)=>el("button",{type:"button",class:cls||null,"aria-pressed":String(F.stage===key),"aria-label":label+": "+num(n||0)+(h?" · "+t("wa_nav_tip",{n:h}):""),onclick:()=>upd({stage:F.stage===key?"":key})},
+    el("span",{text:label}),el("span",{class:"c"},el("b",{text:num(n||0)}),h?el("span",{class:"hot",title:t("wa_nav_tip",{n:h}),text:num(h)}):null),el("i",{style:`width:${Math.round(100*(n||0)/max)}%`}));
+  return el("div",{class:"wa-funnel",role:"group","aria-label":t("wa_c_stage")},...WA_STAGES.map(s=>btn(s,t("wa_s_"+s),cnt[s],hot[s])),btn("ended",t("wa_st_ended"),ended,0,"end")); }
+function waSeg(rows,F,upd){ const n=f=>rows.filter(f).length;
+  const opts=[["","wa_st_all",rows.length],["need","wa_st_need",n(r=>waGroup(r)==="need")],["green","wa_st_green",n(r=>waGroup(r)==="green")],["flag","wa_st_flag",n(r=>waReasons(r).some(x=>x.tier==="flag"))],["ended","wa_st_ended",n(r=>waGroup(r)==="ended")]];
+  return el("div",{class:"seg",role:"group","aria-label":t("wa_c_status")},...opts.map(([k,l,c])=>el("button",{type:"button",class:"sg","aria-pressed":String(F.status===k),onclick:()=>upd({status:k})},t(l)+" ",el("span",{class:"m",text:num(c)})))); }
+function waRow(r){ const st=waStatus(r), fl=waReasons(r).filter(x=>x.tier==="flag");
+  const tr=el("tr",{class:"lnk"+(LD.id===r.thread_id?" hl":""),"data-id":r.thread_id},
+    el("td",{"data-l":t("wa_c_status")},waBadgeEl(st),fl.length?el("span",{class:"lb flag","data-tip":t("wa_st_flag")+"\n"+fl.map(x=>waWhy(x)+(x.text?" — "+x.text:"")).join("\n"),text:t("wa_st_flag")}):null,r.is_test?el("span",{class:"lb test",text:t("wa_test")}):null),
+    el("td",{"data-l":t("wa_c_phone")},el("a",{class:"pn",href:waHref(r.thread_id),text:r.phone_masked}),r.rail?el("div",{class:"m",text:r.rail}):null),
+    el("td",{"data-l":t("wa_c_card")},el("span",{class:"stg"},waStageLbl(r),r.stage_since?el("span",{class:"m",text:" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null),waChain(r)),
+    el("td",{"data-l":t("wa_c_ball")},el("span",{text:waLbl("wa_ball_"+(r.ball||"none"),r.ball)}),r.ball==="us"&&r.last_inbound_at?el("div",{class:"m",text:t("wa_since",{d:waAgo(r.last_inbound_at)})}):null),
+    el("td",{class:"lastm","data-l":t("wa_c_last")},waLastMsg(r.last_message)),
+    el("td",{class:"num","data-l":t("wa_c_act")},waTime(waLast(r))));
+  tr.addEventListener("click",e=>{ if(e.target.closest("a")&&(e.metaKey||e.ctrlKey||e.shiftKey||e.button)) return; e.preventDefault(); waOpen(r.thread_id); });
+  return tr; }
+function waTable(rows,F,upd){ const cols=[{k:"status",l:t("wa_c_status")},{l:t("wa_c_phone")},{k:"stage",l:t("wa_c_card")},{l:t("wa_c_ball")},{l:t("wa_c_last")},{k:"act",l:t("wa_c_act"),num:true}];
+  return el("div",{class:"tbl"},el("div",{class:"tw"},el("table",{class:"cards"},sortableHead(cols,F.sort,s=>upd({sort:s})),
+    el("tbody",{},rows.length?rows.map(waRow):el("tr",{},el("td",{colspan:String(cols.length),class:"empty",text:t("wa_none")})))))); }
+function waStrip(){ const h=WA.health, grp=(l,v,cls,tip)=>el("div",{class:"grp"},el("span",{class:"lbl",text:l}),el("span",{class:"val"+(cls?" "+cls:""),"data-tip":tip||null,tabindex:tip?"0":null,text:v})), kids=[];
+  if(!h) kids.push(grp(t("wa_hh"),t("wa_h_err")+(WA.healthErr?" · "+(WA.healthErr.status??"")+" "+WA.healthErr.message:""),"bad"));
+  else{ const miss=Object.entries(h.checks||{}).filter(([,v])=>!v).map(([k])=>k), ready=!!(h.webhook_ready&&h.outbound_ready), test=h.reply_scope==="test_only";
+    kids.push(grp(t("wa_hh"),ready?t("wa_h_ready"):t("wa_h_incomplete"),ready?"ok":"bad",miss.length?t("wa_h_missing")+"\n"+miss.join(", "):null),
+      grp(t("wa_h_scope"),test?t("wa_h_scope_test"):t("wa_h_scope_all"),test?"warn":null,test?"WA_REPLY_SCOPE\n"+t("wa_h_scope_test_x"):null),
+      grp(t("wa_h_autosend"),h.autosend?t("wa_h_on"):t("wa_h_off"),h.autosend?null:"warn",h.autosend?null:"WA_AUTOSEND\n"+t("wa_h_off_x")),
+      grp(t("wa_h_transport"),[h.transport,h.brain].filter(Boolean).join(" · ")||"–"),
+      grp(t("wa_h_rails"),Object.entries(h.rails||{}).map(([k,v])=>k+" "+v).join(" · ")||"–"),
+      grp(t("wa_h_synced"),h.synced_at?t("wa_ago",{d:waAgo(h.synced_at)})+(h.synced_source?" · "+h.synced_source:""):"–",null,h.synced_at?fmtDT(h.synced_at):null)); }
+  kids.push(el("span",{class:"sp"}),el("div",{class:"grp"},el("span",{class:"live","aria-hidden":"true"}),
+    el("span",{class:"sub"},t("wa_updated")+" ",WA.at?el("time",{datetime:new Date(WA.at).toISOString(),text:waClock(WA.at)}):"–",WA.env?.source?" · "+t("wa_src")+" "+WA.env.source:null),
+    el("button",{class:"btn s",type:"button",onclick:e=>waNow(e.currentTarget),text:"⟳ "+t("wa_h_refresh")})));
+  return el("div",{class:"card wa-strip"},...kids); }
+function waErrCard(e,path="/api/wa/threads"){ const s=e?.status, m=e?.message||"";
+  const msg=s===404?t("wa_e_404"):s===401||s===403?t("wa_e_auth"):s>=502&&s<=504?t("wa_e_up",{s,m}):s==="contract"?m:t("wa_e_other",{s:s??"–",m});
+  return el("div",{class:"card",role:"alert"},el("h2",{text:t("wa_e_title")}),el("p",{class:"lead",text:msg}),
+    el("p",{class:"m"},el("code",{text:"GET "+path+" → "+(s??"network")+(m&&s!=="contract"?" · "+m:"")})),
+    el("div",{class:"row"},el("a",{class:"btn",href:"?mock=1#/leads",text:t("wa_e_demo")}),el("a",{class:"btn",href:"#/docs/wa-dashboard.md",text:"docs/wa-dashboard.md"}))); }
+async function waNow(btn){ if(btn) btn.disabled=true; try{ if(WA.view) await WA.view(); else await waRefresh(); }finally{ if(btn) btn.disabled=false; } }
+
+async function pageLeads(p){
+  const F={q:p.q||"",status:p.status||"",stage:p.stage||"",test:p.test==="1",sort:p.sort||"status"};
+  WA_PARAMS=()=>({q:F.q,status:F.status,stage:F.stage,test:F.test,sort:F.sort==="status"?"":F.sort,t:LD.id||""});
+  await Promise.all([waRefresh(),waHealth()]);
+  if(!WA.rows) return waErrCard(WA.err);
+  const live=el("div",{class:"vh",role:"status"}), head=el("div"), note=el("div"), strip=el("div"), need=el("div"), funnel=el("div"), seg=el("div"), board=el("div");
+  const upd=patch=>{ Object.assign(F,patch); setParams(WA_PARAMS()); paint(); };
+  const qIn=el("input",{type:"search",value:F.q,placeholder:t("wa_f_q"),"aria-label":t("wa_f_q"),autocomplete:"off"}); qIn.addEventListener("input",debounce(()=>upd({q:qIn.value}),200));
+  const test=el("input",{type:"checkbox"}); test.checked=F.test; test.addEventListener("change",()=>upd({test:test.checked}));
+  let lastN=null;
+  function paint(){ const all=WA.rows, rows=F.test?all:all.filter(r=>!r.is_test), real=all.filter(r=>!r.is_test), n=real.filter(waNeeds).length, tests=all.length-real.length;
+    head.replaceChildren(el("h1",{},n?el("span",{class:"n bad",text:num(n)}):null,n?" "+(n===1?t("wa_h1"):t("wa_hn")):t("wa_h0")),el("p",{class:"lead",text:t("wa_lead")}),
+      el("p",{class:"wa-count",text:[num(real.length)+" "+t("wa_sub_leads"),num(real.filter(r=>waStatus(r)==="green").length)+" "+t("wa_sub_green"),
+        num(real.filter(waEnded).length)+" "+t("wa_ended_n"),tests?num(tests)+" "+t("wa_sub_test"):null].filter(Boolean).join(" · ")}));
+    note.replaceChildren(...[MOCK_ON?el("div",{class:"wa-note",text:t("wa_demo")}):null,
+      WA.err&&WA.errAt>WA.at?el("div",{class:"wa-note bad",role:"alert",text:t("wa_e_stale",{m:(WA.err.status??"")+" "+WA.err.message,t:waClock(WA.at)})}):null].filter(Boolean));
+    strip.replaceChildren(waStrip());
+    need.replaceChildren(el("div",{class:"wa-h2"},el("h2",{text:t("wa_needs")})),waNeedList(rows));
+    funnel.replaceChildren(waFunnel(rows,F,upd)); seg.replaceChildren(waSeg(rows,F,upd));
+    board.replaceChildren(waTable(waSort(waFilter(rows,F),F.sort),F,upd));
+    if(lastN!=null&&lastN!==n) live.textContent=n?t("wa_nav_tip",{n}):t("wa_h0"); lastN=n; }
+  const refresh=async()=>{ await Promise.all([waRefresh(),waHealth()]); if(WA.view===refresh) paint(); };
+  WA.view=refresh; everyWhile(refresh,15000);
+  paint(); if(p.t) setTimeout(()=>waOpen(p.t,true),0);
+  return el("div",{"aria-live":"off"},live,head,note,strip,need,
+    el("div",{class:"wa-h2"},el("h2",{text:t("wa_all")})),el("p",{class:"wa-rule",text:t("wa_rule")}),funnel,
+    el("div",{class:"wa-fl"},qIn,seg,el("label",{class:"toggle"},test,t("wa_f_test"))),board); }
+
+// ---- lead drawer: card, documents, conversation (non-modal side panel, like the crawl plan) ----
+const LD={id:null,rows:[],before:null,timer:null,ret:null,tick:0,detail:null};
+const waCloseBtn=()=>el("button",{class:"btn s x",type:"button",onclick:()=>waClose(),text:"✕ "+t("wa_d_close")});
+function waEsc(e){ if(e.key==="Escape"&&$("#lead-dlg").open){ e.preventDefault(); waClose(); } }
+function waMark(){ document.querySelectorAll(".lh[data-id],tr[data-id]").forEach(n=>n.classList.toggle(n.tagName==="TR"?"hl":"on",n.dataset.id===LD.id)); }
+function waOpen(id,fromLoad){ const dlg=$("#lead-dlg");
+  if(LD.timer){ clearInterval(LD.timer); LD.timer=null; }
+  if(!dlg.open&&!fromLoad) LD.ret=document.activeElement;
+  Object.assign(LD,{id,rows:[],before:null,tick:0,detail:null});
+  if(parseHash().path==="/leads") setParams(WA_PARAMS());
+  const r=(WA.rows||[]).find(x=>x.thread_id===id);
+  $("#lead-dlg-body").replaceChildren(el("div",{class:"ld-hd"},el("h2",{class:"pn",id:"lead-dlg-h",text:r?.phone_masked||"…"}),waCloseBtn()),el("p",{class:"m",style:"padding:18px",text:t("loading")}));
+  if(!dlg.open){ dlg.show(); document.addEventListener("keydown",waEsc); }
+  dlg.querySelector(".x")?.focus(); waMark(); waLoadLead(id); }
+function waClose(silent){ const dlg=$("#lead-dlg"), was=LD.id;
+  if(LD.timer){ clearInterval(LD.timer); LD.timer=null; } LD.id=null; document.removeEventListener("keydown",waEsc); if(dlg?.open) dlg.close();
+  if(silent||!was) return;
+  if(parseHash().path==="/leads") setParams(WA_PARAMS()); waMark();
+  const back=LD.ret&&document.contains(LD.ret)?LD.ret:document.querySelector(`.lh[data-id="${CSS.escape(was)}"],tr[data-id="${CSS.escape(was)}"] a`);
+  back?.focus(); LD.ret=null; }
+async function waLoadLead(id){
+  try{ const [d,m]=await Promise.all([api("/api/wa/threads/"+waEnc(id)),api("/api/wa/threads/"+waEnc(id)+"/messages"+qs({limit:30}))]);
+    if(LD.id!==id) return; LD.detail=d; LD.rows=m.rows||[]; LD.before=m.next_before_id??null;
+    // The header is a direct child of the scroll container: sticky only holds inside its own parent.
+    $("#lead-dlg-body").replaceChildren(el("div",{class:"ld-hd",id:"ld-hd"}),el("div",{id:"ld-top"}),el("div",{class:"ld-sec",style:"border-bottom:0;padding-bottom:0"},el("h3",{text:t("wa_d_chat")})),
+      el("div",{class:"ld-chat",id:"ld-chat",role:"log","aria-label":t("wa_d_chat")}),
+      el("div",{class:"ld-sec m",style:"border-top:1px solid var(--line);border-bottom:0"},t("wa_d_readonly")+" "+t("wa_d_id")+": ",el("code",{text:d.thread?.thread_id||id})));
+    waPaintTop(); waPaintChat(); waScrollEnd();
+    $("#ld-hd .x")?.focus({preventScroll:true});          // the loading header's button is gone: keep focus inside the drawer
+    LD.timer=setInterval(()=>waPollLead(id),5000); PAGE_TIMERS.push(LD.timer);
+  }catch(e){ if(LD.id!==id) return;
+    $("#lead-dlg-body").replaceChildren(el("div",{class:"ld-hd"},el("h2",{class:"pn",id:"lead-dlg-h",text:"…"}),waCloseBtn()),el("div",{style:"padding:18px"},waErrCard(e,"/api/wa/threads/"+id)));
+    $("#lead-dlg-body .x")?.focus(); } }
+function waPaintTop(){ const box=$("#ld-top"); if(!box||!LD.detail) return; const d=LD.detail, r=d.thread||{};
+  // Repaint only on a change (or once a minute for the relative times) and keep focus on the close button.
+  const sig=JSON.stringify(d)+LANG+Math.floor(Date.now()/6e4); if(box.dataset.sig===sig) return; box.dataset.sig=sig;
+  const hd=$("#ld-hd"), hadX=!!hd?.contains(document.activeElement);
+  hd?.replaceChildren(el("h2",{class:"pn",id:"lead-dlg-h",text:r.phone_masked}),waBadgeEl(waStatus(r)),
+    r.is_test?el("span",{class:"lb test",text:t("wa_test")}):"",r.rail?el("span",{class:"lb ended",text:r.rail}):"",waCloseBtn(),
+    el("p",{class:"meta m",text:[t("wa_d_opened")+" "+fmtD(r.opened_at),t("wa_d_turns")+" "+num(r.turns),r.card?.campaign?t("wa_d_campaign")+" "+r.card.campaign:null].filter(Boolean).join(" · ")}));
+  box.replaceChildren(...[waWhySec(d),waCardSec(d),r.handoff||(d.handoff_matches||[]).length?waHandoffSec(d):null,waDocsSec(d)].filter(Boolean));
+  if(hadX) hd.querySelector(".x")?.focus(); }
+function waWhySec(d){ const r=d.thread||{}, rs=waReasons(r), notes={}, items=[];
+  [...(d.escalation_notes||[]),...(d.flag_notes||[])].forEach(n=>{ n=String(n); const i=n.indexOf(": "), c=i>0?n.slice(0,i):n; (notes[c]||(notes[c]=[])).push(i>0?n.slice(i+2):""); });
+  if(r.stopped) items.push(el("div",{class:"w ended"},el("b",{text:t("wa_d_stopped")}),r.stopped_reason?el("div",{class:"m",text:r.stopped_reason}):null));
+  if(r.suppression) items.push(el("div",{class:"w ended"},el("b",{text:t("wa_d_suppressed")}),el("div",{class:"m",text:[r.suppression.reason,r.suppression.lane,r.suppression.at?fmtDT(r.suppression.at):null].filter(Boolean).join(" · ")})));
+  rs.forEach(x=>items.push(el("div",{class:"w "+x.tier},el("b",{text:waWhy(x)}),...(notes[x.code]||[]).filter(Boolean).map(s=>el("div",{class:"m",text:s})),
+    x.text?el("div",{class:"m",text:x.text}):null,x.since?el("div",{class:"m",text:t("wa_since",{d:waAgo(x.since)})+" · "+fmtDT(x.since)}):null)));
+  if(r.outcome) items.push(el("div",{class:"w ended"},el("b",{text:waLbl("wa_st_"+r.outcome,r.outcome)})));
+  return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_why")}),items.length?el("div",{class:"ld-why"},...items):el("p",{class:"m",style:"margin:0",text:t("wa_d_green")})); }
+function waCardSec(d){ const r=d.thread||{}, c=r.card||{}, g=r.gates||{}, idx=WA_STAGES.indexOf(r.stage), ok=k=>g[k]==="satisfied", f=waFacts(r);
+  const val={...f,cv_document:ok("cv_document")?t("wa_v_received"):null,qualification_document:ok("qualification_document")?t("wa_v_received"):null,
+    handoff_consent:ok("handoff_consent")&&r.handoff?.consented_at?fmtDT(r.handoff.consented_at):f.handoff_consent};
+  return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_card")}),
+    el("ol",{class:"wsteps","aria-label":t("wa_c_stage")},...WA_STAGES.map((s,i)=>el("li",{class:i<idx?"done":i===idx?"cur":null,"aria-current":i===idx?"step":null,title:t("wa_s_"+s),text:t("wa_s_"+s)}))),
+    r.stage_since?el("p",{class:"m",style:"margin:-4px 0 10px",text:waStageLbl(r)+" · "+t("wa_since",{d:waAgo(r.stage_since)})}):null,
+    el("div",{class:"gl"},...WA_GATES.flatMap(k=>{ const s=g[k]||"open"; return [el("i",{class:s==="satisfied"?"s":s==="blocked"?"b":null,role:"img","aria-label":t("wa_gs_"+s)}),
+      el("span",{class:"k",text:t("wa_g_"+k)}),el("span",{class:s==="satisfied"?null:"m",text:val[k]||t("wa_gs_"+s)})]; })),
+    d.next_objective?el("div",{class:"ld-next"},el("span",{class:"eyebrow",text:t("wa_d_next")}),el("div",{class:"m",text:d.next_objective})):null,
+    c.match_branch?el("p",{class:"m",style:"margin:10px 0 0",text:t("wa_d_branch")+": "+waLbl("wa_b_"+c.match_branch,c.match_branch)}):null); }
+// handoff_matches: the matched clinics behind handoff.clinics. handoff.targets: the status reported back per clinic once
+// the profile went out; attention = a clinic event (reply, interview, trial, offer, halt) with nothing after it yet.
+function waHandoffSec(d){ const h=d.thread?.handoff||{}, ms=d.handoff_matches||[], ts=h.targets||[], clinic=x=>el("a",{href:"#/clinic/"+encodeURIComponent(x.clinic_id),text:x.clinic_name||x.clinic_id});
+  return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_handoff")}),
+    el("div",{class:"kv"},el("span",{text:t("wa_d_consented")}),el("span",{text:h.consented_at?fmtDT(h.consented_at)+" · "+t("wa_since",{d:waAgo(h.consented_at)}):"–"}),
+      el("span",{text:"Status"}),el("span",{text:h.status?waLbl("wa_hs_"+h.status,h.status):"–"}),el("span",{text:t("wa_d_clinics")}),el("span",{text:h.clinics!=null?num(h.clinics):"–"})),
+    ts.length?[el("div",{class:"eyebrow ld-cl-h",text:t("wa_d_targets")}),el("ol",{class:"ld-cl tg"},...ts.map(x=>el("li",{},clinic(x),
+      el("span",{class:"m",text:" · "+[waLbl("wa_ts_"+x.status,x.status),x.ts?fmtDT(x.ts):null].filter(Boolean).join(" · ")}),
+      x.external_ref?el("span",{class:"m",style:"white-space:nowrap",text:" · "+x.external_ref}):null,
+      x.attention?el("div",{class:"att",text:t("wa_attention")}):null)))]:null,
+    ms.length?[el("div",{class:"eyebrow ld-cl-h",text:t("wa_d_matches")}),el("ol",{class:"ld-cl mt"},...ms.map(x=>el("li",{},clinic(x),
+      x.town?el("span",{class:"m",text:" · "+x.town}):null,x.score!=null?el("span",{class:"score",text:" · "+x.score}):null)))]:null); }
+function waDocsSec(d){ const docs=d.documents||[];
+  return el("section",{class:"ld-sec"},el("h3",{text:t("wa_d_docs")+" · "+num(docs.length)}),docs.length?el("div",{class:"kv"},...docs.flatMap(x=>[
+      el("span",{text:waLbl("wa_dt_"+(x.document_type||""),x.document_type||waKind(x.kind||"document"))}),
+      el("span",{text:[(x.mime_type||"").split("/").pop().toUpperCase()||null,x.size_bytes!=null?Math.max(1,Math.round(x.size_bytes/1024))+" KB":null,x.received_at?fmtDT(x.received_at):null,x.reuse_state].filter(Boolean).join(" · ")})])):
+    el("p",{class:"m",style:"margin:0",text:t("wa_d_nodocs")})); }
+const waDay=s=>new Date(s).toLocaleDateString(LANG==="de"?"de-DE":"en-GB",{weekday:"short",day:"2-digit",month:"2-digit"});
+function waBubble(m){ const at=el("time",{datetime:m.at,title:fmtDT(m.at),text:hhmm(m.at)});
+  if(m.deleted) return el("div",{class:"tomb"},t("wa_m_deleted")+" · ",at);
+  const k=m.kind||"text", draft=k==="draft", out=m.direction==="out", meta=m.meta||{};
+  // the refusal and the template name are literal values: in <code>, never upper-cased
+  const cap=draft?[t("wa_m_draft"),meta.scope_refusal?[" · ",el("code",{text:meta.scope_refusal})]:null]:k==="text"?null:[waKind(k),meta.template?[" · ",el("code",{text:meta.template})]:null];
+  // a voice note's transcript is its body (meta.transcript only marks it as one); empty until transcription finishes
+  const body=m.body==null||m.body===""?(k==="audio"?t("wa_m_notranscript"):null):m.body;
+  const btns=(meta.buttons||[]).map(b=>el("span",{text:typeof b==="string"?b:(b.title||b.id||"?")}));
+  const tick=out&&!draft&&m.status?el("span",{class:m.status==="read"?"rd":m.status==="failed"?"fl":null,title:waLbl("wa_ms_"+m.status,m.status),
+    text:m.status==="failed"?" ✕ "+waLbl("wa_ms_failed","failed"):m.status==="sent"?" ✓":" ✓✓"}):null;
+  return el("div",{class:"bub "+(draft?"draft":out?"out":"in")},el("span",{class:"vh",text:t(out?"wa_who_out":"wa_who_in")+": "}),cap?el("div",{class:"cap"},cap):null,
+    body!=null?el("div",{text:body}):null,btns.length?el("div",{class:"btns"},...btns):null,el("div",{class:"ft"},at,tick)); }
+function waChatNodes(rows,prevDay){ const out=[]; let day=prevDay;
+  rows.forEach(m=>{ const dd=new Date(m.at).toDateString(); if(dd!==day){ day=dd; out.push(el("div",{class:"daysep",text:waDay(m.at)})); } out.push(waBubble(m)); }); return out; }
+function waPaintChat(){ const box=$("#ld-chat"); if(!box) return;
+  box.replaceChildren(...[LD.before!=null?el("button",{class:"btn s",type:"button",style:"align-self:center",onclick:waOlder,text:t("wa_d_older")}):null,
+    LD.rows.length?null:el("p",{class:"m",text:t("wa_m_empty")}),...waChatNodes(LD.rows,null)].filter(Boolean)); }
+const waNearEnd=()=>{ const sc=$("#lead-dlg-body"); return sc.scrollHeight-sc.scrollTop-sc.clientHeight<120; };
+function waScrollEnd(){ const sc=$("#lead-dlg-body"); sc.scrollTop=sc.scrollHeight; $("#ld-chat .newpill")?.remove(); }
+async function waOlder(e){ const b=e.currentTarget, id=LD.id; b.disabled=true;
+  try{ const m=await api("/api/wa/threads/"+waEnc(id)+"/messages"+qs({limit:30,before_id:LD.before})); if(LD.id!==id) return;
+    const sc=$("#lead-dlg-body"), h0=sc.scrollHeight, top0=sc.scrollTop;
+    LD.rows=[...(m.rows||[]).filter(x=>!LD.rows.some(y=>y.id===x.id)),...LD.rows]; LD.before=m.next_before_id??null; waPaintChat(); sc.scrollTop=top0+(sc.scrollHeight-h0);
+  }catch(err){ b.disabled=false; toast(t("t_err",{m:esc((err.status??"")+" "+err.message)})); } }
+async function waPollLead(id){
+  try{ const last=LD.rows.length?LD.rows[LD.rows.length-1].id:null;
+    const m=await api("/api/wa/threads/"+waEnc(id)+"/messages"+qs(last!=null?{after_id:last}:{limit:30}));
+    if(LD.id!==id) return; const add=(m.rows||[]).filter(x=>!LD.rows.some(y=>y.id===x.id));
+    if(add.length){ const near=waNearEnd(), box=$("#ld-chat"), prev=LD.rows.length?new Date(LD.rows[LD.rows.length-1].at).toDateString():null;
+      if(!LD.rows.length) box.replaceChildren(); LD.rows.push(...add); box.querySelector(".newpill")?.remove(); box.append(...waChatNodes(add,prev));
+      if(near) waScrollEnd(); else box.append(el("button",{class:"btn s newpill",type:"button",onclick:waScrollEnd,text:t("wa_d_new")})); }
+    if(++LD.tick%3===0){ const d=await api("/api/wa/threads/"+waEnc(id)); if(LD.id===id){ LD.detail=d; waPaintTop(); } }
+    $("#ld-err")?.remove();
+  }catch(e){ if(LD.id===id&&!$("#ld-err")) $("#ld-top")?.after(el("div",{id:"ld-err",class:"wa-note bad",role:"alert",style:"margin:10px 18px",text:t("wa_d_poll_err")+": "+(e.status??"")+" "+e.message})); } }
+
 const GATE={on:false,me:null};
 async function gate(){ let me; try{ me=await api("/api/me"); }catch(e){ me={role:"anonymous",error:e.message}; } GATE.me=me; const ok=me&&me.role==="owner"; /* customers: no dashboard view yet */ GATE.on=!ok; if(ok){ $("#gate")?.remove(); return true; } renderGate(me); return false; }
 function renderGate(me){ $("#gate")?.remove(); document.body.classList.add("gated"); document.getElementById("pj-dock")?.remove(); document.getElementById("pj-launcher")?.remove();
@@ -1514,14 +1942,169 @@ function mockApi(path,opt){
   if(p==="/api/ontology"){ const f=(n,d,e)=>({name:n,desc:{de:d,en:e||d}}); return wrap({nodes:[{id:"krankenhausplan_pdf",label:"Krankenhausplan PDF",kind:"external",desc:{de:"Amtliche Quelle (StMGP): 399 Standorte",en:"Official source (StMGP): 399 sites"},fields:[f("KeZ","Kennziffer","identifier"),f("Betten","zugelassene Betten","licensed beds"),f("Fachrichtungen","Codes","codes"),f("Trägerschaft","ö/fg/p","ownership")]},{id:"clinics",label:"clinics",kind:"table",desc:{de:"Registry, eine Zeile je Standort (KeZ)",en:"Registry, one row per site (KeZ)"},fields:[f("clinic_id","KeZ"),f("name","Name"),f("town","Ort","town"),f("beds","Betten","beds"),f("fachrichtungen","Codes"),f("ats_type","ATS-Anbieter (Discovery)","ATS vendor (discovery)"),f("careers_url","Board-URL")]},{id:"ats_boards",label:"ATS boards",kind:"external",desc:{de:"Karriereportale der Kliniken",en:"Hospital career portals"},fields:[f("vendor","softgarden, rexx, …")]},{id:"firecrawl_agent",label:"Firecrawl agent",kind:"external",desc:{de:"LLM-Agent für Portale ohne Adapter",en:"LLM agent for portals without an adapter"},fields:[f("maxCredits","Kostendeckel","credit cap"),f("schema","JOBS_SCHEMA / CAREER_SCHEMA")]},{id:"inbox",label:"inbox",kind:"table",desc:{de:"Rohzeilen aller Crawler, ein Format",en:"Raw rows from every crawler, one shape"},fields:[f("kind","jobposting | listing"),f("source_url","Stellen-URL","job URL"),f("payload","title, org, loc, description"),f("collector","wer hat es geliefert","who delivered it")]},{id:"posting_observations",label:"posting_observations",kind:"table",desc:{de:"Eine Sichtung je Quelle — die Evidenz",en:"One sighting per source — the evidence"},fields:[f("source_id","→ sources"),f("source_ref","Identität in der Quelle","identity within the source"),f("posting_id","→ postings"),f("role_class","klassifiziert","classified"),f("payload","Original")]},{id:"postings",label:"postings",kind:"table",desc:{de:"Eine Zeile je echter Stelle — die Antwort",en:"One row per real vacancy — the answer"},fields:[f("posting_id","ID"),f("title","Titel","title"),f("role_class","Rolle","role"),f("clinic_id","→ clinics (KeZ)"),f("status","open | expired"),f("verify_status","live | gone | blocked | error"),f("provenance","welche Quelle welches Feld lieferte","which source supplied which field")]},{id:"sources",label:"sources",kind:"table",desc:{de:"Quellen + Präzedenz (niedriger gewinnt)",en:"Sources + precedence (lower wins)"},fields:[f("source_id","10 / 20 / 25"),f("code","krankenhausplan | employer_ats | firecrawl_agent"),f("precedence","1 / 2 / 2")]},{id:"employers",label:"employers",kind:"table",desc:{de:"Arbeitgeber-Identität + Klassifikation",en:"Employer identity + classification"},fields:[f("name_norm","normalisiert","normalised"),f("employer_class","clinic | unknown | non_clinic"),f("class_rule","welche Regel","which rule")]},{id:"v_postings",label:"v_postings",kind:"view",desc:{de:"Lese-View: postings + employer + clinic",en:"Read view: postings + employer + clinic"},fields:[f("…","alle Felder für API und App","all fields for API and app")]},{id:"classify",label:"classify",kind:"process",desc:{de:"Titel/Arbeitgeber → role_class, employer_class (patterns.json)",en:"title/employer → role_class, employer_class (patterns.json)"},fields:[f("patterns.json","editierbar in den Einstellungen","editable in settings")]},{id:"resolve",label:"resolve",kind:"process",desc:{de:"Sichtungen zu Stellen zusammenführen, Felder nach Präzedenz",en:"merge sightings into postings, fields by precedence"},fields:[f("fuzzy_key","title | employer | plz")]},{id:"link_clinics",label:"link-clinics",kind:"process",desc:{de:"Stelle → KeZ (Regeln R1–R6)",en:"posting → KeZ (rules R1–R6)"},fields:[f("clinic_match_rule","R1 … R6")]},{id:"verify",label:"verify",kind:"process",desc:{de:"URL abrufen, Titel prüfen → live/gone/blocked",en:"fetch URL, check title → live/gone/blocked"},fields:[f("verify_status","")]},{id:"app",label:"App / API",kind:"view",desc:{de:"FastAPI + SPA: /api/clinics, /api/jobs, Clawl, CV",en:"FastAPI + SPA: /api/clinics, /api/jobs, Clawl, CV"},fields:[f("/api/*","OpenAPI")]}],
     edges:[{from:"krankenhausplan_pdf",to:"clinics",label:"parse",kind:"derives"},{from:"clinics",to:"ats_boards",label:"careers_url / ats_type",kind:"reads"},{from:"ats_boards",to:"inbox",label:"adapters",kind:"feeds"},{from:"firecrawl_agent",to:"inbox",label:"fallback",kind:"feeds"},{from:"inbox",to:"classify",label:"",kind:"feeds"},{from:"classify",to:"posting_observations",label:"observations",kind:"derives"},{from:"posting_observations",to:"sources",label:"source_id",kind:"fk"},{from:"posting_observations",to:"resolve",label:"",kind:"feeds"},{from:"resolve",to:"postings",label:"golden rows",kind:"derives"},{from:"postings",to:"employers",label:"employer_id",kind:"fk"},{from:"postings",to:"link_clinics",label:"",kind:"feeds"},{from:"link_clinics",to:"clinics",label:"clinic_id",kind:"fk"},{from:"postings",to:"verify",label:"",kind:"feeds"},{from:"v_postings",to:"postings",label:"reads",kind:"reads"},{from:"app",to:"v_postings",label:"reads",kind:"reads"},{from:"app",to:"firecrawl_agent",label:"triggers",kind:"feeds"}],
     process:{steps:[{id:"parse_pdf",title:{de:"PDF parsen",en:"Parse the PDF"},desc:{de:"Der Krankenhausplan wird zu 399 Zeilen in clinics: KeZ, Betten, Fachrichtungen, Träger.",en:"The hospital plan becomes 399 rows in clinics: KeZ, beds, departments, ownership."},nodes:["krankenhausplan_pdf","clinics"],edges:[["krankenhausplan_pdf","clinics"]]},{id:"discover",title:{de:"ATS erkennen",en:"Detect the ATS"},desc:{de:"Einmal je Klinik: Karriereseite finden, Anbieter fingerprinten → careers_url, ats_type.",en:"Once per hospital: find the careers page, fingerprint the vendor → careers_url, ats_type."},nodes:["clinics","ats_boards"],edges:[["clinics","ats_boards"]]},{id:"fetch",title:{de:"Boards abrufen",en:"Fetch the boards"},desc:{de:"Adapter lesen bekannte Boards direkt; ohne Adapter übernimmt der Firecrawl-Agent (Credits).",en:"Adapters read known boards directly; without an adapter the Firecrawl agent takes over (credits)."},nodes:["ats_boards","firecrawl_agent","inbox"],edges:[["ats_boards","inbox"],["firecrawl_agent","inbox"]]},{id:"classify",title:{de:"Klassifizieren",en:"Classify"},desc:{de:"Jede Inbox-Zeile: Rolle, Arbeitgeberklasse, Fachbereich per patterns.json. Nicht-Pflege wird verworfen.",en:"Every inbox row: role, employer class, department via patterns.json. Non-nursing is dropped."},nodes:["inbox","classify","posting_observations"],edges:[["inbox","classify"],["classify","posting_observations"]]},{id:"resolve",title:{de:"Zusammenführen",en:"Resolve"},desc:{de:"Gleiche Stelle aus mehreren Sichtungen → eine Zeile; Felder nach Quellen-Präzedenz.",en:"The same job seen several times → one row; fields by source precedence."},nodes:["posting_observations","sources","resolve","postings"],edges:[["posting_observations","resolve"],["resolve","postings"],["posting_observations","sources"]]},{id:"link",title:{de:"Klinik zuordnen",en:"Link to a hospital"},desc:{de:"Arbeitgeber + Ort → KeZ (Regeln R1–R6). Ohne KeZ zählt eine Stelle nicht als Klinik-Stelle.",en:"Employer + town → KeZ (rules R1–R6). Without a KeZ a job does not count as a hospital job."},nodes:["postings","link_clinics","clinics","employers"],edges:[["postings","link_clinics"],["link_clinics","clinics"],["postings","employers"]]},{id:"verify",title:{de:"Prüfen",en:"Verify"},desc:{de:"Jede Stellen-URL wird abgerufen: live, gone (→ expired), blocked, error.",en:"Every job URL is fetched: live, gone (→ expired), blocked, error."},nodes:["postings","verify"],edges:[["postings","verify"]]},{id:"serve",title:{de:"Ausliefern",en:"Serve"},desc:{de:"v_postings + App-API: Filter, Suche, CV-Abgleich, Clawl-Steuerung.",en:"v_postings + app API: filters, search, CV matching, Clawl controls."},nodes:["v_postings","app"],edges:[["v_postings","postings"],["app","v_postings"]]}]}}); }
+  if(p.startsWith("/api/wa/")) return waMockApi(p,g,M);
   if(p.startsWith("/docs/")) return wrap("# "+p.slice(6)+"\n\nDemo-Dokument (mock). Der Backend-Server liefert hier die echte Datei aus `docs/`.\n\n| Entität | Bedeutung |\n|---|---|\n| clinics | Krankenhausplan-Standorte |\n| postings | Stellen |\n");
   if(p==="/skill/pflege-jobs.skill.md") return wrap("---\nname: pflege-jobs\n---\n\n# pflege-jobs\n\nSkill (mock).\n\n---\n\n# REST API\n\n`GET /api/clinics`\n\n---\n\n# Data model\n\nclinics, postings, posting_observations.\n");
   return Promise.reject(new Error("mock: "+p));
 }
 
+// ---- WhatsApp demo (?mock=1#/leads): invented numbers and conversations, every state the Leads view knows -----
+function waMockApi(p,g,M){ const W=waMock(M.clinics), wrap=v=>new Promise(r=>setTimeout(()=>r(JSON.parse(JSON.stringify(v))),60));
+  const nf=()=>Promise.reject(Object.assign(new Error("unknown thread"),{status:404})); let m; waMockLive(W);
+  if(p==="/api/wa/health") return wrap(W.health);
+  if(p==="/api/wa/threads"){ const rows=g.include_test==="1"?W.threads:W.threads.filter(r=>!r.is_test), off=+(g.offset||0), lim=+(g.limit||20);   // 20 a page: the demo walks next_offset like the real proxy
+    return wrap({total:rows.length,limit:lim,offset:off,next_offset:off+lim<rows.length?off+lim:null,test_threads:rows.filter(r=>r.is_test).length,generated_at:new Date().toISOString(),source:"mock",rows:rows.slice(off,off+lim)}); }
+  if((m=p.match(/^\/api\/wa\/threads\/([^/]+)\/messages$/))){ const all=W.msgs[decodeURIComponent(m[1])]; if(!all) return nf();
+    if(g.after_id!=null) return wrap({rows:all.filter(x=>x.id>+g.after_id),next_before_id:null});
+    const upto=g.before_id?all.filter(x=>x.id<+g.before_id):all, rows=upto.slice(-(+(g.limit||50)));
+    return wrap({rows,next_before_id:rows.length&&upto.length>rows.length?rows[0].id:null}); }
+  if((m=p.match(/^\/api\/wa\/threads\/([^/]+)$/))){ const d=W.detail[decodeURIComponent(m[1])]; return d?wrap(d):nf(); }
+  return Promise.reject(Object.assign(new Error("mock: "+p),{status:404})); }
+function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), iso=a=>new Date(now-a).toISOString(), mi=6e4, h=36e5, d=864e5;
+  const STG=["contact","qualification","matching","matching","cv","documents","consent","submitted"];
+  // Each thread is its card. The gates are read from it the way luna_brain.py requirement_scoreboard reads a card (cv and
+  // qdoc stand in for card.documents), the stage is the first gate still open, and the conversation is built from it.
+  const board=c=>({region:c.region?"satisfied":"open",
+    qualification:["urkunde","defizit","kenntnispruefung"].includes(c.qualification_path)?"satisfied":c.qualification_path==="reject"?"blocked":"open",
+    city_or_department:c.city||c.department?"satisfied":"open",housing:c.housing_needed===false||(c.housing_needed&&c.people_count)?"satisfied":"open",
+    cv_document:c.cv?"satisfied":"open",qualification_document:c.qdoc?"satisfied":"open",handoff_consent:c.anonymous_send_consent?"satisfied":"open"});
+  const doc=c=>c.qualification_path==="urkunde"?"Urkunde":"Defizitbescheid";
+  const OBJ={region:()=>"ask as a plain yes/no whether they are looking for a job in Bayern",
+    qualification:()=>"clarify qualification: first a plain yes/no whether the German Urkunde is already in hand; only on no, the recognition step, again one yes/no at a time",
+    city_or_department:()=>"ask which city in Bayern they want to work in, as an open question (a department they name instead settles this too)",
+    housing:c=>c.housing_needed?"they need a flat: ask how many people would live in it, as an open question (people_count)":"ask ONE plain yes/no whether they need a flat (Unterkunft) at all",
+    cv_document:c=>`ask for BOTH the CV (Lebenslauf) AND the ${doc(c)} as photos/PDFs, together in one ask`,
+    qualification_document:c=>`ask for the still-missing ${doc(c)} as a photo/PDF (the CV is already in)`,
+    handoff_consent:()=>"run the close sequence: state the shortlist, then ask anonymized-send consent"};
+  // Luna's gate order (luna_brain.py _OBJECTIVE_ORDER): one plain yes/no or open question per gate, never an either/or
+  // menu. steps(card)[i] = [Luna's question(s) for gate i, the candidate's answer taken from the card]; [7] closes.
+  const steps=c=>{ const q=c.qualification_path, urk=q==="urkunde", n=c.people_count, yn={meta:{buttons:["Ja","Nein"]}},
+      city=c.city;
+    return [[[["out","buttons","Hallo, hier ist Luna von Pflege-Stellen Bayern. Suchen Sie eine Stelle in Bayern?",yn]],[["in","text","Ja, gerne in Bayern."]]],
+      [[["out","buttons","Haben Sie schon die deutsche Berufsurkunde?",yn]],urk?[["in","text","Ja, seit letztem Jahr."]]:[["in","text","Nein, noch nicht."],
+        ["out","buttons","Haben Sie schon einen Defizitbescheid?",yn],["in","text",q==="defizit"?"Ja, seit März.":"Nein, ich mache im November die Kenntnisprüfung."]]],
+      [[["out","text","In welcher Stadt in Bayern möchten Sie arbeiten?"]],[["in","text",!city?"Egal wo, Hauptsache "+c.department+".":c.department==="flexibel"?city+", die Station ist mir egal."
+        :c.department?"Am liebsten "+city+", "+c.department+".":city+"."]]],
+      [[["out","buttons","Brauchen Sie eine Wohnung?",yn],...(c.housing_needed?[["in","text","Ja, bitte."],["out","text","Für wie viele Personen?"]]:[])],
+        !c.housing_needed?[["in","text","Nein, ich habe schon eine Wohnung."]]:[["in","text",n===1?"Nur für mich.":"Für "+n+" Personen."],
+          ...(c.housing_flexible?[["out","buttons","In "+city+" hat gerade keine Stelle eine Wohnung dabei. Geht auch eine Klinik ohne Wohnung?",yn],["in","text","Ja, das geht auch."]]:[])]],
+      [[["out","text","Schicken Sie mir bitte Ihren Lebenslauf und "+(urk?"Ihre Urkunde":"Ihren Defizitbescheid")+" als Foto oder PDF."]],[["in","document","Lebenslauf.pdf"]]],
+      [[["out","text","Danke! Jetzt fehlt noch "+(urk?"Ihre Urkunde":"Ihr Defizitbescheid")+"."]],[["in","image",doc(c)+".jpg"]]],
+      [[["out","buttons","14 Stellen passen zu Ihnen. Darf ich Ihr Profil anonym an diese Kliniken schicken?",{meta:{buttons:["Ja, gerne","Nein"]}}]],[["in","text","Ja, gerne"]]],
+      [[["out","text","Danke! Eine Kollegin meldet sich, sobald eine Klinik antwortet."]],[]]]; };
+  // The conversation of a card whose first n gates are settled, 17 min apart and ending `last` ago: on Luna's question
+  // for gate n (the ball is with the candidate) or, with `us`, on the candidate's last answer (the ball is with us).
+  const gen=(c,n,us,last)=>{ const L=[["in","text","Hallo, ich interessiere mich für eine Stelle in der Pflege."]], st=steps(c);
+    st.slice(0,n).forEach(([q,a])=>L.push(...q,...a)); if(!us&&st[n]) L.push(...st[n][0]);
+    return L.map((x,j)=>[x[0],x[1],x[2],last+(L.length-1-j)*17*mi,x[3]]); };
+  const T=[], MSG={}, DET={}; let mid=100;
+  const add=o=>{ const id="t_"+(0x9a3c1+T.length*7919).toString(16), c=o.card||{}, {cv,qdoc,anonymous_send_consent,...card}=c, gates=board(c);
+    const open=WA_GATES.findIndex(k=>gates[k]!=="satisfied"), n=open<0?7:open, us=o.ball==="us";
+    if(n>=6&&!(n===6&&us)) card.anonymous_send_offered=true;             // the consent question has gone out
+    const msgs=(o.msgs||[...gen(c,n,us,o.last??30*mi),...(o.after||[])]).map(([dir,kind,body,ago,x])=>({id:++mid,direction:dir,kind,body:x?.deleted?null:body,at:iso(ago),deleted:!!x?.deleted,
+      status:dir==="out"&&kind!=="draft"?(x?.status||"read"):null,meta:x?.meta||{}}));
+    const ins=msgs.filter(x=>x.direction==="in"), outs=msgs.filter(x=>x.direction==="out"&&x.kind!=="draft"), lastM=msgs[msgs.length-1];
+    const row={thread_id:id,phone_masked:o.ph,is_test:!!o.test,rail:o.rail||"meta",opened_at:msgs.length?new Date(waMs(msgs[0].at)-5*mi).toISOString():iso(2*d),
+      last_inbound_at:ins.length?ins[ins.length-1].at:null,last_outbound_at:outs.length?outs[outs.length-1].at:null,turns:ins.length,
+      ball:lastM?(lastM.direction==="in"?"us":"them"):"none",stage:STG[n],stage_since:iso(o.ss??(o.last??30*mi)+40*mi),outcome:o.outcome||null,gates,card,
+      stopped:!!o.stopped,stopped_reason:o.stopped||null,suppression:o.sup||null,escalation_codes:o.esc||[],flag_codes:o.flags||[],escalated_at:o.escAt!=null?iso(o.escAt):null,
+      stuck_reply:!!o.stuck,pending_inbound:o.pending||null,last_send_error:o.senderr||null,handoff:o.handoff||null,lead_status:o.ls||null,
+      last_message:lastM?{direction:lastM.direction,kind:lastM.deleted?"deleted":lastM.kind,preview:lastM.deleted?null:(lastM.body||"").slice(0,140),at:lastM.at}:null};
+    T.push(row); MSG[id]=msgs;
+    DET[id]={thread:row,escalation_notes:o.notes||[],flag_notes:o.fnotes||[],
+      next_objective:gates.qualification==="blocked"?"not placeable -- no placement item open: no region, city, housing or document ask (NOT PLACEABLE)"
+        :open<0?"nothing open -- respond naturally, no open placement item left":OBJ[WA_GATES[open]](c),
+      documents:msgs.filter(x=>x.direction==="in"&&(x.kind==="document"||x.kind==="image")).map((x,i)=>({id:900+mid+i,kind:x.kind,
+        document_type:/leben|cv/i.test(x.body||"")?"lebenslauf":/urkunde/i.test(x.body||"")?"urkunde":/defizit/i.test(x.body||"")?"defizitbescheid":null,
+        mime_type:x.kind==="image"?"image/jpeg":/heic/i.test(x.body||"")?"image/heic":"application/pdf",size_bytes:140000+i*52000,received_at:x.at,reuse_state:null})),
+      send_failures:o.senderr?[o.senderr]:[],
+      handoff_matches:o.handoff?clinics.slice(0,o.handoff.clinics).map((c,i)=>({clinic_id:c.clinic_id,clinic_name:c.name,town:c.town,score:92-i*3})):[]}; };
+  // handoff.targets: the status each clinic reported back once the profile went out (a closed list in the harness);
+  // attention = a reply, interview, trial, offer or halt with nothing after it yet
+  const targets=(n,after,status,own={})=>clinics.slice(0,n).map((c,i)=>({clinic_id:c.clinic_id,clinic_name:c.name,external_ref:"cand-"+(4100+i*37),
+    status:own[i]?.status||status,ts:iso(after-(i+1)*mi),attention:!!own[i]?.attention}));
+  const VN="Nein, ich habe einen Defizitbescheid von der Regierung von Oberbayern, seit März. Den Anpassungslehrgang würde ich machen. Eine Wohnung bräuchte ich auch, nur für mich.";
+  const august=[["out","template","Hallo! Wir haben neue Pflege-Stellen in Bayern. Möchten Sie mehr erfahren?",{meta:{template:"pflege_bayern_reengage_v2"}}],
+    ["in","text","Später vielleicht, ich warte noch auf meinen Bescheid."],["out","text","Alles klar – melden Sie sich gern, sobald er da ist."]];
+  // escalated: every code in app/wa/luna/escalation.py appears at least once
+  add({ph:"+40 ••• ••• 3318",escAt:34*mi,esc:["explicit_human_request"],notes:["explicit_human_request: asked to talk to a person about Probezeit and Kündigungsfrist before sending the Defizitbescheid"],
+    card:{region:"Bayern",city:"München",department:"Intensiv",qualification_path:"defizit",housing_needed:true,people_count:1,campaign:"meta-ro-intensiv-09",cv:true},
+    msgs:[...Array.from({length:18},(_,i)=>{ const x=august[i%3]; return [x[0],x[1],x[2],40*d-i*6*h,x[3]]; }),
+      ["in","text","Hallo, ich habe Ihre Anzeige gesehen.",2*d+3*h],["out","text","Hallo, hier ist Luna – ich bin die digitale Assistentin von Pflege-Stellen Bayern.",2*d+3*h-mi],
+      ["out","buttons","Suchen Sie eine Stelle als Pflegefachkraft in Bayern?",2*d+3*h-2*mi,{meta:{buttons:["Ja","Nein"]}}],["in","text","Ja",2*d+2*h],
+      ["out","text","Haben Sie schon die deutsche Berufsurkunde?",2*d+2*h-mi],
+      ["in","audio",VN,2*d+h,{meta:{transcript:VN}}],   // set_voice_transcript: the transcript is the body, meta.transcript marks it
+      ["out","text","Danke! In München passen gerade 31 offene Stellen auf Intensiv, 12 davon mit Wohnung.",2*d+h-mi],["out","text","Schicken Sie mir bitte Ihren Lebenslauf und Ihren Defizitbescheid als Foto oder PDF.",2*d+h-2*mi],
+      ["in","document","Lebenslauf_2026.pdf",d+5*h],["out","draft","Danke, Ihr Lebenslauf ist angekommen. Es fehlt noch der Defizitbescheid.",d+5*h-mi,{meta:{scope_refusal:"WA_REPLY_SCOPE=test_only"}}],
+      ["out","text","",d+4*h+10*mi,{deleted:true}],["out","text","Danke, Ihr Lebenslauf ist da. Es fehlt noch der Defizitbescheid – ein Foto reicht.",d+4*h],
+      ["in","text","Kann ich bitte mit einer echten Person telefonieren? Ich habe Fragen zum Vertrag, zur Probezeit und zur Kündigungsfrist.",34*mi],
+      ["out","text","Das gebe ich an eine Kollegin weiter – sie meldet sich bei Ihnen.",33*mi,{status:"delivered"}]]});
+  add({ph:"+91 ••• ••• 4471",escAt:2*h+5*mi,esc:["visa_or_immigration_specifics"],flags:["exhaustive_claim_suspected"],notes:["visa_or_immigration_specifics: family reunification visa for her husband"],
+    fnotes:["exhaustive_claim_suspected: a reply said 'alle offenen Stellen in Nürnberg' while the shortlist held 5 of 38"],card:{region:"Bayern",city:"Nürnberg",qualification_path:"kenntnispruefung",campaign:"meta-in-kerala-08"},
+    last:2*h+40*mi,after:[["in","text","Brauche ich für meinen Mann ein eigenes Visum, wenn er mitkommt? Er ist kein Pfleger.",2*h+5*mi],["out","text","Das kläre ich mit einer Kollegin – sie meldet sich bei Ihnen.",2*h+4*mi]]});
+  add({ph:"+63 ••• ••• 0925",escAt:3*h,esc:["unreadable_attachment"],notes:["unreadable_attachment: IMG_4471.HEIC could not be read"],card:{region:"Bayern",city:"Würzburg",department:"OP",qualification_path:"urkunde",housing_needed:false},
+    last:3*h+30*mi,after:[["in","document","IMG_4471.HEIC",3*h],["out","text","Danke! Die Datei kann ich leider nicht öffnen – eine Kollegin schaut sie sich an.",3*h-mi]]});
+  add({ph:"+90 ••• ••• 7702",escAt:50*mi,esc:["grounding_rule_violated_twice"],notes:["grounding_rule_violated_twice: two replies in a row named a posting that is not on the board"],card:{region:"Bayern"},ball:"us",last:50*mi});
+  add({ph:"+380 •• ••• 5614",escAt:20*mi,esc:["unread_media"],card:{region:"Bayern",qualification_path:"defizit"},rail:"bridge",last:55*mi,after:[["in","video","",20*mi]]});
+  add({ph:"+40 ••• ••• 1207",escAt:5*h,esc:["pet_policy_question","legal_or_contract_policy_question"],notes:["pet_policy_question: asks whether a cat is allowed in the staff flat","legal_or_contract_policy_question: asks whether the relocation bonus is paid back after 12 months"],
+    card:{region:"Bayern",city:"Augsburg",department:"Geriatrie",qualification_path:"urkunde",housing_needed:true,people_count:2,cv:true,qdoc:true},
+    last:6*h,after:[["in","text","Darf ich in der Wohnung eine Katze halten? Und muss ich die Umzugsprämie zurückzahlen, wenn ich nach einem Jahr gehe?",5*h]]});
+  add({ph:"+91 ••• ••• 8830",escAt:9*h,esc:["prior_application_status_question"],card:{region:"Bayern",city:"Regensburg",qualification_path:"urkunde",housing_needed:false},
+    last:10*h,after:[["in","text","Ich hatte mich im Juli schon beim Klinikum beworben – gibt es da eine Antwort?",9*h]]});
+  // reply stuck: overdue on us, a failed send, inbound the harness could not process
+  add({ph:"+49 ••• ••• 2290",stuck:true,card:{region:"Bayern",city:"Regensburg",department:"Kardiologie",qualification_path:"urkunde",housing_needed:false},last:4*h,after:[["in","text","Sind die Stellen auch in Teilzeit möglich, 75 %?",3*h+20*mi]]});
+  add({ph:"+63 ••• ••• 5541",senderr:{error:"(#131047) Re-engagement message: more than 24 hours have passed since the customer last replied",at:iso(58*mi)},card:{region:"Bayern",qualification_path:"urkunde"},last:26*h});
+  add({ph:"+90 ••• ••• 3386",stuck:true,pending:{count:2,oldest_recorded_at:iso(2*h+40*mi),last_error:"stt: OPENAI_API_KEY is not set"},card:{region:"Bayern",city:"Ingolstadt",qualification_path:"kenntnispruefung"},
+    last:3*h+10*mi,after:[["in","audio","",2*h+40*mi],["in","audio","",2*h+38*mi]]});
+  // handoff: consent given, app/wa/queue.py hands the thread to a human
+  add({ph:"+40 ••• ••• 6604",handoff:{status:"queued",consented_at:iso(d+3*h+17*mi),clinics:5,targets:[]},last:d+3*h,
+    card:{region:"Bayern",city:"München",department:"Intensiv",qualification_path:"urkunde",housing_needed:false,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true}});
+  add({ph:"+91 ••• ••• 1180",last:4*h,handoff:{status:"attention",consented_at:iso(4*h+17*mi),clinics:12,
+      targets:targets(12,4*h,"sent_to_clinic",{2:{status:"clinic_replied",attention:true}})},
+    card:{region:"Bayern",city:"Nürnberg",qualification_path:"defizit",housing_needed:true,people_count:2,housing_flexible:true,match_branch:"pool",cv:true,qdoc:true,anonymous_send_consent:true}});
+  // after the handoff: a human already has it (in_progress) or it ended well (signed) -- nobody is needed any more
+  add({ph:"+49 ••• ••• 7340",last:2*d,handoff:{status:"in_progress",consented_at:iso(2*d+17*mi),clinics:3,targets:targets(3,2*d-h,"followup_sent",{1:{status:"sent_to_clinic"},2:{status:"declined"}})},
+    card:{region:"Bayern",city:"Erlangen",department:"Kinderklinik",qualification_path:"urkunde",housing_needed:true,people_count:1,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true},
+    after:[["in","text","Wann ist das Vorstellungsgespräch in Erlangen?",3*h],["out","text","Eine Kollegin meldet sich heute mit dem Termin bei Ihnen.",3*h-mi]]});
+  add({ph:"+40 ••• ••• 5566",last:12*d,handoff:{status:"signed",consented_at:iso(12*d+17*mi),clinics:4,targets:targets(4,12*d-h,"declined",{0:{status:"contract_signed"},3:{status:"closed"}})},
+    card:{region:"Bayern",city:"Würzburg",department:"Geriatrie",qualification_path:"defizit",housing_needed:false,cv:true,qdoc:true,anonymous_send_consent:true},
+    after:[["in","text","Ich habe den Vertrag in Würzburg unterschrieben, vielen Dank!",3*d],["out","text","Herzlichen Glückwunsch und einen guten Start!",3*d-mi]]});
+  // green at every funnel stage: green only says nobody is needed, the card says how far each lead has got
+  add({ph:"+43 ••• •••• 5120",last:8*mi,card:{campaign:"meta-at-pflege-09"}});
+  add({ph:"+40 ••• ••• 9934",last:40*mi,card:{region:"Bayern"}});
+  add({ph:"+63 ••• ••• 7218",ball:"us",last:3*mi,card:{region:"Bayern",qualification_path:"urkunde"},rail:"bridge"});
+  add({ph:"+90 ••• ••• 4406",last:h,card:{region:"Bayern",city:"Bamberg",qualification_path:"urkunde",housing_needed:true}});
+  add({ph:"+91 ••• ••• 6652",last:d+2*h,card:{region:"Bayern",city:"Passau",department:"Innere",qualification_path:"urkunde",housing_needed:true,people_count:3}});
+  add({ph:"+49 ••• ••• 8871",last:5*h,card:{region:"Bayern",city:"Rosenheim",department:"flexibel",qualification_path:"defizit",housing_needed:false,cv:true},rail:"bridge"});
+  add({ph:"+380 •• ••• 2047",last:22*mi,card:{region:"Bayern",city:"Landshut",department:"Psychiatrie",qualification_path:"urkunde",housing_needed:false,cv:true,qdoc:true}});
+  // checks (flags): shown, never counted
+  add({ph:"+40 ••• ••• 4589",flags:["decline_classifier_disagreement"],fnotes:["decline_classifier_disagreement: decline=true on 'nicht jetzt, vielleicht im Frühjahr', the refusal classifier said no"],last:2*h,card:{region:"Bayern"}});
+  add({ph:"+63 ••• ••• 3350",flags:["unrecognized_escalation_attempt"],fnotes:["unrecognized_escalation_attempt: model asked to escalate with code 'salary_question', not in the closed set"],last:70*mi,card:{region:"Bayern",qualification_path:"urkunde"},rail:"bridge"});
+  // TASK-316 preview: an evaluator lead_status (P4 is not built yet; this is the slot it lands in)
+  add({ph:"+90 ••• ••• 6127",ls:{status:"red",reason:"Kandidatin ist verärgert über doppelte Nachrichten und droht mit einer Spam-Meldung",at:iso(15*mi)},ball:"us",last:15*mi,card:{region:"Bayern",qualification_path:"urkunde"}});
+  // ended
+  add({ph:"+91 ••• ••• 2718",outcome:"declined",card:{region:"Bayern"},last:3*d+h,after:[["in","text","Nein danke, ich habe kein Interesse mehr.",3*d],["out","text","Alles klar, danke für Ihre Rückmeldung. Alles Gute!",3*d-mi]]});
+  add({ph:"+40 ••• ••• 8126",outcome:"already_placed",last:4*d+h,after:[["in","text","Ich habe schon eine Stelle in Wien gefunden, danke.",4*d],["out","text","Glückwunsch! Alles Gute für den Start.",4*d-mi]]});
+  add({ph:"+63 ••• ••• 1942",outcome:"not_placeable",card:{region:"Bayern",qualification_path:"reject"},last:2*d+h,
+    after:[["in","text","Nein. Ich habe nur das Diplom aus Manila, keinen Bescheid.",2*d],["out","text","Danke. Ohne Anerkennung kann ich Ihnen leider noch keine Stelle vorstellen.",2*d-mi]]});
+  add({ph:"+49 ••• ••• 3057",stopped:"opt-out: 'Stopp'",card:{region:"Bayern"},last:2*d+h,after:[["in","text","Stopp",2*d]]});
+  add({ph:"+43 ••• •••• 7781",sup:{reason:"opt_out",lane:"bridge",at:iso(3*d)},card:{region:"Bayern"},last:3*d});
+  // a test number (TASK-212): hidden by default, never counted, even escalated
+  add({ph:"+43 ••• •••• 4242",test:true,rail:"bridge",escAt:12*mi,esc:["explicit_human_request"],ball:"us",last:12*mi,card:{region:"Bayern",qualification_path:"urkunde"}});
+  const health={checks:{access_token:true,app_secret:true,verify_token:true,phone_number_id:true,openai_api_key:false,bridge_url:true,bridge_token:true,bridge_inbound_token:true},
+    webhook_ready:true,outbound_ready:true,autosend:true,brain:"luna",transport:"bridge",synced_at:iso(2*mi),synced_source:"bridge",reply_scope:"test_only",meta_scope:"all",bridge_ready:true,bridge_inbound_ready:true,stt_ready:false,stt_model:"whisper-1",rails:{}};
+  T.forEach(r=>health.rails[r.rail]=(health.rails[r.rail]||0)+1);
+  return waMock.W={threads:T,msgs:MSG,detail:DET,health,t0:now}; }
+// Eight seconds in, Luna answers the thread whose reply is owed -- the open drawer's 5 s poll has something to pick up.
+function waMockLive(W){ if(W.live||Date.now()-W.t0<8000) return; W.live=true;
+  const r=W.threads.find(x=>x.phone_masked==="+63 ••• ••• 7218"), msgs=W.msgs[r.thread_id], at=new Date().toISOString();
+  const m={id:Math.max(...Object.values(W.msgs).flat().map(x=>x.id))+1,direction:"out",kind:"text",body:"Danke! In welcher Stadt in Bayern möchten Sie arbeiten?",at,deleted:false,status:"delivered",meta:{}};
+  msgs.push(m); Object.assign(r,{ball:"them",last_outbound_at:at,last_message:{direction:"out",kind:"text",preview:m.body,at}}); }
+
 // ---- boot ---------------------------------------------------------------------------------------
 applyLang();
-gate().then(ok=>{ if(!ok) return; taxonomy().then(loadStats).then(route); setInterval(loadStats,60000); billToday(); api("/api/settings").then(s=>SET=s).catch(()=>{}); });
+gate().then(ok=>{ if(!ok) return; taxonomy().then(loadStats).then(route); setInterval(loadStats,60000); billToday(); api("/api/settings").then(s=>SET=s).catch(()=>{});
+  waRefresh(); setInterval(()=>{ if(parseHash().path!=="/leads") waRefresh(); },60000); });   // the Leads badge, on every Pro page
 </script>
 <link rel="stylesheet" href="/dock.css">
 <script src="/dock.js" defer></script>

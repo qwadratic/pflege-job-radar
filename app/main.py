@@ -50,7 +50,14 @@ app.include_router(_coverage_router, prefix="/api", tags=["coverage"])
 app.include_router(_firecrawl_router, prefix="/api", tags=["firecrawl"])
 from .hunter_api import router as _hunter_router                   # /api/hunter/* (resilient Firecrawl runner)
 app.include_router(_hunter_router, prefix="/api", tags=["hunter"])
-from .billing import router as _billing_router                     # GET /api/billing (spend report)
+# The harness itself (app.wa.*) is NOT mounted here. It is its own process, app.wa.asgi:app on
+# tasker-dispatcher-01, next to its data/wa.sqlite. Mounted in the board, these routes would answer
+# from a fresh, empty wa.sqlite on the board VM: 200 with 0 threads, i.e. "nobody needs a human".
+# The board reaches the harness only through this server-side proxy (TASK-395, app/wa_proxy.py):
+# WA_API_BASE/WA_API_TOKEN, owner-gated, the token never reaching the browser.
+from .wa_proxy import router as _wa_proxy_router
+app.include_router(_wa_proxy_router, prefix="/api", tags=["wa-proxy"])
+from .billing import router as _billing_router                    # GET /api/billing (spend report)
 app.include_router(_billing_router, prefix="/api", tags=["billing"])
 from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)
 from .stripe_gate import router as _stripe_router                  # Stripe pay-per-closed-posting gate
