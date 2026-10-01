@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 16:37'
-updated_date: '2026-09-30 20:03'
+updated_date: '2026-10-01 16:00'
 labels:
   - registry
   - parser
@@ -47,4 +47,9 @@ Found 2026-09-30 while deciding the 51 unexplained registry deviations (TASK-175
 **Choices for Ivan:** the dash-bracket names take the plan's literal text (matcher tokens identical; no reason code fits keeping the cleaner DB spelling); 57401/77301 'a.d.' (city_key equal); 18712 'Wasserburg' vs keeping 'Wasserburg am Inn' as source_error.
 
 **Side effects / open:** parse() now fails loudly on the 2025 PDF (KeZ 26205 has no paragraph gaps) and the 2024 PDF (pdfplumber cuts 18802's row into sub-rows); data/backfill_registry_corrections.py (TASK-175 one-off, already applied) can no longer rerun its 2025 reading. Matcher: city_key('Rothenburg o.d. Tauber') = 'rothenburg o tauber' (no 'o.d.' fold) -- the town is unmatched today too ('Tauber'). AC#3's website fields (16212, 56402) were not in this pass. Nothing pushed, no DB writes; AC checkboxes and status untouched.
+
+2026-10-01 ~16:00 UTC (orchestrating session 663542db). Parser patch /tmp/parser183.patch applied, full suite 1628 passed, committed + pushed to main as 5c21d4b. Ivan's answers 2026-10-01: (1A) dash brackets are normalised in the parser, not stored literally -> new K._dash_bracket(name) applied to the name paragraph in _cell(): ' -X' -> ' - X', the bracket's closing dash dropped ('Klinikum Nürnberg -Betriebsstätte Nord-' -> 'Klinikum Nürnberg - Betriebsstätte Nord'); only after a space, so hyphenated words and suspended hyphens are untouched; tests: parametrised real names + the 17702/18003 cell test updated; mutations (closing dash kept / rule also on '-' without space / rule not wired into _cell) each caught (6, 7, 1 failures), restored -> 22 passed. (2) 57401 'Lauf a.d.Pegnitz' and 77301 'Dillingen a.d.Donau' taken from the plan. (3) 18712 keeps 'Wasserburg am Inn' with a source_error row (the plan's bare 'Wasserburg' is ambiguous with Wasserburg (Bodensee)).
+DB (Ivan approved): tools/apply_clinic_corrections.py with the adjusted /tmp/parser183/changes.json (dash names normalised, fields equal to the DB dropped, 18712 town removed) -> 39 clinics, 47 values, all read back OK, 47 corrections rows (backup backups/apply_clinic_corrections_final183_changes_before_20261001T155845Z.json); 3 source_error explanation rows (18701, 18718 'Wasserburg am INN' typo in the plan; 18712); then 17702 and 66101 names normalised the same way (2 rows, parse_error).
+Deviation report after (tools/registry_build.py --report): 6 plan deviations left -- 5 explained source_error (17308 Wolfratshausen vs plan 'Berg am Starnberger See'; 18701/18718 'INN'; 18712 'Wasserburg'; 27701 'Simbach am Inn' vs 'Simbach') and 1 unexplained: 66103 operator (plan 'Klinik am Ziegelberg GmbH & Co. KG' vs Impressum 'Frauenklinik GmbH & Co. KG', HR A 3333 Aschaffenburg -- needs the register entry). missing_in_db 0; not_in_source 8, all explained (nicht_mehr_im_plan). 141 earlier explanation rows are moot (DB = fixed parse), kept as history (/tmp/parser183/moot_rows.json).
+Open from AC#3: website fields 16212 (points at kbo-kinderzentrum-muenchen.de, which is 16211's) and 56402 (does not resolve). parse() fails loudly on the 2025/2024 PDFs (other layouts), so data/backfill_registry_corrections.py cannot be rerun on them. Matcher: 'o.d.' is not normalised like 'a.d.' (57103 'Rothenburg o.d. Tauber').
 <!-- SECTION:NOTES:END -->

@@ -68,6 +68,17 @@ def _paragraphs(words):
     return [_clean(p) for p in paras]
 
 
+def _dash_bracket(name):
+    """The plan sets a sub-site in a dash bracket and its typesetting drops the spaces: 'Klinikum Nürnberg
+    -Betriebsstätte Nord-', 'Schön Klinik Roseneck - Haus Rosenheim -'. Typography only, the words stay the
+    plan's (Ivan 2026-10-01, TASK-183): ' -X' -> ' - X' and the bracket's closing dash is dropped ->
+    'Klinikum Nürnberg - Betriebsstätte Nord'. Only after a space: hyphenated words ('Garmisch-Partenkirchen')
+    and suspended hyphens ('Kinder- und') have none before the dash."""
+    if " -" not in name:
+        return name
+    return re.sub(r"\s*-$", "", re.sub(r" -(?=\S)", " - ", name))
+
+
 def _cell(words, name_x1, status_x1):
     """Words of one table row from the name column's left edge to the page edge -> (name, town, operator, status).
 
@@ -81,7 +92,7 @@ def _cell(words, name_x1, status_x1):
     if not (len(paras) == 3 or len(paras) == 4 and paras[3].startswith("EIN-Krankenhaus")):
         raise ValueError(f"name cell is not name / Standort / Träger [/ EIN-Krankenhaus] paragraphs: {paras}")
     status = _status(" ".join(w["text"] for w in words if name_x1 <= w["x0"] < status_x1))
-    return paras[0], paras[1], paras[2], status
+    return _dash_bracket(paras[0]), paras[1], paras[2], status
 
 
 def _int(cell):

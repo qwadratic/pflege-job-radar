@@ -91,12 +91,28 @@ def test_a_word_past_the_name_column_stays_whole_and_out_of_the_status():
 
 
 def test_a_name_ending_in_a_dash_keeps_its_standort_and_lines_join_with_the_pdfs_own_spaces():
+    # the PDF text is 'Klinikum Landkreis Erding -Außenstelle Dorfen-'; the dash bracket is then normalised
     assert K._cell(_words(C17702), NAME_X1, STATUS_X1) == (
-        "Klinikum Landkreis Erding -Außenstelle Dorfen-", "Dorfen", "Landkreis Erding", "Plan-KH")
+        "Klinikum Landkreis Erding - Außenstelle Dorfen", "Dorfen", "Landkreis Erding", "Plan-KH")
     assert K._cell(_words(C18003), 217.57, 248.86) == (
-        "Klinikum Garmisch-Partenkirchen -Außenstelle Murnau-", "Murnau", "Klinikum Garmisch-Partenkirchen GmbH", "Plan-KH")
+        "Klinikum Garmisch-Partenkirchen - Außenstelle Murnau", "Murnau", "Klinikum Garmisch-Partenkirchen GmbH", "Plan-KH")
     assert K._cell(_words(C56404), NAME_X1, STATUS_X1) == (
         "Klinik Hallerwiese - Cnopfsche Kinderklinik", "Nürnberg", "DIAKONEO KdöR", "Plan-KH")
+
+
+@pytest.mark.parametrize("plan, name", [
+    # the 2026 plan's own name paragraphs (Ivan 2026-10-01: typography normalised, words kept)
+    ("Klinikum Nürnberg -Betriebsstätte Nord-", "Klinikum Nürnberg - Betriebsstätte Nord"),                  # 56401
+    ("Klinikum Bamberg -Betriebsstätte am Bruderwald-", "Klinikum Bamberg - Betriebsstätte am Bruderwald"),  # 46101
+    ("Schön Klinik Roseneck - Haus Rosenheim -", "Schön Klinik Roseneck - Haus Rosenheim"),                  # 16370
+    ("Klinikum Aschaffenburg-Alzenau - Standort Alzenau -", "Klinikum Aschaffenburg-Alzenau - Standort Alzenau"),  # 67101
+    ("Haßberg-Kliniken -Haus Haßfurt-", "Haßberg-Kliniken - Haus Haßfurt"),                                  # 67401
+    ("Klinik Hallerwiese - Cnopfsche Kinderklinik", "Klinik Hallerwiese - Cnopfsche Kinderklinik"),            # 56404
+    ("Deutsches Zentrum für Kinder- und Jugendrheumatologie", "Deutsches Zentrum für Kinder- und Jugendrheumatologie"),
+    ("Klinikum Garmisch-Partenkirchen", "Klinikum Garmisch-Partenkirchen"),
+])
+def test_a_dash_bracket_gets_its_spaces_and_loses_its_closing_dash(plan, name):
+    assert K._dash_bracket(plan) == name
 
 
 def test_a_suspended_hyphen_inside_a_line_is_text():
