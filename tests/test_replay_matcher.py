@@ -123,6 +123,12 @@ def test_names_quotes_the_text_around_the_word_that_names_the_site_and_not_its_s
     assert RM.names("Werden Sie Teil unserer Stationen in Harlaching.", schwabing, harlaching) is None
 
 
+def test_names_quotes_the_town_before_a_word_of_the_name_that_any_ad_for_the_specialty_contains():
+    kinderklinik = {"name": "Alpenklinik Santa Maria für Kinder und Jugendliche", "town": "Bad Hindelang"}
+    text = "Wir suchen für Kinder und Jugendliche eine Pflegefachkraft (m/w/d) für unsere Station mit Schichtdienst und guter Bezahlung in Vollzeit. Arbeitsort ist Bad Hindelang."
+    assert "Hindelang" in RM.names(text, kinderklinik, {})
+
+
 def test_names_reads_a_three_letter_word_that_tells_two_sites_apart():
     sued, nord = {"name": "Klinikum Nürnberg - Betriebsstätte Süd", "town": "Nürnberg"}, {"name": "Klinikum Nürnberg - Betriebsstätte Nord", "town": "Nürnberg"}
     assert "Campus Süd" in RM.names("Standort: Klinikum Nürnberg | Campus Süd Arbeitszeitmodell: Voll- oder Teilzeit", sued, nord)

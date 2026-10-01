@@ -175,10 +175,11 @@ def board(url):
 
 
 def names(text, clinic, other):
-    """A quoted stretch of `text` around the first word (longest first) that names `clinic` and not `other`:
-    a word of its name or its town, the way the Matcher tokenizes them. None when the text has none."""
+    """A quoted stretch of `text` around the first word that names `clinic` and not `other`: a word of its town, then of its
+    name (longest first), the way the Matcher tokenizes them. None when the text has none."""
     words = lambda c: toks(f"{c.get('name') or ''} {c.get('town') or ''}")
-    for w in sorted(words(clinic) - words(other), key=len, reverse=True):
+    town = toks(clinic.get("town") or "")
+    for w in sorted(words(clinic) - words(other), key=lambda w: (w not in town, -len(w))):
         m = re.search(rf"\b{re.escape(w)}\b", text or "", re.I)
         if m:
             return "..." + scrub(" ".join(text[max(0, m.start() - 60):m.end() + 60].split())) + "..."
