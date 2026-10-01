@@ -205,10 +205,36 @@ None of the three is reconstructed or guessed when its underlying row doesn't ex
   every other cadence-based job, which can be off by up to an hour around a DST transition. The
   contract's own formula is generic; a timezone-aware special case for this one job was not built.
 - **`nudges` is never a row** — see the `job` table above.
+- **`relay_sync`'s `last_error` is never actually `null`** (found generating the fixtures below,
+  2026-10-01). `_relay_sync_job_summary` in `app/wa/pro_api.py` calls
+  `_error_info("relay_sync_failed", row["last_error"])` unconditionally; `_error_info`'s own guard
+  checks the truthiness of its *first* argument (the code), not the text, and `"relay_sync_failed"`
+  is a non-empty literal, so this returns a populated `{"code": "relay_sync_failed", "text": ...}`
+  even when `wa_rail_sync.last_error` is `None` (a perfectly healthy relay) — `text` is simply
+  `null` in that case, but `last_error` itself is never the `null` a healthy job row should show.
+  `_broadcasts_job_summary` right below it guards this exact pattern correctly (an explicit
+  `if runner.get("last_error") ... else None` around its own `_error_info` call) — this looks like a
+  copy/paste divergence between the two, not a deliberate choice. Not fixed here (this generator's
+  task is fixtures, not API behavior) — `tests/fixtures/wa_pro_api/activity.json`'s own `relay_sync`
+  job row shows the real, current effect of this (`"last_error": {"code": "relay_sync_failed",
+  "text": null}` on an otherwise fully healthy relay_sync).
 
 ## Fixtures
 
-`tests/fixtures/wa_pro_api/activity.json` and `tests/fixtures/wa_pro_api/ops.json`, synthetic, no real
-phone numbers or thread ids — validated against `app/wa/pro_models.py` on every run by
-`tests/test_wa_pro_fixtures.py`, the same way `threads.json` is, so they cannot silently drift from
-this contract.
+Generated, never hand-written (`tools/wa_pro_fixtures.py` — its own module docstring has the full
+mechanism): `tests/fixtures/wa_pro_api/activity.json`, `activity_tunnel_down.json`, `ops.json` and
+`ops_page2.json`, synthetic, no real phone numbers or thread ids. `activity.json` is the normal
+state (tunnel up); `activity_tunnel_down.json` is the same engine a little later with the bridge
+unreachable (`tunnel.up: false`, an `since`/`last_error`, and `snapshot_at` left stale rather than
+blanked — `write_rail_snapshot`'s own rule). `ops.json` is the first page of the ops mirror (newest
+first); `ops_page2.json` is the next page via `before_id`, showing the cursor shape. All four are
+seeded through the real engine-side writers (`ST.job_run`, `ST.upsert_mirrored_op`,
+`ST.write_rail_snapshot`, `ST.record_rail_sync_ok`/`record_rail_sync_error`,
+`ST.record_luna_call`/`record_send_failure`) with fake bridge `/v1/ops` and `/v1/health` payloads
+shaped like `bridge/ledger.py`'s and `bridge/executor.py`'s own real ones, never a raw INSERT or a
+hand-typed response body — the hand-written versions these replaced had already drifted from the
+real routes once (a leaked real hostname, and an op error message that said "...was running"
+where the bridge's own code says "...was in flight"). All four are validated against
+`app/wa/pro_models.py` on every run by `tests/test_wa_pro_fixtures.py`, and checked byte-identical
+to a fresh generator run by `tests/test_wa_pro_fixtures_generated.py`, the same way `threads.json`
+is, so none of the eight committed fixture files can silently drift from this contract.

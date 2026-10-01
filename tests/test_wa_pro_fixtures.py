@@ -92,10 +92,12 @@ def test_activity_fixture_validates_as_an_activity_response():
     M.ActivityResponse.model_validate(data)
 
 
-def test_activity_fixture_covers_a_tunnel_down_variant():
+def test_activity_fixture_covers_the_tunnel_up_normal_state():
+    """activity.json is the "normal state" fixture (TASK-283.7) -- the down variant moved to its
+    own file, tests/fixtures/wa_pro_api/activity_tunnel_down.json, below."""
     data = _load_activity()
-    assert data["rail"]["tunnel"]["up"] is False
-    assert data["rail"]["tunnel"]["last_error"] is not None
+    assert data["rail"]["tunnel"]["up"] is True
+    assert data["rail"]["tunnel"]["last_error"] is None
 
 
 def test_activity_fixture_covers_an_overdue_job():
@@ -116,6 +118,35 @@ def test_activity_fixture_covers_every_heartbeat_job_and_leaves_nudges_out():
 def test_activity_fixture_covers_a_job_with_an_error():
     data = _load_activity()
     assert any(job["last_error"] for job in data["jobs"])
+
+
+# --- tests/fixtures/wa_pro_api/activity_tunnel_down.json (TASK-283.7) --------------------------------
+ACTIVITY_DOWN_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wa_pro_api" / "activity_tunnel_down.json"
+
+
+def _load_activity_down():
+    return json.loads(ACTIVITY_DOWN_FIXTURE.read_text())
+
+
+def test_activity_down_fixture_validates_as_an_activity_response():
+    data = _load_activity_down()
+    M.ActivityResponse.model_validate(data)
+
+
+def test_activity_down_fixture_covers_a_tunnel_down_variant():
+    data = _load_activity_down()
+    assert data["rail"]["tunnel"]["up"] is False
+    assert data["rail"]["tunnel"]["last_error"] is not None
+    assert data["rail"]["tunnel"]["since"] is not None
+
+
+def test_activity_down_fixture_snapshot_at_is_stale_not_missing():
+    """write_rail_snapshot's own ok=False rule (its docstring): health/snapshot_at are left exactly
+    as the last successful read, never blanked -- a dead bridge shows as an OLD snapshot_at, not a
+    null one. Same snapshot_at as the normal-state fixture, generated_at strictly later."""
+    down, normal = _load_activity_down(), _load_activity()
+    assert down["snapshot_at"] == normal["snapshot_at"]
+    assert down["generated_at"] > down["snapshot_at"]
 
 
 # --- tests/fixtures/wa_pro_api/ops.json (TASK-283.7) -------------------------------------------------
@@ -169,3 +200,27 @@ def test_ops_fixture_no_raw_phone_digits_longer_than_masked_tail():
     for row in data["rows"]:
         masked = row["phone_masked"]
         assert masked is None or "•" in masked
+
+
+# --- tests/fixtures/wa_pro_api/ops_page2.json (TASK-283.7) -------------------------------------------
+OPS_PAGE2_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wa_pro_api" / "ops_page2.json"
+
+
+def _load_ops_page2():
+    return json.loads(OPS_PAGE2_FIXTURE.read_text())
+
+
+def test_ops_page2_fixture_validates_as_an_ops_envelope():
+    data = _load_ops_page2()
+    envelope = M.OpsEnvelope.model_validate(data)
+    assert len(envelope.rows) == len(data["rows"])
+
+
+def test_ops_page2_fixture_is_the_page_after_ops_json():
+    """Shows the cursor shape (contract wording): ops.json's own next_before_id is exactly this
+    page's own before_id query, and this page is the last one -- nothing left to page to."""
+    page1, page2 = _load_ops(), _load_ops_page2()
+    assert page1["next_before_id"] is not None
+    assert page2["next_before_id"] is None
+    assert page2["rows"]
+    assert all(row["id"] not in {r["id"] for r in page1["rows"]} for row in page2["rows"])

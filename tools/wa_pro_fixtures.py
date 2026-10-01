@@ -40,9 +40,21 @@ generate() is also the entry point tests/test_wa_pro_fixtures_generated.py (the 
 directly: it runs this generator into a tmp directory and asserts the result is byte-identical to the
 committed fixtures, so a change to pro_api.py/pro_models.py/store.py that changes what the API
 actually sends fails that test until someone reruns this module with --write.
+
+TASK-283.7 (frontend team already caught the hand-written activity.json/ops.json drifting from the
+real routes once -- see the report this extension shipped with): activity.json, activity_tunnel_down
+.json, ops.json and ops_page2.json are generated the same way, seeded through the real engine-side
+writers (ST.job_run, ST.record_luna_call/record_send_failure, ST.upsert_mirrored_op,
+ST.write_rail_snapshot, ST.record_rail_sync_ok/record_rail_sync_error -- never a raw INSERT) with
+fake bridge /v1/ops and /v1/health payloads shaped like bridge/ledger.py::list_ops and
+bridge/executor.py::health actually produce. A FOURTH determinism seam is needed for these two
+routes specifically -- see _FrozenNow's own docstring below: JobRow.overdue and the ok_24h/
+failed_24h windows read ``datetime.now(timezone.utc)`` directly, never through ``store.now_iso()``,
+which the three patches in _generator_env never touch.
 """
 import argparse
 import contextlib
+import datetime
 import itertools
 import json
 import pathlib
@@ -54,7 +66,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "wa_pro_api"
-FIXTURE_FILES = ("threads.json", "thread_detail.json", "messages.json", "health.json")
+FIXTURE_FILES = ("threads.json", "thread_detail.json", "messages.json", "health.json",
+                 "activity.json", "activity_tunnel_down.json", "ops.json", "ops_page2.json")
 
 # Dummy, obviously-fake bearer tokens -- never read from .env, never anything a real deployment uses.
 READ_TOKEN = "fixture-read-token-not-real"
@@ -86,6 +99,22 @@ PHONE_SUPPRESSED = "+431700004444"
 PHONE_CONSENTED = "+491700005555"
 PHONE_TOMBSTONE = "+491700006666"
 PHONE_DECLINED = "+491700007777"
+
+# TASK-283.7: a fresh block of fake phones for the ops-mirror/activity fixtures, same
+# "+4917000000X"-style convention as PHONE_* above -- never one of the 7 thread phones, so this
+# seeding (which runs strictly after threads.json/thread_detail.json/messages.json/health.json are
+# already captured, see generate() below) can never change a byte of those four files.
+OPS_PHONES = [f"+4917000080{n:02d}" for n in range(1, 13)]
+PHONE_LUNA_REPLY = "+491700008999"
+
+# TASK-283.7: the two moments activity.json / activity_tunnel_down.json are captured at -- both fed
+# to _frozen_wall_clock (see that seam's own docstring) so ST.now_iso() (generated_at) and the
+# datetime.now(timezone.utc) reads JobRow.overdue/ok_24h/failed_24h use agree on "now". 2 minutes
+# apart: long enough for the bridge to have gone unreachable in between (_seed_rail_snapshot_down,
+# called between the two captures), short enough that nothing seeded as "not overdue" at _NOW1
+# flips to overdue by _NOW2 purely from the gap itself.
+_NOW1 = "2026-09-30T12:00:00+00:00"
+_NOW2 = "2026-09-30T12:02:00+00:00"
 
 
 class _Clock:
@@ -158,6 +187,56 @@ def _synthetic_board():
     finally:
         D._snap.clear()
         D._snap.update(previous_snap)
+
+
+class _FrozenNow:
+    """Stand-in for the bare ``datetime`` class inside app.wa.pro_api's and app.wa.store's own
+    module namespace (where ``from datetime import datetime`` bound the name) -- installed ONLY
+    around the two GET /api/wa/pro/activity calls in generate() below (_frozen_wall_clock), never
+    for the whole generator run the way _generator_env's three patches are.
+
+    WHY A FOURTH SEAM. JobRow.overdue (app/wa/pro_api.py:_job_row) and the ok_24h/failed_24h
+    windows (app/wa/store.py:job_run_summary, luna_reply_job_summary) all read
+    ``datetime.now(timezone.utc)`` directly, never through ``store.now_iso()`` -- the one real
+    wall-clock read _generator_env's existing three patches miss. Left unpatched, these three
+    fields would be a function of WHEN the generator happens to run (today's real date) rather
+    than of the fixed clock script below, and -- unlike stuck_reply (see this module's own
+    DETERMINISM section) -- there is no "already years in the past, stays true forever" escape:
+    a job deliberately NOT overdue needs its last_run_at within a couple of cadences of "now", which
+    drifts stale (flips to overdue) within minutes of the generator ever running again. ``.now(tz)``
+    returns the SAME moment ``clock.value`` holds; every other attribute (``fromisoformat``,
+    ``min``, ...) delegates to the real ``datetime.datetime`` class unchanged.
+
+    WHY NOT WIDER. app/wa/api.py's ``_is_stuck`` (a different module, never patched here) and
+    several OTHER app/wa/store.py functions (reply-turn claim staleness, pending-inbound age,
+    STALE_CLAIM_SECONDS) also read ``datetime.now()`` directly and must keep reading the REAL wall
+    clock during thread seeding -- freezing ST.datetime for the whole run would silently change
+    stuck_reply and friends, which this module's own docstring already settled. Scoping the patch
+    to just the activity calls (never active during thread seeding, ops-mirror seeding, or the
+    /api/wa/pro/ops calls, none of which read datetime.now() at all) keeps that settled behaviour
+    untouched."""
+
+    def __init__(self, clock):
+        self._clock = clock
+
+    def now(self, tz=None):
+        value = datetime.datetime.fromisoformat(self._clock.value)
+        return value.astimezone(tz) if tz is not None else value.replace(tzinfo=None)
+
+    def __getattr__(self, name):
+        return getattr(datetime.datetime, name)
+
+
+@contextlib.contextmanager
+def _frozen_wall_clock(clock):
+    """Patches app.wa.pro_api.datetime and app.wa.store.datetime to _FrozenNow(clock) -- see that
+    class's own docstring for why this exists and why it is scoped this narrowly."""
+    from app.wa import pro_api as PA
+    from app.wa import store as ST
+
+    frozen = _FrozenNow(clock)
+    with mock.patch.object(PA, "datetime", frozen), mock.patch.object(ST, "datetime", frozen):
+        yield
 
 
 def _save(c, t):
@@ -618,11 +697,235 @@ SEEDERS = (_seed_test_thread, _seed_escalated_thread, _seed_stuck_thread, _seed_
           _seed_tombstone_thread, _seed_declined_thread, _seed_consented_thread)
 
 
+# --- TASK-283.7: wa_job_runs (the 5 heartbeat jobs, store.HEARTBEAT_JOBS) --------------------------
+
+def _seed_heartbeat_jobs(c, clock):
+    """Seeds all 5 of ST.HEARTBEAT_JOBS through real writers: a couple of earlier successful runs
+    per job via ST.record_job_run (itself a named writer, never a raw INSERT -- just not wrapped in
+    the job_run() context manager, which only exists to time a live call this generator never
+    makes) plus one current run each. catchup/purge_test/agent_notes are all comfortably inside
+    their own cadence (app/wa/pro_api.py:JOB_CADENCE_SEC) and so read as NOT overdue; followups'
+    last real run is hours stale and reads as overdue -- the honest state of a 15-minute job nobody
+    has driven since 09:30, not a second manufactured incident.
+
+    tunnel_watch is the one job seeded through ST.job_run() itself, for a genuine, Pydantic-valid
+    error: deliberately NOT replaying app/wa/tunnel_watch.py::main() itself, whose own graceful
+    ok=False exit (``jr.ok = ok``) never sets error_code/error_text at all -- left that way,
+    store.job_run_summary's unguarded ``{"code": last["error_code"], "text": last["error_text"]}``
+    would build an ErrorInfo with code=None, which app/wa/pro_models.py's ErrorInfo.code: str
+    (required, non-Optional) rejects: a real 500 on GET /api/wa/pro/activity (see the report this
+    extension shipped with). This fixture must not bake that gap into a committed "this is what the
+    route returns" file, so the error here comes from a genuinely raised and (immediately outside
+    job_run's own re-raise) suppressed PermissionError instead -- a real failure mode of
+    tunnel_watch's own state-file write (``_save_state``), at the real default path, not an
+    invented exception on an invented path. last_run_at lands 120s before this seeding's own "now"
+    (JOB_CADENCE_SEC[tunnel_watch]=30s, so 2*cadence=60s) -- overdue AND errored at once, in both
+    activity.json and activity_tunnel_down.json alike (the down variant is 2 minutes later still,
+    see _NOW2)."""
+    from app.wa import store as ST
+    from app.wa import tunnel_watch as TW
+
+    ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:51:00+00:00", "2026-09-30T11:51:02+00:00", True)
+    ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:54:00+00:00", "2026-09-30T11:54:02+00:00", True)
+    ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:57:00+00:00", "2026-09-30T11:57:02+00:00", True)
+
+    ST.record_job_run(c, ST.JOB_FOLLOWUPS, "2026-09-30T09:00:00+00:00", "2026-09-30T09:00:03+00:00", True)
+    ST.record_job_run(c, ST.JOB_FOLLOWUPS, "2026-09-30T09:30:00+00:00", "2026-09-30T09:30:03+00:00", True)
+
+    ST.record_job_run(c, ST.JOB_PURGE_TEST, "2026-09-30T03:00:04+00:00", "2026-09-30T03:00:09+00:00", True)
+
+    ST.record_job_run(c, ST.JOB_AGENT_NOTES, "2026-09-30T11:45:00+00:00", "2026-09-30T11:45:01+00:00", True)
+    ST.record_job_run(c, ST.JOB_AGENT_NOTES, "2026-09-30T11:50:00+00:00", "2026-09-30T11:50:01+00:00", True)
+    ST.record_job_run(c, ST.JOB_AGENT_NOTES, "2026-09-30T11:55:00+00:00", "2026-09-30T11:55:01+00:00", True)
+
+    ST.record_job_run(c, ST.JOB_TUNNEL_WATCH, "2026-09-30T11:50:00+00:00", "2026-09-30T11:50:00+00:00", True)
+    ST.record_job_run(c, ST.JOB_TUNNEL_WATCH, "2026-09-30T11:55:00+00:00", "2026-09-30T11:55:00+00:00", True)
+    clock.set("2026-09-30T11:58:00+00:00")
+    with contextlib.suppress(PermissionError):
+        with ST.job_run(ST.JOB_TUNNEL_WATCH):
+            raise PermissionError(13, "Permission denied", str(TW.STATE_PATH))
+
+
+# --- TASK-283.7: the derived "luna_reply" job (wa_luna_calls / wa_send_failures) -------------------
+
+def _seed_luna_reply_signal(c, clock, phone=PHONE_LUNA_REPLY):
+    """Seeds store.luna_reply_job_summary's own two tables through the real writers: one logged
+    reply-turn attempt (ST.record_luna_call) that then failed to send (ST.record_send_failure).
+    The failure text is copied VERBATIM from app/wa/api.py::_send_reopen_template's own RuntimeError
+    -- the real free-form-window-closed message a genuine send_and_record failure records under
+    this phone, using the real C.FREEFORM_WINDOW_HOURS value -- never invented wording like the
+    hand-written fixture's old "send_and_record: 24h window closed, no reopen template matched",
+    which this harness's actual code has never produced (see the report)."""
+    from app.wa import config as C
+    from app.wa import store as ST
+
+    clock.set("2026-09-30T11:54:02+00:00")
+    ST.record_luna_call(c, phone)
+    error = (f"the WhatsApp free-form window closed for {phone} (last inbound message is over "
+            f"{C.FREEFORM_WINDOW_HOURS}h old) and no reopen template is configured -- register a "
+            f"template with Meta and set WA_REOPEN_TEMPLATE_NAME before this thread can be reached again")
+    clock.set("2026-09-30T11:54:03+00:00")
+    ST.record_send_failure(c, phone, error)
+
+
+# --- TASK-283.7: wa_ops_mirror (GET /v1/ops, bridge/ledger.py's own row shape) ----------------------
+# 14 rows: positions 3..14 (the newest 12 -- ops.json's own page) cover every status in
+# bridge/ledger.py's OP_QUEUED/OP_RUNNING/OP_DONE/OP_FAILED and every one of store.ORIGIN_VALUES'
+# 12 entries exactly once; positions 1-2 (the 2 oldest) exist only so ops_page2.json has a real
+# ``before_id`` page to show. The three failed rows' error code/text are copied VERBATIM from
+# bridge/ledger.py's own three real phone_ops failure sites (_recover_stuck_ops'
+# "restarted_while_running", _expire_op's "op_expired", cancel_op's "op_cancelled") -- never
+# invented wording, unlike the hand-written fixture's old "executor restarted while this op was
+# running" (the real message says "in flight", see the report).
+_OPS_SPEC = (
+    {"position": 1, "op_id": "op_fixt0001", "kind": "send", "origin": "campaign", "state": "done",
+     "phone": OPS_PHONES[11], "created_at": "2026-09-30T11:35:00+00:00",
+     "started_at": "2026-09-30T11:35:01+00:00", "finished_at": "2026-09-30T11:35:05+00:00"},
+    {"position": 2, "op_id": "op_fixt0002", "kind": "send", "origin": "followups", "state": "failed",
+     "phone": OPS_PHONES[9], "created_at": "2026-09-30T11:36:00+00:00",
+     "finished_at": "2026-09-30T11:36:30+00:00", "error_code": "op_cancelled",
+     "error_text": "the caller gave up waiting for this op and cancelled it before it was claimed"},
+    {"position": 3, "op_id": "op_fixt0003", "kind": "send", "origin": "luna", "state": "done",
+     "phone": OPS_PHONES[0], "created_at": "2026-09-30T11:39:00+00:00",
+     "started_at": "2026-09-30T11:39:01+00:00", "finished_at": "2026-09-30T11:39:03+00:00"},
+    {"position": 4, "op_id": "op_fixt0004", "kind": "send_document", "origin": "luna_tool", "state": "done",
+     "phone": OPS_PHONES[1], "created_at": "2026-09-30T11:40:00+00:00",
+     "started_at": "2026-09-30T11:40:01+00:00", "finished_at": "2026-09-30T11:40:05+00:00"},
+    {"position": 5, "op_id": "op_fixt0005", "kind": "send", "origin": "followups", "state": "queued",
+     "phone": OPS_PHONES[2], "created_at": "2026-09-30T11:48:00+00:00"},
+    {"position": 6, "op_id": "op_fixt0006", "kind": "send", "origin": "nudges", "state": "queued",
+     "phone": OPS_PHONES[3], "created_at": "2026-09-30T11:49:00+00:00"},
+    {"position": 7, "op_id": "op_fixt0007", "kind": "send", "origin": "catchup", "state": "failed",
+     "phone": OPS_PHONES[4], "created_at": "2026-09-30T11:50:00+00:00",
+     "finished_at": "2026-09-30T11:52:05+00:00", "budget_sec": 120, "error_code": "op_expired",
+     "error_text": "queued 125s, past the 120s budget the caller queued it under -- nobody is "
+                  "still waiting on it"},
+    {"position": 8, "op_id": "op_fixt0008", "kind": "send", "origin": "campaign", "state": "running",
+     "phone": OPS_PHONES[5], "created_at": "2026-09-30T11:56:00+00:00",
+     "started_at": "2026-09-30T11:59:50+00:00"},
+    {"position": 9, "op_id": "op_fixt0009", "kind": "send", "origin": "broadcast", "state": "running",
+     "phone": OPS_PHONES[6], "created_at": "2026-09-30T11:56:30+00:00",
+     "started_at": "2026-09-30T11:59:55+00:00"},
+    {"position": 10, "op_id": "op_fixt0010", "kind": "read_thread", "origin": "operator", "state": "done",
+     "phone": OPS_PHONES[7], "created_at": "2026-09-30T11:57:00+00:00",
+     "started_at": "2026-09-30T11:57:01+00:00", "finished_at": "2026-09-30T11:57:02+00:00"},
+    {"position": 11, "op_id": "op_fixt0011", "kind": "send", "origin": "agent_notes", "state": "done",
+     "phone": OPS_PHONES[8], "created_at": "2026-09-30T11:57:30+00:00",
+     "started_at": "2026-09-30T11:57:31+00:00", "finished_at": "2026-09-30T11:57:33+00:00"},
+    {"position": 12, "op_id": "op_fixt0012", "kind": "reconcile", "origin": "bridge", "state": "done",
+     "phone": None, "created_at": "2026-09-30T11:58:00+00:00",
+     "started_at": "2026-09-30T11:58:01+00:00", "finished_at": "2026-09-30T11:58:03+00:00"},
+    {"position": 13, "op_id": "op_fixt0013", "kind": "send", "origin": "pro_human", "state": "queued",
+     "phone": OPS_PHONES[10], "created_at": "2026-09-30T11:59:40+00:00"},
+    {"position": 14, "op_id": "op_fixt0014", "kind": "list_chats", "origin": "unknown", "state": "failed",
+     "phone": None, "created_at": "2026-09-30T11:59:50+00:00",
+     "started_at": "2026-09-30T11:59:51+00:00", "finished_at": "2026-09-30T11:59:52+00:00",
+     "error_code": "restarted_while_running",
+     "error_text": "the executor restarted while this op was in flight"},
+)
+
+
+def _seed_ops_mirror(c, clock):
+    """Seeds wa_ops_mirror (_OPS_SPEC above) through the one real writer, ST.upsert_mirrored_op --
+    never a raw INSERT -- with dicts shaped exactly like bridge/ledger.py::_ops_list_row's own GET
+    /v1/ops row (op_id/position/kind/origin/state/priority/created_at/started_at/finished_at/
+    resolved_at/budget_sec/phone/error_code/error_text), the same shape Relay.mirror_ops feeds this
+    function in production."""
+    from app.wa import store as ST
+
+    clock.set("2026-09-30T11:59:58+00:00")
+    for row in _OPS_SPEC:
+        op = {"op_id": row["op_id"], "position": row["position"], "kind": row["kind"],
+             "origin": row["origin"], "state": row["state"], "priority": 1,
+             "created_at": row["created_at"], "started_at": row.get("started_at"),
+             "finished_at": row.get("finished_at"), "resolved_at": None,
+             "budget_sec": row.get("budget_sec"), "phone": row["phone"],
+             "error_code": row.get("error_code"), "error_text": row.get("error_text")}
+        ST.upsert_mirrored_op(c, op)
+
+
+# --- TASK-283.7: wa_rail_snapshot (GET /v1/health, bridge/relay_pull.py's own transform) -----------
+
+def _fake_bridge_health_ok(snapshot_time):
+    """A fake bridge GET /v1/health body, shaped like bridge/executor.py::health()'s real return --
+    only the keys bridge/relay_pull.py::_trim_health actually keeps (_HEALTH_PASSTHROUGH_KEYS) plus
+    rail.driver (which _trim_health narrows to {connected, kind} itself), so this can be fed
+    straight through the real _trim_health/_derive_phone_state pair exactly as Relay.health() would.
+    driver.connected=True with one recent journal_recent.dirty_state_recovered lands
+    _derive_phone_state's own priority order (disconnected > blocked > recovering > ready) on
+    "recovering" -- the one non-"ready" phone.state the task asks every fixture to cover, without a
+    second scenario: write_rail_snapshot(ok=False) never touches phone_state, so
+    activity_tunnel_down.json reports this SAME "recovering" rather than inventing another one."""
+    return {
+        "rail": {"driver": {"connected": True, "kind": "adb"}},
+        "watcher": {"interval_sec": 5.0, "started_at": "2026-09-01T00:00:00+00:00", "cycles": 50000,
+                   "errors": 0, "last_ok_at": snapshot_time, "last_error": None, "last_error_at": None,
+                   "idle_dirty_recovered": 3, "idle_dirty_held": 0, "alive": True},
+        "media_watcher": None, "identity_watcher": None, "reconcile_watcher": None,
+        "unresolved_send_watcher": None, "ops_dispatcher": None,
+        "doctor": {"blocked_by_stuck_op": False},
+        "phone_ops": {"queued": 3, "running": 2, "done": 6, "failed": 3},
+        "quota": {},
+        "inbound": {"seen": 0, "unresolved": 0, "last_poll_at": snapshot_time, "dirty_recovered": 1},
+        "oldest_unresolved_sec": None,
+        "reconcile": {"escalated": 0},
+        "broadcast": {"runs_open": 0, "runner": {
+            "interval_sec": 30.0, "started_at": "2026-09-01T00:00:00+00:00", "cycles": 10000,
+            "attempted": 0, "errors": 0, "last_item_at": None, "last_error": None,
+            "last_error_at": None, "alive": True}},
+        "retention": {"last_ok_at": None, "errors": 0, "last_error": None, "last_error_at": None,
+                     "result": None},
+        "journal_recent": {"window_sec": 3600, "idle_dirty_recovered": 0,
+                           "dirty_state_recovered": 1, "watcher_error": 0},
+    }
+
+
+def _seed_rail_snapshot_good(c, clock):
+    """The "normal state" wa_rail_snapshot row activity.json captures: two sequential fake bridge
+    health bodies fed through the REAL bridge/relay_pull.py::_trim_health/_derive_phone_state pair
+    (never re-derived by hand here) into ST.write_rail_snapshot -- the first establishes
+    tunnel_since/phone_state_since (write_rail_snapshot's own "only moves when the value itself
+    changes" rule), the second refreshes snapshot_at ~19 minutes later with the SAME tunnel_up/
+    phone_state, exactly the shape a healthy, repeatedly-polling relay produces."""
+    from bridge import relay_pull as RP
+    from app.wa import store as ST
+
+    clock.set("2026-09-30T11:40:00+00:00")
+    trimmed = RP._trim_health(_fake_bridge_health_ok(clock.value))
+    ST.write_rail_snapshot(c, ok=True, health=trimmed, tunnel_up=True,
+                           phone_state=RP._derive_phone_state(trimmed))
+
+    clock.set("2026-09-30T11:58:42+00:00")
+    trimmed = RP._trim_health(_fake_bridge_health_ok(clock.value))
+    ST.write_rail_snapshot(c, ok=True, health=trimmed, tunnel_up=True,
+                           phone_state=RP._derive_phone_state(trimmed))
+
+
+def _seed_rail_snapshot_down(c, clock):
+    """The bridge-unreachable variant activity_tunnel_down.json captures: ST.write_rail_snapshot's
+    own ok=False branch (that function's own docstring: health_json/phone_state are left exactly as
+    they were -- never blanked -- so a dead engine shows as an OLD snapshot_at, never a missing one)
+    plus the matching wa_rail_sync failure (ST.record_rail_sync_error) -- a second, later
+    relay_pull drain attempt that never reached the bridge at all, on top of the already-good
+    snapshot _seed_rail_snapshot_good wrote. Deliberately leaves wa_rail_sync's last_ok_at (and so
+    _relay_sync_job_summary's last_run_at = ``synced_at or last_error_at``) exactly as the earlier
+    successful sync set it -- see the report for why that `or` means a fresh failure here never
+    moves relay_sync's own last_run_at forward, which this fixture surfaces rather than hides."""
+    from app.wa import store as ST
+
+    clock.set("2026-09-30T12:01:30+00:00")
+    ST.write_rail_snapshot(c, ok=False, tunnel_up=False, error_code="RelayError",
+                           error="ssh -L to mini01 did not come up in 20s")
+    ST.record_rail_sync_error(c, ST.RAIL_SYNC_SOURCE, "relay: ssh -L to mini01 did not come up in 20s")
+
+
 def generate(sqlite_path):
     """Seeds ``sqlite_path`` (caller's responsibility: a throwaway file, never data/wa.sqlite) through
     the real store functions and the real ASGI app, then reads back every board-scope Pro API route.
     -> {"threads.json": <ThreadsEnvelope dict>, "thread_detail.json": {thread_id: <ThreadDetailResponse
-    dict>}, "messages.json": {thread_id: <MessagesEnvelope dict>}, "health.json": <HealthResponse dict>}.
+    dict>}, "messages.json": {thread_id: <MessagesEnvelope dict>}, "health.json": <HealthResponse dict>,
+    "activity.json": <ActivityResponse dict>, "activity_tunnel_down.json": <ActivityResponse dict>,
+    "ops.json": <OpsEnvelope dict>, "ops_page2.json": <OpsEnvelope dict>}.
 
     Deterministic (see the module docstring): calling this twice on two different empty sqlite paths
     produces byte-identical JSON once ``json.dumps(..., sort_keys=True)`` is applied, which is what
@@ -676,8 +979,50 @@ def generate(sqlite_path):
             health.raise_for_status()
             health_body = health.json()
 
+            # TASK-283.7: activity.json / activity_tunnel_down.json / ops.json / ops_page2.json --
+            # seeded through the real engine-side writers (never a raw INSERT, see each seed
+            # function's own docstring), strictly AFTER every read above, so none of it can change
+            # a byte of threads.json/thread_detail.json/messages.json/health.json.
+            with ST.db() as c:
+                _seed_heartbeat_jobs(c, clock)
+            with ST.db() as c:
+                _seed_luna_reply_signal(c, clock)
+            with ST.db() as c:
+                _seed_ops_mirror(c, clock)
+            with ST.db() as c:
+                _seed_rail_snapshot_good(c, clock)
+
+            clock.set(_NOW1)
+            with _frozen_wall_clock(clock):
+                activity = client.get("/api/wa/pro/activity", headers=RH)
+                activity.raise_for_status()
+                activity_body = activity.json()
+
+            ops = client.get("/api/wa/pro/ops?limit=12", headers=RH)
+            ops.raise_for_status()
+            ops_body = ops.json()
+            next_before_id = ops_body["next_before_id"]
+            assert next_before_id is not None, \
+                "_OPS_SPEC must have more than 12 rows -- ops_page2.json needs a real before_id page"
+            ops_page2 = client.get(f"/api/wa/pro/ops?before_id={next_before_id}", headers=RH)
+            ops_page2.raise_for_status()
+            ops_page2_body = ops_page2.json()
+            assert ops_page2_body["next_before_id"] is None, \
+                "ops_page2.json should exhaust _OPS_SPEC -- adjust the 14-row table or this assertion"
+
+            with ST.db() as c:
+                _seed_rail_snapshot_down(c, clock)
+
+            clock.set(_NOW2)
+            with _frozen_wall_clock(clock):
+                activity_down = client.get("/api/wa/pro/activity", headers=RH)
+                activity_down.raise_for_status()
+                activity_tunnel_down_body = activity_down.json()
+
     return {"threads.json": threads_envelope, "thread_detail.json": thread_detail,
-           "messages.json": messages, "health.json": health_body}
+           "messages.json": messages, "health.json": health_body,
+           "activity.json": activity_body, "activity_tunnel_down.json": activity_tunnel_down_body,
+           "ops.json": ops_body, "ops_page2.json": ops_page2_body}
 
 
 def _dumps(obj):

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-30T12:00:00+00:00",
+  "generated_at": "2026-09-30T12:02:00+00:00",
   "human": {
     "done": 0,
     "failed": 0,
@@ -67,16 +67,16 @@
     },
     {
       "enabled": true,
-      "failed_24h": 0,
+      "failed_24h": 1,
       "job": "relay_sync",
       "last_error": {
         "code": "relay_sync_failed",
-        "text": null
+        "text": "relay: ssh -L to mini01 did not come up in 20s"
       },
       "last_ok_at": "2026-09-30T11:55:00+00:00",
       "last_run_at": "2026-09-30T11:55:00+00:00",
       "next_run_at": "2026-09-30T11:55:03+00:00",
-      "ok_24h": 1,
+      "ok_24h": 0,
       "overdue": true
     },
     {
@@ -118,9 +118,12 @@
       "state": "recovering"
     },
     "tunnel": {
-      "last_error": null,
-      "since": "2026-09-30T11:40:00+00:00",
-      "up": true
+      "last_error": {
+        "code": "RelayError",
+        "text": "ssh -L to mini01 did not come up in 20s"
+      },
+      "since": "2026-09-30T12:01:30+00:00",
+      "up": false
     },
     "watcher": {
       "alive": true,
