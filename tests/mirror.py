@@ -4,8 +4,8 @@ Ivan, 2026-10-01: tests must go to a local database of mirrors of the clinic sit
 new pages is handled by re-recording the mirror and covering it with a new test.
 
 One board = one file, data/mirror/<board_id>.sqlite.xz, plus data/mirror/INDEX.json (what the tests are parametrised
-from, so collection opens no board). The directory is git-ignored: these are third-party pages with HR names, e-mails
-and phone numbers, and the repo is public. Inside the file: an sqlite database (responses, blobs, meta) compressed as one
+from, so collection opens no board). The directory is the main checkout's, shared by every worktree (MIRROR_ROOT overrides),
+and git-ignored: these are third-party pages with HR names, e-mails and phone numbers, and the repo is public. Inside the file: an sqlite database (responses, blobs, meta) compressed as one
 xz stream. The pages of one board are near-copies of each other, so solid xz beat a zlib blob per page by ~40x on the
 first real board measured (AMEOS, 860 pages: 14.2 MB vs 0.36 MB) -- and the disk has 1.6 GB free.
 
@@ -35,6 +35,7 @@ stay, and are skipped only after a request the store answered).
 """
 import contextlib
 import fcntl
+import functools
 import hashlib
 import http.client
 import importlib
@@ -52,7 +53,7 @@ import urllib.request
 from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qsl, urldefrag, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urldefrag, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 
@@ -79,8 +80,20 @@ class MirrorMiss(AssertionError):
     """The mirror does not hold a request (or a whole board). Never caught, never answered from the live site."""
 
 
+@functools.lru_cache(maxsize=1)
+def _shared_root():
+    """ONE mirror for the main checkout and every worktree of it: <main checkout>/data/mirror (git's common dir is the main
+    checkout's .git). A worktree is deleted when its work is done; the mirror must outlive it."""
+    try:
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT, capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+        return (ROOT / common).resolve().parent / "data" / "mirror"
+    except (OSError, subprocess.SubprocessError):  # not a git checkout (an export): next to this file's repo
+        return ROOT / "data" / "mirror"
+
+
 def mirror_dir():
-    return Path(os.environ.get("MIRROR_DIR") or ROOT / "data" / "mirror")
+    """MIRROR_ROOT if set (the tests of this layer point it at a temp dir), else the shared <main checkout>/data/mirror."""
+    return Path(os.environ["MIRROR_ROOT"]) if os.environ.get("MIRROR_ROOT") else _shared_root()
 
 
 def board_file(board_id):
@@ -522,14 +535,94 @@ def _sleep(s):
         _REAL["sleep"](s)
 
 
+# -- Playwright: every request of a context is served by a route; the browser cannot resolve a host on its own
+def _pw_headers(pairs):
+    out = {}
+    for k, v in pairs:
+        if k.lower() in _FRAMING:
+            continue
+        out[k] = (out[k] + ("\n" if k.lower() == "set-cookie" else ", ") + v) if k in out else v
+    return out
+
+
+def _route_handler(m):
+    """One route for a whole context. Playwright routes only the FIRST request of a redirect chain (the browser follows the
+    rest on its own, outside the route), so a hop is never handed to the browser as a redirect: a navigation is re-issued
+    through the route (the same call route_from_har uses), any other request follows its hops here and is answered with the
+    last response. Every hop is a row of its own either way."""
+    def handle(route, request):
+        nav, method, url, body = request.is_navigation_request(), request.method, request.url, request.post_data_buffer or b""
+        while True:
+            try:
+                row = m.serve("playwright", method, url, body)
+            except (MirrorMiss, RuntimeError):  # the miss (or the refused request) is remembered on m; the page just sees it fail
+                route.abort()
+                return
+            if row is None:
+                try:
+                    resp = route.fetch(url=url, method=method, post_data=body or None, max_redirects=0)
+                except Exception as e:
+                    m.record("playwright", method, url, body, None, None, None, None, _exc_row(e))
+                    route.abort()
+                    return
+                status, headers, data = resp.status, [(h["name"], h["value"]) for h in resp.headers_array], resp.body()  # (properties on APIResponse)
+                m.record("playwright", method, url, body, status, resp.status_text, headers, data)
+            elif row.exc:
+                route.abort()
+                return
+            else:
+                status, headers, data = row.status, row.headers, m.store.body(row.body_sha)
+            where = next((v for k, v in headers if k.lower() == "location"), None)
+            if not (300 <= status < 400 and where):
+                break
+            url = urljoin(url, where)
+            if nav:
+                route._sync(route._impl_obj._redirected_navigation_request(url))
+                return
+            if status in (301, 302, 303) and method not in ("GET", "HEAD"):
+                method, body = "GET", b""
+        route.fulfill(status=status, headers=_pw_headers(headers), body=data)
+    return handle
+
+
+def _pw_launch(self, *a, **k):
+    m = _top()
+    if m and m.mode == "replay":  # nothing the route misses can reach the network: Chromium has no resolver but localhost
+        k["args"] = [*(k.get("args") or []), "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"]
+    return _REAL["pw_launch"](self, *a, **k)
+
+
+def _pw_new_context(self, *a, **k):
+    ctx = _REAL["pw_new_context"](self, *a, **k)
+    if _top():
+        ctx.route("**/*", _route_handler(_top()))
+    return ctx
+
+
+def _pw_new_page(self, *a, **k):
+    page = _REAL["pw_new_page"](self, *a, **k)
+    if _top():
+        page.context.route("**/*", _route_handler(_top()))
+    return page
+
+
 def _install():
     _REAL["send"], _REAL["do_open"], _REAL["sleep"] = requests.adapters.HTTPAdapter.send, urllib.request.AbstractHTTPHandler.do_open, time.sleep
     requests.adapters.HTTPAdapter.send = _send
     urllib.request.AbstractHTTPHandler.do_open = _do_open
     time.sleep = _sleep
+    try:
+        from playwright.sync_api import Browser, BrowserType
+    except ImportError:
+        return
+    _REAL["pw_launch"], _REAL["pw_new_context"], _REAL["pw_new_page"] = BrowserType.launch, Browser.new_context, Browser.new_page
+    BrowserType.launch, Browser.new_context, Browser.new_page = _pw_launch, _pw_new_context, _pw_new_page
 
 
 def _uninstall():
     requests.adapters.HTTPAdapter.send = _REAL["send"]
     urllib.request.AbstractHTTPHandler.do_open = _REAL["do_open"]
     time.sleep = _REAL["sleep"]
+    if "pw_launch" in _REAL:
+        from playwright.sync_api import Browser, BrowserType
+        BrowserType.launch, Browser.new_context, Browser.new_page = _REAL["pw_launch"], _REAL["pw_new_context"], _REAL["pw_new_page"]

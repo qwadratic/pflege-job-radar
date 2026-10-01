@@ -61,7 +61,7 @@ class _Site(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def site(monkeypatch, tmp_path):
-    monkeypatch.setenv("MIRROR_DIR", str(tmp_path / "mirror"))
+    monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
     _Site.seq = 0
     srv = ThreadingHTTPServer(("127.0.0.1", 0), _Site)
     t = threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.01), daemon=True)
@@ -327,3 +327,93 @@ def test_a_missing_index_is_an_error_naming_the_command(site):
     with pytest.raises(M.MirrorMiss) as e:
         M.read_index()
     assert "tools/mirror.py record --all" in str(e.value)
+
+
+# --------------------------------------------------------------------------------------------- playwright
+_APP = b"""<html><body><script>
+fetch('/api', {method: 'POST', body: 'hello'}).then(r => r.text()).then(t => document.body.setAttribute('data-api', t));
+fetch('/redir').then(r => r.text()).then(t => document.body.setAttribute('data-redir', t));
+</script></body></html>"""
+_DONE = "document.body.dataset.api && document.body.dataset.redir"
+
+
+@pytest.fixture
+def app_site(site, monkeypatch):
+    orig_get = _Site.do_GET
+
+    def do_get(self):
+        if self.path == "/app":
+            self._send(200, _APP)
+        else:
+            orig_get(self)
+
+    def do_post(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self._send(200, b"echo:" + body, ctype="text/plain")
+
+    monkeypatch.setattr(_Site, "do_GET", do_get)
+    monkeypatch.setattr(_Site, "do_POST", do_post)
+    return site
+
+
+def _browser(pw):
+    try:
+        return pw.chromium.launch(args=["--no-sandbox"])
+    except Exception as exc:  # no browser binary in this env
+        pytest.skip(f"chromium unavailable: {exc}")
+
+
+def _browse(url):
+    pw_api = pytest.importorskip("playwright.sync_api")
+    with pw_api.sync_playwright() as pw:
+        b = _browser(pw)
+        pg = b.new_context().new_page()
+        pg.goto(url, wait_until="networkidle")
+        pg.wait_for_function(_DONE, timeout=5000)
+        out = pg.evaluate("[document.body.dataset.api, document.body.dataset.redir]")
+        b.close()
+        return out
+
+
+def test_playwright_requests_are_recorded_by_a_route_and_replayed_from_it(app_site):
+    live = _record(lambda: _browse(app_site + "/app"))
+    assert live == ["echo:hello", "<html><body>Pflegefachkraft m/w/d /page?landed=1</body></html>"]
+    rows = M.Store.load(BOARD).rows()
+    assert {r.via for r in rows} == {"playwright"}
+    assert [r.status for r in rows if r.url.endswith("/redir")] == [302]  # the redirect is its own recorded hop
+    with M.mirror_board(BOARD):
+        assert _browse(app_site + "/app") == live
+
+
+def test_a_navigation_redirect_goes_back_through_the_route_and_the_browser_ends_on_the_final_url(app_site):
+    """Playwright routes only the first request of a redirect chain; the later hops would reach the network unrecorded."""
+    def go():
+        pw_api = pytest.importorskip("playwright.sync_api")
+        with pw_api.sync_playwright() as pw:
+            b = _browser(pw)
+            pg = b.new_context().new_page()
+            pg.goto(app_site + "/redir", wait_until="networkidle")
+            out = (pg.url, pg.content())
+            b.close()
+            return out
+    live = _record(go)
+    assert live[0] == app_site + "/page?landed=1"
+    rows = M.Store.load(BOARD).rows()
+    assert [(r.status, r.url.rsplit("/", 1)[-1]) for r in rows if r.via == "playwright"] == [(302, "redir"), (200, "page?landed=1")]
+    with M.mirror_board(BOARD):
+        assert go() == live
+
+
+def test_a_page_the_browser_asks_for_and_the_mirror_lacks_fails_the_run(app_site):
+    _record(lambda: _browse(app_site + "/app"))
+    with pytest.raises(M.MirrorMiss, match="via playwright"):
+        with M.mirror_board(BOARD):
+            pw_api = pytest.importorskip("playwright.sync_api")
+            with pw_api.sync_playwright() as pw:
+                b = _browser(pw)
+                pg = b.new_context().new_page()
+                try:
+                    pg.goto(app_site + "/page?never-recorded", wait_until="networkidle")
+                except Exception:
+                    pass  # the route aborted it; the page cannot tell a miss from a dead host
+                b.close()
