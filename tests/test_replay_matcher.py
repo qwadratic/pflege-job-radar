@@ -137,6 +137,12 @@ def test_an_overlay_replaces_the_rows_of_the_boards_it_holds_and_the_replay_show
     assert r.tool == [] and acts(r.pipeline) == {106: ("relink", "1", None)}
 
 
+def test_a_board_is_its_host_and_the_sorted_pool_of_a_raw_jobposting_or_of_a_seeded_observation():
+    assert RM.board_key({"source_host": "h", "payload": {"board_clinic_ids": ["2", "1"]}}) == ("h", ("1", "2"))
+    assert RM.board_key({"source_host": "h", "payload": {"_board": ["3"]}}) == ("h", ("3",))
+    assert RM.board_key({"source_host": "h", "payload": {}}) == ("h", ())
+
+
 def test_a_held_posting_is_left_out_of_every_change_file(replay):
     r = replay("--hold", "102")
     assert sorted(acts(r.pipeline)) == [105, 106] and r.tool == []
