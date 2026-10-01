@@ -97,6 +97,9 @@ def recorded_gap(test_name, board_id):
     or when nothing was recorded for the board."""
     key = CHECK_OF.get(test_name)
     e = ((M.read_index_or_none() or {}).get("boards") or {}).get(board_id)
+    if key and e and e.get("replay_identical") is False:  # the recorder replayed its own recording and got another run: it cannot be trusted
+        return (f"named gap: the recording of {board_id} does not replay as it was recorded ({e.get('replay_diff')}); "
+                f"`tools/mirror.py record {board_id}` again, or fix what makes the board non-deterministic")
     if key and e and (e.get("checks") or {}).get(key) is False:
         return (f"named gap: {key} was already red when {board_id} was recorded ({e['recorded_at'][:10]}); `tools/mirror.py status` "
                 f"lists the gaps, `pytest --runxfail` shows the finding, a re-record stores the new verdict")

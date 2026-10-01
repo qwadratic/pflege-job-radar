@@ -65,5 +65,10 @@ def test_recorded_gap_names_the_check_and_the_board(tmp_path, monkeypatch):
     assert "public_url was already red when b1 was recorded (2026-10-01)" in H.recorded_gap("test_public_url", "b1")
     assert H.recorded_gap("test_round_trip", "b1") is None            # green when recorded
     assert H.recorded_gap("test_public_url", "b2") is None            # no verdict stored (the recording itself failed)
+    idx = json.loads((tmp_path / "INDEX.json").read_text())
+    idx["boards"]["b1"].update(replay_identical=False, replay_diff="rows only in the live run 2, only in the replay 0")
+    (tmp_path / "INDEX.json").write_text(json.dumps(idx))
+    for t in ("test_round_trip", "test_public_url"):                   # a recording that does not replay as recorded: every check of it is a named gap
+        assert "does not replay as it was recorded (rows only in the live run 2" in H.recorded_gap(t, "b1")
     assert H.recorded_gap("test_public_url", "never-recorded") is None
     assert H.recorded_gap("test_mutation", "b1") is None              # not a check
