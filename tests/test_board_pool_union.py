@@ -64,12 +64,12 @@ def _drain(monkeypatch):
     return out
 
 
-def _mci_copy(seed, url, city, plz):
+def _mci_copy(seed, url, city, plz, title="Pflegefachpersonen (m/w/d) für das Neurologische Zentrum"):
     """One copy of a mein-check-in posting as app/crawl.py._vendor_rows queues it for board `seed`:
     no employer on the page (org is the seed clinic's own name, org_source='seed')."""
     return {"kind": "jobposting", "collector": "vendor-mein-check-in-v1", "source_host": "www.mein-check-in.de",
             "source_url": url,
-            "payload": {"url": url, "title": "Pflegefachpersonen (m/w/d) für das Neurologische Zentrum",
+            "payload": {"url": url, "title": title,
                         "org": NAME[seed], "org_source": "seed", "loc": [{"city": city, "plz": plz, "region": "bavaria"}],
                         "description": "", "board_clinic_ids": [seed]}}
 
@@ -78,14 +78,15 @@ def test_every_copy_of_a_posting_served_by_several_boards_links_to_the_same_site
     deg = "https://www.mein-check-in.de/mainkofen/position-430614"
     pas = "https://www.mein-check-in.de/mainkofen/position-505464"
     # run 217's order: 26205's board first, then 27105's, then RH2143's (the last one used to win)
-    IB.enqueue([_mci_copy(s, deg, "Deggendorf", "94469") for s in ("26205", "27105", "RH2143")]
+    IB.enqueue([_mci_copy(s, deg, "Deggendorf", "94469", "Pflegefachpersonen (m/w/d) für die neurologische Frührehabilitation") for s in ("26205", "27105", "RH2143")]
                + [_mci_copy(s, pas, "Passau", "94032") for s in ("26205", "27105", "RH2143")], run_id=1)
 
     links = _drain(monkeypatch)
 
-    # union pool {26205, 27105, RH2143}: Deggendorf ties 27105/RH2143 (one operator) -> the real
-    # 562-bed site, on every copy; one link per posting reaches the push
-    assert links == {deg: ["27105"], pas: ["26205"]}
+    # union pool {26205, 27105, RH2143}: Deggendorf ties 27105/RH2143 (one operator); the title names the early-rehab
+    # unit, so that is the site on every copy and one link per posting reaches the push (a title that names neither,
+    # as the Neurologisches Zentrum ad of 2026-09-29 did, used to go to the bigger 27105 and is now unmatched)
+    assert links == {deg: ["RH2143"], pas: ["26205"]}
 
 
 def _sg_copy(seed_kez, board, city, description=""):

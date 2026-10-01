@@ -13,7 +13,7 @@ import json
 import pytest
 
 from pflege_jobs import cli, inbox_db as IB
-from pflege_jobs.registry import Matcher, city_key
+from pflege_jobs.registry import Matcher, _pick_site, city_key
 
 
 def clinic(cid, name, town, operator=None, beds=None):
@@ -57,8 +57,11 @@ def _env(tmp_path, monkeypatch):
 
 class _Sink:
     links = []
+    written = []
     def __init__(self, *a, **kw): pass
-    def write(self, obs, **kw): return {"observations": len(obs)}
+    def write(self, obs, **kw):
+        _Sink.written.extend(obs)
+        return {"observations": len(obs)}
     def write_clinics(self, rows, log=print): return len(rows)
     def _post(self, body):
         _Sink.links.extend(body.get("clinic_links") or [])
@@ -68,7 +71,7 @@ class _Sink:
 def drain(monkeypatch, registry, rows, stored=True):
     """Real cmd_inbox over a local queue of `rows`. -> ({posting url: [clinic_id or None of every pushed link]},
     {url: process_note}). stored: every posting carries a link already, so an unmatched one pushes a clearing link."""
-    _Sink.links = []
+    _Sink.links, _Sink.written = [], []
     refs = {}
     monkeypatch.setattr(cli, "_live_clinics", lambda url, H: registry)
     monkeypatch.setattr(cli, "EdgeSink", _Sink)
@@ -231,6 +234,25 @@ def test_r_jd_text_needs_the_clinics_town_in_the_text_too():
     assert m.match(None, None, description=named) == ("37304", "R_jd_text", 0.65)
 
 
+KHDW = [dict(clinic_id="77301", name="Kreisklinik St. Elisabeth Dillingen", town="Dillingen a.d.Donau", operator="Kreiskliniken Dillingen-Wertingen gGmbH", beds=182, parse_quality="ok"),
+        dict(clinic_id="77302", name="Kreisklinik Wertingen", town="Wertingen", operator="Kreiskliniken Dillingen-Wertingen gGmbH", beds=117, parse_quality="ok")]
+KHDW_TEXT = ("Pflegefachkraft (m/w/d) für den Standort Dillingen - Kreiskliniken Dillingen Wertingen Zum Inhalt springen Wir suchen Pflegefachkraft (m/w/d) "
+             "für den Standort Dillingen Jetzt bewerben An der Kreisklinik St. Elisabeth Dillingen suchen wir zum nächstmöglichen Zeitpunkt eine "
+             "Pflegefachkraft (m/w/d) für unsere Bettenstationen in Vollzeit oder Teilzeit (unbefristet)")
+
+
+def test_an_unqualified_town_in_the_text_names_the_qualified_registry_town_unless_other_towns_share_it():
+    m = Matcher([dict(c) for c in KHDW])
+    # the group's boilerplate names both sites ("Kreiskliniken Dillingen Wertingen"): "Dillingen" must count as naming Dillingen a.d.Donau,
+    # or Wertingen alone passes the town gate and every Dillingen ad is filed there
+    assert m.match(None, None, description=KHDW_TEXT) is None
+    assert m.match(None, None, description="An der Kreisklinik St. Elisabeth Dillingen suchen wir eine Pflegefachkraft (m/w/d).") == ("77301", "R_jd_text", 0.65)
+    # "Bad" alone names none of the Bad towns
+    bad = [dict(clinic_id="1", name="Rhön Fachklinik Alpha", town="Bad Windsheim", operator=None, beds=50, parse_quality="ok"),
+           dict(clinic_id="2", name="Fachklinik Beta", town="Bad Kissingen", operator=None, beds=50, parse_quality="ok")]
+    assert Matcher(bad).match(None, None, description="Die Rhön Fachklinik Alpha liegt im Kurort Bad Kissingen.") is None
+
+
 # --- R6: which of several same-operator sites the posting is -------------------------------------------------------------
 MUENCHEN_TEXT = ("Die München Klinik gGmbH ist eine Klinik mit fünf Standorten in Bogenhausen, Harlaching, Neuperlach, Schwabing sowie der "
                  "Fachklinik für Dermatologie und Allergologie in der Thalkirchner Straße. Pflegefachkraft Gynäkologie und Wochenbett (w|m|d) "
@@ -245,10 +267,66 @@ def test_r6_does_not_pick_by_beds_when_the_text_names_several_sites():
     assert notes == ["R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names several of them"]
 
 
+def test_a_refused_r6_tie_is_not_rescued_by_the_board_the_ad_came_from():
+    m = Matcher([dict(c) for c in MUENCHEN])
+    # 16205's registered board is the group's whole job market: it cannot say which site an ad that names several is for
+    assert m.match("München Klinik gGmbH", "München", board=["16205"], description=MUENCHEN_TEXT) is None
+
+
+def test_a_refusal_is_noted_once_however_many_rungs_reach_it():
+    m = Matcher([dict(c) for c in NUERNBERG])
+    notes = []
+    for _ in range(2):
+        _pick_site(m.clinics, ("Klinikum Nürnberg",), notes)
+    assert notes == ["R6 refused: sites 56401,56410 tie and the text names none of them"]
+
+
 def test_r6_takes_the_one_site_the_text_names():
     m = Matcher([dict(c) for c in MUENCHEN])
     text = "Pflegefachkraft Gynäkologie und Wochenbett (w|m|d) Werden Sie Teil unserer Stationen für operative Gynäkologie und Wochenbett in Harlaching."
     assert m.match("München Klinik gGmbH", "München", description=text) == ("16202", "R6_ambiguous_sites:16201,16202,16203,16204,16205", 0.5)
+
+
+def test_r6_the_listing_of_the_ads_locations_names_the_site_not_the_boilerplate():
+    m = Matcher([dict(c) for c in MUENCHEN])
+    # München Klinik's own list of the places an ad is for (allJobs[i].locations[].title): the group boilerplate in the
+    # text names every site, the listing says which ones this ad is for
+    assert m.match("München Klinik gGmbH", "München", description=MUENCHEN_TEXT, sites=["München Klinik Neuperlach"]) \
+        == ("16203", "R6_ambiguous_sites:16201,16202,16203,16204,16205", 0.5)
+    notes = []
+    assert m.match("München Klinik gGmbH", "München", description=MUENCHEN_TEXT, note=notes,
+                   sites=["München Klinik Schwabing", "München Klinik Harlaching"]) is None
+    assert notes == ["R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names several of them"]
+    notes = []
+    assert m.match("München Klinik gGmbH", "München", description=MUENCHEN_TEXT, note=notes, sites=["Alle Standorte"]) is None
+    assert notes == ["R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names none of them"]
+
+
+def test_the_listing_of_locations_reaches_the_matcher_in_the_drain_and_in_the_link_stage(monkeypatch, tmp_path):
+    url = "https://www.muenchen-klinik.de/karriere/jobs/pflegefachkraft-neuperlach"
+    ad = {"kind": "observation", "collector": "vendor-muenchen_klinik-v1", "source_host": "www.muenchen-klinik.de", "source_url": url,
+          "payload": {"source_id": 20, "source_ref": "muenchen_klinik:1", "source_url": url, "title": "Pflegefachkraft (w|m|d)",
+                      "employer_name": "München Klinik gGmbH", "employer_class_rule": "x", "role_class": "pflegefachkraft",
+                      "in_bavaria": True, "city": "München", "description": MUENCHEN_TEXT, "sites": ["München Klinik Neuperlach"]}}
+    links, _ = drain(monkeypatch, MUENCHEN, [ad])
+    assert links == {"muenchen_klinik:1": ["16203"]}
+    # the nightly link stage reads the stored payload (a JSON string or a dict) and must not disagree with the drain
+    import requests
+    from pflege_jobs.sinks import EdgeSink
+    posting = lambda pid, payload, title: {"posting_id": pid, "title": title, "city": "München", "clinic_match_rule": None,
+                                           "posting_observations": [{"payload": payload}],
+                                           "employers": {"name_display": "München Klinik gGmbH", "employer_class": "clinic"}}
+    page = [posting(1, json.dumps({"sites": ["München Klinik Neuperlach"]}), "Pflegefachkraft (w|m|d)"),
+            posting(2, {"sites": ["Alle Standorte"]}, "Pflegefachkraft Schwabing (w|m|d)")]
+
+    class _Resp:
+        def json(self): return page
+    monkeypatch.setattr(requests, "get", lambda u, params=None, headers=None, timeout=None: _Resp())
+    posted = []
+    monkeypatch.setattr(EdgeSink, "_post", lambda self, body: (posted.append(body), {"clinic_links": len(body["clinic_links"])})[1])
+    cli.cmd_link_clinics(argparse.Namespace(dry_run=False, out=str(tmp_path / "links.json")))
+    # posting 2's title names Schwabing, its listing says "all sites": the listing is what the ad is for
+    assert [(l["posting_id"], l["clinic_id"]) for b in posted for l in b["clinic_links"]] == [(1, "16203")]
 
 
 def test_r6_nuernberg_campus_sued_ads_go_to_the_sued_site():
@@ -307,13 +385,27 @@ def test_anregiomed_ad_for_rothenburg_follows_the_place_the_adapter_reads(monkey
     assert drain(monkeypatch, ANREGIOMED, [own])[0] == {url: ["57103"]}
 
 
-def test_the_markers_are_stored_with_the_observation_for_the_nightly_link_stage():
+def test_a_seeded_observation_on_a_board_that_names_other_places_attaches_no_better_than_a_raw_row(monkeypatch):
+    stamped = "https://karriere.rottal.example/stellen/1"
+    own = observation(stamped, "Pflegefachkraft (m/w/d)", "Kreiskrankenhaus Eggenfelden", "Eggenfelden", "", ["27705"], city_source="seed", _emp_inherited=True)
+    other = observation("https://karriere.rottal.example/stellen/2", "Pflegefachkraft (m/w/d) Simbach", "Kreiskrankenhaus Eggenfelden",
+                        "Simbach am Inn", "", ["27705"], _emp_inherited=True)
+    assert drain(monkeypatch, ROTTAL, [own])[0] == {stamped: ["27705"]}              # nothing on the board names another place
+    assert drain(monkeypatch, ROTTAL, [own, other])[0][stamped] == [None]           # an ad on it names Simbach: not Eggenfelden's own board
+
+
+def test_the_markers_are_stored_with_the_observation_for_the_nightly_link_stage(monkeypatch):
     o = {"employer_name": "Klinikverbund Allgäu gGmbH", "payload": {"x": 1}, "city_source": "seed"}
     cli._persist_markers(o, employer_inherited=True, city_inherited=True)
     assert o["payload"] == {"x": 1, "employer_source": "seed", "city_source": "seed"}
     o = {"payload": json.dumps({"x": 1})}
     cli._persist_markers(o, employer_inherited=False, city_inherited=False)
     assert json.loads(o["payload"]) == {"x": 1, "employer_source": "page"}
+    # and the drain does it to every seeded observation it writes
+    url = "https://recruitingapp-5511.de.umantis.com/Vacancies/653/Description/1?lang=ger"
+    drain(monkeypatch, ANREGIOMED, [observation(url, "Pflegefachkraft (m/w/d)", "ANregiomed Klinikum Ansbach", "Ansbach", "", ["56101", "57103"],
+                                                  city_source="seed", _emp_inherited=True)])
+    assert json.loads(_Sink.written[0]["payload"]) == {"employer_source": "seed", "city_source": "seed"}
 
 
 # --- gkg-bamberg.de: one posting, two copies (one per clinic board), each carrying its own seed's stamps ------------------

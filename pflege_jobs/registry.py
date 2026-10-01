@@ -151,13 +151,14 @@ def _pick_site(cands, texts, note):
     """Which of several same-operator sites a posting belongs to (rule R6) has to come from the posting,
     not from bed counts (2026-10-01: München Klinik ads for Harlaching + Schwabing sat on Bogenhausen, the
     biggest; Nürnberg Campus Süd ads on Nord). A site is named when the words that set it apart from the
-    other candidates occur in the employer text, title or description. Candidates with the same name are one
-    site entered twice (Plan-KH row and its RHV Reha twin, a Vertrags-KH placeholder): no text can tell them
-    apart, the one with most beds stands for the group (decision-4).
+    other candidates occur in `texts` (the employer text, title and description, or the posting's own
+    listing of its locations). Candidates with the same name are one site entered twice (Plan-KH row and
+    its RHV Reha twin, a Vertrags-KH placeholder): no text can tell them apart, the one with most beds
+    stands for the group (decision-4).
       the text names one site -> that site
-      it names none, and one candidate is the plain name the others only extend ('Klinikum am Europakanal'
-      next to '... Neurologische Rehabilitation') -> that one
-      it names several, or none and no plain candidate -> None: the posting stays unmatched and `note` says why."""
+      it names none or several -> None: the posting stays unmatched and `note` says why. An operator's
+      own name, or a site name another one only extends ('Klinikum am Europakanal' next to '... Neurologische
+      Rehabilitation'), says no more about which site it is than a bed count does."""
     groups = defaultdict(list)
     for x in cands: groups[frozenset(x["_ntoks"])].append(x)
     biggest = lambda g: max(groups[g], key=lambda x: x.get("beds") or 0)
@@ -165,8 +166,7 @@ def _pick_site(cands, texts, note):
     common = frozenset.intersection(*groups)
     text = toks(" ".join(t for t in texts if t))
     named = [g for g in groups if g - common and _named(text, g - common)]
-    pick = named or [g for g in groups if not g - common]
-    if len(pick) == 1: return biggest(pick[0])
+    if len(named) == 1: return biggest(named[0])
     why = ("R6 refused: sites " + ",".join(sorted(x["clinic_id"] for x in cands)) + " tie and the text names "
            + ("several of them" if named else "none of them"))
     if why not in note: note.append(why)
@@ -192,7 +192,7 @@ class Matcher:
         return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
 
     def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False,
-              title=None, foreign=None, note=None):
+              title=None, foreign=None, note=None, sites=None):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
@@ -220,10 +220,12 @@ class Matcher:
 
         title is the posting's own title, read with the description for R6/_match_jd. foreign is what the
         posting's board names beyond the towns of its own clinics (Matcher.foreign_places); note, a list, is
-        filled with why a posting that reached a rule stays unmatched."""
+        filled with why a posting that reached a rule stays unmatched. sites is the posting's own listing of
+        its locations (München Klinik's allJobs[i].locations[].title, verbatim): when there is one it names
+        the site for R6 in place of the free text, whose group boilerplate lists every site."""
         notes = [] if note is None else note
         if city_inherited: city = None
-        texts = (None if employer_inherited else employer, title, description)
+        texts = sites or (None if employer_inherited else employer, title, description)
         r = self._match_content(employer, city, description, employer_inherited=employer_inherited, texts=texts, note=notes)
         if r: return r
         if r is False: return None         # sites of one operator tie and the text names no single one: the board cannot say either
@@ -405,8 +407,13 @@ class Matcher:
         text = norm_text(description[:2000])
         dt = toks(text)
         words = set(re.sub(r"[^\wäöüß ]", " ", text).split())
-        town_named = lambda c: bool(city_key(c.get("town"))) and set(city_key(c.get("town")).split()) <= words
-        hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and town_named(c) and
+        def town_named(c):
+            k = city_key(c.get("town"))
+            # an unqualified mention ("Dillingen") names the qualified registry town ("Dillingen a.d.Donau") when no other
+            # registry town starts with that word -- _town_match's own prefix rule; "Bad" alone names none of the Bad towns
+            return bool(k) and (set(k.split()) <= words or
+                                k.split()[0] in words and len({city_key(x.get("town")) for x in self._by_town(k.split()[0])}) == 1)
+        hits =[c for c in self.clinics if c.get("parse_quality") != "partial" and town_named(c) and
                 ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
         if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
@@ -473,13 +480,14 @@ class Matcher:
 
 
 def link_postings(postings, clinics):
-    """postings: dicts of employer, city, title and the crawler's stamps (employer_inherited, city_inherited) as
-    stored with the posting -- the same inputs pflege_jobs.cli._process_rows gives the Matcher, minus the board."""
+    """postings: dicts of employer, city, title, the crawler's stamps (employer_inherited, city_inherited) and its
+    listing of the posting's locations (sites) as stored with the posting -- the same inputs
+    pflege_jobs.cli._process_rows gives the Matcher, minus the board and the description."""
     m = Matcher(clinics)
     out = []
     for p in postings:
         r = m.match(p.get("employer"), p.get("city"), title=p.get("title"), employer_inherited=bool(p.get("employer_inherited")),
-                    city_inherited=bool(p.get("city_inherited")))
+                    city_inherited=bool(p.get("city_inherited")), sites=p.get("sites"))
         if r:
             out.append({"posting_id": p["posting_id"], "clinic_id": r[0], "clinic_match_rule": r[1], "clinic_match_score": r[2]})
     return out

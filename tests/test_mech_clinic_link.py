@@ -77,8 +77,18 @@ def test_public_law_legal_forms_do_not_split_one_operator():
            "operator": "Bezirkskliniken Mittelfranken", "beds": 40}]
     m = Matcher(cl)
     board = ["56102", "56202", "57407", "RH2398"]
-    assert m.match("Bezirkskliniken Mittelfranken", "Erlangen", board=board) == ("56202", "R6_ambiguous_sites:56202,RH2720", 0.5)
-    assert m.match("Bezirkskliniken Mittelfranken", "Ansbach", board=board) == ("56102", "R6_ambiguous_sites:56102,RH2272,RH2398", 0.5)
+    # Both spellings of the operator now reach the acute AND the Reha site, so the posting has to say which it is
+    # (until 2026-10-01 the bed count answered: the acute site, 56202 / 56102, whatever the ad was for).
+    notes = []
+    assert m.match("Bezirkskliniken Mittelfranken", "Erlangen", board=board, note=notes) is None
+    assert notes == ["R6 refused: sites 56202,RH2720 tie and the text names none of them"]
+    assert m.match("Bezirkskliniken Mittelfranken", "Erlangen", board=board, title="Pflegefachkraft (m/w/d) Neurologische Rehabilitation") \
+        == ("RH2720", "R6_ambiguous_sites:56202,RH2720", 0.5)
+    notes = []
+    assert m.match("Bezirkskliniken Mittelfranken", "Ansbach", board=board, note=notes) is None
+    assert notes == ["R6 refused: sites 56102,RH2272,RH2398 tie and the text names none of them"]
+    assert m.match("Bezirkskliniken Mittelfranken", "Ansbach", board=board, title="Pflegefachkraft (m/w/d) Rehabilitation für Suchtkranke") \
+        == ("RH2272", "R6_ambiguous_sites:56102,RH2272,RH2398", 0.5)
     assert m.match("Bezirkskliniken Mittelfranken", "Engelthal", board=board) == ("57407", "R2_operator_town", 0.9)
 
 

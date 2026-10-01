@@ -39,7 +39,8 @@ POSTING_URL = "https://klinik-x.example/stellenangebot/pflegefachkraft-m-w-d"
 
 def _stub_db(monkeypatch, AC):
     live = {"66103": {**LIVE, "clinic_id": "66103", "name": "Synthetic Frauenklinik"},
-            "12345": LIVE, "12346": {**LIVE, "clinic_id": "12346", "name": "Y"}}
+            "12345": LIVE,
+            "12346": {**LIVE, "clinic_id": "12346", "name": "Y", "careers_url": "https://www.krankenpflegejobs24.de/already-wrong"}}
 
     def rest_get(path, params=None, **kw):
         if path == "clinics":
@@ -54,7 +55,7 @@ def test_lint_careers_urls_names_aggregator_and_posting_url_corrections(monkeypa
     live = _stub_db(monkeypatch, AC)
     corrections = {"66103": {"careers_url": "https://www.krankenpflegejobs24.de/synthetic-frauenklinik"},
                    "12345": {"careers_url": POSTING_URL},
-                   "12346": {"ats_type": "softgarden"},                      # no careers_url written: not linted
+                   "12346": {"ats_type": "softgarden"},                      # no careers_url written (the live one is an aggregator's): not linted
                    "12347": {"careers_url": "https://klinik-z.example/karriere/"}}
     found = AC.lint_careers_urls(corrections, live)
     assert [(f.clinic_id, f.shape) for f in found] == [("66103", "aggregator-host"), ("12345", "posting-url")]

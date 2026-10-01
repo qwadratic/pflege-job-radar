@@ -103,11 +103,13 @@ def link_rows(rq, url, H):
         # passes, re-created R1_exact links the drain had just refused (Rottal-Inn 12, AMEOS, Straubing).
         # A posting counts as stamped when any of its observations is: a missed link is the cheaper error.
         stamped = lambda r, field: any(_marker(o, field) == "seed" for o in r["posting_observations"])
+        listed = lambda r: next(filter(None, (_marker(o, "sites") for o in r["posting_observations"])), None)   # the crawler's own listing of the posting's locations
         rows += [{"posting_id": r["posting_id"], "title": r["title"], "city": r["city"],
                   "clinic_match_rule": r.get("clinic_match_rule"),
                   "employer": (r.get("employers") or {}).get("name_display"),
                   "employer_class": (r.get("employers") or {}).get("employer_class"),
-                  "employer_inherited": stamped(r, "employer_source"), "city_inherited": stamped(r, "city_source")} for r in chunk]
+                  "employer_inherited": stamped(r, "employer_source"), "city_inherited": stamped(r, "city_source"),
+                  "sites": listed(r)} for r in chunk]
         off += len(chunk)
         if len(chunk) < 1000: break
     return rows
@@ -467,10 +469,11 @@ def _ack_postgres(acks):
 
 
 def _marker(o, key):
-    """The crawler's provenance marker `key` ('city_source', 'employer_source') of an observation, wherever
-    the producer put it: pflege_jobs/sources/inbox.py writes both inside the jobposting branch's serialized
-    payload, a seeded adapter sets them as plain top-level keys (the way it sets _emp_inherited) or inside a
-    payload that is a JSON string or a dict. The same reader serves the queue and stored posting_observations."""
+    """What the crawler attached to an observation under `key` -- its provenance markers ('city_source',
+    'employer_source') and its listing of the posting's locations ('sites') -- wherever the producer put it:
+    pflege_jobs/sources/inbox.py writes them inside the jobposting branch's serialized payload, a seeded
+    adapter sets them as plain top-level keys (the way it sets _emp_inherited) or inside a payload that is a
+    JSON string or a dict. The same reader serves the queue and stored posting_observations."""
     if o.get(key) is not None:
         return o[key]
     payload = o.get("payload")
@@ -588,7 +591,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             pool, why = _pooled(o.pop("_board", None), o["source_ref"], pools), []
             mt = m.match(o["employer_name"], o["city"], board=pool, employer_inherited=_employer_inherited(o),
                         city_inherited=_city_inherited(o), description=o.get("description"), title=o.get("title"),
-                        foreign=(boards or {}).get(tuple(pool or ())), note=why)
+                        foreign=(boards or {}).get(tuple(pool or ())), note=why, sites=_marker(o, "sites"))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": _loaded_note(o, why)})
@@ -608,7 +611,8 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             emp_inh, city_inh = _employer_inherited(o), _city_inherited(o)
             pool, why = _pooled(o.pop("_board", None), o.get("source_ref"), pools), []
             mt = m.match(o.get("employer_name"), o.get("city"), board=pool, employer_inherited=emp_inh, city_inherited=city_inh,
-                        description=o.get("description"), title=o.get("title"), foreign=(boards or {}).get(tuple(pool or ())), note=why)
+                        description=o.get("description"), title=o.get("title"), foreign=(boards or {}).get(tuple(pool or ())), note=why,
+                        sites=_marker(o, "sites"))
             _persist_markers(o, emp_inh, city_inh)
             # A seed's own preset _kez is NOT a fallback for a refused match (TASK-166): with the
             # board pool passed above, the Matcher only returns None here when the posting's own
