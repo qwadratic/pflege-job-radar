@@ -127,6 +127,26 @@ def test_the_injected_transport_is_used_verbatim_and_carries_the_whole_contract(
                                       "bubble_index": 0}}
 
 
+def test_the_client_sends_its_origin_as_a_header():
+    """TASK-283.7: whoever built this Client (luna's reply path, catchup, a campaign run, an
+    operator CLI) is who the bridge's /v1/ops read later shows as the op's origin -- carried as a
+    plain header, same place OP_BUDGET_HEADER already rides, never folded into the JSON body."""
+    key = BI.reply_key(phone=LEAD, turn_key=TURN, action="reply", bubble_index=0)
+    cl, fake = reply_client(sent(key), origin=BR.ORIGIN_LUNA)
+    cl.send_text(LEAD, "Guten Tag!")
+    assert fake.sends[0]["headers"][BR.ORIGIN_HEADER] == BR.ORIGIN_LUNA
+
+
+def test_a_client_built_with_no_origin_sends_unknown():
+    """The default (no caller named one) is the same string the bridge's own ledger normalises a
+    missing/unrecognised origin to -- so an un-updated call site is visibly 'unknown' end to end,
+    never silently blank."""
+    key = BI.reply_key(phone=LEAD, turn_key=TURN, action="reply", bubble_index=0)
+    cl, fake = reply_client(sent(key))
+    cl.send_text(LEAD, "Guten Tag!")
+    assert fake.sends[0]["headers"][BR.ORIGIN_HEADER] == BR.ORIGIN_UNKNOWN
+
+
 def test_send_timeout_carries_the_flock_wait_every_sibling_budget_already_has():
     """Every other per-operation budget in this file (DESTROY_BUDGET_SEC, CHATS_BUDGET_SEC,
     THREAD_BUDGET_SEC) explicitly adds FLOCK_WAIT_SEC for the lock wait executor.take_phone can

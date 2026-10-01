@@ -2229,6 +2229,49 @@ def test_opening_a_post_task243_pre_priority_database_backfills_normal_and_stays
     ledger.close()
 
 
+# --- TASK-283.7: an origin column ALTERed onto a table that predates it, same reasoning one column
+# later -- the live mini's own phone_ops table has resolved_at/budget_sec/priority but not this.
+def test_opening_a_pre_origin_database_backfills_unknown_and_stays_openable(tmp_path):
+    """Same shape as the priority migration test above: resolved_at, budget_sec and priority
+    already exist, origin does not yet. The ALTER must run before anything reads the column, and
+    a pre-existing row backfills ORIGIN_UNKNOWN -- never guessed from its kind or args."""
+    import sqlite3
+
+    path = tmp_path / "pre_origin.sqlite"
+    raw = sqlite3.connect(str(path))
+    raw.executescript("""
+        create table phone_ops (
+          op_id       text primary key,
+          position    integer not null,
+          kind        text not null,
+          args        text not null,
+          state       text not null,
+          result      text,
+          error       text,
+          created_at  text not null,
+          started_at  text,
+          finished_at text,
+          resolved_at text,
+          budget_sec  real,
+          priority    integer not null default 1
+        );
+        create index idx_phone_ops_state_priority_position on phone_ops(state, priority, position);
+    """)
+    raw.execute("insert into phone_ops(op_id, position, kind, args, state, created_at, priority) "
+               "values(?,?,?,?,?,?,?)",
+               ("op.pre_origin", 1, "send", "{}", "queued", "2026-09-24T00:00:00Z", L.PRIORITY_NORMAL))
+    raw.commit()
+    raw.close()
+
+    ledger = L.Ledger(path)  # must not raise
+    row = ledger._db.execute(
+        "select origin from phone_ops where op_id=?", ("op.pre_origin",)).fetchone()
+    assert row["origin"] == L.ORIGIN_UNKNOWN, "a pre-existing row backfills unknown, never a guess"
+    claimed = ledger.claim_next_op()
+    assert claimed["op_id"] == "op.pre_origin"
+    ledger.close()
+
+
 # --- TASK-243: an op nobody is still waiting on must not go on to type ---------------------------
 def test_claim_next_op_expires_a_stale_row_and_serves_the_fresh_one_behind_it(tmp_path):
     """Before this fix, claim_next_op claims the oldest queued row unconditionally, no matter how
@@ -2299,6 +2342,32 @@ def test_enqueue_op_with_no_priority_opinion_defaults_to_normal(tmp_path):
     ledger.close()
 
 
+# --- TASK-283.7: every enqueued op is tagged with who is driving it, validated here -----------------
+def test_enqueue_op_stores_a_recognised_origin_verbatim(tmp_path):
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    ledger.enqueue_op("op.a", "send", {"req": {"to": PHONE}}, datetime.now(timezone.utc),
+                      origin=L.ORIGIN_LUNA)
+    assert ledger.op_status("op.a")["origin"] == L.ORIGIN_LUNA
+    ledger.close()
+
+
+@pytest.mark.parametrize("bad_origin", [None, "", "not_a_real_origin", "LUNA", "luna ", 7])
+def test_enqueue_op_stores_unknown_for_anything_outside_the_closed_set(tmp_path, bad_origin):
+    """A bad or missing origin must never be the reason a phone op fails to queue (TASK-283.7's own
+    rule) -- it is stored as ORIGIN_UNKNOWN instead, same discipline as priority=None above."""
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    ledger.enqueue_op("op.b", "send", {"req": {"to": PHONE}}, datetime.now(timezone.utc),
+                      origin=bad_origin)
+    assert ledger.op_status("op.b")["origin"] == L.ORIGIN_UNKNOWN
+    ledger.close()
+
+
+def test_normalize_origin_is_the_single_place_this_gets_decided():
+    assert L.normalize_origin(L.ORIGIN_CATCHUP) == L.ORIGIN_CATCHUP
+    assert L.normalize_origin("garbage") == L.ORIGIN_UNKNOWN
+    assert L.normalize_origin(None) == L.ORIGIN_UNKNOWN
+
+
 def test_phone_ops_queue_counts_breaks_the_total_down_by_priority_tier(tmp_path):
     ledger = L.Ledger(tmp_path / "ledger.sqlite")
     now = datetime.now(timezone.utc)
@@ -2337,6 +2406,122 @@ def test_cancel_op_never_touches_a_row_already_running(tmp_path):
     ledger.close()
 
 
+# --- TASK-283.7: Ledger.list_ops / ops_state_counts, the ledger half of GET /v1/ops -----------------
+@pytest.fixture
+def ops_ledger(tmp_path):
+    ledger = L.Ledger(tmp_path / "ledger.sqlite")
+    yield ledger
+    ledger.close()
+
+
+def _enqueue(ledger, op_id, kind="send", args=None, origin=L.ORIGIN_LUNA, now=None):
+    ledger.enqueue_op(op_id, kind, args if args is not None else {"req": {"to": PHONE}},
+                      now or datetime.now(timezone.utc), origin=origin)
+
+
+def test_list_ops_pages_in_ascending_position_order_with_a_next_cursor(ops_ledger):
+    for i in range(5):
+        _enqueue(ops_ledger, f"op.{i}")
+    page = ops_ledger.list_ops(limit=2)
+    assert [o["op_id"] for o in page["ops"]] == ["op.0", "op.1"]
+    assert page["next_after_position"] == 2
+    page2 = ops_ledger.list_ops(after_position=page["next_after_position"], limit=2)
+    assert [o["op_id"] for o in page2["ops"]] == ["op.2", "op.3"]
+    page3 = ops_ledger.list_ops(after_position=page2["next_after_position"], limit=2)
+    assert [o["op_id"] for o in page3["ops"]] == ["op.4"]
+    assert page3["next_after_position"] is None, "nothing after the last page"
+
+
+def test_list_ops_limit_is_guarded_only_against_non_positive_values(ops_ledger):
+    """CLAUDE.md 'no safety nets': a caller naming a large limit gets it, no server ceiling -- the
+    only guard here is a limit that could not page at all."""
+    for i in range(3):
+        _enqueue(ops_ledger, f"op.{i}")
+    assert len(ops_ledger.list_ops(limit=10_000)["ops"]) == 3, "a large limit is never capped"
+    assert len(ops_ledger.list_ops(limit=0)["ops"]) == 3, "falls back to the default, not refused"
+    assert len(ops_ledger.list_ops(limit=-5)["ops"]) == 3
+
+
+def test_list_ops_active_returns_every_non_terminal_row_and_ignores_the_cursor(ops_ledger):
+    now = datetime.now(timezone.utc)
+    for op_id in ("op.a", "op.b", "op.c", "op.d"):
+        _enqueue(ops_ledger, op_id, now=now)
+    ops_ledger.claim_next_op()  # op.a -> running, FIFO by position
+    ops_ledger.claim_next_op()  # op.b -> running
+    ops_ledger.claim_next_op()  # op.c -> running
+    # op.d is left queued
+    ops_ledger.mark_op_done("op.a", {"ok": True}, now)
+    ops_ledger.mark_op_failed("op.b", {"ok": False, "error": {
+        "code": "boom", "message": "nope", "http_status": 500, "retryable": True}}, now)
+    # op.c is left running
+
+    active = ops_ledger.list_ops(active=True)["ops"]
+    assert {o["op_id"] for o in active} == {"op.c", "op.d"}
+    assert {o["state"] for o in active} == {L.OP_RUNNING, L.OP_QUEUED}
+    # a cursor past every position would see nothing on the paged path -- active ignores it
+    same = ops_ledger.list_ops(active=True, after_position=999)["ops"]
+    assert {o["op_id"] for o in same} == {"op.c", "op.d"}
+
+
+def test_list_ops_ids_returns_exactly_those_rows_in_position_order_not_the_ids_order(ops_ledger):
+    for op_id in ("op.a", "op.b", "op.c"):
+        _enqueue(ops_ledger, op_id)
+    page = ops_ledger.list_ops(ids=["op.c", "op.a"])
+    assert [o["op_id"] for o in page["ops"]] == ["op.a", "op.c"]
+    assert page["next_after_position"] is None
+
+
+def test_list_ops_ids_with_an_empty_list_returns_nothing(ops_ledger):
+    _enqueue(ops_ledger, "op.a")
+    assert ops_ledger.list_ops(ids=[]) == {"ops": [], "next_after_position": None}
+
+
+def test_list_ops_exposes_only_the_phone_from_args_never_other_fields(ops_ledger):
+    """TASK-283.7's own rule for GET /v1/ops: phone is the ONLY value ever taken from args --
+    never other args, result payloads, or message text. ``send`` nests it under args["req"]["to"];
+    everything else that carries a phone has it as a bare top-level field, or not at all."""
+    now = datetime.now(timezone.utc)
+    ops_ledger.enqueue_op("op.send", "send", {"req": {"to": PHONE, "body": "secret message text",
+                                                       "client_msg_id": "wab.o.deadbeef"}}, now,
+                          origin=L.ORIGIN_LUNA)
+    ops_ledger.enqueue_op("op.thread", "read_thread", {"phone": PHONE, "chat": "some-chat-id",
+                                                        "include_text": True}, now,
+                          origin=L.ORIGIN_OPERATOR)
+    ops_ledger.enqueue_op("op.reconcile", "reconcile", {"client_msg_ids": ["a", "b"]}, now,
+                          origin=L.ORIGIN_BRIDGE)
+    rows = {o["op_id"]: o for o in ops_ledger.list_ops()["ops"]}
+    assert rows["op.send"]["phone"] == PHONE
+    assert rows["op.thread"]["phone"] == PHONE
+    assert rows["op.reconcile"]["phone"] is None, "reconcile carries no phone at all"
+    for row in rows.values():
+        assert set(row) == {"op_id", "position", "kind", "origin", "state", "priority",
+                            "created_at", "started_at", "finished_at", "resolved_at",
+                            "budget_sec", "phone", "error_code", "error_text"}, (
+            "exactly the plan's own field list -- nothing else from args leaks through")
+
+
+def test_list_ops_lifts_error_code_and_text_from_the_stored_envelope(ops_ledger):
+    now = datetime.now(timezone.utc)
+    ops_ledger.enqueue_op("op.a", "send", {"req": {"to": PHONE}}, now, origin=L.ORIGIN_LUNA)
+    ops_ledger.claim_next_op()
+    ops_ledger.mark_op_failed("op.a", {"ok": False, "error": {
+        "code": "send_unconfirmed", "message": "boom", "http_status": 502, "retryable": True}}, now)
+    ops_ledger.enqueue_op("op.b", "send", {"req": {"to": PHONE}}, now, origin=L.ORIGIN_LUNA)
+    rows = {o["op_id"]: o for o in ops_ledger.list_ops()["ops"]}
+    assert (rows["op.a"]["error_code"], rows["op.a"]["error_text"]) == ("send_unconfirmed", "boom")
+    assert (rows["op.b"]["error_code"], rows["op.b"]["error_text"]) == (None, None)
+
+
+def test_ops_state_counts_covers_the_whole_table_with_every_key_always_present(ops_ledger):
+    now = datetime.now(timezone.utc)
+    _enqueue(ops_ledger, "op.a", now=now)
+    _enqueue(ops_ledger, "op.b", now=now)
+    ops_ledger.claim_next_op()  # op.a -> running
+    assert ops_ledger.ops_state_counts() == {"queued": 1, "running": 1, "done": 0, "failed": 0}
+    ops_ledger.mark_op_done("op.a", {"ok": True}, now)
+    assert ops_ledger.ops_state_counts() == {"queued": 1, "running": 0, "done": 1, "failed": 0}
+
+
 def test_dispatcher_enqueue_threads_the_budget_through_to_the_ledger_row(rig):
     """Wiring proof, separate from the staleness logic itself (tested directly on the ledger
     above): OpsDispatcher.enqueue's ``budget_sec`` argument has to actually reach the row
@@ -2366,6 +2551,89 @@ def test_the_budget_header_reaches_the_ops_row_over_the_wire(http):
     row = rig.ledger._db.execute(
         "select budget_sec from phone_ops where op_id=?", (body["op_id"],)).fetchone()
     assert row["budget_sec"] == 17.5
+
+
+def _post_with_origin(base, origin_header=None):
+    """Same shape as the budget-header test above: a raw request so an arbitrary header (or none)
+    can ride alongside Authorization, independent of what ``call``/``_raw_call`` build by default."""
+    headers = {"Authorization": "Bearer s3cret", "Content-Type": "application/json"}
+    if origin_header is not None:
+        headers["X-Wa-Origin"] = origin_header
+    req = urllib.request.Request(
+        base + "/v1/messages", method="POST",
+        data=json.dumps({"client_msg_id": KEY, "to": PHONE, "kind": "text", "body": "eins",
+                         "trace": {"action": "reply"}}).encode(),
+        headers=headers)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
+
+def test_the_x_wa_origin_header_reaches_the_ops_row_over_the_wire(http_no_dispatch):
+    rig, base = http_no_dispatch
+    body = _post_with_origin(base, L.ORIGIN_LUNA)
+    assert rig.ledger.op_status(body["op_id"])["origin"] == L.ORIGIN_LUNA
+
+
+def test_a_missing_x_wa_origin_header_stores_unknown_over_the_wire(http_no_dispatch):
+    rig, base = http_no_dispatch
+    body = _post_with_origin(base, None)
+    assert rig.ledger.op_status(body["op_id"])["origin"] == L.ORIGIN_UNKNOWN
+
+
+def test_a_garbage_x_wa_origin_header_stores_unknown_over_the_wire(http_no_dispatch):
+    rig, base = http_no_dispatch
+    body = _post_with_origin(base, "not_a_real_origin")
+    assert rig.ledger.op_status(body["op_id"])["origin"] == L.ORIGIN_UNKNOWN
+
+
+# --- TASK-283.7: GET /v1/ops itself, the Pro activity rail's read of the queue ----------------------
+def test_get_v1_ops_requires_the_same_bearer_token_as_every_other_route(http):
+    rig, base = http
+    status, body = _raw_call(base, "/v1/ops", token="wrong")
+    assert (status, body["error"]["code"]) == (401, "unauthorized")
+
+
+def test_get_v1_ops_never_takes_the_phone_lock_or_touches_the_queue(http_no_dispatch):
+    """No dispatcher thread runs in this fixture, so a row GET /v1/ops enqueued or resolved would
+    be visible immediately -- the plan's own rule ("never calls the bridge and never takes
+    ST._lock", the harness side of the same rule this route keeps on the mini)."""
+    rig, base = http_no_dispatch
+    body = _post_with_origin(base, L.ORIGIN_OPERATOR)
+    assert body["state"] == "queued"
+    before = rig.ledger.ops_state_counts()
+
+    status, ops_body = _raw_call(base, "/v1/ops")
+
+    assert status == 200
+    assert rig.driver.lock_events == [], "a read of the queue never touches the handset"
+    assert rig.ledger.ops_state_counts() == before, "the read enqueued nothing and resolved nothing"
+    assert ops_body["counts"] == before
+
+
+def test_get_v1_ops_shape_matches_the_plan_exactly(http_no_dispatch):
+    rig, base = http_no_dispatch
+    body = _post_with_origin(base, L.ORIGIN_LUNA)
+    op_id = body["op_id"]
+
+    status, ops_body = _raw_call(base, "/v1/ops")
+
+    assert status == 200
+    assert set(ops_body) == {"at", "counts", "ops", "next_after_position"}
+    [row] = [o for o in ops_body["ops"] if o["op_id"] == op_id]
+    assert row["origin"] == L.ORIGIN_LUNA
+    assert row["phone"] == PHONE
+    assert row["kind"] == "send"
+    assert row["state"] == L.OP_QUEUED
+    assert ops_body["counts"]["queued"] == 1
+    assert ops_body["next_after_position"] is None
+
+
+def test_get_v1_ops_active_param_over_the_wire(http_no_dispatch):
+    rig, base = http_no_dispatch
+    _post_with_origin(base, L.ORIGIN_LUNA)
+    status, ops_body = _raw_call(base, "/v1/ops?active=1")
+    assert status == 200
+    assert len(ops_body["ops"]) == 1 and ops_body["ops"][0]["state"] == L.OP_QUEUED
 
 
 def test_ops_cancel_over_the_wire_flips_a_queued_op_and_is_never_claimed(http_no_dispatch):
@@ -2496,6 +2764,20 @@ def test_the_unresolved_send_watcher_enqueues_its_reconcile_as_low_priority(rig)
     result = watch.cycle()
 
     assert rig.ledger.op_status(result["op_id"])["priority"] == L.PRIORITY_LOW
+
+
+def test_the_unresolved_send_watcher_enqueues_its_reconcile_with_origin_bridge(rig):
+    """TASK-283.7: the watcher is enqueueing its OWN op, not relaying an HTTP caller's -- it must
+    carry ORIGIN_BRIDGE, the one origin nothing outside this package ever sends."""
+    rig.driver.ticks = [D.UNVERIFIED]
+    with pytest.raises(E.BridgeRefusal):
+        rig.send()
+
+    dispatch = OD.OpsDispatcher(rig.ledger, rig.executor, O.Operations(rig.executor))
+    watch = W.UnresolvedSendWatcher(rig.ledger, dispatch, log=lambda _m: None, clock=rig.clock)
+    result = watch.cycle()
+
+    assert rig.ledger.op_status(result["op_id"])["origin"] == L.ORIGIN_BRIDGE
 
 
 def test_the_unresolved_send_watcher_cycle_is_a_noop_when_nothing_is_stuck(rig):

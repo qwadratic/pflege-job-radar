@@ -43,6 +43,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import cv as CV
 from . import brain as B
+from . import bridge as BR
 from . import config as C
 from .luna import agent_note_gate as GATE
 from .luna import choices as CH
@@ -551,7 +552,9 @@ def handle_payload(payload, client=None):
     and re-raised. -> the per-message results (a finished message's own result). Tests and scripts; the
     webhook routes use accept_payload + submit_accepted."""
     accepted = accept_payload(payload)
-    finished = {r["wamid"]: r for r in process_phones(accepted["phones"], client=client)}
+    # TASK-283.7: the same pipeline the live webhook's background worker runs (_process_in_background
+    # below) -- the candidate-facing luna brain reply path, not catch-up's re-drive.
+    finished = {r["wamid"]: r for r in process_phones(accepted["phones"], client=client, origin=BR.ORIGIN_LUNA)}
     results = [finished.get(r["wamid"], r) for r in accepted["results"]]
     return {"ok": True, "handled": len(results), "skipped": accepted["skipped"], "results": results}
 
@@ -582,7 +585,9 @@ def submit_accepted(accepted, client=None):
 
 def _process_in_background(phones, client):
     try:
-        return process_phones(phones, client=client, raise_errors=False)
+        # TASK-283.7: the live webhook's reply path -- the candidate-facing luna brain turn, not a
+        # catch-up re-drive (app/wa/luna/catchup.py passes its own origin for that).
+        return process_phones(phones, client=client, raise_errors=False, origin=BR.ORIGIN_LUNA)
     except Exception:
         log.exception("background processing of %d phone(s) stopped; their pending rows stay for catch-up",
                       len(phones))
@@ -597,7 +602,7 @@ def wait_for_background(timeout=None):
         executor.submit(lambda: None).result(timeout)
 
 
-def process_phones(phones, client=None, raise_errors=True):
+def process_phones(phones, client=None, raise_errors=True, origin=None):
     """``drain_pending`` for each phone under ST._lock, then its consent queue builds outside the lock. ->
     every result. Shared by handle_payload, the background worker and catch-up.
 
@@ -605,12 +610,16 @@ def process_phones(phones, client=None, raise_errors=True):
     one client threaded through the whole loop would answer the second candidate in a payload over the
     first one's rail. ``meta.Client`` is documented as one instance per request with no state of its
     own ("state lives in SQLite, not here"), so one per phone instead of one per payload is
-    behaviour-identical on the Meta rail. An injected ``client`` wins for every phone, as before."""
+    behaviour-identical on the Meta rail. An injected ``client`` wins for every phone, as before.
+
+    ``origin`` (TASK-283.7) is who is driving this pass -- ``BR.ORIGIN_LUNA`` for the webhook's
+    background worker, ``BR.ORIGIN_CATCHUP`` for app/wa/luna/catchup.py -- threaded down to
+    whichever send actually goes out, so the bridge's own phone_ops row can be tagged with it."""
     results = []
     for phone in phones:
         cl = T.get_client(phone=phone, client=client)
         with ST._lock, ST.db() as c:
-            done = drain_pending(c, phone, client=cl, raise_errors=raise_errors)
+            done = drain_pending(c, phone, client=cl, raise_errors=raise_errors, origin=origin)
         build_consent_queues(done, raise_errors=raise_errors)
         results.extend(done)
     return results
@@ -648,7 +657,7 @@ def build_consent_queues(results, raise_errors=True):
                 raise
 
 
-def drain_pending(c, phone, client=None, raise_errors=True):
+def drain_pending(c, phone, client=None, raise_errors=True, origin=None):
     """Finish this phone's pending inbound messages, oldest first. -> one result per message looked at.
 
     Stops at the first message while any claim of the phone is in flight (``ST.claim_in_flight``: the other
@@ -656,7 +665,9 @@ def drain_pending(c, phone, client=None, raise_errors=True):
     processes never run turns for one phone at once. A message is done, and its pending row deleted, unless
     its status is in KEEP_PENDING; claimed_elsewhere with the reply claim already 'sent' is done too. A
     failure is logged, kept on the pending row, recorded in wa_send_failures once per distinct error, and
-    re-raised with ``raise_errors``; otherwise the next message runs and the failed one waits for catch-up."""
+    re-raised with ``raise_errors``; otherwise the next message runs and the failed one waits for catch-up.
+
+    ``origin`` (TASK-283.7) is passed straight through to ``finish_inbound``."""
     results = []
     for row in ST.pending_inbound(c, phone):
         wamid = row["wamid"]
@@ -666,7 +677,7 @@ def drain_pending(c, phone, client=None, raise_errors=True):
         if not ST.inbound_is_pending(c, wamid):
             continue   # the other process finished it after this list was read
         try:
-            result = finish_inbound(c, message_from_row(row), client=client)
+            result = finish_inbound(c, message_from_row(row), client=client, origin=origin)
         except Exception as exc:
             error = f"inbound {wamid} not finished: {type(exc).__name__}: {exc}"
             log.exception(error)
@@ -688,7 +699,7 @@ def drain_pending(c, phone, client=None, raise_errors=True):
 MEDIA_CLAIM_PREFIX = "media:"   # wa_reply_turn_claims.turn_key held while one process stores/reads a media message
 
 
-def finish_inbound(c, m, client=None):
+def finish_inbound(c, m, client=None, origin=None):
     """Everything after the webhook recorded one inbound message (``m`` as parse_message/message_from_row
     returns it). Shared by the background worker and catch-up, and safe to repeat:
 
@@ -703,7 +714,11 @@ def finish_inbound(c, m, client=None):
       voice note's turn text is its transcript.
 
     -> the result dict with ``wamid``. Raises on any failure; a brain failure releases the reply claim
-    ('skipped_error') so the next attempt need not wait STALE_CLAIM_SECONDS."""
+    ('skipped_error') so the next attempt need not wait STALE_CLAIM_SECONDS.
+
+    ``origin`` (TASK-283.7) is who called this (``BR.ORIGIN_LUNA``/``BR.ORIGIN_CATCHUP``), passed
+    straight through to whichever of ``_media_ack``/``_route_agent_note``/``process_owed_turn``
+    actually sends."""
     phone, wamid = m["phone"], m["wamid"]
     t = ST.thread(c, phone)
     dirty = _note_arrival(c, t, wamid)
@@ -740,7 +755,7 @@ def finish_inbound(c, m, client=None):
         # Opted out earlier. The message (and a media original) is stored and nothing goes out.
         return {"wamid": wamid, "status": "stopped"}
     if is_media and not reads:
-        return _media_ack(c, t, m, client)
+        return _media_ack(c, t, m, client, origin=origin)
     turn_text = m["text"] if transcript is None else transcript
     if m.get("media_pending") and not m.get("media_id") and ST.is_test_thread(c, t["phone"]):
         # The phone rail's placeholder for a voice note whose file has not linked yet (~20s behind,
@@ -751,12 +766,12 @@ def finish_inbound(c, m, client=None):
         # Scoped to test threads deliberately: a real candidate's voice note keeps today's behaviour
         # exactly, rather than having it changed as a side effect of an operator feature.
         return {"wamid": wamid, "status": "media_pending_placeholder"}
-    routed = _route_agent_note(c, t, m, turn_text, client=client)
+    routed = _route_agent_note(c, t, m, turn_text, client=client, origin=origin)
     if routed is not None:
         return routed
     try:
         result = process_owed_turn(c, t, turn_text, m["button_id"], wamid,
-                                   client=client)
+                                   client=client, origin=origin)
     except Exception:
         if ST.reply_turn_claim_state(c, phone, wamid) == "in_progress":
             ST.finish_reply_turn_claim(c, phone, wamid, "skipped_error")
@@ -826,12 +841,13 @@ def _read_original(doc):
 UNREAD_MEDIA_KEY = "_unread_media"   # card: [{wamid, kind, document_id, received_at}] media nobody here reads
 
 
-def _media_ack(c, t, m, client):
+def _media_ack(c, t, m, client, origin=None):
     """Media nothing reads (video; every kind on the deterministic brain), under the reply claim like any other
     reply. MEDIA_REPLY promises that a colleague looks at it, so the card records it for a human first
     (UNREAD_MEDIA_KEY, ``_escalated``; GET /wa/threads ``unread_media``, campaign --status). A declined Luna card
     gets no MEDIA_REPLY: the message is stored, the silence recorded (ST.NO_SEND_STATE) like a model no_send
-    (TASK-204; review 2026-09-14: a voice note after the decline ack got MEDIA_REPLY and nobody was flagged)."""
+    (TASK-204; review 2026-09-14: a voice note after the decline ack got MEDIA_REPLY and nobody was flagged).
+    ``origin`` (TASK-283.7) is passed straight through to ``send_and_record``."""
     wamid = m["wamid"]
     if not ST.claim_reply_turn(c, t["phone"], wamid):
         return {"wamid": wamid, "status": "claimed_elsewhere"}
@@ -850,7 +866,8 @@ def _media_ack(c, t, m, client):
         ST.save_thread(c, t)
         return {"wamid": wamid, "status": "nothing_to_send", "action": "declined_no_send"}
     try:
-        sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack", turn_key=wamid)
+        sent = send_and_record(c, t, [MEDIA_REPLY], [], client=client, action="media_ack", turn_key=wamid,
+                               origin=origin)
     except Exception:
         ST.finish_reply_turn_claim(c, t["phone"], wamid, "skipped_error")
         raise
@@ -862,10 +879,14 @@ def _media_ack(c, t, m, client):
 AGENT_NOTE_ACK_RU = "[агент] Принято, заметка #{id}. Беру в работу — напишу сюда, когда закончу."
 
 
-def _route_agent_note(c, t, m, text, client=None):
+def _route_agent_note(c, t, m, text, client=None, origin=None):
     """An operator's own instruction, in Russian, on a TEST thread: recorded for the periodic worker
     and acknowledged, never handed to the candidate brain (Ivan, 2026-09-24 -- see
     app/wa/luna/agent_note_gate.py for the live incident this exists for).
+
+    ``origin`` (TASK-283.7) is passed straight through to ``send_and_record`` for the ack -- the
+    ack itself rides whichever pipeline found this note (luna/catchup), not ``BR.ORIGIN_AGENT_NOTES``:
+    that origin is for the completion send app/wa/luna/agent_notes.py makes later, a different call.
 
     -> a result dict when the message was routed, None when it is an ordinary turn. None is the
     overwhelmingly common answer and costs nothing: a thread that is not marked is_test leaves here on
@@ -910,7 +931,7 @@ def _route_agent_note(c, t, m, text, client=None):
             # collision above), and from "agent_note:<wamid>:done" (agent_notes.py's own completion
             # key) -- see that module's own turn-key docstring for the rest of this reasoning.
             send_and_record(c, t, [AGENT_NOTE_ACK_RU.format(id=row["id"])], [], client=client,
-                            action="agent_note_ack", turn_key=f"agent_note:{wamid}:ack")
+                            action="agent_note_ack", turn_key=f"agent_note:{wamid}:ack", origin=origin)
         except Exception:
             # Reclaimable on purpose: the row is already durable, so the retry finds it, skips the
             # classifier, and only re-tries the ack that actually failed.
@@ -932,13 +953,16 @@ TURN_NOT_RUN = ("claimed_elsewhere", "rate_limited")
 KEEP_PENDING = ("claimed_elsewhere", "rate_limited")
 
 
-def process_owed_turn(c, t, text, button_id, turn_key, client=None):
+def process_owed_turn(c, t, text, button_id, turn_key, client=None, origin=None):
     """The core decide-and-send pipeline: claim the reply, dispatch to whichever brain is
     configured, send, and detect a fresh consent. Shared by ``_handle_one`` (the webhook path,
     ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-332,
     ``turn_key`` = the last inbound message a thread is still owed a reply for) -- both must reach
     exactly one reply attempt per inbound message, never two, so both go through the same claim
     (``ST.claim_reply_turn``, TASK-181) instead of duplicating this logic.
+
+    ``origin`` (TASK-283.7): which of those two callers this is, passed straight through to
+    ``send_and_record`` so the phone rail's own queue can tell a live reply from a re-drive.
 
     Does not touch ``t["last_inbound_at"]``/``t["turns"]`` or run media ingestion -- those are
     "a new message just arrived" bookkeeping that only ``_handle_one`` owns; a catch-up retry is
@@ -1027,7 +1051,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None):
     ST.record_composed_reply(c, t["phone"], turn_key, d)
     try:
         sent = send_and_record(c, t, d["bubbles"], d["buttons"], client=client, action=d["action"],
-                               turn_key=turn_key)
+                               turn_key=turn_key, origin=origin)
     except Exception:
         ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_error")
         raise
@@ -1081,8 +1105,15 @@ def _refuse_body_mismatch(cl, wamid, body):
             f"record {body!r} as sent (first-body-wins, TASK-359)")
 
 
-def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
+def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None, origin=None):
     """Send the turn and record it. Buttons ride on the last bubble, which is the question.
+
+    ``origin`` (TASK-283.7): who is driving this send (``app/wa/bridge.py``'s own closed set, e.g.
+    ``BR.ORIGIN_LUNA``/``BR.ORIGIN_CATCHUP``/``BR.ORIGIN_FOLLOWUPS``) -- stamped onto the resolved
+    client's own ``.origin`` attribute right below, never into ``T.get_client``'s own call (that
+    seam's signature stays exactly what every existing test double already expects; the attribute
+    this sets is read only by a real ``bridge.Client``, inert on a Meta client or a test fake).
+    ``None`` leaves whatever origin the client already carries untouched.
 
     With WA_AUTOSEND unset nothing is handed to Meta and the bubbles are stored as 'draft' -- the
     same rows, marked for what they are, so a new deployment can be pointed at the live webhook and
@@ -1125,8 +1156,10 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
         return "nothing_to_send"
     rail = T.rail_for(c, t["phone"])
     cl = T.get_client(phone=t["phone"], client=client, conn=c)
+    if origin:
+        cl.origin = origin
     if getattr(cl, "requires_freeform_window", True) and not _freeform_window_open(t):
-        status = _send_reopen_template(c, t, client=cl, action=action)
+        status = _send_reopen_template(c, t, client=cl, action=action, origin=origin)
         if status == "sent_template":
             ST.pin_rail(c, t["phone"], rail)
         return status
@@ -1172,7 +1205,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
     return "sent"
 
 
-def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=None):
+def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=None, origin=None):
     """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-183) -- the
     loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
@@ -1184,24 +1217,32 @@ def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=N
     ``transport.get_client`` resolves -- one check instead of five, and a sixth send path cannot be
     added without crossing it. It refuses by raising ``SUP.SuppressedRecipient`` inside the try, so a
     refusal is recorded and surfaced exactly like any other undeliverable thread (``last_send_error``)
-    instead of returning a status a caller could read as a successful send."""
+    instead of returning a status a caller could read as a successful send.
+
+    ``origin`` (TASK-283.7) just rides through to ``_send``, which is where it is actually applied."""
     try:
         SUP.assert_not_suppressed(c, t["phone"])
-        return _send(c, t, bubbles, buttons, client=client, action=action, turn_key=turn_key)
+        return _send(c, t, bubbles, buttons, client=client, action=action, turn_key=turn_key, origin=origin)
     except Exception as exc:
         ST.record_send_failure(c, t["phone"], str(exc))
         raise
 
 
-def _send_reopen_template(c, t, client=None, action=None):
+def _send_reopen_template(c, t, client=None, action=None, origin=None):
     """Same send-scope gate as ``_send`` (WA_REPLY_SCOPE / WA_META_SCOPE, TASK note there): a refusal
-    downgrades this to a draft_template exactly like AUTOSEND off, reason on the row."""
+    downgrades this to a draft_template exactly like AUTOSEND off, reason on the row.
+
+    ``origin`` (TASK-283.7): same meaning and same attribute-stamping as in ``_send`` -- this
+    function also resolves its own client when called directly (not only via ``_send``'s reopen
+    branch, where the client already carries the stamp)."""
     if not C.WA_REOPEN_TEMPLATE_NAME:
         raise RuntimeError(
             f"the WhatsApp free-form window closed for {t['phone']} (last inbound message is over "
             f"{C.FREEFORM_WINDOW_HOURS}h old) and no reopen template is configured -- register a "
             f"template with Meta and set WA_REOPEN_TEMPLATE_NAME before this thread can be reached again")
     cl = T.get_client(phone=t["phone"], client=client, conn=c)
+    if origin:
+        cl.origin = origin
     label = f"[template:{C.WA_REOPEN_TEMPLATE_NAME}]"
     client_rail = T.rail_of_client(cl)
     rail = client_rail if client_rail != "unknown" else T.rail_for(c, t["phone"])

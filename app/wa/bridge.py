@@ -110,6 +110,24 @@ OPS_PATH = "/v1/ops"
 # comment on ``budget_sec``. Never a number invented on that side: it is exactly what this side was
 # already willing to wait, restated where the queue can read it.
 OP_BUDGET_HEADER = "X-Wa-Op-Budget-Sec"
+# TASK-283.7: who this Client speaks for, sent on every request so the executor's ledger can tag
+# the phone_ops row it enqueues (``bridge/ledger.py``'s own closed set; anything this sends that is
+# not in it, or nothing at all, is stored as unknown there -- never refused). The Pro activity
+# rail's queue view is the reader; this is the one place that writes it onto the wire.
+ORIGIN_HEADER = "X-Wa-Origin"
+# The values this harness-side package (``app/wa``) ever sets, mirroring ``bridge/ledger.py``'s
+# own closed set by CONVENTION, not by import: the two packages deploy to different machines (this
+# one to the VPS, that one to the mini) and share nothing but the wire. ``ORIGIN_BRIDGE`` and
+# ``ORIGIN_PRO_HUMAN`` are not here -- this side of the wire never mints either of those.
+ORIGIN_LUNA = "luna"
+ORIGIN_LUNA_TOOL = "luna_tool"
+ORIGIN_FOLLOWUPS = "followups"
+ORIGIN_NUDGES = "nudges"
+ORIGIN_CATCHUP = "catchup"
+ORIGIN_CAMPAIGN = "campaign"
+ORIGIN_OPERATOR = "operator"
+ORIGIN_AGENT_NOTES = "agent_notes"
+ORIGIN_UNKNOWN = "unknown"
 
 # The executor's four per-item statuses (``bridge/broadcast.py``): ``sent`` is a verified tick or a
 # ledger replay of one, ``queued`` is not attempted yet or deferred to ``next_attempt_at``,
@@ -346,12 +364,17 @@ class Client:
     wants_idempotency_key = True
 
     def __init__(self, transport=None, media_transport=None, base_url=None, token=None, timeout=None,
-                 sleep=time.sleep, now=None):
+                 sleep=time.sleep, now=None, origin="unknown"):
         self.transport = transport or _default_transport
         self.media_transport = media_transport or _default_media_transport
         self.base_url = (C.BRIDGE_URL if base_url is None else base_url).rstrip("/")
         self.token = C.BRIDGE_TOKEN if token is None else token
         self.timeout = C.BRIDGE_TIMEOUT_SEC if timeout is None else timeout
+        # TASK-283.7: who this instance speaks for (``bridge/ledger.py``'s closed set) -- sent as
+        # ORIGIN_HEADER on every request. A caller that names none, or names something the
+        # executor's ledger does not recognise, is stored as unknown there; this class never
+        # validates it, the ledger does (one place, not two copies of the same enum to drift).
+        self.origin = origin
         # How the inter-bubble gap is waited out; injectable so a test does not sit through it.
         self.sleep = sleep
         self.now = now or (lambda: datetime.now(timezone.utc))
@@ -462,7 +485,8 @@ class Client:
             raise BridgeError("WA_BRIDGE_URL / WA_BRIDGE_TOKEN are not set")
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         budget = self.timeout if timeout is None else timeout
-        headers = {"Authorization": "Bearer " + self.token, OP_BUDGET_HEADER: str(budget)}
+        headers = {"Authorization": "Bearer " + self.token, OP_BUDGET_HEADER: str(budget),
+                  ORIGIN_HEADER: self.origin}
         if data is not None:
             headers["Content-Type"] = "application/json"
         answer = self.transport(method=method, url=self.base_url + path, headers=headers, data=data,

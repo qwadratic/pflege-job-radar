@@ -101,6 +101,7 @@ from typing import NamedTuple
 from datetime import datetime, time as dtime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from .. import bridge as BR
 from .. import config as C
 from .. import meta as M
 from .. import routing as R
@@ -1109,6 +1110,7 @@ def main(argv=None, client=None, clock=None, sleep=None):
         if not args.template_id or args.leads or args.send:
             return fail("--mark-sent needs --template-id and goes without --leads/--send")
         client = T.get_client(client=client)
+        client.origin = BR.ORIGIN_CAMPAIGN  # TASK-283.7: tag the resolved client, not T.get_client's own call
         try:
             definition = client.get_template(args.template_id, require_approved=True)
         except M.MetaError as exc:
@@ -1159,6 +1161,7 @@ def main(argv=None, client=None, clock=None, sleep=None):
     if args.send and C.META_SCOPE == "test_only":
         return fail("--send refuses: WA_META_SCOPE=test_only mutes the Meta channel right now")
     client = T.get_client(client=client)
+    client.origin = BR.ORIGIN_CAMPAIGN  # TASK-283.7: tag the resolved client, not T.get_client's own call
     if args.send and (not client.access_token or not client.phone_number_id):
         return fail("--send needs META_WHATSAPP_ACCESS_TOKEN and META_WHATSAPP_PHONE_NUMBER_ID")
     try:

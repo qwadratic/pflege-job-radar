@@ -648,9 +648,11 @@ class UnresolvedSendWatcher:
                 # is the exact op kind that starved real sends behind it for ~14 hours on two
                 # forever-indeterminate keys on 2026-09-23/24 -- see ledger.unresolved()'s own
                 # docstring for the other half of that fix (escalation stops the re-enqueue).
+                # TASK-283.7: this is the bridge enqueueing its own op, not a caller above the
+                # wire -- ORIGIN_BRIDGE, the one origin nothing outside this package ever sends.
                 op_id = self.ops_dispatcher.enqueue(
                     "reconcile", {"client_msg_ids": [row.client_msg_id for row in rows]},
-                    priority=L.PRIORITY_LOW)
+                    priority=L.PRIORITY_LOW, origin=L.ORIGIN_BRIDGE)
         except Exception as exc:  # a bug in our own code, named as one and never silently swallowed
             self.errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"

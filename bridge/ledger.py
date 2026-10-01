@@ -95,6 +95,47 @@ PRIORITY_URGENT = 0
 PRIORITY_NORMAL = 1
 PRIORITY_LOW = 2
 
+# --- phone-op origin (TASK-283.7): WHO asked for this op, for the Pro activity rail's queue view --
+# a closed set, agreed with pflege-fe (plan "Endpoints" section) so an unlabelled or home-grown value
+# can never reach that UI as something it has to guess a label for. ``luna``/``luna_tool`` are the
+# candidate-facing brain (the reply turn, and its own MCP tool server); ``followups`` covers the
+# tiered nudge sweep (TASK-189) -- there is no separate "nudges" code path to split out of it;
+# ``catchup`` is the 3-minute re-drive poller; ``campaign``/``broadcast`` are the two first-touch
+# bulk sends; ``operator`` is a human running tools/wa_bridge.py by hand; ``agent_notes`` is the
+# operator-inbox completion send (app/wa/luna/agent_notes.py); ``bridge`` is this executor enqueueing
+# its own op (today: UnresolvedSendWatcher's reconcile sweep); ``pro_human`` is reserved for the
+# write half of this feature (TASK-283.3, not built here).
+ORIGIN_LUNA = "luna"
+ORIGIN_LUNA_TOOL = "luna_tool"
+ORIGIN_FOLLOWUPS = "followups"
+ORIGIN_NUDGES = "nudges"
+ORIGIN_CATCHUP = "catchup"
+ORIGIN_CAMPAIGN = "campaign"
+ORIGIN_BROADCAST = "broadcast"
+ORIGIN_OPERATOR = "operator"
+ORIGIN_AGENT_NOTES = "agent_notes"
+ORIGIN_BRIDGE = "bridge"
+ORIGIN_PRO_HUMAN = "pro_human"
+ORIGIN_UNKNOWN = "unknown"
+ORIGINS = frozenset({ORIGIN_LUNA, ORIGIN_LUNA_TOOL, ORIGIN_FOLLOWUPS, ORIGIN_NUDGES, ORIGIN_CATCHUP,
+                     ORIGIN_CAMPAIGN, ORIGIN_BROADCAST, ORIGIN_OPERATOR, ORIGIN_AGENT_NOTES,
+                     ORIGIN_BRIDGE, ORIGIN_PRO_HUMAN, ORIGIN_UNKNOWN})
+
+
+def normalize_origin(origin):
+    """-> ``origin`` when it is one of the closed set above, else ``ORIGIN_UNKNOWN``. Missing
+    (``None``, no header, an older client) and anything a caller invented are the same case here:
+    a bad or absent origin must never be the reason a phone op refuses to queue (TASK-283.7) --
+    it is stored as unknown and the op still runs."""
+    return origin if origin in ORIGINS else ORIGIN_UNKNOWN
+
+
+#: ``GET /v1/ops``'s own default page size (TASK-283.7, plan "Endpoints" section) -- what a caller
+#: gets when it sends no ``limit`` at all. Not a ceiling: ``Ledger.list_ops`` guards only against a
+#: non-positive value, never against a caller legitimately asking for more.
+OPS_LIST_DEFAULT_LIMIT = 500
+
+
 #: TASK-359 AC#9. Ledger rows and journal lines are kept 30 days; the mini has 457 G free but a
 #: candidate's thread metadata is not something to keep forever in a shared home directory.
 LEDGER_RETENTION_DAYS = 30
@@ -212,7 +253,8 @@ create table if not exists phone_ops (
   finished_at text,
   resolved_at text,
   budget_sec  real,
-  priority    integer not null default 1  -- PRIORITY_NORMAL, kept in sync by hand (plain SQL text)
+  priority    integer not null default 1,  -- PRIORITY_NORMAL, kept in sync by hand (plain SQL text)
+  origin      text not null default 'unknown'  -- ORIGIN_UNKNOWN, same reason (TASK-283.7)
 );
 create index if not exists idx_phone_ops_state on phone_ops(state, position);
 create table if not exists audit (
@@ -280,6 +322,45 @@ def _audit_row(row):
 def thread_tag(phone):
     """A phone number that is safe in a log line. PII: the number itself never appears in one."""
     return hashlib.sha256(str(phone).encode("utf-8")).hexdigest()[:12]
+
+
+def _op_phone(kind, args):
+    """-> the target phone from a phone_ops row's own ``args``, or ``None`` (TASK-283.7, ``GET
+    /v1/ops``'s own rule: "phone is the ONLY value taken from args; never return other args, result
+    payloads or message text"). ``send`` (``bridge/server.py``'s ``_enqueue_send``) nests the whole
+    POST body under ``args["req"]``, the one kind whose phone is not a bare top-level field;
+    every other enqueued kind (``send_photos``/``send_gallery``/``send_document``/``read_thread``)
+    carries ``phone`` directly, or not at all (``list_chats``, ``reconcile``, a ``chat=`` read)."""
+    if kind == "send":
+        return (args.get("req") or {}).get("to")
+    phone = args.get("phone")
+    return phone if isinstance(phone, str) else None
+
+
+def _op_error_fields(error):
+    """-> (code, message) lifted from a stored error envelope (``bridge/errors.py::BridgeRefusal.
+    envelope``: ``{"ok": False, "error": {"code", "message", ...}}``), or ``(None, None)`` for a row
+    with no error at all (TASK-283.7, ``GET /v1/ops``'s own ``error_code``/``error_text``)."""
+    if not error:
+        return None, None
+    inner = error.get("error") or {}
+    return inner.get("code"), inner.get("message")
+
+
+def _ops_list_row(row):
+    """-> one ``GET /v1/ops`` row, exactly the fields the plan's "Endpoints" section names, decoded
+    from the raw ``phone_ops`` sqlite row ``Ledger.list_ops`` reads. Not ``op_status``'s shape
+    (``args``/``result`` in full) -- this route never returns anything from ``args`` but the phone,
+    and never ``result`` at all."""
+    args = json.loads(row["args"])
+    error = json.loads(row["error"]) if row["error"] is not None else None
+    error_code, error_text = _op_error_fields(error)
+    return {"op_id": row["op_id"], "position": row["position"], "kind": row["kind"],
+           "origin": row["origin"], "state": row["state"], "priority": row["priority"],
+           "created_at": row["created_at"], "started_at": row["started_at"],
+           "finished_at": row["finished_at"], "resolved_at": row["resolved_at"],
+           "budget_sec": row["budget_sec"], "phone": _op_phone(row["kind"], args),
+           "error_code": error_code, "error_text": error_text}
 
 
 #: One queue entry per PULL INSTANCE, not per unique content (TASK-360 round 5, requirement 2): two
@@ -445,6 +526,12 @@ class Ledger:
             # enqueued before this shipped gets PRIORITY_NORMAL (the same tier a caller with no
             # opinion gets going forward) -- never inferred as urgent or low from nothing.
             self._db.execute(f"alter table phone_ops add column priority integer not null default {PRIORITY_NORMAL}")
+        if "origin" not in cols:
+            # TASK-283.7: a row enqueued before this shipped names nobody -- stored as
+            # ORIGIN_UNKNOWN, never guessed from its kind or args (the same discipline every other
+            # migration in this method already follows for a column it backfills).
+            self._db.execute(
+                f"alter table phone_ops add column origin text not null default '{ORIGIN_UNKNOWN}'")
         self._db.execute(
             "create index if not exists idx_phone_ops_state_priority_position "
             "on phone_ops(state, priority, position)")
@@ -699,7 +786,7 @@ class Ledger:
     # --- the phone-op queue (TASK-227): every HTTP route that touches the phone enqueues here and
     # a single dispatcher thread drains it strictly in ``position`` order. This is what makes two
     # concurrent HTTP requests execute one-after-another instead of racing a bare flock. -----------
-    def enqueue_op(self, op_id, kind, args, now, budget_sec=None, priority=None):
+    def enqueue_op(self, op_id, kind, args, now, budget_sec=None, priority=None, origin=None):
         """One row, ``queued``, at the back of ITS TIER. -> nothing; ``op_id`` is already minted by
         the caller (``bridge/server.py``), not here -- the caller needs it before this call returns
         to answer the HTTP request with it.
@@ -711,16 +798,22 @@ class Ledger:
         unbounded, exactly its behaviour before this column existed.
 
         ``priority`` (TASK-296-adjacent): ``None`` maps to ``PRIORITY_NORMAL`` -- a caller with no
-        opinion gets the tier every op got before this column existed, not a guess at urgency."""
+        opinion gets the tier every op got before this column existed, not a guess at urgency.
+
+        ``origin`` (TASK-283.7): validated against the closed set above HERE, not trusted from the
+        wire -- ``bridge/server.py`` hands through whatever ``X-Wa-Origin`` said, unchecked, and
+        anything not in ``ORIGINS`` (including ``None``) is stored as ``ORIGIN_UNKNOWN`` rather than
+        refused: a bad or missing origin must never be the reason a phone op fails to queue."""
+        origin = normalize_origin(origin)
         with self._lock:
             position = self._db.execute(
                 "select coalesce(max(position), 0) + 1 as n from phone_ops").fetchone()["n"]
             self._db.execute(
-                "insert into phone_ops(op_id, position, kind, args, state, created_at, budget_sec, priority) "
-                "values (?,?,?,?,?,?,?,?)",
+                "insert into phone_ops(op_id, position, kind, args, state, created_at, budget_sec, "
+                "priority, origin) values (?,?,?,?,?,?,?,?,?)",
                 (op_id, position, kind, json.dumps(args, sort_keys=True), OP_QUEUED, utc(now),
                  None if budget_sec is None else float(budget_sec),
-                 PRIORITY_NORMAL if priority is None else int(priority)))
+                 PRIORITY_NORMAL if priority is None else int(priority), origin))
             self._db.commit()
 
     def claim_next_op(self):
@@ -823,6 +916,63 @@ class Ledger:
         out["result"] = json.loads(out["result"]) if out["result"] is not None else None
         out["error"] = json.loads(out["error"]) if out["error"] is not None else None
         return out
+
+    # --- the Pro activity rail's read of this queue (TASK-283.7, ``GET /v1/ops``) ------------------
+    def list_ops(self, *, after_position=0, limit=OPS_LIST_DEFAULT_LIMIT, active=False, ids=None):
+        """-> {"ops": [...], "next_after_position": int|None}, rows always in ascending ``position``
+        order. Three mutually exclusive read shapes, checked in this order:
+
+        - ``ids`` (an iterable of op_ids): exactly those rows, position order, the cursor and
+          ``active`` both ignored -- a caller naming specific ids already knows which ones it wants.
+        - ``active=True``: every row still ``queued`` or ``running``, ALL of them -- "all
+          non-terminal rows" per the plan's own phrase, never a page of them, cursor ignored.
+        - otherwise: a page of ``position > after_position``, oldest first, ``limit`` rows, fetching
+          one extra to learn whether a next page exists -- ``next_after_position`` is this page's
+          last ``position`` when there is one, else ``None`` (CLAUDE.md "no safety nets": a caller
+          that asks for a large ``limit`` gets it, there is no server ceiling here).
+
+        ``limit`` is only ever guarded against a non-positive value (0, negative, not an int) --
+        that falls back to ``OPS_LIST_DEFAULT_LIMIT``, never to refusing the call."""
+        if ids is not None:
+            ids = list(ids)
+            if not ids:
+                return {"ops": [], "next_after_position": None}
+            placeholders = ",".join("?" * len(ids))
+            rows = self._db.execute(
+                f"select * from phone_ops where op_id in ({placeholders}) order by position",
+                ids).fetchall()
+            return {"ops": [_ops_list_row(r) for r in rows], "next_after_position": None}
+        if active:
+            rows = self._db.execute(
+                "select * from phone_ops where state in (?, ?) order by position",
+                (OP_QUEUED, OP_RUNNING)).fetchall()
+            return {"ops": [_ops_list_row(r) for r in rows], "next_after_position": None}
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = OPS_LIST_DEFAULT_LIMIT
+        if limit <= 0:
+            limit = OPS_LIST_DEFAULT_LIMIT
+        rows = self._db.execute(
+            "select * from phone_ops where position > ? order by position limit ?",
+            (int(after_position), limit + 1)).fetchall()
+        next_after_position = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            next_after_position = rows[-1]["position"]
+        return {"ops": [_ops_list_row(r) for r in rows], "next_after_position": next_after_position}
+
+    def ops_state_counts(self):
+        """-> {"queued", "running", "done", "failed"} over the WHOLE ``phone_ops`` table (TASK-283.7,
+        ``GET /v1/ops``'s own ``counts`` field) -- unlike ``phone_ops_queue_counts`` below, which
+        only ever counted ``queued`` rows for the dispatcher's own backlog visibility. Every state
+        gets a key even at zero, so a caller never has to guess whether a missing key means zero
+        rows or "not asked"."""
+        counts = {OP_QUEUED: 0, OP_RUNNING: 0, OP_DONE: 0, OP_FAILED: 0}
+        for r in self._db.execute("select state, count(*) c from phone_ops group by state").fetchall():
+            if r["state"] in counts:
+                counts[r["state"]] = r["c"]
+        return counts
 
     def phone_ops_queue_counts(self):
         """-> {"queued": count, "oldest_queued_at": timestamp or None, "by_priority": {...}} over

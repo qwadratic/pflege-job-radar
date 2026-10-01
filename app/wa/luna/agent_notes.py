@@ -60,6 +60,7 @@ if __name__ == "__main__":
     _ENV.load_service_env_files()
 
 from .. import api as WAPI
+from .. import bridge as BR
 from .. import store as ST
 
 # One template, both outcomes. Every line is always present -- an empty field is written as the dash,
@@ -94,7 +95,8 @@ def _send_completion(c, note_id, word, done, not_done, needed):
     t = ST.thread(c, row["phone"])
     try:
         status = WAPI.send_and_record(c, t, [completion_note(note_id, word, done, not_done, needed)], [],
-                                      action="agent_note_done", turn_key=f"agent_note:{row['wamid']}:done")
+                                      action="agent_note_done", turn_key=f"agent_note:{row['wamid']}:done",
+                                      origin=BR.ORIGIN_AGENT_NOTES)
         if status != "sent":
             # "draft" (WA_AUTOSEND unset -- the ORIGINAL failure this hit, TASK-303: this CLI ran from
             # a plain shell with none of the service's env loaded; fixed by the __main__ guard above,

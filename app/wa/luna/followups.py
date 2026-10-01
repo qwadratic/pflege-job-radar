@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from .. import api as API
+from .. import bridge as BR
 from .. import config as C
 from .. import store as ST
 from . import reporting as REP
@@ -138,7 +139,8 @@ def run(client=None, phones=None):
             # per nudge, and the same value on a retry of the same nudge, which is exactly what
             # makes the executor replay it instead of delivering it twice.
             sent = API.send_and_record(c, t, [C.FOLLOWUP_NUDGE_DE], [], client=client,
-                                       action="followup", turn_key=f"followup:{tier}:{since}")
+                                       action="followup", turn_key=f"followup:{tier}:{since}",
+                                       origin=BR.ORIGIN_FOLLOWUPS)
             if sent != "nothing_to_send":
                 ST.record_followup_sent(c, phone, tier)
             ST.save_thread(c, t)

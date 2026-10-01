@@ -23,6 +23,9 @@
     GET  /v1/ops/<id>          one queued phone op's state/result/error (TASK-227)
     POST /v1/ops/<id>/resolve  mark a failed op reviewed and safe to delete (TASK-230)
     POST /v1/ops/<id>/cancel   the caller gave up: cancel it if still queued, never mid-run (TASK-243)
+    GET  /v1/ops               the whole phone_ops queue/history, paged, read-only (TASK-283.7) --
+                               the Pro activity rail's own view; never takes the phone lock, never
+                               enqueues
 
 The handlers are thin on purpose and the rule is enforceable by reading them: every phone-touching
 one of them parses, then enqueues onto the ops dispatcher (bridge/dispatcher.py) rather than
@@ -131,8 +134,16 @@ class Handler(BaseHTTPRequestHandler):
         it knows about its own urgency -- this is deliberately the one place that classification
         happens (bridge/dispatcher.py stays generic dispatch, on purpose, per its own docstring)."""
         op_id = self.server.dispatcher.enqueue(kind, args, budget_sec=self._op_budget_sec(),
-                                               priority=priority)
+                                               priority=priority, origin=self._origin())
         return 200, {"ok": True, "op_id": op_id, "state": "queued"}
+
+    def _origin(self):
+        """-> the caller's own classification of the op about to be enqueued (TASK-283.7), from
+        ``X-Wa-Origin`` -- ``app/wa/bridge.py::Client`` sends it on every request. Missing, or not
+        one of ``bridge/ledger.py``'s closed enum, is passed through unchecked: ``Ledger.
+        enqueue_op`` is where that gets normalised to ``ORIGIN_UNKNOWN``, not here -- the same
+        single-place-validates discipline ``_op_budget_sec`` already follows for its own header."""
+        return self.headers.get("X-Wa-Origin")
 
     def _op_budget_sec(self):
         """-> the caller's own patience for the op about to be queued (TASK-243), from the header
@@ -335,8 +346,30 @@ class Handler(BaseHTTPRequestHandler):
                 limit=_int(query, "limit", None))}))
         elif parsed.path == "/v1/unresolved":
             self._dispatch(lambda: (200, self.server.executor.unresolved_sends()))
+        elif parsed.path == "/v1/ops":
+            self._dispatch(lambda: (200, self._ops_list(query)))
         else:
             self._dispatch(lambda: _no_route(parsed.path))
+
+    def _ops_list(self, query):
+        """-> the body for ``GET /v1/ops`` (TASK-283.7): a read of ``bridge/ledger.py``'s
+        ``phone_ops`` table alone -- the Pro activity rail's own view of the queue/history. NEVER
+        takes ``huawei01.lock`` and NEVER enqueues (this is a plain ledger read, same shape as
+        ``GET /v1/audit``/``GET /v1/unresolved`` above, not one more ``self._enqueue`` route) --
+        the plan's own rule for this endpoint ("the Pro route never calls the bridge and never
+        takes ST._lock" is the harness side of the same rule this route keeps on the mini).
+
+        ``ids`` is a comma-separated list of op_ids; everything else is ``bridge/ledger.py::
+        Ledger.list_ops``'s own parameters, read off the query string the same way every other
+        GET route here does (``_int``/``_flag`` below)."""
+        ledger = self.server.executor.ledger
+        ids_raw = _str(query, "ids")
+        ids = [i for i in ids_raw.split(",") if i] if ids_raw else None
+        page = ledger.list_ops(after_position=_int(query, "after_position", 0),
+                               limit=_int(query, "limit", L.OPS_LIST_DEFAULT_LIMIT),
+                               active=_flag(query, "active", False), ids=ids)
+        return {"at": L.utc(self.server.executor.clock()), "counts": ledger.ops_state_counts(),
+               "ops": page["ops"], "next_after_position": page["next_after_position"]}
 
 
 def _no_route(path):

@@ -1229,7 +1229,12 @@ def show_clinic_photos(clinic_id: str) -> dict:
             local_files.append(local)
             remote_files.append(_stage_on_mini(local, remote_name))
         try:
-            BR.Client().send_gallery(phone, remote_files, caption=caption)
+            # TASK-283.7: origin set as a plain attribute, not a constructor kwarg -- several
+            # tests here monkeypatch BR.Client with a fixed-arity fake (lambda: fake, a bare
+            # class) that a kwarg would break; the attribute is read only by a real bridge.Client.
+            cl = BR.Client()
+            cl.origin = BR.ORIGIN_LUNA_TOOL
+            cl.send_gallery(phone, remote_files, caption=caption)
             # api._send writes a wa_messages row per bubble it sends so outbound_since_last_turn
             # (prompts.py) can show a resumed session what already went out; this call bypassed
             # that too, so a next turn resuming without CLI session memory of this tool call read
@@ -1415,7 +1420,9 @@ def send_updated_cv(cv_text: str) -> dict:
         remote_name = f"cv_{hashlib.sha1(f'{phone}:{time.time()}'.encode()).hexdigest()}.txt"
         remote_path = _stage_on_mini(local_path, remote_name)
         try:
-            BR.Client().send_document(phone, remote_path)
+            cl = BR.Client()  # TASK-283.7: origin set by attribute, same reason as show_clinic_photos above
+            cl.origin = BR.ORIGIN_LUNA_TOOL
+            cl.send_document(phone, remote_path)
         except BR.BridgeError as exc:
             # Same "was the handset actually touched" distinction show_clinic_photos already draws.
             if exc.code in BR.HANDSET_TOUCHED_CODES or exc.code == BR.CODE_ANSWER_TIMEOUT:

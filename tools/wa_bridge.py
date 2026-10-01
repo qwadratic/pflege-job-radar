@@ -896,7 +896,7 @@ def _server_detail(exc):
 
 def main(argv=None, client=None):
     args = build_parser().parse_args(argv)
-    cl = client if client is not None else BR.Client()
+    cl = client if client is not None else BR.Client(origin=BR.ORIGIN_OPERATOR)
     if not cl.base_url or not cl.token:
         print("ERROR: WA_BRIDGE_URL / WA_BRIDGE_TOKEN are not set; load .env first", file=sys.stderr)
         return EXIT_CONFIG

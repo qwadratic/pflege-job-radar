@@ -30,6 +30,7 @@ import argparse
 import logging
 
 from .. import api as API
+from .. import bridge as BR
 from .. import store as ST
 from . import shadow_run as SR
 
@@ -52,7 +53,8 @@ def run(client=None, phones=None):
     for phone in pending:
         try:
             results.extend({"phone": phone, **r}
-                           for r in API.process_phones([phone], client=client, raise_errors=False))
+                           for r in API.process_phones([phone], client=client, raise_errors=False,
+                                                        origin=BR.ORIGIN_CATCHUP))
         except Exception as exc:
             results.append({"phone": phone, **_failed(phone, None, exc)})
 
@@ -67,7 +69,8 @@ def run(client=None, phones=None):
             if row is None or ST.thread(c, phone)["stopped"]:
                 continue
             try:
-                owed.append({"phone": phone, **API.finish_inbound(c, API.message_from_row(row), client=client)})
+                owed.append({"phone": phone, **API.finish_inbound(c, API.message_from_row(row), client=client,
+                                                                   origin=BR.ORIGIN_CATCHUP)})
             except Exception as exc:
                 owed.append({"phone": phone, **_failed(phone, row["wamid"], exc, c)})
     API.build_consent_queues(owed, raise_errors=False)
