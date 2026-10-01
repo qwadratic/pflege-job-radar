@@ -14,7 +14,9 @@ the live row. `_insert: true` adds a clinic that is not in the DB yet (refused i
 correction row has field '*' and the whole new row as its value. `_why` is required for every clinic,
 its code one of pflege_jobs.correction_reasons for clinics: each verified field change is recorded in
 pflege_jobs.corrections (tools/ledger.py) with its old and new value, so the DB's deviations from the
-primary sources stay explainable.
+primary sources stay explainable. A careers_url this file writes is linted first (pflege_jobs/registry_lint.py:
+a single job page, an aggregator host, the url of a posting); a finding names the clinic and stops the run
+before anything is written, --dry-run included.
 
   set -a; source .env; set +a
   .venv/bin/python tools/apply_clinic_corrections.py corrections.json --dry-run
@@ -28,6 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import config as A                # noqa: E402
+from pflege_jobs.registry_lint import lint_rows  # noqa: E402
 from pflege_jobs.schema import CLINIC_SPEC  # noqa: E402
 from pflege_jobs.sinks import EdgeSink      # noqa: E402
 from tools import ledger as L               # noqa: E402
@@ -53,6 +56,15 @@ def load_corrections(path, codes):
 def fetch_live(clinic_ids):
     live = A.rest_get("clinics", {"select": "*", "clinic_id": f"in.({','.join(clinic_ids)})"})
     return {str(r["clinic_id"]): r for r in live}
+
+
+def lint_careers_urls(corrections, live_by_id):
+    """-> the registry_lint findings for every clinic whose careers_url this file writes: a single job page,
+    an aggregator's page or the page of a posting (any status) is not that clinic's board (TASK-185)."""
+    rows = [merged_row(live_by_id.get(cid, {}), changes) for cid, changes in corrections.items() if "careers_url" in changes]
+    taken = {r["careers_url"] for r in rows
+             if r["careers_url"] and A.rest_get("postings", {"select": "external_url", "external_url": f"eq.{r['careers_url']}", "limit": 1})}
+    return lint_rows(rows, taken)
 
 
 def backup(live_by_id, tag):
@@ -97,6 +109,9 @@ def main():
         sys.exit(f"_insert for clinic(s) already live: {present}")
     for cid in inserts:
         corrections[cid]["clinic_id"] = cid
+    bad = lint_careers_urls(corrections, live_by_id)
+    if bad:
+        sys.exit("careers_url lint failed, nothing written:\n" + "\n".join(f"  {f}" for f in bad))
 
     for cid in ids:
         for line in diff_lines(cid, live_by_id.get(cid, {}), corrections[cid]):

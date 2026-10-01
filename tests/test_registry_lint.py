@@ -1,4 +1,8 @@
-"""Registry lint: careers_url must not be a single job-detail page (TASK-86)."""
+"""Registry lint: careers_url must not be a single job-detail page (TASK-86), an aggregator page or a
+posting's own page (TASK-185)."""
+import re
+from pathlib import Path
+
 from pflege_jobs.registry_lint import check_careers_url, lint_rows
 
 
@@ -57,6 +61,43 @@ def test_lint_rows_reports_clinic_id_and_shape():
     findings = lint_rows(rows)
     assert [f.clinic_id for f in findings] == ["47601"]
     assert findings[0].shape == "job-slug"
+
+
+# --- TASK-185: a careers_url on an aggregator host, or equal to a posting's own url, is not a board. Synthetic
+# rows only; the real offenders are 66103 (krankenpflegejobs24.de) and 77902/77903 (one dongku job page). -----
+def test_lint_flags_an_aggregator_careers_url_and_names_the_clinic():
+    rows = [{"clinic_id": "66103", "name": "Synthetic Frauenklinik", "careers_url": "https://www.krankenpflegejobs24.de/synthetic-frauenklinik"},
+            {"clinic_id": "1", "name": "A", "careers_url": "https://de.indeed.com/cmp/synthetic"},
+            {"clinic_id": "2", "name": "B", "careers_url": "https://www.stepstone.de/cmp/synthetic"},
+            {"clinic_id": "3", "name": "C", "careers_url": "https://www.meinestadt.de/synthetic/stellenangebote"},
+            {"clinic_id": "4", "name": "D", "careers_url": "https://klinik-d.example/karriere/"}]
+    findings = lint_rows(rows)
+    assert [(f.clinic_id, f.shape) for f in findings] == [(c, "aggregator-host") for c in ("66103", "1", "2", "3")]
+    assert "66103" in str(findings[0]) and "Synthetic Frauenklinik" in str(findings[0]) and "krankenpflegejobs24.de" in str(findings[0])
+
+
+def test_a_host_that_merely_contains_an_aggregator_name_is_not_one():
+    rows = [{"clinic_id": "5", "careers_url": "https://www.notindeed.com/karriere"},
+            {"clinic_id": "6", "careers_url": "https://karriere.meinestadt-klinik.example/"},
+            {"clinic_id": "7", "careers_url": "https://klinik-d.example/stepstone.de/jobs"}]
+    assert lint_rows(rows) == []
+
+
+def test_every_host_the_purge_script_retires_is_linted():
+    # AGGREGATOR_HOSTS is not a second list: the hosts data/purge_retired_sources.py purges must all be in it.
+    text = (Path(__file__).resolve().parents[1] / "data" / "purge_retired_sources.py").read_text(encoding="utf-8")
+    hosts = re.findall(r"source_host\.ilike\.\*([^*]+)\*", text)
+    assert hosts
+    for h in hosts:
+        assert [f.shape for f in lint_rows([{"clinic_id": "x", "careers_url": f"https://www.{h}/jobs"}])] == ["aggregator-host"], h
+
+
+def test_a_careers_url_equal_to_a_posting_url_is_that_postings_page():
+    url = "https://klinik-x.example/stellenangebot/pflegefachkraft-m-w-d"
+    rows = [{"clinic_id": "8", "name": "X", "careers_url": url},
+            {"clinic_id": "9", "name": "Y", "careers_url": "https://klinik-y.example/karriere/"}]
+    assert [(f.clinic_id, f.shape) for f in lint_rows(rows, {url})] == [("8", "posting-url")]
+    assert lint_rows(rows) == []                      # the posting urls are what it compares with
 
 
 # --- wiring: the lint must run inside every real funnel a discovered/probed careers_url passes
@@ -135,8 +176,9 @@ def test_cmd_link_clinics_matches_against_the_live_table_and_writes_no_clinics(m
     monkeypatch.setenv("PFLEGE_INGEST_SECRET", "s")
     live = [{"clinic_id": "16201", "name": "München Klinik Schwabing", "town": "München",
              "operator": "München Klinik gGmbH", "beds": 700}]
-    posting = {"posting_id": 1, "city": "München", "clinic_match_rule": None,
-               "employers": {"name_display": "München Klinik Schwabing", "employer_class": "clinic"}}
+    posting = {"posting_id": 1, "title": "Pflegefachkraft (m/w/d)", "city": "München", "clinic_match_rule": None,
+               "employers": {"name_display": "München Klinik Schwabing", "employer_class": "clinic"},
+               "posting_observations": []}
 
     class _FakeResp:
         def __init__(self, data):
