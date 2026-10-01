@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-10-01T12:00:00+00:00",
+  "snapshot_at": "2026-10-01T11:58:42+00:00",
+  "synced_at": "2026-10-01T11:55:10+00:00",
+  "synced_source": "bridge_relay_pull",
+  "rail": {
+    "tunnel": {
+      "up": false,
+      "since": "2026-10-01T11:40:00+00:00",
+      "last_error": {"code": "ConnectionRefusedError", "text": "[Errno 111] Connection refused"}
+    },
+    "phone": {"state": "disconnected", "since": "2026-10-01T11:40:05+00:00"},
+    "watcher": {"alive": true, "heartbeat_at": "2026-10-01T11:58:40+00:00"},
+    "last_sync_at": "2026-10-01T11:55:10+00:00"
+  },
+  "queue": {"queued": 3, "running": 2, "done": 142, "failed": 2},
+  "jobs": [
+    {
+      "job": "catchup", "enabled": true,
+      "last_run_at": "2026-10-01T11:57:00+00:00", "last_ok_at": "2026-10-01T11:57:00+00:00",
+      "last_error": null, "next_run_at": "2026-10-01T12:00:00+00:00",
+      "ok_24h": 462, "failed_24h": 0, "overdue": false
+    },
+    {
+      "job": "followups", "enabled": true,
+      "last_run_at": "2026-10-01T09:30:00+00:00", "last_ok_at": "2026-10-01T09:30:00+00:00",
+      "last_error": null, "next_run_at": "2026-10-01T09:45:00+00:00",
+      "ok_24h": 88, "failed_24h": 0, "overdue": true
+    },
+    {
+      "job": "tunnel_watch", "enabled": true,
+      "last_run_at": "2026-10-01T11:59:45+00:00", "last_ok_at": null,
+      "last_error": {"code": "tunnel_down", "text": "phone-rail tunnel (127.0.0.1:18793) has been DOWN for 1185s (>= 60s threshold)"},
+      "next_run_at": "2026-10-01T12:00:15+00:00",
+      "ok_24h": 2810, "failed_24h": 3, "overdue": false
+    },
+    {
+      "job": "purge_test", "enabled": true,
+      "last_run_at": "2026-10-01T03:00:04+00:00", "last_ok_at": "2026-10-01T03:00:04+00:00",
+      "last_error": null, "next_run_at": "2026-10-02T03:00:04+00:00",
+      "ok_24h": 1, "failed_24h": 0, "overdue": false
+    },
+    {
+      "job": "agent_notes", "enabled": true,
+      "last_run_at": "2026-10-01T11:55:00+00:00", "last_ok_at": "2026-10-01T11:55:00+00:00",
+      "last_error": null, "next_run_at": "2026-10-01T12:00:00+00:00",
+      "ok_24h": 288, "failed_24h": 0, "overdue": false
+    },
+    {
+      "job": "relay_sync", "enabled": true,
+      "last_run_at": "2026-10-01T11:55:10+00:00", "last_ok_at": "2026-10-01T11:55:10+00:00",
+      "last_error": null, "next_run_at": "2026-10-01T11:55:13+00:00",
+      "ok_24h": 1, "failed_24h": 0, "overdue": true
+    },
+    {
+      "job": "luna_reply", "enabled": true,
+      "last_run_at": "2026-10-01T11:54:02+00:00", "last_ok_at": "2026-10-01T11:54:02+00:00",
+      "last_error": {"code": "send_failed", "text": "send_and_record: 24h window closed, no reopen template matched"},
+      "next_run_at": null,
+      "ok_24h": 57, "failed_24h": 1, "overdue": null
+    },
+    {
+      "job": "broadcasts", "enabled": true,
+      "last_run_at": null, "last_ok_at": null,
+      "last_error": null, "next_run_at": null,
+      "ok_24h": 0, "failed_24h": 0, "overdue": null
+    }
+  ],
+  "human": {"queued": 1, "running": 0, "done": 4, "failed": 0},
+  "source": "harness@tasker-dispatcher-01"
+}

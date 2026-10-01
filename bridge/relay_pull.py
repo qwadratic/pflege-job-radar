@@ -77,6 +77,14 @@ class RelayError(RuntimeError):
     """The relay stopped on purpose. The cursor did not move."""
 
 
+class OpsRouteMissing(RelayError):
+    """GET /v1/ops answered 404 -- an executor build that predates this route (TASK-283.7). Its own
+    subclass, not a bare RelayError, so mirror_ops() below can tell "the route does not exist yet"
+    apart from every other transport failure and skip the mirror pass quietly instead of treating it
+    as the drain-stopping kind of error (it isn't: the drain itself never touches /v1/ops at all)."""
+    code = "bridge_no_ops_route"
+
+
 def _write_rail_sync(ok, error=None):
     """The real freshness heartbeat (review item 13, Ivan 2026-09-30): a successful drain_once() is
     the strongest available signal that "the harness has current phone state" -- it is the literal
@@ -99,6 +107,107 @@ def _write_rail_sync(ok, error=None):
             ST.record_rail_sync_ok(c, ST.RAIL_SYNC_SOURCE)
         else:
             ST.record_rail_sync_error(c, ST.RAIL_SYNC_SOURCE, error or "unknown error")
+
+
+# --- Pro activity rail view (TASK-283.7): the health snapshot whitelist ---------------------------
+# What check_watcher_alarm() may hand to snapshot_writer, trimmed from the SAME executor.health()
+# body it already fetches for its own watcher/inbound checks -- never a second health() call (see
+# ALARM_CHECK_INTERVAL_SEC's own cost notes above: health() can cost up to HEALTH_TIMEOUT_SEC when
+# the phone is genuinely gone, so this snapshot rides the existing 60s alarm cadence rather than
+# adding one of its own).
+#: Whole sub-objects passed through unchanged -- every one of these already went through this same
+#: module's own PII review (check_watcher_alarm reads watcher/inbound directly off this body today)
+#: or bridge/doctor.py's, bridge/broadcast.py's, bridge/executor.py's own heartbeat()/health() methods,
+#: none of which ever include a phone number, a wamid, or message text.
+_HEALTH_PASSTHROUGH_KEYS = ("watcher", "media_watcher", "identity_watcher", "reconcile_watcher",
+                            "unresolved_send_watcher", "ops_dispatcher", "doctor", "phone_ops",
+                            "quota", "inbound", "oldest_unresolved_sec", "reconcile", "broadcast",
+                            "retention", "journal_recent")
+
+
+def _trim_health(body):
+    """Whitelist ``body`` (Relay.health()'s raw GET /v1/health response) down to what may be
+    persisted into wa_rail_snapshot.health_json. Drops ``ok``/``version``/``at`` (this snapshot
+    stamps its own snapshot_at), ``rail.number``/``msisdn_verified``/``note`` (the rail's own phone
+    number -- the one PII field this body carries, and one check_watcher_alarm() never reads
+    either), and ``audit`` (a lifetime destruction counter with no Pro-facing use, and not named by
+    the plan's whitelist). ``rail.driver`` is trimmed further still, to {connected, kind} --
+    bridge/adb_driver.py's ``describe()`` also returns an adb serial, a WhatsApp version string and
+    a sha256 of its own module file, none of it rail-health information."""
+    driver = ((body or {}).get("rail") or {}).get("driver") or {}
+    out = {"driver": {"connected": driver.get("connected"), "kind": driver.get("kind")}}
+    for key in _HEALTH_PASSTHROUGH_KEYS:
+        out[key] = (body or {}).get(key)
+    return out
+
+
+#: Closed (app/wa/pro_models.py's PhoneState mirrors this exactly) -- OUR OWN derivation, not the
+#: bridge's, so nothing outside what _derive_phone_state actually returns can ever appear here.
+PHONE_STATE_VALUES = ("ready", "recovering", "blocked", "disconnected", "unknown")
+
+
+def _derive_phone_state(trimmed_health):
+    """-> one of PHONE_STATE_VALUES, from the SAME trimmed snapshot wa_rail_snapshot stores (never
+    re-derived differently by pro_api.py at read time): no single field in bridge/executor.py's
+    health() answers "what state is the phone in", so this is this harness's own single derivation,
+    stated once. Priority order, most urgent first:
+      disconnected -- driver.connected is False
+      blocked      -- the doctor sees a phone_ops row stuck running (doctor.blocked_by_stuck_op,
+                       bridge/doctor.py::heartbeat)
+      recovering   -- a dirty-state or idle-dirty recovery landed in the recent journal window
+                       (journal_recent.dirty_state_recovered / idle_dirty_recovered,
+                       bridge/executor.py's own HEALTH_JOURNAL_WINDOW_SEC)
+      ready        -- none of the above, and driver.connected is True
+    "unknown" only when driver.connected is itself missing (None) -- not merely falsy, since False
+    is the clear "disconnected" signal above it."""
+    driver = (trimmed_health or {}).get("driver") or {}
+    connected = driver.get("connected")
+    if connected is None:
+        return "unknown"
+    if connected is False:
+        return "disconnected"
+    doctor = (trimmed_health or {}).get("doctor") or {}
+    if doctor and doctor.get("blocked_by_stuck_op"):
+        return "blocked"
+    journal = (trimmed_health or {}).get("journal_recent") or {}
+    if journal and ((journal.get("dirty_state_recovered") or 0) > 0
+                    or (journal.get("idle_dirty_recovered") or 0) > 0):
+        return "recovering"
+    return "ready"
+
+
+def _write_rail_snapshot(*, ok, health=None, error=None, error_code=None, tunnel_up=None,
+                         phone_state=None):
+    """The production snapshot_writer (from_env only, same lazy-import convention as
+    _write_rail_sync above)."""
+    from app.wa import store as ST
+    with ST.db() as c:
+        ST.write_rail_snapshot(c, ok=ok, health=health, error=error, error_code=error_code,
+                               tunnel_up=tunnel_up, phone_state=phone_state)
+
+
+class _OpsMirror:
+    """The production mirror_writer (from_env only): lazy-imported app.wa.store, same pattern as
+    _write_rail_sync/_write_rail_snapshot above -- importing this module never pays for
+    app.wa.store unless a Relay is actually built with a mirror_writer (only from_env's production
+    Relay is; every direct Relay()/FakeRelay() construction in tests/test_bridge_relay.py defaults
+    mirror_writer to None and never calls any of these three methods)."""
+
+    def max_position(self):
+        from app.wa import store as ST
+        with ST.db() as c:
+            return ST.ops_mirror_max_position(c)
+
+    def open_ids(self):
+        from app.wa import store as ST
+        with ST.db() as c:
+            return ST.ops_mirror_open_ids(c)
+
+    def write(self, ops):
+        from app.wa import store as ST
+        with ST.db() as c:
+            for op in ops:
+                ST.upsert_mirrored_op(c, op)
 
 
 def utc_now():
@@ -282,7 +391,8 @@ def http_json(method, url, *, headers=None, body=None, timeout=30.0):
 class Relay:
     def __init__(self, *, host, token, webhook_url, inbound_token, cursor, phone_number_id,
                  display_phone_number, waba_id, remote_port=REMOTE_PORT, local_port=LOCAL_PORT,
-                 log=print, fetch_limit=None, sync_writer=None):
+                 log=print, fetch_limit=None, sync_writer=None, mirror_writer=None,
+                 snapshot_writer=None):
         self.tunnel = SshForward(host, remote_port=remote_port, local_port=local_port, log=log)
         self.token = token
         self.webhook_url = webhook_url
@@ -299,6 +409,13 @@ class Relay:
         # builds a Relay/FakeRelay directly keeps writing nothing to any database -- only
         # from_env's production Relay (below) ever passes the real _write_rail_sync.
         self.sync_writer = sync_writer
+        # TASK-283.7, same opt-in convention: mirror_writer (an _OpsMirror-shaped object: methods
+        # max_position/open_ids/write) drives mirror_ops() below; snapshot_writer (a callable, same
+        # shape as sync_writer) drives the extra side effect check_watcher_alarm() gets below. Both
+        # default to None so every test in tests/test_bridge_relay.py that builds a Relay/FakeRelay
+        # directly keeps touching no database for either, exactly like sync_writer.
+        self.mirror_writer = mirror_writer
+        self.snapshot_writer = snapshot_writer
 
     def _mark_synced(self, ok, error=None):
         """Call self.sync_writer, if any, and never let it take the drain loop down with it -- a
@@ -323,16 +440,38 @@ class Relay:
             raise RelayError(f"executor health is {status}: {body}")
         return body, elapsed
 
+    def _write_snapshot(self, *, ok, health=None, error=None, error_code=None, phone_state=None):
+        """Call self.snapshot_writer, if any, and never let it take the drain loop (or the alarm
+        check it rides on) down with it -- same never-load-bearing discipline as _mark_synced
+        above. ``tunnel_up`` is read fresh off self.tunnel here rather than inferred from ``ok``:
+        the tunnel can be open while the executor itself answers with an error, and the inverse
+        (tunnel down) is exactly the ``ok=False`` case -- two different facts, never conflated."""
+        if self.snapshot_writer is None:
+            return
+        try:
+            self.snapshot_writer(ok=ok, health=health, error=error, error_code=error_code,
+                                 tunnel_up=self.tunnel.up(), phone_state=phone_state)
+        except Exception as exc:  # the snapshot is a supplement, never load-bearing for the alarm
+            self.log(f"relay: could not record rail snapshot: {type(exc).__name__}: {exc}")
+
     def check_watcher_alarm(self):
         """Ask health() for the watcher heartbeat and log loudly if it looks dead (TASK-255):
         ``last_ok_at`` stale, ``alive`` false, or the oldest unacked inbound row sitting past
         INBOUND_BACKLOG_STALE_SEC. -> the problems found (empty if none). Never raises past this --
-        a bug or a transport failure here must not take down the drain loop it only supplements."""
+        a bug or a transport failure here must not take down the drain loop it only supplements.
+
+        TASK-283.7: this is also the ONE place wa_rail_snapshot gets written (opt-in,
+        self.snapshot_writer) -- reusing this method's own health() call rather than adding a
+        second one, per ALARM_CHECK_INTERVAL_SEC's own cost notes above (health() can cost up to
+        HEALTH_TIMEOUT_SEC when the phone is genuinely gone; calling it more often than this method
+        already does would make the snapshot itself a second source of the stalls the alarm exists
+        to catch)."""
         try:
             body, _elapsed = self.health()
         except Exception as exc:  # our own bug or a transport failure, named, never swallowed
             self.log(f"ALARM: could not reach the executor for the watcher health check: "
                      f"{type(exc).__name__}: {exc}")
+            self._write_snapshot(ok=False, error=str(exc), error_code=type(exc).__name__)
             return [f"health check failed: {exc}"]
         now = datetime.now(timezone.utc)
         watcher = body.get("watcher") or {}
@@ -355,7 +494,79 @@ class Relay:
                                 f"(over {INBOUND_BACKLOG_STALE_SEC:.0f}s)")
         if problems:
             self.log("ALARM: watcher heartbeat looks dead -- " + "; ".join(problems))
+        trimmed = _trim_health(body)
+        self._write_snapshot(ok=True, health=trimmed, phone_state=_derive_phone_state(trimmed))
         return problems
+
+    # --- Pro activity rail view (TASK-283.7): the ops mirror -------------------------------------
+    def ops(self, *, after_position=None, limit=None, active=None, ids=None):
+        """GET /v1/ops (bridge/server.py, the shared interface's own shape,
+        ~/plans/2026-10-01-pro-activity-rail-view.md "Endpoints"). Raises OpsRouteMissing
+        specifically on 404 (an executor build that predates this route) and plain RelayError on
+        anything else but 200."""
+        query = []
+        if after_position is not None:
+            query.append(f"after_position={int(after_position)}")
+        if limit is not None:
+            query.append(f"limit={int(limit)}")
+        if active:
+            query.append("active=1")
+        if ids:
+            query.append("ids=" + ",".join(ids))
+        path = "/v1/ops" + ("?" + "&".join(query) if query else "")
+        status, body, _elapsed = self.executor(path)
+        if status == 404:
+            raise OpsRouteMissing(f"executor has no /v1/ops route (pre-283.7 build?): {body}")
+        if status != 200:
+            raise RelayError(f"executor ops is {status}: {body}")
+        return body
+
+    def mirror_ops(self):
+        """One mirroring pass (TASK-283.7): page our own highest mirrored position forward through
+        every GET /v1/ops page, then refresh every row the mirror still has open (active=1 AND an
+        explicit ids= of our own open set) -- position paging alone would never see a row's own
+        state change after the fact, since a bridge op's position is assigned once, at enqueue, and
+        never moves (the shared interface). No-op when self.mirror_writer is None (same opt-in
+        convention as sync_writer/snapshot_writer).
+
+        Also triggers an immediate check_watcher_alarm() -- and so an immediate snapshot refresh --
+        when NEW ops appeared (the plan's own data-path note: the snapshot is "refreshed at the
+        existing alarm cadence and also on every cycle in which the ops mirror changed"), rather
+        than waiting out the full 60s alarm cadence. Deliberately scoped to NEW positions only, not
+        every refresh of an already-known open row: a row merely sitting 'running' refreshes on
+        every single pass once anything is running at all, and firing health() on every one of
+        those would turn this into the exact every-cycle hammering ALARM_CHECK_INTERVAL_SEC was
+        chosen to avoid.
+
+        Tolerates OpsRouteMissing by logging and writing nothing for this pass; tolerates any other
+        RelayError/bug the same way check_watcher_alarm() does for its own health() call -- a
+        mirroring failure must not take down the drain loop it only supplements."""
+        if self.mirror_writer is None:
+            return
+        try:
+            new_ops = []
+            after = self.mirror_writer.max_position()
+            page = self.ops(after_position=after, limit=500)
+            new_ops.extend(page.get("ops") or [])
+            next_after = page.get("next_after_position")
+            while next_after is not None:
+                page = self.ops(after_position=next_after, limit=500)
+                new_ops.extend(page.get("ops") or [])
+                next_after = page.get("next_after_position")
+            open_ids = self.mirror_writer.open_ids()
+            refreshed = self.ops(ids=open_ids).get("ops") or [] if open_ids else []
+            active = self.ops(active=True, limit=10000).get("ops") or []
+            all_ops = new_ops + refreshed + active
+            if all_ops:
+                self.mirror_writer.write(all_ops)
+            if new_ops:
+                self.check_watcher_alarm()
+        except OpsRouteMissing as exc:
+            self.log(f"relay: {exc} -- ops mirror skipped this pass")
+        except RelayError as exc:
+            self.log(f"relay: ops mirror failed: {exc}")
+        except Exception as exc:  # our own bug, named as one -- never takes the drain loop with it
+            self.log(f"relay: ops mirror failed: {type(exc).__name__}: {exc}")
 
     def fetch(self):
         """-> the outbox items after our cursor. The ack rides along, so the mini can sweep."""
@@ -428,6 +639,10 @@ class Relay:
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
                 self._mark_synced(False, f"{type(exc).__name__}: {exc}")
+            # TASK-283.7: every cycle, not gated on the alarm cadence -- a no-op when
+            # mirror_writer is None (every test in tests/test_bridge_relay.py builds a Relay
+            # without one), and self-contained (never raises) when it isn't.
+            self.mirror_ops()
             if time.monotonic() >= next_alarm_check:
                 self.check_watcher_alarm()
                 next_alarm_check = time.monotonic() + ALARM_CHECK_INTERVAL_SEC
@@ -455,6 +670,8 @@ def from_env(**override):
         local_port=int(env("WA_BRIDGE_LOCAL_PORT", LOCAL_PORT)),
         cursor=Cursor(state),
         sync_writer=_write_rail_sync,   # review item 13: only the production Relay gets a real writer
+        mirror_writer=_OpsMirror(),     # TASK-283.7: same convention -- only from_env wires one
+        snapshot_writer=_write_rail_snapshot,
     )
     kwargs.update(override)
     return Relay(**kwargs)

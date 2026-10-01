@@ -12,9 +12,11 @@ import json
 import secrets
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 from . import config as C
+from . import phones as PH
 
 _lock = threading.RLock()
 
@@ -229,6 +231,70 @@ create table if not exists wa_rail_sync (
   last_error text,
   last_error_at text
 );
+-- Pro activity rail view (TASK-283.7, plan ~/plans/2026-10-01-pro-activity-rail-view.md). The engine
+-- mirror of the bridge's phone_ops queue (bridge/ledger.py's own table, on the mini) -- written ONLY
+-- by bridge/relay_pull.py's mirror_ops() on the VPS, through GET /v1/ops; a Pro API GET route only
+-- ever reads it (db_ro). The raw phone is NEVER stored here: ``phone`` reaches upsert_mirrored_op as
+-- an argument and is immediately resolved to this harness's own opaque thread_id (the same
+-- engine-minted id every other Pro API surface uses, _ensure_thread_id/thread()) and masked to the
+-- last 4 digits (phones.phone_masked) -- the same two transforms the rest of this module already
+-- applies before anything phone-shaped reaches a Pro response.
+create table if not exists wa_ops_mirror (
+  op_id text primary key,
+  position integer not null,
+  kind text not null,
+  origin text not null,
+  state text not null,
+  priority integer,
+  created_at text not null,
+  started_at text,
+  finished_at text,
+  resolved_at text,
+  budget_sec real,
+  thread_id text,
+  phone_masked text,
+  error_code text,
+  error_text text,
+  mirrored_at text not null
+);
+create index if not exists idx_wa_ops_mirror_position on wa_ops_mirror(position);
+create index if not exists idx_wa_ops_mirror_state on wa_ops_mirror(state);
+create index if not exists idx_wa_ops_mirror_origin on wa_ops_mirror(origin);
+-- One row (id=1): the latest bridge /v1/health snapshot, trimmed to a whitelist (see
+-- relay_pull.py::_trim_health), plus the tunnel's own up/down state and the engine's own
+-- last-reachable bookkeeping. health_json keeps the LAST snapshot that actually arrived when the
+-- bridge goes unreachable (relay_pull.py never blanks it on a failed cycle) -- only tunnel_up/
+-- tunnel_since/last_error_* move, so a dead engine shows up as an OLD snapshot_at next to a FRESH
+-- tunnel_since=down, never as a silently-reset "everything is fine" row.
+create table if not exists wa_rail_snapshot (
+  id integer primary key check (id = 1),
+  snapshot_at text,
+  health_json text,
+  tunnel_up integer,
+  tunnel_since text,
+  phone_state text,
+  phone_state_since text,
+  last_ok_at text,
+  last_error_code text,
+  last_error_text text,
+  last_error_at text
+);
+-- One row per periodic job's run (TASK-283.7's job heartbeats) -- see job_run() below. Only the jobs
+-- with no other durable signal of their own are wrapped (catchup, followups, tunnel_watch,
+-- purge_test, agent_notes); relay_sync/luna_reply/broadcasts are derived from tables that already
+-- exist (wa_rail_sync, wa_luna_calls/wa_reply_turn_claims/wa_inbound_pending, the snapshot's
+-- broadcast section) and never write here.
+create table if not exists wa_job_runs (
+  id integer primary key,
+  job text not null,
+  started_at text not null,
+  finished_at text not null,
+  ok integer not null,
+  counts_json text not null default '{}',
+  error_code text,
+  error_text text
+);
+create index if not exists idx_wa_job_runs_job_started on wa_job_runs(job, started_at);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -1702,3 +1768,311 @@ def reconcile_campaign_send(c, campaign_id, phone, attempt, wamid, sent_at):
                            f"sent")
     c.execute("update wa_reply_turn_claims set state='campaign_sent', updated_at=? where phone=? and turn_key=?",
               (now, phone, CAMPAIGN_CLAIM_PREFIX + campaign_id))
+
+
+# --- Pro activity rail view (TASK-283.7): the ops mirror -------------------------------------------
+# The shared interface both builders build against (~/plans/2026-10-01-pro-activity-rail-view.md,
+# "Endpoints"): bridge/server.py's own phone_ops.origin, sent by app/wa/bridge.py::Client as the
+# X-WA-Origin header on every enqueue, closed to exactly these 12 values -- anything else lands here
+# as "unknown" rather than widening the set by accident.
+ORIGIN_VALUES = ("luna", "luna_tool", "followups", "nudges", "catchup", "campaign", "broadcast",
+                 "operator", "agent_notes", "bridge", "pro_human", "unknown")
+#: bridge/ledger.py's own OP_QUEUED/OP_RUNNING/OP_DONE/OP_FAILED, by VALUE -- this module stays
+#: independent of the ``bridge`` package (the executor's own code, a different deployment) and
+#: never imports it; these are the same four strings, kept in sync by hand because there is no
+#: shared module both sides may import without crossing that line.
+MIRROR_STATE_TERMINAL = ("done", "failed")
+
+
+def upsert_mirrored_op(c, op):
+    """One row of GET /v1/ops (bridge/server.py, the engine's ``Relay.mirror_ops``) into
+    wa_ops_mirror. ``op`` is the interface's own op shape: op_id/position/kind/origin/state/
+    priority/created_at/started_at/finished_at/resolved_at/budget_sec/phone/error_code/error_text.
+
+    NEVER stores the raw phone (module docstring): ``op["phone"]`` (or None -- a background op like
+    list_chats/reconcile touches no single phone) is resolved to this harness's own opaque thread_id
+    through the SAME engine-minted mapping every other Pro API surface uses -- ``thread()`` first,
+    which mints one when this phone has never been seen on this rail at all (a phone the bridge
+    enqueued an op for before any wa_messages ever reached this harness, e.g. a cold-outreach send
+    that has not been answered yet) -- then masked to the last 4 digits (phones.phone_masked), the
+    identical mask the Pro API already uses everywhere else a phone appears at all.
+
+    ``origin`` outside ORIGIN_VALUES is folded to "unknown" here too, independently of whatever the
+    bridge itself already enforces -- belt and suspenders on the one value this table is not allowed
+    to let leak un-validated. op_id is the primary key: a later call with the same op_id (a state
+    transition, queued -> done) replaces the row in place -- this is a mirror, not a log."""
+    phone = op.get("phone")
+    thread_id = phone_masked = None
+    if phone:
+        thread(c, phone)   # ensures the wa_threads row + thread_id exist (TASK-395 pattern)
+        thread_id = thread_id_for_phone(c, phone)
+        phone_masked = PH.phone_masked(phone)
+    origin = op.get("origin") if op.get("origin") in ORIGIN_VALUES else "unknown"
+    c.execute(
+        """insert into wa_ops_mirror (op_id, position, kind, origin, state, priority, created_at,
+               started_at, finished_at, resolved_at, budget_sec, thread_id, phone_masked,
+               error_code, error_text, mirrored_at)
+           values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           on conflict(op_id) do update set
+             position=excluded.position, kind=excluded.kind, origin=excluded.origin,
+             state=excluded.state, priority=excluded.priority, created_at=excluded.created_at,
+             started_at=excluded.started_at, finished_at=excluded.finished_at,
+             resolved_at=excluded.resolved_at, budget_sec=excluded.budget_sec,
+             thread_id=excluded.thread_id, phone_masked=excluded.phone_masked,
+             error_code=excluded.error_code, error_text=excluded.error_text,
+             mirrored_at=excluded.mirrored_at""",
+        (op["op_id"], int(op["position"]), op["kind"], origin, op["state"], op.get("priority"),
+         op["created_at"], op.get("started_at"), op.get("finished_at"), op.get("resolved_at"),
+         op.get("budget_sec"), thread_id, phone_masked, op.get("error_code"), op.get("error_text"),
+         now_iso()))
+    c.commit()
+
+
+def ops_mirror_max_position(c):
+    """The highest position already mirrored, 0 for an empty mirror -- Relay.mirror_ops' own
+    ``after_position`` for the next page."""
+    return c.execute("select coalesce(max(position), 0) as m from wa_ops_mirror").fetchone()["m"]
+
+
+def ops_mirror_open_ids(c):
+    """Every op_id in the mirror whose state is not one of bridge/ledger.py's two terminal ones
+    (MIRROR_STATE_TERMINAL) -- the ``ids=`` refresh Relay.mirror_ops runs on top of the position
+    page, because an op's position never changes once assigned: a row paged in as 'queued' and later
+    finished on the bridge is never seen again by after_position paging alone. Deliberately not
+    narrowed to a known set of non-terminal states either -- any state this mirror does not already
+    recognise as terminal is treated as still open, so a future bridge state is refreshed rather than
+    silently left stale."""
+    rows = c.execute(f"select op_id from wa_ops_mirror where state not in "
+                     f"({','.join('?' * len(MIRROR_STATE_TERMINAL))})", MIRROR_STATE_TERMINAL).fetchall()
+    return [r["op_id"] for r in rows]
+
+
+def ops_mirror_counts(c, origin=None):
+    """{"queued","running","done","failed"} -- a complete COUNT(*) over the whole mirror (never a
+    windowed or capped query, CLAUDE.md "no safety nets"), optionally scoped to one origin (GET
+    /api/wa/pro/activity's human{} is this with origin='pro_human'). A state this mirror has not seen
+    before (a future bridge addition) still counts, under its own key, rather than being folded into
+    one of the four or silently dropped."""
+    sql, args = "select state, count(*) as n from wa_ops_mirror", []
+    if origin is not None:
+        sql += " where origin=?"
+        args.append(origin)
+    rows = c.execute(sql + " group by state", args).fetchall()
+    out = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    for r in rows:
+        out[r["state"]] = r["n"]
+    return out
+
+
+def ops_mirror_page(c, *, limit, status=None, origin=None, before_id=None, after_id=None):
+    """-> (rows, next_before_id) for GET /api/wa/pro/ops. The CURSOR MECHANICS are the three-mode
+    shape pro_api.py's own _messages_page already has (no cursor = the newest ``limit`` rows;
+    ``before_id`` = an older page; ``after_id`` = everything newer, the short-poll mode), keyed on
+    wa_ops_mirror.position (an ever-increasing integer the bridge itself assigns) rather than op_id
+    (an opaque string with no order to page by). The ROW ORDER differs from _messages_page on
+    purpose, per the contract's own wording ("rows newest first"): an activity feed reads
+    newest-on-top, unlike a chat transcript -- so the no-cursor and before_id modes are returned
+    DESCENDING (never reversed to ascending), and next_before_id is the OLDEST position still in
+    this page (the next call goes further back). after_id (the poll mode -- "give me everything
+    since my last row") stays ascending, same as _messages_page: a poller appends what comes back
+    to the end of its own already-newest-first list, which only works if the newly-arrived rows
+    themselves arrive oldest-of-the-new-batch first. ``origin`` may be a single value or an
+    iterable of values (the contract's ``auto`` = every origin except pro_human)."""
+    where, args = [], []
+    if status is not None:
+        where.append("state=?")
+        args.append(status)
+    if origin is not None:
+        if isinstance(origin, (list, tuple, set, frozenset)):
+            origin = list(origin)
+            where.append("origin in (%s)" % ",".join("?" * len(origin)))
+            args.extend(origin)
+        else:
+            where.append("origin=?")
+            args.append(origin)
+    if after_id is not None:
+        where.append("position>?")
+        args.append(after_id)
+        sql = "select * from wa_ops_mirror"
+        if where:
+            sql += " where " + " and ".join(where)
+        rows = c.execute(sql + " order by position asc", args).fetchall()
+        return rows, None
+    if before_id is not None:
+        where.append("position<?")
+        args.append(before_id)
+    sql = "select * from wa_ops_mirror"
+    if where:
+        sql += " where " + " and ".join(where)
+    desc_rows = c.execute(sql + " order by position desc limit ?", args + [limit + 1]).fetchall()
+    has_more = len(desc_rows) > limit
+    page = list(desc_rows[:limit])   # left descending -- "rows newest first" (see docstring)
+    next_before_id = page[-1]["position"] if (page and has_more) else None
+    return page, next_before_id
+
+
+# --- Pro activity rail view (TASK-283.7): the bridge /v1/health snapshot --------------------------
+
+def write_rail_snapshot(c, *, ok, health=None, now=None, error=None, error_code=None,
+                        tunnel_up=None, phone_state=None):
+    """One row (id=1), upserted every snapshot cycle by Relay (bridge/relay_pull.py). ``ok`` is
+    whether THIS call reached the bridge at all: on success ``health``/``tunnel_up``/``phone_state``
+    are the fresh reading and last_error_* are cleared; on failure health_json/phone_state are left
+    exactly as they were (the last thing that actually arrived -- never blanked, so a dead engine
+    shows as an OLD snapshot_at, per the module docstring) and only tunnel_up/last_error_* move.
+    ``tunnel_since``/``phone_state_since`` only change when the value itself changes from the
+    PREVIOUS row -- read back here, not recomputed from a separate clock, so a restart of this
+    process does not reset either "since" to "now" for a state that has not actually changed."""
+    now = now or now_iso()
+    prior = c.execute("select * from wa_rail_snapshot where id=1").fetchone()
+    tunnel_since = (prior["tunnel_since"] if prior and prior["tunnel_up"] == int(bool(tunnel_up))
+                    else now) if tunnel_up is not None else (prior["tunnel_since"] if prior else None)
+    if ok:
+        health_json = json.dumps(health or {}, ensure_ascii=False)
+        phone_since = (prior["phone_state_since"]
+                       if prior and prior["phone_state"] == phone_state else now)
+        c.execute(
+            """insert into wa_rail_snapshot (id, snapshot_at, health_json, tunnel_up, tunnel_since,
+                   phone_state, phone_state_since, last_ok_at, last_error_code, last_error_text,
+                   last_error_at)
+               values (1,?,?,?,?,?,?,?,null,null,null)
+               on conflict(id) do update set
+                 snapshot_at=excluded.snapshot_at, health_json=excluded.health_json,
+                 tunnel_up=excluded.tunnel_up, tunnel_since=excluded.tunnel_since,
+                 phone_state=excluded.phone_state, phone_state_since=excluded.phone_state_since,
+                 last_ok_at=excluded.last_ok_at, last_error_code=null, last_error_text=null,
+                 last_error_at=null""",
+            (now, health_json, int(bool(tunnel_up)), tunnel_since, phone_state, phone_since, now))
+    else:
+        c.execute(
+            """insert into wa_rail_snapshot (id, tunnel_up, tunnel_since, last_error_code,
+                   last_error_text, last_error_at)
+               values (1,?,?,?,?,?)
+               on conflict(id) do update set
+                 tunnel_up=excluded.tunnel_up, tunnel_since=excluded.tunnel_since,
+                 last_error_code=excluded.last_error_code, last_error_text=excluded.last_error_text,
+                 last_error_at=excluded.last_error_at""",
+            (int(bool(tunnel_up)), tunnel_since, error_code or "bridge_unreachable", error, now))
+    c.commit()
+
+
+def rail_snapshot(c):
+    """The one wa_rail_snapshot row as a dict (health_json parsed), or None before the engine has
+    ever written one."""
+    row = c.execute("select * from wa_rail_snapshot where id=1").fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["health"] = json.loads(d.pop("health_json")) if d["health_json"] else {}
+    d["health_json"] = None  # dropped in favour of the parsed "health" key, kept only to pop it above
+    del d["health_json"]
+    return d
+
+
+# --- Pro activity rail view (TASK-283.7): job heartbeats -------------------------------------------
+# Only the jobs with no other durable signal are wrapped here -- see the wa_job_runs SCHEMA comment.
+# "nudges" is a listed job key in the shared interface's origin/job enums, but
+# app.wa.luna.followups IS the proactive-nudge sender (TASK-189) with no separate "followups" pass
+# inside it to record under a second name -- so this wraps it under job="followups" only, matching
+# its own deploy/pflege-wa-followups.timer cadence (900s) one-for-one, and "nudges" is simply never
+# emitted by this harness (docs/wa-pro-activity.md says so).
+
+JOB_CATCHUP, JOB_FOLLOWUPS, JOB_TUNNEL_WATCH = "catchup", "followups", "tunnel_watch"
+JOB_PURGE_TEST, JOB_AGENT_NOTES = "purge_test", "agent_notes"
+HEARTBEAT_JOBS = (JOB_CATCHUP, JOB_FOLLOWUPS, JOB_TUNNEL_WATCH, JOB_PURGE_TEST, JOB_AGENT_NOTES)
+
+
+def record_job_run(c, job, started_at, finished_at, ok, counts=None, error_code=None, error_text=None):
+    c.execute(
+        "insert into wa_job_runs (job, started_at, finished_at, ok, counts_json, error_code, error_text) "
+        "values (?,?,?,?,?,?,?)",
+        (job, started_at, finished_at, int(bool(ok)), json.dumps(counts or {}, ensure_ascii=False),
+         error_code, error_text))
+    c.commit()
+
+
+class _JobRunRecord:
+    """What ``job_run``'s ``with`` block gets to fill in before the row is written. Defaults to a
+    clean success -- a job whose body never touches these fields records as ok, no counts, no
+    error, which matches every job here that cannot usefully fail short of raising."""
+
+    def __init__(self):
+        self.ok = True
+        self.counts = {}
+        self.error_code = None
+        self.error_text = None
+
+
+@contextmanager
+def job_run(job):
+    """Records one wa_job_runs row spanning the wrapped block (TASK-283.7's job heartbeats):
+    started_at now, finished_at when the block exits, ok/counts/error from the yielded recorder.
+    An uncaught exception is recorded too (ok=False, its own type name/str as the error, unless the
+    caller already set one) and then RE-RAISED -- this only observes a job's own entrypoint, it
+    never swallows its failure, so main()'s existing except/return-code handling is unaffected.
+
+    Deliberately minimal (the task's own instruction: wrap main(), do not restructure): the caller
+    wraps the one call that does the real work and sets .ok/.counts on the recorder it gets back;
+    everything else in that main() -- argument parsing, printing, the original return code -- stays
+    exactly where it was."""
+    rec = _JobRunRecord()
+    started = now_iso()
+    try:
+        yield rec
+    except BaseException as exc:
+        rec.ok = False
+        if rec.error_code is None:
+            rec.error_code = type(exc).__name__
+        if rec.error_text is None:
+            rec.error_text = str(exc)
+        with db() as c:
+            record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+        raise
+    with db() as c:
+        record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+
+
+def job_run_summary(c, job):
+    """{"last_run_at","last_ok_at","last_error","ok_24h","failed_24h"} for one heartbeat-recorded job
+    (HEARTBEAT_JOBS), from wa_job_runs -- the "never run yet" shape (every field null/0) when no row
+    exists, never invented. ``last_error`` is the latest run's own error, and only the latest run's:
+    once a run after a failure succeeds, last_error clears -- same convention as wa_rail_sync's
+    record_rail_sync_ok right above, so a resolved alarm does not sit lit forever."""
+    last = c.execute("select * from wa_job_runs where job=? order by started_at desc, id desc limit 1",
+                     (job,)).fetchone()
+    if last is None:
+        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": 0, "failed_24h": 0}
+    last_ok = c.execute("select started_at from wa_job_runs where job=? and ok=1 "
+                        "order by started_at desc limit 1", (job,)).fetchone()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    ok_24h = c.execute("select count(*) as n from wa_job_runs where job=? and ok=1 and started_at>=?",
+                       (job, cutoff)).fetchone()["n"]
+    failed_24h = c.execute("select count(*) as n from wa_job_runs where job=? and ok=0 and started_at>=?",
+                           (job, cutoff)).fetchone()["n"]
+    last_error = None if last["ok"] else {"code": last["error_code"], "text": last["error_text"]}
+    return {"last_run_at": last["started_at"], "last_ok_at": last_ok["started_at"] if last_ok else None,
+            "last_error": last_error, "ok_24h": ok_24h, "failed_24h": failed_24h}
+
+
+# --- Pro activity rail view (TASK-283.7): the derived "luna_reply" job -----------------------------
+# No heartbeat write of its own (the shared interface, "Derived jobs come from existing tables, not
+# from new writes") -- the live reply path is invoked synchronously off the webhook/catch-up, never
+# on a timer, so there is no cadence to compute next_run_at/overdue from either (pro_api.py leaves
+# both null/false for this one, documented in docs/wa-pro-activity.md).
+
+def luna_reply_job_summary(c):
+    """{"last_run_at","last_ok_at","last_error","ok_24h","failed_24h"} derived from wa_luna_calls
+    (every attempted reply turn, success or not) and wa_send_failures (the one durable record of a
+    turn that did NOT make it out). last_run_at/last_ok_at both read as "the most recent logged
+    call" -- wa_luna_calls carries no per-row outcome, so this cannot distinguish a successful call
+    from one whose OWN reply later failed to send; that failure still shows up in last_error/
+    failed_24h from wa_send_failures, which is the most honest split available from what these two
+    tables actually record (docs/wa-pro-activity.md states the limitation)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    last_call = c.execute("select max(at) as m from wa_luna_calls").fetchone()["m"]
+    ok_24h = c.execute("select count(*) as n from wa_luna_calls where at>=?", (cutoff,)).fetchone()["n"]
+    failed_24h = c.execute("select count(*) as n from wa_send_failures where at>=?", (cutoff,)).fetchone()["n"]
+    fail_row = c.execute("select error, at from wa_send_failures order by id desc limit 1").fetchone()
+    last_error = {"code": "send_failed", "text": fail_row["error"]} if fail_row else None
+    return {"last_run_at": last_call, "last_ok_at": last_call, "last_error": last_error,
+            "ok_24h": ok_24h, "failed_24h": failed_24h}

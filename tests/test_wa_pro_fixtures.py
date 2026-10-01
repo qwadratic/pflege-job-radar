@@ -5,6 +5,7 @@ import json
 import pathlib
 
 from app.wa import pro_models as M
+from app.wa import store as ST
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wa_pro_api" / "threads.json"
 
@@ -73,6 +74,98 @@ def test_fixture_no_raw_phone_digits_longer_than_masked_tail():
     """Every phone_masked value must use the bullet character for the hidden portion -- a quick
     regression guard that the fixture itself never leaked a full number."""
     data = _load()
+    for row in data["rows"]:
+        masked = row["phone_masked"]
+        assert masked is None or "•" in masked
+
+
+# --- tests/fixtures/wa_pro_api/activity.json (TASK-283.7) -------------------------------------------
+ACTIVITY_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wa_pro_api" / "activity.json"
+
+
+def _load_activity():
+    return json.loads(ACTIVITY_FIXTURE.read_text())
+
+
+def test_activity_fixture_validates_as_an_activity_response():
+    data = _load_activity()
+    M.ActivityResponse.model_validate(data)
+
+
+def test_activity_fixture_covers_a_tunnel_down_variant():
+    data = _load_activity()
+    assert data["rail"]["tunnel"]["up"] is False
+    assert data["rail"]["tunnel"]["last_error"] is not None
+
+
+def test_activity_fixture_covers_an_overdue_job():
+    data = _load_activity()
+    assert any(job["overdue"] is True for job in data["jobs"])
+
+
+def test_activity_fixture_covers_every_heartbeat_job_and_leaves_nudges_out():
+    """store.HEARTBEAT_JOBS (5) + the 3 derived jobs (relay_sync, luna_reply, broadcasts) = 8 rows.
+    "nudges" is a contract job key this harness deliberately never emits (see
+    docs/wa-pro-activity.md) -- the fixture must not contradict that by inventing one."""
+    data = _load_activity()
+    job_keys = {job["job"] for job in data["jobs"]}
+    assert job_keys == set(ST.HEARTBEAT_JOBS) | {"relay_sync", "luna_reply", "broadcasts"}
+    assert "nudges" not in job_keys
+
+
+def test_activity_fixture_covers_a_job_with_an_error():
+    data = _load_activity()
+    assert any(job["last_error"] for job in data["jobs"])
+
+
+# --- tests/fixtures/wa_pro_api/ops.json (TASK-283.7) -------------------------------------------------
+OPS_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wa_pro_api" / "ops.json"
+
+
+def _load_ops():
+    return json.loads(OPS_FIXTURE.read_text())
+
+
+def test_ops_fixture_validates_as_an_ops_envelope():
+    data = _load_ops()
+    envelope = M.OpsEnvelope.model_validate(data)
+    assert len(envelope.rows) == len(data["rows"])
+
+
+def test_ops_fixture_every_row_validates_individually():
+    data = _load_ops()
+    for row in data["rows"]:
+        M.OpRow.model_validate(row)
+
+
+def test_ops_fixture_covers_every_status():
+    data = _load_ops()
+    assert {row["status"] for row in data["rows"]} == {"queued", "running", "done", "failed"}
+
+
+def test_ops_fixture_covers_every_origin_including_pro_human():
+    data = _load_ops()
+    origins = {row["origin"] for row in data["rows"]}
+    assert origins == set(ST.ORIGIN_VALUES)
+    assert "pro_human" in origins
+
+
+def test_ops_fixture_covers_a_failed_op_with_an_error():
+    data = _load_ops()
+    failed = [row for row in data["rows"] if row["status"] == "failed"]
+    assert failed
+    assert all(row["error"] and row["error"]["code"] for row in failed)
+
+
+def test_ops_fixture_attempts_always_null():
+    """Contract: "attempts is null when the bridge does not track it" -- the bridge tracks no
+    retry count at all, so this is never anything else."""
+    data = _load_ops()
+    assert all(row["attempts"] is None for row in data["rows"])
+
+
+def test_ops_fixture_no_raw_phone_digits_longer_than_masked_tail():
+    data = _load_ops()
     for row in data["rows"]:
         masked = row["phone_masked"]
         assert masked is None or "•" in masked

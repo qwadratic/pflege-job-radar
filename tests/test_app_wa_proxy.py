@@ -116,12 +116,14 @@ def test_query_string_forwarded(client, monkeypatch):
     assert seen["url"] == "http://harness.internal:8502/api/wa/pro/threads?include_test=1&limit=5&offset=10"
 
 
-# --- 2xx passthrough, all four paths ---------------------------------------------------------------
+# --- 2xx passthrough, all six paths -----------------------------------------------------------------
 @pytest.mark.parametrize("board_path,harness_path", [
     ("/api/wa/threads", "/api/wa/pro/threads"),
     ("/api/wa/threads/t_abc123", "/api/wa/pro/threads/t_abc123"),
     ("/api/wa/threads/t_abc123/messages", "/api/wa/pro/threads/t_abc123/messages"),
     ("/api/wa/health", "/api/wa/pro/health"),
+    ("/api/wa/activity", "/api/wa/pro/activity"),
+    ("/api/wa/ops", "/api/wa/pro/ops"),
 ])
 def test_2xx_passthrough(client, monkeypatch, board_path, harness_path):
     monkeypatch.setenv("WA_API_BASE", "http://harness.internal:8502")
@@ -232,3 +234,42 @@ def test_anonymous_and_customer_denied(client):
     cookie = AU.create_session(CUSTOMER, "customer")
     r = client.get("/api/wa/threads", headers={"Cookie": "pj_session=" + cookie})
     assert r.status_code == 401 and r.json()["role"] == "customer"
+
+
+# --- TASK-283.7: /api/wa/activity, /api/wa/ops (query string carried over too) ---------------------
+
+def test_activity_query_string_forwarded(client, monkeypatch):
+    monkeypatch.setenv("WA_API_BASE", "http://harness.internal:8502")
+    monkeypatch.setenv("WA_API_TOKEN", "tok")
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"rows": []})
+
+    _mock(monkeypatch, handler)
+    _login(client)
+    r = client.get("/api/wa/ops?status=failed&origin=auto&limit=5")
+    assert r.status_code == 200
+    assert seen["url"] == ("http://harness.internal:8502/api/wa/pro/ops"
+                           "?status=failed&origin=auto&limit=5")
+
+
+def test_activity_and_ops_anonymous_and_customer_denied(client):
+    for path in ("/api/wa/activity", "/api/wa/ops"):
+        r = client.get(path)
+        assert r.status_code == 401 and r.json()["role"] == "anonymous", path
+    AU.upsert_customer(CUSTOMER)
+    cookie = AU.create_session(CUSTOMER, "customer")
+    for path in ("/api/wa/activity", "/api/wa/ops"):
+        r = client.get(path, headers={"Cookie": "pj_session=" + cookie})
+        assert r.status_code == 401 and r.json()["role"] == "customer", path
+
+
+def test_owner_session_reaches_activity_and_ops(client, monkeypatch):
+    monkeypatch.setenv("WA_API_BASE", "http://harness.internal:8502")
+    monkeypatch.setenv("WA_API_TOKEN", "tok")
+    _mock(monkeypatch, lambda request: httpx.Response(200, json={"rows": []}))
+    _login(client)
+    assert client.get("/api/wa/activity").status_code == 200
+    assert client.get("/api/wa/ops").status_code == 200

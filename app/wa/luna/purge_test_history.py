@@ -341,7 +341,14 @@ def main(argv=None):
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    report = run(older_than_hours=args.older_than_hours, apply=args.apply, phones=phones)
+    # TASK-283.7: the job heartbeat wraps only the purge itself, job key "purge_test" (the real
+    # systemd unit, deploy/pflege-wa-purge-test.timer, runs this daily 03:00 Europe/Berlin).
+    with ST.job_run(ST.JOB_PURGE_TEST) as jr:
+        report = run(older_than_hours=args.older_than_hours, apply=args.apply, phones=phones)
+        jr.ok = report["problems"] == 0
+        jr.counts = {"threads": len(report["phones"]),
+                     "wiped": sum(1 for p in report["phones"] if p["wiped"]),
+                     "problems": report["problems"]}
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

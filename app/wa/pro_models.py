@@ -418,3 +418,143 @@ class LeadsEnvelope(_Strict):
     #: CV, employers, a document-verified flag, consent scope, per-field provenance -- named here
     #: instead of silently absent, per TASK-396's implementation notes.
     gaps: list[str]
+
+
+# --- GET /api/wa/pro/activity, GET /api/wa/pro/ops (TASK-283.7) -------------------------------------
+# ~/plans/2026-10-01-pro-activity-rail-view.md, "Endpoints" -- builder B's half of the Pro activity
+# rail (bridge/relay_pull.py mirrors phone_ops and a health snapshot into app/wa/store.py; these two
+# routes only ever read that mirror, db_ro(), same discipline as every GET above).
+
+#: bridge/ledger.py's OP_QUEUED/OP_RUNNING/OP_DONE/OP_FAILED plus "the bridge's real extra states"
+#: (contract's own wording, Rules) -- plain str, not a closed Literal, for the same reason
+#: DeliveryStatus is (review item 9): a future bridge state must not 500 the whole ops endpoint.
+OpStatus = str
+#: app/wa/store.py:ORIGIN_VALUES, shown raw -- store.py already folds anything outside its own 12
+#: named values to "unknown" before a row is ever mirrored, so this model does not re-enforce it.
+OpOrigin = str
+#: bridge/server.py's op kind names (send, send_photos, send_gallery, send_document, reconcile,
+#: list_chats, read_thread) -- plain str, same "unknown values shown raw" reason as OpStatus.
+OpKind = str
+#: OUR OWN derivation (bridge/relay_pull.py::_derive_phone_state), not the bridge's -- a closed
+#: Literal is correct here, unlike OpStatus/OpOrigin/OpKind, because nothing outside what that one
+#: function returns can ever reach this field.
+PhoneState = Literal["ready", "recovering", "blocked", "disconnected", "unknown"]
+#: The contract's job keys (luna_reply, followups, nudges, broadcasts, relay_sync, catchup,
+#: tunnel_watch, purge_test, agent_notes) -- plain str: "nudges" is listed by the contract but never
+#: emitted by this harness (docs/wa-pro-activity.md), and a closed Literal would turn that documented
+#: omission into a validation hazard instead of leaving it a documentation fact.
+JobKey = str
+
+
+class ErrorInfo(_Strict):
+    """An enum code plus free text (contract: "error = an enum code + free text") -- used for both
+    a mirrored op's own error and a job run's error; the closed code lists differ per use and live
+    in docs/wa-pro-activity.md, not in this shared shape."""
+    code: str
+    text: str | None = None
+
+
+class TunnelInfo(_Strict):
+    up: bool
+    since: str | None = None
+    last_error: ErrorInfo | None = None
+
+
+class PhoneInfo(_Strict):
+    state: PhoneState
+    since: str | None = None
+
+
+class WatcherInfo(_Strict):
+    #: None when the snapshot itself has never run (no watcher reading at all) -- distinct from
+    #: False (a reading WAS taken and the watcher is dead).
+    alive: bool | None = None
+    heartbeat_at: str | None = None
+
+
+class RailInfo(_Strict):
+    tunnel: TunnelInfo
+    phone: PhoneInfo
+    watcher: WatcherInfo
+    #: Same value as ActivityResponse.synced_at, nested here too (the contract's own shape lists
+    #: both) -- intentional duplication, not a typo: one bundle for a "rail health strip" widget
+    #: that only renders ``rail``, one top-level pair for a reader that wants it without destructuring.
+    last_sync_at: str | None = None
+
+
+class QueueCounts(_Strict):
+    """Complete COUNT(*) over the whole ops mirror (contract: "complete counts from the full
+    mirror, never a cut list") -- never a windowed or capped query."""
+    queued: int
+    running: int
+    done: int
+    failed: int
+
+
+class JobRow(_Strict):
+    job: JobKey
+    #: True for every job this harness actually emits a row for (no job here currently has a kill
+    #: switch -- app/wa/config.py has none for any of catchup/followups/tunnel_watch/purge_test/
+    #: agent_notes/relay_sync/luna_reply/broadcasts; documented as deliberate, not an oversight).
+    enabled: bool
+    last_run_at: str | None = None
+    last_ok_at: str | None = None
+    last_error: ErrorInfo | None = None
+    next_run_at: str | None = None
+    ok_24h: int
+    failed_24h: int
+    #: Additive beyond the contract's own field list, same convention as ThreadsEnvelope.synced_at
+    #: (an extra freshness signal, not in wa-dashboard.md either, that the frontend asked for
+    #: anyway): now > last_run_at + 2x the job's own cadence. Null for a job with no fixed cadence
+    #: (luna_reply, broadcasts: event-driven, never on a timer) or that has never run at all.
+    overdue: bool | None = None
+
+
+class ActivityResponse(_Strict):
+    generated_at: str
+    #: wa_rail_snapshot's own timestamp -- null before bridge/relay_pull.py has ever written one.
+    snapshot_at: str | None = None
+    #: See ThreadsEnvelope.synced_at/synced_source -- the SAME wa_rail_sync heartbeat, repeated here
+    #: as its own top-level pair (see RailInfo.last_sync_at for the nested copy).
+    synced_at: str | None = None
+    synced_source: str | None = None
+    rail: RailInfo
+    queue: QueueCounts
+    jobs: list[JobRow]
+    #: origin=pro_human subset of queue (contract: "Human tasks are phone_ops rows with
+    #: origin=pro_human: one list, no /tasks").
+    human: QueueCounts
+    #: Additive, same convention as every other envelope in this module (ThreadsEnvelope.source,
+    #: LeadsEnvelope.source) -- not itemized in the contract's own shape, which lists only the
+    #: fields pflege-fe specifically asked for.
+    source: str
+
+
+class OpRow(_Strict):
+    #: The mirrored op's own op_id (opaque, bridge-minted) -- NOT the position used for cursor
+    #: paging (OpsEnvelope.next_before_id is a position, this is not; see pro_api.py::_op_row_dict).
+    id: str
+    kind: OpKind
+    origin: OpOrigin
+    status: OpStatus
+    thread_id: str | None = None
+    phone_masked: str | None = None
+    created_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    #: Always null (contract: "attempts is null when the bridge does not track it") -- the bridge
+    #: tracks no retry count for a phone_ops row at all, so this is never anything but null today.
+    attempts: Any | None = None
+    error: ErrorInfo | None = None
+
+
+class OpsEnvelope(_Strict):
+    generated_at: str
+    source: str
+    #: See ThreadsEnvelope.synced_at/synced_source.
+    synced_at: str | None = None
+    synced_source: str | None = None
+    rows: list[OpRow]
+    #: A wa_ops_mirror.position, like /messages' own next_before_id is a wa_messages.id -- NOT an
+    #: op_id (see OpRow.id's own note).
+    next_before_id: int | None = None

@@ -59,7 +59,7 @@ import pathlib
 import re
 import socket
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError as PydanticValidationError
@@ -595,6 +595,177 @@ def pro_health(request: Request):
         synced = _rail_sync_summary(c)
     readiness = {k: v for k, v in C.readiness().items() if k not in _HEALTH_DROP_KEYS}
     return _scrub_wamids({**readiness, "rails": rails, **synced})
+
+
+# --- GET /api/wa/pro/activity, GET /api/wa/pro/ops (TASK-283.7, builder B) --------------------------
+# ~/plans/2026-10-01-pro-activity-rail-view.md, "Endpoints". Same discipline as every GET above:
+# db_ro() only, never ST._lock, never calls the bridge -- the engine (bridge/relay_pull.py) is the
+# only thing that ever talks to the mini; this module only ever reads what it already mirrored.
+
+#: Seconds between runs, for the jobs that have one (next_run_at = last_run_at + cadence; overdue =
+#: now > last_run_at + 2x cadence -- both the contract's own formulas, applied uniformly). Sourced
+#: from each job's own deploy/ unit (OnUnitActiveSec/OnCalendar) except relay_sync, which has no
+#: systemd timer of its own -- bridge/relay_pull.py's own INTERVAL_SEC is its cadence instead.
+#: luna_reply and broadcasts are deliberately absent: both are event-driven, not timer-driven, and
+#: the contract's own cadence list (plan, "Data path" section 4) never gives either one a number --
+#: their JobRow.next_run_at/overdue stay null rather than inventing a cadence neither actually has.
+#: purge_test's true schedule is a daily 03:00 Europe/Berlin wall-clock cron, not a fixed interval;
+#: next_run_at here is last_run_at + 86400s, which drifts from the true next 03:00 by up to an hour
+#: across a DST transition -- a known, documented imprecision (docs/wa-pro-activity.md) rather than
+#: a timezone-aware special case the contract's own generic formula never asked for.
+JOB_CADENCE_SEC = {
+    ST.JOB_CATCHUP: 180.0, ST.JOB_FOLLOWUPS: 900.0, ST.JOB_TUNNEL_WATCH: 30.0,
+    ST.JOB_AGENT_NOTES: 300.0, ST.JOB_PURGE_TEST: 86400.0, "relay_sync": 3.0,
+}
+
+
+def _error_info(code, text):
+    return {"code": code, "text": text} if code else None
+
+
+def _job_row(job, summary, *, enabled=True):
+    """One JobRow dict from a {last_run_at, last_ok_at, last_error, ok_24h, failed_24h} summary
+    (store.job_run_summary / store.luna_reply_job_summary / this module's own derived-job
+    summaries below) plus JOB_CADENCE_SEC's own next_run_at/overdue formulas."""
+    cadence = JOB_CADENCE_SEC.get(job)
+    last_run_at = summary["last_run_at"]
+    next_run_at = overdue = None
+    if cadence is not None and last_run_at:
+        last_dt = datetime.fromisoformat(last_run_at.replace("Z", "+00:00"))
+        next_run_at = (last_dt + timedelta(seconds=cadence)).isoformat()
+        overdue = datetime.now(timezone.utc) > last_dt + timedelta(seconds=2 * cadence)
+    return {"job": job, "enabled": enabled, "last_run_at": last_run_at,
+            "last_ok_at": summary["last_ok_at"], "last_error": summary["last_error"],
+            "next_run_at": next_run_at, "ok_24h": summary["ok_24h"], "failed_24h": summary["failed_24h"],
+            "overdue": overdue}
+
+
+def _relay_sync_job_summary(c):
+    """relay_sync (plan "Data path" #5, one of the three derived jobs): app/wa/store.py's own
+    wa_rail_sync heartbeat (bridge/relay_pull.py's _write_rail_sync, review item 13) -- the same
+    row _rail_sync_summary already reads, just read again under this job's name. No 24h WINDOW
+    exists for it (one row, overwritten every ~INTERVAL_SEC): ok_24h/failed_24h here are 1/0
+    (whichever the most recent pass was), not a count of passes over 24h -- documented as a known
+    limitation (docs/wa-pro-activity.md) rather than presented as equivalent to the 5 heartbeat
+    jobs' real windowed counts."""
+    row = ST.rail_sync(c)
+    if row is None:
+        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": 0, "failed_24h": 0}
+    ok = row["last_error"] is None
+    return {"last_run_at": row["synced_at"] or row["last_error_at"], "last_ok_at": row["synced_at"],
+            "last_error": _error_info("relay_sync_failed", row["last_error"]),
+            "ok_24h": 1 if ok else 0, "failed_24h": 0 if ok else 1}
+
+
+def _broadcasts_job_summary(snapshot):
+    """broadcasts (plan "Data path" #5, derived job #3): wa_rail_snapshot's own
+    broadcast.runner heartbeat (bridge/broadcast.py::BroadcastRunner.heartbeat) -- the only signal
+    this harness has for it. ok_24h/failed_24h are that runner's process-LIFETIME
+    attempted/errors counters, not a true 24h window (it exposes no windowed counters the way
+    wa_job_runs does) -- documented the same way as relay_sync above. last_run_at has no direct
+    field either (only an attempted item or an error is recorded, not every idle cycle) --
+    approximated as the newer of last_item_at/last_error_at, so an alive-but-idle runner (no items,
+    no errors since start) honestly reports last_run_at=null rather than a guessed time."""
+    runner = (((snapshot or {}).get("health") or {}).get("broadcast") or {}).get("runner") or {}
+    candidates = [v for v in (runner.get("last_item_at"), runner.get("last_error_at")) if v]
+    last_run_at = max(candidates) if candidates else None
+    last_error = (_error_info("broadcast_runner_error", runner.get("last_error"))
+                 if runner.get("last_error") and runner.get("last_error_at") == last_run_at else None)
+    return {"last_run_at": last_run_at, "last_ok_at": runner.get("last_item_at"),
+            "last_error": last_error, "ok_24h": runner.get("attempted") or 0,
+            "failed_24h": runner.get("errors") or 0}
+
+
+def _job_rows(c, snapshot):
+    """Every JobRow (plan "Data path" #4/#5): the 5 heartbeat-recorded jobs (wa_job_runs,
+    store.HEARTBEAT_JOBS) plus the 3 derived ones. "nudges" -- listed among the contract's own job
+    keys -- is deliberately never emitted: app.wa.luna.followups IS the proactive-nudge sender
+    (TASK-189) in its entirety, with no separate pass to record under a second name; wrapping it
+    once under job="followups" (store.py's own job_run heartbeat) already covers the only nudge
+    code path this harness has. docs/wa-pro-activity.md states this omission explicitly."""
+    rows = [_job_row(job, ST.job_run_summary(c, job)) for job in ST.HEARTBEAT_JOBS]
+    rows.append(_job_row("relay_sync", _relay_sync_job_summary(c)))
+    rows.append(_job_row("luna_reply", ST.luna_reply_job_summary(c)))
+    rows.append(_job_row("broadcasts", _broadcasts_job_summary(snapshot)))
+    return rows
+
+
+def _rail_info(snapshot, synced):
+    health = (snapshot or {}).get("health") or {}
+    watcher = health.get("watcher") or {}
+    return {
+        "tunnel": {"up": bool(snapshot["tunnel_up"]) if snapshot else False,
+                   "since": snapshot["tunnel_since"] if snapshot else None,
+                   "last_error": (_error_info(snapshot["last_error_code"], snapshot["last_error_text"])
+                                  if snapshot and snapshot["last_error_code"] else None)},
+        "phone": {"state": (snapshot["phone_state"] if snapshot and snapshot["phone_state"] else "unknown"),
+                  "since": snapshot["phone_state_since"] if snapshot else None},
+        "watcher": {"alive": watcher.get("alive"), "heartbeat_at": watcher.get("last_ok_at")},
+        # Nested copy of the top-level pair below (ActivityResponse/RailInfo's own docstrings) --
+        # the contract's own shape lists both.
+        "last_sync_at": synced["synced_at"],
+    }
+
+
+@router.get("/wa/pro/activity", response_model=M.ActivityResponse)
+def pro_activity(request: Request):
+    _authorize(request, SCOPE_BOARD)
+    with db_ro() as c:
+        snapshot = ST.rail_snapshot(c)
+        synced = _rail_sync_summary(c)
+        queue = ST.ops_mirror_counts(c)
+        human = ST.ops_mirror_counts(c, origin="pro_human")
+        jobs = _job_rows(c, snapshot)
+    out = {"generated_at": ST.now_iso(), "snapshot_at": snapshot["snapshot_at"] if snapshot else None,
+           "rail": _rail_info(snapshot, synced), "queue": queue, "jobs": jobs, "human": human,
+           "source": _source(), **synced}
+    return _scrub_wamids(out)
+
+
+def _resolve_origin_filter(value):
+    """-> store.ops_mirror_page's own ``origin`` argument (None, one value, or a list) for GET
+    /api/wa/pro/ops's own ``origin=auto|pro|<exact>`` query param (contract wording). None (the
+    param omitted) means no filter at all. 'auto' means every AUTOMATED origin -- every value in
+    ST.ORIGIN_VALUES except pro_human (Rules: "Human tasks are phone_ops rows with
+    origin=pro_human"). 'pro' means exactly pro_human. Anything else must be one of ST.ORIGIN_VALUES
+    exactly, or 400 -- a caller's typo is never silently folded to 'unknown' the way a BRIDGE-
+    supplied value is in store.upsert_mirrored_op; that fallback exists for data this harness does
+    not control, not for a query string this route does."""
+    if value is None:
+        return None
+    if value == "auto":
+        return [o for o in ST.ORIGIN_VALUES if o != "pro_human"]
+    if value == "pro":
+        return "pro_human"
+    if value not in ST.ORIGIN_VALUES:
+        raise HTTPException(400, f"origin must be 'auto', 'pro', or one of {ST.ORIGIN_VALUES}, got {value!r}")
+    return value
+
+
+def _op_row_dict(row):
+    return {"id": row["op_id"], "kind": row["kind"], "origin": row["origin"], "status": row["state"],
+            "thread_id": row["thread_id"], "phone_masked": row["phone_masked"],
+            "created_at": row["created_at"], "started_at": row["started_at"],
+            "finished_at": row["finished_at"], "attempts": None,
+            "error": _error_info(row["error_code"], row["error_text"])}
+
+
+@router.get("/wa/pro/ops", response_model=M.OpsEnvelope)
+def pro_ops(request: Request, status: str | None = None, origin: str | None = None,
+           before_id: int | None = None, after_id: int | None = None, limit: int = 50):
+    _authorize(request, SCOPE_BOARD)
+    if limit <= 0:
+        raise HTTPException(400, f"limit must be a positive integer, got {limit}")
+    if before_id is not None and after_id is not None:
+        raise HTTPException(400, "before_id and after_id may not both be given")
+    origin_filter = _resolve_origin_filter(origin)
+    with db_ro() as c:
+        rows, next_before_id = ST.ops_mirror_page(c, limit=limit, status=status, origin=origin_filter,
+                                                   before_id=before_id, after_id=after_id)
+        synced = _rail_sync_summary(c)
+    out = {"generated_at": ST.now_iso(), "source": _source(), "rows": [_op_row_dict(r) for r in rows],
+           "next_before_id": next_before_id, **synced}
+    return _scrub_wamids(out)
 
 
 # --- handoff write-back (TASK-396) ------------------------------------------------------------------

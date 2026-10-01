@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-10-01T12:00:00+00:00",
+  "source": "harness@tasker-dispatcher-01",
+  "synced_at": "2026-10-01T11:55:10+00:00",
+  "synced_source": "bridge_relay_pull",
+  "rows": [
+    {
+      "id": "op_fake0012", "kind": "list_chats", "origin": "unknown", "status": "failed",
+      "thread_id": null, "phone_masked": null,
+      "created_at": "2026-10-01T11:59:50+00:00", "started_at": "2026-10-01T11:59:51+00:00",
+      "finished_at": "2026-10-01T11:59:52+00:00", "attempts": null,
+      "error": {"code": "restarted_while_running", "text": "executor restarted while this op was running"}
+    },
+    {
+      "id": "op_fake0011", "kind": "send", "origin": "pro_human", "status": "queued",
+      "thread_id": "t_test0000000111", "phone_masked": "+49 ••• ••• 1011",
+      "created_at": "2026-10-01T11:59:40+00:00", "started_at": null, "finished_at": null,
+      "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0010", "kind": "reconcile", "origin": "bridge", "status": "done",
+      "thread_id": null, "phone_masked": null,
+      "created_at": "2026-10-01T11:58:00+00:00", "started_at": "2026-10-01T11:58:01+00:00",
+      "finished_at": "2026-10-01T11:58:03+00:00", "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0009", "kind": "send", "origin": "agent_notes", "status": "done",
+      "thread_id": "t_test0000000109", "phone_masked": "+49 ••• ••• 1009",
+      "created_at": "2026-10-01T11:57:30+00:00", "started_at": "2026-10-01T11:57:31+00:00",
+      "finished_at": "2026-10-01T11:57:33+00:00", "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0008", "kind": "read_thread", "origin": "operator", "status": "done",
+      "thread_id": "t_test0000000108", "phone_masked": "+49 ••• ••• 1008",
+      "created_at": "2026-10-01T11:57:00+00:00", "started_at": "2026-10-01T11:57:01+00:00",
+      "finished_at": "2026-10-01T11:57:02+00:00", "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0007", "kind": "send", "origin": "broadcast", "status": "running",
+      "thread_id": "t_test0000000107", "phone_masked": "+49 ••• ••• 1007",
+      "created_at": "2026-10-01T11:56:30+00:00", "started_at": "2026-10-01T11:59:55+00:00",
+      "finished_at": null, "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0006", "kind": "send", "origin": "campaign", "status": "running",
+      "thread_id": "t_test0000000106", "phone_masked": "+49 ••• ••• 1006",
+      "created_at": "2026-10-01T11:56:00+00:00", "started_at": "2026-10-01T11:59:50+00:00",
+      "finished_at": null, "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0005", "kind": "send", "origin": "catchup", "status": "failed",
+      "thread_id": "t_test0000000105", "phone_masked": "+49 ••• ••• 1005",
+      "created_at": "2026-10-01T11:50:00+00:00", "started_at": "2026-10-01T11:50:01+00:00",
+      "finished_at": "2026-10-01T11:52:01+00:00", "attempts": null,
+      "error": {"code": "op_expired", "text": "op expired after budget_sec=120 with no ack"}
+    },
+    {
+      "id": "op_fake0004", "kind": "send", "origin": "nudges", "status": "queued",
+      "thread_id": "t_test0000000104", "phone_masked": "+49 ••• ••• 1004",
+      "created_at": "2026-10-01T11:49:00+00:00", "started_at": null, "finished_at": null,
+      "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0003", "kind": "send", "origin": "followups", "status": "queued",
+      "thread_id": "t_test0000000103", "phone_masked": "+49 ••• ••• 1003",
+      "created_at": "2026-10-01T11:48:00+00:00", "started_at": null, "finished_at": null,
+      "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0002", "kind": "send_document", "origin": "luna_tool", "status": "done",
+      "thread_id": "t_test0000000102", "phone_masked": "+49 ••• ••• 1002",
+      "created_at": "2026-10-01T11:40:00+00:00", "started_at": "2026-10-01T11:40:01+00:00",
+      "finished_at": "2026-10-01T11:40:05+00:00", "attempts": null, "error": null
+    },
+    {
+      "id": "op_fake0001", "kind": "send", "origin": "luna", "status": "done",
+      "thread_id": "t_test0000000101", "phone_masked": "+49 ••• ••• 1001",
+      "created_at": "2026-10-01T11:39:00+00:00", "started_at": "2026-10-01T11:39:01+00:00",
+      "finished_at": "2026-10-01T11:39:03+00:00", "attempts": null, "error": null
+    }
+  ],
+  "next_before_id": 88
+}

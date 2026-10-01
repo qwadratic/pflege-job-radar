@@ -4,6 +4,7 @@ No phone, no ssh, no webhook. What is asserted here is what a candidate would fe
 a message that never gets answered because its id collided with someone else's, a message answered
 twice because two doors minted two ids for it, and a message the relay walked past.
 """
+import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -621,6 +622,305 @@ def test_production_relay_wires_the_real_rail_sync_writer(monkeypatch):
     relay = RP.from_env()
     try:
         assert relay.sync_writer is RP._write_rail_sync
+    finally:
+        relay.close()
+        relay.cursor.close()
+
+
+# --- TASK-283.7: health whitelist / phone-state derivation --------------------------------------
+
+def test_trim_health_drops_the_rails_own_phone_number_and_the_debug_only_driver_fields():
+    body = {"ok": True, "version": "x", "at": _ago(0),
+            "rail": {"number": "+491700000099", "msisdn_verified": True, "note": None,
+                     "driver": {"connected": True, "kind": "adb", "serial": "ABC123",
+                               "whatsapp_version": "2.26.1",
+                               "modules": {"adb_driver.py": {"sha256": "deadbeef"}}}},
+            "watcher": {"alive": True}, "doctor": {"blocked_by_stuck_op": False},
+            "journal_recent": {"dirty_state_recovered": 0, "idle_dirty_recovered": 0},
+            "audit": {"destructions": 3}}
+    trimmed = RP._trim_health(body)
+    assert trimmed["driver"] == {"connected": True, "kind": "adb"}
+    assert "audit" not in trimmed and "rail" not in trimmed and "ok" not in trimmed
+    assert "+491700000099" not in json.dumps(trimmed)
+    assert "ABC123" not in json.dumps(trimmed) and "deadbeef" not in json.dumps(trimmed)
+    assert trimmed["watcher"] == {"alive": True}
+
+
+def test_derive_phone_state_priority_order():
+    assert RP._derive_phone_state({"driver": {"connected": None}}) == "unknown"
+    assert RP._derive_phone_state({"driver": {}}) == "unknown"
+    assert RP._derive_phone_state({"driver": {"connected": False}}) == "disconnected"
+    # disconnected wins even when the doctor also reports a stuck op
+    assert RP._derive_phone_state({"driver": {"connected": False},
+                                   "doctor": {"blocked_by_stuck_op": True}}) == "disconnected"
+    assert RP._derive_phone_state({"driver": {"connected": True},
+                                   "doctor": {"blocked_by_stuck_op": True}}) == "blocked"
+    assert RP._derive_phone_state(
+        {"driver": {"connected": True}, "doctor": {"blocked_by_stuck_op": False},
+         "journal_recent": {"dirty_state_recovered": 1, "idle_dirty_recovered": 0}}) == "recovering"
+    assert RP._derive_phone_state(
+        {"driver": {"connected": True}, "doctor": {"blocked_by_stuck_op": False},
+         "journal_recent": {"dirty_state_recovered": 0, "idle_dirty_recovered": 2}}) == "recovering"
+    assert RP._derive_phone_state(
+        {"driver": {"connected": True}, "doctor": {"blocked_by_stuck_op": False},
+         "journal_recent": {"dirty_state_recovered": 0, "idle_dirty_recovered": 0}}) == "ready"
+
+
+# --- TASK-283.7: check_watcher_alarm's new snapshot_writer side effect ---------------------------
+
+def test_check_watcher_alarm_writes_an_ok_snapshot_on_a_healthy_body(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.health = lambda: (_health_body(watcher_last_ok_at=_ago(1)), 0.01)
+    relay.tunnel.up = lambda: True
+    calls = []
+    relay.snapshot_writer = lambda **kw: calls.append(kw)
+    relay.check_watcher_alarm()
+    assert len(calls) == 1
+    assert calls[0]["ok"] is True
+    assert calls[0]["tunnel_up"] is True
+    assert calls[0]["phone_state"] == "unknown"   # _health_body carries no "rail"/"driver" key at all
+    assert calls[0]["health"]["watcher"]["alive"] is True
+
+
+def test_check_watcher_alarm_writes_a_failed_snapshot_when_health_itself_fails(cursor):
+    relay = FakeRelay(cursor, [], [])
+
+    def broken_health():
+        raise RP.RelayError("executor health is 500: {}")
+
+    relay.health = broken_health
+    relay.tunnel.up = lambda: False
+    calls = []
+    relay.snapshot_writer = lambda **kw: calls.append(kw)
+    relay.check_watcher_alarm()
+    assert len(calls) == 1
+    assert calls[0]["ok"] is False
+    assert calls[0]["tunnel_up"] is False
+    assert calls[0]["error_code"] == "RelayError"
+    assert calls[0]["health"] is None
+
+
+def test_a_broken_snapshot_writer_never_takes_down_check_watcher_alarm(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.health = lambda: (_health_body(watcher_last_ok_at=_ago(1)), 0.01)
+    lines = []
+    relay.log = lines.append
+
+    def _boom(**kw):
+        raise RuntimeError("disk full")
+
+    relay.snapshot_writer = _boom
+    problems = relay.check_watcher_alarm()   # must not raise
+    assert problems == []
+    assert any("disk full" in line for line in lines)
+
+
+def test_check_watcher_alarm_writes_nothing_without_a_snapshot_writer(cursor):
+    """Default None -- same opt-in discipline as sync_writer: every test above this section that
+    never set snapshot_writer proved nothing by way of this, since _write_snapshot is a no-op."""
+    relay = FakeRelay(cursor, [], [])
+    relay.health = lambda: (_health_body(watcher_last_ok_at=_ago(1)), 0.01)
+    assert relay.snapshot_writer is None
+    relay.check_watcher_alarm()   # must not raise
+
+
+# --- TASK-283.7: Relay.ops() -----------------------------------------------------------------------
+
+def _plain_relay(cursor):
+    relay = RP.Relay(host="nowhere", token="t", webhook_url="http://127.0.0.1:8502/x",
+                     inbound_token="i", cursor=cursor, phone_number_id="p",
+                     display_phone_number="+49", waba_id="w", log=lambda _m: None)
+    relay.tunnel._port_open = lambda: True   # a forward is already up (borrowed) -- no real ssh
+    return relay
+
+
+def test_relay_ops_raises_ops_route_missing_on_404(cursor, monkeypatch):
+    monkeypatch.setattr(RP, "http_json", lambda *a, **kw: (404, {"detail": "not found"}, 0.01))
+    relay = _plain_relay(cursor)
+    with pytest.raises(RP.OpsRouteMissing):
+        relay.ops()
+
+
+def test_relay_ops_raises_relay_error_on_any_other_bad_status(cursor, monkeypatch):
+    monkeypatch.setattr(RP, "http_json", lambda *a, **kw: (500, {"detail": "boom"}, 0.01))
+    relay = _plain_relay(cursor)
+    with pytest.raises(RP.RelayError):
+        relay.ops()
+
+
+def test_relay_ops_builds_the_query_string(cursor, monkeypatch):
+    seen = {}
+
+    def fake_http_json(method, url, **kw):
+        seen["url"] = url
+        return 200, {"ok": True, "ops": [], "counts": {}, "next_after_position": None}, 0.01
+
+    monkeypatch.setattr(RP, "http_json", fake_http_json)
+    relay = _plain_relay(cursor)
+    relay.ops(after_position=5, limit=10, active=True, ids=["a", "b"])
+    assert "after_position=5" in seen["url"]
+    assert "limit=10" in seen["url"]
+    assert "active=1" in seen["url"]
+    assert "ids=a,b" in seen["url"]
+
+
+def test_relay_ops_with_no_arguments_builds_a_bare_query(cursor, monkeypatch):
+    seen = {}
+
+    def fake_http_json(method, url, **kw):
+        seen["url"] = url
+        return 200, {"ok": True, "ops": [], "counts": {}, "next_after_position": None}, 0.01
+
+    monkeypatch.setattr(RP, "http_json", fake_http_json)
+    relay = _plain_relay(cursor)
+    relay.ops()
+    assert seen["url"].endswith("/v1/ops")
+
+
+# --- TASK-283.7: Relay.mirror_ops() -----------------------------------------------------------------
+
+class FakeOpsMirror:
+    """Same shape as the production _OpsMirror (max_position/open_ids/write), backed by a plain
+    dict instead of app.wa.store -- so these tests never touch a database."""
+
+    def __init__(self, seed=()):
+        self.rows = {op["op_id"]: op for op in seed}
+
+    def max_position(self):
+        return max((op["position"] for op in self.rows.values()), default=0)
+
+    def open_ids(self):
+        return [op_id for op_id, op in self.rows.items() if op["state"] not in ("done", "failed")]
+
+    def write(self, ops):
+        for op in ops:
+            self.rows[op["op_id"]] = op
+
+
+def _mirror_op(op_id, position, *, state="queued"):
+    return {"op_id": op_id, "position": position, "kind": "send", "origin": "luna", "state": state,
+            "priority": 0, "created_at": _ago(10), "started_at": None, "finished_at": None,
+            "resolved_at": None, "budget_sec": 60, "phone": "+491700000099",
+            "error_code": None, "error_text": None}
+
+
+def test_mirror_ops_is_a_no_op_without_a_mirror_writer(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.ops = lambda **kw: (_ for _ in ()).throw(AssertionError("ops() must not be called"))
+    relay.mirror_ops()   # must not raise, and must not even call ops()
+
+
+def test_mirror_ops_pages_after_position_until_next_after_position_is_null(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []   # new ops WILL appear -- keep this test off the real one
+    mirror = FakeOpsMirror()
+    relay.mirror_writer = mirror
+    pages = [
+        {"ops": [_mirror_op("a", 1), _mirror_op("b", 2)], "next_after_position": 2},
+        {"ops": [_mirror_op("c", 3)], "next_after_position": None},
+    ]
+    position_calls = []
+
+    def fake_ops(*, after_position=None, limit=None, active=None, ids=None):
+        if active:
+            return {"ops": []}
+        if ids is not None:
+            return {"ops": []}
+        position_calls.append(after_position)
+        return pages.pop(0)
+
+    relay.ops = fake_ops
+    relay.mirror_ops()
+    assert set(mirror.rows) == {"a", "b", "c"}
+    assert position_calls == [0, 2]
+
+
+def test_mirror_ops_refreshes_open_ids_and_active_on_top_of_the_position_page(cursor):
+    relay = FakeRelay(cursor, [], [])
+    mirror = FakeOpsMirror(seed=[_mirror_op("z", 9, state="running")])
+    relay.mirror_writer = mirror
+    seen_ids = []
+
+    def fake_ops(*, after_position=None, limit=None, active=None, ids=None):
+        if ids is not None:
+            seen_ids.append(ids)
+            return {"ops": [_mirror_op("z", 9, state="done")]}
+        if active:
+            return {"ops": [_mirror_op("z", 9, state="done")]}
+        return {"ops": [], "next_after_position": None}
+
+    relay.ops = fake_ops
+    relay.mirror_ops()
+    assert seen_ids == [["z"]]
+    assert mirror.rows["z"]["state"] == "done"
+
+
+def test_mirror_ops_tolerates_a_missing_v1_ops_route(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.mirror_writer = FakeOpsMirror()
+    lines = []
+    relay.log = lines.append
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.OpsRouteMissing("no /v1/ops on this executor"))
+    relay.mirror_ops()   # must not raise
+    assert any("no /v1/ops" in line for line in lines)
+
+
+def test_mirror_ops_tolerates_any_other_relay_error_too(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.mirror_writer = FakeOpsMirror()
+    lines = []
+    relay.log = lines.append
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.RelayError("executor ops is 500: {}"))
+    relay.mirror_ops()   # must not raise
+    assert any("ops mirror failed" in line for line in lines)
+
+
+def test_mirror_ops_triggers_an_immediate_alarm_check_when_new_ops_appeared(cursor):
+    relay = FakeRelay(cursor, [], [])
+    mirror = FakeOpsMirror()
+    relay.mirror_writer = mirror
+    checks = []
+    relay.check_watcher_alarm = lambda: checks.append(1)
+
+    def fake_ops(*, after_position=None, limit=None, active=None, ids=None):
+        if active or ids is not None:
+            return {"ops": []}
+        return {"ops": [_mirror_op("a", 1)], "next_after_position": None}
+
+    relay.ops = fake_ops
+    relay.mirror_ops()
+    assert checks == [1]
+
+
+def test_mirror_ops_does_not_trigger_an_alarm_check_when_nothing_new_appeared(cursor):
+    relay = FakeRelay(cursor, [], [])
+    mirror = FakeOpsMirror(seed=[_mirror_op("z", 1, state="running")])
+    relay.mirror_writer = mirror
+    checks = []
+    relay.check_watcher_alarm = lambda: checks.append(1)
+    relay.ops = lambda **kw: {"ops": [], "next_after_position": None}
+    relay.mirror_ops()
+    assert checks == []
+
+
+def test_relay_run_calls_mirror_ops_every_cycle(cursor, monkeypatch):
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    calls = []
+    relay.mirror_ops = lambda: calls.append(1)
+    relay.run(stop=_StopAfterOnePass())
+    assert calls == [1]
+
+
+def test_production_relay_wires_the_real_mirror_and_snapshot_writers(monkeypatch):
+    for name, where in RP.REQUIRED_ENV.items():
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setenv("WA_BRIDGE_RELAY_STATE", "/dev/shm/pflege-wa-test-relay-cursor-283-7.sqlite")
+    relay = RP.from_env()
+    try:
+        assert isinstance(relay.mirror_writer, RP._OpsMirror)
+        assert relay.snapshot_writer is RP._write_rail_snapshot
     finally:
         relay.close()
         relay.cursor.close()

@@ -772,6 +772,8 @@ python -m tools.wa_pro_fixtures --write
 
 Surprising, truthful behavior the generator surfaced (worth knowing before trusting the fixture's shape over your own intuition): on thread `2222`, `app/wa/api.py`'s AUTOSEND-off/scope-refusal branch records a drafted-but-unsent reply as `kind="draft"` and never touches `last_outbound_at` (only an actual send does) — but `ball_for()` only looks at the last message's `direction`, so one unsent draft flips `ball` from `"us"` to `"them"` and (via `_is_stuck`, which short-circuits on `ball != "us"`) silently clears `stuck_reply`, even though nothing was actually delivered and the escalation is still unresolved.
 
+**Pro activity rail (TASK-283.7): bridge queue + job health.** Two more board-token routes, `GET /wa/pro/activity` and `GET /wa/pro/ops` — the board's "Leads | Rail & jobs" tab. Same auth/thread-identity/reads-never-lock discipline as above, but their own contract, closed value lists and freshness semantics are documented separately in [`docs/wa-pro-activity.md`](wa-pro-activity.md), not here (`docs/wa-dashboard.md` does not cover them either).
+
 ## Deliberately missing
 
 - **No LLM by default.** The question ladder above is deterministic so every rule has a test. `WA_BRAIN=luna` (above) switches to Claude when the full persona/conversation is needed.

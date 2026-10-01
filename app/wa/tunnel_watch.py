@@ -83,7 +83,14 @@ def check_once(now=None):
 
 def main():  # pragma: no cover - the entry point, not exercised offline
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    check_once()
+    # TASK-283.7: lazy import, so this module keeps the light footprint its own docstring describes
+    # (no app.wa.store dependency otherwise -- it never touches the mini or the bridge executor) --
+    # paid only here, in the entry point, never by a probe-only caller such as a test of check_once().
+    from . import store as ST
+    with ST.job_run(ST.JOB_TUNNEL_WATCH) as jr:
+        ok = check_once()
+        jr.ok = ok
+        jr.counts = {"up": ok}
 
 
 if __name__ == "__main__":  # pragma: no cover

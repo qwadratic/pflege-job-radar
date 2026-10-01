@@ -154,14 +154,21 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     phones = [p.strip() for p in args.phones.split(",") if p.strip()] if args.phones else None
-    if _in_quiet_hours():
-        print(f"0 nudge(s) sent (quiet hours: {C.QUIET_HOURS_START}:00-{C.QUIET_HOURS_END}:00 {C.QUIET_HOURS_TZ})")
+    # TASK-283.7: the job heartbeat wraps the whole pass, quiet-hours skip included -- a quiet-hours
+    # tick is still the timer firing on schedule, not a non-event, so it still counts as a run (job
+    # key "followups": app.wa.luna.followups IS the proactive-nudge sender in its entirety, TASK-189;
+    # there is no separate "nudges" pass to record under a second job key, see docs/wa-pro-activity.md).
+    with ST.job_run(ST.JOB_FOLLOWUPS) as jr:
+        if _in_quiet_hours():
+            print(f"0 nudge(s) sent (quiet hours: {C.QUIET_HOURS_START}:00-{C.QUIET_HOURS_END}:00 {C.QUIET_HOURS_TZ})")
+            jr.counts = {"sent": 0, "quiet_hours": True}
+            return 0
+        results = run(phones=phones)
+        print(f"{len(results)} nudge(s) sent")
+        for r in results:
+            print(f"  {r['phone']}: tier {r['tier']} -- {r['status']}")
+        jr.counts = {"sent": len(results)}
         return 0
-    results = run(phones=phones)
-    print(f"{len(results)} nudge(s) sent")
-    for r in results:
-        print(f"  {r['phone']}: tier {r['tier']} -- {r['status']}")
-    return 0
 
 
 if __name__ == "__main__":

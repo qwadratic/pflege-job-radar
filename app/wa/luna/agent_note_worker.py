@@ -877,7 +877,13 @@ def main(argv=None):
         ENV.load_service_env_files()
         p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
         p.parse_args(argv)
-        return run_once()
+        # TASK-283.7: wraps only the tick itself. An exception out of run_once() is recorded here
+        # (ST.job_run never swallows) and then re-raised, straight into the except BaseException
+        # below -- which already writes this worker's OWN health.json and returns 1, unchanged.
+        with ST.job_run(ST.JOB_AGENT_NOTES) as jr:
+            code = run_once()
+            jr.ok = code == 0
+        return code
     except SystemExit:
         raise   # argparse's own --help/bad-argument exit -- not a worker crash to report as one
     except BaseException as exc:
