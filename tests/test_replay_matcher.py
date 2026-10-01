@@ -113,6 +113,21 @@ def test_a_wrong_link_nothing_in_the_pipeline_repairs_is_pinned_only_when_asked_
     assert len(load_changes(str(path), {"wrong_clinic"})) == 7
 
 
+def test_an_overlay_replaces_the_rows_of_the_boards_it_holds_and_the_replay_shows_the_state_after_that_crawl(replay, tmp_path, capsys):
+    # A newer crawl of Alpha's board (the adapter now reads the place from the page: no stamp) lists two of its postings. The
+    # stamped one, unlinked on the old rows, is attached on the new one; "own" and "stale" are no longer listed, so no run judges them,
+    # not even the older run 6 that still holds an old row of "own".
+    IB.enqueue([row("own", "Pflegefachkraft (m/w/d)", "Alphastadt", stamped=False)], run_id=6, path=str(tmp_path / "inbox.sqlite"))
+    overlay = tmp_path / "overlay.json"
+    overlay.write_text(json.dumps([row("stamped", "Pflegefachkraft (m/w/d) Intensiv", "Alphastadt", stamped=False),
+                                   row("wrong", "Pflegefachkraft (m/w/d) Station", "Alphastadt", stamped=False)]))
+    changes, report, _ = replay("--overlay", str(overlay))
+    assert "overlay: 2 rows of 1 boards replace those boards' rows in run 7" in capsys.readouterr().out
+    assert {pid: r["change"] for pid, r in report.items() if pid in (101, 102, 106, 108)} == {
+        101: "not_replayed", 102: "same", 106: "relink", 108: "not_replayed"}
+    assert [(c["posting_id"], c["action"], c.get("clinic_id")) for c in changes] == [(106, "relink", "1")]
+
+
 def test_a_held_posting_is_left_out_of_the_set(replay):
     changes, _, _ = replay("--hold", "102")
     assert [c["posting_id"] for c in changes] == [105, 106]

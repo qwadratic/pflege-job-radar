@@ -18,7 +18,10 @@ judged by an earlier one). --out: the proposed changes of the OPEN postings as a
 for review; this tool never applies it. --report: every posting with its stored and replayed link. --verdicts: an
 optional judge file ({posting_id: {issue, body_says, evidence}}) whose reading is quoted as the evidence of a
 posting it judged a site mismatch. --hold: posting ids whose proposed change a reviewer judged wrong; they are
-left out of --out and listed.
+left out of --out and listed. --overlay: the rows a newer crawl returned for some boards (say, recorded from changed
+adapters), in the raw-row format of the queue: they take the place of those boards' rows in the newest run, and the
+older runs lose the boards' rows too, so the replay shows the state after that crawl -- a posting the new crawl no
+longer lists is judged by no run (not_replayed), as it would be by the next nightly drain.
 
 Rows with clinic_match_rule 'manual' are skipped (the nightly code never touches them). What the set does, and its lock:
   unlink, lock=false  the replayed pipeline (drain + link stage) leaves the posting without a clinic by itself, so the
@@ -82,11 +85,18 @@ def get_all(table, select, order):
     return rows
 
 
-def replay_run(run_id, inbox, clinics, hosts=()):
+def board_key(row):
+    """What board a raw row came from: its host and the registry clinics the crawler routed it for (its pool)."""
+    p = row.get("payload") or {}
+    return row.get("source_host"), tuple(sorted(str(c) for c in (p.get("board_clinic_ids") or p.get("_board") or ())))
+
+
+def replay_run(run_id, inbox, clinics, hosts=(), overlay=(), add_overlay=False):
     """One run's raw rows (those of `hosts`, if given) through the real cmd_inbox, offline. -> {"run", "date",
     "raw_rows", "decisions"}; a decision, keyed "<source_id>|<source_ref>", is what the drain would push for that
     posting: clinic_id and rule (None: unmatched, the stored link would be cleared), or conflict=True (the copies
-    disagree, nothing is pushed)."""
+    disagree, nothing is pushed). overlay: rows a newer crawl returned for some boards; a board it holds (see
+    board_key) loses its rows in this run, and add_overlay puts the overlay's rows in their place."""
     tmp = tempfile.mkdtemp(prefix=f"replay_{run_id}_")
     db = os.path.join(tmp, "queue.sqlite")
     src = sqlite3.connect(f"file:{inbox}?mode=ro", uri=True, timeout=60)
@@ -100,6 +110,12 @@ def replay_run(run_id, inbox, clinics, hosts=()):
     src.close()
     if not raw:
         raise SystemExit(f"run {run_id}: no rows in {inbox}")
+    if overlay:
+        replaced = {board_key(r) for r in overlay}
+        raw = [r for r in raw if board_key(r) not in replaced] + (list(overlay) if add_overlay else [])
+        if not raw:
+            shutil.rmtree(tmp)
+            return {"run": run_id, "date": (date or "")[:10], "raw_rows": 0, "decisions": {}}
     IB.enqueue(raw, run_id=run_id, path=db)
 
     seen, ids, pushed = {}, {}, {}
@@ -196,6 +212,9 @@ def main():
     ap.add_argument("--verdicts", help="judge file: {posting_id: {issue, body_says, evidence}}")
     ap.add_argument("--hold", type=int, nargs="*", default=[], help="posting ids to leave out of --out")
     ap.add_argument("--pin", action="store_true", help="also write the unlink lock=true entries (rule 'manual': no nightly stage touches the row again)")
+    ap.add_argument("--overlay", help="JSON list of raw rows (kind, collector, client_id, source_host, source_url, payload) a newer crawl returned "
+                                      "for some boards: in the first run they replace every row of the boards they hold, and the older runs lose those "
+                                      "boards' rows too (a posting the new crawl no longer lists is not re-evaluated by any run)")
     a = ap.parse_args()
 
     clinics = get_all("clinics", "*", "clinic_id.asc")
@@ -207,11 +226,16 @@ def main():
             keys[o["posting_id"]].add(f"{o['source_id']}|{o['source_ref']}")
     verdicts = json.load(open(a.verdicts, encoding="utf-8")) if a.verdicts else {}
 
-    def replay(run_ids, hosts):
-        with ProcessPoolExecutor(max_workers=min(len(run_ids), os.cpu_count() or 1)) as pool:
-            return list(pool.map(replay_run, run_ids, [a.inbox] * len(run_ids), [clinics] * len(run_ids), hosts))
+    overlay = json.load(open(a.overlay, encoding="utf-8")) if a.overlay else []
 
-    runs = replay(a.runs, [a.hosts] * len(a.runs))
+    def replay(run_ids, hosts, newest=False):
+        n = len(run_ids)
+        with ProcessPoolExecutor(max_workers=min(n, os.cpu_count() or 1)) as pool:
+            return list(pool.map(replay_run, run_ids, [a.inbox] * n, [clinics] * n, hosts, [overlay] * n, [newest and i == 0 for i in range(n)]))
+
+    runs = replay(a.runs, [a.hosts] * len(a.runs), newest=True)
+    if overlay:
+        print(f"overlay: {len(overlay)} rows of {len({board_key(r) for r in overlay})} boards replace those boards' rows in run {a.runs[0]}")
     covered = lambda p: any(k in r["decisions"] for r in runs for k in keys[p["posting_id"]])
     open_urls = [p["external_url"] for p in postings if p["status"] == "open" and p["external_url"] and not covered(p)]
     older = newest_runs(a.inbox, open_urls, a.runs) if not a.hosts else {}
