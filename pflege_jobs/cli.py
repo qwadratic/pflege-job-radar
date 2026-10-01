@@ -492,16 +492,18 @@ def _city_inherited(o):
     return _marker(o, "city_source") == "seed"
 
 
-def _persist_markers(o, employer_inherited, city_inherited):
-    """Write the stamps into the observation's payload, where the stored posting keeps them for later
-    stages (cmd_link_clinics reads them back with _marker). jobposting_to_obs already does for raw job
-    pages; a seeded adapter's finished observation gets them here. Only what is known is written: the
-    city marker only when the adapter set it."""
+def _persist_markers(o, employer_inherited, city_inherited, sites=None):
+    """Write the stamps and the posting's own listing of its locations into the observation's payload, where
+    the stored posting keeps them for later stages (cmd_link_clinics reads them back with _marker).
+    jobposting_to_obs already writes the stamps for raw job pages; a seeded adapter's finished observation
+    gets them here. Only what is known is written: the city marker only when the adapter set it."""
     p = o.get("payload")
     d = json.loads(p) if isinstance(p, str) else dict(p or {})
     d.setdefault("employer_source", "seed" if employer_inherited else "page")
     if city_inherited:
         d.setdefault("city_source", "seed")
+    if sites:
+        d.setdefault("sites", sites)
     o["payload"] = d if isinstance(p, dict) else json.dumps(d, ensure_ascii=False)
 
 
@@ -588,10 +590,12 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
+            emp_inh, city_inh, sites = _employer_inherited(o), _city_inherited(o), o.pop("_sites", None)
             pool, why = _pooled(o.pop("_board", None), o["source_ref"], pools), []
-            mt = m.match(o["employer_name"], o["city"], board=pool, employer_inherited=_employer_inherited(o),
-                        city_inherited=_city_inherited(o), description=o.get("description"), title=o.get("title"),
-                        foreign=(boards or {}).get(tuple(pool or ())), note=why, sites=(r["payload"] or {}).get("sites"))   # the raw row's listing: jobposting_to_obs does not carry it
+            mt = m.match(o["employer_name"], o["city"], board=pool, employer_inherited=emp_inh, city_inherited=city_inh,
+                        description=o.get("description"), title=o.get("title"), foreign=(boards or {}).get(tuple(pool or ())),
+                        note=why, sites=sites)
+            if sites: _persist_markers(o, emp_inh, city_inh, sites)       # jobposting_to_obs stored the stamps; the listing it keeps private
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": _loaded_note(o, why)})
@@ -608,12 +612,12 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o.get('role_class')} (not an experienced nursing role)"}); continue
             if o.get("in_bavaria") is False:
                 ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            emp_inh, city_inh = _employer_inherited(o), _city_inherited(o)
+            emp_inh, city_inh, sites = _employer_inherited(o), _city_inherited(o), _marker(o, "sites")
             pool, why = _pooled(o.pop("_board", None), o.get("source_ref"), pools), []
             mt = m.match(o.get("employer_name"), o.get("city"), board=pool, employer_inherited=emp_inh, city_inherited=city_inh,
                         description=o.get("description"), title=o.get("title"), foreign=(boards or {}).get(tuple(pool or ())), note=why,
-                        sites=_marker(o, "sites"))
-            _persist_markers(o, emp_inh, city_inh)
+                        sites=sites)
+            _persist_markers(o, emp_inh, city_inh, sites)
             # A seed's own preset _kez is NOT a fallback for a refused match (TASK-166): with the
             # board pool passed above, the Matcher only returns None here when the posting's own
             # city names a town no board clinic is in, or the pool stays ambiguous -- so falling back

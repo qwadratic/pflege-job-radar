@@ -1,0 +1,103 @@
+[
+ {
+  "kind": "jobposting",
+  "collector": "vendor-muenchen_klinik-v1",
+  "client_id": "vendor-adapters-default",
+  "source_host": "www.muenchen-klinik.de",
+  "source_url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-gynaekologie-und-wochenbett-w-m-d-stellennummer-43495/",
+  "payload": {
+   "title": "Pflegefachkraft Gynäkologie und Wochenbett (w|m|d)",
+   "org": "München Klinik gGmbH",
+   "org_source": null,
+   "loc": [
+    {
+     "city": "München",
+     "plz": "0",
+     "region": "BY"
+    }
+   ],
+   "url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-gynaekologie-und-wochenbett-w-m-d-stellennummer-43495/",
+   "page": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-gynaekologie-und-wochenbett-w-m-d-stellennummer-43495/",
+   "sites": [
+    "München Klinik Schwabing",
+    "München Klinik Harlaching"
+   ],
+   "description": "Qualität, Patientensicherheit, Forschung, Ausbildung - wir übernehmen Verantwortung für München: Die München Klinik gGmbH ist eine Klinik mit fünf Standorten in Bogenhausen, Harlaching, Neuperlach, Schwabing sowie der Fachklinik für Dermatologie und Allergologie in der Thalkirchner Straße. Jährlich lassen sich im Durchschnitt rund 135.000 Menschen stationär behandeln. Mit aktuell rund 7.000 Mitarbeiter*innen ist die München Klinik gGmbH der größte Anbieter von Gesundheitsdienstleistungen im süddeutschen Raum. Pflegefachkraft Gynäkologie und Wochenbett (w|m|d) Werden Sie Teil unserer Stationen für operative Gynäkologie und Wochenbett in Harlaching. Ihre Aufgaben: Fachpflegerische Aufgaben und Betreuung der Patient*innen mit gynäkologischen oder gynäkologisch-onkologischen Erkrankungen, bzw. mit Schwangerschaftskomplikationen Planung und Evaluation von pflegerischen Interventionen nach Expertenstandards Unterstützung der Eltern in der sensiblen ersten Lebensphase Anleitung und Beratung von Patient*innen und Angehörigen Sicherstellung der Pflegedokumentation Interdisziplinäre Zusammenarbeit Das bringen Sie mit: Abgeschlossene Ausbildung als Pflegefachkraft (w|m|d) bzw. Gesundheits- und Krankenpfleger*in (w|m|d) oder als Hebamme (wm/d) fürs Wochenbett Kenntnisse oder Fort-/Weiterbildungen (IBCLC) im Bereich Still- und Laktationsberatung für die Wochenbett-Stationen Idealerweise erste Berufserfahrung in einem der Fachbereiche Sehr gute Deutschkenntnisse in Wort und Schrift Patientenorientierte Arbeitsweise Unsere Arbeitgeberleistungen: Attraktive Vergütung durch Tarifvertrag mit automatischen Erhöhungen, 13. Gehalt und München-Zulage 30 Tage Jahresurlaub plus bis zu 9 Tage Zusatzurlaub bei ständiger (Wechsel-)Schichtarbeit Wellhub Firmenfitness für die ganze Familie mit Angeboten rund um Fitness, körperlicher und geistiger Gesundheit Mitarbeitervorteile wie zahlreiche Vergünstigungen und Mitarbeiterrabatte - von Reise über Sport bis Multimedia Weitere Informationen finden Sie hier . Die Tätigkeit ist entsprechend Ihrer Qualifikation als Pflegefachkraft (w/m/d) mit P7 TVöD-K/VKA bewertet. Gehaltsbeispiele finden Sie hier. Derzeit haben wir leider keine Möglichkeit, Wohnraum im Rahmen des Einstellungsprozesses zu vermitteln . Für Rückfragen steht Ihnen [contact removed], gerne zur Verfügung. Wir freuen uns über Ihre Online-Bewerbung . Chancengleichheit ist für uns mehr als eine gesetzliche Pflicht. Die Gleichstellung aller Mitarbeiterinnen und Mitarbeiter, unabhängig von Geschlecht, Herkunft, Alter, Hautfarbe, Weltanschauung, Religion, Behinderung oder sexueller Identität wird aktiv gefördert und ist fester Bestandteil unseres Selbstverständnisses und unserer Unternehmenskultur als Arbeitgeberin der Weltstadt München. Schwerbehinderte Bewerberinnen und Bewerber werden bei gleicher Eignung bevorzugt berücksichtigt. Ihre persönlichen Daten rund um Ihre Bewerbung behandeln wir mit Sorgfalt und höchster Vertraulichkeit. Stellennr.: 43495 www.muenchen-klinik.de",
+   "datePosted": "2026-01-01",
+   "employmentType": "FULL_TIME",
+   "board_url": "https://www.muenchen-klinik.de/stellenmarkt/",
+   "board_clinic_ids": [
+    "16201",
+    "16203"
+   ]
+  }
+ },
+ {
+  "kind": "jobposting",
+  "collector": "vendor-muenchen_klinik-v1",
+  "client_id": "vendor-adapters-default",
+  "source_host": "www.muenchen-klinik.de",
+  "source_url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-innere-medizin-w-m-d-stellennummer-43483/",
+  "payload": {
+   "title": "Pflegefachkraft Innere Medizin (w|m|d)",
+   "org": "München Klinik gGmbH",
+   "org_source": null,
+   "loc": [
+    {
+     "city": "München",
+     "plz": "0",
+     "region": "BY"
+    }
+   ],
+   "url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-innere-medizin-w-m-d-stellennummer-43483/",
+   "page": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-innere-medizin-w-m-d-stellennummer-43483/",
+   "sites": [
+    "München Klinik Bogenhausen",
+    "München Klinik Harlaching",
+    "München Klinik Neuperlach",
+    "München Klinik Schwabing",
+    "München Klinik Thalkirchner Straße"
+   ],
+   "description": "Qualität, Patientensicherheit, Forschung, Ausbildung - wir übernehmen Verantwortung für München: Die München Klinik gGmbH ist eine Klinik mit fünf Standorten in Bogenhausen, Harlaching, Neuperlach, Schwabing sowie der Fachklinik für Dermatologie und Allergologie in der Thalkirchner Straße. Jährlich lassen sich im Durchschnitt rund 135.000 Menschen stationär behandeln. Mit aktuell rund 7.000 Mitarbeiter*innen ist die München Klinik gGmbH der größte Anbieter von Gesundheitsdienstleistungen im süddeutschen Raum. Pflegefachkraft Innere Medizin (w|m|d) Werden Sie Teil unserer Teams in den Bereichen: Endokrinologie, Gastroenterologie, Kardiologie, Nephrologie, Pneumologie, Infektiologie, Dermatologie Ihre Aufgaben: Fachpflegerische Aufgaben und Betreuung der Patient*innen Planung und Evaluation von pflegerischen Interventionen nach Expertenstandards Medikamenten- und Schmerzmanagement Sicherstellung der Pflegedokumentation Interdisziplinäre Zusammenarbeit Das bringen Sie mit: Abgeschlossene Ausbildung als Pflegefachkraft (w|m|d) bzw. Gesundheits- und Krankenpfleger*in (w|m|d) Idealerweise erste Berufserfahrung im gewünschten Fachbereich Sehr gute Deutschkenntnisse in Wort und Schrift Patienten- und teamorientierte Arbeitsweise Unsere Arbeitgeberleistungen: Attraktive Vergütung durch Tarifvertrag mit automatischen Erhöhungen, 13. Gehalt und München-Zulage 30 Tage Jahresurlaub plus bis zu 9 Tage Zusatzurlaub bei ständiger (Wechsel-)Schichtarbeit Wellhub Firmenfitness für die ganze Familie mit Angeboten rund um Fitness, körperlicher und geistiger Gesundheit Mitarbeitervorteile wie zahlreiche Vergünstigungen und Mitarbeiterrabatte - von Reise über Sport bis Multimedia Weitere Informationen finden Sie hier . Die Tätigkeit ist entsprechend Ihrer Qualifikation mit P7 TVöD-K/VKA bewertet. Unsere pneumologischen Stationen in Bogenhausen sind mit P8 TVöD-K/VKA bewertet. Gehaltsbeispiele finden Sie hier . Derzeit haben wir leider keine Möglichkeit, Wohnraum im Rahmen des Einstellungsprozesses zu vermitteln . Für Rückfragen steht Ihnen [contact removed], gerne zur Verfügung. Wir freuen uns über Ihre Online-Bewerbung . Chancengleichheit ist für uns mehr als eine gesetzliche Pflicht. Die Gleichstellung aller Mitarbeiterinnen und Mitarbeiter, unabhängig von Geschlecht, Herkunft, Alter, Hautfarbe, Weltanschauung, Religion, Behinderung oder sexueller Identität wird aktiv gefördert und ist fester Bestandteil unseres Selbstverständnisses und unserer Unternehmenskultur als Arbeitgeberin der Weltstadt München. Schwerbehinderte Bewerberinnen und Bewerber werden bei gleicher Eignung bevorzugt berücksichtigt. Ihre persönlichen Daten rund um Ihre Bewerbung behandeln wir mit Sorgfalt und höchster Vertraulichkeit. Stellennr.: 43483 www.muenchen-klinik.de",
+   "datePosted": "2026-01-01",
+   "employmentType": "FULL_TIME",
+   "board_url": "https://www.muenchen-klinik.de/stellenmarkt/",
+   "board_clinic_ids": [
+    "16201",
+    "16203"
+   ]
+  }
+ },
+ {
+  "kind": "jobposting",
+  "collector": "vendor-muenchen_klinik-v1",
+  "client_id": "vendor-adapters-default",
+  "source_host": "www.muenchen-klinik.de",
+  "source_url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/",
+  "payload": {
+   "title": "Pflegefachkraft Psychosomatik (w|m|d)",
+   "org": "München Klinik Harlaching",
+   "org_source": null,
+   "loc": [
+    {
+     "city": "München",
+     "plz": "81545",
+     "region": "BY"
+    }
+   ],
+   "url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/",
+   "page": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-psychosomatik-w-m-d-stellennummer-43515/",
+   "sites": [
+    "München Klinik Harlaching"
+   ],
+   "description": "Qualität, Patientensicherheit, Forschung, Ausbildung - wir übernehmen Verantwortung für München: Die München Klinik gGmbH ist eine Klinik mit fünf Standorten in Bogenhausen, Harlaching, Neuperlach, Schwabing sowie der Fachklinik für Dermatologie und Allergologie in der Thalkirchner Straße. Jährlich lassen sich im Durchschnitt rund 135.000 Menschen stationär behandeln. Mit aktuell rund 7.000 Mitarbeiter*innen ist die München Klinik gGmbH der größte Anbieter von Gesundheitsdienstleistungen im süddeutschen Raum. Pflegefachkraft Psychosomatik (w|m|d) Werden Sie Teil unserer psychosomatischen Stationen in Harlaching . Ihre Aufgaben: Fachpflegerische Betreuung von Patient*innen, inkl. Kriseninterventionen Aufbau von vertrauensvollen Beziehungen zu Patient*innen Anleitung der Patient*innen zur Verbesserung der Lebensqualität Planung und Evaluation von pflegerischen Interventionen und Maßnahmen Anleitung und Beratung von Patient*innen und Angehörigen Interdisziplinäre Zusammenarbeit Das bringen Sie mit: Abgeschlossene Ausbildung als Pflegefachkraft (w|m|d) bzw. Gesundheits- und Krankenpfleger*in (w|m|d)7 Mehrjährige, fundierte Berufserfahrung in der Akutpflege Berufserfahrung in der Psychiatrie oder Psychosomatik wünschenswert Weiterbildung \"Pflege in der Psychiatrie, Psychosomatik und Psychotherapie\" (DKG) oder Bereitschaft diese zu erlangen Sehr gute Deutschkenntnisse in Wort und Schrift Bewusstsein für somatoforme Störungen Hohes Einfühlungsvermögen Unsere Arbeitgeberleistungen: Attraktive Vergütung durch Tarifvertrag mit automatischen Erhöhungen, 13. Gehalt und München-Zulage 30 Tage Jahresurlaub plus bis zu 9 Tage Zusatzurlaub bei ständiger (Wechsel-)Schichtarbeit Wellhub Firmenfitness für die ganze Familie mit Angeboten rund um Fitness, körperlicher und geistiger Gesundheit Mitarbeitervorteile wie zahlreiche Vergünstigungen und Mitarbeiterrabatte - von Reise über Sport bis Multimedia Zahlreiche weitere Arbeitgeberleistungen finden Sie hier Die Tätigkeit ist entsprechend Ihrer Qualifikation mit P8 TVöD-K/VKA ohne Weiterbildung und mit P9 TVöD-K/VKA mit Weiterbildung bewertet. Konkrete Gehaltsbeispiele finden Sie hier. Derzeit haben wir leider keine Möglichkeit , Wohnraum im Rahmen des Einstellungsprozesses zu vermitteln . Für Rückfragen steht Ihnen [contact removed], gerne zur Verfügung. Wir freuen uns über Ihre Online-Bewerbung . Chancengleichheit ist für uns mehr als eine gesetzliche Pflicht. Die Gleichstellung aller Mitarbeiterinnen und Mitarbeiter, unabhängig von Geschlecht, Herkunft, Alter, Hautfarbe, Weltanschauung, Religion, Behinderung oder sexueller Identität wird aktiv gefördert und ist fester Bestandteil unseres Selbstverständnisses und unserer Unternehmenskultur als Arbeitgeberin der Weltstadt München. Schwerbehinderte Bewerberinnen und Bewerber werden bei gleicher Eignung bevorzugt berücksichtigt. Ihre persönlichen Daten rund um Ihre Bewerbung behandeln wir mit Sorgfalt und höchster Vertraulichkeit. Stellennr.: 43515 www.muenchen-klinik.de",
+   "datePosted": "2026-01-01",
+   "employmentType": "FULL_TIME",
+   "board_url": "https://www.muenchen-klinik.de/stellenmarkt/",
+   "board_clinic_ids": [
+    "16201",
+    "16203"
+   ]
+  }
+ }
+]

@@ -9,6 +9,7 @@ Matcher reads. No network: the sinks and lookups of cmd_inbox are stubbed, the l
 jobposting_to_obs and the Matcher are real."""
 import argparse
 import json
+from pathlib import Path
 
 import pytest
 
@@ -100,9 +101,13 @@ def seeded(host, board_url, url, title, org, city, board, description="", **payl
 
 # --- AMEOS (karriere.ameos.eu): one board of a nationwide group, its registry pool collapsed to Neuburg ----------------
 AMEOS = "https://karriere.ameos.eu/offene-stellen/stelle/"
-KIEL = AMEOS + "11716-pflegefachkr%C3%A4fte-in-kiel"
-STASSFURT = AMEOS + "12048-pflegefachkraft-ambulante-pflege-in-sta%C3%9Ffurt"
-OSNABRUECK = AMEOS + "11862-pflegefachkraft-in-osnabr%C3%BCck"
+# The real urls end in "-in-kiel", "-in-sta%C3%9Ffurt", "-in-osnabr%C3%BCck": the adapters read that place now and the Bavaria gate drops
+# such an ad before the Matcher (test_an_ameos_ad_whose_url_names_a_place_outside_bavaria_never_reaches_the_matcher). These are the same
+# pages with the place left out of the url, the way run 225 stamped them: the crawler's place is the seed's copy and only the text names
+# the site -- what the Matcher still has to refuse on a board that names other places.
+KIEL = AMEOS + "11716-pflegefachkr%C3%A4fte"
+STASSFURT = AMEOS + "12048-pflegefachkraft-ambulante-pflege"
+OSNABRUECK = AMEOS + "11862-pflegefachkraft"
 HILDESHEIM = AMEOS + "11533-pflegefachkraft-gerontopsychiatrie-in-hildesheim"
 
 
@@ -125,6 +130,13 @@ def test_ameos_ads_of_other_sites_are_not_filed_under_the_seed_clinic(monkeypatc
     assert links == {KIEL: [None], STASSFURT: [None], OSNABRUECK: [None]}
     assert "R0_board refused" in notes[KIEL] and "no site match" in notes[KIEL]
     assert notes[HILDESHEIM] == "skipped: outside Bavaria"
+
+
+def test_an_ameos_ad_whose_url_names_a_place_outside_bavaria_never_reaches_the_matcher(monkeypatch):
+    real = [AMEOS + "11716-pflegefachkr%C3%A4fte-in-kiel", AMEOS + "12048-pflegefachkraft-ambulante-pflege-in-sta%C3%9Ffurt",
+            AMEOS + "11862-pflegefachkraft-in-osnabr%C3%BCck"]
+    links, notes = drain(monkeypatch, [NEUBURG], [ameos(u, "Pflegefachkraft (m/w/d)") for u in real])
+    assert links == {} and {notes[u] for u in real} == {"skipped: outside Bavaria"}
 
 
 def test_a_single_site_board_that_names_no_other_place_keeps_attaching(monkeypatch):
@@ -316,16 +328,33 @@ def test_r6_the_listing_of_the_ads_locations_names_the_site_not_the_boilerplate(
     assert notes == ["R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names none of them"]
 
 
-def test_a_raw_jobposting_rows_listing_of_locations_reaches_the_matcher(monkeypatch):
-    # crawl_muenchen_klinik queues a raw jobposting whose payload lists the ad's locations; jobposting_to_obs does not carry
-    # the list into the observation, so the drain reads it off the raw row
-    url = "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-gynaekologie-und-wochenbett-w-m-d-stellennummer-43495/"
-    ad = {"kind": "jobposting", "collector": "vendor-muenchen_klinik-v1", "source_host": "www.muenchen-klinik.de", "source_url": url,
-          "payload": {"title": "Pflegefachkraft Gynäkologie und Wochenbett (w|m|d)", "org": "München Klinik gGmbH",
-                      "loc": [{"city": "München", "plz": None, "region": None}], "url": url, "page": url, "sites": ["München Klinik Harlaching"],
-                      "description": MUENCHEN_TEXT, "board_url": "https://www.muenchen-klinik.de/stellenmarkt/", "board_clinic_ids": ["16205"]}}
-    links, _ = drain(monkeypatch, MUENCHEN, [ad])
-    assert links == {url: ["16202"]}           # the boilerplate names all five sites, the listing names Harlaching, not the bigger Bogenhausen
+MK_ROWS = json.loads((Path(__file__).resolve().parent / "fixtures" / "board_samples" / "muenchen_klinik_rows_sample.json").read_text(encoding="utf-8"))
+mk = lambda num, **payload: (lambda r: {**r, "payload": {**r["payload"], **payload}})(next(r for r in MK_ROWS if r["source_url"].rstrip("/").endswith("-" + num)))
+
+
+def test_real_muenchen_klinik_rows_attach_where_the_listing_names_one_site_and_stay_unmatched_where_it_names_several(monkeypatch):
+    # Three nursing rows exactly as crawl_muenchen_klinik queued them on 2026-10-01 (A2's adapters; contact sentence removed): the same
+    # boilerplate names all five sites in every text, the `sites` listing of the posting is what differs -- Harlaching alone (the
+    # adapter then names it as the employer too), Schwabing + Harlaching, and all five.
+    links, notes = drain(monkeypatch, MUENCHEN, MK_ROWS)
+    one, two, five = (mk(n)["source_url"] for n in ("43515", "43495", "43483"))
+    assert links == {one: ["16202"], two: [None], five: [None]}
+    assert "R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names several of them" in notes[two] == notes[five]
+
+
+def test_the_listing_of_a_real_muenchen_klinik_row_reaches_the_matcher_through_jobposting_to_obs(monkeypatch):
+    # jobposting_to_obs hands the listing over as the private key _sites; _process_rows pops it next to _board. The same real row with
+    # a listing that names one clinic and one place that is none (the adapter keeps the employer as the gGmbH then) is attached to that
+    # clinic and not to the bigger Bogenhausen; without a listing the boilerplate names all five and it is refused.
+    url = mk("43495")["source_url"]
+    narrowed = mk("43495", sites=["München Klinik Harlaching", "Bildungscampus"])
+    assert drain(monkeypatch, MUENCHEN, [narrowed])[0] == {url: ["16202"]}
+    # the stored observation keeps the listing (the private keys _sites and _board are popped), where the nightly link stage reads it back
+    stored = [o for o in _Sink.written if o["source_url"] == url]
+    assert [json.loads(o["payload"])["sites"] for o in stored] == [["München Klinik Harlaching", "Bildungscampus"]]
+    assert not any("_sites" in o or "_board" in o for o in stored)
+    unlisted = mk("43495"); unlisted["payload"].pop("sites")
+    assert drain(monkeypatch, MUENCHEN, [unlisted])[0] == {url: [None]}
 
 
 def test_the_listing_of_locations_reaches_the_matcher_in_the_drain_and_in_the_link_stage(monkeypatch, tmp_path):
