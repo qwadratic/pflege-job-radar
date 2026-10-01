@@ -36,8 +36,10 @@ How each vendor is reached (probed 2026-09-06):
   oracle          Oracle Recruiting Cloud is a JS SPA behind an XHR API; crawl_oracle tries a
                   same-origin public jobs.feed.json (schema.org DataFeed, softgarden-fronted tenants
                   like St. Josef publish this, no auth/browser needed -- reuses
-                  crawlers/portals.py:parse_jobposting_feed) and falls back to crawl_wp_jobs for
-                  tenants that render job links server-side instead (Klinikum FFB) or neither
+                  crawlers/portals.py:parse_jobposting_feed); a Candidate Experience site
+                  (jobs.sana.de, or a clinic page linking into one) is read through the public REST
+                  API its SPA uses, list then detail (_oracle_cx_rows, TASK-184); else falls back to
+                  crawl_wp_jobs for tenants that render job links server-side instead (Klinikum FFB) or neither
                   (Altmühlfranken, still needs crawlers/portals.py's Playwright path -- not wired in).
   easyhr          <host>/easyhr-proxy.php answers a public GET with every open position as JSON, no
                   auth/browser needed (TASK-115, confirmed live only on reisach-kliniken.de so far).
@@ -1899,11 +1901,81 @@ def _enrich_wp_fallback_fields(rows, session=None):
     return rows
 
 
+# Oracle HCM "Candidate Experience" (CE) site: https://<host>/<lang>/sites/<SITE>/... is a SPA whose shell names the REST
+# host (data-apibaseurl) and the site number (data-sitenumber); the REST API the SPA itself reads is public. TASK-184:
+# the shell's <title> ("Sana") was stored as every posting's text.
+CX_SITE_RX = re.compile(r"(https?://[^/\s\"'<>]+/[a-z]{2})/sites/[A-Za-z0-9_]+")
+CX_LIST = "recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=%s,limit=50,offset=%d"
+CX_DETAIL = 'recruitingCEJobRequisitionDetails?expand=all&onlyData=true&finder=ById;Id="%s",siteNumber=%s'
+
+
+def _oracle_cx_json(u, session):
+    r = get(u, session=session)
+    if r is None or not r.ok:
+        raise RuntimeError("Oracle CE read failed (%s): %s" % (getattr(r, "status_code", "no response"), u[:200]))
+    return r.json()
+
+
+def _oracle_place(name):
+    """One location name as Oracle prints it: "<city>, <Land>, <country>", a level left out when the requisition is placed
+    higher up ("Bayern, Deutschland", "Deutschland"). The first part is the place at whatever level the source states it,
+    the second last part the Land -- which in_bavaria() reads, instead of a list of Bavarian towns."""
+    parts = [x.strip() for x in (name or "").split(",") if x.strip()]
+    return {"city": parts[0] if parts else None, "plz": None, "region": parts[-2] if len(parts) > 1 else None}
+
+
+def _oracle_cx_rows(cu, session=None):
+    """Every requisition of the Oracle CE site cu is, or the page cu links into (the clinics' www.sana.de pages), read through
+    the REST API: the list to its own TotalJobsCount, then one detail per requisition. None when cu is no such site. A list page
+    that cannot be read fails the board; a detail that cannot be read is recorded in .page_crashes and its row left out."""
+    m = CX_SITE_RX.match(cu)
+    if not m:
+        page = get(cu, session=session)
+        m = page and page.ok and CX_SITE_RX.search(page.text)
+    if not m:
+        return None
+    shell = get(m.group(0), session=session)
+    if shell is None or not shell.ok:
+        raise RuntimeError("Oracle CE site shell not readable (%s): %s" % (getattr(shell, "status_code", "no response"), m.group(0)))
+    api, site = (re.search(r'data-%s="([^"]+)"' % a, shell.text) for a in ("apibaseurl", "sitenumber"))
+    if not (api and site):
+        return None
+    api, site = api.group(1).rstrip("/") + "/hcmRestApi/resources/latest/", site.group(1)
+    reqs, total = [], None
+    while True:
+        it = _oracle_cx_json(api + CX_LIST % (site, len(reqs)), session)["items"][0]
+        total, page = it["TotalJobsCount"], it.get("requisitionList") or []
+        reqs += page
+        if not page or len(reqs) >= total:
+            break
+    out, crashes = _BoardTotalRows(), []
+    for q in reqs:
+        url = "%s/sites/%s/job/%s" % (m.group(1), site, q["Id"])
+        try:
+            d = _oracle_cx_json(api + CX_DETAIL % (q["Id"], site), session)["items"][0]
+        except Exception as e:
+            crashes.append((url, "detail not readable: %s" % str(e)[:200]))
+            continue
+        # the ad is these three fields; CorporateDescriptionStr / OrganizationDescriptionStr are the same company text on every posting
+        text = " ".join(t for t in (_txt(d.get(k)) for k in ("ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")) if t)
+        out.append(row(urlparse(url).netloc, url, {
+            "title": _txt(q["Title"]), "org": q["LegalEmployer"], "org_source": None, "url": url, "page": url,
+            "loc": [_oracle_place(n) for n in [q["PrimaryLocation"]] + [s["Name"] for s in q.get("secondaryLocations") or []]],
+            "description": text or None, "datePosted": _sane_date(q["PostedDate"])}, "oracle"))
+        time.sleep(0.3)
+    out.board_total = total
+    if crashes:
+        out.page_crashes = crashes
+    return out
+
+
 def crawl_oracle(c, session=None):
     """Oracle Recruiting Cloud is a client-rendered SPA -- no server-rendered job links to walk a
     sitemap for. Some tenants (softgarden-fronted, e.g. karriere.josef.de) also publish a public,
     unauthenticated schema.org DataFeed at <origin>/jobs.feed.json; prefer that when present, since
-    it has full descriptions and needs no browser. Falls back to crawl_wp_jobs for tenants that
+    it has full descriptions and needs no browser. A Candidate Experience site (jobs.sana.de, or a clinic
+    page linking into one) is read through the REST API the SPA itself uses (_oracle_cx_rows): title, legal
+    employer, location and ad text of every requisition. Falls back to crawl_wp_jobs for tenants that
     render job links server-side instead (Klinikum FFB, Altmühlfranken); that fallback's own rows
     carry no employmentType/datePosted, so _enrich_wp_fallback_fields backfills both."""
     cu = (c.get("careers_url") or "").strip()
@@ -1927,6 +1999,9 @@ def crawl_oracle(c, session=None):
                     out = _BoardTotalRows(out)
                     out.board_total = data.get("numberOfItems") if isinstance(data.get("numberOfItems"), int) else None
                     return out
+        cx = _oracle_cx_rows(cu, session=session)
+        if cx is not None:
+            return cx
     return _enrich_wp_fallback_fields(crawl_wp_jobs(c, session=session), session=session)
 
 
