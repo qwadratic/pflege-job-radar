@@ -316,6 +316,18 @@ def test_r6_the_listing_of_the_ads_locations_names_the_site_not_the_boilerplate(
     assert notes == ["R6 refused: sites 16201,16202,16203,16204,16205 tie and the text names none of them"]
 
 
+def test_a_raw_jobposting_rows_listing_of_locations_reaches_the_matcher(monkeypatch):
+    # crawl_muenchen_klinik queues a raw jobposting whose payload lists the ad's locations; jobposting_to_obs does not carry
+    # the list into the observation, so the drain reads it off the raw row
+    url = "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/pflegefachkraft-gynaekologie-und-wochenbett-w-m-d-stellennummer-43495/"
+    ad = {"kind": "jobposting", "collector": "vendor-muenchen_klinik-v1", "source_host": "www.muenchen-klinik.de", "source_url": url,
+          "payload": {"title": "Pflegefachkraft Gynäkologie und Wochenbett (w|m|d)", "org": "München Klinik gGmbH",
+                      "loc": [{"city": "München", "plz": None, "region": None}], "url": url, "page": url, "sites": ["München Klinik Harlaching"],
+                      "description": MUENCHEN_TEXT, "board_url": "https://www.muenchen-klinik.de/stellenmarkt/", "board_clinic_ids": ["16205"]}}
+    links, _ = drain(monkeypatch, MUENCHEN, [ad])
+    assert links == {url: ["16202"]}           # the boilerplate names all five sites, the listing names Harlaching, not the bigger Bogenhausen
+
+
 def test_the_listing_of_locations_reaches_the_matcher_in_the_drain_and_in_the_link_stage(monkeypatch, tmp_path):
     url = "https://www.muenchen-klinik.de/karriere/jobs/pflegefachkraft-neuperlach"
     ad = {"kind": "observation", "collector": "vendor-muenchen_klinik-v1", "source_host": "www.muenchen-klinik.de", "source_url": url,

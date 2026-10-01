@@ -591,7 +591,7 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             pool, why = _pooled(o.pop("_board", None), o["source_ref"], pools), []
             mt = m.match(o["employer_name"], o["city"], board=pool, employer_inherited=_employer_inherited(o),
                         city_inherited=_city_inherited(o), description=o.get("description"), title=o.get("title"),
-                        foreign=(boards or {}).get(tuple(pool or ())), note=why, sites=_marker(o, "sites"))
+                        foreign=(boards or {}).get(tuple(pool or ())), note=why, sites=(r["payload"] or {}).get("sites"))   # the raw row's listing: jobposting_to_obs does not carry it
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": _loaded_note(o, why)})
