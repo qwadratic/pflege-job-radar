@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 17:33'
+updated_date: '2026-10-01 17:37'
 labels:
   - frontend
   - whatsapp
@@ -117,4 +117,6 @@ Earlier the same day, a28806b changed the error card to 'Keine Verbindung zum Ha
 2026-10-01: Ivan decided the phone-rail board goes into the Leads view as a second tab ('Rail & Jobs', #/leads?tab=rail), not Clawl. He also said the file with WA_API_BASE / WA_API_TOKEN is readable by user claude over SSH on tasker-dispatcher-01. Fetching it from this session was blocked by the permission classifier ('Credential Exploration', three attempts: the SSH login, finding the board's service unit, finding how the app loads its env). It was not worked around. The commands went to Ivan instead. Order note: the live board runs main without app/wa_proxy.py (PR #1), so the env has no effect until PR #1 is merged and the board redeployed.
 
 2026-10-01, the board-side WA_API_* step does not exist yet (wa-harness checked): no WA_API_TOKEN has been generated (Ivan's step), and WA_API_BASE will be https://ki-workflow.agency once Ivan adds the nginx location /api/wa/pro/. Today /api/wa/pro/health there answers 404, and once it is live the healthy answer without a token is 401. The board's env file is /home/exedev/repo/.env (pflege-web.service EnvironmentFile; gitignored; no WA_API_* keys yet). The board VM's egress IP is 67.213.121.209 (api.ipify.org). wa-harness planned to allow only 161.210.92.90 in the location, which would give the board 403, so the allow line needs 67.213.121.209. wa-harness declined to give the board VM SSH access to the claude account, because its .env holds every harness secret. Ivan copies the token himself.
+
+2026-10-01, with Ivan's go-ahead: generated the board-harness token with openssl rand -hex 32. Its value was never printed or sent in a message. It is stored on tasker-dispatcher-01 in the claude home as .wa_api_token (mode 600), and on the board in the env file of pflege-web.service as WA_API_TOKEN, with WA_API_BASE set to https://ki-workflow.agency. pflege-web was not restarted, because live main has no proxy yet. wa-harness was asked to wire the token into the pflege-wa env and restart it. Before that, the harness Pro health answers 503 locally without a token; afterwards it should give 401 without and 200 with the bearer. Before generating, no env file in the dispatcher home or its 11 worktrees defined WA_API_ keys, and neither running harness process had WA_API_TOKEN. Still open: the nginx location for /api/wa/pro/ on ki-workflow.agency allowing 67.213.121.209 (Ivan, sudo), the PR 1 merge and board redeploy, then PR 2.
 <!-- SECTION:NOTES:END -->
