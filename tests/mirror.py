@@ -631,7 +631,7 @@ def _route_handler(m):
 def _pw_launch(self, *a, **k):
     m = _top()
     if m and m.mode == "replay":  # nothing the route misses can reach the network: Chromium has no resolver but localhost
-        k["args"] = [*(k.get("args") or []), "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"]
+        k["args"] = [*(k.get("args") or []), "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost , EXCLUDE 127.0.0.1 , EXCLUDE [::1]"]
     return _REAL["pw_launch"](self, *a, **k)
 
 

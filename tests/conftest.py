@@ -84,7 +84,7 @@ if not _RECORDING:
         _launch = BrowserType.launch
 
         def _guarded_launch(self, *a, **k):
-            k["args"] = [*(k.get("args") or []), "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"]
+            k["args"] = [*(k.get("args") or []), "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost , EXCLUDE 127.0.0.1 , EXCLUDE [::1]"]
             return _launch(self, *a, **k)
 
         BrowserType.launch = _guarded_launch

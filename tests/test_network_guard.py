@@ -120,6 +120,38 @@ def _hosts_file_name():
                 return names[0]
 
 
+def test_chromium_still_loads_a_page_from_loopback(tmp_path):
+    """The tests of web/ (test_web_*.py) drive Chromium against a local server at http://127.0.0.1:<port>: the resolver rule that blocks every
+    other name must leave loopback alone (found by running the suite: it first blocked 127.0.0.1 too and 170 web tests failed)."""
+    pytest.importorskip("playwright.sync_api")
+    rc, out = _session(tmp_path, '''
+import http.server, threading
+import pytest
+from playwright.sync_api import sync_playwright
+
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write(b"<p id=x>loopback ok</p>")
+    def log_message(self, *a): pass
+
+def test_browser():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    with sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(args=["--no-sandbox"])
+        except Exception as e:
+            pytest.skip(f"chromium unavailable: {e}")
+        pg = b.new_page()
+        for host in ("127.0.0.1", "localhost"):
+            pg.goto(f"http://{host}:{srv.server_address[1]}/", timeout=10000)
+            assert pg.inner_text("#x") == "loopback ok"
+        b.close()
+    srv.shutdown()
+''')
+    assert rc == 0 and "network guard hits: 0" in out, out
+
+
 def test_chromium_cannot_resolve_anything_but_localhost(tmp_path):
     pytest.importorskip("playwright.sync_api")
     name = _hosts_file_name()
