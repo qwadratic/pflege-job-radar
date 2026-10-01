@@ -294,6 +294,27 @@ def test_the_store_dedupes_bodies_compresses_the_file_and_keeps_the_previous_one
         assert m.store.meta("note") == "second" and m.store.count() == 1
 
 
+def test_replays_share_one_unpacked_store_until_the_board_is_re_recorded(site):
+    _record(lambda: requests.get(site + "/page?v=1", timeout=5))
+    with M.mirror_board(BOARD) as a:
+        pass
+    with M.mirror_board(BOARD) as b:
+        assert b.store is a.store  # unpacking the biggest board takes ~0.5 s; a board's tests open it a handful of times
+    _record(lambda: requests.get(site + "/page?v=2", timeout=5))
+    with M.mirror_board(BOARD) as c:
+        assert c.store is not a.store and [r.url.rsplit("?", 1)[1] for r in c.store.rows()] == ["v=2"]
+
+
+def test_a_recording_refuses_our_own_infrastructure_and_paid_apis(site):
+    """The recorder talks to clinic sites only: no DB read through a clinic board's recording, no Firecrawl, no LLM."""
+    for url in ("https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/clinics", "https://api.firecrawl.dev/v1/scrape",
+                "https://supabase.int.exe.xyz/rest/v1/clinics", "https://api.anthropic.com/v1/messages"):
+        with M.recording(BOARD) as rec:
+            with pytest.raises(RuntimeError, match="clinic sites only"):
+                requests.get(url, timeout=5)
+        assert rec.refused == [url] and rec.store.count() == 0  # nothing went out, nothing was stored
+
+
 def test_a_board_that_was_never_recorded_fails_with_the_command_not_with_a_fallback(site):
     with pytest.raises(M.MirrorMiss) as e:
         with M.mirror_board("nope__nowhere.test"):

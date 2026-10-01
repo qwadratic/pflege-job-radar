@@ -149,6 +149,25 @@ class Store:
         db.deserialize(lzma.decompress(path.read_bytes()))
         return cls(board_id, db)
 
+    _loaded = {}  # board file path -> ((mtime_ns, size), Store): a replay never writes, so one board's store is shared by its contexts
+
+    @classmethod
+    def load_shared(cls, board_id):
+        """Store.load for replays: the last two boards stay in memory (a board's tests open its mirror a handful of times;
+        unpacking the biggest one is ~0.5 s). The file's mtime and size say when it was re-recorded."""
+        st = board_file(board_id).stat() if board_file(board_id).exists() else None
+        sig = (st.st_mtime_ns, st.st_size) if st else None
+        key = str(board_file(board_id))
+        hit = cls._loaded.get(key)
+        if hit and sig and hit[0] == sig:
+            return hit[1]
+        store = cls.load(board_id)
+        cls._loaded.pop(key, None)
+        while len(cls._loaded) >= 2:
+            cls._loaded.pop(next(iter(cls._loaded)))
+        cls._loaded[key] = (sig, store)
+        return store
+
     # -- write
     def _blob(self, b):
         sha = _sha(b)
@@ -366,7 +385,7 @@ def _run(m):
 def mirror_board(board_id, scope="adapter"):
     """Replay `board_id` for the block. MIRROR_RECORD=1 (a person, on purpose): go live for the requests the mirror lacks and store them."""
     through = os.environ.get("MIRROR_RECORD") == "1"
-    store = Store.load(board_id) if (board_file(board_id).exists() or not through) else Store.new(board_id)
+    store = (Store.load(board_id) if through else Store.load_shared(board_id)) if (board_file(board_id).exists() or not through) else Store.new(board_id)
     m = Mirror(board_id, store, "through" if through else "replay")
     m.scope = scope
     try:
