@@ -1,0 +1,516 @@
+{
+  "t_0000000000000001": {
+    "documents": [],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "clarify qualification: first a plain yes/no whether the German Urkunde is already in hand; only on no, the recognition step, again one yes/no at a time",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "them",
+      "card": {
+        "campaign": "camp-winter-2026",
+        "city": null,
+        "department": null,
+        "housing_needed": null,
+        "match_branch": null,
+        "people_count": null,
+        "qualification_path": null,
+        "region": "Oberbayern"
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "open",
+        "cv_document": "open",
+        "handoff_consent": "open",
+        "housing": "open",
+        "qualification": "open",
+        "qualification_document": "open",
+        "region": "satisfied"
+      },
+      "handoff": null,
+      "is_test": true,
+      "last_inbound_at": "2026-09-20T08:05:00+00:00",
+      "last_message": {
+        "at": "2026-09-20T08:05:30+00:00",
+        "direction": "out",
+        "kind": "text",
+        "preview": "Willkommen bei Pflege Job Radar! Erzaehlen Sie mir etwas ueber sich."
+      },
+      "last_outbound_at": "2026-09-20T08:05:30+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-20T08:00:00+00:00",
+      "outcome": null,
+      "pending_inbound": null,
+      "phone_masked": "+49 ••• ••• 0001",
+      "rail": null,
+      "stage": "qualification",
+      "stage_since": "2026-09-20T08:05:00+00:00",
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": false,
+      "suppression": null,
+      "thread_id": "t_0000000000000001",
+      "turns": 1
+    }
+  },
+  "t_0000000000000002": {
+    "documents": [
+      {
+        "document_type": "lebenslauf",
+        "id": 1,
+        "kind": "document",
+        "mime_type": "application/pdf",
+        "received_at": "2026-09-20T11:08:00+00:00",
+        "reuse_state": null,
+        "size_bytes": 204800
+      }
+    ],
+    "escalation_notes": [
+      "explicit_human_request: candidate explicitly asked for a human"
+    ],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "ask for the still-missing German Urkunde as a photo/PDF (not a home-country diploma; the CV is already in) -- the close needs both the CV and the qualification document actually received, so name what is still missing again every turn until it arrives",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "them",
+      "card": {
+        "campaign": null,
+        "city": "Augsburg",
+        "department": "Intensiv/IMC",
+        "housing_needed": true,
+        "match_branch": "narrow",
+        "people_count": 1,
+        "qualification_path": "urkunde",
+        "region": "Schwaben"
+      },
+      "escalated_at": "2026-09-22T14:10:05+00:00",
+      "escalation_codes": [
+        "explicit_human_request"
+      ],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "satisfied",
+        "cv_document": "satisfied",
+        "handoff_consent": "open",
+        "housing": "satisfied",
+        "qualification": "satisfied",
+        "qualification_document": "open",
+        "region": "satisfied"
+      },
+      "handoff": null,
+      "is_test": false,
+      "last_inbound_at": "2026-09-22T14:10:00+00:00",
+      "last_message": {
+        "at": "2026-09-22T14:15:00+00:00",
+        "direction": "out",
+        "kind": "draft",
+        "preview": "Habe notiert -- eine Kollegin meldet sich persoenlich bei Ihnen, sobald die Anerkennungs-Urkunde da ist."
+      },
+      "last_outbound_at": "2026-09-22T14:02:00+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-18T09:00:00+00:00",
+      "outcome": null,
+      "pending_inbound": null,
+      "phone_masked": "+49 ••• ••• 2222",
+      "rail": null,
+      "stage": "documents",
+      "stage_since": "2026-09-20T11:08:00+00:00",
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": false,
+      "suppression": null,
+      "thread_id": "t_0000000000000002",
+      "turns": 5
+    }
+  },
+  "t_0000000000000003": {
+    "documents": [
+      {
+        "document_type": null,
+        "id": 2,
+        "kind": "audio",
+        "mime_type": "audio/ogg",
+        "received_at": "2026-09-27T06:00:00+00:00",
+        "reuse_state": null,
+        "size_bytes": 51200
+      }
+    ],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "clarify qualification: first a plain yes/no whether the German Urkunde is already in hand; only on no, the recognition step, again one yes/no at a time",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "us",
+      "card": {
+        "campaign": null,
+        "city": null,
+        "department": null,
+        "housing_needed": null,
+        "match_branch": null,
+        "people_count": null,
+        "qualification_path": null,
+        "region": "Niederbayern"
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "open",
+        "cv_document": "open",
+        "handoff_consent": "open",
+        "housing": "open",
+        "qualification": "open",
+        "qualification_document": "open",
+        "region": "satisfied"
+      },
+      "handoff": null,
+      "is_test": false,
+      "last_inbound_at": "2026-09-27T06:00:00+00:00",
+      "last_message": {
+        "at": "2026-09-27T06:00:00+00:00",
+        "direction": "in",
+        "kind": "audio",
+        "preview": "Ich habe noch eine Frage zu den Unterlagen, bitte rufen Sie mich zurueck."
+      },
+      "last_outbound_at": "2026-09-25T07:40:00+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-25T07:30:00+00:00",
+      "outcome": null,
+      "pending_inbound": {
+        "count": 1,
+        "last_error": "claude CLI timeout after 552s",
+        "oldest_recorded_at": "2026-09-27T06:00:00+00:00"
+      },
+      "phone_masked": "+49 ••• ••• 3333",
+      "rail": "bridge",
+      "stage": "qualification",
+      "stage_since": null,
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": true,
+      "suppression": null,
+      "thread_id": "t_0000000000000003",
+      "turns": 2
+    }
+  },
+  "t_0000000000000004": {
+    "documents": [],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "ask as a plain yes/no whether they are looking for a job in Bayern",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "us",
+      "card": {
+        "campaign": null,
+        "city": null,
+        "department": null,
+        "housing_needed": null,
+        "match_branch": null,
+        "people_count": null,
+        "qualification_path": null,
+        "region": null
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "open",
+        "cv_document": "open",
+        "handoff_consent": "open",
+        "housing": "open",
+        "qualification": "open",
+        "qualification_document": "open",
+        "region": "open"
+      },
+      "handoff": null,
+      "is_test": false,
+      "last_inbound_at": "2026-09-12T09:00:00+00:00",
+      "last_message": {
+        "at": "2026-09-12T09:00:00+00:00",
+        "direction": "in",
+        "kind": "text",
+        "preview": "STOP"
+      },
+      "last_outbound_at": "2026-09-10T11:05:00+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-10T11:00:00+00:00",
+      "outcome": null,
+      "pending_inbound": null,
+      "phone_masked": "+43 ••• ••• 4444",
+      "rail": "meta",
+      "stage": "contact",
+      "stage_since": null,
+      "stopped": true,
+      "stopped_reason": "opt-out",
+      "stuck_reply": false,
+      "suppression": {
+        "at": "2026-09-12T09:00:05+00:00",
+        "lane": "meta",
+        "reason": "inbound stop token"
+      },
+      "thread_id": "t_0000000000000004",
+      "turns": 2
+    }
+  },
+  "t_0000000000000006": {
+    "documents": [],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "clarify qualification: first a plain yes/no whether the German Urkunde is already in hand; only on no, the recognition step, again one yes/no at a time",
+    "send_failures": [
+      {
+        "at": "2026-09-23T15:10:00+00:00",
+        "error": "delivery failed for wamid.…: code 131026 message undeliverable:"
+      }
+    ],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "us",
+      "card": {
+        "campaign": null,
+        "city": null,
+        "department": null,
+        "housing_needed": null,
+        "match_branch": null,
+        "people_count": null,
+        "qualification_path": null,
+        "region": "Unterfranken"
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "open",
+        "cv_document": "open",
+        "handoff_consent": "open",
+        "housing": "open",
+        "qualification": "open",
+        "qualification_document": "open",
+        "region": "satisfied"
+      },
+      "handoff": null,
+      "is_test": false,
+      "last_inbound_at": "2026-09-24T09:00:00+00:00",
+      "last_message": {
+        "at": "2026-09-24T09:00:00+00:00",
+        "direction": "in",
+        "kind": "deleted",
+        "preview": null
+      },
+      "last_outbound_at": "2026-09-23T15:10:00+00:00",
+      "last_send_error": {
+        "at": "2026-09-23T15:10:00+00:00",
+        "error": "delivery failed for wamid.…: code 131026 message undeliverable:"
+      },
+      "lead_status": null,
+      "opened_at": "2026-09-23T15:00:00+00:00",
+      "outcome": null,
+      "pending_inbound": null,
+      "phone_masked": "+49 ••• ••• 6666",
+      "rail": "meta",
+      "stage": "qualification",
+      "stage_since": null,
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": true,
+      "suppression": null,
+      "thread_id": "t_0000000000000006",
+      "turns": 2
+    }
+  },
+  "t_0000000000000008": {
+    "documents": [],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [],
+    "next_objective": "clarify qualification: first a plain yes/no whether the German Urkunde is already in hand; only on no, the recognition step, again one yes/no at a time",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "them",
+      "card": {
+        "campaign": null,
+        "city": null,
+        "department": null,
+        "housing_needed": null,
+        "match_branch": null,
+        "people_count": null,
+        "qualification_path": null,
+        "region": "Oberpfalz"
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "open",
+        "cv_document": "open",
+        "handoff_consent": "open",
+        "housing": "open",
+        "qualification": "open",
+        "qualification_document": "open",
+        "region": "satisfied"
+      },
+      "handoff": null,
+      "is_test": false,
+      "last_inbound_at": "2026-09-06T08:30:00+00:00",
+      "last_message": {
+        "at": "2026-09-06T08:31:00+00:00",
+        "direction": "out",
+        "kind": "text",
+        "preview": "Alles Gute fuer die neue Stelle!"
+      },
+      "last_outbound_at": "2026-09-06T08:31:00+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-05T08:00:00+00:00",
+      "outcome": "declined",
+      "pending_inbound": null,
+      "phone_masked": "+49 ••• ••• 7777",
+      "rail": null,
+      "stage": "qualification",
+      "stage_since": null,
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": false,
+      "suppression": null,
+      "thread_id": "t_0000000000000008",
+      "turns": 2
+    }
+  },
+  "t_0000000000000009": {
+    "documents": [
+      {
+        "document_type": "lebenslauf",
+        "id": 3,
+        "kind": "document",
+        "mime_type": "application/pdf",
+        "received_at": "2026-09-08T10:00:00+00:00",
+        "reuse_state": null,
+        "size_bytes": 198000
+      },
+      {
+        "document_type": "urkunde",
+        "id": 4,
+        "kind": "document",
+        "mime_type": "application/pdf",
+        "received_at": "2026-09-09T10:00:00+00:00",
+        "reuse_state": null,
+        "size_bytes": 165000
+      }
+    ],
+    "escalation_notes": [],
+    "flag_notes": [],
+    "handoff_matches": [
+      {
+        "clinic_id": "c1",
+        "clinic_name": "Klinikum Test",
+        "score": 85,
+        "town": "Testort"
+      },
+      {
+        "clinic_id": "c2",
+        "clinic_name": "Klinikum Zwei",
+        "score": 70,
+        "town": "Zweistadt"
+      }
+    ],
+    "next_objective": "nothing open -- respond naturally, no open placement item left",
+    "send_failures": [],
+    "synced_at": "2026-09-30T11:55:00+00:00",
+    "synced_source": "bridge_relay_pull",
+    "thread": {
+      "ball": "silent",
+      "card": {
+        "campaign": null,
+        "city": "München",
+        "department": "Innere Medizin",
+        "housing_needed": false,
+        "match_branch": "pool",
+        "people_count": null,
+        "qualification_path": "urkunde",
+        "region": "Oberbayern"
+      },
+      "escalated_at": null,
+      "escalation_codes": [],
+      "flag_codes": [],
+      "gates": {
+        "city_or_department": "satisfied",
+        "cv_document": "satisfied",
+        "handoff_consent": "satisfied",
+        "housing": "satisfied",
+        "qualification": "satisfied",
+        "qualification_document": "satisfied",
+        "region": "satisfied"
+      },
+      "handoff": {
+        "clinics": 2,
+        "consented_at": "2026-09-15T10:30:00+00:00",
+        "status": "attention",
+        "targets": [
+          {
+            "attention": false,
+            "clinic_id": "c1",
+            "clinic_name": null,
+            "external_ref": null,
+            "status": "sent_to_clinic",
+            "ts": "2026-09-20T09:00:00+00:00"
+          },
+          {
+            "attention": true,
+            "clinic_id": "c2",
+            "clinic_name": null,
+            "external_ref": null,
+            "status": "interview_scheduled",
+            "ts": "2026-09-28T13:00:00+00:00"
+          }
+        ]
+      },
+      "is_test": false,
+      "last_inbound_at": "2026-09-29T10:00:00+00:00",
+      "last_message": {
+        "at": "2026-09-29T10:00:00+00:00",
+        "direction": "in",
+        "kind": "text",
+        "preview": "Danke, bis dann!"
+      },
+      "last_outbound_at": "2026-09-09T10:05:00+00:00",
+      "last_send_error": null,
+      "lead_status": null,
+      "opened_at": "2026-09-01T08:00:00+00:00",
+      "outcome": null,
+      "pending_inbound": null,
+      "phone_masked": "+49 ••• ••• 5555",
+      "rail": null,
+      "stage": "submitted",
+      "stage_since": "2026-09-15T10:30:00+00:00",
+      "stopped": false,
+      "stopped_reason": null,
+      "stuck_reply": false,
+      "suppression": null,
+      "thread_id": "t_0000000000000009",
+      "turns": 6
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "autosend": false,
+  "brain": "deterministic",
+  "bridge_inbound_ready": false,
+  "bridge_phone_number_id": "",
+  "bridge_ready": false,
+  "checks": {
+    "access_token": false,
+    "app_secret": false,
+    "bridge_inbound_token": false,
+    "bridge_token": false,
+    "bridge_url": false,
+    "openai_api_key": false,
+    "phone_number_id": false,
+    "verify_token": false
+  },
+  "graph_api_version": "v25.0",
+  "luna_media_dir": "/home/cursorworker1/wa_luna_media",
+  "luna_media_host": "macmini",
+  "meta_scope": "all",
+  "outbound_ready": false,
+  "rails": {
+    "bridge": 1,
+    "meta": 2,
+    "unpinned": 4
+  },
+  "reply_scope": "all",
+  "stt_model": "whisper-1",
+  "stt_ready": false,
+  "synced_at": "2026-09-30T11:55:00+00:00",
+  "synced_source": "bridge_relay_pull",
+  "transport": "meta",
+  "webhook_ready": false
+}
