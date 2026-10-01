@@ -26,19 +26,6 @@
   }
  },
  {
-  "posting_id": 5533,
-  "action": "relink",
-  "clinic_id": "RH2376",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Alpenklinik Santa Maria für Kinder und Jugendliche Oberjoch (RH2376) by R3_tokens.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://santa-maria.softgarden.io/job/65927969/Gesundheits-und-Kinder-Krankenpfleger-m-w-d-?l=de (stored posting, in no replayed run; 2026-10-01): names Alpenklinik Santa Maria für Kinder und Jugendliche Oberjoch, Bad Hindelang: ...Gesundheits- und (Kinder-) Krankenpfleger m/w/d..."
-   ]
-  }
- },
- {
   "posting_id": 5634,
   "action": "unlink",
   "lock": false,
@@ -99,7 +86,7 @@
    "reason": "Filed under Dr. Lubos Kliniken Bogenhausen (16236) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.lubos-kliniken.de/karriere/stellenangebote/operationstechnische-assistentinnen-w-m-d-op-fachgesundheits-und-krankenpflegerin-w-m-d/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.lubos-kliniken.de/karriere/stellenangebote/operationstechnische-assistentinnen-w-m-d-op-fachgesundheits-und-krankenpflegerin-w-m-d/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -112,7 +99,7 @@
    "reason": "Filed under Dr. Lubos Kliniken Bogenhausen (16236) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-w-m-d-in-vollzeit-teilzeit-moeglich/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-w-m-d-in-vollzeit-teilzeit-moeglich/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -125,7 +112,7 @@
    "reason": "Filed under Dr. Lubos Kliniken Bogenhausen (16236) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-intensiv-in-vollzeit-teilzeit/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-intensiv-in-vollzeit-teilzeit/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -138,7 +125,7 @@
    "reason": "Filed under Dr. Lubos Kliniken Bogenhausen (16236) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-im-springerdienst-in-bogenhausen-w-m-d-in-vollzeit-teilzeit-moeglich/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.lubos-kliniken.de/karriere/stellenangebote/pflegefachkraft-im-springerdienst-in-bogenhausen-w-m-d-in-vollzeit-teilzeit-moeglich/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -164,7 +151,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69fecc868019ffa9ce18d3075 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69fecc868019ffa9ce18d3075 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -229,7 +216,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a99eb402dae (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a99eb402dae (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -242,7 +229,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a9e35e52e49 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e725801787a9e35e52e49 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -255,7 +242,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e72580178f48d19e80256 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e72580178f48d19e80256 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -268,7 +255,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a384b0d91e0185067e9ec451a3 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a384b0d91e0185067e9ec451a3 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -281,7 +268,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a386d4cc7c01882353072e6940 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a386d4cc7c01882353072e6940 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -294,7 +281,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69ef5d25a019f45e505a10bd3 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69ef5d25a019f45e505a10bd3 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -307,7 +294,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69bb8d50e019c2d1cd3352bb2 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69bb8d50e019c2d1cd3352bb2 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -320,7 +307,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69f857fb9019fb23cf2e44b95 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69f857fb9019fb23cf2e44b95 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -333,7 +320,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d87ed79019e1be9cf3e18e5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d87ed79019e1be9cf3e18e5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -385,7 +372,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/39-pflegefachmann-frau-m-w-d-haematologie-onkologie?cHash=8342dfcc890a1989c3c6c648f664335d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/39-pflegefachmann-frau-m-w-d-haematologie-onkologie?cHash=8342dfcc890a1989c3c6c648f664335d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -398,7 +385,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/40-pflegefachmann-frau-m-w-d-intensivstation?cHash=8c58fd2cb217c93ff2a48a837f2090df (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/40-pflegefachmann-frau-m-w-d-intensivstation?cHash=8c58fd2cb217c93ff2a48a837f2090df (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -411,7 +398,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/41-pflegefachmann-frau-m-w-d-kardiologie?cHash=1cec44697b461d4e4d3bf428c314afaa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/41-pflegefachmann-frau-m-w-d-kardiologie?cHash=1cec44697b461d4e4d3bf428c314afaa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -424,7 +411,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/38-pflegefachmann-frau-m-w-d-unfallchirurgie?cHash=e1cab82b274cb998b1f6591a942fc3a1 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/38-pflegefachmann-frau-m-w-d-unfallchirurgie?cHash=e1cab82b274cb998b1f6591a942fc3a1 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -437,7 +424,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/28-pflegefachmann-frau-m-w-d-im-operationsdienst?cHash=533af33a77b98e0b7d9ee10f494ee524 (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/28-pflegefachmann-frau-m-w-d-im-operationsdienst?cHash=533af33a77b98e0b7d9ee10f494ee524 (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -463,7 +450,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-482303 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-482303 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -476,7 +463,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-482309 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-482309 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -489,7 +476,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-482318 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-482318 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -502,7 +489,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-487511 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-487511 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -515,7 +502,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-496005 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-496005 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -528,7 +515,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-506574 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-506574 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -541,7 +528,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-510294 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-510294 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -554,7 +541,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-516205 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-516205 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -580,7 +567,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52093 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52093 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -593,7 +580,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52664 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52664 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -606,7 +593,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52667 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52667 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -619,7 +606,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52256 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52256 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -632,7 +619,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52655 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52655 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -645,7 +632,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10700 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10700 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -658,7 +645,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10701 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10701 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -671,7 +658,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10688 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10688 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -697,7 +684,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-geriatrie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-geriatrie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -710,7 +697,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-gynakologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-gynakologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -723,7 +710,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-gastroenterologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-gastroenterologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -736,7 +723,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-intensivabteilung (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-intensivabteilung (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -749,7 +736,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-stroke-unit (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-fur-die-stroke-unit (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -762,7 +749,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-interdisziplinare-aufnahmestation (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-w-m-d-interdisziplinare-aufnahmestation (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -775,7 +762,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-als-dauernachtwache-w-m-d-fur-alle-fachbereiche (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-als-dauernachtwache-w-m-d-fur-alle-fachbereiche (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -788,7 +775,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-in-der-chest-pain-unit-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-in-der-chest-pain-unit-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -801,7 +788,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-ota-w-m-d-fur-den-op (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkraft-ota-w-m-d-fur-den-op (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -814,7 +801,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkrafte-gesundheits-und-krankenpfleger-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegefachkrafte-gesundheits-und-krankenpfleger-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -827,7 +814,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/cfde4a73f7cd5a17817abe0b409fa641daf56437 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/cfde4a73f7cd5a17817abe0b409fa641daf56437 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -840,7 +827,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/3c39696c7453ffd5ecd63b9bc5eec041704959ee (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/3c39696c7453ffd5ecd63b9bc5eec041704959ee (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -853,7 +840,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/e397d666938b8a6007ddf5ca3835f8534fd4128b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/e397d666938b8a6007ddf5ca3835f8534fd4128b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -866,7 +853,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/672ea9f1ef5187f1594fee2583a3c938c44de65b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/672ea9f1ef5187f1594fee2583a3c938c44de65b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -879,7 +866,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/e955113e47d5fafc79ccf435807b6be238b8423c (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/e955113e47d5fafc79ccf435807b6be238b8423c (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -957,7 +944,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3084 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3084 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -970,7 +957,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3038 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3038 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -983,7 +970,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3088 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3088 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -996,7 +983,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3897 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3897 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1009,7 +996,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3864 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3864 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1022,7 +1009,7 @@
    "reason": "Filed under Sana Kliniken - Krankenhaus Cham (37202) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.sana.de/de/sites/CX_4025/job/3040 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.sana.de/de/sites/CX_4025/job/3040 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1035,7 +1022,7 @@
    "reason": "Filed under Krankenhaus Weilheim (19002) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.meinkrankenhaus2030.de/stellenanzeige-gesundheits-und-krankenpfleger/-operations-technischen-assistent-w/m/d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.meinkrankenhaus2030.de/stellenanzeige-gesundheits-und-krankenpfleger/-operations-technischen-assistent-w/m/d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1113,7 +1100,7 @@
    "reason": "Filed under Kreisklinik St. Elisabeth Dillingen (77301) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.khdw.de/stellenangebote/operationstechnische-assistenz-pflegepersonal-m-w-d-fuer-den-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.khdw.de/stellenangebote/operationstechnische-assistenz-pflegepersonal-m-w-d-fuer-den-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1126,7 +1113,7 @@
    "reason": "Filed under Kreisklinik St. Elisabeth Dillingen (77301) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-den-standort-dillingen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-den-standort-dillingen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1139,7 +1126,7 @@
    "reason": "Filed under Kreisklinik St. Elisabeth Dillingen (77301) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-die-anaesthesie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-die-anaesthesie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1152,7 +1139,7 @@
    "reason": "Filed under Kreisklinik St. Elisabeth Dillingen (77301) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-unser-flexteam/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.khdw.de/stellenangebote/pflegefachkraft-m-w-d-fuer-unser-flexteam/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1386,7 +1373,7 @@
    "reason": "Filed under Schön Klinik Tagesklinik München (16260) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-in-Muenchen-de-j15107.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.schoen-klinik.de/Pflegefachkraft-mwd-in-Muenchen-de-j15107.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -1412,7 +1399,7 @@
    "reason": "Filed under Therapiezentrum Burgau (77408) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.therapiezentrum-burgau.de/karriere/stellenangebote/job-detail/position/praxisanleiter-fuer-die-intensivstation-mwd (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.therapiezentrum-burgau.de/karriere/stellenangebote/job-detail/position/praxisanleiter-fuer-die-intensivstation-mwd (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1425,7 +1412,7 @@
    "reason": "Filed under Therapiezentrum Burgau (77408) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.therapiezentrum-burgau.de/karriere/stellenangebote/job-detail/position/stellvertretende-stationsleitung-mwd-fuer-unsere-intensivstation (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.therapiezentrum-burgau.de/karriere/stellenangebote/job-detail/position/stellvertretende-stationsleitung-mwd-fuer-unsere-intensivstation (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1607,7 +1594,7 @@
    "reason": "Filed under Klinikum Weiden (36301) by R2_operator_town; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Pflegefachkraefte-m-w-d-fuer-unterschiedliche-Fachbereiche-Klinikum-Weiden-Pflegezentren-Kliniken-Nordoberpfalz-AG--57269324 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-nordoberpfalz.talention.com/stellenangebote/Pflegefachkraefte-m-w-d-fuer-unterschiedliche-Fachbereiche-Klinikum-Weiden-Pflegezentren-Kliniken-Nordoberpfalz-AG--57269324 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -1620,7 +1607,7 @@
    "reason": "Filed under St. Barbara Krankenhaus Schwandorf (37601) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.barmherzige-bieten-zukunft.de/stellenmarkt/stellenboerse/detail/pflegefachkraft-intensivstation-vz/tz-160249072 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.barmherzige-bieten-zukunft.de/stellenmarkt/stellenboerse/detail/pflegefachkraft-intensivstation-vz/tz-160249072 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -1828,7 +1815,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21934/pflegefachkraft-als-stationsleitung-mwd-operative-intensivstation-klinik-fur-anasthesiologie-und-operative-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21934/pflegefachkraft-als-stationsleitung-mwd-operative-intensivstation-klinik-fur-anasthesiologie-und-operative-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1841,7 +1828,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21819/pflegefachkraft-mwd-intensivmedizin-im-springerpool-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21819/pflegefachkraft-mwd-intensivmedizin-im-springerpool-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -1971,7 +1958,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21782/pflegefachkraft-mwd-intensivstation-internistische-intensivpflege-intensivstationen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21782/pflegefachkraft-mwd-intensivstation-internistische-intensivpflege-intensivstationen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2010,7 +1997,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/10423/ota-pflegefachkraft-op-mwd-zentral-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/10423/ota-pflegefachkraft-op-mwd-zentral-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2023,7 +2010,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/10422/ata-pflegefachkraft-anasthesie-mwd-zentral-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/10422/ata-pflegefachkraft-anasthesie-mwd-zentral-op/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2049,7 +2036,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/10935/pflegefachkraft-mwd-im-springerpool-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/10935/pflegefachkraft-mwd-im-springerpool-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2062,7 +2049,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/323/altenpflegerin-mwd-klinik-fur-innere-medizin-2-schwerpunkt-geriatrie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/323/altenpflegerin-mwd-klinik-fur-innere-medizin-2-schwerpunkt-geriatrie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2088,7 +2075,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/321/trainee-mwd-im-pflegemanagement-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/321/trainee-mwd-im-pflegemanagement-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2101,7 +2088,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/301/pflegefachkraft-mwd-klinik-fur-innere-medizin-5-schwerpunkt-onkologie-hamatologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/301/pflegefachkraft-mwd-klinik-fur-innere-medizin-5-schwerpunkt-onkologie-hamatologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2114,7 +2101,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/300/pflegefachkraft-mwd-prolongiertes-weaning-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie-und-internistische-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/300/pflegefachkraft-mwd-prolongiertes-weaning-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie-und-internistische-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2127,7 +2114,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/267/pflegefachkraft-mwd-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/267/pflegefachkraft-mwd-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2179,7 +2166,7 @@
    "reason": "Filed under Bezirksklinikum Wöllershof Rehabilitation Entwöhnungsbehandlung (RH2511) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.medbo.de/bildungswelt/weiterkommen-vertiefen/akademische-weiterbildungen-pflege/praxisanleiterin-pflege (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.medbo.de/bildungswelt/weiterkommen-vertiefen/akademische-weiterbildungen-pflege/praxisanleiterin-pflege (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2192,7 +2179,7 @@
    "reason": "Filed under Bezirksklinikum Wöllershof Rehabilitation Entwöhnungsbehandlung (RH2511) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.medbo.de/karriere/pflege-expertin (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.medbo.de/karriere/pflege-expertin (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2465,7 +2452,7 @@
    "reason": "Filed under LA-Regio Kliniken Kinderklinik St. Marien Landshut (26103) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.la-regio-kliniken.de/stellenanzeige/pflegepaedagoge-m-w-d-in-vollzeit (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.la-regio-kliniken.de/stellenanzeige/pflegepaedagoge-m-w-d-in-vollzeit (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2478,7 +2465,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/cd4a9075f808faf70fc1d71ee17814a411d85252 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/cd4a9075f808faf70fc1d71ee17814a411d85252 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2491,7 +2478,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/8e52ec0eeaf2bfa44bfae33d74e28a3c827a20f5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/8e52ec0eeaf2bfa44bfae33d74e28a3c827a20f5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2504,7 +2491,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/4120bfa93dcde3eb533456e315cb4f1315ef495d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/4120bfa93dcde3eb533456e315cb4f1315ef495d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2517,7 +2504,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/e41311cdd810aa1ae06980efd487926e6bb54c39 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/e41311cdd810aa1ae06980efd487926e6bb54c39 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2530,7 +2517,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/e8851d84e2f9b7b38cd0aaf8aeefedf5a3aa7349 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/e8851d84e2f9b7b38cd0aaf8aeefedf5a3aa7349 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2543,7 +2530,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/28eceeb989b16e234f22c3e3fa7f1fa25a84c6fa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/28eceeb989b16e234f22c3e3fa7f1fa25a84c6fa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2569,7 +2556,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/de/jobposting/7c346d7b731e86bc0234452b62409ec7c29cc40e0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/de/jobposting/7c346d7b731e86bc0234452b62409ec7c29cc40e0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2582,7 +2569,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/de/jobposting/3bcd833b676b6eb4507eeead43e6d4e82e09978a0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/de/jobposting/3bcd833b676b6eb4507eeead43e6d4e82e09978a0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2595,7 +2582,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/de/jobposting/4c11fc48315ec61abefbca03d977520ab3697b2b0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/de/jobposting/4c11fc48315ec61abefbca03d977520ab3697b2b0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2608,7 +2595,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/de/jobposting/2867ec20722ffcca1291476e2a04a65f1d45737b0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/de/jobposting/2867ec20722ffcca1291476e2a04a65f1d45737b0/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2621,7 +2608,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/de/jobposting/5ffe31a737190d20a4c0288cf82f3404ace468c70/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/de/jobposting/5ffe31a737190d20a4c0288cf82f3404ace468c70/apply (replay of run 211, 2026-09-28): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2738,7 +2725,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/jobposting/f29ab87f8f6d707b3867737f7aeafface2b66d730 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/jobposting/f29ab87f8f6d707b3867737f7aeafface2b66d730 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2764,7 +2751,7 @@
    "reason": "Filed under Schön Klinik Tagesklinik München (16260) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.schoen-klinik.de/International-Pflegefachkraft-mwd-in-Deutschland-de-j15061.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.schoen-klinik.de/International-Pflegefachkraft-mwd-in-Deutschland-de-j15061.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -2790,7 +2777,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52692 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52692 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2803,7 +2790,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52390 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52390 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2816,7 +2803,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/21377 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/21377 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2829,7 +2816,7 @@
    "reason": "Filed under Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation (RH1611) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/150 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/150 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2842,7 +2829,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52558 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52558 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2855,7 +2842,7 @@
    "reason": "Filed under Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation (RH1611) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52704 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52704 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2868,7 +2855,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52379 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52379 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2881,7 +2868,7 @@
    "reason": "Filed under Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation (RH1611) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52628 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52628 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2894,7 +2881,7 @@
    "reason": "Filed under Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation (RH1611) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/100 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/100 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2907,7 +2894,7 @@
    "reason": "Filed under Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation (RH1611) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/41887 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/41887 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2920,7 +2907,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/56 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/56 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2933,7 +2920,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10980 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/10980 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -2946,7 +2933,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52607 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52607 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3076,7 +3063,7 @@
    "reason": "Filed under Medic-Center Klinik Fürth (56304) by R_jd_text; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://recruitingapp-5610.de.umantis.com/Vacancies/749/Description/1 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://recruitingapp-5610.de.umantis.com/Vacancies/749/Description/1 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -3115,7 +3102,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/83c6ee3d-64be-414d-8593-0583be721776/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/83c6ee3d-64be-414d-8593-0583be721776/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3128,7 +3115,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/4d64f0e3-23c4-407e-baf3-d208c6f61315/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/4d64f0e3-23c4-407e-baf3-d208c6f61315/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3141,7 +3128,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/acd76a69-5b35-44a3-b1e8-255bc756644b/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/acd76a69-5b35-44a3-b1e8-255bc756644b/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3154,7 +3141,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/8a034548-5a67-4158-b5fc-f05ef57293b5/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/8a034548-5a67-4158-b5fc-f05ef57293b5/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3167,7 +3154,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/a4df9a57-76e4-4fff-9f2b-0a50676b4bc9/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/a4df9a57-76e4-4fff-9f2b-0a50676b4bc9/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3180,7 +3167,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/e9fc5597-4d8c-4d27-8080-7e6bc51949dd/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/e9fc5597-4d8c-4d27-8080-7e6bc51949dd/ (replay of run 220, 2026-09-30): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3193,7 +3180,7 @@
    "reason": "Filed under HELIOS Klinik Erlenbach a. Main (67601) by R0_board_name; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/3aebafeb-58a7-49b0-a648-2ace6fc46678/ (replay of run 185, 2026-09-25): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/3aebafeb-58a7-49b0-a648-2ace6fc46678/ (replay of run 185, 2026-09-25): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3206,7 +3193,7 @@
    "reason": "Filed under HELIOS Klinik Erlenbach a. Main (67601) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/68af5de8-f380-45fd-b59b-a5f37c6ed46f/ (replay of run 195, 2026-09-26): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/68af5de8-f380-45fd-b59b-a5f37c6ed46f/ (replay of run 195, 2026-09-26): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3349,7 +3336,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/jobposting/a43c19c8af04320826d6a72a2e19a0316a4a84fe0 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/jobposting/a43c19c8af04320826d6a72a2e19a0316a4a84fe0 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -3362,7 +3349,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/jobposting/a3552a950ba98e8de8baf214653d1026578187f20 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/jobposting/a3552a950ba98e8de8baf214653d1026578187f20 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -3375,7 +3362,7 @@
    "reason": "Filed under Diakoneo Rangauklinik Ansbach (56103) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.diakoneo.de/jobposting/b6a147b1aac3c175cd1d29c6e1a2e6a788a2fcc70 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://jobs.diakoneo.de/jobposting/b6a147b1aac3c175cd1d29c6e1a2e6a788a2fcc70 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -3388,7 +3375,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52100 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52100 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3401,7 +3388,7 @@
    "reason": "Filed under Donau-Ries Klinik Donauwörth (77901) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://dongku.de/stellenangebote/donau-ries-klinik-donauworth/gesundheits-und-krankenpfleger-gesundheits-und-kinderkrankenpfleger-ota-altenpfleger-m-w-d/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://dongku.de/stellenangebote/donau-ries-klinik-donauworth/gesundheits-und-krankenpfleger-gesundheits-und-kinderkrankenpfleger-ota-altenpfleger-m-w-d/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3427,7 +3414,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/120-medizinische-r-fachangestellte-r-mfa-oder-pflegefachkraft-m-w-d-endoskopie?cHash=dc38eff8d78bd4e96c5a29367e4500cd (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/120-medizinische-r-fachangestellte-r-mfa-oder-pflegefachkraft-m-w-d-endoskopie?cHash=dc38eff8d78bd4e96c5a29367e4500cd (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3440,7 +3427,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/4bebb8518fd78f8f9cbbb24af52646dbd3273a05 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/4bebb8518fd78f8f9cbbb24af52646dbd3273a05 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3466,7 +3453,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/21-pflegefachmann-frau-m-w-d?cHash=b2ae5d6bb232c65bdac4539b6c34eca5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/21-pflegefachmann-frau-m-w-d?cHash=b2ae5d6bb232c65bdac4539b6c34eca5 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3505,7 +3492,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/108-operationstechnische-assistenz-ota-m-w-d-ambulanter-op-minijob?cHash=7d0880966a7ec5f283590f42288b205a (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/108-operationstechnische-assistenz-ota-m-w-d-ambulanter-op-minijob?cHash=7d0880966a7ec5f283590f42288b205a (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3518,7 +3505,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/109-pflegefachmann-frau-m-w-d-ambulanter-op-minijob?cHash=5f25ff6a6257e94a7ea33a9f9c6c2e7e (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/109-pflegefachmann-frau-m-w-d-ambulanter-op-minijob?cHash=5f25ff6a6257e94a7ea33a9f9c6c2e7e (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3531,7 +3518,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/114-pflegefachmann-frau-m-w-d-viszeralchirurgie?cHash=e302ae8cc7ce45e3fb76d779f7d852e2 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/114-pflegefachmann-frau-m-w-d-viszeralchirurgie?cHash=e302ae8cc7ce45e3fb76d779f7d852e2 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3544,7 +3531,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/129-pflegefachmann-frau-m-w-d-viszeralchirurgie-gastroenterologie?cHash=1f907ecc848585b143b272664531244b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/129-pflegefachmann-frau-m-w-d-viszeralchirurgie-gastroenterologie?cHash=1f907ecc848585b143b272664531244b (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3557,7 +3544,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/150-operationstechnische-assistenz-ota-m-w-d?cHash=e69564051e832300a7de3b846e584037 (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/150-operationstechnische-assistenz-ota-m-w-d?cHash=e69564051e832300a7de3b846e584037 (replay of run 208, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3570,7 +3557,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/174-pflegefachkraft-m-w-d?cHash=877a3c50a876e51a623be80824e8f30c (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/174-pflegefachkraft-m-w-d?cHash=877a3c50a876e51a623be80824e8f30c (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3609,7 +3596,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21949/zentrale-praxisanleitung-mwd-fur-den-op-funktionsdienst-klinik-fur-anasthesiologie-und-operative-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21949/zentrale-praxisanleitung-mwd-fur-den-op-funktionsdienst-klinik-fur-anasthesiologie-und-operative-intensivmedizin/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3622,7 +3609,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21950/pflegefachkraft-mwd-padiatrie-kinderintensiv-neonatologie-kinderonkologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21950/pflegefachkraft-mwd-padiatrie-kinderintensiv-neonatologie-kinderonkologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3635,7 +3622,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52802 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52802 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3648,7 +3635,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52799 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52799 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3778,7 +3765,7 @@
    "reason": "Filed under Klinik Günzburg (77401) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/178-praxisanleitung-m-w-d-anaesthesie-weiterbildungsstaette-intensiv-und-anaesthesiepflege?cHash=e281601779474bf2d470c13d810d48a9 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/178-praxisanleitung-m-w-d-anaesthesie-weiterbildungsstaette-intensiv-und-anaesthesiepflege?cHash=e281601779474bf2d470c13d810d48a9 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3791,7 +3778,7 @@
    "reason": "Filed under Sana Klinik Pegnitz (47201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.sana.de/karriere/beruf/pflege/fachpflege/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.sana.de/karriere/beruf/pflege/fachpflege/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -3804,7 +3791,7 @@
    "reason": "Filed under Sana Klinik Pegnitz (47201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.sana.de/karriere/beruf/pflege/hebammen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.sana.de/karriere/beruf/pflege/hebammen/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -4155,7 +4142,7 @@
    "reason": "Filed under Klinikum Main-Spessart Geriatrisches Zentrum Lohr (RH2855) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegepadagoge-b-a-m-a-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinikum-msp.de/karriere/stellenboerse/detail/pflegepadagoge-b-a-m-a-w-m-d (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -4220,7 +4207,7 @@
    "reason": "Filed under Juraklinik Scheßlitz (47101) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://gkg-bamberg.de/job/gesundheits-und-krankenpfleger-m-w-d-speziell-fuer-den-nachtdienst/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://gkg-bamberg.de/job/gesundheits-und-krankenpfleger-m-w-d-speziell-fuer-den-nachtdienst/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -4246,7 +4233,7 @@
    "reason": "Filed under Klinik Fränkische Schweiz Ebermannstadt (47402) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinik-fraenkische-schweiz.de/herz/ueber_uns/stellenangebote/altenpfleger (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinik-fraenkische-schweiz.de/herz/ueber_uns/stellenangebote/altenpfleger (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -4259,7 +4246,7 @@
    "reason": "Filed under Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG (RH2000) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.mein-check-in.de/klinik-familie/position-473058 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.mein-check-in.de/klinik-familie/position-473058 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6196,7 +6183,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21772/medizinischer-fachangestellter-oder-pflegefachkraft-mwd-schlaflabor-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21772/medizinischer-fachangestellter-oder-pflegefachkraft-mwd-schlaflabor-klinik-fur-innere-medizin-3-schwerpunkt-pneumologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6456,7 +6443,7 @@
    "reason": "Filed under Klinikum St. Marien Amberg (36101) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-amberg.de/jobposting/fde0fe06f288fa07158e2e5606769111832df3d7 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-amberg.de/jobposting/fde0fe06f288fa07158e2e5606769111832df3d7 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6469,7 +6456,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/110047e1-3e06-5301-b9f1-398a31fc536e/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/110047e1-3e06-5301-b9f1-398a31fc536e/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6482,7 +6469,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/6419307b-a4ea-5772-9b61-85fbfc179ed9/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/6419307b-a4ea-5772-9b61-85fbfc179ed9/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6495,7 +6482,7 @@
    "reason": "Filed under HELIOS Frankenwaldklinik Kronach (47601) by R1_exact; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/49818800-fb13-51f9-acae-f1561ca7cbe9/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/49818800-fb13-51f9-acae-f1561ca7cbe9/ (replay of run 204, 2026-09-28): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6573,7 +6560,7 @@
    "reason": "Filed under HELIOS Klinik Erlenbach a. Main (67601) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/81bf9a24-6e10-4136-a4cb-e9c7414300fa/ (replay of run 195, 2026-09-26): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/81bf9a24-6e10-4136-a4cb-e9c7414300fa/ (replay of run 195, 2026-09-26): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6586,7 +6573,7 @@
    "reason": "Filed under HELIOS St. Elisabeth-Krankenhaus Bad Kissingen (67201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/b7504760-d937-4169-b878-58369f921e67/ (replay of run 196, 2026-09-26): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/b7504760-d937-4169-b878-58369f921e67/ (replay of run 196, 2026-09-26): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6599,7 +6586,7 @@
    "reason": "Filed under HELIOS St. Elisabeth-Krankenhaus Bad Kissingen (67201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/2ce49d15-72e9-4163-a739-f24bb575ca44/ (replay of run 196, 2026-09-26): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/2ce49d15-72e9-4163-a739-f24bb575ca44/ (replay of run 196, 2026-09-26): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6612,7 +6599,7 @@
    "reason": "Filed under HELIOS St. Elisabeth-Krankenhaus Bad Kissingen (67201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.helios-gesundheit.de/karriere/job/c75d866f-c009-496b-bd05-0fe2bde7a895/ (replay of run 186, 2026-09-25): no clinic evidence: loaded (no site match)"
+    "https://www.helios-gesundheit.de/karriere/job/c75d866f-c009-496b-bd05-0fe2bde7a895/ (replay of run 186, 2026-09-25): no clinic evidence: loaded (no site match: no evidence: its employer is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6625,7 +6612,7 @@
    "reason": "Filed under Asklepios Gesundheitszentrum Bad Tölz GmbH (RH2777) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.asklepios.com/pflegepaedagoge-oder-medizinpaedagoge-wmd-de-j16586.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.asklepios.com/pflegepaedagoge-oder-medizinpaedagoge-wmd-de-j16586.html (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -6638,7 +6625,7 @@
    "reason": "Filed under Klinik Bad Trissl GmbH Rehabilitation (RH1841) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinik-bad-trissl.de/karriere/#examinierte-pflegekräfte-m-w-d-für-die-psychosomatik (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinik-bad-trissl.de/karriere/#examinierte-pflegekräfte-m-w-d-für-die-psychosomatik (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6651,7 +6638,7 @@
    "reason": "Filed under Klinik Bad Trissl GmbH Rehabilitation (RH1841) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.klinik-bad-trissl.de/karriere/#examinierte-pflegekräfte-m-w-d-für-die-onkologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.klinik-bad-trissl.de/karriere/#examinierte-pflegekräfte-m-w-d-für-die-onkologie (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6677,7 +6664,7 @@
    "reason": "Filed under Donau-Ries Klinik Donauwörth (77901) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://dongku.de/tag/stellenangebot/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://dongku.de/tag/stellenangebot/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6794,7 +6781,7 @@
    "reason": "Filed under Donau-Ries Klinik Donauwörth (77901) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://dongku.de/category/stellenangebote/donau-ries-seniorenheim-wemding/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://dongku.de/category/stellenangebote/donau-ries-seniorenheim-wemding/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6820,7 +6807,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e7258017a0a4fb78254fa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8a6230a3783e7258017a0a4fb78254fa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -6833,7 +6820,7 @@
    "reason": "Filed under InnKlinikum Altötting (17101) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69fecc86801a07fbc23d814b5 (replay of run 177, 2026-09-24): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69fecc86801a07fbc23d814b5 (replay of run 177, 2026-09-24): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7119,7 +7106,7 @@
    "reason": "Filed under Juraklinik Scheßlitz (47101) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://gkg-bamberg.de/job/betreuungskraefte-nach-%C2%A743b-sgb-xi-m-w-in-teilzeit/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://gkg-bamberg.de/job/betreuungskraefte-nach-%C2%A743b-sgb-xi-m-w-in-teilzeit/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7132,7 +7119,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21827/medizinischer-fachangestellter-mfa-operationstechnischer-assistentin-ota-mwd-klinik-fur-urologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21827/medizinischer-fachangestellter-mfa-operationstechnischer-assistentin-ota-mwd-klinik-fur-urologie/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7145,7 +7132,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.klinikum-nuernberg.de/de/jobs/21760/intro (replay of run 120, 2026-09-22): no clinic evidence: loaded (no site match)"
+    "https://jobs.klinikum-nuernberg.de/de/jobs/21760/intro (replay of run 120, 2026-09-22): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7158,7 +7145,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/317/pflegefachkraft-mwd-und-pflegefachhelferin-mwd-springerpool-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/317/pflegefachkraft-mwd-und-pflegefachhelferin-mwd-springerpool-campus-nord/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7171,7 +7158,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://jobs.klinikum-nuernberg.de/de/jobs/21794/intro (replay of run 120, 2026-09-22): no clinic evidence: loaded (no site match)"
+    "https://jobs.klinikum-nuernberg.de/de/jobs/21794/intro (replay of run 120, 2026-09-22): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7236,7 +7223,7 @@
    "reason": "Filed under Sana Klinik Pegnitz (47201) by R3_tokens; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.sana.de/karriere/beruf/pflege/gesundheits-pflegeassistenz/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.sana.de/karriere/beruf/pflege/gesundheits-pflegeassistenz/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -7276,97 +7263,6 @@
    "task": "TASK-185",
    "evidence": [
     "https://www.krankenpflegejobs24.de/frankfurt-am-main/krankenpflege/mvz-am-klinikum-frankfurt-hoechst-gmbh/pflegefachkraft-eo-kardiologie-102 (replay of run 197, 2026-09-26): the judge read: Krankenpfleger, Vollzeit, at MVZ am Klinikum Frankfurt Höchst, Frankfurt; no tasks"
-   ]
-  }
- },
- {
-  "posting_id": 13797,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Stellvertretende-Stationsleitung-w-m-d-fuer-die-Station-4A-Akutgeriatrie-befristet-auf-zwei-Jahre-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14236711-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...n 4A (Akutgeriatrie), befristet auf zwei Jahre bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 13799,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Teamleitung-OP-Pflege-im-ambulanten-OP-Zentrum-m-w-d-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14315503-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...ung OP-Pflege im ambulanten OP-Zentrum (m/w/d) bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 14280,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Pflegefachkraft-oder-Notfallsanitaeter-w-m-d-fuer-die-Zentrale-Notaufnahme-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14311022-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...sanitäter (w/m/d) für die Zentrale Notaufnahme bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 14615,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Pflegefachkraft-w-m-d-Springerpool-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14236808-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...Pflegefachkraft (w/m/d) Springerpool bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 14616,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Pflegefachkraft-oder-Anaesthesietechnische-Assistenz-w-m-d-fuer-die-Anaesthesie-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14236735-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...echnische Assistenz (w/m/d) für die Anästhesie bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 14617,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Pflegefachkraft-w-m-d-fuer-die-Palliativstation-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14427085-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...legefachkraft (w/m/d) für die Palliativstation bei Klinikum Ebersberg München Ost gGmbH..."
-   ]
-  }
- },
- {
-  "posting_id": 14633,
-  "action": "relink",
-  "clinic_id": "17501",
-  "_why": {
-   "code": "wrong_clinic",
-   "reason": "Filed under no clinic; the replayed pipeline attaches Kreisklinik Ebersberg (17501) by R2_operator.",
-   "task": "TASK-185",
-   "evidence": [
-    "https://www.stepstone.de/stellenangebote--Stationssekretaer-in-w-m-d-fuer-die-Innere-Medizin-Station-2A-in-Teilzeit-bei-Klinikum-Ebersberg-Muenchen-Ost-gGmbH-Ebersberg-Klinikum-Ebersberg-Muenchen-Ost-gemeinnuetzige-GmbH--14239699-inline.html (stored posting, in no replayed run; 2026-10-01): names Kreisklinik Ebersberg, Ebersberg: ...für die Innere Medizin Station 2A in Teilzeit bei Klinikum Ebersberg München Ost gGmbH..."
    ]
   }
  },
@@ -8354,7 +8250,7 @@
    "reason": "Filed under Klinikum Nürnberg - Betriebsstätte Nord (56401) by R6_ambiguous_sites:56401,56410; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://karriere.klinikum-nuernberg.de/jobs/21786/pflegepadagogepflegepadagogin-pflegelehrerin-mwd-akademie-klinikum-nurnberg/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://karriere.klinikum-nuernberg.de/jobs/21786/pflegepadagogepflegepadagogin-pflegelehrerin-mwd-akademie-klinikum-nurnberg/ (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -8666,7 +8562,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d87ed79019df1e319e20105 (replay of run 189, 2026-09-25): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a69d87ed79019df1e319e20105 (replay of run 189, 2026-09-25): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -8692,7 +8588,7 @@
    "reason": "Filed under InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation (RH2811) by R0_board; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a6a0a623d201a0a959cf5c14aa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://www.innklinikum.de/stellenangebote-detailansicht/8ac789a6a0a623d201a0a959cf5c14aa (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place and employer are the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -8965,7 +8861,7 @@
    "reason": "Filed under Klinikum Garmisch-Partenkirchen - Außenstelle Murnau (18003) by R_jd_text; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://oberland-jobs.de/job/pflegepaedagoge-mwd-1982544 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://oberland-jobs.de/job/pflegepaedagoge-mwd-1982544 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no rule names a registry site for this employer and place)"
    ]
   }
  },
@@ -9108,7 +9004,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52427 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52427 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -9121,7 +9017,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52809 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52809 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  },
@@ -9134,7 +9030,7 @@
    "reason": "Filed under Klinikum Bamberg - Betriebsstätte am Bruderwald (46101) by R6_ambiguous_sites:46101,46103,46170; the replayed pipeline finds no evidence that the posting belongs to any registry clinic.",
    "task": "TASK-185",
    "evidence": [
-    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52810 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match)"
+    "https://sozialstiftung-bamberg.dvinci-easy.com/de/jobs/52810 (replay of run 225, 2026-10-01): no clinic evidence: loaded (no site match: no evidence: its place is the seed clinic's own copy, nothing else names a site)"
    ]
   }
  }
