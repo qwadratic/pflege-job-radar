@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-09-30 23:13'
+updated_date: '2026-10-01 14:24'
 labels:
   - frontend
   - whatsapp
@@ -94,4 +94,12 @@ Built the web/ half of the Pro Leads view (2026-09-29, pflege-fe session):
 - Open questions sent to wa-harness: is the audio transcript in meta.transcript with body null; is targets[].attention a string or a bool; is there a closed list for targets[].status.
 
 2026-09-30, wa-harness answered the open questions from its code, applied in 82b391e: (1) a voice note's transcript is its body (set_voice_transcript writes body and meta.transcript), so the drawer renders the body once and meta.transcript is documented as a marker only; (2) targets[].attention is a bool, and targets[].status is a closed list of 10 (sent_to_clinic, followup_sent, clinic_replied, interview_scheduled, trial_scheduled, offer, contract_signed, declined, closed, halted), all labelled in DE/EN; an unknown value still shows raw; (3) handoff_matches stays in the thread detail as the matched clinics behind handoff.clinics, and the drawer shows it again ('Passende Kliniken' with town and score) next to targets ('Stand je Klinik'). My earlier f6f4374 had wrongly dropped it. Demo: 6604 queued has no targets yet, 1180 attention has one clinic_replied target flagged, 7340 in_progress, 5566 signed with a contract_signed target. Verification: Leads + responsive 43 passed, mutation check 11 of 11 red, drawer screenshot checked. Preview version 6. No open questions with wa-harness.
+
+2026-10-01, follow-up agreed with wa-harness (its TASK-283.7): Ivan wants the phone rail shown in Pro: the bridge (tunnel, phone, watcher, last sync), the phone_ops queue (queued, running, done, failed), the automatic jobs, and tasks a human queued from Pro. Agreed shape:
+- GET /api/wa/pro/activity is a polled snapshot {generated_at, snapshot_at, synced_at, synced_source, rail: {tunnel: {up, since, last_error}, phone: {state, since}, watcher: {alive, heartbeat_at}, last_sync_at}, queue: {queued, running, done, failed}, jobs: [{job, enabled, last_run_at, last_ok_at, last_error, next_run_at, ok_24h, failed_24h}], human: {...counts}}. The counts are complete.
+- GET /api/wa/pro/ops?status=&origin=auto|pro&before_id=&after_id=&limit= returns rows newest first, with next_before_id and no caps. A row is {id, kind, origin, status, thread_id, phone_masked, created_at, started_at, finished_at, attempts (null if untracked), error {code, text}}. Human tasks are rows with origin=pro_human.
+- Enums: origin = luna, luna_tool, followups, catchup, campaign, broadcast, operator, pro_human, unknown. Job keys = luna_reply, followups, nudges, broadcasts, relay_sync, catchup, tunnel_watch, purge_test, agent_notes. Status = queued, running, done, failed, plus the bridge ledger's extra states (e.g. cancelled). Unknown values are shown raw.
+- /api/wa/pro is owner-only, with deny tests on the harness side.
+- wa-harness was asked to put the contract in its own doc (e.g. docs/wa-pro-activity.md) so PR #1 and PR #2 do not collide add/add on docs/wa-dashboard.md.
+- Placement: there is no view named 'activity board'. The proposal is a second tab on #/leads (?tab=rail), and Ivan was asked whether he meant Clawl instead. It gets built here (a new AC on this task, no new task ID while the ID lanes overlap) once the fixtures land.
 <!-- SECTION:NOTES:END -->
