@@ -13,6 +13,7 @@ API is refused. The adapters' own sleeps stay while recording and the run is one
   diff <board_id> [--apply]                    record into memory, print added / removed / changed URLs, keep only on --apply
   status [--older-than DAYS]                   what is mirrored (age is information, never an automatic refresh)
   list-urls <board_id> [--scope S]  |  show <board_id> <url>  |  sql <board_id> "<select ...>"  |  reindex
+  record-infra                                 the registry read proxy snapshot behind tests/test_geo.py (our own DB, read-only)
 """
 import argparse
 import json
@@ -277,6 +278,8 @@ def _entries():
 
 def cmd_status(a):
     idx = _entries()
+    for bid, e in M.read_index().get("infra", {}).items():
+        _log(f"{bid:56.56} infra  pages {e['pages']:5} raw {e['bytes_raw'] / 1e6:7.1f} MB xz {e.get('bytes_file', 0) / 1e6:6.2f} MB rows {e['rows']:>5} {e['recorded_at'][:10]}")
     now = datetime.now(timezone.utc)
     rows, tot = [], {"pages": 0, "raw": 0, "file": 0}
     for bid, e in sorted(idx.items(), key=lambda kv: kv[0]):
@@ -321,16 +324,34 @@ def cmd_sql(a):
 
 
 def cmd_reindex(a):
-    n = 0
+    idx = {"format": M.FORMAT, "boards": {}, "infra": {}}
     for f in sorted(M.mirror_dir().glob("*.sqlite.xz")):
-        s = M.Store.load(f.name.removesuffix(".sqlite.xz"))
-        e = s.meta("index")
+        e = M.Store.load(f.name.removesuffix(".sqlite.xz")).meta("index")
         if not e:
             _log(f"{f.name}: no index entry in its meta (recorded by something else?), skipped")
             continue
-        M.update_index(dict(e, bytes_file=f.stat().st_size))
-        n += 1
-    _log(f"INDEX.json rebuilt from {n} board file(s)")
+        idx["infra" if e.get("kind") == "infra" else "boards"][e["board_id"]] = dict(e, bytes_file=f.stat().st_size)
+    M.write_index(idx)
+    _log(f"INDEX.json rebuilt from {len(idx['boards'])} board file(s) and {len(idx['infra'])} infra snapshot(s)")
+
+
+INFRA_BOARD = "infra__registry-read-proxy"
+
+
+def cmd_record_infra(a):
+    """The registry read proxy as tests/test_geo.py reads it (every town, every (city, plz) pair of the posting observations):
+    our own database, not a clinic site, so it is the one recording that may talk to it. Read-only, like everything here."""
+    from tests import test_geo as TG
+    t0 = time.time()
+    with M.recording(INFRA_BOARD, allow_infra=True) as rec:
+        with M.scope("geo"):
+            pairs, towns = TG._fetch_live_city_plz_pairs(), TG._load_towns()
+    e = {"board_id": INFRA_BOARD, "kind": "infra", "url": AC.PROXY, "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+         "recorder_sha": M.git_sha(), "seconds": round(time.time() - t0, 1), **rec.store.stats(), "rows": len(pairs), "towns": len(towns), "error": None}
+    rec.store.set_meta("index", e)
+    path = rec.save()
+    M.update_index(dict(e, bytes_file=path.stat().st_size), section="infra")
+    _log(f"{INFRA_BOARD}: {len(pairs)} (city, plz) pairs, {len(towns)} towns, {e['pages']} pages, raw {e['bytes_raw'] / 1e6:.1f} MB, xz {path.stat().st_size / 1e6:.2f} MB")
 
 
 def main():
@@ -375,6 +396,8 @@ def main():
     q.set_defaults(fn=cmd_sql)
     x = sub.add_parser("reindex")
     x.set_defaults(fn=cmd_reindex)
+    i = sub.add_parser("record-infra", help="the registry read proxy snapshot tests/test_geo.py reads")
+    i.set_defaults(fn=cmd_record_infra)
     a = p.parse_args()
     if a.cmd == "record" and not (a.all or a.targets):
         p.error("record needs board ids/hosts/clinic ids, or --all")

@@ -106,6 +106,14 @@ def board_for_url(url):
     raise M.MirrorMiss(f"the mirror has no board with url {url!r}: .venv/bin/python {M.RECORD} record <board_id | host | clinic_id>")
 
 
+def board_with(part):
+    """The mirrored board whose careers url contains `part` (a host, usually)."""
+    for b in indexed_boards():
+        if part in b["url"]:
+            return b
+    raise M.MirrorMiss(f"the mirror has no board with {part!r} in its url: .venv/bin/python {M.RECORD} record {part}")
+
+
 @contextlib.contextmanager
 def _mirror(board, scope):
     if M.active():

@@ -251,8 +251,8 @@ class Store:
 # a mirror in use: replay (tests), record (the tool), through (replay, live only for what is missing)
 # ---------------------------------------------------------------------------------------------
 class Mirror:
-    def __init__(self, board_id, store, mode):
-        self.board_id, self.store, self.mode = board_id, store, mode
+    def __init__(self, board_id, store, mode, allow_infra=False):
+        self.board_id, self.store, self.mode, self.allow_infra = board_id, store, mode, allow_infra
         self.scope, self.misses, self.refused, self.live_requests, self.last_live = "adapter", [], [], 0, True
         self._n, self._lock = {}, threading.Lock()
 
@@ -270,7 +270,7 @@ class Mirror:
             if self.mode == "replay":
                 self.miss(via, method, url, sha)
         host = urlparse(url).hostname or ""
-        if _INFRA.search(host):
+        if _INFRA.search(host) and not self.allow_infra:
             self.refused.append(url)
             raise RuntimeError(f"the recorder talks to clinic sites only; refusing {method.upper()} {url}")
         with self._lock:
@@ -387,9 +387,10 @@ def replaying(store, scope="adapter"):
 
 
 @contextlib.contextmanager
-def recording(board_id):
-    """Live: every request goes out and is stored, hop by hop. The caller saves (`rec.save(meta)`). Only tools/mirror.py does this."""
-    m = Mirror(board_id, Store.new(board_id), "record")
+def recording(board_id, allow_infra=False):
+    """Live: every request goes out and is stored, hop by hop. The caller saves (`rec.save(meta)`). Only tools/mirror.py does this.
+    allow_infra: record a read of our own read proxy (the registry snapshot tests/test_geo.py reads); a clinic board never does."""
+    m = Mirror(board_id, Store.new(board_id), "record", allow_infra)
     with _activate(m):
         yield m
 
@@ -416,19 +417,32 @@ def read_index():
     return idx
 
 
-def update_index(entry):
+def write_index(idx):
+    """Replace INDEX.json atomically (under the index lock)."""
+    d = mirror_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "INDEX.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _write_index_locked(idx)
+
+
+def _write_index_locked(idx):
+    tmp = mirror_dir() / "INDEX.json.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(idx, f, ensure_ascii=False, indent=1, sort_keys=True)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, index_path())
+
+
+def update_index(entry, section="boards"):
     d = mirror_dir()
     d.mkdir(parents=True, exist_ok=True)
     with open(d / "INDEX.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         idx = read_index_or_none() or {"format": FORMAT, "boards": {}}
-        idx["boards"][entry["board_id"]] = entry
-        tmp = d / "INDEX.json.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(idx, f, ensure_ascii=False, indent=1, sort_keys=True)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, index_path())
+        idx.setdefault(section, {})[entry["board_id"]] = entry
+        _write_index_locked(idx)
 
 
 def git_sha():
