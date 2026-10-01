@@ -14,6 +14,9 @@ from app import runs as R
 def fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "SQLITE_PATH", tmp_path / "app.sqlite")
     monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    # app startup warms the snapshot in a thread (app/main.py _startup): without this the five route tests below read the real
+    # Supabase project (found by the network guard, TASK-197) -- the same stub every other TestClient(app) test uses
+    monkeypatch.setattr(D, "refresh", lambda: D._snap)
     R.init()
     return tmp_path
 

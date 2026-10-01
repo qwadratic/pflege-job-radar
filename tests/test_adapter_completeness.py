@@ -30,25 +30,15 @@ from tests import adapter_harness as H  # noqa: E402
 from tests import mirror as M  # noqa: E402
 
 # --- the boards of the mirror, biggest first (the recorder sorts the same way) --------------------
-_INDEX = M.read_index_or_none()
-_ENTRIES = sorted(_INDEX["boards"].values(), key=lambda e: (-e["n_clinics"], e["board_id"])) if _INDEX else []
-_BOARD_LIST = [dict(e["board"], board_id=e["board_id"]) for e in _ENTRIES]
-_BOARD_IDS = [e["board_id"] for e in _ENTRIES]
+_BOARD_LIST = H.indexed_boards()
 _FAMILY_BOARDS = H.family_boards(_BOARD_LIST)
-
-# No mirror at all must be a loud failure of every case that needs it, never an empty (skipped) parametrisation.
-_NO_MIRROR = "no-mirror"
+_PARAMS, _IDS = H.board_params(_BOARD_LIST)  # no mirror at all: one case that fails saying how to record it, never a skip
 
 
-def _need_mirror():
-    M.read_index()  # raises MirrorMiss with the command that records the boards
-    raise M.MirrorMiss(f"{M.index_path()} lists no board: record them with .venv/bin/python {M.RECORD} record --all")
-
-
-@pytest.fixture(scope="module", params=_BOARD_LIST or [None], ids=_BOARD_IDS or [_NO_MIRROR])
+@pytest.fixture(scope="module", params=_PARAMS, ids=_IDS)
 def board(request):
     if request.param is None:
-        _need_mirror()
+        H.need_mirror()
     return request.param
 
 
@@ -101,10 +91,10 @@ def test_round_trip(board, adapter_result):
 # ---------------------------------------------------------------------------------------------
 @pytest.mark.mutation
 @pytest.mark.parametrize("mutation_name", sorted(AC.MUTATIONS))
-@pytest.mark.parametrize("family", sorted(_FAMILY_BOARDS) or [_NO_MIRROR])
+@pytest.mark.parametrize("family", sorted(_FAMILY_BOARDS) or ["no-mirror"])
 def test_mutation(monkeypatch, family, mutation_name):
-    if family == _NO_MIRROR:
-        _need_mirror()
+    if family == "no-mirror":
+        H.need_mirror()
     board, baseline_checks, client, baseline_rows, baseline_calls, rows, calls, checks = H.mutated_run(
         monkeypatch, family, mutation_name, _FAMILY_BOARDS)
 

@@ -76,6 +76,36 @@ def family_boards(boards):
     return out
 
 
+# ---------------------------------------------------------------------------------------------
+# the boards of the mirror (data/mirror/INDEX.json -- no network, no board file opened)
+# ---------------------------------------------------------------------------------------------
+def indexed_boards():
+    """Every mirrored board as the harness takes it, biggest first (ties by id), each carrying its `board_id`."""
+    idx = M.read_index_or_none()
+    entries = sorted(idx["boards"].values(), key=lambda e: (-e["n_clinics"], e["board_id"])) if idx else []
+    return [dict(e["board"], board_id=e["board_id"]) for e in entries]
+
+
+def need_mirror():
+    """What a case does when the mirror is not there: fail, saying which command makes it (never skip)."""
+    M.read_index()
+    raise M.MirrorMiss(f"{M.index_path()} lists no board: record them with .venv/bin/python {M.RECORD} record --all")
+
+
+def board_params(boards, id_fn=lambda b: b["board_id"]):
+    """(argvalues, ids) for pytest.mark.parametrize over `boards`; with no mirror a single None case that calls need_mirror(),
+    so an empty parametrisation can never turn into a silent skip."""
+    return (list(boards) or [None]), ([id_fn(b) for b in boards] or ["no-mirror"])
+
+
+def board_for_url(url):
+    """The mirrored board whose careers url is `url`."""
+    for b in indexed_boards():
+        if b["url"] == url:
+            return b
+    raise M.MirrorMiss(f"the mirror has no board with url {url!r}: .venv/bin/python {M.RECORD} record <board_id | host | clinic_id>")
+
+
 @contextlib.contextmanager
 def _mirror(board, scope):
     if M.active():
