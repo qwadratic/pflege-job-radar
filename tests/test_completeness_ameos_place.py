@@ -40,8 +40,8 @@ def test_every_ameos_posting_carries_the_place_its_own_page_states():
         for r in rows:
             url = H.url_of(r)
             m = _PLACE.search(requests.get(url, timeout=25).text)
-            if not m:
-                continue  # a posting that states no place has nothing to compare against
+            if not (m and m.group(1).strip()):
+                continue  # a posting that states no place (one has an empty jobLocation) has nothing to compare against
             declared_n += 1
             city = H.field("vendor", r, "city")
             if _norm(city) not in _norm(m.group(1)):
