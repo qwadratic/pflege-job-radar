@@ -93,7 +93,7 @@ The board's list envelope (`app/data.py:page`), with no maximum page size. The v
 | `stage_since` | time \| null | `requirement_scoreboard().stage_since` |
 | `outcome` | `declined` \| `already_placed` \| `not_placeable` \| null | `luna/reporting.py:stage_for`, the terminal labels only |
 | `gates` | object: gate → `satisfied` \| `open` \| `blocked` | `requirement_scoreboard`, keys `region`, `qualification`, `city_or_department`, `housing`, `cv_document`, `qualification_document`, `handoff_consent` |
-| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city` (a string or a list), `department` (`card.department_pref`, passed raw; the view shows `"flexibel"` as any department), `qualification_path`, `housing_needed`, `people_count`, `housing_flexible` (would also take a clinic without a flat), `anonymous_send_offered` (the consent question has gone out), `campaign` (a campaign_id or null), `match_branch`. Never `cv_text` or any document text |
+| `card` | object | a safe summary of `wa_threads.slots`: `region`, `city` (a string), `department` (`card.department_pref`, passed raw; the view shows `"flexibel"` as any department), `qualification_path`, `housing_needed`, `people_count`, `housing_flexible` (would also take a clinic without a flat), `anonymous_send_offered` (the consent question has gone out), `campaign` (a campaign_id or null), `match_branch`. Never `cv_text` or any document text |
 | `stopped`, `stopped_reason` | bool, string \| null | `wa_threads` |
 | `suppression` | `{reason, lane, at}` \| null | `suppression.py` (no `trigger_text` in the list) |
 | `escalation_codes`, `flag_codes` | string[] | `card._escalation_codes`, `card._flag_codes` |

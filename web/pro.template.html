@@ -1593,7 +1593,7 @@ function waWhy(x){ switch(x.code){
   default: return waCode(x.code); } }
 // What the card summary says per gate, in the harness's own gate order (luna_brain.py requirement_scoreboard), or null.
 // `chain` words each value so it names its own step: the one-line chain has no gate labels next to it, the drawer has.
-function waFacts(r,chain){ const c=r.card||{}, city=Array.isArray(c.city)?c.city.join(", "):c.city, n=c.people_count;
+function waFacts(r,chain){ const c=r.card||{}, city=c.city, n=c.people_count;
   const house=c.housing_needed===false?t(chain?"wa_k_nohouse":"wa_v_housing_no"):c.housing_needed!==true?null
     :n?(chain?t("wa_k_house",{n}):t(n===1?"wa_v_housing_yes1":"wa_v_housing_yes",{n})):t(chain?"wa_k_house_q":"wa_v_housing_q");
   return {region:typeof c.region==="string"?c.region:null,
@@ -1979,7 +1979,7 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
   // Luna's gate order (luna_brain.py _OBJECTIVE_ORDER): one plain yes/no or open question per gate, never an either/or
   // menu. steps(card)[i] = [Luna's question(s) for gate i, the candidate's answer taken from the card]; [7] closes.
   const steps=c=>{ const q=c.qualification_path, urk=q==="urkunde", n=c.people_count, yn={meta:{buttons:["Ja","Nein"]}},
-      city=Array.isArray(c.city)?c.city.slice(0,-1).join(", ")+" oder "+c.city[c.city.length-1]:c.city;
+      city=c.city;
     return [[[["out","buttons","Hallo, hier ist Luna von Pflege-Stellen Bayern. Suchen Sie eine Stelle in Bayern?",yn]],[["in","text","Ja, gerne in Bayern."]]],
       [[["out","buttons","Haben Sie schon die deutsche Berufsurkunde?",yn]],urk?[["in","text","Ja, seit letztem Jahr."]]:[["in","text","Nein, noch nicht."],
         ["out","buttons","Haben Sie schon einen Defizitbescheid?",yn],["in","text",q==="defizit"?"Ja, seit März.":"Nein, ich mache im November die Kenntnisprüfung."]]],
@@ -2061,7 +2061,7 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
     card:{region:"Bayern",city:"München",department:"Intensiv",qualification_path:"urkunde",housing_needed:false,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true}});
   add({ph:"+91 ••• ••• 1180",last:4*h,handoff:{status:"attention",consented_at:iso(4*h+17*mi),clinics:12,
       targets:targets(12,4*h,"sent_to_clinic",{2:{status:"clinic_replied",attention:true}})},
-    card:{region:"Bayern",city:["Nürnberg","Erlangen","Fürth"],qualification_path:"defizit",housing_needed:true,people_count:2,housing_flexible:true,match_branch:"pool",cv:true,qdoc:true,anonymous_send_consent:true}});
+    card:{region:"Bayern",city:"Nürnberg",qualification_path:"defizit",housing_needed:true,people_count:2,housing_flexible:true,match_branch:"pool",cv:true,qdoc:true,anonymous_send_consent:true}});
   // after the handoff: a human already has it (in_progress) or it ended well (signed) -- nobody is needed any more
   add({ph:"+49 ••• ••• 7340",last:2*d,handoff:{status:"in_progress",consented_at:iso(2*d+17*mi),clinics:3,targets:targets(3,2*d-h,"followup_sent",{1:{status:"sent_to_clinic"},2:{status:"declined"}})},
     card:{region:"Bayern",city:"Erlangen",department:"Kinderklinik",qualification_path:"urkunde",housing_needed:true,people_count:1,match_branch:"narrow",cv:true,qdoc:true,anonymous_send_consent:true},

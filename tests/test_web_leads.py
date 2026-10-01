@@ -92,7 +92,7 @@ def _chain(row):
 
 def test_every_lead_shows_what_we_know_in_conversation_order(leads):
     assert _chain(leads.locator(".lh", has_text="1180")) == [
-        ["Bayern", "s"], ["Defizitbescheid", "s"], ["Nürnberg, Erlangen, Fürth", "s"], ["flat for 2 · or without", "s"],
+        ["Bayern", "s"], ["Defizitbescheid", "s"], ["Nürnberg", "s"], ["flat for 2 · or without", "s"],
         ["CV", "s"], ["Certificate", "s"], ["Consent", "s"]]
     board = leads.locator("tbody")
     assert _chain(board.locator("tr", has_text="2047")) == [
