@@ -370,6 +370,7 @@ def _seed_obs(board, c, towns, log):
         seeded = next((s for s in bite_seeds if str(s.get("kez")) == str(c["clinic_id"])), None)
         if seeded and seeded.get("customer"):
             seed["customer"], seed["listing"] = seeded["customer"], seeded.get("listing")
+            seed["place_field"] = seeded.get("place_field")   # TASK-184: custom field naming the posting's own site (Arberland), see bite.to_observation
         rows, st = bite.crawl(seed, towns, log=log)
         for r in rows:
             r.setdefault("_kez", None)
