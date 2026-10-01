@@ -281,10 +281,11 @@ class Crawler:
         self.towns, self.budget, self.list_budget, self.sleep, self.log = towns, per_site_pages, list_pages, sleep, log
         self.s = requests.Session(); self.s.headers.update({"User-Agent": UA, "Accept-Language": "de-DE,de;q=0.9"})
         self.robots = {}
-        # Every page the walk asked for and did not get: "HTTP 500 <url>", "ConnectionError <url>" (TASK-185 F4). A
-        # walk that could not read a page it queued has not read the whole board -- crawl() returns this in its
-        # stats as failed_pages and app/crawl.py records it as a crawl issue, instead of the page silently vanishing.
-        self.failed = []
+        # Every page the walk asked for and did not get: "HTTP 500 <url>", "ConnectionError <url>" (TASK-185 F4) --
+        # crawl() returns them in its stats as failed_pages (information). incomplete_pages is the subset a walk
+        # cannot be called complete without, and app/crawl.py records exactly that as a crawl issue (kind 'incomplete',
+        # which blocks absence-retirement): see _failure.
+        self.failed, self.incomplete, self.needed = [], [], set()
 
     def allowed(self, url):
         host = urlparse(url).scheme + "://" + urlparse(url).netloc
@@ -314,21 +315,33 @@ class Crawler:
             r = self.s.get(url, timeout=40, allow_redirects=True)
             time.sleep(self.sleep)
             if r.status_code == 200 and "html" in r.headers.get("content-type", ""): return r
-            if r.status_code != 200: self.failed.append(f"HTTP {r.status_code} {url}")
+            if r.status_code != 200: self._failure(f"HTTP {r.status_code}", url, r.status_code >= 500)
         except requests.RequestException as e:
-            self.failed.append(f"{type(e).__name__} {url}")
+            self._failure(type(e).__name__, url, True)
         return None
+
+    def _failure(self, what, url, server_or_transport):
+        """A page the walk asked for and did not get (TASK-185 F4). Every one is listed in failed_pages. It is also
+        listed in incomplete_pages -- the walk is incomplete without it -- when it is a 5xx / transport failure (any
+        page: the site, not the link, is at fault) or the walk needed that very URL: self.needed, filled where the walk
+        queues a seed or listing page (start_urls), a pagination page (PAGINATE), a sitemap, or a URL it judged to be a
+        job (job_links). A 4xx on a link the walk merely followed (an image, a Wicket callback, a dead nav entry) is
+        information only: the walk could not have known it carried anything."""
+        self.failed.append(f"{what} {url}")
+        if server_or_transport or url in self.needed:
+            self.incomplete.append(f"{what} {url}")
 
     def sitemap_job_urls(self, url, depth=0, limit=20000):  # loop-safety ceiling, not a board-size cap
         """Return job-like <loc> URLs from a sitemap or sitemap index (recurses one level)."""
         r = None
+        self.needed.add(url)                  # a sitemap or sitemap index the walk reads is one it needs
         try:
             if self.allowed(url):
                 r = self.s.get(url, timeout=40); time.sleep(self.sleep)
         except requests.RequestException as e:
-            self.failed.append(f"{type(e).__name__} {url}")
+            self._failure(type(e).__name__, url, True)
             return []
-        if r is not None and r.status_code != 200: self.failed.append(f"HTTP {r.status_code} {url}")
+        if r is not None and r.status_code != 200: self._failure(f"HTTP {r.status_code}", url, r.status_code >= 500)
         if not r or r.status_code != 200: return []
         locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", r.text)
         if "<sitemapindex" in r.text and depth == 0:
@@ -378,6 +391,7 @@ class Crawler:
         original unbounded-depth (page-budget-only) behaviour. prefetched lets a page already fetched by
         the caller (the seed page, when peeking for a section link) be reused instead of re-fetched."""
         prefetched = dict(prefetched or {})
+        self.needed.update(urldefrag(u)[0] for u in start_urls)       # the board's own seed / listing pages
         list_q = deque((u, 0) for u in start_urls)
         seen_lists, job_links, jobs = set(), {}, {}
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0}
@@ -442,12 +456,14 @@ class Crawler:
                     # list_pages still far under list_budget, and lost real pagination it had the
                     # budget to read (confirmed live 2026-09-21: ANregiomed, list_pages 102/500).
                     if depth_cap is None or depth < depth_cap:
+                        if PAGINATE.search(u): self.needed.add(u)         # the walk's own pagination signal: the board's next page
                         list_q.append((u, depth + 1))
         for sm in sitemaps:
             for u in self.sitemap_job_urls(sm):
                 if u not in job_links and not LINK_BAD.search(u): job_links[u] = ""
         stats["sitemap_links"] = sum(1 for v in job_links.values() if v == "")
         for u, anchor in list(job_links.items())[: self.budget]:
+            self.needed.add(u)                # every job_links entry is a URL the walk itself judged to be a job
             r = self.fetch(u)
             if not r: continue
             stats["job_pages"] += 1
@@ -480,7 +496,7 @@ class Crawler:
         the exact same class of gap crawl_wp_jobs's own equivalent was already fixed for)."""
         hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
         seed_url = seed["career"]
-        self.failed = []
+        self.failed, self.incomplete, self.needed = [], [], set()
         r0 = self.fetch(seed_url)
         prefetched = {urldefrag(seed_url)[0]: r0} if r0 else {}
         section_href = self._section_link(r0, hosts) if r0 else None
@@ -516,6 +532,7 @@ class Crawler:
                 stats[k] = stats.get(k, 0) + section_stats.get(k, 0)
         stats["section_first"] = bool(section_href)
         stats["failed_pages"] = list(dict.fromkeys(self.failed))     # one entry per page: the section walk and the full walk fetch some twice
+        stats["incomplete_pages"] = list(dict.fromkeys(self.incomplete))
         return rows, stats
 
     def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False, city_seed=False):

@@ -768,6 +768,44 @@ def _body_text(htmltext):
     return _txt(re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or ""))
 
 
+# The ad's own container, most specific first (TASK-185 F6): the eRecruiter engine's jobBlock divs, then <main>, then <article>.
+# The tag is followed by whitespace, "/" or ">" so that <main-nav> is not <main>; jobBlock is one whole token of the class attribute.
+_JOBBLOCK_RX = re.compile(r"""<div(?=[\s/>])[^>]*?\sclass=["'](?:[^"']*\s)?jobBlock(?:\s[^"']*)?["'][^>]*>""", re.I)
+_MAIN_RX = re.compile(r"<main(?=[\s/>])[^>]*>", re.I)
+_ARTICLE_RX = re.compile(r"<article(?=[\s/>])[^>]*>", re.I)
+
+
+def _elements(htmltext, open_rx, tag):
+    """The inner HTML of every outermost <tag> element whose opening tag open_rx matches, in page order. Nested <tag>s are
+    counted, so a block's own child blocks do not end it early; an element left open runs to the end of the page, as a
+    browser reads it."""
+    close_rx = re.compile(r"<(/?)%s(?=[\s/>])[^>]*>" % tag, re.I)
+    out, end = [], 0
+    for m in open_rx.finditer(htmltext):
+        if m.start() < end:
+            continue                                      # inside the previous one
+        depth, inner_end, end = 1, len(htmltext), len(htmltext)
+        for t in close_rx.finditer(htmltext, m.end()):
+            depth += -1 if t.group(1) else 1
+            if depth == 0:
+                inner_end, end = t.start(), t.end()
+                break
+        out.append(htmltext[m.end():inner_end])
+    return out
+
+
+def _ad_text(htmltext):
+    """The ad when the JobPosting JSON-LD states none (an empty description: eRecruiter, jobs.klinikum-ab-alz.de; no key at all:
+    karriere.klinikum-nuernberg.de): the text of the board's own container -- every jobBlock div, else <main>, else <article> --
+    and not of the page around it, whose skip links, JavaScript / cookie notice, upload and cookie dialogs the whole body also
+    reads (6,592 chars median on the 30 rows, 4,309 here). No container: the body as _body_text has it."""
+    for tag, rx in (("div", _JOBBLOCK_RX), ("main", _MAIN_RX), ("article", _ARTICLE_RX)):
+        parts = _elements(htmltext or "", rx, tag)
+        if parts:
+            return _body_text(" ".join(parts))
+    return _body_text(htmltext)
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -824,8 +862,8 @@ def parse_job_page(htmltext, url, org):
                         "datePosted": _sane_date(n.get("datePosted")) or _page_meta_date(htmltext),
                         "employmentType": n.get("employmentType"),
                         # an empty JSON-LD description (TASK-185 F6: 29 of 64 eRecruiter jobs on jobs.klinikum-ab-alz.de) is
-                        # not the posting having no text -- the ad is in the page body
-                        "description": _txt(n.get("description")) or _body_text(htmltext)}
+                        # not the posting having no text -- the ad is in the page, in the board's own container
+                        "description": _txt(n.get("description")) or _ad_text(htmltext)}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
     # TASK-170: a cookie-consent dialog can be the page's first <h1> (kurpark.mutter-kind.de: "Diese

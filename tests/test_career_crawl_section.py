@@ -8,6 +8,8 @@ Contract under test (see pflege_jobs/section.py + the task note in ats_seeds/car
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pflege_jobs.sources.career_crawl import Crawler  # noqa: E402
@@ -584,3 +586,100 @@ def test_crawl_with_every_page_answering_reports_no_failed_pages():
     cr = _live_crawler({seed_url: (200, '<a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % job),
                         job: (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))})
     assert cr.crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen"})[1]["failed_pages"] == []
+
+
+# --- TASK-185 / F4 (second pass): which of the pages that did not answer make the read INCOMPLETE --------------------
+# stats["failed_pages"] lists every page the walk asked for and did not get (information). stats["incomplete_pages"] -- what
+# app/crawl.py records as the crawl_issue kind 'incomplete', the one that blocks absence-retirement -- lists only the pages
+# the walk itself needed, told apart by the walk's own variables: the seed and every start_url (seed, extra_seeds, the
+# section-first subtree), a page it queued under PAGINATE, a sitemap / sitemap index, a URL in job_links (an anchor with a
+# posting-shaped text, or a sitemap job URL) -- and any 5xx or transport error on any page. A 4xx on a link the walk merely
+# followed (queued as a list page by JOB_HREF / LIST_NAV) is information only.
+SEED = "https://x.example/karriere"
+JOB_URL = "https://x.example/stelle/1"
+JOB_PAGE = (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))
+JOB_ANCHOR = '<a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % JOB_URL
+
+
+def _walk(pages, seed_url=SEED, **seed):
+    return _live_crawler(pages).crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen", **seed})[1]
+
+
+@pytest.mark.parametrize("seed_url,dead,status", [
+    # anregiomed.de/karriere-jobs: dead "Weiterbildung" navigation (LIST_NAV) and a "/detail/" news index (JOB_HREF), both queued as list pages
+    ("https://www.anregiomed.de/karriere-jobs/", "https://www.anregiomed.de/medizin-und-pflege/klinikum-ansbach/urologie/weiterbildung", 404),
+    ("https://www.anregiomed.de/karriere-jobs/", "https://www.anregiomed.de/aktuelles/neuigkeiten/detail/", 404),
+    # uk-augsburg.softgarden.io: Wicket callback links ("/vacancies?-1.-jobSearch-...") answer 403 to a plain GET
+    ("https://uk-augsburg.softgarden.io/de/vacancies", "https://uk-augsburg.softgarden.io/de/vacancies?-1.-jobSearch-jobSearchContainer-internalLink", 403),
+    # karriere.klinikverbund-allgaeu.de: an image srcset string ("<png>, /fileadmin/... 480w") read as a link; "Verbundweiterbildung" matches LIST_NAV
+    ("https://karriere.klinikverbund-allgaeu.de/karriere",
+     "https://karriere.klinikverbund-allgaeu.de/fileadmin/_processed_/b/4/csm_Broschuere_Verbundweiterbildung_Unterallgaeu_2023_a2da198e0a.png, "
+     "/fileadmin/_processed_/b/4/csm_Broschuere_Verbundweiterbildung_Unterallgaeu_2023_16532e5f92.png 480w", 404),
+    (SEED, "https://x.example/karriere/weiterbildung", 410),
+])
+def test_a_dead_followed_link_is_failed_information_but_does_not_make_the_read_incomplete(seed_url, dead, status):
+    stats = _walk({seed_url: (200, '<a href="%s">Mehr</a>' % dead), dead: (status, "Not found")}, seed_url)
+    assert stats["failed_pages"] == ["HTTP %d %s" % (status, dead)]
+    assert stats["incomplete_pages"] == []
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_server_error_on_a_followed_link_makes_the_read_incomplete(status):
+    stray = "https://x.example/karriere/weiterbildung"
+    stats = _walk({SEED: (200, '<a href="%s">Mehr</a>' % stray), stray: (status, "TYPO3 Exception")})
+    assert stats["failed_pages"] == stats["incomplete_pages"] == ["HTTP %d %s" % (status, stray)]
+
+
+def test_a_transport_failure_on_a_followed_link_makes_the_read_incomplete():
+    import requests
+    stray = "https://x.example/karriere/weiterbildung"
+    cr = _live_crawler({SEED: (200, '<a href="%s">Mehr</a>' % stray)})
+    answer = cr.s.get
+    def get(url, **kw):
+        if url == stray:
+            raise requests.ConnectionError("reset")
+        return answer(url, **kw)
+    cr.s.get = get
+    stats = cr.crawl({"name": "X", "kez": "1", "career": SEED, "town": "Muenchen"})[1]
+    assert stats["failed_pages"] == stats["incomplete_pages"] == ["ConnectionError " + stray]
+
+
+SITEMAP = "https://x.example/sitemap.xml"
+SITEMAP_CHILD = "https://x.example/sitemap-jobs.xml"
+PAGE_2 = "https://x.example/stellen?page=2"
+LISTING = "https://x.example/stellen"
+SECTION = "https://x.example/karriere/pflege/"
+URLSET = "<urlset><url><loc>%s</loc></url></urlset>" % JOB_URL
+SITEMAP_INDEX = "<sitemapindex><sitemap><loc>%s</loc></sitemap></sitemapindex>" % SITEMAP_CHILD
+
+
+@pytest.mark.parametrize("pages,seed,dead,status", [
+    pytest.param({}, {}, SEED, 404, id="seed"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"extra_seeds": [LISTING]}, LISTING, 404, id="extra_seed"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"extra_seeds": [LISTING]}, LISTING, 403, id="extra_seed_403"),
+    pytest.param({SEED: (200, '<a href="%s">2</a>' % PAGE_2)}, {}, PAGE_2, 404, id="pagination"),
+    pytest.param({SEED: (200, '<a href="%s">2</a>' % PAGE_2)}, {}, PAGE_2, 403, id="pagination_403"),
+    pytest.param({SEED: (200, '<a href="/karriere/pflege/">Pflegedienst</a>')}, {}, SECTION, 404, id="section_subtree"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"sitemaps": [SITEMAP]}, SITEMAP, 404, id="sitemap"),
+    pytest.param({SEED: (200, "<p>Jobs</p>"), SITEMAP: (200, SITEMAP_INDEX)}, {"sitemaps": [SITEMAP]}, SITEMAP_CHILD, 404, id="sitemap_index_child"),
+    pytest.param({SEED: (200, JOB_ANCHOR)}, {}, JOB_URL, 404, id="job_detail"),
+    pytest.param({SEED: (200, JOB_ANCHOR)}, {}, JOB_URL, 403, id="job_detail_403"),
+    pytest.param({SEED: (200, "<p>Jobs</p>"), SITEMAP: (200, URLSET)}, {"sitemaps": [SITEMAP]}, JOB_URL, 404, id="sitemap_job_detail"),
+])
+def test_a_page_the_walk_needed_that_does_not_answer_makes_the_read_incomplete(pages, seed, dead, status):
+    stats = _walk({**pages, dead: (status, "Not found")}, SEED, **seed)
+    entry = "HTTP %d %s" % (status, dead)
+    assert entry in stats["failed_pages"]
+    assert stats["incomplete_pages"] == [entry]        # once: the seed (and a section page) is asked for twice
+
+
+def test_failed_pages_lists_every_page_that_did_not_answer_incomplete_pages_only_the_needed_ones():
+    stray = "https://x.example/karriere/weiterbildung"
+    stats = _walk({SEED: (200, '<a href="%s">Mehr</a><a href="%s">2</a>' % (stray, PAGE_2))})
+    assert stats["failed_pages"] == ["HTTP 404 " + stray, "HTTP 404 " + PAGE_2]
+    assert stats["incomplete_pages"] == ["HTTP 404 " + PAGE_2]
+
+
+def test_crawl_with_every_page_answering_reports_no_incomplete_pages():
+    stats = _walk({SEED: (200, JOB_ANCHOR), JOB_URL: JOB_PAGE})
+    assert stats["failed_pages"] == [] and stats["incomplete_pages"] == []
