@@ -235,7 +235,7 @@ def _serve_api(page, wa):
     page.route("**/api/**", handle)
 
 
-@pytest.mark.parametrize("status,expected", [(404, "not connected to the harness yet"), (502, "not answering (502)"),
+@pytest.mark.parametrize("status,expected", [(404, "not connected to the harness yet"), (502, "No connection to the harness (502)"),
                                              (403, "Owners only")])
 def test_an_unreachable_api_is_an_error_never_zero_leads(browser_and_base, status, expected):
     browser, base = browser_and_base

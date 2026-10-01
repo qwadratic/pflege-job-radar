@@ -154,7 +154,7 @@ bridge". The list envelope and the thread detail carry the same two fields.
 |---|---|
 | 404 on `/api/wa/threads` | this board is not connected to the harness yet (the proxy is missing) |
 | 401 / 403 | owners only |
-| 502 / 503 / 504 | the harness is not answering, with the proxy's message |
+| 502 / 503 / 504 | no connection to the harness, with the proxy's message: the harness is down or timed out, it rejected the board token (502), or `WA_API_BASE` is not set on the board (503, `app/wa_proxy.py`) |
 | anything else | the status and the message |
 
 Each of these replaces the view with an error card and a link to the demo. None of them renders as "0 leads".
