@@ -122,10 +122,16 @@ def _body_bytes(body):
     raise TypeError(f"the mirror cannot key a streamed request body ({type(body).__name__})")
 
 
+# a session token and a clock in a URL name no content: the Regiomed P&I tenants load their images as .../bewerber/files?xsrf=<session>&key=<file>&ts=<ms>,
+# new on every run (measured: three boards did not replay as recorded because of exactly these two). Only the second-chance match ignores them.
+_VOLATILE = {"xsrf", "ts"}
+
+
 def _norm_url(url):
-    """Same request, query parameters in any order (the second-chance match)."""
+    """Same request, query parameters in any order and without a session token or clock (the second-chance match)."""
     p = urlparse(urldefrag(url)[0])
-    return urlunparse((p.scheme.lower(), p.netloc.lower(), p.path, p.params, urlencode(sorted(parse_qsl(p.query, keep_blank_values=True))), ""))
+    q = sorted(kv for kv in parse_qsl(p.query, keep_blank_values=True) if kv[0] not in _VOLATILE)
+    return urlunparse((p.scheme.lower(), p.netloc.lower(), p.path, p.params, urlencode(q), ""))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -253,7 +259,7 @@ class Store:
                 ex, nm = {}, {}
                 for r in self.rows():
                     ex.setdefault((r.via, r.method, r.req_sha, r.url), {}).setdefault(r.scope, []).append(r)
-                    nm.setdefault((r.via, r.method, r.req_sha, r.norm), {}).setdefault(r.scope, []).append(r)
+                    nm.setdefault((r.via, r.method, r.req_sha, _norm_url(r.url)), {}).setdefault(r.scope, []).append(r)
                 self._idx = (ex, nm)
             u = urldefrag(url)[0]
             for tbl, k in ((self._idx[0], u), (self._idx[1], _norm_url(u))):

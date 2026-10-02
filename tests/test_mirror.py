@@ -183,6 +183,16 @@ def test_query_parameter_order_is_the_second_chance_match_only(site):
             requests.get(site + "/page?a=1&b=3", timeout=5)
 
 
+def test_a_session_token_and_a_clock_in_the_query_are_not_part_of_the_request(site):
+    """The Regiomed P&I tenants load images as .../files?xsrf=<session>&key=<file>&ts=<ms>: new on every run, naming no content."""
+    _record(lambda: requests.get(site + "/page?xsrf=AAA&key=7&ts=1790914134", timeout=5))
+    with M.mirror_board(BOARD):
+        assert requests.get(site + "/page?ts=1790999999&key=7&xsrf=BBB", timeout=5).status_code == 200
+    with pytest.raises(M.MirrorMiss):  # the parameter that does name content still has to match
+        with M.mirror_board(BOARD):
+            requests.get(site + "/page?xsrf=AAA&key=8&ts=1790914134", timeout=5)
+
+
 def test_the_fragment_is_not_part_of_the_request(site):
     _record(lambda: requests.get(site + "/page", timeout=5))
     with M.mirror_board(BOARD):

@@ -306,7 +306,7 @@ def cmd_list_urls(a):
 
 def cmd_show(a):
     s = M.Store.load(a.board_id)
-    hits = [r for r in s.rows() if r.url == a.url or r.norm == M._norm_url(a.url)]
+    hits = [r for r in s.rows() if r.url == a.url or M._norm_url(r.url) == M._norm_url(a.url)]
     if not hits:
         sys.exit(f"{a.board_id} holds nothing for {a.url}")
     for r in hits:
