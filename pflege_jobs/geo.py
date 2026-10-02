@@ -361,3 +361,65 @@ def resolve(city=None, plz=None, region=None, *, text=None) -> Geo:
     if not (city or plz or region):
         return _unknown("no_signal")
     return _unknown("not_found")
+
+
+# ==================== clinic coordinates (TASK-200) ==============================================
+# The registry has no coordinates of its own. A clinic's point is the centre of its municipality (the Destatis
+# row of this table), which is what a map of 651 sites needs and all the data supports: clinics of one town
+# share one point, and the source says so ("municipality_centroid"), it is no address.
+_TOWN_OVERRIDES_PATH = _DATA_DIR / "clinic_town_overrides.json"
+_FOLD_SUBS = ((r"\ba\.\s*d\.|\ban der\b", "ad"), (r"\bo\.\s*d\.|\bob der\b", "od"), (r"\bi\.\s*d\.|\bin der\b", "id"),
+              (r"\ba\.|\bam\b|\ban\b", "a"), (r"\bb\.|\bbei\b", "b"), (r"\bi\.|\bim\b|\bin\b", "i"), (r"/", " "))
+_BY_FOLDED = {}     # fold_town(Destatis name) -> [Bavarian destatis rows]
+_BY_EXACT = {}      # Destatis gemeindename -> row
+_TOWN_OVERRIDES = {}
+
+
+def fold_town(s):
+    """A town as a registry or Destatis writes it, reduced to letters and digits: umlauts folded, the Destatis
+    suffix (', St', ', M', ', GKSt') cut, 'a.d.' = 'an der', 'o.d.' = 'ob der', 'b.' = 'bei', 'i.' = 'im'."""
+    x = (s or "").strip().lower().translate(UMLAUT_FOLD)
+    x = re.sub(r",\s*[A-Za-z]{1,5}$", "", x)
+    for pat, rep in _FOLD_SUBS:
+        x = re.sub(pat, rep, x)
+    return re.sub(r"[^a-z0-9]+", "", x)
+
+
+def _load_towns():
+    import json
+    for rows in _NAME_ROWS.values():
+        for r in rows:
+            if r["land"] == "BY":
+                _BY_FOLDED.setdefault(fold_town(r["gemeindename"]), []).append(r)
+                _BY_EXACT[r["gemeindename"]] = r
+                _BY_EXACT[f"{r['gemeindename']}@{r['plz']}"] = r
+    with open(_TOWN_OVERRIDES_PATH, encoding="utf-8") as f:
+        _TOWN_OVERRIDES.update({k: v for k, v in json.load(f).items() if not k.startswith("_")})
+    missing = sorted(set(_TOWN_OVERRIDES.values()) - set(_BY_EXACT))
+    if missing:
+        raise RuntimeError(f"{_TOWN_OVERRIDES_PATH.name} names municipalities the table does not have: {missing}")
+
+
+_load_towns()
+
+
+def clinic_centroid(town, plz=None) -> Optional[Geo]:
+    """Centre of the Bavarian municipality a clinic's `town` (and `plz`) names, None when nothing in the table
+    names exactly one point. Order: the override file (a registry town the table spells differently, or a
+    part of a town: 'Augsburg-Göggingen'), resolve() with the PLZ, then the folded Destatis name (one point
+    only: 'Neustadt' alone stays None, 'Neustadt a.d. Aisch' is found)."""
+    t = (town or "").strip()
+    if t in _TOWN_OVERRIDES:
+        return _row_geo(_BY_EXACT[_TOWN_OVERRIDES[t]], "BY", "clinic_town_override")      # "Berg@82335": two Bavarian Gemeinden are called Berg
+    g = resolve(city=t or None, plz=plz)
+    if g.land == "BY" and g.lat is not None:
+        return g
+    rows = _BY_FOLDED.get(fold_town(t)) if t else None
+    if rows and len({(r["lat"], r["lon"]) for r in rows}) == 1:
+        return _row_geo(rows[0], "BY", "clinic_town_folded")
+    # The registry lists Bavarian clinics only, so a bare name ('Weiden', 'Lindau') may be read against the
+    # Bavarian municipalities alone: it counts when exactly one of them starts with it ('Weiden i.d.OPf.').
+    rows = [r for r in _STEM_ROWS.get(bare_stem(normalize_name(t)), []) if r["land"] == "BY"] if t else []
+    if rows and len({(r["lat"], r["lon"]) for r in rows}) == 1:
+        return _row_geo(rows[0], "BY", "clinic_town_bavarian_stem")
+    return None

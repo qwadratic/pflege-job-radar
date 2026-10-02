@@ -280,6 +280,11 @@ Rules: `usd = credits * price_per_credit` (`settings.firecrawl.eur_per_credit`, 
 ### Clinic row
 `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile, photo_url, presentation`
 
+`lat`, `lon` (WGS84), `geo_source` (`municipality_centroid`) and `geo_name` (the Destatis municipality the point is the centre of) place the
+clinic on a map. It is the centre of the clinic's town, no address: clinics of one town share one point (München: 58). `null` in all four
+when the geo table names no single point for the town; every one of the 651 registry clinics has one on 2026-10-02 (pflege_jobs/geo.py
+`clinic_centroid`, data/geo/clinic_town_overrides.json). Public like the rest of the row.
+
 `photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
 `clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key
 `(clinic_id, source)`) -- today exactly one Google-Maps cover photo per clinic (TASK-120 partial pass, no

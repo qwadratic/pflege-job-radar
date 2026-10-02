@@ -1,0 +1,16 @@
+{
+ "_about": "Registry town strings the Destatis table cannot match by itself -> the exact Destatis gemeindename whose centre stands for the clinic (pflege_jobs.geo.clinic_centroid, TASK-200). A part of a town or a district maps to its town.",
+ "Pfaffenhofen": "Pfaffenhofen a.d.Ilm, St",
+ "Grafenau": "Grafenau, St",
+ "Schwarzach": "Schwarzach, M",
+ "Berg": "Berg@82335",
+ "Landsberg": "Landsberg am Lech, GKSt",
+ "Neuburg/Donau": "Neuburg a.d.Donau, GKSt",
+ "Auerbach/OPf.": "Auerbach i.d.OPf., St",
+ "Augsburg-Göggingen": "Augsburg",
+ "München-Flughafen": "München, Landeshauptstadt",
+ "Hopfen am See/Füssen": "Füssen, St",
+ "Füssen-Hopfen am See": "Füssen, St",
+ "Bad Griesbach-Therme": "Bad Griesbach i.Rottal, St",
+ "Bad Griesbach-Zentrum": "Bad Griesbach i.Rottal, St"
+}
