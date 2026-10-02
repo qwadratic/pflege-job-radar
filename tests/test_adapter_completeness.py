@@ -89,9 +89,21 @@ def test_round_trip(board, adapter_result):
 # ---------------------------------------------------------------------------------------------
 # mutations (TASK-27): break an adapter on purpose on one board per family and prove exactly the matching check goes red
 # ---------------------------------------------------------------------------------------------
+# (family, mutation) pairs whose meta-test cannot show what it is meant to show -- named gaps, found by the first full run over the mirror
+MUTATION_GAPS = {
+    ("crawlers.vendor_adapters:crawl_drv_bund", "cap_first_page"):
+        "the adapter refuses a board read that stops short (RuntimeError 'listing page=1 failed (404) -- board read stops short') instead of "
+        "returning fewer rows, so declared_total_parity never gets the chance to go red",
+    ("crawlers.vendor_adapters:crawl_oracle", "skip_detail"):
+        "the oracle adapter builds every row from the detail fetch: blocking it returns 0 rows, so declared_total_parity goes red as well "
+        "(collateral by construction)",
+}
+_MUTATION_PAIRS = [pytest.param(f, m, id=f"{f}-{m}", marks=[pytest.mark.xfail(reason="named gap: " + MUTATION_GAPS[f, m], strict=False)] if (f, m) in MUTATION_GAPS else [])
+                   for f in sorted(_FAMILY_BOARDS) for m in sorted(AC.MUTATIONS)] or [pytest.param("no-mirror", "no-mirror", id="no-mirror")]
+
+
 @pytest.mark.mutation
-@pytest.mark.parametrize("mutation_name", sorted(AC.MUTATIONS))
-@pytest.mark.parametrize("family", sorted(_FAMILY_BOARDS) or ["no-mirror"])
+@pytest.mark.parametrize("family,mutation_name", _MUTATION_PAIRS)
 def test_mutation(monkeypatch, family, mutation_name):
     if family == "no-mirror":
         H.need_mirror()

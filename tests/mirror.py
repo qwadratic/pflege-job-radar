@@ -7,7 +7,7 @@ One board = one file, data/mirror/<board_id>.sqlite.xz, plus data/mirror/INDEX.j
 from, so collection opens no board). The directory is the main checkout's, shared by every worktree (MIRROR_ROOT overrides),
 and git-ignored: these are third-party pages with HR names, e-mails and phone numbers, and the repo is public. Inside the file: an sqlite database (responses, blobs, meta) compressed as one
 xz stream. The pages of one board are near-copies of each other, so solid xz beat a zlib blob per page by ~40x on the
-first real board measured (AMEOS, 860 pages: 14.2 MB vs 0.36 MB) -- and the disk has 1.6 GB free.
+first real board measured (AMEOS, 860 pages: 14.2 MB vs 0.36 MB).
 
     responses  one row per HTTP exchange, in the order it happened. A redirect chain is N rows (each hop is its own
                answer), a transport failure is a row with `exc` and no status. `scope` says which part of the board's
@@ -32,6 +32,10 @@ requests.get all behave as in production, every hop served), urllib.request.Abst
 HTTPError handling stay urllib's own), Playwright's Browser.new_context (a context.route serves every request) and
 time.sleep (replay is fast; the adapters sleep 0.3 s per request, Oracle took 8 minutes live; while recording the sleeps
 stay, and are skipped only after a request the store answered).
+
+Not a clinic site but the same rule: the web fonts our own pages load are the board `infra__web-fonts` (web_fonts, route_web_fonts,
+wired for every Chromium of a test by tests/conftest.py), and the registry read proxy snapshot behind tests/test_geo.py is
+`infra__registry-read-proxy` (tools/mirror.py record-infra).
 """
 import contextlib
 import fcntl
