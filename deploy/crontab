@@ -1,0 +1,7 @@
+# Host cron of user exedev on the exe.dev VM. Install (replaces the whole crontab): crontab deploy/crontab
+# Check:  crontab -l     Log: data/purge_inbox.log (gitignored)
+#
+# Weekly, Sunday 12:00 UTC (after the nightly pass 03:00-~09:45 and the verify that queues behind it):
+# keep the last 4 days of raw crawler rows in data/inbox.sqlite (= the last 4 nightly runs, ~100 MB each).
+# Older rows live on only in crawl_output/run_<id>.jsonl. Nothing else touches the queue's size.
+0 12 * * 0 cd /home/exedev/repo && .venv/bin/python -m pflege_jobs.cli purge-inbox --days 4 >> data/purge_inbox.log 2>&1

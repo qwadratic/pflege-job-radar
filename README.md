@@ -6,6 +6,7 @@ read-only API.
 
 **Live:** <https://pflege-board.exe.xyz> (Pro-Dashboard: /pro) · **Docs:** [`docs/overview.md`](docs/overview.md) (ontology),
 [`docs/scraping.md`](docs/scraping.md), [`docs/api.md`](docs/api.md), [`docs/performance.md`](docs/performance.md),
+[`docs/deploy.md`](docs/deploy.md) (services, schedules, host cron, restart rule, disk)
 · **Agents:** [`skill/SKILL.md`](skill/SKILL.md) (bundle served at `/skill/pflege-jobs.skill.md`)
 
 ```bash
@@ -44,7 +45,8 @@ tests/              no network; one file per mechanic (tests/test_mech_<id>.py)
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env                          # keys
 set -a; . ./.env; set +a
-.venv/bin/uvicorn app.main:app --port 8501    # board + API  (systemd unit: deploy/pflege-web.service)
+.venv/bin/uvicorn app.main:app --port 8501    # board + API  (systemd unit: deploy/pflege-web.service; production setup: docs/deploy.md)
+crontab deploy/crontab                        # host cron: weekly purge of the raw crawler queue
 
 # pipeline pieces (the backend runs these for you; CLI for batch work)
 python -m pflege_jobs.cli inbox         # raw crawler rows -> observations
