@@ -187,7 +187,7 @@ def test_html_signature_and_per_recipient_attachment(cfg):
     (d / "kp" / "p_1.pdf").write_bytes(b"%PDF-1.4 clinic 1")
     conf = json.loads(cfg.read_text())
     conf["cadence"][0]["attachments"] = [{"path": "kp/p_[KP].pdf", "name": "Profil.pdf"}]
-    conf["signature"] = {"text": "Daria\nNDT Group", "image": "sig.png", "alt": "Daria · NDT Group", "width": 460, "height": 130}
+    conf["signature"] = {"text": "Daria\nBeispiel Group", "image": "sig.png", "alt": "Daria · Beispiel Group", "width": 460, "height": 130}
     cfg.write_text(json.dumps(conf))
     rec = json.loads((d / "recipients.json").read_text())
     rec[0]["vars"].update({"STELLEN": "– Stelle A & B\n  https://a.example/x?y=1&z=2", "KP": "1"})
@@ -197,7 +197,7 @@ def test_html_signature_and_per_recipient_attachment(cfg):
     c["suppression_db"] = None
     bid, _ = M.plan(c, at("2026-09-28T09:00"))
     it = json.loads((c["batches"] / f"{bid}.json").read_text())["items"][0]
-    assert it["body"].endswith("Mit freundlichen Grüßen\nDaria\nNDT Group\n") and "https://a.example/x?y=1&z=2" in it["body"]
+    assert it["body"].endswith("Mit freundlichen Grüßen\nDaria\nBeispiel Group\n") and "https://a.example/x?y=1&z=2" in it["body"]
     assert '<a href="https://a.example/x?y=1&amp;z=2">Stelle A &amp; B</a>' in it["html"] and f'src="cid:{c["signature"]["cid"]}"' in it["html"]
     assert [a["name"] for a in it["attachments"]] == ["Profil.pdf"] and it["attachments"][0]["path"].endswith("kp/p_1.pdf")
     parts = {p.get_content_type(): p for p in M.build_message(c, it).walk()}

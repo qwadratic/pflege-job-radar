@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-28 09:21'
-updated_date: '2026-09-28 13:13'
+updated_date: '2026-10-05 19:07'
 labels:
   - email
 dependencies: []
@@ -44,5 +44,5 @@ Ivan's Gmail was searched through the claude.ai Gmail connector: sender Valentin
 Open: whether M365 forwards messages that it files in daria's Junk Email folder is not verified.
 
 2026-09-28 13:03 UTC: first install attempt stopped (as designed, before the sudo rule) because a directory above the MSAL cache is writable by a non-root user; the first version checked every directory because it wrote the cache back. Reworked: no write-back, only the cache file itself is checked. Ivan then allowed Claude to run the installer ("ты в ручном режиме, можешь сам сделать"); it passed its smoke run and installed the sudo rule. Note: sudo -n worked for the claude user, so the claude user has passwordless sudo in general; the rule "no sudo for Claude" is a policy, and daria-inbox is its only exception.
-Fetched daria since 2026-09-28 00:00 Berlin: 41 messages, 23 inbound. Forwarded 3: Valentin's reply (10:48), Microsoft billing notice (card declined for Exchange Online Plan 1, tenant NDT Group), NDR for the daria-test letter to anastasiya.yeremenko@bewerbung-pflege.work (address does not exist). Not forwarded: 20 cold sales letters to "Daria"; asked Ivan whether he wants those too.
+Fetched daria since 2026-09-28 00:00 Berlin: 41 messages, 23 inbound. Forwarded 3: Valentin's reply (10:48), Microsoft billing notice (card declined for Exchange Online Plan 1, tenant (the client)), NDR for the daria-test letter to anastasiya.yeremenko@bewerbung-pflege.work (address does not exist). Not forwarded: 20 cold sales letters to "Daria"; asked Ivan whether he wants those too.
 <!-- SECTION:NOTES:END -->

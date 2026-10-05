@@ -668,10 +668,10 @@ def test_phone_number_info_asks_only_for_fields_the_phone_number_node_answers(wa
 
     def transport(method, url, headers=None, data=None, timeout=None):
         calls.append({"method": method, "url": url, "headers": headers, "data": data})
-        return {"display_phone_number": "+49 170 0000000", "verified_name": "Test NDT", "id": "p1"}
+        return {"display_phone_number": "+49 170 0000000", "verified_name": "Test Client", "id": "p1"}
 
     cl = M.Client(transport=transport, access_token="tok", phone_number_id="p1")
-    assert cl.phone_number_info() == {"display_phone_number": "+49 170 0000000", "verified_name": "Test NDT",
+    assert cl.phone_number_info() == {"display_phone_number": "+49 170 0000000", "verified_name": "Test Client",
                                       "id": "p1"}
     assert calls[0] == {"method": "GET", "headers": {"Authorization": "Bearer tok"}, "data": None,
                         "url": f"https://graph.facebook.com/{C.GRAPH_API_VERSION}/p1"
@@ -712,3 +712,37 @@ def test_list_message_templates_raises_without_an_access_token(wa):
     cl = M.Client(transport=lambda **kw: {"data": []}, access_token="", phone_number_id="p1")
     with pytest.raises(M.MetaError, match="not set"):
         cl.list_message_templates("waba-1")
+
+
+# --- client identity (TASK-162): app/wa/config.py:client() -------------------------------------
+
+def test_client_missing_file_raises_naming_the_path(tmp_path, monkeypatch):
+    path = tmp_path / "nowhere" / "wa-client.json"
+    monkeypatch.setenv("WA_CLIENT_CONFIG", str(path))
+    with pytest.raises(RuntimeError, match="client config not found") as exc_info:
+        C.client()
+    assert str(path) in str(exc_info.value)
+
+
+def test_client_missing_name_raises(tmp_path, monkeypatch):
+    path = tmp_path / "wa-client.json"
+    path.write_text(json.dumps({"own_mail_domains": [], "partner_mail_domains": []}), encoding="utf-8")
+    monkeypatch.setenv("WA_CLIENT_CONFIG", str(path))
+    with pytest.raises(RuntimeError, match='no non-empty "name" key'):
+        C.client()
+
+    # a blank "name" is equally empty -- a different path, so a failed read is never served from cache
+    path2 = tmp_path / "wa-client2.json"
+    path2.write_text(json.dumps({"name": "   "}), encoding="utf-8")
+    monkeypatch.setenv("WA_CLIENT_CONFIG", str(path2))
+    with pytest.raises(RuntimeError, match='no non-empty "name" key'):
+        C.client()
+
+
+def test_client_env_override_reads_the_configured_path(tmp_path, monkeypatch):
+    path = tmp_path / "wa-client.json"
+    path.write_text(json.dumps({"name": "Testfirma", "own_mail_domains": ["example.org"],
+                                "partner_mail_domains": ["partner.example"]}), encoding="utf-8")
+    monkeypatch.setenv("WA_CLIENT_CONFIG", str(path))
+    assert C.client() == {"name": "Testfirma", "own_mail_domains": ["example.org"],
+                          "partner_mail_domains": ["partner.example"]}

@@ -78,8 +78,12 @@ REUSE_PENDING, REUSE_CONFIRMED, REUSE_DECLINED = ST.REUSE_PENDING, ST.REUSE_CONF
 
 _LUNA_DIR = pathlib.Path(__file__).resolve().parent / "luna"
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+# TASK-162: constitution.json carries a "{client}" placeholder (this repo is public) wherever it used
+# to name the client directly -- substituted here, once, at import time. Plain substring replace, same
+# reasoning as prompts.py's own _CLIENT_NAME substitution: nothing else in this JSON's dumped text
+# looks like "{client}" by accident.
 _CONSTITUTION_TEXT = json.dumps(json.loads((_LUNA_DIR / "constitution.json").read_text(encoding="utf-8")),
-                                ensure_ascii=False, indent=2)
+                                ensure_ascii=False, indent=2).replace("{client}", C.client()["name"])
 _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledge.json").read_text(encoding="utf-8")),
                                  ensure_ascii=False, indent=2)
 
@@ -1357,8 +1361,10 @@ def _message_view(row, delivery=None):
 
 
 # The old bot's "already greeted" check (apps/connectors/candidate_reply_council.py _has_valentina_freeform_greeting):
-# a free-form outbound message that names Valentina or NDT Group, or opens with 'Hallo Frau/Herr'. Templates excluded.
-_GREETING_RE = re.compile(r"ich bin valentina|ndt group", re.I)
+# a free-form outbound message that names Valentina or the client, or opens with 'Hallo Frau/Herr'. Templates
+# excluded. The client half is built from config/wa-client.json's name (TASK-162), same re.escape/case-
+# insensitivity/alternation shape the old literal company-name branch always had.
+_GREETING_RE = re.compile(r"ich bin valentina|" + re.escape(C.client()["name"].lower()), re.I)
 _SALUTATION_RE = re.compile(r"^hallo\s+(frau|herr)\b", re.I)
 _FREEFORM_KINDS = ("text", "buttons", "draft")
 

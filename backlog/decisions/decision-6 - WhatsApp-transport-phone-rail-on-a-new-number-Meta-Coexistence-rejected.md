@@ -7,7 +7,7 @@ status: accepted
 ## Context
 
 Today the WhatsApp harness (`app/wa/`) talks to exactly one transport: `app/wa/meta.py`, the Meta
-WhatsApp Cloud API, on the "Valentyn NDT" number. Ivan wants WhatsApp off Meta and onto a phone rail:
+WhatsApp Cloud API, on the "Valentyn <client>" number. Ivan wants WhatsApp off Meta and onto a phone rail:
 a home machine plus a real handset, driving a genuine WhatsApp client.
 
 Full investigation, contract and milestones: `/home/claude/plans/2026-09-20-wa-home-transport-plan.md`.
@@ -37,7 +37,7 @@ Ivan decided on 2026-09-21:
    swappable.
 2. **Handset: `huawei_p30_lite_02`** — the idle one. Not `huawei_p30_lite_01`: that one runs the
    colleague's ChatGPT lead research at ~77k requests/day.
-3. **A NEW SIM and a new number.** The "Valentyn NDT" number cannot move. It is Cloud-API-registered,
+3. **A NEW SIM and a new number.** The "Valentyn <client>" number cannot move. It is Cloud-API-registered,
    so it cannot run in the consumer app; it cannot be deleted within 30 days of a paid send; and
    taking it off the API destroys the colleague's 29 APPROVED `recruitment_*` templates plus the live
    nginx webhook at `/candidate-action/webhooks/meta/whatsapp`.
@@ -111,7 +111,7 @@ Ivan decided on 2026-09-21:
   opened at least every 13 days.
 - **Keep cold first-contact on the Cloud API, conversations on the phone.** The plan's own
   recommendation and its largest free risk reduction. Rejected: cold outreach moves to the phone.
-- **Move the Valentyn NDT number.** Impossible without destroying 29 approved templates and the live
+- **Move the Valentyn <client> number.** Impossible without destroying 29 approved templates and the live
   webhook; a Cloud-API-registered number cannot run in the consumer app.
 - **Baileys / linked-device library with `native_flow` buttons.** Restores real buttons by injecting
   `biz_bot: '1'`, the loudest possible "not a human client" signal. Rejected.

@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-29 10:00'
-updated_date: '2026-09-30 18:28'
+updated_date: '2026-10-05 18:56'
 labels:
   - operator-note
 dependencies: []
@@ -38,7 +38,7 @@ Operator reports that the bot replied to the inbound message with information bu
 ## Database context
 ### Recent messages (+436…6780)
 - [2026-09-29T09:45:27+00:00] in text: Hallo, suche eine Stelle
-- [2026-09-29T09:52:42+00:00] out text: Hallo! Schön, dass Sie sich melden. 😊 Ich bin Valentina von der NDT Group – aktuell haben wir 2.878 offene Pflegestellen an bayerischen Kliniken.
+- [2026-09-29T09:52:42+00:00] out text: Hallo! Schön, dass Sie sich melden. 😊 Ich bin Valentina von der <client> – aktuell haben wir 2.878 offene Pflegestellen an bayerischen Kliniken.
 - [2026-09-29T09:54:18+00:00] in text: 🎤 Sprachnachricht (0:53)
 - [2026-09-29T09:54:45+00:00] in audio: Так, смотри, значит, ты написал мне информацию и не задал никакого вопроса, коммуникация должна идти, во-первых, по нашему чек-листу, то есть сначала нужно квалифицировать, или это медсестра уже с подтвержденным дипломом, потом понять, что она хочет, ну, то есть как-то надо обработать этот чек-лист…
 

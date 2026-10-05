@@ -4,6 +4,28 @@ classes, plus partner re-keying and an org-topic table. Pseudonymises from/to/cc
 Writes data/email-analysis/batches_stage2b/b2_NNN.jsonl, strata_manifest.json, org_topics.jsonl, org_topics_stats.json."""
 import os, re, json, hashlib, collections
 from datetime import datetime, timedelta
+
+
+def _client_config():
+    """TASK-162: this repo is public, so the client's real identity (name, own/partner mail
+    domains) lives in config/wa-client.json (gitignored), never in source -- see
+    app/wa/config.py:client(). This script does not import the app package, so it is a tiny local
+    mirror of that loader: same path rule (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json),
+    same loud failure on a missing file, bad JSON or an empty/missing "name" ("No safety nets")."""
+    path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or "/home/claude/repo/pflege-board/config/wa-client.json"
+    if not os.path.exists(path):
+        raise RuntimeError(f"client config not found at {path!r} -- create it (config/wa-client.example.json "
+                           f"shows the shape) or set WA_CLIENT_CONFIG to point at it")
+    with open(path, encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not str(data.get("name", "")).strip():
+        raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    return data
+
+
 A = "/home/claude/repo/pflege-board/data/email-analysis"; B = os.path.join(A, "batches_stage2b"); os.makedirs(B, exist_ok=True)
 for fn in os.listdir(B): os.remove(os.path.join(B, fn))
 msgs = {}
@@ -22,8 +44,8 @@ MB = sorted({m["mailbox"] for m in msgs.values()})
 LABEL = {}
 for mb in MB:
     LABEL[mb] = ("K" if mb.endswith(".agency") else "M") + str(len([x for x in LABEL.values() if x[0] == ("K" if mb.endswith(".agency") else "M")]) + 1)
-OUR_DOM = {mb.split("@")[1] for mb in MB} | {"kindt.agency", "ki-agent.agency", "ki-ndt.agency", "ki-workflow.agency"}
-PARTNER_DOM = {"ndt-group.agency"}
+OUR_DOM = {mb.split("@")[1] for mb in MB} | set(_client_config()["own_mail_domains"])
+PARTNER_DOM = set(_client_config()["partner_mail_domains"])
 TAG = re.compile(r"\[(SNOV|WRM)\]|\bwsn\b|warm-?up", re.I)
 NDR = re.compile(r"undeliverable|delivery (status|failure|has failed)|unzustellbar|mail delivery|returned mail|nicht zugestellt|failure notice|delivery notification|nicht zustellbar", re.I)
 def pseud(a):

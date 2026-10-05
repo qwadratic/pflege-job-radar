@@ -278,8 +278,9 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
     assert seen["user"]["latest_inbound"] == "Intensivstation bitte"
     assert "thread" not in seen["user"], "history now lives in the resumed session, not the payload"
     assert "Valentina" in seen["system"]
-    # TASK-203 (Ivan 2026-09-14): Luna introduces herself as the old bot did, "Valentina von der NDT Group".
-    assert "Ich bin Valentina von der NDT Group." in seen["system"]
+    # TASK-203 (Ivan 2026-09-14): Luna introduces herself as the old bot did, "Valentina von der <client>"
+    # (TASK-162: the client's name comes from the test config, not a literal here).
+    assert f"Ich bin Valentina von der {C.client()['name']}." in seen["system"]
 
 
 def test_market_snapshot_matches_only_once_fully_ready_to_close(luna):

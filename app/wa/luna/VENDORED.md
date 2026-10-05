@@ -13,7 +13,7 @@ and infrastructure-specific material removed or replaced:
 
 | kept, same substance | genericized | dropped entirely |
 |---|---|---|
-| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-203 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der NDT Group" | interview scheduling (a second, later conversation the source calls "Game 2") |
+| persona ("Valentina"), tone, Sie-Form, one-question-per-turn, bubble budget | company name → none at first; since TASK-203 (Ivan, 2026-09-14) the old bot's own wording, "Valentina von der {client}" (TASK-162: the client's real name lives in config/wa-client.json, gitignored -- never in this file) | interview scheduling (a second, later conversation the source calls "Game 2") |
 | qualification accept/reject gate, Urkunde/Defizit/Kenntnisprüfung logic | — (already generic regulatory knowledge, copied as-is: `qualification_knowledge.json`) | CV/document OCR ingestion and the rules that react to it (as of TASK-327, see note below — no longer entirely dropped) |
 | "not placeable → explain once, then stop" | — | clinic-submission email + human-approval token flow (kept only as a state flag, see `constitution.json:handoff_principle`) |
 | primary-candidate-first (companion mentioned mid-chat) | — | manager WhatsApp call-permission form, WABA approved-template inventory |
@@ -43,7 +43,9 @@ falling through to a Claude-vision path for images and scanned PDFs), and merges
 as `cv_text`/`urkunde_text` before `LB.turn()` runs. `prompts.py:RULES` gained one line telling the
 model how to react to those two fields; everything else in this file's table above still holds.
 
-**Update (TASK-203/101, Ivan 2026-09-14):** identity follows the source again: "Ich bin Valentina von der NDT
-Group." and "ein digitaler Assistent der NDT Group" (source: first-touch copy and `HONEST_AI_IDENTITY_DE`).
+**Update (TASK-203/101, Ivan 2026-09-14):** identity follows the source again: "Ich bin Valentina von der
+{client}." and "ein digitaler Assistent der {client}" (source: first-touch copy and `HONEST_AI_IDENTITY_DE`;
+TASK-162: the client's real name is substituted in at load time from config/wa-client.json, see
+app/wa/config.py:client() and app/wa/luna/prompts.py's `_CLIENT_NAME`).
 The decline acknowledgement is the source's `DECLINE_ACK_DE` verbatim. Proactive messages exist now as fixed
 texts sent by code (follow-up nudges, campaign template); the model sees them afterwards in the payload.

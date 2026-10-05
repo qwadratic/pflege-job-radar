@@ -320,7 +320,7 @@ def test_introduced_follows_the_old_bot_greeting_check_not_the_session(wa, monke
     # TASK-386: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
     monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
     model = Model(monkeypatch, _out(decline=True, bubbles=[]),
-                  _out(re_engaged=True, bubbles=["Schön! Ich bin Valentina von der NDT Group. Haben Sie die Urkunde?"]),
+                  _out(re_engaged=True, bubbles=[f"Schön! Ich bin Valentina von der {C.client()['name']}. Haben Sie die Urkunde?"]),
                   _out(bubbles=["Super."]))
     _deliver(wa, _message("wamid.in.1", text="Nein, kein Interesse"))
     _deliver(wa, _message("wamid.in.2", text="Doch, ich habe jetzt Interesse"))
@@ -330,11 +330,11 @@ def test_introduced_follows_the_old_bot_greeting_check_not_the_session(wa, monke
 
 
 @pytest.mark.parametrize("kind, body, expected", [
-    ("text", "Danke! Ich bin Valentina von der NDT Group.", True),
-    ("buttons", "Ich bin Valentina — ein digitaler Assistent der NDT Group.", True),
+    ("text", f"Danke! Ich bin Valentina von der {C.client()['name']}.", True),
+    ("buttons", f"Ich bin Valentina — ein digitaler Assistent der {C.client()['name']}.", True),
     ("text", "Hallo Frau Test, schön von Ihnen zu hören.", True),
     ("text", "Alles klar, vielen Dank für die Rückmeldung.", False),
-    ("template", "Hallo Frau Test. Ich bin Valentina von der NDT Group.", False),
+    ("template", f"Hallo Frau Test. Ich bin Valentina von der {C.client()['name']}.", False),
 ])
 def test_introduced_reads_free_form_outbound_like_the_old_bot(wa, kind, body, expected):
     with ST.db() as c:
@@ -686,11 +686,12 @@ def test_the_prompt_carries_the_old_bot_identity_and_no_invented_brand():
     for brand in ("pflege-job-radar", "pflege-board", "pflege_board", "job-radar"):
         assert brand not in system.lower()
         assert all(brand not in name for name in LB.MCP_TOOL_NAMES)
+    name = C.client()["name"]
     identity = _rule("IDENTITY")
-    assert "Ich bin Valentina von der NDT Group." in identity and "ein digitaler Assistent der NDT Group" in identity
-    assert "Stopp" in identity and "human colleague" in identity and "contacted NDT Group on this WhatsApp number" in identity
-    # Repair 2026-09-14: the old bot says 'ein digitaler Assistent der NDT Group', never 'Assistentin'.
-    assert "Du bist Valentina, ein digitaler Assistent der NDT Group" in LB.P.GOAL
+    assert f"Ich bin Valentina von der {name}." in identity and f"ein digitaler Assistent der {name}" in identity
+    assert "Stopp" in identity and "human colleague" in identity and f"contacted {name} on this WhatsApp number" in identity
+    # Repair 2026-09-14: the old bot says 'ein digitaler Assistent der <client>', never 'Assistentin'.
+    assert f"Du bist Valentina, ein digitaler Assistent der {name}" in LB.P.GOAL
     assert "digitale assistentin" not in system.lower() and "never 'Assistentin'" in identity
 
 

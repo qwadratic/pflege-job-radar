@@ -11,6 +11,17 @@ import pytest
 
 os.environ.setdefault("AUTH_DISABLED", "1")
 
+# TASK-162: the client's real identity is gitignored (config/wa-client.json); every test runs against
+# the committed, synthetic config/wa-client.example.json instead, unless a test (or the environment
+# running pytest) already set WA_CLIENT_CONFIG itself. Set here, at collection time, before any test
+# module's own "from app.wa import ..." imports app/wa/luna/prompts.py or luna_brain.py -- both read
+# client() at import time (same reasoning _LIVE_CREDENTIALS above has for popping its own vars this
+# early). Absolute path from this file's own location, not the cwd pytest happened to be run from.
+os.environ.setdefault(
+    "WA_CLIENT_CONFIG",
+    str(pathlib.Path(__file__).resolve().parent.parent / "config" / "wa-client.example.json"),
+)
+
 # No test may reach a live system through credentials it merely inherited (Ivan, 2026-09-25). The
 # wa-harness session was started from a shell with the phone rail's rail.env loaded, so every pytest
 # it ran saw WA_TRANSPORT=bridge and a real WA_BRIDGE_URL/WA_BRIDGE_TOKEN: tests that do not pin their

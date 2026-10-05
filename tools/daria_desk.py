@@ -64,6 +64,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import clinic_mailer as M  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
+
+
+def _client_config():
+    """TASK-162: this repo is public, so the client's real identity lives in config/wa-client.json
+    (gitignored), never in source -- see app/wa/config.py:client(). This script does not import the
+    app package, so it is a tiny local mirror of that loader rather than an import: same path rule
+    (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json), same loud failure on a missing file,
+    bad JSON or an empty/missing "name" (CLAUDE.md, "No safety nets")."""
+    path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or str(REPO / "config" / "wa-client.json")
+    p = Path(path)
+    if not p.exists():
+        raise RuntimeError(f"client config not found at {path!r} -- create it (config/wa-client.example.json "
+                           f"shows the shape) or set WA_CLIENT_CONFIG to point at it")
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not str(data.get("name", "")).strip():
+        raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    return data
+
+
+def _client_name():
+    return _client_config()["name"]
+
+
+def _client_partner_domain():
+    """Valentyn's own mail domain (he talks to the clinics) -- the client's domain spelled out in it is
+    exactly the thing TASK-162 keeps out of source, so ANSWER_SYSTEM below builds his address from the
+    configured partner_mail_domains rather than a literal domain."""
+    domains = _client_config().get("partner_mail_domains") or []
+    if not domains:
+        raise RuntimeError("client config has no \"partner_mail_domains\" entry -- needed for Valentyn's "
+                           "address in ANSWER_SYSTEM")
+    return domains[0]
+
+
 BOARD_TOOLS = ("search_postings", "get_posting", "list_clinics", "search_postings_with_housing", "list_clinics_with_housing",
                "list_cities_with_postings", "count_postings", "read_board_docs", "board_api_get", "get_clinic_contact")
 PHONE_TOOLS = ("show_clinic_photos", "send_updated_cv", "read_history", "read_document", "find_stored_cv", "match_cv_to_postings")
@@ -303,7 +340,11 @@ def act(d, c, bs, frm, mid):
 
 # ---------- Daria's answer ----------
 
-ANSWER_SYSTEM = """You are Daria (Дарья), an AI employee of NDT Group, a placement agency that places nurses trained abroad with German hospitals on direct hire (Direktvermittlung; the clinic pays a fee when the contract is signed). You work from the mailbox daria.s@pflege-connect.work. Your colleagues: Ivan (the owner, ivan.d.kotelnikov@gmail.com) and Valentyn Vihandt (he talks to the clinics, v.vihandt@ndt-group.agency). One of them wrote to you; your answer goes to both.
+# TASK-162: the employer name and Valentyn's own mail domain come from the gitignored client config
+# (_client_name/_client_partner_domain above) -- with its "name" and "partner_mail_domains" set to
+# the old literal values (see git history pre-TASK-162), this f-string renders byte-identical to the
+# old literal text.
+ANSWER_SYSTEM = f"""You are Daria (Дарья), an AI employee of {_client_name()}, a placement agency that places nurses trained abroad with German hospitals on direct hire (Direktvermittlung; the clinic pays a fee when the contract is signed). You work from the mailbox daria.s@pflege-connect.work. Your colleagues: Ivan (the owner, ivan.d.kotelnikov@gmail.com) and Valentyn Vihandt (he talks to the clinics, v.vihandt@{_client_partner_domain()}). One of them wrote to you; your answer goes to both.
 
 How you answer:
 - In Russian, short and plain, one idea per sentence: the answer first, then the facts that back it, no more than the question needs. You are a woman: about yourself write "проверила", "нашла", "завела". The first time a German term appears, give its meaning in Russian in brackets.

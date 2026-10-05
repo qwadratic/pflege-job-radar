@@ -38,6 +38,26 @@ def load_env(p):
     return e
 
 
+def _client_config():
+    """TASK-162: this repo is public, so the client's real identity (name, own/partner mail
+    domains) lives in config/wa-client.json (gitignored), never in source -- see
+    app/wa/config.py:client(). This script does not import the app package, so it is a tiny local
+    mirror of that loader: same path rule (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json),
+    same loud failure on a missing file, bad JSON or an empty/missing "name" ("No safety nets")."""
+    path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or "/home/claude/repo/pflege-board/config/wa-client.json"
+    if not os.path.exists(path):
+        raise RuntimeError(f"client config not found at {path!r} -- create it (config/wa-client.example.json "
+                           f"shows the shape) or set WA_CLIENT_CONFIG to point at it")
+    with open(path, encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not str(data.get("name", "")).strip():
+        raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    return data
+
+
 # ---------- who is "us" ----------
 env = load_env(ENV)
 our_addrs = set()
@@ -50,7 +70,7 @@ for d in os.listdir(DUMP):
     if os.path.exists(s):
         our_addrs.add(json.load(open(s))["mailbox"].lower())
 our_domains = {a.split("@")[1] for a in our_addrs}
-our_domains |= {"kindt.agency", "ki-agent.agency", "ki-ndt.agency", "ki-workflow.agency"}
+our_domains |= set(_client_config()["own_mail_domains"])
 
 FREEMAIL = {"gmail.com", "googlemail.com", "web.de", "gmx.de", "gmx.net", "t-online.de",
             "outlook.com", "hotmail.com", "yahoo.com", "yahoo.de", "icloud.com", "ukr.net",

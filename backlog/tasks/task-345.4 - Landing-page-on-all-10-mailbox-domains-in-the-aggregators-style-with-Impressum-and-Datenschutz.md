@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:31'
+updated_date: '2026-10-05 19:03'
 labels:
   - email
 dependencies: []
@@ -19,7 +20,7 @@ ordinal: 115000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-German clinic managers open the sender domain before replying. 6 domains are GoDaddy parking pages (/lander); bewerbung-pflege.work, bewerbungpflege.work and pflege.works redirect to pflege-ndt.work (NDT landing on 185.158.133.1, no Impressum found). A parked or empty domain reads as fraud. Style must follow the main aggregator site. Decide with Ivan: one shared page or per-domain variant, and what happens to the existing NDT landing.
+German clinic managers open the sender domain before replying. 6 domains are GoDaddy parking pages (/lander); bewerbung-pflege.work, bewerbungpflege.work and pflege.works redirect to <our client-named domain> (the client's landing on 185.158.133.1, no Impressum found). A parked or empty domain reads as fraud. Style must follow the main aggregator site. Decide with Ivan: one shared page or per-domain variant, and what happens to the existing client landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

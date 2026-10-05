@@ -11,6 +11,28 @@ Outputs data/email-analysis/out/ledgers.json + ledgers.md:
 Domains and counts only — no names."""
 import json, re, os, collections, statistics
 from datetime import datetime, timedelta
+
+
+def _client_config():
+    """TASK-162: this repo is public, so the client's real identity (name, own/partner mail
+    domains) lives in config/wa-client.json (gitignored), never in source -- see
+    app/wa/config.py:client(). This script does not import the app package, so it is a tiny local
+    mirror of that loader: same path rule (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json),
+    same loud failure on a missing file, bad JSON or an empty/missing "name" ("No safety nets")."""
+    path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or "/home/claude/repo/pflege-board/config/wa-client.json"
+    if not os.path.exists(path):
+        raise RuntimeError(f"client config not found at {path!r} -- create it (config/wa-client.example.json "
+                           f"shows the shape) or set WA_CLIENT_CONFIG to point at it")
+    with open(path, encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not str(data.get("name", "")).strip():
+        raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    return data
+
+
 A = "/home/claude/repo/pflege-board/data/email-analysis"; OUT = os.path.join(A, "out")
 msgs = {}
 for l in open(os.path.join(A, "messages.jsonl"), encoding="utf-8"):
@@ -20,7 +42,10 @@ for l in open(os.path.join(A, "threads.jsonl"), encoding="utf-8"):
     t = json.loads(l); threads[t["thread_id"]] = t
 ce = json.load(open(os.path.join(A, "clinic_engaged_set.json")))
 FINAL = set(ce["final_ids"]); WARM = set(ce["warm_domains"])
-OUR_DOM = {m["mailbox"].split("@")[1] for m in msgs.values()} | {"kindt.agency", "ki-agent.agency", "ki-ndt.agency", "ki-workflow.agency", "ndt-group.agency"}
+# The partner domain is unioned in here too (not a separate PARTNER_DOM, unlike email_stage2b.py) --
+# this ledger only ever needed one "is this us" set, so the union is kept rather than split in two.
+OUR_DOM = ({m["mailbox"].split("@")[1] for m in msgs.values()}
+           | set(_client_config()["own_mail_domains"]) | set(_client_config()["partner_mail_domains"]))
 GEN1 = re.compile(r"examinierte pflegefachkr")
 AUTO_FROM = re.compile(r"mailer-daemon|postmaster|no-?reply|noreply|donotreply|bounce", re.I)
 NDR_SUBJ = re.compile(r"undeliverable|delivery (status|failure|has failed)|unzustellbar|mail delivery|returned mail|nicht zugestellt|failure notice|delivery notification|nicht zustellbar|zustellung fehlgeschlagen", re.I)

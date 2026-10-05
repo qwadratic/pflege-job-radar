@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-23 19:43'
-updated_date: '2026-09-30 18:28'
+updated_date: '2026-10-05 18:56'
 labels: []
 dependencies: []
 priority: high
@@ -30,7 +30,7 @@ confirmed against the actual rows:
   19:23-26  app/wa/api.py::process_owed_turn answers the owed "Passau" inbound. turn_context()
             builds the prompt from wa_messages, which has NO record that we just sent anything --
             so the brain treats "Passau" as a cold first contact and drafts its OWN introduction
-            ("Hallo! Ich bin Valentina, ein digitaler Assistent der NDT Group...") followed by a
+            ("Hallo! Ich bin Valentina, ein digitaler Assistent der <client>...") followed by a
             qualification question, both real sends to Valentyns phone, both entirely off-script
             and inconsistent with the template that had just gone out ninety seconds earlier.
 

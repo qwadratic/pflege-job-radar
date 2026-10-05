@@ -9,7 +9,7 @@ stored — only their filenames are recorded.
 
 Usage:
   python3 tools/email_dump_imap.py                              # all Zoho boxes
-  ONLY_MAILBOX=dashandt@pflege-ndt.work python3 tools/email_dump_imap.py
+  ONLY_MAILBOX=box@example.org python3 tools/email_dump_imap.py
   MONTHS=6 python3 tools/email_dump_imap.py
 """
 import imaplib, email, json, os, re, time

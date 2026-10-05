@@ -20,7 +20,7 @@ The CLI has no `decision edit`, so decision-6 keeps its superseded wording ("A N
 
 1. **No new SIM.** The bot sends from the +49 number already on `huawei_p30_lite_02`. That number is a
    candidate-role persona ("Babu22") from the colleague's August soak tests, not the WABA number, so
-   decision-6's constraint ("the Valentyn NDT number cannot move") is untouched — Valentyn NDT stays on the
+   decision-6's constraint ("the Valentyn <client> number cannot move") is untouched — Valentyn <client> stays on the
    Cloud API as the rollback rail.
 2. **A typed "ja" documents consent.** `WA_BRIDGE_SYNTHETIC_CONSENT` ships ON (TASK-351), with a tier-1
    ordinal or tier-2 exact-title match plus a confirmation turn, and the verbatim typed token stored in

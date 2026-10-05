@@ -1099,7 +1099,7 @@ def test_a_candidate_who_wrote_after_the_first_attempt_is_not_resent_and_the_rep
     _run(wa, graph, leads, "--send")
     for phone in (LEAD_A, LEAD_B):
         _failed_status(phone, _claim(phone)["wamid"], 131042)
-    model = Model(monkeypatch, _out(bubbles=["Hallo! Ich bin Valentina von der NDT Group."]))
+    model = Model(monkeypatch, _out(bubbles=[f"Hallo! Ich bin Valentina von der {C.client()['name']}."]))
     _route({"messages": [{"id": "wamid.in.hallo", "from": LEAD_A[1:], "type": "text", "text": {"body": "Hallo, wer ist da?"}}]})
     assert model.payloads[0]["outbound_since_last_turn"] == [] and "campaign" not in model.payloads[0]["card"]
 

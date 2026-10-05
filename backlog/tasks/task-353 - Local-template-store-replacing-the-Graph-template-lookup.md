@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 01:22'
-updated_date: '2026-09-25 00:02'
+updated_date: '2026-10-05 19:15'
 labels:
   - wa-transport
 dependencies:
@@ -32,7 +32,7 @@ Read data/wa_templates/<id>.json in the same dict shape campaign.py already cons
 
 Ban control that belongs in the message set rather than in the sender: no two outbound first-touch bodies are byte-identical. A set of one opening line sent 20 times a day from an unwarmed consumer number is the pattern that draws reports.
 
-The 29 APPROVED recruitment_* templates on the Valentyn NDT number are the colleague asset, they do not move, and they stay the Meta rail set.
+The 29 APPROVED recruitment_* templates on the Valentyn <client> number are the colleague asset, they do not move, and they stay the Meta rail set.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

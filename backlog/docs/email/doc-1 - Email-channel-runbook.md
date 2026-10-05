@@ -3,7 +3,7 @@ id: doc-1
 title: Email channel runbook
 type: guide
 created_date: '2026-09-17 17:30'
-updated_date: '2026-10-01 16:02'
+updated_date: '2026-10-05 19:12'
 tags:
   - email
   - runbook
@@ -91,7 +91,7 @@ Corrected headline numbers (clinic-gated, UTC): Gen1 campaign "Examinierte Pfleg
 
 - **PITFALL**: ~78% of outbound in these mailboxes is warm-up bot traffic ([SNOV]/[WRM]/wsn + untagged chit-chat); some boxes pitch an unrelated AI service. Gate every KPI on the Gen1 subject regex ∪ clinic domain regex, exclude warm-up domains. Raw `quant_stats.json` is contaminated.
 - **PITFALL**: all timestamps are UTC; Berlin = +2 h, recruiter calendars run on Europe/Kyiv (+3 h). Stage 1 clock-of-day findings are mislabeled.
-- **PITFALL**: post-reply work (invites, "Unterlagen nach unserem Gespräch", contracts) came from the partner mailbox at ndt-group.agency (not exported) and other sending identities. Visible only via cc.
+- **PITFALL**: post-reply work (invites, "Unterlagen nach unserem Gespräch", contracts) came from the partner mailbox at the client's domain (not exported) and other sending identities. Visible only via cc.
 - **PITFALL**: keyword flags are weak — `fee_invoice` 0% precision, `legal_complaint`/`reject` fire on OOO disclaimers, `optout` 88% third-party spam, `sensitive` = health-scam spam. Stage 1/2b M1–M6 labels are different permutations.
 - **PITFALL**: Graph (M365) dumps carry no attachment names; `tools/email_enrich_graph_attachments.py` (sudo, Ivan) not yet run.
 - Privacy: intermediate JSON artifacts were scrubbed (persona/person/clinic names); reports use roles, org types, thread_ids only. Data stays on the server.

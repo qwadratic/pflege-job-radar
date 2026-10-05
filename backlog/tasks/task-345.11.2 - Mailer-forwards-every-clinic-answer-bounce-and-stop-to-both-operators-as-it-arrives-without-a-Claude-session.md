@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-05 09:14'
-updated_date: '2026-10-05 18:01'
+updated_date: '2026-10-05 19:07'
 labels: []
 dependencies: []
 parent_task_id: TASK-345.11
@@ -39,7 +39,7 @@ Ivan, 2026-10-05: "у нас должна быть автоотправка ем
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-05.10: forward_inbound in tools/clinic_mailer.py (watch mails reply/stop/bounce/complaint/unmatched to the campaign operators before the ledger line; failure leaves the message unseen). New kind operator_undeliverable: a bounce naming an operator address is not a clinic bounce and goes only to the other operators (Valentyn's address v.vihandt@ndt-group.agency returned 'Recipient Unknown' on 05.10; the NDR of a forwarded clinic answer quoted our message-id, so wave 1 halted on it and, once forwarded, it would loop). tools/daria_forward.py sends to both operators. tests/test_clinic_mailer.py: 3 new tests, 49 pass with test_daria_desk.py. Not yet seen live: a real clinic answer forwarded by a running batch.
+05.10: forward_inbound in tools/clinic_mailer.py (watch mails reply/stop/bounce/complaint/unmatched to the campaign operators before the ledger line; failure leaves the message unseen). New kind operator_undeliverable: a bounce naming an operator address is not a clinic bounce and goes only to the other operators (Valentyn's address v.vihandt@<client domain> returned 'Recipient Unknown' on 05.10; the NDR of a forwarded clinic answer quoted our message-id, so wave 1 halted on it and, once forwarded, it would loop). tools/daria_forward.py sends to both operators. tests/test_clinic_mailer.py: 3 new tests, 49 pass with test_daria_desk.py. Not yet seen live: a real clinic answer forwarded by a running batch.
 
 05.10 evening: live check: LMU Klinikum München answered at 11:30:48 (ledger inbound, recipient 16290) and the answer was mailed to the operators by the running batch (forwarded_to and forward_message_id in the ledger line). Valentyn's address bounced, so operators in campaign.json, campaign.w2.json, data/email-analysis/desk/daria.json and TO in tools/daria_forward.py are Ivan only until Valentyn gives a working address. Batches of one campaign run as separate processes on one ledger (wave 2 first letters and its follow-up batch): watch() now takes an exclusive flock on <ledger>.watch.lock so two processes never forward the same answer twice. Tests: .venv/bin/python -m pytest tests/test_clinic_mailer.py tests/test_daria_desk.py, 52 passed.
 

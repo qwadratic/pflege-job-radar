@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 14:24'
-updated_date: '2026-09-16 14:51'
+updated_date: '2026-10-05 18:57'
 labels: []
 dependencies:
   - TASK-340
@@ -55,7 +55,7 @@ Repair round 1 (final verifier 2026-09-14): exit code -- a --no-wait run stopped
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-101: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-100). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "Valentyn NDT".
+REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-101: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-100). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "Valentyn <client>".
 
 Found live 2026-09-14 15:57 UTC: a test send of recruitment_bayern_stellen_interesse_de to Ivan was accepted by Meta (wamid returned) but the status webhook said failed, code 131042 "Business eligibility payment issue: your WhatsApp Business account has unsettled payments" (WABA <WABA id>, business <business portfolio id>). Paid template sends fail asynchronously this way while free-form replies inside the 24h window still work. Runbook: before a batch, send the template to an operator number and wait for a delivered status (TASK-341 status storage) -- an accepted POST alone proves nothing; --status must show per-phone failed codes like 131042.
 

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 22:15'
-updated_date: '2026-09-23 02:17'
+updated_date: '2026-10-05 18:53'
 labels: []
 dependencies:
   - TASK-102
@@ -55,7 +55,7 @@ Implemented (offline, not committed):
 - Tests: import 38 passed (5 new: records per phone incl. suppression normalisation and reopened lifecycle, apply marks declined + silence + no follow-up + re-engagement + no re-mark, older decline vs later message here, own decline kept, contract violations; stop test extended), sender 44 passed (2 new: end to end with the synthetic old DB and the example queries, override flag). Mutation checks: disabling the mark or the skip fails the new tests.
 
 Docs: docs/whatsapp.md (Decline paragraph, Campaign recipients contract + opt_outs record table + what --apply writes, Campaign sender history source/override, plan actions, send step 1, exit 2, runbook commands with the source, tests), docs/rollout-runbook.md steps 6/7.
-Live llm (claude CLI, fake Meta, tmp SQLite, nothing sent): new test_an_imported_old_system_opt_out_stays_silent_until_the_candidate_re_engages [1] passed, [2] passed (a second [2] run printed the silent first turn, result not captured); 'Ok, danke.' -> no reply, re-engagement -> 'Schön, dass Sie sich wieder melden! Ich bin Valentina von der NDT Group.' + Urkunde question. Regression after the DECLINE prompt change: test_decline_by_text_then_ok_danke_stays_silent[1] and test_re_engagement_after_a_decline_resumes_the_funnel[1] passed.
+Live llm (claude CLI, fake Meta, tmp SQLite, nothing sent): new test_an_imported_old_system_opt_out_stays_silent_until_the_candidate_re_engages [1] passed, [2] passed (a second [2] run printed the silent first turn, result not captured); 'Ok, danke.' -> no reply, re-engagement -> 'Schön, dass Sie sich wieder melden! Ich bin Valentina von der <client>.' + Urkunde question. Regression after the DECLINE prompt change: test_decline_by_text_then_ok_danke_stays_silent[1] and test_re_engagement_after_a_decline_resumes_the_funnel[1] passed.
 Offline: full suite once, 1510 passed, 126 skipped, 61 deselected (137 s); afterwards two assertions added (CLI output line, metadata-phone evidence) and the four touched files re-run: 281 passed.
 Open for Ivan: employed_elsewhere / explicit_closed_flag lifecycle reasons not read; suppression rows of every workspace count; placement withdrawn counts as a decline; old correspondence-derived declines (regex on last inbound) are not re-derived; an imported Stopp declines (re-engageable) rather than stops the thread; live sales_brain.sqlite schema never inspected (tables from code), a missing table fails loudly as import_error.
 

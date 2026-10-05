@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 !.env.kindt.example
+# the real client identity (name, mail domains); see config/wa-client.example.json -- this repo is
+# public and TASK-162 says the client's name is never committed here
+config/wa-client.json
 # real WhatsApp test-handset numbers (Ivan/Valentyn); see config/wa-test-numbers.example.json
 config/wa-test-numbers.json
 config/wa-test-numbers-reset.csv

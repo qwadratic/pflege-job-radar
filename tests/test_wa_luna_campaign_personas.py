@@ -57,8 +57,10 @@ NEW_LEAD_OPENER_RE = re.compile(r"danke(schön)? für ihre (nachricht|anfrage|be
 BAYERN_QUESTION_RE = re.compile(r"\b(?:suchen sie|sind sie|interessier\w*|möchten sie|wollen sie|kommt|käme|wäre)\b"
                                 r"[^.!?]*\bbayern\b[^.!?]*\?", re.I)
 QUALIFICATION_RE = re.compile(r"urkunde|anerkenn", re.I)
-# Review 2026-09-14 (R5): the first model reply on a campaign thread names Valentina and NDT Group once.
-INTRO_RE = re.compile(r"valentina[^.!?]*ndt|ndt[^.!?]*valentina", re.I)
+# Review 2026-09-14 (R5): the first model reply on a campaign thread names Valentina and the client once
+# (TASK-162: built from the configured client name, not a literal company name).
+_CLIENT_NAME_RE = re.escape(C.client()["name"].lower())
+INTRO_RE = re.compile(rf"valentina[^.!?]*{_CLIENT_NAME_RE}|{_CLIENT_NAME_RE}[^.!?]*valentina", re.I)
 # Repair 2026-09-14: live, a nudge 'sind Sie noch da?' answered 'Ja' got 'Alles gut, ich bin noch da'.
 SELF_THERE_RE = re.compile(r"\bich bin (?:\w+ ){0,2}(?:da|hier)\b|\bbin (?:\w+ ){0,2}für sie da\b", re.I)
 # Repair 2026-09-14: live, an already placed candidate was offered 'dass ich Ihnen ab und zu passende Stellen zeige';
@@ -229,7 +231,7 @@ def test_who_are_you_and_where_is_my_number_from(chat, run):
     chat.campaign()
     bubbles, _ = chat.say("Wer sind Sie? Woher haben Sie meine Nummer?")
     said, dump = _text(bubbles).lower(), chat.dump()
-    assert "valentina" in said and "ndt" in said, dump
+    assert "valentina" in said and C.client()["name"].lower() in said, dump
     assert re.search(r"gemeldet|kontakt|geschrieben|beworben", said), f"not honest about the earlier contact: {dump}"
     assert "stopp" in said, f"Stopp not mentioned: {dump}"
     assert re.search(r"mensch|kolleg|mitarbeiter|ansprechpart|manager", said), f"no human handoff offered: {dump}"

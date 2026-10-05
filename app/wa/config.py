@@ -5,6 +5,7 @@ uses (apps/connectors/meta_whatsapp_cloud.py), so one Meta app and one .env fit 
 Nothing here has a default that could pass for a configured value: an unset token stays empty and
 the send path raises rather than pretend (CLAUDE.md, "No safety nets").
 """
+import json
 import os
 import pathlib
 import shutil
@@ -473,6 +474,40 @@ def sales_brain_path():
     """The colleague's CRM sqlite (TASK-396, Daria's leads read) -- read-only, never ours to write.
     Env-overridable for a test's synthetic fixture; the default is the real path on this host."""
     return os.environ.get("WA_SALES_BRAIN_PATH", "").strip() or "/opt/clinic-dispatcher/var/sales_brain.sqlite"
+
+
+# --- Client identity (TASK-162: this repo is public, the client's name/domains are never committed
+# here) -----------------------------------------------------------------------------------------
+# config/wa-client.json is the real file (gitignored); config/wa-client.example.json is the committed,
+# synthetic stand-in with the same shape. Every place that used to hard-code the client's name or mail
+# domains (app/wa/luna/prompts.py, constitution.json, app/wa/luna_brain.py's greeting check,
+# tools/daria_desk.py's ANSWER_SYSTEM, the email tools' own-domain sets) now reads it from here.
+# "No safety nets" (CLAUDE.md): a missing file, unreadable JSON or a missing/empty "name" raises
+# loudly naming the path -- never a default that could pass for a real client identity.
+_CLIENT_CACHE = {}
+
+
+def client():
+    """-> the parsed client-identity dict ({"name", "own_mail_domains", "partner_mail_domains"}).
+    Path: WA_CLIENT_CONFIG if set, else <repo root>/config/wa-client.json. Cached per path -- a test
+    that points WA_CLIENT_CONFIG elsewhere and monkeypatch.setenv's back gets a fresh read for the
+    new path, not a stale cache entry from the first one."""
+    path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or str(A.ROOT / "config" / "wa-client.json")
+    if path in _CLIENT_CACHE:
+        return _CLIENT_CACHE[path]
+    p = pathlib.Path(path)
+    if not p.exists():
+        raise RuntimeError(
+            f"client config not found at {path!r} -- create it (config/wa-client.example.json shows "
+            f"the shape) or set WA_CLIENT_CONFIG to point at it")
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not str(data.get("name", "")).strip():
+        raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    _CLIENT_CACHE[path] = data
+    return data
 
 
 def readiness():
