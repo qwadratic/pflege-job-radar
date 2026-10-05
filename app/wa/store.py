@@ -9,6 +9,7 @@ Slots are a JSON blob: they are the conversation's memory, and their vocabulary 
 """
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import sys
@@ -280,22 +281,34 @@ create table if not exists wa_rail_snapshot (
   last_error_text text,
   last_error_at text
 );
--- One row per periodic job's run (TASK-283.7's job heartbeats) -- see job_run() below. Only the jobs
--- with no other durable signal of their own are wrapped (catchup, followups, tunnel_watch,
--- purge_test, agent_notes); relay_sync/luna_reply/broadcasts are derived from tables that already
--- exist (wa_rail_sync, wa_luna_calls/wa_reply_turn_claims/wa_inbound_pending, the snapshot's
--- broadcast section) and never write here.
-create table if not exists wa_job_runs (
-  id integer primary key,
-  job text not null,
-  started_at text not null,
-  finished_at text not null,
-  ok integer not null,
-  counts_json text not null default '{}',
-  error_code text,
-  error_text text
+-- One row PER JOB (TASK-283.7's job heartbeats, 2026-10-05 migration off the old append-only
+-- wa_job_runs log -- see _migrate_job_runs_to_job_state below for why: ~3.7k rows/day, mostly
+-- tunnel_watch every 30s, was 1.8 MB of a 2.1 MB prod wa.sqlite after 4 days, Ivan 2026-10-05).
+-- running_since/running_pid describe a run CURRENTLY in flight (both null when none is); a killed
+-- run leaves running_since set rather than clearing it on its own -- see job_run()'s own docstring
+-- for why that is the honest reading, not a bug. last_started_at/last_finished_at/last_ok/
+-- last_ok_at/last_error_code/last_error_at describe the most recently FINISHED run's own outcome
+-- only (never the in-flight one). buckets_json is a JSON object of {"<UTC hour, ISO>": [ok_count,
+-- failed_count]}, holding ONLY the hours inside the trailing 24h -- pruned on every write
+-- (record_job_finished), never grown past ~25 keys. This pruned set IS the 24h window
+-- job_run_summary's own ok_24h/failed_24h sum at READ time, not a row-count cap on top of it
+-- (CLAUDE.md "no safety nets" -- there is nothing here for a budget to silently truncate: an hour
+-- a job never ran in simply has no key). Only the jobs with no other durable signal of their own
+-- are wrapped (catchup, followups, tunnel_watch, purge_test, agent_notes); relay_sync/luna_reply/
+-- broadcasts are derived from tables that already exist (wa_rail_sync, wa_luna_calls/
+-- wa_reply_turn_claims/wa_inbound_pending, the snapshot's broadcast section) and never write here.
+create table if not exists wa_job_state (
+  job text primary key,
+  running_since text,
+  running_pid integer,
+  last_started_at text,
+  last_finished_at text,
+  last_ok integer,
+  last_ok_at text,
+  last_error_code text,
+  last_error_at text,
+  buckets_json text not null default '{}'
 );
-create index if not exists idx_wa_job_runs_job_started on wa_job_runs(job, started_at);
 """
 
 # A prior claim attempt that crashed mid-flight (process killed, box rebooted) must not block an
@@ -371,7 +384,15 @@ def _migrate(c):
               "where import_ref is not null")
     _migrate_agent_notes_autoincrement(c)
     _backfill_thread_ids(c)
-    _backfill_legacy_job_run_error_codes(c)
+    if _migrate_job_runs_to_job_state(c):
+        # Only the process that actually performed the drop reclaims the space (review requirement
+        # -- see _migrate_job_runs_to_job_state's own docstring for the race-safety this depends
+        # on): VACUUM rewrites the whole file, PRAGMA wal_checkpoint(TRUNCATE) flushes AND truncates
+        # the WAL file auto_vacuum=0 (prod's setting) would otherwise leave sitting around. Neither
+        # is wrapped in try/except -- CLAUDE.md "no safety nets": a failure here must be loud, not
+        # a silently-skipped shrink.
+        c.execute("vacuum")
+        c.execute("pragma wal_checkpoint(truncate)")
 
 
 # TASK-303 (Ivan, 2026-09-25, round-1 review, finding A2 -- "correctness of the operator-note state
@@ -575,27 +596,104 @@ def _backfill_thread_ids(c):
     c.commit()
 
 
-#: MINOR-1, 10-05 review: prod's pre-fix build left ~186 wa_job_runs rows with ok=0 and
-#: error_code=null (tunnel_watch, from before job_run() required every ok=False exit to name a
-#: code -- see job_run()'s own RuntimeError guard above). job_run_summary() turns a null code into
-#: {"code": None}, which pro_models.ErrorInfo (code: str) rejects, 500ing GET /api/wa/pro/activity
-#: the day one of these old rows happens to be a job's newest (every job's first new run since the
-#: fix already replaces it as the newest row, but the rows themselves outlive that in wa_job_runs).
-#: This gives every such row an explicit, honest code rather than inventing what actually happened --
-#: "legacy_unrecorded" names exactly what is known (this row predates the fix that would have
-#: recorded a real one), nothing more.
+#: MINOR-1, 10-05 review, superseded by TASK-283.7's own 2026-10-05 migration below: prod's
+#: pre-fix build left ~186 wa_job_runs rows with ok=0 and error_code=null (tunnel_watch, from
+#: before job_run() required every ok=False exit to name a code). job_run_summary() turns a null
+#: code into {"code": None}, which pro_models.ErrorInfo (code: str) rejects, 500ing GET
+#: /api/wa/pro/activity the day one of these old rows happens to be a job's newest. This USED to be
+#: a separate per-db()-open backfill (an UPDATE against wa_job_runs, run every time); that table no
+#: longer exists at all once _migrate_job_runs_to_job_state has run once, so the one place this fix
+#: now lives is that migration's own per-job row build, below -- the constant survives unchanged
+#: ("legacy_unrecorded" names exactly what is known: this row predates the fix that would have
+#: recorded a real one, nothing more) because the migrated wa_job_state row's last_error_code still
+#: needs the exact same honest substitute.
 LEGACY_UNRECORDED_ERROR_CODE = "legacy_unrecorded"
 
 
-def _backfill_legacy_job_run_error_codes(c):
-    """One-time migration (MINOR-1, 10-05 review): every wa_job_runs row with ok=0 and
-    error_code=null gets error_code='legacy_unrecorded'. Idempotent with no marker needed -- the
-    UPDATE's own WHERE clause (error_code is null) matches nothing once it has run, same as
-    _backfill_thread_ids right above. Cheap on every db() call: an indexed-enough WHERE over a table
-    this harness's own retention never lets grow large."""
-    c.execute("update wa_job_runs set error_code=? where ok=0 and error_code is null",
-              (LEGACY_UNRECORDED_ERROR_CODE,))
+def _migrate_job_runs_to_job_state(c):
+    """One-time migration (TASK-283.7, 2026-10-05): the old append-only wa_job_runs log (~3.7k
+    rows/day, mostly tunnel_watch every 30s -- 1.8 MB of a 2.1 MB prod wa.sqlite after 4 days,
+    Ivan 2026-10-05: "job runs - can just extend the record about currently running stuff +
+    migrate (migration must reduce storage space)") becomes exactly one wa_job_state row per job,
+    then the table itself -- and the space it used -- is dropped for good. -> True when THIS call
+    actually performed the drop (the caller then VACUUMs + checkpoints, see _migrate above);
+    False when there was nothing to do (a fresh database that never had wa_job_runs, or another
+    process/thread already finished this exact migration).
+
+    IDEMPOTENT AND RACE-SAFE ACROSS PROCESSES (same two-phase-check discipline as
+    ensure_campaign_schema/_migrate_agent_notes_autoincrement elsewhere in this file): pflege-wa,
+    every cron/timer unit, and the relay all call db() -- and so this function -- and may do so
+    concurrently. The cheap existence check right below (no transaction) makes the steady-state
+    case (already migrated) a single indexed sqlite_master read; only when wa_job_runs might still
+    exist does this take SQLite's write lock (``begin immediate``) and check AGAIN inside it -- a
+    process that loses that race finds the table already gone the moment it gets the lock, and
+    returns False having written nothing, never an error.
+
+    ONE TRANSACTION: build every wa_job_state row, drop the index, drop the table, commit -- or
+    roll back to the completely untouched original on any error, so a crash mid-migration never
+    leaves a half-converted state for the next db() call to see.
+
+    PER JOB (``select distinct job from wa_job_runs`` -- every job name the old table actually
+    holds, not just today's 5 HEARTBEAT_JOBS, in case history has an older or renamed one): the
+    newest row (``started_at`` desc, ``id`` desc) supplies last_started_at/last_finished_at/
+    last_ok; the newest row with ok=1 supplies last_ok_at -- job_run_summary's own OLD meaning,
+    preserved exactly: the STARTED_AT of the latest success, never its finished_at (see
+    record_job_finished's own docstring for why the live write path keeps that same convention
+    going forward, instead of quietly starting to mean something else). When the newest row is a
+    failure, last_error_code is that row's own code, or LEGACY_UNRECORDED_ERROR_CODE when it was
+    null, and last_error_at is that row's own finished_at. Every row within the trailing 24h of
+    THIS MIGRATION's own "now" (not each row's own moment) buckets by its finished_at's UTC hour,
+    ok/failed split -- see _job_state_hour_key/_prune_job_state_buckets.
+
+    running_since/running_pid are always NULL on a migrated row (review's own framing: "rows with
+    finished_at NULL are not 'running' after a restart"): wa_job_runs.finished_at is NOT NULL, so
+    no row could ever represent a run that crashed before writing its own finish -- there is no
+    "still running" state in the old data to carry forward either way. A run genuinely in flight
+    at migration time re-establishes its own running_since the moment THAT process's job_run()
+    next starts, exactly like any other restart."""
+    if c.execute("select 1 from sqlite_master where type='table' and name='wa_job_runs'").fetchone() is None:
+        return False
     c.commit()
+    c.execute("begin immediate")
+    try:
+        if c.execute(
+                "select 1 from sqlite_master where type='table' and name='wa_job_runs'").fetchone() is None:
+            c.commit()   # another process won the race and already finished this -- nothing to do
+            return False
+        cutoff_24h = (datetime.fromisoformat(now_iso()) - timedelta(hours=24)).isoformat()
+        jobs = [r["job"] for r in c.execute("select distinct job from wa_job_runs").fetchall()]
+        for job in jobs:
+            last = c.execute(
+                "select * from wa_job_runs where job=? order by started_at desc, id desc limit 1",
+                (job,)).fetchone()
+            last_ok_row = c.execute(
+                "select started_at from wa_job_runs where job=? and ok=1 order by started_at desc limit 1",
+                (job,)).fetchone()
+            buckets = {}
+            for row in c.execute(
+                    "select finished_at, ok from wa_job_runs where job=? and finished_at>=?",
+                    (job, cutoff_24h)).fetchall():
+                bucket = buckets.setdefault(_job_state_hour_key(row["finished_at"]), [0, 0])
+                bucket[0 if row["ok"] else 1] += 1
+            last_ok = bool(last["ok"])
+            last_error_code = last_error_at = None
+            if not last_ok:
+                last_error_code = last["error_code"] or LEGACY_UNRECORDED_ERROR_CODE
+                last_error_at = last["finished_at"]
+            c.execute(
+                "insert or replace into wa_job_state (job, running_since, running_pid, "
+                "last_started_at, last_finished_at, last_ok, last_ok_at, last_error_code, "
+                "last_error_at, buckets_json) values (?,null,null,?,?,?,?,?,?,?)",
+                (job, last["started_at"], last["finished_at"], int(last_ok),
+                 last_ok_row["started_at"] if last_ok_row else None,
+                 last_error_code, last_error_at, json.dumps(buckets)))
+        c.execute("drop index if exists idx_wa_job_runs_job_started")
+        c.execute("drop table wa_job_runs")
+    except BaseException:
+        c.rollback()
+        raise
+    c.commit()
+    return True
 
 
 def thread_id_for_phone(c, phone):
@@ -2042,8 +2140,8 @@ def rail_snapshot(c):
 
 
 # --- Pro activity rail view (TASK-283.7): job heartbeats -------------------------------------------
-# Only the jobs with no other durable signal are wrapped here -- see the wa_job_runs SCHEMA comment.
-# "nudges" is a listed job key in the shared interface's origin/job enums, but
+# Only the jobs with no other durable signal are wrapped here -- see the wa_job_state SCHEMA
+# comment. "nudges" is a listed job key in the shared interface's origin/job enums, but
 # app.wa.luna.followups IS the proactive-nudge sender (TASK-189) with no separate "followups" pass
 # inside it to record under a second name -- so this wraps it under job="followups" only, matching
 # its own deploy/pflege-wa-followups.timer cadence (900s) one-for-one, and "nudges" is simply never
@@ -2054,104 +2152,228 @@ JOB_PURGE_TEST, JOB_AGENT_NOTES = "purge_test", "agent_notes"
 HEARTBEAT_JOBS = (JOB_CATCHUP, JOB_FOLLOWUPS, JOB_TUNNEL_WATCH, JOB_PURGE_TEST, JOB_AGENT_NOTES)
 
 
-def record_job_run(c, job, started_at, finished_at, ok, counts=None, error_code=None, error_text=None):
+def _job_state_hour_key(iso_ts):
+    """The UTC-hour bucket key for one run's own timestamp -- wa_job_state.buckets_json's keys,
+    "<UTC hour, ISO>" per the SCHEMA comment: the hour component only (minute/second/microsecond
+    zeroed), e.g. "2026-10-05T13:00:00+00:00" for anything between :00:00 and :59:59 that hour.
+    Two runs finishing in the same UTC hour collapse into the same bucket -- this is what keeps
+    buckets_json at O(24) keys per job no matter how often the job runs (tunnel_watch alone is
+    ~2880 runs/day under the OLD per-row wa_job_runs design this replaces)."""
+    dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+    return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0).isoformat()
+
+
+def _prune_job_state_buckets(buckets, as_of_iso):
+    """Drops every hour-bucket older than the trailing 24h window as of ``as_of_iso`` -- run on
+    every write (record_job_finished), so buckets_json always holds ONLY the hours inside that
+    window: at most 25 keys (the current hour plus the 24 before it), ever, regardless of how many
+    runs a job has ever had. This pruned set IS the 24h window job_run_summary's own ok_24h/
+    failed_24h sum at READ time -- a window, never a row-count cap on top of it (CLAUDE.md "no
+    safety nets": an hour a job never ran in simply has no key, nothing is ever truncated to fit a
+    budget)."""
+    cutoff = datetime.fromisoformat(as_of_iso.replace("Z", "+00:00")) - timedelta(hours=24)
+    return {k: v for k, v in buckets.items() if datetime.fromisoformat(k) >= cutoff}
+
+
+def record_job_started(c, job, started_at=None, pid=None):
+    """The START half of job_run()'s heartbeat, callable directly (tools/wa_pro_fixtures.py: a job
+    shown as currently running; tests). A single ON CONFLICT upsert -- atomic on its own, no
+    ``begin immediate`` needed the way record_job_finished's read-modify-write does.
+    running_since/running_pid/last_started_at all move to this call's own values. An overlapping
+    second start of the same job (which none of today's jobs can actually do -- all cron/timer
+    driven, never re-entrant) would overwrite the first start's running_pid; that is exactly why
+    record_job_finished's own pid check exists, see its docstring."""
+    started_at = started_at or now_iso()
+    pid = os.getpid() if pid is None else pid
     c.execute(
-        "insert into wa_job_runs (job, started_at, finished_at, ok, counts_json, error_code, error_text) "
-        "values (?,?,?,?,?,?,?)",
-        (job, started_at, finished_at, int(bool(ok)), json.dumps(counts or {}, ensure_ascii=False),
-         error_code, error_text))
+        "insert into wa_job_state (job, running_since, running_pid, last_started_at, buckets_json) "
+        "values (?,?,?,?,'{}') "
+        "on conflict(job) do update set running_since=excluded.running_since, "
+        "running_pid=excluded.running_pid, last_started_at=excluded.last_started_at",
+        (job, started_at, pid, started_at))
     c.commit()
 
 
+def record_job_finished(c, job, pid, ok, started_at, finished_at, error_code=None):
+    """The FINISH half of job_run()'s heartbeat. ONE ``begin immediate`` transaction (review
+    requirement): the read of running_pid/buckets_json below and the update that follows must not
+    interleave with another finish of the SAME job -- two overlapping runs finishing within the
+    same instant would otherwise race on buckets_json, the second writer's stale read silently
+    dropping the first writer's increment.
+
+    running_since/running_pid are cleared ONLY if running_pid still matches ``pid`` -- an
+    overlapping run of the same job (its own record_job_started having overwritten running_pid in
+    between) must not have ITS still-live running state erased by THIS one's finish. Everything
+    else always moves: last_finished_at to ``finished_at`` unconditionally; last_ok_at (on
+    ``ok``) or last_error_code/last_error_at (on failure) to ``started_at`` -- not ``finished_at``
+    -- the SAME value last_run_at itself reads (job_run_summary), preserving the old
+    wa_job_runs-era meaning of both fields exactly: one run's own started_at, reused for both
+    "when did it run" and "when did it last succeed/fail". The OTHER pair (error vs. ok) is left
+    exactly as it was on the row, same "a later success does not retroactively invent an earlier
+    error, and vice versa" convention job_run_summary's own docstring already states.
+
+    This hour's bucket (keyed by ``finished_at``, see _job_state_hour_key) is incremented and the
+    whole buckets_json is re-pruned to the trailing 24h as of ``finished_at`` (_prune_job_state_
+    buckets) -- using the run's OWN finished_at as "now", not the real wall clock, is what lets a
+    sequence of calls with historical timestamps (tools/wa_pro_fixtures.py, record_job_run below)
+    replay exactly what job_run() would have written if it had actually run at each of those
+    moments."""
+    c.commit()
+    c.execute("begin immediate")
+    try:
+        row = c.execute("select running_pid, buckets_json from wa_job_state where job=?", (job,)).fetchone()
+        buckets = json.loads(row["buckets_json"]) if row and row["buckets_json"] else {}
+        hour_key = _job_state_hour_key(finished_at)
+        bucket = buckets.get(hour_key) or [0, 0]
+        bucket[0 if ok else 1] += 1
+        buckets[hour_key] = bucket
+        buckets = _prune_job_state_buckets(buckets, finished_at)
+        clear_running = bool(row) and row["running_pid"] == pid
+        running_sql = "running_since=null, running_pid=null, " if clear_running else ""
+        if ok:
+            c.execute(f"update wa_job_state set {running_sql}last_finished_at=?, last_ok=1, "
+                      f"last_ok_at=?, buckets_json=? where job=?",
+                      (finished_at, started_at, json.dumps(buckets), job))
+        else:
+            c.execute(f"update wa_job_state set {running_sql}last_finished_at=?, last_ok=0, "
+                      f"last_error_code=?, last_error_at=?, buckets_json=? where job=?",
+                      (finished_at, error_code, started_at, json.dumps(buckets), job))
+    except BaseException:
+        c.rollback()
+        raise
+    c.commit()
+
+
+def record_job_run(c, job, started_at, finished_at, ok, counts=None, error_code=None, error_text=None):
+    """Named writer for seeding a HISTORICAL run outside job_run()'s own live timing (tools/
+    wa_pro_fixtures.py, tests): start then finish wa_job_state's bookkeeping using the GIVEN
+    timestamps instead of now_iso(), so a sequence of calls with increasing finished_at values
+    replays exactly what job_run() would have written if it had actually run at each of those
+    historical moments (including which hour each run's bucket lands in, and which buckets age out
+    by the LAST call's own finished_at). ``counts``/``error_text`` are accepted for call-site
+    compatibility -- every caller before this fix pass passed them -- but neither is persisted:
+    wa_job_state carries no counts_json/error_text column (nothing ever read either back out
+    through either Pro route)."""
+    pid = os.getpid()
+    record_job_started(c, job, started_at=started_at, pid=pid)
+    record_job_finished(c, job, pid, bool(ok), started_at, finished_at, error_code=error_code)
+
+
 class _JobRunRecord:
-    """What ``job_run``'s ``with`` block gets to fill in before the row is written. Defaults to a
-    clean success -- a job whose body never touches these fields records as ok, no counts, no
-    error, which matches every job here that cannot usefully fail short of raising."""
+    """What ``job_run``'s ``with`` block gets to fill in before its heartbeat is written. Defaults
+    to a clean success -- a job whose body never touches these fields records as ok, no counts, no
+    error, which matches every job here that cannot usefully fail short of raising. ``counts`` is
+    kept purely for call-site compatibility (every caller sets it); it is never persisted, see
+    record_job_run's own docstring."""
 
     def __init__(self):
         self.ok = True
         self.counts = {}
         self.error_code = None
-        self.error_text = None
 
 
-def _record_job_run_safe(job, started, rec):
-    """record_job_run, never allowed to replace the job's own exception or exit code (review
-    finding 10, MINOR): a wa_job_runs write that fails (the db locked past its own busy_timeout,
-    disk full) is the HEARTBEAT failing, not the job itself -- logged loudly to stderr (job name
-    + exception) and otherwise swallowed, so job_run's caller always sees the job's own outcome,
-    never this bookkeeping's."""
+def _start_job_run_safe(job, pid, started):
+    """record_job_started, never allowed to block the job's own body from running: a START write
+    that fails (the db locked past its own busy_timeout, disk full) is the HEARTBEAT failing, not
+    the job itself -- same convention as _finish_job_run_safe right below."""
     try:
         with db() as c:
-            record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+            record_job_started(c, job, started_at=started, pid=pid)
     except Exception as exc:
-        print(f"job_run({job!r}): could not record the heartbeat: {type(exc).__name__}: {exc}",
+        print(f"job_run({job!r}): could not record the start heartbeat: {type(exc).__name__}: {exc}",
+             file=sys.stderr)
+
+
+def _finish_job_run_safe(job, pid, started, rec):
+    """record_job_finished, never allowed to replace the job's own exception or exit code (review
+    finding 10, MINOR): a heartbeat write that fails is the HEARTBEAT failing, not the job itself --
+    logged loudly to stderr (job name + exception) and otherwise swallowed, so job_run's caller
+    always sees the job's own outcome, never this bookkeeping's."""
+    try:
+        with db() as c:
+            record_job_finished(c, job, pid, rec.ok, started, now_iso(), error_code=rec.error_code)
+    except Exception as exc:
+        print(f"job_run({job!r}): could not record the finish heartbeat: {type(exc).__name__}: {exc}",
              file=sys.stderr)
 
 
 @contextmanager
 def job_run(job):
-    """Records one wa_job_runs row spanning the wrapped block (TASK-283.7's job heartbeats):
-    started_at now, finished_at when the block exits, ok/counts/error from the yielded recorder.
-    An uncaught exception is recorded too (ok=False, its own type name/str as the error, unless the
-    caller already set one) and then RE-RAISED -- this only observes a job's own entrypoint, it
-    never swallows its failure, so main()'s existing except/return-code handling is unaffected.
+    """Updates this job's ONE wa_job_state row spanning the wrapped block (TASK-283.7's job
+    heartbeats, 2026-10-05 extended to track a run CURRENTLY in flight rather than just append
+    another log row -- Ivan, 2026-10-05): running_since/running_pid/last_started_at at entry;
+    last_finished_at/last_ok/ok-or-error at exit, from the yielded recorder. An uncaught exception
+    is recorded too (ok=False, its own type name as the error, unless the caller already set one)
+    and then RE-RAISED -- this only observes a job's own entrypoint, it never swallows its failure,
+    so main()'s existing except/return-code handling is unaffected.
 
     Deliberately minimal (the task's own instruction: wrap main(), do not restructure): the caller
     wraps the one call that does the real work and sets .ok/.counts on the recorder it gets back;
     everything else in that main() -- argument parsing, printing, the original return code -- stays
     exactly where it was.
 
-    Review finding 1 (BLOCKER): a clean exit with rec.ok left False and no rec.error_code set is a
-    caller bug -- app/wa/pro_models.py's ErrorInfo.code is a required str, so that row would 500
-    the /activity route for as long as it is the job's latest run. CLAUDE.md "no safety nets": this
-    raises loudly here instead of inventing a fallback code or writing the bad row anyway."""
+    Review finding 1 (BLOCKER, still applies): a clean exit with rec.ok left False and no
+    rec.error_code set is a caller bug -- app/wa/pro_models.py's ErrorInfo.code is a required str,
+    so that row would 500 the /activity route for as long as it is the job's latest run. CLAUDE.md
+    "no safety nets": this raises loudly here instead of inventing a fallback code or writing the
+    bad row anyway -- note this means the finish write (and so the running_since/running_pid
+    clear) never happens on this path either: the row is left showing a run that started but never
+    cleanly finished, which is an honest reflection of the caller bug, not a separate gap to patch
+    around."""
     rec = _JobRunRecord()
+    pid = os.getpid()
     started = now_iso()
+    _start_job_run_safe(job, pid, started)
     try:
         yield rec
     except BaseException as exc:
         rec.ok = False
         if rec.error_code is None:
-            rec.error_code = type(exc).__name__
-        if rec.error_text is None:
             # NIT-1, 10-05 review: the class name only, never str(exc) -- an uncaught exception's
             # own message can carry a raw phone or message body (the same class of leak review
-            # finding 2 fixed for error_code), and error_text is never served through either Pro
-            # route anyway (job_run_summary only ever reads error_code). The full traceback is
-            # still there, in the job's own stderr/journal -- this heartbeat row is not that log.
-            rec.error_text = type(exc).__name__
-        _record_job_run_safe(job, started, rec)
+            # finding 2 fixed for error_code). The full traceback is still there, in the job's own
+            # stderr/journal -- this heartbeat row is not that log.
+            rec.error_code = type(exc).__name__
+        _finish_job_run_safe(job, pid, started, rec)
         raise
     if not rec.ok and rec.error_code is None:
         raise RuntimeError(f"job_run({job!r}): rec.ok is False but no rec.error_code was set "
                            "(every ok=False heartbeat must name why)")
-    _record_job_run_safe(job, started, rec)
+    _finish_job_run_safe(job, pid, started, rec)
 
 
 def job_run_summary(c, job):
-    """{"last_run_at","last_ok_at","last_error","ok_24h","failed_24h"} for one heartbeat-recorded job
-    (HEARTBEAT_JOBS), from wa_job_runs -- the "never run yet" shape (every field null/0) when no row
-    exists, never invented. ``last_error`` is the latest run's own error, and only the latest run's:
-    once a run after a failure succeeds, last_error clears -- same convention as wa_rail_sync's
-    record_rail_sync_ok right above, so a resolved alarm does not sit lit forever."""
-    last = c.execute("select * from wa_job_runs where job=? order by started_at desc, id desc limit 1",
-                     (job,)).fetchone()
-    if last is None:
-        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": 0, "failed_24h": 0}
-    last_ok = c.execute("select started_at from wa_job_runs where job=? and ok=1 "
-                        "order by started_at desc limit 1", (job,)).fetchone()
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-    ok_24h = c.execute("select count(*) as n from wa_job_runs where job=? and ok=1 and started_at>=?",
-                       (job, cutoff)).fetchone()["n"]
-    failed_24h = c.execute("select count(*) as n from wa_job_runs where job=? and ok=0 and started_at>=?",
-                           (job, cutoff)).fetchone()["n"]
-    # Review finding 2 (BLOCKER): code only, never error_text -- a job's own exception str() can
+    """{"last_run_at","last_ok_at","last_error","ok_24h","failed_24h","running_since"} for one
+    heartbeat-recorded job (HEARTBEAT_JOBS), from its one wa_job_state row -- the "never run yet"
+    shape (every field null/0) when no row exists, never invented. ``last_error`` is the latest
+    FINISHED run's own error, and only that run's: once a run after a failure succeeds, last_error
+    clears -- same convention as wa_rail_sync's record_rail_sync_ok above, so a resolved alarm does
+    not sit lit forever. ``running_since`` is null whenever no run is currently in flight; a value
+    older than the job's own cadence means that run died or hung without ever reaching
+    job_run()'s finish (a killed process, say) -- the existing overdue computation
+    (app/wa/pro_api.py) is unaffected either way, it reads last_run_at/last_ok_at, never this.
+    ``ok_24h``/``failed_24h`` are summed from buckets_json over the trailing 24h AS OF NOW (read
+    time), via ``datetime.now(timezone.utc)`` same as every other summary function's own cutoff in
+    this file -- deliberately NOT ``now_iso()`` (see _job_state_hour_key/_prune_job_state_buckets'
+    own write-time pruning for why the WRITE side uses the run's own timestamp instead)."""
+    row = c.execute("select * from wa_job_state where job=?", (job,)).fetchone()
+    if row is None:
+        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": 0,
+                "failed_24h": 0, "running_since": None}
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    buckets = json.loads(row["buckets_json"]) if row["buckets_json"] else {}
+    ok_24h = failed_24h = 0
+    for key, counts in buckets.items():
+        if datetime.fromisoformat(key) >= cutoff:
+            ok_24h += counts[0]
+            failed_24h += counts[1]
+    # Review finding 2 (BLOCKER): code only, never free text -- a job's own exception str() can
     # carry whatever the failing call embedded (see upsert_mirrored_op's own docstring for the
     # bridge-side examples); app/wa/pro_models.py's ErrorInfo no longer even HAS a text field.
-    last_error = None if last["ok"] else {"code": last["error_code"]}
-    return {"last_run_at": last["started_at"], "last_ok_at": last_ok["started_at"] if last_ok else None,
-            "last_error": last_error, "ok_24h": ok_24h, "failed_24h": failed_24h}
+    last_error = None if row["last_ok"] in (1, None) else {"code": row["last_error_code"]}
+    return {"last_run_at": row["last_started_at"], "last_ok_at": row["last_ok_at"],
+            "last_error": last_error, "ok_24h": ok_24h, "failed_24h": failed_24h,
+            "running_since": row["running_since"]}
 
 
 # --- Pro activity rail view (TASK-283.7): the derived "luna_reply" job -----------------------------

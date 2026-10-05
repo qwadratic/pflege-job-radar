@@ -697,7 +697,7 @@ SEEDERS = (_seed_test_thread, _seed_escalated_thread, _seed_stuck_thread, _seed_
           _seed_tombstone_thread, _seed_declined_thread, _seed_consented_thread)
 
 
-# --- TASK-283.7: wa_job_runs (the 5 heartbeat jobs, store.HEARTBEAT_JOBS) --------------------------
+# --- TASK-283.7: wa_job_state (the 5 heartbeat jobs, store.HEARTBEAT_JOBS) -------------------------
 
 def _seed_heartbeat_jobs(c, clock):
     """Seeds all 5 of ST.HEARTBEAT_JOBS through real writers: a couple of earlier successful runs
@@ -707,6 +707,11 @@ def _seed_heartbeat_jobs(c, clock):
     their own cadence (app/wa/pro_api.py:JOB_CADENCE_SEC) and so read as NOT overdue; followups'
     last real run is hours stale and reads as overdue -- the honest state of a 15-minute job nobody
     has driven since 09:30, not a second manufactured incident.
+
+    catchup additionally gets a record_job_started with no matching finish (2026-10-05,
+    TASK-283.7's own extension to track a run CURRENTLY in flight): activity.json's own `catchup`
+    row is the one committed fixture with JobRow.running_since actually set, so that field has
+    real coverage too, not just a hand-typed example in the contract doc.
 
     tunnel_watch is the one job seeded through ST.job_run() itself rather than by replaying
     app/wa/tunnel_watch.py::main(): review finding 1 (BLOCKER) now makes job_run() itself raise if
@@ -729,6 +734,11 @@ def _seed_heartbeat_jobs(c, clock):
     ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:51:00+00:00", "2026-09-30T11:51:02+00:00", True)
     ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:54:00+00:00", "2026-09-30T11:54:02+00:00", True)
     ST.record_job_run(c, ST.JOB_CATCHUP, "2026-09-30T11:57:00+00:00", "2026-09-30T11:57:02+00:00", True)
+    # catchup's own NEXT cycle, still in flight when activity.json is captured at _NOW1
+    # (12:00:00) -- cadence is 180s, so 11:59:40 is ordinary scheduling jitter ahead of the next
+    # on-time tick, not a stuck run. last_run_at reads this moment; last_ok_at stays the PRIOR
+    # (finished) run's own 11:57:00, since this one never finishes before capture.
+    ST.record_job_started(c, ST.JOB_CATCHUP, started_at="2026-09-30T11:59:40+00:00", pid=4242)
 
     ST.record_job_run(c, ST.JOB_FOLLOWUPS, "2026-09-30T09:00:00+00:00", "2026-09-30T09:00:03+00:00", True)
     ST.record_job_run(c, ST.JOB_FOLLOWUPS, "2026-09-30T09:30:00+00:00", "2026-09-30T09:30:03+00:00", True)

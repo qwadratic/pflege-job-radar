@@ -526,7 +526,7 @@ class JobRow(_Strict):
     #: broadcasts' only numbers are bridge/broadcast.py::BroadcastRunner's own process-LIFETIME
     #: attempted/errors counters (reset on every bridge restart) -- both were misleading enough
     #: ("ok (24h): 1" for a job that runs ~28k times a day) that showing them as real windowed
-    #: counts was worse than showing nothing. Every HEARTBEAT_JOBS job (wa_job_runs-backed) and
+    #: counts was worse than showing nothing. Every HEARTBEAT_JOBS job (wa_job_state-backed) and
     #: luna_reply (wa_luna_calls/wa_send_failures-backed) still report a real windowed int.
     ok_24h: int | None
     failed_24h: int | None
@@ -535,6 +535,14 @@ class JobRow(_Strict):
     #: anyway): now > last_run_at + 2x the job's own cadence. Null for a job with no fixed cadence
     #: (luna_reply, broadcasts: event-driven, never on a timer) or that has never run at all.
     overdue: bool | None = None
+    #: (TASK-283.7, 2026-10-05) Null when no run of this job is currently in flight. Set only for
+    #: the 5 HEARTBEAT_JOBS (store.job_run_summary's own wa_job_state row) -- the 3 derived jobs
+    #: (relay_sync, luna_reply, broadcasts) have no in-flight concept at all and always read null
+    #: here. A value OLDER than the job's own cadence means that run died or hung without ever
+    #: reaching job_run()'s finish (a killed process, say) -- see docs/wa-pro-activity.md's own
+    #: "running_since" section. This does not change what ``overdue`` means above: overdue still
+    #: reads only last_run_at/last_ok_at.
+    running_since: str | None = None
 
 
 class ActivityResponse(_Strict):

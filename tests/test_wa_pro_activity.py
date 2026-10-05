@@ -103,22 +103,30 @@ def test_activity_reflects_a_recorded_job_run(client):
     assert catchup["enabled"] is True
 
 
-def test_activity_200_on_a_legacy_job_run_row_with_no_code(client):
-    """MINOR-1, 10-05 review: prod wa_job_runs holds ~186 pre-fix tunnel_watch rows with ok=0 and
-    no error_code at all (from before job_run() required every ok=False exit to name one). The
-    startup migration (store._backfill_legacy_job_run_error_codes, a _migrate() step) gives every
-    such row the explicit code "legacy_unrecorded" the next time ANY process opens ST.db() -- in
-    prod that is simply the next cron tick's own db() call; simulated here the same way: insert
-    the old-shaped row directly, then open ST.db() again (the self-heal), then read it back
-    through the real endpoint, as this job's newest row."""
+def test_activity_200_after_migrating_a_legacy_job_run_row_with_no_code(client):
+    """MINOR-1, 10-05 review, superseded 2026-10-05 by the wa_job_runs -> wa_job_state migration
+    (store._migrate_job_runs_to_job_state, TASK-283.7): prod wa_job_runs held ~186 pre-fix
+    tunnel_watch rows with ok=0 and no error_code at all (from before job_run() required every
+    ok=False exit to name one). The migration gives any such row the explicit code
+    "legacy_unrecorded" for its new wa_job_state.last_error_code the moment ANY process next opens
+    ST.db() -- in prod that was simply the next cron tick's own db() call, once, ever. Simulated
+    here by rebuilding what a pre-283.7 database actually looked like (drop the wa_job_state this
+    client fixture's own startup hook already created, recreate the OLD wa_job_runs table by hand,
+    insert the old-shaped row), then opening ST.db() again (the one-time migration), then reading
+    it back through the real endpoint, as this job's newest -- and only -- row."""
     with ST.db() as c:
+        c.execute("drop table wa_job_state")
+        c.execute(
+            "create table wa_job_runs (id integer primary key, job text not null, "
+            "started_at text not null, finished_at text not null, ok integer not null, "
+            "counts_json text not null default '{}', error_code text, error_text text)")
         c.execute(
             "insert into wa_job_runs (job, started_at, finished_at, ok, counts_json, error_code, "
             "error_text) values (?,?,?,?,?,?,?)",
             ("tunnel_watch", "2026-09-15T10:00:00+00:00", "2026-09-15T10:00:00+00:00", 0, "{}",
              None, None))
         c.commit()
-    ST.db()  # the self-heal every later db() open performs
+    ST.db()  # the one-time migration: builds wa_job_state, fixes the null code, drops wa_job_runs
 
     resp = client.get("/api/wa/pro/activity", headers=RH)
     assert resp.status_code == 200

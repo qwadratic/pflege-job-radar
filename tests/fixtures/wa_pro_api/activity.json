@@ -15,10 +15,11 @@
       "job": "catchup",
       "last_error": null,
       "last_ok_at": "2026-09-30T11:57:00+00:00",
-      "last_run_at": "2026-09-30T11:57:00+00:00",
-      "next_run_at": "2026-09-30T12:00:00+00:00",
+      "last_run_at": "2026-09-30T11:59:40+00:00",
+      "next_run_at": "2026-09-30T12:02:40+00:00",
       "ok_24h": 3,
-      "overdue": false
+      "overdue": false,
+      "running_since": "2026-09-30T11:59:40+00:00"
     },
     {
       "enabled": true,
@@ -29,7 +30,8 @@
       "last_run_at": "2026-09-30T09:30:00+00:00",
       "next_run_at": "2026-09-30T09:45:00+00:00",
       "ok_24h": 2,
-      "overdue": true
+      "overdue": true,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -42,7 +44,8 @@
       "last_run_at": "2026-09-30T11:58:00+00:00",
       "next_run_at": "2026-09-30T11:58:30+00:00",
       "ok_24h": 2,
-      "overdue": true
+      "overdue": true,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -53,7 +56,8 @@
       "last_run_at": "2026-09-30T03:00:04+00:00",
       "next_run_at": "2026-10-01T03:00:04+00:00",
       "ok_24h": 1,
-      "overdue": false
+      "overdue": false,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -64,7 +68,8 @@
       "last_run_at": "2026-09-30T11:55:00+00:00",
       "next_run_at": null,
       "ok_24h": 3,
-      "overdue": null
+      "overdue": null,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -75,7 +80,8 @@
       "last_run_at": "2026-09-30T11:55:00+00:00",
       "next_run_at": "2026-09-30T11:55:03+00:00",
       "ok_24h": null,
-      "overdue": true
+      "overdue": true,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -88,7 +94,8 @@
       "last_run_at": "2026-09-30T11:54:02+00:00",
       "next_run_at": null,
       "ok_24h": 1,
-      "overdue": null
+      "overdue": null,
+      "running_since": null
     },
     {
       "enabled": true,
@@ -99,7 +106,8 @@
       "last_run_at": null,
       "next_run_at": null,
       "ok_24h": null,
-      "overdue": null
+      "overdue": null,
+      "running_since": null
     }
   ],
   "queue": {

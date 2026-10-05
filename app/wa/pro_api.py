@@ -627,7 +627,7 @@ def pro_health(request: Request):
 #: */5 line is not this job's real cadence -- the script itself exits 0 before Python ever starts on
 #: most ticks (outside the 09-22 Vienna window, the lock already held, or the sqlite prefilter count
 #: is 0, the ordinary idle case), and none of those gated exits or the script's own guard failures
-#: (claude binary missing, prefilter query itself erroring) ever write a wa_job_runs heartbeat --
+#: (claude binary missing, prefilter query itself erroring) ever write a wa_job_state heartbeat row --
 #: only a real `python -m app.wa.luna.agent_note_worker` invocation does, which happens only when
 #: there is an open note to work. A "300s" cadence read off the cron line would call this job
 #: "overdue" during every ordinary idle stretch (the normal case), which is not a fact this harness
@@ -655,7 +655,11 @@ def _error_info(code):
 def _job_row(job, summary, *, enabled=True):
     """One JobRow dict from a {last_run_at, last_ok_at, last_error, ok_24h, failed_24h} summary
     (store.job_run_summary / store.luna_reply_job_summary / this module's own derived-job
-    summaries below) plus JOB_CADENCE_SEC's own next_run_at/overdue formulas."""
+    summaries below) plus JOB_CADENCE_SEC's own next_run_at/overdue formulas. ``running_since``
+    (TASK-283.7, 2026-10-05) is read with ``.get`` -- only store.job_run_summary's own dict carries
+    it (one wa_job_state row per HEARTBEAT_JOBS job); the 3 derived summaries below have no
+    in-flight concept at all and so are always null here, same as every job before this field
+    existed."""
     cadence = JOB_CADENCE_SEC.get(job)
     last_run_at = summary["last_run_at"]
     next_run_at = overdue = None
@@ -667,7 +671,7 @@ def _job_row(job, summary, *, enabled=True):
     return {"job": job, "enabled": enabled, "last_run_at": last_run_at,
             "last_ok_at": summary["last_ok_at"], "last_error": summary["last_error"],
             "next_run_at": next_run_at, "ok_24h": summary["ok_24h"], "failed_24h": summary["failed_24h"],
-            "overdue": overdue}
+            "overdue": overdue, "running_since": summary.get("running_since")}
 
 
 def _relay_sync_job_summary(c):
@@ -709,7 +713,7 @@ def _broadcasts_job_summary(snapshot):
 
 
 def _job_rows(c, snapshot):
-    """Every JobRow (plan "Data path" #4/#5): the 5 heartbeat-recorded jobs (wa_job_runs,
+    """Every JobRow (plan "Data path" #4/#5): the 5 heartbeat-recorded jobs (wa_job_state,
     store.HEARTBEAT_JOBS) plus the 3 derived ones. "nudges" -- listed among the contract's own job
     keys -- is deliberately never emitted: app.wa.luna.followups IS the proactive-nudge sender
     (TASK-189) in its entirety, with no separate pass to record under a second name; wrapping it

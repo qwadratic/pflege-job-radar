@@ -31,10 +31,18 @@ earlier than the 60s cadence already would; a new-rows cycle before the throttle
 nothing. Both routes only ever read these mirrors —
 never the bridge, never the live phone — so a slow or unreachable bridge never slows a board read.
 `wa_ops_mirror` also carries its own heartbeat, separate from both (see "Freshness semantics" below).
-Five deploy-unit jobs (`catchup`, `followups`, `tunnel_watch`, `purge_test`, `agent_notes`) record their
-own heartbeat row in `wa_job_runs` via `app/wa/store.py:job_run()`; three more (`relay_sync`,
-`luna_reply`, `broadcasts`) are derived read-only from signals that already exist for other reasons
-(no new writes for those three).
+Five deploy-unit jobs (`catchup`, `followups`, `tunnel_watch`, `purge_test`, `agent_notes`) update their
+own ONE row in `wa_job_state` via `app/wa/store.py:job_run()`; three more (`relay_sync`, `luna_reply`,
+`broadcasts`) are derived read-only from signals that already exist for other reasons (no new writes
+for those three). `wa_job_state` replaced an earlier append-only log table, `wa_job_runs` (one row per
+run, ~3.7k rows/day, mostly `tunnel_watch` every 30s — 1.8 MB of a 2.1 MB prod `wa.sqlite` after 4
+days): a 2026-10-05 migration (`app/wa/store.py:_migrate_job_runs_to_job_state`, a `_migrate()` step,
+idempotent and race-safe across the several processes that open this db concurrently) converts every
+job's history into one row — `running_since`/`running_pid` for a run currently in flight, `last_*` for
+the most recently FINISHED run's own outcome, and `buckets_json` (see "`running_since` and
+`buckets_json`" below) for its rolling 24h counts — then drops the old table and reclaims the space
+with `VACUUM`/`PRAGMA wal_checkpoint(TRUNCATE)`. See "Known imprecisions" below for what a pre-migration
+row with no error code becomes.
 
 **Polling.** Every 15s normally, every 5s while the rail tab is open (pflege-fe's own choice, not
 enforced server-side — these routes have no rate limit of their own).
@@ -46,7 +54,8 @@ enforced server-side — these routes have no rate limit of their own).
  rail: {tunnel: {up, since, last_error}, phone: {state, since},
         watcher: {alive, heartbeat_at}, last_sync_at},
  queue: {queued, running, done, failed, other, as_of},
- jobs: [{job, enabled, last_run_at, last_ok_at, last_error, next_run_at, ok_24h, failed_24h, overdue}],
+ jobs: [{job, enabled, last_run_at, last_ok_at, last_error, next_run_at, ok_24h, failed_24h, overdue,
+         running_since}],
  human: {queued, running, done, failed, other, as_of},
  source}
 ```
@@ -183,7 +192,7 @@ here — but unlike the two above, that is the plan, not a mistake to fix.
 
 | job | source | cadence | notes |
 |---|---|---|---|
-| `catchup` | heartbeat (`wa_job_runs`) | 180s | |
+| `catchup` | heartbeat (`wa_job_state`) | 180s | |
 | `followups` | heartbeat | 900s | **also covers `nudges`** — see below |
 | `tunnel_watch` | heartbeat | 30s | |
 | `purge_test` | heartbeat | 86400s | daily 03:00 Europe/Berlin cron; see "Known imprecisions" |
@@ -198,7 +207,7 @@ minutes, but that is the cron tick, not this job's own cadence — the script ex
 ever starts on most ticks (outside the 09:00-22:00 Vienna window, the cross-process lock already
 held, or — the ordinary case — the sqlite prefilter finds nothing to do), and none of those gated
 exits, nor a guard failure (the `claude` binary missing, the prefilter query itself erroring), ever
-writes a `wa_job_runs` heartbeat row. Only a real `python -m app.wa.luna.agent_note_worker`
+updates this job's `wa_job_state` row. Only a real `python -m app.wa.luna.agent_note_worker`
 invocation does, and that happens only when the worker actually picks up an open note and runs it
 to completion. So `last_run_at`/`last_ok_at`/`last_error`/`ok_24h`/`failed_24h` are the same true
 windowed values every other heartbeat job reports — just over a much sparser, demand-driven set of
@@ -213,6 +222,29 @@ that looks for a `nudges` row will never find one; this is a documented omission
 
 `enabled` is `true` on every row, always — no job in this harness has a kill switch in
 `app/wa/config.py`, so there is nothing for this field to ever report as `false`.
+
+**`running_since` and `buckets_json`** (TASK-283.7, 2026-10-05, replacing the old append-only
+`wa_job_runs` log with one `wa_job_state` row per job — Ivan: "job runs - can just extend the record
+about currently running stuff + migrate"). `running_since`/`running_pid` describe a run CURRENTLY in
+flight; `job_run()` (`app/wa/store.py`) sets both at the START of the wrapped block and clears both
+at its FINISH — but ONLY if `running_pid` still names that same process (an overlapping run of the
+same job, which none of today's 5 heartbeat jobs can actually produce, must not erase the OTHER
+run's still-live state). `JobRow.running_since` is `null` whenever no run is in flight. **A
+`running_since` OLDER than the job's own cadence is a signal, not a separate status field**: it
+means that run died or hung without ever reaching `job_run()`'s finish (the process was killed, say)
+— the existing `overdue` flag is unaffected either way (it reads only `last_run_at`/`last_ok_at`,
+never `running_since`), so a caller wanting to flag a stuck run computes that itself from
+`running_since` + the job's own cadence, same table as above.
+
+`last_started_at`/`last_finished_at`/`last_ok`/`last_ok_at`/`last_error_code`/`last_error_at` all
+describe the most recently FINISHED run only — never the in-flight one. `buckets_json` is the
+storage behind `ok_24h`/`failed_24h`: a JSON object of `{"<UTC hour, ISO>": [ok_count,
+failed_count]}` holding ONLY the hours inside the trailing 24h, pruned on every finish. This pruned
+set **is** the 24h window those two fields sum at READ time (`app/wa/store.py:job_run_summary`) —
+not a row-count cap on top of a window, there is nothing here for a budget to silently truncate (an
+hour a job never ran in simply has no key; at most ~25 keys ever, the current hour plus the 24
+before it, however often the job actually runs — `tunnel_watch` alone was ~2880 rows/day under the
+old per-run design).
 
 `next_run_at` = `last_run_at + cadence`; `overdue` (additive, not in the contract's own field list, but
 `pflege-fe` asked for it) = `now > last_run_at + threshold`, where `threshold` is `2×cadence` for
@@ -324,21 +356,27 @@ None of the four is reconstructed or guessed when its underlying row doesn't exi
   would trust least, a number that looks precise and isn't. Both fields are now `Optional[int]`,
   always `null` for these two jobs, rather than a number with a hidden asterisk. The 5 heartbeat jobs
   (`catchup`, `followups`, `tunnel_watch`, `purge_test`, `agent_notes`) are unaffected — they have
-  true windowed counts from `wa_job_runs` and keep reporting a real number.
+  true windowed counts from `wa_job_state`'s own `buckets_json` (see "running_since and
+  buckets_json" below) and keep reporting a real number.
 - **`purge_test`'s `next_run_at` drifts across DST.** Its real schedule is a daily 03:00 Europe/Berlin
   wall-clock cron, not a fixed interval; this API computes `next_run_at` as `last_run_at + 86400s` like
   every other cadence-based job, which can be off by up to an hour around a DST transition. The
   contract's own formula is generic; a timezone-aware special case for this one job was not built.
 - **`nudges` is never a row** — see the `job` table above.
 - **`legacy_unrecorded`: old `tunnel_watch` rows from before this fix pass required a code on every
-  `ok=0` exit** (MINOR-1, 10-05 review). `app/wa/store.py::_backfill_legacy_job_run_error_codes`
-  (a `_migrate()` step, so every `db()` open runs it — idempotent: its `UPDATE ... WHERE error_code
-  is null` matches nothing once it has already run once) gives every `wa_job_runs` row with `ok=0`
-  and no code the explicit code `legacy_unrecorded`, rather than leaving `error_code` null (which
-  `job_run_summary()` would otherwise turn into `{"code": None}`, rejected by `pro_models.ErrorInfo`
-  — a 500 on `GET /api/wa/pro/activity` the day one of these old rows happens to be a job's newest).
-  Seeing `legacy_unrecorded` on a job row only ever means "this row predates the fix"; it carries no
-  information about what actually went wrong on that old run, because none was ever recorded.
+  `ok=0` exit** (originally MINOR-1, 10-05 review; superseded 2026-10-05 by the `wa_job_runs` →
+  `wa_job_state` migration below). `app/wa/store.py::_migrate_job_runs_to_job_state` (a `_migrate()`
+  step, idempotent and race-safe across the several processes that open this db concurrently — see
+  its own docstring) gives any migrated job whose newest `wa_job_runs` row was `ok=0` with no code
+  the explicit code `legacy_unrecorded` for its new `wa_job_state.last_error_code`, rather than
+  leaving it null (which `job_run_summary()` would otherwise turn into `{"code": None}`, rejected by
+  `pro_models.ErrorInfo` — a 500 on `GET /api/wa/pro/activity`). This USED to be a separate
+  backfill re-run on every `db()` open (`_backfill_legacy_job_run_error_codes`, now removed); once
+  the migration has run — once, ever, per database — there is no `wa_job_runs` row left for a
+  repeat backfill to find, so the fix now lives entirely in the migration's own per-job row build.
+  Seeing `legacy_unrecorded` on a job row only ever means "this row's history predates the fix"; it
+  carries no information about what actually went wrong on that old run, because none was ever
+  recorded.
 - **A ledger reset with nothing open in the mirror at that exact moment has no signal to catch**
   (review finding 11, NIT). The reset detector (`ledger_position_reset`, see "Freshness semantics"
   above — not in the `error.code` table, since neither it nor `bridge_no_ops_route` is ever served
@@ -361,8 +399,8 @@ state (tunnel up); `activity_tunnel_down.json` is the same engine a little later
 unreachable (`tunnel.up: false`, an `since`/`last_error`, and `snapshot_at` left stale rather than
 blanked — `write_rail_snapshot`'s own rule). `ops.json` is the first page of the ops mirror (newest
 first); `ops_page2.json` is the next page via `before_id`, showing the cursor shape. All four are
-seeded through the real engine-side writers (`ST.job_run`, `ST.upsert_mirrored_op`,
-`ST.write_rail_snapshot`, `ST.record_rail_sync_ok`/`record_rail_sync_error`,
+seeded through the real engine-side writers (`ST.job_run`/`ST.record_job_run`/`ST.record_job_started`,
+`ST.upsert_mirrored_op`, `ST.write_rail_snapshot`, `ST.record_rail_sync_ok`/`record_rail_sync_error`,
 `ST.record_luna_call`/`record_send_failure`) with fake bridge `/v1/ops` and `/v1/health` payloads
 shaped like `bridge/ledger.py`'s and `bridge/executor.py`'s own real ones, never a raw INSERT or a
 hand-typed response body — the hand-written versions these replaced had already drifted from the
@@ -371,6 +409,9 @@ where the bridge's own code says "...was in flight"). All four are validated aga
 `app/wa/pro_models.py` on every run by `tests/test_wa_pro_fixtures.py`, and checked byte-identical
 to a fresh generator run by `tests/test_wa_pro_fixtures_generated.py`, the same way `threads.json`
 is, so none of the eight committed fixture files can silently drift from this contract.
+`activity.json` also carries one job (`catchup`) with `running_since` set — `ST.record_job_started`
+called directly, right after that job's own last finished run, never finished again before the
+fixture is captured — so `JobRow.running_since` has committed coverage too (TASK-283.7, 2026-10-05).
 
 **Review finding 6's own fixture repro, fixed in place.** `ops.json` used to show `origin=broadcast`
 and `origin=nudges` on two rows — neither has a real phone_ops-emitting code path (`broadcast` runs

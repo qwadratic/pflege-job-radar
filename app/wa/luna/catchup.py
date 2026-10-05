@@ -102,8 +102,9 @@ def main(argv=None):
 
     phones = [p.strip() for p in args.phones.split(",") if p.strip()] if args.phones else None
     # TASK-283.7: the job heartbeat wraps only this call (not argument parsing/printing) -- ST.job_run
-    # records one wa_job_runs row for the whole pass, failing=true when any message errored, so an
-    # exception inside run() itself is recorded (and re-raised) too, never silently swallowed.
+    # updates this job's one wa_job_state row for the whole pass, failing=true when any message
+    # errored, so an exception inside run() itself is recorded (and re-raised) too, never silently
+    # swallowed.
     with ST.job_run(ST.JOB_CATCHUP) as jr:
         results = run(phones=phones)
         errors = sum(1 for r in results if r["status"] == "error")
