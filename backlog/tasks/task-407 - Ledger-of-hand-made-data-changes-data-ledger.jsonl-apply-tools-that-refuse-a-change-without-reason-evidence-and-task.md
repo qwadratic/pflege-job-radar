@@ -40,7 +40,7 @@ Backfill (122 lines, marked backfilled=true, times reconstructed from backups): 
 First real use (Ivan approved 7 items 2026-09-29, 'да давай по всем да'): registry task169 (10 rows, 17 lines), task170 (12 rows, 21 lines; RH2843 ats_type no-op not logged), task171 (1 row, 1 line); postings: 9 retires + 1 relink (20 lines). All read back OK. Ledger total 181 lines. Matching CSV patches applied to data/registry/clinics.csv so a CSV re-push cannot revert them (until the CSV is removed, see the follow-up task).
 Side finding: CSV vs DB already disagree on rows nobody touched today (e.g. 16291 TUM careers_url/ats_type blank in CSV, set in DB; 57707 and 66104 beds 0 in CSV, NULL in DB) -- evidence for the CSV-removal task.
 
-2026-10-05: renumbered from TASK-174 by backlog doctor --fix (two tasks had the ID TASK-174). A mention of TASK-174 in a task text written before this date may mean this task, not the one that kept TASK-174.
+2026-10-05: renumbered from TASK-414 by backlog doctor --fix (two tasks had the ID TASK-414). A mention of TASK-414 in a task text written before this date may mean this task, not the one that kept TASK-414.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -1,5 +1,5 @@
 ---
-id: TASK-198
+id: TASK-426
 title: >-
   Store inbound WhatsApp document originals on disk, linked to the candidate in
   the DB
@@ -17,7 +17,7 @@ ordinal: 95000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan 2026-09-14: keep the original files candidates send (CV, Urkunde, photos), not only extracted text, and connect them to the person. Today app/wa/api.py:_ingest_media downloads the media, keeps only extracted text on the card (cv_text/urkunde_text, overwritten by the next upload) and throws the bytes away; the media_id is not stored anywhere either, so a lost original cannot be re-fetched later. A single document_type/certificate_level card field is also overwritten per upload, so the harness cannot tell which document types a candidate has sent so far -- TASK-199 (CV + qualification document both required) needs that per-document record. Files are real candidate PII.
+Ivan 2026-09-14: keep the original files candidates send (CV, Urkunde, photos), not only extracted text, and connect them to the person. Today app/wa/api.py:_ingest_media downloads the media, keeps only extracted text on the card (cv_text/urkunde_text, overwritten by the next upload) and throws the bytes away; the media_id is not stored anywhere either, so a lost original cannot be re-fetched later. A single document_type/certificate_level card field is also overwritten per upload, so the harness cannot tell which document types a candidate has sent so far -- TASK-427 (CV + qualification document both required) needs that per-document record. Files are real candidate PII.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -49,7 +49,7 @@ Implemented (2026-09-14):
 - app/wa/store.py: wa_documents table + idx_wa_documents_phone; record_document (commits at once), set_document_text, set_document_classification, documents_for.
 - app/wa/api.py: _store_original (media_url + download_media -> _write_original -> record_document) runs in _handle_one for every media kind, both brains, right after record_inbound and before the stopped check / ack / extraction. _write_original: <dir>/<phone digits>/<UTC %Y%m%dT%H%M%S%fZ>-<media id alphanumerics><ext>; dirs chmod 0700, mkstemp 0600, fsync, os.link (atomic no-clobber, FileExistsError) instead of os.replace (which overwrites). _suffix_for now takes only a trailing 1-5 char alnum extension from the WhatsApp filename (lowercased), else _MIME_SUFFIX (extended with WhatsApp audio/video/office types), else .bin -- same helper feeds the vision temp file. _ingest_media(c, t, m, doc) extracts from the stored blob, writes text/text_key then document_type/certificate_level onto the row; card behaviour unchanged; _extract_media_text unchanged. Media inbound wa_messages.meta also carries media_id/media_mime_type/media_filename so a failed download stays re-fetchable.
 - GET /api/wa/threads?phone= adds documents = documents_for minus text.
-- Tests: tests/test_wa_media_intake.py (TASK-198 section + updated audio/video/deterministic/extraction-failure tests), tests/test_wa_harness.py (FakeMeta media methods, DOCUMENTS_DIR fixture).
+- Tests: tests/test_wa_media_intake.py (TASK-426 section + updated audio/video/deterministic/extraction-failure tests), tests/test_wa_harness.py (FakeMeta media methods, DOCUMENTS_DIR fixture).
 - docs/whatsapp.md: Documents section; status line, Files bullet, POST order, threads route row, env block, TASK-81 paragraph updated.
 - Smoke: synthetic data/wa_test_docs jpgs through handle_payload (deterministic, drafts, fake Meta, tmp SQLite/DOCUMENTS_DIR): files 0600, sha256 matches, '../../' filename stored as data only.
 
@@ -58,17 +58,17 @@ Full offline suite: 1191 passed, 126 skipped, 18 deselected (exit 0). data/wa_do
 Review fixes 2026-09-14 (fixer):
 - vision-cli-cwd-reads-stored-originals: app/cv.py VisionClient._live_call now runs with cwd = the single-file temp dir (same dir as --add-dir) and --no-session-persistence, so no per-call ~/.claude/projects/<tmp> transcript is written. Before, the cwd was the service's repo root, which holds data/wa_documents/. cv.py comment corrected; docs PII paragraph names who can read the originals. Test: tests/test_cv_intake.py asserts cwd and the flag. Live llm vision test passed and created no project dir.
 - threads-endpoint-unauthenticated-on-8502: app/wa/asgi.py calls app.auth.install(app). Test (tests/test_wa_media_intake.py): with no session, GET /api/wa/threads (also ?phone=) and /api/wa/ownership return 401; /api/wa/health and /healthz return 200; a signed webhook POST returns 200; with an owner session cookie, 200. After the next pflege-wa restart, reading threads on 8502 needs an owner session cookie from the board login (8502 has no login route). Docs updated.
-- Shared with TASK-199: the ingest result is saved before the reply attempt, and catch-up skips media turns whose file is not on the card yet (see TASK-199 notes).
+- Shared with TASK-427: the ingest result is saved before the reply attempt, and catch-up skips media turns whose file is not on the card yet (see TASK-427 notes).
 Offline suite: 1270 passed, 126 skipped, 26 deselected.
 
 Repair round 1 (2026-09-14, verifier findings):
 - stored-extension-from-filename (AC3 wording): api._store_original now names the original with _mime_suffix(mime_type) only (_MIME_SUFFIX, else .bin). '../../evil.sh' as application/pdf is stored .pdf, 'run.sh' with no mime .bin. _suffix_for (filename extension first) now feeds only the vision temp file. Tests: hostile-filename matrix updated (+2 cases: scan.jpeg/octet-stream -> .bin, run.sh/no mime -> .bin), _mime_suffix asserted. docs/whatsapp.md Where line updated.
-- Not changed (open questions for Ivan): no retry/re-read of a stored original after a failed download/vision/classification (thread stays stuck_reply); no retention/deletion of data/wa_documents, STOP deletes nothing; pflege-wa.service still runs pre-TASK-198 code until someone restarts it.
-Offline suite after repair: see TASK-199 note.
+- Not changed (open questions for Ivan): no retry/re-read of a stored original after a failed download/vision/classification (thread stays stuck_reply); no retention/deletion of data/wa_documents, STOP deletes nothing; pflege-wa.service still runs pre-TASK-426 code until someone restarts it.
+Offline suite after repair: see TASK-427 note.
 
 Repair round 2 (2026-09-14, final-verifier findings):
 - deterministic audio/video coverage (AC5): tests/test_wa_media_intake.py::test_deterministic_brain_audio_and_video_are_stored_and_acked (audio/ogg -> .ogg, video/mp4 -> .mp4; row kind/mime/text null, bytes on disk, flat ack). Only luna audio/video had a test before.
-- Not changed (open questions for Ivan): on the deterministic brain the flat media ack now needs a successful Meta download first; a failed download fails the whole webhook turn loudly (before TASK-198 the ack still went out). No retry/re-ingest from the stored original after a failed download/vision/classification: record_inbound already committed, so Meta's redelivery is a duplicate and catch-up reports media_not_ingested; the thread stays stuck_reply. No retention/deletion for data/wa_documents, STOP deletes nothing. Mixed versions until pflege-wa.service restarts: the webhook runs pre-TASK-198 code (no wa_documents rows) while the catch-up/follow-up timers load the new tree, so a luna document/image turn the old webhook fails to answer is skipped by catch-up as media_not_ingested.
+- Not changed (open questions for Ivan): on the deterministic brain the flat media ack now needs a successful Meta download first; a failed download fails the whole webhook turn loudly (before TASK-426 the ack still went out). No retry/re-ingest from the stored original after a failed download/vision/classification: record_inbound already committed, so Meta's redelivery is a duplicate and catch-up reports media_not_ingested; the thread stays stuck_reply. No retention/deletion for data/wa_documents, STOP deletes nothing. Mixed versions until pflege-wa.service restarts: the webhook runs pre-TASK-426 code (no wa_documents rows) while the catch-up/follow-up timers load the new tree, so a luna document/image turn the old webhook fails to answer is skipped by catch-up as media_not_ingested.
 
 Validation 2026-09-14 (after 4-lens review + adversarial verify + 2 repair rounds): full offline suite 1281 passed, 126 skipped. Live ingest smoke (real claude vision + classify, fake Meta, temp DB/dir): synthetic CV + Urkunde stored 0600 at recorded absolute paths, sha256 match, filename '../../Lebenslauf.jpg' kept as data only. Review additions kept: VisionClient runs with cwd=temp dir + --no-session-persistence; app/wa/asgi.py now installs app.auth middleware (GET /api/wa/threads and /ownership need an owner session on 8502; no login route on 8502) -- flagged to Ivan as an operational decision. NOT deployed: pflege-wa.service still runs code from 2026-09-13 20:12 UTC; restart is Ivan's call. Open: retention/deletion policy, re-ingest from stored original after failed extraction, stopped-thread downloads, Meta sha256 check, LLMClient (classify) still writes session transcripts with document text.
 

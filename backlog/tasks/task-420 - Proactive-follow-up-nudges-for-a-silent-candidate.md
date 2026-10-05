@@ -1,5 +1,5 @@
 ---
-id: TASK-189
+id: TASK-420
 title: Proactive follow-up nudges for a silent candidate
 status: Done
 assignee: []
@@ -31,7 +31,7 @@ Real system re-engages a candidate who has gone silent after our last message, a
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-app/wa/store.py: wa_followups_sent(phone, tier, sent_at) + record_followup_sent/followup_tiers_sent_since/candidate_phones. app/wa/config.py: WA_FOLLOWUP_TIERS_MINUTES (default 15,60,240), WA_MAX_FOLLOWUPS_PER_STREAK (default 4), WA_FOLLOWUP_NUDGE_DE. app/wa/luna/followups.py: run()/main() -- eligibility is ball_for()=='them' + not stopped + _eligible_tier() (tiers fire strictly in order, one at a time, streak derived from followups sent since the candidate's own last message so a reply naturally resets it without a drift-prone counter). Sends go through api.send_and_record() (renamed from _send_and_record -- a second real caller outside api.py made the underscore-prefix wrong), so the TASK-174 window gate applies automatically. 11 new tests, two real test-authoring bugs caught and fixed while writing them (a wamid collision between a manually-inserted row and the fake client's own counter; a chronologically-backward timestamp setup that silently disproved the reset test it was supposed to prove). Offline suite: 1133 passed, same 5 pre-existing unrelated failures.
+app/wa/store.py: wa_followups_sent(phone, tier, sent_at) + record_followup_sent/followup_tiers_sent_since/candidate_phones. app/wa/config.py: WA_FOLLOWUP_TIERS_MINUTES (default 15,60,240), WA_MAX_FOLLOWUPS_PER_STREAK (default 4), WA_FOLLOWUP_NUDGE_DE. app/wa/luna/followups.py: run()/main() -- eligibility is ball_for()=='them' + not stopped + _eligible_tier() (tiers fire strictly in order, one at a time, streak derived from followups sent since the candidate's own last message so a reply naturally resets it without a drift-prone counter). Sends go through api.send_and_record() (renamed from _send_and_record -- a second real caller outside api.py made the underscore-prefix wrong), so the TASK-414 window gate applies automatically. 11 new tests, two real test-authoring bugs caught and fixed while writing them (a wamid collision between a manually-inserted row and the fake client's own counter; a chronologically-backward timestamp setup that silently disproved the reset test it was supposed to prove). Offline suite: 1133 passed, same 5 pre-existing unrelated failures.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

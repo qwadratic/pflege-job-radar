@@ -67,7 +67,7 @@ calls -- `BRIDGE_PUBLIC_BASE_URL=https://jobs.bewerbung-pflege.work` per
 serves that hostname before editing):
 
 ```nginx
-# Meta WhatsApp webhook -- routed through our harness first (app/wa/router.py, TASK-188), which
+# Meta WhatsApp webhook -- routed through our harness first (app/wa/router.py, TASK-419), which
 # decides per-message whether we answer or forward to the real system's own internal address
 # (127.0.0.1:8816, untouched, still running). Must be `location =` (exact match) so it takes
 # precedence over the broader /candidate-action/ prefix block below it, without touching that
@@ -265,7 +265,7 @@ that has a session id -- the conversation would stay readable on disk. The job n
 ## Known gaps going into this rollout (not blockers, but real)
 
 - No Meta-approved reopen template registered (`WA_REOPEN_TEMPLATE_NAME` unset) -- a thread that
-  goes >24h without a reply from us fails loudly instead of sending (TASK-174). Low risk at
+  goes >24h without a reply from us fails loudly instead of sending (TASK-414). Low risk at
   launch (webhook-driven replies are synchronous, so the window is fresh at send time) but will
   matter once catch-up/follow-ups start reaching an older thread.
 - `WA_REAL_SYSTEM_PHONES_FILE` only updates hourly (`known-phones-export.timer`) -- a phone that

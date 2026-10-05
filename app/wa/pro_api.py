@@ -716,7 +716,7 @@ def _job_rows(c, snapshot):
     """Every JobRow (plan "Data path" #4/#5): the 5 heartbeat-recorded jobs (wa_job_state,
     store.HEARTBEAT_JOBS) plus the 3 derived ones. "nudges" -- listed among the contract's own job
     keys -- is deliberately never emitted: app.wa.luna.followups IS the proactive-nudge sender
-    (TASK-189) in its entirety, with no separate pass to record under a second name; wrapping it
+    (TASK-420) in its entirety, with no separate pass to record under a second name; wrapping it
     once under job="followups" (store.py's own job_run heartbeat) already covers the only nudge
     code path this harness has. docs/wa-pro-activity.md states this omission explicitly."""
     rows = [_job_row(job, ST.job_run_summary(c, job)) for job in ST.HEARTBEAT_JOBS]

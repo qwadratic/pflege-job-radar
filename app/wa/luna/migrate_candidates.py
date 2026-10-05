@@ -1,4 +1,4 @@
-"""Migrate real candidates into this harness's own wa_threads (TASK-175) -- idempotent, from a
+"""Migrate real candidates into this harness's own wa_threads (TASK-415) -- idempotent, from a
 generic JSON export an operator produces from wherever their real candidate data actually lives.
 This module never queries any specific external system directly (same discipline as
 external_contacts.py, TASK-173): it only knows the shape below, which any operator's own export

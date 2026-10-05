@@ -6,7 +6,7 @@ an unmet promise and routing.py refuses to route anything at all (by design -- s
 docstring).
 
 Same genericize-the-real-system discipline as app/wa/luna/external_contacts.py (TASK-173) and
-app/wa/luna/migrate_candidates.py (TASK-175): this module never names or hardcodes any specific
+app/wa/luna/migrate_candidates.py (TASK-415): this module never names or hardcodes any specific
 external system's schema, table, or column names. It knows nothing about where the operator's
 data actually lives -- the operator supplies the exact SQL query themselves (``--query``), and this
 module only ever reads the first column of each row it gets back. Nothing here is a description of

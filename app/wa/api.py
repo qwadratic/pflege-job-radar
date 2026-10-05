@@ -11,9 +11,9 @@ Order of business on an inbound POST (TASK-341), and the reason for each step:
    on the event loop; steps 1-4 run in the threadpool, so a slow turn never stalls /wa/health or a
    concurrent webhook;
 5. the worker (``drain_pending`` -> ``finish_inbound``) takes each phone's pending messages oldest first:
-   arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-198,
+   arrival bookkeeping; media: store the original under C.DOCUMENTS_DIR (``_store_original``, TASK-426,
    both brains, stopped threads too); a WA_BRAIN=luna document/image is read and classified onto the card
-   before the brain runs (``_ingest_media``, TASK-327/TASK-199); a WA_BRAIN=luna voice note (audio, or a document
+   before the brain runs (``_ingest_media``, TASK-327/TASK-427); a WA_BRAIN=luna voice note (audio, or a document
    with an audio mime type) is transcribed and the transcript is the turn's text (``_transcribe_voice_note``,
    TASK-210); video, and every kind on the deterministic brain, get the flat ``MEDIA_REPLY`` ack; decide the
    reply (app/wa/brain.py or app/wa/luna_brain.py, picked in config.py); send, then write the outbound rows;
@@ -275,12 +275,12 @@ _MIME_SUFFIX = {"image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", 
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx"}
 
 # The only part of an untrusted WhatsApp filename that may reach a path: the vision temp file's extension
-# (_suffix_for). A stored original never uses it (TASK-198 review, _mime_suffix).
+# (_suffix_for). A stored original never uses it (TASK-426 review, _mime_suffix).
 _SAFE_EXTENSION = re.compile(r"\.([A-Za-z0-9]{1,5})\Z")
 
 
 def _mime_suffix(mime_type):
-    """The stored original's extension (TASK-198): the mime type's from _MIME_SUFFIX, else .bin."""
+    """The stored original's extension (TASK-426): the mime type's from _MIME_SUFFIX, else .bin."""
     return _MIME_SUFFIX.get((mime_type or "").split(";")[0].strip().lower(), ".bin")
 
 
@@ -296,8 +296,8 @@ def _suffix_for(filename, mime_type):
 
 def _write_original(phone, media_id, blob, suffix):
     """-> absolute path of ``blob`` stored as <C.DOCUMENTS_DIR>/<phone digits>/<UTC timestamp>-<media
-    id alphanumerics><suffix> (TASK-198). No part of the WhatsApp filename is used: the caller passes
-    ``_mime_suffix`` (TASK-198 review: '../../evil.sh' used to be stored as '.sh').
+    id alphanumerics><suffix> (TASK-426). No part of the WhatsApp filename is used: the caller passes
+    ``_mime_suffix`` (TASK-426 review: '../../evil.sh' used to be stored as '.sh').
 
     Directories are chmod 0700, the file is mkstemp's 0600. Written to a temp file in the same
     directory, then hard-linked to its name: the name never shows a half-written file, and unlike
@@ -325,7 +325,7 @@ def _write_original(phone, media_id, blob, suffix):
 def _store_original(c, m, client=None):
     """Download one inbound media message (Meta's two-step media API, app/wa/meta.py:Client.media_url/
     download_media), store the original bytes (``_write_original``) and link them to the phone and
-    wamid with a wa_documents row (TASK-198). Every media kind, both brains, before any extraction --
+    wamid with a wa_documents row (TASK-426). Every media kind, both brains, before any extraction --
     a failed extraction still leaves the original stored and linked.
 
     -> {"id": wa_documents row id, "blob": bytes, "mime_type": ...}. Raises loudly on any failure (bad
@@ -345,7 +345,7 @@ def _store_original(c, m, client=None):
 def _extract_media_text(kind, blob, filename, mime_type):
     """-> the file's text. A document with its own text layer is read directly (extract_text); a
     bare image, or a scanned PDF with no text layer, goes through the vision path. Which card key the
-    text lands on is decided by the classification, not by this method (TASK-199, ``_ingest_media``).
+    text lands on is decided by the classification, not by this method (TASK-427, ``_ingest_media``).
     """
     mt = (mime_type or "").split(";")[0].strip().lower()
     is_pdf = (filename or "").lower().endswith(".pdf") or mt == "application/pdf" or blob[:5] == b"%PDF-"
@@ -357,9 +357,9 @@ def _extract_media_text(kind, blob, filename, mime_type):
     return text
 
 
-# TASK-199: the card key a file's text lands on, by classify_document()'s document_type. Any other
+# TASK-427: the card key a file's text lands on, by classify_document()'s document_type. Any other
 # type (auslaendisches_diplom/aufenthaltstitel/dienstplan/other) touches neither key -- its text stays on
-# the wa_documents row only. A key's text is appended to, never replaced (TASK-199 review: a two-page CV
+# the wa_documents row only. A key's text is appended to, never replaced (TASK-427 review: a two-page CV
 # sent as two photos, or a Defizitbescheid then a helfer certificate, lost the earlier file's text, and
 # handle_payload feeds only these card keys to CV.analyse_candidate at consent).
 _CARD_TEXT_KEY = {"lebenslauf": "cv_text", "urkunde": "urkunde_text", "defizitbescheid": "urkunde_text"}
@@ -395,13 +395,13 @@ def _ingest_media(c, t, m, doc):
     Luna card, for WA_BRAIN=luna threads only -- the caller (_handle_one) keeps the deterministic
     brain's flat media ack completely separate from this path.
 
-    Card effects (TASK-199): the text is appended to ``_CARD_TEXT_KEY[document_type]`` (cv_text/urkunde_text,
+    Card effects (TASK-427): the text is appended to ``_CARD_TEXT_KEY[document_type]`` (cv_text/urkunde_text,
     or no key); document_type/certificate_level stay the latest file's (prompts.py DOCUMENT TYPE);
     ``documents`` gains {id, document_type, certificate_level} -- the list luna_brain's documents gate
     reads, no text and no path since the card goes to the model; ``_documents_just_received`` gains the
     same summary, popped by luna_brain.turn() on the reply turn so the model can tell a file arrived
     even when it is the wrong type. The wa_documents row gets the text, then the classification and
-    text_key (TASK-198).
+    text_key (TASK-426).
 
     A file with no readable text lands as document_type UNREADABLE (no text key, counts for no gate), so the
     reply turn tells the candidate. Raises loudly on any other failure -- a failed vision call, a failed
@@ -705,7 +705,7 @@ def finish_inbound(c, m, client=None, origin=None):
 
     - arrival bookkeeping is derived from the message row (``_note_arrival``), never incremented twice;
     - media runs under the claim ``media:<wamid>``: no wa_documents row yet -> download with the media_id
-      kept in meta and store the original (TASK-198); a WA_BRAIN=luna document/image not on the saved card
+      kept in meta and store the original (TASK-426); a WA_BRAIN=luna document/image not on the saved card
       yet -> read and classify it (from the bytes just downloaded, or the stored original re-read and
       checked against its sha256) and save the card before the claim is released; a WA_BRAIN=luna voice
       note not transcribed yet -> transcribe it the same way (TASK-210), the transcript stored on its
@@ -748,7 +748,7 @@ def finish_inbound(c, m, client=None, origin=None):
         ST.finish_reply_turn_claim(c, phone, media_key, "media_done")
 
     if dirty:
-        # TASK-199 review: bookkeeping and ingest are saved before the reply attempt, so a brain or Meta
+        # TASK-427 review: bookkeeping and ingest are saved before the reply attempt, so a brain or Meta
         # failure below does not lose them; the retry starts from this card.
         ST.save_thread(c, t)
     if t["stopped"]:
@@ -946,7 +946,7 @@ def _route_agent_note(c, t, m, text, client=None, origin=None):
 
 # process_owed_turn statuses that leave ``t`` untouched. The caller skips its save: on claimed_elsewhere
 # the other process (webhook or catch-up) saves its own copy, and an earlier copy written over it lost
-# last_outbound_at and _session_id (TASK-199 review).
+# last_outbound_at and _session_id (TASK-427 review).
 TURN_NOT_RUN = ("claimed_elsewhere", "rate_limited")
 # finish_inbound statuses after which the message still owes work: another process holds it, or the rate
 # cap deferred the turn. Every other status finishes its wa_inbound_pending row (TASK-341).
@@ -959,7 +959,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None, origin=None)
     ``turn_key`` = the message that just arrived) and ``app/wa/luna/catchup.py`` (TASK-332,
     ``turn_key`` = the last inbound message a thread is still owed a reply for) -- both must reach
     exactly one reply attempt per inbound message, never two, so both go through the same claim
-    (``ST.claim_reply_turn``, TASK-181) instead of duplicating this logic.
+    (``ST.claim_reply_turn``, TASK-416) instead of duplicating this logic.
 
     ``origin`` (TASK-283.7): which of those two callers this is, passed straight through to
     ``send_and_record`` so the phone rail's own queue can tell a live reply from a re-drive.
@@ -1005,7 +1005,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None, origin=None)
     if d is None:
         if C.BRAIN == "luna" and C.LUNA_MAX_CALLS_PER_HOUR > 0 and \
                 ST.count_recent_luna_calls(c, t["phone"]) >= C.LUNA_MAX_CALLS_PER_HOUR:
-            # The message stays recorded and the claim is left in a reclaimable state (TASK-181) --
+            # The message stays recorded and the claim is left in a reclaimable state (TASK-416) --
             # the catch-up driver (TASK-332) is what actually answers it once the window rolls over.
             ST.finish_reply_turn_claim(c, t["phone"], turn_key, "skipped_rate_cap")
             return {"status": "rate_limited"}
@@ -1076,7 +1076,7 @@ def process_owed_turn(c, t, text, button_id, turn_key, client=None, origin=None)
 
 
 def _freeform_window_open(t):
-    """Meta's own policy, not this repo's choice (TASK-174): free-form text is only deliverable
+    """Meta's own policy, not this repo's choice (TASK-414): free-form text is only deliverable
     within C.FREEFORM_WINDOW_HOURS of the candidate's last message. No message from the candidate
     ever (last_inbound_at unset, e.g. a campaign recipient who never replied) means no window at all
     (TASK-204): Meta does not deliver free text there. Every reply path sets last_inbound_at before it
@@ -1126,7 +1126,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None, origi
     the reason recorded on the row (``meta.scope_refusal``) so it reads differently from an ordinary
     AUTOSEND-off draft.
 
-    The free-form-vs-template choice (TASK-174) is made here, in code, never by the brain: whichever
+    The free-form-vs-template choice (TASK-414) is made here, in code, never by the brain: whichever
     brain ran still decides *what* to say and produces bubbles normally, but if the 24h window has
     closed since the candidate's last message, those bubbles are not deliverable at all -- Meta
     rejects free-form text outside the window. This swaps in the configured reopen template
@@ -1302,7 +1302,7 @@ def wa_threads(request: Request, limit: int = 50):
     one exists, ``last_send_error`` (TASK-183) -- computed here, not stored on the row itself, so
     they always reflect the current time and the latest failure rather than a stale snapshot.
 
-    ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-198): wa_documents
+    ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-426): wa_documents
     metadata only -- no file bytes, and no extracted ``text`` (what the brain uses is on the card in
     ``thread.slots``; the per-file text stays in the table).
 

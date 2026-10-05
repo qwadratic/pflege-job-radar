@@ -53,7 +53,7 @@ the code before implementing -- all confirmed:
   ordering/mutex between them.
 - No existing guard covers this: grepped app/wa for flock/FileLock -- none guards mcp_config.json
   (the only flock usage is bridge/executor-side, unrelated). ST.claim_reply_turn (store.py,
-  TASK-181) is keyed by (phone, turn_key) -- protects same-phone double-processing only, not two
+  TASK-416) is keyed by (phone, turn_key) -- protects same-phone double-processing only, not two
   different phones racing. ST._lock is threading.RLock -- process-local, no cross-process effect.
 - Consumers confirmed: tools_server._turn_phone() (669-676) reads WA_LUNA_PHONE from env;
   look_at_phone (1131-1156) and show_clinic_photos (1037-1063) both take phone from

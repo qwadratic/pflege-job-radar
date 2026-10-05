@@ -1,4 +1,4 @@
-"""Offline tests for the new store.py primitives: reply-turn claims (TASK-181), the per-candidate
+"""Offline tests for the new store.py primitives: reply-turn claims (TASK-416), the per-candidate
 LLM call log (TASK-180), and send-failure recording (TASK-183)."""
 import pytest
 

@@ -99,7 +99,7 @@ PRIORITY_LOW = 2
 # a closed set, agreed with pflege-fe (plan "Endpoints" section) so an unlabelled or home-grown value
 # can never reach that UI as something it has to guess a label for. ``luna``/``luna_tool`` are the
 # candidate-facing brain (the reply turn, and its own MCP tool server); ``followups`` covers the
-# tiered nudge sweep (TASK-189) -- there is no separate "nudges" code path to split out of it;
+# tiered nudge sweep (TASK-420) -- there is no separate "nudges" code path to split out of it;
 # ``catchup`` is the 3-minute re-drive poller; ``campaign``/``broadcast`` are the two first-touch
 # bulk sends; ``operator`` is a human running tools/wa_bridge.py by hand; ``agent_notes`` is the
 # operator-inbox completion send (app/wa/luna/agent_notes.py); ``bridge`` is this executor enqueueing

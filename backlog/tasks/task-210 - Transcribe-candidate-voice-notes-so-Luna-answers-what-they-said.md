@@ -16,7 +16,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Today a WhatsApp voice note (audio) is stored (TASK-198) but not read: the candidate gets the flat media reply and the thread is flagged for a human, so a campaign reply spoken as a voice note stalls. The old system transcribed candidate audio with OpenAI Whisper (apps/connectors/candidate_audio_stt.py: model whisper-1, OPENAI_API_KEY, suffix rules for audio.bin / ogg-opus). Ivan 2026-09-14: do it like the old system.
+Today a WhatsApp voice note (audio) is stored (TASK-426) but not read: the candidate gets the flat media reply and the thread is flagged for a human, so a campaign reply spoken as a voice note stalls. The old system transcribed candidate audio with OpenAI Whisper (apps/connectors/candidate_audio_stt.py: model whisper-1, OPENAI_API_KEY, suffix rules for audio.bin / ogg-opus). Ivan 2026-09-14: do it like the old system.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -78,7 +78,7 @@ def test_search_postings_filters_by_department_and_role(tmp_path, monkeypatch):
 
 
 def test_search_postings_reads_the_candidates_department_word_in_board_vocabulary(tmp_path, monkeypatch):
-    """TASK-199 review: a live persona run called search_postings(city='München', department='Intensivstation'),
+    """TASK-427 review: a live persona run called search_postings(city='München', department='Intensivstation'),
     got 0 rows from the exact board filter ('Intensiv/IMC') and told the candidate nothing was open."""
     board(tmp_path, monkeypatch)
     for word in ("Intensivstation", "ITS", "Intensiv/IMC"):
@@ -634,7 +634,7 @@ def test_every_tool_luna_may_call_is_a_real_read_only_tool_and_contacts_are_not_
     assert allowed <= set(TS.mcp._tool_manager._tools), "the CLI allowlist names a tool the server does not serve"
     assert {"search_postings_with_housing", "list_clinics_with_housing", "list_cities_with_postings",
             "count_postings", "read_board_docs", "board_api_get"} <= allowed
-    # TASK-195: contact details belong to the human handoff after consent, never to the conversation.
+    # TASK-424: contact details belong to the human handoff after consent, never to the conversation.
     assert "get_clinic_contact" in TS.mcp._tool_manager._tools and "get_clinic_contact" not in allowed
     # TASK-374: this one IS for the conversation. It is registered here; the CLI reaches it only once
     # luna_brain.MCP_TOOL_NAMES names it and _mcp_config_path passes WA_LUNA_PHONE (that file is another

@@ -899,7 +899,7 @@ def rail_sync(c, source=RAIL_SYNC_SOURCE):
             "last_error_at": row["last_error_at"]}
 
 
-# --- reply-turn claims (TASK-181): durable, cross-process dedup beyond wamid uniqueness ----------
+# --- reply-turn claims (TASK-416): durable, cross-process dedup beyond wamid uniqueness ----------
 # The wamid UNIQUE constraint on wa_messages stops a Meta redelivery from being answered twice, but
 # it says nothing about two DIFFERENT entrypoints (the webhook, and the catch-up driver, TASK-332)
 # both deciding -- at the same moment, in separate processes -- to generate and send a reply for
@@ -1209,7 +1209,7 @@ def send_failures_for(c, phone):
     return [dict(r) for r in rows]
 
 
-# --- proactive follow-up nudges (TASK-189) --------------------------------------------------------
+# --- proactive follow-up nudges (TASK-420) --------------------------------------------------------
 
 def record_followup_sent(c, phone, tier):
     c.execute("insert into wa_followups_sent (phone, tier, sent_at) values (?,?,?)", (phone, tier, now_iso()))
@@ -1234,7 +1234,7 @@ def claim_nudge(c, phone, fingerprint):
     same candidate at nearly the same moment cannot both go through. ST._lock only serializes
     within one process; this table is what makes the guarantee hold across separate processes too.
 
-    Deliberately simpler than claim_reply_turn (TASK-181): nothing here is ever reclaimable. A
+    Deliberately simpler than claim_reply_turn (TASK-416): nothing here is ever reclaimable. A
     reply-turn claim protects an inbound message that is owed a reply and must eventually get one
     (so a crashed attempt has to be retryable); a nudge is never owed the way a reply is -- a claim
     that never results in an actual send is simply a nudge that did not go out this round, not a
@@ -1264,7 +1264,7 @@ def candidate_phones(c):
     return [r["phone"] for r in rows]
 
 
-# --- inbound media originals (TASK-198) -----------------------------------------------------------
+# --- inbound media originals (TASK-426) -----------------------------------------------------------
 # One row per stored original file (app/wa/api.py:_store_original writes the file first, then this
 # row). wamid is the inbound message the file came with: record_inbound's UNIQUE wa_messages.wamid
 # already drops a redelivery before ingest, so a first delivery never finds its wamid taken here.
@@ -1289,7 +1289,7 @@ def set_document_text(c, doc_id, text):
 
 def set_document_classification(c, doc_id, document_type, certificate_level, text_key):
     """app/cv.py:classify_document() result (TASK-334) for this one file, and the card key its text
-    went to -- chosen by document_type (cv_text/urkunde_text, None for any other type, TASK-199)."""
+    went to -- chosen by document_type (cv_text/urkunde_text, None for any other type, TASK-427)."""
     c.execute("update wa_documents set document_type=?, certificate_level=?, text_key=? where id=?",
               (document_type, certificate_level, text_key, doc_id))
     c.commit()
@@ -2147,7 +2147,7 @@ def rail_snapshot(c):
 # --- Pro activity rail view (TASK-283.7): job heartbeats -------------------------------------------
 # Only the jobs with no other durable signal are wrapped here -- see the wa_job_state SCHEMA
 # comment. "nudges" is a listed job key in the shared interface's origin/job enums, but
-# app.wa.luna.followups IS the proactive-nudge sender (TASK-189) with no separate "followups" pass
+# app.wa.luna.followups IS the proactive-nudge sender (TASK-420) with no separate "followups" pass
 # inside it to record under a second name -- so this wraps it under job="followups" only, matching
 # its own deploy/pflege-wa-followups.timer cadence (900s) one-for-one, and "nudges" is simply never
 # emitted by this harness (docs/wa-pro-activity.md says so).

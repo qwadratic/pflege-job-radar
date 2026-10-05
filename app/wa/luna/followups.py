@@ -1,11 +1,11 @@
-"""Proactive follow-up nudges (TASK-189): the real production system re-engages a candidate who
+"""Proactive follow-up nudges (TASK-420): the real production system re-engages a candidate who
 went silent after our last message, at tiered intervals (15m/1h/4h, capped per streak) -- named
 explicitly as something this harness lacked (docs/whatsapp.md, "no proactive re-engagement
 messages"). This is the scaled-down equivalent: same tiered idea, a much simpler implementation --
 fixed reviewable German nudge text rather than a model call. An unprompted, system-initiated
 message is not what app.wa.luna_brain.turn()'s "the candidate just said X" contract was built for,
 and a fixed, reviewable nudge is the safer choice for something nobody asked the model to say. A
-quiet-hours window (TASK-196) and a durable cross-process dedup claim (TASK-337, ST.claim_nudge) ARE
+quiet-hours window (TASK-425) and a durable cross-process dedup claim (TASK-337, ST.claim_nudge) ARE
 ported, though: see _in_quiet_hours and run() below.
 
 A thread is eligible once: not stopped, not finished (reporting.stage_for() not in TERMINAL_STAGES --
@@ -18,7 +18,7 @@ derived from how many nudges have been sent since their own last message, not a 
 column that could drift out of sync with reality.
 
 Sends go through the exact same app.wa.api.send_and_record() the webhook/catch-up paths use, so
-the TASK-174 24h-window/reopen-template gate applies here too -- not a second copy of that logic.
+the TASK-414 24h-window/reopen-template gate applies here too -- not a second copy of that logic.
 
 Usage: ``python -m app.wa.luna.followups [--phones p1,p2,...]``. No systemd timer is installed as
 part of this task -- deploy cadence is an operational decision, out of scope here.
@@ -45,12 +45,12 @@ TERMINAL_STAGES = ("consented", "not_placeable", "declined", "already_placed")
 
 def _in_quiet_hours(now=None):
     """True if `now` (defaults to the real current time) falls inside the configured local
-    quiet-hours window (TASK-196). A global time check, not per-candidate -- this board has no
+    quiet-hours window (TASK-425). A global time check, not per-candidate -- this board has no
     per-candidate timezone data, so one fixed timezone (C.QUIET_HOURS_TZ) stands in for all of
     them. Handles a window that wraps past midnight (START > END, e.g. 21 -> 9); START == END is
     a zero-width window, read as 'no quiet hours configured' (disabled) rather than 'quiet all
     day', so a config typo that sets both to the same value fails open (nudges keep sending, the
-    pre-TASK-196 behavior) instead of silently and permanently suppressing every nudge."""
+    pre-TASK-425 behavior) instead of silently and permanently suppressing every nudge."""
     now = now or datetime.now(timezone.utc)
     hour = now.astimezone(ZoneInfo(C.QUIET_HOURS_TZ)).hour
     start, end = C.QUIET_HOURS_START, C.QUIET_HOURS_END
@@ -81,7 +81,7 @@ def _eligible_tier(conn, phone, last_outbound_at, last_inbound_at):
 def run(client=None, phones=None):
     """-> a list of {"phone": ..., "tier": ..., "status": ...} for every thread actually nudged.
     Runs against the real, configured database, same as catchup.py -- no dry-run mode here.
-    [] immediately, with no thread even looked at, during quiet hours (TASK-196) -- a nudge due
+    [] immediately, with no thread even looked at, during quiet hours (TASK-425) -- a nudge due
     during that window is not lost, just delayed: _eligible_tier is driven by elapsed time since
     last_outbound_at, so the next 15-min timer tick outside the window finds the same tier still
     due and sends it then. Every send is additionally gated on ST.claim_nudge (TASK-337) so a
@@ -156,7 +156,7 @@ def main(argv=None):
     phones = [p.strip() for p in args.phones.split(",") if p.strip()] if args.phones else None
     # TASK-283.7: the job heartbeat wraps the whole pass, quiet-hours skip included -- a quiet-hours
     # tick is still the timer firing on schedule, not a non-event, so it still counts as a run (job
-    # key "followups": app.wa.luna.followups IS the proactive-nudge sender in its entirety, TASK-189;
+    # key "followups": app.wa.luna.followups IS the proactive-nudge sender in its entirety, TASK-420;
     # there is no separate "nudges" pass to record under a second job key, see docs/wa-pro-activity.md).
     with ST.job_run(ST.JOB_FOLLOWUPS) as jr:
         if _in_quiet_hours():

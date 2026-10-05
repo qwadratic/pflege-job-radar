@@ -18,7 +18,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan 2026-09-16 for his own number (ends 8778, used for manual end-to-end tests): mark it as a test thread and delete its message history regularly so every manual test starts fresh. Today the only way is manual SQL (TASK-194 did exactly that by hand), test threads are counted in reports like real candidates, and a stale card (consent, documents, campaign context) makes the next test start from the wrong state.
+Ivan 2026-09-16 for his own number (ends 8778, used for manual end-to-end tests): mark it as a test thread and delete its message history regularly so every manual test starts fresh. Today the only way is manual SQL (TASK-423 did exactly that by hand), test threads are counted in reports like real candidates, and a stale card (consent, documents, campaign context) makes the next test start from the wrong state.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -71,7 +71,7 @@ def _jobs():
 
 
 def _clinics():
-    """One clinic per fixture city, so list_clinics answers from the same board (TASK-199 repair round 2)."""
+    """One clinic per fixture city, so list_clinics answers from the same board (TASK-427 repair round 2)."""
     open_by_city = Counter((city, bezirk) for city, bezirk, _, _ in _PLAN)
     return [{"clinic_id": _clinic_id(city), "name": f"Klinikum {city}", "town": city, "regierungsbezirk": bezirk,
              "beds": 500, "jobs_open": n, "jobs_fresh": n, "jobs_live": n, "fachrichtungen": []} for (city, bezirk), n in open_by_city.items()]
@@ -118,7 +118,7 @@ def _run(script, thread=None):
 
 def _send_document(thread, document_type, text, certificate_level="unknown"):
     """Simulate app/wa/api.py:_ingest_media's effect on the card before the next turn runs
-    (TASK-195/TASK-199) -- tests call LB.turn() directly and never go through the webhook's own media-
+    (TASK-424/TASK-427) -- tests call LB.turn() directly and never go through the webhook's own media-
     download/classification path, so a script that needs 'a document just arrived' (the documents
     gate the CLOSE SEQUENCE requires) sets the same card fields _ingest_media writes: the text key
     chosen by document_type, the latest document_type/certificate_level, and one entry in both
@@ -139,7 +139,7 @@ def _all_bubbles(results):
     return [b for d in results for b in d["bubbles"]]
 
 
-# TASK-199 repair round 2: while the MCP tools read no board, Luna's own München search came back empty and she said
+# TASK-427 repair round 2: while the MCP tools read no board, Luna's own München search came back empty and she said
 # "Für München habe ich aktuell leider keine offene Stelle" two turns before the shortlist named Klinikum München.
 # The fixture board has open München postings, so a bubble naming München with such a denial is false.
 _NO_OPENING_RE = re.compile(r"\bkeine\s+(?:\w+\s+){0,2}(?:stelle|job|angebot)", re.I)
@@ -171,15 +171,15 @@ def test_maria_verified_urkunde_reaches_a_city_and_department_without_a_reject(b
 
 
 def test_the_close_sequence_states_matches_before_recap_and_consent_together(board):
-    """TASK-167, tightened by TASK-194 and TASK-195: once qualification, city, department and
+    """TASK-167, tightened by TASK-423 and TASK-424: once qualification, city, department and
     housing are all settled, the harness must not jump straight to the anonymized-send question in
     the very same turn that first names a clinic -- it states the distinct clinic count and
     shortlist together as one info-only turn, THEN (a later turn) restates the matched criteria and
-    asks for consent together. TASK-194 found the original four-turn spread (count, then shortlist,
+    asks for consent together. TASK-423 found the original four-turn spread (count, then shortlist,
     then recap, each its own turn) read as broken on a real WhatsApp test -- three turns in a row
     with no question at all, so the candidate had to guess they should send a filler reply to keep
-    it moving. TASK-195 additionally requires actual documents (not just a verbal 'ja, ich habe
-    die Urkunde'; TASK-199: the CV and the Urkunde) before the close sequence can start at all --
+    it moving. TASK-424 additionally requires actual documents (not just a verbal 'ja, ich habe
+    die Urkunde'; TASK-427: the CV and the Urkunde) before the close sequence can start at all --
     this script simulates both arriving via _send_document (the persona scripts are pure text; a
     real document download/classification is TASK-327's own separately-tested path). The defining regression this guards is narrower than
     "every step its own turn": a shortlist and the consent ask must never land in the same turn as
@@ -225,7 +225,7 @@ def test_the_close_sequence_states_matches_before_recap_and_consent_together(boa
     # the turn after the upload, so its first clinic mention is searched from there.
     first_clinic_turn = next((i for i, d in enumerate(results) if i >= close_start
                               and any(c in " ".join(d["bubbles"]) for c in board_clinics)), None)
-    # TASK-199 review: 2/2 live runs failed here because department_pref='Intensivstation' filtered the harness
+    # TASK-427 review: 2/2 live runs failed here because department_pref='Intensivstation' filtered the harness
     # shortlist to nothing (market_snapshot now reads the word in board vocabulary) -- the card shows which.
     card = {k: v for k, v in results[-1]["slots"].items() if not k.endswith("_text")}
     assert first_clinic_turn is not None, (
@@ -249,7 +249,7 @@ def test_maria_salary_question_is_deferred_never_quoted(board):
     assert not SALARY_RE.search(bubbles), f"a euro figure must never be quoted, got: {bubbles!r}"
 
 
-# --- both documents before the close, the missing one re-asked (TASK-199, Ivan's manual test) -----
+# --- both documents before the close, the missing one re-asked (TASK-427, Ivan's manual test) -----
 
 _CV_RE = re.compile(r"lebenslauf|\bcv\b", re.I)
 _BOARD_CLINICS = ("Klinikum München", "Klinikum Augsburg", "Klinikum Würzburg", "Klinikum Regensburg",
@@ -268,7 +268,7 @@ def _no_close(d, transcript):
 
 
 def test_svetlana_sends_only_her_cv_and_is_asked_for_the_urkunde_until_it_arrives(board):
-    """TASK-199 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the
+    """TASK-427 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the
     close). Fictional persona: Svetlana, Urkunde, München, lives alone -- everything settled but the
     documents. The first document ask names both the CV and the Urkunde; she sends only the CV (Luna
     thanks and asks for the Urkunde, no shortlist/consent); she writes 'schicke ich später' (Luna still
@@ -316,7 +316,7 @@ def _luna_bubbles(transcript):
 
 
 def test_svetlana_wrong_document_types_get_the_missing_documents_named_again(board):
-    """TASK-199 AC3, the wrong-type case (verifier round 2: only an offline prompt-string test and one throwaway
+    """TASK-427 AC3, the wrong-type case (verifier round 2: only an offline prompt-string test and one throwaway
     probe covered it). Same settled card and opener as above. A Dienstplan arrives first (neither document: both
     named again), then the CV (the Urkunde named), then a home-country nursing diploma (not the German Urkunde:
     the German Urkunde named again). No shortlist or consent at any step."""

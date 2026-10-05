@@ -6,10 +6,10 @@ brain, still gets untouched. No network, no real `claude` CLI: the Meta client, 
 and luna_brain.Client are all fakes here, same seam convention as tests/test_wa_harness.py and
 tests/test_wa_luna_brain.py.
 
-TASK-198: every media message, both brains, has its original stored under C.DOCUMENTS_DIR (a tmp
+TASK-426: every media message, both brains, has its original stored under C.DOCUMENTS_DIR (a tmp
 dir here) and linked by a wa_documents row before anything reads it.
 
-TASK-199 (bottom section): the card key follows the classification, not the extraction method, and
+TASK-427 (bottom section): the card key follows the classification, not the extraction method, and
 card.documents / documents_just_received record what arrived.
 """
 import hashlib
@@ -137,7 +137,7 @@ def deterministic_wa(tmp_path, monkeypatch):
     # C.BRAIN left at its default ("deterministic") on purpose -- this is the regression check.
 
 
-# --- extraction dispatch: which path (the card key is the classification's, TASK-199) ----------
+# --- extraction dispatch: which path (the card key is the classification's, TASK-427) ----------
 
 def test_extract_media_text_dispatch(monkeypatch):
     pdf_with_text = pdf_bytes_with_text("Hallo, das ist ein echter Lebenslauf-Text")
@@ -157,7 +157,7 @@ def test_extract_media_text_dispatch(monkeypatch):
 
 
 def test_suffix_for_prefers_the_filename_extension_over_the_mime_guess():
-    """The vision temp file only; a stored original is named by _mime_suffix (TASK-198 review)."""
+    """The vision temp file only; a stored original is named by _mime_suffix (TASK-426 review)."""
     assert WAPI._suffix_for("scan.jpeg", "application/octet-stream") == ".jpeg"
     assert WAPI._suffix_for(None, "image/webp") == ".webp"
     assert WAPI._suffix_for(None, "application/unknown") == ".bin"
@@ -246,7 +246,7 @@ def test_vision_extraction_failure_propagates_not_swallowed(luna_wa, monkeypatch
         rows = ST.history(c, LEAD)
         docs = ST.documents_for(c, LEAD)
     assert [r["direction"] for r in rows] == ["in"], "the inbound is kept, no reply is claimed"
-    # TASK-198: the original was stored and linked before extraction ran, and stays.
+    # TASK-426: the original was stored and linked before extraction ran, and stays.
     assert [d["wamid"] for d in docs] == ["wamid.4"]
     assert pathlib.Path(docs[0]["path"]).read_bytes() == b"blank-image-bytes"
     assert docs[0]["text"] is None and docs[0]["text_key"] is None and docs[0]["document_type"] is None
@@ -282,7 +282,7 @@ def _no_extraction(monkeypatch):
 
 def test_video_under_luna_still_gets_the_flat_ack(luna_wa, monkeypatch, tmp_path):
     """Nothing reads a video -- treating it like 'read' would be exactly the invented-safety-net kind of silent
-    pretending CLAUDE.md rules out. TASK-198: the original is still stored, named with the mime type's extension.
+    pretending CLAUDE.md rules out. TASK-426: the original is still stored, named with the mime type's extension.
     Audio is transcribed since TASK-210 (tests/test_wa_voice_notes.py)."""
     _no_extraction(monkeypatch)
     meta = _meta_with(("v1", "video/mp4", b"\x00\x00\x00 ftypmp4"))
@@ -296,7 +296,7 @@ def test_video_under_luna_still_gets_the_flat_ack(luna_wa, monkeypatch, tmp_path
     assert meta.download_calls == ["https://cdn.example/v1"]
 
 
-# --- the deterministic brain: still only the flat ack, but the original is stored (TASK-198) ------
+# --- the deterministic brain: still only the flat ack, but the original is stored (TASK-426) ------
 
 def test_deterministic_brain_document_is_stored_and_acked_never_read(deterministic_wa, monkeypatch):
     _no_extraction(monkeypatch)
@@ -332,7 +332,7 @@ def test_deterministic_brain_image_is_stored_and_acked_never_read(deterministic_
 ])
 def test_deterministic_brain_audio_and_video_are_stored_and_acked(deterministic_wa, monkeypatch, kind, media_id,
                                                                   mime_type, blob, ext):
-    """TASK-198 AC1/AC5, the non-luna audio/video path (verifier round 2: only luna audio/video had a test)."""
+    """TASK-426 AC1/AC5, the non-luna audio/video path (verifier round 2: only luna audio/video had a test)."""
     _no_extraction(monkeypatch)
     meta = _meta_with((media_id, mime_type, blob))
     out = WAPI.handle_payload(payload(kind, media_id=media_id, mime_type=mime_type), client=meta)
@@ -344,7 +344,7 @@ def test_deterministic_brain_audio_and_video_are_stored_and_acked(deterministic_
     assert docs[0]["path"].endswith(f"-{media_id}{ext}") and pathlib.Path(docs[0]["path"]).read_bytes() == blob
 
 
-# --- TASK-198: originals on disk, linked to the phone in wa_documents -----------------------------
+# --- TASK-426: originals on disk, linked to the phone in wa_documents -----------------------------
 
 # <UTC %Y%m%dT%H%M%S%f>Z-<media id alphanumerics><extension>
 _STORED_NAME = re.compile(r"\d{8}T\d{12}Z-[A-Za-z0-9]+\.[a-z0-9]{1,5}")
@@ -387,7 +387,7 @@ def test_stored_original_is_owner_only_and_leaves_no_temp_file(deterministic_wa,
     assert [p.name for p in path.parent.iterdir()] == [path.name]
 
 
-# TASK-198 review: the extension is the mime type's too -- '../../evil.sh' was stored as '.sh'.
+# TASK-426 review: the extension is the mime type's too -- '../../evil.sh' was stored as '.sh'.
 @pytest.mark.parametrize("filename, mime_type, suffix", [
     ("../../evil.sh", "application/pdf", ".pdf"),
     ("a/b.pdf", "application/pdf", ".pdf"),
@@ -427,7 +427,7 @@ def test_classification_failure_keeps_the_original_and_its_text(luna_wa, monkeyp
         (doc,) = ST.documents_for(c, LEAD)
     assert pathlib.Path(doc["path"]).read_bytes() == pdf
     assert "Lebenslauf" in doc["text"] and doc["document_type"] is None
-    assert doc["text_key"] is None, "TASK-199: the card key comes from the classification, which failed"
+    assert doc["text_key"] is None, "TASK-427: the card key comes from the classification, which failed"
 
 
 def test_download_failure_stores_nothing_but_keeps_the_media_id_on_the_message(luna_wa, tmp_path):
@@ -522,7 +522,7 @@ def test_threads_api_lists_documents_as_metadata_only(luna_wa, monkeypatch):
     assert body["thread"]["phone"] == LEAD
 
 
-# --- TASK-199: the card key follows the classification; documents accumulate on the card ---------
+# --- TASK-427: the card key follows the classification; documents accumulate on the card ---------
 
 _CV_PDF = pdf_bytes_with_text("Lebenslauf 5 Jahre Intensivstation")
 
@@ -638,7 +638,7 @@ def test_a_rate_limited_media_turn_keeps_documents_just_received_for_the_catch_u
     assert t["slots"]["_documents_just_received"] == [summary], "no reply ran, the next one still owes the thanks"
 
 
-# --- TASK-199 review 2026-09-14: the ingest result survives a failed reply; catch-up never answers blind --
+# --- TASK-427 review 2026-09-14: the ingest result survives a failed reply; catch-up never answers blind --
 
 _READY_BUT_DOCUMENTS = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True,
                         "city": "München", "housing_needed": False}
@@ -857,7 +857,7 @@ def test_files_with_the_same_card_key_append_their_text_never_replace_it(luna_wa
 
 
 def test_a_foreign_diploma_keeps_both_text_keys_untouched_and_does_not_open_the_gate(luna_wa, monkeypatch):
-    """TASK-199 review: classified auslaendisches_diplom (app/cv.py), a home-country diploma is neither the
+    """TASK-427 review: classified auslaendisches_diplom (app/cv.py), a home-country diploma is neither the
     German Urkunde nor its text."""
     _seed_card(_READY_BUT_DOCUMENTS)
     monkeypatch.setattr(CV, "extract_text_vision", lambda blob, suffix=".png", client=None: blob.decode("latin-1"))

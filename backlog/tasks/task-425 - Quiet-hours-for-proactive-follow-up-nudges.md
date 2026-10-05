@@ -1,5 +1,5 @@
 ---
-id: TASK-196
+id: TASK-425
 title: Quiet hours for proactive follow-up nudges
 status: Done
 assignee: []
@@ -15,7 +15,7 @@ ordinal: 92000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan confirmed after the TASK-195 comparison report: the real reference implementation's proactive nudges never fire during a candidate's likely sleep window; app/wa/luna/followups.py (TASK-189) currently has no such guard and could send an unprompted nudge at 3am. Dedup fingerprinting (the source's other quiet-hours-adjacent feature) is explicitly uncertain/not yet requested -- out of scope for this task, to be raised separately.
+Ivan confirmed after the TASK-424 comparison report: the real reference implementation's proactive nudges never fire during a candidate's likely sleep window; app/wa/luna/followups.py (TASK-420) currently has no such guard and could send an unprompted nudge at 3am. Dedup fingerprinting (the source's other quiet-hours-adjacent feature) is explicitly uncertain/not yet requested -- out of scope for this task, to be raised separately.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

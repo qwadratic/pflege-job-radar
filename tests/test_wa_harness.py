@@ -71,7 +71,7 @@ class FakeMeta:
         return self._next()
 
     def media_url(self, media_id):
-        """Every inbound media original is downloaded and stored (TASK-198), whichever brain answers."""
+        """Every inbound media original is downloaded and stored (TASK-426), whichever brain answers."""
         return {"url": f"https://cdn.example/{media_id}", "mime_type": "application/pdf"}
 
     def download_media(self, url):
@@ -238,7 +238,7 @@ def test_media_is_acknowledged_not_silently_dropped(wa):
     assert out["results"][0]["action"] == "media_ack"
     assert wa.sent[-1]["body"] == WAPI.MEDIA_REPLY
     with ST.db() as c:
-        assert [d["wamid"] for d in ST.documents_for(c, LEAD)] == ["wamid.pdf"], "TASK-198: original kept"
+        assert [d["wamid"] for d in ST.documents_for(c, LEAD)] == ["wamid.pdf"], "TASK-426: original kept"
 
 
 # --- the conversation ----------------------------------------------------------------------------
@@ -561,7 +561,7 @@ def test_health_reports_readiness_without_secrets(wa):
     assert APP_SECRET not in json.dumps(body) and "test-token" not in json.dumps(body)
 
 
-# --- TASK-174: the 24h free-form window --------------------------------------------------------
+# --- TASK-414: the 24h free-form window --------------------------------------------------------
 # _handle_one() always stamps last_inbound_at to "now" for a live inbound turn, so the window can
 # never be closed there by construction -- these test _send()/_freeform_window_open() directly,
 # the way a future catch-up/dry-run tool (operating on a possibly-stale stored thread) would.

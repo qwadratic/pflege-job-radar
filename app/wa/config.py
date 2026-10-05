@@ -27,7 +27,7 @@ HTTP_TIMEOUT_SEC = 30
 
 # WhatsApp Cloud API policy (not this repo's choice): free-form text is only allowed within this
 # many hours of the candidate's last message; outside it, only a pre-approved template message
-# goes through (TASK-174). 24 is Meta's actual rule -- overridable only for testing.
+# goes through (TASK-414). 24 is Meta's actual rule -- overridable only for testing.
 FREEFORM_WINDOW_HOURS = float(os.environ.get("WA_FREEFORM_WINDOW_HOURS", "24") or "24")
 # Must already be approved in Meta Business Manager -- this repo cannot create one. Empty means
 # "not configured yet": a thread whose window has closed then fails loudly (app/wa/api.py) rather
@@ -38,7 +38,7 @@ WA_REOPEN_TEMPLATE_LANG = os.environ.get("WA_REOPEN_TEMPLATE_LANG", "de").strip(
 # The harness keeps its own SQLite file: the board's app.sqlite is rebuilt by crawl/run bookkeeping,
 # and a conversation must outlive that.
 SQLITE_PATH = A.DATA_DIR / "wa.sqlite"
-# Inbound media originals (TASK-198, app/wa/api.py:_store_original): one owner-only subdirectory
+# Inbound media originals (TASK-426, app/wa/api.py:_store_original): one owner-only subdirectory
 # per phone, one file per inbound media message, each linked by a wa_documents row. Candidate PII:
 # gitignored, never commit it.
 DOCUMENTS_DIR = pathlib.Path(os.environ.get("WA_DOCUMENTS_DIR", "").strip() or A.DATA_DIR / "wa_documents")
@@ -407,7 +407,7 @@ REAL_SYSTEM_PHONES_FILE = os.environ.get("WA_REAL_SYSTEM_PHONES_FILE", "").strip
 # REAL_SYSTEM_PHONES_FILE: with this on, that export is never consulted.
 OWN_ALL_CHATS = os.environ.get("WA_OWN_ALL_CHATS", "").strip().lower() in ("1", "true", "yes")
 
-# Webhook router (TASK-188, app/wa/router.py): where to forward a 'them'-owned message. Empty
+# Webhook router (TASK-419, app/wa/router.py): where to forward a 'them'-owned message. Empty
 # means router.route_webhook() raises loudly on any 'them' message rather than silently dropping
 # a real candidate's reply -- this is not registered as Meta's actual webhook URL by anything in
 # this repo, that is a separate, explicitly-confirmed production change.
@@ -421,7 +421,7 @@ REAL_SYSTEM_WEBHOOK_URL = os.environ.get("WA_REAL_SYSTEM_WEBHOOK_URL", "").strip
 # the network-trust boundary that replaces it).
 INTERNAL_WEBHOOK_ENABLED = os.environ.get("WA_INTERNAL_WEBHOOK_ENABLED", "").strip() in ("1", "true", "yes")
 
-# Proactive follow-up nudges (TASK-189, app/wa/luna/followups.py) -- a scaled-down version of the
+# Proactive follow-up nudges (TASK-420, app/wa/luna/followups.py) -- a scaled-down version of the
 # real system's own tiered (15m/1h/4h) re-engagement. Fixed, reviewable text, not a model call --
 # an unprompted, system-initiated message is not what luna_brain.turn()'s "the candidate just
 # said X" contract was built for.
@@ -430,7 +430,7 @@ MAX_FOLLOWUPS_PER_STREAK = int(os.environ.get("WA_MAX_FOLLOWUPS_PER_STREAK", "4"
 FOLLOWUP_NUDGE_DE = os.environ.get("WA_FOLLOWUP_NUDGE_DE", "").strip() or (
     "Nur zur Sicherheit nachgefragt – sind Sie noch da? Ich helfe gerne weiter, sobald Sie Zeit haben 🙂")
 
-# Quiet hours for follow-up nudges only (TASK-196): the real reference system never sends its own
+# Quiet hours for follow-up nudges only (TASK-425): the real reference system never sends its own
 # proactive nudge during a candidate's likely sleep window -- this scaled-down version lacked that
 # entirely until now. One fixed local-time window in one timezone, not per-candidate, since this
 # board has no per-candidate timezone data (it is Bavaria-only, same reasoning as the rest of this

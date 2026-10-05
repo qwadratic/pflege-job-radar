@@ -90,7 +90,7 @@ _QUALIFICATION_TEXT = json.dumps(json.loads((_LUNA_DIR / "qualification_knowledg
 # one did, for a whole task), and the two fallbacks for what the presets do not cover: this repo's own
 # agent docs and an allowlist of public board GET paths. Every one of them is read-only.
 # tools_server.py also defines get_clinic_contact (with its own tests) -- deliberately NOT in this
-# tuple (TASK-195): contact details are for the human handoff after consent (app/wa/queue.py), never
+# tuple (TASK-424): contact details are for the human handoff after consent (app/wa/queue.py), never
 # something the candidate-facing conversation itself should be able to surface.
 # Model-visible (tool names are mcp__<server>__<tool>): a neutral word, never a brand the model could
 # repeat to a candidate (TASK-203: asked who we are, Luna named the repo).
@@ -323,7 +323,7 @@ CLOSE_LIMIT = OF.OFFER_LIMIT
 def _city_or_department_satisfied(card):
     """The one predicate for the 'city_or_department' gate -- shared by requirement_scoreboard()
     and market_snapshot() so they cannot silently disagree about what counts as answered (a real
-    bug found live, TASK-186: market_snapshot's ready_to_close used to require BOTH city AND
+    bug found live, TASK-417: market_snapshot's ready_to_close used to require BOTH city AND
     department_pref while requirement_scoreboard told the model this gate was satisfied by EITHER
     -- a candidate who is genuinely flexible on department (a real, valid answer, not a missing
     one) then saw requirement_scoreboard say 'satisfied' while market_snapshot never actually
@@ -385,12 +385,12 @@ def _counts_for_gate(doc):
 
 
 def _cv_document_received(card):
-    """TASK-199: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
+    """TASK-427: a file classified as lebenslauf is in card["documents"] (app/wa/api.py:_ingest_media)."""
     return any(d["document_type"] == "lebenslauf" and _counts_for_gate(d) for d in card.get("documents", []))
 
 
 def _is_qualification_document(doc, path):
-    """TASK-199: urkunde path -> a non-helfer urkunde; defizit/kenntnispruefung path -> a non-helfer
+    """TASK-427: urkunde path -> a non-helfer urkunde; defizit/kenntnispruefung path -> a non-helfer
     urkunde or a defizitbescheid; any other path (none yet, unknown, reject) -> nothing counts.
     'urkunde' is the German licence only: a home-country diploma is classified auslaendisches_diplom
     (app/cv.py:DOC_TYPES) and never counts, on any path."""
@@ -469,7 +469,7 @@ def _reuse_pending(card, cv_in, qualification_in):
 
 
 def _documents_satisfied(card):
-    """TASK-195, tightened by TASK-199 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent
+    """TASK-424, tightened by TASK-427 (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent
     Lebenslauf unlocked the close): BOTH a CV and the qualification document for the candidate's path
     have actually arrived and been classified -- a conversational 'ja, ich habe die Urkunde' never
     counts. Reads only card["documents"]: a legacy/migrated card with cv_text/urkunde_text but no
@@ -518,7 +518,7 @@ def market_snapshot(card):
     (TASK-344) is ``slots.read_department_pref(card.department_pref)``, null without one: only status applied
     filters by department (any of its departments); ambiguous, flexible and unmatched build the shortlist from the
     other criteria. Deliberately thin
-    (TASK-195, after reading how the real reference implementation actually works): open_jobs is
+    (TASK-424, after reading how the real reference implementation actually works): open_jobs is
     the one aggregate number always present -- safe for a first-turn greeting, and the one
     question RULES lets the model answer without a live tool call. There is no per-city/
     per-department preview list here anymore; recon on the real system found it does not use live
@@ -530,7 +530,7 @@ def market_snapshot(card):
     shortlist[] (up to CLOSE_LIMIT distinct clinics) and matching_clinics_count still turn up here,
     deterministically, once qualification, EITHER city or department_pref (see
     _city_or_department_satisfied), housing, AND documents (_documents_satisfied: CV and qualification
-    document both received, TASK-199) are all settled:
+    document both received, TASK-427) are all settled:
     naming the exact clinics a candidate's anonymized profile may reach is compliance-sensitive
     enough (never invent a clinic name) that it stays harness-computed, not left to the model's
     recall of an earlier tool result several turns back.
@@ -564,7 +564,7 @@ def market_snapshot(card):
         filters["city"] = card["city"]
     department_filter = None
     if card.get("department_pref"):
-        # TASK-199 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
+        # TASK-427 review: department_pref is the candidate's word ("Intensivstation"), the board filter an exact
         # match on its own vocabulary ("Intensiv/IMC"). TASK-344: a flexible word ("egal", "flexibel") or a word
         # the board has no department for filtered as written and emptied the shortlist (live, consent asked
         # with no clinic named); only board departments filter now, and department_filter says which. Review
@@ -599,7 +599,7 @@ def market_snapshot(card):
                           and _housing_satisfied(card) and _documents_satisfied(card))
     # TASK-373: the shortlist IS the offer's positions -- one assembly, one cap, one place the
     # remainder count and the narrowing criteria come from (app/wa/luna/offer.py:build_offer). Still
-    # only once ready to close: TASK-195's rule that the payload carries no per-city preview stands,
+    # only once ready to close: TASK-424's rule that the payload carries no per-city preview stands,
     # and a five-position offer before the gates are settled would be exactly that preview.
     #
     # Which leaves offer null for most of the funnel, where the candidate is actually choosing --
@@ -619,7 +619,7 @@ def market_snapshot(card):
                         "city_regierungsbezirk": city_bezirk, "cities_with_housing": housing_cities}}
 
 
-# Gate-priority order for requirement_scoreboard()'s next_objective (TASK-195): a single computed
+# Gate-priority order for requirement_scoreboard()'s next_objective (TASK-424): a single computed
 # hint naming the ONE gate still open, so the model does not have to infer priority purely from
 # THINK_ORDER prose -- modeled on the real reference implementation's own code-computed per-turn
 # objective (recon: a plain rule tells its model that objective is "the ONLY placement question
@@ -635,12 +635,12 @@ _OBJECTIVE_ORDER = (
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
     # TASK-211: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
     ("housing", "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"),
-    ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-199
+    ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-427
                   "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
 )
 
-# TASK-199 review: a rejected qualification ends the checklist -- falling through to the next open gate told
+# TASK-427 review: a rejected qualification ends the checklist -- falling through to the next open gate told
 # the model to ask a not-placeable candidate for documents every turn (prompts.py NOT PLACEABLE says stop).
 _NOT_PLACEABLE_OBJECTIVE = ("not placeable -- no placement item open: no region, city, housing or document ask "
                             "(NOT PLACEABLE)")
@@ -652,7 +652,7 @@ _HOUSING_HEADCOUNT_OBJECTIVE = ("they need a flat: ask how many people would liv
 
 def _qualification_document_name(path):
     """(name, note) for the qualification document the candidate's path needs, as next_objective says it
-    (TASK-199)."""
+    (TASK-427)."""
     if path == "urkunde":
         return "the German Urkunde", "not a home-country diploma"
     if path in ("defizit", "kenntnispruefung"):
@@ -728,11 +728,11 @@ def funnel_stage(board):
 def requirement_scoreboard(card):
     """State only, never a script (RULES: 'the requirement scoreboard is state only'). One of
     satisfied | open | blocked per gate, so the model can see what is left without being told
-    what to ask next -- except next_objective (TASK-195), a single computed string naming the one
+    what to ask next -- except next_objective (TASK-424), a single computed string naming the one
     gate still open in priority order, purely a hint the model may act on or override (a candidate
     answering something else first is still fine, per the CLOSE SEQUENCE/ONE FORWARD STEP rules).
 
-    TASK-199: cv_document and qualification_document are the two halves of documents (satisfied only
+    TASK-427: cv_document and qualification_document are the two halves of documents (satisfied only
     when both are); next_objective names the missing one(s). A blocked qualification (reject) makes
     next_objective the not-placeable hint, whatever else is open. TASK-342: an imported document counts only once
     reuse is confirmed; while one that would settle an open half is pending, the documents objective is the reuse
@@ -1456,7 +1456,7 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
     is what lets the CLOSE SEQUENCE rule honestly distinguish "the candidate tapped Ja" (consent is
     now recorded, in code, see turn()) from "the candidate typed something that looks like yes"
     (not consent -- the model must ask them to tap one of the two buttons instead).
-    documents_just_received (TASK-199) lists the files that arrived since the last reply
+    documents_just_received (TASK-427) lists the files that arrived since the last reply
     ({id, document_type, certificate_level}, empty on every other turn): a media message has an empty
     latest_inbound, and card.documents alone does not say which entry is new -- this does, wrong
     document types included.
@@ -1702,7 +1702,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     """
     card = dict(thread.get("slots") or {})
     asked = list(thread.get("asked") or [])
-    # TASK-199: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
+    # TASK-427: set by app/wa/api.py:_ingest_media, consumed by this reply -- never saved back.
     documents_just_received = card.pop("_documents_just_received", [])
     context = dict(thread.get("turn_context") or {})
     seen_through_id = context.pop("seen_through_id", None)
@@ -2090,7 +2090,7 @@ def _remove_segment(value, text):
 def apply_document_reuse(c, t, changes):
     """Record ``_decide_document_reuse``'s changes on the wa_documents rows (reuse_state, reuse_decided_at) and on
     the card text keys: a confirmed document's stored text is appended to its text_key (cv_text/urkunde_text, the
-    TASK-199 key), a confirmation withdrawn removes it again. Called by api.process_owed_turn after the send."""
+    TASK-427 key), a confirmation withdrawn removes it again. Called by api.process_owed_turn after the send."""
     for change in changes:
         row = ST.document_by_id(c, change["id"])
         if row is None or row["phone"] != t["phone"]:

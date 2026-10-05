@@ -216,7 +216,7 @@ from, and inventing one (reading "300s" off the cron line) would mark this job "
 every ordinary idle stretch with no open notes, which is the normal case, not a problem.
 
 `nudges` is listed by the contract's own job-key enum but this harness never emits a row for it:
-`app/wa/luna/followups.py` **is** the entire proactive-nudge sender (TASK-189) — there is no second
+`app/wa/luna/followups.py` **is** the entire proactive-nudge sender (TASK-420) — there is no second
 pass to wrap under a second name. Its one heartbeat is recorded under `job="followups"`. A frontend
 that looks for a `nudges` row will never find one; this is a documented omission, not a bug.
 

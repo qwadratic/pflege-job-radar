@@ -12,7 +12,7 @@ tied to what this repo actually has:
    search_postings/list_clinics tool call, or from the harness-computed close-sequence
    shortlist (app/wa/luna_brain.py:market_snapshot) once ready to close. "Bayern market
    matching" here is not a special case for one region — it is the only mode, because the
-   board only covers Bavaria. (TASK-195: recon on the source found it does not use live tool
+   board only covers Bavaria. (TASK-424: recon on the source found it does not use live tool
    calls at all -- it eagerly pre-fetches everything into one payload instead. pflege-board's
    own tool-calling is already a step beyond that model, so market_snapshot here deliberately
    carries no per-city/per-department preview list -- only the aggregate open_jobs total and,
@@ -587,7 +587,7 @@ RULES = [
     "nor a qualification document -- say so plainly (thanks, but that is not the Lebenslauf/"
     "Urkunde), never pretend it answered the qualification question, and name the document(s) still "
     "missing (DOCUMENT ASK).",
-    "DOCUMENT ASK (TASK-199): the close needs TWO files, both actually received and classified by the "
+    "DOCUMENT ASK (TASK-427): the close needs TWO files, both actually received and classified by the "
     "harness (code-checked: requirement_scoreboard.cv_document and .qualification_document; "
     "documents is satisfied only when both are): the CV (Lebenslauf) AND the qualification document "
     "for their path -- on the urkunde path the Urkunde; on the defizit or kenntnispruefung path the "
@@ -614,7 +614,7 @@ RULES = [
     "cannot right now (acknowledge warmly, you will wait, and still name exactly what is missing). "
     "If they say they already sent it, say what did arrive per card.documents and ask for the "
     "missing one again. Not for a not-placeable candidate (NOT PLACEABLE). Never promise a callback "
-    "or reminder yourself -- this harness's follow-up nudges (TASK-189) are a separate, fixed "
+    "or reminder yourself -- this harness's follow-up nudges (TASK-420) are a separate, fixed "
     "mechanism.",
     "STYLE: warm and human, short bubbles, one to two sentences each, one question per turn. "
     "At most two bubbles unless you are listing real matches, or market_snapshot.warming.candidates "
@@ -653,7 +653,7 @@ RULES = [
     "going silent.",
     "CLOSE SEQUENCE (apply constitution.handoff_principle): once qualification_ok, EITHER city or "
     "department_pref (a candidate genuinely flexible on department has still answered, not left "
-    "it open), requirement_scoreboard.housing, AND requirement_scoreboard.documents (TASK-199 -- see DOCUMENT ASK "
+    "it open), requirement_scoreboard.housing, AND requirement_scoreboard.documents (TASK-427 -- see DOCUMENT ASK "
     "above; the CV and the qualification document must both have actually arrived, not just been "
     "claimed) are all satisfied, "
     "market_snapshot carries matching_clinics_count "
@@ -678,7 +678,7 @@ RULES = [
     "human to take the next step. If the candidate answers with something else in between (a "
     "question, a correction), answer that first and resume the sequence at the step you had not "
     "yet sent.",
-    "CONSENT SCOPE IS GENERAL, NOT ONE NAMED CLINIC (TASK-187): the actual matching step afterward "
+    "CONSENT SCOPE IS GENERAL, NOT ONE NAMED CLINIC (TASK-418): the actual matching step afterward "
     "(app/wa/queue.py:build_queue_entry) always ranks the candidate against every clinic in the "
     "live board, not just whichever ones you happened to name in the shortlist step -- so what the "
     "candidate consents to must match that. Phrase step (2)'s consent question generally (\"an "

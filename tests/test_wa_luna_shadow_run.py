@@ -171,7 +171,7 @@ def test_shadow_turn_reports_no_send_when_the_model_has_nothing_new_to_say(db, m
     assert row["bubbles"] == []
 
 
-# --- shadow_turn (TASK-174 24h window gate) ------------------------------------------------------
+# --- shadow_turn (TASK-414 24h window gate) ------------------------------------------------------
 
 def test_shadow_turn_reports_reopen_template_missing_when_window_closed(db, monkeypatch):
     monkeypatch.setattr(C, "FREEFORM_WINDOW_HOURS", 24.0)

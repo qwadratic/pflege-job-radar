@@ -375,7 +375,7 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
     if city:
         town = _resolve_city(city, _cities_with_postings(), "open postings")
     if department:
-        # TASK-199 review: the model passes the candidate's word (live tool log: department="Intensivstation",
+        # TASK-427 review: the model passes the candidate's word (live tool log: department="Intensivstation",
         # 0 rows, "keine passende offene Stelle"). TASK-344: the same reading as luna_brain.market_snapshot; a
         # flexible word filters nothing, a word the board has no department for raises instead of returning [].
         # ToolError: the model reads its text (any other exception reaches it as a bare "Error executing tool").
@@ -732,7 +732,7 @@ def _turn_role_class():
 
 
 def _stored_cv_text(phone):
-    """This thread's stored CV text (the card key app/wa/api.py's media intake appends to, TASK-199).
+    """This thread's stored CV text (the card key app/wa/api.py's media intake appends to, TASK-427).
 
     Read with a plain select rather than store.thread(): that helper creates the thread row on first
     contact ("an unknown number is a lead, not an error"), and nothing this model calls may write."""

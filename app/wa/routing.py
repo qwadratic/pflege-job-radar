@@ -3,7 +3,7 @@ bot ("them") -- currently owns a WhatsApp phone number's conversation.
 
 This is deliberately the safe, in-repo, reversible slice of a bigger idea: route genuinely NEW
 leads to this harness and leave existing/older conversations with the real system, except one an
-operator of this harness reopens themselves (TASK-174's reopen template) -- that one explicit act
+operator of this harness reopens themselves (TASK-414's reopen template) -- that one explicit act
 hands the conversation to us from then on. Actually pointing Meta's webhook at a router that
 consults this table is a separate, production-infrastructure change needing its own coordination
 and sign-off with whoever owns that Meta app; nothing here does that, and nothing here changes
@@ -104,7 +104,7 @@ def route_decision(conn, phone):
 
 def flip_to_us_on_reopen(conn, phone):
     """The one explicit trigger that hands an existing conversation to us regardless of its prior
-    owner: this harness itself just sent that phone a reopen template (TASK-174)."""
+    owner: this harness itself just sent that phone a reopen template (TASK-414)."""
     _set_ownership(conn, phone, "us", reason="reopened_by_us")
 
 

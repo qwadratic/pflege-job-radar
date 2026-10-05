@@ -67,7 +67,7 @@ def sha256_bytes(blob):
 
 # --- what WhatsApp's own media folders hold, and how to read them ------------------------------
 
-#: Only the folders that carry RECEIVED bytes worth reading (TASK-199/TASK-210 read document, image
+#: Only the folders that carry RECEIVED bytes worth reading (TASK-427/TASK-210 read document, image
 #: and audio; video gets the flat ack on both brains -- see app/wa/api.py:_READ_KINDS). Stickers and
 #: wallpapers are on this phone's tree too and are never candidate content, so they are not listed.
 WA_MEDIA_DIRS = ("WhatsApp Images", "WhatsApp Video", "WhatsApp Documents",

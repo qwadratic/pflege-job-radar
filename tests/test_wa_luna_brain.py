@@ -270,11 +270,11 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
     LB.turn("Intensivstation bitte", luna, client=fake_client(capture))
     assert seen["user"]["market_snapshot"]["open_jobs"] == 2
     assert seen["user"]["market_snapshot"]["matches"] == [], (
-        "TASK-195: no per-city preview list anymore -- a live tool call answers city-specific "
+        "TASK-424: no per-city preview list anymore -- a live tool call answers city-specific "
         "questions, market_snapshot only ever gets a shortlist once fully ready to close")
     assert seen["user"]["requirement_scoreboard"]["region"] == "open"
     assert seen["user"]["requirement_scoreboard"]["next_objective"], (
-        "TASK-195: a computed next_objective hint must always be present")
+        "TASK-424: a computed next_objective hint must always be present")
     assert seen["user"]["latest_inbound"] == "Intensivstation bitte"
     assert "thread" not in seen["user"], "history now lives in the resumed session, not the payload"
     assert "Valentina" in seen["system"]
@@ -283,7 +283,7 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
 
 
 def test_market_snapshot_matches_only_once_fully_ready_to_close(luna):
-    """TASK-195: market_snapshot carries no early per-city/per-department preview anymore -- only
+    """TASK-424: market_snapshot carries no early per-city/per-department preview anymore -- only
     the aggregate open_jobs total always, and matches/shortlist once qualification, city-or-
     department, housing AND documents are all satisfied. A candidate with city+qualification but
     no document read yet must still see an empty matches list -- that is the new documents gate,
@@ -307,7 +307,7 @@ def test_requirement_scoreboard_reflects_the_card():
 
 
 def test_requirement_scoreboard_documents_gate_and_next_objective():
-    """TASK-195/TASK-199: documents is open until both documents have arrived (card.documents), and
+    """TASK-424/TASK-427: documents is open until both documents have arrived (card.documents), and
     next_objective names the single highest-priority open gate."""
     board = LB.requirement_scoreboard({})
     assert board["documents"] == "open"
@@ -318,7 +318,7 @@ def test_requirement_scoreboard_documents_gate_and_next_objective():
     assert fully_ready["next_objective"].startswith("run the close sequence")
 
 
-# --- TASK-199: both the CV and the qualification document for the path, or the close stays shut ---
+# --- TASK-427: both the CV and the qualification document for the path, or the close stays shut ---
 # (Ivan's manual test 2026-09-13: a claimed Urkunde plus a sent Lebenslauf unlocked the close.)
 
 _CV = {"id": 1, "document_type": "lebenslauf", "certificate_level": "unknown"}
@@ -369,7 +369,7 @@ _GATE_CASES = [
     ("cv_dienstplan", "urkunde", {"documents": [_CV, _DIENSTPLAN]}, "satisfied", "open", _URKUNDE_MISSING),
     ("cv_other", "urkunde", {"documents": [_CV, _OTHER]}, "satisfied", "open", _URKUNDE_MISSING),
     ("aufenthaltstitel_only", "urkunde", {"documents": [_AUFENTHALTSTITEL]}, "open", "open", _BOTH),
-    # TASK-199 review: a home-country diploma is not the German Urkunde, and not a Defizitbescheid either.
+    # TASK-427 review: a home-country diploma is not the German Urkunde, and not a Defizitbescheid either.
     ("cv_foreign_diploma", "urkunde", {"documents": [_CV, _FOREIGN_DIPLOMA]}, "satisfied", "open", _URKUNDE_MISSING),
     ("cv_foreign_diploma_defizit_path", "defizit", {"documents": [_CV, _FOREIGN_DIPLOMA]}, "satisfied", "open",
      _DEFIZIT_MISSING),
@@ -411,7 +411,7 @@ def test_shortlist_stays_empty_until_both_documents_are_in(luna, path, extra, cv
 
 
 def test_the_photo_pdf_hint_sits_on_the_document_being_asked_for():
-    """TASK-199 review: the template read 'ask for the still-missing Urkunde -- the CV is already in as a
+    """TASK-427 review: the template read 'ask for the still-missing Urkunde -- the CV is already in as a
     photo/PDF', putting the format hint on the document that had already arrived."""
     for card in ({**_ALL_BUT_DOCUMENTS, "documents": [_CV]}, {**_ALL_BUT_DOCUMENTS, "documents": [_URKUNDE]},
                  {**_ALL_BUT_DOCUMENTS, "qualification_path": "defizit", "documents": [_CV]}):
@@ -428,7 +428,7 @@ _REJECTED = {"region": "Bayern", "qualification_path": "reject", "qualification_
                                    {"city": "München", "housing_needed": False, "documents": [_CV]}],
                          ids=["nothing_else", "no_region", "city_and_housing", "city_housing_and_cv"])
 def test_a_rejected_candidate_gets_the_not_placeable_objective_never_a_document_ask(extra):
-    """TASK-199 review: next_objective skipped the blocked qualification and fell through to 'ask for BOTH the
+    """TASK-427 review: next_objective skipped the blocked qualification and fell through to 'ask for BOTH the
     CV AND the qualification document ... every turn until it arrives' -- against NOT PLACEABLE."""
     board = LB.requirement_scoreboard({**_REJECTED, **extra})
     assert board["qualification"] == "blocked"
@@ -463,7 +463,7 @@ def test_documents_just_received_reaches_the_model_once_and_is_never_saved_back(
 
 
 def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_turn():
-    ask = _rule("DOCUMENT ASK (TASK-199)")
+    ask = _rule("DOCUMENT ASK (TASK-427)")
     assert "the CV (Lebenslauf) AND the qualification document for their path" in ask
     assert "on the urkunde path the Urkunde; on the defizit or kenntnispruefung path the Defizitbescheid" in ask
     assert "ask for BOTH by name in one request" in ask
@@ -479,7 +479,7 @@ def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_tur
     assert "A document still missing per requirement_scoreboard is not such a fact" in _rule("MEMORY")
     assert "documents_just_received" in _rule("CV/URKUNDE TEXT")
     assert "\"other\" means the file is neither a CV nor a qualification document" in _rule("DOCUMENT TYPE")
-    # TASK-199 review: a home-country diploma is classified apart from the German Urkunde and never counts.
+    # TASK-427 review: a home-country diploma is classified apart from the German Urkunde and never counts.
     assert "document_type=\"auslaendisches_diplom\" is a nursing diploma" in _rule("DOCUMENT TYPE")
     assert "NOT the Urkunde, even when the candidate calls it that" in _rule("DOCUMENT TYPE")
     assert "a home-country nursing diploma (auslaendisches_diplom) is not it, on any path" in ask
@@ -561,7 +561,7 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
 
 
 def test_the_constitution_media_rule_no_longer_stops_the_document_ask():
-    """TASK-199 review: media_unreadable_rule said 'this assistant cannot read attachments yet' and 'do not
+    """TASK-427 review: media_unreadable_rule said 'this assistant cannot read attachments yet' and 'do not
     re-ask for a document they already sent' -- the opposite of DOCUMENT ASK for an unusable file."""
     system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
     assert "cannot read attachments yet" not in system
@@ -572,7 +572,7 @@ def test_the_constitution_media_rule_no_longer_stops_the_document_ask():
     assert "ask for that document again (DOCUMENT ASK)" in think6
 
 
-# --- TASK-186: market_snapshot's ready_to_close must agree with requirement_scoreboard's own
+# --- TASK-417: market_snapshot's ready_to_close must agree with requirement_scoreboard's own
 # city_or_department gate -- a live e2e run found a candidate genuinely flexible on department
 # (a real, valid answer) saw the scoreboard say "satisfied" while the shortlist never actually
 # populated, since ready_to_close silently required BOTH city AND department_pref.
@@ -583,7 +583,7 @@ def test_requirement_scoreboard_city_or_department_is_satisfied_by_either_alone(
     assert LB.requirement_scoreboard({})["city_or_department"] == "open"
 
 
-_DOC = {"qualification_path": "urkunde", "documents": [_CV, _URKUNDE]}   # TASK-199: both documents in
+_DOC = {"qualification_path": "urkunde", "documents": [_CV, _URKUNDE]}   # TASK-427: both documents in
 
 
 def test_shortlist_appears_with_only_department_known_no_city(luna):
@@ -600,12 +600,12 @@ def test_shortlist_appears_with_only_city_known_no_department(luna):
     assert snap["shortlist"], (
         "a candidate flexible on department but with a stated city (a real, answered preference, "
         "not a missing one) must still reach a shortlist -- this is the exact regression a live "
-        "e2e persona run surfaced (backlog TASK-186)")
+        "e2e persona run surfaced (backlog TASK-417)")
 
 
 @pytest.mark.parametrize("department_pref", ["Intensivstation", "ITS", "Intensivpflege", "intensiv", "Intensiv/IMC"])
 def test_shortlist_reads_the_candidates_department_word_in_board_vocabulary(luna, department_pref):
-    """TASK-199 review: the live close persona test wrote 'Intensivstation wäre ideal.', the model stored
+    """TASK-427 review: the live close persona test wrote 'Intensivstation wäre ideal.', the model stored
     department_pref='Intensivstation', and the exact board filter ('Intensiv/IMC') left the shortlist empty
     with both documents in -- consent was then asked with no clinic ever named."""
     card = {"qualification_ok": True, "city": "München", "department_pref": department_pref,
@@ -790,8 +790,8 @@ def test_shortlist_is_empty_with_neither_city_nor_department(luna):
 
 
 def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_satisfied(luna):
-    """TASK-195: qualification/city/housing alone are not enough -- documents must actually have
-    arrived (TASK-199: the CV and the qualification document, card.documents) before the
+    """TASK-424: qualification/city/housing alone are not enough -- documents must actually have
+    arrived (TASK-427: the CV and the qualification document, card.documents) before the
     shortlist/close sequence exists, matching the real reference implementation's own
     document-verification gate (recon notes)."""
     card = {"qualification_ok": True, "qualification_path": "urkunde", "city": "München", "housing_needed": False}
@@ -1345,7 +1345,7 @@ def test_live_reply_raises_when_result_is_missing(luna, monkeypatch, tmp_path):
 # (probed against CLI 2.1.270). The turn then runs against a system prompt that says "TOOLS
 # (mandatory, not optional)", names nine tools that are not there, and answers about the board from
 # nothing: an unverified claim indistinguishable from a verified one, the exact failure class
-# (TASK-199) these tools exist to remove.
+# (TASK-427) these tools exist to remove.
 
 def test_a_turn_whose_tools_server_never_started_fails_loudly_instead_of_answering(luna, monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=_ok_stdout(), tools_start=False))

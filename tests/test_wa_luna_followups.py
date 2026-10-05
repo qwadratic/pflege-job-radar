@@ -1,4 +1,4 @@
-"""Offline tests for app/wa/luna/followups.py (TASK-189) -- fixture threads only, no real CLI, no
+"""Offline tests for app/wa/luna/followups.py (TASK-420) -- fixture threads only, no real CLI, no
 network. Fakes app.wa.meta.Client, same pattern as tests/test_wa_luna_catchup.py."""
 import time
 from datetime import datetime, timedelta, timezone
@@ -39,7 +39,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "AUTOSEND", True)
     monkeypatch.setattr(C, "FOLLOWUP_TIER_MINUTES", [15, 60, 240])
     monkeypatch.setattr(C, "MAX_FOLLOWUPS_PER_STREAK", 4)
-    # Quiet hours (TASK-196) default to 21->9 Europe/Berlin -- every test in this file below is
+    # Quiet hours (TASK-425) default to 21->9 Europe/Berlin -- every test in this file below is
     # about tier/streak logic, not quiet hours, and must not flake depending on the real wall-clock
     # time the suite happens to run at. Disabled here (start==end, see _in_quiet_hours' own
     # docstring for why that reads as 'disabled'); the dedicated quiet-hours tests below restore
@@ -204,7 +204,7 @@ def test_run_can_be_scoped_to_specific_phones(db):
     assert [r["phone"] for r in results] == ["+49222"]
 
 
-# --- quiet hours (TASK-196) -----------------------------------------------------------------------
+# --- quiet hours (TASK-425) -----------------------------------------------------------------------
 
 def _at(hour, tz="Europe/Berlin"):
     """A UTC-aware datetime whose local hour in `tz` is exactly `hour` -- Berlin has no DST
