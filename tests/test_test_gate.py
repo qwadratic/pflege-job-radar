@@ -1214,6 +1214,11 @@ def test_cmd_pre_push_never_requests_the_llm_lane():
 
 # --- cmd_pre_deploy, with fakes -- the LLM lane's new home (Ivan, 2026-10-05) ------------------------
 
+def _same_rev(rev):
+    """Stands in for resolve_commit where the test's fake shas are already "full"."""
+    return rev
+
+
 def test_cmd_pre_deploy_runs_llm_lane_when_diff_touches_an_llm_relevant_path():
     seen = {}
 
@@ -1225,7 +1230,7 @@ def test_cmd_pre_deploy_runs_llm_lane_when_diff_touches_an_llm_relevant_path():
 
     rc = G.cmd_pre_deploy(
         Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: ["app/data.py"], parent_pid=1, run_lanes=fake_run_lanes,
+        env={}, git_run=lambda args: ["app/data.py"], parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["sha"] == "target1111111111111111111111111111111111"
@@ -1243,7 +1248,7 @@ def test_cmd_pre_deploy_skips_llm_lane_when_diff_touches_nothing_llm_relevant():
 
     rc = G.cmd_pre_deploy(
         Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, run_lanes=fake_run_lanes,
+        env={}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["need_llm"] is False
@@ -1259,7 +1264,7 @@ def test_cmd_pre_deploy_env_force_run_still_works():
 
     rc = G.cmd_pre_deploy(
         Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={"PFLEGE_GATE_LLM": "1"}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1,
+        env={"PFLEGE_GATE_LLM": "1"}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, resolve=_same_rev,
         run_lanes=fake_run_lanes,
     )
     assert rc == 0
@@ -1285,7 +1290,7 @@ def test_cmd_pre_deploy_defaults_deployed_to_the_main_checkouts_head_when_omitte
     rc = G.cmd_pre_deploy(
         Path("/some/worktree"), "target1111111111111111111111111111111111", None,
         env={}, git_run=fake_git_run, get_main_checkout_head=fake_get_main_checkout_head,
-        parent_pid=1, run_lanes=fake_run_lanes,
+        parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["worktree"] == Path("/some/worktree")
@@ -1295,10 +1300,46 @@ def test_cmd_pre_deploy_defaults_deployed_to_the_main_checkouts_head_when_omitte
 def test_cmd_pre_deploy_propagates_the_lane_runners_exit_code():
     rc = G.cmd_pre_deploy(
         Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: [], parent_pid=1,
+        env={}, git_run=lambda args: [], parent_pid=1, resolve=_same_rev,
         run_lanes=lambda *a, **k: 1,
     )
     assert rc == 1
+
+
+def test_resolve_commit_turns_head_a_branch_and_a_short_sha_into_the_full_sha(tmp_path):
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    sha = _commit_file(repo, "a.txt", "one\n", "first")
+    branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo, check=True,
+                            capture_output=True, text=True).stdout.strip()
+    for rev in ("HEAD", branch, sha[:7], sha):
+        assert G.resolve_commit(rev, repo) == sha
+
+
+def test_resolve_commit_raises_on_a_rev_that_names_no_commit(tmp_path):
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    _commit_file(repo, "a.txt", "one\n", "first")
+    with pytest.raises(RuntimeError, match="does not name a commit"):
+        G.resolve_commit("no-such-branch", repo)
+
+
+def test_cmd_pre_deploy_keys_lanes_by_the_full_sha_when_given_symbolic_revs(tmp_path):
+    """10-05 review MAJOR 1: `--target HEAD` used to reach the stamp/scratch checkout as the string
+    "HEAD", so a stamp written for one commit vouched for any later HEAD."""
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    sha1 = _commit_file(repo, "a.txt", "one\n", "first")
+    sha2 = _commit_file(repo, "app/data.py", "x = 1\n", "second")
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        seen["sha"] = sha
+        seen["need_llm"] = need_llm
+        return 0
+
+    rc = G.cmd_pre_deploy(repo, "HEAD", "HEAD~1", env={}, parent_pid=1, run_lanes=fake_run_lanes)
+    assert rc == 0
+    assert seen["sha"] == sha2
+    assert seen["need_llm"] is True    # HEAD~1..HEAD touches app/data.py
+    assert sha1 != sha2
 
 
 # --- _save_lane_log ----------------------------------------------------------------------------------

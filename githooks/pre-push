@@ -1,5 +1,6 @@
 #!/bin/sh
-# pflege-board pre-push gate: the deploy gate (versioned: tools/test_gate.py does the work, this is a
+# pflege-board pre-push gate, offline lane only -- the LLM lane runs before a deploy, via `tools/test_gate.py
+# pre-deploy --target <sha>` (versioned: tools/test_gate.py does the work, this is a
 # thin shim). Remote "fork" has two push URLs (GitHub + macmini:pflege-wa-bridge.git, whose
 # post-receive restarts the bridge), so this can fire twice for one push; tools/test_gate.py stamps
 # per sha under ~/.local/state/pflege-gate/ so the second firing does not re-run.

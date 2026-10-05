@@ -319,10 +319,10 @@ def llm_lane_decision(paths: Iterable[str] | None, env: dict) -> tuple[bool, str
     if forced == "0":
         return False, "PFLEGE_GATE_LLM=0 (forced skip)"
     if paths is None:
-        return True, "change set unknown (remote sha not present locally) -- running the LLM lane to be safe"
+        return True, "change set unknown (base sha not present locally) -- running the LLM lane"
     paths = list(paths)
     if touches_llm_paths(paths):
-        return True, "pushed range touches an LLM-relevant path"
+        return True, "changed range touches an LLM-relevant path"
     return False, "no LLM-relevant path in the pushed range"
 
 
@@ -427,6 +427,18 @@ def main_checkout_root(worktree: Path) -> Path:
         cwd=worktree, capture_output=True, text=True, check=True,
     ).stdout.strip()
     return Path(out).parent
+
+
+def resolve_commit(rev: str, cwd: Path) -> str:
+    """Full sha of the commit ``rev`` names in ``cwd`` (a sha, short sha, branch, tag or HEAD). Raises
+    when it names no commit. pre-deploy keys its stamp and scratch checkout by this sha: an unresolved
+    "HEAD" or branch name would reuse an old stamp for a different commit (10-05 review, MAJOR 1)."""
+    proc = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"],
+                          cwd=cwd, capture_output=True, text=True)
+    sha = proc.stdout.strip()
+    if proc.returncode != 0 or not sha:
+        raise RuntimeError(f"{rev!r} does not name a commit in {cwd}")
+    return sha
 
 
 def main_checkout_head(worktree: Path) -> str:
@@ -647,10 +659,10 @@ def run_llm_lane(
             total, skipped, skip_details = _parse_junit_report(junit_path)
             if total == 0:
                 passed = False
-                print("pre-push: llm lane FAILED -- junit report shows 0 tests collected")
+                print("gate: llm lane FAILED -- junit report shows 0 tests collected")
             elif skipped:
                 passed = False
-                print(f"pre-push: llm lane FAILED -- {skipped} test(s) skipped instead of run:")
+                print(f"gate: llm lane FAILED -- {skipped} test(s) skipped instead of run:")
                 for test_id, reason in skip_details:
                     print(f"  {test_id}: {reason}")
         return LaneResult("llm", passed, duration, proc.returncode, failing, proc.stdout)
@@ -897,15 +909,21 @@ def cmd_pre_deploy(
     get_main_checkout_head: Callable[[Path], str] = main_checkout_head,
     parent_pid: int | None = None,
     run_lanes: Callable[..., int] = _run_lanes_for_sha,
+    resolve: Callable[[str], str] | None = None,
 ) -> int:
     env = env if env is not None else os.environ
     if git_run is None:
         def git_run(args: Sequence[str]) -> list[str]:
             return real_git_run(args, cwd=worktree)
+    if resolve is None:
+        def resolve(rev: str) -> str:
+            return resolve_commit(rev, worktree)
 
+    target = resolve(target)
     if deployed is None:
         deployed = get_main_checkout_head(worktree)
         print(f"pre-deploy: --deployed not given -- using the main checkout's HEAD {deployed[:12]}")
+    deployed = resolve(deployed)
 
     # Reuses determine_changed_paths (same function pre-push used to call for its own old..new sha
     # range) via a synthetic ref: deployed -> target is an ordinary update as far as that function is
@@ -935,7 +953,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                              "invoked the hook for -- defaults to this checkout when omitted)")
         if name == "pre-deploy":
             p.add_argument("--target", required=True,
-                            help="the sha about to be deployed -- tested in a scratch worktree")
+                            help="the commit about to be deployed (any rev; resolved to its full sha) -- "
+                                 "tested in a scratch worktree")
             p.add_argument("--deployed", default=None,
                             help="the sha currently deployed (default: the MAIN checkout's HEAD, via "
                                  "main_checkout_root)")
