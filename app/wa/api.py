@@ -1206,7 +1206,7 @@ def _send(c, t, bubbles, buttons, client=None, action=None, turn_key=None, origi
 
 
 def send_and_record(c, t, bubbles, buttons, client=None, action=None, turn_key=None, origin=None):
-    """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-183) -- the
+    """Wraps ``_send`` to durably record a Meta send failure before re-raising (TASK-412) -- the
     loud-failure behavior for the caller (a 502, per this module's own docstring) is unchanged;
     what changes is that the failure now leaves a trace (``ST.record_send_failure``, readable via
     GET /wa/threads) instead of vanishing along with the never-persisted thread state.
@@ -1268,7 +1268,7 @@ def _send_reopen_template(c, t, client=None, action=None, origin=None):
 
 
 def _is_stuck(c, phone, last_inbound_at, stopped):
-    """True once a thread's ball has been on us (TASK-183) longer than C.STUCK_REPLY_HOURS -- the
+    """True once a thread's ball has been on us (TASK-412) longer than C.STUCK_REPLY_HOURS -- the
     honest, available equivalent of the real system's watchdog: no email/Telegram integration
     exists in this repo, so this is a durable, discoverable flag, not an invented notification."""
     from .luna import reporting as REP   # imported lazily: touches luna_brain, only when read
@@ -1299,7 +1299,7 @@ def wa_threads(request: Request, limit: int = 50):
 
     Gated in app/auth.py the same way /api/autopilot is -- a lead's phone number and what they told
     us is the most personal data this repo holds. Each row also carries ``stuck_reply`` and, when
-    one exists, ``last_send_error`` (TASK-183) -- computed here, not stored on the row itself, so
+    one exists, ``last_send_error`` (TASK-412) -- computed here, not stored on the row itself, so
     they always reflect the current time and the latest failure rather than a stale snapshot.
 
     ``?phone=`` also lists that phone's stored media originals (``documents``, TASK-426): wa_documents

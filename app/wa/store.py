@@ -1175,7 +1175,7 @@ def recent_agent_notes_for_phone(c, phone, exclude_id, limit=5):
     return [dict(r) for r in rows]
 
 
-# --- per-candidate LLM call rate limit (TASK-180) ------------------------------------------------
+# --- per-candidate LLM call rate limit (TASK-410) ------------------------------------------------
 
 def record_luna_call(c, phone):
     c.execute("insert into wa_luna_calls (phone, at) values (?,?)", (phone, now_iso()))
@@ -1189,7 +1189,7 @@ def count_recent_luna_calls(c, phone, within_hours=1.0):
     return row["n"]
 
 
-# --- send-failure visibility (TASK-183) -----------------------------------------------------------
+# --- send-failure visibility (TASK-412) -----------------------------------------------------------
 
 def record_send_failure(c, phone, error):
     c.execute("insert into wa_send_failures (phone, error, at) values (?,?,?)", (phone, error, now_iso()))

@@ -8,7 +8,7 @@ Every persona below is fully fictional -- invented names, invented specifics -- 
 cases each script triggers) come from a read of two months of the reference implementation's
 real WhatsApp history on tasker-dispatcher-01, aggregated and anonymized into archetype groups
 before a single line of this file was written. No real name, phone number, or verbatim message
-from that history appears here -- see the task history (backlog TASK-164 follow-up notes) for the
+from that history appears here -- see the task history (backlog TASK-404 follow-up notes) for the
 full anonymized group report this was built from.
 
 Run explicitly: ``pytest -q -m llm tests/test_wa_luna_personas.py``. Skipped automatically if the
@@ -171,7 +171,7 @@ def test_maria_verified_urkunde_reaches_a_city_and_department_without_a_reject(b
 
 
 def test_the_close_sequence_states_matches_before_recap_and_consent_together(board):
-    """TASK-167, tightened by TASK-423 and TASK-424: once qualification, city, department and
+    """TASK-405, tightened by TASK-423 and TASK-424: once qualification, city, department and
     housing are all settled, the harness must not jump straight to the anonymized-send question in
     the very same turn that first names a clinic -- it states the distinct clinic count and
     shortlist together as one info-only turn, THEN (a later turn) restates the matched criteria and
@@ -665,7 +665,7 @@ def test_a_question_about_an_unlisted_city_actually_triggers_a_live_search(board
     final_bubbles = " ".join(results[-1]["bubbles"])
     assert final_bubbles.strip(), "the tool call must still be followed by an actual reply"
     assert "coburg" in final_bubbles.lower(), (
-        f"TASK-177: the reply should name what it checked (Coburg), not just answer generically: {final_bubbles!r}")
+        f"TASK-409: the reply should name what it checked (Coburg), not just answer generically: {final_bubbles!r}")
 
 
 def test_a_question_the_snapshot_already_answers_does_not_trigger_a_needless_call(board):

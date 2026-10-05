@@ -1,5 +1,5 @@
 # Catch-up poller for the WhatsApp harness (app/wa/luna/catchup.py, TASK-332, docs/whatsapp.md
-# "Rate limit, dedup claim, catch-up, failure visibility (TASK-180/181/332/183)"): retries an owed
+# "Rate limit, dedup claim, catch-up, failure visibility (TASK-410/416/332/412)"): retries an owed
 # reply the webhook path never got to -- Meta delivery is not guaranteed, and a prior attempt can
 # fail before an outbound message is ever recorded. Runs as its own periodic oneshot job, driven
 # by deploy/pflege-wa-catchup.timer, rather than inside pflege-wa.service itself, so a slow or

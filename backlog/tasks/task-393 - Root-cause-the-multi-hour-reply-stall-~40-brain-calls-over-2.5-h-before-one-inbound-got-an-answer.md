@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-29 23:08'
+updated_date: '2026-10-05 17:58'
 labels:
   - luna
   - latency
@@ -23,7 +24,7 @@ ordinal: 268000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Found by the practice audit on 2026-09-29. On test thread B, the inbound at 2026-09-23 12:45:12 got its first reply at 15:22:32, 2h37m later.
 - In between, wa_luna_calls logged ~40 invocations 2-8 min apart. That matches the catch-up poller retrying an owed thread over and over.
-- TASK-183 (stuck_reply flag after 2 h) only makes the stall visible. TASK-180 (calls/hour cap) only caps its cost.
+- TASK-412 (stuck_reply flag after 2 h) only makes the stall visible. TASK-410 (calls/hour cap) only caps its cost.
 - Neither explains why 40 calls produced no reply.
 <!-- SECTION:DESCRIPTION:END -->
 

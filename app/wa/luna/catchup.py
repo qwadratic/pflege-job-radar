@@ -17,7 +17,7 @@ Two passes, one pipeline: app.wa.api.finish_inbound, the same the webhook's back
    reporting.ball_for() == "us" rule, or just ``--phones``) and not stopped: its last inbound message goes
    through finish_inbound once. Covers messages recorded before wa_inbound_pending existed.
 
-Same reply-turn claims (TASK-416), rate cap (TASK-180) and failure recording (TASK-183) as the webhook, and a
+Same reply-turn claims (TASK-416), rate cap (TASK-410) and failure recording (TASK-412) as the webhook, and a
 consent reached here builds its queue entry the same way (API.build_consent_queues). A failing message is
 logged, recorded (pending row, wa_send_failures once per distinct error), reported as status ``error``, and
 the pass goes on; main() exits 1 when any message failed.

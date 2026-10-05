@@ -1,4 +1,4 @@
-"""TASK-180/77/79: the shared process_owed_turn pipeline in app/wa/api.py -- reply-turn claims
+"""TASK-410/77/79: the shared process_owed_turn pipeline in app/wa/api.py -- reply-turn claims
 prevent double-answering the same inbound message, the per-candidate rate cap skips the brain
 without losing the message, and a send failure is durably recorded. Fakes app.wa.luna_brain.turn
 (no real CLI) and app.wa.meta.Client (no network), same patterns as
@@ -98,7 +98,7 @@ def test_two_calls_with_different_turn_keys_both_proceed(wa, monkeypatch):
     assert r1["status"] == "sent" and r2["status"] == "sent"
 
 
-# --- per-candidate rate limit (TASK-180) ----------------------------------------------------------
+# --- per-candidate rate limit (TASK-410) ----------------------------------------------------------
 
 def test_hitting_the_rate_cap_skips_the_brain_without_losing_the_message(wa, monkeypatch):
     monkeypatch.setattr(C, "LUNA_MAX_CALLS_PER_HOUR", 1)
@@ -137,7 +137,7 @@ def test_a_rate_limited_turn_is_reclaimable_by_a_later_catch_up_pass(wa, monkeyp
     assert result["status"] == "sent"
 
 
-# --- send-failure visibility (TASK-183) ------------------------------------------------------------
+# --- send-failure visibility (TASK-412) ------------------------------------------------------------
 
 def test_a_send_failure_is_durably_recorded_before_reraising(wa, monkeypatch):
     monkeypatch.setattr(LB, "turn", lambda text, thread, button_id=None, client=None: _fake_turn_result())
@@ -260,7 +260,7 @@ def test_a_replayed_send_does_not_spend_the_rate_cap_budget_again(wa, monkeypatc
     assert calls_after_retry == 1, "the replay must not have counted as a second real compose"
 
 
-# --- stuck-reply flag (TASK-183) -------------------------------------------------------------------
+# --- stuck-reply flag (TASK-412) -------------------------------------------------------------------
 
 def test_is_stuck_false_for_a_thread_that_just_wrote(wa):
     with ST.db() as c:

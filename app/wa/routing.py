@@ -54,7 +54,7 @@ def _is_known_to_real_system(phone):
     the one piece of information this harness cannot derive on its own. WA_REAL_SYSTEM_PHONES_FILE
     is a plain, newline-delimited, operator-produced export (an authorized, periodic sync from
     wherever the real system's own data lives) -- same genericize-the-real-system discipline as
-    app/wa/luna/external_contacts.py (TASK-173): this module never names or queries any specific
+    app/wa/luna/external_contacts.py (TASK-406): this module never names or queries any specific
     real system directly."""
     if not C.REAL_SYSTEM_PHONES_FILE:
         raise RuntimeError(

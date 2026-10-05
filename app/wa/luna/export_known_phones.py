@@ -5,7 +5,7 @@ reads. Nothing else in this repo produces that file; without it, WA_REAL_SYSTEM_
 an unmet promise and routing.py refuses to route anything at all (by design -- see its own
 docstring).
 
-Same genericize-the-real-system discipline as app/wa/luna/external_contacts.py (TASK-173) and
+Same genericize-the-real-system discipline as app/wa/luna/external_contacts.py (TASK-406) and
 app/wa/luna/migrate_candidates.py (TASK-415): this module never names or hardcodes any specific
 external system's schema, table, or column names. It knows nothing about where the operator's
 data actually lives -- the operator supplies the exact SQL query themselves (``--query``), and this

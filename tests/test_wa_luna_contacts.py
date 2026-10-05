@@ -68,7 +68,7 @@ def _no_real_sleep(monkeypatch):
     monkeypatch.setattr(CT.time, "sleep", lambda s: None)
 
 
-# --- source 0: optional external contact CRM (TASK-173) ------------------------------------------
+# --- source 0: optional external contact CRM (TASK-406) ------------------------------------------
 
 def test_external_crm_wins_and_skips_every_other_source(monkeypatch):
     """A hit from the external CRM must short-circuit enr_contact_emails, the website fetch and

@@ -1,5 +1,5 @@
 """Offline tests for the new store.py primitives: reply-turn claims (TASK-416), the per-candidate
-LLM call log (TASK-180), and send-failure recording (TASK-183)."""
+LLM call log (TASK-410), and send-failure recording (TASK-412)."""
 import pytest
 
 from app.wa import config as C
