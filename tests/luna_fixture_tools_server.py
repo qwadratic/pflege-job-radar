@@ -10,6 +10,11 @@ JSON and points ``LB._mcp_config_path`` at ``python -m tests.luna_fixture_tools_
 the rest of the generated config (PYTHONPATH, WA_SQLITE_PATH, WA_LUNA_SESSION_DIR) stays as luna_brain writes it.
 Run that way, this module loads the JSON into ``D._snap``, pins ``D.refresh`` to it (same as the test fixtures)
 and runs the real tools server.
+
+``D.job_detail`` is pinned to the board too, in both processes (2026-10-05): it is a live PostgREST read of the
+``postings`` row (luna_brain's warming shortlist, the get_posting tool). Unpinned, a checkout with the board's
+.env fetched REAL ads for the fixture's synthetic posting ids 1..N, and the pre-push gate's scratch checkout
+(no .env) failed every persona with "PostgREST 401: No API key found".
 """
 import json
 import os
@@ -20,6 +25,20 @@ from app import data as D
 
 _MODULE = "tests.luna_fixture_tools_server"
 _BOARD_KEYS = ("jobs", "clinics", "by_clinic", "facets", "taxonomy")
+_CLINIC_KEYS = ("clinic_id", "name", "town", "regierungsbezirk", "ats_type", "beds", "size", "careers_url", "website")
+
+
+def fixture_job_detail(posting_id):
+    """app/data.py:job_detail's shape, served from the fixture board: no live columns (description is None,
+    as job_detail's callers already allow), no observations."""
+    job = next((j for j in D.jobs() if j["posting_id"] == int(posting_id)), None)
+    if job is None:
+        return None
+    row = {**job, "observations": []}
+    c = D.clinic(job.get("clinic_id") or "")
+    if c:
+        row["clinic"] = {k: c.get(k) for k in _CLINIC_KEYS}
+    return row
 
 
 def use_fixture_board(monkeypatch, tmp_path):
@@ -39,12 +58,14 @@ def use_fixture_board(monkeypatch, tmp_path):
         return path
 
     monkeypatch.setattr(LB, "_mcp_config_path", fixture_config_path)
+    monkeypatch.setattr(D, "job_detail", fixture_job_detail)
 
 
 if __name__ == "__main__":
     D._snap.update(json.loads(Path(os.environ["WA_TEST_BOARD_JSON"]).read_text(encoding="utf-8")),
                    at=time.time(), loading=False, error=None)
     D.refresh = lambda: D._snap
+    D.job_detail = fixture_job_detail
     from app.wa.luna import tools_server as TS
     # TS.serve(), not mcp.run(): it applies the tool descriptions the model reads (built by the parent
     # from this same fixture board and passed in WA_LUNA_BOARD_VOCABULARY, TASK-110) and stamps the
