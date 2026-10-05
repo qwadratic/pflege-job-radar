@@ -7,7 +7,7 @@ to send.
 
 WHY. Valentyn, live 2026-09-24, asked "Wo ist die Klinik?" three times running and got three
 different phrasings of the same non-specific answer while his card stayed completely empty. A real
-candidate, +491709990589, shows the same disease from the other side: 21 outbound messages against
+candidate shows the same disease from the other side: 21 outbound messages against
 7 inbound, 8 of them the fixed "sind Sie noch da?" nudge, and one single slot ever filled. Both are
 the same failure -- we said something true and then stopped, leaving the person with nothing to
 answer.

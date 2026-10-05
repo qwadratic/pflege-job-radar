@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:48'
-updated_date: '2026-09-27 08:31'
+updated_date: '2026-10-05 18:02'
 labels:
   - dialog
   - architecture
@@ -127,5 +127,5 @@ Folded here: TASK-307, TASK-301, TASK-300, TASK-250. Their full text is kept in 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-27: send-scope kill switches live (b5c78c7): WA_REPLY_SCOPE=test_only (both rails) and WA_META_SCOPE=test_only (Meta channel muted; set to all to re-activate). A refused send is stored as a draft with meta.scope_refusal. Why: WA_OWN_ALL_CHATS=1 (b69d336, 2026-09-23) also captured Meta-webhook inbound, so the bot answered a real candidate via the Cloud API on 09-23..25 (thread +491709990589; two call requests answered with 'a colleague will call'; 9 fixed nudges). Still open: the thread rail is pinned forever, so a bridge-pinned test user writing to the Meta number is answered from the handset (new AC above).
+2026-09-27: send-scope kill switches live (b5c78c7): WA_REPLY_SCOPE=test_only (both rails) and WA_META_SCOPE=test_only (Meta channel muted; set to all to re-activate). A refused send is stored as a draft with meta.scope_refusal. Why: WA_OWN_ALL_CHATS=1 (b69d336, 2026-09-23) also captured Meta-webhook inbound, so the bot answered a real candidate via the Cloud API on 09-23..25 (thread of that candidate; two call requests answered with 'a colleague will call'; 9 fixed nudges). Still open: the thread rail is pinned forever, so a bridge-pinned test user writing to the Meta number is answered from the handset (new AC above).
 <!-- SECTION:NOTES:END -->

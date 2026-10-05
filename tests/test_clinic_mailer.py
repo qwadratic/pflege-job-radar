@@ -116,7 +116,7 @@ def test_do_not_contact_domain_blocks_to_and_cc(cfg):
 
 
 def test_do_not_contact_entry_with_replace_with_swaps_the_address_instead_of_blocking(cfg):
-    """LMU, 05.10: write to PA.ProfileLAK@..., not to pflegestellen@... any more."""
+    """LMU, 05.10: write to HR.PflegeTeam@..., not to pflegestellen@... any more."""
     (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.de", "replace_with": ["neu@a.de", "ST@a.de"], "clinic": "Klinik A",
                                                       "by": "Klinik A", "date": "2026-10-05", "why": "asked to write elsewhere"}]))
     cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
@@ -653,67 +653,67 @@ def answer(w, frm, text, mid="<r1@x>", subject="AW: Pflegekraft", **headers):
 
 
 def test_a_terms_request_changes_nothing_but_the_label_and_the_forward(scfg, monkeypatch, reader):
-    """02.10: Ilmtalklinik (Karin Nadler) asks for the terms."""
-    w = answers_world(scfg, monkeypatch, ["karin.nadler@klinikallianz.com"], [], "Ilmtalklinik Pfaffenhofen")
-    answer(w, "Karin Nadler <karin.nadler@klinikallianz.com>", "Sehr geehrte Damen und Herren,\n\nschicken Sie mir bitte Ihre Konditionen.\n\nKarin Nadler\n")
+    """02.10: Ilmtalklinik (Anna Berger) asks for the terms."""
+    w = answers_world(scfg, monkeypatch, ["anna.berger@klinikverbund.example"], [], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "Anna Berger <anna.berger@klinikverbund.example>", "Sehr geehrte Damen und Herren,\n\nschicken Sie mir bitte Ihre Konditionen.\n\nAnna Berger\n")
     reader.says("Konditionen", pattern="terms_request", quote="schicken Sie mir bitte Ihre Konditionen.")
     (ev,) = M.watch(scfg)
     assert ev["kind"] == "reply" and ev["pattern"] == "terms_request" and ev["actions"] == [] and ev["digest_to"] == OPS
-    assert table(scfg) == [] and w.sent == [] and reader.asked[0]["our_addresses"] == ["karin.nadler@klinikallianz.com"]
+    assert table(scfg) == [] and w.sent == [] and reader.asked[0]["our_addresses"] == ["anna.berger@klinikverbund.example"]
     M.digest([scfg])
     d = _email.message_from_bytes(w.to_ops_of(OPS[0])[0][1].as_bytes(), policy=_email.policy.default)
     assert "клиника ответила · клиника просит условия" in d.get_body(("plain",)).get_content()
 
 
 def test_a_redirect_makes_the_target_the_recipient_and_mutes_the_sender(scfg, monkeypatch, reader):
-    """05.10: LMU (pflegestellen@) says to write to PA.ProfileLAK@ and to stop writing to the Pflegestellen address."""
-    w = answers_world(scfg, monkeypatch, ["pflegestellen@med.uni-muenchen.de"], [], "LMU Klinikum München")
-    answer(w, "pflegestellen@med.uni-muenchen.de", "Sehr geehrte Damen und Herren,\n\nbitte wenden Sie sich in dieser Angelegenheit an "
-           "PA.ProfileLAK@med.uni-muenchen.de. Bitte schreiben Sie nicht mehr an die Pflegestellen-Adresse und löschen Sie sie.\n")
-    reader.says("PA.ProfileLAK", pattern="redirect", addresses=["PA.ProfileLAK@med.uni-muenchen.de"],
-                quote="bitte wenden Sie sich in dieser Angelegenheit an PA.ProfileLAK@med.uni-muenchen.de.")
+    """05.10: LMU (pflegestellen@) says to write to HR.PflegeTeam@ and to stop writing to the Pflegestellen address."""
+    w = answers_world(scfg, monkeypatch, ["pflegestellen@uniklinik.example"], [], "LMU Klinikum München")
+    answer(w, "pflegestellen@uniklinik.example", "Sehr geehrte Damen und Herren,\n\nbitte wenden Sie sich in dieser Angelegenheit an "
+           "HR.PflegeTeam@uniklinik.example. Bitte schreiben Sie nicht mehr an die Pflegestellen-Adresse und löschen Sie sie.\n")
+    reader.says("HR.PflegeTeam", pattern="redirect", addresses=["HR.PflegeTeam@uniklinik.example"],
+                quote="bitte wenden Sie sich in dieser Angelegenheit an HR.PflegeTeam@uniklinik.example.")
     (ev,) = M.watch(scfg)
     (row,) = table(scfg)
-    assert row["match"] == "pflegestellen@med.uni-muenchen.de" and row["replace_with"] == ["PA.ProfileLAK@med.uni-muenchen.de"]
-    assert row["reason"] == "redirect" and row["by"] == "pflegestellen@med.uni-muenchen.de" and row["clinic"] == "LMU Klinikum München"
-    assert row["date"] == M.now_in(scfg).strftime("%Y-%m-%d") == "2026-09-29" and "PA.ProfileLAK@med.uni-muenchen.de." in row["why"]
-    assert M.suppressed(scfg, ["pflegestellen@med.uni-muenchen.de"]) == set()                     # muted by a swap, not blocked
-    assert M.swap_addresses(["pflegestellen@med.uni-muenchen.de"], M.replacements(scfg, ["pflegestellen@med.uni-muenchen.de"])) == ["PA.ProfileLAK@med.uni-muenchen.de"]
-    assert w.sent == [] and "записал в таблицу: писать на PA.ProfileLAK@med.uni-muenchen.de" in ev["actions"][0]["ru"]
+    assert row["match"] == "pflegestellen@uniklinik.example" and row["replace_with"] == ["HR.PflegeTeam@uniklinik.example"]
+    assert row["reason"] == "redirect" and row["by"] == "pflegestellen@uniklinik.example" and row["clinic"] == "LMU Klinikum München"
+    assert row["date"] == M.now_in(scfg).strftime("%Y-%m-%d") == "2026-09-29" and "HR.PflegeTeam@uniklinik.example." in row["why"]
+    assert M.suppressed(scfg, ["pflegestellen@uniklinik.example"]) == set()                     # muted by a swap, not blocked
+    assert M.swap_addresses(["pflegestellen@uniklinik.example"], M.replacements(scfg, ["pflegestellen@uniklinik.example"])) == ["HR.PflegeTeam@uniklinik.example"]
+    assert w.sent == [] and "записал в таблицу: писать на HR.PflegeTeam@uniklinik.example" in ev["actions"][0]["ru"]
     M.digest([scfg])
     html_part = _email.message_from_bytes(w.to_ops_of(OPS[1])[0][1].as_bytes(), policy=_email.policy.default).get_body(("html",)).get_content()
-    assert "клиника просит писать другому адресату: PA.ProfileLAK@med.uni-muenchen.de" in html_part and "Сделано: записал в таблицу" in html_part
+    assert "клиника просит писать другому адресату: HR.PflegeTeam@uniklinik.example" in html_part and "Сделано: записал в таблицу" in html_part
 
 
 def test_an_out_of_office_with_a_substitute_address_moves_the_cc_to_the_main_place(scfg, monkeypatch, reader):
-    """29.09/02.10: Sandra Bär (To) is away, Karin Nadler (Cc) is her substitute."""
-    w = answers_world(scfg, monkeypatch, ["sandra.baer@klinikallianz.com"], ["karin.nadler@klinikallianz.com"], "Ilmtalklinik Pfaffenhofen")
-    answer(w, "sandra.baer@klinikallianz.com", "Ich bin nicht im Haus. Mails werden nicht weitergeleitet. Bitte wenden Sie sich an meine Vertretung "
-           "Karin Nadler (karin.nadler@klinikallianz.com) oder an das Sekretariat.", subject="Abwesenheit", Auto_Submitted="auto-replied")
-    reader.says("Vertretung", pattern="out_of_office", addresses=["karin.nadler@klinikallianz.com"], names=["Karin Nadler"],
-                quote="Bitte wenden Sie sich an meine Vertretung Karin Nadler (karin.nadler@klinikallianz.com)")
+    """29.09/02.10: Julia Koch (To) is away, Anna Berger (Cc) is her substitute."""
+    w = answers_world(scfg, monkeypatch, ["julia.koch@klinikverbund.example"], ["anna.berger@klinikverbund.example"], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "julia.koch@klinikverbund.example", "Ich bin nicht im Haus. Mails werden nicht weitergeleitet. Bitte wenden Sie sich an meine Vertretung "
+           "Anna Berger (anna.berger@klinikverbund.example) oder an das Sekretariat.", subject="Abwesenheit", Auto_Submitted="auto-replied")
+    reader.says("Vertretung", pattern="out_of_office", addresses=["anna.berger@klinikverbund.example"], names=["Anna Berger"],
+                quote="Bitte wenden Sie sich an meine Vertretung Anna Berger (anna.berger@klinikverbund.example)")
     (ev,) = M.watch(scfg)
     assert ev["kind"] == "auto_reply" and ev["digest_to"] == OPS and reader.asked[0]["automatic"] is True
     (row,) = table(scfg)
-    assert row["by"] == "sandra.baer@klinikallianz.com, out-of-office auto-reply" and row["reason"] == "redirect"
-    swaps = M.replacements(scfg, ["sandra.baer@klinikallianz.com", "karin.nadler@klinikallianz.com"])
-    assert M.swap_addresses(["sandra.baer@klinikallianz.com"], swaps) == ["karin.nadler@klinikallianz.com"]
+    assert row["by"] == "julia.koch@klinikverbund.example, out-of-office auto-reply" and row["reason"] == "redirect"
+    swaps = M.replacements(scfg, ["julia.koch@klinikverbund.example", "anna.berger@klinikverbund.example"])
+    assert M.swap_addresses(["julia.koch@klinikverbund.example"], swaps) == ["anna.berger@klinikverbund.example"]
     assert "stopped" not in M.next_due(scfg, {"id": "1", "clinic": "Klinik A"}, M.read_ledger(scfg))[1]       # an out of office ends no sequence
 
 
 def test_names_without_an_address_count_when_one_is_ours_and_otherwise_change_nothing(scfg, monkeypatch, reader):
-    """29.09/02.10: Tobias Heckelsmüller (Cc) names four colleagues, Frau Son is our main recipient; and a stranger's name."""
-    w = answers_world(scfg, monkeypatch, ["stefanie.son@starnberger-kliniken.de"], ["tobias.heckelsmueller@starnberger-kliniken.de"], "Klinikum Starnberg")
-    answer(w, "tobias.heckelsmueller@starnberger-kliniken.de", "Ich bin nicht im Haus. Bitte wenden Sie sich an meine Kollegen Herr Hohndorf, "
-           "Herr Keil, Frau Sättler und Frau Son.", Auto_Submitted="auto-replied")
-    reader.says("Kollegen", pattern="out_of_office", names=["Hohndorf", "Keil", "Sättler", "Son"], already_ours=["stefanie.son@starnberger-kliniken.de"],
-                quote="Bitte wenden Sie sich an meine Kollegen Herr Hohndorf, Herr Keil, Frau Sättler und Frau Son.")
+    """29.09/02.10: Markus Lang (Cc) names four colleagues, Frau Roth is our main recipient; and a stranger's name."""
+    w = answers_world(scfg, monkeypatch, ["lena.roth@kliniken-see.example"], ["markus.lang@kliniken-see.example"], "Klinikum Starnberg")
+    answer(w, "markus.lang@kliniken-see.example", "Ich bin nicht im Haus. Bitte wenden Sie sich an meine Kollegen Herr Brandt, "
+           "Herr Vogel, Frau Kraus und Frau Roth.", Auto_Submitted="auto-replied")
+    reader.says("Kollegen", pattern="out_of_office", names=["Brandt", "Vogel", "Kraus", "Roth"], already_ours=["lena.roth@kliniken-see.example"],
+                quote="Bitte wenden Sie sich an meine Kollegen Herr Brandt, Herr Vogel, Frau Kraus und Frau Roth.")
     M.watch(scfg)
     (row,) = table(scfg)
-    assert row["match"] == "tobias.heckelsmueller@starnberger-kliniken.de" and row["replace_with"] == ["stefanie.son@starnberger-kliniken.de"]
-    swaps = M.replacements(scfg, ["stefanie.son@starnberger-kliniken.de", "tobias.heckelsmueller@starnberger-kliniken.de"])
-    assert M.swap_addresses(["stefanie.son@starnberger-kliniken.de", "tobias.heckelsmueller@starnberger-kliniken.de"], swaps) == ["stefanie.son@starnberger-kliniken.de"]
-    answer(w, "stefanie.son@starnberger-kliniken.de", "Ich bin nicht im Haus. Meine Vertretung ist Frau Meier, Tel. 089 123456.", mid="<r2@x>",
+    assert row["match"] == "markus.lang@kliniken-see.example" and row["replace_with"] == ["lena.roth@kliniken-see.example"]
+    swaps = M.replacements(scfg, ["lena.roth@kliniken-see.example", "markus.lang@kliniken-see.example"])
+    assert M.swap_addresses(["lena.roth@kliniken-see.example", "markus.lang@kliniken-see.example"], swaps) == ["lena.roth@kliniken-see.example"]
+    answer(w, "lena.roth@kliniken-see.example", "Ich bin nicht im Haus. Meine Vertretung ist Frau Meier, Tel. 089 123456.", mid="<r2@x>",
            Auto_Submitted="auto-replied")
     reader.says("Frau Meier", pattern="out_of_office", names=["Meier"], phones=["089 123456"], quote="Meine Vertretung ist Frau Meier, Tel. 089 123456.")
     ev = M.watch(scfg)[0]
@@ -760,20 +760,20 @@ def test_a_classifier_that_cannot_read_an_answer_halts_and_the_answer_is_read_ag
 
 
 def test_what_the_classifier_says_it_found_must_be_in_the_mail(scfg, monkeypatch, reader):
-    raw = mail("pd@a.de", "AW", "Bitte wenden Sie sich an Frau Son.", None, "<r1@x>")[2]
-    reader.says("Frau Son", pattern="redirect", addresses=["son@a.de"], quote="Bitte wenden Sie sich an Frau Son.")
-    with pytest.raises(M.MailerError, match="the address 'son@a.de' is not in the mail"):
+    raw = mail("pd@a.de", "AW", "Bitte wenden Sie sich an Frau Roth.", None, "<r1@x>")[2]
+    reader.says("Frau Roth", pattern="redirect", addresses=["roth@a.de"], quote="Bitte wenden Sie sich an Frau Roth.")
+    with pytest.raises(M.MailerError, match="the address 'roth@a.de' is not in the mail"):
         M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
     reader.rules.clear()
-    reader.says("Frau Son", pattern="redirect", already_ours=["son@a.de"], quote="Bitte wenden Sie sich an Frau Son.")
+    reader.says("Frau Roth", pattern="redirect", already_ours=["roth@a.de"], quote="Bitte wenden Sie sich an Frau Roth.")
     with pytest.raises(M.MailerError, match="not one of our addresses"):
         M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
     reader.rules.clear()
-    reader.says("Frau Son", pattern="redirect", names=["Son"], quote="Bitte rufen Sie Frau Son an.")
+    reader.says("Frau Roth", pattern="redirect", names=["Roth"], quote="Bitte rufen Sie Frau Roth an.")
     with pytest.raises(M.MailerError, match="the quote .* is not in the mail"):
         M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
     reader.rules.clear()
-    reader.says("Frau Son", pattern="opt_out", quote="Bitte wenden Sie sich an Frau Son.")
+    reader.says("Frau Roth", pattern="opt_out", quote="Bitte wenden Sie sich an Frau Roth.")
     with pytest.raises(M.MailerError, match="opt_out without a scope"):
         M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
 
@@ -807,9 +807,9 @@ def test_a_redirect_written_after_planning_reaches_the_letter_at_send_time(scfg,
 
 def test_a_swap_at_send_time_moves_a_cc_to_the_main_place_without_a_duplicate(scfg):
     scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
-    scfg["do_not_contact"].write_text(json.dumps([{"match": "sandra@a.de", "replace_with": ["karin@a.de"], "reason": "redirect"}]))
-    out = M.routed(scfg, {"to": ["sandra@a.de"], "cc": ["karin@a.de", "other@a.de"]}, live=True)
-    assert out["to"] == ["karin@a.de"] and out["cc"] == ["other@a.de"] and out["planned_to"] == ["sandra@a.de"] and out["planned_cc"] == ["karin@a.de", "other@a.de"]
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "julia@a.de", "replace_with": ["anna@a.de"], "reason": "redirect"}]))
+    out = M.routed(scfg, {"to": ["julia@a.de"], "cc": ["anna@a.de", "other@a.de"]}, live=True)
+    assert out["to"] == ["anna@a.de"] and out["cc"] == ["other@a.de"] and out["planned_to"] == ["julia@a.de"] and out["planned_cc"] == ["anna@a.de", "other@a.de"]
 
 
 def test_a_block_written_after_planning_stops_the_letter_at_send_time(scfg, monkeypatch):
@@ -1170,16 +1170,16 @@ def recipients(c):
 
 
 def test_a_redirect_to_a_new_address_makes_a_recipient_and_ends_the_old_sequence(scfg, monkeypatch, reader):
-    """05.10: LMU's Pflegestellen box says to write to PA.ProfileLAK@, an address we never wrote to."""
+    """05.10: LMU's Pflegestellen box says to write to HR.PflegeTeam@, an address we never wrote to."""
     w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [], "LMU Klinikum München")
-    answer(w, "pd1@example.org", "Bitte wenden Sie sich an PA.ProfileLAK@med.uni-muenchen.de.")
-    reader.says("PA.ProfileLAK", pattern="redirect", addresses=["PA.ProfileLAK@med.uni-muenchen.de"], quote="Bitte wenden Sie sich an PA.ProfileLAK@med.uni-muenchen.de.")
+    answer(w, "pd1@example.org", "Bitte wenden Sie sich an HR.PflegeTeam@uniklinik.example.")
+    reader.says("HR.PflegeTeam", pattern="redirect", addresses=["HR.PflegeTeam@uniklinik.example"], quote="Bitte wenden Sie sich an HR.PflegeTeam@uniklinik.example.")
     (ev,) = M.watch(scfg)
     old, new = [r for r in recipients(scfg) if r["id"] in ("1", "1r1")]
-    assert new["to"] == ["PA.ProfileLAK@med.uni-muenchen.de"] and new["cc"] == [] and new["redirect_of"] == "1" and new["clinic"] == old["clinic"]
+    assert new["to"] == ["HR.PflegeTeam@uniklinik.example"] and new["cc"] == [] and new["redirect_of"] == "1" and new["clinic"] == old["clinic"]
     assert new["vars"]["ANREDE"] == "Sehr geehrte Damen und Herren" and new["vars"]["BEREICH"] == old["vars"]["BEREICH"] and old["vars"]["ANREDE"] == "Sehr geehrte Frau A"
     letter = ev["actions"][1]
-    assert letter["do"] == "redirect_letter" and letter["recipient"] == "1r1" and "первое письмо на PA.ProfileLAK@med.uni-muenchen.de" in letter["ru"]
+    assert letter["do"] == "redirect_letter" and letter["recipient"] == "1r1" and "первое письмо на HR.PflegeTeam@uniklinik.example" in letter["ru"]
     (red,) = w.events("redirected")
     assert red["recipient_id"] == "1" and red["to_recipient"] == "1r1" and red["kind"] == "redirected"
     assert M.next_due(scfg, old, M.read_ledger(scfg))[1].startswith("stopped: redirected")           # a letter to the old address would double it
@@ -1189,9 +1189,9 @@ def test_a_redirect_to_a_new_address_makes_a_recipient_and_ends_the_old_sequence
 
 def test_a_redirect_to_an_address_we_already_wrote_to_makes_no_letter(scfg, monkeypatch, reader):
     """Starnberg: the substitute is already our main recipient; Ilmtalklinik: she is in Cc."""
-    w = answers_world(scfg, monkeypatch, ["sandra.baer@klinikallianz.com"], ["karin.nadler@klinikallianz.com"], "Ilmtalklinik Pfaffenhofen")
-    answer(w, "sandra.baer@klinikallianz.com", "Ich bin nicht im Haus. Vertretung: karin.nadler@klinikallianz.com", Auto_Submitted="auto-replied")
-    reader.says("Vertretung", pattern="out_of_office", addresses=["karin.nadler@klinikallianz.com"], quote="Vertretung: karin.nadler@klinikallianz.com")
+    w = answers_world(scfg, monkeypatch, ["julia.koch@klinikverbund.example"], ["anna.berger@klinikverbund.example"], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "julia.koch@klinikverbund.example", "Ich bin nicht im Haus. Vertretung: anna.berger@klinikverbund.example", Auto_Submitted="auto-replied")
+    reader.says("Vertretung", pattern="out_of_office", addresses=["anna.berger@klinikverbund.example"], quote="Vertretung: anna.berger@klinikverbund.example")
     (ev,) = M.watch(scfg)
     assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3"] and w.events("redirected") == []
     assert ev["actions"][1] == {"do": "redirect_letter", "recipient": None, "to": [], "ru": "нового письма нет: на этот адрес мы уже писали"}

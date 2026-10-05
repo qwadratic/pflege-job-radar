@@ -19,7 +19,7 @@ from bridge import ledger as L
 
 TEST_PHONE = "+436600000001"
 OTHER_TEST = "+436600000002"
-REAL = "+491709990589"
+REAL = "+4915550000589"
 
 # 03:00 Berlin on a Thursday: outside active hours (9-20), which refuses every governed send
 # whatever its kind, so one timestamp exercises the strictest branch.
@@ -107,7 +107,7 @@ def test_a_real_candidates_own_traffic_still_counts_normally(led):
     first-touch gap -- which genuinely does apply between two real strangers -- is not what decides."""
     earlier = DAY - datetime.timedelta(hours=1)
     _spend(led, REAL, G.FIRST_TOUCH, earlier, n=3)
-    assert _gov(led).check(now=DAY, phone="+491709990590",
+    assert _gov(led).check(now=DAY, phone="+4915550000590",
                            kind=G.FIRST_TOUCH).first_touches_today == 3
 
 

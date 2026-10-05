@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-05 09:22'
-updated_date: '2026-10-05 09:58'
+updated_date: '2026-10-05 18:01'
 labels: []
 dependencies: []
 parent_task_id: TASK-345.12
@@ -17,7 +17,7 @@ ordinal: 290000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-10-05, after Ilmtalklinik (Karin Nadler, deputy nursing director) asked for the terms ("Konditionen") on 02.10: Valentyn will send the terms to the sender box and Daria sends them to the clinic; if a request from Valentyn to send something to a clinic is unclear or needs agreeing first, Daria clarifies the letter with him in the mail dialogue and then sends it. Today the desk (tools/daria_desk.py, tools/daria_tools.py) answers operators and has no tool that mails a clinic, and batch letters go only through an approved plan. Without this the terms reach a clinic only when a Claude session is open.
+Ivan, 2026-10-05, after Ilmtalklinik (its deputy nursing director) asked for the terms ("Konditionen") on 02.10: Valentyn will send the terms to the sender box and Daria sends them to the clinic; if a request from Valentyn to send something to a clinic is unclear or needs agreeing first, Daria clarifies the letter with him in the mail dialogue and then sends it. Today the desk (tools/daria_desk.py, tools/daria_tools.py) answers operators and has no tool that mails a clinic, and batch letters go only through an approved plan. Without this the terms reach a clinic only when a Claude session is open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

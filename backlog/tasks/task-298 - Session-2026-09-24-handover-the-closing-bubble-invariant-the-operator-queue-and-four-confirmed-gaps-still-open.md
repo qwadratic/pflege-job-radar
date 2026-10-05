@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-24 21:33'
-updated_date: '2026-09-30 18:28'
+updated_date: '2026-10-05 18:02'
 labels:
   - whatsapp
   - handover
@@ -136,7 +136,7 @@ WORKFLOW OUTPUTS (large; read before redesigning anything):
   /home/claude/.tmp/claude-1003/-home-claude-repo/4e983037-6874-59b2-9744-feb738486035/tasks/weyo45o4f.output
 - Four gap fixes, launched at handover, results land later: run wf_9aef5321-b9a / task wjb3qywg2
 
-THE LIVE EVIDENCE FOR THE NUDGE GAP, real candidate +491709990589: 21 outbound against 7 inbound,
+THE LIVE EVIDENCE FOR THE NUDGE GAP, real candidate (number kept out of git): 21 outbound against 7 inbound,
 EIGHT of them 'Nur zur Sicherheit nachgefragt - sind Sie noch da?', card holding exactly one slot
 (region=Bayern) after 7 turns. She asked twice to be phoned and got a document request both times.
 This thread is untouched and is the best test case for whatever the nudge fix turns out to be.

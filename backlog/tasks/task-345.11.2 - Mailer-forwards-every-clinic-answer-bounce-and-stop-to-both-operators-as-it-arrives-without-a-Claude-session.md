@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-05 09:14'
-updated_date: '2026-10-05 11:43'
+updated_date: '2026-10-05 18:01'
 labels: []
 dependencies: []
 parent_task_id: TASK-345.11
@@ -18,7 +18,7 @@ ordinal: 289000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-10-05: "у нас должна быть автоотправка емейла на наши с Валентином емейлы". A clinic answer (Ilmtalklinik Pfaffenhofen, Karin Nadler, "schicken Sie mir bitte Ihre Konditionen", Fri 02.10 11:45) sat unseen for three days: the batch logged it as an inbound event and took the clinic out of its sequence, but nothing mailed the operators, and forwarding was a manual step (tools/daria_forward.py, then to Ivan only) done only inside a Claude session. Nobody worked on Friday afternoon or over the weekend. The Rotkreuz bounce the same day only reached the operators as a halt notice without the report. With bounce removed from halt_on on 02.10 (a spam rejection by one clinic server stopped the whole wave), a bounce no longer produces any mail at all.
+Ivan, 2026-10-05: "у нас должна быть автоотправка емейла на наши с Валентином емейлы". A clinic answer (Ilmtalklinik Pfaffenhofen, the deputy nursing director, "schicken Sie mir bitte Ihre Konditionen", Fri 02.10 11:45) sat unseen for three days: the batch logged it as an inbound event and took the clinic out of its sequence, but nothing mailed the operators, and forwarding was a manual step (tools/daria_forward.py, then to Ivan only) done only inside a Claude session. Nobody worked on Friday afternoon or over the weekend. The Rotkreuz bounce the same day only reached the operators as a halt notice without the report. With bounce removed from halt_on on 02.10 (a spam rejection by one clinic server stopped the whole wave), a bounce no longer produces any mail at all.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -43,7 +43,7 @@ Ivan, 2026-10-05: "у нас должна быть автоотправка ем
 
 05.10 evening: live check: LMU Klinikum München answered at 11:30:48 (ledger inbound, recipient 16290) and the answer was mailed to the operators by the running batch (forwarded_to and forward_message_id in the ledger line). Valentyn's address bounced, so operators in campaign.json, campaign.w2.json, data/email-analysis/desk/daria.json and TO in tools/daria_forward.py are Ivan only until Valentyn gives a working address. Batches of one campaign run as separate processes on one ledger (wave 2 first letters and its follow-up batch): watch() now takes an exclusive flock on <ledger>.watch.lock so two processes never forward the same answer twice. Tests: .venv/bin/python -m pytest tests/test_clinic_mailer.py tests/test_daria_desk.py, 52 passed.
 
-05.10 late, Ivan: roles. Valentyn's new address is ukraine.bz1@gmail.com. Config of each campaign: "operators" = who may command (Ivan, Valentyn), "notify" = announcement, reports, halt, resumed, done (Ivan only), "forward" = per inbound kind who gets the answer (reply and unmatched: Ivan and Valentyn; stop, bounce, complaint, operator_undeliverable: Ivan). The desk config has "notify" for its stop notice. A batch planned earlier keeps its old recipients in the batch file; notices are cut to the notify list. The pre-announcement wait of a scheduled batch now reads the inbox too, so wave 1 answers are forwarded before the Friday announcement. Nadler and LMU answers re-sent to Valentyn with tools/daria_forward.py send ... --to ukraine.bz1@gmail.com.
+05.10 late, Ivan: roles. Valentyn's new address is ukraine.bz1@gmail.com. Config of each campaign: "operators" = who may command (Ivan, Valentyn), "notify" = announcement, reports, halt, resumed, done (Ivan only), "forward" = per inbound kind who gets the answer (reply and unmatched: Ivan and Valentyn; stop, bounce, complaint, operator_undeliverable: Ivan). The desk config has "notify" for its stop notice. A batch planned earlier keeps its old recipients in the batch file; notices are cut to the notify list. The pre-announcement wait of a scheduled batch now reads the inbox too, so wave 1 answers are forwarded before the Friday announcement. Ilmtalklinik and LMU answers re-sent to Valentyn with tools/daria_forward.py send ... --to ukraine.bz1@gmail.com.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

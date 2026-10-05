@@ -82,7 +82,7 @@ def _tool():
 def test_template_mode_renders_every_recipient_from_their_name():
     rows = [{"line": 1, "to": "+436600000001", "body": None, "name": "Ivan"},
             {"line": 2, "to": "+436600000002", "body": None, "name": "Valentyn"},
-            {"line": 3, "to": "+491709990589", "body": None, "name": None}]
+            {"line": 3, "to": "+4915550000589", "body": None, "name": None}]
     items = _tool().plan_broadcast(rows, None, template=True)
     assert [i["body"] for i in items] == [IVAN, VALENTYN, NO_NAME], (
         "a recipient with no name still gets the approved wording, just the plain greeting")
