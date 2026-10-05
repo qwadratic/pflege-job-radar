@@ -78,9 +78,9 @@ Row = namedtuple("Row", "seq scope via method url norm req_sha status reason hea
 _FRAMING = {"content-encoding", "transfer-encoding", "content-length"}
 _MAX_REDIRECTS = 20  # Chromium follows at most 20 redirects of one request, then fails it
 # analytics beacons a page fires on its own (measured on the Klinikum Ingolstadt P&I board: a Matomo POST whose URL carries a
-# random id, a clock and timings, new on every run, so a replay could never match it). The browser's answer is an empty 204 in
+# random id, a clock and timings, new on every run, so a replay could never match it; Tag Manager's /a?v=3&l=... logging beacon likewise). The browser's answer is an empty 204 in
 # every mode: nothing is sent to the clinic's analytics while recording, nothing is stored, nothing can miss.
-_BEACON = re.compile(r"(^|[.-])(matomo|piwik|google-analytics|doubleclick|hotjar|clarity|plausible)\b|/(matomo|piwik)\.php$", re.I)
+_BEACON = re.compile(r"(^|[.-])(matomo|piwik|google-analytics|googletagmanager|doubleclick|hotjar|clarity|plausible)\b|/(matomo|piwik)\.php$", re.I)
 # our own infrastructure and paid APIs: a recording talks to clinic sites only (no DB, no Firecrawl, no LLM)
 _INFRA = re.compile(r"(^|\.)(supabase\.co|supabase\.com|supabase\.int\.exe\.xyz|firecrawl\.dev|anthropic\.com|openai\.com|exa\.ai|stripe\.com)$", re.I)
 

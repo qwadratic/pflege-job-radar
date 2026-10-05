@@ -367,6 +367,7 @@ _APP = b"""<html><body><script>
 fetch('/api', {method: 'POST', body: 'hello'}).then(r => r.text()).then(t => document.body.setAttribute('data-api', t));
 fetch('/redir').then(r => r.text()).then(t => document.body.setAttribute('data-redir', t));
 fetch('/matomo.php?r=' + Math.random(), {method: 'POST', body: String(Math.random())});
+fetch('https://www.googletagmanager.com/a?v=3&l=L' + Math.random(), {mode: 'no-cors'}).catch(() => 0);
 </script></body></html>"""
 _DONE = "document.body.dataset.api && document.body.dataset.redir"
 
@@ -415,6 +416,7 @@ def test_playwright_requests_are_recorded_by_a_route_and_replayed_from_it(app_si
     rows = M.Store.load(BOARD).rows()
     assert {r.via for r in rows} == {"playwright"}
     assert [r.status for r in rows if r.url.endswith("/redir")] == [302]  # the redirect is its own recorded hop
+    assert not [r for r in rows if "googletagmanager" in r.url]  # nor Tag Manager's logging beacon (a random 'l=' per run: it broke the replay of a Helios mutation run)
     assert not [r for r in rows if "matomo" in r.url]  # the analytics beacon (a new random URL and body every run) is answered 204, never stored
     with M.mirror_board(BOARD):
         assert _browse(app_site + "/app") == live

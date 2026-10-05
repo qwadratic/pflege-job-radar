@@ -94,6 +94,9 @@ MUTATION_GAPS = {
     ("crawlers.vendor_adapters:crawl_drv_bund", "cap_first_page"):
         "the adapter refuses a board read that stops short (RuntimeError 'listing page=1 failed (404) -- board read stops short') instead of "
         "returning fewer rows, so declared_total_parity never gets the chance to go red",
+    ("crawlers.vendor_adapters:crawl_oracle", "cap_first_page"):
+        "the Oracle CE adapter (9bf74cd) refuses a list page that cannot be read (RuntimeError 'Oracle CE read failed (404)') instead of "
+        "returning fewer rows, so declared_total_parity never gets the chance to go red -- the board fails loudly, which is the design",
     ("crawlers.vendor_adapters:crawl_oracle", "skip_detail"):
         "the oracle adapter builds every row from the detail fetch: blocking it returns 0 rows, so declared_total_parity goes red as well "
         "(collateral by construction)",
