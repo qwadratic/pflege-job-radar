@@ -69,6 +69,7 @@ The VM disk is 25 GB. Check with `df -h /`. What is big and what it is (all giti
 | `crawl_snapshots/` | 1.7 GB | recorded pages the old adapter tests read; the mirror (TASK-197, not merged yet) is to replace them |
 | `data/clinic_photos/` | 1.5 GB | 399 chosen photos (`clinic_photos` table) plus 2121 unused candidates, input of TASK-120 and TASK-121 |
 | `data/inbox.sqlite` | 0.5 GB | bounded by the weekly purge |
+| `~/.cache/ms-playwright/` | 0.65 GB per browser revision | one Playwright only: the `.venv` package (`CLAUDE.md` → One Playwright). A second version adds a second revision |
 | `backups/` | 0.1 GB | before-images of hand-made data writes (`tools/apply_*`, `tools/ledger.py`) |
 
 Disk clean-up rule: delete only what this table says is rebuildable or recorded elsewhere, and look at the target first.
