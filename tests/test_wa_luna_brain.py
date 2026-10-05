@@ -282,7 +282,7 @@ def test_the_model_receives_the_market_snapshot_and_scoreboard_but_not_a_history
     assert "Ich bin Valentina von der NDT Group." in seen["system"]
 
 
-def test_market_snapshot_matches_only_once_fully_ready_to_close():
+def test_market_snapshot_matches_only_once_fully_ready_to_close(luna):
     """TASK-195: market_snapshot carries no early per-city/per-department preview anymore -- only
     the aggregate open_jobs total always, and matches/shortlist once qualification, city-or-
     department, housing AND documents are all satisfied. A candidate with city+qualification but
@@ -403,7 +403,7 @@ def test_documents_gate_needs_the_cv_and_the_qualification_document_for_the_path
 
 @pytest.mark.parametrize("path, extra, cv_document, qualification_document, objective",
                          [c[1:] for c in _GATE_CASES], ids=[c[0] for c in _GATE_CASES])
-def test_shortlist_stays_empty_until_both_documents_are_in(path, extra, cv_document, qualification_document,
+def test_shortlist_stays_empty_until_both_documents_are_in(luna, path, extra, cv_document, qualification_document,
                                                            objective):
     snap = LB.market_snapshot({**_ALL_BUT_DOCUMENTS, "qualification_path": path, **extra})
     assert bool(snap["shortlist"]) is (cv_document == qualification_document == "satisfied")
@@ -586,7 +586,7 @@ def test_requirement_scoreboard_city_or_department_is_satisfied_by_either_alone(
 _DOC = {"qualification_path": "urkunde", "documents": [_CV, _URKUNDE]}   # TASK-199: both documents in
 
 
-def test_shortlist_appears_with_only_department_known_no_city():
+def test_shortlist_appears_with_only_department_known_no_city(luna):
     card = {"qualification_ok": True, "department_pref": "Intensiv/IMC", "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
@@ -594,7 +594,7 @@ def test_shortlist_appears_with_only_department_known_no_city():
         "matching requirement_scoreboard's own city_or_department == satisfied verdict")
 
 
-def test_shortlist_appears_with_only_city_known_no_department():
+def test_shortlist_appears_with_only_city_known_no_department(luna):
     card = {"qualification_ok": True, "city": "München", "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"], (
@@ -783,13 +783,13 @@ def test_department_prompt_rule_keeps_department_pref_to_the_candidates_own_word
     assert "(qualification, city, department, experience)" not in system
 
 
-def test_shortlist_is_empty_with_neither_city_nor_department():
+def test_shortlist_is_empty_with_neither_city_nor_department(luna):
     card = {"qualification_ok": True, "housing_needed": False, **_DOC}
     snap = LB.market_snapshot(card)
     assert snap["shortlist"] == []
 
 
-def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_satisfied():
+def test_shortlist_is_empty_without_a_document_even_when_everything_else_is_satisfied(luna):
     """TASK-195: qualification/city/housing alone are not enough -- documents must actually have
     arrived (TASK-199: the CV and the qualification document, card.documents) before the
     shortlist/close sequence exists, matching the real reference implementation's own

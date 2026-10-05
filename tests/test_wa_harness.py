@@ -334,7 +334,7 @@ def test_matches_name_real_postings_with_clinic_town_and_no_link(wa):
     assert "http" not in bubble
 
 
-def test_the_deterministic_brain_shows_the_ad_url_only_on_a_test_thread():
+def test_the_deterministic_brain_shows_the_ad_url_only_on_a_test_thread(wa):
     """TASK-379 AC#6: both brains read the SAME flag, so they cannot disagree about what a test
     thread is shown (app/wa/luna/source_link.py is the other half)."""
     rows = B.jobs_for({"department": "Intensiv/IMC", "city": "München"})[:1]
