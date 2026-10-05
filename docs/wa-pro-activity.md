@@ -23,8 +23,12 @@ every other `/wa/*` owner-read route: `/api/wa/activity` and `/api/wa/ops` are i
 (review finding 6 — the two used to be described together as "every drain cycle", which is only true
 of one of them): `wa_ops_mirror` is refreshed on every drain cycle that actually ran (the relay's own
 ~3s loop, skipped only on a cycle whose drain itself just failed); `wa_rail_snapshot` is refreshed at
-a much coarser 60s cadence (`ALARM_CHECK_INTERVAL_SEC`), plus once extra on any cycle where the ops
-mirror found new rows — never on every single drain pass. Both routes only ever read these mirrors —
+a much coarser 60s cadence (`ALARM_CHECK_INTERVAL_SEC`) — never on every single drain pass. A cycle
+where the ops mirror found new rows also *asks* for an extra snapshot check, but (review finding 8,
+MINOR) through the exact same `ALARM_CHECK_INTERVAL_SEC` throttle the periodic check itself uses
+(`Relay._run_alarm_check_if_due`), not a bypass of it — so in practice this never produces a write
+earlier than the 60s cadence already would; a new-rows cycle before the throttle is next due changes
+nothing. Both routes only ever read these mirrors —
 never the bridge, never the live phone — so a slow or unreachable bridge never slows a board read.
 `wa_ops_mirror` also carries its own heartbeat, separate from both (see "Freshness semantics" below).
 Five deploy-unit jobs (`catchup`, `followups`, `tunnel_watch`, `purge_test`, `agent_notes`) record their
@@ -100,6 +104,12 @@ enforced server-side — these routes have no rate limit of their own).
   same 3-mode cursor mechanics as `/messages`, opposite row order.
 - `before_id`/`after_id` are `wa_ops_mirror.position` integers, an internal sequence number — never
   the bridge's own `op_id` string. Giving both at once is `400`.
+- **`after_id` only ever returns newly *enqueued* positions** (`position > after_id`) — `position` is
+  assigned once, at enqueue, and never reassigned on a state transition (`bridge/ledger.py`'s own
+  `phone_ops.position`). A row a poller already holds that later moves `queued` → `running` → `done`
+  keeps its old `position`, so a steady stream of `after_id` polls never surfaces that change: a
+  poller that needs to see status changes on rows it already has must re-fetch the first page
+  (no cursor) instead, not rely on `after_id` alone.
 - `limit` is the client's page size, not a server cap — any positive integer; `limit<=0` is `400`.
 - **`status`** — exact match, one value, no `auto`/`pro` shorthand (that shorthand is `origin`-only).
 - **`origin`** — `auto` means every *automated* origin (every value in the Origin table below except
@@ -137,7 +147,7 @@ never the bridge's raw value): one of exactly
 | value | meaning |
 |---|---|
 | `ready` | phone-rail driver connected, nothing else wrong |
-| `recovering` | connected, but the last snapshot's journal replay recovered a dirty or idle-dirty state |
+| `recovering` | connected, but a dirty or idle-dirty recovery landed in the journal within the last 24h (`bridge/executor.py::HEALTH_JOURNAL_WINDOW_SEC` — a single old recovery keeps this state for the full 24h, not just the latest snapshot; the window is deliberately left as-is) |
 | `blocked` | connected, but the doctor reports a stuck op blocking the queue |
 | `disconnected` | the driver itself reports not connected |
 | `unknown` | no snapshot has ever reported a connected state either way (fresh install) |
@@ -177,11 +187,24 @@ here — but unlike the two above, that is the plan, not a mistake to fix.
 | `followups` | heartbeat | 900s | **also covers `nudges`** — see below |
 | `tunnel_watch` | heartbeat | 30s | |
 | `purge_test` | heartbeat | 86400s | daily 03:00 Europe/Berlin cron; see "Known imprecisions" |
-| `agent_notes` | heartbeat | 300s | |
+| `agent_notes` | heartbeat | — no cadence | see below |
 | `relay_sync` | derived (`wa_rail_sync`) | ~3s | relay's own drain-loop interval |
 | `luna_reply` | derived (`wa_luna_calls`/`wa_send_failures`) | — event-driven, no cadence | |
 | `broadcasts` | derived (`bridge/broadcast.py` runner heartbeat) | — event-driven, no cadence | |
 | `nudges` | **never emitted** | — | see below |
+
+**`agent_notes` has no cadence** (MAJOR-1, 10-05 review): `tools/agent_note_cron.sh` runs every 5
+minutes, but that is the cron tick, not this job's own cadence — the script exits 0 before Python
+ever starts on most ticks (outside the 09:00-22:00 Vienna window, the cross-process lock already
+held, or — the ordinary case — the sqlite prefilter finds nothing to do), and none of those gated
+exits, nor a guard failure (the `claude` binary missing, the prefilter query itself erroring), ever
+writes a `wa_job_runs` heartbeat row. Only a real `python -m app.wa.luna.agent_note_worker`
+invocation does, and that happens only when the worker actually picks up an open note and runs it
+to completion. So `last_run_at`/`last_ok_at`/`last_error`/`ok_24h`/`failed_24h` are the same true
+windowed values every other heartbeat job reports — just over a much sparser, demand-driven set of
+runs — while `next_run_at`/`overdue` are always `null`: there is no real interval to compute either
+from, and inventing one (reading "300s" off the cron line) would mark this job "overdue" during
+every ordinary idle stretch with no open notes, which is the normal case, not a problem.
 
 `nudges` is listed by the contract's own job-key enum but this harness never emits a row for it:
 `app/wa/luna/followups.py` **is** the entire proactive-nudge sender (TASK-189) — there is no second
@@ -197,13 +220,23 @@ every job **except** `relay_sync` (review finding 9, MINOR): at relay_sync's own
 `2×cadence` is 6s, tight enough that perfectly ordinary scheduling jitter under load reads as
 "overdue" — `relay_sync` uses a flat 60s threshold instead (`app/wa/pro_api.py:JOB_OVERDUE_SEC`).
 Both `next_run_at`/`overdue` are `null` for the two event-driven jobs (`luna_reply`, `broadcasts` —
-neither has a cadence to compute from) and for any job that has never run at all.
+neither has a cadence to compute from), for `agent_notes` (no real cadence either — see above), and
+for any job that has never run at all.
 
-**`luna_reply`'s own `last_error` semantics** (review findings 2 and 6): the **newest send failure
-within the last 24h**, else `null` — never the newest ever. Before this fix pass it read as the
-newest failure ever recorded, so a send failure from a week ago would still show as "the" current
-error today, long after the thread recovered; it now clears the same way every heartbeat job's own
-`last_error` already did (a later success supersedes an earlier failure).
+**`luna_reply`'s own `last_error` semantics** (review findings 2 and 6, plus MINOR-3 on the 10-05
+review): **present whenever any `wa_send_failures` row falls within the last 24h**, else `null` —
+never the newest-ever failure (before this fix pass it read as the newest failure ever recorded, so
+a send failure from a week ago would still show as "the" current error today, long after the thread
+recovered). But **a later successful call does NOT clear it**: unlike every heartbeat job's own
+`last_error` (which a later success does supersede), `wa_luna_calls` carries no per-row outcome, so
+this derivation cannot tell "a reply turn ran clean after the failure" from "no turn has run since" —
+`last_error` simply stays `{"code": "send_failed"}` for the full 24h after the failing send,
+regardless of how many successful calls happen in between, and only clears once the failure itself
+ages out of the window. Two more of this job's fields read the same source, for the same reason:
+**`ok_24h`** counts every `wa_luna_calls` row in the last 24h, successful or not (there is no
+per-row outcome to filter on), so it is a call-volume count, not a success count; **`last_ok_at`**
+is simply the timestamp of the most recent logged call, not the most recent one known to have
+succeeded.
 
 **`error.code`** — code only, never free text (review finding 2, BLOCKER: an op error's `error.text`
 and a job row's `last_error.text` used to carry the bridge's/an exception's own raw string
@@ -218,7 +251,15 @@ as `status`/`kind`/`origin` above. Every code this harness can actually produce 
 | `op_expired` | mirrored straight from `bridge/ledger.py` — the op's own budget_sec elapsed unacked |
 | `op_cancelled` | mirrored straight from `bridge/ledger.py` |
 | `restarted_while_running` | mirrored straight from `bridge/ledger.py` — the bridge process restarted mid-op |
-| `bridge_no_ops_route` | `relay_pull.py`'s own: the mini's bridge build predates `GET /v1/ops` — either a genuine `404`, or the 400 `invalid_request` an *old* bridge build's own catch-all answers for any unmatched path (review finding 4, MAJOR: folded into this same code, since this module's own `/v1/ops` query is always well-formed, so a 400 here is never a real malformed-query refusal in practice) |
+| `invalid_request` | `bridge/errors.py` — the executor refused the request as malformed before anything was typed (`bridge/executor.py`) |
+| `not_on_whatsapp` | `bridge/errors.py` — the chat could not be opened for that number (`bridge/executor.py`) |
+| `send_unconfirmed` | `bridge/errors.py` — keys may have been pressed and no tick was read; never auto-resent (`bridge/executor.py`) |
+| `device_unavailable` | `bridge/errors.py` — flock busy, adb gone, or the phone was asleep; nothing was typed (`bridge/executor.py`) |
+| `rail_parked` | `bridge/errors.py` — the governor refused: quiet hours, Sunday, a cap, or the min gap (`bridge/governor.py`) |
+| `executor_error` | `bridge/errors.py` — a bug in the bridge's own package (`bridge/executor.py`) |
+| `chat_not_found` | `bridge/errors.py` — no chat by that identity is on the handset's list (reserved: no executor path raises it on this rail's current op kinds today) |
+| `chat_identity_mismatch` | `bridge/errors.py` — the chat on screen is not the one the caller named (reserved, same as above) |
+| `idempotency_conflict` | `bridge/errors.py` — a different body under a key whose first body has no result yet |
 | `tunnel_down` | `tunnel_watch.py`'s own heartbeat: `check_once()` returned false (review finding 1, BLOCKER) |
 | `messages_errored` | `catchup.py`'s own heartbeat: at least one message in the pass errored (review finding 1) |
 | `purge_problems` | `purge_test_history.py`'s own heartbeat: the run reported `problems > 0` (review finding 1) |
@@ -226,12 +267,23 @@ as `status`/`kind`/`origin` above. Every code this harness can actually produce 
 | `send_failed` | `luna_reply`'s own derivation: at least one `wa_send_failures` row within the last 24h |
 | `relay_sync_failed` | this API's own derivation for the `relay_sync` job row, from `wa_rail_sync.last_error` |
 | `broadcast_runner_error` | this API's own derivation for the `broadcasts` job row, from the runner's own `last_error` |
-| `ledger_position_reset` | `relay_pull.py`'s own ops-mirror heartbeat (review finding 11, NIT) — see "Known imprecisions" below |
+| `legacy_unrecorded` | a one-time migration's own backfill (MINOR-1, 10-05 review) — see "Known imprecisions" below |
 | *(a Python exception class name, e.g. `ConnectionRefusedError`, `URLError`, `TimeoutError`, `PermissionError`)* | either `relay_pull.py`'s own (the bridge/tunnel was unreachable, or the ops mirror pass hit a bug), or any of the 5 heartbeat jobs' own `main()` raising uncaught rather than setting one of the explicit codes above |
 
-An op's own `error.code` comes straight from the bridge (the first three rows above); a heartbeat
-job's `last_error.code` is either one it set explicitly before a clean `ok=False` exit (the four
-`review finding 1` rows above) or an uncaught exception's own type name; `relay_sync`/`broadcasts`/
+Two codes `bridge/errors.py` also defines are **never served through either of these two routes**
+and are deliberately not in the table above: `bridge_no_ops_route` and `ledger_position_reset` are
+each recorded only in the ops mirror's own internal heartbeat row, for on-box debugging — see
+"Freshness semantics" below, which states this explicitly. The same holds for every refusal code
+`bridge/errors.py` defines that no op kind on this rail can ever raise today (`unauthorized` — a
+request never even reaches the ledger; `media_not_found`/`already_attached`/`destruction_unverified`/
+`op_not_found` — none of this rail's current op kinds touch media or chat destruction): they are
+not listed above either, same reasoning.
+
+An op's own `error.code` comes straight from the bridge — either `bridge/ledger.py`'s own three
+terminal-state codes (the first three rows above) or a `bridge/errors.py` `BridgeRefusal` the
+executor raised while running the op, mirrored verbatim (the next 9 rows); a heartbeat job's
+`last_error.code` is either one it set explicitly before a clean `ok=False` exit (the four
+`review finding 1` rows) or an uncaught exception's own type name; `relay_sync`/`broadcasts`/
 `luna_reply` use their own derived codes.
 
 ## Freshness semantics
@@ -278,9 +330,19 @@ None of the four is reconstructed or guessed when its underlying row doesn't exi
   every other cadence-based job, which can be off by up to an hour around a DST transition. The
   contract's own formula is generic; a timezone-aware special case for this one job was not built.
 - **`nudges` is never a row** — see the `job` table above.
+- **`legacy_unrecorded`: old `tunnel_watch` rows from before this fix pass required a code on every
+  `ok=0` exit** (MINOR-1, 10-05 review). `app/wa/store.py::_backfill_legacy_job_run_error_codes`
+  (a `_migrate()` step, so every `db()` open runs it — idempotent: its `UPDATE ... WHERE error_code
+  is null` matches nothing once it has already run once) gives every `wa_job_runs` row with `ok=0`
+  and no code the explicit code `legacy_unrecorded`, rather than leaving `error_code` null (which
+  `job_run_summary()` would otherwise turn into `{"code": None}`, rejected by `pro_models.ErrorInfo`
+  — a 500 on `GET /api/wa/pro/activity` the day one of these old rows happens to be a job's newest).
+  Seeing `legacy_unrecorded` on a job row only ever means "this row predates the fix"; it carries no
+  information about what actually went wrong on that old run, because none was ever recorded.
 - **A ledger reset with nothing open in the mirror at that exact moment has no signal to catch**
   (review finding 11, NIT). The reset detector (`ledger_position_reset`, see "Freshness semantics"
-  and the `error.code` table above) works by noticing every op_id the mirror still has open vanish
+  above — not in the `error.code` table, since neither it nor `bridge_no_ops_route` is ever served
+  through either of these two routes) works by noticing every op_id the mirror still has open vanish
   from the bridge at once — the one false-positive-free signal this read-only interface offers. A
   reset that happens to land while the mirror has zero open ops leaves nothing to vanish, so it is
   silently missed until the next op the mirror tracks exposes the mismatch some other way. Narrow

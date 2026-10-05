@@ -103,6 +103,44 @@ def test_activity_reflects_a_recorded_job_run(client):
     assert catchup["enabled"] is True
 
 
+def test_activity_200_on_a_legacy_job_run_row_with_no_code(client):
+    """MINOR-1, 10-05 review: prod wa_job_runs holds ~186 pre-fix tunnel_watch rows with ok=0 and
+    no error_code at all (from before job_run() required every ok=False exit to name one). The
+    startup migration (store._backfill_legacy_job_run_error_codes, a _migrate() step) gives every
+    such row the explicit code "legacy_unrecorded" the next time ANY process opens ST.db() -- in
+    prod that is simply the next cron tick's own db() call; simulated here the same way: insert
+    the old-shaped row directly, then open ST.db() again (the self-heal), then read it back
+    through the real endpoint, as this job's newest row."""
+    with ST.db() as c:
+        c.execute(
+            "insert into wa_job_runs (job, started_at, finished_at, ok, counts_json, error_code, "
+            "error_text) values (?,?,?,?,?,?,?)",
+            ("tunnel_watch", "2026-09-15T10:00:00+00:00", "2026-09-15T10:00:00+00:00", 0, "{}",
+             None, None))
+        c.commit()
+    ST.db()  # the self-heal every later db() open performs
+
+    resp = client.get("/api/wa/pro/activity", headers=RH)
+    assert resp.status_code == 200
+    tunnel_watch = next(j for j in resp.json()["jobs"] if j["job"] == "tunnel_watch")
+    assert tunnel_watch["last_error"] == {"code": "legacy_unrecorded"}
+
+
+def test_activity_agent_notes_has_no_cadence_even_after_a_recorded_run(client):
+    """MAJOR-1, 10-05 review: tools/agent_note_cron.sh's own */5 line is the cron tick, not this
+    job's real cadence -- it exits before Python starts on most ticks, and none of those gated
+    exits ever write a heartbeat. A real worker run DOES write one (job_run() wraps main()), but
+    next_run_at/overdue must still read null/null -- there is no real interval to compute either
+    from, unlike every job that actually has a systemd timer."""
+    with ST.job_run(ST.JOB_AGENT_NOTES) as jr:
+        jr.counts = {"notes": 1}
+    body = client.get("/api/wa/pro/activity", headers=RH).json()
+    agent_notes = next(j for j in body["jobs"] if j["job"] == "agent_notes")
+    assert agent_notes["last_run_at"] is not None
+    assert agent_notes["next_run_at"] is None
+    assert agent_notes["overdue"] is None
+
+
 def test_activity_reflects_the_ops_mirror_counts_including_human(client):
     with ST.db() as c:
         ST.upsert_mirrored_op(c, _op("a", 1, state="queued", origin="luna"))

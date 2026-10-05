@@ -646,6 +646,41 @@ def test_trim_health_drops_the_rails_own_phone_number_and_the_debug_only_driver_
     assert trimmed["watcher"] == {"alive": True}
 
 
+def test_trim_health_strips_a_phone_from_free_text_last_error_fields():
+    """NIT-1, 10-05 review: watcher/dispatcher/broadcast-runner/retention last_error fields are all
+    built from an uncaught exception's own str(exc), which can carry a raw phone (review finding 2's
+    own class of leak). ``_trim_health`` must never let that text through, while still keeping the
+    *fact* that an error happened (a boolean) and the timestamp, since
+    pro_api._broadcasts_job_summary derives broadcast_runner_error off exactly that presence check."""
+    leaky = f"ConnectionError: could not reach the chat for {BERND} (window closed)"
+    body = {"watcher": {"alive": True, "last_error": leaky, "last_error_at": _ago(0)},
+            "ops_dispatcher": {"errors": 2, "last_error": leaky, "last_error_at": _ago(0)},
+            "retention": {"last_ok_at": _ago(0), "errors": 0, "last_error": leaky,
+                          "last_error_at": _ago(0), "result": {"purged": 1}},
+            "broadcast": {"runs_open": 1,
+                          "runner": {"attempted": 5, "errors": 1, "last_error": leaky,
+                                     "last_error_at": _ago(0), "last_item_at": None}}}
+    trimmed = RP._trim_health(body)
+    dumped = json.dumps(trimmed)
+    assert BERND not in dumped
+    assert "window closed" not in dumped
+    # the presence of an error, and when it happened, both survive as non-free-text values
+    assert trimmed["watcher"]["last_error"] is True
+    assert trimmed["watcher"]["last_error_at"] == body["watcher"]["last_error_at"]
+    assert trimmed["ops_dispatcher"]["last_error"] is True
+    assert trimmed["retention"]["last_error"] is True
+    assert trimmed["retention"]["errors"] == 0           # a plain count, untouched
+    assert trimmed["broadcast"]["runner"]["last_error"] is True
+    assert trimmed["broadcast"]["runner"]["last_error_at"] == body["broadcast"]["runner"]["last_error_at"]
+
+
+def test_trim_health_leaves_a_clean_last_error_null():
+    """The common case (no error on this pass): last_error is None, not stripped into True."""
+    body = {"watcher": {"alive": True, "last_error": None, "last_error_at": None}}
+    trimmed = RP._trim_health(body)
+    assert trimmed["watcher"]["last_error"] is None
+
+
 def test_derive_phone_state_priority_order():
     assert RP._derive_phone_state({"driver": {"connected": None}}) == "unknown"
     assert RP._derive_phone_state({"driver": {}}) == "unknown"
@@ -793,12 +828,13 @@ def test_relay_ops_passes_its_own_shorter_timeout_not_the_default_30s(cursor, mo
 
 def test_relay_ops_treats_an_old_bridges_400_invalid_request_as_route_missing(cursor, monkeypatch):
     """Review finding 4 (MAJOR): an executor build that predates /v1/ops does not actually answer
-    404 for it -- bridge/server.py's own catch-all for an unmatched path answers 400
-    invalid_request, the SAME shape a genuinely malformed query from this module would get. Since
-    this module only ever builds well-formed queries, that 400 is always the "no route yet" case in
-    practice, so it is folded into OpsRouteMissing exactly like the 404 case."""
+    404 for it -- bridge/server.py's own catch-all for an unmatched path (``_no_route``) answers
+    400 invalid_request with the EXACT message "no route /v1/ops" (NIT-3, 10-05 review narrowed the
+    fold to this exact message, not every 400 invalid_request -- see the next two tests), so it is
+    folded into OpsRouteMissing exactly like the 404 case."""
     monkeypatch.setattr(RP, "http_json",
-                        lambda *a, **kw: (400, {"error": {"code": "invalid_request", "message": "no route"}}, 0.01))
+                        lambda *a, **kw: (400, {"error": {"code": "invalid_request",
+                                                          "message": "no route /v1/ops"}}, 0.01))
     relay = _plain_relay(cursor)
     with pytest.raises(RP.OpsRouteMissing):
         relay.ops()
@@ -810,6 +846,19 @@ def test_relay_ops_a_400_with_some_other_code_is_still_a_plain_relay_error(curso
     drain loop as a real RelayError, not be swallowed as "route missing"."""
     monkeypatch.setattr(RP, "http_json",
                         lambda *a, **kw: (400, {"error": {"code": "something_else"}}, 0.01))
+    relay = _plain_relay(cursor)
+    with pytest.raises(RP.RelayError):
+        relay.ops()
+
+
+def test_relay_ops_a_400_invalid_request_with_a_different_message_is_a_real_error(cursor, monkeypatch):
+    """NIT-3, 10-05 review: the OLD fold matched ANY 400 invalid_request, regardless of message --
+    too broad, since this module could in principle build a malformed query (a real bug) that also
+    comes back as a 400 invalid_request with some OTHER message, and that must not be silently
+    read as "the route doesn't exist yet". Only the exact _no_route message for THIS path counts."""
+    monkeypatch.setattr(RP, "http_json",
+                        lambda *a, **kw: (400, {"error": {"code": "invalid_request",
+                                                          "message": "after_position must be an integer"}}, 0.01))
     relay = _plain_relay(cursor)
     with pytest.raises(RP.RelayError):
         relay.ops()
@@ -914,6 +963,33 @@ def test_mirror_ops_tolerates_any_other_relay_error_too(cursor):
     relay.ops = lambda **kw: (_ for _ in ()).throw(RP.RelayError("executor ops is 500: {}"))
     relay.mirror_ops()   # must not raise
     assert any("ops mirror failed" in line for line in lines)
+
+
+def test_mirror_ops_logs_other_relay_errors_only_on_a_state_change(cursor):
+    """NIT-2, 10-05 review: a persistent 500 used to log every single ~3s pass (~1200 lines/hour at
+    that cadence). Only the first failure, and a later CHANGE of error type, should log -- the same
+    discipline OpsRouteMissing already had (review finding 4)."""
+    relay = FakeRelay(cursor, [], [])
+    relay.mirror_writer = FakeOpsMirror()
+    lines = []
+    relay.log = lines.append
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.RelayError("executor ops is 500: {}"))
+
+    relay.mirror_ops()
+    relay.mirror_ops()
+    relay.mirror_ops()
+    assert sum("ops mirror failed" in line for line in lines) == 1
+
+    # a DIFFERENT error type logs again (it is new information, not the same stuck failure)
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.RelayError("executor ops is 503: {}"))
+    relay.mirror_ops()
+    assert sum("ops mirror failed" in line for line in lines) == 2
+
+    # and recovering logs once, not on every later healthy pass
+    relay.ops = lambda **kw: {"ops": [], "next_after_position": None}
+    relay.mirror_ops()
+    relay.mirror_ops()
+    assert sum("recovered" in line for line in lines) == 1
 
 
 def test_mirror_ops_triggers_an_immediate_alarm_check_when_new_ops_appeared(cursor):

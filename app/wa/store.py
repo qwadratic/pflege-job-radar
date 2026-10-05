@@ -371,6 +371,7 @@ def _migrate(c):
               "where import_ref is not null")
     _migrate_agent_notes_autoincrement(c)
     _backfill_thread_ids(c)
+    _backfill_legacy_job_run_error_codes(c)
 
 
 # TASK-303 (Ivan, 2026-09-25, round-1 review, finding A2 -- "correctness of the operator-note state
@@ -571,6 +572,29 @@ def _backfill_thread_ids(c):
         return
     for row in missing:
         _ensure_thread_id(c, row["phone"])
+    c.commit()
+
+
+#: MINOR-1, 10-05 review: prod's pre-fix build left ~186 wa_job_runs rows with ok=0 and
+#: error_code=null (tunnel_watch, from before job_run() required every ok=False exit to name a
+#: code -- see job_run()'s own RuntimeError guard above). job_run_summary() turns a null code into
+#: {"code": None}, which pro_models.ErrorInfo (code: str) rejects, 500ing GET /api/wa/pro/activity
+#: the day one of these old rows happens to be a job's newest (every job's first new run since the
+#: fix already replaces it as the newest row, but the rows themselves outlive that in wa_job_runs).
+#: This gives every such row an explicit, honest code rather than inventing what actually happened --
+#: "legacy_unrecorded" names exactly what is known (this row predates the fix that would have
+#: recorded a real one), nothing more.
+LEGACY_UNRECORDED_ERROR_CODE = "legacy_unrecorded"
+
+
+def _backfill_legacy_job_run_error_codes(c):
+    """One-time migration (MINOR-1, 10-05 review): every wa_job_runs row with ok=0 and
+    error_code=null gets error_code='legacy_unrecorded'. Idempotent with no marker needed -- the
+    UPDATE's own WHERE clause (error_code is null) matches nothing once it has run, same as
+    _backfill_thread_ids right above. Cheap on every db() call: an indexed-enough WHERE over a table
+    this harness's own retention never lets grow large."""
+    c.execute("update wa_job_runs set error_code=? where ok=0 and error_code is null",
+              (LEGACY_UNRECORDED_ERROR_CODE,))
     c.commit()
 
 
@@ -2091,7 +2115,12 @@ def job_run(job):
         if rec.error_code is None:
             rec.error_code = type(exc).__name__
         if rec.error_text is None:
-            rec.error_text = str(exc)
+            # NIT-1, 10-05 review: the class name only, never str(exc) -- an uncaught exception's
+            # own message can carry a raw phone or message body (the same class of leak review
+            # finding 2 fixed for error_code), and error_text is never served through either Pro
+            # route anyway (job_run_summary only ever reads error_code). The full traceback is
+            # still there, in the job's own stderr/journal -- this heartbeat row is not that log.
+            rec.error_text = type(exc).__name__
         _record_job_run_safe(job, started, rec)
         raise
     if not rec.ok and rec.error_code is None:

@@ -623,9 +623,20 @@ def pro_health(request: Request):
 #: next_run_at here is last_run_at + 86400s, which drifts from the true next 03:00 by up to an hour
 #: across a DST transition -- a known, documented imprecision (docs/wa-pro-activity.md) rather than
 #: a timezone-aware special case the contract's own generic formula never asked for.
+#: agent_notes is ALSO deliberately absent (MAJOR-1, 10-05 review): tools/agent_note_cron.sh's own
+#: */5 line is not this job's real cadence -- the script itself exits 0 before Python ever starts on
+#: most ticks (outside the 09-22 Vienna window, the lock already held, or the sqlite prefilter count
+#: is 0, the ordinary idle case), and none of those gated exits or the script's own guard failures
+#: (claude binary missing, prefilter query itself erroring) ever write a wa_job_runs heartbeat --
+#: only a real `python -m app.wa.luna.agent_note_worker` invocation does, which happens only when
+#: there is an open note to work. A "300s" cadence read off the cron line would call this job
+#: "overdue" during every ordinary idle stretch (the normal case), which is not a fact this harness
+#: has grounds to assert (CLAUDE.md "no safety nets": no invented cadence neither the script nor the
+#: worker actually has). docs/wa-pro-activity.md documents the resulting null/null next_run_at/
+#: overdue and what a non-null last_run_at here actually means.
 JOB_CADENCE_SEC = {
     ST.JOB_CATCHUP: 180.0, ST.JOB_FOLLOWUPS: 900.0, ST.JOB_TUNNEL_WATCH: 30.0,
-    ST.JOB_AGENT_NOTES: 300.0, ST.JOB_PURGE_TEST: 86400.0, "relay_sync": 3.0,
+    ST.JOB_PURGE_TEST: 86400.0, "relay_sync": 3.0,
 }
 #: Review finding 9 (MINOR): the generic "overdue after 2x cadence" formula fires after just 6s of
 #: silence for relay_sync (cadence 3.0s) -- any single slow health call, delivery, or the mirror's

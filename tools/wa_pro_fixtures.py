@@ -787,7 +787,12 @@ def _seed_luna_reply_signal(c, clock, phone=PHONE_LUNA_REPLY):
 # copied VERBATIM from bridge/ledger.py's own three real phone_ops failure sites (_recover_stuck_ops'
 # "restarted_while_running", _expire_op's "op_expired", cancel_op's "op_cancelled") -- never
 # invented wording, unlike the hand-written fixture's old "executor restarted while this op was
-# running" (the real message says "in flight", see the report).
+# running" (the real message says "in flight", see the report). Position 3's phone is
+# PHONE_ESCALATED, not an OPS_PHONES entry (NIT-6, 10-05 review) -- every OPS_PHONES value is a
+# synthetic number no wa_threads row is ever seeded for, so every op row used to show
+# thread_id=null; using an already-seeded candidate here gives ops.json one real linked example,
+# through the same real lookup (ST.upsert_mirrored_op -> thread_id_for_phone_if_known), not a
+# hand-set field.
 _OPS_SPEC = (
     {"position": 1, "op_id": "op_fixt0001", "kind": "send", "origin": "campaign", "state": "done",
      "phone": OPS_PHONES[11], "created_at": "2026-09-30T11:35:00+00:00",
@@ -797,7 +802,13 @@ _OPS_SPEC = (
      "finished_at": "2026-09-30T11:36:30+00:00", "error_code": "op_cancelled",
      "error_text": "the caller gave up waiting for this op and cancelled it before it was claimed"},
     {"position": 3, "op_id": "op_fixt0003", "kind": "send", "origin": "luna", "state": "done",
-     "phone": OPS_PHONES[0], "created_at": "2026-09-30T11:39:00+00:00",
+     # NIT-6, 10-05 review: PHONE_ESCALATED, not a fresh OPS_PHONES entry -- it is already a
+     # seeded candidate by the time this runs (SEEDERS, strictly before this function), so
+     # ST.upsert_mirrored_op's own real thread_id_for_phone_if_known lookup finds its real,
+     # already-minted thread_id. ops.json used to show thread_id=null on every single row -- no
+     # OPS_PHONES entry is ever a real candidate -- leaving pflege-fe with no linked-row example;
+     # generated, never hand-written, same as every other value here.
+     "phone": PHONE_ESCALATED, "created_at": "2026-09-30T11:39:00+00:00",
      "started_at": "2026-09-30T11:39:01+00:00", "finished_at": "2026-09-30T11:39:03+00:00"},
     {"position": 4, "op_id": "op_fixt0004", "kind": "send_document", "origin": "luna_tool", "state": "done",
      "phone": OPS_PHONES[1], "created_at": "2026-09-30T11:40:00+00:00",

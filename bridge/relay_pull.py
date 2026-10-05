@@ -130,6 +130,35 @@ _HEALTH_PASSTHROUGH_KEYS = ("watcher", "media_watcher", "identity_watcher", "rec
                             "retention", "journal_recent")
 
 
+def _strip_free_text_errors(value):
+    """Recursively replace every ``last_error``/``error`` STRING with the boolean ``True`` (NIT-1,
+    10-05 review) -- each one of these, everywhere it appears in the passthrough sub-objects below
+    (``watcher``/`media_watcher`/`identity_watcher`/`reconcile_watcher`/`unresolved_send_watcher`/
+    `ops_dispatcher`/`retention` directly, `broadcast.runner` one level deeper), is built from an
+    uncaught exception's own f"{type(exc).__name__}: {exc}" (bridge/watcher.py, bridge/dispatcher.py,
+    bridge/broadcast.py, bridge/executor.py's own retention heartbeat all follow that same pattern)
+    -- free text that can and does carry a raw phone number or message body pulled into that
+    exception's own message, the same class of leak review finding 2 already fixed for
+    wa_job_runs/wa_ops_mirror. A boolean, not a dropped key: app/wa/pro_api.py's own
+    ``_broadcasts_job_summary`` reads ``runner.get("last_error")`` as a plain truthy/falsy presence
+    check (paired with ``last_error_at`` to tell "an error happened" from "which pass"), never the
+    text itself -- dropping the key outright would silently stop that derivation from ever firing
+    again. ``None`` (no error on this pass) passes through unchanged, same as every other value:
+    codes, other booleans, counts (``errors`` is a plain int cycle-counter, never this string), and
+    timestamps (``last_error_at`` stays -- staleness is still worth knowing)."""
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if k in ("last_error", "error") and isinstance(v, str):
+                out[k] = True
+            else:
+                out[k] = _strip_free_text_errors(v)
+        return out
+    if isinstance(value, list):
+        return [_strip_free_text_errors(v) for v in value]
+    return value
+
+
 def _trim_health(body):
     """Whitelist ``body`` (Relay.health()'s raw GET /v1/health response) down to what may be
     persisted into wa_rail_snapshot.health_json. Drops ``ok``/``version``/``at`` (this snapshot
@@ -138,11 +167,13 @@ def _trim_health(body):
     either), and ``audit`` (a lifetime destruction counter with no Pro-facing use, and not named by
     the plan's whitelist). ``rail.driver`` is trimmed further still, to {connected, kind} --
     bridge/adb_driver.py's ``describe()`` also returns an adb serial, a WhatsApp version string and
-    a sha256 of its own module file, none of it rail-health information."""
+    a sha256 of its own module file, none of it rail-health information. Every passthrough value
+    also goes through ``_strip_free_text_errors`` (NIT-1): the sub-objects named below were only
+    ever reviewed for a raw phone/wamid/message field, never for a free-text exception string."""
     driver = ((body or {}).get("rail") or {}).get("driver") or {}
     out = {"driver": {"connected": driver.get("connected"), "kind": driver.get("kind")}}
     for key in _HEALTH_PASSTHROUGH_KEYS:
-        out[key] = (body or {}).get(key)
+        out[key] = _strip_free_text_errors((body or {}).get(key))
     return out
 
 
@@ -451,6 +482,12 @@ class Relay:
         # applies to its own periodic check, instead of bypassing it on every new op).
         self._ops_route_missing = False
         self._next_alarm_check = 0.0
+        #: NIT-2, 10-05 review: any OTHER /v1/ops failure (RelayError, not OpsRouteMissing -- that
+        #: one already had its own state-change gate above) used to log every single pass -- a
+        #: persistent 500 gave one line per ~3s drain cycle, ~1200 lines/hour. None, or the last
+        #: logged message (str(exc), not just the exception TYPE -- a 500 replaced by a 503 is new
+        #: information worth a fresh line, even though both are plain RelayError instances).
+        self._ops_last_error_message = None
 
     def _mark_synced(self, ok, error=None):
         """Call self.sync_writer, if any, and never let it take the drain loop down with it -- a
@@ -565,11 +602,12 @@ class Relay:
         Review finding 4 (MAJOR): an executor build that predates this route does not actually
         answer 404 for it -- bridge/server.py's own catch-all for an unmatched path (``_no_route``)
         raises ``invalid_request`` (400), the SAME refusal a genuinely malformed query from this
-        module would get. Since this module only ever builds well-formed queries, a 400
-        invalid_request here is never that second case in practice -- it is this same
-        "the route does not exist yet" fact under the old build's own fallback shape, so it is
-        treated identically to the 404 case right below it, never as a RelayError that would stop
-        the whole drain loop over an executor that simply has not been upgraded yet."""
+        module would get. NIT-3 (10-05 review) narrowed the fold to the EXACT message
+        ``_no_route`` raises for this path ("no route /v1/ops") rather than any 400
+        invalid_request -- a 400 with a different message is a real refusal (this module built a
+        malformed query, or hit an actual bug), never the old-build fallback, and must surface as
+        a RelayError that stops the drain loop over it, not get silently folded into "the route
+        does not exist yet"."""
         query = []
         if after_position is not None:
             query.append(f"after_position={int(after_position)}")
@@ -583,7 +621,14 @@ class Relay:
         status, body, _elapsed = self.executor(path, timeout=OPS_TIMEOUT_SEC)
         if status == 404:
             raise OpsRouteMissing(f"executor has no /v1/ops route (pre-283.7 build?): {body}")
-        if status == 400 and isinstance(body, dict) and (body.get("error") or {}).get("code") == "invalid_request":
+        # NIT-3, 10-05 review: narrowed to the EXACT message bridge/server.py's own _no_route
+        # raises for this path ("no route /v1/ops", invalid_request/400, no query string in it --
+        # parsed.path never carries one) -- not every 400 invalid_request. A 400 with any other
+        # message is a genuine refusal (a malformed query THIS module itself built, a real bug),
+        # never an old-build fallback, and must not be swallowed into "the route doesn't exist yet".
+        if (status == 400 and isinstance(body, dict)
+                and (body.get("error") or {}).get("code") == "invalid_request"
+                and (body.get("error") or {}).get("message") == "no route /v1/ops"):
             raise OpsRouteMissing(f"executor has no /v1/ops route (pre-283.7 build, 400 fallback): {body}")
         if status != 200:
             raise RelayError(f"executor ops is {status}: {body}")
@@ -659,6 +704,12 @@ class Relay:
                 high_water = max(op["position"] for op in new_ops)
             open_ids = self.mirror_writer.open_ids()
             refreshed = self.ops(ids=open_ids).get("ops") or [] if open_ids else []
+            # limit=10000 here is NOT a real ceiling (NIT-5, 10-05 review): Ledger.list_ops's own
+            # active=True branch ("every row still queued or running, ALL of them") runs a plain
+            # "state in (?, ?) order by position" query with no LIMIT clause at all -- this kwarg
+            # is simply ignored on that code path. Kept as a documented, honest value (large enough
+            # to look intentional rather than an accidental small default) rather than removed and
+            # re-litigated later; the bridge's own docstring is the actual source of truth.
             active = self.ops(active=True, limit=10000).get("ops") or []
 
             if open_ids and not refreshed:
@@ -672,6 +723,9 @@ class Relay:
             if self._ops_route_missing:
                 self.log("relay: /v1/ops is reachable again -- ops mirror resumed")
                 self._ops_route_missing = False
+            if self._ops_last_error_message is not None:  # NIT-2: log the recovery, once
+                self.log("relay: ops mirror recovered")
+                self._ops_last_error_message = None
 
             # Finding 3's own fix: an active row above this pass's high-water mark is left for a
             # later position-paging pass, never written now.
@@ -689,10 +743,20 @@ class Relay:
                 self._ops_route_missing = True
             self._mark_mirrored(False, exc.code)
         except RelayError as exc:
-            self.log(f"relay: ops mirror failed: {exc}")
+            # NIT-2, 10-05 review: log only on a state CHANGE (first failure, or the message
+            # changing -- a 500 replaced by a 503 is new information) -- same discipline as
+            # OpsRouteMissing just above, for the same reason: this used to log every single ~3s
+            # pass, a line per cycle for as long as the failure lasts.
+            message = str(exc)
+            if message != self._ops_last_error_message:
+                self.log(f"relay: ops mirror failed: {exc}")
+                self._ops_last_error_message = message
             self._mark_mirrored(False, type(exc).__name__)
         except Exception as exc:  # our own bug, named as one -- never takes the drain loop with it
-            self.log(f"relay: ops mirror failed: {type(exc).__name__}: {exc}")
+            message = f"{type(exc).__name__}: {exc}"
+            if message != self._ops_last_error_message:
+                self.log(f"relay: ops mirror failed: {message}")
+                self._ops_last_error_message = message
             self._mark_mirrored(False, type(exc).__name__)
 
     def fetch(self):

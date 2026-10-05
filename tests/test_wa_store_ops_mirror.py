@@ -208,6 +208,20 @@ def test_job_run_records_an_uncaught_exception_and_still_re_raises(db):
     assert summary["last_error"] == {"code": "RuntimeError"}
 
 
+def test_job_run_error_text_is_only_the_exception_class_name_never_str_exc(db):
+    """NIT-1, 10-05 review: an uncaught exception's own str() can carry a raw phone (the same class
+    of leak review finding 2 fixed for error_code) -- error_text must never store it, even though
+    error_text itself is never served through either Pro route (job_run_summary only ever reads
+    error_code). The class name only; the full traceback stays in the job's own stderr/journal."""
+    with pytest.raises(RuntimeError):
+        with ST.job_run("catchup"):
+            raise RuntimeError(f"could not reach the chat for {PHONE}")
+    row = db.execute("select error_text from wa_job_runs where job='catchup' "
+                     "order by id desc limit 1").fetchone()
+    assert row["error_text"] == "RuntimeError"
+    assert PHONE not in row["error_text"]
+
+
 def test_job_run_summary_last_error_clears_after_a_later_success(db):
     with ST.job_run("catchup") as jr:
         jr.ok = False
