@@ -14,24 +14,30 @@ returns everything that client can show. The board is the oracle — never our o
   round trip     a sample of stored rows resolves live with the same title.
 
 Nothing here filters: completeness is about coverage, not about which postings we keep.
-tests/test_adapter_completeness.py parameterises these over the live registry; every page fetched
-here is also written to the snapshot folder, so the mirror grows as a side effect of testing.
+
+Tests never touch a live site (TASK-197). The oracle is what the board's own client reads and declares -- but it is read
+from a frozen recording of the board, the local mirror (tests/mirror.py, data/mirror/, git-ignored), and that recording is
+refreshed on purpose:
+
+  new page shape or new board  ->  .venv/bin/python tools/mirror.py record <board_id | host | clinic_id>
+                                   (one page: tools/mirror.py add <board_id> <url>)
+                               ->  write the red test on the mirror  ->  fix the adapter  ->  green.
+
+A request the mirror does not hold fails the test with the board, the URL and that command; nothing falls back to the live
+site, and conftest.py makes any non-local socket or DNS lookup in a test an error. tests/test_adapter_completeness.py
+parameterises these checks over the mirror index (tests/adapter_harness.py has the harness; tools/mirror.py is the only
+code that talks to a clinic site).
 """
-import hashlib
 import html
 import json
-import os
 import re
 import urllib.request
-from datetime import date
-from pathlib import Path
 from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 PROXY = "https://supabase.int.exe.xyz/rest/v1"
 HDR = {"Accept-Profile": "pflege_jobs"}
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/128.0.0.0 Safari/537.36")
-SNAPSHOT_ROOT = Path(os.environ.get("SNAPSHOT_ROOT", "crawl_snapshots"))
 
 # Read-path families a board's client may use. Name -> regex over page+script text. The adapter for
 # that board must call the same family (checked by endpoint shape, see `endpoint_key`).
@@ -121,25 +127,12 @@ def boards(clinics=None):
 
 
 # ---------------------------------------------------------------------------------------------
-# snapshot: every page a test fetches lands on disk (R1 -- the mirror grows as a side effect)
+# save: the old crawl_snapshots writer. The mirror (tests/mirror.py) records every HTTP exchange itself, hop by hop, so
+# nothing is written here any more. The function stays because production code calls it
+# (pflege_jobs/sources/pi_asp.py, the rendered DOM of a Playwright page) and tests/test_completeness_pi_asp.py spies on it.
 # ---------------------------------------------------------------------------------------------
-def snapshot_dir(board_url):
-    h = urlparse(board_url).netloc.lower().removeprefix("www.")
-    d = SNAPSHOT_ROOT / h / date.today().isoformat()
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def save(board_url, url, body, status=200, content_type="text/html"):
-    """Write one fetched page under the board's dated folder and append its manifest line."""
-    d = snapshot_dir(board_url)
-    name = hashlib.sha1(url.encode()).hexdigest()[:16] + (".json" if "json" in content_type else ".html")
-    (d / name).write_text(body, encoding="utf-8", errors="replace")
-    with open(d / "manifest.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"url": url, "file": name, "status": status, "bytes": len(body),
-                            "content_type": content_type, "sha256": hashlib.sha256(body.encode("utf-8", "replace")).hexdigest()},
-                           ensure_ascii=False) + "\n")
-    return d / name
+    return None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -154,7 +147,7 @@ def endpoint_key(url):
     return urlunparse((p.scheme or "https", p.netloc.lower().removeprefix("www."), path, "", "&".join(names), ""))
 
 
-def client_read_paths(careers_url, session=None, max_scripts=6, snapshot=True):
+def client_read_paths(careers_url, session=None, max_scripts=6):
     """Every read path the board's own client uses, from the page and the scripts it loads --
     including cross-origin vendor bundles (the smartrecruiters tenant lived only inside
     static.smartrecruiters.com/job-widget/..., never in the page). Analytics/consent bundles skipped.
@@ -165,8 +158,6 @@ def client_read_paths(careers_url, session=None, max_scripts=6, snapshot=True):
     if not r or not r.ok:
         return {"error": f"HTTP {getattr(r, 'status_code', 'none')}", "vendors": set(), "urls": set(),
                 "api_urls": set(), "pagination": set(), "detail_links": set(), "html": "", "final_url": careers_url}
-    if snapshot:
-        save(careers_url, r.url, r.text, r.status_code)
     bodies = [r.text]
     for src in SCRIPT_SRC_RX.findall(r.text)[:max_scripts]:
         u = urljoin(r.url, src)
@@ -175,8 +166,6 @@ def client_read_paths(careers_url, session=None, max_scripts=6, snapshot=True):
         s = _get(u, session=session)
         if s and s.ok and len(s.text) < 3_000_000:
             bodies.append(s.text)
-            if snapshot:
-                save(careers_url, u, s.text, s.status_code, "application/javascript")
     blob = "\n".join(bodies)
     vendors = {name for name, rx in API_HINTS if re.search(rx, blob, re.I)}
     urls = set()
@@ -288,7 +277,3 @@ MUTATIONS = {
     "api_self_link": "store the API self-link as url -- the public-url check must go red",
     "skip_detail": "never fetch detail endpoints -- the read-path check must go red",
 }
-
-
-def offline():
-    return os.environ.get("PFLEGE_TESTS_OFFLINE") == "1"

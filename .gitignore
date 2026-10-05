@@ -15,6 +15,9 @@ crawl_vendors/
 crawl_vendors.log
 crawl_raw/
 crawl_snapshots/
+# the local mirror of the clinic sites (tests/mirror.py, tools/mirror.py): third-party pages with HR names, e-mails and
+# phone numbers -- never committed, the repo is public
+data/mirror/
 backups/
 data/export/
 
