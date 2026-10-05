@@ -18,8 +18,10 @@ from crawlers import vendor_adapters as VA
 
 pytestmark = [pytest.mark.network, pytest.mark.completeness]
 
-if AC.offline():
-    pytest.skip("adapter-completeness harness offline: PFLEGE_TESTS_OFFLINE=1", allow_module_level=True)
+from tests.test_adapter_completeness import _SKIP_REASON
+
+if _SKIP_REASON:
+    pytest.skip(f"adapter-completeness harness offline: {_SKIP_REASON}", allow_module_level=True)
 
 _DVINCI_BOARDS = [b for b in AC.boards().values() if b.get("vendor") == "dvinci"]
 
