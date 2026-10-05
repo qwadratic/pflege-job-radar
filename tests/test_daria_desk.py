@@ -563,9 +563,14 @@ def test_start_desk_runs_the_desk_command_in_a_window_called_desk(tools, mailing
     assert f"sudo -E python3 -u tools/daria_desk.py run {desk.d['_path']} >> " in new[-1]
 
 
-def test_the_answer_config_tells_the_tools_who_asked_and_what_exists(desk, tmp_path):
+def test_the_answer_config_tells_the_tools_who_asked_and_what_exists(desk, tmp_path, monkeypatch):
+    """Needs neither the repo's .env nor the OS user `run_as`: a fresh clone and CI have neither."""
+    monkeypatch.setattr(M, "load_env", lambda: {"SUPABASE_URL": "http://127.0.0.1:9", "SUPABASE_ANON_KEY": "test"})
+    monkeypatch.setattr(D.pwd, "getpwnam", lambda name: type("Pw", (), {"pw_dir": f"/home/{name}"})())
     path = D.mcp_config(desk.d, tmp_path / "run", OPS[1])
     env = json.loads(path.read_text())["mcpServers"]["daria"]["env"]
     assert env["DARIA_ASKED_BY"] == OPS[1] and env["DARIA_TZ"] == "Europe/Berlin"
     assert json.loads(env["DARIA_CAMPAIGNS"]) == {"w1": str(desk.c1), "w2": str(desk.c2)} and json.loads(env["DARIA_TMUX"])["session"] == "dsk-mailing"
-    assert env["DARIA_DESK_CONFIG"] == str(desk.d["_path"])
+    assert env["DARIA_DESK_CONFIG"] == str(desk.d["_path"]) and env["HOME"] == "/home/claude"
+    jobs = json.loads(path.read_text())["mcpServers"]["jobs"]["env"]
+    assert jobs["SUPABASE_URL"] == "http://127.0.0.1:9" and jobs["SUPABASE_ANON_KEY"] == "test"
