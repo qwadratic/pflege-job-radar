@@ -25,6 +25,7 @@ def cfg(tmp_path):
     conf = {"campaign": "c", "sender": "me@example.org", "sender_name": "Me", "tz": "Europe/Berlin",
             "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "16:00"}, "holidays": ["2026-10-02"],
             "pause_seconds": [0, 0], "stop_on": ["reply", "stop", "bounce"], "halt_on": ["bounce", "stop"], "watch_folders": ["INBOX"],
+            "watch_via": "daria-inbox", "watch_overlap_minutes": 10,
             "cadence": [{"step": "initial", "template": "t0.txt"}, {"step": "fu1", "after": "4bd", "in_thread": True, "template": "t1.txt"}],
             "recipients": "recipients.json", "allowlist": "allowlist.txt", "ledger": "ledger.jsonl", "batches": "b", "approvals": "a"}
     (tmp_path / "c.json").write_text(json.dumps(conf))
@@ -1279,7 +1280,7 @@ def test_a_failed_redirect_letter_is_raised_recorded_and_not_tried_again(fcfg, m
 
 def helper_world(scfg, monkeypatch, overlap=10):
     """A campaign read through the helper; `reads` records every `since` it is asked for, `inbox` is what it returns."""
-    scfg.update({"watch_via": "daria-inbox", "watch_overlap_minutes": overlap})
+    scfg["watch_overlap_minutes"] = overlap
     if overlap is None:
         del scfg["watch_overlap_minutes"]
     real_inbox_messages = M.inbox_messages
@@ -1329,3 +1330,38 @@ def test_a_helper_watch_without_an_overlap_in_the_config_fails_loudly(scfg, monk
     with pytest.raises(M.MailerError, match="watch_overlap_minutes"):
         M.watch(scfg)
     assert not M.watched_state(scfg).exists()
+
+
+def test_a_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_refused(cfg):
+    """Ivan, 2026-10-05: the rule is that the mailbox is read only through daria-inbox."""
+    for via in ("imap", "graph", None):
+        conf = json.loads(cfg.read_text())
+        conf.pop("watch_via")
+        if via:
+            conf["watch_via"] = via
+        cfg.write_text(json.dumps(conf))
+        with pytest.raises(M.MailerError, match=r'"watch_via" must be "daria-inbox".*got ' + re.escape(repr(via))):
+            M.load_config(cfg)
+
+
+def test_a_failing_helper_is_tried_again_three_times_and_the_last_failure_is_raised(monkeypatch):
+    """05.10: a message moved to Junk between the helper's list and its fetch answers 404 and ends the helper; it took the desk
+    down at 16:59 and a batch at 19:47."""
+    calls, naps = [], []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if len(calls) <= fails:
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="Traceback ...\nurllib.error.HTTPError: HTTP Error 404: Not Found")
+        return types.SimpleNamespace(returncode=0, stdout='{"a": 1}\n', stderr="")
+    monkeypatch.setattr(M.subprocess, "run", run)
+    monkeypatch.setattr(M, "sleep", naps.append)
+    since = at("2026-10-05T10:00:00")
+    fails = 3
+    assert M.helper_output(since) == '{"a": 1}\n' and len(calls) == 4 and naps == [M.READ_RETRY_SECONDS] * 3
+    assert calls[0] == ["sudo", "-n", M.DARIA_INBOX, "--since", "2026-10-05T10:00:00+02:00"]
+    calls.clear(), naps.clear()
+    fails = 4
+    with pytest.raises(M.MailerError, match=r"(?s)exited 1 on 4 tries in a row: .*HTTP Error 404"):
+        M.helper_output(since)
+    assert len(calls) == 4 and len(naps) == 3

@@ -17,8 +17,10 @@ Commands:
                              poll_seconds it stamps the heartbeat, reads the operators' new mail, acts on stop, skip
                              and status at once and answers everything else from a worker thread, one mail at a
                              time. A second thread sends the letters that clinics' redirects made (clinic_mailer.py
-                             redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. A
-                             read of the operators' mail that fails is tried again three times, then mailed once per
+                             redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. A third
+                             thread reads every campaign's inbox for clinic answers (clinic_mailer.watch), whether a
+                             batch runs or not; a campaign that cannot be read (after the helper's three retries) is logged and mailed once. A
+                             read of the operators' mail that fails (after the same retries) is mailed once per
                              outage; the desk goes on with the rest but stamps no heartbeat until a read succeeds. Any
                              other error ends the desk after a mail to the operators; the batches halt by themselves
                              once the heartbeat is older than their limit.
@@ -76,6 +78,7 @@ def load(path):
     path = Path(path).resolve()
     d = json.loads(path.read_text())
     d["_dir"], d["_path"] = path.parent, path
+    M.require_daria_inbox(d, path)
     for k in ("ledger", "heartbeat", "session_dir"):
         d[k] = (path.parent / d[k]).resolve()
     d["docs"] = {k: str((path.parent / v).resolve()) for k, v in d.get("docs", {}).items()}
@@ -494,6 +497,41 @@ def redirect_letters(d, box):
                          "Повторно это письмо не отправляется, пока вы не решите. Что уже ушло, видно в журнале волны.")
 
 
+def watch_campaigns(d, box, failing):
+    """Read every campaign's inbox for clinic answers (clinic_mailer.watch: classify, log, act), with retries, whether or
+    not a batch of it runs (Ivan, 2026-10-05: a batch process was the only reader, so an answer waited for the next one:
+    52 minutes on 02.10, and after the last batch nobody would read). A campaign whose read still fails is logged
+    (watch_error) and mailed once per outage; the others go on. `failing` is the set of campaigns in an outage; returns it."""
+    for c in d["campaigns"]:
+        cfg = c["cfg"]
+        name = cfg["campaign"]
+        try:
+            M.watch(cfg, box)
+        except Exception as e:
+            reason = str(e) or type(e).__name__
+            if name not in failing:
+                log(d, {"event": "watch_error", "campaign": name, "reason": reason, "trace": traceback.format_exc()[-2000:]})
+                error_notice(d, box, f"Дарья не может прочитать ответы клиник: {c['label']}",
+                             f"{c['label']}: чтение ответов клиник не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
+                             "Стол пробует снова каждую минуту и ничего не пропустит: ответ, который не удалось прочитать, остаётся "
+                             "непрочитанным и будет прочитан при следующей удачной попытке.")
+            failing = failing | {name}
+        else:
+            if name in failing:
+                log(d, {"event": "watch_recovered", "campaign": name})
+            failing = failing - {name}
+    return failing
+
+
+def watch_worker(d, box):
+    """Its own thread: a watch classifies answers with the model, which takes seconds, and the main loop must keep stamping
+    the heartbeat and reading the operators' mail meanwhile. Dies only with the desk; the main loop checks it."""
+    failing = set()
+    while True:
+        failing = watch_campaigns(d, box, failing)
+        M.sleep(d["poll_seconds"])
+
+
 def redirect_worker(d, box):
     """Its own thread: a redirect letter waits for an odd minute and a batch pauses between letters, and the main loop must
     keep stamping the heartbeat and reading the operators' mail meanwhile. Dies only with the desk; the main loop checks it."""
@@ -521,21 +559,9 @@ def operator_mail(d, since, seen):
             yield folder, msg, mid, frm
 
 
-READ_RETRIES = 3                    # Ivan, 2026-10-05: the standard three retries
-READ_RETRY_SECONDS = 10
-
-
 def read_operator_mail(d, since, seen):
-    """The new operator mails, as a list. A read that fails (daria-inbox exits non-zero when a message vanishes between its
-    list and its fetch, a token expires) is tried again READ_RETRIES times, READ_RETRY_SECONDS apart; the last error is
-    raised."""
-    for attempt in range(READ_RETRIES + 1):
-        try:
-            return list(operator_mail(d, since, seen))
-        except Exception:
-            if attempt == READ_RETRIES:
-                raise
-            M.sleep(READ_RETRY_SECONDS)
+    """The new operator mails, as a list. The retries of a failing read are the helper's (clinic_mailer.helper_output)."""
+    return list(operator_mail(d, since, seen))
 
 
 def error_notice(d, box, subject, *paragraphs):
@@ -557,7 +583,7 @@ def poll(d, box, jobs, since, failing):
         if not failing:
             log(d, {"event": "read_error", "reason": reason, "trace": traceback.format_exc()[-2000:]})
             error_notice(d, box, "Дарья не может прочитать почту операторов",
-                         f"Чтение почты операторов не удалось {READ_RETRIES + 1} раза подряд: {reason}",
+                         f"Чтение почты операторов не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
                          "Стол продолжает работать: сводка и письма на новые адреса идут. Пока чтение не восстановится, команды и вопросы "
                          "письмом не читаются, а рассылки в режиме стола прервутся сами, когда пульс стола устареет. Что пришло за это время, "
                          "будет прочитано после восстановления.")
@@ -623,6 +649,8 @@ def _run(d):
     worker.start()
     redirects = threading.Thread(target=redirect_worker, args=(d, box), daemon=True)
     redirects.start()
+    watchers = threading.Thread(target=watch_worker, args=(d, box), daemon=True)
+    watchers.start()
     log(d, {"event": "desk_started", "pid": os.getpid(), "since": since.isoformat(timespec="seconds"), "requeued": len(left)})
     print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, mail since {since:%Y-%m-%d %H:%M}, "
           f"{len(active(d))} active batches, {len(left)} questions still to answer")
@@ -635,6 +663,8 @@ def _run(d):
                 raise M.MailerError("the answer worker died")
             if not redirects.is_alive():
                 raise M.MailerError("the redirect worker died")
+            if not watchers.is_alive():
+                raise M.MailerError("the watch worker died")
             since, failing = poll(d, box, jobs, since, failing)
             time.sleep(max(0, d["poll_seconds"] - (now(d) - t0).total_seconds()))
     except BaseException as e:

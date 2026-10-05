@@ -46,6 +46,7 @@ def campaign(root, name, ids, monkeypatch):
     conf = {"campaign": name, "sender": "me@example.org", "sender_name": "Daria", "tz": "Europe/Berlin",
             "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:00"}, "holidays": [], "pause_seconds": [90, 180],
             "stop_on": ["reply", "stop", "bounce"], "halt_on": ["bounce", "stop"], "watch_folders": ["inbox"],
+            "watch_via": "daria-inbox", "watch_overlap_minutes": 10,
             "cadence": [{"step": "initial", "template": "t0.txt"}, {"step": "fu1", "after": "3bd", "in_thread": True, "template": "t1.txt"}],
             "recipients": "recipients.json", "allowlist": "allowlist.txt", "ledger": "ledger.jsonl", "batches": "b", "approvals": "a",
             "operators": OPS, "notify": OPS, "forward": {k: OPS for k in M.FORWARD_KINDS}, "command_poll_seconds": 60, "announce": {"window_minutes": 60, "template": "announce.txt", "notes": "notes.txt"},
@@ -227,7 +228,7 @@ def test_a_desk_error_is_logged_and_mailed_before_the_desk_exits(desk, monkeypat
 
 
 def failing_inbox(monkeypatch, fails):
-    """D.operator_mail that raises `fails` times (a vanished message, HTTP 404) and then reads two mails; M.sleep is recorded."""
+    """D.operator_mail that raises `fails` times (the helper's retries are over, see test_clinic_mailer) and then reads nothing."""
     calls, naps = [], []
 
     def inbox(d, since, seen):
@@ -238,15 +239,6 @@ def failing_inbox(monkeypatch, fails):
     monkeypatch.setattr(D, "operator_mail", inbox)
     monkeypatch.setattr(M, "sleep", naps.append)
     return calls, naps
-
-
-def test_an_inbox_read_is_retried_three_times_before_it_counts_as_failed(desk, monkeypatch):
-    calls, naps = failing_inbox(monkeypatch, 3)
-    assert D.read_operator_mail(desk.d, NOW, set()) == [] and len(calls) == 4 and naps == [D.READ_RETRY_SECONDS] * 3
-    calls, naps = failing_inbox(monkeypatch, 4)
-    with pytest.raises(M.MailerError, match="HTTP 404"):
-        D.read_operator_mail(desk.d, NOW, set())
-    assert len(calls) == 4 and len(naps) == 3
 
 
 def test_an_inbox_that_stays_unreadable_is_mailed_once_and_the_rest_of_the_desk_goes_on(desk, monkeypatch):
@@ -639,3 +631,32 @@ def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_des
     assert [(e["event"], e["campaign"]) for e in ev] == [("redirect_letters", "w1"), ("redirect_error", "w2")] and "SMTP refused" in ev[1]["reason"]
     (m,) = desk.sent
     assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.de']" in plain(m)
+
+
+def test_the_desk_reads_every_campaigns_answers_and_mails_one_that_stays_unreadable_once(desk, monkeypatch):
+    """Ivan, 2026-10-05: a batch process was the only reader of the clinics' answers, so one waited for the next process."""
+    watched = []
+
+    def watch(cfg, box):
+        watched.append(cfg["campaign"])
+        if cfg["campaign"] == "w1":
+            raise M.MailerError("daria-inbox exited 1: HTTP 404")
+        return []
+    monkeypatch.setattr(M, "watch", watch)
+    failing = D.watch_campaigns(desk.d, {}, set())
+    assert failing == {"w1"} and watched == ["w1", "w2"]
+    (m,) = desk.sent
+    assert m["Subject"] == "Дарья не может прочитать ответы клиник: волна 1" and m["To"] == ", ".join(OPS)
+    assert "4 раза подряд: daria-inbox exited 1: HTTP 404" in plain(m)
+    assert D.watch_campaigns(desk.d, {}, failing) == {"w1"} and len(desk.sent) == 1          # the outage goes on: no second mail
+    monkeypatch.setattr(M, "watch", lambda cfg, box: [])
+    assert D.watch_campaigns(desk.d, {}, failing) == set()
+    assert [(e["event"], e["campaign"]) for e in D.read_ledger(desk.d) if e["event"].startswith("watch_")] == [("watch_error", "w1"), ("watch_recovered", "w1")]
+
+
+def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_refused(desk):
+    conf = json.loads(desk.d["_path"].read_text())
+    conf["watch_via"] = "graph"
+    desk.d["_path"].write_text(json.dumps(conf))
+    with pytest.raises(M.MailerError, match='"watch_via" must be "daria-inbox".*got .graph.'):
+        D.load(desk.d["_path"])

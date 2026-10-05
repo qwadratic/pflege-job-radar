@@ -167,9 +167,18 @@ class DeliveryHalt(MailerError):
 
 # ---------- config and files ----------
 
+def require_daria_inbox(conf, where):
+    """The one way Daria's mailbox is read (Ivan, 2026-10-05): through DARIA_INBOX. A config that names another way (IMAP, Graph
+    with its root-owned token cache) is refused when it is loaded."""
+    if conf.get("watch_via") != "daria-inbox":
+        raise MailerError(f'{where}: "watch_via" must be "daria-inbox": the mailbox is read only through {DARIA_INBOX}, '
+                          f'got {conf.get("watch_via")!r}')
+
+
 def load_config(path):
     path = Path(path).resolve()
     cfg = json.loads(path.read_text())
+    require_daria_inbox(cfg, path)
     cfg["_dir"] = path.parent
     for k in ("recipients", "allowlist", "ledger", "batches", "approvals"):
         cfg[k] = (path.parent / cfg[k]).resolve()
@@ -1949,14 +1958,29 @@ def inbox_messages(cfg, box, since, seen):
     return imap_messages(cfg, box or mailbox(cfg["sender"]), since)
 
 
+READ_RETRIES = 3                    # Ivan, 2026-10-05: the standard three retries of a read of the mailbox
+READ_RETRY_SECONDS = 10
+
+
+def helper_output(since):
+    """What daria-inbox prints for `since`, tried again READ_RETRIES times, READ_RETRY_SECONDS apart, when it exits non-zero:
+    a message that is moved or deleted between the helper's list and its fetch (Exchange files spam into Junk a moment after
+    delivery) answers 404 and ends the helper. The retry lists again. This took the desk down at 16:59 and a batch at 19:47
+    on 05.10. The last failure is raised."""
+    for attempt in range(READ_RETRIES + 1):
+        p = subprocess.run(["sudo", "-n", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
+                           capture_output=True, text=True, timeout=900)
+        if not p.returncode:
+            return p.stdout
+        if attempt == READ_RETRIES:
+            raise MailerError(f"daria-inbox exited {p.returncode} on {READ_RETRIES + 1} tries in a row: {p.stderr.strip()[-1500:]}")
+        sleep(READ_RETRY_SECONDS)
+
+
 def helper_messages(cfg, since, seen):
     """(folder, raw MIME) of every message daria-inbox returns since `since`, in every folder, except drafts, daria's
     own messages (Sent Items) and Message-IDs in `seen`; the Junk folder is named junkemail, like Graph's."""
-    p = subprocess.run(["sudo", "-n", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
-                       capture_output=True, text=True, timeout=900)
-    if p.returncode:
-        raise MailerError(f"daria-inbox exited {p.returncode}: {p.stderr.strip()[-1500:]}")
-    for line in p.stdout.splitlines():
+    for line in helper_output(since).splitlines():
         m = json.loads(line)
         frm = (((m.get("from") or {}).get("emailAddress") or {}).get("address") or "").lower()
         if m.get("isDraft") or frm == DARIA or (m.get("internetMessageId") or "").strip() in seen:
