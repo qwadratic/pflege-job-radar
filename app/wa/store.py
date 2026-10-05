@@ -392,7 +392,12 @@ def _migrate(c):
         # is wrapped in try/except -- CLAUDE.md "no safety nets": a failure here must be loud, not
         # a silently-skipped shrink.
         c.execute("vacuum")
-        c.execute("pragma wal_checkpoint(truncate)")
+        busy, log_pages, done_pages = c.execute("pragma wal_checkpoint(truncate)").fetchone()
+        if busy or log_pages != done_pages:
+            # The pragma itself never raises on a reader holding a snapshot (10-05 review MINOR-2).
+            raise sqlite3.OperationalError(
+                f"wal_checkpoint(truncate) after the wa_job_runs drop did not complete: busy={busy}, "
+                f"log={log_pages}, checkpointed={done_pages}")
 
 
 # TASK-303 (Ivan, 2026-09-25, round-1 review, finding A2 -- "correctness of the operator-note state
@@ -2179,18 +2184,20 @@ def record_job_started(c, job, started_at=None, pid=None):
     """The START half of job_run()'s heartbeat, callable directly (tools/wa_pro_fixtures.py: a job
     shown as currently running; tests). A single ON CONFLICT upsert -- atomic on its own, no
     ``begin immediate`` needed the way record_job_finished's read-modify-write does.
-    running_since/running_pid/last_started_at all move to this call's own values. An overlapping
+    running_since/running_pid move to this call's own values; last_started_at does NOT -- it is
+    last_run_at, the most recently FINISHED run's start, moved only by record_job_finished (10-05
+    review MINOR-4: a killed or hung run must not push next_run_at/overdue back). An overlapping
     second start of the same job (which none of today's jobs can actually do -- all cron/timer
     driven, never re-entrant) would overwrite the first start's running_pid; that is exactly why
     record_job_finished's own pid check exists, see its docstring."""
     started_at = started_at or now_iso()
     pid = os.getpid() if pid is None else pid
     c.execute(
-        "insert into wa_job_state (job, running_since, running_pid, last_started_at, buckets_json) "
-        "values (?,?,?,?,'{}') "
+        "insert into wa_job_state (job, running_since, running_pid, buckets_json) "
+        "values (?,?,?,'{}') "
         "on conflict(job) do update set running_since=excluded.running_since, "
-        "running_pid=excluded.running_pid, last_started_at=excluded.last_started_at",
-        (job, started_at, pid, started_at))
+        "running_pid=excluded.running_pid",
+        (job, started_at, pid))
     c.commit()
 
 
@@ -2204,7 +2211,8 @@ def record_job_finished(c, job, pid, ok, started_at, finished_at, error_code=Non
     running_since/running_pid are cleared ONLY if running_pid still matches ``pid`` -- an
     overlapping run of the same job (its own record_job_started having overwritten running_pid in
     between) must not have ITS still-live running state erased by THIS one's finish. Everything
-    else always moves: last_finished_at to ``finished_at`` unconditionally; last_ok_at (on
+    else always moves: last_started_at to ``started_at`` and last_finished_at to ``finished_at``
+    unconditionally; last_ok_at (on
     ``ok``) or last_error_code/last_error_at (on failure) to ``started_at`` -- not ``finished_at``
     -- the SAME value last_run_at itself reads (job_run_summary), preserving the old
     wa_job_runs-era meaning of both fields exactly: one run's own started_at, reused for both
@@ -2231,13 +2239,13 @@ def record_job_finished(c, job, pid, ok, started_at, finished_at, error_code=Non
         clear_running = bool(row) and row["running_pid"] == pid
         running_sql = "running_since=null, running_pid=null, " if clear_running else ""
         if ok:
-            c.execute(f"update wa_job_state set {running_sql}last_finished_at=?, last_ok=1, "
-                      f"last_ok_at=?, buckets_json=? where job=?",
-                      (finished_at, started_at, json.dumps(buckets), job))
+            c.execute(f"update wa_job_state set {running_sql}last_started_at=?, last_finished_at=?, "
+                      f"last_ok=1, last_ok_at=?, buckets_json=? where job=?",
+                      (started_at, finished_at, started_at, json.dumps(buckets), job))
         else:
-            c.execute(f"update wa_job_state set {running_sql}last_finished_at=?, last_ok=0, "
-                      f"last_error_code=?, last_error_at=?, buckets_json=? where job=?",
-                      (finished_at, error_code, started_at, json.dumps(buckets), job))
+            c.execute(f"update wa_job_state set {running_sql}last_started_at=?, last_finished_at=?, "
+                      f"last_ok=0, last_error_code=?, last_error_at=?, buckets_json=? where job=?",
+                      (started_at, finished_at, error_code, started_at, json.dumps(buckets), job))
     except BaseException:
         c.rollback()
         raise
@@ -2301,8 +2309,8 @@ def _finish_job_run_safe(job, pid, started, rec):
 def job_run(job):
     """Updates this job's ONE wa_job_state row spanning the wrapped block (TASK-283.7's job
     heartbeats, 2026-10-05 extended to track a run CURRENTLY in flight rather than just append
-    another log row -- Ivan, 2026-10-05): running_since/running_pid/last_started_at at entry;
-    last_finished_at/last_ok/ok-or-error at exit, from the yielded recorder. An uncaught exception
+    another log row -- Ivan, 2026-10-05): running_since/running_pid at entry;
+    last_started_at/last_finished_at/last_ok/ok-or-error at exit, from the yielded recorder. An uncaught exception
     is recorded too (ok=False, its own type name as the error, unless the caller already set one)
     and then RE-RAISED -- this only observes a job's own entrypoint, it never swallows its failure,
     so main()'s existing except/return-code handling is unaffected.

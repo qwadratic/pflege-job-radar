@@ -348,6 +348,10 @@ None of the four is reconstructed or guessed when its underlying row doesn't exi
 
 ## Known imprecisions (documented, not bugs)
 
+- **`ok_24h`/`failed_24h` of the 5 heartbeat jobs cover 23–24h, not exactly 24h.** `buckets_json`
+  counts whole UTC hours keyed by each run's `finished_at`; an hour counts only if it starts at or
+  after `now − 24h`, so the oldest partial hour is dropped. Under-count is at most one hour of runs
+  (~120 for `tunnel_watch`, ~4%).
 - **`relay_sync`/`broadcasts` `ok_24h`/`failed_24h` are `null`, not a count** (review "Documented
   gaps" — changed by this fix pass; they used to return a number that looked like a real 24h window
   but was not one: `relay_sync` has one row, overwritten every pass, so its old `1`/`0` really meant

@@ -15,8 +15,8 @@
       "job": "catchup",
       "last_error": null,
       "last_ok_at": "2026-09-30T11:57:00+00:00",
-      "last_run_at": "2026-09-30T11:59:40+00:00",
-      "next_run_at": "2026-09-30T12:02:40+00:00",
+      "last_run_at": "2026-09-30T11:57:00+00:00",
+      "next_run_at": "2026-09-30T12:00:00+00:00",
       "ok_24h": 3,
       "overdue": false,
       "running_since": "2026-09-30T11:59:40+00:00"
