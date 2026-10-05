@@ -103,6 +103,18 @@ def test_sibling_is_skipped_when_the_harvested_run_actually_covers_its_town(hdb)
     assert st["C"]["status"] == "skipped" and "already covered this site" in st["C"]["last_error"]
 
 
+def test_a_gzipped_run_file_is_read_like_a_plain_one(hdb):
+    """deploy/crontab gzips crawl_output/run_<id>.jsonl after 7 days and the .gz replaces the plain file."""
+    import gzip
+    write_run_jsonl(8, [("Pflegefachkraft (m/w/d)", "Bstadt")])
+    p = A.CRAWL_OUT / "run_8.jsonl"
+    with open(p, "rb") as f, gzip.open(str(p) + ".gz", "wb") as g:
+        g.write(f.read())
+    p.unlink()
+    assert H._run_mentions_town(8, "Bstadt") is True
+    assert H._run_mentions_town(8, "Cstadt") is False
+
+
 def test_sibling_host_only_after_rows(hdb):
     day = H.today()
     cl = [clinic("B", "B", 500, "https://b.de/karriere"), clinic("C", "C", 300, "https://b.de/x")]

@@ -22,6 +22,7 @@ one retry at 200 only after an UNBILLED 'Agent reached max credits' -> needs_man
 """
 import argparse
 import fcntl
+import gzip
 import json
 import os
 import re
@@ -140,8 +141,10 @@ def _run_mentions_town(run_id, town):
     if not town or not run_id:
         return False
     path = A.CRAWL_OUT / f"run_{run_id}.jsonl"
+    if not path.exists():
+        path = path.with_name(path.name + ".gz")        # deploy/crontab gzips run files older than 7 days
     try:
-        with open(path, encoding="utf-8") as f:
+        with (gzip.open if path.suffix == ".gz" else open)(path, "rt", encoding="utf-8") as f:
             for line in f:
                 try:
                     row = json.loads(line)

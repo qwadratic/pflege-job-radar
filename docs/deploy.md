@@ -54,6 +54,8 @@ Supabase Postgres (`postings`, `posting_observations`) → `link-cross`, then `v
 |---|---|---|
 | Sunday 12:00 | `python -m pflege_jobs.cli purge-inbox --days 4` | `data/inbox.sqlite` grows ~100 MB per nightly run. Keeps the last 4 runs for `cli inbox --reprocess-run`; deletes older rows by `received_at`. Log: `data/purge_inbox.log` |
 
+| Sunday 12:05 | `find crawl_output -name 'run_*.jsonl' -mtime +7 -exec gzip {} +` | `crawl_output/run_<id>.jsonl` is ~110 MB per nightly run. Older files become `run_<id>.jsonl.gz` (~16 MB, no row lost); `app/hunter.py` and `tools/task95_replay.py` read both |
+
 The purge deletes rows but does not shrink the file; SQLite reuses the freed pages, so the file stays flat (about 0.5 to 1.2 GB).
 To give the space back to the disk, stop writers (no crawl running) and run `sqlite3 data/inbox.sqlite VACUUM` (needs free space about the size of the live rows).
 
@@ -63,7 +65,7 @@ The VM disk is 25 GB. Check with `df -h /`. What is big and what it is (all giti
 
 | path | size 2026-10-05 | note |
 |---|---|---|
-| `crawl_output/run_<id>.jsonl` | 1.9 GB, +~110 MB per nightly run | per-run dump of the raw rows; the only copy once the inbox purge has run. **No retention yet.** |
+| `crawl_output/run_<id>.jsonl[.gz]` | plain +~110 MB per nightly run, `.gz` ~16 MB | per-run dump of the raw rows; the only copy once the inbox purge has run. Files older than 7 days are gzipped weekly, none deleted |
 | `crawl_snapshots/` | 1.7 GB | recorded pages the old adapter tests read; the mirror (TASK-197, not merged yet) is to replace them |
 | `data/clinic_photos/` | 1.5 GB | 399 chosen photos (`clinic_photos` table) plus 2121 unused candidates, input of TASK-120 and TASK-121 |
 | `data/inbox.sqlite` | 0.5 GB | bounded by the weekly purge |
