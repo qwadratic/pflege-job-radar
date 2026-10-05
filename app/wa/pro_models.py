@@ -447,15 +447,23 @@ JobKey = str
 
 
 class ErrorInfo(_Strict):
-    """An enum code plus free text (contract: "error = an enum code + free text") -- used for both
-    a mirrored op's own error and a job run's error; the closed code lists differ per use and live
-    in docs/wa-pro-activity.md, not in this shared shape."""
+    """Just an enum code (review finding 2, BLOCKER -- NOT "an enum code plus free text" as the
+    contract originally had it): used for both a mirrored op's own error and a job run's error.
+    docs/wa-pro-activity.md previously called error.code "closed to exactly this list", which was
+    false (review finding 6) -- it is an OPEN set, documented there, and an unknown code is shown
+    raw, same convention as OpStatus/OpOrigin/OpKind above. The free-text field this used to carry
+    is gone outright, not merely scrubbed: the bridge's own error text can embed a raw phone (the
+    share-picker's "no row ... matches {phone}") or message text (callers that embed
+    ``record {body!r}``), and nothing short of removing the field stops a FUTURE caller from piping
+    one more such string through it."""
     code: str
-    text: str | None = None
 
 
 class TunnelInfo(_Strict):
-    up: bool
+    #: None before any snapshot has ever been written (review finding 11, NIT) -- distinct from
+    #: False (a snapshot WAS taken and the tunnel really is down); previously defaulted to False,
+    #: indistinguishable from a real outage.
+    up: bool | None
     since: str | None = None
     last_error: ErrorInfo | None = None
 
@@ -489,6 +497,17 @@ class QueueCounts(_Strict):
     running: int
     done: int
     failed: int
+    #: Every state outside the four above, keyed by its own name (review finding 6, MAJOR): a
+    #: future bridge state used to be added as a brand-new top-level key, which this model's own
+    #: extra="forbid" turned into a 500 on GET /api/wa/pro/activity the moment the bridge shipped
+    #: one (reproduced in review). Empty, never missing, when nothing unexpected is seen.
+    other: dict[str, int] = {}
+    #: When the ops mirror itself last confirmed it is in sync with the bridge (review finding 4,
+    #: MAJOR) -- app/wa/store.py's OPS_MIRROR_SYNC_SOURCE heartbeat, null before any mirroring pass
+    #: has ever succeeded. Without this, a mirror that has failed every pass for hours still showed
+    #: these same counts as current (reproduced in review): nothing told the API the mirror itself
+    #: had gone stale, only the DRAIN's own synced_at/snapshot_at, both unrelated to this table.
+    as_of: str | None = None
 
 
 class JobRow(_Strict):
@@ -501,8 +520,16 @@ class JobRow(_Strict):
     last_ok_at: str | None = None
     last_error: ErrorInfo | None = None
     next_run_at: str | None = None
-    ok_24h: int
-    failed_24h: int
+    #: Null (review's "Documented gaps"), not an invented count, for the two jobs this harness has
+    #: no true 24h window for: relay_sync is one row overwritten every ~3s (its own "ok_24h"/
+    #: "failed_24h" used to be 1/0 off the LATEST pass only, not a count over 24h at all), and
+    #: broadcasts' only numbers are bridge/broadcast.py::BroadcastRunner's own process-LIFETIME
+    #: attempted/errors counters (reset on every bridge restart) -- both were misleading enough
+    #: ("ok (24h): 1" for a job that runs ~28k times a day) that showing them as real windowed
+    #: counts was worse than showing nothing. Every HEARTBEAT_JOBS job (wa_job_runs-backed) and
+    #: luna_reply (wa_luna_calls/wa_send_failures-backed) still report a real windowed int.
+    ok_24h: int | None
+    failed_24h: int | None
     #: Additive beyond the contract's own field list, same convention as ThreadsEnvelope.synced_at
     #: (an extra freshness signal, not in wa-dashboard.md either, that the frontend asked for
     #: anyway): now > last_run_at + 2x the job's own cadence. Null for a job with no fixed cadence
@@ -534,6 +561,10 @@ class OpRow(_Strict):
     #: The mirrored op's own op_id (opaque, bridge-minted) -- NOT the position used for cursor
     #: paging (OpsEnvelope.next_before_id is a position, this is not; see pro_api.py::_op_row_dict).
     id: str
+    #: wa_ops_mirror.position (review finding 5, MAJOR): without this, after_id/before_id -- both
+    #: positions -- had no row-level counterpart a poller could read back and resubmit, breaking
+    #: the contract's own "the cursor works like /messages" promise (there, id IS the cursor).
+    position: int
     kind: OpKind
     origin: OpOrigin
     status: OpStatus
@@ -554,6 +585,10 @@ class OpsEnvelope(_Strict):
     #: See ThreadsEnvelope.synced_at/synced_source.
     synced_at: str | None = None
     synced_source: str | None = None
+    #: See QueueCounts.as_of -- the SAME ops-mirror heartbeat, repeated here as its own top-level
+    #: field (review finding 4) rather than nested, since this envelope has no "queue" object to
+    #: hang it off.
+    mirrored_at: str | None = None
     rows: list[OpRow]
     #: A wa_ops_mirror.position, like /messages' own next_before_id is a wa_messages.id -- NOT an
     #: op_id (see OpRow.id's own note).

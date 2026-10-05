@@ -1,8 +1,10 @@
 {
   "generated_at": "2026-09-30T12:02:00+00:00",
   "human": {
+    "as_of": "2026-09-30T11:59:58+00:00",
     "done": 0,
     "failed": 0,
+    "other": {},
     "queued": 1,
     "running": 0
   },
@@ -34,8 +36,7 @@
       "failed_24h": 1,
       "job": "tunnel_watch",
       "last_error": {
-        "code": "PermissionError",
-        "text": "[Errno 13] Permission denied: '/home/claude/.local/state/pflege-wa-bridge/tunnel_watch.json'"
+        "code": "PermissionError"
       },
       "last_ok_at": "2026-09-30T11:55:00+00:00",
       "last_run_at": "2026-09-30T11:58:00+00:00",
@@ -67,16 +68,15 @@
     },
     {
       "enabled": true,
-      "failed_24h": 1,
+      "failed_24h": null,
       "job": "relay_sync",
       "last_error": {
-        "code": "relay_sync_failed",
-        "text": "relay: ssh -L to mini01 did not come up in 20s"
+        "code": "relay_sync_failed"
       },
       "last_ok_at": "2026-09-30T11:55:00+00:00",
       "last_run_at": "2026-09-30T11:55:00+00:00",
       "next_run_at": "2026-09-30T11:55:03+00:00",
-      "ok_24h": 0,
+      "ok_24h": null,
       "overdue": true
     },
     {
@@ -84,8 +84,7 @@
       "failed_24h": 1,
       "job": "luna_reply",
       "last_error": {
-        "code": "send_failed",
-        "text": "the WhatsApp free-form window closed for +491700008999 (last inbound message is over 24.0h old) and no reopen template is configured -- register a template with Meta and set WA_REOPEN_TEMPLATE_NAME before this thread can be reached again"
+        "code": "send_failed"
       },
       "last_ok_at": "2026-09-30T11:54:02+00:00",
       "last_run_at": "2026-09-30T11:54:02+00:00",
@@ -95,19 +94,21 @@
     },
     {
       "enabled": true,
-      "failed_24h": 0,
+      "failed_24h": null,
       "job": "broadcasts",
       "last_error": null,
       "last_ok_at": null,
       "last_run_at": null,
       "next_run_at": null,
-      "ok_24h": 0,
+      "ok_24h": null,
       "overdue": null
     }
   ],
   "queue": {
+    "as_of": "2026-09-30T11:59:58+00:00",
     "done": 6,
     "failed": 3,
+    "other": {},
     "queued": 3,
     "running": 2
   },
@@ -119,8 +120,7 @@
     },
     "tunnel": {
       "last_error": {
-        "code": "RelayError",
-        "text": "ssh -L to mini01 did not come up in 20s"
+        "code": "RelayError"
       },
       "since": "2026-09-30T12:01:30+00:00",
       "up": false

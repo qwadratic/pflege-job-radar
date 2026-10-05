@@ -349,6 +349,10 @@ def main(argv=None):
         jr.counts = {"threads": len(report["phones"]),
                      "wiped": sum(1 for p in report["phones"] if p["wiped"]),
                      "problems": report["problems"]}
+        if not jr.ok:
+            # Review finding 1 (BLOCKER): an explicit code, since nothing raised -- each PROBLEM
+            # line is already printed/returned above, per-thread.
+            jr.error_code = "purge_problems"
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

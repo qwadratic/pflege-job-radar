@@ -71,6 +71,11 @@ WATCHER_STALE_SEC = 60.0
 #: rather than the ordinary gap to the next drain (INTERVAL_SEC above). Same caveat as
 #: WATCHER_STALE_SEC: a first number, not a considered one.
 INBOUND_BACKLOG_STALE_SEC = 60.0
+#: Review finding 8 (MINOR): GET /v1/ops used to ride the generic 30s http_json timeout, same as a
+#: real send -- but this route is a plain ledger read (bridge/server.py::_ops_list's own
+#: docstring: "NEVER takes huawei01.lock and NEVER enqueues"), so a slow one should give up well
+#: before it could delay the next drain pass by a noticeable amount.
+OPS_TIMEOUT_SEC = 10.0
 
 
 class RelayError(RuntimeError):
@@ -208,6 +213,29 @@ class _OpsMirror:
         with ST.db() as c:
             for op in ops:
                 ST.upsert_mirrored_op(c, op)
+
+    def reset(self):
+        """Review finding 11 (NIT): the recovery for a detected ledger position reset (the
+        bridge's own ``position`` counter has restarted below this mirror's stored max) -- wipes
+        the mirror outright, so the next pass's ``after_position`` starts from 0 instead of
+        staying wedged above every position the bridge is about to reuse."""
+        from app.wa import store as ST
+        with ST.db() as c:
+            ST.clear_ops_mirror(c)
+
+
+def _write_mirror_sync(ok, error_code=None):
+    """The production mirror_sync_writer (from_env only, same lazy-import convention as
+    _write_rail_sync/_write_rail_snapshot above): the ops mirror's own heartbeat (review finding 4,
+    MAJOR), sharing wa_rail_sync's table under a second ``source`` key
+    (app/wa/store.py::OPS_MIRROR_SYNC_SOURCE) rather than a dedicated column/table -- that table is
+    already exactly this shape (an ok/at-or-error heartbeat, keyed by source)."""
+    from app.wa import store as ST
+    with ST.db() as c:
+        if ok:
+            ST.record_rail_sync_ok(c, ST.OPS_MIRROR_SYNC_SOURCE)
+        else:
+            ST.record_rail_sync_error(c, ST.OPS_MIRROR_SYNC_SOURCE, error_code or "unknown_error")
 
 
 def utc_now():
@@ -392,7 +420,7 @@ class Relay:
     def __init__(self, *, host, token, webhook_url, inbound_token, cursor, phone_number_id,
                  display_phone_number, waba_id, remote_port=REMOTE_PORT, local_port=LOCAL_PORT,
                  log=print, fetch_limit=None, sync_writer=None, mirror_writer=None,
-                 snapshot_writer=None):
+                 snapshot_writer=None, mirror_sync_writer=None):
         self.tunnel = SshForward(host, remote_port=remote_port, local_port=local_port, log=log)
         self.token = token
         self.webhook_url = webhook_url
@@ -416,6 +444,13 @@ class Relay:
         # directly keeps touching no database for either, exactly like sync_writer.
         self.mirror_writer = mirror_writer
         self.snapshot_writer = snapshot_writer
+        # TASK-283.7 review finding 4 (MAJOR): the mirror's own heartbeat, same opt-in convention.
+        self.mirror_sync_writer = mirror_sync_writer
+        # Review finding 4 (log only on an OpsRouteMissing state CHANGE, not every ~3s pass) and
+        # finding 8 (route the mirror's own health check through the SAME throttle run() already
+        # applies to its own periodic check, instead of bypassing it on every new op).
+        self._ops_route_missing = False
+        self._next_alarm_check = 0.0
 
     def _mark_synced(self, ok, error=None):
         """Call self.sync_writer, if any, and never let it take the drain loop down with it -- a
@@ -453,6 +488,28 @@ class Relay:
                                  tunnel_up=self.tunnel.up(), phone_state=phone_state)
         except Exception as exc:  # the snapshot is a supplement, never load-bearing for the alarm
             self.log(f"relay: could not record rail snapshot: {type(exc).__name__}: {exc}")
+
+    def _mark_mirrored(self, ok, error_code=None):
+        """Call self.mirror_sync_writer, if any, and never let it take the drain loop down with it
+        -- same never-load-bearing discipline as _mark_synced/_write_snapshot above (review
+        finding 4, MAJOR)."""
+        if self.mirror_sync_writer is None:
+            return
+        try:
+            self.mirror_sync_writer(ok, error_code)
+        except Exception as exc:  # the heartbeat is a supplement, never load-bearing for mirroring
+            self.log(f"relay: could not record ops-mirror heartbeat: {type(exc).__name__}: {exc}")
+
+    def _run_alarm_check_if_due(self):
+        """check_watcher_alarm(), but only once self._next_alarm_check has actually passed (review
+        finding 8, MINOR) -- the single gate run() and mirror_ops() both go through, so a burst of
+        new ops cannot make mirror_ops() fire the (up to HEALTH_TIMEOUT_SEC-costly) health check
+        more often than ALARM_CHECK_INTERVAL_SEC, the exact hammering that interval exists to
+        prevent. ``_next_alarm_check`` starts at 0.0 (TASK-255: checked once immediately)."""
+        now = time.monotonic()
+        if now >= self._next_alarm_check:
+            self.check_watcher_alarm()
+            self._next_alarm_check = time.monotonic() + ALARM_CHECK_INTERVAL_SEC
 
     def check_watcher_alarm(self):
         """Ask health() for the watcher heartbeat and log loudly if it looks dead (TASK-255):
@@ -503,7 +560,16 @@ class Relay:
         """GET /v1/ops (bridge/server.py, the shared interface's own shape,
         ~/plans/2026-10-01-pro-activity-rail-view.md "Endpoints"). Raises OpsRouteMissing
         specifically on 404 (an executor build that predates this route) and plain RelayError on
-        anything else but 200."""
+        anything else but 200.
+
+        Review finding 4 (MAJOR): an executor build that predates this route does not actually
+        answer 404 for it -- bridge/server.py's own catch-all for an unmatched path (``_no_route``)
+        raises ``invalid_request`` (400), the SAME refusal a genuinely malformed query from this
+        module would get. Since this module only ever builds well-formed queries, a 400
+        invalid_request here is never that second case in practice -- it is this same
+        "the route does not exist yet" fact under the old build's own fallback shape, so it is
+        treated identically to the 404 case right below it, never as a RelayError that would stop
+        the whole drain loop over an executor that simply has not been upgraded yet."""
         query = []
         if after_position is not None:
             query.append(f"after_position={int(after_position)}")
@@ -514,9 +580,11 @@ class Relay:
         if ids:
             query.append("ids=" + ",".join(ids))
         path = "/v1/ops" + ("?" + "&".join(query) if query else "")
-        status, body, _elapsed = self.executor(path)
+        status, body, _elapsed = self.executor(path, timeout=OPS_TIMEOUT_SEC)
         if status == 404:
             raise OpsRouteMissing(f"executor has no /v1/ops route (pre-283.7 build?): {body}")
+        if status == 400 and isinstance(body, dict) and (body.get("error") or {}).get("code") == "invalid_request":
+            raise OpsRouteMissing(f"executor has no /v1/ops route (pre-283.7 build, 400 fallback): {body}")
         if status != 200:
             raise RelayError(f"executor ops is {status}: {body}")
         return body
@@ -529,23 +597,57 @@ class Relay:
         never moves (the shared interface). No-op when self.mirror_writer is None (same opt-in
         convention as sync_writer/snapshot_writer).
 
-        Also triggers an immediate check_watcher_alarm() -- and so an immediate snapshot refresh --
-        when NEW ops appeared (the plan's own data-path note: the snapshot is "refreshed at the
-        existing alarm cadence and also on every cycle in which the ops mirror changed"), rather
-        than waiting out the full 60s alarm cadence. Deliberately scoped to NEW positions only, not
-        every refresh of an already-known open row: a row merely sitting 'running' refreshes on
-        every single pass once anything is running at all, and firing health() on every one of
-        those would turn this into the exact every-cycle hammering ALARM_CHECK_INTERVAL_SEC was
-        chosen to avoid.
+        Review finding 3 (MAJOR): the ``active`` fetch (every currently non-terminal op, no
+        position filter at all) can return a row enqueued AFTER the position page above was
+        fetched -- writing that row raises the mirror's own max_position past it, and the NEXT
+        pass's ``after_position`` then starts above a DIFFERENT op that was enqueued in between and
+        had already finished (quota refusal, idempotent replay) before THIS pass's own ``active``
+        fetch ever looked: that op is skipped forever, and done/failed counts undercount from then
+        on. Fixed by never writing an ``active`` row whose position is above this pass's own
+        high-water mark (the highest position actually seen via position-paging, or ``after`` when
+        nothing new paged in at all) -- such a row is simply left for the position-paging page that
+        will reach it on a later pass, same as any other op not yet visible through ``active``.
 
-        Tolerates OpsRouteMissing by logging and writing nothing for this pass; tolerates any other
-        RelayError/bug the same way check_watcher_alarm() does for its own health() call -- a
-        mirroring failure must not take down the drain loop it only supplements."""
+        Review finding 11 (NIT): also checks for a ledger position reset (a ledger reset, or a
+        retention sweep that outlived every row this mirror's own cursor was already past) --
+        since positions only ever grow on a live bridge, the one false-positive-free signal
+        available through this interface is every op_id this mirror still has open (self.
+        mirror_writer.open_ids()) vanishing from the bridge AT ONCE: list_ops's own ``ids=`` branch
+        returns whatever still exists for exactly those ids, state ignored, so losing every single
+        one of them in one pass (never just one stale straggler retention swept on its own) means
+        the whole phone_ops table underneath them is gone, not that they individually finished or
+        were cleaned up. Detected, this pass wipes the mirror and returns early (the next pass
+        pages from 0 again) instead of staying permanently blind, and logs it -- naturally only
+        once, since open_ids is empty right after the wipe and this check is vacuously false then.
+        (A reset with NOTHING open in this mirror at the moment it happens has no signal to catch
+        here at all -- a known, narrow gap for this NIT-level fix, not a false-positive risk.)
+
+        Also triggers an alarm/snapshot check when NEW ops appeared (the plan's own data-path note:
+        the snapshot is "refreshed at the existing alarm cadence and also on every cycle in which
+        the ops mirror changed"), through the SAME throttle run() applies to its own periodic check
+        (review finding 8, MINOR: this used to call check_watcher_alarm() unconditionally on any
+        new op, bypassing ALARM_CHECK_INTERVAL_SEC -- the exact every-cycle hammering that interval
+        exists to prevent, once anything is enqueued often enough).
+
+        Writes a heartbeat (self.mirror_sync_writer, review finding 4, MAJOR) on every pass that
+        reaches a real outcome -- ok on a clean pass (even an empty one: "the mirror tried and
+        found nothing new" is itself current information), ok=False with a code on a detected
+        reset, an OpsRouteMissing or any other failure -- so a caller can tell a frozen mirror from
+        a healthy, idle one (GET /api/wa/pro/activity's queue.as_of / GET /api/wa/pro/ops'
+        mirrored_at).
+
+        Tolerates OpsRouteMissing by logging ONLY ON A STATE CHANGE (review finding 4) -- this used
+        to log every single pass, which at the 3s drain cadence is a line every 3s forever, exactly
+        the kind of noise TASK-375's own tunnel-borrowed fix (see SshForward.open's docstring)
+        already had to fix once for a different route. Tolerates any other RelayError/bug the same
+        way check_watcher_alarm() does for its own health() call -- a mirroring failure must not
+        take down the drain loop it only supplements."""
         if self.mirror_writer is None:
             return
         try:
             new_ops = []
             after = self.mirror_writer.max_position()
+            high_water = after
             page = self.ops(after_position=after, limit=500)
             new_ops.extend(page.get("ops") or [])
             next_after = page.get("next_after_position")
@@ -553,20 +655,45 @@ class Relay:
                 page = self.ops(after_position=next_after, limit=500)
                 new_ops.extend(page.get("ops") or [])
                 next_after = page.get("next_after_position")
+            if new_ops:
+                high_water = max(op["position"] for op in new_ops)
             open_ids = self.mirror_writer.open_ids()
             refreshed = self.ops(ids=open_ids).get("ops") or [] if open_ids else []
             active = self.ops(active=True, limit=10000).get("ops") or []
+
+            if open_ids and not refreshed:
+                self.log(f"relay: ledger position reset detected (all {len(open_ids)} op(s) this "
+                         f"mirror still had open vanished from the bridge at once) -- resetting "
+                         f"the ops mirror")
+                self.mirror_writer.reset()
+                self._mark_mirrored(False, "ledger_position_reset")
+                return
+
+            if self._ops_route_missing:
+                self.log("relay: /v1/ops is reachable again -- ops mirror resumed")
+                self._ops_route_missing = False
+
+            # Finding 3's own fix: an active row above this pass's high-water mark is left for a
+            # later position-paging pass, never written now.
+            active = [op for op in active if op["position"] <= high_water]
+
             all_ops = new_ops + refreshed + active
             if all_ops:
                 self.mirror_writer.write(all_ops)
             if new_ops:
-                self.check_watcher_alarm()
+                self._run_alarm_check_if_due()
+            self._mark_mirrored(True)
         except OpsRouteMissing as exc:
-            self.log(f"relay: {exc} -- ops mirror skipped this pass")
+            if not self._ops_route_missing:
+                self.log(f"relay: {exc} -- ops mirror will be skipped until the executor is upgraded")
+                self._ops_route_missing = True
+            self._mark_mirrored(False, exc.code)
         except RelayError as exc:
             self.log(f"relay: ops mirror failed: {exc}")
+            self._mark_mirrored(False, type(exc).__name__)
         except Exception as exc:  # our own bug, named as one -- never takes the drain loop with it
             self.log(f"relay: ops mirror failed: {type(exc).__name__}: {exc}")
+            self._mark_mirrored(False, type(exc).__name__)
 
     def fetch(self):
         """-> the outbox items after our cursor. The ack rides along, so the mini can sweep."""
@@ -621,8 +748,9 @@ class Relay:
         backoff = interval
         # TASK-255: checked once immediately, not only after the first ALARM_CHECK_INTERVAL_SEC --
         # a relay that starts up already blind should say so now, not wait a full interval to ask.
-        next_alarm_check = time.monotonic()
+        self._next_alarm_check = time.monotonic()
         while stop is None or not stop.is_set():
+            drained_ok = True
             try:
                 self.drain_once()
                 backoff = interval
@@ -634,18 +762,22 @@ class Relay:
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
                 self._mark_synced(False, str(exc))
+                drained_ok = False
             except Exception as exc:  # our own bug, named as one
                 self.log(f"relay: {type(exc).__name__}: {exc}")
                 self.tunnel.close()
                 backoff = min(backoff * 2, 60.0)
                 self._mark_synced(False, f"{type(exc).__name__}: {exc}")
-            # TASK-283.7: every cycle, not gated on the alarm cadence -- a no-op when
-            # mirror_writer is None (every test in tests/test_bridge_relay.py builds a Relay
-            # without one), and self-contained (never raises) when it isn't.
-            self.mirror_ops()
-            if time.monotonic() >= next_alarm_check:
-                self.check_watcher_alarm()
-                next_alarm_check = time.monotonic() + ALARM_CHECK_INTERVAL_SEC
+                drained_ok = False
+            # TASK-283.7: a no-op when mirror_writer is None (every test in
+            # tests/test_bridge_relay.py builds a Relay without one), self-contained (never
+            # raises) when it isn't -- but skipped on a cycle whose drain itself just failed
+            # (review finding 8, MINOR): the tunnel the drain just closed would otherwise be
+            # reopened immediately for a second, unrelated purpose, adding a second ssh attempt of
+            # up to TUNNEL_READY_SEC on top of the failure the drain loop is already backing off.
+            if drained_ok:
+                self.mirror_ops()
+            self._run_alarm_check_if_due()
             time.sleep(backoff)
 
     def close(self):
@@ -672,6 +804,7 @@ def from_env(**override):
         sync_writer=_write_rail_sync,   # review item 13: only the production Relay gets a real writer
         mirror_writer=_OpsMirror(),     # TASK-283.7: same convention -- only from_env wires one
         snapshot_writer=_write_rail_snapshot,
+        mirror_sync_writer=_write_mirror_sync,  # review finding 4: same convention
     )
     kwargs.update(override)
     return Relay(**kwargs)

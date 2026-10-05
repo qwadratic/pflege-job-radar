@@ -1,6 +1,7 @@
 """Tests for GET /api/wa/pro/activity and GET /api/wa/pro/ops (TASK-283.7, builder B's half of
 ~/plans/2026-10-01-pro-activity-rail-view.md). Same offline pattern as tests/test_wa_pro_api.py: one
 tmp sqlite per test, both pro tokens set, asgi's startup hook creates the schema."""
+import re
 import threading
 import time
 
@@ -76,10 +77,12 @@ def test_activity_ok_and_validates_before_anything_has_ever_run(client):
     M.ActivityResponse.model_validate(body)
     assert body["snapshot_at"] is None
     assert body["synced_at"] is None
-    assert body["rail"]["tunnel"]["up"] is False
+    assert body["rail"]["tunnel"]["up"] is None
     assert body["rail"]["phone"]["state"] == "unknown"
-    assert body["queue"] == {"queued": 0, "running": 0, "done": 0, "failed": 0}
-    assert body["human"] == {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    assert body["queue"] == {"queued": 0, "running": 0, "done": 0, "failed": 0, "other": {},
+                              "as_of": None}
+    assert body["human"] == {"queued": 0, "running": 0, "done": 0, "failed": 0, "other": {},
+                              "as_of": None}
 
 
 def test_activity_jobs_list_has_exactly_8_rows_and_excludes_nudges(client):
@@ -105,8 +108,10 @@ def test_activity_reflects_the_ops_mirror_counts_including_human(client):
         ST.upsert_mirrored_op(c, _op("a", 1, state="queued", origin="luna"))
         ST.upsert_mirrored_op(c, _op("b", 2, state="done", origin="pro_human"))
     body = client.get("/api/wa/pro/activity", headers=RH).json()
-    assert body["queue"] == {"queued": 1, "running": 0, "done": 1, "failed": 0}
-    assert body["human"] == {"queued": 0, "running": 0, "done": 1, "failed": 0}
+    assert body["queue"] == {"queued": 1, "running": 0, "done": 1, "failed": 0, "other": {},
+                              "as_of": None}
+    assert body["human"] == {"queued": 0, "running": 0, "done": 1, "failed": 0, "other": {},
+                              "as_of": None}
 
 
 def test_activity_reflects_a_tunnel_down_snapshot(client):
@@ -115,8 +120,7 @@ def test_activity_reflects_a_tunnel_down_snapshot(client):
                                error_code="ConnectionRefusedError", tunnel_up=False)
     body = client.get("/api/wa/pro/activity", headers=RH).json()
     assert body["rail"]["tunnel"]["up"] is False
-    assert body["rail"]["tunnel"]["last_error"] == {"code": "ConnectionRefusedError",
-                                                     "text": "connection refused"}
+    assert body["rail"]["tunnel"]["last_error"] == {"code": "ConnectionRefusedError"}
 
 
 def test_activity_never_blocks_behind_st_lock(client):
@@ -222,7 +226,7 @@ def test_ops_origin_invalid_value_is_400(client):
 def test_ops_failed_row_carries_its_error(client):
     _seed_ops(client)
     rows = client.get("/api/wa/pro/ops?status=failed", headers=RH).json()["rows"]
-    assert rows[0]["error"] == {"code": "op_expired", "text": "no ack"}
+    assert rows[0]["error"] == {"code": "op_expired"}
 
 
 def test_ops_attempts_always_null(client):
@@ -249,6 +253,49 @@ def test_ops_never_leaks_a_raw_phone_or_wamid(client):
     assert REAL_PHONE not in raw
     assert REAL_PHONE[1:] not in raw
     assert "wamid." not in raw or "wamid.…" in raw
+
+
+def test_pii_from_the_review_never_reaches_either_endpoint_or_the_mirror_row(client):
+    """Review finding 2 (BLOCKER), fed its own VERBATIM leaking strings end to end:
+    - (a) op errors: executor.py's DriverError text, "no row in WhatsApp's own share picker
+      matches {phone}" (adb_driver.py), mirrored word for word into wa_ops_mirror.error_text and
+      then into GET /api/wa/pro/ops' error.text.
+    - (b) the luna_reply job: wa_send_failures.error carrying str(exc) from api.py, which itself
+      carries the raw phone ("free-form window closed for {phone}") and message text
+      ("record {body!r}").
+    The fix is code-only, both in the API response AND in the wa_ops_mirror row itself (never just
+    at the serialization layer) -- this asserts both, plus the no-raw-digit-run/no-body-text
+    discipline over the full rendered text of both endpoints."""
+    share_picker_text = f"no row in WhatsApp's own share picker matches {REAL_PHONE}"
+    freeform_text = f"the WhatsApp free-form window closed for {REAL_PHONE} (last inbound message is over 72h old)"
+    body_text = "record {'to': '" + REAL_PHONE + "', 'body': 'Ich bin schwanger und suche eine Stelle'}"
+
+    with ST.db() as c:
+        ST.upsert_mirrored_op(c, _op("op_pii", 1, state="failed", error_code="op_failed",
+                                     error_text=share_picker_text))
+        row = c.execute("select error_text from wa_ops_mirror where op_id='op_pii'").fetchone()
+        assert row["error_text"] is None   # review's fix reaches the mirror TABLE, not just the API
+
+        ST.record_luna_call(c, REAL_PHONE)
+        ST.record_send_failure(c, REAL_PHONE, freeform_text)
+        ST.record_send_failure(c, REAL_PHONE, body_text)
+
+    ops_raw = client.get("/api/wa/pro/ops", headers=RH).text
+    activity_raw = client.get("/api/wa/pro/activity", headers=RH).text
+
+    for raw in (ops_raw, activity_raw):
+        assert REAL_PHONE not in raw
+        assert REAL_PHONE[1:] not in raw                 # not even the digits without the leading +
+        assert "share picker" not in raw
+        assert "free-form window closed" not in raw
+        assert "schwanger" not in raw                    # the sensitive message body itself
+        assert not re.search(r"\d{6,}", raw)              # no long digit run of any kind
+
+    ops_body = client.get("/api/wa/pro/ops", headers=RH).json()
+    assert ops_body["rows"][0]["error"] == {"code": "op_failed"}
+    activity_body = client.get("/api/wa/pro/activity", headers=RH).json()
+    luna_reply = next(j for j in activity_body["jobs"] if j["job"] == "luna_reply")
+    assert luna_reply["last_error"] == {"code": "send_failed"}
 
 
 def test_ops_never_blocks_behind_st_lock(client):

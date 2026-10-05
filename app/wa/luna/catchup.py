@@ -109,6 +109,10 @@ def main(argv=None):
         errors = sum(1 for r in results if r["status"] == "error")
         jr.ok = errors == 0
         jr.counts = {"attempted": len(results), "errors": errors}
+        if not jr.ok:
+            # Review finding 1 (BLOCKER): an explicit code, since nothing raised -- every
+            # message's own error already went to wa_send_failures/the log above, per-message.
+            jr.error_code = "messages_errored"
     print(f"{len(results)} message(s) attempted")
     for r in results:
         print(f"  {r['phone']} {r.get('wamid')}: {r['status']}" + (f" -- {r['error']}" if r.get("error") else ""))

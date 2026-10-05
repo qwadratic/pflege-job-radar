@@ -708,20 +708,21 @@ def _seed_heartbeat_jobs(c, clock):
     last real run is hours stale and reads as overdue -- the honest state of a 15-minute job nobody
     has driven since 09:30, not a second manufactured incident.
 
-    tunnel_watch is the one job seeded through ST.job_run() itself, for a genuine, Pydantic-valid
-    error: deliberately NOT replaying app/wa/tunnel_watch.py::main() itself, whose own graceful
-    ok=False exit (``jr.ok = ok``) never sets error_code/error_text at all -- left that way,
-    store.job_run_summary's unguarded ``{"code": last["error_code"], "text": last["error_text"]}``
-    would build an ErrorInfo with code=None, which app/wa/pro_models.py's ErrorInfo.code: str
-    (required, non-Optional) rejects: a real 500 on GET /api/wa/pro/activity (see the report this
-    extension shipped with). This fixture must not bake that gap into a committed "this is what the
-    route returns" file, so the error here comes from a genuinely raised and (immediately outside
-    job_run's own re-raise) suppressed PermissionError instead -- a real failure mode of
-    tunnel_watch's own state-file write (``_save_state``), at the real default path, not an
-    invented exception on an invented path. last_run_at lands 120s before this seeding's own "now"
-    (JOB_CADENCE_SEC[tunnel_watch]=30s, so 2*cadence=60s) -- overdue AND errored at once, in both
-    activity.json and activity_tunnel_down.json alike (the down variant is 2 minutes later still,
-    see _NOW2)."""
+    tunnel_watch is the one job seeded through ST.job_run() itself rather than by replaying
+    app/wa/tunnel_watch.py::main(): review finding 1 (BLOCKER) now makes job_run() itself raise if
+    a caller leaves ``rec.ok`` False with no ``rec.error_code`` set, and main() was fixed to set
+    ``jr.error_code = "tunnel_down"`` on a plain ``check_once()`` False -- so that specific gap
+    (an ErrorInfo with code=None, which app/wa/pro_models.py's required, non-Optional
+    ``ErrorInfo.code: str`` rejects -- a real 500 on GET /api/wa/pro/activity, see the report this
+    extension originally shipped with) can no longer happen either way. This fixture keeps its own
+    seeding call instead of replaying main() purely so the committed fixture shows a SECOND, equally
+    real tunnel_watch failure mode (a genuinely raised and, immediately outside job_run's own
+    re-raise, suppressed PermissionError from the job's state-file write, ``_save_state``, at its
+    real default path) rather than always "tunnel_down" -- not an invented exception on an invented
+    path, just a different one of tunnel_watch's own two ways to fail. last_run_at lands 120s before
+    this seeding's own "now" (JOB_CADENCE_SEC[tunnel_watch]=30s, so 2*cadence=60s) -- overdue AND
+    errored at once, in both activity.json and activity_tunnel_down.json alike (the down variant is
+    2 minutes later still, see _NOW2)."""
     from app.wa import store as ST
     from app.wa import tunnel_watch as TW
 
@@ -770,10 +771,20 @@ def _seed_luna_reply_signal(c, clock, phone=PHONE_LUNA_REPLY):
 
 # --- TASK-283.7: wa_ops_mirror (GET /v1/ops, bridge/ledger.py's own row shape) ----------------------
 # 14 rows: positions 3..14 (the newest 12 -- ops.json's own page) cover every status in
-# bridge/ledger.py's OP_QUEUED/OP_RUNNING/OP_DONE/OP_FAILED and every one of store.ORIGIN_VALUES'
-# 12 entries exactly once; positions 1-2 (the 2 oldest) exist only so ops_page2.json has a real
-# ``before_id`` page to show. The three failed rows' error code/text are copied VERBATIM from
-# bridge/ledger.py's own three real phone_ops failure sites (_recover_stuck_ops'
+# bridge/ledger.py's OP_QUEUED/OP_RUNNING/OP_DONE/OP_FAILED. They do NOT cover all 12
+# store.ORIGIN_VALUES once each any more (review finding 6's own repro: "ops.json:39 and :58 show
+# broadcast and nudges, which no code path sends") -- bridge/ledger.py's own origin comment says
+# why: ``followups`` already covers the tiered nudge sweep ("there is no separate 'nudges' code
+# path to split out of it"), and a broadcast run never touches phone_ops/enqueue_op at all -- it is
+# queued through the wholly separate ``/v1/broadcasts`` table (``bridge/broadcast.py``,
+# ``app/wa/bridge.py::Client.broadcast``), so no phone_ops row can ever carry origin=broadcast
+# either. Positions 6 and 9 (ex-"nudges"/"broadcast") are ``followups``/``campaign`` instead -- the
+# real origins those two code paths actually stamp -- so the 12 slots now cover 10 distinct real
+# origins (followups and campaign each twice, pro_human still once: review flagged only the two
+# fixture origins "no code path sends", not pro_human, which TASK-283.3's own write half will mint
+# once it ships -- not a regression this fix pass owns). Positions 1-2 (the 2 oldest) exist only so
+# ops_page2.json has a real ``before_id`` page to show. The three failed rows' error code/text are
+# copied VERBATIM from bridge/ledger.py's own three real phone_ops failure sites (_recover_stuck_ops'
 # "restarted_while_running", _expire_op's "op_expired", cancel_op's "op_cancelled") -- never
 # invented wording, unlike the hand-written fixture's old "executor restarted while this op was
 # running" (the real message says "in flight", see the report).
@@ -793,7 +804,7 @@ _OPS_SPEC = (
      "started_at": "2026-09-30T11:40:01+00:00", "finished_at": "2026-09-30T11:40:05+00:00"},
     {"position": 5, "op_id": "op_fixt0005", "kind": "send", "origin": "followups", "state": "queued",
      "phone": OPS_PHONES[2], "created_at": "2026-09-30T11:48:00+00:00"},
-    {"position": 6, "op_id": "op_fixt0006", "kind": "send", "origin": "nudges", "state": "queued",
+    {"position": 6, "op_id": "op_fixt0006", "kind": "send", "origin": "followups", "state": "queued",
      "phone": OPS_PHONES[3], "created_at": "2026-09-30T11:49:00+00:00"},
     {"position": 7, "op_id": "op_fixt0007", "kind": "send", "origin": "catchup", "state": "failed",
      "phone": OPS_PHONES[4], "created_at": "2026-09-30T11:50:00+00:00",
@@ -803,7 +814,7 @@ _OPS_SPEC = (
     {"position": 8, "op_id": "op_fixt0008", "kind": "send", "origin": "campaign", "state": "running",
      "phone": OPS_PHONES[5], "created_at": "2026-09-30T11:56:00+00:00",
      "started_at": "2026-09-30T11:59:50+00:00"},
-    {"position": 9, "op_id": "op_fixt0009", "kind": "send", "origin": "broadcast", "state": "running",
+    {"position": 9, "op_id": "op_fixt0009", "kind": "send", "origin": "campaign", "state": "running",
      "phone": OPS_PHONES[6], "created_at": "2026-09-30T11:56:30+00:00",
      "started_at": "2026-09-30T11:59:55+00:00"},
     {"position": 10, "op_id": "op_fixt0010", "kind": "read_thread", "origin": "operator", "state": "done",
@@ -842,6 +853,11 @@ def _seed_ops_mirror(c, clock):
              "budget_sec": row.get("budget_sec"), "phone": row["phone"],
              "error_code": row.get("error_code"), "error_text": row.get("error_text")}
         ST.upsert_mirrored_op(c, op)
+    # Review finding 4: queue.as_of / OpsEnvelope.mirrored_at both read wa_rail_sync's own
+    # OPS_MIRROR_SYNC_SOURCE row (the mirror's own heartbeat, separate from the tunnel/bridge
+    # health snapshot below) -- write it through the real writer so those fields are not left
+    # null in every fixture, the one state this generator would otherwise never exercise.
+    ST.record_rail_sync_ok(c, ST.OPS_MIRROR_SYNC_SOURCE)
 
 
 # --- TASK-283.7: wa_rail_snapshot (GET /v1/health, bridge/relay_pull.py's own transform) -----------

@@ -174,10 +174,17 @@ def test_ops_fixture_covers_every_status():
     assert {row["status"] for row in data["rows"]} == {"queued", "running", "done", "failed"}
 
 
-def test_ops_fixture_covers_every_origin_including_pro_human():
+def test_ops_fixture_covers_every_origin_a_code_path_really_sends_plus_pro_human():
+    """Review finding 6's own repro ("ops.json:39 and :58 show broadcast and nudges, which no code
+    path sends"): neither of those two ORIGIN_VALUES has a real phone_ops-emitting code path --
+    bridge/ledger.py's own origin comment says ``followups`` already covers the tiered nudge sweep,
+    and a broadcast run never touches phone_ops at all (its own ``/v1/broadcasts`` table) -- so the
+    fixture no longer claims to cover them. ``pro_human`` stays (TASK-283.3's own write half is not
+    built yet either, but the review did not flag this one, and it is this feature's own "human"
+    queue bucket -- dropping it would leave that branch unexercised)."""
     data = _load_ops()
     origins = {row["origin"] for row in data["rows"]}
-    assert origins == set(ST.ORIGIN_VALUES)
+    assert origins == set(ST.ORIGIN_VALUES) - {"nudges", "broadcast"}
     assert "pro_human" in origins
 
 

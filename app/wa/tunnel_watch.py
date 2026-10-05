@@ -91,6 +91,12 @@ def main():  # pragma: no cover - the entry point, not exercised offline
         ok = check_once()
         jr.ok = ok
         jr.counts = {"up": ok}
+        if not ok:
+            # Review finding 1 (BLOCKER): a failed run with no exception left ErrorInfo.code as
+            # None, which fails pro_models.ErrorInfo's validation (code: str) -- the /activity
+            # route then 500s for as long as the tunnel stays down. An explicit code names what
+            # actually happened (the probe failed, nothing raised).
+            jr.error_code = "tunnel_down"
 
 
 if __name__ == "__main__":  # pragma: no cover

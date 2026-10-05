@@ -777,6 +777,44 @@ def test_relay_ops_with_no_arguments_builds_a_bare_query(cursor, monkeypatch):
     assert seen["url"].endswith("/v1/ops")
 
 
+def test_relay_ops_passes_its_own_shorter_timeout_not_the_default_30s(cursor, monkeypatch):
+    seen = {}
+
+    def fake_http_json(method, url, **kw):
+        seen["timeout"] = kw.get("timeout")
+        return 200, {"ok": True, "ops": [], "counts": {}, "next_after_position": None}, 0.01
+
+    monkeypatch.setattr(RP, "http_json", fake_http_json)
+    relay = _plain_relay(cursor)
+    relay.ops()
+    assert seen["timeout"] == RP.OPS_TIMEOUT_SEC
+    assert seen["timeout"] != 30.0   # executor()'s own default, review finding 8 (MINOR)
+
+
+def test_relay_ops_treats_an_old_bridges_400_invalid_request_as_route_missing(cursor, monkeypatch):
+    """Review finding 4 (MAJOR): an executor build that predates /v1/ops does not actually answer
+    404 for it -- bridge/server.py's own catch-all for an unmatched path answers 400
+    invalid_request, the SAME shape a genuinely malformed query from this module would get. Since
+    this module only ever builds well-formed queries, that 400 is always the "no route yet" case in
+    practice, so it is folded into OpsRouteMissing exactly like the 404 case."""
+    monkeypatch.setattr(RP, "http_json",
+                        lambda *a, **kw: (400, {"error": {"code": "invalid_request", "message": "no route"}}, 0.01))
+    relay = _plain_relay(cursor)
+    with pytest.raises(RP.OpsRouteMissing):
+        relay.ops()
+
+
+def test_relay_ops_a_400_with_some_other_code_is_still_a_plain_relay_error(cursor, monkeypatch):
+    """The 400-is-route-missing fold is specifically for invalid_request -- a 400 this module's own
+    well-formed query could never trigger for a genuinely different reason must still stop the
+    drain loop as a real RelayError, not be swallowed as "route missing"."""
+    monkeypatch.setattr(RP, "http_json",
+                        lambda *a, **kw: (400, {"error": {"code": "something_else"}}, 0.01))
+    relay = _plain_relay(cursor)
+    with pytest.raises(RP.RelayError):
+        relay.ops()
+
+
 # --- TASK-283.7: Relay.mirror_ops() -----------------------------------------------------------------
 
 class FakeOpsMirror:
@@ -795,6 +833,9 @@ class FakeOpsMirror:
     def write(self, ops):
         for op in ops:
             self.rows[op["op_id"]] = op
+
+    def reset(self):
+        self.rows = {}
 
 
 def _mirror_op(op_id, position, *, state="queued"):
@@ -911,6 +952,134 @@ def test_relay_run_calls_mirror_ops_every_cycle(cursor, monkeypatch):
     relay.mirror_ops = lambda: calls.append(1)
     relay.run(stop=_StopAfterOnePass())
     assert calls == [1]
+
+
+def test_relay_run_skips_mirror_ops_on_a_cycle_whose_drain_failed(cursor, monkeypatch):
+    """Review finding 8 (MINOR): drain_once's own failure already closed the tunnel and is backing
+    off -- calling mirror_ops() right after would reopen it immediately for a second, unrelated
+    purpose, adding a whole extra ssh attempt on top of the failure the drain loop is already
+    backing off from."""
+    monkeypatch.setattr(RP.time, "sleep", lambda _seconds: None)
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    relay.fetch = lambda: (_ for _ in ()).throw(RP.RelayError("webhook answered 502"))
+    calls = []
+    relay.mirror_ops = lambda: calls.append(1)
+    relay.run(stop=_StopAfterOnePass())
+    assert calls == []
+
+
+def test_mirror_ops_defers_an_active_row_above_this_pass_high_water_then_catches_up(cursor):
+    """Review finding 3 (MAJOR), its own A/B repro: op A is enqueued right after this pass's
+    position page and finishes so fast it is already terminal (and so invisible to the active=1
+    fetch too) by the time this pass reads it; op B is enqueued after A and is still queued when
+    active=1 is read. Writing B this pass (position above the page's own high-water mark) would
+    raise the mirror's max position straight past A, skipping it forever -- the fix defers B
+    instead, so the mirror's max position does not move past it. The NEXT pass's position page
+    (which starts from that same, unmoved max position) then picks up both A and B by position,
+    regardless of state -- nothing lost."""
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    mirror = FakeOpsMirror()
+    relay.mirror_writer = mirror
+    pass_n = {"n": 1}
+
+    def fake_ops(*, after_position=None, limit=None, active=None, ids=None):
+        if ids is not None:
+            return {"ops": []}
+        if active:
+            return {"ops": [_mirror_op("B", 105, state="queued")]}
+        if pass_n["n"] == 1:
+            return {"ops": [_mirror_op("p1", 100, state="done")], "next_after_position": None}
+        return {"ops": [_mirror_op("A", 102, state="done"), _mirror_op("B", 105, state="queued")],
+                "next_after_position": None}
+
+    relay.ops = fake_ops
+
+    relay.mirror_ops()
+    assert set(mirror.rows) == {"p1"}            # B deferred -- not written this pass
+    assert mirror.max_position() == 100          # the cursor must not jump straight to B
+
+    pass_n["n"] = 2
+    relay.mirror_ops()
+    assert set(mirror.rows) == {"p1", "A", "B"}  # the next pass's position page catches both
+
+
+def test_mirror_ops_writes_an_ok_heartbeat_on_a_clean_pass(cursor):
+    """Review finding 4 (MAJOR): a heartbeat on every pass that reaches a real outcome, so a caller
+    can tell a frozen mirror from a healthy, idle one (queue.as_of / OpsEnvelope.mirrored_at)."""
+    relay = FakeRelay(cursor, [], [])
+    relay.check_watcher_alarm = lambda: []
+    relay.mirror_writer = FakeOpsMirror()
+    relay.ops = lambda **kw: {"ops": [], "next_after_position": None}
+    calls = []
+    relay.mirror_sync_writer = lambda ok, error_code=None: calls.append((ok, error_code))
+    relay.mirror_ops()
+    assert calls == [(True, None)]
+
+
+def test_mirror_ops_writes_a_failed_heartbeat_with_the_route_missing_code(cursor):
+    relay = FakeRelay(cursor, [], [])
+    relay.mirror_writer = FakeOpsMirror()
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.OpsRouteMissing("no /v1/ops on this executor"))
+    calls = []
+    relay.mirror_sync_writer = lambda ok, error_code=None: calls.append((ok, error_code))
+    relay.mirror_ops()
+    assert calls == [(False, RP.OpsRouteMissing.code)]
+
+
+def test_mirror_ops_logs_route_missing_once_on_state_change_not_every_pass(cursor):
+    """Review finding 4 (MAJOR): this used to log every single pass, a line every ~3s forever at
+    the drain cadence -- now only on the transition into, and back out of, "route missing"."""
+    relay = FakeRelay(cursor, [], [])
+    mirror = FakeOpsMirror()
+    relay.mirror_writer = mirror
+    lines = []
+    relay.log = lines.append
+    relay.ops = lambda **kw: (_ for _ in ()).throw(RP.OpsRouteMissing("no /v1/ops on this executor"))
+
+    relay.mirror_ops()
+    relay.mirror_ops()
+    relay.mirror_ops()
+    missing_lines = [l for l in lines if "no /v1/ops" in l]
+    assert len(missing_lines) == 1   # not three
+
+    relay.ops = lambda **kw: {"ops": [], "next_after_position": None}
+    relay.mirror_ops()
+    resumed_lines = [l for l in lines if "reachable again" in l]
+    assert len(resumed_lines) == 1
+
+
+def test_mirror_ops_detects_a_ledger_position_reset_and_resets_the_mirror_once(cursor):
+    """Review finding 11 (NIT): the one false-positive-free signal available through this
+    interface -- every op_id this mirror still has open vanishing from the bridge AT ONCE (never
+    just one stale straggler retention-swept on its own) -- wipes the mirror and reports it as a
+    distinct error_code, rather than staying permanently blind with stale, now-wrong positions."""
+    relay = FakeRelay(cursor, [], [])
+    mirror = FakeOpsMirror(seed=[_mirror_op("z", 9, state="running")])
+    relay.mirror_writer = mirror
+    lines = []
+    relay.log = lines.append
+    heartbeats = []
+    relay.mirror_sync_writer = lambda ok, error_code=None: heartbeats.append((ok, error_code))
+
+    def fake_ops(*, after_position=None, limit=None, active=None, ids=None):
+        if ids is not None:
+            return {"ops": []}             # every previously-open id vanished at once
+        if active:
+            return {"ops": []}
+        return {"ops": [], "next_after_position": None}
+
+    relay.ops = fake_ops
+    relay.mirror_ops()
+    assert mirror.rows == {}               # wiped
+    assert heartbeats == [(False, "ledger_position_reset")]
+    assert any("ledger position reset" in l for l in lines)
+
+    # vacuously false right after the wipe (open_ids is now empty) -- no second wipe, no repeat log
+    lines.clear()
+    relay.mirror_ops()
+    assert not any("ledger position reset" in l for l in lines)
 
 
 def test_production_relay_wires_the_real_mirror_and_snapshot_writers(monkeypatch):

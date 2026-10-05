@@ -15,6 +15,7 @@ from app import cv as CV
 from app import data as D
 from app.wa import api as WAPI
 from app.wa import asgi
+from app.wa import bridge as BR
 from app.wa import brain as B
 from app.wa import config as C
 from app.wa import luna_brain as LB
@@ -364,3 +365,21 @@ def test_a_drain_skips_a_message_the_other_process_finished_after_the_list_was_r
 
     monkeypatch.setattr(ST, "claim_in_flight", other_process_finishes_first)
     assert CU.run(client=wa) == [] and brain.texts == []
+
+
+# --- TASK-283.7 review finding 11 (NIT): "luna_brain never tags its origin" ------------------------
+
+def test_the_live_webhooks_background_worker_tags_its_phone_ops_origin_luna(monkeypatch):
+    """The real, live webhook path (submit_accepted -> _process_in_background), not handle_payload's
+    own test/script-only call one function up -- both already pass origin=BR.ORIGIN_LUNA to
+    process_phones in the current code, but this pins the ACTUAL production entrypoint down with a
+    test, rather than leaving it to only ever be checked by re-reading the source."""
+    seen = {}
+
+    def fake_process_phones(phones, *, client=None, raise_errors=True, origin=None):
+        seen["phones"], seen["origin"] = phones, origin
+        return []
+
+    monkeypatch.setattr(WAPI, "process_phones", fake_process_phones)
+    WAPI._process_in_background(["+491700000099"], None)
+    assert seen == {"phones": ["+491700000099"], "origin": BR.ORIGIN_LUNA}

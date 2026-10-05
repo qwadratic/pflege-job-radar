@@ -11,6 +11,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+import sys
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -597,6 +598,18 @@ def phone_for_thread_id(c, thread_id):
     return row["phone"] if row else None
 
 
+def thread_id_for_phone_if_known(c, phone):
+    """This phone's opaque thread_id, or None when it has never had one minted -- unlike
+    ``thread_id_for_phone`` above, NEVER raises and NEVER inserts (review finding 7): the ops
+    mirror (``upsert_mirrored_op`` below) sees phones from every bridge-op origin, including a
+    plain operator ``tools/wa_bridge.py send``/``read`` to a number that has never been a
+    candidate at all -- minting a wa_threads row for one of those (the old behaviour, via
+    ``thread()``) planted a fake lead at the top of GET /api/wa/pro/threads. A mirrored op for a
+    phone with no thread yet reports ``thread_id: null`` instead."""
+    row = c.execute("select thread_id from wa_thread_ids where phone=?", (phone,)).fetchone()
+    return row["thread_id"] if row else None
+
+
 def existing_thread(c, phone):
     """The thread row for this phone -- unlike thread(), never creates one, so it is safe to call
     over a read-only connection. Raises when the row does not exist (review item 7): every caller in
@@ -718,6 +731,13 @@ def rail_counts(c):
 # A Pro API read only ever calls rail_sync() below, never either writer.
 
 RAIL_SYNC_SOURCE = "bridge_relay_pull"
+#: A second source sharing the SAME wa_rail_sync table (it is keyed on ``source``, text primary
+#: key, by design): the ops mirror's own heartbeat (review finding 4, MAJOR) -- bridge/
+#: relay_pull.py::Relay.mirror_ops writes it on every pass, success or failure, through the same
+#: record_rail_sync_ok/record_rail_sync_error pair the drain's own heartbeat above uses. Exposed as
+#: GET /api/wa/pro/activity's queue.as_of and GET /api/wa/pro/ops' mirrored_at -- never invented
+#: when no pass has ever succeeded (None, same "no silent fallbacks" rule as RAIL_SYNC_SOURCE).
+OPS_MIRROR_SYNC_SOURCE = "ops_mirror"
 
 
 def record_rail_sync_ok(c, source):
@@ -1791,21 +1811,28 @@ def upsert_mirrored_op(c, op):
 
     NEVER stores the raw phone (module docstring): ``op["phone"]`` (or None -- a background op like
     list_chats/reconcile touches no single phone) is resolved to this harness's own opaque thread_id
-    through the SAME engine-minted mapping every other Pro API surface uses -- ``thread()`` first,
-    which mints one when this phone has never been seen on this rail at all (a phone the bridge
-    enqueued an op for before any wa_messages ever reached this harness, e.g. a cold-outreach send
-    that has not been answered yet) -- then masked to the last 4 digits (phones.phone_masked), the
-    identical mask the Pro API already uses everywhere else a phone appears at all.
+    through the SAME engine-minted mapping every other Pro API surface uses -- but only a LOOKUP
+    (``thread_id_for_phone_if_known``, review finding 7), never ``thread()``'s own insert: an
+    operator ``tools/wa_bridge.py send``/``read`` to a number that has never been a candidate at
+    all used to plant a fresh wa_threads row here, which then showed up as a brand-new lead at the
+    top of GET /api/wa/pro/threads. A phone with no thread yet mirrors with thread_id=null instead.
+    The phone is also masked to the last 4 digits (phones.phone_masked), the identical mask the Pro
+    API already uses everywhere else a phone appears at all.
 
     ``origin`` outside ORIGIN_VALUES is folded to "unknown" here too, independently of whatever the
     bridge itself already enforces -- belt and suspenders on the one value this table is not allowed
     to let leak un-validated. op_id is the primary key: a later call with the same op_id (a state
-    transition, queued -> done) replaces the row in place -- this is a mirror, not a log."""
+    transition, queued -> done) replaces the row in place -- this is a mirror, not a log.
+
+    error_text is NEVER WRITTEN (review finding 2, BLOCKER): the bridge's own free-text error can
+    carry a raw phone (the share-picker's "no row ... matches {phone}") or message text (callers
+    that embed ``record {body!r}``), and this row feeds GET /api/wa/pro/ops directly -- so the
+    column is always set to None here regardless of what ``op`` carries, and only ``error_code``
+    (a closed-ish, non-PII enum value) is ever stored or served."""
     phone = op.get("phone")
     thread_id = phone_masked = None
     if phone:
-        thread(c, phone)   # ensures the wa_threads row + thread_id exist (TASK-395 pattern)
-        thread_id = thread_id_for_phone(c, phone)
+        thread_id = thread_id_for_phone_if_known(c, phone)
         phone_masked = PH.phone_masked(phone)
     origin = op.get("origin") if op.get("origin") in ORIGIN_VALUES else "unknown"
     c.execute(
@@ -1823,7 +1850,7 @@ def upsert_mirrored_op(c, op):
              mirrored_at=excluded.mirrored_at""",
         (op["op_id"], int(op["position"]), op["kind"], origin, op["state"], op.get("priority"),
          op["created_at"], op.get("started_at"), op.get("finished_at"), op.get("resolved_at"),
-         op.get("budget_sec"), thread_id, phone_masked, op.get("error_code"), op.get("error_text"),
+         op.get("budget_sec"), thread_id, phone_masked, op.get("error_code"), None,
          now_iso()))
     c.commit()
 
@@ -1832,6 +1859,18 @@ def ops_mirror_max_position(c):
     """The highest position already mirrored, 0 for an empty mirror -- Relay.mirror_ops' own
     ``after_position`` for the next page."""
     return c.execute("select coalesce(max(position), 0) as m from wa_ops_mirror").fetchone()["m"]
+
+
+def clear_ops_mirror(c):
+    """Wipes the whole mirror (review finding 11, NIT): the recovery for a detected ledger position
+    reset (bridge/relay_pull.py::Relay.mirror_ops, "bridge active max position < mirror max") --
+    the bridge's own ``position`` counter has restarted (a ledger reset, or a retention sweep that
+    outlived every row this mirror had already paged past), so this mirror's stored positions are
+    about to collide with brand-new, unrelated ops reusing the same small numbers. Paging restarts
+    from 0 on the very next pass. A rare, abnormal event -- never called from an ordinary mirroring
+    pass, only once the reset itself is detected."""
+    c.execute("delete from wa_ops_mirror")
+    c.commit()
 
 
 def ops_mirror_open_ids(c):
@@ -1847,20 +1886,29 @@ def ops_mirror_open_ids(c):
     return [r["op_id"] for r in rows]
 
 
+#: ops_mirror_counts' own closed keys -- anything else lands under "other" (see below).
+_QUEUE_COUNT_STATES = ("queued", "running", "done", "failed")
+
+
 def ops_mirror_counts(c, origin=None):
-    """{"queued","running","done","failed"} -- a complete COUNT(*) over the whole mirror (never a
-    windowed or capped query, CLAUDE.md "no safety nets"), optionally scoped to one origin (GET
-    /api/wa/pro/activity's human{} is this with origin='pro_human'). A state this mirror has not seen
-    before (a future bridge addition) still counts, under its own key, rather than being folded into
-    one of the four or silently dropped."""
+    """{"queued","running","done","failed","other"} -- a complete COUNT(*) over the whole mirror
+    (never a windowed or capped query, CLAUDE.md "no safety nets"), optionally scoped to one origin
+    (GET /api/wa/pro/activity's human{} is this with origin='pro_human'). A state this mirror has
+    not seen before (a future bridge addition) is counted under "other" (review finding 6, a
+    {state: count} map), never added as a new top-level key: app/wa/pro_models.py's QueueCounts is
+    ``extra="forbid"``, so writing it as a new key the way this used to (review's own repro)
+    500s GET /api/wa/pro/activity the moment the bridge ships one new state."""
     sql, args = "select state, count(*) as n from wa_ops_mirror", []
     if origin is not None:
         sql += " where origin=?"
         args.append(origin)
     rows = c.execute(sql + " group by state", args).fetchall()
-    out = {"queued": 0, "running": 0, "done": 0, "failed": 0}
+    out = {"queued": 0, "running": 0, "done": 0, "failed": 0, "other": {}}
     for r in rows:
-        out[r["state"]] = r["n"]
+        if r["state"] in _QUEUE_COUNT_STATES:
+            out[r["state"]] = r["n"]
+        else:
+            out["other"][r["state"]] = r["n"]
     return out
 
 
@@ -2003,6 +2051,20 @@ class _JobRunRecord:
         self.error_text = None
 
 
+def _record_job_run_safe(job, started, rec):
+    """record_job_run, never allowed to replace the job's own exception or exit code (review
+    finding 10, MINOR): a wa_job_runs write that fails (the db locked past its own busy_timeout,
+    disk full) is the HEARTBEAT failing, not the job itself -- logged loudly to stderr (job name
+    + exception) and otherwise swallowed, so job_run's caller always sees the job's own outcome,
+    never this bookkeeping's."""
+    try:
+        with db() as c:
+            record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+    except Exception as exc:
+        print(f"job_run({job!r}): could not record the heartbeat: {type(exc).__name__}: {exc}",
+             file=sys.stderr)
+
+
 @contextmanager
 def job_run(job):
     """Records one wa_job_runs row spanning the wrapped block (TASK-283.7's job heartbeats):
@@ -2014,7 +2076,12 @@ def job_run(job):
     Deliberately minimal (the task's own instruction: wrap main(), do not restructure): the caller
     wraps the one call that does the real work and sets .ok/.counts on the recorder it gets back;
     everything else in that main() -- argument parsing, printing, the original return code -- stays
-    exactly where it was."""
+    exactly where it was.
+
+    Review finding 1 (BLOCKER): a clean exit with rec.ok left False and no rec.error_code set is a
+    caller bug -- app/wa/pro_models.py's ErrorInfo.code is a required str, so that row would 500
+    the /activity route for as long as it is the job's latest run. CLAUDE.md "no safety nets": this
+    raises loudly here instead of inventing a fallback code or writing the bad row anyway."""
     rec = _JobRunRecord()
     started = now_iso()
     try:
@@ -2025,11 +2092,12 @@ def job_run(job):
             rec.error_code = type(exc).__name__
         if rec.error_text is None:
             rec.error_text = str(exc)
-        with db() as c:
-            record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+        _record_job_run_safe(job, started, rec)
         raise
-    with db() as c:
-        record_job_run(c, job, started, now_iso(), rec.ok, rec.counts, rec.error_code, rec.error_text)
+    if not rec.ok and rec.error_code is None:
+        raise RuntimeError(f"job_run({job!r}): rec.ok is False but no rec.error_code was set "
+                           "(every ok=False heartbeat must name why)")
+    _record_job_run_safe(job, started, rec)
 
 
 def job_run_summary(c, job):
@@ -2049,7 +2117,10 @@ def job_run_summary(c, job):
                        (job, cutoff)).fetchone()["n"]
     failed_24h = c.execute("select count(*) as n from wa_job_runs where job=? and ok=0 and started_at>=?",
                            (job, cutoff)).fetchone()["n"]
-    last_error = None if last["ok"] else {"code": last["error_code"], "text": last["error_text"]}
+    # Review finding 2 (BLOCKER): code only, never error_text -- a job's own exception str() can
+    # carry whatever the failing call embedded (see upsert_mirrored_op's own docstring for the
+    # bridge-side examples); app/wa/pro_models.py's ErrorInfo no longer even HAS a text field.
+    last_error = None if last["ok"] else {"code": last["error_code"]}
     return {"last_run_at": last["started_at"], "last_ok_at": last_ok["started_at"] if last_ok else None,
             "last_error": last_error, "ok_24h": ok_24h, "failed_24h": failed_24h}
 
@@ -2067,12 +2138,20 @@ def luna_reply_job_summary(c):
     call" -- wa_luna_calls carries no per-row outcome, so this cannot distinguish a successful call
     from one whose OWN reply later failed to send; that failure still shows up in last_error/
     failed_24h from wa_send_failures, which is the most honest split available from what these two
-    tables actually record (docs/wa-pro-activity.md states the limitation)."""
+    tables actually record (docs/wa-pro-activity.md states the limitation).
+
+    ``last_error`` (review finding 6, MAJOR; also finding 2): the NEWEST send failure WITHIN THE
+    LAST 24H, else null -- not the newest ever, which used to sit lit forever (a send failure from
+    a week ago would still show as "the" current error today). code only, never the failure's own
+    text (review finding 2, BLOCKER): wa_send_failures.error is ``str(exc)`` from app/wa/api.py,
+    which can carry the raw phone (``api.py``'s own "free-form window closed for {phone}") or
+    message text (``record {body!r}``)."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     last_call = c.execute("select max(at) as m from wa_luna_calls").fetchone()["m"]
     ok_24h = c.execute("select count(*) as n from wa_luna_calls where at>=?", (cutoff,)).fetchone()["n"]
     failed_24h = c.execute("select count(*) as n from wa_send_failures where at>=?", (cutoff,)).fetchone()["n"]
-    fail_row = c.execute("select error, at from wa_send_failures order by id desc limit 1").fetchone()
-    last_error = {"code": "send_failed", "text": fail_row["error"]} if fail_row else None
+    fail_row = c.execute("select at from wa_send_failures where at>=? order by at desc, id desc limit 1",
+                         (cutoff,)).fetchone()
+    last_error = {"code": "send_failed"} if fail_row else None
     return {"last_run_at": last_call, "last_ok_at": last_call, "last_error": last_error,
             "ok_24h": ok_24h, "failed_24h": failed_24h}

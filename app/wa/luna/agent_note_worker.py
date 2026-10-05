@@ -883,6 +883,10 @@ def main(argv=None):
         with ST.job_run(ST.JOB_AGENT_NOTES) as jr:
             code = run_once()
             jr.ok = code == 0
+            if not jr.ok:
+                # Review finding 1 (BLOCKER): an explicit code, since nothing raised -- run_once()
+                # already wrote its own health.json/log line for whatever made it return nonzero.
+                jr.error_code = "nonzero_exit"
         return code
     except SystemExit:
         raise   # argparse's own --help/bad-argument exit -- not a worker crash to report as one

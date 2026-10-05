@@ -287,6 +287,16 @@ def _rail_sync_summary(c):
     return {"synced_at": row["synced_at"] if row else None, "synced_source": row["source"] if row else None}
 
 
+def _mirror_sync_summary(c):
+    """The ops mirror's own heartbeat (review finding 4, MAJOR): wa_rail_sync's
+    ST.OPS_MIRROR_SYNC_SOURCE row, written by bridge/relay_pull.py::Relay.mirror_ops on every pass
+    -- null before any mirroring pass has ever succeeded (a fresh database, an executor build with
+    no /v1/ops route yet, or every pass so far has failed), never invented. -> GET /api/wa/pro/
+    activity's queue.as_of/human.as_of and GET /api/wa/pro/ops' mirrored_at."""
+    row = ST.rail_sync(c, source=ST.OPS_MIRROR_SYNC_SOURCE)
+    return row["synced_at"] if row else None
+
+
 # --- shared row/detail builders --------------------------------------------------------------------
 
 def _document_summary(row):
@@ -617,10 +627,18 @@ JOB_CADENCE_SEC = {
     ST.JOB_CATCHUP: 180.0, ST.JOB_FOLLOWUPS: 900.0, ST.JOB_TUNNEL_WATCH: 30.0,
     ST.JOB_AGENT_NOTES: 300.0, ST.JOB_PURGE_TEST: 86400.0, "relay_sync": 3.0,
 }
+#: Review finding 9 (MINOR): the generic "overdue after 2x cadence" formula fires after just 6s of
+#: silence for relay_sync (cadence 3.0s) -- any single slow health call, delivery, or the mirror's
+#: own first pass/backoff crosses that, flapping an alarm on a job that is, in practice, never
+#: actually stalled. A floor per job, not a second cadence: only overdue's own THRESHOLD widens;
+#: next_run_at still reads off the job's real cadence. Every job not named here keeps 2x cadence.
+JOB_OVERDUE_SEC = {"relay_sync": 60.0}
 
 
-def _error_info(code, text):
-    return {"code": code, "text": text} if code else None
+def _error_info(code):
+    """ErrorInfo as {"code": ...} only (review finding 2, BLOCKER) -- see pro_models.ErrorInfo's
+    own docstring for why the free-text field this used to carry is gone outright."""
+    return {"code": code} if code else None
 
 
 def _job_row(job, summary, *, enabled=True):
@@ -633,7 +651,8 @@ def _job_row(job, summary, *, enabled=True):
     if cadence is not None and last_run_at:
         last_dt = datetime.fromisoformat(last_run_at.replace("Z", "+00:00"))
         next_run_at = (last_dt + timedelta(seconds=cadence)).isoformat()
-        overdue = datetime.now(timezone.utc) > last_dt + timedelta(seconds=2 * cadence)
+        threshold = JOB_OVERDUE_SEC.get(job, 2 * cadence)
+        overdue = datetime.now(timezone.utc) > last_dt + timedelta(seconds=threshold)
     return {"job": job, "enabled": enabled, "last_run_at": last_run_at,
             "last_ok_at": summary["last_ok_at"], "last_error": summary["last_error"],
             "next_run_at": next_run_at, "ok_24h": summary["ok_24h"], "failed_24h": summary["failed_24h"],
@@ -643,37 +662,39 @@ def _job_row(job, summary, *, enabled=True):
 def _relay_sync_job_summary(c):
     """relay_sync (plan "Data path" #5, one of the three derived jobs): app/wa/store.py's own
     wa_rail_sync heartbeat (bridge/relay_pull.py's _write_rail_sync, review item 13) -- the same
-    row _rail_sync_summary already reads, just read again under this job's name. No 24h WINDOW
-    exists for it (one row, overwritten every ~INTERVAL_SEC): ok_24h/failed_24h here are 1/0
-    (whichever the most recent pass was), not a count of passes over 24h -- documented as a known
-    limitation (docs/wa-pro-activity.md) rather than presented as equivalent to the 5 heartbeat
-    jobs' real windowed counts."""
+    row _rail_sync_summary already reads, just read again under this job's name.
+
+    ok_24h/failed_24h are null (review's "Documented gaps"): this is one row, overwritten every
+    ~INTERVAL_SEC, with no 24h window behind it at all -- the old 1/0 (whichever the latest pass
+    was) read as a real windowed count but was not one ("ok (24h): 1" for a job that runs ~28k
+    times a day). last_error is null UNLESS the latest pass actually failed (review finding 6: the
+    old code passed a truthy literal code into _error_info unconditionally, so this was NEVER
+    actually null, even on a clean pass -- the one live bug the fixture-generation pass found)."""
     row = ST.rail_sync(c)
     if row is None:
-        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": 0, "failed_24h": 0}
+        return {"last_run_at": None, "last_ok_at": None, "last_error": None, "ok_24h": None, "failed_24h": None}
     ok = row["last_error"] is None
     return {"last_run_at": row["synced_at"] or row["last_error_at"], "last_ok_at": row["synced_at"],
-            "last_error": _error_info("relay_sync_failed", row["last_error"]),
-            "ok_24h": 1 if ok else 0, "failed_24h": 0 if ok else 1}
+            "last_error": None if ok else _error_info("relay_sync_failed"),
+            "ok_24h": None, "failed_24h": None}
 
 
 def _broadcasts_job_summary(snapshot):
     """broadcasts (plan "Data path" #5, derived job #3): wa_rail_snapshot's own
     broadcast.runner heartbeat (bridge/broadcast.py::BroadcastRunner.heartbeat) -- the only signal
-    this harness has for it. ok_24h/failed_24h are that runner's process-LIFETIME
-    attempted/errors counters, not a true 24h window (it exposes no windowed counters the way
-    wa_job_runs does) -- documented the same way as relay_sync above. last_run_at has no direct
-    field either (only an attempted item or an error is recorded, not every idle cycle) --
-    approximated as the newer of last_item_at/last_error_at, so an alive-but-idle runner (no items,
-    no errors since start) honestly reports last_run_at=null rather than a guessed time."""
+    this harness has for it. ok_24h/failed_24h are null (review's "Documented gaps"): that runner
+    exposes only process-LIFETIME attempted/errors counters (reset on every bridge restart, not a
+    true 24h window), which used to be served as if they were one. last_run_at has no direct field
+    either (only an attempted item or an error is recorded, not every idle cycle) -- approximated
+    as the newer of last_item_at/last_error_at, so an alive-but-idle runner (no items, no errors
+    since start) honestly reports last_run_at=null rather than a guessed time."""
     runner = (((snapshot or {}).get("health") or {}).get("broadcast") or {}).get("runner") or {}
     candidates = [v for v in (runner.get("last_item_at"), runner.get("last_error_at")) if v]
     last_run_at = max(candidates) if candidates else None
-    last_error = (_error_info("broadcast_runner_error", runner.get("last_error"))
+    last_error = (_error_info("broadcast_runner_error")
                  if runner.get("last_error") and runner.get("last_error_at") == last_run_at else None)
     return {"last_run_at": last_run_at, "last_ok_at": runner.get("last_item_at"),
-            "last_error": last_error, "ok_24h": runner.get("attempted") or 0,
-            "failed_24h": runner.get("errors") or 0}
+            "last_error": last_error, "ok_24h": None, "failed_24h": None}
 
 
 def _job_rows(c, snapshot):
@@ -694,9 +715,11 @@ def _rail_info(snapshot, synced):
     health = (snapshot or {}).get("health") or {}
     watcher = health.get("watcher") or {}
     return {
-        "tunnel": {"up": bool(snapshot["tunnel_up"]) if snapshot else False,
+        # Review finding 11 (NIT): null before any snapshot exists, not False -- False claimed a
+        # real outage was already observed when, in fact, nothing has ever been checked yet.
+        "tunnel": {"up": (bool(snapshot["tunnel_up"]) if snapshot else None),
                    "since": snapshot["tunnel_since"] if snapshot else None,
-                   "last_error": (_error_info(snapshot["last_error_code"], snapshot["last_error_text"])
+                   "last_error": (_error_info(snapshot["last_error_code"])
                                   if snapshot and snapshot["last_error_code"] else None)},
         "phone": {"state": (snapshot["phone_state"] if snapshot and snapshot["phone_state"] else "unknown"),
                   "since": snapshot["phone_state_since"] if snapshot else None},
@@ -713,9 +736,11 @@ def pro_activity(request: Request):
     with db_ro() as c:
         snapshot = ST.rail_snapshot(c)
         synced = _rail_sync_summary(c)
+        mirrored_at = _mirror_sync_summary(c)
         queue = ST.ops_mirror_counts(c)
         human = ST.ops_mirror_counts(c, origin="pro_human")
         jobs = _job_rows(c, snapshot)
+    queue["as_of"] = human["as_of"] = mirrored_at
     out = {"generated_at": ST.now_iso(), "snapshot_at": snapshot["snapshot_at"] if snapshot else None,
            "rail": _rail_info(snapshot, synced), "queue": queue, "jobs": jobs, "human": human,
            "source": _source(), **synced}
@@ -743,11 +768,12 @@ def _resolve_origin_filter(value):
 
 
 def _op_row_dict(row):
-    return {"id": row["op_id"], "kind": row["kind"], "origin": row["origin"], "status": row["state"],
+    return {"id": row["op_id"], "position": row["position"], "kind": row["kind"],
+            "origin": row["origin"], "status": row["state"],
             "thread_id": row["thread_id"], "phone_masked": row["phone_masked"],
             "created_at": row["created_at"], "started_at": row["started_at"],
             "finished_at": row["finished_at"], "attempts": None,
-            "error": _error_info(row["error_code"], row["error_text"])}
+            "error": _error_info(row["error_code"])}
 
 
 @router.get("/wa/pro/ops", response_model=M.OpsEnvelope)
@@ -763,8 +789,9 @@ def pro_ops(request: Request, status: str | None = None, origin: str | None = No
         rows, next_before_id = ST.ops_mirror_page(c, limit=limit, status=status, origin=origin_filter,
                                                    before_id=before_id, after_id=after_id)
         synced = _rail_sync_summary(c)
-    out = {"generated_at": ST.now_iso(), "source": _source(), "rows": [_op_row_dict(r) for r in rows],
-           "next_before_id": next_before_id, **synced}
+        mirrored_at = _mirror_sync_summary(c)
+    out = {"generated_at": ST.now_iso(), "source": _source(), "mirrored_at": mirrored_at,
+           "rows": [_op_row_dict(r) for r in rows], "next_before_id": next_before_id, **synced}
     return _scrub_wamids(out)
 
 

@@ -1,19 +1,20 @@
 {
   "generated_at": "2026-09-30T12:00:00+00:00",
+  "mirrored_at": "2026-09-30T11:59:58+00:00",
   "next_before_id": 3,
   "rows": [
     {
       "attempts": null,
       "created_at": "2026-09-30T11:59:50+00:00",
       "error": {
-        "code": "restarted_while_running",
-        "text": "the executor restarted while this op was in flight"
+        "code": "restarted_while_running"
       },
       "finished_at": "2026-09-30T11:59:52+00:00",
       "id": "op_fixt0014",
       "kind": "list_chats",
       "origin": "unknown",
       "phone_masked": null,
+      "position": 14,
       "started_at": "2026-09-30T11:59:51+00:00",
       "status": "failed",
       "thread_id": null
@@ -27,9 +28,10 @@
       "kind": "send",
       "origin": "pro_human",
       "phone_masked": "+49 ••• ••• 8011",
+      "position": 13,
       "started_at": null,
       "status": "queued",
-      "thread_id": "t_0000000000000015"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -40,6 +42,7 @@
       "kind": "reconcile",
       "origin": "bridge",
       "phone_masked": null,
+      "position": 12,
       "started_at": "2026-09-30T11:58:01+00:00",
       "status": "done",
       "thread_id": null
@@ -53,9 +56,10 @@
       "kind": "send",
       "origin": "agent_notes",
       "phone_masked": "+49 ••• ••• 8009",
+      "position": 11,
       "started_at": "2026-09-30T11:57:31+00:00",
       "status": "done",
-      "thread_id": "t_0000000000000014"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -66,9 +70,10 @@
       "kind": "read_thread",
       "origin": "operator",
       "phone_masked": "+49 ••• ••• 8008",
+      "position": 10,
       "started_at": "2026-09-30T11:57:01+00:00",
       "status": "done",
-      "thread_id": "t_0000000000000013"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -77,11 +82,12 @@
       "finished_at": null,
       "id": "op_fixt0009",
       "kind": "send",
-      "origin": "broadcast",
+      "origin": "campaign",
       "phone_masked": "+49 ••• ••• 8007",
+      "position": 9,
       "started_at": "2026-09-30T11:59:55+00:00",
       "status": "running",
-      "thread_id": "t_0000000000000012"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -92,25 +98,26 @@
       "kind": "send",
       "origin": "campaign",
       "phone_masked": "+49 ••• ••• 8006",
+      "position": 8,
       "started_at": "2026-09-30T11:59:50+00:00",
       "status": "running",
-      "thread_id": "t_0000000000000011"
+      "thread_id": null
     },
     {
       "attempts": null,
       "created_at": "2026-09-30T11:50:00+00:00",
       "error": {
-        "code": "op_expired",
-        "text": "queued 125s, past the 120s budget the caller queued it under -- nobody is still waiting on it"
+        "code": "op_expired"
       },
       "finished_at": "2026-09-30T11:52:05+00:00",
       "id": "op_fixt0007",
       "kind": "send",
       "origin": "catchup",
       "phone_masked": "+49 ••• ••• 8005",
+      "position": 7,
       "started_at": null,
       "status": "failed",
-      "thread_id": "t_0000000000000010"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -119,11 +126,12 @@
       "finished_at": null,
       "id": "op_fixt0006",
       "kind": "send",
-      "origin": "nudges",
+      "origin": "followups",
       "phone_masked": "+49 ••• ••• 8004",
+      "position": 6,
       "started_at": null,
       "status": "queued",
-      "thread_id": "t_000000000000000f"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -134,9 +142,10 @@
       "kind": "send",
       "origin": "followups",
       "phone_masked": "+49 ••• ••• 8003",
+      "position": 5,
       "started_at": null,
       "status": "queued",
-      "thread_id": "t_000000000000000e"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -147,9 +156,10 @@
       "kind": "send_document",
       "origin": "luna_tool",
       "phone_masked": "+49 ••• ••• 8002",
+      "position": 4,
       "started_at": "2026-09-30T11:40:01+00:00",
       "status": "done",
-      "thread_id": "t_000000000000000d"
+      "thread_id": null
     },
     {
       "attempts": null,
@@ -160,9 +170,10 @@
       "kind": "send",
       "origin": "luna",
       "phone_masked": "+49 ••• ••• 8001",
+      "position": 3,
       "started_at": "2026-09-30T11:39:01+00:00",
       "status": "done",
-      "thread_id": "t_000000000000000c"
+      "thread_id": null
     }
   ],
   "source": "harness@fixture-host",

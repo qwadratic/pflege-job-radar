@@ -36,9 +36,21 @@ def test_upsert_mirrored_op_never_stores_the_raw_phone(db):
     dumped = " ".join(str(v) for v in dict(row).values())
     assert PHONE not in dumped
     assert PHONE[1:] not in dumped          # not even the digits without the leading +
-    assert row["thread_id"] == ST.thread_id_for_phone(db, PHONE)
+    # review finding 7: the mirror looks a thread up, it never creates one just to have an id --
+    # no thread exists yet for PHONE, so thread_id stays null rather than silently minting one.
+    assert row["thread_id"] is None
     assert row["phone_masked"].endswith(PHONE[-4:])
     assert "•" in row["phone_masked"]
+
+
+def test_upsert_mirrored_op_finds_an_existing_thread_without_inserting(db):
+    """Review finding 7, the other half: when a thread already exists (e.g. from a prior inbound
+    message), the mirror does look it up -- it just never creates one on its own."""
+    ST.thread(db, PHONE)   # the engine mints a thread the normal way (e.g. a prior inbound message)
+    thread_id = ST.thread_id_for_phone(db, PHONE)
+    ST.upsert_mirrored_op(db, _op("a", 1))
+    row = db.execute("select * from wa_ops_mirror where op_id='a'").fetchone()
+    assert row["thread_id"] == thread_id
 
 
 def test_upsert_mirrored_op_with_no_phone_leaves_thread_fields_null(db):
@@ -89,13 +101,26 @@ def test_ops_mirror_counts_is_complete_and_defaults_known_states_to_zero(db):
     ST.upsert_mirrored_op(db, _op("a", 1, state="queued"))
     ST.upsert_mirrored_op(db, _op("b", 2, state="queued"))
     ST.upsert_mirrored_op(db, _op("c", 3, state="done"))
-    assert ST.ops_mirror_counts(db) == {"queued": 2, "running": 0, "done": 1, "failed": 0}
+    assert ST.ops_mirror_counts(db) == {"queued": 2, "running": 0, "done": 1, "failed": 0,
+                                         "other": {}}
 
 
 def test_ops_mirror_counts_scoped_to_one_origin(db):
     ST.upsert_mirrored_op(db, _op("a", 1, origin="pro_human", state="queued"))
     ST.upsert_mirrored_op(db, _op("b", 2, origin="luna", state="queued"))
-    assert ST.ops_mirror_counts(db, origin="pro_human") == {"queued": 1, "running": 0, "done": 0, "failed": 0}
+    assert ST.ops_mirror_counts(db, origin="pro_human") == {"queued": 1, "running": 0, "done": 0,
+                                                             "failed": 0, "other": {}}
+
+
+def test_ops_mirror_counts_buckets_an_unrecognised_state_under_other(db):
+    """Review finding 6: a state this mirror has not seen before is counted under "other", never
+    added as a new top-level key -- QueueCounts is extra="forbid", so a new top-level key would
+    500 GET /api/wa/pro/activity the moment the bridge ships one new state."""
+    ST.upsert_mirrored_op(db, _op("a", 1, state="queued"))
+    db.execute("update wa_ops_mirror set state='cancelled' where op_id='a'")
+    db.commit()
+    assert ST.ops_mirror_counts(db) == {"queued": 0, "running": 0, "done": 0, "failed": 0,
+                                         "other": {"cancelled": 1}}
 
 
 # --- ops_mirror_page -------------------------------------------------------------------------------
@@ -172,7 +197,7 @@ def test_job_run_records_an_explicit_failure_without_raising(db):
         jr.counts = {"attempted": 5, "errors": 2}
     summary = ST.job_run_summary(db, "catchup")
     assert summary["last_ok_at"] is None
-    assert summary["last_error"] == {"code": "partial_failure", "text": "2 of 5 failed"}
+    assert summary["last_error"] == {"code": "partial_failure"}
 
 
 def test_job_run_records_an_uncaught_exception_and_still_re_raises(db):
@@ -180,7 +205,7 @@ def test_job_run_records_an_uncaught_exception_and_still_re_raises(db):
         with ST.job_run("catchup"):
             raise RuntimeError("boom")
     summary = ST.job_run_summary(db, "catchup")
-    assert summary["last_error"] == {"code": "RuntimeError", "text": "boom"}
+    assert summary["last_error"] == {"code": "RuntimeError"}
 
 
 def test_job_run_summary_last_error_clears_after_a_later_success(db):
@@ -271,7 +296,72 @@ def test_luna_reply_job_summary_counts_calls_and_send_failures(db):
     summary = ST.luna_reply_job_summary(db)
     assert summary["ok_24h"] == 1
     assert summary["failed_24h"] == 1
-    assert summary["last_error"] == {"code": "send_failed", "text": "template not approved"}
+    assert summary["last_error"] == {"code": "send_failed"}
+
+
+# --- review finding 2 (BLOCKER): new code reading a row the OLD (pre-fix) 283.7 code wrote ---------
+# The table schemas themselves never changed (every column below already existed; this fix pass
+# added no ALTER) -- so the one real compatibility question is a *data* one: data/wa.sqlite on the
+# box already has wa_ops_mirror/wa_job_runs rows the OLD code wrote, with error_text genuinely
+# populated (word for word, per review finding 2(a)/(b)) before this fix pass ever ran. These tests
+# write such a row with a raw INSERT -- deliberately bypassing upsert_mirrored_op/record_job_run,
+# which now always write error_text as NULL -- to prove the NEW read side (store.py's own summary
+# functions, exercised directly here; the full HTTP path is covered separately in
+# tests/test_wa_pro_activity.py) works unchanged against that already-unmigrated-in-place data: no
+# crash, and the leaked text never resurfaces through a code-only read. CLAUDE.md: never touch real
+# data/wa.sqlite -- this is its own disposable tmp_path db, built with the CURRENT schema (the only
+# one there is) and then seeded exactly how an OLD binary would have left it.
+
+def test_ops_mirror_page_reads_an_old_pre_fix_row_without_crashing_or_leaking(db):
+    db.execute(
+        "insert into wa_ops_mirror (op_id, position, kind, origin, state, priority, created_at, "
+        "started_at, finished_at, resolved_at, budget_sec, thread_id, phone_masked, error_code, "
+        "error_text, mirrored_at) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("old1", 1, "send", "luna", "failed", 0, "2026-09-15T10:00:00+00:00", None,
+         "2026-09-15T10:00:05+00:00", None, 60.0, None, "•••• 8877", "op_failed",
+         f"no row in WhatsApp's own share picker matches {PHONE}",   # the OLD code's own verbatim write
+         "2026-09-15T10:00:05+00:00"))
+    db.commit()
+
+    rows, _ = ST.ops_mirror_page(db, limit=10)
+    assert len(rows) == 1
+    assert rows[0]["op_id"] == "old1"
+    assert rows[0]["error_code"] == "op_failed"
+    # the raw column read back still carries the old text (this is a row store.py only READS here,
+    # never rewrites) -- the discipline is that nothing in the Pro API path ever surfaces it, which
+    # pro_api.py's own _error_info(code)-only (single-arg) signature enforces independent of what
+    # this column happens to hold, old row or new.
+    assert rows[0]["error_text"] == f"no row in WhatsApp's own share picker matches {PHONE}"
+
+
+def test_job_run_summary_reads_an_old_pre_fix_row_without_crashing(db):
+    """The OLD code's own gap (review finding 1, BLOCKER): a graceful ok=False exit that never set
+    error_code at all -- exactly tunnel_watch.py's pre-fix behaviour. job_run_summary must not
+    crash on it (the NEW job_run() context manager raises loudly on this shape going forward, but
+    cannot retroactively fix a row an old binary already wrote)."""
+    db.execute(
+        "insert into wa_job_runs (job, started_at, finished_at, ok, counts_json, error_code, "
+        "error_text) values (?,?,?,?,?,?,?)",
+        ("tunnel_watch", "2026-09-15T10:00:00+00:00", "2026-09-15T10:00:00+00:00", 0, "{}", None, None))
+    db.commit()
+
+    summary = ST.job_run_summary(db, "tunnel_watch")
+    assert summary["last_error"] == {"code": None}   # not raised, not invented -- the honest old row
+
+
+def test_luna_reply_job_summary_reads_an_old_pre_fix_send_failure_without_leaking(db):
+    """wa_send_failures.error is populated by app/wa/api.py's own str(exc) and was never touched by
+    this fix pass (it is the one durable log of a send failure, by design) -- the fix is that
+    luna_reply_job_summary never reads that column's text back out, old row or new."""
+    freeform_text = f"the WhatsApp free-form window closed for {PHONE} (last inbound message is over 72h old)"
+    ST.record_luna_call(db, PHONE)
+    db.execute("insert into wa_send_failures (phone, error, at) values (?,?,?)",
+              (PHONE, freeform_text, ST.now_iso()))
+    db.commit()
+
+    summary = ST.luna_reply_job_summary(db)
+    assert summary["last_error"] == {"code": "send_failed"}
+    assert PHONE not in str(summary)
 
 
 # --- the shared enums themselves --------------------------------------------------------------------
