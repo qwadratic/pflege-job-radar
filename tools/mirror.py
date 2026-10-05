@@ -14,16 +14,24 @@ API is refused. The adapters' own sleeps stay while recording and the run is one
   status [--older-than DAYS]                   what is mirrored (age is information, never an automatic refresh)
   list-urls <board_id> [--scope S]  |  show <board_id> <url>  |  sql <board_id> "<select ...>"  |  reindex
   record-infra                                 the registry read proxy snapshot behind tests/test_geo.py (our own DB, read-only)
+  push                                         the mirror to the private Bunny Storage Zone: one tar, then latest.json (env BUNNY_MIRROR_ZONE, BUNNY_MIRROR_RW_KEY)
+  pull                                         the mirror from there into the mirror root (env BUNNY_MIRROR_ZONE, BUNNY_MIRROR_RO_KEY); docs/deploy.md
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import traceback
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -363,6 +371,130 @@ def cmd_record_infra(a):
     _log(f"{INFRA_BOARD}: {len(pairs)} (city, plz) pairs, {len(towns)} towns, {e['pages']} pages, raw {e['bytes_raw'] / 1e6:.1f} MB, xz {path.stat().st_size / 1e6:.2f} MB")
 
 
+# ---------------------------------------------------------------------------------------------
+# push / pull: the mirror in a private Bunny Storage Zone (no pull zone, nothing public; the pages hold third-party HR names)
+# ---------------------------------------------------------------------------------------------
+BUNNY_BASE_URL = "https://storage.bunnycdn.com"
+CHUNK = 1 << 20
+
+
+def bunny_zone(key_env):
+    """(url of the zone, access key) from the environment; every missing name is named. BUNNY_MIRROR_BASE_URL is for the tests."""
+    missing = [n for n in ("BUNNY_MIRROR_ZONE", key_env) if not os.environ.get(n)]
+    if missing:
+        sys.exit(f"missing environment variable(s): {', '.join(missing)}")
+    base = (os.environ.get("BUNNY_MIRROR_BASE_URL") or BUNNY_BASE_URL).rstrip("/")
+    return f"{base}/{os.environ['BUNNY_MIRROR_ZONE']}", os.environ[key_env]
+
+
+def bunny_call(method, url, key, ok, **kw):
+    """One request, no retry, no redirect (the key would follow it). Any status outside `ok` ends the run, with the URL and without the key."""
+    try:
+        r = requests.request(method, url, headers={"AccessKey": key}, allow_redirects=False, **kw)
+    except requests.RequestException as e:
+        sys.exit(f"{method} {url}: {type(e).__name__}: {e}")
+    if r.status_code not in ok:
+        sys.exit(f"{method} {url}: HTTP {r.status_code} {r.reason}: {r.text[:300]}")
+    return r
+
+
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(CHUNK):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def cmd_push(a):
+    """One tar (INDEX.json + every *.sqlite.xz, no *.prev, no compression: the boards are xz already), then latest.json, last."""
+    prefix, key = bunny_zone("BUNNY_MIRROR_RW_KEY")
+    root = M.mirror_dir()
+    boards = sorted(root.glob("*.sqlite.xz"))
+    if not (root / "INDEX.json").is_file() or not boards:
+        sys.exit(f"nothing to push: {root} needs INDEX.json and at least one *.sqlite.xz")
+    repo_sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    name = f"mirror-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{repo_sha}.tar"
+    with tempfile.TemporaryDirectory(prefix="mirror-push-") as tmp:
+        path = Path(tmp) / name
+        with tarfile.open(path, "w") as tar:
+            for p in [root / "INDEX.json", *boards]:
+                tar.add(p, arcname=p.name)
+        size, digest = path.stat().st_size, sha256_of(path)
+        with open(path, "rb") as f:  # streamed from disk: requests sends a file object with its Content-Length
+            bunny_call("PUT", f"{prefix}/{name}", key, (200, 201), data=f)
+    _log(f"uploaded {name}  {size} bytes  sha256 {digest}  ({len(boards)} boards + INDEX.json)")
+    latest = {"archive": name, "sha256": digest, "bytes": size, "boards": len(boards),
+              "pushed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "repo_sha": repo_sha}
+    bunny_call("PUT", f"{prefix}/latest.json", key, (200, 201), data=json.dumps(latest, indent=1).encode())  # last: a failed upload never moves it
+    _log(f"uploaded latest.json -> {name}")
+
+
+def download(url, key, dest):
+    """Stream a GET to `dest`. -> (bytes, sha256)."""
+    h, n = hashlib.sha256(), 0
+    with bunny_call("GET", url, key, (200,), stream=True) as r:
+        try:
+            with open(dest, "wb") as f:
+                for chunk in r.iter_content(CHUNK):
+                    f.write(chunk)
+                    h.update(chunk)
+                    n += len(chunk)
+        except requests.RequestException as e:
+            sys.exit(f"GET {url}: the download broke after {n} bytes: {type(e).__name__}: {e}")
+    return n, h.hexdigest()
+
+
+def unpack(archive, out):
+    """Unpack into the empty directory `out`. Every member is checked before anything is written: INDEX.json and flat *.sqlite.xz files only."""
+    try:
+        with tarfile.open(archive, "r:") as tar:
+            members = tar.getmembers()
+            for m in members:
+                parts = PurePosixPath(m.name).parts
+                if PurePosixPath(m.name).is_absolute() or ".." in parts:
+                    sys.exit(f"unsafe path in the archive: {m.name!r} (absolute or ..); nothing was unpacked")
+                if not m.isreg() or len(parts) != 1 or not (m.name == "INDEX.json" or m.name.endswith(".sqlite.xz")):
+                    sys.exit(f"unexpected member in the archive: {m.name!r} (only INDEX.json and *.sqlite.xz files are allowed); nothing was unpacked")
+            if "INDEX.json" not in {m.name for m in members}:
+                sys.exit("the archive has no INDEX.json; nothing was unpacked")
+            for m in members:
+                with tar.extractfile(m) as src, open(out / m.name, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except (tarfile.TarError, EOFError) as e:
+        sys.exit(f"{archive.name} is not a readable tar: {type(e).__name__}: {e}")
+    return [m.name for m in members]
+
+
+def cmd_pull(a):
+    """latest.json -> the archive it names -> checked (bytes, sha256) -> unpacked beside the mirror -> files renamed into it. The mirror stays whole until then."""
+    prefix, key = bunny_zone("BUNNY_MIRROR_RO_KEY")
+    root = M.mirror_dir()
+    raw = bunny_call("GET", f"{prefix}/latest.json", key, (200,)).content
+    try:
+        latest = json.loads(raw)
+        name, want_sha, want_bytes = latest["archive"], latest["sha256"], latest["bytes"]
+    except (ValueError, KeyError, TypeError):
+        sys.exit(f"{prefix}/latest.json does not name an archive with sha256 and bytes: {raw[:300]!r}")
+    if not isinstance(name, str) or Path(name).name != name:
+        sys.exit(f"{prefix}/latest.json names {name!r}, which is not a plain file name")
+    root.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".pull-", dir=root))  # same filesystem as the mirror: the final step is renames
+    try:
+        n, digest = download(f"{prefix}/{name}", key, stage / name)
+        if n != want_bytes:
+            sys.exit(f"{name}: {n} bytes downloaded, latest.json says {want_bytes}; the mirror is untouched")
+        if digest != str(want_sha).lower():
+            sys.exit(f"{name}: sha256 {digest} downloaded, latest.json says {want_sha}; the mirror is untouched")
+        (stage / "new").mkdir()
+        names = unpack(stage / name, stage / "new")
+        for member in sorted(names, key=lambda m: m == "INDEX.json"):  # the index last
+            os.replace(stage / "new" / member, root / member)
+    finally:
+        shutil.rmtree(stage)
+    _log(f"pulled {name}  {n} bytes  sha256 {digest}  -> {root} ({len(names) - 1} boards + INDEX.json)")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -407,6 +539,8 @@ def main():
     x.set_defaults(fn=cmd_reindex)
     i = sub.add_parser("record-infra", help="the registry read proxy snapshot tests/test_geo.py reads")
     i.set_defaults(fn=cmd_record_infra)
+    sub.add_parser("push", help="upload the mirror to the Bunny zone (latest.json last)").set_defaults(fn=cmd_push)
+    sub.add_parser("pull", help="download the mirror the zone's latest.json names").set_defaults(fn=cmd_pull)
     a = p.parse_args()
     if a.cmd == "record" and not (a.all or a.targets):
         p.error("record needs board ids/hosts/clinic ids, or --all")

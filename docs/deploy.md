@@ -74,6 +74,34 @@ The VM disk is 25 GB. Check with `df -h /`. What is big and what it is (all giti
 
 Disk clean-up rule: delete only what this table says is rebuildable or recorded elsewhere, and look at the target first.
 
+## Mirror on Bunny
+
+The test mirror (`data/mirror/`: `INDEX.json` plus about 405 `*.sqlite.xz`, 492 MB, TASK-197) is kept in a private Bunny Storage Zone
+so a CI runner can fetch it. The zone has no pull zone: nothing is public, because the pages hold third-party HR names and contacts.
+`*.prev` files are never uploaded.
+
+| env name | who | what |
+|---|---|---|
+| `BUNNY_MIRROR_ZONE` | both | storage zone name |
+| `BUNNY_MIRROR_RW_KEY` | `push` | the zone's read-write password (header `AccessKey`) |
+| `BUNNY_MIRROR_RO_KEY` | `pull`, CI | the zone's read-only password |
+| `BUNNY_MIRROR_BASE_URL` | tests | default `https://storage.bunnycdn.com`; the tests point it at a local fake |
+
+```bash
+.venv/bin/python tools/mirror.py push    # after tools/mirror.py record|add
+.venv/bin/python tools/mirror.py pull    # CI, before pytest; or a fresh VM
+```
+
+`push` writes one uncompressed tar of `INDEX.json` and every `*.sqlite.xz` as `mirror-<UTC YYYYMMDD-HHMMSS>-<short git sha>.tar`
+(`PUT https://storage.bunnycdn.com/<zone>/<name>`, streamed from disk), then `latest.json` with `{archive, sha256, bytes, boards,
+pushed_at, repo_sha}`. `latest.json` goes last, so a failed upload never moves the pointer; old archives stay in the zone (a
+rollback is a `latest.json` that names an older one).
+`pull` reads `latest.json`, streams the archive it names to disk, checks bytes and sha256, unpacks beside the mirror and only then
+renames the files into place, so a pull that breaks halfway leaves the old mirror whole. It overwrites `INDEX.json` and the boards
+in the archive and leaves other files alone: push first if this machine holds recordings the zone lacks. Any failure (missing env
+name, HTTP status, size or sha256 mismatch, a tar member that is absolute or contains `..`) stops with a message and a non-zero exit;
+there is no retry and no fall back to a local copy.
+
 ## Check after a deploy
 
 ```bash
