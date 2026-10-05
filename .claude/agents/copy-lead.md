@@ -17,7 +17,7 @@ Role: copy + UX taste for pflege-board (Pflege-Stellen Bayern). Two sites: `/` l
 - Audience 3: agents (skill docs). Imperative, one rule per line, API-level, no UI walkthroughs.
 - Tone: proof over promise. Every claim must be a live number the page owns or a source link. No "größte", "beste", "alle" unless the count is on screen.
 - Product terms fixed: Klinik (not Krankenhaus in UI), Stelle (not Job in DE), Pflegefachkraft, Karriereportal, Nachweis, Krankenhausplan, Ort, Umkreis, Fachbereich, Lebenslauf, Luna (WhatsApp agent). Pro terms: Clawl, Hunter, Läufe, Kosten.
-- German operator vocabulary from NDT Operator stays (MANAGER, ANTWORT NÖTIG, LUNA AKTIV, LUNA PAUSIERT).
+- The German operator vocabulary of the existing WhatsApp operator panel stays (MANAGER, ANTWORT NÖTIG, LUNA AKTIV, LUNA PAUSIERT).
 
 ### M2 Rag rules (36/72)
 - Body font is JetBrains Mono, so width is deterministic: 15px = 9px per char, 13px = 7.8px per char.
