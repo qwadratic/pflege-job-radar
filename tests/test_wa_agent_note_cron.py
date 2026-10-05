@@ -1,27 +1,37 @@
 """tools/agent_note_cron.sh, exercised as a real subprocess (it is a bash script -- there is nothing
 else to import) with every path it touches overridden by env so no test here reads or writes anything
-under /home/claude/repo/pflege-board's own data/ or state/ dirs, and no test spawns the real `claude`
-or `backlog` CLI (the worker itself is replaced by WA_AGENT_NOTE_WORKER_CMD, a small fake script)."""
+under this checkout's own data/ or state/ dirs, and no test spawns the real `claude` or `backlog` CLI
+(the worker itself is replaced by WA_AGENT_NOTE_WORKER_CMD, a small fake script; the binary guard's
+input is a fake symlink-to-executable built fresh per test, never this host's own `claude`)."""
 import json
 import os
 import pathlib
 import sqlite3
 import stat
 import subprocess
+import sys
 
 import pytest
 
-SCRIPT = "/home/claude/repo/pflege-board/tools/agent_note_cron.sh"
-REAL_CLAUDE = "/home/claude/.local/bin/claude"
-REAL_VENV_PY = os.path.realpath("/home/claude/repo/pflege-board/.venv/bin/python")
+# THIS checkout's own script -- never a different checkout's copy (a hardcoded absolute path here
+# would silently test whatever happened to be sitting at that path on THIS box, not the code this
+# worktree/clone actually carries, and would exit 127 -- "no such file" -- on any other checkout).
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+SCRIPT = str(REPO_ROOT / "tools" / "agent_note_cron.sh")
+# write_health() in the script only needs stdlib (json, datetime) -- whatever interpreter is already
+# running this test suite is correct on every host, with no git/venv plumbing needed to find it.
+REAL_VENV_PY = os.path.realpath(sys.executable)
 
 
 @pytest.fixture()
 def env(tmp_path):
-    """A scratch repo dir (with a venv/bin/python symlinked to the REAL interpreter, so the script's
-    own write_health() -- which always uses that path, never WA_AGENT_NOTE_WORKER_CMD -- produces real
-    JSON), a scratch state dir, and a scratch sqlite db with just the one table/columns the prefilter
-    query needs. -> the env dict a test starts from; each test overrides just what it needs to."""
+    """A scratch repo dir (with a venv/bin/python symlinked to the interpreter already running this
+    test, so the script's own write_health() -- which always uses that path, never
+    WA_AGENT_NOTE_WORKER_CMD -- produces real JSON), a scratch state dir, a scratch sqlite db with
+    just the one table/columns the prefilter query needs, and a fake `claude` binary (a symlink to a
+    tiny executable, matching the real CLI's own symlink-based install shape, so the script's binary
+    guard passes without this host needing the real thing installed anywhere). -> the env dict a test
+    starts from; each test overrides just what it needs to."""
     repo_dir = tmp_path / "repo"
     (repo_dir / ".venv" / "bin").mkdir(parents=True)
     (repo_dir / "data").mkdir()
@@ -32,10 +42,16 @@ def env(tmp_path):
     conn.execute("create table wa_agent_notes (id integer primary key, status text, notified_at text)")
     conn.commit()
     conn.close()
+    fake_claude_target = tmp_path / "fake-claude-target.sh"
+    fake_claude_target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_claude_target.chmod(fake_claude_target.stat().st_mode | stat.S_IEXEC)
+    fake_claude = tmp_path / "fake-claude"
+    fake_claude.symlink_to(fake_claude_target)
     return {
-        "HOME": "/home/claude", "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME") or os.path.expanduser("~"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "WA_AGENT_NOTE_REPO_DIR": str(repo_dir), "WA_AGENT_NOTE_STATE_DIR": str(state_dir),
-        "WA_SQLITE_PATH": str(db_path), "WA_AGENT_NOTE_CLAUDE_BIN": REAL_CLAUDE,
+        "WA_SQLITE_PATH": str(db_path), "WA_AGENT_NOTE_CLAUDE_BIN": str(fake_claude),
         "WA_AGENT_NOTE_TEST_HOUR": "10",
     }
 
@@ -126,8 +142,11 @@ def test_a_non_executable_claude_binary_is_a_problem(env, tmp_path):
 
 
 def test_a_working_claude_symlink_passes_the_guard(env):
-    """The real /home/claude/.local/bin/claude, resolved through readlink -f -- confirms the guard
-    accepts a REAL symlink-to-executable, not just rejecting broken ones."""
+    """The `env` fixture's own WA_AGENT_NOTE_CLAUDE_BIN is already a symlink to a tiny executable
+    (matching the real CLI's own symlink-based install shape), resolved through readlink -f --
+    confirms the guard accepts a REAL symlink-to-executable, not just rejecting broken ones (the
+    three tests above). No override needed here: this is the baseline every other test also relies
+    on to get past the guard at all."""
     add_pending_row(env)
     fake = write_fake_worker(pathlib.Path(env["WA_AGENT_NOTE_REPO_DIR"]).parent, "exit 0\n")
     env = {**env, "WA_AGENT_NOTE_WORKER_CMD": str(fake)}

@@ -19,6 +19,15 @@ import tools.disk_janitor as DJ
 
 DAY = 86400
 
+# The one "now" every test's JanitorConfig sees by default (make_cfg below), and the one every
+# _set_mtime stamp is anchored to -- NOT time.time(). A stamp anchored to the real wall clock drifts
+# out from under a fixed now_fn as real calendar days pass: test_stale_session_entry_moved_whole
+# stamped `days_ago=20` against SESSION_STALE_DAYS=14 (a 6-day margin) using the real clock, so the
+# file's age as THIS fixed now_fn sees it shrank by one full day for every day that passed after this
+# was written, and the test started failing for real on the sixth day with no code change anywhere
+# (reproduced 2026-10-05, 6 days after this constant's date) -- a time bomb, not a host difference.
+FIXED_NOW = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+
 
 class FakeCompletedProcess:
     def __init__(self, returncode=0, stdout="", stderr=""):
@@ -86,7 +95,10 @@ class FakeRunner:
 
 
 def _set_mtime(path: Path, days_ago: float):
-    t = time.time() - days_ago * DAY
+    """Anchored to FIXED_NOW, never the real wall clock -- see its docstring. A test that needs a
+    DIFFERENT reference point passes `now=` to make_cfg AND stamps its own files relative to that
+    same `now`, by hand, so the two clocks a test uses are never two different ones by accident."""
+    t = FIXED_NOW.timestamp() - days_ago * DAY
     import os
 
     os.utime(path, (t, t))
@@ -97,7 +109,7 @@ def make_cfg(tmp_path, **overrides):
     home.mkdir(exist_ok=True)
     runner = overrides.pop("runner", None) or FakeRunner()
     now = overrides.pop("now", None)
-    now_fn = (lambda: now) if now is not None else (lambda: datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc))
+    now_fn = (lambda: now) if now is not None else (lambda: FIXED_NOW)
     free_mb = overrides.pop("free_mb", 1000)
     kwargs = dict(
         home=home,

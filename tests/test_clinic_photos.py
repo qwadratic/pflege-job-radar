@@ -35,7 +35,10 @@ def test_build_merges_photo_url_onto_the_clinic_row(fresh, monkeypatch):
                 "fachrichtungen": "", "ats_type": "", "website": "", "careers_url": ""}]
 
     def fake_rest_get_all(table, params):
-        return [] if table == "v_postings" else clinics
+        # _build() also reads "postings" for housing evidence (app/data.py:_housing_evidence) --
+        # answer that (and v_postings) with no rows; only "clinics" gets these clinic-shaped rows,
+        # which have no posting_id.
+        return clinics if table == "clinics" else []
 
     monkeypatch.setattr(A, "rest_get_all", fake_rest_get_all)
     monkeypatch.setattr(D, "taxonomy", lambda: {})
@@ -104,7 +107,10 @@ def test_build_merges_presentation_onto_the_clinic_row(fresh, monkeypatch):
                 "fachrichtungen": "", "ats_type": "", "website": "", "careers_url": ""}]
 
     def fake_rest_get_all(table, params):
-        return [] if table == "v_postings" else clinics
+        # _build() also reads "postings" for housing evidence (app/data.py:_housing_evidence) --
+        # answer that (and v_postings) with no rows; only "clinics" gets these clinic-shaped rows,
+        # which have no posting_id.
+        return clinics if table == "clinics" else []
 
     monkeypatch.setattr(A, "rest_get_all", fake_rest_get_all)
     monkeypatch.setattr(D, "taxonomy", lambda: {})
