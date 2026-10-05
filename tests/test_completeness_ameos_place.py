@@ -10,9 +10,8 @@ The steps this file went through:
   1. the page shape is new  ->  .venv/bin/python tools/mirror.py record karriere.ameos.eu     (888 pages, 59.8 MB raw, 0.66 MB on disk)
   2. the test below, written on the mirror   ->  RED on base:  `pytest tests/test_completeness_ameos_place.py --runxfail`
        "779/779 postings carry a city their own page contradicts, e.g. ... 'Neuburg/Donau', 'Haldensleben'"
-  3. the fix (TASK-185, 6456a2a on worktree-integration: the posting's own place is read before any seed stamp)  ->  GREEN, same command
-
-The marker keeps the base suite green until that fix is merged; once it is, this test XPASSes and the marker goes.
+  3. the fix (TASK-185, 6456a2a, on main since 2026-10-05: the posting's own place is read before any seed stamp)  ->  GREEN, same command
+     (the test carried an xfail marker until that fix was merged; it XPASSed on the first run over the merged adapter and the marker went)
 """
 import re
 
@@ -30,7 +29,6 @@ def _norm(s):
 
 
 @pytest.mark.completeness
-@pytest.mark.xfail(strict=False, reason="base adapter stamps the seed town on every AMEOS posting; fixed by TASK-185 (6456a2a on worktree-integration), delete this marker once it is merged")
 def test_every_ameos_posting_carries_the_place_its_own_page_states():
     board = H.board_with("karriere.ameos.eu")
     rows, _calls = H.run_adapter(board)
