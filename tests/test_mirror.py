@@ -493,7 +493,7 @@ def test_a_miss_ends_the_browser_so_a_walker_does_not_wait_out_a_timeout_per_cli
                 pg.evaluate("fetch('/never-recorded').catch(() => 0)")
                 try:
                     pg.wait_for_selector("#never-there", timeout=8000)
-                except pw_api.Error as e:
-                    seen.append(str(e))
+                except BaseException as e:  # TargetClosedError; under load the driver's CancelledError when the close races the wait
+                    seen.append(f"{type(e).__name__}: {e}")
                 b.close()
-    assert seen and "closed" in seen[0], f"the wait ran into its own timeout instead of ending with the browser: {seen}"
+    assert seen and "Timeout" not in seen[0], f"the wait ran into its own timeout instead of ending with the browser: {seen}"
