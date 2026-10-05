@@ -606,8 +606,16 @@ def _route_handler(m):
         while True:
             try:
                 row = m.serve("playwright", method, url, body)
-            except (MirrorMiss, RuntimeError):  # the miss (or the refused request) is remembered on m; the page just sees it fail
+            except (MirrorMiss, RuntimeError) as e:  # the miss (or the refused request) is remembered on m; the page just sees it fail
                 route.abort()
+                if isinstance(e, MirrorMiss):
+                    # A walker that clicks through a list waits out a timeout per row for what a click opens (pi_asp: 15 s x 60 rows, 20 minutes a
+                    # board) before the run ends and the miss is raised. Raising here deadlocks the sync driver; closing the browser ends every
+                    # wait at once ("Target page, context or browser has been closed") and the walker's own per-row handling takes it from there.
+                    try:
+                        request.frame.page.context.close()
+                    except Exception:  # already closed, or a request with no frame
+                        pass
                 return
             if row is None:
                 try:

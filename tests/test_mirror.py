@@ -450,3 +450,25 @@ def test_a_page_the_browser_asks_for_and_the_mirror_lacks_fails_the_run(app_site
                 except Exception:
                     pass  # the route aborted it; the page cannot tell a miss from a dead host
                 b.close()
+
+
+def test_a_miss_ends_the_browser_so_a_walker_does_not_wait_out_a_timeout_per_click(app_site):
+    """The P&I adapter clicks every title and waits up to 15 s for what the click opens; after a miss each of its 60-odd rows
+    would wait that out (20 minutes a board) before the run ends and the miss is raised. A miss closes the browser: the next
+    wait fails at once, the walker's own per-row handling records it, and the run ends with the MirrorMiss."""
+    _record(lambda: _browse(app_site + "/app"))
+    pw_api = pytest.importorskip("playwright.sync_api")
+    seen = []  # what the walker's own wait said (an assert inside the block would itself be turned into the MirrorMiss)
+    with pytest.raises(M.MirrorMiss, match="never-recorded"):
+        with M.mirror_board(BOARD):
+            with pw_api.sync_playwright() as pw:
+                b = _browser(pw)
+                pg = b.new_context().new_page()
+                pg.goto(app_site + "/app", wait_until="networkidle")
+                pg.evaluate("fetch('/never-recorded').catch(() => 0)")
+                try:
+                    pg.wait_for_selector("#never-there", timeout=8000)
+                except pw_api.Error as e:
+                    seen.append(str(e))
+                b.close()
+    assert seen and "closed" in seen[0], f"the wait ran into its own timeout instead of ending with the browser: {seen}"
