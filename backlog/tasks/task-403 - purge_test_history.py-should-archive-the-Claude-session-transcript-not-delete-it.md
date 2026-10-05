@@ -1,12 +1,12 @@
 ---
-id: TASK-163
+id: TASK-403
 title: >-
   purge_test_history.py should archive the Claude session transcript, not delete
   it
 status: To Do
 assignee: []
 created_date: '2026-09-23 02:09'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -25,3 +25,9 @@ The daily purge (pflege-wa-purge-test.timer, 03:00 Europe/Berlin, --older-than-h
 - [ ] #2 the card's _session_id is still cleared/reset the same way as today, so a fresh test never resumes from the archived transcript
 - [ ] #3 the daily timer's default run (--older-than-hours 0 --apply) uses the same archive behavior, not a separate code path
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-05: renumbered from TASK-163 by backlog doctor --fix (two tasks had the ID TASK-163). A mention of TASK-163 in a task text written before this date may mean this task, not the one that kept TASK-163.
+<!-- SECTION:NOTES:END -->

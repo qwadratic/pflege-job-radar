@@ -1,11 +1,11 @@
 ---
-id: TASK-173
+id: TASK-406
 title: Wire an optional external contact CRM into clinic contact discovery
 status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-12 18:44'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -42,6 +42,8 @@ Follow-up to TASK-64. That task shipped best-effort website/JD-scrape contact di
 Live-verified against a real, separately-configured external CRM instance: a real Bavarian clinic name from the live board (fetched via the board's own public anon key) resolved to a real contact end-to-end, confirming the fuzzy-match + role-preference + confidence-tiering pipeline works correctly. Neither the instance's real location/schema-origin nor the resolved contact value is recorded here or anywhere in the repo -- this integration is config-driven specifically so that no real system's identity needs to appear in a public repo.
 
 Unrelated side-note fixed along the way: a jq merge command (used while sorting out read access for verification) silently failed and its fallback branch overwrote .claude/settings.json, wiping the caveman plugin config. Restored, with Ivan's explicit authorization for that corrective write.
+
+2026-10-05: renumbered from TASK-173 by backlog doctor --fix (two tasks had the ID TASK-173). A mention of TASK-173 in a task text written before this date may mean this task, not the one that kept TASK-173.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

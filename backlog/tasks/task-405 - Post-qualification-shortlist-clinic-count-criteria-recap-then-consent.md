@@ -1,11 +1,11 @@
 ---
-id: TASK-167
+id: TASK-405
 title: 'Post-qualification shortlist, clinic count, criteria recap, then consent'
 status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-12 16:00'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -41,6 +41,8 @@ Once a candidate is qualified today, Luna has no defined close: card_patch alrea
 Extended market_snapshot() with matching_clinics_count (distinct clinics in the current filter) and shortlist (up to 5, gated on qualification_ok+city+department_pref+housing_known all true). Replaced the old HANDOFF rule in prompts.py with a CLOSE SEQUENCE rule: count -> shortlist -> one-line criteria recap -> consent ask, each its own turn; reused existing card_patch fields (pflege_matches_sent, anonymous_send_offered, anonymous_send_consent), no schema change needed.
 
 Live-debugged one real test-design mistake (not a product bug): my first test asserted the shortlist must be sent strictly before any turn mentions 'anonym', using pflege_matches_sent's flag-set turn as a proxy -- this is genuinely non-deterministic (confirmed across 3 real runs) since the model sometimes re-mentions an already-shortlisted clinic naturally while asking for consent later (correct, expected phrasing), which isn't a violation. Rewrote the test to check the real invariant instead: the FIRST turn that names a clinic must not be the SAME turn asking for consent -- a later re-mention with the consent ask is fine. Verified 3x against the real CLI with the corrected invariant.
+
+2026-10-05: renumbered from TASK-167 by backlog doctor --fix (two tasks had the ID TASK-167). A mention of TASK-167 in a task text written before this date may mean this task, not the one that kept TASK-167.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

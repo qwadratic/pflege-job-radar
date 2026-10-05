@@ -17,3 +17,4 @@ task_prefix: "task"
 projects:
   - "whatsapp"
   - "board"
+  - "daria"
