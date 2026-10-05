@@ -11,8 +11,9 @@ same box (nurse79 wave 1 and wave 2) a "стоп" meant for one wave halted both
 batch whose config has "desk" reads no operator mail; it checks this desk's heartbeat and halts when it goes stale.
 
 Commands:
-  run CONFIG                 the desk loop. Run as root like a live batch (sudo -E python3 tools/daria_desk.py run
-                             CONFIG): it appends stop and skip to the campaigns' root-owned ledgers. Every
+  run CONFIG                 the desk loop. Run as the claude user, like a live batch (python3 tools/daria_desk.py run
+                             CONFIG): the mail is read through daria-inbox and the campaigns' ledgers are the claude
+                             user's, where it appends stop and skip. Every
                              poll_seconds it stamps the heartbeat, reads the operators' new mail, acts on stop, skip
                              and status at once and answers everything else from a worker thread, one mail at a
                              time. A second thread sends the letters that clinics' redirects made (clinic_mailer.py

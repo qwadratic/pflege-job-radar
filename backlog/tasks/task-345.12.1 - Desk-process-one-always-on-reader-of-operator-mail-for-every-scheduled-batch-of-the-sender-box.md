@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-01 18:10'
-updated_date: '2026-10-05 17:04'
+updated_date: '2026-10-05 17:31'
 labels:
   - email
 dependencies: []
@@ -50,4 +50,6 @@ Two scheduled batches (nurse79 wave 1 until 09.10, nurse79-2 from 02.10) share d
 Ivan, 2026-10-01: the 10-minute heartbeat limit (desk.max_age_seconds 600) is confirmed ("да").
 
 Ivan 2026-10-05 evening: the desk crashed at 16:59 on a daria-inbox HTTP 404 (a message vanished between the list and the fetch). Now the read of the operators' mail is retried three times (10 s apart); if it still fails the desk logs read_error and mails the notify list once per outage, and goes on with the halt notices, the digest and the answer and redirect threads. It stamps no heartbeat and does not move its read position until a read succeeds (a stop by mail would go unread, so the batches halt themselves after their limit; the mail that arrived meanwhile is read afterwards). Also: the redirect letters (TASK-345.12.9) are sent from a desk thread; a stop by mail does not stop them (Ivan's decision). tools/daria_desk.py poll/read_operator_mail, tests/test_daria_desk.py.
+
+Ivan 2026-10-05 evening: no root any more. sudo needs a password, so the desk and the batches now run as the claude user in tmux nurse79 (tools/daria_tools.py starts them as python3 -u). The campaigns' watch_via went from graph (root-owned MSAL cache) to daria-inbox with watch_overlap_minutes: 10; the helper cannot skip what was read (a read since the campaign's first day is 2 min and 104 MB), so _watch keeps <ledger>.watched (when the last read began) and reads from that minus the overlap; the first read per campaign is the long one, a failed read leaves the file as it was. The root-owned ledgers, locks and heartbeat were recreated as claude-owned identical copies. tools/mailing_up.sh removed (it only existed to type the sudo password). Smoke test of redirect_letters on a copy of the data with SMTP and clock faked: one letter to PA.ProfileLAK@ with the Kurzprofil, no Cc, new thread, second call sends nothing.
 <!-- SECTION:NOTES:END -->

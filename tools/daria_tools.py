@@ -439,7 +439,7 @@ def start_batch(campaign: str, batch_id: str) -> dict:
         running = _running(rf"clinic_mailer\.py send \S+ {re.escape(batch_id)}(\s|$)")
         if running:
             raise ToolError(f"{batch_id} already runs, a second process would send its letters twice: {running[0][:200]}")
-        argv = ["sudo", "-E", "python3", "-u", "tools/clinic_mailer.py", "send", str(path), batch_id, "--live"]
+        argv = ["python3", "-u", "tools/clinic_mailer.py", "send", str(path), batch_id, "--live"]
         out = _rel(d, cfg, "ledger").parent / f"send-{batch_id}.out"
         rec["command"] = argv
         _run_window(batch_id, argv, out)
@@ -475,7 +475,7 @@ def start_desk() -> dict:
         running = _running(r"daria_desk\.py run \S+")
         if running:
             raise ToolError(f"a desk already runs, a second one would answer every mail twice: {running[0][:200]}")
-        argv = ["sudo", "-E", "python3", "-u", "tools/daria_desk.py", "run", str(cfg)]
+        argv = ["python3", "-u", "tools/daria_desk.py", "run", str(cfg)]
         out = cfg.parent / "desk.out"
         rec["command"] = argv
         _run_window("desk", argv, out)

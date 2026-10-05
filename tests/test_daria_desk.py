@@ -447,7 +447,7 @@ class FakeTmux:
         for ws in self.sessions.values():
             for w, procs in ws.items():
                 out.append((pid, 1, "sh -c " + procs[0]))
-                out += [(pid + 1, pid, "sudo -E python3 -u tools/clinic_mailer.py send /x/campaign.json " + w.removeprefix("send-") + " --live")] if w.startswith(("w1-", "w2-")) else []
+                out += [(pid + 1, pid, "python3 -u tools/clinic_mailer.py send /x/campaign.json " + w.removeprefix("send-") + " --live")] if w.startswith(("w1-", "w2-")) else []
                 pid += 10
         return out
 
@@ -550,16 +550,16 @@ def test_start_batch_needs_the_operators_approval_and_runs_the_send_command_in_a
     assert r == {"window": desk.b2, "output_file": str(cfg["ledger"].parent / f"send-{desk.b2}.out")}
     new, = [c for c in mailing.calls if c[0] == "new-session"]
     assert new[new.index("-n") + 1] == desk.b2
-    assert f"sudo -E python3 -u tools/clinic_mailer.py send {desk.d['campaigns'][1]['path']} {desk.b2} --live >> " in new[-1]
+    assert f"python3 -u tools/clinic_mailer.py send {desk.d['campaigns'][1]['path']} {desk.b2} --live >> " in new[-1]
     ev, = [e for e in audited(desk) if e["tool"] == "start_batch" and "error" not in e]
-    assert ev["command"][:6] == ["sudo", "-E", "python3", "-u", "tools/clinic_mailer.py", "send"] and ev["result"]["window"] == desk.b2
+    assert ev["command"][:4] == ["python3", "-u", "tools/clinic_mailer.py", "send"] and ev["result"]["window"] == desk.b2
 
 
 def test_stop_batch_sends_ctrl_c_to_the_window_that_runs_the_batch_in_any_mailing_session(tools, mailing, desk):
     mailing.sessions = {"nurse79": {f"{desk.b1}": ["x"]}, "dsk-mailing": {desk.b2: ["y"]}}
-    mailing.ps = lambda: [(1, 0, "tmux"), (1000, 1, "sh -c cd /r && sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live >> o 2>&1"),
-                          (1001, 1000, "sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live"),
-                          (1010, 1, "sh -c cd /r && sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.w2.json " + desk.b2 + " --live")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (1000, 1, "sh -c cd /r && python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live >> o 2>&1"),
+                          (1001, 1000, "python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live"),
+                          (1010, 1, "sh -c cd /r && python3 -u tools/clinic_mailer.py send /c/campaign.w2.json " + desk.b2 + " --live")]
     r = tools.stop_batch("w1", desk.b1)
     assert r["window"] == f"nurse79:{desk.b1}" and r["sent"] == "C-c"
     assert ("send-keys", "-t", f"nurse79:{desk.b1}", "C-c") in mailing.calls
@@ -579,14 +579,14 @@ def test_a_call_that_cannot_be_written_to_the_desk_ledger_does_not_run(tools, ma
 def test_start_batch_and_start_desk_are_refused_while_the_process_runs(tools, mailing, desk):
     cfg = desk.d["campaigns"][1]["cfg"]
     (cfg["approvals"] / f"{desk.b2}.pending.json").rename(cfg["approvals"] / f"{desk.b2}.json")
-    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"sudo -E python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2} --live"),
-                          (60, 1, "sudo -E python3 -u tools/daria_desk.py run data/email-analysis/desk/daria.json")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2} --live"),
+                          (60, 1, "python3 -u tools/daria_desk.py run data/email-analysis/desk/daria.json")]
     with pytest.raises(tools.ToolError, match=f"{desk.b2} already runs"):
         tools.start_batch("w2", desk.b2)
     with pytest.raises(tools.ToolError, match="a desk already runs"):
         tools.start_desk()
     assert not [c for c in mailing.calls if c[0].startswith("new-")]
-    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"sudo -E python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2}-other --live")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2}-other --live")]
     tools.start_batch("w2", desk.b2)                                            # another batch's process is no reason to refuse
 
 
@@ -606,7 +606,7 @@ def test_start_desk_runs_the_desk_command_in_a_window_called_desk(tools, mailing
     r = tools.start_desk()
     assert r["window"] == "desk" and r["output_file"] == str(desk.d["_path"].parent / "desk.out")
     new, = [c for c in mailing.calls if c[0] == "new-session"]
-    assert f"sudo -E python3 -u tools/daria_desk.py run {desk.d['_path']} >> " in new[-1]
+    assert f"python3 -u tools/daria_desk.py run {desk.d['_path']} >> " in new[-1]
 
 
 def test_the_answer_config_tells_the_tools_who_asked_and_what_exists(desk, tmp_path, monkeypatch):

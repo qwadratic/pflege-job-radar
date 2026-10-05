@@ -1273,3 +1273,59 @@ def test_a_failed_redirect_letter_is_raised_recorded_and_not_tried_again(fcfg, m
         M.redirect_letters(fcfg)
     assert [(e["recipient_id"], e["step"]) for e in w.events("redirect_attempt")] == [("1r1", "initial")]
     assert M.redirect_letters(fcfg) is None                                  # once per (recipient, step); the failure is for the operators
+
+
+# ---------- watch via daria-inbox: incremental reads (Ivan, 2026-10-05: no root for the batches) ----------
+
+def helper_world(scfg, monkeypatch, overlap=10):
+    """A campaign read through the helper; `reads` records every `since` it is asked for, `inbox` is what it returns."""
+    scfg.update({"watch_via": "daria-inbox", "watch_overlap_minutes": overlap})
+    if overlap is None:
+        del scfg["watch_overlap_minutes"]
+    real_inbox_messages = M.inbox_messages
+    w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
+    monkeypatch.setattr(M, "inbox_messages", real_inbox_messages)               # the World fakes it; these tests go through the dispatch
+    w.reads = []
+    inbox = []
+
+    def helper(cfg, since, seen):
+        w.reads.append(since)
+        yield from inbox
+    monkeypatch.setattr(M, "helper_messages", helper)
+    w.helper_inbox = inbox
+    return w
+
+
+def test_a_helper_watch_reads_from_the_campaign_start_once_and_then_only_the_overlap(scfg, monkeypatch):
+    w = helper_world(scfg, monkeypatch)
+    M.watch(scfg)
+    assert w.reads == [at("2026-09-29T00:00:00")]                                            # the first read: everything
+    assert json.loads(M.watched_state(scfg).read_text()) == {"read_from": "2026-09-29T10:05:00+02:00"}
+    w.now = at("2026-09-29T10:20:00")
+    M.watch(scfg)
+    assert w.reads[1] == at("2026-09-29T09:55:00")                                           # last read began 10:05, minus 10 minutes
+    w.now = at("2026-09-29T10:21:00")
+    M.watch(scfg)
+    assert w.reads[2] == at("2026-09-29T10:10:00")
+
+
+def test_a_failed_helper_watch_does_not_move_the_read_position(scfg, monkeypatch):
+    w = helper_world(scfg, monkeypatch)
+    M.watch(scfg)
+    before = M.watched_state(scfg).read_text()
+    w.now = at("2026-09-29T11:00:00")
+
+    def broken(cfg, since, seen):
+        raise M.MailerError("daria-inbox exited 1: HTTP 404")
+        yield
+    monkeypatch.setattr(M, "helper_messages", broken)
+    with pytest.raises(M.MailerError, match="HTTP 404"):
+        M.watch(scfg)
+    assert M.watched_state(scfg).read_text() == before
+
+
+def test_a_helper_watch_without_an_overlap_in_the_config_fails_loudly(scfg, monkeypatch):
+    helper_world(scfg, monkeypatch, overlap=None)
+    with pytest.raises(M.MailerError, match="watch_overlap_minutes"):
+        M.watch(scfg)
+    assert not M.watched_state(scfg).exists()
