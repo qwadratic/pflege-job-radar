@@ -86,9 +86,11 @@ def resolve(tokens, boards, ids):
 # ---------------------------------------------------------------------------------------------
 def scenario(board):
     """What test_adapter_completeness runs for one board: the adapter, the oracle, the five checks (the round trip fetches)."""
-    rows, calls = H.run_adapter(board)
+    stats = {}
+    rows, calls = H.run_adapter(board, stats=stats)
     client = H.client_for(board, cache=False)
-    return {"rows": rows, "calls": calls, "client": client, "checks": H.run_checks(board, rows, calls, client)}
+    return {"rows": rows, "calls": calls, "client": client, "checks": H.run_checks(board, rows, calls, client),
+            "adapter_error": stats.get("error")}
 
 
 def canon(res):
@@ -172,6 +174,7 @@ def record_one(board, bid, towns, mutations, verify=True):
         "declared_total": AC.declared_total(client.get("html"), client.get("api_json")) if client and not client.get("error") else None,
         "checks": {k: v[0] for k, v in res["checks"].items()} if res else None,
         "replay_identical": identical, "replay_diff": diff, "mutations": mut, "error": err, "refused": rec.refused,
+        "adapter_error": (res or {}).get("adapter_error"),  # what the adapter itself reported (P&I: 'position page did not open for 77 of 77')
     }
     rec.store.set_meta("index", entry)
     return rec, entry
@@ -189,7 +192,8 @@ def line(i, n, e):
     rep = {True: "replay identical", False: "REPLAY DIFFERS", None: "replay not checked"}[e["replay_identical"]]
     return (f"[{i}/{n}] {e['board_id']}  clinics {e['n_clinics']}  pages {e['pages']}  raw {e['bytes_raw'] / 1e6:.1f} MB"
             f"  xz {e.get('bytes_file', 0) / 1e6:.2f} MB  rows {e['rows']}  checks {ok}/{len(e['checks']) if e['checks'] else '-'}  {rep}"
-            f"  exc {e['n_exc']}  {e['seconds']} s" + (f"  ERROR {e['error'].strip().splitlines()[-1][:160]}" if e["error"] else ""))
+            f"  exc {e['n_exc']}  {e['seconds']} s" + (f"  ERROR {e['error'].strip().splitlines()[-1][:160]}" if e["error"] else "")
+            + (f"  ADAPTER-ERROR {e['adapter_error'][:160]}" if e.get("adapter_error") else ""))
 
 
 def free_gb():
@@ -218,11 +222,13 @@ def cmd_record(a):
         rec, e = record_one(b, bid, towns, bid in cands, verify=not a.no_verify)
         e = save_one(rec, e)
         _log(line(i, n, e))
-        if e["error"] or e["replay_identical"] is False or e["refused"]:
+        if e["error"] or e["replay_identical"] is False or e["refused"] or e.get("adapter_error"):
             failed.append(e)
     _log(f"done {n} board(s); {len(failed)} with an error, a replay that differs or a refused request")
     for e in failed:
-        _log(f"  {e['board_id']}: " + (e["error"].strip().splitlines()[-1][:200] if e["error"] else e["replay_diff"] or f"refused {e['refused'][:2]}"))
+        why = (e["error"].strip().splitlines()[-1][:200] if e["error"] else e["replay_diff"] if e["replay_identical"] is False
+               else f"refused {e['refused'][:2]}" if e["refused"] else f"adapter error: {e['adapter_error'][:200]}")
+        _log(f"  {e['board_id']}: {why}")
 
 
 def cmd_add(a):
@@ -289,6 +295,7 @@ def cmd_status(a):
         tot["file"] += e.get("bytes_file", 0)
         gap = [k for k, ok in (e.get("checks") or {}).items() if not ok]
         flags = [f for f, on in (("ERROR", e.get("error")), ("REPLAY-DIFFERS", e.get("replay_identical") is False), ("EXC", e.get("n_exc")),
+                                 ("ADAPTER-ERROR", e.get("adapter_error")),
                                  ("GAP:" + ",".join(gap), gap), (f"OLD>{a.older_than}d", age > a.older_than)) if on]
         rows.append(f"{bid:56.56} {e['kind']:6} clin {e['n_clinics']:2} pages {e['pages']:5} raw {e['bytes_raw'] / 1e6:7.1f} MB "
                     f"xz {e.get('bytes_file', 0) / 1e6:6.2f} MB rows {str(e['rows']):>5} age {age:3}d {e['recorded_at'][:10]}  {' '.join(flags)}")

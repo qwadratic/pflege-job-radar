@@ -81,3 +81,28 @@ def test_compare_ignores_the_clock_and_the_order_and_names_what_differs():
     other = {"rows": [{"title": "Arzt"}], "calls": ["u1"], "checks": {"public url": (False, "gone")}}
     ok, why = T.compare(a, other)
     assert not ok and "only in the live run 1" in why and "adapter calls differ (2 live, 1 replay)" in why and "check public url" in why
+
+
+# --------------------------------------------------------------------------------------------- the adapter's own error
+def test_run_adapter_hands_back_the_stats_error_of_a_seeded_board(site, monkeypatch):
+    """P&I: 'position page did not open for 77 of 77 listed rows' ends the run with zero rows and five vacuously green checks."""
+    from tests import adapter_harness as H
+    s = M.Store.new(BOARD)
+    s.set_meta("towns", [])
+    s.save()
+    monkeypatch.setattr(H.AppCrawl, "_seed_obs", lambda board, c, towns, log: ([], {"listed": 77, "opened": 0, "error": "position page did not open for 77 of 77"}))
+    stats = {}
+    rows, _calls = H.run_adapter({"board_id": BOARD, "kind": "seeded", "clinics": [{}]}, stats=stats)
+    assert rows == [] and stats["error"] == "position page did not open for 77 of 77"
+
+
+def test_a_recording_names_the_error_its_adapter_ended_with(monkeypatch):
+    def run(board, stats=None):
+        stats["error"] = "position page did not open for 77 of 77"
+        return [], []
+    monkeypatch.setattr(T.H, "run_adapter", run)
+    monkeypatch.setattr(T.H, "client_for", lambda board, cache=True: {})
+    monkeypatch.setattr(T.H, "run_checks", lambda board, rows, calls, client: {})
+    assert T.scenario({"board_id": BOARD})["adapter_error"] == "position page did not open for 77 of 77"
+    e = dict(_board(), adapter_error="position page did not open for 77 of 77", checks={}, seconds=1, error=None)
+    assert "ADAPTER-ERROR position page did not open for 77 of 77" in T.line(1, 1, e)

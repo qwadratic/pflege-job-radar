@@ -148,15 +148,22 @@ def _mirror(board, scope):
 # (== "vendor" -> _vendor_rows, everything else -> _seed_obs). Looked up through the AppCrawl module object (not imported
 # by name) so a mutation test's monkeypatch on AppCrawl._vendor_rows / AppCrawl._seed_obs is actually exercised.
 # ---------------------------------------------------------------------------------------------
-def run_adapter(board, scope=ADAPTER):
+def run_adapter(board, scope=ADAPTER, stats=None):
+    """-> (rows, urls the adapter asked for). `stats`, when a dict, gets what the adapter itself says went wrong ("error"): a seeded
+    adapter's stats["error"], a vendor adapter's page_crashes -- a run that ends in zero rows with every check vacuously green says so here."""
     c = board["clinics"][0]
     log = lambda *a: None  # noqa: E731
     with _mirror(board, scope) as m, AC.RecordCalls() as rec:
         if board["kind"] == "vendor":
             rows = AppCrawl._vendor_rows(board, c, requests.Session(), log)
+            crashes = getattr(rows, "page_crashes", None)
+            if stats is not None and crashes:
+                stats["error"] = f"{len(crashes)} page(s) the adapter could not read, first: {crashes[0]}"
         else:
             # what app.data.towns() read from the registry the day the board was recorded (tests/mirror.py meta)
-            rows, _st = AppCrawl._seed_obs(board, c, set(m.store.meta("towns")), log)
+            rows, st = AppCrawl._seed_obs(board, c, set(m.store.meta("towns")), log)
+            if stats is not None:
+                stats.update(st or {})
     return rows, rec.urls
 
 
