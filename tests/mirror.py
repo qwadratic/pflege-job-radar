@@ -76,6 +76,7 @@ _COLS = "seq, scope, via, method, url, query_norm, req_body_sha256, status, reas
 Row = namedtuple("Row", "seq scope via method url norm req_sha status reason headers body_sha exc fetched_at")
 # transport framing of the connection that carried the body, not part of the content
 _FRAMING = {"content-encoding", "transfer-encoding", "content-length"}
+_MAX_REDIRECTS = 20  # Chromium follows at most 20 redirects of one request, then fails it
 # analytics beacons a page fires on its own (measured on the Klinikum Ingolstadt P&I board: a Matomo POST whose URL carries a
 # random id, a clock and timings, new on every run, so a replay could never match it). The browser's answer is an empty 204 in
 # every mode: nothing is sent to the clinic's analytics while recording, nothing is stored, nothing can miss.
@@ -626,6 +627,7 @@ def _route_handler(m):
             m.fragments[_norm_url(href)] = urlparse(href).fragment
             route.fulfill(status=204)
             return
+        hops = 0
         while True:
             try:
                 row = m.serve("playwright", method, url, body)
@@ -659,6 +661,10 @@ def _route_handler(m):
             where = next((v for k, v in headers if k.lower() == "location"), None)
             if not (300 <= status < 400 and where):
                 break
+            hops += 1
+            if hops > _MAX_REDIRECTS:  # the browser's own end for a chain it follows itself (net::ERR_TOO_MANY_REDIRECTS), which this loop replaces
+                route.abort()
+                return
             url = urljoin(url, where)
             if nav:
                 frag = m.fragments.get(_norm_url(request.url))

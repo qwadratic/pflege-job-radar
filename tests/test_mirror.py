@@ -42,6 +42,8 @@ class _Site(BaseHTTPRequestHandler):
             self._send(200, ("<html><body>Pflegefachkraft m/w/d " + p + "</body></html>").encode())
         elif p == "/redir":
             self._send(302, b"", [("Location", "/page?landed=1")])
+        elif p == "/loop":
+            self._send(302, b"", [("Location", "/loop")])
         elif p == "/gz":
             self._send(200, gzip.compress(b"<html>gzipped body</html>"), [("Content-Encoding", "gzip")])
         elif p == "/cookies":
@@ -450,6 +452,26 @@ def test_a_page_the_browser_asks_for_and_the_mirror_lacks_fails_the_run(app_site
                 except Exception:
                     pass  # the route aborted it; the page cannot tell a miss from a dead host
                 b.close()
+
+
+def test_a_url_that_redirects_to_itself_ends_where_the_browser_ends_it_and_does_not_spin(app_site):
+    """Wirkzvin's ad images (redactorfilesloader?id=...) answered 302 to their own URL: the route followed the hops itself with no
+    end, and the replay of the single recorded hop spun at 100% CPU for 40 minutes. The browser stops after 20 redirects
+    (net::ERR_TOO_MANY_REDIRECTS); so does the route that replaces its following."""
+    def go():
+        pw_api = pytest.importorskip("playwright.sync_api")
+        with pw_api.sync_playwright() as pw:
+            b = _browser(pw)
+            pg = b.new_context().new_page()
+            pg.goto(app_site + "/page?opener", wait_until="networkidle")
+            out = pg.evaluate("fetch('/loop').then(() => 'answered', () => 'failed')")
+            b.close()
+            return out
+    assert _record(go) == "failed"
+    rows = [r for r in M.Store.load(BOARD).rows() if r.url.endswith("/loop")]
+    assert len(rows) == 21 and {r.status for r in rows} == {302}  # the first request and the 20 redirects the browser would follow
+    with M.mirror_board(BOARD):
+        assert go() == "failed"
 
 
 def test_a_popup_opened_on_a_redirecting_url_keeps_the_fragment_it_was_opened_with(app_site):
