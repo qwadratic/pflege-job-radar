@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 17:41'
+updated_date: '2026-10-01 21:55'
 labels:
   - frontend
   - whatsapp
@@ -40,6 +40,7 @@ Data comes from the WhatsApp harness (app/wa/*, PR #1 qwadratic/pflege-job-radar
 - [x] #6 All strings exist in DE and EN, the view is keyboard operable (rows, filters, panel close with Esc) and usable at 375 px width
 - [x] #7 docs/wa-dashboard.md documents the exact /api/wa/* response shapes the view reads, and the wa-harness session has them
 - [x] #8 Every lead, in the needs-a-human list and in the board, shows its card as one line in the harness's gate order (region, qualification, town or department, housing, CV, certificate, consent): what we know per gate, the current step (the first gate not satisfied) marked, later gates dim; within one status the board lists the lead that has got furthest first (Ivan 2026-09-30: green is green at different stages)
+- [ ] #9 Leads has a Rail & Jobs tab showing the bridge state, the phone_ops queue, the automatic jobs and the tasks queued from Pro, read from /api/wa/activity and /api/wa/ops (snapshot age visible, ops paged by cursor with no cap)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -121,4 +122,14 @@ Earlier the same day, a28806b changed the error card to 'Keine Verbindung zum Ha
 2026-10-01, with Ivan's go-ahead: generated the board-harness token with openssl rand -hex 32. Its value was never printed or sent in a message. It is stored on tasker-dispatcher-01 in the claude home as .wa_api_token (mode 600), and on the board in the env file of pflege-web.service as WA_API_TOKEN, with WA_API_BASE set to https://ki-workflow.agency. pflege-web was not restarted, because live main has no proxy yet. wa-harness was asked to wire the token into the pflege-wa env and restart it. Before that, the harness Pro health answers 503 locally without a token; afterwards it should give 401 without and 200 with the bearer. Before generating, no env file in the dispatcher home or its 11 worktrees defined WA_API_ keys, and neither running harness process had WA_API_TOKEN. Still open: the nginx location for /api/wa/pro/ on ki-workflow.agency allowing 67.213.121.209 (Ivan, sudo), the PR 1 merge and board redeploy, then PR 2.
 
 2026-10-01, Ivan: 'все делай, и пусть только мы можем по этому роуту идти'. Added the nginx location on tasker-dispatcher-01 (claude has passwordless sudo). It sits in /etc/nginx/sites-available/ki-workflow.agency, in the 443 server block before location /, and is 'location ^~ /api/wa/pro/' with allow 67.213.121.209 (the board's egress IP), deny all, and proxy_pass http://127.0.0.1:8502 with no URI part, so paths pass through unchanged. The backup is ki-workflow.agency.bak.20261001-174046. nginx -t passed before the reload. Verified: the board without a token gets 401, the board with its token gets 200, another IP (the dispatcher's own public address) gets 403, and the site root still gets 200. ki-workflow.agency resolves IPv4 only, and the board has no IPv6 egress, so the one IPv4 allow line covers it. The activity and ops routes under /api/wa/pro/ go through the same location. Not done: merging PR 1 and PR 2, because this background session must not merge. GitHub reports PR 1's mergeable state as UNKNOWN (it was CONFLICTING earlier). pflege-web was not restarted, because live main has no proxy until PR 1 lands.
+
+2026-10-01 evening, Ivan: 'merge whatever is simpler, the goal is that the front pulls data; the dispatcher repo need not be updated'.
+- Choice: PR #1 is the whole harness (469 files, CONFLICTING with main) and the board needs only its proxy. So app/wa_proxy.py, tests/test_app_wa_proxy.py, the app/main.py mount and the four /api/wa/* OWNER_READ_PREFIXES entries in app/auth.py were copied verbatim from PR #1 (TASK-395) into PR #2 (85281d0), and main was merged in (b981451).
+- Pre-merge live check: the proxy code ran with the board's real WA_API_BASE/WA_API_TOKEN through nginx and got 200 on threads and health. The built Leads view rendered that live data: no error card, no page errors, the drawer loaded a thread, the strip showed the rail contact. Only counts were printed; no lead data was kept.
+- Tests after merging main (-m 'not network' --timeout=300, the 21 test files touching app, Pro page, auth, docs): 601 passed, 17 skipped, 1 failed. The failure is test_ontology career_profiles ('no such table: career_profiles' in the local DB), unrelated to this diff.
+- Lesson: an unfiltered full run hung for 3 h in a network test connected to a clinic site. Always pass -m 'not network' with a timeout.
+- PR #2 was squash-merged as 111e8f7 on Ivan's instruction. The board checkout /home/exedev/repo was fast-forwarded from aa1448c to 111e8f7. Before that, the 11 incoming files had no local edits there.
+- With 0 queued or running crawl_runs, pflege-web was restarted. Result: active, / gives 200, and /api/wa/health and /api/wa/threads give 401 without a session (owner gate; before the deploy they were 404). The service process has WA_API_BASE and WA_API_TOKEN. No warnings in the journal.
+- PR #1 stays open for wa-harness. Merging main into it later conflicts only on docs/index.json (keep both entries, whatsapp.md first); the proxy hunks are identical.
+- Next: the Rail & Jobs tab (AC #9) on branch feat/pro-leads-rail.
 <!-- SECTION:NOTES:END -->
