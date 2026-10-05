@@ -219,7 +219,8 @@ def test_leads_fits_a_phone(browser_and_base):
     assert not page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth + 1")
     page.locator(".lh-list > .lh").first.click()
     page.wait_for_selector("#ld-chat .bub")
-    assert page.evaluate("document.querySelector('#lead-dlg').getBoundingClientRect().width") == 390
+    # rounded: Chromium reports the layout width as a float32, 390.00003 on some builds
+    assert page.evaluate("Math.round(document.querySelector('#lead-dlg').getBoundingClientRect().width)") == 390
     assert not page.errors, page.errors[:2]
     page.context.close()
 
