@@ -20,7 +20,7 @@ def cfg(tmp_path):
     (tmp_path / "t0.txt").write_text("Betreff: Pflegekraft für [BEREICH]\n\n[ANREDE],\n\nText zu [BEREICH].\n")
     (tmp_path / "t1.txt").write_text("Betreff: Re: Pflegekraft für [BEREICH]\n\n[ANREDE],\n\nNachfrage.\n")
     (tmp_path / "recipients.json").write_text(json.dumps([
-        {"id": "1", "clinic": "Klinik A", "to": ["pd@a.de"], "cc": ["st@a.de"], "vars": {"ANREDE": "Sehr geehrte Frau A", "BEREICH": "Intensivstation"}}]))
+        {"id": "1", "clinic": "Klinik A", "to": ["pd@a.example"], "cc": ["st@a.example"], "vars": {"ANREDE": "Sehr geehrte Frau A", "BEREICH": "Intensivstation"}}]))
     (tmp_path / "allowlist.txt").write_text("# test\ncat1@example.org\ncat2@example.org\n")
     conf = {"campaign": "c", "sender": "me@example.org", "sender_name": "Me", "tz": "Europe/Berlin",
             "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "16:00"}, "holidays": ["2026-10-02"],
@@ -106,33 +106,33 @@ def test_plan_renders_follow_up_in_thread(cfg):
 
 
 def test_do_not_contact_domain_blocks_to_and_cc(cfg):
-    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "a.de", "clinic": "Klinik A", "by": "V", "date": "2026-09-28", "why": "x"}]))
+    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "a.example", "clinic": "Klinik A", "by": "V", "date": "2026-09-28", "why": "x"}]))
     cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
     c = M.load_config(cfg)
     c["suppression_db"] = None
-    assert M.suppressed(c, ["pd@a.de", "St@A.de", "x@b.de"]) == {"pd@a.de", "St@A.de"}
+    assert M.suppressed(c, ["pd@a.example", "St@A.example", "x@b.example"]) == {"pd@a.example", "St@A.example"}
     bid, report = M.plan(c, at("2026-09-29T09:00"))
     assert bid is None and "not planned" in report[0]
 
 
 def test_do_not_contact_entry_with_replace_with_swaps_the_address_instead_of_blocking(cfg):
     """LMU, 05.10: write to HR.PflegeTeam@..., not to pflegestellen@... any more."""
-    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.de", "replace_with": ["neu@a.de", "ST@a.de"], "clinic": "Klinik A",
+    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.example", "replace_with": ["neu@a.example", "ST@a.example"], "clinic": "Klinik A",
                                                       "by": "Klinik A", "date": "2026-10-05", "why": "asked to write elsewhere"}]))
     cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
     c = M.load_config(cfg)
     c["suppression_db"] = None
-    assert M.suppressed(c, ["pd@a.de"]) == set() and M.replacements(c, ["PD@a.de", "x@b.de"]) == {"PD@a.de": ["neu@a.de", "ST@a.de"]}
+    assert M.suppressed(c, ["pd@a.example"]) == set() and M.replacements(c, ["PD@a.example", "x@b.example"]) == {"PD@a.example": ["neu@a.example", "ST@a.example"]}
     bid, report = M.plan(c, at("2026-09-29T09:00"))
     item = json.loads((c["batches"] / f"{bid}.json").read_text())["items"][0]
-    assert (item["to"], item["cc"]) == (["neu@a.de", "ST@a.de"], []) and "replaces pd@a.de with neu@a.de, ST@a.de" in report[0]
+    assert (item["to"], item["cc"]) == (["neu@a.example", "ST@a.example"], []) and "replaces pd@a.example with neu@a.example, ST@a.example" in report[0]
 
 
 def test_a_scheduled_batch_carries_a_follow_up_that_falls_due_before_its_start(fcfg):
     """Ivan, 2026-10-02/05: a wave's plan carries every follow-up. A clinic written to on Tue has its fu1 due days later;
     a scheduled plan made before that, for a start after it, holds fu1 and fu2, and a start before it still leaves it out."""
     c = fcfg
-    M.append_ledger(c, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd@a.de"],
+    M.append_ledger(c, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd@a.example"],
                         "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     due = M.next_due(c, json.loads(c["recipients"].read_text())[0], M.read_ledger(c))[1]
     now, day = at("2026-09-30T09:00"), due.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -146,7 +146,7 @@ def test_a_scheduled_batch_carries_a_follow_up_that_falls_due_before_its_start(f
 
 def test_plan_only_selected_recipients(cfg):
     rec = json.loads((cfg.parent / "recipients.json").read_text())
-    (cfg.parent / "recipients.json").write_text(json.dumps(rec + [dict(rec[0], id="2", clinic="Klinik B", to=["pd@b.de"], cc=[])]))
+    (cfg.parent / "recipients.json").write_text(json.dumps(rec + [dict(rec[0], id="2", clinic="Klinik B", to=["pd@b.example"], cc=[])]))
     c = M.load_config(cfg)
     c["suppression_db"] = None
     bid, report = M.plan(c, at("2026-09-29T09:00"), only=["2"])
@@ -190,15 +190,15 @@ def test_html_signature_and_per_recipient_attachment(cfg):
     conf["signature"] = {"text": "Daria\nNDT Group", "image": "sig.png", "alt": "Daria · NDT Group", "width": 460, "height": 130}
     cfg.write_text(json.dumps(conf))
     rec = json.loads((d / "recipients.json").read_text())
-    rec[0]["vars"].update({"STELLEN": "– Stelle A & B\n  https://a.de/x?y=1&z=2", "KP": "1"})
-    rec[0]["html_vars"] = {"STELLEN": '– <a href="https://a.de/x?y=1&amp;z=2">Stelle A &amp; B</a>'}
+    rec[0]["vars"].update({"STELLEN": "– Stelle A & B\n  https://a.example/x?y=1&z=2", "KP": "1"})
+    rec[0]["html_vars"] = {"STELLEN": '– <a href="https://a.example/x?y=1&amp;z=2">Stelle A &amp; B</a>'}
     (d / "recipients.json").write_text(json.dumps(rec))
     c = M.load_config(cfg)
     c["suppression_db"] = None
     bid, _ = M.plan(c, at("2026-09-28T09:00"))
     it = json.loads((c["batches"] / f"{bid}.json").read_text())["items"][0]
-    assert it["body"].endswith("Mit freundlichen Grüßen\nDaria\nNDT Group\n") and "https://a.de/x?y=1&z=2" in it["body"]
-    assert '<a href="https://a.de/x?y=1&amp;z=2">Stelle A &amp; B</a>' in it["html"] and f'src="cid:{c["signature"]["cid"]}"' in it["html"]
+    assert it["body"].endswith("Mit freundlichen Grüßen\nDaria\nNDT Group\n") and "https://a.example/x?y=1&z=2" in it["body"]
+    assert '<a href="https://a.example/x?y=1&amp;z=2">Stelle A &amp; B</a>' in it["html"] and f'src="cid:{c["signature"]["cid"]}"' in it["html"]
     assert [a["name"] for a in it["attachments"]] == ["Profil.pdf"] and it["attachments"][0]["path"].endswith("kp/p_1.pdf")
     parts = {p.get_content_type(): p for p in M.build_message(c, it).walk()}
     assert {"text/plain", "text/html", "image/png", "application/pdf"} <= set(parts)
@@ -219,12 +219,12 @@ GRAPH_ENV = {"MICROSOFT_GRAPH_MSAL_CACHE": "/root-only/cache.json", "MICROSOFT_G
 def test_graph_watch_logs_reply_by_thread_and_skips_known(cfg, monkeypatch):
     c = M.load_config(cfg)
     c.update({"watch_via": "graph", "watch_folders": ["inbox"]})
-    c["ledger"].write_text(json.dumps({"event": "sent", "recipient_id": "1", "step": "initial", "to": ["pd@a.de"], "cc": [],
+    c["ledger"].write_text(json.dumps({"event": "sent", "recipient_id": "1", "step": "initial", "to": ["pd@a.example"], "cc": [],
                                        "sent_at": "2026-09-28T09:00:00+02:00", "message_id": "<m1@x>"}) + "\n")
-    reply = b"From: pd@a.de\r\nTo: me@example.org\r\nSubject: AW: Pflegekraft\r\nMessage-ID: <r1@a.de>\r\nIn-Reply-To: <m1@x>\r\n\r\nJa, gerne.\r\n"
+    reply = b"From: pd@a.example\r\nTo: me@example.org\r\nSubject: AW: Pflegekraft\r\nMessage-ID: <r1@a.example>\r\nIn-Reply-To: <m1@x>\r\n\r\nJa, gerne.\r\n"
     urls, fetched = [], []
     fake = types.SimpleNamespace(GRAPH="https://graph.example/v1.0", get_token_for=lambda user, g: ("tok", None),
-                                 graph_get=lambda url, tok: urls.append(url) or {"value": [{"id": "A1", "internetMessageId": "<r1@a.de>"}]})
+                                 graph_get=lambda url, tok: urls.append(url) or {"value": [{"id": "A1", "internetMessageId": "<r1@a.example>"}]})
     monkeypatch.setitem(sys.modules, "email_dump_graph", fake)
     monkeypatch.setattr(M, "load_env", lambda: GRAPH_ENV)
     monkeypatch.setattr(M, "graph_raw", lambda url, tok: fetched.append(url) or reply)
@@ -259,7 +259,7 @@ def test_test_campaign_redirects_to_allowlist(cfg):
     bid, _ = M.plan(c, at("2026-09-28T09:00"))
     batch = json.loads((c["batches"] / f"{bid}.json").read_text())
     it = batch["items"][0]
-    assert it["to"] == ["cat1@example.org"] and it["cc"] == ["cat2@example.org"] and it["real_to"] == ["pd@a.de"]
+    assert it["to"] == ["cat1@example.org"] and it["cc"] == ["cat2@example.org"] and it["real_to"] == ["pd@a.example"]
     M.guard(c, batch, live=False)
 
 
@@ -609,10 +609,10 @@ def test_watch_keeps_a_clinic_answer_and_the_digest_mails_it_once_per_address(sc
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
     M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
-                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+                           "to": ["pd@a.example"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     w.now = at("2026-09-29T10:05:00")
-    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Schicken Sie uns Ihre Konditionen.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
-    w.inbox.append(mail("pd@a.de", "Automatische Antwort: Pflegekraft", "Ich bin nicht im Haus.", at("2026-09-29T10:04:00"), "<r2@a.de>",
+    w.inbox.append(mail("pd@a.example", "AW: Pflegekraft", "Schicken Sie uns Ihre Konditionen.", at("2026-09-29T10:03:00"), "<r1@a.example>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.example", "Automatische Antwort: Pflegekraft", "Ich bin nicht im Haus.", at("2026-09-29T10:04:00"), "<r2@a.example>",
                         In_Reply_To="<m1@x>", Auto_Submitted="auto-replied"))
     assert [e["kind"] for e in M.watch(scfg)] == ["reply", "auto_reply"]
     assert not w.to_ops() and not w.to_ops_of(OPS[0])                          # nothing goes out as it arrives
@@ -627,9 +627,9 @@ def test_watch_keeps_a_clinic_answer_and_the_digest_mails_it_once_per_address(sc
     assert "<table" in html_part and "Klinik A" in html_part and "Schicken Sie uns Ihre Konditionen." in html_part
     assert "Klinik A" in d.get_body(("plain",)).get_content()
     (orig,) = [a for a in d.iter_attachments() if a.get_content_type() == "message/rfc822"]
-    assert orig.get_content()["Message-ID"] == "<r1@a.de>"
+    assert orig.get_content()["Message-ID"] == "<r1@a.example>"
     assert M.digest([scfg]) == {} and len(w.to_ops_of(OPS[1])) == 1             # carried: not mailed again
-    assert [(e["to"], e["imap_message_ids"]) for e in w.events("digested")] == [(OPS[0], ["<r1@a.de>"]), (OPS[1], ["<r1@a.de>"])]
+    assert [(e["to"], e["imap_message_ids"]) for e in w.events("digested")] == [(OPS[0], ["<r1@a.example>"]), (OPS[1], ["<r1@a.example>"])]
 
 
 def answers_world(scfg, monkeypatch, to, cc, clinic="Klinik A"):
@@ -721,8 +721,8 @@ def test_names_without_an_address_count_when_one_is_ours_and_otherwise_change_no
 
 
 def test_an_out_of_office_that_names_nobody_stays_in_the_ledger_only(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
-    answer(w, "pd@a.de", "Ich bin bis 12.10. im Urlaub.", Auto_Submitted="auto-replied")
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
+    answer(w, "pd@a.example", "Ich bin bis 12.10. im Urlaub.", Auto_Submitted="auto-replied")
     reader.says("Urlaub", pattern="out_of_office", quote="Ich bin bis 12.10. im Urlaub.")
     (ev,) = M.watch(scfg)
     assert ev["pattern"] == "out_of_office" and "digest_to" not in ev and "eml" not in ev and table(scfg) == []
@@ -730,16 +730,16 @@ def test_an_out_of_office_that_names_nobody_stays_in_the_ledger_only(scfg, monke
 
 
 def test_an_opt_out_blocks_the_address_it_names_or_the_whole_clinic_only_when_it_says_so(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], ["st@a.de"])
-    answer(w, "pd@a.de", "Bitte streichen Sie uns aus Ihrem Verteiler.")
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], ["st@a.example"])
+    answer(w, "pd@a.example", "Bitte streichen Sie uns aus Ihrem Verteiler.")
     reader.says("Verteiler", pattern="opt_out", scope="address", quote="Bitte streichen Sie uns aus Ihrem Verteiler.")
     M.watch(scfg)
     (row,) = table(scfg)
-    assert row["match"] == "pd@a.de" and row["reason"] == "opt_out" and "replace_with" not in row and M.suppressed(scfg, ["pd@a.de", "st@a.de"]) == {"pd@a.de"}
-    answer(w, "pd@a.de", "Wir wünschen keinerlei Kontakt zu Ihnen, für das ganze Haus.", mid="<r2@x>")
+    assert row["match"] == "pd@a.example" and row["reason"] == "opt_out" and "replace_with" not in row and M.suppressed(scfg, ["pd@a.example", "st@a.example"]) == {"pd@a.example"}
+    answer(w, "pd@a.example", "Wir wünschen keinerlei Kontakt zu Ihnen, für das ganze Haus.", mid="<r2@x>")
     reader.says("keinerlei Kontakt", pattern="opt_out", scope="clinic", quote="Wir wünschen keinerlei Kontakt zu Ihnen, für das ganze Haus.")
     M.watch(scfg)
-    assert [r["match"] for r in table(scfg)] == ["pd@a.de", "st@a.de"]            # pd@ was there, st@ is added
+    assert [r["match"] for r in table(scfg)] == ["pd@a.example", "st@a.example"]            # pd@ was there, st@ is added
     assert [a["added"] for a in w.events("inbound")[1]["actions"]] == [False, True]
 
 
@@ -760,28 +760,28 @@ def test_a_classifier_that_cannot_read_an_answer_halts_and_the_answer_is_read_ag
 
 
 def test_what_the_classifier_says_it_found_must_be_in_the_mail(scfg, monkeypatch, reader):
-    raw = mail("pd@a.de", "AW", "Bitte wenden Sie sich an Frau Roth.", None, "<r1@x>")[2]
-    reader.says("Frau Roth", pattern="redirect", addresses=["roth@a.de"], quote="Bitte wenden Sie sich an Frau Roth.")
-    with pytest.raises(M.MailerError, match="the address 'roth@a.de' is not in the mail"):
-        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+    raw = mail("pd@a.example", "AW", "Bitte wenden Sie sich an Frau Roth.", None, "<r1@x>")[2]
+    reader.says("Frau Roth", pattern="redirect", addresses=["roth@a.example"], quote="Bitte wenden Sie sich an Frau Roth.")
+    with pytest.raises(M.MailerError, match="the address 'roth@a.example' is not in the mail"):
+        M.classify_answer(scfg, raw, "pd@a.example", "Klinik A", ["pd@a.example"], False)
     reader.rules.clear()
-    reader.says("Frau Roth", pattern="redirect", already_ours=["roth@a.de"], quote="Bitte wenden Sie sich an Frau Roth.")
+    reader.says("Frau Roth", pattern="redirect", already_ours=["roth@a.example"], quote="Bitte wenden Sie sich an Frau Roth.")
     with pytest.raises(M.MailerError, match="not one of our addresses"):
-        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+        M.classify_answer(scfg, raw, "pd@a.example", "Klinik A", ["pd@a.example"], False)
     reader.rules.clear()
     reader.says("Frau Roth", pattern="redirect", names=["Roth"], quote="Bitte rufen Sie Frau Roth an.")
     with pytest.raises(M.MailerError, match="the quote .* is not in the mail"):
-        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+        M.classify_answer(scfg, raw, "pd@a.example", "Klinik A", ["pd@a.example"], False)
     reader.rules.clear()
     reader.says("Frau Roth", pattern="opt_out", quote="Bitte wenden Sie sich an Frau Roth.")
     with pytest.raises(M.MailerError, match="opt_out without a scope"):
-        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+        M.classify_answer(scfg, raw, "pd@a.example", "Klinik A", ["pd@a.example"], False)
 
 
 def test_a_redirect_from_an_address_we_never_wrote_to_changes_no_table(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
-    answer(w, "sekretariat@a.de", "Bitte wenden Sie sich an kontakt@a.de.", subject="AW: Pflegekraft")
-    reader.says("kontakt@a.de", pattern="redirect", addresses=["kontakt@a.de"], quote="Bitte wenden Sie sich an kontakt@a.de.")
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
+    answer(w, "sekretariat@a.example", "Bitte wenden Sie sich an kontakt@a.example.", subject="AW: Pflegekraft")
+    reader.says("kontakt@a.example", pattern="redirect", addresses=["kontakt@a.example"], quote="Bitte wenden Sie sich an kontakt@a.example.")
     (ev,) = M.watch(scfg)
     assert table(scfg) == [] and "не один из адресов" in ev["actions"][0]["ru"] and ev["digest_to"] == OPS
 
@@ -807,9 +807,9 @@ def test_a_redirect_written_after_planning_reaches_the_letter_at_send_time(scfg,
 
 def test_a_swap_at_send_time_moves_a_cc_to_the_main_place_without_a_duplicate(scfg):
     scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
-    scfg["do_not_contact"].write_text(json.dumps([{"match": "julia@a.de", "replace_with": ["anna@a.de"], "reason": "redirect"}]))
-    out = M.routed(scfg, {"to": ["julia@a.de"], "cc": ["anna@a.de", "other@a.de"]}, live=True)
-    assert out["to"] == ["anna@a.de"] and out["cc"] == ["other@a.de"] and out["planned_to"] == ["julia@a.de"] and out["planned_cc"] == ["anna@a.de", "other@a.de"]
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "julia@a.example", "replace_with": ["anna@a.example"], "reason": "redirect"}]))
+    out = M.routed(scfg, {"to": ["julia@a.example"], "cc": ["anna@a.example", "other@a.example"]}, live=True)
+    assert out["to"] == ["anna@a.example"] and out["cc"] == ["other@a.example"] and out["planned_to"] == ["julia@a.example"] and out["planned_cc"] == ["anna@a.example", "other@a.example"]
 
 
 def test_a_block_written_after_planning_stops_the_letter_at_send_time(scfg, monkeypatch):
@@ -837,24 +837,24 @@ def test_a_block_written_after_planning_stops_the_letter_at_send_time(scfg, monk
 def test_the_send_time_block_check_drops_a_blocked_cc_stops_a_blocked_swap_target_and_spares_test_copies(scfg):
     scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
     scfg["do_not_contact"].write_text(json.dumps([
-        {"match": "b@a.de", "reason": "opt_out"}, {"match": "t@a.de", "reason": "opt_out"},
-        {"match": "old@a.de", "replace_with": ["t@a.de"], "reason": "redirect"}]))
-    it = {"recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["a@a.de"], "cc": ["b@a.de", "c@a.de"]}
+        {"match": "b@a.example", "reason": "opt_out"}, {"match": "t@a.example", "reason": "opt_out"},
+        {"match": "old@a.example", "replace_with": ["t@a.example"], "reason": "redirect"}]))
+    it = {"recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["a@a.example"], "cc": ["b@a.example", "c@a.example"]}
     out = M.routed(scfg, it, live=True)
-    assert out["to"] == ["a@a.de"] and out["cc"] == ["c@a.de"] and out["planned_cc"] == ["b@a.de", "c@a.de"] and out["planned_to"] == ["a@a.de"]
+    assert out["to"] == ["a@a.example"] and out["cc"] == ["c@a.example"] and out["planned_cc"] == ["b@a.example", "c@a.example"] and out["planned_to"] == ["a@a.example"]
     with pytest.raises(M.Blocked) as e:                                          # the address a redirect sends to is checked too
-        M.routed(scfg, {**it, "to": ["old@a.de"], "cc": []}, live=True)
-    assert e.value.addresses == ["t@a.de"]
+        M.routed(scfg, {**it, "to": ["old@a.example"], "cc": []}, live=True)
+    assert e.value.addresses == ["t@a.example"]
     with pytest.raises(M.Blocked) as e:
-        M.routed(scfg, {**it, "to": ["B@a.de"], "cc": []}, live=True)            # a different case is the same address
-    assert M.routed(scfg, {**it, "to": ["b@a.de"]}, live=False)["to"] == ["b@a.de"]    # an allowlist copy keeps its address
-    clean = {**it, "cc": ["c@a.de"]}
+        M.routed(scfg, {**it, "to": ["B@a.example"], "cc": []}, live=True)            # a different case is the same address
+    assert M.routed(scfg, {**it, "to": ["b@a.example"]}, live=False)["to"] == ["b@a.example"]    # an allowlist copy keeps its address
+    clean = {**it, "cc": ["c@a.example"]}
     assert M.routed(scfg, clean, live=True) is clean
 
 
 def test_a_blocked_letter_of_a_simple_batch_is_skipped_loudly_and_the_others_go(cfg, monkeypatch, capsys):
     recs = json.loads((cfg.parent / "recipients.json").read_text())
-    recs.append({**recs[0], "id": "2", "clinic": "Klinik B", "to": ["pd@b.de"], "cc": []})
+    recs.append({**recs[0], "id": "2", "clinic": "Klinik B", "to": ["pd@b.example"], "cc": []})
     (cfg.parent / "recipients.json").write_text(json.dumps(recs))
     (cfg.parent / "dnc.json").write_text("[]\n")
     cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
@@ -868,12 +868,12 @@ def test_a_blocked_letter_of_a_simple_batch_is_skipped_loudly_and_the_others_go(
     monkeypatch.setattr(M.time, "sleep", lambda s: None)
     bid, _ = M.plan(c, at("2026-09-28T09:00"))
     (c["approvals"] / f"{bid}.pending.json").rename(c["approvals"] / f"{bid}.json")
-    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.de", "reason": "opt_out"}]))      # written after planning
+    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.example", "reason": "opt_out"}]))      # written after planning
     M.send(c, bid, live=True)
-    assert [m["To"] for m in sent] == ["pd@b.de"]
+    assert [m["To"] for m in sent] == ["pd@b.example"]
     (ev,) = [e for e in M.read_ledger(c) if e["event"] == "blocked"]
-    assert (ev["recipient_id"], ev["addresses"]) == ("1", ["pd@a.de"]) and not [e for e in M.read_ledger(c) if e["event"] == "halt"]
-    assert "BLOCKED 1 Klinik A initial: pd@a.de is on a suppression list, not sent" in capsys.readouterr().out
+    assert (ev["recipient_id"], ev["addresses"]) == ("1", ["pd@a.example"]) and not [e for e in M.read_ledger(c) if e["event"] == "halt"]
+    assert "BLOCKED 1 Klinik A initial: pd@a.example is on a suppression list, not sent" in capsys.readouterr().out
 
 
 def test_a_second_process_for_the_same_batch_fails_at_once(scfg, monkeypatch):
@@ -895,9 +895,9 @@ def test_a_digest_that_fails_keeps_its_answers_for_the_next_one(scfg, monkeypatc
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
     M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
-                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+                           "to": ["pd@a.example"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     w.now = at("2026-09-29T10:05:00")
-    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Gerne.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.example", "AW: Pflegekraft", "Gerne.", at("2026-09-29T10:03:00"), "<r1@a.example>", In_Reply_To="<m1@x>"))
     M.watch(scfg)
     monkeypatch.setattr(M, "smtp_send", lambda box, msg: {OPS[0]: (550, b"no")})
     with pytest.raises(M.MailerError, match="SMTP refused the digest"):
@@ -912,9 +912,9 @@ def test_two_watches_of_one_ledger_run_one_after_the_other(scfg, monkeypatch):
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
     M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
-                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+                           "to": ["pd@a.example"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     w.now = at("2026-09-29T10:05:00")
-    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Danke.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.example", "AW: Pflegekraft", "Danke.", at("2026-09-29T10:03:00"), "<r1@a.example>", In_Reply_To="<m1@x>"))
     got = []
     with open(scfg["ledger"].with_name(scfg["ledger"].name + ".watch.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)                              # the other process is in its watch
@@ -938,10 +938,10 @@ def test_notices_go_to_the_notify_list_and_answers_by_kind_to_the_forward_list(s
     (t, sent), = w.sent
     assert sent["To"] == OPS[0] and w.events("notice")[0]["to"] == OPS[:1]
     M.append_ledger(scfg, {"event": "sent", "batch_id": bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
-                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+                           "to": ["pd@a.example"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     w.now = at("2026-09-29T10:05:00")
-    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Konditionen?", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
-    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Bitte keine weiteren Mails.", at("2026-09-29T10:04:00"), "<r2@a.de>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.example", "AW: Pflegekraft", "Konditionen?", at("2026-09-29T10:03:00"), "<r1@a.example>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.example", "AW: Pflegekraft", "Bitte keine weiteren Mails.", at("2026-09-29T10:04:00"), "<r2@a.example>", In_Reply_To="<m1@x>"))
     assert [e["kind"] for e in M.watch(scfg)] == ["reply", "stop"]
     assert [e["digest_to"] for e in w.events("inbound")] == [OPS, OPS[:1]]
     assert M.digest([scfg]) == {OPS[0]: 2, OPS[1]: 1}
@@ -953,7 +953,7 @@ def test_an_undeliverable_operator_mail_is_no_clinic_bounce_and_goes_to_the_othe
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
     M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
-                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+                           "to": ["pd@a.example"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
     w.now = at("2026-09-29T10:05:00")
     w.inbox.append(mail("postmaster@outlook.example", "Undeliverable: [daria] Klinik A: AW", f"Your message to {OPS[1]} couldn't be delivered. "
                         "Recipient Unknown\n\nOriginal headers:\nReferences: <m1@x>\n", at("2026-09-29T10:03:00"), "<ndr1@o>"))
@@ -1201,17 +1201,17 @@ def test_a_redirect_to_an_address_we_already_wrote_to_makes_no_letter(scfg, monk
 
 def test_a_redirect_to_a_blocked_address_makes_no_letter(scfg, monkeypatch, reader):
     w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
-    scfg["do_not_contact"].write_text(json.dumps([{"match": "x@optout.de", "reason": "opt_out"}]))
-    answer(w, "pd1@example.org", "Bitte schreiben Sie an x@optout.de.")
-    reader.says("optout", pattern="redirect", addresses=["x@optout.de"], quote="Bitte schreiben Sie an x@optout.de.")
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "x@optout.example", "reason": "opt_out"}]))
+    answer(w, "pd1@example.org", "Bitte schreiben Sie an x@optout.example.")
+    reader.says("optout", pattern="redirect", addresses=["x@optout.example"], quote="Bitte schreiben Sie an x@optout.example.")
     (ev,) = M.watch(scfg)
-    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3"] and "в списке блокировки: x@optout.de" in ev["actions"][1]["ru"]
+    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3"] and "в списке блокировки: x@optout.example" in ev["actions"][1]["ru"]
 
 
 def test_the_same_redirect_read_twice_makes_one_recipient(scfg, monkeypatch, reader):
     w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
-    assert M.redirect_letter(scfg, "1", ["new@a.de"])["id"] == "1r1"
-    again = M.redirect_letter(scfg, "1", ["new@a.de"])
+    assert M.redirect_letter(scfg, "1", ["new@a.example"])["id"] == "1r1"
+    again = M.redirect_letter(scfg, "1", ["new@a.example"])
     assert again["id"] is None and "уже сделан" in again["ru"] and [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"]
     assert len(w.events("redirected")) == 1
 
@@ -1222,16 +1222,16 @@ def test_a_redirect_that_was_interrupted_before_its_ledger_event_is_finished_not
     real = M.append_ledger
     monkeypatch.setattr(M, "append_ledger", lambda c, e: (_ for _ in ()).throw(PermissionError("ledger")) if e["event"] == "redirected" else real(c, e))
     with pytest.raises(PermissionError):
-        M.redirect_letter(scfg, "1", ["new@a.de"])
+        M.redirect_letter(scfg, "1", ["new@a.example"])
     monkeypatch.setattr(M, "append_ledger", real)
     assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"] and w.events("redirected") == []
-    assert "уже сделан" in M.redirect_letter(scfg, "1", ["new@a.de"])["ru"]
+    assert "уже сделан" in M.redirect_letter(scfg, "1", ["new@a.example"])["ru"]
     assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"] and [e["to_recipient"] for e in w.events("redirected")] == ["1r1"]
 
 
 def test_a_redirect_recipient_is_not_planned_into_a_waves_batch(fcfg, monkeypatch):
     World(fcfg, monkeypatch, "2026-09-29T08:40:00")
-    M.redirect_letter(fcfg, "1", ["new@a.de"])
+    M.redirect_letter(fcfg, "1", ["new@a.example"])
     bid, report = M.plan(fcfg, at("2026-09-29T08:40:00"), announce_at=at("2026-09-29T09:00:00"), only=["2", "3"])
     assert {it["recipient_id"] for it in json.loads((fcfg["batches"] / f"{bid}.json").read_text())["items"]} == {"2", "3"}
     bid, report = M.plan(fcfg, at("2026-09-29T08:40:00"))
@@ -1244,20 +1244,20 @@ def test_redirect_letters_go_in_the_window_each_step_once_and_the_follow_up_in_i
     M.append_ledger(fcfg, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd1@example.org"],
                            "cc": [], "sent_at": "2026-09-29T07:00:00+02:00", "message_id": "<m0@x>"})
     assert M.redirect_letters(fcfg) is None                                  # no redirect recipient yet
-    M.redirect_letter(fcfg, "1", ["new@a.de"])
+    M.redirect_letter(fcfg, "1", ["new@a.example"])
     assert M.redirect_letters(fcfg) is None and w.sent == []                 # 07:00: outside the window
     w.now = at("2026-09-29T09:00:00")                                        # a round minute: the letter waits for an odd one
     bid = M.redirect_letters(fcfg)
     (t, first), = w.sent
-    assert t.minute % 5 and first["To"] == "new@a.de" and first["Subject"] == "Pflegekraft für Intensivstation" and not first["In-Reply-To"]
+    assert t.minute % 5 and first["To"] == "new@a.example" and first["Subject"] == "Pflegekraft für Intensivstation" and not first["In-Reply-To"]
     assert plain(first).startswith("Sehr geehrte Damen und Herren,") and (fcfg["approvals"] / f"{bid}.json").exists()
-    assert [(e["recipient_id"], e["step"], e["to"]) for e in w.events("sent") if e["recipient_id"] == "1r1"] == [("1r1", "initial", ["new@a.de"])]
+    assert [(e["recipient_id"], e["step"], e["to"]) for e in w.events("sent") if e["recipient_id"] == "1r1"] == [("1r1", "initial", ["new@a.example"])]
     assert [(e["recipient_id"], e["step"]) for e in w.events("redirect_attempt")] == [("1r1", "initial")]
     assert M.redirect_letters(fcfg) is None and len(w.sent) == 1             # the follow-up is not due: 3 business days
     w.now = at("2026-10-05T10:00:00")                                        # 29.09 + 3 business days, 02.10 a holiday
     M.redirect_letters(fcfg)
     (_, fu1) = w.sent[1]
-    assert fu1["To"] == "new@a.de" and fu1["In-Reply-To"] == first["Message-ID"] and fu1["Subject"].startswith("Re:")
+    assert fu1["To"] == "new@a.example" and fu1["In-Reply-To"] == first["Message-ID"] and fu1["Subject"].startswith("Re:")
     assert M.redirect_letters(fcfg) is None
 
 
@@ -1265,10 +1265,10 @@ def test_a_failed_redirect_letter_is_raised_recorded_and_not_tried_again(fcfg, m
     w = World(fcfg, monkeypatch, "2026-09-29T09:01:00")
     M.append_ledger(fcfg, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd1@example.org"],
                            "cc": [], "sent_at": "2026-09-29T07:00:00+02:00", "message_id": "<m0@x>"})
-    M.redirect_letter(fcfg, "1", ["new@a.de"])
+    M.redirect_letter(fcfg, "1", ["new@a.example"])
 
     def refuse(box, msg):
-        return {"new@a.de": (550, b"no such user")}
+        return {"new@a.example": (550, b"no such user")}
     monkeypatch.setattr(M, "smtp_send", refuse)
     with pytest.raises(M.MailerError, match="SMTP refused"):
         M.redirect_letters(fcfg)
@@ -1376,7 +1376,7 @@ def stranger(w, frm, text, mid, subject="Anfrage", t="2026-09-29T10:03:00", **he
 def test_a_mail_from_an_address_and_domain_no_letter_went_to_is_classified_logged_and_forwarded(scfg, monkeypatch, reader):
     """Ivan, 2026-10-05: if a clinic writes from some other domain, we read it too; everything goes through the classifier.
     Before, `_watch` dropped such a mail: not in the thread, not from an address or domain we wrote to."""
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
     stranger(w, "Personalabteilung <personal@klinikverbund-nord.example>", "Wir haben Interesse an Ihrer Pflegekraft.\n", "<s1@x>")
     assert M.watch(scfg) == []                                         # a campaign's watch leaves it
     (ev,) = M.sweep([scfg])
@@ -1389,7 +1389,7 @@ def test_a_mail_from_an_address_and_domain_no_letter_went_to_is_classified_logge
 
 
 def test_advertising_is_classified_and_logged_but_not_forwarded(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
     stranger(w, "steve@seo-leads.example", "Boost your pipeline today. Unsubscribe here.\n", "<s2@x>", subject="Re: quick question")
     reader.says("Boost your pipeline", pattern="unrelated", quote="Boost your pipeline today.")
     (ev,) = M.sweep([scfg])
@@ -1398,20 +1398,20 @@ def test_advertising_is_classified_and_logged_but_not_forwarded(scfg, monkeypatc
 
 
 def test_the_sweep_leaves_what_a_watch_takes_and_the_operators_and_the_boxs_own_mail(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
     stranger(w, "x@elsewhere.example", "Danke, Konditionen?\n", "<t1@x>", In_Reply_To="<m1@x>")         # in the letter's thread
-    stranger(w, "hr@a.de", "Guten Tag\n", "<t2@x>")                                                      # a domain we wrote to
+    stranger(w, "hr@a.example", "Guten Tag\n", "<t2@x>")                                                      # a domain we wrote to
     stranger(w, OPS[0], "stopp\n", "<t3@x>")                                                             # an operator's command
     stranger(w, "me@example.org", "our own\n", "<t4@x>")
     stranger(w, "postmaster@outlook.example", f"Your message to {OPS[1]} couldn't be delivered.\n", "<t5@x>", subject="Undeliverable: x")
     stranger(w, "unknown@elsewhere.example", "Hallo\n", "<t6@x>")
     assert [e["from"] for e in M.sweep([scfg])] == ["unknown@elsewhere.example"]
     assert sorted((e["kind"], e["from"]) for e in M.watch(scfg)) == [("operator_undeliverable", "postmaster@outlook.example"),
-                                                                       ("reply", "x@elsewhere.example"), ("unmatched", "hr@a.de")]
+                                                                       ("reply", "x@elsewhere.example"), ("unmatched", "hr@a.example")]
 
 
 def test_a_sweep_starts_when_it_first_runs_and_goes_on_from_the_last_read_less_the_overlap(scfg, monkeypatch):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
     stranger(w, "old@elsewhere.example", "Vor Stunden\n", "<o1@x>", t="2026-09-29T08:00:00")           # before the first sweep
     stranger(w, "new@elsewhere.example", "Jetzt\n", "<o2@x>", t="2026-09-29T10:00:00")
     assert [e["from"] for e in M.sweep([scfg])] == ["new@elsewhere.example"]                           # now 10:05, overlap 10 min
@@ -1424,7 +1424,7 @@ def test_a_sweep_starts_when_it_first_runs_and_goes_on_from_the_last_read_less_t
 
 
 def test_a_mail_the_classifier_cannot_read_stops_the_sweep_and_is_read_again(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
     stranger(w, "a@elsewhere.example", "Hallo eins\n", "<c1@x>")
     stranger(w, "b@elsewhere.example", "boom\n", "<c2@x>")
     stranger(w, "c@elsewhere.example", "Hallo drei\n", "<c3@x>")
@@ -1437,8 +1437,8 @@ def test_a_mail_the_classifier_cannot_read_stops_the_sweep_and_is_read_again(scf
 
 
 def test_an_opt_out_from_a_sender_we_never_wrote_to_blocks_the_addresses_it_names(scfg, monkeypatch, reader):
-    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
-    stranger(w, "hr@klinikverbund-nord.example", "Bitte streichen Sie pd@a.de aus Ihrem Verteiler.\n", "<p1@x>")
-    reader.says("streichen", pattern="opt_out", addresses=["pd@a.de"], scope="address", quote="Bitte streichen Sie pd@a.de aus Ihrem Verteiler.")
+    w = answers_world(scfg, monkeypatch, ["pd@a.example"], [])
+    stranger(w, "hr@klinikverbund-nord.example", "Bitte streichen Sie pd@a.example aus Ihrem Verteiler.\n", "<p1@x>")
+    reader.says("streichen", pattern="opt_out", addresses=["pd@a.example"], scope="address", quote="Bitte streichen Sie pd@a.example aus Ihrem Verteiler.")
     (ev,) = M.sweep([scfg])
-    assert ev["kind"] == "unmatched" and ev["actions"][0]["do"] == "opt_out" and [r["match"] for r in table(scfg)] == ["pd@a.de"]
+    assert ev["kind"] == "unmatched" and ev["actions"][0]["do"] == "opt_out" and [r["match"] for r in table(scfg)] == ["pd@a.example"]

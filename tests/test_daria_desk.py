@@ -623,7 +623,7 @@ def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_des
     def redirect_letters(cfg):
         calls.append(cfg["campaign"])
         if cfg["campaign"] == "w2":
-            raise M.MailerError("SMTP refused ['pa@x.de']")
+            raise M.MailerError("SMTP refused ['pa@x.example']")
         return "w1-20261002-0930"
     monkeypatch.setattr(M, "redirect_letters", redirect_letters)
     D.redirect_letters(desk.d, {})
@@ -631,7 +631,7 @@ def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_des
     ev = [e for e in D.read_ledger(desk.d) if e["event"] in ("redirect_letters", "redirect_error")]
     assert [(e["event"], e["campaign"]) for e in ev] == [("redirect_letters", "w1"), ("redirect_error", "w2")] and "SMTP refused" in ev[1]["reason"]
     (m,) = desk.sent
-    assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.de']" in plain(m)
+    assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.example']" in plain(m)
 
 
 def test_the_desk_reads_every_campaigns_answers_and_the_rest_and_mails_a_read_that_stays_failing_once(desk, monkeypatch):
@@ -662,12 +662,12 @@ def test_a_failing_sweep_is_mailed_once_and_does_not_stop_the_watches(desk, monk
     monkeypatch.setattr(M, "watch", lambda cfg, box: watched.append(cfg["campaign"]) or [])
 
     def sweep(cfgs, box):
-        raise M.MailerError("could not read the mail from x@y.de ('Hallo'): classifier: claude exited 1")
+        raise M.MailerError("could not read the mail from x@y.example ('Hallo'): classifier: claude exited 1")
     monkeypatch.setattr(M, "sweep", sweep)
     failing = D.watch_campaigns(desk.d, {}, set())
     assert failing == {D.SWEEP} and watched == ["w1", "w2"]
     (m,) = desk.sent
-    assert m["Subject"] == "Дарья не может прочитать почту: входящие вне рассылок" and "could not read the mail from x@y.de" in plain(m)
+    assert m["Subject"] == "Дарья не может прочитать почту: входящие вне рассылок" and "could not read the mail from x@y.example" in plain(m)
 
 
 def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_refused(desk):
