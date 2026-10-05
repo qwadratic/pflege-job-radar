@@ -284,6 +284,7 @@ class Mirror:
         self.board_id, self.store, self.mode, self.allow_infra = board_id, store, mode, allow_infra
         self.scope, self.misses, self.refused, self.live_requests, self.last_live = "adapter", [], [], 0, True
         self._n, self._lock = {}, threading.Lock()
+        self.fragments = {}  # normalised URL -> the #fragment a page opened it with (Playwright's request URL never has it)
 
     def serve(self, via, method, url, body):
         """The recorded Row for this request; None when the caller must go live (record / through); MirrorMiss otherwise."""
@@ -592,6 +593,23 @@ def _pw_headers(pairs):
     return out
 
 
+# A page that opens a window on a URL with a #fragment ('...?company=1#position,id=<uuid>,popup=y', P&I) and a server that answers that URL
+# with a redirect: the browser keeps the fragment over the redirect, but Playwright hands the route a request URL without it and the
+# re-issued navigation has none, so the app lands on its start page. The page tells the route the fragment before it opens the window
+# (a synchronous XHR to a path the route answers itself, so the route knows it by the time the navigation request arrives).
+_FRAGMENT_PATH = "/__mirror_fragment"
+_FRAGMENT_HOOK = """(() => {
+  const open = window.open;
+  window.open = function (u, ...rest) {
+    try {
+      const abs = new URL(String(u), location.href);
+      if (abs.hash) { const x = new XMLHttpRequest(); x.open('POST', '%s', false); x.send(abs.href); }
+    } catch (e) {}
+    return open.call(this, u, ...rest);
+  };
+})();""" % _FRAGMENT_PATH
+
+
 def _route_handler(m):
     """One route for a whole context. Playwright routes only the FIRST request of a redirect chain (the browser follows the
     rest on its own, outside the route), so a hop is never handed to the browser as a redirect: a navigation is re-issued
@@ -601,6 +619,11 @@ def _route_handler(m):
         nav, method, url, body = request.is_navigation_request(), request.method, request.url, request.post_data_buffer or b""
         u = urlparse(url)
         if _BEACON.search(u.hostname or "") or _BEACON.search(u.path):
+            route.fulfill(status=204)
+            return
+        if u.path == _FRAGMENT_PATH and method == "POST":
+            href = body.decode("utf-8", "replace")
+            m.fragments[_norm_url(href)] = urlparse(href).fragment
             route.fulfill(status=204)
             return
         while True:
@@ -638,6 +661,10 @@ def _route_handler(m):
                 break
             url = urljoin(url, where)
             if nav:
+                frag = m.fragments.get(_norm_url(request.url))
+                if frag:  # carried over the hop, as the browser does (the next hop of the chain arrives as a request of its own)
+                    m.fragments[_norm_url(url)] = frag
+                    url = urldefrag(url)[0] + "#" + frag
                 route._sync(route._impl_obj._redirected_navigation_request(url))
                 return
             if status in (301, 302, 303) and method not in ("GET", "HEAD"):
@@ -653,17 +680,22 @@ def _pw_launch(self, *a, **k):
     return _REAL["pw_launch"](self, *a, **k)
 
 
+def _pw_route(ctx):
+    ctx.route("**/*", _route_handler(_top()))
+    ctx.add_init_script(_FRAGMENT_HOOK)
+
+
 def _pw_new_context(self, *a, **k):
     ctx = _REAL["pw_new_context"](self, *a, **k)
     if _top():
-        ctx.route("**/*", _route_handler(_top()))
+        _pw_route(ctx)
     return ctx
 
 
 def _pw_new_page(self, *a, **k):
     page = _REAL["pw_new_page"](self, *a, **k)
     if _top():
-        page.context.route("**/*", _route_handler(_top()))
+        _pw_route(page.context)
     return page
 
 

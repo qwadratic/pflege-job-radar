@@ -452,6 +452,31 @@ def test_a_page_the_browser_asks_for_and_the_mirror_lacks_fails_the_run(app_site
                 b.close()
 
 
+def test_a_popup_opened_on_a_redirecting_url_keeps_the_fragment_it_was_opened_with(app_site):
+    """P&I (regiomed, wirkzvin): window.open('.../bewerber-web?company=...#position,id=<uuid>,popup=y') answers 302 and the app reads
+    the position from the fragment. Playwright hands the route a request URL without it and a re-issued navigation has none, so the
+    popup landed on the list and the position form never rendered (every click 'did not open'); the browser itself keeps the fragment
+    over a redirect."""
+    def go():
+        pw_api = pytest.importorskip("playwright.sync_api")
+        with pw_api.sync_playwright() as pw:
+            b = _browser(pw)
+            ctx = b.new_context()
+            pg = ctx.new_page()
+            pg.goto(app_site + "/page?opener", wait_until="networkidle")
+            with ctx.expect_page(timeout=10000) as opened:
+                pg.evaluate("window.open('/redir#position,id=7,popup=y')")
+            pop = opened.value
+            pop.wait_for_load_state("load")
+            out = pop.url.replace(app_site, "")
+            b.close()
+            return out
+    live = _record(go)
+    assert live == "/page?landed=1#position,id=7,popup=y"
+    with M.mirror_board(BOARD):
+        assert go() == live
+
+
 def test_a_miss_ends_the_browser_so_a_walker_does_not_wait_out_a_timeout_per_click(app_site):
     """The P&I adapter clicks every title and waits up to 15 s for what the click opens; after a miss each of its 60-odd rows
     would wait that out (20 minutes a board) before the run ends and the miss is raised. A miss closes the browser: the next
