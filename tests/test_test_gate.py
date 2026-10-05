@@ -827,6 +827,39 @@ def test_run_llm_lane_still_fails_on_a_genuine_test_failure(tmp_path):
     assert result.failing_tests == ["tests/test_cv_intake.py::test_a"]
 
 
+# --- main_checkout_root / main_checkout_head, against a real throwaway git repo + linked worktree ---
+
+def _add_linked_worktree(repo, worktree_path, sha):
+    subprocess.run(["git", "worktree", "add", "--detach", str(worktree_path), sha],
+                    cwd=repo, check=True, capture_output=True, text=True)
+
+
+def test_main_checkout_root_from_the_main_checkout_itself_is_itself(tmp_path):
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    _commit_file(repo, "a.txt", "one\n", "first")
+    assert G.main_checkout_root(repo) == repo.resolve()
+
+
+def test_main_checkout_root_from_a_linked_worktree_is_the_main_checkout(tmp_path):
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    sha1 = _commit_file(repo, "a.txt", "one\n", "first")
+    worktree = tmp_path / "linked-worktree"
+    _add_linked_worktree(repo, worktree, sha1)
+    assert G.main_checkout_root(worktree) == repo.resolve()
+
+
+def test_main_checkout_head_reads_the_main_checkouts_head_not_the_worktrees(tmp_path):
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    sha1 = _commit_file(repo, "a.txt", "one\n", "first")
+    sha2 = _commit_file(repo, "a.txt", "two\n", "second")
+    # a linked worktree detached at the OLDER sha -- main_checkout_head must still report sha2, the
+    # main checkout's own HEAD, not whatever this worktree happens to have checked out.
+    worktree = tmp_path / "linked-worktree"
+    _add_linked_worktree(repo, worktree, sha1)
+    assert G.main_checkout_head(worktree) == sha2
+    assert G.main_checkout_head(repo) == sha2
+
+
 # --- M4 / ScratchWorktree, against a real throwaway git repo ----------------------------------------
 
 def test_scratch_worktree_checks_out_the_given_sha(tmp_path):
@@ -944,7 +977,7 @@ def test_run_lanes_for_sha_skips_llm_lane_when_offline_failed(tmp_path, capsys):
 
     rc = G._run_lanes_for_sha(
         "deadbeef", need_llm=True, llm_reason="touches luna",
-        parent_pid=111, stamp_dir=tmp_path, scratch_factory=_FakeScratch,
+        parent_pid=111, stamp_dir=tmp_path, log_dir=tmp_path, scratch_factory=_FakeScratch,
         offline_lane=offline_lane, llm_lane=llm_lane,
     )
     assert rc == 1
@@ -997,7 +1030,7 @@ def test_run_lanes_for_sha_writes_failed_parent_pid_on_failure(tmp_path):
 
     rc = G._run_lanes_for_sha(
         "deadbeef", need_llm=False, llm_reason="no LLM-relevant path",
-        parent_pid=222, stamp_dir=tmp_path, scratch_factory=_FakeScratch,
+        parent_pid=222, stamp_dir=tmp_path, log_dir=tmp_path, scratch_factory=_FakeScratch,
         offline_lane=offline_lane, llm_lane=lambda scratch: _fake_lane_result("llm", True),
     )
     assert rc == 1
@@ -1012,8 +1045,8 @@ def test_run_lanes_for_sha_second_push_url_fails_immediately_without_rerunning(t
         calls.append("ran")
         return _fake_lane_result("offline", False)
 
-    kwargs = dict(stamp_dir=tmp_path, scratch_factory=_FakeScratch, offline_lane=offline_lane,
-                  llm_lane=lambda s: _fake_lane_result("llm", True))
+    kwargs = dict(stamp_dir=tmp_path, log_dir=tmp_path, scratch_factory=_FakeScratch,
+                  offline_lane=offline_lane, llm_lane=lambda s: _fake_lane_result("llm", True))
 
     # first push-URL firing: runs for real, fails, stamps failed_parent_pid=333
     rc1 = G._run_lanes_for_sha("deadbeef", need_llm=False, llm_reason="x", parent_pid=333, **kwargs)
@@ -1033,8 +1066,8 @@ def test_run_lanes_for_sha_a_later_new_push_of_the_same_sha_reruns_from_scratch(
         calls.append("ran")
         return _fake_lane_result("offline", False)
 
-    kwargs = dict(stamp_dir=tmp_path, scratch_factory=_FakeScratch, offline_lane=offline_lane,
-                  llm_lane=lambda s: _fake_lane_result("llm", True))
+    kwargs = dict(stamp_dir=tmp_path, log_dir=tmp_path, scratch_factory=_FakeScratch,
+                  offline_lane=offline_lane, llm_lane=lambda s: _fake_lane_result("llm", True))
 
     G._run_lanes_for_sha("deadbeef", need_llm=False, llm_reason="x", parent_pid=333, **kwargs)
     # a brand-new `git push` (different parent pid) is not covered by the earlier FAILED stamp
@@ -1059,7 +1092,58 @@ def test_run_lanes_for_sha_skips_entirely_when_an_already_passed_stamp_covers(tm
     assert calls == []  # a PASSED stamp still short-circuits exactly as before (unchanged behavior)
 
 
-# --- cmd_pre_push, with fakes -------------------------------------------------------------------------
+# --- _run_lanes_for_sha: failed-lane log file (Ivan, 2026-10-05 -- a failed 44-min LLM lane's output
+# used to be lost with the scratch dir, forcing a blind rerun) ---------------------------------------
+
+def test_run_lanes_for_sha_saves_offline_lane_log_on_failure_and_prints_path(tmp_path, capsys):
+    def offline_lane(scratch, *, fail_fast):
+        return _fake_lane_result("offline", False, failing_tests=["tests/x.py::t"])
+
+    log_dir = tmp_path / "logs"
+    rc = G._run_lanes_for_sha(
+        "deadbeef", need_llm=False, llm_reason="x", parent_pid=1, stamp_dir=tmp_path,
+        log_dir=log_dir, scratch_factory=_FakeScratch, offline_lane=offline_lane,
+        llm_lane=lambda s: _fake_lane_result("llm", True),
+    )
+    assert rc == 1
+    log_path = log_dir / "deadbeef-offline.log"
+    assert log_path.exists()
+    assert f"full offline lane output saved to {log_path}" in capsys.readouterr().out
+
+
+def test_run_lanes_for_sha_saves_llm_lane_log_on_failure_and_prints_path(tmp_path, capsys):
+    def offline_lane(scratch, *, fail_fast):
+        return _fake_lane_result("offline", True)
+
+    def llm_lane(scratch):
+        return G.LaneResult("llm", False, 0.1, 1, ["tests/llm_x.py::t"], "the real llm stdout\n")
+
+    log_dir = tmp_path / "logs"
+    rc = G._run_lanes_for_sha(
+        "deadbeef", need_llm=True, llm_reason="touches luna", parent_pid=1, stamp_dir=tmp_path,
+        log_dir=log_dir, scratch_factory=_FakeScratch, offline_lane=offline_lane, llm_lane=llm_lane,
+    )
+    assert rc == 1
+    log_path = log_dir / "deadbeef-llm.log"
+    assert log_path.read_text() == "the real llm stdout\n"
+    assert f"full llm lane output saved to {log_path}" in capsys.readouterr().out
+
+
+def test_run_lanes_for_sha_does_not_save_a_log_for_a_passing_lane(tmp_path):
+    def offline_lane(scratch, *, fail_fast):
+        return _fake_lane_result("offline", True)
+
+    log_dir = tmp_path / "logs"
+    rc = G._run_lanes_for_sha(
+        "deadbeef", need_llm=False, llm_reason="x", parent_pid=1, stamp_dir=tmp_path,
+        log_dir=log_dir, scratch_factory=_FakeScratch, offline_lane=offline_lane,
+        llm_lane=lambda s: _fake_lane_result("llm", True),
+    )
+    assert rc == 0
+    assert not log_dir.exists()
+
+
+# --- cmd_pre_push, with fakes -- offline lane only, LLM lane moved to pre-deploy -------------------
 
 def test_cmd_pre_push_runs_lanes_for_each_non_delete_ref_in_order():
     seen_shas = []
@@ -1074,8 +1158,7 @@ def test_cmd_pre_push_runs_lanes_for_each_non_delete_ref_in_order():
         "refs/heads/b sha_b1111111111111111111111111111111111111 refs/heads/b "
         "sha_b0000000000000000000000000000000000000\n"
     )
-    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text, git_run=lambda args: ["app/a.py"],
-                        env={}, parent_pid=999, run_lanes=fake_run_lanes)
+    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text, parent_pid=999, run_lanes=fake_run_lanes)
     assert rc == 0
     assert seen_shas == ["sha_a1111111111111111111111111111111111111",
                           "sha_b1111111111111111111111111111111111111"]
@@ -1084,7 +1167,7 @@ def test_cmd_pre_push_runs_lanes_for_each_non_delete_ref_in_order():
 def test_cmd_pre_push_skips_delete_refs_without_running_lanes():
     text = f"refs/heads/x {ZERO40} refs/heads/x oldsha1111111111111111111111111111111111\n"
     calls = []
-    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text, git_run=lambda args: [], env={},
+    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text,
                         parent_pid=1, run_lanes=lambda *a, **k: calls.append(a) or 0)
     assert rc == 0
     assert calls == []
@@ -1098,7 +1181,7 @@ def test_cmd_pre_push_nonzero_exit_when_any_ref_fails():
         "oldb0000000000000000000000000000000000000\n"
     )
     results = iter([0, 1])
-    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text, git_run=lambda args: [], env={},
+    rc = G.cmd_pre_push(Path("/unused"), stdin_text=text,
                         parent_pid=1, run_lanes=lambda *a, **k: next(results))
     assert rc == 1
 
@@ -1107,12 +1190,14 @@ def test_cmd_pre_push_no_refs_on_stdin_returns_zero_without_running_lanes():
     def fail_if_called(*a, **k):
         raise AssertionError("run_lanes should not run with no refs")
 
-    rc = G.cmd_pre_push(Path("/unused"), stdin_text="", git_run=lambda args: [], env={},
-                        parent_pid=1, run_lanes=fail_if_called)
+    rc = G.cmd_pre_push(Path("/unused"), stdin_text="", parent_pid=1, run_lanes=fail_if_called)
     assert rc == 0
 
 
-def test_cmd_pre_push_passes_through_a_forced_llm_decision_from_env():
+def test_cmd_pre_push_never_requests_the_llm_lane():
+    """pre-push dropped the LLM-lane trigger entirely (Ivan, 2026-10-05): it no longer looks at
+    touched paths or PFLEGE_GATE_LLM at all -- need_llm is unconditionally False, every time. The
+    LLM lane now only runs via pre-deploy."""
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid):
@@ -1122,7 +1207,104 @@ def test_cmd_pre_push_passes_through_a_forced_llm_decision_from_env():
 
     text = "refs/heads/a newa1111111111111111111111111111111111111 refs/heads/a " \
            "olda0000000000000000000000000000000000000\n"
-    G.cmd_pre_push(Path("/unused"), stdin_text=text, git_run=lambda args: ["docs/x.md"],
-                   env={"PFLEGE_GATE_LLM": "1"}, parent_pid=1, run_lanes=fake_run_lanes)
+    G.cmd_pre_push(Path("/unused"), stdin_text=text, parent_pid=1, run_lanes=fake_run_lanes)
+    assert seen["need_llm"] is False
+    assert "pre-deploy" in seen["reason"]
+
+
+# --- cmd_pre_deploy, with fakes -- the LLM lane's new home (Ivan, 2026-10-05) ------------------------
+
+def test_cmd_pre_deploy_runs_llm_lane_when_diff_touches_an_llm_relevant_path():
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        seen["sha"] = sha
+        seen["need_llm"] = need_llm
+        seen["label"] = label
+        return 0
+
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
+        env={}, git_run=lambda args: ["app/data.py"], parent_pid=1, run_lanes=fake_run_lanes,
+    )
+    assert rc == 0
+    assert seen["sha"] == "target1111111111111111111111111111111111"
     assert seen["need_llm"] is True
-    assert "forced" in seen["reason"]
+    assert seen["label"] == "pre-deploy"
+
+
+def test_cmd_pre_deploy_skips_llm_lane_when_diff_touches_nothing_llm_relevant():
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        seen["need_llm"] = need_llm
+        seen["reason"] = llm_reason
+        return 0
+
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
+        env={}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, run_lanes=fake_run_lanes,
+    )
+    assert rc == 0
+    assert seen["need_llm"] is False
+    assert "no LLM-relevant" in seen["reason"]
+
+
+def test_cmd_pre_deploy_env_force_run_still_works():
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        seen["need_llm"] = need_llm
+        return 0
+
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
+        env={"PFLEGE_GATE_LLM": "1"}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1,
+        run_lanes=fake_run_lanes,
+    )
+    assert rc == 0
+    assert seen["need_llm"] is True
+
+
+def test_cmd_pre_deploy_defaults_deployed_to_the_main_checkouts_head_when_omitted():
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        return 0
+
+    def fake_get_main_checkout_head(worktree):
+        seen["worktree"] = worktree
+        return "mainheadsha11111111111111111111111111111"
+
+    diffed = {}
+
+    def fake_git_run(args):
+        diffed["args"] = args
+        return []
+
+    rc = G.cmd_pre_deploy(
+        Path("/some/worktree"), "target1111111111111111111111111111111111", None,
+        env={}, git_run=fake_git_run, get_main_checkout_head=fake_get_main_checkout_head,
+        parent_pid=1, run_lanes=fake_run_lanes,
+    )
+    assert rc == 0
+    assert seen["worktree"] == Path("/some/worktree")
+    assert "mainheadsha11111111111111111111111111111" in diffed["args"]
+
+
+def test_cmd_pre_deploy_propagates_the_lane_runners_exit_code():
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
+        env={}, git_run=lambda args: [], parent_pid=1,
+        run_lanes=lambda *a, **k: 1,
+    )
+    assert rc == 1
+
+
+# --- _save_lane_log ----------------------------------------------------------------------------------
+
+def test_save_lane_log_writes_stdout_and_returns_the_path(tmp_path):
+    lane = G.LaneResult("offline", False, 1.2, 1, ["tests/x.py::t"], "some pytest output\n")
+    path = G._save_lane_log("deadbeef", lane, log_dir=tmp_path / "logs")
+    assert path == tmp_path / "logs" / "deadbeef-offline.log"
+    assert path.read_text() == "some pytest output\n"

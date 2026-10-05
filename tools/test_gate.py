@@ -1,15 +1,33 @@
 #!/usr/bin/env python3
 """tools/test_gate.py -- versioned git-hook test gate (2026-10-05, Ivan: "тесты гонять норм, можно
-прекомит хук").
+прекомит хук"), plus a `pre-deploy` CLI subcommand for the deploy pipeline (also 2026-10-05, Ivan:
+"run the LLM tests only before deploying, not on every push").
 
 Two hooks share this module: githooks/pre-commit (fast, skips when nothing staged can affect code)
-and githooks/pre-push (the deploy gate: tests the pushed commit itself in a scratch worktree, never
-the working tree). Both are thin shims -- see githooks/pre-commit and githooks/pre-push -- so the
-logic here is what gets versioned and tested (tests/test_test_gate.py). install_githooks.sh points
-core.hooksPath at this checkout's githooks/ by absolute path, and the shims exec whichever
+and githooks/pre-push (the FAST push gate: tests the pushed commit itself in a scratch worktree,
+never the working tree, offline WA lane only). Both are thin shims -- see githooks/pre-commit and
+githooks/pre-push -- so the logic here is what gets versioned and tested (tests/test_test_gate.py).
+install_githooks.sh points core.hooksPath at this checkout's githooks/ by absolute path, and the
+shims exec whichever
 tools/test_gate.py sits next to it -- so every linked worktree runs the SAME hooks file, and this
 script is told which worktree's content to test via --worktree (the index for pre-commit, the pushed
 sha's own scratch checkout for pre-push).
+
+The LLM lane (Luna persona/e2e + CV classification, 73 tests, ~44 min of real Opus calls) does NOT
+run on pre-push any more. Until 2026-10-05 it did, whenever the pushed range touched an LLM-relevant
+path -- Ivan found that too slow for every push ("run the LLM tests only before deploying, not on
+every push") and a failed 44-minute run's output was being thrown away with the scratch dir on top of
+that, forcing a blind rerun. Both are fixed by moving the LLM lane to a separate `pre-deploy`
+subcommand, run by hand or by the deploy pipeline, never by a git hook: `tools/test_gate.py
+pre-deploy --target <sha> [--deployed <sha>]` (deployed defaults to the MAIN checkout's HEAD, via
+main_checkout_root -- never this invocation's own worktree, which may be a dev worktree like this
+one). pre-deploy diffs deployed..target the same way pre-push used to diff a push's old..new sha,
+runs the offline lane always, and the LLM lane only when that diff touches LLM_RELEVANT_PREFIXES (or
+PFLEGE_GATE_LLM=1/0 overrides it) -- same llm_lane_decision/touches_llm_paths logic, same stamps under
+~/.local/state/pflege-gate/. Either command, on a lane failure, now also saves that lane's full stdout
+to ~/.local/state/pflege-gate/logs/<sha>-<lane>.log (never swept, unlike the /dev/shm scratch dirs
+below) and prints the path, so a failed LLM lane's output survives to be read instead of re-spending
+the ~44 minutes just to see it again.
 
 Measured 2026-10-05 on this box, offline WA lane set (tests/test_wa_*.py tests/test_bridge_*.py
 tests/test_app_wa_proxy.py tests/test_auth.py tests/test_app_api.py, -m "not llm and not network"):
@@ -46,7 +64,8 @@ ScratchWorktree (pre-push's checkout of the pushed sha) gets the same treatment 
 
 Design: all IO (subprocess, filesystem, time) is behind small injectable seams so
 tests/test_test_gate.py can exercise the decision logic -- path classification, the LLM trigger,
-stamp handling, pre-push sha-range computation, the scratch worktree and lane orchestration -- without
+stamp handling, pre-push/pre-deploy sha-range computation, the scratch worktree and lane
+orchestration -- without
 depending on a particular live pytest/git outcome where a fake will do (ScratchWorktree and the index
 materialization are still exercised against a real throwaway git repo under /dev/shm, since that is
 what they wrap). CLAUDE.md "No safety nets": every failure below is loud (non-zero exit, printed test
@@ -126,7 +145,7 @@ LLM_LANE_FILES = (
     "tests/test_wa_luna_personas.py",
 )
 
-# Paths whose change should pull in the LLM lane on pre-push (prefixes, matched against repo-root-
+# Paths whose change should pull in the LLM lane on pre-deploy (prefixes, matched against repo-root-
 # relative git paths with "/" separators). Opus review m2: the e2e funnel (traced by actually
 # importing tests/test_wa_luna_e2e_funnel.py and diffing sys.modules, 2026-10-05) drives
 # app/wa/api.py (document ingestion onto the card), app/wa/slots.py and app/wa/store.py (the slot
@@ -157,6 +176,11 @@ LLM_RELEVANT_PREFIXES = (
 CLAUDE_OAUTH_TOKEN_FILE = Path.home() / ".config" / "pflege-ci" / "claude-oauth-token"
 
 STAMP_DIR = Path.home() / ".local" / "state" / "pflege-gate"
+
+# A failed lane's full stdout, kept here (never under /dev/shm, never swept) so it survives past the
+# run that produced it -- a failed LLM lane used to lose its only copy of the output when its scratch
+# dir was removed, costing a ~44-minute rerun just to see it again (Ivan, 2026-10-05).
+LOG_DIR = STAMP_DIR / "logs"
 
 # Everything this gate ever writes to /dev/shm (lane basetemps, pre-commit's materialized index tree,
 # pre-push's scratch worktrees) lives under one root so a single sweep at hook start can find and
@@ -384,6 +408,35 @@ def determine_changed_paths(ref: RefUpdate, git_run: GitRun) -> tuple[set[str] |
 def real_git_run(args: Sequence[str], cwd: Path = REPO_ROOT) -> list[str]:
     proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
     return proc.stdout.splitlines()
+
+
+# --------------------------------------------------------------------------------------------------
+# Pre-deploy: finding "the main checkout" from any worktree.
+
+def main_checkout_root(worktree: Path) -> Path:
+    """The MAIN checkout's root directory -- never `worktree` itself when `worktree` is a linked
+    worktree (e.g. a dev worktree like this one) -- derived exactly the way githooks/pre-commit and
+    githooks/pre-push derive it in shell: `dirname -- "$(git rev-parse --path-format=absolute
+    --git-common-dir)")`. git's common dir is shared by every worktree and always lives inside the
+    main checkout's own .git, so this resolves correctly whether `worktree` IS the main checkout (its
+    .git IS the common dir) or a linked worktree (whose .git file points at
+    <main>/.git/worktrees/<name>, and --git-common-dir follows that back to <main>/.git). Never
+    hardcoded, so this keeps working if the main checkout ever moves."""
+    out = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=worktree, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return Path(out).parent
+
+
+def main_checkout_head(worktree: Path) -> str:
+    """HEAD of the MAIN checkout (see main_checkout_root), for pre-deploy's `--deployed` default: the
+    sha currently live is whatever the main checkout -- the one production actually runs from -- is
+    sitting on, not this invocation's own (possibly unrelated) worktree."""
+    main_checkout = main_checkout_root(worktree)
+    out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=main_checkout,
+                          capture_output=True, text=True, check=True).stdout.strip()
+    return out
 
 
 # --------------------------------------------------------------------------------------------------
@@ -712,27 +765,44 @@ def cmd_pre_commit(worktree: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------------------
-# CLI: pre-push.
+# A failed lane's full stdout, saved somewhere that outlives this run's scratch cleanup.
+
+def _save_lane_log(sha: str, lane: LaneResult, *, log_dir: Path = LOG_DIR) -> Path:
+    """Write `lane`'s full stdout to <log_dir>/<sha>-<lane.name>.log and return the path. Called only
+    for a FAILED lane -- a passed lane's output is uninteresting and the stamp already records the
+    pass. Unlike the /dev/shm scratch dirs, log_dir is never swept by anything in this module, so the
+    file is still there after the run (and its ScratchWorktree/basetemp) is gone."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / f"{sha}-{lane.name}.log"
+    path.write_text(lane.stdout)
+    return path
+
+
+# --------------------------------------------------------------------------------------------------
+# CLI: pre-push and pre-deploy share this lane runner (and its stamps). `label` is only cosmetic
+# (which command's name prefixes the printed lines); the decision logic is identical either way.
 
 def _run_lanes_for_sha(
     sha: str, need_llm: bool, llm_reason: str, *,
     parent_pid: int | None = None,
     stamp_dir: Path = STAMP_DIR,
+    log_dir: Path = LOG_DIR,
     scratch_factory: Callable[[str], "object"] = ScratchWorktree,
     offline_lane: Callable[..., LaneResult] = run_offline_lane,
     llm_lane: Callable[..., LaneResult] = run_llm_lane,
+    label: str = "pre-push",
 ) -> int:
     pid = parent_pid if parent_pid is not None else os.getppid()
     stamp = read_stamp(sha, stamp_dir=stamp_dir)
     if stamp_covers(stamp, need_llm):
         lanes = ", ".join(sorted(stamp.get("lanes", {})))
-        print(f"pre-push: {sha[:12]} already verified (stamped lanes: {lanes}) -- not re-running")
+        print(f"{label}: {sha[:12]} already verified (stamped lanes: {lanes}) -- not re-running")
         return 0
     if stamp_failed_this_push(stamp, pid):
         # Opus review m4: git already ran this hook once for this sha against the OTHER push URL in
         # this same `git push`, and it failed -- the push is rejected either way, so don't spend the
         # offline lane (or, worse, real LLM tokens) running it all again for nothing.
-        print(f"pre-push: {sha[:12]} already FAILED earlier in this push (pid {pid}) -- "
+        print(f"{label}: {sha[:12]} already FAILED earlier in this push (pid {pid}) -- "
               "not re-running; fix and push again")
         return 1
 
@@ -741,33 +811,37 @@ def _run_lanes_for_sha(
 
     with scratch_factory(sha) as scratch:
         offline = offline_lane(scratch, fail_fast=False)
-        print(f"pre-push: offline lane {'passed' if offline.passed else 'FAILED'} "
+        print(f"{label}: offline lane {'passed' if offline.passed else 'FAILED'} "
               f"({offline.duration_s:.1f}s)")
         lanes_result["offline"] = {"passed": offline.passed, "duration_s": offline.duration_s}
 
         llm_skip_reason: str | None = None
         if not offline.passed:
             overall_ok = False
-            print("pre-push: failing test(s):")
+            print(f"{label}: failing test(s):")
             for test_id in offline.failing_tests:
                 print(f"  {test_id}")
+            log_path = _save_lane_log(sha, offline, log_dir=log_dir)
+            print(f"{label}: full offline lane output saved to {log_path}")
             if need_llm:
                 llm_skip_reason = "offline lane failed"  # m4: never spend the LLM lane on a dead push
         elif need_llm:
-            print(f"pre-push: LLM lane triggered -- {llm_reason}")
+            print(f"{label}: LLM lane triggered -- {llm_reason}")
             llm = llm_lane(scratch)
-            print(f"pre-push: llm lane {'passed' if llm.passed else 'FAILED'} ({llm.duration_s:.1f}s)")
+            print(f"{label}: llm lane {'passed' if llm.passed else 'FAILED'} ({llm.duration_s:.1f}s)")
             lanes_result["llm"] = {"passed": llm.passed, "duration_s": llm.duration_s}
             if not llm.passed:
                 overall_ok = False
-                print("pre-push: failing test(s):")
+                print(f"{label}: failing test(s):")
                 for test_id in llm.failing_tests:
                     print(f"  {test_id}")
+                log_path = _save_lane_log(sha, llm, log_dir=log_dir)
+                print(f"{label}: full llm lane output saved to {log_path}")
         else:
             llm_skip_reason = llm_reason
 
         if llm_skip_reason is not None:
-            print(f"pre-push: LLM lane SKIPPED -- {llm_skip_reason}")
+            print(f"{label}: LLM lane SKIPPED -- {llm_skip_reason}")
 
     if overall_ok:
         write_stamp(sha, lanes_result, stamp_dir=stamp_dir)
@@ -776,11 +850,14 @@ def _run_lanes_for_sha(
     return 0 if overall_ok else 1
 
 
+# --------------------------------------------------------------------------------------------------
+# CLI: pre-push -- the FAST push gate. Offline lane only, always: the LLM lane moved to pre-deploy
+# below (Ivan, 2026-10-05), so neither a touched LLM-relevant path nor PFLEGE_GATE_LLM=1 has any
+# effect here any more -- that override now only does something on pre-deploy.
+
 def cmd_pre_push(
     worktree: Path, *,
     stdin_text: str | None = None,
-    git_run: GitRun | None = None,
-    env: dict | None = None,
     parent_pid: int | None = None,
     run_lanes: Callable[..., int] = _run_lanes_for_sha,
 ) -> int:
@@ -790,26 +867,59 @@ def cmd_pre_push(
         print("pre-push: no refs on stdin, nothing to test")
         return 0
 
-    if git_run is None:
-        def git_run(args: Sequence[str]) -> list[str]:
-            return real_git_run(args, cwd=worktree)
-
-    env = env if env is not None else os.environ
     pid = parent_pid if parent_pid is not None else os.getppid()
+    llm_reason = "pre-push never runs the LLM lane -- it moved to pre-deploy (Ivan, 2026-10-05)"
 
     for ref in updates:
         if is_delete(ref):
             print(f"pre-push: {ref.remote_ref} is a delete -- skipping")
             continue
-        changed, reason = determine_changed_paths(ref, git_run)
-        need_llm, llm_reason = llm_lane_decision(changed, env)
-        rc = run_lanes(ref.local_sha, need_llm, llm_reason, parent_pid=pid)
+        rc = run_lanes(ref.local_sha, False, llm_reason, parent_pid=pid)
         if rc:
-            # The push is rejected as a whole; testing the remaining refs (and spending the LLM lane on
-            # them) cannot change that.
+            # The push is rejected as a whole; testing the remaining refs cannot change that.
             print(f"pre-push: {ref.local_ref} failed -- not testing the remaining refs of this push")
             return rc
     return 0
+
+
+# --------------------------------------------------------------------------------------------------
+# CLI: pre-deploy -- the DEPLOY gate. Always the offline lane; the LLM lane too when deployed..target
+# touches an LLM-relevant path (same trigger pre-push used to apply on every push, moved here instead
+# -- Ivan, 2026-10-05: "run the LLM tests only before deploying, not on every push"). Run by hand or
+# by the deploy pipeline -- never by a git hook, so there is no stdin to parse and no push-URL
+# double-firing to dedupe; the parent-pid fail-stamp dedup in _run_lanes_for_sha still applies
+# harmlessly (a second pre-deploy invocation with a different pid just re-runs, which is correct).
+
+def cmd_pre_deploy(
+    worktree: Path, target: str, deployed: str | None = None, *,
+    env: dict | None = None,
+    git_run: GitRun | None = None,
+    get_main_checkout_head: Callable[[Path], str] = main_checkout_head,
+    parent_pid: int | None = None,
+    run_lanes: Callable[..., int] = _run_lanes_for_sha,
+) -> int:
+    env = env if env is not None else os.environ
+    if git_run is None:
+        def git_run(args: Sequence[str]) -> list[str]:
+            return real_git_run(args, cwd=worktree)
+
+    if deployed is None:
+        deployed = get_main_checkout_head(worktree)
+        print(f"pre-deploy: --deployed not given -- using the main checkout's HEAD {deployed[:12]}")
+
+    # Reuses determine_changed_paths (same function pre-push used to call for its own old..new sha
+    # range) via a synthetic ref: deployed -> target is an ordinary update as far as that function is
+    # concerned (is_new_branch is false whenever `deployed` is a real, non-zero sha, which it always
+    # is here -- either given explicitly or read as the main checkout's own HEAD).
+    synthetic_ref = RefUpdate("pre-deploy-target", target, "pre-deploy-deployed", deployed)
+    paths, path_reason = determine_changed_paths(synthetic_ref, git_run)
+    need_llm, llm_reason = llm_lane_decision(paths, env)
+    n_paths = "unknown" if paths is None else str(len(paths))
+    print(f"pre-deploy: testing {target[:12]} against deployed {deployed[:12]} "
+          f"({n_paths} changed path(s), {path_reason})")
+
+    pid = parent_pid if parent_pid is not None else os.getpid()
+    return run_lanes(target, need_llm, llm_reason, parent_pid=pid, label="pre-deploy")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -818,11 +928,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="test_gate.py")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("pre-commit", "pre-push"):
+    for name in ("pre-commit", "pre-push", "pre-deploy"):
         p = sub.add_parser(name)
         p.add_argument("--worktree", type=Path, default=REPO_ROOT,
                         help="the worktree whose content to test (passed by the shim as the one git "
                              "invoked the hook for -- defaults to this checkout when omitted)")
+        if name == "pre-deploy":
+            p.add_argument("--target", required=True,
+                            help="the sha about to be deployed -- tested in a scratch worktree")
+            p.add_argument("--deployed", default=None,
+                            help="the sha currently deployed (default: the MAIN checkout's HEAD, via "
+                                 "main_checkout_root)")
     args = parser.parse_args(argv)
 
     _cleanup_dead_run_dirs()
@@ -831,6 +947,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "pre-push":
         _cleanup_dead_scratch_worktrees()
         return cmd_pre_push(args.worktree)
+    if args.command == "pre-deploy":
+        _cleanup_dead_scratch_worktrees()
+        return cmd_pre_deploy(args.worktree, args.target, args.deployed)
     parser.error(f"unknown command {args.command!r}")
     return 2
 
