@@ -15,8 +15,10 @@ Commands:
                              CONFIG): it appends stop and skip to the campaigns' root-owned ledgers. Every
                              poll_seconds it stamps the heartbeat, reads the operators' new mail, acts on stop, skip
                              and status at once and answers everything else from a worker thread, one mail at a
-                             time. Any error ends the desk after a mail to the operators; the batches halt by
-                             themselves once the heartbeat is older than their limit.
+                             time. A second thread sends the letters that clinics' redirects made (clinic_mailer.py
+                             redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. Any
+                             other error ends the desk after a mail to the operators; the batches halt by themselves
+                             once the heartbeat is older than their limit.
   ask CONFIG TEXT [--from A] one question to Daria without mail; the answer is printed, nothing is sent.
   route CONFIG               the active batches and their operator threads, for a look.
 
@@ -490,6 +492,14 @@ def redirect_letters(d, box):
             M.smtp_send(box, m)
 
 
+def redirect_worker(d, box):
+    """Its own thread: a redirect letter waits for an odd minute and a batch pauses between letters, and the main loop must
+    keep stamping the heartbeat and reading the operators' mail meanwhile. Dies only with the desk; the main loop checks it."""
+    while True:
+        redirect_letters(d, box)
+        time.sleep(d["poll_seconds"])
+
+
 def handled(d):
     """Message-IDs the desk or a batch already answered."""
     seen = {e["message_id"] for e in read_ledger(d) if e["event"] == "mail"}
@@ -553,6 +563,8 @@ def _run(d):
         jobs.put(mail)
     worker = threading.Thread(target=answer_worker, args=(d, box, jobs), daemon=True)
     worker.start()
+    redirects = threading.Thread(target=redirect_worker, args=(d, box), daemon=True)
+    redirects.start()
     log(d, {"event": "desk_started", "pid": os.getpid(), "since": since.isoformat(timespec="seconds"), "requeued": len(left)})
     print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, mail since {since:%Y-%m-%d %H:%M}, "
           f"{len(active(d))} active batches, {len(left)} questions still to answer")
@@ -563,11 +575,12 @@ def _run(d):
             stamp(d, since)
             if not worker.is_alive():
                 raise M.MailerError("the answer worker died")
+            if not redirects.is_alive():
+                raise M.MailerError("the redirect worker died")
             seen = handled(d)
             for folder, msg, mid, frm in operator_mail(d, since, seen):
                 handle(d, box, jobs, folder, msg, mid, frm)
             status_check(d, box)
-            redirect_letters(d, box)
             if digest_due(d, t0):
                 answers = M.digest([c["cfg"] for c in d["campaigns"]], box)
                 log(d, {"event": "digest", "date": f"{t0:%Y-%m-%d}", "answers": answers})
