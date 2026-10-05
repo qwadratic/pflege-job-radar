@@ -38,10 +38,10 @@ def _declared_total(board_id):
 
 
 def _shell_title(board_id):
-    """The <title> every page under jobs.sana.de shows: the SPA shell's, as recorded."""
+    """The <title> every page of the site (/sites/CX_...) shows: the SPA shell's, as recorded. (Not the host's 404 page, which the jobs.feed.json probe lands on.)"""
     store = M.Store.load_shared(board_id)
     for r in store.rows():
-        if r.status == 200 and r.body_sha and urlparse(r.url).hostname == "jobs.sana.de":
+        if r.status == 200 and r.body_sha and urlparse(r.url).hostname == "jobs.sana.de" and "/sites/CX_" in r.url:
             m = re.search(r"<title>([^<]*)</title>", store.body(r.body_sha).decode("utf-8", "replace"))
             if m:
                 return m.group(1).strip()
