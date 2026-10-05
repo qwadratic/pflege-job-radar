@@ -15,6 +15,7 @@ through since this very fix pass, so there is no live code path left that could 
 import os
 import pathlib
 import sqlite3
+import sys
 import subprocess
 import threading
 import time
@@ -31,10 +32,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]   # this worktree -- PYTHONPA
                                                        # subprocess below must resolve `app.wa` to
                                                        # THIS worktree's own edited copy, never the
                                                        # main checkout's
-# The main checkout's venv (no worktree carries its own, see "Worktree base check" /
-# "Mini deploy = git push" conventions) -- the interpreter only; PYTHONPATH below still points at
-# ROOT so `import app.wa...` resolves to this worktree's own files, not the main checkout's.
-REAL_VENV_PY = os.path.realpath("/home/claude/repo/pflege-board/.venv/bin/python")
+# The interpreter running this test (the venv's locally, the runner's own on CI); PYTHONPATH below
+# points at ROOT so `import app.wa...` resolves to this checkout's own files.
+REAL_VENV_PY = sys.executable
 # Same six vars the project's own standing rule requires every ad-hoc script to scrub before it
 # can touch a real db() -- belt and suspenders on top of whatever the invoking shell already did,
 # since the multiprocess test below launches real `python -c` child processes of its own.
