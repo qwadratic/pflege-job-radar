@@ -470,6 +470,26 @@ def status_check(d, box):
             M.notify(cfg, box, json.loads((cfg["batches"] / f"{bid}.json").read_text()), "halt", title, text, halt_ts=halt["ts"])
 
 
+def redirect_letters(d, box):
+    """Send the letters that clinics' redirects made (Ivan, 2026-10-05: the classifier writes the table entry and the letter
+    goes too), for every campaign. The first one goes in the next send window; a failure is written to the desk ledger and
+    mailed to the notify list, once, because the mailer tries every (recipient, step) once. It does not stop the desk: the
+    operators' mail goes on being read."""
+    for c in d["campaigns"]:
+        cfg = c["cfg"]
+        try:
+            bid = M.redirect_letters(cfg)
+            if bid:
+                log(d, {"event": "redirect_letters", "campaign": cfg["campaign"], "batch_id": bid})
+        except Exception as e:
+            reason = str(e) or type(e).__name__
+            log(d, {"event": "redirect_error", "campaign": cfg["campaign"], "reason": reason, "trace": traceback.format_exc()[-2000:]})
+            m = M.operator_mail(d, {"operators": d["notify"]}, f"Письмо на новый адрес не ушло: {c['label']}",
+                                M.Doc(f"{c['label']}: письмо клинике на адрес из её ответа не ушло.", f"Ошибка: {reason}",
+                                      "Повторно это письмо не отправляется, пока вы не решите. Что уже ушло, видно в журнале волны.", "Daria"))
+            M.smtp_send(box, m)
+
+
 def handled(d):
     """Message-IDs the desk or a batch already answered."""
     seen = {e["message_id"] for e in read_ledger(d) if e["event"] == "mail"}
@@ -547,6 +567,7 @@ def _run(d):
             for folder, msg, mid, frm in operator_mail(d, since, seen):
                 handle(d, box, jobs, folder, msg, mid, frm)
             status_check(d, box)
+            redirect_letters(d, box)
             if digest_due(d, t0):
                 answers = M.digest([c["cfg"] for c in d["campaigns"]], box)
                 log(d, {"event": "digest", "date": f"{t0:%Y-%m-%d}", "answers": answers})

@@ -574,3 +574,22 @@ def test_the_answer_config_tells_the_tools_who_asked_and_what_exists(desk, tmp_p
     assert env["DARIA_DESK_CONFIG"] == str(desk.d["_path"]) and env["HOME"] == "/home/claude"
     jobs = json.loads(path.read_text())["mcpServers"]["jobs"]["env"]
     assert jobs["SUPABASE_URL"] == "http://127.0.0.1:9" and jobs["SUPABASE_ANON_KEY"] == "test"
+
+
+def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_desk(desk, monkeypatch):
+    """Ivan, 2026-10-05: the desk sends the letters that clinic redirects made; one wave failing must not stop the other
+    or the reading of the operators' mail."""
+    calls = []
+
+    def redirect_letters(cfg):
+        calls.append(cfg["campaign"])
+        if cfg["campaign"] == "w2":
+            raise M.MailerError("SMTP refused ['pa@x.de']")
+        return "w1-20261002-0930"
+    monkeypatch.setattr(M, "redirect_letters", redirect_letters)
+    D.redirect_letters(desk.d, {})
+    assert calls == ["w1", "w2"]
+    ev = [e for e in D.read_ledger(desk.d) if e["event"] in ("redirect_letters", "redirect_error")]
+    assert [(e["event"], e["campaign"]) for e in ev] == [("redirect_letters", "w1"), ("redirect_error", "w2")] and "SMTP refused" in ev[1]["reason"]
+    (m,) = desk.sent
+    assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.de']" in plain(m)

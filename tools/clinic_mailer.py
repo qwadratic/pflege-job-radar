@@ -94,6 +94,15 @@ in the inbound event and in the operators' daily digest. A replace_with entry al
 send time routed() swaps the addresses (Ivan, 2026-10-05); the approval covers the planned ones, the "sent" event keeps
 both (to, planned_to). A blocking entry is only read by plan, not at send time.
 
+Redirect letters (Ivan, 2026-10-05: the classifier writes the entry and the letter goes too): a redirect to an address
+no letter of the campaign went to makes a new recipient, "<old id>r<n>" with "redirect_of" (redirect_letter: same clinic,
+files and cadence, To the new address, a general greeting, no Cc) and ends the old recipient's sequence ("redirected" in the
+ledger). The desk calls redirect_letters on every poll: in the send window, on an odd minute, it plans that recipient's due
+step as a batch of its own, renames its pending approval itself and sends it live, the first letter at once, the follow-ups
+as the cadence says, each in the thread of the recipient's own first letter. Every (recipient, step) is tried once, a
+"redirect_attempt" event first; a failure is raised, written to the desk ledger and mailed to the notify list. A wave's
+plan leaves these recipients to the desk. `redirect CONFIG ID ADDRESS...` makes the recipient by hand.
+
 Letters: every message has a plain-text part and an HTML part rendered from the same template. A recipient's
 "html_vars" replace placeholders in the HTML part only (links); "vars" fill both. Config "signature" is appended
 to every step: its "text" to the plain part, its "image" (inline, by Content-ID) to the HTML part, or the text
@@ -290,7 +299,8 @@ def add_after(cfg, t, after):
 def recipient_state(cfg, rid, ledger):
     """Return (sent events in step order, stop event or None) for one recipient."""
     sent = [e for e in ledger if e["event"] == "sent" and e["recipient_id"] == rid]
-    stop = next((e for e in ledger if e["event"] == "inbound" and e.get("recipient_id") == rid and e["kind"] in cfg["stop_on"]), None)
+    stop = next((e for e in ledger if e.get("recipient_id") == rid
+                 and (e["event"] == "redirected" or (e["event"] == "inbound" and e["kind"] in cfg["stop_on"]))), None)
     order = {s["step"]: i for i, s in enumerate(cfg["cadence"])}
     return sorted(sent, key=lambda e: order[e["step"]]), stop
 
@@ -491,6 +501,9 @@ def plan(cfg, now, only=None, announce_at=None, start_at=None):
     items, report = [], []
     for k, rec in enumerate(recipients):
         if only and rec["id"] not in only:
+            continue
+        if rec.get("redirect_of") and not only:             # sent by redirect_letters, a wave's rounds would double it
+            report.append(f"-  {rec['id']} {rec['clinic']}: redirect letter, sent by redirect_letters")
             continue
         i, due = next_due(cfg, rec, ledger)
         if i is None:
@@ -828,7 +841,7 @@ def _send(cfg, batch_id, live, watch_inbox):
             raise MailerError("--no-watch does not apply to a scheduled batch: it reads the operators' stop commands from the inbox")
         return send_scheduled(cfg, batch, live)
     box = mailbox(cfg["sender"])
-    started = datetime.now(cfg["tz"]).isoformat(timespec="seconds")
+    started = now_in(cfg).isoformat(timespec="seconds")
     if watch_inbox:
         check_inbox(cfg, box)
         watch(cfg, box)               # replies since the last run take their senders out of this batch before anything goes
@@ -845,7 +858,7 @@ def _send(cfg, batch_id, live, watch_inbox):
         if stop:
             print(f"skip {it['recipient_id']} {it['step']}: {stop['kind']} arrived after planning")
             continue
-        now = datetime.now(cfg["tz"])
+        now = now_in(cfg)
         if not in_window(cfg, now):
             raise MailerError(f"outside the send window at {now:%a %Y-%m-%d %H:%M}; {len(batch['items']) - n} left, rerun send inside the window")
         try:
@@ -859,14 +872,14 @@ def _send(cfg, batch_id, live, watch_inbox):
                                  "recipient_id": it["recipient_id"], "clinic": it["clinic"], "step": it["step"],
                                  "to": out["to"], "cc": out["cc"], **{k: out[k] for k in ("planned_to", "planned_cc") if k in out},
                                  "real_to": it.get("real_to"), "message_id": msg["Message-ID"],
-                                 "subject": it["subject"], "sha256": it["sha256"], "sent_at": datetime.now(cfg["tz"]).isoformat(timespec="seconds"),
+                                 "subject": it["subject"], "sha256": it["sha256"], "sent_at": now_in(cfg).isoformat(timespec="seconds"),
                                  "smtp_refused": {k: [v[0], v[1].decode("utf-8", "replace")] for k, v in refused.items()}})
         print(f"sent {n + 1}/{len(batch['items'])} {it['recipient_id']} {it['step']} to {', '.join(out['to'])} {ev['message_id']}"
               + (f" (planned {', '.join(it['to'])}: changed by the do-not-contact table or a suppression list)" if "planned_to" in out else ""))
         if refused:
             raise MailerError(f"HALT: SMTP refused {sorted(refused)}")
         if n + 1 < len(batch["items"]):
-            time.sleep(random.uniform(*cfg["pause_seconds"]))
+            sleep(random.uniform(*cfg["pause_seconds"]))
         if not watch_inbox:
             continue
         watch(cfg, box)
@@ -913,7 +926,7 @@ def reported(ledger, bid, rnd):
 
 
 STOP_RU = {"reply": "клиника ответила", "stop": "клиника просит больше не писать", "bounce": "недоставка (bounce)",
-           "complaint": "жалоба на спам"}
+           "complaint": "жалоба на спам", "redirected": "клиника просит писать на другой адрес, письмо ушло туда"}
 
 
 def item_states(cfg, batch, ledger=None, ignore_halt=False):
@@ -1595,13 +1608,14 @@ def table_add(cfg, entry):
     return True
 
 
-def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic):
+def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic, rid=None):
     """Do by itself what the pattern asks (Ivan, 2026-10-05) and return what it did as [{"ru": ..., ...}] for the operators.
     redirect and out_of_office with a substitute: the substitute becomes the main recipient and the sender's address is
     muted (a do-not-contact entry with replace_with, reason "redirect"); names alone count when they are one of our
     addresses. opt_out: a blocking entry for the addresses named (the sender's when none is), for every address of the
     clinic when the mail says the whole clinic. terms_request, out_of_office without a substitute and other change
-    nothing. No letter goes out."""
+    nothing. A redirect also makes the letter for the new address (redirect_letter; Ivan, 2026-10-05: the classifier
+    writes the entry and the letter goes too); nothing else sends anything."""
     pattern = ans["pattern"]
     entry = {"clinic": clinic or "—", "by": f"{frm}, out-of-office auto-reply" if automatic else frm,
              "date": received.strftime("%Y-%m-%d"), "why": f"Answer {subject!r} read {received:%d.%m.%Y %H:%M}: '{ans['quote']}'"}
@@ -1615,9 +1629,13 @@ def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic):
         if frm not in {a.lower() for a in ours}:
             return [{"ru": f"таблица не менялась: {frm} не один из адресов, на которые мы писали этой клинике"}]
         added = table_add(cfg, {"match": frm, "replace_with": targets, **entry, "reason": "redirect"})
-        return [{"do": "redirect", "match": frm, "replace_with": targets, "added": added,
-                 "ru": (f"записал в таблицу: писать на {', '.join(targets)}, адрес {frm} приглушён (перенаправление)" if added
-                        else f"в таблице уже есть запись для {frm}, ничего не менял")}]
+        out = [{"do": "redirect", "match": frm, "replace_with": targets, "added": added,
+                "ru": (f"записал в таблицу: писать на {', '.join(targets)}, адрес {frm} приглушён (перенаправление)" if added
+                       else f"в таблице уже есть запись для {frm}, ничего не менял")}]
+        if rid:
+            letter = redirect_letter(cfg, rid, targets)
+            out.append({"do": "redirect_letter", "recipient": letter["id"], "to": letter["to"], "ru": letter["ru"]})
+        return out
     if pattern == "opt_out":
         matches = ans["addresses"] or [frm]
         if ans["scope"] == "clinic":
@@ -1629,6 +1647,86 @@ def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic):
                         "ru": f"записал в таблицу: не писать на {a}" if added else f"в таблице уже есть запись для {a}, ничего не менял"})
         return out
     return []
+
+
+REDIRECT_GREETING = "Sehr geehrte Damen und Herren"
+
+
+def redirect_letter(cfg, rid, targets):
+    """Make a recipient for the address a clinic's answer sends us to (Ivan, 2026-10-05: the classifier writes the entry
+    and the letter goes too): the same clinic, files and cadence as recipient `rid`, To the targets, no Cc, a general
+    greeting because the old one named another person, its own sequence from the first step on, in a thread of its own.
+    The old recipient's sequence ends (a "redirected" event). Returns {"id", "to", "ru"}; "id" is None when no letter is
+    made: every target already got a letter of this campaign (a Cc, a colleague), or a suppression list names it, or this
+    answer was acted on before (the recipient exists; a "redirected" event missing from an interrupted run is written now).
+    redirect_letters sends it."""
+    ledger = read_ledger(cfg)
+    asked = [a for a in targets if a.lower() not in {x.lower() for e in ledger if e["event"] == "sent" for x in e["to"] + e["cc"]}]
+    if not asked:
+        return {"id": None, "to": [], "ru": "нового письма нет: на этот адрес мы уже писали"}
+    blocked = suppressed(cfg, asked)
+    if blocked:
+        return {"id": None, "to": [], "ru": f"нового письма нет: адрес в списке блокировки: {', '.join(sorted(blocked))}"}
+    with open(cfg["recipients"].with_name(cfg["recipients"].name + ".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        rows = json.loads(cfg["recipients"].read_text())
+        old = next((r for r in rows if r["id"] == rid), None)
+        if not old:
+            raise MailerError(f"redirect: no recipient {rid} in {cfg['recipients']}")
+        root = old.get("redirect_of", old["id"])
+        made = next((r for r in rows if r.get("redirect_of") == root and {a.lower() for a in r["to"]} == {a.lower() for a in asked}), None)
+        if not made:
+            made = {**old, "id": f"{root}r{1 + sum(r.get('redirect_of') == root for r in rows)}", "to": asked, "cc": [],
+                    "vars": {**old["vars"], "ANREDE": REDIRECT_GREETING}, "redirect_of": root}
+            tmp = cfg["recipients"].with_name(cfg["recipients"].name + ".tmp")
+            tmp.write_text(json.dumps(rows + [made], ensure_ascii=False, indent=1) + "\n")
+            st = cfg["recipients"].stat()
+            os.chmod(tmp, st.st_mode & 0o7777)
+            if os.geteuid() == 0:
+                os.chown(tmp, st.st_uid, st.st_gid)
+            tmp.replace(cfg["recipients"])
+            fresh = True
+        else:
+            fresh = False
+    if not any(e["event"] == "redirected" and e["to_recipient"] == made["id"] for e in ledger):
+        append_ledger(cfg, {"event": "redirected", "kind": "redirected", "recipient_id": rid, "to_recipient": made["id"], "targets": asked})
+    if not fresh:
+        return {"id": None, "to": [], "ru": f"для этого перенаправления получатель {made['id']} уже сделан, ничего не менял"}
+    w = cfg["window"]
+    return {"id": made["id"], "to": asked,
+            "ru": (f"сделал получателя {made['id']}: первое письмо на {', '.join(asked)} уйдёт в ближайшее окно отправки "
+                   f"({w['from']}-{w['to']}, будни), дальше по каденции; последовательность старого адреса закрыта")}
+
+
+def redirect_letters(cfg):
+    """Send what is due for the recipients redirect_letter made, in the send window and on an odd minute: the step the
+    cadence says, as a batch of its own that plan writes, an approval that this call renames itself (Ivan, 2026-10-05: no
+    go-ahead per letter), and send --live with the inbox watched. Every (recipient, step) is tried once: a "redirect_attempt"
+    event is written before anything else, so a failure at any point is raised and recorded and does not repeat on the next
+    call. Returns the batch id, or None when nothing is due."""
+    rows = [r for r in json.loads(cfg["recipients"].read_text()) if r.get("redirect_of")]
+    now = now_in(cfg)
+    if not rows or not in_window(cfg, now):
+        return None
+    ledger, due = read_ledger(cfg), []
+    for rec in rows:
+        i, when_due = next_due(cfg, rec, ledger)
+        if i is None or (when_due and now < when_due):
+            continue
+        if not any(e["event"] == "redirect_attempt" and e["recipient_id"] == rec["id"] and e["step"] == cfg["cadence"][i]["step"] for e in ledger):
+            due.append((rec["id"], cfg["cadence"][i]["step"]))
+    if not due:
+        return None
+    for rid, step in due:
+        append_ledger(cfg, {"event": "redirect_attempt", "recipient_id": rid, "step": step})
+    while not odd_minute(t := now_in(cfg)):
+        sleep(60 - t.second - t.microsecond / 1e6 + random.uniform(1, 20))
+    bid, report = plan(cfg, now_in(cfg), only=[rid for rid, _ in due])
+    if not bid:
+        raise MailerError("the redirect letters were not planned: " + "; ".join(report))
+    (cfg["approvals"] / f"{bid}.pending.json").rename(cfg["approvals"] / f"{bid}.json")
+    send(cfg, bid, live=True)
+    return bid
 
 
 def pattern_ru(ans):
@@ -1792,7 +1890,7 @@ def _watch(cfg, box):
             clinic = next((e.get("clinic") for e in sent if e["recipient_id"] == rid), None)
             try:
                 ans = classify_answer(cfg, raw, frm, clinic, ours, kind == "auto_reply")
-                actions = act_on_answer(cfg, ans, frm, clinic, ours, " ".join(str(msg.get("Subject", "")).split()), now_in(cfg), kind == "auto_reply")
+                actions = act_on_answer(cfg, ans, frm, clinic, ours, " ".join(str(msg.get("Subject", "")).split()), now_in(cfg), kind == "auto_reply", rid)
             except MailerError as e:
                 raise MailerError(f"HALT: could not read the answer from {frm} ({str(msg.get('Subject', ''))!r}): {e}")
         to = [a for a in cfg["forward"][kind] if a not in down] if cfg["operators"] and forwarded(kind, ans) else []
@@ -1931,6 +2029,8 @@ def main(argv=None):
     p = sub.add_parser("send"); p.add_argument("config"); p.add_argument("batch_id"); p.add_argument("--live", action="store_true")
     p.add_argument("--no-watch", action="store_true", help="allowlist tests only: do not read the inbox during the batch")
     p = sub.add_parser("watch"); p.add_argument("config")
+    p = sub.add_parser("redirect", help="make the letter for an address a clinic's answer named (redirect_letter), by hand")
+    p.add_argument("config"); p.add_argument("recipient_id"); p.add_argument("addresses", nargs="+")
     p = sub.add_parser("status"); p.add_argument("config"); p.add_argument("--now")
     a = ap.parse_args(argv)
     cfg = load_config(a.config)
@@ -1947,6 +2047,8 @@ def main(argv=None):
             send(cfg, a.batch_id, a.live, watch_inbox=not a.no_watch)
         elif a.cmd == "watch":
             watch(cfg)
+        elif a.cmd == "redirect":
+            print(redirect_letter(cfg, a.recipient_id, a.addresses)["ru"])
         else:
             status(cfg, now)
     except MailerError as e:

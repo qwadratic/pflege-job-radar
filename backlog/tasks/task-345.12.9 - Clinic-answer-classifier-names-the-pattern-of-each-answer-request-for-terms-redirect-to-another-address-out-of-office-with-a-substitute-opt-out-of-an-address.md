@@ -8,7 +8,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-05 09:58'
-updated_date: '2026-10-05 14:23'
+updated_date: '2026-10-05 16:11'
 labels: []
 dependencies: []
 parent_task_id: TASK-345.12
@@ -41,6 +41,8 @@ Ivan, 2026-10-05: clinic answers repeat a few communication patterns and each ne
 05.10 later, Ivan answered "нужна" to the open question: routed(cfg, it, live) in tools/clinic_mailer.py swaps the addresses of a letter at send time by the replace_with entries of the table (live sends only; an allowlist test copy keeps its allowlist addresses; the cc is deduped against To like in plan). guard() and the approval are untouched: they cover the planned addresses; the sent event carries to/cc as sent plus planned_to/planned_cc. Tests: a live approved batch with an entry written after planning, and the cc-to-To case; 67 passed. NOT covered: a blocking entry (opt_out) is still read by plan only, so an opt-out from an automatic reply does not drop a letter already planned; no target check after the swap (plan checks suppressed() on the swapped addresses). Ask Ivan before adding either.
 
 05.10, Ivan asked for the open gap to be closed ("на момент отправки нужна проверка"): clinic_mailer.routed() now repeats the plan block check at send time on the addresses that go (after the redirect swap), live only. A blocked To raises Blocked: the letter is not sent, a "blocked" ledger event is written (item_states shows the clinic as "адрес в списке блокировки", its other letters of the batch go with it), the console prints BLOCKED, and in a scheduled batch Ivan gets a notice "письмо не ушло"; the batch does not halt and the other clinics go on. A blocked Cc is dropped; the sent event keeps planned_to/planned_cc. The address a redirect sends to is checked too. Both lists count (do_not_contact blocking entries and sales_brain suppression_list), as at plan time. An allowlist test copy is not checked. Tests: test_a_block_written_after_planning_stops_the_letter_at_send_time, test_the_send_time_block_check_drops_a_blocked_cc_stops_a_blocked_swap_target_and_spares_test_copies, test_a_blocked_letter_of_a_simple_batch_is_skipped_loudly_and_the_others_go; 92 passed. Live audit (read-only, as root): none of the unsent letters of the approved batches of both waves is blocked today. Processes and desk restarted 16:23 Berlin.
+
+Extension, Ivan 2026-10-05 (evening): the classifier's redirect did not send anything, so the address a clinic named never got our letter (LMU: pflegestellen@ answered 05.10 11:30 with PA.ProfileLAK@; its reply closed the sequence and the table entry changed nothing). Now a redirect (or an out-of-office with a substitute) to an address no letter of the campaign went to also makes a recipient '<id>r<n>' (tools/clinic_mailer.py redirect_letter: same clinic, files and cadence, To the new address, general greeting, no Cc) and ends the old recipient's sequence; the desk's poll calls redirect_letters, which plans that recipient's due step, renames its approval itself and sends it live in the window on an odd minute. Targets that already got a letter (a Cc, the substitute we wrote to: Starnberg, Ilmtalklinik) or sit on a block list get no letter. Every (recipient, step) is tried once ('redirect_attempt' event), a failure goes to the desk ledger and the notify list. Tests: tests/test_clinic_mailer.py (redirect letters), tests/test_daria_desk.py. LMU backfilled by hand: recipient 16290r1 exists, the desk sends it at its first poll in a send window once the desk runs again.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -1160,3 +1160,116 @@ def test_a_non_ascii_subject_keeps_its_spaces_on_the_wire(scfg):
             buf = io.BytesIO()
             email.generator.BytesGenerator(buf).flatten(m, linesep="\r\n")      # what smtplib.send_message writes
             assert str(_email.message_from_bytes(buf.getvalue(), policy=_email.policy.default)["Subject"]) == subject
+
+
+# ---------- redirect letters (Ivan, 2026-10-05: the classifier writes the entry and the letter goes too) ----------
+
+def recipients(c):
+    return json.loads(c["recipients"].read_text())
+
+
+def test_a_redirect_to_a_new_address_makes_a_recipient_and_ends_the_old_sequence(scfg, monkeypatch, reader):
+    """05.10: LMU's Pflegestellen box says to write to PA.ProfileLAK@, an address we never wrote to."""
+    w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [], "LMU Klinikum München")
+    answer(w, "pd1@example.org", "Bitte wenden Sie sich an PA.ProfileLAK@med.uni-muenchen.de.")
+    reader.says("PA.ProfileLAK", pattern="redirect", addresses=["PA.ProfileLAK@med.uni-muenchen.de"], quote="Bitte wenden Sie sich an PA.ProfileLAK@med.uni-muenchen.de.")
+    (ev,) = M.watch(scfg)
+    old, new = [r for r in recipients(scfg) if r["id"] in ("1", "1r1")]
+    assert new["to"] == ["PA.ProfileLAK@med.uni-muenchen.de"] and new["cc"] == [] and new["redirect_of"] == "1" and new["clinic"] == old["clinic"]
+    assert new["vars"]["ANREDE"] == "Sehr geehrte Damen und Herren" and new["vars"]["BEREICH"] == old["vars"]["BEREICH"] and old["vars"]["ANREDE"] == "Sehr geehrte Frau A"
+    letter = ev["actions"][1]
+    assert letter["do"] == "redirect_letter" and letter["recipient"] == "1r1" and "первое письмо на PA.ProfileLAK@med.uni-muenchen.de" in letter["ru"]
+    (red,) = w.events("redirected")
+    assert red["recipient_id"] == "1" and red["to_recipient"] == "1r1" and red["kind"] == "redirected"
+    assert M.next_due(scfg, old, M.read_ledger(scfg))[1].startswith("stopped: redirected")           # a letter to the old address would double it
+    assert M.next_due(scfg, new, M.read_ledger(scfg)) == (0, None)
+    assert w.sent == []                                                                              # the desk sends it, in the window
+
+
+def test_a_redirect_to_an_address_we_already_wrote_to_makes_no_letter(scfg, monkeypatch, reader):
+    """Starnberg: the substitute is already our main recipient; Ilmtalklinik: she is in Cc."""
+    w = answers_world(scfg, monkeypatch, ["sandra.baer@klinikallianz.com"], ["karin.nadler@klinikallianz.com"], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "sandra.baer@klinikallianz.com", "Ich bin nicht im Haus. Vertretung: karin.nadler@klinikallianz.com", Auto_Submitted="auto-replied")
+    reader.says("Vertretung", pattern="out_of_office", addresses=["karin.nadler@klinikallianz.com"], quote="Vertretung: karin.nadler@klinikallianz.com")
+    (ev,) = M.watch(scfg)
+    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3"] and w.events("redirected") == []
+    assert ev["actions"][1] == {"do": "redirect_letter", "recipient": None, "to": [], "ru": "нового письма нет: на этот адрес мы уже писали"}
+    assert M.next_due(scfg, recipients(scfg)[0], M.read_ledger(scfg))[1] == "sequence complete"     # not "stopped: redirected": the old sequence goes on
+    assert not [e for e in M.read_ledger(scfg) if e["event"] == "redirected"]
+
+
+def test_a_redirect_to_a_blocked_address_makes_no_letter(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "x@optout.de", "reason": "opt_out"}]))
+    answer(w, "pd1@example.org", "Bitte schreiben Sie an x@optout.de.")
+    reader.says("optout", pattern="redirect", addresses=["x@optout.de"], quote="Bitte schreiben Sie an x@optout.de.")
+    (ev,) = M.watch(scfg)
+    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3"] and "в списке блокировки: x@optout.de" in ev["actions"][1]["ru"]
+
+
+def test_the_same_redirect_read_twice_makes_one_recipient(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
+    assert M.redirect_letter(scfg, "1", ["new@a.de"])["id"] == "1r1"
+    again = M.redirect_letter(scfg, "1", ["new@a.de"])
+    assert again["id"] is None and "уже сделан" in again["ru"] and [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"]
+    assert len(w.events("redirected")) == 1
+
+
+def test_a_redirect_that_was_interrupted_before_its_ledger_event_is_finished_not_doubled(scfg, monkeypatch):
+    """The recipient was written, the ledger refused the event (a root-owned file and a user's run): the next call writes the event."""
+    w = answers_world(scfg, monkeypatch, ["pd1@example.org"], [])
+    real = M.append_ledger
+    monkeypatch.setattr(M, "append_ledger", lambda c, e: (_ for _ in ()).throw(PermissionError("ledger")) if e["event"] == "redirected" else real(c, e))
+    with pytest.raises(PermissionError):
+        M.redirect_letter(scfg, "1", ["new@a.de"])
+    monkeypatch.setattr(M, "append_ledger", real)
+    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"] and w.events("redirected") == []
+    assert "уже сделан" in M.redirect_letter(scfg, "1", ["new@a.de"])["ru"]
+    assert [r["id"] for r in recipients(scfg)] == ["1", "2", "3", "1r1"] and [e["to_recipient"] for e in w.events("redirected")] == ["1r1"]
+
+
+def test_a_redirect_recipient_is_not_planned_into_a_waves_batch(fcfg, monkeypatch):
+    World(fcfg, monkeypatch, "2026-09-29T08:40:00")
+    M.redirect_letter(fcfg, "1", ["new@a.de"])
+    bid, report = M.plan(fcfg, at("2026-09-29T08:40:00"), announce_at=at("2026-09-29T09:00:00"), only=["2", "3"])
+    assert {it["recipient_id"] for it in json.loads((fcfg["batches"] / f"{bid}.json").read_text())["items"]} == {"2", "3"}
+    bid, report = M.plan(fcfg, at("2026-09-29T08:40:00"))
+    assert any("1r1" in line and "redirect_letters" in line for line in report)
+    assert "1r1" not in {it["recipient_id"] for it in json.loads((fcfg["batches"] / f"{bid}.json").read_text())["items"]}
+
+
+def test_redirect_letters_go_in_the_window_each_step_once_and_the_follow_up_in_its_own_thread(fcfg, monkeypatch):
+    w = World(fcfg, monkeypatch, "2026-09-29T07:00:00")
+    M.append_ledger(fcfg, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd1@example.org"],
+                           "cc": [], "sent_at": "2026-09-29T07:00:00+02:00", "message_id": "<m0@x>"})
+    assert M.redirect_letters(fcfg) is None                                  # no redirect recipient yet
+    M.redirect_letter(fcfg, "1", ["new@a.de"])
+    assert M.redirect_letters(fcfg) is None and w.sent == []                 # 07:00: outside the window
+    w.now = at("2026-09-29T09:00:00")                                        # a round minute: the letter waits for an odd one
+    bid = M.redirect_letters(fcfg)
+    (t, first), = w.sent
+    assert t.minute % 5 and first["To"] == "new@a.de" and first["Subject"] == "Pflegekraft für Intensivstation" and not first["In-Reply-To"]
+    assert plain(first).startswith("Sehr geehrte Damen und Herren,") and (fcfg["approvals"] / f"{bid}.json").exists()
+    assert [(e["recipient_id"], e["step"], e["to"]) for e in w.events("sent") if e["recipient_id"] == "1r1"] == [("1r1", "initial", ["new@a.de"])]
+    assert [(e["recipient_id"], e["step"]) for e in w.events("redirect_attempt")] == [("1r1", "initial")]
+    assert M.redirect_letters(fcfg) is None and len(w.sent) == 1             # the follow-up is not due: 3 business days
+    w.now = at("2026-10-05T10:00:00")                                        # 29.09 + 3 business days, 02.10 a holiday
+    M.redirect_letters(fcfg)
+    (_, fu1) = w.sent[1]
+    assert fu1["To"] == "new@a.de" and fu1["In-Reply-To"] == first["Message-ID"] and fu1["Subject"].startswith("Re:")
+    assert M.redirect_letters(fcfg) is None
+
+
+def test_a_failed_redirect_letter_is_raised_recorded_and_not_tried_again(fcfg, monkeypatch):
+    w = World(fcfg, monkeypatch, "2026-09-29T09:01:00")
+    M.append_ledger(fcfg, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd1@example.org"],
+                           "cc": [], "sent_at": "2026-09-29T07:00:00+02:00", "message_id": "<m0@x>"})
+    M.redirect_letter(fcfg, "1", ["new@a.de"])
+
+    def refuse(box, msg):
+        return {"new@a.de": (550, b"no such user")}
+    monkeypatch.setattr(M, "smtp_send", refuse)
+    with pytest.raises(M.MailerError, match="SMTP refused"):
+        M.redirect_letters(fcfg)
+    assert [(e["recipient_id"], e["step"]) for e in w.events("redirect_attempt")] == [("1r1", "initial")]
+    assert M.redirect_letters(fcfg) is None                                  # once per (recipient, step); the failure is for the operators
