@@ -171,6 +171,19 @@ def posting_html(url: str, session=None):
 
 def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirmed=False) -> dict:
     a = jp.get("address") or {}
+    cities = [a.get("city")]
+    # TASK-184: on some tenants `address` is the employer's seat, the same on most postings (Arberland: Viechtach
+    # on 35 of 41), and the site a posting is for is in a custom field whose name differs per tenant -- the seed
+    # names it ("place_field", data/registry/bite_seeds.json); its values are the tenant's place slugs ("zwiesel").
+    # The address's PLZ and coordinates stay only on a posting whose first place is the address city itself; a
+    # posting that carries no such field, or a tenant without the setting, reads its address as before.
+    named = (jp.get("custom") or {}).get(seed["place_field"]) if seed.get("place_field") else None
+    if named:
+        # ponytail: the slug is title-cased as the tenant API publishes no display names; add a label map if a tenant's slugs stop reading as towns
+        cities = [x.replace("_", " ").title() for x in ([named] if isinstance(named, str) else named)]
+    at_address = lambda c: (c or "").casefold() == (a.get("city") or "").casefold()
+    here = at_address(cities[0])
+    plz = a.get("postCode") if here else None
     api_emp = (jp.get("employer") or {}).get("name") or None
     # The two same-origin fallback shapes (_jp_from_json_jobs_php, _jp_from_jsonld) never produce an
     # "employer" key at all -- emp then falls to the seed clinic's own registry name, which is a
@@ -195,9 +208,11 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         "role_class": role, "role_rule": rule, "qualification_hint": qualification_hint(title, "", desc),
         "department_hint": department_hint(f"{title} {(jp.get('custom') or {}).get('untertitel') or ''}", desc),
         "department_raw": (jp.get("custom") or {}).get("untertitel") or None,
-        "city": a.get("city"), "plz": a.get("postCode"), "region": a.get("region") or a.get("state"), "lat": a.get("latitude"), "lon": a.get("longitude"),
-        "in_bavaria": in_bavaria(a.get("city"), a.get("postCode"), None, towns),
-        "n_locations": 1, "locations": json.dumps([{"adresse": {"ort": a.get("city"), "plz": a.get("postCode")}}], ensure_ascii=False),
+        "city": cities[0], "plz": plz, "region": a.get("region") or a.get("state"),
+        "lat": a.get("latitude") if here else None, "lon": a.get("longitude") if here else None,
+        "in_bavaria": in_bavaria(cities[0], plz, None, towns),
+        "n_locations": len(cities),
+        "locations": json.dumps([{"adresse": {"ort": c, "plz": a.get("postCode") if at_address(c) else None}} for c in cities], ensure_ascii=False),
         "employment_types": [t for t, k in (("vollzeit", "full_time"), ("teilzeit", "part_time"), ("minijob", "mini")) if k in et],
         "shift_night_weekend": None, "homeoffice": None, "quereinstieg": None,
         "contract": {"01": "BEFRISTET", "02": "UNBEFRISTET"}.get(befr[0] if isinstance(befr, list) and befr else befr),
@@ -211,7 +226,7 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         # only a fallback for the rare case url itself is empty (2026-09-28, clinic 56404/56406).
         "external_url": jp["url"] or jp.get("applyUrl"), "description": (desc or "")[:20000] or None,
         **enr, "details_fetched_at": datetime.now(timezone.utc).isoformat() if desc else None, "details_error": None,
-        "fuzzy_key": fuzzy_key(title, emp, a.get("city")), "content_hash": content_hash(title, emp, a.get("city"), jp.get("modifiedOn")),
+        "fuzzy_key": fuzzy_key(title, emp, cities[0]), "content_hash": content_hash(title, emp, cities[0], jp.get("modifiedOn")),
         "payload": json.dumps({"bite": {k: v for k, v in jp.items() if k not in ("custom",)}, "bite_custom": {k: v for k, v in (jp.get("custom") or {}).items() if k != "keyfacts_renderer"},
                                "crawl": {"seed": seed.get("career"), "kez": seed.get("kez"), "parse": "bite_api"}}, ensure_ascii=False),
         # consumed by app/crawl.py _load_observations -> Matcher.match(employer_inherited=...)

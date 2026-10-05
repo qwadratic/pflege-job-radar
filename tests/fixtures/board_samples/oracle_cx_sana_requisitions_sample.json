@@ -1,0 +1,500 @@
+{
+ "_about": "Oracle HCM Candidate Experience (jobs.sana.de, site CX_4025): 5 of the 1,099 requisitions, fetched 2026-10-01. `list_items` are the list answer's requisitionList entries unedited; `details` are the detail answers with unused fields dropped, the corporate/organization boilerplate cut to its first sentence and the contact field redacted; `shell` is the SPA page's <title> and <base> tag.",
+ "shell": "<title>Sana</title>\n<base href=\"/de/sites/CX_4025\" data-cspnonce =\"\" data-apibaseurl=\"https://fa-eycl-saasfaeuraprod1.fa.ocs.oraclecloud.com:443\" data-fahosturl=\"https://fa-eycl-saasfaeuraprod1.fa.ocs.oraclecloud.com:443\" data-vanitybaseurl=\"https://jobs.sana.de/\" data-sitenumber=\"CX_4025\" data-shorturl='{\"challengeFlag\":null,\"url\":null}' data-customjs-src='https://fa-eycl-saasfaeuraprod1.fa.ocs.oraclecloud.com:443/hcmUI/CandExpStatic/js/ce-custom.js?themeNumber=4027&themeVersion=2&brandVersion=88'/>",
+ "list_items": [
+  {
+   "Id": "6544",
+   "Title": "Stationsleitung (m/w/d) – Innere Medizin / Akutgeriatrie",
+   "PostedDate": "2026-06-11",
+   "PostingEndDate": null,
+   "Language": "D",
+   "PrimaryLocationCountry": "DE",
+   "GeographyId": 100000001942437,
+   "HotJobFlag": false,
+   "WorkplaceTypeCode": null,
+   "JobFamily": "Pflegedienst",
+   "JobFunction": null,
+   "WorkerType": null,
+   "ContractType": null,
+   "ManagerLevel": null,
+   "JobSchedule": null,
+   "JobShift": null,
+   "JobType": null,
+   "StudyLevel": null,
+   "DomesticTravelRequired": null,
+   "InternationalTravelRequired": null,
+   "WorkDurationYears": null,
+   "WorkDurationMonths": null,
+   "WorkHours": null,
+   "WorkDays": null,
+   "LegalEmployer": "Sana Klinik Pegnitz GmbH",
+   "BusinessUnit": null,
+   "Department": null,
+   "Organization": null,
+   "BusinessUnitId": 300000026954380,
+   "LegalEmployerId": 300000012101995,
+   "OrganizationId": 300000012101995,
+   "MediaThumbURL": null,
+   "ShortDescriptionStr": "",
+   "PrimaryLocation": "Pegnitz, Bayern, Deutschland",
+   "Distance": 2,
+   "TrendingFlag": false,
+   "BeFirstToApplyFlag": false,
+   "Relevancy": 2,
+   "WorkplaceType": "",
+   "ExternalQualificationsStr": null,
+   "ExternalResponsibilitiesStr": null,
+   "secondaryLocations": []
+  },
+  {
+   "Id": "3084",
+   "Title": "Pflegefachkraft / Pflegehilfskraft (m/w/d) für die  Palliativstation / Innere Medizin",
+   "PostedDate": "2026-04-17",
+   "PostingEndDate": null,
+   "Language": "D",
+   "PrimaryLocationCountry": "DE",
+   "GeographyId": 100000001943208,
+   "HotJobFlag": false,
+   "WorkplaceTypeCode": "ORA_ON_SITE",
+   "JobFamily": "Pflegedienst",
+   "JobFunction": null,
+   "WorkerType": null,
+   "ContractType": null,
+   "ManagerLevel": null,
+   "JobSchedule": null,
+   "JobShift": null,
+   "JobType": null,
+   "StudyLevel": null,
+   "DomesticTravelRequired": null,
+   "InternationalTravelRequired": null,
+   "WorkDurationYears": null,
+   "WorkDurationMonths": null,
+   "WorkHours": null,
+   "WorkDays": null,
+   "LegalEmployer": "Sana Kliniken des Landkreises Cham GmbH",
+   "BusinessUnit": null,
+   "Department": null,
+   "Organization": null,
+   "BusinessUnitId": 300000002545001,
+   "LegalEmployerId": 300000002493003,
+   "OrganizationId": 300000002493003,
+   "MediaThumbURL": "https://karriere.sana.de/fileadmin/default/_migrated/tx_asjobboerse/banner_images/Pflege/Pflege_Frau_3.jpg",
+   "ShortDescriptionStr": "\n",
+   "PrimaryLocation": "Cham, Bayern, Deutschland",
+   "Distance": 2,
+   "TrendingFlag": false,
+   "BeFirstToApplyFlag": false,
+   "Relevancy": 2,
+   "WorkplaceType": "Vor Ort",
+   "ExternalQualificationsStr": null,
+   "ExternalResponsibilitiesStr": null,
+   "secondaryLocations": []
+  },
+  {
+   "Id": "2650",
+   "Title": "Logopäde (m/w/d) für die hochmoderne Geriatrie",
+   "PostedDate": "2026-09-30",
+   "PostingEndDate": null,
+   "Language": "D",
+   "PrimaryLocationCountry": "DE",
+   "GeographyId": 300000016599004,
+   "HotJobFlag": false,
+   "WorkplaceTypeCode": "ORA_ON_SITE",
+   "JobFamily": "Therapie",
+   "JobFunction": null,
+   "WorkerType": null,
+   "ContractType": null,
+   "ManagerLevel": null,
+   "JobSchedule": null,
+   "JobShift": null,
+   "JobType": null,
+   "StudyLevel": null,
+   "DomesticTravelRequired": null,
+   "InternationalTravelRequired": null,
+   "WorkDurationYears": null,
+   "WorkDurationMonths": null,
+   "WorkHours": null,
+   "WorkDays": null,
+   "LegalEmployer": "Sana Klinikum Lichtenberg",
+   "BusinessUnit": null,
+   "Department": null,
+   "Organization": null,
+   "BusinessUnitId": 300000026808288,
+   "LegalEmployerId": 300000026854447,
+   "OrganizationId": 300000026854447,
+   "MediaThumbURL": "https://karriere.sana.de/fileadmin/default/_migrated/tx_asjobboerse/banner_images/Pflege/Pflege_Frau_seniorig_2.jpg",
+   "ShortDescriptionStr": "",
+   "PrimaryLocation": "Lichtenberg (Berlin), Berlin, Deutschland",
+   "Distance": 9,
+   "TrendingFlag": false,
+   "BeFirstToApplyFlag": false,
+   "Relevancy": 9,
+   "WorkplaceType": "Vor Ort",
+   "ExternalQualificationsStr": null,
+   "ExternalResponsibilitiesStr": null,
+   "secondaryLocations": []
+  },
+  {
+   "Id": "7276",
+   "Title": "Mitarbeiter (m/w/d) Operativer Einkauf im Allgäu",
+   "PostedDate": "2026-09-28",
+   "PostingEndDate": null,
+   "Language": "D",
+   "PrimaryLocationCountry": "DE",
+   "GeographyId": 100000001926210,
+   "HotJobFlag": false,
+   "WorkplaceTypeCode": "ORA_ON_SITE",
+   "JobFamily": "Management und Verwaltung",
+   "JobFunction": null,
+   "WorkerType": null,
+   "ContractType": null,
+   "ManagerLevel": null,
+   "JobSchedule": null,
+   "JobShift": null,
+   "JobType": null,
+   "StudyLevel": null,
+   "DomesticTravelRequired": null,
+   "InternationalTravelRequired": null,
+   "WorkDurationYears": null,
+   "WorkDurationMonths": null,
+   "WorkHours": null,
+   "WorkDays": null,
+   "LegalEmployer": "Sana Einkauf & Logistik GmbH",
+   "BusinessUnit": null,
+   "Department": null,
+   "Organization": null,
+   "BusinessUnitId": 300000473646049,
+   "LegalEmployerId": 300000012347573,
+   "OrganizationId": 300000473646049,
+   "MediaThumbURL": "https://karriere.sana.de/fileadmin/default/Sana-Ag/ka-SI-30857_Original.jpg",
+   "ShortDescriptionStr": "",
+   "PrimaryLocation": "Bayern, Deutschland",
+   "Distance": 9,
+   "TrendingFlag": false,
+   "BeFirstToApplyFlag": false,
+   "Relevancy": 9,
+   "WorkplaceType": "Vor Ort",
+   "ExternalQualificationsStr": null,
+   "ExternalResponsibilitiesStr": null,
+   "secondaryLocations": []
+  },
+  {
+   "Id": "6720",
+   "Title": "Stationsleitung (m/w/d) Notfallambulanz Pflege Elmshorn",
+   "PostedDate": "2026-08-24",
+   "PostingEndDate": null,
+   "Language": "D",
+   "PrimaryLocationCountry": "DE",
+   "GeographyId": 300000000447249,
+   "HotJobFlag": false,
+   "WorkplaceTypeCode": null,
+   "JobFamily": "Pflegedienst",
+   "JobFunction": null,
+   "WorkerType": null,
+   "ContractType": null,
+   "ManagerLevel": null,
+   "JobSchedule": null,
+   "JobShift": null,
+   "JobType": null,
+   "StudyLevel": null,
+   "DomesticTravelRequired": null,
+   "InternationalTravelRequired": null,
+   "WorkDurationYears": null,
+   "WorkDurationMonths": null,
+   "WorkHours": null,
+   "WorkDays": null,
+   "LegalEmployer": "Regio Kliniken GmbH",
+   "BusinessUnit": null,
+   "Department": null,
+   "Organization": null,
+   "BusinessUnitId": 300000012472773,
+   "LegalEmployerId": 300000002493822,
+   "OrganizationId": 300000002493822,
+   "MediaThumbURL": null,
+   "ShortDescriptionStr": "Moderne ZNA - starke Teamkultur - eigenständige Führungsstruktur Eine Leitungsrolle, die wirklich Gestaltung ermöglicht. Unsere Notaufnahme ist ein Ort, an dem Professionalität, Teamgeist und moderne Strukturen zusammenkommen. Als pflegerische Leitung arbeitest Du nicht in der klassischen Hierarchie der Pflegedienstl-eitung, sondern in einer eigenständigen, modernen Personalstruktur, die Dir echte Gestaltungsspielräume bietet. Gemeinsam mit einem engagierten Team, dem Chefarzt des Zentrums, festen Oberärzten und klaren Prozessen sorgst Du dafür, dass unsere Patientinnen und Patienten bestmöglich versorgt werden.\n",
+   "PrimaryLocation": "Deutschland",
+   "Distance": 2,
+   "TrendingFlag": false,
+   "BeFirstToApplyFlag": false,
+   "Relevancy": 2,
+   "WorkplaceType": "",
+   "ExternalQualificationsStr": null,
+   "ExternalResponsibilitiesStr": null,
+   "secondaryLocations": [
+    {
+     "RequisitionLocationId": 300000437566628,
+     "GeographyNodeId": 100005438160795,
+     "GeographyId": 100000001951268,
+     "Name": "Elmshorn, Schleswig-Holstein, Deutschland",
+     "CountryCode": "DE",
+     "Latitude": 53.75444,
+     "Longitude": 9.65201
+    }
+   ]
+  }
+ ],
+ "details": {
+  "6544": {
+   "Id": "6544",
+   "Title": "Stationsleitung (m/w/d) – Innere Medizin / Akutgeriatrie",
+   "Category": "Pflegedienst",
+   "ExternalPostedStartDate": "2026-06-11T08:58:38+00:00",
+   "ExternalPostedEndDate": null,
+   "ExternalDescriptionStr": "<ul>\n <li>Attraktive Vergütung entsprechend Ihrer Qualifikation und Berufserfahrung&nbsp;</li>\n <li>30 Tage Urlaub sowie arbeitsfrei am 24.12. und 31.12.&nbsp;</li>\n <li>Umfangreiche Fort- und Weiterbildungsmöglichkeiten sowie individuelle Entwicklungsperspektiven&nbsp;</li>\n <li>Moderne Arbeitsplatzausstattung und kurze Entscheidungswege&nbsp;</li>\n <li>Corporate Benefits wie Deutschlandticket-Zuschuss, Company Bike und IGB</li>\n <li>Wertschätzendes Arbeitsumfeld mit engagiertem Team, Mitarbeiterevents und attraktiver Willkommens- / Mitarbeiter-werben-Mitarbeiter Prämie&nbsp;</li>\n</ul>",
+   "ExternalResponsibilitiesStr": "<ul>\n <li>Fachliche, organisatorische und personelle Leitung der Station für Innere Medizin und Akutgeriatrie</li>\n <li>&nbsp;Sicherstellung und Weiterentwicklung einer hochwertigen, patientenorientierten Pflege sowie der pflegerischen Qualitätsstandards&nbsp;</li>\n <li>Verantwortung für Dienstplanung, Personaleinsatz und effiziente Stationsabläufe&nbsp;</li>\n <li>Führung, Förderung und Entwicklung der Mitarbeitenden sowie Begleitung neuer Teammitglieder in der Einarbeitung&nbsp;</li>\n <li>Enge interdisziplinäre Zusammenarbeit mit Ärzt:innen, Therapeut:innen und weiteren Berufsgruppen&nbsp;</li>\n <li>Mitwirkung an Projekten und Maßnahmen zur Weiterentwicklung der pflegerischen Versorgung&nbsp;</li>\n</ul>",
+   "ExternalQualificationsStr": "<ul>\n <li>Abgeschlossene Ausbildung als Pflegefachkraft (m/w/d)&nbsp;</li>\n <li>Weiterbildung zur Stationsleitung bzw. Leitung einer Pflegeeinheit oder eine vergleichbare Qualifikation oder die Motivation, diese zeitnah zu absolvieren</li>\n <li>Berufserfahrung in der Inneren Medizin, Akutgeriatrie oder einem vergleichbaren Fachbereich&nbsp;</li>\n <li>Abgeschlossene Weiterbildung Geriatrie oder die Motivation, diese zeitnah zu absolvieren&nbsp;</li>\n <li>Ausgeprägte Führungs-, Organisations- und Kommunikationskompetenz&nbsp;</li>\n <li>Verantwortungsbewusstsein, Teamorientierung und Engagement für die Weiterentwicklung pflegerischer Standards</li>\n</ul>",
+   "CorporateDescriptionStr": "Die Sana Kliniken AG ist eine der größten Klinikgruppen in Deutschland.",
+   "OrganizationDescriptionStr": "Die Sana Klinik Pegnitz GmbH ist ein Haus der Grund- und Regelversorgung im südlichen Teil des Landkreises Bayreuth.",
+   "PrimaryLocation": "Pegnitz, Bayern, Deutschland",
+   "PrimaryLocationCountry": "DE",
+   "LegalEmployer": "Sana Klinik Pegnitz GmbH",
+   "secondaryLocations": [],
+   "workLocation": [
+    {
+     "LocationName": "Pegnitz, Langer Berg 12",
+     "Latitude": "49.75784",
+     "Longitude": "11.5278"
+    }
+   ],
+   "requisitionFlexFields": [
+    {
+     "Prompt": "Erfahrungsniveau",
+     "Value": "Berufserfahrene",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 1
+    },
+    {
+     "Prompt": "Beschäftigungsverhältnis",
+     "Value": "Festanstellung",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 2
+    },
+    {
+     "Prompt": "Ansprechpartner",
+     "Value": "[redacted]",
+     "ControlType": "TextArea",
+     "SequenceNumber": 3
+    },
+    {
+     "Prompt": "Zeitmodell",
+     "Value": "Vollzeit",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 4
+    }
+   ]
+  },
+  "3084": {
+   "Id": "3084",
+   "Title": "Pflegefachkraft / Pflegehilfskraft (m/w/d) für die  Palliativstation / Innere Medizin",
+   "Category": "Pflegedienst",
+   "ExternalPostedStartDate": "2026-04-17T08:48:47+00:00",
+   "ExternalPostedEndDate": null,
+   "ExternalDescriptionStr": "<ul>\n <li>Wir bieten dir professionelles, interdisziplinäres Arbeiten in einem aufgeschlossenen und freundlichen Team, mit flachen Hierarchien und kollegialem Führungsstil</li>\n <li>Dich erwartet ein moderner Arbeitsbereich mit modernen Informations- und Kommunikationswegen</li>\n <li>Durch den Einsatz von Stationsassistenz, Kodierassistenz und unser zentrales Belegungsmanagement bieten wir organisatorische Strukturen, die eine Konzentration deiner Tätigkeit auf ärztliche Aufgaben ermöglicht</li>\n <li>Gerne bieten wir dir die Möglichkeit zu wissenschaftlichen Arbeiten und zahlreiche interne und externe Fort- und Weiterbildungen</li>\n <li>Wir bieten familienfreundliche, flexible Arbeitszeiten</li>\n <li>Eine leistungsgerechte Vergütung und zusätzliche betriebliche Altersversorge sind für uns selbstverständlich</li>\n <li>Ebenso erwarten dich Vorteile wie vergünstigte Parkmöglichkeiten, Mitarbeiterrabatte in der Cafeteria sowie im Imbiss und die Bezuschussung eines Deutschlandtickets und vieles mehr</li>\n</ul>",
+   "ExternalResponsibilitiesStr": "<ul>\n <li>die Erstellung, Durchführung und Anpassung der Pflegeplanung unter Berücksichtigung der Bedürfnisse von Patienten und Angehörigen&nbsp;</li>\n <li>die Unterstützung der Patienten und deren Angehörigen in schweren Phasen des Lebens&nbsp;</li>\n <li>die selbständige Organisation, Koordination und Durchführung des Pflege- und Behandlungsprozesses</li>\n <li>die enge interdisziplinäre und berufsgruppenübergreifende Zusammenarbeit und Abstimmung bei allen pflegerischen und therapeutischen Maßnahmen</li>\n <li>die enge Zusammenarbeit mit dem Pflegeteam der internistischen Station</li>\n</ul>",
+   "ExternalQualificationsStr": "<ul>\n <li>Du hast eine abgeschlossene Berufsausbildung als Gesundheits- und Krankenpfleger/in, Pflegefachkraft, Altenpfleger/in oder&nbsp;</li>\n <li>eine abgeschlossene Berufsausbildung als Krankenpflegehilfskraft, Altenpflegehilfskraft, Pflegehilfskraft&nbsp;</li>\n <li>zu deinen Kompetenzen zählen Teamfähigkeit, Zuverlässigkeit und Verantwortungsbewusstsein&nbsp;</li>\n <li>die Bereitschaft zur Fort- und Weiterbildung siehst du als selbstverständlich an</li>\n</ul>",
+   "CorporateDescriptionStr": "Die Sana Kliniken AG ist eine der größten Klinikgruppen in Deutschland.",
+   "OrganizationDescriptionStr": "Die Sana Kliniken des Landkreises Cham GmbH sind Häuser der Grund- und Regelversorgung.",
+   "PrimaryLocation": "Cham, Bayern, Deutschland",
+   "PrimaryLocationCountry": "DE",
+   "LegalEmployer": "Sana Kliniken des Landkreises Cham GmbH",
+   "secondaryLocations": [],
+   "workLocation": [
+    {
+     "LocationName": "Bad Kötzting, Hauser Straße 42",
+     "Latitude": "49.18424",
+     "Longitude": "12.85926"
+    }
+   ],
+   "requisitionFlexFields": [
+    {
+     "Prompt": "Erfahrungsniveau",
+     "Value": "Berufserfahrene",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 1
+    },
+    {
+     "Prompt": "Beschäftigungsverhältnis",
+     "Value": "Festanstellung",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 2
+    },
+    {
+     "Prompt": "Ansprechpartner",
+     "Value": "[redacted]",
+     "ControlType": "TextArea",
+     "SequenceNumber": 3
+    },
+    {
+     "Prompt": "Zeitmodell",
+     "Value": "Vollzeit und/oder Teilzeit",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 4
+    },
+    {
+     "Prompt": "Führungserfahrung",
+     "Value": "Nein",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 13
+    }
+   ]
+  },
+  "2650": {
+   "Id": "2650",
+   "Title": "Logopäde (m/w/d) für die hochmoderne Geriatrie",
+   "Category": "Therapie",
+   "ExternalPostedStartDate": "2026-09-30T07:49:55+00:00",
+   "ExternalPostedEndDate": null,
+   "ExternalDescriptionStr": "<ul>\n <li>Breite Unterstützung in der Fort- und Weiterbildung (speziell Zertifikats- und fachspezifische Weiterbildung)</li>\n <li>Individuelle Einarbeitung</li>\n <li>Familienfreundliche Arbeitszeitregelung und Unternehmenskultur</li>\n <li>Betriebliche Altersvorsorge</li>\n <li>PME Familienservice</li>\n <li>Mitarbeiterempfehlungsprogramm inkl. Prämie</li>\n <li>Deutschlandticket - Zuschuss</li>\n <li>Corporate Benefits</li>\n <li>Mitarbeiterevents</li>\n</ul>",
+   "ExternalResponsibilitiesStr": "<ul>\n <li>Du erstellst die Planung von Therapien und führst diese anschließend durch&nbsp;</li>\n <li>Die Dokumentation der Behandlung erledigst du selbstständig</li>\n <li>Du führst Einzel- und Gruppentherapien durch</li>\n <li>Die Weiterentwicklung des Konzeptes gehört ebenfalls zu deinen Aufgaben</li>\n <li>Du berätst die Angehörigen und Patienten</li>\n</ul>",
+   "ExternalQualificationsStr": "<ul>\n <li>Du bist ein erfahrener Logopäde und möchtest dich beruflich verändern oder steigst nach erfolgreichem Abschluss der Ausbildung ganz neu bei uns ein</li>\n <li>Du hast Freude und Interesse an der Behandlung von Menschen mit verschiedenen Krankheitsbildern</li>\n <li>Außerdem zeichnen dich Eigeninitiative, Teamfähigkeit, Engagement sowie ein Problemlösungskompetenz aus&nbsp;</li>\n <li>Dein Auftreten gegenüber Patienten und deren Angehörigen ist freundlich und hilfsbereit</li>\n</ul>",
+   "CorporateDescriptionStr": "Die Sana Kliniken AG ist eine der größten Klinikgruppen in Deutschland.",
+   "OrganizationDescriptionStr": "Das Sana Klinikum Lichtenberg ist ein akademisches Lehrkrankenhaus der Charité und zählt mit 676 Betten zu den größten Kliniken der Hauptstadt.",
+   "PrimaryLocation": "Lichtenberg (Berlin), Berlin, Deutschland",
+   "PrimaryLocationCountry": "DE",
+   "LegalEmployer": "Sana Klinikum Lichtenberg",
+   "secondaryLocations": [],
+   "workLocation": [
+    {
+     "LocationName": "Berlin, Fanningerstraße 32",
+     "Latitude": "54.03639",
+     "Longitude": "10.44205"
+    }
+   ],
+   "requisitionFlexFields": [
+    {
+     "Prompt": "Erfahrungsniveau",
+     "Value": "Berufserfahrene",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 1
+    },
+    {
+     "Prompt": "Beschäftigungsverhältnis",
+     "Value": "Festanstellung",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 2
+    },
+    {
+     "Prompt": "Ansprechpartner",
+     "Value": "[redacted]",
+     "ControlType": "TextArea",
+     "SequenceNumber": 3
+    },
+    {
+     "Prompt": "Zeitmodell",
+     "Value": "Vollzeit und/oder Teilzeit",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 4
+    }
+   ]
+  },
+  "7276": {
+   "Id": "7276",
+   "Title": "Mitarbeiter (m/w/d) Operativer Einkauf im Allgäu",
+   "Category": "Management und Verwaltung",
+   "ExternalPostedStartDate": "2026-09-28T13:43:20+00:00",
+   "ExternalPostedEndDate": null,
+   "ExternalDescriptionStr": "<ul>\n <li>30 Tage Urlaub, flexible und familienfreundliche Arbeitszeitregelungen</li>\n <li>Zuschuss zu Company Fitness Angeboten</li>\n <li>Zuschuss zum Deutschlandticket und Kita-Zuschuss</li>\n <li>Betriebliche Altersvorsorge sowie exklusive Vergünstigungen über Corporate Benefits</li>\n <li>Fachliche und persönliche Weiterbildungen, Online-Bibliothek und eCampus</li>\n <li>Prämien durch das Mitarbeiterempfehlungsprogramm</li>\n</ul>",
+   "ExternalResponsibilitiesStr": "<ul>\n <li>Du unterstützt zunächst direkt die operativen Beschaffungsprozesse unseres Kundenklinikums Ostallgäu-Kaufbeuren – vor allem im Bereich medizinisches Verbrauchsmaterial</li>\n <li>Du prüfst und bearbeitest Bedarfsanforderungen und wickelst Bestellungen auf Basis bestehender Rahmenverträge ab</li>\n <li>Du überwachst Liefertermine, klärst Abweichungen und bearbeitest Reklamationen</li>\n <li>Du arbeitest eng mit den Fachbereichen im Klinikum, Lieferanten und unserer zentralen Beschaffungsorganisation zusammen</li>\n <li>Du begleitest die schrittweise Überführung der Beschaffungsaufgaben in unsere Organisation</li>\n <li>Perspektivisch übernimmst du operative Beschaffungsaufgaben für mehrere Klinikstandorte in der Region</li>\n</ul>",
+   "ExternalQualificationsStr": "<ul>\n <li>Du bringst eine abgeschlossene kaufmännische Ausbildung oder eine vergleichbare Qualifikation mit</li>\n <li>Du konntest bereit Erfahrung im Einkauf oder in der Materialwirtschaft sammeln, idealerweise im Gesundheitswesen oder klinischen Umfeld</li>\n <li>Du bist sicher im Umgang mit MS Office und idealerweise mit ERP-Systemen</li>\n <li>Du zeichnest dich durch eine strukturierte, selbstständige und zuverlässige Arbeitsweise aus</li>\n <li>Du bist kommunikationsstark, arbeitest gerne im Team und bringst eine hohe Serviceorientierung mit</li>\n <li>Du hast Freude daran, Veränderungen aktiv mitzugestalten</li>\n <li>Abhängig von Qualifikation und Profil bieten wir ein Jahresgehalt von 40.000–45.000&nbsp;€ brutto bei einer Vollzeittätigkeit</li>\n</ul>",
+   "CorporateDescriptionStr": "Die Sana Kliniken AG ist eine der größten Klinikgruppen in Deutschland.",
+   "OrganizationDescriptionStr": "Die Sana ProCure GmbH ist ein Tochterunternehmen der Sana Kliniken AG und die zentrale Beschaffungsorganisation des Gesundheitsunternehmens.",
+   "PrimaryLocation": "Bayern, Deutschland",
+   "PrimaryLocationCountry": "DE",
+   "LegalEmployer": "Sana Einkauf & Logistik GmbH",
+   "secondaryLocations": [],
+   "workLocation": [
+    {
+     "LocationName": "Ismaning, Adalperostraße 31",
+     "Latitude": "48.22728",
+     "Longitude": "11.6763"
+    }
+   ],
+   "requisitionFlexFields": [
+    {
+     "Prompt": "Erfahrungsniveau",
+     "Value": "Berufseinsteiger",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 1
+    },
+    {
+     "Prompt": "Beschäftigungsverhältnis",
+     "Value": "Festanstellung",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 2
+    },
+    {
+     "Prompt": "Ansprechpartner",
+     "Value": "[redacted]",
+     "ControlType": "TextArea",
+     "SequenceNumber": 3
+    },
+    {
+     "Prompt": "Zeitmodell",
+     "Value": "Vollzeit",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 4
+    },
+    {
+     "Prompt": "Führungserfahrung",
+     "Value": "Nein",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 13
+    }
+   ]
+  },
+  "6720": {
+   "Id": "6720",
+   "Title": "Stationsleitung (m/w/d) Notfallambulanz Pflege Elmshorn",
+   "Category": "Pflegedienst",
+   "ExternalPostedStartDate": "2026-08-24T05:18:02+00:00",
+   "ExternalPostedEndDate": null,
+   "ExternalDescriptionStr": "<ul><li>Vergütung nach TVöD mit allen üblichen Sozialleistungen</li><li>Fort- und Weiterbildungsmöglichkeiten (z. B. Simulationstraining, Führungskräfteprogramme)</li><li>Betriebliche Gesundheitsförderung&nbsp;</li><li>Vereinbarkeit von Beruf und Familie (flexible Arbeitszeitmodelle, Kooperationskindergärten, Lebenslagencoaching u.v.m.)</li><li>Eigenständige pflegerische Leitungsposition mit echter Gestaltungsmöglichkeit</li><li>Moderne, klar definierte Organisationsstruktur</li><li>Enge Zusammenarbeit mit festen Oberärzten</li><li>Strukturierte Einarbeitung und Unterstützung durch erfahrene Leitungskräfte</li></ul>",
+   "ExternalResponsibilitiesStr": "<ul style=\"padding-left: 47px;\"><li>Weiterentwicklung, Coaching und Einsatzplanung des pflegerischen Teams</li><li>Optimierung von Abläufen, Schnittstellen und Patientenfluss</li><li>Umsetzung von Standards, Hygienevorgaben und Notfallpflege-SOPs</li><li>enge Kooperation mit ärztlichem Dienst, Rettungsdienst, stationärem Bereich, Radiologie und Funktionsdiagnostik</li><li>Förderung von Fortbildungen, Simulationstrainings und Fachweiterbildungen</li><li>Sicherstellung eines reibungslosen 24/7-Betriebs</li></ul>",
+   "ExternalQualificationsStr": "<ul style=\"padding-left: 47px;\"><li>Abgeschlossene Zusatzweiterbildung Notfallpflege (DKG) - zwingende Voraussetzung</li><li>Berufserfahrung in der Notaufnahme oder Akutpflege</li><li>Führungskompetenz, Kommunikationsstärke und Freude an Teamarbeit</li><li>Strukturierte, lösungsorientierte Arbeitsweise</li><li>Bereitschaft, moderne Führungsmodelle aktiv mitzugestalten</li></ul>",
+   "CorporateDescriptionStr": "Die Sana Kliniken AG ist eine der größten Klinikgruppen in Deutschland.",
+   "OrganizationDescriptionStr": "Die Regio Kliniken sind ein integrierter Anbieter von Dienstleistungen im Gesundheitswesen in der Region Pinneberg.",
+   "PrimaryLocation": "Deutschland",
+   "PrimaryLocationCountry": "DE",
+   "LegalEmployer": "Regio Kliniken GmbH",
+   "secondaryLocations": [
+    {
+     "Name": "Elmshorn, Schleswig-Holstein, Deutschland",
+     "CountryCode": "DE"
+    }
+   ],
+   "workLocation": [
+    {
+     "LocationName": "Elmshorn, Agnes-Karll-Allee 17",
+     "Latitude": "53.75215",
+     "Longitude": "9.68191"
+    }
+   ],
+   "requisitionFlexFields": [
+    {
+     "Prompt": "Erfahrungsniveau",
+     "Value": "Führungserfahrene",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 1
+    },
+    {
+     "Prompt": "Beschäftigungsverhältnis",
+     "Value": "Festanstellung",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 2
+    },
+    {
+     "Prompt": "Ansprechpartner",
+     "Value": "[redacted]",
+     "ControlType": "TextArea",
+     "SequenceNumber": 3
+    },
+    {
+     "Prompt": "Führungserfahrung",
+     "Value": "Ja",
+     "ControlType": "SingleChoiceList",
+     "SequenceNumber": 13
+    }
+   ]
+  }
+ }
+}

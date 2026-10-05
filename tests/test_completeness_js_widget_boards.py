@@ -21,6 +21,8 @@ import json
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from crawlers import vendor_adapters as va  # noqa: E402
@@ -181,6 +183,107 @@ def test_erecruiter_falls_back_to_the_list_row_when_a_detail_page_is_gone(monkey
     p = va.crawl_erecruiter({"name": "seed", "careers_url": ER_CU})[0]["payload"]
     assert p["loc"][0]["city"] == "Kaufbeuren"
     assert p["datePosted"] == "2026-09-21"               # from the list row's "21.09.2026"
+
+
+def _fx(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples", name), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_erecruiter_reads_the_pages_own_ad_when_the_json_ld_description_is_empty(monkeypatch):
+    """TASK-185 F6, jobs.klinikum-ab-alz.de/Job/3146 frozen (fixtures/board_samples/README.md): 29 of the board's 64 jobs
+    ship a JobPosting JSON-LD whose description is "" -- no location, no employer either -- while the ad sits in the page's
+    own jobBlock divs. The adapter had no HTML fallback, so those rows stored no text (10 stored postings)."""
+    jobs = [{"Id": 3146, "Title": "Gesundheits- und Krankenpfleger / Altenpfleger Geriatrische Rehabilitation (m/w/d)",
+             "SubTitle": "", "Location": "Alzenau", "Date": "20.02.2025"}]
+    cu, u = "https://jobs.klinikum-ab-alz.de/Jobs", "https://jobs.klinikum-ab-alz.de/Job/3146"
+    monkeypatch.setattr(va, "get", _router({cu: _R(_erecruiter_page(jobs), url=cu),
+                                            u: _R(_fx("erecruiter_klinikum_ab_alz_job_3146_sample.html"), url=u)}))
+    p = va.crawl_erecruiter({"name": "Klinikum Aschaffenburg-Alzenau", "careers_url": cu})[0]["payload"]
+    assert "Berufserfahrung von Vorteil" in p["description"]
+    assert "Koordination aller Maßnahmen im Rahmen des Pflegeprozesses" in p["description"]
+
+
+# The ad's own text, not the page's: Q5 of the same item. The first cut took the whole body minus nav/header/footer, which on this
+# engine also reads the skip links, the JavaScript/cookie notice, the "Interesse?" upload dialog, the cookie dialog and the
+# outdated-browser banner (6,592 chars median on the 30 rows, 4,309 in the board's own container).
+ER_3146_AD = ("Alzenau Vollzeit oder Teilzeit unbefristet Jetzt bewerben! "
+              "Wir suchen zum nächstmöglichen Zeitpunkt Gesundheits- und Krankenpfleger (m/w/d) und Altenpfleger (m/w/d) für die "
+              "Geriatrische Rehabilitation am Standort Alzenau in Vollzeit oder Teilzeit (50%). "
+              "Das bringen Sie mit: Erfolgreich abgeschlossene Ausbildung als Gesundheits- und Krankenpfleger (m/w/d) oder Altenpfleger (m/w/d) "
+              "Berufserfahrung von Vorteil Gute IT-Kenntnisse (MS Office, Orbis) "
+              "Ausgeprägte Patienten- und Serviceorientierung sowie Kommunikationsfähigkeit Verantwortungsbewusstsein "
+              "Selbstständige, zuverlässige Arbeitsweise sowie Organisationsfähigkeit Teamfähigkeit und Engagement "
+              "Das sind Ihre Aufgaben: Bedürfnis- und situationsgerechte Versorgung der Patienten "
+              "Koordination aller Maßnahmen im Rahmen des Pflegeprozesses Vollständige, digitale Patientendokumentation")
+
+
+def test_erecruiter_ad_text_is_the_boards_jobBlock_divs_and_nothing_else_on_the_page(monkeypatch):
+    """jobs.klinikum-ab-alz.de/Job/3146 frozen: the four jobBlock divs, in page order -- the facts block first, whose own text sits
+    behind three nested divs, so a block that ended at its first </div> would lose "unbefristet" and the apply link."""
+    jobs = [{"Id": 3146, "Title": "Gesundheits- und Krankenpfleger / Altenpfleger Geriatrische Rehabilitation (m/w/d)",
+             "SubTitle": "", "Location": "Alzenau", "Date": "20.02.2025"}]
+    cu, u = "https://jobs.klinikum-ab-alz.de/Jobs", "https://jobs.klinikum-ab-alz.de/Job/3146"
+    monkeypatch.setattr(va, "get", _router({cu: _R(_erecruiter_page(jobs), url=cu),
+                                            u: _R(_fx("erecruiter_klinikum_ab_alz_job_3146_sample.html"), url=u)}))
+    p = va.crawl_erecruiter({"name": "Klinikum Aschaffenburg-Alzenau", "careers_url": cu})[0]["payload"]
+    assert p["description"] == ER_3146_AD
+
+
+NBG_URL = "https://karriere.klinikum-nuernberg.de/jobs/21361/oberarzt-mwd-fur-die-abteilung-innere-medizin/"
+LD_EMPTY = '<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", "description": ""}</script>'
+
+
+def test_parse_job_page_takes_the_ad_from_main_when_the_page_has_no_jobBlock():
+    """karriere.klinikum-nuernberg.de/jobs/21361 frozen (no `description` key in its JSON-LD): the ad is read from <main>, so
+    the <title> outside it ("... | Karriereportal") is not part of the text. This template keeps its whole site menu inside <main> too,
+    so the text still opens with the menu: a narrower container needs a board-specific rule, not this one."""
+    d = va.parse_job_page(_fx("nuernberg_klinikum_job_21361_sample.html"), NBG_URL, "Klinikum Nürnberg")["description"]
+    assert "Karriereportal" not in d
+    assert d.startswith("Freie Stellen Pflege & Funktionsdienst Ärztlicher Dienst MTD & Therapeuten Stellenangebot Oberarzt (m/w/d)")
+    assert "Praxiserfahrung in der Durchführung von Tätigkeiten in einer internistischen Funktionsabteilung" in d
+    assert d.endswith("Die interdisziplinäre Intensivstation im Krankenhaus Lauf umfasst zehn Betten.")
+
+
+# No recorded board has the <article> shape, and none has more than one container: the order jobBlock, main, article, body is the
+# rule's own, written down as a test. Every page names each container it has, so the text says which one won.
+def _priority_page(article, main, block):
+    inner = '<div class="jobBlock">Block</div>' if block else ""
+    body = "<nav>Menü</nav><p>Cookie-Hinweis</p>" + ("<article>Artikel</article>" if article else "")
+    body += ("<main><p>Main</p>" + inner + "</main>") if main else inner
+    return LD_EMPTY + "<body>" + body + "<footer>Impressum</footer></body>"
+
+
+@pytest.mark.parametrize("article,main,block,text", [
+    (True, True, True, "Block"),                 # jobBlock before main
+    (True, True, False, "Main"),                 # main before article
+    (True, False, False, "Artikel"),             # article before the body
+    (False, False, False, "Cookie-Hinweis"),     # no container: the body minus nav / header / footer, as before
+])
+def test_parse_job_page_prefers_the_boards_own_container_in_a_fixed_order(article, main, block, text):
+    assert va.parse_job_page(_priority_page(article, main, block), "https://x.example/job/1", "X")["description"] == text
+
+
+def test_parse_job_page_matches_the_jobBlock_class_as_a_whole_token_and_closes_nested_blocks():
+    html = (LD_EMPTY + '<div class="notjobBlock">A</div><div class="jobBlockish">B</div><div data-class="jobBlock">C</div>'
+            '<div class="foo jobBlock bar"><div>D</div> E</div><div class="jobBlock">F<div class="jobBlock">H</div></div><div>G</div>')
+    assert va.parse_job_page(html, "https://x.example/job/1", "X")["description"] == "D E F H"      # H once: inside F's block
+
+
+def test_parse_job_page_does_not_take_a_custom_element_for_main():
+    html = LD_EMPTY + "<main-nav>Menü</main-nav><main>Wir suchen Verstärkung.</main>"
+    assert va.parse_job_page(html, "https://x.example/job/1", "X")["description"] == "Wir suchen Verstärkung."
+
+
+def test_parse_job_page_reads_an_unclosed_container_to_the_end_of_the_page():
+    assert va.parse_job_page(LD_EMPTY + "<body><p>Menü</p><main><p>Wir suchen Verstärkung.", "https://x.example/job/1", "X")["description"] \
+        == "Wir suchen Verstärkung."
+
+
+def test_parse_job_page_keeps_a_non_empty_json_ld_description_over_the_page_text():
+    html = ('<script type="application/ld+json">{"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", '
+            '"description": "Die Stelle laut Anzeige."}</script><h1>Pflegefachkraft (m/w/d)</h1><p>Seitentext drumherum.</p>')
+    assert va.parse_job_page(html, "https://x.example/j/1", "X")["description"] == "Die Stelle laut Anzeige."
 
 
 def test_crawl_wp_jobs_delegates_to_erecruiter_by_capability(monkeypatch):

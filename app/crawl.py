@@ -370,6 +370,7 @@ def _seed_obs(board, c, towns, log):
         seeded = next((s for s in bite_seeds if str(s.get("kez")) == str(c["clinic_id"])), None)
         if seeded and seeded.get("customer"):
             seed["customer"], seed["listing"] = seeded["customer"], seeded.get("listing")
+            seed["place_field"] = seeded.get("place_field")   # TASK-184: custom field naming the posting's own site (Arberland), see bite.to_observation
         rows, st = bite.crawl(seed, towns, log=log)
         for r in rows:
             r.setdefault("_kez", None)
@@ -862,6 +863,21 @@ def execute(run_id):
                                      f"read stopped by a safety ceiling, not by the board's own end of pagination "
                                      f"({json.dumps({k: v for k, v in st.items() if k in ('job_links_found', 'list_pages', 'job_pages')}, ensure_ascii=False)})", run_id)
                 log(f"  WARNING: truncated read for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=truncated")
+            # TASK-185 F4: pages the walk asked for and did not get (career_crawl.Crawler.fetch: non-200, transport
+            # error) are carried as "HTTP 500 <url>". A walk that could not read a page it needed -- its seed / listing
+            # pages, pagination, sitemaps, the detail page of a URL it judged to be a job, or any page that answered 5xx /
+            # failed in transport (stats["incomplete_pages"], see Crawler._failure) -- under-read the board, the same
+            # shape as the board_total check below, so the same kind: 'incomplete' (board_walk_ok False for the day).
+            # Before this the page just vanished and the board read as a clean success. A 4xx on a link the walk merely
+            # followed (stats["failed_pages"] minus incomplete_pages: an image, a Wicket callback) is logged, not recorded.
+            failed_pages = (st or {}).get("failed_pages") or []
+            incomplete_pages = (st or {}).get("incomplete_pages") or []
+            if incomplete_pages:
+                R.record_crawl_issue(url, day, "incomplete", b.get("vendor"), ids,
+                                     f"{len(incomplete_pages)} page(s) the walk needed did not answer: " + "; ".join(incomplete_pages), run_id)
+                log(f"  WARNING: {len(incomplete_pages)} page(s) the walk needed did not answer for {b['vendor']} {url[:60]} — recorded as crawl_issue kind=incomplete")
+            if len(failed_pages) > len(incomplete_pages):
+                log(f"  {len(failed_pages) - len(incomplete_pages)} followed link(s) did not answer 200 for {b['vendor']} {url[:60]} (not needed for completeness, stats failed_pages only)")
             # TASK-88 AC#1/#2: the seeded-adapter counterpart to the vendor branch's board_total
             # check above -- bite.py is the first seeded adapter to carry it (page.total off its own
             # API), st.get() keeps this a no-op for the others until they do too.

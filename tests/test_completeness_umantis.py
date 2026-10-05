@@ -130,3 +130,62 @@ def test_app_crawl_umantis_branch_adds_no_per_board_ceiling_of_its_own(monkeypat
     assert stats["job_links_found"] == n
     assert len(rows) == n
     assert stats["truncated"] is False
+
+
+# --- TASK-185 / F2: a place the page states is read; a place copied from the seed is marked a stamp -------------
+# karriere.klinikverbund-allgaeu.de is ONE hub for six registry clinics. Every detail page carries its own
+# "Standort" field ("Kempten", "Immenstadt; Oberstdorf"), the walk ignored it and stamped the seed clinic's town on
+# 81 of 84 rows, with no marker. The lines below are the text of two real pages as the crawler stored them (run 225,
+# 2026-10-01 06:06 UTC; the site's job module answered with an empty shell when the markup was fetched again), in
+# minimal markup.
+KVA_SEED = {"name": "Klinik Kempten", "kez": "76301", "career": "https://karriere.klinikverbund-allgaeu.de/",
+            "town": "Kempten", "operator": "Klinikverbund Allgäu gGmbH"}
+KVA_TOWNS = {"kempten", "immenstadt", "oberstdorf", "mindelheim"}
+KVA_URL = "https://karriere.klinikverbund-allgaeu.de/karriere-detail/%s/Stelle/%d?cHash=x"
+KVA_PAGE = """<html><head><title>Karriere Detail - Klinikverbund Allgäu</title></head><body>
+<h1>%s</h1><a href="#">jetzt bewerben</a>
+<div>Standort</div><div>%s</div><div>Eintrittstermin</div><div>%s</div><div>Umfang</div><div>Teilzeit</div>
+<div>Arbeitsbereich</div><div>Ärztlicher Dienst</div></body></html>"""
+
+
+def _inherited(row):
+    from pflege_jobs.cli import _city_inherited
+    return _city_inherited(row)
+
+
+def test_heuristic_reads_the_standort_field_of_a_multi_site_posting_and_does_not_mark_it():
+    page = KVA_PAGE % ("Pflegefachkraft (m/w/d), Notfallsanitäter (m/w/d) und Anästhesietechnische Assistenz (ATA) für die Anästhesie",
+                       "Immenstadt; Oberstdorf", "ab sofort")
+    row = Crawler(towns=KVA_TOWNS)._heuristic(page, KVA_URL % ("Immenstadt-Oberstdorf", 856), KVA_SEED)
+    assert row["city"] == "Immenstadt"        # first listed site, the order jobposting_to_obs also keeps
+    assert not _inherited(row)                # read off the page, never marked
+
+
+def test_heuristic_does_not_mark_a_standort_that_happens_to_be_the_seed_town():
+    page = KVA_PAGE % ("Facharzt Neurologie (m/w/d) in Teilzeit", "Kempten", "01.12.2026")
+    row = Crawler(towns=KVA_TOWNS)._heuristic(page, KVA_URL % ("Kempten", 2641), KVA_SEED)
+    assert row["city"] == "Kempten" and not _inherited(row)
+
+
+def test_heuristic_reads_a_bare_plz_ort_pair_with_its_own_rule_not_the_verify_readers_multiword_one():
+    # the run-225 Allgäu row that stated no Standort but a letterhead "87700 Memmingen" -- verify.extract_location's own
+    # plz_ort source would return "Memmingen Bewerbungen" (it is only confirming evidence there, TRUSTED_LOC)
+    page = ("<html><body><h1>Pflegefachkraft (m/w/d) Kinderklinik</h1><p>Bewerbungen willkommen</p>"
+            "<div>Musterweg 1</div><div>87700 Memmingen Bewerbungen willkommen</div></body></html>")
+    row = Crawler(towns=KVA_TOWNS | {"memmingen"})._heuristic(page, KVA_URL % ("Memmingen", 5), KVA_SEED)
+    assert (row["city"], row["plz"]) == ("Memmingen", "87700") and not _inherited(row)
+
+
+def test_heuristic_marks_the_seed_town_stamp_when_the_page_names_no_place():
+    page = "<html><body><h1>Medizinischer Fachangestellter (w/m/d) für den Bereich Stationsdienst</h1><p>Bewerben Sie sich jetzt.</p></body></html>"
+    row = Crawler(towns=KVA_TOWNS)._heuristic(page, KVA_URL % ("Kempten", 1), KVA_SEED)
+    assert row["city"] == "Kempten" and _inherited(row)
+
+
+def test_from_jsonld_marks_the_seed_town_when_the_json_ld_has_no_address():
+    jp = {"@type": "JobPosting", "title": "Pflegefachkraft (m/w/d)", "description": "d", "datePosted": "2026-01-01"}
+    with_address = dict(jp, jobLocation={"address": {"addressLocality": "Immenstadt"}})
+    cr = Crawler(towns=KVA_TOWNS)
+    assert _inherited(cr._from_jsonld(jp, KVA_URL % ("Kempten", 3), KVA_SEED))
+    row = cr._from_jsonld(with_address, KVA_URL % ("Kempten", 4), KVA_SEED)
+    assert row["city"] == "Immenstadt" and not _inherited(row)

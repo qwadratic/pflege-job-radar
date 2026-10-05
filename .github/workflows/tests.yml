@@ -1,0 +1,37 @@
+name: tests
+
+# The offline suite: everything except the tests that talk to live clinic boards (network) and the ones
+# that spawn the paid `claude` CLI (llm). Those two stay manual.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest-timeout
+      - run: python -m playwright install --with-deps chromium
+      # Placeholders, not credentials: several modules read these at import or call time. The offline
+      # suite never connects to them; 127.0.0.1:9 refuses at once if a test tries.
+      - run: python -m pytest -q -m "not network and not llm" --timeout=300
+        env:
+          # The adapter-completeness modules read the clinic registry from the internal read proxy at
+          # import; this is their own switch for a run that cannot reach it (tests/adapter_contract.py).
+          PFLEGE_TESTS_OFFLINE: "1"
+          SUPABASE_URL: http://127.0.0.1:9
+          SUPABASE_ANON_KEY: ci-placeholder
+          PFLEGE_INGEST_URL: http://127.0.0.1:9/ingest
+          PFLEGE_INGEST_SECRET: ci-placeholder
+          FIRECRAWL_API_KEY: ci-placeholder

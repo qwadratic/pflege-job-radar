@@ -36,8 +36,10 @@ How each vendor is reached (probed 2026-09-06):
   oracle          Oracle Recruiting Cloud is a JS SPA behind an XHR API; crawl_oracle tries a
                   same-origin public jobs.feed.json (schema.org DataFeed, softgarden-fronted tenants
                   like St. Josef publish this, no auth/browser needed -- reuses
-                  crawlers/portals.py:parse_jobposting_feed) and falls back to crawl_wp_jobs for
-                  tenants that render job links server-side instead (Klinikum FFB) or neither
+                  crawlers/portals.py:parse_jobposting_feed); a Candidate Experience site
+                  (jobs.sana.de, or a clinic page linking into one) is read through the public REST
+                  API its SPA uses, list then detail (_oracle_cx_rows, TASK-184); else falls back to
+                  crawl_wp_jobs for tenants that render job links server-side instead (Klinikum FFB) or neither
                   (Altmühlfranken, still needs crawlers/portals.py's Playwright path -- not wired in).
   easyhr          <host>/easyhr-proxy.php answers a public GET with every open position as JSON, no
                   auth/browser needed (TASK-115, confirmed live only on reisach-kliniken.de so far).
@@ -760,6 +762,50 @@ NOT_JOB_TITLE_RX = re.compile(r"^(Impressum|Datenschutzerkl.rung|Barrierefreihei
 STELLENANGEBOT_IN_RX = re.compile(r"<h[1-6][^>]*>\s*Stellenangebot in\s+([^<]+?)\s*</h[1-6]>", re.I)
 
 
+def _body_text(htmltext):
+    """The page's own text without its scripts, styles, nav, header and footer -- what the posting says when the JSON-LD
+    does not (an empty description: eRecruiter, jobs.klinikum-ab-alz.de; kbo.de's facts-only one)."""
+    return _txt(re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or ""))
+
+
+# The ad's own container, most specific first (TASK-185 F6): the eRecruiter engine's jobBlock divs, then <main>, then <article>.
+# The tag is followed by whitespace, "/" or ">" so that <main-nav> is not <main>; jobBlock is one whole token of the class attribute.
+_JOBBLOCK_RX = re.compile(r"""<div(?=[\s/>])[^>]*?\sclass=["'](?:[^"']*\s)?jobBlock(?:\s[^"']*)?["'][^>]*>""", re.I)
+_MAIN_RX = re.compile(r"<main(?=[\s/>])[^>]*>", re.I)
+_ARTICLE_RX = re.compile(r"<article(?=[\s/>])[^>]*>", re.I)
+
+
+def _elements(htmltext, open_rx, tag):
+    """The inner HTML of every outermost <tag> element whose opening tag open_rx matches, in page order. Nested <tag>s are
+    counted, so a block's own child blocks do not end it early; an element left open runs to the end of the page, as a
+    browser reads it."""
+    close_rx = re.compile(r"<(/?)%s(?=[\s/>])[^>]*>" % tag, re.I)
+    out, end = [], 0
+    for m in open_rx.finditer(htmltext):
+        if m.start() < end:
+            continue                                      # inside the previous one
+        depth, inner_end, end = 1, len(htmltext), len(htmltext)
+        for t in close_rx.finditer(htmltext, m.end()):
+            depth += -1 if t.group(1) else 1
+            if depth == 0:
+                inner_end, end = t.start(), t.end()
+                break
+        out.append(htmltext[m.end():inner_end])
+    return out
+
+
+def _ad_text(htmltext):
+    """The ad when the JobPosting JSON-LD states none (an empty description: eRecruiter, jobs.klinikum-ab-alz.de; no key at all:
+    karriere.klinikum-nuernberg.de): the text of the board's own container -- every jobBlock div, else <main>, else <article> --
+    and not of the page around it, whose skip links, JavaScript / cookie notice, upload and cookie dialogs the whole body also
+    reads (6,592 chars median on the 30 rows, 4,309 here). No container: the body as _body_text has it."""
+    for tag, rx in (("div", _JOBBLOCK_RX), ("main", _MAIN_RX), ("article", _ARTICLE_RX)):
+        parts = _elements(htmltext or "", rx, tag)
+        if parts:
+            return _body_text(" ".join(parts))
+    return _body_text(htmltext)
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -815,7 +861,9 @@ def parse_job_page(htmltext, url, org):
                         # _enrich_wp_fallback_fields to re-fetch the page just to find it.
                         "datePosted": _sane_date(n.get("datePosted")) or _page_meta_date(htmltext),
                         "employmentType": n.get("employmentType"),
-                        "description": _txt(n.get("description"))}
+                        # an empty JSON-LD description (TASK-185 F6: 29 of 64 eRecruiter jobs on jobs.klinikum-ab-alz.de) is
+                        # not the posting having no text -- the ad is in the page, in the board's own container
+                        "description": _txt(n.get("description")) or _ad_text(htmltext)}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
     # TASK-170: a cookie-consent dialog can be the page's first <h1> (kurpark.mutter-kind.de: "Diese
@@ -861,7 +909,6 @@ def parse_job_page(htmltext, url, org):
                 return None
     if not title:
         return None
-    body = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", htmltext or "")
     # No JSON-LD JobPosting anywhere (confirmed live: karriere.barmherzige.net) -- but the page still
     # states employmentType/city plainly next to a schedule/location icon; read that instead of
     # leaving fields the source does expose empty.
@@ -877,7 +924,7 @@ def parse_job_page(htmltext, url, org):
     return {"title": title, "org": org, "org_source": "seed",
             "loc": [{"city": facts.get("location") or (_txt(stelle_in.group(1), 200) if stelle_in else None),
                      "plz": None, "region": None}],
-            "url": url, "page": url, "description": _txt(body),
+            "url": url, "page": url, "description": _body_text(htmltext),
             "employmentType": facts.get("schedule"),
             # TASK-85 AC#6: this is the branch a JSON-LD-less TYPO3 board (AMEOS: itemprop meta, no
             # JobPosting block at all, see ITEMPROP_DATE_RX) always took, so datePosted was always
@@ -941,7 +988,7 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
         # The two shapes that answer 200 but are not the posting, decided by the same helpers the
         # verifier uses so a row cannot enter here and be expired hours later by the verify pass:
         # a bot wall's own refusal page, and a slug that redirected to the board's list.
-        from pflege_jobs.verify import WALL_MARKERS, _bounced_to_list
+        from pflege_jobs.verify import TRUSTED_LOC, WALL_MARKERS, _bounced_to_list, extract_location
         if WALL_MARKERS.search(r.text[:4000]) or _bounced_to_list(u, r.url, None):
             continue
         m = ALLJOBS_RX.search(r.text)
@@ -1016,17 +1063,27 @@ def _wp_job_rows(urls, c, host, session, section_labels=None, seen=None, titles=
                 # board can link these same standard German legal-notice pages from its careers page.
                 continue
         if not j["loc"][0]["city"]:
-            # TASK-118: a shared board with no structured location field at all can still state the
-            # real work site in plain body prose ("am Standort Weilheim") -- confirmed live
-            # 2026-09-23, meinkrankenhaus2030.de. Try that BEFORE the single-clinic seed-town
-            # fallback, so a board this function's own caller has widened to more than one clinic
-            # (crawlers.vendor_adapters.account_pool_for) does not get every row stamped with
-            # whichever clinic happened to trigger this fetch.
-            standort = extract_standort_city(j.get("description"), towns) if towns else None
-            if standort:
-                j["loc"] = [{"city": standort, "plz": None, "region": None}]
-            elif c.get("town"):
-                j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
+            # TASK-185: the page can state its own place without a JSON-LD jobLocation -- schema.org
+            # microdata (karriere.ameos.eu, krankenpflegejobs24.de) or an "Einsatzort" block
+            # (kliniken-gz-kru.de, awo-omf.de, innklinikum.de) -- read it the way pflege_jobs.verify
+            # does, BEFORE any stamp: 404 judged postings sat under a seed clinic whose town their own
+            # text contradicts. A label is believed only against `towns` (nothing to check it with
+            # otherwise); a place read here is never marked a stamp.
+            city, plz, src = extract_location(r.text, towns)
+            if city and src in TRUSTED_LOC and (towns or src != "einsatzort"):
+                j["loc"] = [{"city": city, "plz": plz, "region": None}]
+            else:
+                # TASK-118: a shared board with no structured location field at all can still state the
+                # real work site in plain body prose ("am Standort Weilheim") -- confirmed live
+                # 2026-09-23, meinkrankenhaus2030.de. Try that BEFORE the single-clinic seed-town
+                # fallback, so a board this function's own caller has widened to more than one clinic
+                # (crawlers.vendor_adapters.account_pool_for) does not get every row stamped with
+                # whichever clinic happened to trigger this fetch.
+                standort = extract_standort_city(j.get("description"), towns) if towns else None
+                if standort:
+                    j["loc"] = [{"city": standort, "plz": None, "region": None}]
+                elif c.get("town"):
+                    j["loc"] = [{"city": c["town"], "plz": None, "region": None}]; j["city_source"] = "seed"
         j["section_labels"] = list(section_labels) if section_labels else []
         out.append(row(host, j["url"], j, "wp_jobs"))
         time.sleep(0.2)
@@ -1899,11 +1956,81 @@ def _enrich_wp_fallback_fields(rows, session=None):
     return rows
 
 
+# Oracle HCM "Candidate Experience" (CE) site: https://<host>/<lang>/sites/<SITE>/... is a SPA whose shell names the REST
+# host (data-apibaseurl) and the site number (data-sitenumber); the REST API the SPA itself reads is public. TASK-184:
+# the shell's <title> ("Sana") was stored as every posting's text.
+CX_SITE_RX = re.compile(r"(https?://[^/\s\"'<>]+/[a-z]{2})/sites/[A-Za-z0-9_]+")
+CX_LIST = "recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=%s,limit=50,offset=%d"
+CX_DETAIL = 'recruitingCEJobRequisitionDetails?expand=all&onlyData=true&finder=ById;Id="%s",siteNumber=%s'
+
+
+def _oracle_cx_json(u, session):
+    r = get(u, session=session)
+    if r is None or not r.ok:
+        raise RuntimeError("Oracle CE read failed (%s): %s" % (getattr(r, "status_code", "no response"), u[:200]))
+    return r.json()
+
+
+def _oracle_place(name):
+    """One location name as Oracle prints it: "<city>, <Land>, <country>", a level left out when the requisition is placed
+    higher up ("Bayern, Deutschland", "Deutschland"). The first part is the place at whatever level the source states it,
+    the second last part the Land -- which in_bavaria() reads, instead of a list of Bavarian towns."""
+    parts = [x.strip() for x in (name or "").split(",") if x.strip()]
+    return {"city": parts[0] if parts else None, "plz": None, "region": parts[-2] if len(parts) > 1 else None}
+
+
+def _oracle_cx_rows(cu, session=None):
+    """Every requisition of the Oracle CE site cu is, or the page cu links into (the clinics' www.sana.de pages), read through
+    the REST API: the list to its own TotalJobsCount, then one detail per requisition. None when cu is no such site. A list page
+    that cannot be read fails the board; a detail that cannot be read is recorded in .page_crashes and its row left out."""
+    m = CX_SITE_RX.match(cu)
+    if not m:
+        page = get(cu, session=session)
+        m = page and page.ok and CX_SITE_RX.search(page.text)
+    if not m:
+        return None
+    shell = get(m.group(0), session=session)
+    if shell is None or not shell.ok:
+        raise RuntimeError("Oracle CE site shell not readable (%s): %s" % (getattr(shell, "status_code", "no response"), m.group(0)))
+    api, site = (re.search(r'data-%s="([^"]+)"' % a, shell.text) for a in ("apibaseurl", "sitenumber"))
+    if not (api and site):
+        return None
+    api, site = api.group(1).rstrip("/") + "/hcmRestApi/resources/latest/", site.group(1)
+    reqs, total = [], None
+    while True:
+        it = _oracle_cx_json(api + CX_LIST % (site, len(reqs)), session)["items"][0]
+        total, page = it["TotalJobsCount"], it.get("requisitionList") or []
+        reqs += page
+        if not page or len(reqs) >= total:
+            break
+    out, crashes = _BoardTotalRows(), []
+    for q in reqs:
+        url = "%s/sites/%s/job/%s" % (m.group(1), site, q["Id"])
+        try:
+            d = _oracle_cx_json(api + CX_DETAIL % (q["Id"], site), session)["items"][0]
+        except Exception as e:
+            crashes.append((url, "detail not readable: %s" % str(e)[:200]))
+            continue
+        # the ad is these three fields; CorporateDescriptionStr / OrganizationDescriptionStr are the same company text on every posting
+        text = " ".join(t for t in (_txt(d.get(k)) for k in ("ExternalDescriptionStr", "ExternalResponsibilitiesStr", "ExternalQualificationsStr")) if t)
+        out.append(row(urlparse(url).netloc, url, {
+            "title": _txt(q["Title"]), "org": q["LegalEmployer"], "org_source": None, "url": url, "page": url,
+            "loc": [_oracle_place(n) for n in [q["PrimaryLocation"]] + [s["Name"] for s in q.get("secondaryLocations") or []]],
+            "description": text or None, "datePosted": _sane_date(q["PostedDate"])}, "oracle"))
+        time.sleep(0.3)
+    out.board_total = total
+    if crashes:
+        out.page_crashes = crashes
+    return out
+
+
 def crawl_oracle(c, session=None):
     """Oracle Recruiting Cloud is a client-rendered SPA -- no server-rendered job links to walk a
     sitemap for. Some tenants (softgarden-fronted, e.g. karriere.josef.de) also publish a public,
     unauthenticated schema.org DataFeed at <origin>/jobs.feed.json; prefer that when present, since
-    it has full descriptions and needs no browser. Falls back to crawl_wp_jobs for tenants that
+    it has full descriptions and needs no browser. A Candidate Experience site (jobs.sana.de, or a clinic
+    page linking into one) is read through the REST API the SPA itself uses (_oracle_cx_rows): title, legal
+    employer, location and ad text of every requisition. Falls back to crawl_wp_jobs for tenants that
     render job links server-side instead (Klinikum FFB, Altmühlfranken); that fallback's own rows
     carry no employmentType/datePosted, so _enrich_wp_fallback_fields backfills both."""
     cu = (c.get("careers_url") or "").strip()
@@ -1927,6 +2054,9 @@ def crawl_oracle(c, session=None):
                     out = _BoardTotalRows(out)
                     out.board_total = data.get("numberOfItems") if isinstance(data.get("numberOfItems"), int) else None
                     return out
+        cx = _oracle_cx_rows(cu, session=session)
+        if cx is not None:
+            return cx
     return _enrich_wp_fallback_fields(crawl_wp_jobs(c, session=session), session=session)
 
 
@@ -2587,6 +2717,7 @@ def crawl_muenchen_klinik(c, session=None, cu_resp=None):
             continue
         locs = [_txt(x.get("title"), 200) for x in (j.get("locations") or [])]
         sites = [MK_SITES[x.lower()] for x in locs if x and x.lower() in MK_SITES]
+        listed = [x for x in locs if x]        # payload["sites"]: every listed location, in listing order, for the matcher
         confident = len(sites) == 1 and len(locs) == 1
         org = sites[0] if confident else "München Klinik gGmbH"
         d = get(url, session=session)
@@ -2598,7 +2729,7 @@ def crawl_muenchen_klinik(c, session=None, cu_resp=None):
         payload = {"title": title, "org": org if confident else ((full or {}).get("org") or org),
                    "org_source": None if confident else (full or {}).get("org_source"),
                    "loc": (full or {}).get("loc") or [{"city": "München", "plz": None, "region": None}],
-                   "url": url, "page": url,
+                   "url": url, "page": url, "sites": listed,
                    "description": (full or {}).get("description"),
                    "datePosted": (full or {}).get("datePosted"),
                    "employmentType": (full or {}).get("employmentType")}
@@ -2935,6 +3066,11 @@ GROUP_PORTALS = [
      # address every time; still true 2026-09-18). crawl_group_portal must never carry that address
      # through as the posting's own location -- see hq_location_untrusted below.
      "hq_location_untrusted": True,
+     # The JSON-LD `description` is the page's "job-details" facts partial (Eintrittsdatum / Arbeitszeit), never the
+     # ad: measured 2026-10-01 on the 105 distinct postings of the board -- 13 empty, 91 that facts line (83 of 29-163
+     # chars, 8 repeated up to 20,000 chars), 1 "Arbeitszeit nach Vereinbarung". The ad (3.2-5.2k chars) is only in the
+     # page body -- crawl_group_portal reads it from there (a length test would miss the 20k blobs).
+     "jsonld_description_is_facts": True,
      # ...but each detail page DOES carry a structured "Einsatzort" block naming the real kbo site
      # and its street address (confirmed live 2026-09-21: present on all 108 job pages on the
      # board). That block is the posting's own site of work -- both its city/postcode and the site
@@ -3168,6 +3304,8 @@ def crawl_group_portal(c, g, session=None, towns=None):
             continue
         j = parse_job_page(r.text, r.url, c["name"])
         if j and j.get("title"):
+            if g.get("jsonld_description_is_facts"):
+                j["description"] = _body_text(r.text)
             from pflege_jobs.verify import _EINSATZORT, _PLZ_ORT, _clean_city, _placeable
             site_city = site_plz = None
             site_block_rx = g.get("site_block_rx")
@@ -3335,6 +3473,7 @@ def main():
             locs = r["payload"].get("loc") or [{}]
             if c.get("town") and not any((l or {}).get("city") for l in locs):
                 r["payload"]["loc"] = [{"city": c["town"], "plz": None, "region": None}]
+                r["payload"]["city_source"] = "seed"      # TASK-185: a copy of the seed clinic's town is marked as one
         n = save(rows, "vendor_" + c["ats_type"])
         total += n
         print("  %-44s %-16s jobs %3d" % (c["name"][:44], c["ats_type"], n))

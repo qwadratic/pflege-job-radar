@@ -194,6 +194,8 @@ def test_career_profiles_is_empty_while_the_graph_leaves_it_out():
         assert NODES["career_profile"].get("populated") is not None
         return
     with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as c:
+        if not c.execute("select 1 from sqlite_master where type='table' and name='career_profiles'").fetchone():
+            pytest.skip("local data/app.sqlite has no career_profiles table")
         n = c.execute("select count(*) from career_profiles").fetchone()[0]
     assert n == 0, f"career_profiles holds {n} rows and no node in docs/ontology.json publishes it"
 

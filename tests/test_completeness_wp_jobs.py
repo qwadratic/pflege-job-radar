@@ -596,6 +596,69 @@ def test_wp_job_rows_falls_back_to_the_seed_town_when_no_standort_is_stated(monk
     assert rows[0]["payload"]["city_source"] == "seed"
 
 
+# --- TASK-185: the page's own place beats the seed-town stamp -------------------------------------
+# 404 of 2,794 judged open postings sat under a registry clinic whose town the posting's own text
+# contradicts: _wp_job_rows stamped the seed clinic's town on every page whose place it could not read,
+# although the page states it as schema.org microdata (karriere.ameos.eu: <meta itemprop="jobLocation"
+# content="Osnabrück">, 5 ads stamped to a Bavarian clinic) or as an "EINSATZORT:" block
+# (kliniken-gz-kru.de: Krumbach, stamped Günzburg). Fixtures: frozen real page slices.
+def _fx(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples", name), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_wp_job_rows_reads_the_microdata_joblocation_instead_of_stamping_the_seed_town(monkeypatch):
+    url = "https://x.example/stelle/psychotherapeut"
+    monkeypatch.setattr(va, "get", _router({url: _R(_fx("ameos_stelle_osnabrueck_sample.html"), url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Klinikum Parsberg", "town": "Parsberg"}, "x.example", None, towns={"parsberg"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Osnabrück"       # not Parsberg
+    assert rows[0]["payload"].get("city_source") is None             # a place read off the page is never marked a stamp
+
+
+def test_wp_job_rows_reads_a_registry_town_from_an_einsatzort_block_instead_of_stamping_the_seed_town(monkeypatch):
+    url = "https://x.example/detail/22-pflegefachmann"
+    monkeypatch.setattr(va, "get", _router({url: _R(_fx("kliniken_gz_kru_einsatzort_sample.html"), url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Klinik Günzburg", "town": "Günzburg"}, "x.example", None, towns={"günzburg", "krumbach"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Krumbach"
+    assert rows[0]["payload"].get("city_source") is None
+
+
+def test_wp_job_rows_does_not_believe_an_einsatzort_label_it_cannot_check_against_the_registry_towns(monkeypatch):
+    url = "https://x.example/detail/22-pflegefachmann"
+    monkeypatch.setattr(va, "get", _router({url: _R(_fx("kliniken_gz_kru_einsatzort_sample.html"), url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Klinik Günzburg", "town": "Günzburg"}, "x.example", None)   # towns=None
+    assert rows[0]["payload"]["loc"][0]["city"] == "Günzburg"
+    assert rows[0]["payload"]["city_source"] == "seed"
+
+
+def test_wp_job_rows_does_not_take_a_bare_plz_ort_address_for_the_postings_place(monkeypatch):
+    # synthetic page: a footer address is the house's office, not where this job is worked (verify.TRUSTED_LOC)
+    url = "https://x.example/detail/24-pflegefachmann"
+    page = "<title>Pflegefachmann/-frau (m/w/d)</title><p>Wir suchen Sie.</p><footer>Musterstr. 1, 86381 Krumbach</footer>"
+    monkeypatch.setattr(va, "get", _router({url: _R(page, url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Klinik Günzburg", "town": "Günzburg"}, "x.example", None, towns={"günzburg", "krumbach"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Günzburg"
+    assert rows[0]["payload"]["city_source"] == "seed"
+
+
+def test_wp_job_rows_reads_the_place_out_of_prose_only_up_to_the_end_of_its_sentence(monkeypatch):
+    # real Rottal-Inn page: "...am Standort Eggenfelden. Sie sind verantwortlich..." stored the city "Eggenfelden Sie"
+    url = "https://x.example/job/reinigungskraft-m-w-d-in-eggenfelden/"
+    monkeypatch.setattr(va, "get", _router({url: _R(_fx("rottal_standort_prose_sample.html"), url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Rottal-Inn Kliniken Simbach", "town": "Simbach am Inn"}, "x.example", None,
+                           towns={"simbach am inn", "eggenfelden"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Eggenfelden"
+    assert rows[0]["payload"].get("city_source") is None
+
+
+def test_wp_job_rows_marks_the_seed_town_when_the_page_names_no_place_at_all(monkeypatch):
+    url = "https://x.example/detail/23-pflegefachmann"
+    monkeypatch.setattr(va, "get", _router({url: _R("<title>Pflegefachmann/-frau (m/w/d)</title><p>Wir suchen Sie.</p>", url=url, ok=True)}))
+    rows = va._wp_job_rows([url], {"name": "Klinik Günzburg", "town": "Günzburg"}, "x.example", None, towns={"günzburg", "krumbach"})
+    assert rows[0]["payload"]["loc"][0]["city"] == "Günzburg"
+    assert rows[0]["payload"]["city_source"] == "seed"
+
+
 # --- TASK-90: filter/pagination parameter walking, generic across boards ------------------------
 
 def test_paginated_job_links_follows_a_numbered_bootstrap_pager_not_just_a_next_link(monkeypatch):

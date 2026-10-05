@@ -17,7 +17,9 @@ def test_region_codes_beat_everything():
 
 
 def test_town_list_and_generic_prefix():
-    assert in_bavaria("Bad Oeynhausen", None, None, {"bad kissingen", "bad"}) is None
+    # the generic first token "bad" in the town list must not make it Bavarian. It used to come out undecided (None);
+    # since TASK-185 F7c data/geo (Destatis) knows Bad Oeynhausen is a municipality of Nordrhein-Westfalen, so it is False
+    assert in_bavaria("Bad Oeynhausen", None, None, {"bad kissingen", "bad"}) is False
     assert in_bavaria("Tutzing", None, None, {"tutzing"}) is True
     assert in_bavaria("Berlin", None, None, {"tutzing"}) is False
     assert in_bavaria("", None, None, set()) is None

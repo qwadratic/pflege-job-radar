@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-24 17:33'
-updated_date: '2026-09-25 00:10'
+updated_date: '2026-10-01 18:01'
 labels:
   - db-quality
   - infra
@@ -25,4 +25,11 @@ Found twice independently today (2026-09-24, TASK-142's and TASK-154's own inves
 - [ ] #1 Grep the repo for direct PostgREST GET calls (data/*.py, tools/*.py, crawlers/*.py -- the requests.get(...rest/v1/...) pattern) and list every one that does not already paginate via Range headers or OFFSET
 - [ ] #2 Decide and apply a standard fix: either a small shared helper (paginated REST GET) that these scripts import, or a documented convention (always check Content-Range, always paginate above 1000) -- whichever is the smaller true fix, not a new abstraction for its own sake
 - [ ] #3 Live-verified: at least one previously-affected script (or a repro case) is confirmed to now return the true full row count above 1000, not a silently truncated 1000
+- [ ] #4 rest_get_all raises (no default order invented) when params has no 'order'; the existing callers and the test fakes keep working; test red before / green after, mutation-checked
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-01 (TASK-184 Altenpflege research): second, separate trap in the same helper. app/config.py rest_get_all(path, params, page=1000) pages with limit/offset and sends NO order unless the caller passes params['order']; PostgREST gives no stable order without it, so rows can be skipped or duplicated between pages. An agent's first read of the open postings returned 765 rows instead of 1,050 for that reason. All 16 production call sites pass order today (grep of the call lines; tests use fakes), so nothing is wrong now, but the helper lets the next caller walk into it.
+<!-- SECTION:NOTES:END -->

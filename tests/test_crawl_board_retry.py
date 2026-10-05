@@ -464,6 +464,59 @@ def test_a_truncated_seeded_read_is_recorded_as_crawl_issue_kind_truncated(fresh
     assert "180" in issues[0]["error"]   # the count reached, not just the fact of the stop
 
 
+def test_a_seeded_walk_with_pages_that_did_not_answer_is_recorded_as_crawl_issue_kind_incomplete(fresh, monkeypatch):
+    """TASK-185 F4: karriere.klinikverbund-allgaeu.de's job module answers HTTP 500, the walk read 19 rows instead of
+    84 and the run read as success. Every page the walk asked for and did not get is carried in stats["failed_pages"]
+    ("HTTP <status> <url>"); the ones the walk needed (stats["incomplete_pages"]: seed / listing, pagination, sitemap,
+    a URL it judged to be a job, any 5xx / transport failure) make the read kind='incomplete' (no new kind), so
+    board_walk_ok is False for the day and nothing absent from it counts as gone. A dead link it merely followed
+    stays in failed_pages and is not in the issue."""
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    needed = ["HTTP 500 https://x.example/?id=49&type=9818", "ConnectionError https://x.example/p2"]
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (
+        obs, {"truncated": False, "failed_pages": needed + ["HTTP 404 https://x.example/aktuelles/detail/"], "incomplete_pages": needed}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    issues = [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"]
+    assert len(issues) == 1 and issues[0]["board_url"] == "https://x.example/board"
+    assert "HTTP 500 https://x.example/?id=49&type=9818" in issues[0]["error"]     # status and url, every one of them
+    assert "ConnectionError https://x.example/p2" in issues[0]["error"]
+    assert "aktuelles/detail" not in issues[0]["error"]
+    assert R.board_walk_ok("https://x.example/board", R.now()[:10]) is False
+
+
+def test_a_seeded_walk_whose_only_failures_are_followed_links_records_no_incomplete_issue(fresh, monkeypatch):
+    """anregiomed.de (dead nav entries, 404), karriere.klinikverbund-allgaeu.de (an image srcset read as a link, 404) and
+    uk-augsburg.softgarden.io (Wicket callback links, 403) each read in full: their failed_pages must not block
+    absence-retirement for the day."""
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (obs, {
+        "truncated": False, "incomplete_pages": [],
+        "failed_pages": ["HTTP 404 https://www.anregiomed.de/aktuelles/neuigkeiten/detail/",
+                         "HTTP 403 https://uk-augsburg.softgarden.io/de/vacancies?-1.-jobSearch-jobSearchContainer-internalLink"]}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+    assert R.board_walk_ok("https://x.example/board", R.now()[:10]) is True
+
+
+def test_a_seeded_walk_whose_every_page_answered_records_no_incomplete_issue(fresh, monkeypatch):
+    seeded_board = {"kind": "seeded", "vendor": "umantis", "clinics": [CLINIC]}
+    obs = [{"source_ref": "https://x.example/1", "title": "Pflegefachkraft (m/w/d)"}]
+    monkeypatch.setattr(CR, "_boards", lambda clinics: {"https://x.example/board": seeded_board})
+    monkeypatch.setattr(CR, "_seed_obs", lambda b, c, towns, log: (obs, {"truncated": False, "failed_pages": [], "incomplete_pages": []}))
+    rid = R.create_run("clinic", "1", "adapter")
+    CR.execute(rid)
+
+    assert [i for i in R.list_crawl_issues() if i["kind"] == "incomplete"] == []
+
+
 def test_a_complete_seeded_read_records_no_truncated_issue(fresh, monkeypatch):
     """The other side of the same check: a board that stopped at its own end of pagination must not
     be reported as truncated, or the flag means nothing."""

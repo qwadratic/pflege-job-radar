@@ -13,6 +13,7 @@ filter dropped, and what it would have INSERTed into the 2000-per-rolling-24h Po
 """
 import argparse
 import collections
+import gzip
 import json
 import os
 import re
@@ -46,7 +47,7 @@ class _Sink:
         return {k: (len(v) if isinstance(v, list) else 1) for k, v in body.items()}
 
 
-RUN_ID_RX = re.compile(r"run_(\d+)\.jsonl$")
+RUN_ID_RX = re.compile(r"run_(\d+)\.jsonl(?:\.gz)?$")   # deploy/crontab gzips run files older than 7 days
 
 
 def run_id_for(jsonl_path, explicit=None):
@@ -74,7 +75,7 @@ def main():
     run_id = run_id_for(a.jsonl, a.run_id)
 
     rows = []
-    for line in open(a.jsonl, encoding="utf-8"):
+    for line in (gzip.open if a.jsonl.endswith(".gz") else open)(a.jsonl, "rt", encoding="utf-8"):
         line = line.strip()
         if line:
             rows.append(json.loads(line))

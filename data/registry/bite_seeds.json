@@ -69,7 +69,8 @@
   "career": "https://jobs.arberlandkliniken.de/",
   "customer": "arberland-kliniken",
   "listing": "main-listing",
-  "kez": "27601"
+  "kez": "27601",
+  "place_field": "ort"
  },
  {
   "name": "Arberlandklinik Viechtach",
@@ -78,7 +79,8 @@
   "career": "https://jobs.arberlandkliniken.de/",
   "customer": "arberland-kliniken",
   "listing": "main-listing",
-  "kez": "27602"
+  "kez": "27602",
+  "place_field": "ort"
  },
  {
   "name": "Kreisklinik Wolfratshausen",

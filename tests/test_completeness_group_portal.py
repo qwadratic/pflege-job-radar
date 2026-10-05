@@ -210,6 +210,40 @@ def test_kbo_takes_site_name_and_address_from_the_pages_own_einsatzort_block(mon
         assert p["loc"][0]["plz"] != "80538"
 
 
+def _fx(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "board_samples", name), encoding="utf-8") as f:
+        return f.read()
+
+
+KBO_3378 = "https://kbo.de/karriere/jobs/3378-arzt-in-weiterbildung-zum-fa-psychiatrie-und-psychotherapie-m-w-d"
+KBO_FACTS = "Eintrittsdatum 01.01.2027 Arbeitszeit Vollzeit / Teilzeit: mind. 75 %"
+
+
+def _kbo_3378_rows(monkeypatch, g):
+    list_url = g["list"]
+    monkeypatch.setattr(va, "get", _router({list_url: _R('<a href="%s"></a>' % KBO_3378, url=list_url, ok=True),
+                                            KBO_3378: _R(_fx("kbo_job_3378_sample.html"), url=KBO_3378, ok=True)}))
+    return va.crawl_group_portal({"name": "kbo-Isar-Amper-Klinikum", "careers_url": "https://kbo-iak.de"}, g, towns={"taufkirchen (vils)", "haar"})
+
+
+def test_kbo_description_is_the_pages_ad_not_the_json_ld_facts_block(monkeypatch):
+    """TASK-185 F3, kbo.de job 3378 frozen (fixtures/board_samples/README.md): the JSON-LD `description` of every kbo
+    posting is the page's "job-details" facts partial (Eintrittsdatum / Arbeitszeit), never the ad -- measured on the 105
+    distinct postings of the board: 13 empty, 91 that facts line (83 of 29-163 chars, 8 repeated up to 20,000 chars), 1
+    "Arbeitszeit nach Vereinbarung". The ad (3.2-5.2k chars) is only in the page body."""
+    p = _kbo_3378_rows(monkeypatch, va.GROUP_PORTALS[0])[0]["payload"]
+    assert "Aufnahme, Diagnostik und Behandlung von Patient*innen" in p["description"]
+    assert "Ihr Profil" in p["description"]
+    assert p["loc"][0] == {"city": "Taufkirchen", "plz": "84416", "region": None}   # the Einsatzort block read is untouched by this
+
+
+def test_a_group_portal_not_flagged_as_facts_only_keeps_its_json_ld_description(monkeypatch):
+    """The flag is a measured fact about one portal's JSON-LD, not a length rule: a portal without it still gets the
+    JSON-LD description as before (the facts line here, since this fixture is kbo's)."""
+    g = {k: v for k, v in va.GROUP_PORTALS[0].items() if k != "jsonld_description_is_facts"}
+    assert _kbo_3378_rows(monkeypatch, g)[0]["payload"]["description"] == KBO_FACTS
+
+
 def test_kbo_site_name_resolves_two_same_town_sister_sites_to_different_registry_rows():
     """The point of reading the site name: Matcher.match() can now name the right one of the two
     Landsberg am Lech kbo sites from content alone, with no board-pool guess."""

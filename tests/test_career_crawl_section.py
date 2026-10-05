@@ -14,6 +14,8 @@ Contract under test (see pflege_jobs/section.py + TASK-56 / commit 0ee9828, whic
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pflege_jobs.sources.career_crawl import Crawler  # noqa: E402
@@ -476,3 +478,218 @@ def test_the_description_of_a_crawled_posting_reaches_the_role_classifier():
     cr = _crawler({seed_url: R(seed_html, seed_url), job_url: R(job_html, job_url)})
     rows, _stats = cr.crawl({"name": "Example Klinik", "kez": "1", "career": seed_url, "town": "Muenchen"})
     assert [(r["role_class"], r["role_rule"].split(":")[0]) for r in rows] == [("ausbildung", "ausbildung_body")]
+
+
+# --- TASK-185 / F8: LINK_BAD names a page TYPE, never the words of a job's own title slug ----------------------
+# LINK_BAD substring-matched the whole URL, so a posting whose slug merely CONTAINS a bad word was dropped with no
+# stat and no crawl issue. Frozen real URLs: UKA softgarden job 67659167 (sitemap, JobPosting JSON-LD, datePosted
+# 2026-09-25) has "Datenschutz" in its slug; every "-ologin" profession noun contains "login"
+# (Technologin: kliniken-gz-kru.de, klinikum-nuernberg.de, klinikum-straubing.de; Psychologin: diakonie-wuerzburg.de).
+UKA_SLUG_URL = ("https://uk-augsburg.softgarden.io/job/67659167/Jurist-m-w-d-für-Datenschutz-und-IT-Recht-mit-"
+                "vorgesehener-Übernahme-der-Funktion-als-Datenschutzbeauftragter-m-w-d-")
+TECHNOLOGIN_URL = "https://kliniken-gz-kru.de/karriere/stellenangebote/detail/23-medizinische-r-technologe-technologin-fuer-radiologie-mtr-m-w-d"
+
+
+def test_link_bad_does_not_read_the_words_of_a_job_slug():
+    from pflege_jobs.sources.career_crawl import LINK_BAD
+    assert not LINK_BAD.search(UKA_SLUG_URL)
+    assert not LINK_BAD.search(TECHNOLOGIN_URL)
+    assert not LINK_BAD.search("https://diakonie-wuerzburg.de/aktuelle-jobs/psychologin-(m-w-d)-beim-sozialpsychiatrischen-dienst.html")
+
+
+def test_link_bad_still_names_the_page_types_it_always_did():
+    from pflege_jobs.sources.career_crawl import LINK_BAD
+    for u in ("https://www.klinikum-ab-alz.de/datenschutz",
+              "https://www.klinikum-ab-alz.de/impressum",
+              "https://karriere.ameos.eu/datenschutz/cookie-erklaerung",
+              "https://uk-augsburg.softgarden.io/de/imprint",
+              "https://jobs.klinikum-ab-alz.de/Login/3439",
+              "https://recruitingapp-5545.de.umantis.com/Vacancies/Register/CheckLogin/1",
+              "https://www.facebook.com/klinikum.ab.alz/",
+              "https://twitter.com/KlinikumNbg",
+              "https://www.addtoany.com/add_to/xing?linkurl=https%3A%2F%2Fkarriere.rottalinnkliniken.de%2Fjob%2Fx",
+              "https://vk.com/share.php?url=https%3A%2F%2Fdongku.de%2Fstellenangebote%2Fx",
+              "https://www.innklinikum.de/aerzteportal?tx_felogin_login%5Baction%5D=recovery&cHash=29768bf1",
+              "https://www.jaegerwinkel.de/wGlobal/content/privacy/redirect-external.php?url=https://www.youtube.com/channel/x"):
+        assert LINK_BAD.search(u), u
+
+
+def test_a_sitemap_job_whose_slug_contains_a_bad_word_is_walked_not_dropped_silently():
+    seed_url = "https://uk-augsburg.softgarden.io/"
+    page = JOBPOSTING_TMPL.format(title="Jurist (m/w/d) für Datenschutz und IT-Recht")
+    cr = _crawler({seed_url: R("<html></html>", seed_url), UKA_SLUG_URL: R(page, UKA_SLUG_URL)})
+    cr.sitemap_job_urls = lambda sm: [UKA_SLUG_URL]
+    rows, stats = cr._crawl_urls({"name": "UKA", "kez": "1", "career": seed_url, "town": "Augsburg"}, {"uk-augsburg.softgarden.io"},
+                                 [seed_url], ["https://uk-augsburg.softgarden.io/sitemap.xml"])
+    assert [r["source_url"] for r in rows] == [UKA_SLUG_URL]
+    assert stats["job_pages"] == 1
+
+
+def test_a_listed_job_whose_slug_contains_a_bad_word_passes_the_link_gate():
+    cr = _crawler({})
+    assert cr._page_hosts_ok(UKA_SLUG_URL, {"uk-augsburg.softgarden.io"}) is True
+    assert cr._page_hosts_ok("https://uk-augsburg.softgarden.io/de/imprint", {"uk-augsburg.softgarden.io"}) is False
+
+
+# --- TASK-185 / F4: a page the walk asked for and did not get is recorded, with its status and URL ------------------
+# Crawler.fetch returned None for every non-200 and the walk reported truncated False: karriere.klinikverbund-allgaeu.de's
+# job module answers with an HTTP 500 "TYPO3 Exception" (and, between 500s, a 200 shell with no jobs) -- the board read 84
+# rows on run 225 and 19 on the next walk, and nothing said so.
+class _HttpResp:
+    def __init__(self, url, status, text="", ctype="text/html; charset=utf-8"):
+        self.url, self.status_code, self.text, self.headers = url, status, text, {"content-type": ctype}
+
+
+def _live_crawler(pages):
+    """A Crawler with its REAL fetch over a fake session: pages = {url: (status, text)}; anything else answers 404."""
+    cr = Crawler(towns={"muenchen"}, sleep=0, log=lambda *a, **k: None)
+    cr.s.get = lambda url, timeout=40, allow_redirects=True: _HttpResp(url, *pages.get(url, (404,)))
+    return cr
+
+
+def test_fetch_records_a_non_200_with_its_status_and_url():
+    cr = _live_crawler({"https://x.example/?id=49&type=9818": (500, "TYPO3 Exception")})
+    assert cr.fetch("https://x.example/?id=49&type=9818") is None
+    assert cr.failed == ["HTTP 500 https://x.example/?id=49&type=9818"]
+
+
+def test_fetch_records_a_transport_failure_with_its_error_and_url():
+    import requests
+    cr = _live_crawler({})
+    def boom(url, timeout=40, allow_redirects=True):
+        raise requests.ConnectionError("reset")
+    cr.s.get = boom
+    assert cr.fetch("https://x.example/jobs") is None
+    assert cr.failed == ["ConnectionError https://x.example/jobs"]
+
+
+def test_fetch_does_not_record_a_robots_refusal_or_a_non_html_200():
+    cr = _live_crawler({"https://x.example/a.pdf": (200, "%PDF", "application/pdf")})
+    assert cr.fetch("https://x.example/a.pdf") is None
+    cr.allowed = lambda url: False
+    assert cr.fetch("https://x.example/private") is None
+    assert cr.failed == []
+
+
+def test_a_sitemap_that_does_not_answer_200_is_recorded_too():
+    cr = _live_crawler({"https://x.example/sitemap.xml": (500, "TYPO3 Exception")})
+    assert cr.sitemap_job_urls("https://x.example/sitemap.xml") == []
+    assert cr.failed == ["HTTP 500 https://x.example/sitemap.xml"]
+
+
+def test_crawl_reports_every_page_it_could_not_read_in_its_stats():
+    seed_url = "https://x.example/karriere"
+    listing = "https://x.example/?id=49&type=9818"
+    job = "https://x.example/stelle/1"
+    cr = _live_crawler({
+        seed_url: (200, '<a href="%s">Stellenangebote</a><a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % (listing, job)),
+        listing: (500, "TYPO3 Exception"),
+        job: (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))})
+    rows, stats = cr.crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen"})
+    assert [r["source_url"] for r in rows] == [job]              # what could be read is still returned
+    assert stats["failed_pages"] == ["HTTP 500 " + listing]
+
+
+def test_crawl_with_every_page_answering_reports_no_failed_pages():
+    seed_url = "https://x.example/karriere"
+    job = "https://x.example/stelle/1"
+    cr = _live_crawler({seed_url: (200, '<a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % job),
+                        job: (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))})
+    assert cr.crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen"})[1]["failed_pages"] == []
+
+
+# --- TASK-185 / F4 (second pass): which of the pages that did not answer make the read INCOMPLETE --------------------
+# stats["failed_pages"] lists every page the walk asked for and did not get (information). stats["incomplete_pages"] -- what
+# app/crawl.py records as the crawl_issue kind 'incomplete', the one that blocks absence-retirement -- lists only the pages
+# the walk itself needed, told apart by the walk's own variables: the seed and every start_url (seed, extra_seeds, the
+# section-first subtree), a page it queued under PAGINATE, a sitemap / sitemap index, a URL in job_links (an anchor with a
+# posting-shaped text, or a sitemap job URL) -- and any 5xx or transport error on any page. A 4xx on a link the walk merely
+# followed (queued as a list page by JOB_HREF / LIST_NAV) is information only.
+SEED = "https://x.example/karriere"
+JOB_URL = "https://x.example/stelle/1"
+JOB_PAGE = (200, JOBPOSTING_TMPL.format(title="Pflegefachkraft (m/w/d) Station 1"))
+JOB_ANCHOR = '<a href="%s">Pflegefachkraft (m/w/d) Station 1</a>' % JOB_URL
+
+
+def _walk(pages, seed_url=SEED, **seed):
+    return _live_crawler(pages).crawl({"name": "X", "kez": "1", "career": seed_url, "town": "Muenchen", **seed})[1]
+
+
+@pytest.mark.parametrize("seed_url,dead,status", [
+    # anregiomed.de/karriere-jobs: dead "Weiterbildung" navigation (LIST_NAV) and a "/detail/" news index (JOB_HREF), both queued as list pages
+    ("https://www.anregiomed.de/karriere-jobs/", "https://www.anregiomed.de/medizin-und-pflege/klinikum-ansbach/urologie/weiterbildung", 404),
+    ("https://www.anregiomed.de/karriere-jobs/", "https://www.anregiomed.de/aktuelles/neuigkeiten/detail/", 404),
+    # uk-augsburg.softgarden.io: Wicket callback links ("/vacancies?-1.-jobSearch-...") answer 403 to a plain GET
+    ("https://uk-augsburg.softgarden.io/de/vacancies", "https://uk-augsburg.softgarden.io/de/vacancies?-1.-jobSearch-jobSearchContainer-internalLink", 403),
+    # karriere.klinikverbund-allgaeu.de: an image srcset string ("<png>, /fileadmin/... 480w") read as a link; "Verbundweiterbildung" matches LIST_NAV
+    ("https://karriere.klinikverbund-allgaeu.de/karriere",
+     "https://karriere.klinikverbund-allgaeu.de/fileadmin/_processed_/b/4/csm_Broschuere_Verbundweiterbildung_Unterallgaeu_2023_a2da198e0a.png, "
+     "/fileadmin/_processed_/b/4/csm_Broschuere_Verbundweiterbildung_Unterallgaeu_2023_16532e5f92.png 480w", 404),
+    (SEED, "https://x.example/karriere/weiterbildung", 410),
+])
+def test_a_dead_followed_link_is_failed_information_but_does_not_make_the_read_incomplete(seed_url, dead, status):
+    stats = _walk({seed_url: (200, '<a href="%s">Mehr</a>' % dead), dead: (status, "Not found")}, seed_url)
+    assert stats["failed_pages"] == ["HTTP %d %s" % (status, dead)]
+    assert stats["incomplete_pages"] == []
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_server_error_on_a_followed_link_makes_the_read_incomplete(status):
+    stray = "https://x.example/karriere/weiterbildung"
+    stats = _walk({SEED: (200, '<a href="%s">Mehr</a>' % stray), stray: (status, "TYPO3 Exception")})
+    assert stats["failed_pages"] == stats["incomplete_pages"] == ["HTTP %d %s" % (status, stray)]
+
+
+def test_a_transport_failure_on_a_followed_link_makes_the_read_incomplete():
+    import requests
+    stray = "https://x.example/karriere/weiterbildung"
+    cr = _live_crawler({SEED: (200, '<a href="%s">Mehr</a>' % stray)})
+    answer = cr.s.get
+    def get(url, **kw):
+        if url == stray:
+            raise requests.ConnectionError("reset")
+        return answer(url, **kw)
+    cr.s.get = get
+    stats = cr.crawl({"name": "X", "kez": "1", "career": SEED, "town": "Muenchen"})[1]
+    assert stats["failed_pages"] == stats["incomplete_pages"] == ["ConnectionError " + stray]
+
+
+SITEMAP = "https://x.example/sitemap.xml"
+SITEMAP_CHILD = "https://x.example/sitemap-jobs.xml"
+PAGE_2 = "https://x.example/stellen?page=2"
+LISTING = "https://x.example/stellen"
+SECTION = "https://x.example/karriere/pflege/"
+URLSET = "<urlset><url><loc>%s</loc></url></urlset>" % JOB_URL
+SITEMAP_INDEX = "<sitemapindex><sitemap><loc>%s</loc></sitemap></sitemapindex>" % SITEMAP_CHILD
+
+
+@pytest.mark.parametrize("pages,seed,dead,status", [
+    pytest.param({}, {}, SEED, 404, id="seed"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"extra_seeds": [LISTING]}, LISTING, 404, id="extra_seed"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"extra_seeds": [LISTING]}, LISTING, 403, id="extra_seed_403"),
+    pytest.param({SEED: (200, '<a href="%s">2</a>' % PAGE_2)}, {}, PAGE_2, 404, id="pagination"),
+    pytest.param({SEED: (200, '<a href="%s">2</a>' % PAGE_2)}, {}, PAGE_2, 403, id="pagination_403"),
+    pytest.param({SEED: (200, '<a href="/karriere/pflege/">Pflegedienst</a>')}, {}, SECTION, 404, id="section_subtree"),
+    pytest.param({SEED: (200, "<p>Jobs</p>")}, {"sitemaps": [SITEMAP]}, SITEMAP, 404, id="sitemap"),
+    pytest.param({SEED: (200, "<p>Jobs</p>"), SITEMAP: (200, SITEMAP_INDEX)}, {"sitemaps": [SITEMAP]}, SITEMAP_CHILD, 404, id="sitemap_index_child"),
+    pytest.param({SEED: (200, JOB_ANCHOR)}, {}, JOB_URL, 404, id="job_detail"),
+    pytest.param({SEED: (200, JOB_ANCHOR)}, {}, JOB_URL, 403, id="job_detail_403"),
+    pytest.param({SEED: (200, "<p>Jobs</p>"), SITEMAP: (200, URLSET)}, {"sitemaps": [SITEMAP]}, JOB_URL, 404, id="sitemap_job_detail"),
+])
+def test_a_page_the_walk_needed_that_does_not_answer_makes_the_read_incomplete(pages, seed, dead, status):
+    stats = _walk({**pages, dead: (status, "Not found")}, SEED, **seed)
+    entry = "HTTP %d %s" % (status, dead)
+    assert entry in stats["failed_pages"]
+    assert stats["incomplete_pages"] == [entry]        # once: the seed (and a section page) is asked for twice
+
+
+def test_failed_pages_lists_every_page_that_did_not_answer_incomplete_pages_only_the_needed_ones():
+    stray = "https://x.example/karriere/weiterbildung"
+    stats = _walk({SEED: (200, '<a href="%s">Mehr</a><a href="%s">2</a>' % (stray, PAGE_2))})
+    assert stats["failed_pages"] == ["HTTP 404 " + stray, "HTTP 404 " + PAGE_2]
+    assert stats["incomplete_pages"] == ["HTTP 404 " + PAGE_2]
+
+
+def test_crawl_with_every_page_answering_reports_no_incomplete_pages():
+    stats = _walk({SEED: (200, JOB_ANCHOR), JOB_URL: JOB_PAGE})
+    assert stats["failed_pages"] == [] and stats["incomplete_pages"] == []

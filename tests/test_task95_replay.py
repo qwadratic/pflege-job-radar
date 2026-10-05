@@ -11,6 +11,7 @@ from tools.task95_replay import run_id_for
 def test_run_id_is_parsed_from_the_jsonl_filename():
     assert run_id_for("crawl_output/run_108.jsonl") == 108
     assert run_id_for("crawl_output/run_96.jsonl") == 96
+    assert run_id_for("crawl_output/run_96.jsonl.gz") == 96     # deploy/crontab gzips old run files
 
 
 def test_explicit_run_id_wins_over_the_filename():

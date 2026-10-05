@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pflege_jobs.classify import fuzzy_key   # noqa: E402
 from pflege_jobs.sources.bite import _has_label, find_nursing_taxonomy, crawl, to_observation   # noqa: E402
 
 
@@ -200,3 +201,96 @@ def test_the_ad_text_reaches_the_role_classifier():
     html = "<p>Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)</p>"
     obs = to_observation(jp, seed, {"nürnberg"}, html)
     assert obs["role_class"] == "ausbildung" and obs["role_rule"].startswith("ausbildung_body:")
+
+
+# --- TASK-184: a tenant whose address is the employer's seat, not the posting's place -----------------
+# Arberland Kliniken (bewerbung.arberlandkliniken.de, live 2026-10-01, 41 postings): address.city is the seat Viechtach on
+# 35 of them (5 more carry the MVZ's own address in Regen, 1 none), the site the posting is for is custom.ort[] (a list of
+# lower-case place slugs), custom.einrichtung[] names the facility. Diakoneo's tenant names its place `custom.standort`
+# and its address IS the posting's.
+
+ARBERLAND_SEAT = {"street": "Karl-Gareis-Straße", "houseNumber": "31", "postCode": "94234", "city": "Viechtach",
+                  "country": "de", "latitude": 49.0852209, "longitude": 12.875395}
+ARBERLAND_MVZ = {"street": "Zwieseler Straße", "postCode": "94209", "city": "Regen", "country": "de"}
+
+
+def _arberland_jp(title, ort, einrichtung, address=ARBERLAND_SEAT):
+    jp = {"title": title, "url": f"https://bewerbung.arberlandkliniken.de/jobposting/{title}",
+          "employer": {"name": "Arberland Kliniken"}, "address": dict(address), "employmentType": ["full_time"],
+          "custom": {"kontakt_text": "sadipscing elitr", "einrichtung": einrichtung, "art": ["vollzeit"], "abteilung": ["pflege"]}}
+    if ort is not None:
+        jp["custom"]["ort"] = ort
+    return jp
+
+
+ARBERLAND_OTA = _arberland_jp("Operationstechnischer Assistent (m/w/d)", ["zwiesel"], ["arberlandklinik_zwiesel"])
+ARBERLAND_VIECHTACH = _arberland_jp("Ausbildung zum Koch (m/w/d)", ["viechtach"], ["arberlandklinik_viechtach"])
+ARBERLAND_SPRINGER = _arberland_jp("Pflegefachmann/-frau (m/w/d) für unseren Springerpool", ["viechtach", "zwiesel"],
+                                   ["arberlandklinik_zwiesel", "arberlandklinik_viechtach"])
+ARBERLAND_MVZ_ORT = _arberland_jp("Facharzt (m/w/d) Neurologie", ["viechtach", "zwiesel"], ["mvz_arberland"], ARBERLAND_MVZ)
+ARBERLAND_MVZ_NO_ORT = _arberland_jp("Facharzt (m/w/d) Kinder- und Jugendmedizin", None, ["mvz_arberland"], ARBERLAND_MVZ)
+ARBERLAND_NO_ADDRESS = _arberland_jp("Hausarzt (m/w/d) für die Marktgemeinde Bodenmais", None, None, {})
+ARBERLAND_SEED = {"name": "Arberlandklinik Zwiesel", "kez": "27601", "career": "https://jobs.arberlandkliniken.de/",
+                  "customer": "arberland-kliniken", "listing": "main-listing", "place_field": "ort"}
+TOWNS = {"zwiesel", "viechtach"}
+
+
+def test_a_place_field_names_the_posting_own_site_not_the_tenant_seat():
+    obs = to_observation(ARBERLAND_OTA, ARBERLAND_SEED, TOWNS)
+    assert (obs["city"], obs["plz"], obs["lat"], obs["lon"]) == ("Zwiesel", None, None, None)   # the seat's PLZ/coordinates are not Zwiesel's
+    assert obs["in_bavaria"] is True
+    assert (obs["n_locations"], json.loads(obs["locations"])) == (1, [{"adresse": {"ort": "Zwiesel", "plz": None}}])
+    assert obs["fuzzy_key"] == fuzzy_key("Operationstechnischer Assistent (m/w/d)", "Arberland Kliniken", "Zwiesel")
+    assert json.loads(obs["payload"])["bite_custom"]["ort"] == ["zwiesel"]                      # the raw field stays in the payload
+
+
+def test_a_posting_naming_the_address_city_reads_exactly_as_it_did_before():
+    # the seat IS Viechtach's address: PLZ, coordinates and everything derived stay (13 of the 41 live postings)
+    with_field = to_observation(ARBERLAND_VIECHTACH, ARBERLAND_SEED, TOWNS)
+    without = to_observation(ARBERLAND_VIECHTACH, {k: v for k, v in ARBERLAND_SEED.items() if k != "place_field"}, TOWNS)
+    assert (with_field["city"], with_field["plz"], with_field["lat"], with_field["lon"], with_field["in_bavaria"]) == ("Viechtach", "94234", 49.0852209, 12.875395, True)
+    assert {k: v for k, v in with_field.items() if k not in ("observed_at", "details_fetched_at")} == {k: v for k, v in without.items() if k not in ("observed_at", "details_fetched_at")}
+
+
+def test_without_a_place_field_the_address_is_read_as_before():
+    # the address is the posting's own field on a tenant that does not say otherwise (Diakoneo)
+    obs = to_observation(ARBERLAND_OTA, {k: v for k, v in ARBERLAND_SEED.items() if k != "place_field"}, TOWNS)
+    assert (obs["city"], obs["plz"], obs["lat"], obs["lon"]) == ("Viechtach", "94234", 49.0852209, 12.875395)
+    assert (obs["n_locations"], json.loads(obs["locations"])) == (1, [{"adresse": {"ort": "Viechtach", "plz": "94234"}}])
+
+
+def test_a_posting_naming_two_sites_lists_both_and_leaves_the_pick_to_the_matcher():
+    obs = to_observation(ARBERLAND_SPRINGER, ARBERLAND_SEED, TOWNS)
+    assert obs["n_locations"] == 2
+    assert json.loads(obs["locations"]) == [{"adresse": {"ort": "Viechtach", "plz": "94234"}}, {"adresse": {"ort": "Zwiesel", "plz": None}}]
+    assert (obs["city"], obs["plz"]) == ("Viechtach", "94234")        # the first place it names, as it lists them
+
+
+def test_the_address_of_another_facility_is_dropped_when_the_posting_names_other_places():
+    # MVZ postings carry their own address (Regen) but name the hospitals they work in
+    obs = to_observation(ARBERLAND_MVZ_ORT, ARBERLAND_SEED, TOWNS)
+    assert (obs["city"], obs["plz"], obs["lat"], obs["lon"]) == ("Viechtach", None, None, None)
+
+
+def test_a_posting_without_the_place_field_keeps_reading_its_own_address():
+    obs = to_observation(ARBERLAND_MVZ_NO_ORT, ARBERLAND_SEED, TOWNS)
+    assert (obs["city"], obs["plz"], obs["in_bavaria"]) == ("Regen", "94209", True)
+    obs = to_observation(ARBERLAND_NO_ADDRESS, ARBERLAND_SEED, TOWNS)
+    assert (obs["city"], obs["plz"], obs["in_bavaria"]) == (None, None, None)
+
+
+def test_the_arberland_seeds_name_the_place_field_and_no_other_tenant_does():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    seeds = json.load(open(os.path.join(root, "data", "registry", "bite_seeds.json"), encoding="utf-8"))
+    assert {s["kez"]: s.get("place_field") for s in seeds if s["customer"] == "arberland-kliniken"} == {"27601": "ort", "27602": "ort"}
+    assert [s["customer"] for s in seeds if s.get("place_field")] == ["arberland-kliniken", "arberland-kliniken"]
+
+
+def test_the_crawl_hands_the_seeds_place_field_to_the_adapter(monkeypatch):
+    import app.crawl as CR
+    seen = []
+    monkeypatch.setattr("pflege_jobs.sources.bite.crawl", lambda seed, towns, log=print: (seen.append(seed), ([], {}))[1])
+    for kez in ("27601", "56404"):
+        c = {"clinic_id": kez, "name": "Test Klinik", "careers_url": "https://example.de/karriere", "town": "Zwiesel"}
+        CR._seed_obs({"vendor": "bite"}, c, set(), lambda *_: None)
+    assert [(s["kez"], s.get("place_field")) for s in seen] == [("27601", "ort"), ("56404", None)]

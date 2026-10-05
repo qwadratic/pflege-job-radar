@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlparse, urldefrag
 import requests
 
 from .. import config as C
+from .. import geo
 from ..classify import (canonical_job_url, classify_employer, classify_role, content_hash, department_hint,
                         employer_norm, enrich_description, fuzzy_key, norm_text, qualification_hint)
 from ..section import pick_nursing_link
@@ -27,19 +28,26 @@ from ..section import pick_nursing_link
 # drifted -- this copy never gained the bare-slash suffix form, "Pfleger/in"/"Pfleger/innen"/
 # "Angestellte/r") -- see pflege_jobs/posting_signal.py for the reconciled union.
 from ..posting_signal import GENDER_MARKER as JOB_TEXT
+from ..verify import TRUSTED_LOC, extract_location
 
 SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 pflege-jobs-crawler"
 LINK_OK = re.compile(r"job|stelle|vacanc|position|karriere|career|bewerb|angebot|offer|posting|/p/|/de/", re.I)
 JOB_HREF = re.compile(r"/detail/|/detailansicht/|/job/|/jobad\?|/jobs?/[^/?]*\d|/karriere/jobs/|/stellenangebot|/stellenanzeige|/vacanc|/position/|jobid|job_id|jobdetail|/p/|[?&]id=\d|/de/jobs/\d|/jobs/\d", re.I)
 LIST_NAV = re.compile(r"weiter|nächste|next|mehr laden|alle stellen|page|seite|pflege|krankenpflege|medizin|berufsgruppe|fachbereich|kategorie|filter", re.I)
-LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#|login|logout|datenschutz|impressum|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print"
+_BAD_PAGE = "login|logout|datenschutz|impressum|imprint|agb|cookie|newsletter|facebook|instagram|linkedin|xing|youtube|twitter|share|print"
+# A bad word names a page TYPE -- where a name BEGINS (a host label, a path segment) or anywhere in the query -- never inside
+# the words of a job's own title slug (TASK-185: UKA softgarden job 67659167 "Jurist-m-w-d-für-Datenschutz-und-IT-Recht-…" was
+# dropped silently, and every "-ologin" profession noun -- Technologin, Psychologin -- contains "login").
+LINK_BAD = re.compile(r"\.(pdf|jpe?g|png|gif|svg|css|js|zip|docx?|xlsx?)(\?|$)|mailto:|tel:|javascript:|#"
+                      r"|(?<=[/.])(?:" + _BAD_PAGE + r")|\?.*(?:" + _BAD_PAGE + r")"
                        # umantis: /Jobs/<n> is always its own paginated listing (never a posting) --
                        # language-switcher anchors on that listing self-link to it in every UI language
                        # ("Zum Hauptinhalt springen", "Erweiterte Suche", ...), and InitiativeApplication
                        # is a generic "apply speculatively" CTA, not a posting either (confirmed live on
                        # all 4 direct-host umantis boards: both otherwise pass JOB_HREF's /vacanc match).
-                       r"|/Jobs/\d+(?:[?&]|$)|InitiativeApplication", re.I)
+                       # /CheckLogin/<n> is its login step (Register/CheckLogin, <id>/Application/CheckLogin).
+                       r"|/Jobs/\d+(?:[?&]|$)|InitiativeApplication|/CheckLogin/", re.I)
 # The positive counterpart of LINK_BAD's umantis carve-out just above: a URL shape that is ALWAYS a
 # single vacancy's own detail page for its vendor, never a listing/category/contact page, so it is
 # trusted as strong per-URL evidence in _crawl_urls the same way JSON-LD is trusted as strong
@@ -170,30 +178,39 @@ LAND_RX = re.compile(r"bayern|bavaria|baden-württemberg|baden-wuerttemberg|hess
 # garbage string, so the seed clinic's own Bavarian town survived unchallenged on a Saxony-Anhalt
 # posting). city_from_url() now finds the LAST "-in-" itself (str.rfind, not regex search) and only
 # regex-validates the tail after it.
-_URL_CITY_TAIL = re.compile(r"^[a-zäöüß][a-zäöüß0-9\-]{3,}(?:\.html?)?/?$", re.I)
+_URL_CITY_TAIL = re.compile(r"^[a-zäöüß][a-zäöüß\-]{3,}(?:\.html?)?/?$", re.I)     # a place name has no digit in it
 _URL_PCT = {"%c3%bc": "ü", "%c3%a4": "ä", "%c3%b6": "ö", "%c3%9f": "ß", "%c3%9c": "ü", "%c3%84": "ä", "%c3%96": "ö"}
 
 
 def city_from_url(url, towns):
     """The city a job URL names in its own slug, but only when it is a place we can actually place:
     in_bavaria() must return True or False for it. That rejects the slugs that are not cities at all
-    ("-in-teilzeit", "-in-vollzeit") without needing a list of them."""
+    ("-in-teilzeit", "-in-vollzeit") without needing a list of them.
+
+    Two shapes name it: the trailing "-in-<city>" of the job slug (a job id after it, "...-in-cham-188996675.html", is
+    not part of the city -- TASK-185 F7a), else a "/standorte/<city>/" path segment (helios-gesundheit.de, F7b)."""
     u = (url or "").split("?")[0].split("#")[0]
     for k, v in _URL_PCT.items():
         u = u.replace(k, v).replace(k.upper(), v)
+    cands = []
     idx = u.rfind("-in-")
-    if idx == -1:
-        return None
-    tail = u[idx + len("-in-"):]
-    if not _URL_CITY_TAIL.match(tail):
-        return None
-    city = re.sub(r"(?:\.html?)?/?$", "", tail, flags=re.I).replace("-", " ").strip()
-    if in_bavaria(city, None, None, towns) is not None:
-        return city
-    # the registry writes some towns in a form a slug never uses ("Neuburg/Donau" vs
-    # "neuburg-an-der-donau", "Garmisch-Partenkirchen" vs "garmisch-partenkirchen"), so compare on a
-    # form where the separators and the connector words are gone before giving up
-    return city if _canon_town(city) in {_canon_town(t) for t in towns} else None
+    if idx != -1:
+        cands.append(re.sub(r"-\d+(?=(?:\.html?)?/?$)", "", u[idx + len("-in-"):]))
+    m = re.search(r"/standorte/([^/]+)/", u)
+    if m:
+        cands.append(m.group(1))
+    for tail in cands:
+        if not _URL_CITY_TAIL.match(tail):
+            continue
+        city = re.sub(r"(?:\.html?)?/?$", "", tail, flags=re.I).replace("-", " ").strip()
+        if in_bavaria(city, None, None, towns) is not None:
+            return city
+        # the registry writes some towns in a form a slug never uses ("Neuburg/Donau" vs
+        # "neuburg-an-der-donau", "Garmisch-Partenkirchen" vs "garmisch-partenkirchen"), so compare on a
+        # form where the separators and the connector words are gone before giving up
+        if _canon_town(city) in {_canon_town(t) for t in towns}:
+            return city
+    return None
 
 
 _TOWN_CONNECT = re.compile(r"\b(an|am|im|bei|der|die|ob|vor|auf|a|i|d)\b")
@@ -248,7 +265,12 @@ def in_bavaria(city, plz, region, towns):
     # NON_BAV_CITIES; checked only AFTER `towns`, so a real Bavarian site of the same first word
     # still wins on its own registry entry
     if first in NON_BAV_CITIES: return False
-    return None
+    # TASK-185 F7c: the hand list above does not know the 26 AMEOS slug cities (213 rows) or Köthen/Stralsund; the repo's own
+    # municipality table (data/geo, Destatis) does. One direction only: a municipality it places in another Land is not
+    # Bavaria; a hit for BY never makes a city Bavarian here (Brunnen is a Bavarian Gemeinde and also Brunnen SZ, 8 AMEOS rows),
+    # and an ambiguous name is UNKNOWN there, so it stays undecided here.
+    land = geo.resolve(city).land
+    return False if land not in ("BY", geo.UNKNOWN) else None
 
 
 class Crawler:
@@ -259,6 +281,11 @@ class Crawler:
         self.towns, self.budget, self.list_budget, self.sleep, self.log = towns, per_site_pages, list_pages, sleep, log
         self.s = requests.Session(); self.s.headers.update({"User-Agent": UA, "Accept-Language": "de-DE,de;q=0.9"})
         self.robots = {}
+        # Every page the walk asked for and did not get: "HTTP 500 <url>", "ConnectionError <url>" (TASK-185 F4) --
+        # crawl() returns them in its stats as failed_pages (information). incomplete_pages is the subset a walk
+        # cannot be called complete without, and app/crawl.py records exactly that as a crawl issue (kind 'incomplete',
+        # which blocks absence-retirement): see _failure.
+        self.failed, self.incomplete, self.needed = [], [], set()
 
     def allowed(self, url):
         host = urlparse(url).scheme + "://" + urlparse(url).netloc
@@ -288,18 +315,33 @@ class Crawler:
             r = self.s.get(url, timeout=40, allow_redirects=True)
             time.sleep(self.sleep)
             if r.status_code == 200 and "html" in r.headers.get("content-type", ""): return r
-        except requests.RequestException:
-            return None
+            if r.status_code != 200: self._failure(f"HTTP {r.status_code}", url, r.status_code >= 500)
+        except requests.RequestException as e:
+            self._failure(type(e).__name__, url, True)
         return None
+
+    def _failure(self, what, url, server_or_transport):
+        """A page the walk asked for and did not get (TASK-185 F4). Every one is listed in failed_pages. It is also
+        listed in incomplete_pages -- the walk is incomplete without it -- when it is a 5xx / transport failure (any
+        page: the site, not the link, is at fault) or the walk needed that very URL: self.needed, filled where the walk
+        queues a seed or listing page (start_urls), a pagination page (PAGINATE), a sitemap, or a URL it judged to be a
+        job (job_links). A 4xx on a link the walk merely followed (an image, a Wicket callback, a dead nav entry) is
+        information only: the walk could not have known it carried anything."""
+        self.failed.append(f"{what} {url}")
+        if server_or_transport or url in self.needed:
+            self.incomplete.append(f"{what} {url}")
 
     def sitemap_job_urls(self, url, depth=0, limit=20000):  # loop-safety ceiling, not a board-size cap
         """Return job-like <loc> URLs from a sitemap or sitemap index (recurses one level)."""
         r = None
+        self.needed.add(url)                  # a sitemap or sitemap index the walk reads is one it needs
         try:
             if self.allowed(url):
                 r = self.s.get(url, timeout=40); time.sleep(self.sleep)
-        except requests.RequestException:
+        except requests.RequestException as e:
+            self._failure(type(e).__name__, url, True)
             return []
+        if r is not None and r.status_code != 200: self._failure(f"HTTP {r.status_code}", url, r.status_code >= 500)
         if not r or r.status_code != 200: return []
         locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", r.text)
         if "<sitemapindex" in r.text and depth == 0:
@@ -349,6 +391,7 @@ class Crawler:
         original unbounded-depth (page-budget-only) behaviour. prefetched lets a page already fetched by
         the caller (the seed page, when peeking for a section link) be reused instead of re-fetched."""
         prefetched = dict(prefetched or {})
+        self.needed.update(urldefrag(u)[0] for u in start_urls)       # the board's own seed / listing pages
         list_q = deque((u, 0) for u in start_urls)
         seen_lists, job_links, jobs = set(), {}, {}
         stats = {"list_pages": 0, "job_pages": 0, "jobposting_pages": 0, "heuristic_pages": 0}
@@ -413,12 +456,14 @@ class Crawler:
                     # list_pages still far under list_budget, and lost real pagination it had the
                     # budget to read (confirmed live 2026-09-21: ANregiomed, list_pages 102/500).
                     if depth_cap is None or depth < depth_cap:
+                        if PAGINATE.search(u): self.needed.add(u)         # the walk's own pagination signal: the board's next page
                         list_q.append((u, depth + 1))
         for sm in sitemaps:
             for u in self.sitemap_job_urls(sm):
                 if u not in job_links and not LINK_BAD.search(u): job_links[u] = ""
         stats["sitemap_links"] = sum(1 for v in job_links.values() if v == "")
         for u, anchor in list(job_links.items())[: self.budget]:
+            self.needed.add(u)                # every job_links entry is a URL the walk itself judged to be a job
             r = self.fetch(u)
             if not r: continue
             stats["job_pages"] += 1
@@ -451,6 +496,7 @@ class Crawler:
         the exact same class of gap crawl_wp_jobs's own equivalent was already fixed for)."""
         hosts = set(seed.get("hosts") or []) | {urlparse(seed["career"]).netloc}
         seed_url = seed["career"]
+        self.failed, self.incomplete, self.needed = [], [], set()
         r0 = self.fetch(seed_url)
         prefetched = {urldefrag(seed_url)[0]: r0} if r0 else {}
         section_href = self._section_link(r0, hosts) if r0 else None
@@ -485,13 +531,22 @@ class Crawler:
             for k in ("list_pages", "job_pages", "jobposting_pages", "heuristic_pages", "job_links_found", "sitemap_links"):
                 stats[k] = stats.get(k, 0) + section_stats.get(k, 0)
         stats["section_first"] = bool(section_href)
+        stats["failed_pages"] = list(dict.fromkeys(self.failed))     # one entry per page: the section walk and the full walk fetch some twice
+        stats["incomplete_pages"] = list(dict.fromkeys(self.incomplete))
         return rows, stats
 
-    def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False):
+    def _base(self, url, seed, title, desc, city, plz, region, published, valid, dept, parse, employer=None, section_confirmed=False, city_seed=False):
         # seed.get("operator") beats seed["name"]: a shared-hub seed (e.g. ats_seeds.umantis()'s
         # hub_needs_own_host case) sets it precisely when the seed clinic's own name would be wrong
         # for every OTHER site's postings on that same hub -- see ats_seeds.py's umantis() docstring.
         emp = employer or seed.get("operator") or seed["name"]
+        city_src = "seed" if city_seed else "page"
+        if city_seed:
+            # TASK-185 F7b: a page that states no place but whose URL names one (helios-gesundheit.de/karriere/standorte/leipzig/...):
+            # the URL outranks the stamp, as it does in inbox.jobposting_to_obs. Never over a place the page stated.
+            url_city = city_from_url(url, self.towns)
+            if url_city:
+                city, plz, region, city_seed, city_src = url_city, None, None, False, "url"
         e_class, e_rule = classify_employer(emp)
         role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed, desc=desc)
         enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
@@ -513,7 +568,11 @@ class Crawler:
             "first_published": published, "last_modified": None, "valid_until": valid, "external_url": url, "description": (desc or "")[:20000] or None,
             **enr, "details_fetched_at": datetime.now(timezone.utc).isoformat() if desc else None, "details_error": None,
             "fuzzy_key": fuzzy_key(title, emp, city), "content_hash": content_hash(title, emp, city, desc[:200] if desc else None),
-            "payload": json.dumps({"crawl": {"seed": seed["career"], "kez": seed.get("kez"), "parse": parse}}, ensure_ascii=False),
+            # city_source="seed": the city is the seed clinic's own registry town copied onto a posting that states
+            # none (TASK-81/185) -- pflege_jobs.cli._city_inherited reads it out of this payload, so Matcher.match
+            # cannot let that copy fabricate agreement with the seed. A city read off the posting is "page".
+            "payload": json.dumps({"crawl": {"seed": seed["career"], "kez": seed.get("kez"), "parse": parse},
+                                   "city_source": city_src}, ensure_ascii=False),
             # A shared-hub seed (seed.get("operator") set, see _base() in ats_seeds.py) genuinely
             # covers several distinct real sites -- defaulting an unmatched row to the ONE seed
             # clinic that happened to kick off the crawl is exactly the wrong-guess bug this operator
@@ -537,8 +596,9 @@ class Crawler:
     def _from_jsonld(self, jp, url, seed, section_confirmed=False):
         locs = _location(jp)
         l = next((x for x in locs if in_bavaria(x["city"], x["plz"], x["region"], self.towns)), locs[0] if locs else {"city": None, "plz": None, "region": None})
+        stamped = False
         if not l.get("city") and not l.get("plz") and seed.get("town"):        # JSON-LD without address (d.vinci easy): seed town
-            l = {"city": seed["town"], "plz": None, "region": None}
+            l = {"city": seed["town"], "plz": None, "region": None}; stamped = True
         if seed.get("town") is None:                                            # multi-site operator: a town named in the title wins over an HQ address
             tm = re.search(r"\b(?:in|am|im|Standort|Klinikum|Klinik|Krankenhaus)\s+(?:kbo-)?([A-ZÄÖÜ][\wäöüß\-]+(?: (?:am|an der|im|bei|in der) [A-ZÄÖÜ][\wäöüß\-]+)?)", _strip(jp.get("title") or ""))
             if tm and norm_text(tm.group(1)).split()[0] in self.towns and norm_text(tm.group(1)) != norm_text(l.get("city") or ""):
@@ -556,7 +616,7 @@ class Crawler:
         # None and there is no safer operator fallback either.
         o = self._base(url, seed, _strip(jp.get("title") or ""), desc, l["city"], l["plz"], l["region"],
                        (jp.get("datePosted") or "")[:10] or None, (jp.get("validThrough") or "")[:10] or None, None, "jsonld",
-                       employer=ho_name, section_confirmed=section_confirmed)
+                       employer=ho_name, section_confirmed=section_confirmed, city_seed=stamped)
         o["employment_types"] = [t for t, k in (("vollzeit", "FULL_TIME"), ("teilzeit", "PART_TIME"), ("minijob", "MINI")) if k in et.upper()]
         if re.search(r"TEMPORARY|BEFRISTET", et, re.I): o["contract"] = "BEFRISTET"
         return o
@@ -580,15 +640,17 @@ class Crawler:
         if not title or re.fullmatch(r"[\w\s\-/&,\.]+\(\d+\)", title.strip()): return None     # category links like "Pflegedienst (5)"
         txt = _strip(html)
         city = seed.get("town"); plz = None
-        # 1) town named in the title ("am BKH Passau", "in Freising", "Standort Landau"), 2) explicit Einsatzort/Arbeitsort label, 3) seed town
+        # 1) town named in the title ("am BKH Passau", "in Freising", "Standort Landau"), 2) the page's own place field -- an
+        # Einsatzort/Arbeitsort/Dienstort/Standort block, schema.org microdata -- read by pflege_jobs.verify.extract_location (the reader the
+        # verify pass uses; the first of a "Immenstadt; Oberstdorf" list), 3) seed town, marked as the stamp it is (city_seed)
         found_city = False
         tm = re.search(r"(?:\bin|\bam|\bim|\bfür|Standort|Klinik(?:um)?)\s+(?:BKH|Klinikum|Klinik|Krankenhaus)?\s*([A-ZÄÖÜ][\wäöüß\-]+(?: (?:am|an der|im|bei|in der) [A-ZÄÖÜ][\wäöüß\-]+)?)", title)
         if tm and norm_text(tm.group(1)).split()[0] in self.towns and norm_text(tm.group(1)) not in ("bayern",):
             city, found_city = tm.group(1), True
         else:
-            m = re.search(r"(?:Einsatzort|Arbeitsort|Dienstort)\s*[:\-]?\s*([A-ZÄÖÜ][\wäöüß\-\.]+(?: (?:am|an der|im|bei|in der) [A-ZÄÖÜ][\wäöüß\-]+)?)", txt)
-            if m and norm_text(m.group(1)).split()[0] in self.towns:
-                city, found_city = m.group(1), True
+            lc, lp, src = extract_location(html, self.towns)
+            if lc and src in TRUSTED_LOC:
+                city, plz, found_city = lc, lp, True
         if not found_city:
             # A bare "12345 Ort" pair found anywhere on the page is regularly a contact/imprint/
             # letterhead address, not the posting's own site (confirmed live: the Medic-Center
@@ -603,7 +665,8 @@ class Crawler:
         # rather than leaving fields empty the source actually exposes, same fields _from_jsonld reads.
         dm = re.search(r"Ver[öo]ffentlichung\s*(?:ab)?\s*[:\-]?\s*(\d{1,2})\.(\d{1,2})\.(\d{4})", txt, re.I)
         published = "%s-%02d-%02d" % (dm.group(3), int(dm.group(2)), int(dm.group(1))) if dm else None
-        o = self._base(url, seed, title, txt[:20000], city, plz, None, published, None, None, "heuristic", section_confirmed=section_confirmed)
+        o = self._base(url, seed, title, txt[:20000], city, plz, None, published, None, None, "heuristic", section_confirmed=section_confirmed,
+                       city_seed=not found_city and plz is None)
         o["employment_types"] = [t for t, kw in (("vollzeit", "Vollzeit"), ("teilzeit", "Teilzeit"), ("minijob", "Minijob")) if re.search(r"\b" + kw + r"\b", txt, re.I)]
         return o
 

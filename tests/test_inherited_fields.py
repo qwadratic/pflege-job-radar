@@ -6,6 +6,8 @@ passed the Bavaria gate precisely because the substituted town IS Bavarian. Acro
 rows sat there as Bavarian while their URL named a non-Bavarian city, and 1438 clinic links rested
 on an employer name the crawler itself had written.
 """
+import json
+
 import pytest
 
 from crawlers.vendor_adapters import parse_job_page
@@ -45,6 +47,59 @@ def _obs(url, city, org, city_source=None, org_source=None):
 ])
 def test_city_from_url_only_returns_placeable_cities(url, expected):
     assert city_from_url(url, TOWNS) == expected
+
+
+def test_a_trailing_numeric_job_id_is_not_part_of_the_city():
+    """TASK-185 F7a: postings 14790 / 14807 (barmherzige-regensburg.de, real URL) were stored with city "cham 188996675":
+    the slug tail "cham-188996675.html" passed the shape check and in_bavaria() took the first token "cham" as the town."""
+    url = ("https://www.barmherzige-regensburg.de/karriere/offene-stellen-bewerbung/detail/j/medizinische/-r-technologe/"
+           "-in-fuer-radiologie-mtrm/w/d-in-teilzeit-fuer-unser-mvz-in-cham-188996675.html")
+    assert city_from_url(url, TOWNS | {"cham"}) == "cham"
+    assert city_from_url(url + "?tx_contrast=1&cHash=567a75557821a3d11cc62d12f2501482", TOWNS | {"cham"}) == "cham"
+    assert city_from_url("https://x/job/pflegefachkraft-in-neuburg-an-der-donau-2", TOWNS) == "neuburg an der donau"   # duplicate-slug suffix
+    # jobs.schoen-klinik.de ends "-in-<City>-de-j<id>.html" (and truncates long city names): stored as "Vogtareuth de j15611";
+    # a place name has no digit, so that tail is not a city at all
+    assert city_from_url("https://jobs.schoen-klinik.de/Behandlungsassistenz-mwd-in-Vogtareuth-de-j15611.html", TOWNS | {"vogtareuth"}) is None
+
+
+@pytest.mark.parametrize("url, expected", [
+    # TASK-185 F7b: helios-gesundheit.de names the site in /karriere/standorte/<city>/ and has no "-in-<city>" slug; 9 stored
+    # postings of the Kronach seed (all verdict site_mismatch) are Berlin-Zehlendorf / Erfurt / Köthen / Leipzig / Stralsund pages.
+    ("https://www.helios-gesundheit.de/karriere/standorte/leipzig/das-sind-wir/herzzentrum/job-pws/", "leipzig"),
+    ("https://www.helios-gesundheit.de/karriere/standorte/berlin-zehlendorf/jobs/sanihaeubchen/", "berlin zehlendorf"),
+    ("https://www.helios-gesundheit.de/karriere/standorte/stralsund/jobs/pflegekraft-its/", "stralsund"),   # needs F7c: not in NON_BAV_CITIES
+    ("https://www.helios-gesundheit.de/karriere/standorte/koethen/jobs/gesundheits-und-krankenpfleger-oder-altenpfleger--m-w-d-/", "koethen"),
+    ("https://www.helios-gesundheit.de/karriere/standorte/helios-klinik-xyz/jobs/a/", None),               # a segment that is not a place
+])
+def test_city_from_url_reads_a_standorte_segment(url, expected):
+    assert city_from_url(url, TOWNS) == expected
+
+
+HELIOS_SEED = {"name": "HELIOS Frankenwaldklinik Kronach", "kez": "47601", "town": "Kronach",
+               "career": "https://www.helios-gesundheit.de/karriere/job/3bc89d91-7c4e-485d-ba7f-260fc7a5a378/"}
+HELIOS_LEIPZIG = "https://www.helios-gesundheit.de/karriere/standorte/leipzig/das-sind-wir/herzzentrum/job-pws/"
+
+
+def test_a_seeded_crawler_row_whose_page_names_no_place_takes_the_place_its_url_names():
+    """TASK-185 F7b: the Helios location pages under the Kronach seed (no JSON-LD, no place on the page) were stored with
+    city Kronach; jobposting_to_obs lets the URL outrank a stamp, the seeded Crawler path did not. A page without a place
+    is the only case: nothing the page states is overridden."""
+    from pflege_jobs.cli import _city_inherited
+    cr = Crawler(TOWNS | {"kronach"})
+    o = cr._heuristic("<html><body><h1>Herzzentrum Leipzig</h1><p>Jetzt bewerben</p></body></html>", HELIOS_LEIPZIG, HELIOS_SEED)
+    assert o["city"] == "leipzig" and o["in_bavaria"] is False and not _city_inherited(o)
+    assert json.loads(o["payload"])["city_source"] == "url"
+    # no placeable city in the URL: still the stamp, still marked
+    o2 = cr._heuristic("<html><body><h1>Pflegefachkraft Station 1</h1><p>Jetzt bewerben</p></body></html>",
+                       "https://www.helios-gesundheit.de/karriere/job/abc/pflegefachkraft/", HELIOS_SEED)
+    assert o2["city"] == "Kronach" and _city_inherited(o2)
+
+
+def test_a_seeded_crawler_row_with_a_place_on_its_page_keeps_it_over_the_url():
+    cr = Crawler(TOWNS | {"kronach"})
+    jp = {"title": "Pflegefachkraft (m/w/d)", "jobLocation": {"address": {"addressLocality": "Kronach"}}}
+    o = cr._from_jsonld(jp, HELIOS_LEIPZIG, HELIOS_SEED)
+    assert o["city"] == "Kronach" and json.loads(o["payload"])["city_source"] == "page"
 
 
 def test_url_city_overrides_an_inherited_one_and_the_row_is_dropped():
