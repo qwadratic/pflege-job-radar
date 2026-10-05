@@ -8,6 +8,7 @@ import random
 import shlex
 import sqlite3
 import sys
+import types
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
@@ -45,6 +46,7 @@ def campaign(root, name, ids, monkeypatch):
     conf = {"campaign": name, "sender": "me@example.org", "sender_name": "Daria", "tz": "Europe/Berlin",
             "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:00"}, "holidays": [], "pause_seconds": [90, 180],
             "stop_on": ["reply", "stop", "bounce"], "halt_on": ["bounce", "stop"], "watch_folders": ["inbox"],
+            "watch_via": "daria-inbox", "watch_overlap_minutes": 10,
             "cadence": [{"step": "initial", "template": "t0.txt"}, {"step": "fu1", "after": "3bd", "in_thread": True, "template": "t1.txt"}],
             "recipients": "recipients.json", "allowlist": "allowlist.txt", "ledger": "ledger.jsonl", "batches": "b", "approvals": "a",
             "operators": OPS, "notify": OPS, "forward": {k: OPS for k in M.FORWARD_KINDS}, "command_poll_seconds": 60, "announce": {"window_minutes": 60, "template": "announce.txt", "notes": "notes.txt"},
@@ -208,23 +210,63 @@ def test_a_correction_mail_cannot_do_becomes_a_task_and_a_failed_answer_is_told(
 
 
 def test_a_desk_error_is_logged_and_mailed_before_the_desk_exits(desk, monkeypatch):
+    """An error outside the reading of the mail (an inbox that cannot be read is retried, see below) still ends the desk."""
     desk.intents["Какой статус рассылки?"] = ("status", [], [])
     monkeypatch.setattr(M, "mailbox", lambda a: {"ADDRESS": a})
-    calls = []
+    monkeypatch.setattr(D, "operator_mail", lambda d, since, seen: iter(()))
 
-    def inbox(d, since, seen):
-        calls.append(since)
-        if len(calls) > 1:
-            raise M.MailerError("daria-inbox exited 1: token expired")
-        return iter(())
-    monkeypatch.setattr(D, "operator_mail", inbox)
+    def status_check(d, box):
+        raise M.MailerError("halt notice failed: token expired")
+    monkeypatch.setattr(D, "status_check", status_check)
     with pytest.raises(M.MailerError, match="token expired"):
         D.run(desk.d)
     (stop,) = [e for e in D.read_ledger(desk.d) if e["event"] == "desk_stopped"]
-    assert stop["reason"] == "daria-inbox exited 1: token expired"
+    assert stop["reason"] == "halt notice failed: token expired"
     (m,) = desk.sent
     assert m["Subject"] == "Дарья не читает почту операторов" and "token expired" in plain(m) and m["To"] == ", ".join(OPS)
     assert json.loads(desk.d["heartbeat"].read_text())["ts"] == NOW.isoformat(timespec="seconds")
+
+
+def failing_inbox(monkeypatch, fails):
+    """D.operator_mail that raises `fails` times (the helper's retries are over, see test_clinic_mailer) and then reads nothing."""
+    calls, naps = [], []
+
+    def inbox(d, since, seen):
+        calls.append(since)
+        if len(calls) <= fails:
+            raise M.MailerError("daria-inbox exited 1: HTTP 404")
+        return iter(())
+    monkeypatch.setattr(D, "operator_mail", inbox)
+    monkeypatch.setattr(M, "sleep", naps.append)
+    return calls, naps
+
+
+def test_an_inbox_that_stays_unreadable_is_mailed_once_and_the_rest_of_the_desk_goes_on(desk, monkeypatch):
+    """Ivan, 2026-10-05: three retries, a notice, and the desk keeps running; the heartbeat is the one thing it must not fake."""
+    calls, naps = failing_inbox(monkeypatch, 99)
+    ran = []
+    monkeypatch.setattr(D, "status_check", lambda d, box: ran.append("status"))
+    monkeypatch.setattr(D, "digest_due", lambda d, t: True)
+    monkeypatch.setattr(M, "digest", lambda cfgs, box: ran.append("digest") or {})
+    since = NOW - timedelta(minutes=30)
+    assert D.poll(desk.d, {}, desk.jobs, since, False) == (since, True) and ran == ["status", "digest"]
+    (m,) = [m for m in desk.sent if m["Subject"] == "Дарья не может прочитать почту операторов"]
+    assert m["To"] == ", ".join(OPS) and "4 раза подряд: daria-inbox exited 1: HTTP 404" in plain(m)
+    assert not desk.d["heartbeat"].exists()                                         # a stop by mail would go unread
+    for _ in range(2):                                                              # the outage goes on: no second mail
+        assert D.poll(desk.d, {}, desk.jobs, since, True) == (since, True)
+    assert len(desk.sent) == 1 and ran == ["status", "digest"] * 3
+    assert [e["event"] for e in D.read_ledger(desk.d) if e["event"].startswith("read_")] == ["read_error"]
+
+
+def test_the_desk_reads_again_after_an_outage_from_where_it_stopped(desk, monkeypatch):
+    calls, naps = failing_inbox(monkeypatch, 0)
+    monkeypatch.setattr(D, "status_check", lambda d, box: None)
+    since = NOW - timedelta(minutes=30)
+    new_since, failing = D.poll(desk.d, {}, desk.jobs, since, True)
+    assert failing is False and calls == [since] and new_since == NOW - timedelta(minutes=desk.d["overlap_minutes"])
+    assert [e["event"] for e in D.read_ledger(desk.d) if e["event"] == "read_recovered"] == ["read_recovered"]
+    assert json.loads(desk.d["heartbeat"].read_text())["since"] == since.isoformat(timespec="seconds")
 
 
 def test_the_digest_goes_out_once_a_day_from_digest_at(desk, monkeypatch):
@@ -236,17 +278,13 @@ def test_the_digest_goes_out_once_a_day_from_digest_at(desk, monkeypatch):
     desk.intents["Какой статус рассылки?"] = ("status", [], [])
     monkeypatch.setattr(M, "mailbox", lambda a: {"ADDRESS": a})
     monkeypatch.setattr(D, "digest_due", lambda d, t: True)
-    monkeypatch.setattr(D.time, "sleep", lambda s: None)
     got = []
     monkeypatch.setattr(M, "digest", lambda cfgs, box: got.append(cfgs) or {OPS[0]: 2})
-    calls = []
+    monkeypatch.setattr(D, "operator_mail", lambda d, since, seen: iter(()))
 
-    def inbox(d, since, seen):
-        calls.append(since)
-        if len(calls) > 2:                          # the start reads once, the first round once
-            raise M.MailerError("stop here")
-        return iter(())
-    monkeypatch.setattr(D, "operator_mail", inbox)
+    def end_of_round(seconds):
+        raise M.MailerError("stop here")
+    monkeypatch.setattr(D, "time", types.SimpleNamespace(sleep=end_of_round))       # the main loop's sleep only, not the threads'
     with pytest.raises(M.MailerError, match="stop here"):
         D.run(desk.d)
     assert got == [[desk.d["campaigns"][0]["cfg"], desk.d["campaigns"][1]["cfg"]]]
@@ -401,7 +439,7 @@ class FakeTmux:
         for ws in self.sessions.values():
             for w, procs in ws.items():
                 out.append((pid, 1, "sh -c " + procs[0]))
-                out += [(pid + 1, pid, "sudo -E python3 -u tools/clinic_mailer.py send /x/campaign.json " + w.removeprefix("send-") + " --live")] if w.startswith(("w1-", "w2-")) else []
+                out += [(pid + 1, pid, "python3 -u tools/clinic_mailer.py send /x/campaign.json " + w.removeprefix("send-") + " --live")] if w.startswith(("w1-", "w2-")) else []
                 pid += 10
         return out
 
@@ -504,16 +542,16 @@ def test_start_batch_needs_the_operators_approval_and_runs_the_send_command_in_a
     assert r == {"window": desk.b2, "output_file": str(cfg["ledger"].parent / f"send-{desk.b2}.out")}
     new, = [c for c in mailing.calls if c[0] == "new-session"]
     assert new[new.index("-n") + 1] == desk.b2
-    assert f"sudo -E python3 -u tools/clinic_mailer.py send {desk.d['campaigns'][1]['path']} {desk.b2} --live >> " in new[-1]
+    assert f"python3 -u tools/clinic_mailer.py send {desk.d['campaigns'][1]['path']} {desk.b2} --live >> " in new[-1]
     ev, = [e for e in audited(desk) if e["tool"] == "start_batch" and "error" not in e]
-    assert ev["command"][:6] == ["sudo", "-E", "python3", "-u", "tools/clinic_mailer.py", "send"] and ev["result"]["window"] == desk.b2
+    assert ev["command"][:4] == ["python3", "-u", "tools/clinic_mailer.py", "send"] and ev["result"]["window"] == desk.b2
 
 
 def test_stop_batch_sends_ctrl_c_to_the_window_that_runs_the_batch_in_any_mailing_session(tools, mailing, desk):
     mailing.sessions = {"nurse79": {f"{desk.b1}": ["x"]}, "dsk-mailing": {desk.b2: ["y"]}}
-    mailing.ps = lambda: [(1, 0, "tmux"), (1000, 1, "sh -c cd /r && sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live >> o 2>&1"),
-                          (1001, 1000, "sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live"),
-                          (1010, 1, "sh -c cd /r && sudo -E python3 -u tools/clinic_mailer.py send /c/campaign.w2.json " + desk.b2 + " --live")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (1000, 1, "sh -c cd /r && python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live >> o 2>&1"),
+                          (1001, 1000, "python3 -u tools/clinic_mailer.py send /c/campaign.json " + desk.b1 + " --live"),
+                          (1010, 1, "sh -c cd /r && python3 -u tools/clinic_mailer.py send /c/campaign.w2.json " + desk.b2 + " --live")]
     r = tools.stop_batch("w1", desk.b1)
     assert r["window"] == f"nurse79:{desk.b1}" and r["sent"] == "C-c"
     assert ("send-keys", "-t", f"nurse79:{desk.b1}", "C-c") in mailing.calls
@@ -533,14 +571,14 @@ def test_a_call_that_cannot_be_written_to_the_desk_ledger_does_not_run(tools, ma
 def test_start_batch_and_start_desk_are_refused_while_the_process_runs(tools, mailing, desk):
     cfg = desk.d["campaigns"][1]["cfg"]
     (cfg["approvals"] / f"{desk.b2}.pending.json").rename(cfg["approvals"] / f"{desk.b2}.json")
-    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"sudo -E python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2} --live"),
-                          (60, 1, "sudo -E python3 -u tools/daria_desk.py run data/email-analysis/desk/daria.json")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2} --live"),
+                          (60, 1, "python3 -u tools/daria_desk.py run data/email-analysis/desk/daria.json")]
     with pytest.raises(tools.ToolError, match=f"{desk.b2} already runs"):
         tools.start_batch("w2", desk.b2)
     with pytest.raises(tools.ToolError, match="a desk already runs"):
         tools.start_desk()
     assert not [c for c in mailing.calls if c[0].startswith("new-")]
-    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"sudo -E python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2}-other --live")]
+    mailing.ps = lambda: [(1, 0, "tmux"), (50, 1, f"python3 -u tools/clinic_mailer.py send data/x/campaign.w2.json {desk.b2}-other --live")]
     tools.start_batch("w2", desk.b2)                                            # another batch's process is no reason to refuse
 
 
@@ -560,7 +598,7 @@ def test_start_desk_runs_the_desk_command_in_a_window_called_desk(tools, mailing
     r = tools.start_desk()
     assert r["window"] == "desk" and r["output_file"] == str(desk.d["_path"].parent / "desk.out")
     new, = [c for c in mailing.calls if c[0] == "new-session"]
-    assert f"sudo -E python3 -u tools/daria_desk.py run {desk.d['_path']} >> " in new[-1]
+    assert f"python3 -u tools/daria_desk.py run {desk.d['_path']} >> " in new[-1]
 
 
 def test_the_answer_config_tells_the_tools_who_asked_and_what_exists(desk, tmp_path, monkeypatch):
@@ -593,3 +631,32 @@ def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_des
     assert [(e["event"], e["campaign"]) for e in ev] == [("redirect_letters", "w1"), ("redirect_error", "w2")] and "SMTP refused" in ev[1]["reason"]
     (m,) = desk.sent
     assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.de']" in plain(m)
+
+
+def test_the_desk_reads_every_campaigns_answers_and_mails_one_that_stays_unreadable_once(desk, monkeypatch):
+    """Ivan, 2026-10-05: a batch process was the only reader of the clinics' answers, so one waited for the next process."""
+    watched = []
+
+    def watch(cfg, box):
+        watched.append(cfg["campaign"])
+        if cfg["campaign"] == "w1":
+            raise M.MailerError("daria-inbox exited 1: HTTP 404")
+        return []
+    monkeypatch.setattr(M, "watch", watch)
+    failing = D.watch_campaigns(desk.d, {}, set())
+    assert failing == {"w1"} and watched == ["w1", "w2"]
+    (m,) = desk.sent
+    assert m["Subject"] == "Дарья не может прочитать ответы клиник: волна 1" and m["To"] == ", ".join(OPS)
+    assert "4 раза подряд: daria-inbox exited 1: HTTP 404" in plain(m)
+    assert D.watch_campaigns(desk.d, {}, failing) == {"w1"} and len(desk.sent) == 1          # the outage goes on: no second mail
+    monkeypatch.setattr(M, "watch", lambda cfg, box: [])
+    assert D.watch_campaigns(desk.d, {}, failing) == set()
+    assert [(e["event"], e["campaign"]) for e in D.read_ledger(desk.d) if e["event"].startswith("watch_")] == [("watch_error", "w1"), ("watch_recovered", "w1")]
+
+
+def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_refused(desk):
+    conf = json.loads(desk.d["_path"].read_text())
+    conf["watch_via"] = "graph"
+    desk.d["_path"].write_text(json.dumps(conf))
+    with pytest.raises(M.MailerError, match='"watch_via" must be "daria-inbox".*got .graph.'):
+        D.load(desk.d["_path"])

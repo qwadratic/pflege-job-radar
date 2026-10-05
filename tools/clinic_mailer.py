@@ -47,7 +47,10 @@ Commands:
                                  is root-owned: run every command that watches (watch, send) as
                                  sudo -E python3 tools/clinic_mailer.py ...
                                  "watch_via": "daria-inbox" reads through the root-owned helper `sudo -n
-                                 /usr/local/sbin/daria-inbox` (tools/daria_inbox.py), for runs as the claude user.
+                                 /usr/local/sbin/daria-inbox` (tools/daria_inbox.py), for runs as the claude user: no
+                                 sudo password, no root. The helper cannot skip what was read, so a watch reads from when
+                                 the last one began (ledger.jsonl.watched) minus "watch_overlap_minutes", which the config
+                                 must give; the first read starts on the campaign's first day (about 2 minutes).
   status CONFIG [--now ISO]      one line per recipient: steps sent, state, next step and when it is due.
 
 Cadence (config "cadence"): an ordered list of steps. Step 0 goes when planned; every later step goes `after`
@@ -164,9 +167,18 @@ class DeliveryHalt(MailerError):
 
 # ---------- config and files ----------
 
+def require_daria_inbox(conf, where):
+    """The one way Daria's mailbox is read (Ivan, 2026-10-05): through DARIA_INBOX. A config that names another way (IMAP, Graph
+    with its root-owned token cache) is refused when it is loaded."""
+    if conf.get("watch_via") != "daria-inbox":
+        raise MailerError(f'{where}: "watch_via" must be "daria-inbox": the mailbox is read only through {DARIA_INBOX}, '
+                          f'got {conf.get("watch_via")!r}')
+
+
 def load_config(path):
     path = Path(path).resolve()
     cfg = json.loads(path.read_text())
+    require_daria_inbox(cfg, path)
     cfg["_dir"] = path.parent
     for k in ("recipients", "allowlist", "ledger", "batches", "approvals"):
         cfg[k] = (path.parent / cfg[k]).resolve()
@@ -1271,7 +1283,7 @@ def check_desk(cfg):
         beat = json.loads(d["heartbeat"].read_text())
     except FileNotFoundError:
         raise MailerError(f"desk mode, but the desk has never run: no heartbeat {d['heartbeat']}. Start it: "
-                          "sudo -E python3 tools/daria_desk.py run <desk config>")
+                          "python3 tools/daria_desk.py run <desk config>")
     age = (now_in(cfg) - datetime.fromisoformat(beat["ts"])).total_seconds()
     if age > d["max_age_seconds"]:
         raise MailerError(f"the desk has not read the operators' mail for {age / 60:.0f} min (heartbeat {beat['ts']}, "
@@ -1833,6 +1845,26 @@ def digest(cfgs, box=None):
     return out
 
 
+def watched_state(cfg):
+    """Where a daria-inbox watch remembers when its last read began: next to the ledger."""
+    return cfg["ledger"].with_name(cfg["ledger"].name + ".watched")
+
+
+def watch_since(cfg, start):
+    """The `since` of a daria-inbox read. The helper cannot skip messages already seen (a read since the campaign's first
+    day is 2 minutes and 100 MB, measured 2026-10-05), so after the first read, which starts at `start`, a watch reads from
+    when the last one began, minus "watch_overlap_minutes" (Exchange's and this box's clocks differ and a message can be listed
+    late; Ivan, 2026-10-05: 10). Messages in the overlap are in `seen` or are not clinic answers."""
+    try:
+        overlap = timedelta(minutes=cfg["watch_overlap_minutes"])
+    except KeyError:
+        raise MailerError('watch_via "daria-inbox" needs "watch_overlap_minutes" in the config: how far before the last read a watch looks again')
+    state = watched_state(cfg)
+    if not state.exists():
+        return start
+    return max(start, datetime.fromisoformat(json.loads(state.read_text())["read_from"]) - overlap)
+
+
 def watch(cfg, box=None):
     """Log every new inbound message that belongs to this campaign; return the new events. Batches of one campaign (a
     wave's first letters and its follow-ups planned later) run as separate processes on one ledger: one watch at a
@@ -1856,6 +1888,9 @@ def _watch(cfg, box):
     domains = {a.split("@")[1] for a in by_addr}
     since = min(datetime.fromisoformat(e["sent_at"]) for e in sent).astimezone(cfg["tz"]).replace(hour=0, minute=0, second=0, microsecond=0)
     via = cfg.get("watch_via", "imap")
+    read_from = now_in(cfg)
+    if via == "daria-inbox":
+        since = watch_since(cfg, since)
     fetch = inbox_messages(cfg, box, since, seen)
     new, n_read = [], 0
     for folder, raw in fetch:
@@ -1904,6 +1939,10 @@ def _watch(cfg, box):
         new.append(ev)
         print(f"inbound {ev['kind']:10} {rid} from {ev['from']} [{how}] {ev['subject'][:70]}"
               + ("  <- from a campaign domain but matches no sent message: read it by hand" if kind == "unmatched" else ""))
+    if via == "daria-inbox":                  # only a read that went through: a failed one is read again from the same point
+        tmp = watched_state(cfg).with_suffix(".watched.tmp")
+        tmp.write_text(json.dumps({"read_from": read_from.isoformat(timespec="seconds")}))
+        tmp.replace(watched_state(cfg))
     print(f"watch {cfg['sender']} via {via}: {n_read} messages read in "
           f"{'all folders' if via == 'daria-inbox' else ', '.join(cfg['watch_folders'])} since {since:%Y-%m-%d}, {len(new)} new for this campaign")
     return new
@@ -1919,14 +1958,29 @@ def inbox_messages(cfg, box, since, seen):
     return imap_messages(cfg, box or mailbox(cfg["sender"]), since)
 
 
+READ_RETRIES = 3                    # Ivan, 2026-10-05: the standard three retries of a read of the mailbox
+READ_RETRY_SECONDS = 10
+
+
+def helper_output(since):
+    """What daria-inbox prints for `since`, tried again READ_RETRIES times, READ_RETRY_SECONDS apart, when it exits non-zero:
+    a message that is moved or deleted between the helper's list and its fetch (Exchange files spam into Junk a moment after
+    delivery) answers 404 and ends the helper. The retry lists again. This took the desk down at 16:59 and a batch at 19:47
+    on 05.10. The last failure is raised."""
+    for attempt in range(READ_RETRIES + 1):
+        p = subprocess.run(["sudo", "-n", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
+                           capture_output=True, text=True, timeout=900)
+        if not p.returncode:
+            return p.stdout
+        if attempt == READ_RETRIES:
+            raise MailerError(f"daria-inbox exited {p.returncode} on {READ_RETRIES + 1} tries in a row: {p.stderr.strip()[-1500:]}")
+        sleep(READ_RETRY_SECONDS)
+
+
 def helper_messages(cfg, since, seen):
     """(folder, raw MIME) of every message daria-inbox returns since `since`, in every folder, except drafts, daria's
     own messages (Sent Items) and Message-IDs in `seen`; the Junk folder is named junkemail, like Graph's."""
-    p = subprocess.run(["sudo", "-n", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
-                       capture_output=True, text=True, timeout=900)
-    if p.returncode:
-        raise MailerError(f"daria-inbox exited {p.returncode}: {p.stderr.strip()[-1500:]}")
-    for line in p.stdout.splitlines():
+    for line in helper_output(since).splitlines():
         m = json.loads(line)
         frm = (((m.get("from") or {}).get("emailAddress") or {}).get("address") or "").lower()
         if m.get("isDraft") or frm == DARIA or (m.get("internetMessageId") or "").strip() in seen:

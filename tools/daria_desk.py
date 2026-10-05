@@ -11,12 +11,17 @@ same box (nurse79 wave 1 and wave 2) a "стоп" meant for one wave halted both
 batch whose config has "desk" reads no operator mail; it checks this desk's heartbeat and halts when it goes stale.
 
 Commands:
-  run CONFIG                 the desk loop. Run as root like a live batch (sudo -E python3 tools/daria_desk.py run
-                             CONFIG): it appends stop and skip to the campaigns' root-owned ledgers. Every
+  run CONFIG                 the desk loop. Run as the claude user, like a live batch (python3 tools/daria_desk.py run
+                             CONFIG): the mail is read through daria-inbox and the campaigns' ledgers are the claude
+                             user's, where it appends stop and skip. Every
                              poll_seconds it stamps the heartbeat, reads the operators' new mail, acts on stop, skip
                              and status at once and answers everything else from a worker thread, one mail at a
                              time. A second thread sends the letters that clinics' redirects made (clinic_mailer.py
-                             redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. Any
+                             redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. A third
+                             thread reads every campaign's inbox for clinic answers (clinic_mailer.watch), whether a
+                             batch runs or not; a campaign that cannot be read (after the helper's three retries) is logged and mailed once. A
+                             read of the operators' mail that fails (after the same retries) is mailed once per
+                             outage; the desk goes on with the rest but stamps no heartbeat until a read succeeds. Any
                              other error ends the desk after a mail to the operators; the batches halt by themselves
                              once the heartbeat is older than their limit.
   ask CONFIG TEXT [--from A] one question to Daria without mail; the answer is printed, nothing is sent.
@@ -73,6 +78,7 @@ def load(path):
     path = Path(path).resolve()
     d = json.loads(path.read_text())
     d["_dir"], d["_path"] = path.parent, path
+    M.require_daria_inbox(d, path)
     for k in ("ledger", "heartbeat", "session_dir"):
         d[k] = (path.parent / d[k]).resolve()
     d["docs"] = {k: str((path.parent / v).resolve()) for k, v in d.get("docs", {}).items()}
@@ -486,10 +492,44 @@ def redirect_letters(d, box):
         except Exception as e:
             reason = str(e) or type(e).__name__
             log(d, {"event": "redirect_error", "campaign": cfg["campaign"], "reason": reason, "trace": traceback.format_exc()[-2000:]})
-            m = M.operator_mail(d, {"operators": d["notify"]}, f"Письмо на новый адрес не ушло: {c['label']}",
-                                M.Doc(f"{c['label']}: письмо клинике на адрес из её ответа не ушло.", f"Ошибка: {reason}",
-                                      "Повторно это письмо не отправляется, пока вы не решите. Что уже ушло, видно в журнале волны.", "Daria"))
-            M.smtp_send(box, m)
+            error_notice(d, box, f"Письмо на новый адрес не ушло: {c['label']}",
+                         f"{c['label']}: письмо клинике на адрес из её ответа не ушло.", f"Ошибка: {reason}",
+                         "Повторно это письмо не отправляется, пока вы не решите. Что уже ушло, видно в журнале волны.")
+
+
+def watch_campaigns(d, box, failing):
+    """Read every campaign's inbox for clinic answers (clinic_mailer.watch: classify, log, act), with retries, whether or
+    not a batch of it runs (Ivan, 2026-10-05: a batch process was the only reader, so an answer waited for the next one:
+    52 minutes on 02.10, and after the last batch nobody would read). A campaign whose read still fails is logged
+    (watch_error) and mailed once per outage; the others go on. `failing` is the set of campaigns in an outage; returns it."""
+    for c in d["campaigns"]:
+        cfg = c["cfg"]
+        name = cfg["campaign"]
+        try:
+            M.watch(cfg, box)
+        except Exception as e:
+            reason = str(e) or type(e).__name__
+            if name not in failing:
+                log(d, {"event": "watch_error", "campaign": name, "reason": reason, "trace": traceback.format_exc()[-2000:]})
+                error_notice(d, box, f"Дарья не может прочитать ответы клиник: {c['label']}",
+                             f"{c['label']}: чтение ответов клиник не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
+                             "Стол пробует снова каждую минуту и ничего не пропустит: ответ, который не удалось прочитать, остаётся "
+                             "непрочитанным и будет прочитан при следующей удачной попытке.")
+            failing = failing | {name}
+        else:
+            if name in failing:
+                log(d, {"event": "watch_recovered", "campaign": name})
+            failing = failing - {name}
+    return failing
+
+
+def watch_worker(d, box):
+    """Its own thread: a watch classifies answers with the model, which takes seconds, and the main loop must keep stamping
+    the heartbeat and reading the operators' mail meanwhile. Dies only with the desk; the main loop checks it."""
+    failing = set()
+    while True:
+        failing = watch_campaigns(d, box, failing)
+        M.sleep(d["poll_seconds"])
 
 
 def redirect_worker(d, box):
@@ -497,7 +537,7 @@ def redirect_worker(d, box):
     keep stamping the heartbeat and reading the operators' mail meanwhile. Dies only with the desk; the main loop checks it."""
     while True:
         redirect_letters(d, box)
-        time.sleep(d["poll_seconds"])
+        M.sleep(d["poll_seconds"])
 
 
 def handled(d):
@@ -517,6 +557,50 @@ def operator_mail(d, since, seen):
         mid = str(msg.get("Message-ID") or "").strip() or "sha256:" + hashlib.sha256(raw).hexdigest()
         if frm in d["operators"] and mid not in seen:
             yield folder, msg, mid, frm
+
+
+def read_operator_mail(d, since, seen):
+    """The new operator mails, as a list. The retries of a failing read are the helper's (clinic_mailer.helper_output)."""
+    return list(operator_mail(d, since, seen))
+
+
+def error_notice(d, box, subject, *paragraphs):
+    """A mail to the notify list in Daria's name."""
+    M.smtp_send(box, M.operator_mail(d, {"operators": d["notify"]}, subject, M.Doc(*paragraphs, "Daria")))
+
+
+def poll(d, box, jobs, since, failing):
+    """One pass of the desk loop; returns (since, failing). The operators' mail is read with retries. When the read still
+    fails the desk logs it and mails the notify list once per outage (Ivan, 2026-10-05), and goes on with the rest: halt
+    notices, the digest, the answer and redirect threads. It does not stamp the heartbeat and does not move `since` then:
+    a stop by mail would go unread, so the batches halt by themselves when the heartbeat is older than their limit, and
+    the mail that arrived meanwhile is read after the outage."""
+    t0 = now(d)
+    try:
+        mails = read_operator_mail(d, since, handled(d))
+    except Exception as e:
+        reason = str(e) or type(e).__name__
+        if not failing:
+            log(d, {"event": "read_error", "reason": reason, "trace": traceback.format_exc()[-2000:]})
+            error_notice(d, box, "Дарья не может прочитать почту операторов",
+                         f"Чтение почты операторов не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
+                         "Стол продолжает работать: сводка и письма на новые адреса идут. Пока чтение не восстановится, команды и вопросы "
+                         "письмом не читаются, а рассылки в режиме стола прервутся сами, когда пульс стола устареет. Что пришло за это время, "
+                         "будет прочитано после восстановления.")
+        failing = True
+    else:
+        if failing:
+            log(d, {"event": "read_recovered"})
+        failing = False
+        stamp(d, since)
+        for folder, msg, mid, frm in mails:
+            handle(d, box, jobs, folder, msg, mid, frm)
+        since = t0 - timedelta(minutes=d["overlap_minutes"])     # the server's and Exchange's clocks differ
+    status_check(d, box)
+    if digest_due(d, t0):
+        answers = M.digest([c["cfg"] for c in d["campaigns"]], box)
+        log(d, {"event": "digest", "date": f"{t0:%Y-%m-%d}", "answers": answers})
+    return since, failing
 
 
 def handle(d, box, jobs, folder, msg, mid, frm):
@@ -553,7 +637,7 @@ def _run(d):
     beat = json.loads(d["heartbeat"].read_text()) if d["heartbeat"].exists() else None
     start = datetime.fromisoformat(d["start"])
     since = max(start, datetime.fromisoformat(beat["since"]) - timedelta(minutes=d["overlap_minutes"])) if beat else start
-    list(operator_mail(d, now(d), set()))                           # the inbox can be read
+    read_operator_mail(d, now(d), set())                            # the inbox can be read
     check = classify(d, "статус", "Какой статус рассылки?", active(d))
     if check["intent"] != "status":
         raise M.MailerError(f"classifier self-check: 'Какой статус рассылки?' came back as {check['intent']}, not status")
@@ -565,26 +649,23 @@ def _run(d):
     worker.start()
     redirects = threading.Thread(target=redirect_worker, args=(d, box), daemon=True)
     redirects.start()
+    watchers = threading.Thread(target=watch_worker, args=(d, box), daemon=True)
+    watchers.start()
     log(d, {"event": "desk_started", "pid": os.getpid(), "since": since.isoformat(timespec="seconds"), "requeued": len(left)})
     print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, mail since {since:%Y-%m-%d %H:%M}, "
           f"{len(active(d))} active batches, {len(left)} questions still to answer")
     before = {s: signal.signal(s, M.ended) for s in (signal.SIGTERM, signal.SIGHUP)}
+    failing = False
     try:
         while True:
             t0 = now(d)
-            stamp(d, since)
             if not worker.is_alive():
                 raise M.MailerError("the answer worker died")
             if not redirects.is_alive():
                 raise M.MailerError("the redirect worker died")
-            seen = handled(d)
-            for folder, msg, mid, frm in operator_mail(d, since, seen):
-                handle(d, box, jobs, folder, msg, mid, frm)
-            status_check(d, box)
-            if digest_due(d, t0):
-                answers = M.digest([c["cfg"] for c in d["campaigns"]], box)
-                log(d, {"event": "digest", "date": f"{t0:%Y-%m-%d}", "answers": answers})
-            since = t0 - timedelta(minutes=d["overlap_minutes"])     # the server's and Exchange's clocks differ
+            if not watchers.is_alive():
+                raise M.MailerError("the watch worker died")
+            since, failing = poll(d, box, jobs, since, failing)
             time.sleep(max(0, d["poll_seconds"] - (now(d) - t0).total_seconds()))
     except BaseException as e:
         reason = str(e) or type(e).__name__
