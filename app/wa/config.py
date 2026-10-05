@@ -146,11 +146,15 @@ if BRAIN not in ("deterministic", "luna"):
 # pressure. Known cost: TASK-287's own profiling showed cli_duration_ms scales with num_turns and
 # reasoning depth, so this raises tail latency on cold, multi-tool-call turns -- accepted
 # knowingly, not a regression.
-LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-opus-5").strip() or "claude-opus-5"
+# 2026-10-05, Ivan: Opus 5.5 at effort "high" ("модель можно на opus 5.5 обновить?" -> effort "high"). Until then
+# production ran Sonnet 5/high through a WA_LUNA_MODEL/WA_LUNA_EFFORT override in .env while the llm tests ran
+# this default (Opus 5/max) -- the tests checked a model production did not use. The default is now the one
+# production runs; the .env override is dropped at deploy.
+LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-opus-5-5").strip() or "claude-opus-5-5"
 # See LUNA_MODEL's comment just above -- same 2026-09-24 CONVERGE-incident decision, same
 # explicit override of TASK-287's "high". Accepted values are low/medium/high/xhigh/max
 # (`claude -p --help`).
-LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "max").strip() or "max"
+LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "high").strip() or "high"
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if
