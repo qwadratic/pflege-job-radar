@@ -5,11 +5,10 @@ TASK-86: 47601 (.../karriere/job/3bc89d91-7c4e-485d-ba7f-260fc7a5a378/) and
 77901 (.../stellenangebote/gku-donau-ries-.../gesundheits-und-krankenpfleger-
 .../) both slipped into the registry as a single posting standing in for the
 whole board -- each produces exactly one junk row instead of a real crawl.
-Offline, no network: runs over the CSV rows/fields already loaded elsewhere.
+Offline, no network: runs over clinic rows already loaded elsewhere (`python -m pflege_jobs.registry_lint` lints the live table).
 """
 from __future__ import annotations
 
-import csv
 import re
 from dataclasses import dataclass
 
@@ -50,8 +49,7 @@ def check_careers_url(careers_url: str) -> str | None:
 
 
 def lint_rows(rows) -> list[LintFinding]:
-    """rows: iterable of dicts each with at least clinic_id/careers_url
-    (e.g. csv.DictReader over data/registry/clinics.csv, or live clinics.clinics rows)."""
+    """rows: iterable of dicts each with at least clinic_id/careers_url (live pflege_jobs.clinics rows)."""
     findings = []
     for row in rows:
         shape = check_careers_url(row.get("careers_url", ""))
@@ -60,13 +58,9 @@ def lint_rows(rows) -> list[LintFinding]:
     return findings
 
 
-def lint_csv(path: str = "data/registry/clinics.csv") -> list[LintFinding]:
-    with open(path, newline="", encoding="utf-8") as f:
-        return lint_rows(csv.DictReader(f))
-
-
 if __name__ == "__main__":
-    findings = lint_csv()
+    from app import config as A
+    findings = lint_rows(A.rest_get_all("clinics", {"select": "clinic_id,careers_url", "order": "clinic_id"}))
     if not findings:
         print("no job-detail-shaped careers_url found")
     for f in findings:

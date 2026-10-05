@@ -454,6 +454,9 @@ def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
     # for a town-based matcher rung that cannot help here (both clinics are in Landshut).
     la_regio_pool = {x["clinic_id"] for x in (board.get("clinics") or [])} >= {"26108", "26103"}
     for r in rows:
+        house = VA.reha_house(ids, r["payload"].get("title"))   # TASK-170/172, see VA.REHA_HOUSE_BOARDS
+        if house:
+            r["payload"]["org"], r["payload"]["org_source"] = house, None
         # which board this came from is provenance, not a guess -- it bounds the site the posting
         # can belong to (74 boards are shared, covering 253 clinics)
         r["payload"]["board_url"] = board.get("url") or c.get("careers_url")
@@ -844,7 +847,9 @@ def execute(run_id):
                 return rows, [], None
             obs, st = _seed_obs(b, c, towns, log)
             for o in obs:
-                o["_board"] = [x["clinic_id"] for x in b["clinics"]]
+                # An adapter's own pool wins (TASK-178: pi_asp sets [] for a unit its seed marks as no
+                # registry site, so the board's only clinic is not the drain's fallback for it).
+                o.setdefault("_board", [x["clinic_id"] for x in b["clinics"]])
             log(f"  {b['vendor']:<14} {url[:60]} -> {len(obs)} observations {json.dumps({k: v for k, v in (st or {}).items() if k in ('error', 'total', 'board_total', 'pflege', 'job_links_found', 'job_pages', 'shared', 'truncated')}, ensure_ascii=False)} ({names}) {round(time.time() - t0)}s")
             if st and st.get("error"):
                 return [], obs, st["error"]

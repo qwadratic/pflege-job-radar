@@ -194,7 +194,7 @@ class EdgeSink:
         # TASK-86: refuse a single-job-detail-page-shaped careers_url here, loudly, rather than let it
         # become a one-row "board" once crawled -- but drop only that ONE value, not the whole row or
         # batch. Every real caller (career_discover_exa.py's Exa write-back, cli.py's ats-probe drain,
-        # cli.py's registry CSV push) builds this row from a full live-clinic snapshot and only
+        # tools/apply_clinic_corrections.py) builds this row from a full live-clinic snapshot and only
         # conditionally overwrites careers_url, so a row proposing an unrelated correction (e.g.
         # ats_type only) routinely CARRIES THROUGH an already-bad, unchanged careers_url. Refusing the
         # whole row for that protects nothing (the value is already live) while it wedges every other

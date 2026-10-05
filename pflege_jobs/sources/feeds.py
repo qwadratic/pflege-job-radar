@@ -11,7 +11,7 @@ SOURCE_ID = C.SOURCES["employer_ats"]["source_id"]
 
 def _obs(url, title, emp, city, plz, region, desc, published, dept, extra, towns, seed):
     e_class, e_rule = classify_employer(emp)
-    role, rule = classify_role(title, "")
+    role, rule = classify_role(title, "", desc=desc)
     enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
     now = datetime.now(timezone.utc).isoformat()
     return {

@@ -13,8 +13,8 @@ two polluted inputs:
    Bad Mergentheim is a real clinic town), 965xx Sonneberg (Thueringen), and 87491 Jungholz -- an
    Austrian exclave that only has a German PLZ because it is reachable by road solely through
    Bavaria.
-2. `towns`, built at pflege_jobs/cli.py:370 from data/registry/clinics.csv's PDF-parse-mangled town
-   column, carries junk tokens ("klinik", "hof", "berg", "landau", "friedberg", "neustadt",
+2. `towns`, built in pflege_jobs/cli.py's cmd_inbox from the registry's PDF-parse-mangled town column
+   (then data/registry/clinics.csv, the clinics table since TASK-175), carries junk tokens ("klinik", "hof", "berg", "landau", "friedberg", "neustadt",
    "weilheim", "gmbh & co. kg", ...) that in_bavaria's first-token match (career_crawl.py:98-99) then
    matches against ANY city string starting with that word. Combined with a Bavarian-town regex that
    is a strict subset check, not a Land check, this makes today's code return True for five real,

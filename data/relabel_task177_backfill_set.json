@@ -1,0 +1,3444 @@
+{
+ "postings": [
+  {
+   "posting_id": 6786,
+   "status": "open",
+   "title": "Heilerziehungspfleger (w/m/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 6845,
+   "status": "expired",
+   "title": "Verpflegungsassistent (m/w/d)",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:verpflegung"
+   ]
+  },
+  {
+   "posting_id": 6943,
+   "status": "open",
+   "title": "Staatlich geprüfte Kinderpfleger/Erzieher (m/w/d), Studenten (m/w/d) mit pädagogischer Grundqualifikation",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7011,
+   "status": "open",
+   "title": "Heilerziehungspflegerin (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pflegerin"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7012,
+   "status": "open",
+   "title": "Heilerziehungspflegerin (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pflegerin"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7038,
+   "status": "open",
+   "title": "Fachkraft (m/w/d) / Heilerziehungspfleger (m/w/d) - Urphertshofen (Obernzenn)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7050,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) / Erzieher (m/w/d) Außenwohngruppe Bad Berneck",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7051,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) / Fachkraft (m/w/d) für den Nachtdienst - Wohnen Rothenburg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7052,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) / Fachkraft (m/w/d) Wohnen Obernzenn - Urphertshofen (Wohnbereich 3)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7053,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für eine beschützende Wohngruppe bei Wohnen Himmelkron - Wohngruppe F6 Haus Froschletten",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7054,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für eine beschützende Wohngruppe bei Wohnen Himmelkron - Wohngruppen F5 Haus Froschletten",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7055,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für eine beschützende Wohngruppe bei Wohnen Himmelkron - Wohngruppe S6/7 Schloss",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7058,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) / pädagogische Fachkraft (m/w/d) bei Wohnen Bruckberg",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7059,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) Wohnen Himmelkron - Wohngruppe E1 Haus Elisabeth",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7060,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) Wohnen Himmelkron - Wohngruppen F3/F4 Haus Froschletten",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7063,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) - Nürnberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7064,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) - Nürnberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7065,
+   "status": "expired",
+   "title": "Kinderpfleger (m/w/d) - Nürnberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7066,
+   "status": "expired",
+   "title": "Kinderpfleger (m/w/d) - Roth",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7067,
+   "status": "expired",
+   "title": "Kinderpfleger (m/w/d) - Stein",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7121,
+   "status": "open",
+   "title": "Erzieher (m/w/d), Heilerziehungspfleger (m/w/d) oder Kinderpfleger (m/w/d) für das Heilpädagogische Wohnheim",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 7122,
+   "status": "open",
+   "title": "Erzieher (m/w/d) oder Heilerziehungspfleger (m/w/d) für die Heilpädagogische Tagesstätte in Teilzeit",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 7123,
+   "status": "expired",
+   "title": "Erzieher (m/w/d) oder Heilerziehungspfleger (m/w/d) für unsere Heilpädagogische Tagesstätte in TZ",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 7272,
+   "status": "expired",
+   "title": "Kinderpfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 7274,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7321,
+   "status": "open",
+   "title": "Erzieher oder Heilerziehungspfleger (m/w/d) für unsere Kinder- und Jugendabteilung in Prien am Chiemsee",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 7322,
+   "status": "open",
+   "title": "Erzieher oder Heilerziehungspfleger (m/w/d) Kinder- und Jugendpsychiatrie an unserem neuen Standort in Vogtareuth",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 7406,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) Psychiatrie & Psychosomatik in Landsberg am Lech",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 7407,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) Psychiatrie und Psychosomatik in Garmisch-Partenkirchen",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 10072,
+   "status": "expired",
+   "title": "Diätassistent / Diätassistentin (w|m|d) Verpflegungsservice / München (Nr. 44508)",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:verpflegung"
+   ]
+  },
+  {
+   "posting_id": 10113,
+   "status": "open",
+   "title": "Erzieher / Heilerziehungspfleger / Heilpädagoge (m/w/d) für den Pflege- und Erziehungsdienst am Standort Landsberg am Lech",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 10504,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für unsere Kindertherapiestätte (Mo. bis Fr.) - Psychosomatische Familienklinik",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 11076,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) - Nürnberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 12010,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 12186,
+   "status": "open",
+   "title": "Raumpfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:raumpfleg"
+   ]
+  },
+  {
+   "posting_id": 12233,
+   "status": "expired",
+   "title": "Staatlich anerkannter Erzieher/Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 12291,
+   "status": "open",
+   "title": "Tierpfleger - Fachrichtung Forschung und Klinik (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 12297,
+   "status": "open",
+   "title": "Tierpfleger (m/w/d) für die Keimfrei-Tierhaltung",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 12298,
+   "status": "open",
+   "title": "Tierpfleger (m/w/d) für die Keimfrei-Tierhaltung",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 12299,
+   "status": "open",
+   "title": "Tierpfleger-Assistent - Fachrichtung Forschung und Klinik (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 12579,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) oder Pflegehelfer (m/w/d) Markersbacher Straße Obernzenn",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 12581,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) / Heilerziehungspflegehelfer (m/w/d) für unsere neue Wohngruppe im Kinder- und Jugendbereich Sonnenhof in Bruckberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 12705,
+   "status": "open",
+   "title": "Erzieher, Heilpädagoge oder Heilerziehungspfleger (m/w/d) für Tagesstätte Würzburg - Diakonisches Werk Würzburg",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 12796,
+   "status": "open",
+   "title": "Staatlich anerkannter Erzieher/Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 12814,
+   "status": "open",
+   "title": "Examinierter Tierpfleger für die Forschung (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:examinierte"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 12938,
+   "status": "open",
+   "title": "Heilerziehungspflegehelferin, Kinderpflegerin (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pflegerin"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 13360,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) - Stein",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 13592,
+   "status": "open",
+   "title": "Erzieher, Kinderpfleger, Sozialpädagoge (o. ä. Abschlüsse) (m/w/d)",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 13624,
+   "status": "open",
+   "title": "Erzieher/ Kinderpfleger (m/w/d) für die inklusive Kindertagesstätte im Hessing Förderzentrum",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 13683,
+   "status": "expired",
+   "title": "Staatlich anerkannter Erzieher/Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 13704,
+   "status": "expired",
+   "title": "Examinierter Tierpfleger für die Forschung (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:examinierte"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 13937,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Kinderpfleger / Altenpflegehelfer (m/w/d) für unsere Wohneinrichtung Kloster Holzen",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "pflegehelfer",
+    "pflegehelfer:altenpflegehelfer"
+   ]
+  },
+  {
+   "posting_id": 14015,
+   "status": "open",
+   "title": "Erzieherin / Heilerziehungspflegerin / Sozialpädagogin (m/w/d) für unsere neue Wohngruppe",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14016,
+   "status": "open",
+   "title": "Erzieherin / Heilerziehungspflegerin / Kindheitspädagogin / Sozialpädagogin (m/w/d) für unsere neue Kinder-Wohngruppe",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14017,
+   "status": "open",
+   "title": "Erzieher oder Heilerziehungspfleger (m/w/d) für unsere Kinder- und Jugendabteilung in Prien am Chiemsee",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14018,
+   "status": "expired",
+   "title": "Erzieher oder Heilerziehungspfleger (m/w/d) Kinder- und Jugendpsychiatrie an unserem neuen Standort in Vogtareuth",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14019,
+   "status": "open",
+   "title": "Sozialpädagogin / Heilpädagogin / Erzieherin / Heilerziehungspflegerin (m/w/d) für die Jugendwohngemeinschaft",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:sozialpädag"
+   ]
+  },
+  {
+   "posting_id": 14020,
+   "status": "open",
+   "title": "Fachkräfte – darunter Erzieher, Heilerziehungspfleger, Heilpädagogen, Pädagogen und Sozialpädagogen (m/w/d)",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14021,
+   "status": "open",
+   "title": "Erzieherin / Sozialpädagogin / Heilerziehungspflegerin (m/w/d) für unsere Jugendwohngruppe",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14022,
+   "status": "open",
+   "title": "Erzieherin / Sozialpädagogin / Heilerziehungspflegerin (m/w/d) für unsere Klärungsgruppe",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14147,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d), Heilerziehungspflegehelfer (m/w/d), Schulbegleiter (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14150,
+   "status": "open",
+   "title": "Kinderpflegerin (m/w/d) für unsere neue Kinderwohngruppe",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pflegerin"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14151,
+   "status": "open",
+   "title": "Kinderpflegerin (m/w/d) für unsere neue Kinderwohngruppe",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pflegerin"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14152,
+   "status": "open",
+   "title": "Erzieher-Heilerziehungspfleger-Erzieher im Anerkennungsjahr-Kinderpfleger (m/w/d)-Entdeckerkita Schlammersdorf",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14153,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für unsere Kinderkrippe \"Palmsanlage\"",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14268,
+   "status": "open",
+   "title": "Kinderpfleger / Kinderpflegerin (m/w/d) in Moniberg/Landshut",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14269,
+   "status": "open",
+   "title": "Kinderpfleger / Kinderpflegerin (m/w/d) Kinderhaus Bullerbü",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14270,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) als Schulbegleitung in Kempten (Allgäu)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14342,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für Nachtwache in Kempten (Allgäu)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14343,
+   "status": "open",
+   "title": "Heilerziehungspfleger / Arbeitserzieher (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14345,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) in Kempten (Allgäu)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14348,
+   "status": "open",
+   "title": "Sozialpädagogen / Heilpädagogen / Heilerziehungspfleger als Hausleitung m/w/d",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:sozialpädag"
+   ]
+  },
+  {
+   "posting_id": 14349,
+   "status": "open",
+   "title": "Erzieher/in, Sozialpädagoge, Sozialpädagogin und Heilerziehungspfleger/in (m/w/d) in Offenbach",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14355,
+   "status": "open",
+   "title": "Heilerziehungspfleger / Erzieher / Heilpädagoge als Gruppenleitung Tagesförderstätte m/w/d",
+   "stored": [
+    "leitung",
+    "leitung:gruppenleit"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14487,
+   "status": "open",
+   "title": "Erzieher, Heilpädagoge, Sozialpädagoge oder Heilerziehungspfleger (m/w/d) für die stationäre Jugendhilfe",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14489,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger, Heilpädagoge (m/w/d)",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14536,
+   "status": "open",
+   "title": "Erzieher, Kinderpfleger, Sozialpädagoge (o. ä. Abschlüsse) (m/w/d) – Kindertagesstätten",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14537,
+   "status": "open",
+   "title": "Komm ins Teams als Erzieher (m/w/d) oder Kinderpfleger (m/w/d) in Trudering",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14543,
+   "status": "open",
+   "title": "Kinderpfleger/in (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14631,
+   "status": "open",
+   "title": "Erzieher*in / Kinderpfleger*in (m/w/d) in Voll- oder Teilzeit",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14650,
+   "status": "open",
+   "title": "Fach- oder Ergänzungskraft (Erzieher/ Heilerziehungspfleger/ Kinderpfleger/ Heilerziehungspflegehelfer) m/w/d",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14651,
+   "status": "open",
+   "title": "Kinderpfleger/in (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14727,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Sozialbetreuer / Kinderpfleger / Pflegehelfer / Quereinsteiger (m/w/d) für unsere Wohneinrichtung City-Wohnen in Augsburg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14728,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Sozialbetreuer / Kinderpfleger / Pflegehelfer / Quereinsteiger (m/w/d) für unsere Wohneinrichtung Don Bosco",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14729,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Kinderpfleger / Krankenpflegehelfer / Altenpflegehelfer / Sozialbetreuer / Quereinsteiger (m/w/d) für unsere Wohneinrichtung Breitbrunn am Ammersee",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "pflegehelfer",
+    "pflegehelfer:krankenpflegehelfer"
+   ]
+  },
+  {
+   "posting_id": 14730,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Pflegefachhelfer / Sozialbetreuer / Kinderpfleger (m/w/d) für die Gruppe Elisabeth",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "pflegehelfer",
+    "pflegehelfer:pflegefachhelfer"
+   ]
+  },
+  {
+   "posting_id": 14877,
+   "status": "open",
+   "title": "Heilerziehungspfleger für den stationären Bereich m/w/d",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14880,
+   "status": "open",
+   "title": "Zimmermädchen / Roomboy / Raumpfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:raumpfleg"
+   ]
+  },
+  {
+   "posting_id": 14893,
+   "status": "open",
+   "title": "Kinderpfleger oder pädagogische Ergänzungskraft (m/w/d) im mobilen Einsatz Kindertageseinrichtungen München",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14894,
+   "status": "open",
+   "title": "Kinderpfleger oder pädagogische Ergänzungskraft (m/w/d) Haus für Kinder Laim",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14896,
+   "status": "open",
+   "title": "Pädagogische Fachkraft / Heilerziehungspfleger / Erzieher oder Heilerziehungspflegehelfer (m/w/d) in Peiting-Herzogsägmühle",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14899,
+   "status": "open",
+   "title": "Sozialpädagoge / Erzieher / Heilerziehungspfleger (m/w/d) Stütz- und Förderklasse | Herzogsägmühle",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:sozialpädag"
+   ]
+  },
+  {
+   "posting_id": 14900,
+   "status": "open",
+   "title": "Schul -und Berufsausbildung zum Heilerziehungspfleger / Heilerziehungspflegehelfer (m/w/d) / Heilerziehungspflegerisches Einführungsjahr (HEJ)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14901,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für unsere Wohnangebote in Peiting-Herzogsägmühle",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14905,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger, Kinderpfleger (m/w/d) für das inklusive Kinderhaus im Dorf in Peißenberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14906,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für das inklusive Urmel-Kinderhaus Penzberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14907,
+   "status": "open",
+   "title": "Erzieher / Kinderpfleger (m/w/d) für Ganztagsbildung / Hort Aubinger Allee, Minijob",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14909,
+   "status": "open",
+   "title": "Erzieher / Heilerziehungspfleger / Sozialpädagoge (m/w/d) für Inobhutnahme-Einrichtung Peiting",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14910,
+   "status": "open",
+   "title": "Kinderpfleger / Heilerziehungspflegehelfer (m/w/d) Kinderhaus am Berg Peißenberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14922,
+   "status": "open",
+   "title": "Erzieher/in und Kinderpfleger/in (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14939,
+   "status": "open",
+   "title": "Mitarbeiter Gartenpflege / Grünflächenpflege (w/m/d)",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:gartenpflege"
+   ]
+  },
+  {
+   "posting_id": 14940,
+   "status": "open",
+   "title": "Erzieher/Kinderpfleger (m/w/d) ab 01.07.2026",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14943,
+   "status": "open",
+   "title": "Helfer (m/w/d) für Ladetätigkeiten, Werkstatt und Grünflächenpflege",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:grünflächenpflege"
+   ]
+  },
+  {
+   "posting_id": 14946,
+   "status": "open",
+   "title": "Qualifizierte Tagespflegeperson (m/w/d) für unsere nach Kneipp zertifizierte Kita in Kombination mit unserer Manufaktur",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tagespflegeperson"
+   ]
+  },
+  {
+   "posting_id": 14947,
+   "status": "open",
+   "title": "Garten-und Landschaftspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:landschaftspflege"
+   ]
+  },
+  {
+   "posting_id": 14948,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für unser Kinderhaus Rasselbande in Burlafingen in Voll- oder Teilzeit",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14963,
+   "status": "open",
+   "title": "Kosmetiker und Fußpfleger (m/w/d) - Ganzjahresstelle",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kosmetik"
+   ]
+  },
+  {
+   "posting_id": 14965,
+   "status": "open",
+   "title": "Kosmetikerin (m/w/d) mit Fußpflegeausbildung",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kosmetik"
+   ]
+  },
+  {
+   "posting_id": 14966,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) zur mobilen Tagesmütter-Unterstützung / Kita Klecks in Teilzeit (19,5 h/Woche)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14967,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für unser neues Kinderhaus City-Kids ab 1. 9. 2026 in Voll- oder Teilzeit",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14973,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14974,
+   "status": "open",
+   "title": "Raumpfleger / Housekeeper (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:raumpfleg"
+   ]
+  },
+  {
+   "posting_id": 14976,
+   "status": "open",
+   "title": "Heilerziehungspflegehelfer / Sozialbetreuer / Kinderpfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14978,
+   "status": "open",
+   "title": "Heilerziehungspflegerinnen und -pfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14979,
+   "status": "open",
+   "title": "Landschaftsgärtner (m/w/d) für Grünflächenpflege",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:grünflächenpflege"
+   ]
+  },
+  {
+   "posting_id": 14981,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) für Nachtwache",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 14983,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger* als Schulbegleitung",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 14985,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für unseren Inselhort ab 1. 9. 2026 in Teilzeit (30 h/Woche)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 14988,
+   "status": "open",
+   "title": "Kosmetikerin (m/w/d) mit Fußpflegeausbildung",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kosmetik"
+   ]
+  },
+  {
+   "posting_id": 15001,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) als Schulbegleitung",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15003,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für Kinderhaus Ideenreich in Voll- oder Teilzeit",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15005,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 15008,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 15012,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 15013,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 15014,
+   "status": "open",
+   "title": "Kinderpfleger, Sozialbetreuer, Heilerziehungspflegehelfer*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15015,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 15018,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 15019,
+   "status": "open",
+   "title": "Erzieher, Heilerziehungspfleger*",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:erzieher"
+   ]
+  },
+  {
+   "posting_id": 15021,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d) für den Kindergarten Kunterbunt",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15028,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d) Psychiatrie & Psychosomatik in Landsberg am Lech",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 15041,
+   "status": "expired",
+   "title": "Kinderpfleger (w/m/d) für unser Kinderhaus Kind und Natur in Söcking",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15043,
+   "status": "open",
+   "title": "LKW-Fahrer (m/w/d) in der Landschaftspflege",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:landschaftspflege"
+   ]
+  },
+  {
+   "posting_id": 15044,
+   "status": "open",
+   "title": "Maschinenführer (m/w/d) in der Landschaftspflege",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:landschaftspflege"
+   ]
+  },
+  {
+   "posting_id": 15046,
+   "status": "open",
+   "title": "Fachbereichskoordinator Grünanlagenpflege (m/w/d)",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:grünanlagenpflege"
+   ]
+  },
+  {
+   "posting_id": 15069,
+   "status": "open",
+   "title": "pädagogische Hilfskraft (m/w/d) – Kinderpfleger oder HEP-Helfer für die Schulbegleitung in Penzberg",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15071,
+   "status": "open",
+   "title": "Kosmetikerin (m/w/d) medizinische Fußpflege und medizinische Kosmetik",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kosmetik"
+   ]
+  },
+  {
+   "posting_id": 15154,
+   "status": "open",
+   "title": "Kinderpfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15155,
+   "status": "open",
+   "title": "Kinderpfleger (w/m/d) für unser inklusives Kinderhaus in Peißenberg",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15217,
+   "status": "open",
+   "title": "Heilerziehungspfleger (m/w/d)",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:heilerziehung"
+   ]
+  },
+  {
+   "posting_id": 15255,
+   "status": "open",
+   "title": "Tierpfleger (m/w/d) - Zentrum für präklinische Forschung",
+   "stored": [
+    "pflegefachkraft",
+    "pflegefachkraft:pfleger"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:tierpfleg"
+   ]
+  },
+  {
+   "posting_id": 15260,
+   "status": "open",
+   "title": "Pädagogische Ergänzungskraft (m/w/d) / Kinderpfleger (m/w/d) -  Nürnberg",
+   "stored": [
+    "apn_experte",
+    "apn_experte:pädagog"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:kinderpfleger"
+   ]
+  },
+  {
+   "posting_id": 15315,
+   "status": "open",
+   "title": "Servicemitarbeiter (m/w/d) in unserer Patientenverpflegung",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:verpflegung"
+   ]
+  },
+  {
+   "posting_id": 15316,
+   "status": "open",
+   "title": "Betriebsassistenz (m/w/d) für Patientenbeherbergung und -verpflegung",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:verpflegung"
+   ]
+  },
+  {
+   "posting_id": 15317,
+   "status": "open",
+   "title": "Beschäftigung im Zuverdienst – Garten- und Anlagepflege (w/m/d)",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:anlagepflege"
+   ]
+  },
+  {
+   "posting_id": 15325,
+   "status": "open",
+   "title": "Servicemitarbeiter (m/w/d) in unserer Patientenverpflegung",
+   "stored": [
+    "sonstige_pflege",
+    "fallback"
+   ],
+   "new": [
+    "nicht_pflege",
+    "nicht_pflege:verpflegung"
+   ]
+  }
+ ],
+ "observations": [
+  {
+   "observation_id": 34439,
+   "posting_id": 6786,
+   "source_id": 20,
+   "source_ref": "https://www.medbo.de/karriere/schuelerin/ausbildungen/ausbildung-heilerziehungspfleger-w/m/d",
+   "source_url": "https://www.medbo.de/karriere/schuelerin/ausbildungen/ausbildung-heilerziehungspfleger-w/m/d",
+   "observed_at": "2026-09-05T17:55:35.435744+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 34560,
+   "posting_id": 6845,
+   "source_id": 20,
+   "source_ref": "https://romed-jobs.de/de/jobs/31496/verpflegungsassistent-mwd",
+   "source_url": "https://romed-jobs.de/de/jobs/31496/verpflegungsassistent-mwd",
+   "observed_at": "2026-09-06T01:38:06.73134+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 34673,
+   "posting_id": 6943,
+   "source_id": 20,
+   "source_ref": "https://jobs.ukr.de/jobposting/2aacf34dcde9b8b637363ba4bd3ae90ded1f000e0",
+   "source_url": "https://jobs.ukr.de/jobposting/2aacf34dcde9b8b637363ba4bd3ae90ded1f000e0",
+   "observed_at": "2026-09-29T04:58:57.728715+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 40602,
+   "posting_id": 7011,
+   "source_id": 20,
+   "source_ref": "https://bewerbung.augustinum-gruppe.de/jobposting/a81ec5b3d10cd53ad33c551773a9ee4774cffde60",
+   "source_url": "https://bewerbung.augustinum-gruppe.de/jobposting/a81ec5b3d10cd53ad33c551773a9ee4774cffde60",
+   "observed_at": "2026-09-29T03:10:21.618311+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pflegerin"
+  },
+  {
+   "observation_id": 40603,
+   "posting_id": 7012,
+   "source_id": 20,
+   "source_ref": "https://bewerbung.augustinum-gruppe.de/jobposting/21e1d121096a717f264f052fa95eda72ba27f0320",
+   "source_url": "https://bewerbung.augustinum-gruppe.de/jobposting/21e1d121096a717f264f052fa95eda72ba27f0320",
+   "observed_at": "2026-09-29T03:10:20.893584+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pflegerin"
+  },
+  {
+   "observation_id": 40638,
+   "posting_id": 7038,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/e997ff05dd97bbd04a2baa8c907f1654035f5ef80",
+   "source_url": "https://jobs.diakoneo.de/jobposting/e997ff05dd97bbd04a2baa8c907f1654035f5ef80",
+   "observed_at": "2026-09-29T05:26:04.663092+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40650,
+   "posting_id": 7050,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/ceb0d95b5947da5c8826809299bfc36f83794b400",
+   "source_url": "https://jobs.diakoneo.de/jobposting/ceb0d95b5947da5c8826809299bfc36f83794b400",
+   "observed_at": "2026-09-29T05:26:30.242709+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40651,
+   "posting_id": 7051,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/b01af6bd3db48bfb2e3b7f6e5c1070fb2f3944b20",
+   "source_url": "https://jobs.diakoneo.de/jobposting/b01af6bd3db48bfb2e3b7f6e5c1070fb2f3944b20",
+   "observed_at": "2026-09-29T05:26:30.888718+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40652,
+   "posting_id": 7052,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/58ad6e1d819ed3ad8c44e3d874170c508f7e97670",
+   "source_url": "https://jobs.diakoneo.de/jobposting/58ad6e1d819ed3ad8c44e3d874170c508f7e97670",
+   "observed_at": "2026-09-29T05:26:31.526775+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40653,
+   "posting_id": 7053,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/7c346d7b731e86bc0234452b62409ec7c29cc40e0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/7c346d7b731e86bc0234452b62409ec7c29cc40e0",
+   "observed_at": "2026-09-29T05:26:32.840586+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40654,
+   "posting_id": 7054,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/3bcd833b676b6eb4507eeead43e6d4e82e09978a0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/3bcd833b676b6eb4507eeead43e6d4e82e09978a0",
+   "observed_at": "2026-09-29T05:26:33.508085+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40655,
+   "posting_id": 7055,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/4c11fc48315ec61abefbca03d977520ab3697b2b0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/4c11fc48315ec61abefbca03d977520ab3697b2b0",
+   "observed_at": "2026-09-29T05:26:34.185073+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40658,
+   "posting_id": 7058,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/01b8309f0f6a6f41ce74d6ec88e652559f1b4c670",
+   "source_url": "https://jobs.diakoneo.de/jobposting/01b8309f0f6a6f41ce74d6ec88e652559f1b4c670",
+   "observed_at": "2026-09-29T05:26:37.438126+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 40659,
+   "posting_id": 7059,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/2867ec20722ffcca1291476e2a04a65f1d45737b0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/2867ec20722ffcca1291476e2a04a65f1d45737b0",
+   "observed_at": "2026-09-29T05:26:40.034764+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40660,
+   "posting_id": 7060,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/5ffe31a737190d20a4c0288cf82f3404ace468c70",
+   "source_url": "https://jobs.diakoneo.de/jobposting/5ffe31a737190d20a4c0288cf82f3404ace468c70",
+   "observed_at": "2026-09-29T05:26:40.647525+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40663,
+   "posting_id": 7063,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/b435148cfc407e0423dd4927169cfffc885991e50",
+   "source_url": "https://jobs.diakoneo.de/jobposting/b435148cfc407e0423dd4927169cfffc885991e50",
+   "observed_at": "2026-09-29T05:26:44.479492+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40664,
+   "posting_id": 7064,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/3ed3b54ba91883275240e725faad635462841c370",
+   "source_url": "https://jobs.diakoneo.de/jobposting/3ed3b54ba91883275240e725faad635462841c370",
+   "observed_at": "2026-09-29T05:26:45.700788+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40665,
+   "posting_id": 7065,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/a6c0d599fd8ac7ca3d2b605df8424785c09027af0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/a6c0d599fd8ac7ca3d2b605df8424785c09027af0",
+   "observed_at": "2026-09-09T03:22:31.718948+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40666,
+   "posting_id": 7066,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/35c86415c3d08114c59502c9da6e5983c88f14630",
+   "source_url": "https://jobs.diakoneo.de/jobposting/35c86415c3d08114c59502c9da6e5983c88f14630",
+   "observed_at": "2026-09-09T03:22:31.885554+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40667,
+   "posting_id": 7067,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/a1f963c9ea0390ee2722df07acd4e492a1ac0df10",
+   "source_url": "https://jobs.diakoneo.de/jobposting/a1f963c9ea0390ee2722df07acd4e492a1ac0df10",
+   "observed_at": "2026-09-11T10:18:47.445571+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 40721,
+   "posting_id": 7121,
+   "source_id": 20,
+   "source_ref": "https://jobs.b-ite.com/jobposting/1384ca0f96b5b097f505b252a949120c35a32f790",
+   "source_url": "https://jobs.b-ite.com/jobposting/1384ca0f96b5b097f505b252a949120c35a32f790",
+   "observed_at": "2026-09-29T04:16:08.066507+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 40722,
+   "posting_id": 7122,
+   "source_id": 20,
+   "source_ref": "https://jobs.b-ite.com/jobposting/48ce7257a0463a235aa0cd9bd843002fafe86a4e0",
+   "source_url": "https://jobs.b-ite.com/jobposting/48ce7257a0463a235aa0cd9bd843002fafe86a4e0",
+   "observed_at": "2026-09-29T04:16:08.715927+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 40723,
+   "posting_id": 7123,
+   "source_id": 20,
+   "source_ref": "https://jobs.b-ite.com/jobposting/f1ab1141e5ed02674c56b8d69dbbc4346cca99730",
+   "source_url": "https://jobs.b-ite.com/jobposting/f1ab1141e5ed02674c56b8d69dbbc4346cca99730",
+   "observed_at": "2026-09-28T04:18:00.51457+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 55678,
+   "posting_id": 7272,
+   "source_id": 20,
+   "source_ref": "https://karriere.hescuro.de/jobs/67074970/Kinderpfleger-m-w-d-/",
+   "source_url": "https://karriere.hescuro.de/jobs/67074970/Kinderpfleger-m-w-d-/",
+   "observed_at": "2026-09-14T03:33:14.069234+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41107,
+   "posting_id": 7272,
+   "source_id": 20,
+   "source_ref": "https://hescuro.softgarden.io/job/67074970/Kinderpfleger-m-w-d-?jobDbPVId=283383010&amp%3Bl=de&l=de",
+   "source_url": "https://hescuro.softgarden.io/job/67074970/Kinderpfleger-m-w-d-?jobDbPVId=283383010&amp%3Bl=de&l=de",
+   "observed_at": "2026-09-06T13:45:56.929173+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41115,
+   "posting_id": 7272,
+   "source_id": 20,
+   "source_ref": "https://hescuro.softgarden.io/job/67074970/Kinderpfleger-m-w-d-?l=de",
+   "source_url": "https://hescuro.softgarden.io/job/67074970/Kinderpfleger-m-w-d-?l=de",
+   "observed_at": "2026-09-06T13:46:09.816861+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 67086,
+   "posting_id": 7274,
+   "source_id": 20,
+   "source_ref": "softgarden:64185168",
+   "source_url": "https://hescuro.softgarden.io/job/64185168/Heilerziehungspfleger-m-w-d-?l=de",
+   "observed_at": "2026-09-29T08:37:30.86497+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41117,
+   "posting_id": 7274,
+   "source_id": 20,
+   "source_ref": "https://hescuro.softgarden.io/job/64185168/Heilerziehungspfleger-m-w-d-?l=de",
+   "source_url": "https://hescuro.softgarden.io/job/64185168/Heilerziehungspfleger-m-w-d-?l=de",
+   "observed_at": "2026-09-06T13:46:13.872815+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 55674,
+   "posting_id": 7274,
+   "source_id": 20,
+   "source_ref": "https://karriere.hescuro.de/jobs/64185168/Heilerziehungspfleger-m-w-d-/",
+   "source_url": "https://karriere.hescuro.de/jobs/64185168/Heilerziehungspfleger-m-w-d-/",
+   "observed_at": "2026-09-22T05:28:07.383141+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41109,
+   "posting_id": 7274,
+   "source_id": 20,
+   "source_ref": "https://hescuro.softgarden.io/job/64185168/Heilerziehungspfleger-m-w-d-?jobDbPVId=282373170&amp%3Bl=de&l=de",
+   "source_url": "https://hescuro.softgarden.io/job/64185168/Heilerziehungspfleger-m-w-d-?jobDbPVId=282373170&amp%3Bl=de&l=de",
+   "observed_at": "2026-09-06T13:46:01.115165+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41173,
+   "posting_id": 7321,
+   "source_id": 20,
+   "source_ref": "https://jobs.schoen-klinik.de/Erzieher-oder-Heilerziehungspfleger-mwd-fuer-unsere-Kinder-de-j15563.html",
+   "source_url": "https://jobs.schoen-klinik.de/Erzieher-oder-Heilerziehungspfleger-mwd-fuer-unsere-Kinder-de-j15563.html",
+   "observed_at": "2026-09-29T09:32:42.43166+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41174,
+   "posting_id": 7322,
+   "source_id": 20,
+   "source_ref": "https://jobs.schoen-klinik.de/Erzieher-oder-Heilerziehungspfleger-mwd-Kinder-und-Jugendp-de-j15696.html",
+   "source_url": "https://jobs.schoen-klinik.de/Erzieher-oder-Heilerziehungspfleger-mwd-Kinder-und-Jugendp-de-j15696.html",
+   "observed_at": "2026-09-29T09:32:42.452108+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41412,
+   "posting_id": 7406,
+   "source_id": 20,
+   "source_ref": "https://kbo.de/karriere/jobs/22-14-hep-heilerziehungspfleger-m-w-d-psychiatrie-psychosomatik-in-landsberg-am-lech",
+   "source_url": "https://kbo.de/karriere/jobs/22-14-hep-heilerziehungspfleger-m-w-d-psychiatrie-psychosomatik-in-landsberg-am-lech",
+   "observed_at": "2026-09-29T09:29:37.186143+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 41415,
+   "posting_id": 7407,
+   "source_id": 20,
+   "source_ref": "https://kbo.de/karriere/jobs/22-13-hep-heilerziehungspfleger-m-w-d-psychiatrie-und-psychosomatik-in-garmisch-partenkirchen",
+   "source_url": "https://kbo.de/karriere/jobs/22-13-hep-heilerziehungspfleger-m-w-d-psychiatrie-und-psychosomatik-in-garmisch-partenkirchen",
+   "observed_at": "2026-09-29T09:29:37.188786+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 51506,
+   "posting_id": 10072,
+   "source_id": 20,
+   "source_ref": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/diaetassistent-diaetassistentin-w-m-d-stellennummer-44508/",
+   "source_url": "https://www.muenchen-klinik.de/stellenmarkt/aktuelles-stellenangebot/stellenangebot/diaetassistent-diaetassistentin-w-m-d-stellennummer-44508/",
+   "observed_at": "2026-09-06T06:54:02.889433+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 51573,
+   "posting_id": 10113,
+   "source_id": 20,
+   "source_ref": "https://kbo.de/karriere/jobs/97-2026-erzieher-heilerziehungspfleger-heilpaedagoge-m-w-d-fuer-den-pflege-und-erziehungsdienst-am-standort-landsberg-am-lech",
+   "source_url": "https://kbo.de/karriere/jobs/97-2026-erzieher-heilerziehungspfleger-heilpaedagoge-m-w-d-fuer-den-pflege-und-erziehungsdienst-am-standort-landsberg-am-lech",
+   "observed_at": "2026-09-29T09:29:36.43026+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 64466,
+   "posting_id": 10504,
+   "source_id": 20,
+   "source_ref": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?jobDbPVId=285293852&amp%3Bl=de&l=de",
+   "source_url": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?jobDbPVId=285293852&amp%3Bl=de&l=de",
+   "observed_at": "2026-09-22T04:55:04.308542+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 53375,
+   "posting_id": 10504,
+   "source_id": 20,
+   "source_ref": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?jobDbPVId=283883605&amp%3Bl=de&l=de",
+   "source_url": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?jobDbPVId=283883605&amp%3Bl=de&l=de",
+   "observed_at": "2026-09-18T04:51:57.350516+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 53381,
+   "posting_id": 10504,
+   "source_id": 20,
+   "source_ref": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?l=de",
+   "source_url": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?l=de",
+   "observed_at": "2026-09-22T04:55:28.075548+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 66437,
+   "posting_id": 10504,
+   "source_id": 20,
+   "source_ref": "softgarden:66504228",
+   "source_url": "https://heiligenfeld.softgarden.io/job/66504228/Heilerziehungspfleger-m-w-d-f%C3%BCr-unsere-Kindertherapiest%C3%A4tte-Mo.-bis-Fr.-Psychosomatische-Familienklinik?l=de",
+   "observed_at": "2026-09-29T05:04:00.686124+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 55577,
+   "posting_id": 11076,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/8b07052619f3d6543f4d317afc18e11878b9436b0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/8b07052619f3d6543f4d317afc18e11878b9436b0",
+   "observed_at": "2026-09-29T05:26:45.071499+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 58022,
+   "posting_id": 12010,
+   "source_id": 20,
+   "source_ref": "https://karriere.ameos.eu/offene-stellen/stelle/11677-heilerziehungspfleger-in-osnabr%C3%BCck",
+   "source_url": "https://karriere.ameos.eu/offene-stellen/stelle/11677-heilerziehungspfleger-in-osnabr%C3%BCck",
+   "observed_at": "2026-09-29T09:29:52.666912+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59461,
+   "posting_id": 12186,
+   "source_id": 20,
+   "source_ref": "https://www.krankenhaus-st-camillus.de/stellenangebote/raumpflegerin",
+   "source_url": "https://www.krankenhaus-st-camillus.de/stellenangebote/raumpflegerin",
+   "observed_at": "2026-09-29T09:31:33.826387+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59664,
+   "posting_id": 12233,
+   "source_id": 20,
+   "source_ref": "https://referral-portal-staging.lmu-klinikum.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "source_url": "https://referral-portal-staging.lmu-klinikum.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "observed_at": "2026-09-13T03:20:24.315081+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59871,
+   "posting_id": 12291,
+   "source_id": 20,
+   "source_ref": "https://www.karriere.uk-erlangen.de/job/tierpfleger-fachrichtung-forschung-und-klinik-m-w-d-13510/",
+   "source_url": "https://www.karriere.uk-erlangen.de/job/tierpfleger-fachrichtung-forschung-und-klinik-m-w-d-13510/",
+   "observed_at": "2026-09-29T09:31:05.536415+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59877,
+   "posting_id": 12297,
+   "source_id": 20,
+   "source_ref": "https://www.karriere.uk-erlangen.de/job/tierpfleger-m-w-d-fuer-die-keimfrei-tierhaltung-13593/",
+   "source_url": "https://www.karriere.uk-erlangen.de/job/tierpfleger-m-w-d-fuer-die-keimfrei-tierhaltung-13593/",
+   "observed_at": "2026-09-29T09:31:05.545698+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59878,
+   "posting_id": 12298,
+   "source_id": 20,
+   "source_ref": "https://www.karriere.uk-erlangen.de/job/tierpfleger-m-w-d-fuer-die-keimfrei-tierhaltung-13594/",
+   "source_url": "https://www.karriere.uk-erlangen.de/job/tierpfleger-m-w-d-fuer-die-keimfrei-tierhaltung-13594/",
+   "observed_at": "2026-09-29T09:31:05.555035+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 59896,
+   "posting_id": 12299,
+   "source_id": 20,
+   "source_ref": "https://www.karriere.uk-erlangen.de/job/tierpfleger-assistent-fachrichtung-forschung-und-klinik-m-w-d-13534/",
+   "source_url": "https://www.karriere.uk-erlangen.de/job/tierpfleger-assistent-fachrichtung-forschung-und-klinik-m-w-d-13534/",
+   "observed_at": "2026-09-29T09:31:05.595802+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 61665,
+   "posting_id": 12579,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/ac7574f3628c89c740a6cf6a95604fc387ca273a0",
+   "source_url": "https://jobs.diakoneo.de/jobposting/ac7574f3628c89c740a6cf6a95604fc387ca273a0",
+   "observed_at": "2026-09-29T05:26:36.781995+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 61670,
+   "posting_id": 12581,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/2165b66acde93113b4560a8976ea293ff4f874910",
+   "source_url": "https://jobs.diakoneo.de/jobposting/2165b66acde93113b4560a8976ea293ff4f874910",
+   "observed_at": "2026-09-29T05:26:43.812426+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 61921,
+   "posting_id": 12705,
+   "source_id": 20,
+   "source_ref": "https://diakonie-wuerzburg.de/diakonisches-werk-wuerzburg/arbeiten-in-der-diakonie/aktuelle-jobs/erzieher,-heilpaedagoge-oder-heilerziehungspfleger-(m-w-d)-fuer-tagesstaette-wuerzburg.html",
+   "source_url": "https://diakonie-wuerzburg.de/diakonisches-werk-wuerzburg/arbeiten-in-der-diakonie/aktuelle-jobs/erzieher,-heilpaedagoge-oder-heilerziehungspfleger-(m-w-d)-fuer-tagesstaette-wuerzburg.html",
+   "observed_at": "2026-09-29T09:31:15.722268+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 63671,
+   "posting_id": 12796,
+   "source_id": 20,
+   "source_ref": "https://www.lmu-klinikum.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "source_url": "https://www.lmu-klinikum.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "observed_at": "2026-09-29T09:29:18.74536+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 63691,
+   "posting_id": 12814,
+   "source_id": 20,
+   "source_ref": "https://www.lmu-klinikum.de/stellenanzeigen/tierpfleger-fur-forschung-und-klinik/354ed9bd7af42dab",
+   "source_url": "https://www.lmu-klinikum.de/stellenanzeigen/tierpfleger-fur-forschung-und-klinik/354ed9bd7af42dab",
+   "observed_at": "2026-09-29T09:29:19.78736+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:examinierte"
+  },
+  {
+   "observation_id": 64255,
+   "posting_id": 12938,
+   "source_id": 20,
+   "source_ref": "https://bewerbung.augustinum-gruppe.de/jobposting/1ef380e08ed98074d1c1f77d2a49a084d3f5ef4c0",
+   "source_url": "https://bewerbung.augustinum-gruppe.de/jobposting/1ef380e08ed98074d1c1f77d2a49a084d3f5ef4c0",
+   "observed_at": "2026-09-29T03:10:18.558075+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pflegerin"
+  },
+  {
+   "observation_id": 66705,
+   "posting_id": 13360,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/8c6afad54024a318dacf35df74d5e7854c4960a10",
+   "source_url": "https://jobs.diakoneo.de/jobposting/8c6afad54024a318dacf35df74d5e7854c4960a10",
+   "observed_at": "2026-09-29T05:26:46.295101+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 67716,
+   "posting_id": 13592,
+   "source_id": 20,
+   "source_ref": "https://brkm.pi-asp.de/bewerber-web/?company=123-FIRMA-ID#position,id=11dafb4f-9cea-4e68-9094-0329f0ac130f",
+   "source_url": "https://brkm.pi-asp.de/bewerber-web/?company=123-FIRMA-ID#position,id=11dafb4f-9cea-4e68-9094-0329f0ac130f",
+   "observed_at": "2026-09-29T03:30:41.379025+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 70605,
+   "posting_id": 13624,
+   "source_id": 20,
+   "source_ref": "https://hessing-kliniken.softgarden.io/job/52828689/Erzieher-Kinderpfleger-m-w-d-f%C3%BCr-die-inklusive-Kindertagesst%C3%A4tte-im-Hessing-F%C3%B6rderzentrum-?jobDbPVId=283761560&l=de",
+   "source_url": "https://hessing-kliniken.softgarden.io/job/52828689/Erzieher-Kinderpfleger-m-w-d-f%C3%BCr-die-inklusive-Kindertagesst%C3%A4tte-im-Hessing-F%C3%B6rderzentrum-?jobDbPVId=283761560&l=de",
+   "observed_at": "2026-09-29T19:17:36.341213+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 72111,
+   "posting_id": 13683,
+   "source_id": 20,
+   "source_ref": "https://ea-kum1.external-pages-kum1.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "source_url": "https://ea-kum1.external-pages-kum1.de/stellenanzeigen/erzieher-heilerziehungspfleger-oder-gesundheits-und-krankenpflegekraft-fur-die-kjp4/9c61709dbc7b3720",
+   "observed_at": "2026-09-24T17:28:05.005366+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 72132,
+   "posting_id": 13704,
+   "source_id": 20,
+   "source_ref": "https://ea-kum1.external-pages-kum1.de/stellenanzeigen/tierpfleger-fur-forschung-und-klinik/354ed9bd7af42dab",
+   "source_url": "https://ea-kum1.external-pages-kum1.de/stellenanzeigen/tierpfleger-fur-forschung-und-klinik/354ed9bd7af42dab",
+   "observed_at": "2026-09-24T17:28:06.030771+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:examinierte"
+  },
+  {
+   "observation_id": 73704,
+   "posting_id": 13937,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Kinderpfleger-Altenpflegehelfer-m-w-d-fuer-unsere-Wohneinrichtung-Kloster-Holzen-86695-Allmannshofen-Kloster-Holzen-Hotel-GmbH--14085735-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Kinderpfleger-Altenpflegehelfer-m-w-d-fuer-unsere-Wohneinrichtung-Kloster-Holzen-86695-Allmannshofen-Kloster-Holzen-Hotel-GmbH--14085735-inline.html",
+   "observed_at": "2026-09-24T17:30:01.442293+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 73782,
+   "posting_id": 14015,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieherin-Heilerziehungspflegerin-Sozialpaedagogin-m-w-d-fuer-unsere-neue-Wohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14034883-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieherin-Heilerziehungspflegerin-Sozialpaedagogin-m-w-d-fuer-unsere-neue-Wohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14034883-inline.html",
+   "observed_at": "2026-09-24T17:30:01.487418+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73783,
+   "posting_id": 14016,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieherin-Heilerziehungspflegerin-Kindheitspaedagogin-Sozialpaedagogin-m-w-d-fuer-unsere-neue-Kinder-Wohngruppe-Immenreuth-SOS-Kinderdorf-e-V--13911005-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieherin-Heilerziehungspflegerin-Kindheitspaedagogin-Sozialpaedagogin-m-w-d-fuer-unsere-neue-Kinder-Wohngruppe-Immenreuth-SOS-Kinderdorf-e-V--13911005-inline.html",
+   "observed_at": "2026-09-24T17:30:01.487773+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73784,
+   "posting_id": 14017,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-oder-Heilerziehungspfleger-m-w-d-fuer-unsere-Kinder-und-Jugendabteilung-in-Prien-am-Chiemsee-Prien-am-Chiemsee-Schoen-Klinik-Gruppe--13320317-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-oder-Heilerziehungspfleger-m-w-d-fuer-unsere-Kinder-und-Jugendabteilung-in-Prien-am-Chiemsee-Prien-am-Chiemsee-Schoen-Klinik-Gruppe--13320317-inline.html",
+   "observed_at": "2026-09-24T17:30:01.488764+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 73785,
+   "posting_id": 14018,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-oder-Heilerziehungspfleger-m-w-d-Kinder-und-Jugendpsychiatrie-an-unserem-neuen-Standort-in-Vogtareuth-Vogtareuth-Schoen-Klinik-Gruppe--13630004-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-oder-Heilerziehungspfleger-m-w-d-Kinder-und-Jugendpsychiatrie-an-unserem-neuen-Standort-in-Vogtareuth-Vogtareuth-Schoen-Klinik-Gruppe--13630004-inline.html",
+   "observed_at": "2026-09-24T17:30:01.48945+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 73786,
+   "posting_id": 14019,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Sozialpaedagogin-Heilpaedagogin-Erzieherin-Heilerziehungspflegerin-m-w-d-fuer-die-Jugendwohngemeinschaft-Nuremberg-SOS-Kinderdorf-e-V--14277296-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Sozialpaedagogin-Heilpaedagogin-Erzieherin-Heilerziehungspflegerin-m-w-d-fuer-die-Jugendwohngemeinschaft-Nuremberg-SOS-Kinderdorf-e-V--14277296-inline.html",
+   "observed_at": "2026-09-24T17:30:01.490073+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73787,
+   "posting_id": 14020,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Fachkraefte-darunter-Erzieher-Heilerziehungspfleger-Heilpaedagogen-Paedagogen-und-Sozialpaedagogen-m-w-d-Hengersberg-Vilshofen-Psychologisch-Systemische-Jugendhilfe-GmbH--13425918-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Fachkraefte-darunter-Erzieher-Heilerziehungspfleger-Heilpaedagogen-Paedagogen-und-Sozialpaedagogen-m-w-d-Hengersberg-Vilshofen-Psychologisch-Systemische-Jugendhilfe-GmbH--13425918-inline.html",
+   "observed_at": "2026-09-24T17:30:01.490485+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73788,
+   "posting_id": 14021,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieherin-Sozialpaedagogin-Heilerziehungspflegerin-m-w-d-fuer-unsere-Jugendwohngruppe-Luedenscheid-SOS-Kinderdorf-e-V--14224144-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieherin-Sozialpaedagogin-Heilerziehungspflegerin-m-w-d-fuer-unsere-Jugendwohngruppe-Luedenscheid-SOS-Kinderdorf-e-V--14224144-inline.html",
+   "observed_at": "2026-09-24T17:30:01.491818+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73789,
+   "posting_id": 14022,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieherin-Sozialpaedagogin-Heilerziehungspflegerin-m-w-d-fuer-unsere-Klaerungsgruppe-Luedenscheid-SOS-Kinderdorf-e-V--14224146-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieherin-Sozialpaedagogin-Heilerziehungspflegerin-m-w-d-fuer-unsere-Klaerungsgruppe-Luedenscheid-SOS-Kinderdorf-e-V--14224146-inline.html",
+   "observed_at": "2026-09-24T17:30:01.492377+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 73914,
+   "posting_id": 14147,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-Heilerziehungspflegehelfer-m-w-d-Schulbegleiter-m-w-d-Bayreuth-Kulmbach-Bamberg-Intercept-Care-GmbH--13505323-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-Heilerziehungspflegehelfer-m-w-d-Schulbegleiter-m-w-d-Bayreuth-Kulmbach-Bamberg-Intercept-Care-GmbH--13505323-inline.html",
+   "observed_at": "2026-09-24T17:30:04.997211+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 73917,
+   "posting_id": 14150,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpflegerin-m-w-d-fuer-unsere-neue-Kinderwohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14438975-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpflegerin-m-w-d-fuer-unsere-neue-Kinderwohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14438975-inline.html",
+   "observed_at": "2026-09-24T17:30:04.998732+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pflegerin"
+  },
+  {
+   "observation_id": 73918,
+   "posting_id": 14151,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpflegerin-m-w-d-fuer-unsere-neue-Kinderwohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14445449-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpflegerin-m-w-d-fuer-unsere-neue-Kinderwohngruppe-Immenreuth-SOS-Kinderdorf-e-V--14445449-inline.html",
+   "observed_at": "2026-09-24T17:30:04.999398+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pflegerin"
+  },
+  {
+   "observation_id": 73919,
+   "posting_id": 14152,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-Heilerziehungspfleger-Erzieher-im-Anerkennungsjahr-Kinderpfleger-m-w-d-Entdeckerkita-Schlammersdorf-Schlammersdorf-Menzlas-LearningCampus-gGmbH--14387995-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-Heilerziehungspfleger-Erzieher-im-Anerkennungsjahr-Kinderpfleger-m-w-d-Entdeckerkita-Schlammersdorf-Schlammersdorf-Menzlas-LearningCampus-gGmbH--14387995-inline.html",
+   "observed_at": "2026-09-24T17:30:04.999876+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 73920,
+   "posting_id": 14153,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-m-w-d-fuer-unsere-Kinderkrippe-Palmsanlage-Erlangen-Johanniter-Unfall-Hilfe-e-V--14386654-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-m-w-d-fuer-unsere-Kinderkrippe-Palmsanlage-Erlangen-Johanniter-Unfall-Hilfe-e-V--14386654-inline.html",
+   "observed_at": "2026-09-24T17:30:05.000553+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74035,
+   "posting_id": 14268,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-Kinderpflegerin-m-w-d-in-Moniberg-Landshut-Landshut-BRK-Kreisverband-Landshut--14211215-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-Kinderpflegerin-m-w-d-in-Moniberg-Landshut-Landshut-BRK-Kreisverband-Landshut--14211215-inline.html",
+   "observed_at": "2026-09-24T17:30:05.074923+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74036,
+   "posting_id": 14269,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-Kinderpflegerin-m-w-d-Kinderhaus-Bullerbue-Landshut-BRK-Kreisverband-Landshut--14055205-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-Kinderpflegerin-m-w-d-Kinderhaus-Bullerbue-Landshut-BRK-Kreisverband-Landshut--14055205-inline.html",
+   "observed_at": "2026-09-24T17:30:05.075254+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74037,
+   "posting_id": 14270,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-m-w-d-als-Schulbegleitung-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14475179-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-m-w-d-als-Schulbegleitung-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14475179-inline.html",
+   "observed_at": "2026-09-24T17:30:05.076469+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74109,
+   "posting_id": 14342,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-fuer-Nachtwache-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14405743-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-fuer-Nachtwache-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14405743-inline.html",
+   "observed_at": "2026-09-24T17:30:05.143278+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74110,
+   "posting_id": 14343,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-Arbeitserzieher-m-w-d-Kempten-Allgaeu-Allgaeuer-Werkstaetten-GmbH--14456057-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-Arbeitserzieher-m-w-d-Kempten-Allgaeu-Allgaeuer-Werkstaetten-GmbH--14456057-inline.html",
+   "observed_at": "2026-09-24T17:30:05.14397+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74112,
+   "posting_id": 14345,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14401348-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-m-w-d-in-Kempten-Allgaeu-Kempten-Koerperbehinderte-Allgaeu-gGmbH--14401348-inline.html",
+   "observed_at": "2026-09-24T17:30:05.145011+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74115,
+   "posting_id": 14348,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Sozialpaedagogen-Heilpaedagogen-Heilerziehungspfleger-als-Hausleitung-m-w-d-Aschaffenburg-Tatenwerk-gemeinnuetzige-GmbH--14068644-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Sozialpaedagogen-Heilpaedagogen-Heilerziehungspfleger-als-Hausleitung-m-w-d-Aschaffenburg-Tatenwerk-gemeinnuetzige-GmbH--14068644-inline.html",
+   "observed_at": "2026-09-24T17:30:05.14797+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 74116,
+   "posting_id": 14349,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-in-Sozialpaedagoge-Sozialpaedagogin-und-Heilerziehungspfleger-in-m-w-d-in-Offenbach-Offenbach-am-Main-Caritasverband-Offenbach-Main-e-V-Geschaeftsstelle--13321128-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-in-Sozialpaedagoge-Sozialpaedagogin-und-Heilerziehungspfleger-in-m-w-d-in-Offenbach-Offenbach-am-Main-Caritasverband-Offenbach-Main-e-V-Geschaeftsstelle--13321128-inline.html",
+   "observed_at": "2026-09-24T17:30:05.151501+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 74122,
+   "posting_id": 14355,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-Erzieher-Heilpaedagoge-als-Gruppenleitung-Tagesfoerderstaette-m-w-d-Aschaffenburg-Tatenwerk-gemeinnuetzige-GmbH--14069526-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspfleger-Erzieher-Heilpaedagoge-als-Gruppenleitung-Tagesfoerderstaette-m-w-d-Aschaffenburg-Tatenwerk-gemeinnuetzige-GmbH--14069526-inline.html",
+   "observed_at": "2026-09-24T17:30:05.165118+00:00",
+   "role_class": "leitung",
+   "role_rule": "leitung:gruppenleit"
+  },
+  {
+   "observation_id": 74254,
+   "posting_id": 14487,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-Heilpaedagoge-Sozialpaedagoge-oder-Heilerziehungspfleger-m-w-d-fuer-die-stationaere-Jugendhilfe-Schweinfurt-meinestadt-de--14430365-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-Heilpaedagoge-Sozialpaedagoge-oder-Heilerziehungspfleger-m-w-d-fuer-die-stationaere-Jugendhilfe-Schweinfurt-meinestadt-de--14430365-inline.html",
+   "observed_at": "2026-09-24T17:30:05.258149+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 74256,
+   "posting_id": 14489,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-Heilerziehungspfleger-Heilpaedagoge-m-w-d-Freyung-Kreis-Caritasverband-Freyung-Grafenau-e-V--14157468-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-Heilerziehungspfleger-Heilpaedagoge-m-w-d-Freyung-Kreis-Caritasverband-Freyung-Grafenau-e-V--14157468-inline.html",
+   "observed_at": "2026-09-24T17:30:05.26651+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 74303,
+   "posting_id": 14536,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieher-Kinderpfleger-Sozialpaedagoge-o-ae-Abschluesse-m-w-d-Kindertagesstaetten-Muenchen-Unterschleissheim-Harthof-Moosach-BRK-Kreisverband-Muenchen--13847952-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieher-Kinderpfleger-Sozialpaedagoge-o-ae-Abschluesse-m-w-d-Kindertagesstaetten-Muenchen-Unterschleissheim-Harthof-Moosach-BRK-Kreisverband-Muenchen--13847952-inline.html",
+   "observed_at": "2026-09-24T17:30:05.316472+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 74304,
+   "posting_id": 14537,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Komm-ins-Teams-als-Erzieher-m-w-d-oder-Kinderpfleger-m-w-d-in-Trudering-Muenchen-Unsere-Champions-GmbH--14451973-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Komm-ins-Teams-als-Erzieher-m-w-d-oder-Kinderpfleger-m-w-d-in-Trudering-Muenchen-Unsere-Champions-GmbH--14451973-inline.html",
+   "observed_at": "2026-09-24T17:30:05.317802+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74310,
+   "posting_id": 14543,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-in-m-w-d-Amberg-Oberpfalz-Katholisches-Dekanat-Amberg-Ensdorf--14381915-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-in-m-w-d-Amberg-Oberpfalz-Katholisches-Dekanat-Amberg-Ensdorf--14381915-inline.html",
+   "observed_at": "2026-09-24T17:30:05.323506+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74398,
+   "posting_id": 14631,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Erzieherin-Kinderpflegerin-m-w-d-in-Voll-oder-Teilzeit-Kirchseeon-Stiftung-St-Zeno-Kirchseeon--14425798-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Erzieherin-Kinderpflegerin-m-w-d-in-Voll-oder-Teilzeit-Kirchseeon-Stiftung-St-Zeno-Kirchseeon--14425798-inline.html",
+   "observed_at": "2026-09-24T17:30:09.06901+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74417,
+   "posting_id": 14650,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Fach-oder-Ergaenzungskraft-Erzieher-Heilerziehungspfleger-Kinderpfleger-Heilerziehungspflegehelfer-m-w-d-Murnau-Radio-Oberland-Programmanbieter-GmbH-Co-Vermarktungs-KG--14102787-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Fach-oder-Ergaenzungskraft-Erzieher-Heilerziehungspfleger-Kinderpfleger-Heilerziehungspflegehelfer-m-w-d-Murnau-Radio-Oberland-Programmanbieter-GmbH-Co-Vermarktungs-KG--14102787-inline.html",
+   "observed_at": "2026-09-24T17:30:09.084834+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74418,
+   "posting_id": 14651,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Kinderpfleger-in-m-w-d-Murnau-Radio-Oberland-Programmanbieter-GmbH-Co-Vermarktungs-KG--14088319-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Kinderpfleger-in-m-w-d-Murnau-Radio-Oberland-Programmanbieter-GmbH-Co-Vermarktungs-KG--14088319-inline.html",
+   "observed_at": "2026-09-24T17:30:09.085841+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74494,
+   "posting_id": 14727,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Sozialbetreuer-Kinderpfleger-Pflegehelfer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-City-Wohnen-in-Augsburg-Ursberg-Dominikus-Ringeisen-Werk--14231146-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Sozialbetreuer-Kinderpfleger-Pflegehelfer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-City-Wohnen-in-Augsburg-Ursberg-Dominikus-Ringeisen-Werk--14231146-inline.html",
+   "observed_at": "2026-09-24T17:30:09.141421+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74495,
+   "posting_id": 14728,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Sozialbetreuer-Kinderpfleger-Pflegehelfer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-Don-Bosco-Ursberg-Dominikus-Ringeisen-Werk--14161396-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Sozialbetreuer-Kinderpfleger-Pflegehelfer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-Don-Bosco-Ursberg-Dominikus-Ringeisen-Werk--14161396-inline.html",
+   "observed_at": "2026-09-24T17:30:09.142729+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74496,
+   "posting_id": 14729,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Kinderpfleger-Krankenpflegehelfer-Altenpflegehelfer-Sozialbetreuer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-Breitbrunn-am-Ammersee-Ursberg-Dominikus-Ringeisen-Werk--14125023-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Kinderpfleger-Krankenpflegehelfer-Altenpflegehelfer-Sozialbetreuer-Quereinsteiger-m-w-d-fuer-unsere-Wohneinrichtung-Breitbrunn-am-Ammersee-Ursberg-Dominikus-Ringeisen-Werk--14125023-inline.html",
+   "observed_at": "2026-09-24T17:30:09.144178+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 74497,
+   "posting_id": 14730,
+   "source_id": 20,
+   "source_ref": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Pflegefachhelfer-Sozialbetreuer-Kinderpfleger-m-w-d-fuer-die-Gruppe-Elisabeth-Ursberg-Dominikus-Ringeisen-Werk--14231148-inline.html",
+   "source_url": "https://www.stepstone.de/stellenangebote--Heilerziehungspflegehelfer-Pflegefachhelfer-Sozialbetreuer-Kinderpfleger-m-w-d-fuer-die-Gruppe-Elisabeth-Ursberg-Dominikus-Ringeisen-Werk--14231148-inline.html",
+   "observed_at": "2026-09-24T17:30:09.14491+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 80995,
+   "posting_id": 14877,
+   "source_id": 20,
+   "source_ref": "softgarden:67564697",
+   "source_url": "https://klinikhochried.softgarden.io/job/67564697/Heilerziehungspfleger-f%C3%BCr-den-station%C3%A4ren-Bereich-m-w-d?l=de",
+   "observed_at": "2026-09-29T06:11:29.847034+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81048,
+   "posting_id": 14880,
+   "source_id": 20,
+   "source_ref": "https://www.stwolfgang.de/de/stwolfgang/jobs-und-karriere/housekeeping-mitarbeiter.html",
+   "source_url": "https://www.stwolfgang.de/de/stwolfgang/jobs-und-karriere/housekeeping-mitarbeiter.html",
+   "observed_at": "2026-09-29T09:32:50.249214+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81165,
+   "posting_id": 14893,
+   "source_id": 20,
+   "source_ref": "softgarden:65907399",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/65907399/Kinderpfleger-oder-p-dagogische-Erg-nzungskraft-m-w-d-im-mobilen-Einsatz-Kindertageseinrichtungen-M-nchen/?jobDbPVId=285613707",
+   "observed_at": "2026-09-29T06:08:11.810206+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81166,
+   "posting_id": 14894,
+   "source_id": 20,
+   "source_ref": "softgarden:65965173",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/65965173/Kinderpfleger-oder-p-dagogische-Erg-nzungskraft-m-w-d-Haus-f-r-Kinder-Laim/?jobDbPVId=285615052",
+   "observed_at": "2026-09-29T06:08:11.818217+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81168,
+   "posting_id": 14896,
+   "source_id": 20,
+   "source_ref": "softgarden:66464028",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/66464028/P-dagogische-Fachkraft-Heilerziehungspfleger-Erzieher-oder-Heilerziehungspflegehelfer-m-w-d-in-Peiting-Herzogs-gm-hle/?jobDbPVId=283430875",
+   "observed_at": "2026-09-29T06:08:11.895795+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81171,
+   "posting_id": 14899,
+   "source_id": 20,
+   "source_ref": "softgarden:66590683",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/66590683/Sozialp-dagoge-Erzieher-Heilerziehungspfleger-m-w-d-St-tz-und-F-rderklasse-Herzogs-gm-hle/?jobDbPVId=283932534",
+   "observed_at": "2026-09-28T06:07:58.911633+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81172,
+   "posting_id": 14900,
+   "source_id": 20,
+   "source_ref": "softgarden:66618658",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/66618658/Schul-und-Berufsausbildung-zum-Heilerziehungspfleger-Heilerziehungspflegehelfer-m-w-d-Heilerziehungspflegerisches-Einf-hrungsjahr-HEJ-/?jobDbPVId=284062290",
+   "observed_at": "2026-09-29T06:08:11.92192+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81173,
+   "posting_id": 14901,
+   "source_id": 20,
+   "source_ref": "softgarden:66656203",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/66656203/Heilerziehungspfleger-m-w-d-f-r-unsere-Wohnangebote-in-Peiting-Herzogs-gm-hle/?jobDbPVId=284564865",
+   "observed_at": "2026-09-29T06:08:11.93404+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81177,
+   "posting_id": 14905,
+   "source_id": 20,
+   "source_ref": "softgarden:67168265",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/67168265/Erzieher-Heilerziehungspfleger-Kinderpfleger-m-w-d-f-r-das-inklusive-Kinderhaus-im-Dorf-in-Pei-enberg/?jobDbPVId=285468472",
+   "observed_at": "2026-09-29T06:08:12.118783+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81178,
+   "posting_id": 14906,
+   "source_id": 20,
+   "source_ref": "softgarden:67210715",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/67210715/Kinderpfleger-m-w-d-f-r-das-inklusive-Urmel-Kinderhaus-Penzberg/?jobDbPVId=285468497",
+   "observed_at": "2026-09-29T06:08:12.16325+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81179,
+   "posting_id": 14907,
+   "source_id": 20,
+   "source_ref": "softgarden:67271975",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/67271975/Erzieher-Kinderpfleger-m-w-d-f-r-Ganztagsbildung-Hort-Aubinger-Allee-Minijob/?jobDbPVId=284125130",
+   "observed_at": "2026-09-29T06:08:12.201588+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81181,
+   "posting_id": 14909,
+   "source_id": 20,
+   "source_ref": "softgarden:67544292",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/67544292/Erzieher-Heilerziehungspfleger-Sozialp-dagoge-m-w-d-f-r-Inobhutnahme-Einrichtung-Peiting/?jobDbPVId=285306227",
+   "observed_at": "2026-09-29T06:08:12.483839+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81182,
+   "posting_id": 14910,
+   "source_id": 20,
+   "source_ref": "softgarden:67559627",
+   "source_url": "https://diakonie-muenchen.softgarden.io/job/67559627/Kinderpfleger-Heilerziehungspflegehelfer-m-w-d-Kinderhaus-am-Berg-Pei-enberg/?jobDbPVId=285468672",
+   "observed_at": "2026-09-29T06:08:12.508269+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81233,
+   "posting_id": 14922,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieherin-und-kinderpflegerin-mwd-1950936",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieherin-und-kinderpflegerin-mwd-1950936",
+   "observed_at": "2026-09-29T09:31:38.756635+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81250,
+   "posting_id": 14939,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/mitarbeiter-gartenpflege-gruenflaechenpflege-wmd-1197024",
+   "source_url": "https://allgaeuer-jobs.de/job/mitarbeiter-gartenpflege-gruenflaechenpflege-wmd-1197024",
+   "observed_at": "2026-09-29T09:31:43.662348+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81251,
+   "posting_id": 14940,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieherkinderpfleger-mwd-ab-01072026-1197399",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieherkinderpfleger-mwd-ab-01072026-1197399",
+   "observed_at": "2026-09-29T09:31:43.789951+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81254,
+   "posting_id": 14943,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/helfer-mwd-fuer-ladetaetigkeiten-werkstatt-und-gruenflaechenpflege-1208744",
+   "source_url": "https://allgaeuer-jobs.de/job/helfer-mwd-fuer-ladetaetigkeiten-werkstatt-und-gruenflaechenpflege-1208744",
+   "observed_at": "2026-09-29T09:31:45.637573+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81257,
+   "posting_id": 14946,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/qualifizierte-tagespflegeperson-mwd-fuer-unsere-nach-kneipp-zertifizierte-kita-kombination-mit-1414055",
+   "source_url": "https://allgaeuer-jobs.de/job/qualifizierte-tagespflegeperson-mwd-fuer-unsere-nach-kneipp-zertifizierte-kita-kombination-mit-1414055",
+   "observed_at": "2026-09-29T09:31:46.958181+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81258,
+   "posting_id": 14947,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/garten-und-landschaftspfleger-mwd-1644538",
+   "source_url": "https://allgaeuer-jobs.de/job/garten-und-landschaftspfleger-mwd-1644538",
+   "observed_at": "2026-09-29T09:31:48.476805+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81259,
+   "posting_id": 14948,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unser-kinderhaus-rasselbande-burlafingen-voll-oder-teilzeit-1724216",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unser-kinderhaus-rasselbande-burlafingen-voll-oder-teilzeit-1724216",
+   "observed_at": "2026-09-29T09:31:49.487973+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81274,
+   "posting_id": 14963,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kosmetiker-und-fusspfleger-mwd-ganzjahresstelle-1831985",
+   "source_url": "https://allgaeuer-jobs.de/job/kosmetiker-und-fusspfleger-mwd-ganzjahresstelle-1831985",
+   "observed_at": "2026-09-29T09:31:51.385637+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81276,
+   "posting_id": 14965,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kosmetikerin-mwd-mit-fusspflegeausbildung-1874237",
+   "source_url": "https://allgaeuer-jobs.de/job/kosmetikerin-mwd-mit-fusspflegeausbildung-1874237",
+   "observed_at": "2026-09-29T09:31:52.191252+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81277,
+   "posting_id": 14966,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-zur-mobilen-tagesmuetter-unterstuetzung-kita-klecks-teilzeit-195-hwoche-1883330",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-zur-mobilen-tagesmuetter-unterstuetzung-kita-klecks-teilzeit-195-hwoche-1883330",
+   "observed_at": "2026-09-29T09:31:52.42697+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81278,
+   "posting_id": 14967,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unser-neues-kinderhaus-city-kids-ab-1-9-2026-voll-oder-teilzeit-1895051",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unser-neues-kinderhaus-city-kids-ab-1-9-2026-voll-oder-teilzeit-1895051",
+   "observed_at": "2026-09-29T09:31:54.106402+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81284,
+   "posting_id": 14973,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-1959988",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-1959988",
+   "observed_at": "2026-09-29T09:31:56.776858+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81285,
+   "posting_id": 14974,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/raumpfleger-housekeeper-mwd-1960789",
+   "source_url": "https://allgaeuer-jobs.de/job/raumpfleger-housekeeper-mwd-1960789",
+   "observed_at": "2026-09-29T09:31:56.86304+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81287,
+   "posting_id": 14976,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspflegehelfer-sozialbetreuer-kinderpfleger-mwd-1974174",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspflegehelfer-sozialbetreuer-kinderpfleger-mwd-1974174",
+   "observed_at": "2026-09-29T09:31:59.479346+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81289,
+   "posting_id": 14978,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspflegerinnen-und-pfleger-mwd-1977218",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspflegerinnen-und-pfleger-mwd-1977218",
+   "observed_at": "2026-09-29T09:32:00.458034+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81290,
+   "posting_id": 14979,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/landschaftsgaertner-mwd-fuer-gruenflaechenpflege-1977586",
+   "source_url": "https://allgaeuer-jobs.de/job/landschaftsgaertner-mwd-fuer-gruenflaechenpflege-1977586",
+   "observed_at": "2026-09-29T09:32:00.518694+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81292,
+   "posting_id": 14981,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-fuer-nachtwache-1977989",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-fuer-nachtwache-1977989",
+   "observed_at": "2026-09-29T09:32:00.634325+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81294,
+   "posting_id": 14983,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-als-schulbegleitung-1983075",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-als-schulbegleitung-1983075",
+   "observed_at": "2026-09-29T09:32:02.041598+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81296,
+   "posting_id": 14985,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unseren-inselhort-ab-1-9-2026-teilzeit-30-hwoche-1989215",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-unseren-inselhort-ab-1-9-2026-teilzeit-30-hwoche-1989215",
+   "observed_at": "2026-09-29T09:32:03.257504+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81299,
+   "posting_id": 14988,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kosmetikerin-mwd-mit-fusspflegeausbildung-1991614",
+   "source_url": "https://allgaeuer-jobs.de/job/kosmetikerin-mwd-mit-fusspflegeausbildung-1991614",
+   "observed_at": "2026-09-29T09:32:08.251496+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81312,
+   "posting_id": 15001,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-als-schulbegleitung-2000187",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-als-schulbegleitung-2000187",
+   "observed_at": "2026-09-29T09:32:10.177092+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81314,
+   "posting_id": 15003,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-kinderhaus-ideenreich-voll-oder-teilzeit-2001679",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-fuer-kinderhaus-ideenreich-voll-oder-teilzeit-2001679",
+   "observed_at": "2026-09-29T09:32:10.445615+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81316,
+   "posting_id": 15005,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2002078",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2002078",
+   "observed_at": "2026-09-29T09:32:10.539396+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81319,
+   "posting_id": 15008,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2004158",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2004158",
+   "observed_at": "2026-09-29T09:32:11.260002+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81323,
+   "posting_id": 15012,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2005006",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2005006",
+   "observed_at": "2026-09-29T09:32:11.9772+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81324,
+   "posting_id": 15013,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005287",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005287",
+   "observed_at": "2026-09-29T09:32:12.135044+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81325,
+   "posting_id": 15014,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-sozialbetreuer-heilerziehungspflegehelfer-2005291",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-sozialbetreuer-heilerziehungspflegehelfer-2005291",
+   "observed_at": "2026-09-29T09:32:12.14224+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81326,
+   "posting_id": 15015,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005293",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005293",
+   "observed_at": "2026-09-29T09:32:12.154271+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81329,
+   "posting_id": 15018,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005299",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005299",
+   "observed_at": "2026-09-29T09:32:12.168405+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81330,
+   "posting_id": 15019,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005300",
+   "source_url": "https://allgaeuer-jobs.de/job/erzieher-heilerziehungspfleger-2005300",
+   "observed_at": "2026-09-29T09:32:12.173756+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81332,
+   "posting_id": 15021,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/kinderpfleger-mwd-fuer-den-kindergarten-kunterbunt-2000048",
+   "source_url": "https://oberland-jobs.de/job/kinderpfleger-mwd-fuer-den-kindergarten-kunterbunt-2000048",
+   "observed_at": "2026-09-29T09:32:17.847147+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81339,
+   "posting_id": 15028,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/heilerziehungspfleger-mwd-psychiatrie-psychosomatik-landsberg-am-lech-1761863",
+   "source_url": "https://oberland-jobs.de/job/heilerziehungspfleger-mwd-psychiatrie-psychosomatik-landsberg-am-lech-1761863",
+   "observed_at": "2026-09-29T09:32:20.777584+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81352,
+   "posting_id": 15041,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/kinderpfleger-wmd-fuer-unser-kinderhaus-kind-und-natur-soecking-1991530",
+   "source_url": "https://oberland-jobs.de/job/kinderpfleger-wmd-fuer-unser-kinderhaus-kind-und-natur-soecking-1991530",
+   "observed_at": "2026-09-24T17:29:34.28952+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 81354,
+   "posting_id": 15043,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/lkw-fahrer-mwd-der-landschaftspflege-1987791",
+   "source_url": "https://oberland-jobs.de/job/lkw-fahrer-mwd-der-landschaftspflege-1987791",
+   "observed_at": "2026-09-29T09:32:24.179399+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81355,
+   "posting_id": 15044,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/maschinenfuehrer-mwd-der-landschaftspflege-1987792",
+   "source_url": "https://oberland-jobs.de/job/maschinenfuehrer-mwd-der-landschaftspflege-1987792",
+   "observed_at": "2026-09-29T09:32:24.182533+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81357,
+   "posting_id": 15046,
+   "source_id": 20,
+   "source_ref": "https://schwarzwald-jobs.de/job/fachbereichskoordinator-gruenanlagenpflege-mwd-1978600",
+   "source_url": "https://schwarzwald-jobs.de/job/fachbereichskoordinator-gruenanlagenpflege-mwd-1978600",
+   "observed_at": "2026-09-29T09:32:24.460969+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 81380,
+   "posting_id": 15069,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/paedagogische-hilfskraft-mwd-kinderpfleger-oder-hep-helfer-fuer-die-schulbegleitung-penzberg-1976678",
+   "source_url": "https://oberland-jobs.de/job/paedagogische-hilfskraft-mwd-kinderpfleger-oder-hep-helfer-fuer-die-schulbegleitung-penzberg-1976678",
+   "observed_at": "2026-09-26T09:28:47.824988+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 81382,
+   "posting_id": 15071,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/kosmetikerin-mwd-medizinische-fusspflege-und-medizinische-kosmetik-1433665",
+   "source_url": "https://oberland-jobs.de/job/kosmetikerin-mwd-medizinische-fusspflege-und-medizinische-kosmetik-1433665",
+   "observed_at": "2026-09-26T09:28:48.156682+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 88644,
+   "posting_id": 15154,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-2005450",
+   "source_url": "https://allgaeuer-jobs.de/job/kinderpfleger-mwd-2005450",
+   "observed_at": "2026-09-29T09:32:12.246894+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 88665,
+   "posting_id": 15155,
+   "source_id": 20,
+   "source_ref": "https://oberland-jobs.de/job/kinderpfleger-wmd-fuer-unser-inklusives-kinderhaus-peissenberg-2005511",
+   "source_url": "https://oberland-jobs.de/job/kinderpfleger-wmd-fuer-unser-inklusives-kinderhaus-peissenberg-2005511",
+   "observed_at": "2026-09-29T09:32:23.847769+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 91970,
+   "posting_id": 15217,
+   "source_id": 20,
+   "source_ref": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2005919",
+   "source_url": "https://allgaeuer-jobs.de/job/heilerziehungspfleger-mwd-2005919",
+   "observed_at": "2026-09-29T09:32:12.435609+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 99007,
+   "posting_id": 15255,
+   "source_id": 20,
+   "source_ref": "https://karriere.tumklinikum.de/de/jobs/494-tierpfleger-m-w-d-zentrum-fur-praklinische-forschung",
+   "source_url": "https://karriere.tumklinikum.de/de/jobs/494-tierpfleger-m-w-d-zentrum-fur-praklinische-forschung",
+   "observed_at": "2026-09-29T09:29:20.695585+00:00",
+   "role_class": "pflegefachkraft",
+   "role_rule": "pflegefachkraft:pfleger"
+  },
+  {
+   "observation_id": 100320,
+   "posting_id": 15260,
+   "source_id": 20,
+   "source_ref": "https://jobs.diakoneo.de/jobposting/19ef3294548826a59570b27e11a62439b0499fa70",
+   "source_url": "https://jobs.diakoneo.de/jobposting/19ef3294548826a59570b27e11a62439b0499fa70",
+   "observed_at": "2026-09-29T05:26:58.996893+00:00",
+   "role_class": "apn_experte",
+   "role_rule": "apn_experte:pädagog"
+  },
+  {
+   "observation_id": 101733,
+   "posting_id": 15315,
+   "source_id": 20,
+   "source_ref": "https://lindenhof.mutter-kind.de/stellenangebote/servicemitarbeiter-(mwd)-in-unserer-patientenverpflegung-7600",
+   "source_url": "https://lindenhof.mutter-kind.de/stellenangebote/servicemitarbeiter-(mwd)-in-unserer-patientenverpflegung-7600",
+   "observed_at": "2026-09-29T21:13:42.49942+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 101734,
+   "posting_id": 15316,
+   "source_id": 20,
+   "source_ref": "https://maximilian.mutter-kind.de/stellenangebote/betriebsassistenz-(mwd)-fur-patientenbeherbergung-und-verpflegung-6882",
+   "source_url": "https://maximilian.mutter-kind.de/stellenangebote/betriebsassistenz-(mwd)-fur-patientenbeherbergung-und-verpflegung-6882",
+   "observed_at": "2026-09-29T21:13:42.536261+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 101736,
+   "posting_id": 15317,
+   "source_id": 20,
+   "source_ref": "https://k60360.coveto.de/job-beschaeftigung-im-zuverdienst-garten-und-anlagepflege-w-m-d-nuernberg-1870.html",
+   "source_url": "https://k60360.coveto.de/job-beschaeftigung-im-zuverdienst-garten-und-anlagepflege-w-m-d-nuernberg-1870.html",
+   "observed_at": "2026-09-29T21:13:42.795663+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  },
+  {
+   "observation_id": 101745,
+   "posting_id": 15325,
+   "source_id": 20,
+   "source_ref": "https://alpenhof.mutter-kind.de/stellenangebote/servicemitarbeiter-(mwd)-in-unserer-patientenverpflegung-7721",
+   "source_url": "https://alpenhof.mutter-kind.de/stellenangebote/servicemitarbeiter-(mwd)-in-unserer-patientenverpflegung-7721",
+   "observed_at": "2026-09-29T21:13:43.162758+00:00",
+   "role_class": "sonstige_pflege",
+   "role_rule": "fallback"
+  }
+ ]
+}

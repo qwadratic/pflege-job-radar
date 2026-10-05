@@ -13,7 +13,6 @@ filter dropped, and what it would have INSERTed into the 2000-per-rolling-24h Po
 """
 import argparse
 import collections
-import csv
 import json
 import os
 import re
@@ -70,7 +69,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("jsonl")
     ap.add_argument("--db", default="/tmp/task95_replay.sqlite")
-    ap.add_argument("--clinics", default="data/registry/clinics.csv")
     ap.add_argument("--run-id", type=int, default=None, help="defaults to the run_<N> parsed from the jsonl filename")
     a = ap.parse_args()
     run_id = run_id_for(a.jsonl, a.run_id)
@@ -100,10 +98,9 @@ def main():
     n = IB.enqueue(rows, run_id=run_id, path=a.db)
     print(f"NEW PATH: {n} rows queued in {a.db} ({os.path.getsize(a.db) / 1e6:.1f} MB), 0 rows written to Postgres so far")
 
-    clinics = list(csv.DictReader(open(a.clinics, encoding="utf-8")))
+    # the live clinics table, read before requests.get is stubbed below (the registry has no CSV copy any more)
+    clinics = cli._live_clinics(os.environ["SUPABASE_URL"], {"apikey": os.environ["SUPABASE_ANON_KEY"], "Accept-Profile": "pflege_jobs"})
     towns = {norm_text(c["town"]) for c in clinics if c.get("town")}
-    for c in clinics:
-        c["beds"] = int(c["beds"]) if c.get("beds") else None
     m = Matcher([dict(c) for c in clinics])
 
     cli.EdgeSink = _Sink

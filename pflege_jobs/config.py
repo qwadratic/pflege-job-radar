@@ -29,6 +29,8 @@ LEGAL_FORMS = ""
 PFLEGE_TOKEN = ""               # gate: no nursing token at all -> nicht_pflege
 STRONG_PFLEGE_TITLE = ""        # a strong token in the *title* overrides a nicht_pflege hit
 NICHT_PFLEGE = ""
+AUSBILDUNG_BODY = ""            # a training-place page states these in its body, a staff posting does not (TASK-186)
+NO_VACANCY_BODY = ""            # "keine offenen Stellen": the page itself says nothing is open (TASK-186)
 ROLE_RULES = []                 # [(role_class, regex), ...]
 ROLE_FALLBACK = "sonstige_pflege"
 # --- Intake policy: which role_classes are allowed into the database at all (experienced nursing only).
@@ -46,6 +48,11 @@ EMAIL = ""; LANGUAGE_REQ = ""; BONUS = ""; CHILDCARE = ""; ANERKENNUNG = ""
 # section. Used by classify.department_hint() so specialty classification can read a posting's own
 # tasks text without reading page menus/contacts/footer/hospital-wide boilerplate.
 TASK_HEAD = ""; TASK_STOP = ""
+# TASK-186: the phrases of a posting's own recruiting statement or board header that name its ward -- "... sucht für
+# die Station M62 (Dialyse) ab sofort ...", "Die neurologische Allgemeinstation 6 West ... sucht ab sofort",
+# "Bereich Akutgeriatrie Einstiegsdatum ..." -- each regex's group 1 is the phrase. classify.department_hint() reads
+# them only when title and the Aufgaben/Profil sections name no department.
+DEPT_ANCHOR = []
 
 
 def validate(p):
@@ -62,7 +69,7 @@ def validate(p):
         for i, x in enumerate(p["employer"][grp]):
             chk(x["re"], f"employer.{grp}[{i}]")
     chk(p["employer"].get("legal_forms", ""), "employer.legal_forms")
-    for k in ("pflege_gate", "nicht_pflege", "strong_pflege"):
+    for k in ("pflege_gate", "nicht_pflege", "strong_pflege", "ausbildung_body", "no_vacancy_body"):
         chk(p["role"][k], f"role.{k}")
     for i, x in enumerate(p["role"]["rules"]):
         chk(x["re"], f"role.rules[{i}]")
@@ -94,6 +101,7 @@ def _apply(p):
     g["LEGAL_FORMS"] = p["employer"]["legal_forms"]
     r = p["role"]
     g["PFLEGE_TOKEN"], g["NICHT_PFLEGE"], g["STRONG_PFLEGE_TITLE"] = r["pflege_gate"], r["nicht_pflege"], r["strong_pflege"]
+    g["AUSBILDUNG_BODY"], g["NO_VACANCY_BODY"] = r["ausbildung_body"], r["no_vacancy_body"]
     g["ROLE_RULES"] = [(x["role_class"], x["re"]) for x in r["rules"]]
     g["ROLE_FALLBACK"] = r.get("fallback", "sonstige_pflege")
     g["EXCLUDED_ROLE_CLASSES"] = set(p.get("excluded_role_classes", ["nicht_pflege", "ausbildung", "werkstudent_praktikum"]))
@@ -103,6 +111,7 @@ def _apply(p):
     g["HOUSING"], g["PAY_GRADE"], g["PAY_TEXT"] = e["housing"], e["pay_grade"], e["pay_text"]
     g["REQ_HEAD"], g["REQ_STOP"], g["EXPERIENCE"], g["EMAIL"] = e["req_head"], e["req_stop"], e["experience"], e["email"]
     g["TASK_HEAD"], g["TASK_STOP"] = e["task_head"], e["task_stop"]
+    g["DEPT_ANCHOR"] = [x["re"] for x in e["dept_anchor"]]
     g["LANGUAGE_REQ"], g["BONUS"], g["CHILDCARE"], g["ANERKENNUNG"] = e["language"], e["bonus"], e["childcare"], e["anerkennung"]
     g["TARIFF"] = [(x["label"], x["re"]) for x in e["tariff"]]
 

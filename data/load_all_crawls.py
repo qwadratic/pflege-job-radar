@@ -1,6 +1,7 @@
 """Load every crawl checkpoint (data/*_done.json, data/crawl_*.json) idempotently: attribute sites, push, link, verify=live."""
-import json, glob, os, sys, csv
+import json, glob, os, sys
 sys.path.insert(0, '/home/claude/pflege/repo' if os.path.exists('/home/claude/pflege/repo') else os.getcwd())
+from app import config as A
 from collections import OrderedDict
 from pflege_jobs.registry import Matcher
 from pflege_jobs.sinks import EdgeSink
@@ -15,8 +16,7 @@ for f in files:
     for r in lst:
         if isinstance(r, dict) and r.get('source_ref'): rows[r['source_ref']] = r
 rows = list(rows.values())
-clinics = list(csv.DictReader(open('data/registry/clinics.csv', encoding='utf-8')))
-for c in clinics: c['beds'] = int(c['beds']) if c.get('beds') else None
+clinics = A.rest_get_all('clinics', {'select': '*', 'order': 'clinic_id'})
 m = Matcher([dict(c) for c in clinics])
 for r in rows:
     if not r.get('_kez'):

@@ -463,3 +463,16 @@ def test_browser_crawler_link_gate_rejects_an_unrelated_domain_for_a_bare_apex_s
     assert rows == []
     assert stats["job_links_found"] == 1
     assert fetched == ["https://karriere.kbo-iak.de/stelle-3"]
+
+
+def test_the_description_of_a_crawled_posting_reaches_the_role_classifier():
+    # TASK-186: a training place listed under a role title ("Operationstechnische Assistenten (m/w/d)") says so
+    # only in its body (real excerpt of a live posting).
+    seed_url = "https://example-klinik.de/karriere/"
+    job_url = "https://example-klinik.de/karriere/job-1"
+    seed_html = '<a href="/karriere/job-1">Operationstechnische Assistenten (m/w/d)</a>'
+    job_html = JOBPOSTING_TMPL.format(title="Operationstechnische Assistenten (m/w/d)").replace(
+        "Wir suchen Verstaerkung.", "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)")
+    cr = _crawler({seed_url: R(seed_html, seed_url), job_url: R(job_html, job_url)})
+    rows, _stats = cr.crawl({"name": "Example Klinik", "kez": "1", "career": seed_url, "town": "Muenchen"})
+    assert [(r["role_class"], r["role_rule"].split(":")[0]) for r in rows] == [("ausbildung", "ausbildung_body")]

@@ -20,9 +20,10 @@ import sys
 from collections import defaultdict
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from app import config as A  # noqa: E402
 CSV = ROOT / "data" / "geo" / "gemeinden_de.csv"
 OUTLINE = ROOT / "data" / "geo" / "bayern_vg2500.json"
-REGISTRY = ROOT / "data" / "registry" / "clinics.csv"
 RB_DIGIT = {"Oberbayern": "1", "Niederbayern": "2", "Oberpfalz": "3", "Oberfranken": "4",
             "Mittelfranken": "5", "Unterfranken": "6", "Schwaben": "7"}
 PARENS = re.compile(r"\(.*?\)")
@@ -76,23 +77,22 @@ def main():
                 for k in {norm(base), norm(plain), norm(CONNECTOR.sub(" ", plain)), norm(QUALIFIER.sub(" ", plain))}:
                     rb_rows[(k, r["ars"][2])].append((round(float(r["lat"]), 3), round(float(r["lon"]), 3)))
     pinned, unresolved = 0, []
-    with open(REGISTRY, newline="", encoding="utf-8") as f:
-        for c in csv.DictReader(f):
-            town, d = (c["town"] or "").strip(), RB_DIGIT.get(c["regierungsbezirk"])
-            if not town or not d:
-                continue
-            # Most specific spelling first, and stop at the first one that identifies exactly one
-            # municipality: "Aschau im Chiemgau" is unambiguous, its bare stem "Aschau" is not.
-            cand = [norm(town), norm(PARENS.sub(" ", town)), norm(CONNECTOR.sub(" ", town)), norm(QUALIFIER.sub(" ", town))]
-            hit = next((set(rb_rows[(k, d)]) for k in cand if k and len(set(rb_rows.get((k, d), []))) == 1), set())
-            if len(hit) == 1:
-                xy = next(iter(hit))
-                for k in {norm(town), norm(PARENS.sub(" ", town)), norm(CONNECTOR.sub(" ", town))}:
-                    if k and keys.get(k) != xy:
-                        keys[k] = xy
-                        pinned += 1
-            elif norm(town) not in keys:
-                unresolved.append(f"{town} ({c['regierungsbezirk']})")
+    for c in A.rest_get_all("clinics", {"select": "town,regierungsbezirk", "order": "clinic_id"}):   # the register
+        town, d = (c["town"] or "").strip(), RB_DIGIT.get(c["regierungsbezirk"])
+        if not town or not d:
+            continue
+        # Most specific spelling first, and stop at the first one that identifies exactly one
+        # municipality: "Aschau im Chiemgau" is unambiguous, its bare stem "Aschau" is not.
+        cand = [norm(town), norm(PARENS.sub(" ", town)), norm(CONNECTOR.sub(" ", town)), norm(QUALIFIER.sub(" ", town))]
+        hit = next((set(rb_rows[(k, d)]) for k in cand if k and len(set(rb_rows.get((k, d), []))) == 1), set())
+        if len(hit) == 1:
+            xy = next(iter(hit))
+            for k in {norm(town), norm(PARENS.sub(" ", town)), norm(CONNECTOR.sub(" ", town))}:
+                if k and keys.get(k) != xy:
+                    keys[k] = xy
+                    pinned += 1
+        elif norm(town) not in keys:
+            unresolved.append(f"{town} ({c['regierungsbezirk']})")
     js_towns = "|".join("%s:%.3f,%.3f" % (k, la, lo) for k, (la, lo) in sorted(keys.items()))
     js_towns = "|".join("%s:%.3f,%.3f" % (k, la, lo) for k, (la, lo) in sorted(keys.items()))
 

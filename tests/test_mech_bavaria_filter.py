@@ -32,5 +32,8 @@ def test_one_item_list_instead_of_scalar_does_not_crash():
     assert in_bavaria([], [], [], set()) is None
 
 
-def test_mechanic_try_reports_why():
+def test_mechanic_try_reports_why(monkeypatch):
+    from app import data as D
+    monkeypatch.setattr(D, "clinics", lambda: [{"clinic_id": "77502", "town": "Neu-Ulm"}])   # the town list comes from the registry snapshot
     assert get("bavaria_filter").run({"city": "Neu-Ulm", "plz": "89231", "region": ""}) == {"result": {"in_bavaria": True}, "rule": "plz"}
+    assert get("bavaria_filter").run({"city": "Neu-Ulm", "plz": "", "region": ""}) == {"result": {"in_bavaria": True}, "rule": "town list"}

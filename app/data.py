@@ -2,7 +2,6 @@
 per-site aggregates, routing, facets). Rebuilt on start, after every crawl, and when older than TTL.
 The snapshot is small (a few thousand rows), so filtering happens in Python — see docs/performance.md
 for what to move into Postgres once DDL is possible."""
-import csv
 import functools
 import json
 import re
@@ -250,8 +249,12 @@ def _housing_evidence():
 
 
 def _build():
+    from pflege_jobs import config as C
     t0 = time.time()
-    jobs = A.rest_get_all("v_postings", {"select": JOB_COLS, "status": "eq.open", "order": "posting_id"})
+    # Excluded classes (patterns.json excluded_role_classes) are refused at intake; rows stored before a
+    # class became excluded stay in the DB, relabeled, and are hidden here (Ivan, 2026-09-29, TASK-177).
+    jobs = A.rest_get_all("v_postings", {"select": JOB_COLS, "status": "eq.open", "order": "posting_id",
+                                         "role_class": f"not.in.({','.join(sorted(C.EXCLUDED_ROLE_CLASSES))})"})
     clinics = A.rest_get_all("clinics", {"select": "*", "order": "clinic_id"})
     evidence = _housing_evidence()
     for j in jobs:
@@ -411,11 +414,6 @@ def jobs():
 
 def clinic(clinic_id):
     return snapshot()["by_clinic"].get(str(clinic_id))
-
-
-def registry_csv_rows():
-    with open(A.CLINICS_CSV, encoding="utf-8") as f:
-        return list(csv.DictReader(f))
 
 
 def towns():
@@ -889,19 +887,11 @@ PLAN_COLS = ("clinic_id", "name", "town", "operator", "landkreis", "regierungsbe
 
 
 def plan_rows(p=None):
-    """The post-processed Krankenhausplan (registry CSV, every column) as rows; DB-side aggregates added."""
+    """The registry -- the clinics table, every registry column (TASK-175: no longer a CSV copy of it) -- with
+    the snapshot's size bucket and open-job count."""
     p = p or {}
-    by = snapshot()["by_clinic"]
-    rows = []
-    for r in registry_csv_rows():
-        row = {k: r.get(k) for k in PLAN_COLS}
-        row["beds"] = int(r["beds"]) if (r.get("beds") or "").isdigit() else None
-        row["day_places"] = int(r["day_places"]) if (r.get("day_places") or "").isdigit() else None
-        row["fachrichtungen"] = [x for x in (r.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
-        live = by.get(r["clinic_id"]) or {}
-        row["size"] = live.get("size") if live else size_bucket(row["beds"])
-        row["jobs_open"] = live.get("jobs_open", 0)
-        rows.append(row)
+    rows = [{**{k: c.get(k) for k in PLAN_COLS}, "size": c.get("size"), "jobs_open": c.get("jobs_open", 0)}
+            for c in clinics()]
     for key in ("regierungsbezirk", "status", "traegerart", "versorgungsstufe"):
         vals = set(_split(p.get(key)))
         if vals:

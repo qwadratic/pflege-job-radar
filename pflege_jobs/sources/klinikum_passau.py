@@ -93,7 +93,7 @@ def crawl(c, towns, log=None):
         title, desc = j["title"], j["description"] or ""
         e_class, e_rule = classify_employer(c["name"])
         section_confirmed = bool(j["department"] and "pflege" in j["department"].lower())
-        role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed)
+        role, rule = classify_role(title, "", nursing_section_confirmed=section_confirmed, desc=desc)
         enr = {("enr_" + k): v for k, v in enrich_description(desc).items()}
         obs.append({
             "source_id": C.SOURCES["employer_ats"]["source_id"], "source_ref": j["url"], "source_url": j["url"], "observed_at": now,

@@ -1,3 +1,5 @@
+import pytest
+
 from pflege_jobs.classify import department_hint, extract_section
 from pflege_jobs.mechanics import get
 
@@ -135,3 +137,144 @@ def test_extract_section_is_the_shared_reusable_helper():
     assert extract_section("kein Treffer hier", head, stop) is None        # head never matches -> None
     text = extract_section("Ihre Aufgaben: Pflege auf der Station. Ihr Profil: examiniert.", head, stop)
     assert text == "Pflege auf der Station."
+
+
+# --- TASK-186 problem 4 (judge verdicts 2026-09-30, "specialty_hidden"): 216 postings carry a generic title
+# ("Pflegefachkraft (m/w/d)") and name their ward in the body, but not under an Aufgaben/Profil heading, so
+# department_hint (title + those two sections only, TASK-97) found nothing. The ward is stated in the posting's
+# own recruiting statement -- "... sucht für die Station M62 (Dialyse) ab sofort ..." -- and in the structured
+# header some boards print ("Bereich Akutgeriatrie Einstiegsdatum ..."). Only when title and sections name no
+# department at all, those phrases are read (patterns.json enrichment.dept_anchor); nothing else in the body.
+# Excerpts are the real text of live postings (posting id in the comment), employer names dropped.
+_RECRUITING_STATEMENTS = [
+    ("die_station_dialyse", "Dialyse/Nephrologie",                                                   # 13474
+     "Bewerbungsfrist: 18.10.2026 Das Klinikum sucht für die Station M62 (Dialyse) ab sofort in Teilzeit (19,25h) "
+     "eine/n Auf der M62 erwartet Sie ein breites Spektrum an verschiedensten Krankheitsbildern."),
+    ("die_station_haematologie", "Onkologie",                                                        # 10662
+     "Bewerbungsfrist: 31.12.2026 Das Klinikum sucht für die Station M41 (Hämatologie) der Medizinischen Klinik II "
+     "ab sofort eine/n Die Station M41 verfügt über 29 Patientenbetten."),
+    ("die_stroke_unit", "Neurologie",                                                               # 10657
+     "Bewerbungsfrist: 31.12.2026 Das Klinikum sucht für die Stroke Unit ab sofort in Voll- oder Teilzeit eine "
+     "Das pflegerische Team der Stroke Unit versorgt auf 8 Bettplätzen überwachungspflichtige Patienten."),
+    ("die_internistische_station", "Innere Medizin",                                                # 10663
+     "Bewerbungsfrist: 02.10.2026 Das Klinikum sucht für die internistische Kurzliegerstation M66 ab sofort in Voll- "
+     "oder Teilzeit eine Auf unserer neuen Kurzliegerstation ist Ihre Expertise gefragt!"),
+    ("unsere_abteilung", "Kardiologie",                                                             # 11767
+     "Zum nächstmöglichen Zeitpunkt suchen wir für unsere Klinik am Standort München West für unsere Abteilung "
+     "Kardiologie Sie als Gesundheits- und Krankenpfleger / Pflegefachkraft für die Wahlleistungsstation (m/w/d) in Voll- oder Teilzeit."),
+    ("den_bereich", "Geriatrie|Chirurgie/Orthopädie",                                               # 6488
+     "Wir suchen für den Bereich Geriatrie und orthopädische Krankenhausabteilung der Klinik Pflegefachkräfte / "
+     "Altenpflegefachkräfte (m/w/d) in Voll- und Teilzeit."),
+]
+_BEREICH_FIELDS = [
+    ("akutgeriatrie", "Geriatrie",                                                                   # 13699
+     "Arbeitsort Campus Innenstadt Arbeitszeit Vollzeit Einrichtung Pflegedirektion Bereich Akutgeriatrie "
+     "Einstiegsdatum Zum nächstmöglichen Zeitpunkt Bewerbungsfrist Nächstmöglich"),
+    ("paediatrische_onkologie", "Pädiatrie/Neonatologie|Onkologie",                                 # 13678
+     "Arbeitsort Campus Innenstadt Arbeitszeit Vollzeit/Teilzeit Einrichtung Pflegedirektion Bereich Pädiatrische "
+     "Onkologie Stationen KIIS3, KIIKMT und KIITONKO Einstiegsdatum Zum nächstmöglichen Zeitpunkt"),
+]
+
+
+@pytest.mark.parametrize("why, want, desc", _RECRUITING_STATEMENTS, ids=[x[0] for x in _RECRUITING_STATEMENTS])
+def test_the_ward_named_in_the_recruiting_statement_is_found(why, want, desc):
+    assert department_hint("Pflegefachkraft (m/w/d)", desc) == want
+
+
+@pytest.mark.parametrize("why, want, desc", _BEREICH_FIELDS, ids=[x[0] for x in _BEREICH_FIELDS])
+def test_the_bereich_field_of_a_board_header_is_found(why, want, desc):
+    assert department_hint("Pflegefachkraft oder Altenpfleger (m/w/d)", desc) == want
+
+
+def test_the_recruiting_statement_is_only_read_when_title_and_sections_name_no_department():
+    # the title names one: the ward in the statement is not added (TASK-97: a posting's department is what its title
+    # or its own sections say, the fallback never widens an answer that exists)
+    desc = "Das Klinikum sucht für die Station M41 (Hämatologie) der Medizinischen Klinik II ab sofort eine/n"
+    assert department_hint("Pflegefachkraft Intensivstation (m/w/d)", desc) == "Intensiv/IMC"
+    assert department_hint("Pflegefachkraft (m/w/d)", desc) == "Onkologie"
+
+
+def test_words_outside_the_recruiting_statement_still_produce_no_label():
+    # the Ilmtalklinik sentence of TASK-97 (posting 10767) and the Fürstenfeldbruck directory (5979) with a generic
+    # title: neither names the posting's own ward, and a statement that names none ("für unser Team") adds nothing
+    hospital_wide = ("Als Haus der Grund- und Regelversorgung verfügen wir neben den klassischen Fachabteilungen auch über eine "
+                     "Chest Pain Unit, eine Stroke Unit, eine Akutgeriatrie und ein Endoprothetik-Zentrum.")
+    directory = ("Fachbereiche Anästhesie & operative Intensivmedizin Sekretariat Neurologie & Stroke Unit "
+                 "Sekretariat Montag - Freitag: 8.30 bis 14.00 Uhr")
+    assert department_hint("Pflegefachkraft (m/w/d)", hospital_wide + " Wir suchen für unser Team ab sofort eine Pflegefachkraft.") is None
+    assert department_hint("Pflegefachkraft (m/w/d)", directory + " Wir suchen für unser Team ab sofort eine Pflegefachkraft.") is None
+    # a statement that names no ward ends at its sentence: what follows is the hospital's, not the posting's (composed)
+    assert department_hint("Pflegefachkraft (m/w/d)", "Das Klinikum sucht für die Station ab sofort eine/n Pflegefachkraft. "
+                           "Stroke Unit, Chest Pain Unit und Akutgeriatrie runden unser Angebot ab.") is None
+
+
+def test_other_jobs_listed_on_the_page_are_not_this_postings_ward():
+    # 14912: a careers page that lists the organisation's other vacancies ("<Einrichtung> sucht <Beruf> ..."). A "sucht"
+    # without "für die/den/unsere <ward>" names a profession or a site, never this posting's ward (employer dropped)
+    assert department_hint("Pflegefachkräfte (m/w/d) in Kassel",
+                           "Jobs Umkreissuche Suchen Kampagne English Jugendhilfezentrum sucht Kinder- und "
+                           "Jugendlichenpsychotherapeuten (m/w/d) Erzieher/ Heilerziehungspfleger/ Heilpädagoge (m/w/d) in Ahlen "
+                           "Materialverantwortliche*r im Regionalverband") is None
+
+
+def test_a_neuter_unser_is_a_facility_not_a_ward():
+    # 15155: "unsere Abteilung Kardiologie" names a ward (11767), "für unser inklusives Kinderhaus" the employer's facility
+    assert department_hint("Kinderpfleger (w/m/d) für unser inklusives Kinderhaus",
+                           "Wir suchen dich als Kinderpfleger (w/m/d) für unser inklusives Kinderhaus an der Ammer in Vollzeit "
+                           "Der Träger ist ein innovativer und inklusiver Träger der Kinder- und Jugendhilfe") is None
+
+
+# TASK-186: four words that name a ward of the existing Onkologie / Pädiatrie-Neonatologie labels and were missing from
+# their patterns (live: 13642 Säuglingsstation, 13657 Knochenmarktransplantationseinheit, 13667 Kinderspital, 10561
+# Stammzelltransplantationseinheit, 15146 Knochenmarktransplantation, 5953 Säuglingsstation). No new label.
+# "Knochenmark" alone is not one of them (a marrow puncture is a procedure), only the transplant unit word.
+@pytest.mark.parametrize("title, want", [
+    ("Pflegefachmann Knochenmarktransplantation (m/w/d)", "Onkologie"),                                  # 15146
+    ("Pflegefachperson (m/w/d) Stammzelltransplantationseinheit (SZT)", "Onkologie"),                     # 10561
+    ("Pflegefachkraft (m/w/d) für die interdisziplinäre Säuglingsstation", "Pädiatrie/Neonatologie"),     # 5953
+], ids=["knochenmark", "stammzell", "saeugling"])
+def test_marrow_stem_cell_and_infant_wards_are_named_in_titles(title, want):
+    assert department_hint(title) == want
+
+
+def test_a_marrow_puncture_in_the_tasks_is_a_procedure_not_a_ward():
+    # 10521 (a Study Nurse office of a children's clinic): "Assistenz bei Knochenmarks- und Lumbalpunktionen" names a
+    # procedure, so only the transplant unit word ("Knochenmarktransplantation") counts, not "Knochenmark" alone
+    assert department_hint("Studienassistenz (m/w/d)",
+                           "Ihre Aufgaben Unterstützung der Prüfärzte bei klinischen Studien Assistenz bei Knochenmarks- und "
+                           "Lumbalpunktionen sowie die Organisation und Verarbeitung von Patienten-Proben Ihr Profil") is None
+
+
+def test_a_kinderspital_header_is_a_paediatric_ward():
+    # 13667, the institution's name dropped
+    assert department_hint("Pflegefachkraft oder Altenpfleger (m/w/d)",
+                           "Arbeitsort Campus Innenstadt Einrichtung Pflegedirektion Bereich Kinderspital Einstiegsdatum "
+                           "Zum nächstmöglichen Zeitpunkt") == "Pädiatrie/Neonatologie"
+
+
+# The third shape: the ward is the grammatical subject of the statement ("Die neurologische Allgemeinstation 6 West
+# ... sucht ab sofort ..."), real excerpts of live postings. An employer named as the subject is not a ward: the
+# Hessing posting's statement says "suchen zum nächstmöglichen Zeitpunkt" and its employer name carries a
+# department word, so it is read for neither ("ab sofort" is the frame, the employer's name never is).
+_UNIT_SUBJECTS = [
+    ("die_allgemeinstation", "Neurologie",                                                          # 10642
+     "Bewerbungsfrist: 31.12.2026 Die neurologische Allgemeinstation 6 West im Kopfklinikum sucht ab sofort in Vollzeit "
+     "(38,5 Wochenstunden) oder Teilzeit (individuelles Stundenmodell) eine Die Neurologie hat sich in den letzten 20 Jahren "
+     "von einem diagnostischen zu einem therapeutischen Fach gewandelt."),
+    ("das_team_der_station", "Intensiv/IMC",                                                        # 10647
+     "Bewerbungsfrist: 31.12.2026 Das pflegerische Team der HNO Intensivstation im Klinikum sucht ab sofort zur Verstärkung "
+     "eine/n Das pflegerische Team der HNO Intensivstation versorgt mit 6 Behandlungsplätzen überwachungs- sowie "
+     "beatmungspflichtige Patienten."),
+]
+
+
+@pytest.mark.parametrize("why, want, desc", _UNIT_SUBJECTS, ids=[x[0] for x in _UNIT_SUBJECTS])
+def test_the_ward_that_is_the_subject_of_the_recruiting_statement_is_found(why, want, desc):
+    assert department_hint("Pflegefachfrau/-mann (m/w/d)", desc) == want
+
+
+def test_an_employer_named_as_the_subject_is_not_a_ward():
+    # 6404: "Die orthopädischen Fachkliniken der <Stiftung> suchen zum nächstmöglichen Zeitpunkt ..." (name dropped)
+    assert department_hint("Pflegefachkraft (m/w/d)",
+                           "Das sind wir: Die orthopädischen Fachkliniken der Stiftung suchen zum nächstmöglichen Zeitpunkt "
+                           "Pflegefachkräfte (m/w/d) mit der Fachweiterbildung Praxisanleitung für unsere SCU (StudentCareUnit).") is None

@@ -179,3 +179,32 @@ def test_edge_sink_post_retries_transport_exception(monkeypatch):
     monkeypatch.setattr("pflege_jobs.sinks.time.sleep", lambda s: None)
     assert sink._post({"x": 1}) == {"ok": True}
     assert len(calls) == 2
+
+
+def test_the_inbox_row_description_reaches_the_role_classifier():
+    # TASK-186: an Ausbildung posted as "Operationstechnische Assistenten (m/w/d)" says so only in its body
+    # (real excerpt of a live posting), so the inbox row's description must reach classify_role.
+    o = obs(payload={"title": "Operationstechnische Assistenten (m/w/d)",
+                     "description": "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss "
+                                    "(oder gleichwertig) zusammen mit: einer erfolgreich abgeschlossenen Berufsausbildung"})
+    assert o["role_class"] == "ausbildung" and o["role_rule"].startswith("ausbildung_body:")
+
+
+def test_feed_adapters_hand_the_ad_text_to_the_role_classifier():
+    # TASK-186: pflege_jobs/sources/feeds.py builds its observations through _obs (personio, smartrecruiters,
+    # talention); the same training-place body as above must classify as ausbildung there too.
+    from pflege_jobs.sources import feeds
+    o = feeds._obs("https://x/1", "Operationstechnische Assistenten (m/w/d)", "Klinikum Nürnberg", "Nürnberg", "90419",
+                   "Bayern", "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig)",
+                   "2026-08-31", None, {}, TOWNS, {})
+    assert o["role_class"] == "ausbildung" and o["role_rule"].startswith("ausbildung_body:")
+
+
+def test_a_page_that_says_nothing_is_open_is_classified_as_such_at_intake():
+    # TASK-186: the observation carries the reason (role_rule), the intake gate then refuses it like any excluded class.
+    from pflege_jobs.sinks import only_pflege
+    o = obs(payload={"title": "Gesundheits- / Krankenpfleger",
+                     "description": "Patientenportal Derzeit haben wir keine offenen Stellen im Stationsbereich zu "
+                                    "besetzen. Wir freuen uns aber über jede Initiativbewerbung."})
+    assert (o["role_class"], o["role_rule"]) == ("nicht_pflege", "no_vacancy_page")
+    assert only_pflege([o]) == []

@@ -349,3 +349,94 @@ def test_verify_all_records_a_crashed_http_row_instead_of_ending_the_whole_pass(
     assert len(res) == 4, "every row must come back, crashed one included"
     assert by_id[1]["verify_status"] == "error" and "http rung crashed: TypeError" in by_id[1]["verify_note"]
     assert all(by_id[i]["verify_status"] == "live" for i in (0, 2, 3))
+
+
+# --- the http rung sends the crawler's per-host User-Agent (TASK-173) -------------------------
+# bewerberportal.rhoen-klinikum-ag.com answers 401 with an empty body to any UA claiming Chrome --
+# verify's own UA included -- and serves Firefox (live 2026-09-29). The crawler has fetched it with a
+# per-host override since TASK-168; verify kept its own UA, so every RHÖN Bad Neustadt posting 401'd
+# here, rendered blank in Chromium, and escalated to a paid Firecrawl scrape every night.
+
+_RHOEN_URL = "https://bewerberportal.rhoen-klinikum-ag.com/Pflegefachkraft-mwd-Zentrale-Notaufnahme-de-j3105.html"
+_RHOEN_TITLE = "Pflegefachkraft (m/w/d) Zentrale Notaufnahme"
+
+
+class _RhoenBoardSession:
+    """That board's own answer: 401 + empty body to a UA claiming Chrome, the posting page to any
+    other UA. Records every User-Agent it was sent."""
+    def __init__(self):
+        self.uas = []
+
+    def get(self, url, headers=None, timeout=None, allow_redirects=None):
+        ua = (headers or {}).get("User-Agent", "")
+        self.uas.append(ua)
+        if "Chrome" in ua:
+            return _UAResp(url, 401, "")
+        return _UAResp(url, 200, f"<title>Stellenangebot {_RHOEN_TITLE} bei RHÖN-KLINIKUM AG</title>")
+
+
+class _UAResp:
+    def __init__(self, url, status, text):
+        self.url, self.status_code, self.text, self.headers, self.ok = url, status, text, {}, status < 400
+
+
+def test_verify_http_rung_sends_the_crawlers_user_agent_for_an_overridden_host():
+    import crawlers.vendor_adapters as va
+    import pflege_jobs.verify as V
+    crawler, verifier = _RhoenBoardSession(), _RhoenBoardSession()
+    assert va.get(_RHOEN_URL, session=crawler).status_code == 200
+
+    out = V.verify_one(verifier, _RHOEN_URL, _RHOEN_TITLE, rungs=("http",))
+    assert (out["verify_status"], out["verify_http"], out["method"]) == ("live", 200, "http")
+    assert V.verify_url(verifier, _RHOEN_URL, _RHOEN_TITLE)[:2] == ("live", 200)
+
+    firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+    assert crawler.uas == [firefox]
+    assert verifier.uas == [firefox, firefox]
+
+
+def test_verify_http_rung_keeps_its_own_user_agent_for_every_other_host():
+    # Same operator, sibling host: the override is keyed to the board host only (www serves Chrome fine).
+    import pflege_jobs.verify as V
+    s = _RhoenBoardSession()
+    url = "https://www.rhoen-klinikum-ag.com/karriere/pflegefachkraft-zentrale-notaufnahme"
+    V.verify_one(s, url, _RHOEN_TITLE, rungs=("http",))
+    V.verify_url(s, url, _RHOEN_TITLE)
+    assert s.uas == [V.UA, V.UA]
+
+
+# --- gone-markers count only in the page's visible text (TASK-176) ----------------------------
+# The *.mutter-kind.de job pages are Next.js: the RSC payload <script> ships the site's not-found
+# boundary ("Die Seite wurde leider nicht gefunden.") with every page, live ones included. With a
+# bare "Pflegefachkraft (m/w/d)" title (no title token) that script text alone expired the live
+# postings 15113/15114/15314 on 2026-09-29. A dead posting on that host answers 404.
+
+_NEXT_JOB_PAGE = (
+    '<html><head><title>Stellenangebot: Pflegefachkraft (m/w/d)</title></head><body>'
+    '<h1>Pflegefachkraft (m/w/d)</h1><p>Verstärkung als Pflegefachkraft (m/w/d) in unserer Klinik Maximilian '
+    'in Voll- oder Teilzeit. Arbeitsort: Scheidegg. Jetzt bewerben</p>'
+    '<script>self.__next_f.push([1,"[\\"$\\",\\"p\\",null,{\\"className\\":\\"text-center text-base\\",'
+    '\\"children\\":\\"Die Seite wurde leider nicht gefunden.\\"}]"])</script></body></html>')
+
+
+def test_decide_ignores_a_gone_marker_inside_a_script_of_a_live_posting_page():
+    assert decide(200, _NEXT_JOB_PAGE, "Pflegefachkraft (m/w/d)") == (
+        "live", 200, "200, no title token to confirm, no gone-marker either")
+    # the title-token path too: no token on the page, but no visible gone message either -> undecided
+    assert decide(200, _NEXT_JOB_PAGE, "Pflegefachkraft (m/w/d) Intensivstation Nürnberg") == (
+        "error", 200, "200 but title not found (JS-rendered or list page)")
+
+
+def test_decide_ignores_a_gone_marker_in_a_style_block_a_tag_attribute_or_a_script_cut_open_by_the_slice():
+    styled = _NEXT_JOB_PAGE.replace("</title>", '</title><style>.empty::after{content:"Seite nicht gefunden"}</style>')
+    assert decide(200, styled, "Pflegefachkraft (m/w/d)")[0] == "live"
+    attr = _NEXT_JOB_PAGE.replace("<h1>", '<h1 data-empty-text="Stelle nicht gefunden">')
+    assert decide(200, attr, "Pflegefachkraft (m/w/d)")[0] == "live"
+    cut = _NEXT_JOB_PAGE.replace("</script></body></html>", "")   # a >400 KB page sliced mid-script
+    assert decide(200, cut, "Pflegefachkraft (m/w/d)")[0] == "live"
+
+
+def test_decide_still_reads_a_visible_gone_message_as_gone():
+    dead = _NEXT_JOB_PAGE.replace("<h1>Pflegefachkraft (m/w/d)</h1>", "<h1>Die Seite wurde leider <b>nicht gefunden</b>.</h1>")
+    assert decide(200, dead, "Pflegefachkraft (m/w/d)") == ("gone", 200, "200, no title token to confirm, but a gone-marker matched")
+    assert decide(200, dead, "Pflegefachkraft (m/w/d) Intensivstation Nürnberg") == ("gone", 200, "200 but title missing + gone marker")

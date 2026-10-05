@@ -694,3 +694,28 @@ def test_crawl_wp_jobs_widens_an_extbase_limit_field_before_reading_the_career_p
     rows = va.crawl_wp_jobs({"name": "Klinik X", "town": "X", "careers_url": narrow})
     titles = {r["payload"]["title"] for r in rows}
     assert titles == {"Pflegefachkraft A (m/w/d)", "Pflegefachkraft B (m/w/d)"}
+
+
+def test_haus_am_kurpark_postings_listed_as_bare_list_items_are_read(monkeypatch):
+    """TASK-171: hausamkurpark.de (PARITÄTISCHE Haus am Kurpark, RH1970, Bad Königshofen) lists its
+    postings as bare <li> text under "aktuelle Stellenanzeigen" -- no link, no detail page -- so the
+    board read 0 rows every night while 2 of its 5 postings are nursing. The site menu's own <li>s
+    (all linked) on the same page are not postings. Fixture: live page 2026-09-29."""
+    from pflege_jobs import config as PC
+    from pflege_jobs.sources.inbox import jobposting_to_obs
+    cu = "https://www.hausamkurpark.de/die-klinik/ihre-karriere"
+    with open(os.path.join(FIXTURES, "hausamkurpark_ihre_karriere_sample.html"), encoding="utf-8") as f:
+        monkeypatch.setattr(va, "get", _router({cu: _R(f.read(), url=cu, ok=True)}))
+    rows = va.crawl_wp_jobs({"clinic_id": "RH1970", "name": "PARITÄTISCHE Haus am Kurpark gGmbH",
+                             "town": "Bad Königshofen", "careers_url": cu})
+    assert [r["payload"]["title"] for r in rows] == [
+        "Mitarbeiter*in für unseren Pflegedienst (m/w/d) in Teil- oder Vollzeit",
+        "Mitarbeiter*in für unseren Pflegedienst (m/w/d) bevorzugt im Nachtdienst",
+        "Psychologischen Psychotherapeuten (m/w/d) in Teil- oder Vollzeit für unser Sozialtherapeutisches Team",
+        "Mitarbeiter*in für den Bereich Marketing / Social Media (4 Std.)",
+        "Mitarbeiter*in für den Bereich Haustechnik (m/w/d) in Teilzeit (25h)"]
+    assert len({r["source_url"] for r in rows}) == 5
+    obs = [jobposting_to_obs({**r, "inbox_id": 1}, {"bad königshofen"}) for r in rows]
+    assert [o["title"] for o in obs if o["role_class"] not in PC.EXCLUDED_ROLE_CLASSES] == [
+        "Mitarbeiter*in für unseren Pflegedienst (m/w/d) in Teil- oder Vollzeit",
+        "Mitarbeiter*in für unseren Pflegedienst (m/w/d) bevorzugt im Nachtdienst"]

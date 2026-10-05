@@ -1,5 +1,5 @@
 """Registry lint: careers_url must not be a single job-detail page (TASK-86)."""
-from pflege_jobs.registry_lint import check_careers_url, lint_csv, lint_rows
+from pflege_jobs.registry_lint import check_careers_url, lint_rows
 
 
 # --- the real junk rows the lint exists to have caught -------------------------------------------
@@ -59,28 +59,10 @@ def test_lint_rows_reports_clinic_id_and_shape():
     assert findings[0].shape == "job-slug"
 
 
-def test_lint_csv_reads_the_clinics_csv_dialect_and_flags_job_detail_rows(tmp_path):
-    # Exercises lint_csv()'s own CSV-reading path (DictReader over the real column header) against
-    # a synthetic fixture, not the live data/registry/clinics.csv -- a test asserting a specific
-    # clinic_id is still broken in the real CSV goes red the moment someone fixes that row; it would
-    # be testing the mutable state of production data, not the lint (TASK-86 review finding #4).
-    csv_path = tmp_path / "clinics.csv"
-    csv_path.write_text(
-        "clinic_id,name,town,careers_url,ats_type\n"
-        "11111,Clean Hospital,Testort,https://example.de/stellenangebote/,\n"
-        "22222,Broken Hospital,Testort,"
-        "https://example.de/karriere/job/3bc89d91-7c4e-485d-ba7f-260fc7a5a378/,\n",
-        encoding="utf-8",
-    )
-    findings = lint_csv(str(csv_path))
-    assert {f.clinic_id: f.shape for f in findings} == {"22222": "job-slug"}
-
-
-# --- wiring: the lint must run inside every real funnel a discovered/probed/registry-pushed
-# careers_url passes through: EdgeSink.write_clinics (pflege_jobs/sinks.py) -- career_discover_exa.py's
-# Exa write-back and cli.py's ats-probe path post through it directly, and cmd_link_clinics's CSV push
-# (cli.py) is routed through it too as of this round (TASK-86 review round 2, finding #2). A lint
-# module nothing imports cannot reject anything. -------------------------------------------------
+# --- wiring: the lint must run inside every real funnel a discovered/probed careers_url passes
+# through: EdgeSink.write_clinics (pflege_jobs/sinks.py) -- career_discover_exa.py's Exa write-back and
+# cli.py's ats-probe path post through it directly (cmd_link_clinics's CSV push, the third funnel, is
+# gone since TASK-175). A lint module nothing imports cannot reject anything. --------------------------
 def test_write_clinics_rejects_a_job_detail_careers_url_before_posting():
     from pflege_jobs.sinks import EdgeSink
 
@@ -136,11 +118,10 @@ def test_write_clinics_scrubs_only_the_bad_careers_url_not_the_whole_batch():
     assert by_id["0"]["careers_url"] == "https://example.de/stellenangebote/"   # clean rows untouched
 
 
-# --- TASK-86 review round 2, finding #2: cmd_link_clinics (`link-clinics`, --csv defaulting to this
-# task's own data/registry/clinics.csv) posted every registry row via sink._post({"clinics": batch})
-# directly -- the only funnel the lint never ran in. A CSV row still carrying a job-detail-page
-# careers_url (lint_csv flags 5 of them today) reached production ungated. -------------------------
-def test_cmd_link_clinics_routes_the_csv_push_through_the_same_lint(monkeypatch, tmp_path):
+# --- TASK-175: cmd_link_clinics (`link-clinics`, orchestrate.py's nightly 'link' stage) used to load
+# data/registry/clinics.csv and push every row of it back into the clinics table, reverting any fix made in
+# the DB since the CSV was last written. It now matches against the live table and writes clinic_links only.
+def test_cmd_link_clinics_matches_against_the_live_table_and_writes_no_clinics(monkeypatch, tmp_path):
     import argparse
 
     import requests
@@ -152,15 +133,10 @@ def test_cmd_link_clinics_routes_the_csv_push_through_the_same_lint(monkeypatch,
     monkeypatch.setenv("SUPABASE_ANON_KEY", "k")
     monkeypatch.setenv("PFLEGE_INGEST_URL", "http://ingest.example")
     monkeypatch.setenv("PFLEGE_INGEST_SECRET", "s")
-
-    csv_path = tmp_path / "clinics.csv"
-    csv_path.write_text(
-        "clinic_id,name,town,operator,landkreis,regierungsbezirk,status,versorgungsstufe,traegerart,"
-        "beds,day_places,fachrichtungen,parse_quality,source,website,careers_url,ats_type\n"
-        "16268,MVT Zentrum,Testort,,,,,,,,,,,,,"
-        "https://mvt-zentrum.de/job/leitung-finanzen-medizincontrolling-m-w-d/,\n",
-        encoding="utf-8",
-    )
+    live = [{"clinic_id": "16201", "name": "München Klinik Schwabing", "town": "München",
+             "operator": "München Klinik gGmbH", "beds": 700}]
+    posting = {"posting_id": 1, "city": "München", "clinic_match_rule": None,
+               "employers": {"name_display": "München Klinik Schwabing", "employer_class": "clinic"}}
 
     class _FakeResp:
         def __init__(self, data):
@@ -170,8 +146,10 @@ def test_cmd_link_clinics_routes_the_csv_push_through_the_same_lint(monkeypatch,
             return self._data
 
     def fake_get(u, params=None, headers=None, timeout=None):
-        if "/rest/v1/postings?" in u or "/rest/v1/clinics?" in u:
-            return _FakeResp([])
+        if "/rest/v1/clinics?" in u:
+            return _FakeResp(live)
+        if "/rest/v1/postings?" in u:
+            return _FakeResp([posting])
         raise AssertionError(f"unexpected GET {u}")
     monkeypatch.setattr(requests, "get", fake_get)
 
@@ -179,9 +157,7 @@ def test_cmd_link_clinics_routes_the_csv_push_through_the_same_lint(monkeypatch,
     monkeypatch.setattr(EdgeSink, "_post",
                          lambda self, body: (posted.append(body), {k: len(v) for k, v in body.items()})[1])
 
-    a = argparse.Namespace(csv=str(csv_path), dry_run=False, out=str(tmp_path / "links.json"))
-    cli.cmd_link_clinics(a)
+    cli.cmd_link_clinics(argparse.Namespace(dry_run=False, out=str(tmp_path / "links.json")))
 
-    sent = [r for b in posted for r in b.get("clinics", [])]
-    assert sent and sent[0]["clinic_id"] == "16268"
-    assert sent[0]["careers_url"] == ""        # scrubbed by write_clinics's lint -- proves this path is gated too
+    assert [list(b) for b in posted] == [["clinic_links"]]           # links only: no clinics push at all
+    assert posted[0]["clinic_links"][0]["clinic_id"] == "16201"      # matched against the live row

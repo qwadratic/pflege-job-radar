@@ -180,9 +180,9 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
     e_class, e_rule = classify_employer(emp)
     title = jp.get("title") or ""
     bg = (jp.get("custom") or {}).get("berufsgruppe") or []
-    role, rule = classify_role(title, "", "AUSBILDUNG" if any(BERUF_AUSB.search(x) for x in bg) else "",
-                               nursing_section_confirmed=section_confirmed)
     desc = _strip(desc_html) if desc_html else None
+    role, rule = classify_role(title, "", "AUSBILDUNG" if any(BERUF_AUSB.search(x) for x in bg) else "",
+                               nursing_section_confirmed=section_confirmed, desc=desc)
     enr = {("enr_" + k): v for k, v in enrich_description(desc or "").items()}
     et = jp.get("employmentType") or []
     befr = (jp.get("custom") or {}).get("befristung")
@@ -205,7 +205,11 @@ def to_observation(jp: dict, seed: dict, towns, desc_html=None, section_confirme
         "salary_min": None, "salary_max": None, "salary_unit": None, "salary_note": (jp.get("custom") or {}).get("umfang"),
         "first_published": (jp.get("activatedOn") or jp.get("startsOn") or jp.get("createdOn") or "")[:10] or None,
         "last_modified": jp.get("modifiedOn"), "valid_until": (jp.get("endsOn") or "")[:10] or None,
-        "external_url": jp.get("applyUrl") or jp["url"], "description": (desc or "")[:20000] or None,
+        # jp["url"] is the same field source_ref/source_url above already trust as the real ad page;
+        # applyUrl is a separate vendor field that some tenants (e.g. Diakoneo) point at a JS-only
+        # application-form host with no server-rendered content -- url is the reliable one, applyUrl
+        # only a fallback for the rare case url itself is empty (2026-09-28, clinic 56404/56406).
+        "external_url": jp["url"] or jp.get("applyUrl"), "description": (desc or "")[:20000] or None,
         **enr, "details_fetched_at": datetime.now(timezone.utc).isoformat() if desc else None, "details_error": None,
         "fuzzy_key": fuzzy_key(title, emp, a.get("city")), "content_hash": content_hash(title, emp, a.get("city"), jp.get("modifiedOn")),
         "payload": json.dumps({"bite": {k: v for k, v in jp.items() if k not in ("custom",)}, "bite_custom": {k: v for k, v in (jp.get("custom") or {}).items() if k != "keyfacts_renderer"},

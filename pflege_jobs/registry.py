@@ -13,8 +13,24 @@ from collections import defaultdict
 
 from .schema import CLINIC_SPEC
 
-from .classify import employer_norm, norm_text
+from .classify import employer_norm as _employer_key, norm_text
 from .sources.career_crawl import _canon_town
+
+
+# Public-law legal forms. classify's legal-form list only knows the private-law ones (GmbH, AG, e.V. ...);
+# toks() below already drops these (STOP, ALIASES["ku"]), the exact R1/R2 keys did not. TASK-169: the
+# Krankenhausplan spells 'KU Bezirkskliniken Mittelfranken, AöR', the RHV Reha rows and every posting
+# 'Bezirkskliniken Mittelfranken' -- keyed apart, R2_operator saw only the Reha rows in Erlangen/Ansbach.
+PUBLIC_LAW_FORMS = {"ku", "gku", "aör", "adör", "kdör", "aoer", "adoer", "kdoer"}
+
+
+def employer_norm(name):
+    """classify.employer_norm (the employers table's identity key) keeps hyphens; here, matching a
+    posting to a registry site, a hyphen and a space spell one name. TASK-168: the RHV Reha row RH1962
+    and every posting's JSON-LD say 'RHÖN-KLINIKUM AG', the Krankenhausplan rows of the same campus
+    'RHÖN KLINIKUM AG' -- keyed apart, R2_operator saw RH1962 as that operator's only site."""
+    return " ".join(t for t in _employer_key(name).replace("-", " ").split() if t not in PUBLIC_LAW_FORMS)
+
 
 STOP = {"klinik", "kliniken", "klinikum", "krankenhaus", "gmbh", "ggmbh", "ag", "kg", "ev", "e", "v", "gku", "aör", "aoer",
         "stiftung", "gemeinnützige", "gemeinnuetzige", "und", "der", "des", "die", "für", "fuer", "im", "am", "an", "in", "von", "st", "sankt",
@@ -28,7 +44,13 @@ CITY_ALIASES = {"münchen": {"münchen", "muenchen", "munich"}, "nürnberg": {"n
                 # started comparing this town for the first time (R1_exact never checked city before)
                 # and refused a real "Klinikum Neumarkt" posting stating the spelled-out city, because
                 # the two forms canonicalized to "neumarkt opf" vs "neumarkt in oberpfalz" -- disjoint.
-                "neumarkt in oberpfalz": {"neumarkt i.d.opf.", "neumarkt i.d. opf."}}
+                "neumarkt in oberpfalz": {"neumarkt i.d.opf.", "neumarkt i.d. opf."},
+                # TASK-170: the RHV registry spells Klinik Höhenried's town "Bernried/Obb." (RH2229); its
+                # own board and every posting name the municipality, "Bernried am Starnberger See".
+                "bernried starnberger see": {"bernried/obb."},
+                # TASK-172: Klinikum Altmühlfranken's coveto board names the town "Weißenburg in Bayern",
+                # the registry "Weißenburg i.Bay." (57701, 57706).
+                "weißenburg bay": {"weißenburg in bayern"}}
 
 
 ALIASES = {"universitätsklinikum": {"universität"}, "uniklinikum": {"universität"}, "uniklinik": {"universität"},
@@ -251,6 +273,11 @@ class Matcher:
         if employer_inherited and len(same_town) > 1:
             et, ek = set(), set()
         if not et and not ek: return None
+        # R3's same-operator bed-count guess (R6) waits for R4: the operator tokens can still name ONE
+        # site outright (TASK-170: "RehaZentren der Deutschen Rentenversicherung" ties two DRV Bund houses
+        # in Bad Kissingen by name, only RH2467's operator -- DRV Baden-Wuerttemberg's "Reha Zentren" --
+        # carries it). Replayed over run 217's 3529 matched rows: exactly those 2 postings change.
+        r6 = None
         for rule, key, thr, score in (("R3_tokens", "_ntoks", 0.6, 0.8), ("R4_tokens_op", "_otoks", 0.6, 0.75)):
             cands = []
             for x in same_town:
@@ -289,7 +316,8 @@ class Matcher:
                 ops = {employer_norm(x.get("operator") or x["name"]) for x in best}
                 if len(ops) == 1:
                     top = _pick_site(best)
-                    return top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in best)), 0.5
+                    r6 = r6 or (top["clinic_id"], "R6_ambiguous_sites:" + ",".join(sorted(x["clinic_id"] for x in best)), 0.5)
+        if r6: return r6
         cands = [(overlap(et, x["_ntoks"] | x["_otoks"]), x) for x in same_town]
         best = [x for j, x in cands if j >= 0.5]
         if len(best) == 1 and len(same_town) == 1: return best[0]["clinic_id"], "R5_loose", 0.6
@@ -382,7 +410,7 @@ def link_postings(postings, clinics):
             out.append({"posting_id": p["posting_id"], "clinic_id": r[0], "clinic_match_rule": r[1], "clinic_match_score": r[2]})
     return out
 
-# Columns that ATS discovery owns but that also appear in the registry CSV.
+# Columns that ATS discovery owns but that a full clinics row also carries.
 DISCOVERY_OWNED = ("ats_type", "careers_url")
 
 

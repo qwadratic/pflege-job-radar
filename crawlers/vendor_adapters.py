@@ -66,22 +66,14 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
 H = {"User-Agent": UA, "Accept-Language": "de-DE,de;q=0.9"}
 
 # Per-host UA override, checked only inside get() below -- H/UA stay the shared default for every
-# other board. augencentrum.de's CleanTalk anti-crawler plugin served a JS-cookie-challenge page to
-# this repo's own UA (confirmed live 2026-09-22, TASK-114) while a plain Windows-Chrome UA sailed
-# through first try; keyed by netloc, not folded into H, so this one site's quirk can never leak
-# into the shared H every other adapter call reads.
-UA_OVERRIDE = {
-    "augencentrum.de": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                         "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"),
-}
+# other board. The table lives in pflege_jobs/user_agent.py so verify's HTTP rung sends the same UA per
+# host (TASK-173); UA_OVERRIDE is re-exported here for existing readers of va.UA_OVERRIDE.
+from pflege_jobs.user_agent import UA_OVERRIDE, ua_override  # noqa: E402,F401
 
 
 def _headers_for(u):
-    host = urlparse(u).netloc.lower()
-    for domain, ua in UA_OVERRIDE.items():
-        if host == domain or host.endswith("." + domain):
-            return {"User-Agent": ua, "Accept-Language": "de-DE,de;q=0.9"}
-    return H
+    ua = ua_override(u)
+    return {"User-Agent": ua, "Accept-Language": "de-DE,de;q=0.9"} if ua else H
 
 
 OUT = os.environ.get("EGRESS_OUTPUT_DIR", "crawl_vendors")
@@ -588,7 +580,10 @@ JOB_PATH = re.compile(r"[/-](jobs?|stellen?\w*|karriere/stellen|vacan)[/-]|/(kar
 # and "(w/m/d)" are the only orders seen live across every board surveyed so far -- not widened to
 # every theoretical permutation without evidence one exists.
 SLUG_GENDER_RX = re.compile(r"[/-](?:m-w-d|w-m-d)(?:[/-]|$)", re.I)
-NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b|[?&](kategorie|category)=|"
+# Government Site Builder's (every DRV clinic site) job SEARCH FORM, /SiteGlobals/Forms/<form>/...,
+# is a listing, never a posting: its first result's heading became a row, and its per-request
+# search_coordinates.HASH made that row a new posting every night (TASK-170, 2026-09-29).
+NOT_JOB_PATH = re.compile(r"/job-?(?:news)?letter\b|[?&](kategorie|category)=|/SiteGlobals/Forms/|"
                           # A section word does not have to sit immediately before /detail/ -- a news
                           # article can nest its own /detail/ view one folder deeper still (confirmed
                           # live 2026-09-22: anregiomed.de's own postings 10453/10454/10455/10746,
@@ -762,6 +757,9 @@ NOT_JOB_TITLE_RX = re.compile(r"^(Impressum|Datenschutzerkl.rung|Barrierefreihei
                               r"Kontakt|AGB|Sitemap|Cookie-Einstellungen)\s*$", re.I)
 
 
+STELLENANGEBOT_IN_RX = re.compile(r"<h[1-6][^>]*>\s*Stellenangebot in\s+([^<]+?)\s*</h[1-6]>", re.I)
+
+
 def parse_job_page(htmltext, url, org):
     """No JSON-LD on these sites: take JSON-LD if present, else <h1>, else <title>."""
     for m in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', htmltext or "", re.S):
@@ -820,7 +818,10 @@ def parse_job_page(htmltext, url, org):
                         "description": _txt(n.get("description"))}
             stack += [v for v in n.values() if isinstance(v, (dict, list))]
             stack += [x for v in n.values() if isinstance(v, list) for x in v if isinstance(x, dict)]
-    h1 = re.search(r"<h1[^>]*>(.*?)</h1>", htmltext or "", re.S)
+    # TASK-170: a cookie-consent dialog can be the page's first <h1> (kurpark.mutter-kind.de: "Diese
+    # Website verwendet Cookies" ahead of the job's own <h1>) -- never the job, so take the next one.
+    h1 = next((m for m in re.finditer(r"<h1[^>]*>(.*?)</h1>", htmltext or "", re.S)
+               if not re.search(r"cookie", m.group(1), re.I)), None)
     # A site-wide a11y label (e.g. <h1 class="visuallyhidden">Klinikum X gGmbH</h1>) sits on every
     # page including the shell of a JS-rendered detail page -- never a job title, so treat it as no
     # h1 at all rather than let it win by default.
@@ -866,10 +867,16 @@ def parse_job_page(htmltext, url, org):
     # leaving fields the source does expose empty.
     facts = dict(re.findall(r'icons/([a-z]+)\.svg"[^>]*/?>\s*<span class="fact">([^<]+)</span>',
                              htmltext or "", re.I))
+    # Same idea, different template: karriere.medicalpark.de heads every posting with its site's town
+    # ("<h4>Stellenangebot in Bad Rodach</h4>" right above the <h1>; 103 of 105 postings, run 217) and
+    # has no other location field -- without it every row got the seed clinic's town stamped on it
+    # (TASK-166), including the group's Berlin/Hessen/NRW postings.
+    stelle_in = STELLENANGEBOT_IN_RX.search(htmltext or "")
     # No JobPosting JSON-LD reached this branch at all -- org is always the caller's seed-clinic
     # fallback here, never a page-stated name.
     return {"title": title, "org": org, "org_source": "seed",
-            "loc": [{"city": facts.get("location"), "plz": None, "region": None}],
+            "loc": [{"city": facts.get("location") or (_txt(stelle_in.group(1), 200) if stelle_in else None),
+                     "plz": None, "region": None}],
             "url": url, "page": url, "description": _txt(body),
             "employmentType": facts.get("schedule"),
             # TASK-85 AC#6: this is the branch a JSON-LD-less TYPO3 board (AMEOS: itemprop meta, no
@@ -1503,6 +1510,8 @@ def _inline_heading_job_rows(cu_resp, c, host):
 # once per department filter tab, so the raw page repeats each title several times.
 TITLE_ONLY_SITES = {
     "klinik-bad-trissl.de": re.compile(r'et_pb_text_inner">\s*<p>([^<]+)</p>'),
+    # TASK-171: bare <li> text under "aktuelle Stellenanzeigen"; every other <li> on the page is a linked menu item.
+    "hausamkurpark.de": re.compile(r"<li>([^<]+)</li>"),
 }
 
 
@@ -1729,7 +1738,7 @@ def crawl_wp_jobs(c, session=None, towns=None):
         # (asklepios), the page's own embedded job JSON behind a handlebars template (eRecruiter),
         # and a widget loader that names its tenant board (concludis). All three are fingerprinted
         # on the response already fetched above, so the probe itself costs no extra request.
-        for delegate in (crawl_asklepios, crawl_erecruiter, crawl_concludis_widget, crawl_muenchen_klinik):
+        for delegate in (crawl_asklepios, crawl_erecruiter, crawl_concludis_widget, crawl_muenchen_klinik, crawl_onapply, crawl_mediclin):
             rows = delegate(c, session=session, cu_resp=cu_resp)
             # `if rows:` alone is falsy for an empty-but-annotated _BoardTotalRows, so a board this
             # delegate DID recognise (it parsed a total off the board's own JSON) but read zero rows
@@ -2422,6 +2431,110 @@ def crawl_concludis_widget(c, session=None, cu_resp=None):
     return out
 
 
+# onapply career-page widget: an empty <div class="onapply-career-page-container"
+# data-url="https://<tenant>.onapply.de/feed/render.html?format=json"> filled client-side from that
+# JSON feed ({"listings": [...]}, each with its own linkJobAd detail page carrying a JobPosting JSON-LD).
+# A page can mount several (confirmed live 2026-09-29, TASK-170: hoehenried.de mounts the clinic's and
+# its prevention centre's tenant); every feed named is part of the board.
+ONAPPLY_FEED_RX = re.compile(r'class="onapply-career-page-container"[^>]*\bdata-url="([^"]+)"')
+
+
+def crawl_onapply(c, session=None, cu_resp=None):
+    feeds = list(dict.fromkeys(_html.unescape(f) for f in ONAPPLY_FEED_RX.findall(cu_resp.text))) if cu_resp is not None and cu_resp.ok else []
+    if not feeds:
+        return []
+    listings = []
+    for feed in feeds:
+        r = get(feed, session=session)
+        try:
+            listings += r.json()["listings"]
+        except (AttributeError, ValueError, KeyError, TypeError):
+            raise RuntimeError("onapply: feed %s unreadable -- board read stops short" % feed)
+    out = _BoardTotalRows()
+    out.board_total = len(listings)
+    for li in listings:
+        u = li.get("linkJobAd")
+        d = get(u, session=session) if u else None
+        j = parse_job_page(d.text, d.url, c["name"]) if d is not None and d.ok else None
+        if not j or not j.get("title"):
+            continue   # fewer rows than board_total: app/crawl.py records the under-read
+        j["section_labels"] = [li["department"]] if li.get("department") else []
+        out.append(row(urlparse(u).netloc, j["url"], j, "onapply"))
+        time.sleep(0.3)
+    return out
+
+
+# MediClin's career site (www.mediclin-karriere.de, TYPO3 extension "brajobsmdc", TASK-171): a clinic's
+# page lists its postings as teaser cards whose only link is a "zur Stellenanzeige" button on a "-wmd-"
+# slug -- no job path, no gender-marked anchor text -- so the generic walk read none of them (RH2547).
+# Each card states title, category, facility and town; the page states its own total ("von insgesamt N
+# Ergebnissen") and serves cards past the first 10 only through its filter form's AJAX endpoint (the
+# form's own hidden fields, page=k, jobfilter=0 as its script sends when paging). Past the last page
+# the endpoint repeats the last page, so the walk stops on the board's own total.
+MDC_CARD_RX = re.compile(r'<article\s+class="mdc-job-advertisement-teaser[^"]*"[^>]*\bdata-job-id="(\d+)"(.*?)</article>', re.S)
+MDC_TOTAL_RX = re.compile(r'von insgesamt\s*<strong><span data-wrapper="jobslistresults">(\d+)</span>')
+MDC_FORM_RX = re.compile(r'<form[^>]*\bdata-job-advertisement-filter\b[^>]*\bdata-ajax-url="([^"]+)"[^>]*>(.*?)</form>', re.S)
+
+
+def _mdc_cards(htmltext):
+    """{job_id: (title, labels, facility, town, href)}; the page renders every card twice (list and map)."""
+    out = {}
+    for jid, card in MDC_CARD_RX.findall(htmltext or ""):
+        title = re.search(r'teaser-title">(.*?)</p>', card, re.S)
+        labels = re.search(r'#job-category"\s*/>\s*</svg>(.*?)</li>', card, re.S)
+        fac = re.search(r'teaser-facility">\s*<a[^>]*>(.*?)</a>\s*<span[^>]*>(.*?)</span>', card, re.S)
+        href = re.search(r'<a href="([^"]+)" class="mdc-btn', card)
+        if title and href:
+            out.setdefault(jid, (_txt(title.group(1), 300),
+                                 [_txt(s) for s in re.findall(r"<span>(.*?)</span>", labels.group(1), re.S)] if labels else [],
+                                 _txt(fac.group(1), 300) if fac else None, _txt(fac.group(2), 200) if fac else None,
+                                 _html.unescape(href.group(1))))
+    return out
+
+
+def _mdc_page_url(cu_resp, page):
+    action, form = MDC_FORM_RX.search(cu_resp.text).groups()
+    fields = []
+    for inp in re.findall(r"<input\b[^>]*>", form):
+        n, v = re.search(r'\bname="([^"]*)"', inp), re.search(r'\bvalue="([^"]*)"', inp)
+        if 'type="hidden"' in inp and n and v and v.group(1):
+            k = _html.unescape(n.group(1))
+            fields.append((k, str(page) if k.endswith("[page]") else "0" if k.endswith("[jobfilter]") else _html.unescape(v.group(1))))
+    return urljoin(cu_resp.url, _html.unescape(action)) + "&" + urlencode(fields)
+
+
+def crawl_mediclin(c, session=None, cu_resp=None):
+    if cu_resp is None or not cu_resp.ok or 'data-ctype="brajobsmdc_jobs"' not in cu_resp.text:
+        return []
+    m = MDC_TOTAL_RX.search(cu_resp.text)
+    if not m:
+        raise RuntimeError("mediclin: %s states no total ('von insgesamt N')" % cu_resp.url)
+    total, cards, page = int(m.group(1)), _mdc_cards(cu_resp.text), 1
+    while len(cards) < total:
+        page += 1
+        r = get(_mdc_page_url(cu_resp, page), session=session)
+        try:
+            new = _mdc_cards(next(v for e in r.json()["html"] for k, v in e.items() if k == "appendedElements"))
+        except (AttributeError, ValueError, KeyError, TypeError, StopIteration):
+            raise RuntimeError("mediclin: listing page %d of %s unreadable -- board read stops short" % (page, cu_resp.url))
+        if not set(new) - set(cards):
+            raise RuntimeError("mediclin: listing page %d of %s added no card, %d of %d read" % (page, cu_resp.url, len(cards), total))
+        cards.update(new)
+    out = _BoardTotalRows()
+    out.board_total = total
+    for title, labels, facility, town, href in cards.values():
+        u = urljoin(cu_resp.url, href)
+        d = get(u, session=session)
+        j = parse_job_page(d.text, d.url, c["name"]) if d is not None and d.ok else None
+        if not j:
+            continue   # fewer rows than board_total: app/crawl.py records the under-read
+        j.update(title=title, org=facility or c["name"], org_source=None if facility else "seed",
+                 loc=[{"city": town, "plz": None, "region": None}], section_labels=labels)
+        out.append(row(urlparse(u).netloc, j["url"], j, "mediclin"))
+        time.sleep(0.3)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # muenchen-klinik.de: one gGmbH, 5 physical Standorte (Schwabing/Harlaching/Neuperlach/Bogenhausen/
 # Thalkirchner Straße) sharing ONE employer_name/operator string ("München Klinik gGmbH") on every
@@ -2633,8 +2746,8 @@ def crawl_dvinci(c, session=None):
 # {error, from_cache, count, positions[]}; GET .../easyhr-proxy.php?id=<id> returns the one extra
 # field the list endpoint omits -- position.editor, the HTML job description.
 # ---------------------------------------------------------------------------
-# clinic name substring -> the jobgroup value that names it, verified against data/registry/
-# clinics.csv (77607/77672 Hochgrat-Klinik Wolfsried, 78008/78071 Adula-Klinik Oberstdorf). This is
+# clinic name substring -> the jobgroup value that names it, verified against the clinics registry
+# (77607/77672 Hochgrat-Klinik Wolfsried, 78008/78071 Adula-Klinik Oberstdorf). This is
 # just this one confirmed tenant's own two sub-brands, not a general EasyHR contract.
 EASYHR_JOBGROUP = [("hochgrat", "Hochgrat Klinik"), ("adula", "Adula Klinik")]
 
@@ -2693,6 +2806,108 @@ def crawl_easyhr(c, session=None):
                 payload["description"] = _txt((dd.get("position") or {}).get("editor"))
         out.append(row(host, payload["url"], payload, "easyhr"))
         time.sleep(0.5)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# drv_bund: Deutsche Rentenversicherung Bund's own job portal (Drupal Views), drv-bund-karriere.de.
+# Its Reha-Zentren publish there, not on their own sites -- confirmed live 2026-09-29 (TASK-170):
+# reha-klinik-wendelstein.de, -hartwald.de and -hochstaufen.de 302 to a www host with no DNS record.
+# The registry careers_url is the listing filtered to one Ort (?field_location=<id>); each result
+# item names its Ort next to its link. crawl_wp_jobs is no fit: the portal's sitemap is every DRV
+# Bund job nationwide, and its detail pages carry no JSON-LD location, so every one of them got the
+# seed clinic's town. Pages are Drupal's 0-based ?page=N; a page with no result item is the board's
+# own end ("Die von Dir gewählten Suchparameter ergeben keine Treffer.").
+# ---------------------------------------------------------------------------
+DRV_BUND_ITEM_RX = re.compile(r'<div class="resultItem">(.*?)class="detailLink"', re.S)
+DRV_BUND_DETAIL_RX = re.compile(r'<section class="jobAdMainInfo">(.*?)<div class="jobAdButtonContainer">', re.S)
+
+
+def crawl_drv_bund(c, session=None):
+    cu = (c.get("careers_url") or "").strip()
+    if not cu:
+        return []
+    p = urlparse(cu)
+    qs = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True) if k != "page"]
+    items = {}
+    for page in itertools.count(0):
+        u = p._replace(query=urlencode(qs + [("page", str(page))])).geturl()
+        r = get(u, session=session)
+        if not r or not r.ok:
+            if page == 0:
+                return []   # nothing read at all: app/crawl.py's attempt/ok tally reports the transport failure
+            raise RuntimeError("drv_bund: listing page=%d failed (%s) -- board read stops short" % (page, getattr(r, "status_code", "no response")))
+        fresh = 0
+        for b in DRV_BUND_ITEM_RX.findall(re.sub(r"(?s)<!--.*?-->", "", r.text)):
+            href = re.search(r'href="([^"]+)"', b)
+            url = urljoin(r.url, href.group(1)) if href else None
+            if not url or url in items:
+                continue
+            place = re.search(r'<p class="globalTextBold">(.*?)</p>', b, re.S)
+            items[url] = (_txt(re.search(r"<h3[^>]*>(.*?)</h3>", b, re.S).group(1), 300), _txt(place.group(1), 200) if place else None)
+            fresh += 1
+        if not fresh:
+            break
+    out, crashes = _BoardTotalRows(), []
+    for url, (title, city) in items.items():
+        d = get(url, session=session)
+        m = DRV_BUND_DETAIL_RX.search(d.text) if d is not None and d.ok else None
+        if not m:
+            crashes.append((url, "detail page unreadable (%s)" % getattr(d, "status_code", "no response")))
+        payload = {"title": title, "org": "Deutsche Rentenversicherung Bund", "org_source": None,
+                   "loc": [{"city": city, "plz": None, "region": None}], "url": url, "page": url,
+                   "description": _txt(re.sub(r"(?s)<!--.*?-->", "", m.group(1))) if m else None}
+        out.append(row(p.netloc, url, payload, "drv_bund"))
+        time.sleep(0.3)
+    if crashes:
+        out.page_crashes = crashes
+    return out
+
+
+# ---------------------------------------------------------------------------
+# median: the MEDIAN group portal karriere.median-kliniken.de (TYPO3 median_job_portal), one listing
+# for ~120 facilities. The registry careers_url is the listing filtered to one Standort
+# (/de/jobs/0/0/<location id>/, the portal's own route). It renders 10 postings; the rest come from
+# the listing's own "load more" button (data-more -> JSON {html, more}) until a page names no `more`
+# (TASK-170, confirmed live 2026-09-29). Every detail page carries a full JobPosting JSON-LD.
+# crawl_wp_jobs is no fit: it also stored the unfiltered /de/jobs/ root and the page's canonical
+# filter link as postings, each titled with another site's first job and stamped with the seed town.
+# ---------------------------------------------------------------------------
+MEDIAN_ITEM_HREF_RX = re.compile(r'<section class="joboffer-item[^"]*">.*?href="([^"]*-de-j\d+\.html)"', re.S)
+MEDIAN_MORE_RX = re.compile(r'data-more="([^"]+)"')
+
+
+def crawl_median(c, session=None):
+    cu = (c.get("careers_url") or "").strip()
+    if not cu:
+        return []
+    r = get(cu, session=session)
+    if not r or not r.ok:
+        return []   # nothing read at all: app/crawl.py's attempt/ok tally reports the transport failure
+    parts, m = [r.text], MEDIAN_MORE_RX.search(r.text)
+    more = _html.unescape(m.group(1)) if m else None
+    while more:
+        rm = get(urljoin(r.url, more), session=session)
+        try:
+            page = rm.json() if rm is not None and rm.ok else None
+        except ValueError:
+            page = None
+        if not isinstance(page, dict):
+            raise RuntimeError("median: load-more page %s failed -- board read stops short" % more)
+        parts.append(page.get("html") or "")
+        more = page.get("more")
+    urls = list(dict.fromkeys(urljoin(r.url, _html.unescape(h)) for part in parts for h in MEDIAN_ITEM_HREF_RX.findall(part)))
+    out, crashes = _BoardTotalRows(), []
+    for u in urls:
+        d = get(u, session=session)
+        j = parse_job_page(d.text, d.url, c["name"]) if d is not None and d.ok else None
+        if not j or not j.get("title"):
+            crashes.append((u, "detail page unreadable (%s)" % getattr(d, "status_code", "no response")))
+            continue
+        out.append(row(urlparse(r.url).netloc, j["url"], j, "median"))
+        time.sleep(0.3)
+    if crashes:
+        out.page_crashes = crashes
     return out
 
 
@@ -2819,6 +3034,30 @@ LA_REGIO_LANDSHUT_PEDIATRIC_RX = re.compile(r"\bkinder|p[aä]diatrie", re.I)
 
 def split_la_regio_landshut(title):
     return "26103" if LA_REGIO_LANDSHUT_PEDIATRIC_RX.search(title or "") else "26108"
+
+
+# TASK-170: hessing-kliniken.softgarden.io is one board for 76111 (acute orthopaedics) and the two Hessing
+# Reha houses. Every posting's hiringOrganization is "Hessing Stiftung", which content matching files
+# under 76111 whatever the board pool says (confirmed live 2026-09-29: RH1585/RH2724 at 0 while their
+# own nursing postings sat on 76111). Only the title names a Reha house ("... für die orthopädische
+# Rehabilitationsklinik"); a title naming exactly one gets that house's registry name as its employer,
+# so R1_exact finds it. Naming both houses, or neither, leaves the posting as it was.
+# TASK-172: same shape on Klinikum Altmühlfranken's coveto board -- employer "Klinikum Altmühlfranken"
+# goes to the acute 57705 in Gunzenhausen, "... für unsere geriatrische Rehabilitation" is RH2456's.
+ORTHO_REHA_RX = re.compile(r"orthopädische\w*\s+Rehabilitation", re.I)
+GERI_REHA_RX = re.compile(r"geriatrische\w*\s+Rehabilitation", re.I)
+REHA_HOUSE_BOARDS = [
+    ({"76111", "RH1585", "RH2724"}, [(ORTHO_REHA_RX, "Orthopädische Rehabilitationsklinik der Hessing Stiftung"),
+                                     (GERI_REHA_RX, "Geriatrische Rehabilitation der Hessing Stiftung")]),
+    ({"57701", "57705", "RH2456"}, [(GERI_REHA_RX, "Klinikum Altmühlfranken Gunzenhausen Geriatrische Rehabilitation")]),
+]
+
+
+def reha_house(board_ids, title):
+    ids = {str(i) for i in board_ids}
+    houses = next((h for clinic_ids, h in REHA_HOUSE_BOARDS if ids & clinic_ids), [])
+    hits = [name for rx, name in houses if rx.search(title or "")]
+    return hits[0] if len(hits) == 1 else None
 
 
 def clean_talention_city(raw_city, pool_towns):
@@ -2998,6 +3237,9 @@ VENDORS = {
     "oracle": crawl_oracle,
     "dvinci": crawl_dvinci,
     "easyhr": crawl_easyhr,
+    "drv_bund": crawl_drv_bund,
+    "median": crawl_median,
+    "coveto": crawl_wp_jobs,   # server-rendered board + JobPosting pages, see routing.ADAPTERS
     "asklepios": crawl_asklepios,
     "erecruiter": crawl_erecruiter,
     "concludis_widget": crawl_concludis_widget,

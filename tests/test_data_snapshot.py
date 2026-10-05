@@ -84,3 +84,20 @@ def test_a_failed_refresh_of_a_stale_snapshot_still_reads_as_stale_afterwards(mo
     assert D._snap["at"] == old_at                                  # untouched, not bumped forward
     assert time.time() - D._snap["at"] > D.TTL                      # still reads as stale -> will retry
     assert D._snap["clinics"] == old_clinics                        # last good data still there to serve
+
+
+def test_the_board_hides_open_postings_of_excluded_role_classes(monkeypatch):
+    # TASK-177 (Ivan 2026-09-29, option A): rows relabeled to an excluded class stay in the DB and
+    # are hidden from the board by the snapshot query itself, using the live excluded set.
+    from app import config as A
+    from pflege_jobs import config as C
+    seen = {}
+
+    def fake_rest_get_all(path, params=None, page=1000, timeout=120):
+        seen[path] = params
+        return []
+    monkeypatch.setattr(A, "rest_get_all", fake_rest_get_all)
+    monkeypatch.setattr(C, "EXCLUDED_ROLE_CLASSES", {"pflegehelfer", "nicht_pflege"})
+    D._build()
+    assert seen["v_postings"]["status"] == "eq.open"
+    assert seen["v_postings"]["role_class"] == "not.in.(nicht_pflege,pflegehelfer)"

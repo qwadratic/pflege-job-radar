@@ -52,7 +52,7 @@ def jobposting_to_obs(row, towns):
     # crawlers/vendor_adapters.py's section-aware crawl_* functions when the job's own label is
     # known (personio/smartrecruiters/dvinci/rexx/mein-check-in/wp_jobs) -- see pflege_jobs/section.py.
     nursing_section_confirmed = section.job_confirmed_nursing(p.get("section_labels"))
-    role, rule = classify_role(title, "", nursing_section_confirmed=nursing_section_confirmed)
+    role, rule = classify_role(title, "", nursing_section_confirmed=nursing_section_confirmed, desc=desc)
     enr = {("enr_" + k): v for k, v in enrich_description(desc).items()}
     et = p.get("employmentType"); et = " ".join(et) if isinstance(et, list) else (et or "")
     now = datetime.now(timezone.utc).isoformat()

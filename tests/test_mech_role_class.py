@@ -1,3 +1,5 @@
+import pytest
+
 from pflege_jobs.classify import classify_role
 from pflege_jobs.config import EXCLUDED_ROLE_CLASSES
 from pflege_jobs.mechanics import get
@@ -44,7 +46,8 @@ def test_audit_fixes():
              ("Pflegeunterstützungskraft (w/m/d)", "Bürokaufmann/-frau", "pflegehelfer"),
              ("Mitarbeiter (m/w/d) im Hol- u. Bringedienst", "Schwestern-/Pflegediensthelfer/in", "nicht_pflege"),
              ("Stellvertretende AEMP-Leitung (m/w/d)", "Gesundheits- und Krankenpfleger/in", "nicht_pflege"),
-             ("Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)", "Lehrkraft - Schulen im Gesundheitswesen", "apn_experte"),
+             # TASK-186: teaching staff is not nursing (this row said apn_experte until 2026-09-30)
+             ("Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)", "Lehrkraft - Schulen im Gesundheitswesen", "nicht_pflege"),
              ("Kommissarische Funktionsleitung Anästhesiepflege (m/w/d)", "Gesundheits- und Krankenpfleger/in", "leitung"),
              ("Leiter - Pflege (m/w/d)", "Pflegedienstleiter/in", "leitung")]
     for title, hb, want in cases:
@@ -193,3 +196,308 @@ def test_speculative_application_titles_never_classify_as_a_real_role():
     # this check must not swallow real postings, only speculative-application titles.
     assert classify_role("Pflegefachkraft (m/w/d)", "")[0] == "pflegefachkraft"
     assert classify_role("Pflegefachkraft Intensivstation (m/w/d)", "")[0] == "pflegefachkraft"
+
+
+# TASK-177 (Ivan, 2026-09-29): Kinderpfleger/-in (Kita), Heilerziehungspfleger/-in (HEP) and Landschafts-/
+# Garten-/Parkpfleger are not nursing. strong_pflege's "pfleger\b|pflegerin\b|pflegerisch" matched inside
+# those very words, so their nicht_pflege hit was overridden and _ROLES filed them as pflegefachkraft /
+# apn_experte / leitung -- 110 open postings on 2026-09-29. Every title below is a real live posting title.
+def test_hep_kinderpfleger_and_gardening_pfleger_titles_are_not_nursing():
+    for title, rule in [
+        ("Heilerziehungspfleger (m/w/d)", "nicht_pflege:heilerziehung"),                                 # 7274
+        ("Heilerziehungspflegerin (m/w/d)", "nicht_pflege:heilerziehung"),                               # 7011
+        ("Heilerziehungspflegerinnen und -pfleger (m/w/d)", "nicht_pflege:heilerziehung"),               # 14978
+        ("Kinderpfleger (m/w/d) - Nürnberg", "nicht_pflege:kinderpfleger"),                              # 7063
+        ("Kinderpfleger/in (m/w/d)", "nicht_pflege:kinderpfleger"),                                      # 14543
+        ("Kinderpflegerin (m/w/d) für unsere neue Kinderwohngruppe", "nicht_pflege:kinderpfleger"),      # 14150
+        ("Erzieher, Kinderpfleger, Sozialpädagoge (o. ä. Abschlüsse) (m/w/d)", "nicht_pflege:erzieher"),  # 13592, was apn_experte
+        ("Heilerziehungspfleger / Erzieher / Heilpädagoge als Gruppenleitung Tagesförderstätte m/w/d",
+         "nicht_pflege:heilerziehung"),                                                                  # 14355, was leitung
+        ("Garten-und Landschaftspfleger (m/w/d)", "nicht_pflege:landschaftspflege"),                     # 14947
+    ]:
+        assert classify_role(title, "") == ("nicht_pflege", rule), title
+    # Only helper roles left once "Kinderpfleger" no longer reads as pflegefachkraft (13937).
+    assert classify_role("Heilerziehungspflegehelfer / Kinderpfleger / Altenpflegehelfer (m/w/d) für unsere "
+                         "Wohneinrichtung Kloster Holzen", "") == ("pflegehelfer", "pflegehelfer:altenpflegehelfer")
+
+
+def test_real_nursing_titles_next_to_hep_or_kinder_words_stay_nursing():
+    for title, want in [
+        ("Gesundheits- und Kinderkrankenpfleger (w/m/d)", "pflegefachkraft"),
+        ("Kinderkrankenschwester (m/w/d)", "pflegefachkraft"),
+        ("Kinderintensivpfleger (m/w/d)", "fachpflege"),
+        ("Kinderkrankenpflegerinnen und -pfleger (m/w/d)", "pflegefachkraft"),                            # 14970
+        ("Krankenschwester (m/w/d) Kinderpflege", "pflegefachkraft"),
+        ("Altenpfleger (m/w/d)", "pflegefachkraft"),
+        ("Pflegefachkraft (m/w/d)", "pflegefachkraft"),
+        ("Pflegehelfer (m/w/d)", "pflegehelfer"),
+        # a posting that also takes nurses stays a nursing posting (7091, 14989, 14011)
+        ("Pflegefachkraft (m/w/d) / Heilerziehungspfleger (m/w/d) auf geringfügiger Basis - Wohnen Rothenburg",
+         "pflegefachkraft"),
+        ("Heilerziehungspfleger, Erzieher, Gesundheits- und Krankenpfleger, Altenpfleger oder Pflegefachmann*",
+         "pflegefachkraft"),
+        ("Sozial- oder Sonderpädagoge, Pfleger mit Schwerpunkt Psychiatrie, Heilerziehungspfleger (m/w/d)",
+         "apn_experte"),
+    ]:
+        assert classify_role(title, "")[0] == want, title
+
+
+# TASK-177 extension ("nursing jobs only"): catering, grounds, animal-keeper, cleaning, foot-care/cosmetics and
+# childminder titles that the "pfleg" gate let in and the -pfleger precedence or the fallback kept. Live titles.
+def test_catering_grounds_animal_cleaning_cosmetic_and_childminder_titles_are_not_nursing():
+    for title, rule in [
+        ("Servicemitarbeiter (m/w/d) in unserer Patientenverpflegung", "nicht_pflege:verpflegung"),           # 15315
+        ("Betriebsassistenz (m/w/d) für Patientenbeherbergung und -verpflegung", "nicht_pflege:verpflegung"),  # 15316
+        ("Beschäftigung im Zuverdienst – Garten- und Anlagepflege (w/m/d)", "nicht_pflege:anlagepflege"),      # 15317
+        ("Tierpfleger (m/w/d) für die Keimfrei-Tierhaltung", "nicht_pflege:tierpfleg"),                        # 12297
+        ("Examinierter Tierpfleger für die Forschung (m/w/d)", "nicht_pflege:tierpfleg"),                      # 12814
+        ("Raumpfleger (m/w/d)", "nicht_pflege:raumpfleg"),                                                     # 12186
+        ("Zimmermädchen / Roomboy / Raumpfleger (m/w/d)", "nicht_pflege:raumpfleg"),                           # 14880
+        ("Kosmetiker und Fußpfleger (m/w/d) - Ganzjahresstelle", "nicht_pflege:kosmetik"),                     # 14963
+        ("Kosmetikerin (m/w/d) medizinische Fußpflege und medizinische Kosmetik", "nicht_pflege:kosmetik"),    # 15071
+        ("Qualifizierte Tagespflegeperson (m/w/d) für unsere nach Kneipp zertifizierte Kita in Kombination "
+         "mit unserer Manufaktur", "nicht_pflege:tagespflegeperson"),                                          # 14946
+    ]:
+        assert classify_role(title, "") == ("nicht_pflege", rule), title
+    # a nursing-section label skips the gate, the nicht_pflege terms still decide (live inbox titles)
+    assert classify_role("Fußpflege - Klinikum Main-Spessart", "", nursing_section_confirmed=True) == ("nicht_pflege", "nicht_pflege:fußpfleg")
+    assert classify_role("Podologe (m/w/d)", "", nursing_section_confirmed=True) == ("nicht_pflege", "nicht_pflege:podolog")
+    # elderly day care ("Tagespflege") is nursing work and stays in its class
+    for title, want in [("Pflegefachkraft (m/w/d) Tagespflege", "pflegefachkraft"),
+                        ("Krankenpfleger in Stockstadt am Main, Tagespflege Am Hübnerwald", "pflegefachkraft"),
+                        ("Pflegedienstleitung für die Tagespflege (m/w/d) als Krankheitsvertretung", "leitung"),
+                        ("Betreuungskraft (m/w/d) Tagespflege", "pflegehelfer")]:
+        assert classify_role(title, "")[0] == want, title
+
+
+# TASK-186 problem 1 (judge verdicts 2026-09-30): an Ausbildung offered under a plain staff title. The title
+# says "Operationstechnische Assistenten (m/w/d)"; only the body says it is a training place, so the title-only
+# classifier filed it as a kept class (ota_ata, pflegefachkraft) and the board listed it as a job. The markers
+# are what a training-place page states and a staff posting does not: the school-leaving certificate a school
+# leaver needs, and a training start date. Each excerpt is the real body text of a live posting (posting id in
+# the comment), abridged to the one passage that carries the marker, names and contact data dropped.
+_TRAINING_PAGE_EXCERPTS = [
+    ("ausbildungsbeginn", "Operationstechnischer Assistent (m/w/d)",                                # 12990
+     "Ausbildungsbeginn Die Ausbildung beginnt immer am zweiten Dienstag im September und die Ausbildungszeit "
+     "beträgt drei Jahre. Wir bieten… Eine abwechslungsreiche und umfassende Ausbildung Ein angenehmes "
+     "Arbeitsklima in einem aufgeschlossenen Team"),
+    ("hauptschulabschluss", "Operationstechnische Assistenten (m/w/d)",                             # 7376
+     "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss (oder gleichwertig) zusammen "
+     "mit: einer erfolgreich abgeschlossenen, mindestens zweijährigen Berufsausbildung - oder- der Erlaubnis zur "
+     "Führung der Berufsbezeichnung Krankenpflegehelfer/-in"),
+    ("realschulabschluss", "Operationstechnischer Assistent (OTA) (m/w/d)",                         # 12327
+     "Das solltest Du mitbringen: Realschulabschluss oder eine gleichwertige Schulbildung Belastbarkeit und "
+     "Teamfähigkeit, um den Anforderungen im OP-Saal gerecht zu werden Interesse für den medizinischen Bereich"),
+    ("mittelschulabschluss", "Pflegefachkraft (m/w/d)",                                             # 12646
+     "Zulassungsvoraussetzungen Mindestalter 17 Jahre oder Mittelschulabschluss mit einer erfolgreich "
+     "abgeschlossenen zweijährigen Berufsausbildung bzw. mit einjähriger Ausbildung zur staatlich anerkannten "
+     "Pflegefachhilfe Gesundheitliche Eignung"),
+    ("mittlere reife", "Pflegefachmann/-frau (m/d/w)",                                              # 12641
+     "Persönliche Voraussetzungen Abgeschlossene 10-jährige Schulbildung (Mittlere Reife, Fachschulhochreife)"),
+    ("mittlerer schulabschluss", "Ausbildungsplätze zur Pflegefachkraft (m/w/d)",                   # 15347
+     "Aufnahmevoraussetzungen Gesundheitliche Eignung zur Ausübung des Pflegeberufes Mittlerer Schulabschluss "
+     "oder eine andere gleichwertige, abgeschlossene Schulbildung"),
+]
+
+# Staff postings and boilerplate that mention "Ausbildung" without being one (all real, posting id in the comment).
+_STAFF_PAGE_EXCERPTS = [
+    ("profil", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",              # 12953
+     "Ihr Profil Abgeschlossene Ausbildung zum Gesundheits- und Krankenpfleger (m/w/d) oder zur "
+     "Pflegefachkraft (m/w/d) Hohe Sozialkompetenz und Kommunikationsfähigkeit Zuverlässigkeit und Teamfähigkeit"),
+    ("ota_profil", "Operationstechnische Assistenz (OTA), OP-Kraft oder MFA mit Weiterbildung",       # 15244
+     "Ihr Profil Abgeschlossene Ausbildung zur OTA, OP-Schwester/OP-Pfleger oder MFA mit entsprechender "
+     "Weiterbildung oder Erfahrung im OP-Dienst Idealerweise einige Jahre Berufserfahrung"),
+    ("praxisanleitung", "Freigestellte Praxisanleitung (m/w/d)",                                      # 5959
+     "Ab 01.09.2026 ist mit Beginn des neuen Ausbildungsjahres eine Teilzeitstelle (30 Std./Woche) als "
+     "Freigestellte Praxisanleitung (m/w/d) zu besetzen. Bitte bewerben Sie sich über den untenstehenden Link."),
+    ("arbeitgeber", "Examinierte Pflegefachkraft (m/w/d) - Erlangen",                                 # 7036
+     "Bei uns wird Ausbildung und Weiterbildung großgeschrieben: aktuell haben wir 22 Schüler*innen in drei "
+     "Ausbildungsjahren. Für kostenlose Getränke (Wasser) ist natürlich jederzeit gesorgt."),
+    ("hochschulabschluss", "Advanced Practice Nurse – (Endo-)Vaskuläre Chirurgie",                    # 6140
+     "eine abgeschlossene dreijährige Pflegeausbildung Engagement und Begeisterung für die Pflege und deren "
+     "Weiterentwicklung Dem Hochschulabschluss entsprechende gute Fach-, Methoden- und Sozialkompetenzen"),
+    ("navigation", "Operationstechnischen Assistenten (m/w/d) sowie OP Fachkraft",                    # 6620
+     "Jobs-mit Herz – Pflegekraft Initiativbewerbung Initiativbewerbung Ausbildungsplatz Kontakt Impressum"),
+    ("bildungsinstitut", "Pflegefachkraft (m/w/d) für unsere interdisziplinäre Intensivstation",      # 6610
+     "Das zugehörige Bildungsinstitut für Gesundheitsberufe bietet 120 Ausbildungsplätze für junge Menschen an."),
+]
+
+
+@pytest.mark.parametrize("marker, title, body", _TRAINING_PAGE_EXCERPTS, ids=[x[0] for x in _TRAINING_PAGE_EXCERPTS])
+def test_an_ausbildung_under_a_staff_title_is_read_from_the_body(marker, title, body):
+    assert classify_role(title, "")[0] != "ausbildung"                    # the title alone does not give it away
+    role, rule = classify_role(title, "", desc=body)
+    assert role == "ausbildung" and rule.startswith("ausbildung_body:"), (role, rule)
+
+
+@pytest.mark.parametrize("why, title, body", _STAFF_PAGE_EXCERPTS, ids=[x[0] for x in _STAFF_PAGE_EXCERPTS])
+def test_a_staff_posting_that_mentions_ausbildung_stays_what_its_title_says(why, title, body):
+    role, rule = classify_role(title, "", desc=body)
+    assert (role, rule) == classify_role(title, ""), (role, rule)
+
+
+def test_without_a_body_the_title_alone_decides_as_before():
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "")[0] == "ota_ata"
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "", desc="")[0] == "ota_ata"
+    assert classify_role("Operationstechnische Assistenten (m/w/d)", "", desc=None)[0] == "ota_ata"
+
+
+def test_mechanic_try_reads_the_ad_text():
+    r = get("role_class").run({"title": "Operationstechnische Assistenten (m/w/d)", "hauptberuf": "", "offer_kind": "",
+                               "description": "Ihre Voraussetzungen für die Ausbildung Sie haben einen Hauptschulabschluss"})
+    assert r["result"] == {"role_class": "ausbildung", "excluded": True}
+    assert r["rule"].startswith("ausbildung_body:")
+
+
+# TASK-186 problem 2 (judge verdicts 2026-09-30, "nonnursing_job"): clear non-nursing clusters that sat on the
+# board as nursing roles because their title carries a nursing token ("Pflegepädagoge", "Pflege", "ATA", "Station")
+# or a leadership word the pflege_gate accepts ("Bereichsleitung"). Every title is a real live posting title (posting
+# id in the comment); a (title, hauptberuf) pair is given where the Arbeitsagentur occupation took part.
+_NOT_NURSING_TITLES = [
+    # teaching staff and school administration: patterns.json role.rules, ahead of ota_ata / hebamme / apn_experte
+    ("teach_pflegepaedagoge", "Pflegepädagoge (m/w/d)", ""),                                                     # 10140
+    ("teach_pflegepaedagoge_lehrkraft", "Pflegepädagoge / Lehrkraft für Pflegeberufe (m/w/d)", ""),               # 15087
+    ("teach_lehrkraft", "Lehrkraft (m/w/d) für die Berufsfachschule für Pflege / Qualifikationsebene 3", ""),     # 10517
+    ("teach_lehrkraft_ota", "Lehrkraft für OTA: Pflegepädagoge/ Medizinpädagoge/ Berufspädagoge (m/w/d)", ""),    # 12331
+    ("teach_lehrkraft_ata", "Lehrkraft Berufsfachschule ATA-OTA - Bereich OTA (m/w/d)", ""),                     # 15358
+    ("teach_medizinpaedagoge", "Pflege-/Medizinpädagoge (m/w/d)", ""),                                           # 6748
+    ("teach_pflegepaedagoge_oder_lehrer", "Pflegepädagoge oder Lehrer für Pflegeberufe (w/m/d)", ""),            # 7331
+    # the shape the brief names; no live posting carries it without a Pflegepädagoge next to it yet
+    ("teach_lehrer_alone", "Lehrer für Pflegeberufe (m/w/d)", ""),
+    ("teach_dozent", "Dozent:in (m/w/d) Basis Pflege", ""),                                                      # 15073
+    ("teach_hauptberuf", "Pflege- oder Medizinpädagoge mit Bachelor-Abschluss (m/w/d)",
+     "Lehrkraft - Schulen im Gesundheitswesen"),                                                                 # 10707
+    ("school_lehrsekretariat", "Lehrsekretariat Hebammenwissenschaft", ""),                                      # 10519
+    ("school_teamassistenz", "Teamassistenz ATA-OTA-Berufsfachschule", ""),                                      # 12834
+    ("school_verwaltungskraft", "Verwaltungskraft (m/w/d) für die Berufsfachschule der Evangelischen PflegeAkademie", ""),  # 14911
+    ("school_stundenplan", "Koordinator Unterrichtsplanung / Zentrale Stundenplanung Berufsfachschule Pflege (m/w/d)", ""),  # 6847
+    ("school_leitung_der_akademie", "Leitung (m/w/d) der Akademie - Dienstleistungszentrum Bildung / Pflegeschulen", ""),     # 10503
+    ("school_teamassistenz_akademie", "Teamassistenz der Akademieleitung für Gesundheits- und Pflegeberufe (m/w/d)", ""),   # 15243
+    # medical assistants in the spellings the old pattern missed, physicians, doctors' secretaries
+    ("mfa_slash_dash", "Medizinische/-r Fachangestellte/-r (m/w/d) für die Zentrale Notaufnahme", ""),            # 10446
+    ("mfa_abbreviated", "Med. Fachangestellte (w/m/d) - für den Stützpunkt Notaufnahme", ""),                     # 10124
+    ("mfa_funktionsdienst", "med. Fachangestellte/r im Funktionsdienst", ""),                                    # 14769
+    ("arzt_gender_colon", "Ärzt:in in Weiterbildung - für die Station", ""),                                     # 12311
+    ("arzt_leitung", "Stellvertretende ärztliche Leitung (m/w/d) für die Zentrale Notaufnahme", ""),              # 10440
+    ("arzt_bereichsleitung", "Ärztliche Bereichsleitung MVZ Rheumatologie", ""),                                 # 14819
+    ("arztsekretaer", "Arztsekretär (m/w/d)  Vorzimmer Station 34", ""),                                         # 12718
+    # IT / EDV
+    ("it_anwendungsbetreuer", "ORBIS Anwendungsbetreuer (m/w/d) - Schnittstelle Pflege & IT", ""),               # 10441
+    ("it_edv", "Mitarbeiter in der Stabstelle EDV Pflege (m/w/d)", ""),                                          # 13636
+    # DKG Fachweiterbildung course pages (the title is the course name, not a job)
+    ("course_dkg_op", "Fachweiterbildung (DKG) Pflege im Operationsdienst", ""),                                 # 6931
+    ("course_dkg_onko", "Fachweiterbildung (DKG) Pflege in der Onkologie", ""),                                  # 6932
+    ("course_intensiv", "Fachweiterbildung für Intensiv- und Anästhesiepflege", ""),                             # 6635
+    # not hospital work at all: aggregator boards, laboratory and sales titles that only pass the gate on a
+    # leadership or ATA/OTA token
+    ("retail_frischetheke", "Bereichsleiter Frischetheke (m/w/d)", ""),                                          # 15006
+    ("retail_frischetheke_bereichsleitung", "Bereichsleitung Frischetheke (m/w/d)", ""),                         # 15000
+    ("industry_steine_erden", "Bereichsleiter (m/w/d) Steine & Erden", ""),                                      # 14984
+    ("industry_standortmanager", "Bereichsleiter Produktion / Standortmanager (m/w/d)", ""),                     # 14986
+    ("sales_beratung_verkauf", "Fachbereichsleitung Beratung & Verkauf", ""),                                    # 15020
+    ("petrol_station", "Verkäufer Stationsleitung (m/w/d) Tankstelle", ""),                                      # 14942
+    ("radiology_ct", "Bereichsleitung Computertomographie (m/w/d)", ""),                                         # 6740
+    ("radiology_mrt", "Bereichsleitung MRT (m/w/d)", ""),                                                        # 6741
+    ("laboratory_blutbank", "MTL / Bereichsleitung Blutbank (m/w/d)", ""),                                       # 6864
+    ("laboratory_laborant", "Laborant - Milchwirtschaftlicher Laborant, CTA, ATA, MTLA, PTA (m/w/d)", ""),       # 14944
+    ("pharma_berater", "PTA, BTA, CTA, OTA oder MTLA als Pharmaberater / Pharmareferent im Innendienst (m/w/x)", ""),  # 14493
+]
+
+# Neighbours that name the same words and are nursing (or at least not part of the clusters above).
+_STILL_NURSING_TITLES = [
+    ("praxisanleiter_paedagogisch", "Praxisanleiter (m/w/d) - Pädagogisches Kompetenzzentrum", "praxisanleitung"),            # 7379
+    ("practical_instruction_nurse", "Pflegefachkraft (m/w/d) für den Schwerpunkt Praxisbegleitung und fachpraktischem Unterricht",
+     "pflegefachkraft"),                                                                                                       # 6428
+    ("ward_team_assistant", "Teamassistentin (m/w/d) der Station 3 mit den Fachbereichen Geburtshilfe und Gynäkologie",
+     "sonstige_pflege"),                                                                                                       # 13004
+    # an office clerk outside a school: not part of the school cluster, left as it was for the owner (no body text)
+    ("clerk_in_nursing_service", "Verwaltungskraft im Pflegedienst (m/w/d)", "sonstige_pflege"),                              # 14307
+    ("job_with_fachweiterbildung", "Pflegefachkraft (m/w/d) mit Fachweiterbildung in der Psychiatrie, Psychosomatik und Psychotherapie",
+     "fachpflege"),                                                                                                            # 11299
+    ("job_with_fachweiterbildung_notfall", "Gesundheits- und Krankenpfleger (m/w/d) mit Fachweiterbildung Notfallpflege", "fachpflege"),  # 6082
+    ("nursing_bereichsleitung", "Stellvertretende Bereichsleitung 5/6 (w/d/m)", "leitung"),                                   # 7326
+    ("wohnbereichsleitung", "Wohnbereichsleitung (m/w/d)", "leitung"),                                                        # 13595
+    ("nurse_or_mtra", "Gesundheits- und Krankenpfleger (m/w/d) oder MTRA (m/w/d) im Herzkatheter-Labor in Voll- oder Teilzeit",
+     "pflegefachkraft"),                                                                                                       # 5858
+    ("mfa_or_nurse", "MFA oder Pflegefachkraft (m/w/d) für die Ambulanz", "pflegefachkraft"),                                 # TASK-89
+    ("hygienefachkraft", "Hygienefachkraft (m/w/d)", "apn_experte"),                                                          # 13200, owner decision
+    ("stationsleitung", "Stationsleitung (m/w/d) Dialyse", "leitung"),                                                        # 6064
+]
+
+
+@pytest.mark.parametrize("why, title, hauptberuf", _NOT_NURSING_TITLES, ids=[x[0] for x in _NOT_NURSING_TITLES])
+def test_clear_non_nursing_titles_are_not_nursing(why, title, hauptberuf):
+    role, rule = classify_role(title, hauptberuf)
+    assert role == "nicht_pflege" and rule.startswith("nicht_pflege:"), (role, rule)
+
+
+@pytest.mark.parametrize("why, title, want", _STILL_NURSING_TITLES, ids=[x[0] for x in _STILL_NURSING_TITLES])
+def test_neighbours_of_the_non_nursing_clusters_stay_nursing(why, title, want):
+    assert classify_role(title, "")[0] == want, title
+
+
+# TASK-186 problem 3 (judge verdicts 2026-09-30, "no_job_text"): a page that is not a vacancy was stored as one. The
+# mechanism that already exists for that is the speculative-application check: the row is classified nicht_pflege
+# with a rule that names the reason (raw inbox row stays, the ack says "skipped: nicht_pflege"), never dropped
+# silently. The pages below say there is nothing open; each excerpt is real body text of a live page (posting id in
+# the comment), contact data and the clinic name dropped.
+_NO_VACANCY_PAGES = [
+    ("career_page_none_open", "Gesundheits- / Krankenpfleger",                                      # 12173
+     "Patientenportal Derzeit haben wir keine offenen Stellen im Stationsbereich zu besetzen. Wir freuen uns aber "
+     "über jede Initiativbewerbung."),
+    ("filtered_list_none", "Gesundheits- und Krankenpfleger Intensivstation Neurochirurgie (m/w/d)",   # 12307
+     "Suchen X Filter zurücksetzen 108 offene Stellenausschreibungen Leider sind derzeit keine passenden "
+     "Stellenangebote in diesem Bereich vorhanden. Bitte passen Sie die Suchfilter an. Alle Stellenangebote anzeigen "
+     "Der verwendete Link enthält keine Treffer."),
+    ("search_empty", "Stellvertretende Stationsleitung (m/w/d) für die Intensivstation",            # 11892
+     "Atmungstherapeut (m/w/d) Vollzeit | Standort: an beiden Standorten ›› Mehr Informationen Für Ihre Suche wurden "
+     "leider keine Stellenanzeigen gefunden."),
+]
+
+# The same words in a real vacancy, or other words that only look alike (all real, id in the comment).
+_VACANCY_PAGES = [
+    ("housing_sentence", "Pflegefachkraft Innere Medizin (w|m|d)",                                   # 6384
+     "Die Tätigkeit ist entsprechend Ihrer Qualifikation mit P7 TVöD-K/VKA bewertet. Derzeit haben wir leider keine "
+     "Möglichkeit, Wohnraum im Rahmen des Einstellungsprozesses zu vermitteln. Wir freuen uns über Ihre Online-Bewerbung."),
+    ("faq_initiative", "Akademisierte Pflegefachkraft (m/w/d) B.A. oder B.Sc.",                      # 13142
+     "Kann ich mich initiativ bewerben? Sollten Sie aktuell keine passende Stelle auf unserem Stellenportal finden, "
+     "können Sie uns sehr gern auch initiativ eine Bewerbung zukommen lassen."),
+    ("initiative_footer", "Examinierte Pflegefachkraft (m/w/d)",                                    # 14876
+     "Wir freuen uns über Initiativbewerbungen von examinierten Pflegefachkräften ( m/w/d ) für eine Voll- oder "
+     "Teilzeitbeschäftigung. Sofern wir aktuell keine geeignete Stelle anbieten können, nehmen wir Ihre Bewerbung "
+     "gerne in unseren Bewerberpool auf."),
+    # Composed, not frozen: a real vacancy (12953) that also says there is nothing open for ANOTHER department. The
+    # sentence is the one from 12174; a vacancy states its own Aufgabengebiet or Profil, and either one is enough.
+    ("none_elsewhere_with_both_sections", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Aufgabengebiet Ganzheitliche Pflege "
+     "und zugewandte Betreuung der Patienten Verantwortlichkeit für die Umsetzung des Pflegeprozesses Ihr Profil "
+     "Abgeschlossene Ausbildung zum Gesundheits- und Krankenpfleger (m/w/d) oder zur Pflegefachkraft (m/w/d) Hohe "
+     "Sozialkompetenz und Kommunikationsfähigkeit Wir bieten Ihnen: Unbefristeter Arbeitsvertrag"),
+    ("none_elsewhere_with_tasks_only", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Aufgabengebiet Ganzheitliche Pflege "
+     "und zugewandte Betreuung der Patienten Verantwortlichkeit für die Umsetzung des Pflegeprozesses"),
+    ("none_elsewhere_with_profile_only", "Pflegefachkraft (m/w/d) oder Pflegefachhelfer (m/w/d) für Pflegestation",
+     "Derzeit haben wir keine offenen Stellen im Funktionsbereich zu besetzen. Ihr Profil Abgeschlossene Ausbildung zum "
+     "Gesundheits- und Krankenpfleger (m/w/d) oder zur Pflegefachkraft (m/w/d) Hohe Sozialkompetenz und Kommunikationsfähigkeit"),
+]
+
+
+@pytest.mark.parametrize("why, title, body", _NO_VACANCY_PAGES, ids=[x[0] for x in _NO_VACANCY_PAGES])
+def test_a_page_that_says_nothing_is_open_is_not_a_vacancy(why, title, body):
+    assert classify_role(title, "")[0] not in EXCLUDED_ROLE_CLASSES          # the title alone reads like a job
+    assert classify_role(title, "", desc=body) == ("nicht_pflege", "no_vacancy_page")
+
+
+@pytest.mark.parametrize("why, title, body", _VACANCY_PAGES, ids=[x[0] for x in _VACANCY_PAGES])
+def test_a_vacancy_that_only_mentions_nothing_open_elsewhere_stays_a_vacancy(why, title, body):
+    assert classify_role(title, "", desc=body) == classify_role(title, "")
+    assert classify_role(title, "")[0] not in EXCLUDED_ROLE_CLASSES
+
+
+def test_a_listing_page_titled_stellenangebote_is_not_a_vacancy():
+    # 12681: the career portal's landing page; a plural "Stellenangebote" cannot name one job, whatever else
+    # the title says ("Pflegefachkräfte" is a strong nursing word, hence a rule in role.rules, not the nicht_pflege list)
+    role, rule = classify_role("Pflegejobs: Stellenangebote für Pflegefachkräfte", "")
+    assert role == "nicht_pflege" and rule.startswith("nicht_pflege:"), (role, rule)
+    # a real posting whose title says "Stellenangebot" in the singular stays one (14875)
+    assert classify_role("Stellenangebot als Gesundheits- und Krankenpfleger / Altenpfleger (m/w/d)", "")[0] == "pflegefachkraft"

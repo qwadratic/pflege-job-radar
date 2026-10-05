@@ -82,3 +82,23 @@ def test_parse_on_a_real_saved_page_reads_job_count_title_department_and_permali
 def test_is_klinikum_passau_fingerprints_the_real_saved_page():
     resp = type("R", (), {"ok": True, "text": FIXTURE.read_text(encoding="utf-8")})()
     assert kp.is_klinikum_passau(resp)
+
+
+def test_crawl_classifies_a_training_place_from_its_own_description(monkeypatch):
+    # TASK-186: Klinikum Passau lists its training places on the same board as its jobs, under a title that
+    # reads like a role. The body (real excerpt of a live posting) carries the admission requirements.
+    import requests
+
+    class _Resp:
+        ok = True
+        status_code = 200
+        text = ('<li class="job_1"><span class="vacancy-header">Pflegefachkraft (m/w/d)'
+                '<a class="vacancy-externalurl" href="https://x/1">Copy to Clipboard</a></span>'
+                '<div class="vacancy-description">Aufnahmevoraussetzungen Gesundheitliche Eignung zur Ausübung des '
+                'Pflegeberufes Mittlerer Schulabschluss oder eine andere gleichwertige, abgeschlossene Schulbildung'
+                '</div><span class="vacancy-from">Stelle frei ab:</span>01.09.2026</li>')
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _Resp())
+    clinic = {"clinic_id": "K1", "name": "Klinikum Passau", "town": "Passau", "careers_url": "https://klinikum-passau.de/karriere"}
+    rows, _stats = kp.crawl(clinic, {"passau"})
+    assert [r["role_class"] for r in rows] == ["ausbildung"]

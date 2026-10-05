@@ -14,6 +14,7 @@ def _compile():
     g["_PFLEGE"] = C.rx(C.PFLEGE_TOKEN)
     g["_NICHT"] = C.rx(C.NICHT_PFLEGE)
     g["_STRONG_T"] = C.rx(C.STRONG_PFLEGE_TITLE)
+    g["_AUSB_BODY"], g["_NO_VACANCY"] = C.rx(C.AUSBILDUNG_BODY), C.rx(C.NO_VACANCY_BODY)
     g["_ROLES"] = [(n, C.rx(p)) for n, p in C.ROLE_RULES]
     g["_QUAL"] = [(n, C.rx(p)) for n, p in C.QUALIFICATION_HINT]
     g["_DEPT"] = [(n, C.rx(p)) for n, p in C.DEPARTMENT_HINT]
@@ -22,6 +23,7 @@ def _compile():
     g["_EMAIL"] = re.compile(C.EMAIL)
     g["_PAY"], g["_PAYTXT"], g["_REQH"], g["_REQS"], g["_EXP"] = C.rx(C.PAY_GRADE), C.rx(C.PAY_TEXT), C.rx(C.REQ_HEAD), C.rx(C.REQ_STOP), C.rx(C.EXPERIENCE)
     g["_TASKH"], g["_TASKSTOP"] = C.rx(C.TASK_HEAD), C.rx(C.TASK_STOP)
+    g["_DANCHOR"] = [C.rx(p) for p in C.DEPT_ANCHOR]
     g["_LANG"], g["_BONUS"], g["_CHILD"], g["_ANERK"] = C.rx(C.LANGUAGE_REQ), C.rx(C.BONUS), C.rx(C.CHILDCARE), C.rx(C.ANERKENNUNG)
 
 
@@ -49,6 +51,18 @@ from .posting_signal import GENDER_MARKER as _POSTING_SHAPED  # noqa: E402
 _SPECULATIVE_APPLICATION_RX = re.compile(r"^\s*(initiativbewerbung(?:en)?|blitzbewerbung)\b", re.I)
 
 _JOB_URL_HOST_RX = re.compile(r"^https?://([^/]+)", re.I)
+
+# TASK-177: a "-pfleg-" word that itself contains a nicht_pflege term IS that non-nursing occupation --
+# Heilerziehungspfleger, Kinderpflegerin, Landschaftspfleger, Tierpfleger, Raumpfleger (Ivan, 2026-09-29).
+# strong_pflege's generic "pfleger\b|pflegerin\b|pflegerisch" matched inside exactly those words, so their
+# own nicht_pflege hit was always overridden (and _ROLES' "pfleger\b" filed them as pflegefachkraft).
+# Such a word, with an elided partner ("Heilerziehungspflegerinnen und -pfleger"), is not nursing
+# evidence for the strong_pflege check or the _ROLES loop; the nicht_pflege check itself still sees it.
+_PFLEG_WORD_RX = re.compile(r"\w*pfleg\w*(?:\s*(?:und|oder|/)\s*-\w+)?")
+
+
+def _drop_nicht_pfleg_words(s):
+    return _PFLEG_WORD_RX.sub(lambda m: " " if _NICHT.search(m.group(0)) else m.group(0), s)
 
 # TASK-142: a tariff name immediately preceded/followed by one of these phrases is being used as a
 # comparison benchmark ("angelehnt an TVöD", "TVöD angelehnt", "über dem Tarif der TVöD-K"), not stated
@@ -134,7 +148,7 @@ def classify_employer(name: str):
     return "unknown", "no_match"
 
 
-def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursing_section_confirmed: bool = False):
+def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursing_section_confirmed: bool = False, desc: str = ""):
     """-> (role_class, rule). Evaluated on title + hauptberuf; offer_kind AUSBILDUNG forces ausbildung.
 
     nursing_section_confirmed: True when the job's OWN vendor-provided category/department label
@@ -154,9 +168,25 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
         für DRG/PEPP") even inside a confirmed "Pflege, Patientenmanagement & Dokumentation"/
         "Pflegedienst" bucket -- both HR groupings that also carry MFAs, Kodierfachkräfte,
         Physiotherapeuten etc. Leaving step 2 active is what keeps those correctly excluded even
-        though step 1 no longer blocks them on the way in.
+        though step 1 no longer blocks them on the way in. A strong token only counts outside a
+        "-pfleg-" word that is itself a nicht_pflege term (TASK-177, _drop_nicht_pfleg_words).
       - Steps 3 (offer_kind AUSBILDUNG/PRAKTIKUM_TRAINEE) and 4 (the _ROLES loop, which is what
         detects pflegehelfer) always run unchanged: "still filter helpers/learners" does not relax.
+
+    TASK-186: patterns.json's role.rules carries one nicht_pflege rule right after ausbildung -- teaching staff
+    and school administration (Pflegepädagoge, Lehrkraft, Lehrsekretariat) plus a few occupations that only reach
+    this function through a nursing-looking word ("Laborant ... ATA", "Verkäufer Stationsleitung"). It lives in the
+    ordered rules, not in the nicht_pflege regex, because those titles carry a word strong_pflege would otherwise
+    honour (Pflegepädagoge, Stationsleitung, ATA) and the rule has to beat ota_ata/hebamme/apn_experte/leitung.
+
+    desc (TASK-186): the posting's own body, when the caller has it. An Ausbildung is often posted under a
+    plain staff title ("Operationstechnische Assistenten (m/w/d)") and only its body says so: the school-leaving
+    certificate it asks of a school leaver, its Ausbildungsbeginn (patterns.json role.ausbildung_body). Such a
+    body classifies as ausbildung right after the offer_kind steps. "abgeschlossene Ausbildung als ..." in a
+    staff profile is not a marker. A body that says nothing is open ("Derzeit haben wir keine offenen Stellen",
+    role.no_vacancy_body) and has no Aufgaben/Profil section of its own is a page with no job: nicht_pflege /
+    no_vacancy_page, right after the speculative-application title (a real vacancy that says so about ANOTHER
+    department states its own sections and is left alone). No desc = title only, as before.
 
     Checked before all of that: a speculative-application title ("Initiativbewerbung Pflegefachkraft
     (m/w/d)", "Blitzbewerbung Ärzte (m/w/d)") is never a genuine open posting, no matter which role it
@@ -166,16 +196,22 @@ def classify_role(title: str, hauptberuf: str = "", offer_kind: str = "", nursin
     """
     if _SPECULATIVE_APPLICATION_RX.search(title or ""):
         return "nicht_pflege", "speculative_application"
+    if _NO_VACANCY.search(norm_text(desc)) and not (extract_section(desc, _TASKH, _TASKSTOP) or extract_section(desc, _REQH, _REQS)):
+        return "nicht_pflege", "no_vacancy_page"
     s = norm_text(f"{title} || {hauptberuf}")
     if not _PFLEGE.search(s):                      # gate first: Ausbildung Elektroniker is not nursing
         if not nursing_section_confirmed:
             return "nicht_pflege", "no_pflege_token"
-    if _NICHT.search(s) and not _STRONG_T.search(norm_text(title)):
+    if _NICHT.search(s) and not _STRONG_T.search(_drop_nicht_pfleg_words(norm_text(title))):
         return "nicht_pflege", f"nicht_pflege:{_NICHT.search(s).group(0)}"
     if offer_kind == "AUSBILDUNG":
         return "ausbildung", "offer_kind:AUSBILDUNG"
     if offer_kind == "PRAKTIKUM_TRAINEE":
         return "werkstudent_praktikum", "offer_kind:PRAKTIKUM_TRAINEE"
+    m = _AUSB_BODY.search(norm_text(desc))
+    if m:
+        return "ausbildung", f"ausbildung_body:{m.group(0)}"
+    s = _drop_nicht_pfleg_words(s)
     for name, r in _ROLES:
         m = r.search(s)
         if m:
@@ -267,11 +303,23 @@ def department_hint(title: str, desc: str = ""):
     08141/99-6103' -- a phone-directory line entirely outside any Aufgaben/Profil section on that same
     posting's page -- and 'verfügt über ... eine Chest Pain Unit, eine Stroke Unit, eine Akutgeriatrie'
     -- a hospital-wide intro paragraph on a Gynäkologie/Geburtshilfe posting, posting_id 10767 -- both
-    produce no department label here, confirmed live)."""
+    produce no department label here, confirmed live).
+
+    One addition (TASK-186): when title, Aufgaben and Profil name no department at all, the ward the posting
+    names in its own recruiting statement is read (see the comment below)."""
     tasks = extract_section(desc, _TASKH, _TASKSTOP)
     profil = extract_section(desc, _REQH, _REQS)
     s = norm_text(" || ".join(x for x in (title, tasks, profil) if x))
-    return "|".join(n for n, r in _DEPT if r.search(s)) or None
+    found = [n for n, r in _DEPT if r.search(s)]
+    if not found:
+        # TASK-186: a generic title ("Pflegefachkraft (m/w/d)") with the ward named only in the posting's own
+        # recruiting statement ("... sucht für die Station M62 (Dialyse) ab sofort ...") or in a board's "Bereich ...
+        # Einstiegsdatum" header: read those phrases (patterns.json enrichment.dept_anchor), nothing else of the
+        # body -- and only when title and sections named no department, so an answer that exists is never widened.
+        d = norm_text(desc)
+        s = " || ".join(m.group(1) for r in _DANCHOR for m in r.finditer(d))
+        found = [n for n, r in _DEPT if r.search(s)]
+    return "|".join(found) or None
 
 
 def fuzzy_key(title: str, employer: str, city: str) -> str:

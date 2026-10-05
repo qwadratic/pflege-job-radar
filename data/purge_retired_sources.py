@@ -1,4 +1,5 @@
-"""Purge Arbeitsagentur (30) + aggregator (40) data from Supabase, register source 25, sync clinic status values.
+"""Purge Arbeitsagentur (30) + aggregator (40) data from Supabase, register source 25 (step g, the clinic status sync
+from data/registry/clinics.csv, was removed with the CSV in TASK-175).
 Backs up to backups/ first. Idempotent.
   set -a; . ./.env; set +a; python3 data/purge_retired_sources.py [--dry]"""
 import json, os, sys, time
@@ -126,18 +127,8 @@ if not DRY:
     print("crawl_runs unlinked:", r.status_code, r.text[:100])
 print("deleted sources:", delete("sources", "source_id=in.(30,40)"))
 
-# g. clinic status values: CSV (canonical, cleaned by krankenhausplan._status) -> DB
-import csv
-csv_status = {r["clinic_id"]: r["status"] for r in csv.DictReader(open("/home/exedev/repo/data/registry/clinics.csv", encoding="utf-8"))}
-db_status = {x["clinic_id"]: x["status"] for x in page("clinics", "clinic_id,status", "", "clinic_id")}
-diff = [(cid, db_status.get(cid), st) for cid, st in csv_status.items() if cid in db_status and db_status[cid] != st]
-print("clinic status fixes:", len(diff))
-for cid, old, new in diff:
-    if DRY:
-        print("  DRY", cid, old, "->", new); continue
-    r = requests.patch(f"{U}/clinics?clinic_id=eq.{cid}", headers={**H, "Prefer": "return=minimal"}, json={"status": new}, timeout=60)
-    if r.status_code >= 300:
-        print("  ERR", cid, r.status_code, r.text[:100])
+# g. (removed, TASK-175) pushed data/registry/clinics.csv's status values into the DB. The DB is the registry
+# now and the CSV is gone; a status change goes through tools/apply_clinic_corrections.py.
 
 # h. P&I seeds are routing facts (Helios walls its own site; its P&I board answers): persist ats_type/careers_url.
 sys.path.insert(0, "/home/exedev/repo")

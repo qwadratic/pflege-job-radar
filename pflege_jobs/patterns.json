@@ -74,8 +74,10 @@
  },
  "role": {
   "pflege_gate": "pfleg|betreuungskraft|betreuungskräfte|alltagsbegleit|\\bstation(en)?\\b|op-bereich|op-fachkr|op-kraft|funktionsdienst|intensivstation|notaufnahme|kreißsaal|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|\\bapn\\b|\\bnurses?\\b|stationsleit|bereichsleit|praxisanleit|nachtwache|hygienefachkraft|hygienebeauftragte|advanced practice|fachweiterbildung|critical care|kinderintensiv|intensivfachkr|\\bgkp\\b|\\bguk\\b|\\bop[- ]?leit(?:ung|er)\\b",
-  "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|medizinische[nr]?/?r? fachangestellte[nr]?|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik|buchhalt|controlling",
+  "nicht_pflege": "facharzt|fachärzt|oberarzt|oberärzt|assistenzarzt|assistenzärzt|chefarzt|chefärzt|\\barzt\\b|ärztin\\b|\\bärzte\\b|psycholog|psychotherapeut|bewegungstherapeut|sporttherapeut|rettungs|notfallsanit|sanitäter|arzthelfer|(?:medizinische[nr]?|med\\.)(?:\\s*/\\s*-?r)?\\s+fachangestellte[nr]?|\\bmfa\\b|\\bmta\\b|mtra|mtla|physiotherap|ergotherap|logopäd|heilerziehung|kinderpfleger|tierpfleg|\\braumpfleg|fu(?:ß|ss)pfleg|podolog|kosmetik|tagespflegeperson|verpflegung|\\berzieher|sozialpädag|hauswirtschaft|reinigung|\\bkoch\\b|köchin|medizincontroll|kodier|schulleit|niederlassungsleit|bildungsbegleit|restaurant|küche|gastronom|hol-? ?u(nd)?\\.? ?bringe?dienst|bringdienst|patientenbegleit|patiententransport|\\baemp\\b|\\bzsva\\b|sterilgut|physician assistant|arztassistent|empfang|sekretariat|\\bit-\\b|haustechnik|buchhalt|controlling|(?:park|garten|grünflächen|grünanlagen|landschafts|anlagen?)pflege|(?:ä|ae)rzt[:*_/]in|(?:ä|ae)rztliche[rnms]?\\b|arztsekret|\\bedv\\b|anwendungsbetreu|^\\s*fachweiterbildung|frischetheke|standortmanager|steine\\s*&\\s*erden|beratung\\s*&\\s*verkauf|computertomographie|\\bmrt\\b|\\bmtl\\b",
   "strong_pflege": "pflegefach|pflegekr[aä]ft|pfleger\\b|pflegerin\\b|pflegerisch|pflegedienst|pflegeexpert|pflegepädagog|op-pflege|krankenpfleg|altenpfleg|op-fachkr|krankenschwester|hebamme|entbindungs|\\bota\\b|\\bata\\b|operationstechn|anästhesietechn|anaesthesietechn|stationsleit|praxisanleit|\\bnurse\\b|\\bapn\\b",
+  "ausbildung_body": "ausbildungsbeginn|(?:haupt|real|mittel)schulabschluss|mittlere[rn]? (?:reife|schulabschluss)",
+  "no_vacancy_body": "keine\\s+(?:offenen\\s+|passenden\\s+)?(?:stellen\\b|stellenangebote|stellenanzeigen)",
   "rules": [
    {
     "role_class": "werkstudent_praktikum",
@@ -84,6 +86,10 @@
    {
     "role_class": "ausbildung",
     "re": "\\bausbildung\\b|\\bazubi|auszubildende|\\(ausbildung\\)|duales studium|dualstudium"
+   },
+   {
+    "role_class": "nicht_pflege",
+    "re": "(?:pflege|medizin)p(?:ä|ae)dagog|lehrkr[aä]ft|lehrer(?:in)?\\b|\\bdozent|lehrsekretariat|unterrichtsplanung|leitung[^|]{0,15}der akademie|(?:verwaltungskraft|teamassistenz)[^|]{0,60}(?:schule|akademie)|laborant|pharmaberater|verkäufer|\\bstellenangebote\\b"
    },
    {
     "role_class": "hebamme",
@@ -161,7 +167,7 @@
   },
   {
    "hint": "Pädiatrie/Neonatologie",
-   "re": "pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend"
+   "re": "pädiatr|paediatr|neonat|kinderklinik|kinderstation|kinder- und jugend|säugling|kinderspital"
   },
   {
    "hint": "Geburtshilfe",
@@ -169,7 +175,7 @@
   },
   {
    "hint": "Onkologie",
-   "re": "onkolog|hämatolog|haematolog|strahlen|palliativ"
+   "re": "onkolog|hämatolog|haematolog|strahlen|palliativ|knochenmarks?transplant|stammzell"
   },
   {
    "hint": "Kardiologie",
@@ -242,6 +248,20 @@
   "req_stop": "(?:wir bieten|unser angebot|was wir bieten|das bieten wir|ihre aufgaben|deine aufgaben|aufgaben|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
   "task_head": "(?:ihre aufgaben|deine aufgaben|ihr aufgabenbereich|dein aufgabenbereich|ihr aufgabengebiet|dein aufgabengebiet|ihre tätigkeiten|deine tätigkeiten|das erwartet sie|das erwartet dich|was sie erwartet|was dich erwartet)",
   "task_stop": "(?:ihr profil|das bringen sie mit|das bringst du mit|dein profil|anforderungen|wir erwarten|voraussetzungen|ihre qualifikation|deine qualifikation|was sie mitbringen|was du mitbringst|sie bringen mit|du bringst mit|wir bieten|unser angebot|was wir bieten|das bieten wir|benefits|kontakt|bewerbung|ansprechpartner|wir freuen uns)",
+  "dept_anchor": [
+   {
+    "name": "bereich_field",
+    "re": "\\bbereich\\s+([^|]{2,90}?)\\s+einstiegsdatum"
+   },
+   {
+    "name": "recruiting_statement",
+    "re": "\\b(?:suchen|sucht)\\b[^.]{0,80}?\\bfür\\s+(?:die|den|unsere)\\s+([^.]{2,140})"
+   },
+   {
+    "name": "ward_as_subject",
+    "re": "\\b(?:die|das)\\s+([^.]{2,100}?)\\s+sucht\\s+ab sofort"
+   }
+  ],
   "experience": "((?:\\d+|mehrjährig\\w*|langjährig\\w*|erste|einschlägig\\w*|fundiert\\w*)\\s?(?:-?\\s?jahr\\w*)?\\s?(?:berufs|praxis)?erfahrung[^.\\n]{0,60})",
   "email": "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}",
   "language": "\\b(a2|b1|b2|c1)\\b.{0,40}(deutsch|sprach)|deutsch.{0,40}\\b(a2|b1|b2|c1)\\b",
