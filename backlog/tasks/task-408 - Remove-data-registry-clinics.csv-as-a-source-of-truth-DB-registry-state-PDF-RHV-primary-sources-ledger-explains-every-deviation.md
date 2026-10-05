@@ -1,12 +1,12 @@
 ---
-id: TASK-175
+id: TASK-408
 title: >-
   Remove data/registry/clinics.csv as a source of truth: DB = registry state,
   PDF/RHV = primary sources, ledger explains every deviation
 status: In Progress
 assignee: []
 created_date: '2026-09-29 21:38'
-updated_date: '2026-09-30 00:05'
+updated_date: '2026-10-05 13:36'
 labels:
   - db-quality
   - infra
@@ -75,4 +75,6 @@ Needs Ivan's go-ahead (DB writes, none done):
 Open, not touched: data/sync_rhv_reha.py --push and data/sync_diakoneo_social.py --push still push their CSVs straight into clinics, bypassing corrections; data/registry/reha_bavaria.csv still exists; the 7 registry_lint findings; pflege_jobs/registry.py merge_discovered is now called by no production code (only an API hint in app/main.py and its tests); there is no reason code for "the DB takes a newer source value" (the build uses parse_error) -- worth a code in correction_reasons.
 
 2026-09-30 00:00-00:10 UTC (orchestrating session): /tmp/nocsv.patch (sha256 2854f665...16d32, 63 files, +854/-1184) applied to main with git apply after --check; data/registry/clinics.csv and data/sync_krankenhausplan_2026.py are gone from main (pre-apply copy of the CSV: /home/exedev/.claude/jobs/663542db/tmp/clinics_csv_before_task175.csv). The old pflege-web process answered /api/plan 500 (FileNotFoundError on the CSV) for ~2 min until restart; restarted 00:0x UTC, /api/plan 200 with total 651 = the clinics table, / 200. Full suite on main after apply: 1619 passed, 18 skipped, 0 failed (7:01). Not done (need Ivan): insert the 141-row backfill, push the safe fill/repair file (43 clinics, 97 values), per-item decisions on the 52 review values.
+
+2026-10-05: renumbered from TASK-175 by backlog doctor --fix (two tasks had the ID TASK-175). A mention of TASK-175 in a task text written before this date may mean this task, not the one that kept TASK-175.
 <!-- SECTION:NOTES:END -->

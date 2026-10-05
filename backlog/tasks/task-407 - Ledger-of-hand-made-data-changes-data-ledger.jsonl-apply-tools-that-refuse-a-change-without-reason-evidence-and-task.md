@@ -1,12 +1,12 @@
 ---
-id: TASK-174
+id: TASK-407
 title: >-
   Ledger of hand-made data changes: data/ledger.jsonl + apply tools that refuse
   a change without reason, evidence and task
 status: Done
 assignee: []
 created_date: '2026-09-29 21:38'
-updated_date: '2026-09-29 21:38'
+updated_date: '2026-10-05 13:36'
 labels:
   - db-quality
   - infra
@@ -39,6 +39,8 @@ Mutation tests (restored from /tmp copies, diff -q identical): M1 evidence no lo
 Backfill (122 lines, marked backfilled=true, times reconstructed from backups): TASK-163 5 duplicate retires (5819-5823) + 10 detaches locked manual (effective write 2026-09-28T06:58:01Z); TASK-153 5 re-locks (2026-09-28T07:06:05Z); TASK-166 25 unlinks (75 field lines, 2026-09-29T16:48:15Z); TASK-167 7 beds (2026-09-29T15:14:10Z).
 First real use (Ivan approved 7 items 2026-09-29, 'да давай по всем да'): registry task169 (10 rows, 17 lines), task170 (12 rows, 21 lines; RH2843 ats_type no-op not logged), task171 (1 row, 1 line); postings: 9 retires + 1 relink (20 lines). All read back OK. Ledger total 181 lines. Matching CSV patches applied to data/registry/clinics.csv so a CSV re-push cannot revert them (until the CSV is removed, see the follow-up task).
 Side finding: CSV vs DB already disagree on rows nobody touched today (e.g. 16291 TUM careers_url/ats_type blank in CSV, set in DB; 57707 and 66104 beds 0 in CSV, NULL in DB) -- evidence for the CSV-removal task.
+
+2026-10-05: renumbered from TASK-174 by backlog doctor --fix (two tasks had the ID TASK-174). A mention of TASK-174 in a task text written before this date may mean this task, not the one that kept TASK-174.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

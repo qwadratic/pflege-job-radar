@@ -1,12 +1,12 @@
 ---
-id: TASK-183
+id: TASK-412
 title: >-
   Send-failure and stuck-thread visibility (parity with send_uncertain +
   watchdog)
 status: In Progress
 assignee: []
 created_date: '2026-09-13 11:14'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -32,4 +32,6 @@ Recon found a Meta send failure in our harness just raises and the route answers
 
 <!-- SECTION:NOTES:BEGIN -->
 app/wa/store.py: wa_send_failures(phone, error, at) + record_send_failure/recent_send_failure. app/wa/api.py: _send_and_record() wraps _send(), records the failure then re-raises (the loud-502 behavior is unchanged). GET /wa/threads now computes stuck_reply per row (_is_stuck: ball_for()=='us' and older than C.STUCK_REPLY_HOURS, default 2h) and includes last_send_error when one exists. No notification channel invented (none exists in this repo) -- durable + discoverable only, per CLAUDE.md's no-invented-safety-nets rule read the other way (don't invent a channel either).
+
+2026-10-05: renumbered from TASK-183 by backlog doctor --fix (two tasks had the ID TASK-183). A mention of TASK-183 in a task text written before this date may mean this task, not the one that kept TASK-183.
 <!-- SECTION:NOTES:END -->

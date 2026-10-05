@@ -1,11 +1,11 @@
 ---
-id: TASK-177
+id: TASK-409
 title: Luna proactively names what it searched for when it uses a tool
 status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-13 09:40'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -37,6 +37,8 @@ Ivan asked: whenever the candidate mentions something that lets Luna filter/sear
 
 <!-- SECTION:NOTES:BEGIN -->
 Extended prompts.py TOOLS rule with a NAME WHAT YOU CHECKED clause -- weave the searched city/department/region into the sentence naturally rather than a separate mechanical announcement, and only when a real tool call happened (not for plain market_snapshot facts). Strengthened the existing Coburg proactive-tool-use test to assert the reply actually names the city, not just that it answers. Verified live: 'In Coburg habe ich aktuell leider keine offene Stelle im Bestand' -- already satisfied this before the change, confirmed to keep doing so.
+
+2026-10-05: renumbered from TASK-177 by backlog doctor --fix (two tasks had the ID TASK-177). A mention of TASK-177 in a task text written before this date may mean this task, not the one that kept TASK-177.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

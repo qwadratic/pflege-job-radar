@@ -1,10 +1,10 @@
 ---
-id: TASK-180
+id: TASK-410
 title: Per-candidate LLM call rate limit (parity with CATCHUP_MODEL_RUNS_PER_HOUR)
 status: Done
 assignee: []
 created_date: '2026-09-13 11:14'
-updated_date: '2026-09-25 07:54'
+updated_date: '2026-10-05 13:36'
 labels: []
 dependencies: []
 project: whatsapp
@@ -31,6 +31,8 @@ Recon found our harness has zero rate limit on how often the claude CLI is invok
 
 <!-- SECTION:NOTES:BEGIN -->
 app/wa/store.py: wa_luna_calls(phone, at) + record_luna_call/count_recent_luna_calls (rolling 1h window). app/wa/config.py: WA_LUNA_MAX_CALLS_PER_HOUR, default 20 (generous backstop, not a conversational throttle), 0 disables. Checked in process_owed_turn() before dispatching to the brain -- over cap finishes the claim as skipped_rate_cap (reclaimable) and returns status=rate_limited without losing the inbound message.
+
+2026-10-05: renumbered from TASK-180 by backlog doctor --fix (two tasks had the ID TASK-180). A mention of TASK-180 in a task text written before this date may mean this task, not the one that kept TASK-180.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

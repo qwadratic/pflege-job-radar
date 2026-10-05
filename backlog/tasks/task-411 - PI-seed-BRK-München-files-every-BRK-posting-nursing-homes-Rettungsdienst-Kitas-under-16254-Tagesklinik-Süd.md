@@ -1,11 +1,12 @@
 ---
-id: TASK-181
+id: TASK-411
 title: >-
   P&I seed BRK München files every BRK posting (nursing homes, Rettungsdienst,
   Kitas) under 16254 Tagesklinik Süd
 status: To Do
 assignee: []
 created_date: '2026-09-29 23:15'
+updated_date: '2026-10-05 13:36'
 labels:
   - adapter
   - matcher
@@ -24,3 +25,9 @@ Found 2026-09-29 by the TASK-178 P&I work (worktree ki-pi): data/registry/pi_see
 - [ ] #1 Every BRK board row is either matched to the registry site it names or left without a clinic (kez null site), with the board's own pin/department line as evidence
 - [ ] #2 Existing wrongly linked BRK postings under 16254 are unlinked via tools/apply_posting_changes.py with code wrong_clinic (needs Ivan's go-ahead)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-05: renumbered from TASK-181 by backlog doctor --fix (two tasks had the ID TASK-181). A mention of TASK-181 in a task text written before this date may mean this task, not the one that kept TASK-181.
+<!-- SECTION:NOTES:END -->

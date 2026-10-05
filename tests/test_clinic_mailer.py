@@ -1,8 +1,12 @@
 """tools/clinic_mailer.py: cadence arithmetic, rendering and the send guard (no network)."""
+import fcntl
 import json
+import re
+import os
 import sys
+import threading
 import types
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -27,8 +31,48 @@ def cfg(tmp_path):
     return tmp_path / "c.json"
 
 
+def plain(m):
+    """The text part of a mail to the operators (every one of them is multipart/alternative)."""
+    return m.get_body(("plain",)).get_content()
+
+
+def has_row(text, *cells):
+    """A line of `text` holds `cells` in order, aligned: two spaces or more between them (the last one may be a prefix)."""
+    return any(re.fullmatch(r"\s*" + r"\s{2,}".join(map(re.escape, cells)) + r".*", line) for line in text.split("\n"))
+
+
 def at(s):
     return datetime.fromisoformat(s + "+02:00")
+
+
+ANSWER_OTHER = {"pattern": "other", "addresses": [], "names": [], "phones": [], "already_ours": [], "scope": None, "quote": "", "why": "test"}
+
+
+class Reader:
+    """The model that reads clinic answers: the first rule whose keyword is in the mail text gives its JSON, else "other";
+    "boom" in the text breaks it while `broken`. Anything but the answer prompt goes to the real ask_claude."""
+
+    def __init__(self, real):
+        self.real, self.rules, self.asked, self.broken = real, [], [], True
+
+    def says(self, key, **fields):
+        self.rules.append((key, {**ANSWER_OTHER, **fields}))
+
+    def ask(self, cfg, system, payload):
+        if system != M.ANSWER_SYSTEM:
+            return self.real(cfg, system, payload)
+        self.asked.append(payload)
+        if self.broken and "boom" in payload["text"]:
+            raise M.MailerError("classifier: claude exited 1: overloaded")
+        out = next((f for k, f in self.rules if k in payload["text"]), ANSWER_OTHER)
+        return dict(out), json.dumps(out)
+
+
+@pytest.fixture(autouse=True)
+def reader(monkeypatch):
+    r = Reader(M.ask_claude)
+    monkeypatch.setattr(M, "ask_claude", r.ask)
+    return r
 
 
 def test_business_days_skip_weekend_and_holiday(cfg):
@@ -40,13 +84,13 @@ def test_business_days_skip_weekend_and_holiday(cfg):
 
 def test_next_step_waits_for_cadence_and_stops_on_reply(cfg):
     c = M.load_config(cfg)
-    assert M.next_due(c, "1", []) == (0, None)
+    assert M.next_due(c, {"id": "1", "clinic": "Klinik A"}, []) == (0, None)
     sent = [{"event": "sent", "recipient_id": "1", "step": "initial", "sent_at": "2026-09-28T09:00:00+02:00", "message_id": "<m1@x>"}]
-    assert M.next_due(c, "1", sent) == (1, at("2026-10-05T09:00"))
+    assert M.next_due(c, {"id": "1", "clinic": "Klinik A"}, sent) == (1, at("2026-10-05T09:00"))
     reply = {"event": "inbound", "recipient_id": "1", "kind": "reply", "ts": "2026-09-29T10:00:00+02:00"}
-    assert M.next_due(c, "1", sent + [reply])[0] is None
+    assert M.next_due(c, {"id": "1", "clinic": "Klinik A"}, sent + [reply])[0] is None
     auto = dict(reply, kind="auto_reply")
-    assert M.next_due(c, "1", sent + [auto])[0] == 1
+    assert M.next_due(c, {"id": "1", "clinic": "Klinik A"}, sent + [auto])[0] == 1
 
 
 def test_plan_renders_follow_up_in_thread(cfg):
@@ -68,6 +112,35 @@ def test_do_not_contact_domain_blocks_to_and_cc(cfg):
     assert M.suppressed(c, ["pd@a.de", "St@A.de", "x@b.de"]) == {"pd@a.de", "St@A.de"}
     bid, report = M.plan(c, at("2026-09-29T09:00"))
     assert bid is None and "not planned" in report[0]
+
+
+def test_do_not_contact_entry_with_replace_with_swaps_the_address_instead_of_blocking(cfg):
+    """LMU, 05.10: write to PA.ProfileLAK@..., not to pflegestellen@... any more."""
+    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.de", "replace_with": ["neu@a.de", "ST@a.de"], "clinic": "Klinik A",
+                                                      "by": "Klinik A", "date": "2026-10-05", "why": "asked to write elsewhere"}]))
+    cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
+    c = M.load_config(cfg)
+    c["suppression_db"] = None
+    assert M.suppressed(c, ["pd@a.de"]) == set() and M.replacements(c, ["PD@a.de", "x@b.de"]) == {"PD@a.de": ["neu@a.de", "ST@a.de"]}
+    bid, report = M.plan(c, at("2026-09-29T09:00"))
+    item = json.loads((c["batches"] / f"{bid}.json").read_text())["items"][0]
+    assert (item["to"], item["cc"]) == (["neu@a.de", "ST@a.de"], []) and "replaces pd@a.de with neu@a.de, ST@a.de" in report[0]
+
+
+def test_a_scheduled_batch_carries_a_follow_up_that_falls_due_before_its_start(fcfg):
+    """Ivan, 2026-10-02/05: a wave's plan carries every follow-up. A clinic written to on Tue has its fu1 due days later;
+    a scheduled plan made before that, for a start after it, holds fu1 and fu2, and a start before it still leaves it out."""
+    c = fcfg
+    M.append_ledger(c, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd@a.de"],
+                        "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    due = M.next_due(c, json.loads(c["recipients"].read_text())[0], M.read_ledger(c))[1]
+    now, day = at("2026-09-30T09:00"), due.replace(hour=0, minute=0, second=0, microsecond=0)
+    bid, report = M.plan(c, now, only=["1"])
+    assert bid is None and f"fu1 due {due:%Y-%m-%d %H:%M}" in report[0]
+    bid, report = M.plan(c, now, only=["1"], announce_at=day.replace(hour=7), start_at=day.replace(hour=8))
+    assert bid is None and f"fu1 due {due:%Y-%m-%d %H:%M}" in report[0]
+    bid, report = M.plan(c, now, only=["1"], announce_at=day.replace(hour=9), start_at=day.replace(hour=11, minute=30))
+    assert [i["step"] for i in json.loads((c["batches"] / f"{bid}.json").read_text())["items"]] == ["fu1", "fu2"]
 
 
 def test_plan_only_selected_recipients(cfg):
@@ -159,7 +232,7 @@ def test_graph_watch_logs_reply_by_thread_and_skips_known(cfg, monkeypatch):
     assert "/me/mailFolders/inbox/messages" in urls[0] and "receivedDateTime%20ge%202026-09-27T22%3A00%3A00Z" in urls[0]
     assert fetched == ["https://graph.example/v1.0/me/messages/A1/$value"]
     assert M.watch(c) == [] and len(fetched) == 1          # already in the ledger: listed, not downloaded again
-    assert M.next_due(c, "1", M.read_ledger(c))[0] is None  # the reply ends the sequence
+    assert M.next_due(c, {"id": "1", "clinic": "Klinik A"}, M.read_ledger(c))[0] is None  # the reply ends the sequence
 
 
 def test_graph_watch_without_root_says_sudo(cfg, monkeypatch):
@@ -215,6 +288,7 @@ def scheduled_config(cfg, monkeypatch, cadence):
     conf = json.loads(cfg.read_text()) | {
         "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:00"}, "pause_seconds": [90, 180],
         "operators": [o.upper() if k == 0 else o for k, o in enumerate(OPS)], "command_poll_seconds": 60,
+        "notify": OPS, "forward": {k: OPS for k in M.FORWARD_KINDS},
         "announce": {"window_minutes": 60, "template": "announce.txt", "notes": "notes.txt"},
         "classifier": {"model": "claude-haiku-4-5", "claude_bin": "/bin/false", "run_as": "claude", "timeout_seconds": 5},
         "watch_folders": ["inbox"], "cadence": cadence}
@@ -346,6 +420,9 @@ class World:
     def to_ops(self):
         return [(t, m) for t, m in self.sent if m["To"] == ", ".join(OPS)]
 
+    def to_ops_of(self, address):
+        return [(t, m) for t, m in self.sent if m["To"] == address]
+
     def events(self, kind):
         return [e for e in M.read_ledger(self.c) if e["event"] == kind]
 
@@ -359,7 +436,7 @@ def test_scheduled_send_announces_at_nine_and_sends_on_time(scfg, monkeypatch):
     assert [p.get_filename() for p in ann.iter_attachments()] == ["Plan_c_2026-09-29.pdf"]
     assert [(t.isoformat(), to) for t, to in w.to_clinics()] == [(it["send_at"], it["to"][0]) for it in batch["items"]]
     done_t, done = w.to_ops()[-1]
-    assert len(w.to_ops()) == 2 and "рассылка завершена" in done["Subject"] and "Писем ушло: 3 из 3" in done.get_content()
+    assert len(w.to_ops()) == 2 and "рассылка завершена" in done["Subject"] and "Писем ушло: 3 из 3" in plain(done)
     assert done["Auto-Submitted"] == "auto-generated" and [e["kind"] for e in w.events("notice")] == ["done"]
     assert w.asked == ["Какой статус рассылки?"]                      # the start-up self-check only
 
@@ -373,7 +450,7 @@ def test_stop_before_the_first_letter_cancels(scfg, monkeypatch):
     assert w.to_clinics() == []
     (t, reply), = w.to_ops()[1:]
     assert t < at("2026-09-29T09:22:00") and reply["In-Reply-To"] == "<c1@op>" and reply["To"] == ", ".join(OPS)
-    assert "Рассылка отменена" in reply.get_content() and reply["Subject"] == "Re: Рассылка c"
+    assert "Рассылка отменена" in plain(reply) and reply["Subject"] == "Re: Рассылка c"
     assert w.asked[1:] == ["Стоп, отменяй."]                           # quoted history cut, the early mail not read
     (h,) = w.events("halt")
     assert h["by"] == "op2@example.net" and h["command_id"] == "<c1@op>"
@@ -389,11 +466,11 @@ def test_stop_during_the_batch_halts_and_skip_drops_one_clinic(scfg, monkeypatch
     w.inbox.append(mail("op1@example.org", "стоп", "стоп", first + timedelta(seconds=30), "<s2@op>"))
     M.send(scfg, w.bid, live=False)
     assert [to for _, to in w.to_clinics()] == ["pd1@example.org"]
-    replies = [m.get_content() for _, m in w.to_ops()[1:]]
+    replies = [plain(m) for _, m in w.to_ops()[1:]]
     assert "Убрано: Klinik B — больше ничего не уйдёт" in replies[0] and "Рассылка остановлена. Писем ушло: 1; не уйдёт: 1" in replies[1]
     assert [e["recipient_id"] for e in w.events("skip")] == ["2"] and len(w.events("halt")) == 1
-    assert "Klinik B — ничего не уйдёт: убрано по письму op1@example.org" in replies[1]
-    assert "Klinik C — ничего не уйдёт: рассылка остановлена" in replies[1]
+    assert has_row(replies[1], "Klinik B", "ничего не уйдёт: убрано по письму op1@example.org")
+    assert has_row(replies[1], "Klinik C", "ничего не уйдёт: рассылка остановлена")
 
 
 def test_status_other_command_and_chat_change_nothing(scfg, monkeypatch):
@@ -406,22 +483,43 @@ def test_status_other_command_and_chat_change_nothing(scfg, monkeypatch):
     w.inbox.append(mail("stranger@example.com", "стоп", "стоп", at("2026-09-29T09:16:00"), "<x@y>"))
     M.send(scfg, w.bid, live=False)
     assert len(w.to_clinics()) == 3
-    replies = [m.get_content() for _, m in w.to_ops()[1:-1]]
-    assert len(replies) == 3 and "Статус ниже, ничего не изменено" in replies[0] and "Klinik A — первое письмо вт 29.09 10:0" in replies[0]
+    replies = [plain(m) for _, m in w.to_ops()[1:-1]]
+    assert len(replies) == 3 and "Статус ниже, ничего не изменено" in replies[0] and has_row(replies[0], "Klinik A", "первое письмо вт 29.09 10:0")
     assert "такой команды письмом нет, нужен оператор" in replies[1] and "не похоже на команду" in replies[2]
     assert [e["intent"] for e in w.events("command")] == ["status", "other_command", "not_command", "auto_reply"]
 
 
-def test_classifier_failure_halts_and_tells_the_operators(scfg, monkeypatch):
+def test_classifier_failure_halts_and_only_the_status_check_tells_the_operators(scfg, monkeypatch):
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     batch = w.plan()
     w.inbox.append(mail("op1@example.org", "?", "boom", datetime.fromisoformat(batch["items"][0]["send_at"]) + timedelta(seconds=5), "<b1@op>"))
     with pytest.raises(M.MailerError, match="could not read the mail from op1@example.org"):
         M.send(scfg, w.bid, live=False)
     assert len(w.to_clinics()) == 1
-    t, notice = w.to_ops()[-1]
-    assert "рассылка прервана" in notice["Subject"] and "overloaded" in notice.get_content()
     assert [e["intent"] for e in w.events("command")] == ["classifier_failed"] and [h["kind"] for h in w.events("halt")] == ["error"]
+    assert not any("прервана" in m["Subject"] for _, m in w.to_ops()) and w.events("notice") == []     # the dying process mails nothing
+    grace = timedelta(minutes=15)
+    w.now += timedelta(minutes=14)
+    assert M.unnoticed_halts(scfg, grace) == []                      # a restart inside the grace is never mailed
+    w.now += timedelta(minutes=2)
+    (bid, halt), = M.unnoticed_halts(scfg, grace)
+    title, text = M.halt_notice(halt)
+    assert title == "рассылка прервана" and "overloaded" in text
+    M.notify(scfg, {"ADDRESS": "x"}, batch, "halt", title, text, halt_ts=halt["ts"])
+    assert "рассылка прервана" in w.to_ops()[-1][1]["Subject"] and M.unnoticed_halts(scfg, grace) == []        # told once
+
+
+def test_a_halted_batch_that_a_later_plan_carries_is_not_mailed(scfg, monkeypatch):
+    """05.10: a halted batch is replaced by a new plan; the status check mails a halt only when its letters are left."""
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    first = w.plan()
+    w.now = at("2026-09-29T08:41:00")
+    bid2, _ = M.plan(scfg, w.now, announce_at=at("2026-09-29T09:50:00"))
+    assert bid2 > first["batch_id"]
+    M.append_ledger(scfg, {"event": "halt", "batch_id": first["batch_id"], "kind": "error", "reason": "x"})
+    M.append_ledger(scfg, {"event": "halt", "batch_id": bid2, "kind": "error", "reason": "y"})
+    w.now = at("2026-09-29T09:10:00")
+    assert [b for b, _ in M.unnoticed_halts(scfg, timedelta(minutes=15))] == [bid2]
 
 
 def test_bounce_halts_the_batch(scfg, monkeypatch):
@@ -431,8 +529,11 @@ def test_bounce_halts_the_batch(scfg, monkeypatch):
     w.inbox.append(mail("MAILER-DAEMON@example.org", "Undelivered Mail", "pd1@example.org: user unknown", first + timedelta(seconds=40), "<nd@x>"))
     with pytest.raises(M.MailerError, match="HALT: bounce"):
         M.send(scfg, w.bid, live=False)
-    assert len(w.to_clinics()) == 1 and "рассылка остановлена" in w.to_ops()[-1][1]["Subject"]
-    assert [h["kind"] for h in w.events("halt")] == ["delivery"]
+    assert len(w.to_clinics()) == 1 and [h["kind"] for h in w.events("halt")] == ["delivery"]
+    assert not any("остановлена" in m["Subject"] for _, m in w.to_ops())
+    w.now += timedelta(minutes=16)
+    (bid, halt), = M.unnoticed_halts(scfg, timedelta(minutes=15))
+    assert M.halt_notice(halt)[0] == "рассылка остановлена" and "новым планом" in M.halt_notice(halt)[1]
     with pytest.raises(M.MailerError, match="was halted"):          # a bounce is not resumed: only a new plan continues
         M.send(scfg, w.bid, live=False)
 
@@ -502,6 +603,367 @@ def test_watch_never_logs_an_operators_mail_as_a_clinic_answer(scfg, monkeypatch
     assert M.watch(scfg) == []
 
 
+def test_watch_keeps_a_clinic_answer_and_the_digest_mails_it_once_per_address(scfg, monkeypatch):
+    """Ivan, 2026-10-05: clinic answers reach the operators once a day, in one mail with a table and the originals."""
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
+                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Schicken Sie uns Ihre Konditionen.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.de", "Automatische Antwort: Pflegekraft", "Ich bin nicht im Haus.", at("2026-09-29T10:04:00"), "<r2@a.de>",
+                        In_Reply_To="<m1@x>", Auto_Submitted="auto-replied"))
+    assert [e["kind"] for e in M.watch(scfg)] == ["reply", "auto_reply"]
+    assert not w.to_ops() and not w.to_ops_of(OPS[0])                          # nothing goes out as it arrives
+    reply, auto = w.events("inbound")
+    assert reply["digest_to"] == OPS and "digest_to" not in auto and (scfg["ledger"].parent / reply["eml"]).exists()
+    assert M.watch(scfg) == []                                                  # seen
+    assert M.digest([scfg, scfg]) == {OPS[0]: 1, OPS[1]: 1}                     # one mail per address, the same ledger twice counts once
+    (t, sent), = w.to_ops_of(OPS[1])
+    d = _email.message_from_bytes(sent.as_bytes(), policy=_email.policy.default)           # as the operator receives it
+    assert d["Subject"] == "Ответы клиник за 29.09.2026: 1" and d["Auto-Submitted"] == "auto-generated"
+    html_part = d.get_body(("html",)).get_content()
+    assert "<table" in html_part and "Klinik A" in html_part and "Schicken Sie uns Ihre Konditionen." in html_part
+    assert "Klinik A" in d.get_body(("plain",)).get_content()
+    (orig,) = [a for a in d.iter_attachments() if a.get_content_type() == "message/rfc822"]
+    assert orig.get_content()["Message-ID"] == "<r1@a.de>"
+    assert M.digest([scfg]) == {} and len(w.to_ops_of(OPS[1])) == 1             # carried: not mailed again
+    assert [(e["to"], e["imap_message_ids"]) for e in w.events("digested")] == [(OPS[0], ["<r1@a.de>"]), (OPS[1], ["<r1@a.de>"])]
+
+
+def answers_world(scfg, monkeypatch, to, cc, clinic="Klinik A"):
+    """A scheduled campaign whose first letter to `clinic` (recipient 1) went to `to`, cc `cc`, and an empty do-not-contact table."""
+    scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
+    scfg["do_not_contact"].write_text("[]\n")
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": clinic, "step": "initial",
+                           "to": to, "cc": cc, "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    return w
+
+
+def table(c):
+    return json.loads(c["do_not_contact"].read_text())
+
+
+def answer(w, frm, text, mid="<r1@x>", subject="AW: Pflegekraft", **headers):
+    w.inbox.append(mail(frm, subject, text, at("2026-09-29T10:03:00"), mid, In_Reply_To="<m1@x>", **headers))
+
+
+def test_a_terms_request_changes_nothing_but_the_label_and_the_forward(scfg, monkeypatch, reader):
+    """02.10: Ilmtalklinik (Karin Nadler) asks for the terms."""
+    w = answers_world(scfg, monkeypatch, ["karin.nadler@klinikallianz.com"], [], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "Karin Nadler <karin.nadler@klinikallianz.com>", "Sehr geehrte Damen und Herren,\n\nschicken Sie mir bitte Ihre Konditionen.\n\nKarin Nadler\n")
+    reader.says("Konditionen", pattern="terms_request", quote="schicken Sie mir bitte Ihre Konditionen.")
+    (ev,) = M.watch(scfg)
+    assert ev["kind"] == "reply" and ev["pattern"] == "terms_request" and ev["actions"] == [] and ev["digest_to"] == OPS
+    assert table(scfg) == [] and w.sent == [] and reader.asked[0]["our_addresses"] == ["karin.nadler@klinikallianz.com"]
+    M.digest([scfg])
+    d = _email.message_from_bytes(w.to_ops_of(OPS[0])[0][1].as_bytes(), policy=_email.policy.default)
+    assert "клиника ответила · клиника просит условия" in d.get_body(("plain",)).get_content()
+
+
+def test_a_redirect_makes_the_target_the_recipient_and_mutes_the_sender(scfg, monkeypatch, reader):
+    """05.10: LMU (pflegestellen@) says to write to PA.ProfileLAK@ and to stop writing to the Pflegestellen address."""
+    w = answers_world(scfg, monkeypatch, ["pflegestellen@med.uni-muenchen.de"], [], "LMU Klinikum München")
+    answer(w, "pflegestellen@med.uni-muenchen.de", "Sehr geehrte Damen und Herren,\n\nbitte wenden Sie sich in dieser Angelegenheit an "
+           "PA.ProfileLAK@med.uni-muenchen.de. Bitte schreiben Sie nicht mehr an die Pflegestellen-Adresse und löschen Sie sie.\n")
+    reader.says("PA.ProfileLAK", pattern="redirect", addresses=["PA.ProfileLAK@med.uni-muenchen.de"],
+                quote="bitte wenden Sie sich in dieser Angelegenheit an PA.ProfileLAK@med.uni-muenchen.de.")
+    (ev,) = M.watch(scfg)
+    (row,) = table(scfg)
+    assert row["match"] == "pflegestellen@med.uni-muenchen.de" and row["replace_with"] == ["PA.ProfileLAK@med.uni-muenchen.de"]
+    assert row["reason"] == "redirect" and row["by"] == "pflegestellen@med.uni-muenchen.de" and row["clinic"] == "LMU Klinikum München"
+    assert row["date"] == M.now_in(scfg).strftime("%Y-%m-%d") == "2026-09-29" and "PA.ProfileLAK@med.uni-muenchen.de." in row["why"]
+    assert M.suppressed(scfg, ["pflegestellen@med.uni-muenchen.de"]) == set()                     # muted by a swap, not blocked
+    assert M.swap_addresses(["pflegestellen@med.uni-muenchen.de"], M.replacements(scfg, ["pflegestellen@med.uni-muenchen.de"])) == ["PA.ProfileLAK@med.uni-muenchen.de"]
+    assert w.sent == [] and "записал в таблицу: писать на PA.ProfileLAK@med.uni-muenchen.de" in ev["actions"][0]["ru"]
+    M.digest([scfg])
+    html_part = _email.message_from_bytes(w.to_ops_of(OPS[1])[0][1].as_bytes(), policy=_email.policy.default).get_body(("html",)).get_content()
+    assert "клиника просит писать другому адресату: PA.ProfileLAK@med.uni-muenchen.de" in html_part and "Сделано: записал в таблицу" in html_part
+
+
+def test_an_out_of_office_with_a_substitute_address_moves_the_cc_to_the_main_place(scfg, monkeypatch, reader):
+    """29.09/02.10: Sandra Bär (To) is away, Karin Nadler (Cc) is her substitute."""
+    w = answers_world(scfg, monkeypatch, ["sandra.baer@klinikallianz.com"], ["karin.nadler@klinikallianz.com"], "Ilmtalklinik Pfaffenhofen")
+    answer(w, "sandra.baer@klinikallianz.com", "Ich bin nicht im Haus. Mails werden nicht weitergeleitet. Bitte wenden Sie sich an meine Vertretung "
+           "Karin Nadler (karin.nadler@klinikallianz.com) oder an das Sekretariat.", subject="Abwesenheit", Auto_Submitted="auto-replied")
+    reader.says("Vertretung", pattern="out_of_office", addresses=["karin.nadler@klinikallianz.com"], names=["Karin Nadler"],
+                quote="Bitte wenden Sie sich an meine Vertretung Karin Nadler (karin.nadler@klinikallianz.com)")
+    (ev,) = M.watch(scfg)
+    assert ev["kind"] == "auto_reply" and ev["digest_to"] == OPS and reader.asked[0]["automatic"] is True
+    (row,) = table(scfg)
+    assert row["by"] == "sandra.baer@klinikallianz.com, out-of-office auto-reply" and row["reason"] == "redirect"
+    swaps = M.replacements(scfg, ["sandra.baer@klinikallianz.com", "karin.nadler@klinikallianz.com"])
+    assert M.swap_addresses(["sandra.baer@klinikallianz.com"], swaps) == ["karin.nadler@klinikallianz.com"]
+    assert "stopped" not in M.next_due(scfg, {"id": "1", "clinic": "Klinik A"}, M.read_ledger(scfg))[1]       # an out of office ends no sequence
+
+
+def test_names_without_an_address_count_when_one_is_ours_and_otherwise_change_nothing(scfg, monkeypatch, reader):
+    """29.09/02.10: Tobias Heckelsmüller (Cc) names four colleagues, Frau Son is our main recipient; and a stranger's name."""
+    w = answers_world(scfg, monkeypatch, ["stefanie.son@starnberger-kliniken.de"], ["tobias.heckelsmueller@starnberger-kliniken.de"], "Klinikum Starnberg")
+    answer(w, "tobias.heckelsmueller@starnberger-kliniken.de", "Ich bin nicht im Haus. Bitte wenden Sie sich an meine Kollegen Herr Hohndorf, "
+           "Herr Keil, Frau Sättler und Frau Son.", Auto_Submitted="auto-replied")
+    reader.says("Kollegen", pattern="out_of_office", names=["Hohndorf", "Keil", "Sättler", "Son"], already_ours=["stefanie.son@starnberger-kliniken.de"],
+                quote="Bitte wenden Sie sich an meine Kollegen Herr Hohndorf, Herr Keil, Frau Sättler und Frau Son.")
+    M.watch(scfg)
+    (row,) = table(scfg)
+    assert row["match"] == "tobias.heckelsmueller@starnberger-kliniken.de" and row["replace_with"] == ["stefanie.son@starnberger-kliniken.de"]
+    swaps = M.replacements(scfg, ["stefanie.son@starnberger-kliniken.de", "tobias.heckelsmueller@starnberger-kliniken.de"])
+    assert M.swap_addresses(["stefanie.son@starnberger-kliniken.de", "tobias.heckelsmueller@starnberger-kliniken.de"], swaps) == ["stefanie.son@starnberger-kliniken.de"]
+    answer(w, "stefanie.son@starnberger-kliniken.de", "Ich bin nicht im Haus. Meine Vertretung ist Frau Meier, Tel. 089 123456.", mid="<r2@x>",
+           Auto_Submitted="auto-replied")
+    reader.says("Frau Meier", pattern="out_of_office", names=["Meier"], phones=["089 123456"], quote="Meine Vertretung ist Frau Meier, Tel. 089 123456.")
+    ev = M.watch(scfg)[0]
+    assert len(table(scfg)) == 1 and ev["digest_to"] == OPS                       # a name and a phone number: forwarded, the table unchanged
+
+
+def test_an_out_of_office_that_names_nobody_stays_in_the_ledger_only(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    answer(w, "pd@a.de", "Ich bin bis 12.10. im Urlaub.", Auto_Submitted="auto-replied")
+    reader.says("Urlaub", pattern="out_of_office", quote="Ich bin bis 12.10. im Urlaub.")
+    (ev,) = M.watch(scfg)
+    assert ev["pattern"] == "out_of_office" and "digest_to" not in ev and "eml" not in ev and table(scfg) == []
+    assert M.digest([scfg]) == {}
+
+
+def test_an_opt_out_blocks_the_address_it_names_or_the_whole_clinic_only_when_it_says_so(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], ["st@a.de"])
+    answer(w, "pd@a.de", "Bitte streichen Sie uns aus Ihrem Verteiler.")
+    reader.says("Verteiler", pattern="opt_out", scope="address", quote="Bitte streichen Sie uns aus Ihrem Verteiler.")
+    M.watch(scfg)
+    (row,) = table(scfg)
+    assert row["match"] == "pd@a.de" and row["reason"] == "opt_out" and "replace_with" not in row and M.suppressed(scfg, ["pd@a.de", "st@a.de"]) == {"pd@a.de"}
+    answer(w, "pd@a.de", "Wir wünschen keinerlei Kontakt zu Ihnen, für das ganze Haus.", mid="<r2@x>")
+    reader.says("keinerlei Kontakt", pattern="opt_out", scope="clinic", quote="Wir wünschen keinerlei Kontakt zu Ihnen, für das ganze Haus.")
+    M.watch(scfg)
+    assert [r["match"] for r in table(scfg)] == ["pd@a.de", "st@a.de"]            # pd@ was there, st@ is added
+    assert [a["added"] for a in w.events("inbound")[1]["actions"]] == [False, True]
+
+
+def test_a_classifier_that_cannot_read_an_answer_halts_and_the_answer_is_read_again_on_resume(scfg, monkeypatch, reader):
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    batch = w.plan()
+    first = datetime.fromisoformat(batch["items"][0]["send_at"])
+    w.inbox.append(mail(batch["items"][0]["to"][0], "AW: Pflegekraft", "boom Konditionen bitte", first + timedelta(seconds=5), "<r1@x>"))
+    with pytest.raises(M.MailerError, match="HALT: could not read the answer from pd.@example.org .*overloaded"):
+        M.send(scfg, w.bid, live=False)
+    assert w.events("inbound") == [] and [h["kind"] for h in w.events("halt")] == ["error"]
+    reader.broken = False
+    reader.says("Konditionen", pattern="terms_request", quote="boom Konditionen bitte")
+    M.send(scfg, w.bid, live=False)                                              # the same command resumes and reads it again
+    (ev,) = w.events("inbound")
+    assert ev["pattern"] == "terms_request" and [h["kind"] for h in w.events("halt")] == ["error"] and len(w.events("resumed")) == 1
+    assert len(w.to_clinics()) == 3                                              # the halt cost no letter: the other two went after the resume
+
+
+def test_what_the_classifier_says_it_found_must_be_in_the_mail(scfg, monkeypatch, reader):
+    raw = mail("pd@a.de", "AW", "Bitte wenden Sie sich an Frau Son.", None, "<r1@x>")[2]
+    reader.says("Frau Son", pattern="redirect", addresses=["son@a.de"], quote="Bitte wenden Sie sich an Frau Son.")
+    with pytest.raises(M.MailerError, match="the address 'son@a.de' is not in the mail"):
+        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+    reader.rules.clear()
+    reader.says("Frau Son", pattern="redirect", already_ours=["son@a.de"], quote="Bitte wenden Sie sich an Frau Son.")
+    with pytest.raises(M.MailerError, match="not one of our addresses"):
+        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+    reader.rules.clear()
+    reader.says("Frau Son", pattern="redirect", names=["Son"], quote="Bitte rufen Sie Frau Son an.")
+    with pytest.raises(M.MailerError, match="the quote .* is not in the mail"):
+        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+    reader.rules.clear()
+    reader.says("Frau Son", pattern="opt_out", quote="Bitte wenden Sie sich an Frau Son.")
+    with pytest.raises(M.MailerError, match="opt_out without a scope"):
+        M.classify_answer(scfg, raw, "pd@a.de", "Klinik A", ["pd@a.de"], False)
+
+
+def test_a_redirect_from_an_address_we_never_wrote_to_changes_no_table(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    answer(w, "sekretariat@a.de", "Bitte wenden Sie sich an kontakt@a.de.", subject="AW: Pflegekraft")
+    reader.says("kontakt@a.de", pattern="redirect", addresses=["kontakt@a.de"], quote="Bitte wenden Sie sich an kontakt@a.de.")
+    (ev,) = M.watch(scfg)
+    assert table(scfg) == [] and "не один из адресов" in ev["actions"][0]["ru"] and ev["digest_to"] == OPS
+
+
+def test_a_redirect_written_after_planning_reaches_the_letter_at_send_time(scfg, monkeypatch):
+    """Ivan, 2026-10-05: an out-of-office's substitute gets the letters already planned; the approval covers the planned
+    addresses, the ledger keeps both, and a test copy to an allowlist address is not swapped."""
+    scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
+    scfg["do_not_contact"].write_text("[]\n")
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    batch = w.plan()
+    (scfg["approvals"] / f"{w.bid}.pending.json").rename(scfg["approvals"] / f"{w.bid}.json")
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "pd2@example.org", "replace_with": ["new2@example.org"], "reason": "redirect"}]))
+    M.send(scfg, w.bid, live=True)
+    letters = {m["Subject"] + m["To"]: m for _, m in w.sent if not m["To"] == ", ".join(OPS)}
+    assert sorted(m["To"] for m in letters.values()) == ["new2@example.org", "pd1@example.org", "pd3@example.org"]
+    sent = {e["recipient_id"]: e for e in w.events("sent")}
+    assert sent["2"]["to"] == ["new2@example.org"] and sent["2"]["planned_to"] == ["pd2@example.org"] and "planned_to" not in sent["1"]
+    assert [it["to"] for it in batch["items"] if it["recipient_id"] == "2"] == [["pd2@example.org"]]      # the batch file is untouched
+    it = {"to": ["pd2@example.org"], "cc": ["x@example.org"]}
+    assert M.routed(scfg, it, live=False) is it                                  # an allowlist copy keeps its addresses
+
+
+def test_a_swap_at_send_time_moves_a_cc_to_the_main_place_without_a_duplicate(scfg):
+    scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "sandra@a.de", "replace_with": ["karin@a.de"], "reason": "redirect"}]))
+    out = M.routed(scfg, {"to": ["sandra@a.de"], "cc": ["karin@a.de", "other@a.de"]}, live=True)
+    assert out["to"] == ["karin@a.de"] and out["cc"] == ["other@a.de"] and out["planned_to"] == ["sandra@a.de"] and out["planned_cc"] == ["karin@a.de", "other@a.de"]
+
+
+def test_a_block_written_after_planning_stops_the_letter_at_send_time(scfg, monkeypatch):
+    """Ivan, 2026-10-05: an opt-out written after planning must stop the letter that is already approved. The clinic's other
+    letters of the batch go with it, the others go on, the operators are told, nothing halts."""
+    scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
+    scfg["do_not_contact"].write_text("[]\n")
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    batch = w.plan()
+    (scfg["approvals"] / f"{w.bid}.pending.json").rename(scfg["approvals"] / f"{w.bid}.json")
+    scfg["do_not_contact"].write_text(json.dumps([{"match": "pd2@example.org", "reason": "opt_out", "clinic": "Klinik B", "by": "Klinik B"}]))
+    M.send(scfg, w.bid, live=True)
+    assert sorted(to for _, to in w.to_clinics()) == ["pd1@example.org", "pd3@example.org"]
+    (blocked,) = w.events("blocked")
+    assert (blocked["recipient_id"], blocked["addresses"], blocked["step"]) == ("2", ["pd2@example.org"], "initial")
+    assert {e["recipient_id"] for e in w.events("sent")} == {"1", "3"} and w.events("halt") == []
+    assert [it["to"] for it in batch["items"] if it["recipient_id"] == "2"] == [["pd2@example.org"]]      # the approved batch is untouched
+    notice = next(e for e in w.events("notice") if e["kind"] == "blocked")
+    assert notice["recipient_id"] == "2" and "Klinik B" in notice["title"]
+    text = next(plain(m) for _, m in w.to_ops() if "письмо не ушло: Klinik B" in m["Subject"])
+    assert "pd2@example.org в списке блокировки" in text and has_row(text, "Klinik B", "ничего не уйдёт: адрес в списке блокировки: pd2@example.org")
+    assert has_row(text, "Klinik A", "первое письмо ушло")
+
+
+def test_the_send_time_block_check_drops_a_blocked_cc_stops_a_blocked_swap_target_and_spares_test_copies(scfg):
+    scfg["do_not_contact"] = scfg["ledger"].parent / "dnc.json"
+    scfg["do_not_contact"].write_text(json.dumps([
+        {"match": "b@a.de", "reason": "opt_out"}, {"match": "t@a.de", "reason": "opt_out"},
+        {"match": "old@a.de", "replace_with": ["t@a.de"], "reason": "redirect"}]))
+    it = {"recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["a@a.de"], "cc": ["b@a.de", "c@a.de"]}
+    out = M.routed(scfg, it, live=True)
+    assert out["to"] == ["a@a.de"] and out["cc"] == ["c@a.de"] and out["planned_cc"] == ["b@a.de", "c@a.de"] and out["planned_to"] == ["a@a.de"]
+    with pytest.raises(M.Blocked) as e:                                          # the address a redirect sends to is checked too
+        M.routed(scfg, {**it, "to": ["old@a.de"], "cc": []}, live=True)
+    assert e.value.addresses == ["t@a.de"]
+    with pytest.raises(M.Blocked) as e:
+        M.routed(scfg, {**it, "to": ["B@a.de"], "cc": []}, live=True)            # a different case is the same address
+    assert M.routed(scfg, {**it, "to": ["b@a.de"]}, live=False)["to"] == ["b@a.de"]    # an allowlist copy keeps its address
+    clean = {**it, "cc": ["c@a.de"]}
+    assert M.routed(scfg, clean, live=True) is clean
+
+
+def test_a_blocked_letter_of_a_simple_batch_is_skipped_loudly_and_the_others_go(cfg, monkeypatch, capsys):
+    recs = json.loads((cfg.parent / "recipients.json").read_text())
+    recs.append({**recs[0], "id": "2", "clinic": "Klinik B", "to": ["pd@b.de"], "cc": []})
+    (cfg.parent / "recipients.json").write_text(json.dumps(recs))
+    (cfg.parent / "dnc.json").write_text("[]\n")
+    cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"do_not_contact": "dnc.json"}))
+    c = M.load_config(cfg)
+    c["suppression_db"] = None
+    sent = []
+    for name, fn in (("smtp_send", lambda box, msg: sent.append(msg) or {}), ("mailbox", lambda a: {"ADDRESS": a}),
+                     ("check_inbox", lambda cfg, box: None), ("watch", lambda cfg, box=None: []), ("in_window", lambda cfg, t: True),
+                     ("sleep", lambda s: None)):
+        monkeypatch.setattr(M, name, fn)
+    monkeypatch.setattr(M.time, "sleep", lambda s: None)
+    bid, _ = M.plan(c, at("2026-09-28T09:00"))
+    (c["approvals"] / f"{bid}.pending.json").rename(c["approvals"] / f"{bid}.json")
+    (cfg.parent / "dnc.json").write_text(json.dumps([{"match": "pd@a.de", "reason": "opt_out"}]))      # written after planning
+    M.send(c, bid, live=True)
+    assert [m["To"] for m in sent] == ["pd@b.de"]
+    (ev,) = [e for e in M.read_ledger(c) if e["event"] == "blocked"]
+    assert (ev["recipient_id"], ev["addresses"]) == ("1", ["pd@a.de"]) and not [e for e in M.read_ledger(c) if e["event"] == "halt"]
+    assert "BLOCKED 1 Klinik A initial: pd@a.de is on a suppression list, not sent" in capsys.readouterr().out
+
+
+def test_a_second_process_for_the_same_batch_fails_at_once(scfg, monkeypatch):
+    """Ivan, 2026-10-05: a double start would send the letters twice; the lock goes with the process."""
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    path = scfg["batches"] / f"{w.bid}.json"
+    fd = os.open(path, os.O_RDONLY)
+    fcntl.flock(fd, fcntl.LOCK_EX)                                              # the first process
+    with pytest.raises(M.MailerError, match=f"batch {w.bid} is already running"):
+        M.send(scfg, w.bid, live=False)
+    assert w.sent == [] and w.events("halt") == []                              # it did not touch the batch
+    os.close(fd)                                                                # the first process ended or was killed
+    M.send(scfg, w.bid, live=False)
+    assert len(w.to_clinics()) == 3
+
+
+def test_a_digest_that_fails_keeps_its_answers_for_the_next_one(scfg, monkeypatch):
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
+                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Gerne.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    M.watch(scfg)
+    monkeypatch.setattr(M, "smtp_send", lambda box, msg: {OPS[0]: (550, b"no")})
+    with pytest.raises(M.MailerError, match="SMTP refused the digest"):
+        M.digest([scfg])
+    assert w.events("digested") == []
+    monkeypatch.setattr(M, "smtp_send", w.smtp)
+    assert M.digest([scfg]) == {OPS[0]: 1, OPS[1]: 1}
+
+
+def test_two_watches_of_one_ledger_run_one_after_the_other(scfg, monkeypatch):
+    """Two batches of one campaign poll the same inbox: the second watch waits and finds the answer already logged."""
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
+                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Danke.", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    got = []
+    with open(scfg["ledger"].with_name(scfg["ledger"].name + ".watch.lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)                              # the other process is in its watch
+        t = threading.Thread(target=lambda: got.append(M.watch(scfg)))
+        t.start()
+        t.join(0.5)
+        assert t.is_alive() and not got
+    t.join(5)
+    assert [e["kind"] for e in got[0]] == ["reply"] and len(w.events("inbound")) == 1
+
+
+def test_notices_go_to_the_notify_list_and_answers_by_kind_to_the_forward_list(scfg, monkeypatch):
+    """Ivan, 2026-10-05: Valentyn hears of no start, round or halt, only of clinic answers nobody has handled yet; a batch
+    planned while he was on its notices keeps none for him."""
+    scfg["notify"], scfg["forward"] = OPS[:1], {k: OPS[:1] for k in M.FORWARD_KINDS} | {"reply": OPS, "unmatched": OPS}
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    bid, _ = M.plan(scfg, w.now, announce_at=at("2026-09-29T09:00:00"))
+    batch = json.loads((scfg["batches"] / f"{bid}.json").read_text())
+    assert batch["announce"]["to"] == OPS[:1] and batch["operators"] == OPS[:1]
+    M.notify(scfg, {"ADDRESS": "x"}, {**batch, "operators": OPS}, "halt", "рассылка прервана", "x")
+    (t, sent), = w.sent
+    assert sent["To"] == OPS[0] and w.events("notice")[0]["to"] == OPS[:1]
+    M.append_ledger(scfg, {"event": "sent", "batch_id": bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
+                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Konditionen?", at("2026-09-29T10:03:00"), "<r1@a.de>", In_Reply_To="<m1@x>"))
+    w.inbox.append(mail("pd@a.de", "AW: Pflegekraft", "Bitte keine weiteren Mails.", at("2026-09-29T10:04:00"), "<r2@a.de>", In_Reply_To="<m1@x>"))
+    assert [e["kind"] for e in M.watch(scfg)] == ["reply", "stop"]
+    assert [e["digest_to"] for e in w.events("inbound")] == [OPS, OPS[:1]]
+    assert M.digest([scfg]) == {OPS[0]: 2, OPS[1]: 1}
+
+
+def test_an_undeliverable_operator_mail_is_no_clinic_bounce_and_goes_to_the_other_operator(scfg, monkeypatch):
+    """05.10: Valentyn's address bounced; the report quoted a forwarded clinic answer, so wave 1 took it for a clinic's
+    bounce and halted. Now it is its own kind, never matched to a clinic and never mailed back to the dead address."""
+    w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
+    w.plan()
+    M.append_ledger(scfg, {"event": "sent", "batch_id": w.bid, "recipient_id": "1", "clinic": "Klinik A", "step": "initial",
+                           "to": ["pd@a.de"], "cc": [], "sent_at": "2026-09-29T10:01:30+02:00", "message_id": "<m1@x>"})
+    w.now = at("2026-09-29T10:05:00")
+    w.inbox.append(mail("postmaster@outlook.example", "Undeliverable: [daria] Klinik A: AW", f"Your message to {OPS[1]} couldn't be delivered. "
+                        "Recipient Unknown\n\nOriginal headers:\nReferences: <m1@x>\n", at("2026-09-29T10:03:00"), "<ndr1@o>"))
+    (ev,) = M.watch(scfg)
+    assert (ev["kind"], ev["recipient_id"]) == ("operator_undeliverable", None) and ev["digest_to"] == [OPS[0]]
+    assert M.digest([scfg]) == {OPS[0]: 1}
+    (t, sent), = w.to_ops_of(OPS[0])
+    assert "наше письмо оператору не доставлено" in sent.get_body(("plain",)).get_content()
+    assert "stopped" not in M.next_due(scfg, {"id": "1", "clinic": "Klinik A"}, M.read_ledger(scfg))[1]   # the clinic is not stopped by it
+
+
 def test_the_mail_the_classifier_could_not_read_is_read_again_on_resume(scfg, monkeypatch):
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
@@ -513,7 +975,7 @@ def test_the_mail_the_classifier_could_not_read_is_read_again_on_resume(scfg, mo
     M.send(scfg, w.bid, live=False)                                  # resumes: the unread stop is read and obeyed
     assert w.to_clinics() == [] and [h["kind"] for h in w.events("halt")] == ["error", "operator"]
     assert [e["intent"] for e in w.events("command")] == ["classifier_failed", "stop"]
-    assert [e["kind"] for e in w.events("notice")] == ["halt", "resumed"]
+    assert w.events("notice") == []                                  # a restart is no news
 
 
 def test_sigterm_and_sighup_end_a_batch_like_ctrl_c():
@@ -556,6 +1018,23 @@ def test_plan_carries_the_follow_ups_and_a_report_before_each_round(fcfg):
         M.plan(fcfg, at("2026-09-28T17:00"), announce_at=at("2026-09-29T08:30:00"), start_at=at("2026-09-29T09:00:00"))
 
 
+def test_last_step_ends_one_clinics_sequence_early(fcfg):
+    recs = json.loads(fcfg["recipients"].read_text())
+    recs[1]["last_step"] = "initial"
+    fcfg["recipients"].write_text(json.dumps(recs))
+    random.seed(3)
+    bid, report = M.plan(fcfg, at("2026-09-28T17:00"), announce_at=at("2026-09-28T18:00:00"), start_at=at("2026-09-29T09:00:00"))
+    items = json.loads((fcfg["batches"] / f"{bid}.json").read_text())["items"]
+    assert [(it["recipient_id"], it["step"]) for it in items] == [
+        ("1", "initial"), ("2", "initial"), ("3", "initial"), ("1", "fu1"), ("3", "fu1"), ("1", "fu2"), ("3", "fu2")]
+    assert "+  2 Klinik B: initial to pd2@example.org" in report
+    ledger = [{"event": "sent", "recipient_id": "2", "step": "initial", "sent_at": "2026-09-29T09:03:00+02:00"}]
+    assert M.next_due(fcfg, recs[1], ledger) == (None, "sequence complete")
+    recs[1]["last_step"] = "fu9"
+    with pytest.raises(M.MailerError, match="last_step 'fu9' is not a cadence step"):
+        M.last_step(fcfg, recs[1])
+
+
 def test_follow_ups_go_by_themselves_in_thread_with_a_report_before_each_round(fcfg, monkeypatch):
     w = World(fcfg, monkeypatch, "2026-09-28T17:50:00", intents={"не отправляй в klinik c": ("skip", ["3"])})
     batch = w.plan(announce="2026-09-28T18:00:00", start="2026-09-29T09:00:00")
@@ -580,14 +1059,51 @@ def test_follow_ups_go_by_themselves_in_thread_with_a_report_before_each_round(f
     assert [(e["step"], e["sent_at"], e["going"]) for e in w.events("report")] == [
         ("fu1", "2026-10-05T08:00:00+02:00", ["1", "3"]), ("fu2", "2026-10-12T08:00:00+02:00", ["1"])]
     fu1 = next(c for _, s, c in ops if "фоллоу-ап 1 пн 05.10" in s)
-    assert "Не уйдёт:\n  Klinik B — клиника ответила" in fu1 and "Тема: Re: Pflegekraft für Intensivstation" in fu1
+    assert "Не уйдёт:\n" in fu1 and has_row(fu1, "Klinik B", "клиника ответила") and "Тема: Re: Pflegekraft für Intensivstation" in fu1
     assert "Фоллоу-ап 1 — пн 05.10, с 09:0" in fu1 and ", по одному:" in fu1
     fu2 = next(c for _, s, c in ops if "фоллоу-ап 2 пн 12.10" in s)
-    assert "Klinik C — убрано по письму op2@example.net" in fu2 and "Klinik B — клиника ответила" in fu2
+    assert has_row(fu2, "Klinik C", "убрано по письму op2@example.net") and has_row(fu2, "Klinik B", "клиника ответила")
     assert "Фоллоу-ап 2 — пн 12.10, в 09:0" in fu2 and "по одному" not in fu2       # one letter: a time, not a span
     assert "рассылка завершена" in ops[-1][1] and "Писем ушло: 6 из 9" in ops[-1][2]
-    assert "Klinik A — первое письмо ушло вт 29.09 09:0" in ops[-1][2] and "; фоллоу-ап 1 ушёл пн 05.10 09:0" in ops[-1][2]
+    assert has_row(ops[-1][2], "Klinik A", "первое письмо ушло вт 29.09 09:0") and "; фоллоу-ап 1 ушёл пн 05.10 09:0" in ops[-1][2]
     assert [e["intent"] for e in w.events("command")] == ["skip"] and w.events("halt") == []
+
+
+def cells(html_text):
+    """The tables of an HTML part as lists of rows of cell texts."""
+    unesc = lambda c: re.sub(r"<[^>]+>", "", c).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    return [[[unesc(c) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row)] for row in re.findall(r"<tr>(.*?)</tr>", table)]
+            for table in re.findall(r"<table.*?</table>", html_text)]
+
+
+def test_every_mail_to_the_operators_has_a_text_part_and_an_html_part_with_real_tables(fcfg, monkeypatch):
+    """Ivan, 2026-10-05: operator mail is HTML, its tables are tables; the text part has the same rows aligned."""
+    w = World(fcfg, monkeypatch, "2026-09-28T17:50:00", intents={"не отправляй в klinik c": ("skip", ["3"])})
+    w.plan(announce="2026-09-28T18:00:00", start="2026-09-29T09:00:00")
+    w.inbox.append(mail("pd2@example.org", "AW: Pflegekraft für Intensivstation", "Danke, wir melden uns.", at("2026-09-30T10:00:00"), "<r2@b>"))
+    w.inbox.append(mail("op2@example.net", "Klinik C", "Не отправляй в Klinik C", at("2026-10-06T12:00:00"), "<s3@op>"))
+    M.send(fcfg, w.bid, live=False)
+    mails = [m for _, m in w.to_ops()]
+    assert len(mails) >= 6
+    for m in mails:
+        assert m.get_content_type() in ("multipart/alternative", "multipart/mixed"), m["Subject"]
+        assert m.get_body(("plain",)).get_content_type() == "text/plain" and m.get_body(("html",)).get_content_type() == "text/html", m["Subject"]
+    report = next(m for m in mails if "фоллоу-ап 1 пн 05.10" in m["Subject"] and "предварительный отчёт" in m["Subject"])
+    tables = cells(report.get_body(("html",)).get_content())
+    assert tables[0][0] == ["Время", "Клиника", "Кому", "Копия"]                        # who goes when
+    assert [r[1:3] for r in tables[0][1:]] == [["Klinik A", "pd1@example.org"], ["Klinik C", "pd3@example.org"]]
+    assert tables[1] == [["Клиника", "Почему"], ["Klinik B", tables[1][1][1]]] and "клиника ответила" in tables[1][1][1]   # who does not and why
+    assert re.search(r"^ +09:0\d {2,}Klinik A {2,}pd1@example\.org", plain(report), re.M)    # the same rows aligned in the text part
+    assert has_row(plain(report), "Клиника", "Почему") and "Тема: Re: Pflegekraft" in plain(report)
+    notice = next(m for m in mails if "ушло 3 из 3" in m["Subject"])
+    state = cells(notice.get_body(("html",)).get_content())[0]
+    assert state[0] == ["Клиника", "Письма"] and [r[0] for r in state[1:]] == ["Klinik A", "Klinik B", "Klinik C"]
+    assert has_row(plain(notice), "Клиника", "Письма") and "<" not in plain(notice).replace("<r", "")
+    reply = next(m for m in mails if m["Subject"] == "Re: Klinik C")                       # the answer to a command
+    assert cells(reply.get_body(("html",)).get_content())[0][0] == ["Клиника", "Письма"]
+    announce = mails[0]
+    assert [p.get_content_type() for p in announce.iter_attachments()] == ["application/pdf"]
+    assert cells(announce.get_body(("html",)).get_content())[0][0] == ["Время", "Клиника", "Кому"]
 
 
 def test_a_stop_between_rounds_cancels_every_follow_up(fcfg, monkeypatch):
@@ -596,9 +1112,9 @@ def test_a_stop_between_rounds_cancels_every_follow_up(fcfg, monkeypatch):
     w.inbox.append(mail("op1@example.org", "Re: план", "стоп", at("2026-10-01T15:00:00"), "<st@op>"))
     M.send(fcfg, w.bid, live=False)
     assert len(clinic_letters(w)) == 3 and w.events("report") == []
-    reply = w.to_ops()[-1][1].get_content()
+    reply = plain(w.to_ops()[-1][1])
     assert "Рассылка остановлена. Писем ушло: 3; не уйдёт: 6, фоллоу-апы тоже." in reply
-    assert "Klinik A — первое письмо ушло вт 29.09 09:0" in reply and "дальше ничего не уйдёт: рассылка остановлена" in reply
+    assert has_row(reply, "Klinik A", "первое письмо ушло вт 29.09 09:0") and "дальше ничего не уйдёт: рассылка остановлена" in reply
     assert "Команды — письмом" not in reply                          # the process ends: no command list
     assert [e["kind"] for e in w.events("notice")] == ["round"]      # no "done": the stop's answer said it all
     with pytest.raises(M.MailerError, match="was halted"):
@@ -613,12 +1129,11 @@ def test_an_error_halt_is_resumed_by_the_same_command(fcfg, monkeypatch):
         M.send(fcfg, w.bid, live=False)
     (h,) = w.events("halt")
     assert h["kind"] == "error" and "network down" in h["reason"]
-    notice = w.to_ops()[-1][1]
-    assert "рассылка прервана" in notice["Subject"] and "той же командой" in notice.get_content()
+    assert [e["kind"] for e in w.events("notice")] == ["round"] and "той же командой" in M.halt_notice(h)[1]
     w.now = at("2026-10-01T09:30:00")
     M.send(fcfg, w.bid, live=False)
     assert len(clinic_letters(w)) == 9 and len(w.events("announced")) == 1
-    assert [e["kind"] for e in w.events("notice")] == ["round", "halt", "resumed", "round", "done"]
+    assert [e["kind"] for e in w.events("notice")] == ["round", "round", "done"]
 
 
 def test_a_resume_after_a_missed_send_time_needs_a_new_plan(fcfg, monkeypatch):

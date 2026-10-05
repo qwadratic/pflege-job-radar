@@ -1,5 +1,5 @@
 ---
-id: TASK-164
+id: TASK-404
 title: >-
   WhatsApp brain: swap the LLM behind the same persona/rules/gates from OpenAI
   to Claude
@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-12 12:53'
-updated_date: '2026-09-23 02:16'
+updated_date: '2026-10-05 13:36'
 labels:
   - whatsapp
   - luna
@@ -51,6 +51,8 @@ The inbound WhatsApp harness (TASK-59) ships a deterministic, no-LLM brain. Sepa
 
 <!-- SECTION:NOTES:BEGIN -->
 Verified end-to-end against the real claude CLI (three manual runs: normal turn asking the qualification question, qualification-reject gate firing the locked text, out-of-scope-region gate firing without a model call). Offline suite: tests/test_wa_luna_brain.py 28 passed; full repo suite 860 passed / 122 skipped / 6 failed, same 6 pre-existing failures as before this change (4 need Supabase credentials this sandbox lacks, 2 in test_career_crawl_section/test_ontology, both predating this work).
+
+2026-10-05: renumbered from TASK-164 by backlog doctor --fix (two tasks had the ID TASK-164). A mention of TASK-164 in a task text written before this date may mean this task, not the one that kept TASK-164.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
