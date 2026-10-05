@@ -69,7 +69,10 @@ def phones_owed_a_reply(conn, include_test=False):
     already settled -- no recorded no_send (ST.NO_SEND_STATE, TASK-204) and not routed to the operator
     inbox (ST.AGENT_NOTE_STATE, 2026-09-24: an operator note is answered by its own ack, so a thread
     whose last inbound was one is not owed a candidate reply and must not be re-driven into the brain)
-    -- one query, not N -- the same condition reporting.ball_for() == "us" checks per-phone.
+    -- one query, not N -- close to, but not the same as, reporting.ball_for() == "us": this query
+    does not check wa_threads.stopped or wa_suppressions (SUP.is_suppressed), so a stopped or
+    cross-rail-suppressed thread whose last message is inbound still counts as owed here, where
+    ball_for() would call it "silent".
 
     ``include_test`` decides what a test number (TASK-212) counts as here, because this query has two
     kinds of caller. As a REPORT (this module) it leaves them out: a list of candidates waiting for an

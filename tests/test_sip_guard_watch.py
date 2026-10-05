@@ -94,7 +94,11 @@ def test_log_growth_needs_ten_minutes_of_samples(rig):
     rig.append(rig.ast, blob * 3000)
     due = rig.run(T0 + 600)
     assert [k for k, _, _ in due] == ["log_growth"]
-    assert "МБ/ч" in rig.sent[0][1]
+    body = rig.sent[0][1]
+    assert "МБ/ч" in body
+    # the file size in the alert must come from the real ast_log passed in, not the module's own
+    # ASTERISK_LOG global (which does not exist on this machine and would always read as 0 МБ)
+    assert "файл 0 МБ" not in body
 
 
 def test_guard_down_and_jail_stop(rig):
@@ -110,11 +114,25 @@ def test_failed_send_is_retried_next_run(rig):
     rig.append(rig.ast, "".join(fail_line("1.1.1.1", "18:41:07") for _ in range(40)))
     assert len(rig.run(T0 + 300)) == 1 and rig.sent == []
     assert "smtp down" in rig.health()["last_alert_error"]["error"]
+    # M5: the second pass appends NO new lines -- ast_pos already moved past the burst above, so if
+    # the finding were not kept in state["pending"] it would be gone by now. It is still mailed.
     rig.fail_send = False
-    rig.append(rig.ast, "".join(fail_line("1.1.1.1", "18:46:07") for _ in range(40)))
     assert len(rig.run(T0 + 600)) == 1 and len(rig.sent) == 1
     h = rig.health()
     assert h["last_alert"]["message_id"] == "<id1@x>" and h["last_alert_error"] is None
+    subject = rig.sent[0][0]
+    assert "1.1.1.1" in subject
+
+
+def test_pending_finding_survives_two_failed_sends_then_sent_once(rig):
+    rig.fail_send = True
+    rig.append(rig.ast, "".join(fail_line("8.8.8.8", "18:41:07") for _ in range(40)))
+    assert len(rig.run(T0 + 300)) == 1 and rig.sent == []
+    # second failed send, still no new lines at all: the pending finding must not be dropped
+    assert len(rig.run(T0 + 600)) == 1 and rig.sent == []
+    rig.fail_send = False
+    assert len(rig.run(T0 + 900)) == 1 and len(rig.sent) == 1
+    assert "8.8.8.8" in rig.sent[0][0]
 
 
 def test_copytruncate_rotation_reads_from_start(rig):

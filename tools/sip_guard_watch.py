@@ -144,7 +144,7 @@ def rate(samples, idx, now):
     return sum(s[idx] for s in samples) * 3600 / (now - first)
 
 
-def check(state, now, ast_lines, grown, events, active, disk_free):
+def check(state, now, ast_lines, grown, events, active, disk_free, ast_log=ASTERISK_LOG):
     """Update state in place; return the findings due now: [(kind, key, text)]."""
     for ts, kind, jail, ip, kv in events:
         state["last_event"] = [ts, kind, jail]
@@ -194,7 +194,7 @@ def check(state, now, ast_lines, grown, events, active, disk_free):
         found.append(("brute_force", ip, f"Атака на SIP: {ip}, до {per_sec} неудачных запросов в секунду и {per_min} "
                       f"в минуту (пик {peak_sec}), всего {n_all} с прошлой проверки. {ban_note(ip)}"))
     if bytes_h is not None and bytes_h >= GROWTH_MB_PER_H << 20:
-        size = ASTERISK_LOG.stat().st_size if ASTERISK_LOG.exists() else 0
+        size = ast_log.stat().st_size if ast_log.exists() else 0
         found.append(("log_growth", "log_growth", f"Лог asterisk растёт на {bytes_h / (1 << 20):.0f} МБ/ч (файл "
                       f"{size / (1 << 20):.0f} МБ). На диске свободно {disk_free / (1 << 30):.1f} ГБ."))
     if fail_h is not None and fail_h >= VOLUME_PER_H:
@@ -273,7 +273,7 @@ def send_mail(subject, body):
 def load_state(state_dir):
     p = state_dir / "state.json"
     s = json.loads(p.read_text()) if p.exists() else {}
-    for k, v in (("banned", {}), ("bans", []), ("samples", []), ("alerted", {})):
+    for k, v in (("banned", {}), ("bans", []), ("samples", []), ("alerted", {}), ("pending", {})):
         s.setdefault(k, v)
     return s
 
@@ -291,10 +291,18 @@ def run(*, state_dir=STATE_DIR, ast_log=ASTERISK_LOG, events_log=EVENTS_LOG, now
     state = load_state(state_dir)
     ast_lines, state["ast_pos"], grown = read_new(ast_log, state.get("ast_pos"))
     ev_lines, state["ev_pos"], _ = read_new(events_log, state.get("ev_pos"), from_start=True)
-    due = check(state, now, ast_lines, grown, parse_events(ev_lines),
-                fail2ban_active() if active is None else active,
-                shutil.disk_usage("/").free if disk_free is None else disk_free)
+    new_findings = check(state, now, ast_lines, grown, parse_events(ev_lines),
+                         fail2ban_active() if active is None else active,
+                         shutil.disk_usage("/").free if disk_free is None else disk_free, ast_log)
     state["last_run"] = now
+    # Findings due now = this run's new ones plus anything still unsent from a prior run (same key
+    # merges to the freshest text) -- ast_pos already advanced past the lines a finding came from, so
+    # once a finding is found it must live in state["pending"] until a send actually succeeds, or a
+    # failed send (SMTP timeout, etc.) loses it the moment the attack that caused it stops.
+    pending = state["pending"]
+    for f in new_findings:
+        pending[f"{f[0]}:{f[1]}"] = list(f)
+    due = list(pending.values())
     if due:
         subject, body = compose(state, now, due)
         if dry_run:
@@ -304,9 +312,10 @@ def run(*, state_dir=STATE_DIR, ast_log=ASTERISK_LOG, events_log=EVENTS_LOG, now
                 mid = send(subject, body)
                 for f in due:
                     state["alerted"][f"{f[0]}:{f[1]}"] = now
+                pending.clear()
                 state["health"]["last_alert"] = {"at": utc(now), "subject": subject, "message_id": mid}
                 state["health"]["last_alert_error"] = None
-            except Exception as e:  # noqa: BLE001 -- recorded and retried next run; the findings stay due
+            except Exception as e:  # noqa: BLE001 -- stays in state["pending"], retried next run; alerted/cooldown untouched
                 state["health"]["last_alert_error"] = {"at": utc(now), "error": f"{type(e).__name__}: {e}"}
                 print(f"[{utc(now)}] ALERT SEND FAILED: {type(e).__name__}: {e}", file=sys.stderr)
     state["alerted"] = {k: t for k, t in state["alerted"].items()
