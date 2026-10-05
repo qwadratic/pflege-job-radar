@@ -158,3 +158,29 @@ bridge". The list envelope and the thread detail carry the same two fields.
 | anything else | the status and the message |
 
 Each of these replaces the view with an error card and a link to the demo. None of them renders as "0 leads".
+
+## Rail & jobs tab
+
+`/pro#/leads?tab=rail` is the second tab of this view. It shows the phone rail, read-only:
+
+- **Bridge**: the tunnel, the phone state, the watcher and the last sync, each with how long it has been so.
+- **Queue of phone ops**: counts by state over the whole ops mirror, and the same counts for the ops a human queued from Pro. A click on a count filters the list below.
+- **Automatic jobs**: one row per job with its state (ok, error with the code, overdue, never ran), the last run, the last ok run, the next run and the 24 h counts.
+- **Operations**: every phone op, newest first, with filters by state and origin.
+
+The binding field contract for both routes is [`wa-pro-activity.md`](wa-pro-activity.md) (wa-harness). What the view does with it:
+
+| Read | Used for |
+|---|---|
+| `GET /api/wa/activity` | bridge, queue, jobs. Polled every 5 s on this tab and every 15 s on the Leads tab, where it only colours the dot on the tab. |
+| `GET /api/wa/ops?status=&origin=&limit=50&before_id=` | the operations list |
+
+- **Headline.** The rail is *down* when the tunnel is down, the phone is `disconnected` or `blocked`, or the watcher is not alive. It has *warnings* when the phone is `recovering`, a job has an error or is overdue, or the queue mirror is stale. Each reason is listed under the headline.
+- **Stale.** All ages are `generated_at` minus the timestamp, so a browser clock that is off changes nothing. The queue mirror is called stale when `queue.as_of` is more than 60 s behind (the harness's own threshold for `relay_sync`), the bridge snapshot when `snapshot_at` is more than 180 s behind (3 times its 60 s cadence). A stale mirror gets a red note: the counts and the list are then the last known state.
+- **Ops are re-read, not appended.** An op keeps its `position` when its state changes, so `after_id` never shows that change. Every 5 s the view reads again from the newest op down to the oldest one on screen.
+- **No cap.** "Load older operations" follows `next_before_id` until it is `null`. A response without `next_before_id` is an error on screen, not the end of the list.
+- **Unknown values are shown raw**: an op state, kind or origin, a job key or an error code the view has no label for appears exactly as the harness sent it. `queue.other` states get their own count.
+- **Dashes, not zeros.** `ok_24h` / `failed_24h` are `null` for `relay_sync` and `broadcasts` and show as a dash. For `luna_reply` the first number is calls, not successes; the cell says so on hover.
+- **Errors.** A 404 on `/api/wa/activity` means this board's proxy is older than the harness and has no rail routes; the tab says so, and the Leads tab keeps working without a rail dot.
+
+`?mock=1#/leads?tab=rail` shows the demo: 72 invented ops and a queue that moves every 8 s.
