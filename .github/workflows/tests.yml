@@ -27,6 +27,9 @@ jobs:
       # suite never connects to them; 127.0.0.1:9 refuses at once if a test tries.
       - run: python -m pytest -q -m "not network and not llm" --timeout=300
         env:
+          # The adapter-completeness modules read the clinic registry from the internal read proxy at
+          # import; this is their own switch for a run that cannot reach it (tests/adapter_contract.py).
+          PFLEGE_TESTS_OFFLINE: "1"
           SUPABASE_URL: http://127.0.0.1:9
           SUPABASE_ANON_KEY: ci-placeholder
           PFLEGE_INGEST_URL: http://127.0.0.1:9/ingest

@@ -86,11 +86,16 @@ def test_a_failed_refresh_of_a_stale_snapshot_still_reads_as_stale_afterwards(mo
     assert D._snap["clinics"] == old_clinics                        # last good data still there to serve
 
 
-def test_the_board_hides_open_postings_of_excluded_role_classes(monkeypatch):
+def test_the_board_hides_open_postings_of_excluded_role_classes(tmp_path, monkeypatch):
     # TASK-177 (Ivan 2026-09-29, option A): rows relabeled to an excluded class stay in the DB and
     # are hidden from the board by the snapshot query itself, using the live excluded set.
     from app import config as A
+    from app import runs as R
     from pflege_jobs import config as C
+    # _build() also reads the run and photo tables; give it its own initialised DB, not data/app.sqlite.
+    monkeypatch.setattr(A, "SQLITE_PATH", tmp_path / "app.sqlite")
+    monkeypatch.setattr(A, "DATA_DIR", tmp_path)
+    R.init()
     seen = {}
 
     def fake_rest_get_all(path, params=None, page=1000, timeout=120):
