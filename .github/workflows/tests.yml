@@ -1,7 +1,7 @@
 name: tests
 
 # The offline suite: everything except the tests that talk to live clinic boards (network) and the ones
-# that spawn the paid `claude` CLI (llm). Those two stay manual.
+# that spawn the paid `claude` CLI (llm). Those two stay manual for now.
 on:
   push:
     branches: [main]
@@ -17,15 +17,34 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+        with:
+          fetch-depth: 0
+      # A pull request runs the tests of the areas it touches; tools/ci_scope.py holds the map.
+      # A push to main runs everything.
+      - id: scope
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            tests=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | python3 tools/ci_scope.py)
+          else
+            tests=ALL
+          fi
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          echo "Scope: $tests" >> "$GITHUB_STEP_SUMMARY"
+      - if: steps.scope.outputs.tests != 'NONE'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt pytest-timeout
-      - run: python -m playwright install --with-deps chromium
+      - if: steps.scope.outputs.tests != 'NONE'
+        run: pip install -r requirements.txt
+      - if: steps.scope.outputs.tests == 'ALL' || contains(steps.scope.outputs.tests, 'tests/test_web_')
+        run: python -m playwright install --with-deps chromium
+      - if: steps.scope.outputs.tests != 'NONE'
+        run: python tools/ci_scope.py --self-test
       # Placeholders, not credentials: several modules read these at import or call time. The offline
       # suite never connects to them; 127.0.0.1:9 refuses at once if a test tries.
-      - run: python -m pytest -q -m "not network and not llm" --timeout=300
+      - if: steps.scope.outputs.tests != 'NONE'
+        run: python -m pytest -q -m "not network and not llm" --timeout=300 ${{ steps.scope.outputs.tests != 'ALL' && steps.scope.outputs.tests || '' }}
         env:
           # The adapter-completeness modules read the clinic registry from the internal read proxy at
           # import; this is their own switch for a run that cannot reach it (tests/adapter_contract.py).
