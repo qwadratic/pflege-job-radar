@@ -106,6 +106,11 @@ as the cadence says, each in the thread of the recipient's own first letter. Eve
 "redirect_attempt" event first; a failure is raised, written to the desk ledger and mailed to the notify list. A wave's
 plan leaves these recipients to the desk. `redirect CONFIG ID ADDRESS...` makes the recipient by hand.
 
+Every other message (Ivan, 2026-10-05: everything that reaches the box is classified): a watch takes what belongs to its
+campaign, `sweep` reads the rest, a clinic's other address or domain, a candidate, a service, an advertiser, through the
+same answer classifier. What is no advertising ("unrelated") is logged as "unmatched" in the first campaign's ledger and
+forwarded to the "unmatched" list like any such mail; advertising is only logged. The desk sweeps on every poll.
+
 Letters: every message has a plain-text part and an HTML part rendered from the same template. A recipient's
 "html_vars" replace placeholders in the HTML part only (links); "vars" fill both. Config "signature" is appended
 to every step: its "text" to the plain part, its "image" (inline, by Content-ID) to the HTML part, or the text
@@ -1545,16 +1550,17 @@ def classify(msg, text):
     return "stop" if STOP_WORDS.search(fresh) else "reply"
 
 
-ANSWER_PATTERNS = ("terms_request", "redirect", "out_of_office", "opt_out", "other")
-ANSWER_SYSTEM = """You sort one email that a clinic (a hospital, its personnel office or nursing management) sent back to the mailbox of a recruiting agency that had written to it about placing a nurse. The mail is a human answer or an automatic reply, in German, English or another language. You get the subject, the sender's own new words (quoted history is removed), the sender's address ("from"), "automatic" (true when the mail is an automatic reply), the clinic's name and "our_addresses": the addresses of that clinic the agency wrote to (empty when the clinic is unknown).
+ANSWER_PATTERNS = ("unrelated", "terms_request", "redirect", "out_of_office", "opt_out", "other")
+ANSWER_SYSTEM = """You sort one email that a clinic (a hospital, its personnel office or nursing management) sent back to the mailbox of a recruiting agency that had written to it about placing a nurse. The mail is usually a human answer or an automatic reply, in German, English or another language; it can also be any other mail that reached the box from an address the agency never wrote to. You get the subject, the sender's own new words (quoted history is removed), the sender's address ("from"), "automatic" (true when the mail is an automatic reply), the clinic's name and "our_addresses": the addresses of that clinic the agency wrote to (empty when the clinic is unknown).
 
 Pick exactly one pattern:
+- "unrelated": advertising, a cold sales offer, a newsletter or other bulk mail that sells or promotes something to the agency (also when it offers an unsubscribe link, also when its subject starts with "Re:" or "AW:"); not a mail about nurses, clinics, candidates, vacancies, the agency's letters, its accounts, payments or services.
 - "redirect": the mail says to write to another person or address instead of the sender, or to use another channel for this concern ("wenden Sie sich bitte an ...", "schreiben Sie an ...", "bitte nicht mehr an diese Adresse, sondern an ...") and is not an absence notice.
 - "opt_out": the mail asks the agency to stop writing, to remove or delete the address or the clinic from its lists, and names no other address to write to.
 - "terms_request": the mail asks the agency to send its terms, conditions, prices, an offer or its placement contract ("schicken Sie mir bitte Ihre Konditionen").
 - "out_of_office": an absence notice (holiday, leave, sick, not in the house), automatic or written by hand, with or without a named substitute.
-- "other": everything else (interest in a candidate, questions, thanks, a received-notice, a rejection).
-If more than one fits, take the first of this order: redirect, opt_out, terms_request, out_of_office, other; an absence notice that names a substitute stays "out_of_office".
+- "other": everything else, also what you cannot place (interest in a candidate, questions, thanks, a received-notice, a rejection, a notice of a service the agency uses).
+If more than one fits, take the first of this order: unrelated, redirect, opt_out, terms_request, out_of_office, other; an absence notice that names a substitute stays "out_of_office".
 
 Fields, all copied from the mail, never guessed:
 - "addresses": email addresses exactly as written. For redirect and out_of_office: the substitute or new addresses to write to (not the sender's own, not the agency's). For opt_out: the addresses the mail asks us to stop writing to, only when it names them; otherwise [].
@@ -1565,7 +1571,7 @@ Fields, all copied from the mail, never guessed:
 - "quote": one sentence copied letter for letter from the mail that carries the pattern; "" for "other".
 - "why": one short sentence in Russian.
 
-Answer with one JSON object and nothing else: {"pattern": "terms_request|redirect|out_of_office|opt_out|other", "addresses": [], "names": [], "phones": [], "already_ours": [], "scope": null, "quote": "", "why": ""}"""
+Answer with one JSON object and nothing else: {"pattern": "unrelated|terms_request|redirect|out_of_office|opt_out|other", "addresses": [], "names": [], "phones": [], "already_ours": [], "scope": null, "quote": "", "why": ""}"""
 ADDRESS = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
@@ -1744,7 +1750,8 @@ def redirect_letters(cfg):
 def pattern_ru(ans):
     """The pattern in Russian for the operators."""
     who = "; ".join(filter(None, [", ".join(ans["addresses"]), ", ".join(ans["names"]), ", ".join(ans["phones"])]))
-    return {"terms_request": "клиника просит условия",
+    return {"unrelated": "реклама или рассылка, не по теме",
+            "terms_request": "клиника просит условия",
             "redirect": "клиника просит писать другому адресату" + (f": {who}" if who else ""),
             "out_of_office": "автоответ: сотрудника нет на месте" + (f", замена: {who}" if who else ""),
             "opt_out": "клиника просит больше не писать" + (f" на {', '.join(ans['addresses'])}" if ans["addresses"] else "")
@@ -1762,7 +1769,8 @@ def forwarded(kind, ans):
 
 STOP_RU["operator_undeliverable"] = "наше письмо оператору не доставлено"
 FORWARD_KINDS = ("reply", "stop", "bounce", "complaint", "unmatched", "operator_undeliverable", "auto_reply")      # auto_reply: see forwarded()
-STOP_RU["unmatched"] = "письмо с домена клиники, к отправленным письмам не привязано"
+STOP_RU["unmatched"] = "письмо не привязано к нашим письмам (другой адрес или домен)"
+STOP_RU["unrelated"] = "реклама или рассылка"
 STOP_RU["auto_reply"] = "автоответ"
 
 
@@ -1845,9 +1853,40 @@ def digest(cfgs, box=None):
     return out
 
 
+def sent_index(sent):
+    """(Message-ID -> recipient id, address -> recipient id, domains) of the "sent" events of one or more campaigns."""
+    by_mid = {e["message_id"]: e["recipient_id"] for e in sent}
+    by_addr = {}
+    for e in sent:
+        for a in e["to"] + e["cc"]:
+            by_addr[a.lower()] = e["recipient_id"]
+    return by_mid, by_addr, {a.split("@")[1] for a in by_addr}
+
+
+def match_sent(msg, raw_text, kind, frm, by_mid, by_addr):
+    """(recipient id, how) of the sent letter an inbound message belongs to, (None, None) when it belongs to none: its
+    thread, a quoted Message-ID, its sender's address, for a bounce or a complaint an address in the report."""
+    refs = set(re.findall(r"<[^>]+>", " ".join(filter(None, [msg.get("In-Reply-To"), msg.get("References")]))))
+    rid, how = next((by_mid[r] for r in refs if r in by_mid), None), "thread"
+    if not rid:
+        rid, how = next((by_mid[m] for m in by_mid if m in raw_text), None), "quoted message-id"
+    if not rid:
+        rid, how = by_addr.get(frm), "from address"
+    if not rid and kind in ("bounce", "complaint"):
+        rid, how = next((r for a, r in by_addr.items() if a in raw_text.lower()), None), "address in report"
+    return (rid, how) if rid else (None, None)
+
+
 def watched_state(cfg):
     """Where a daria-inbox watch remembers when its last read began: next to the ledger."""
     return cfg["ledger"].with_name(cfg["ledger"].name + ".watched")
+
+
+def watch_overlap(cfg):
+    try:
+        return timedelta(minutes=cfg["watch_overlap_minutes"])
+    except KeyError:
+        raise MailerError('watch_via "daria-inbox" needs "watch_overlap_minutes" in the config: how far before the last read a watch looks again')
 
 
 def watch_since(cfg, start):
@@ -1855,10 +1894,7 @@ def watch_since(cfg, start):
     day is 2 minutes and 100 MB, measured 2026-10-05), so after the first read, which starts at `start`, a watch reads from
     when the last one began, minus "watch_overlap_minutes" (Exchange's and this box's clocks differ and a message can be listed
     late; Ivan, 2026-10-05: 10). Messages in the overlap are in `seen` or are not clinic answers."""
-    try:
-        overlap = timedelta(minutes=cfg["watch_overlap_minutes"])
-    except KeyError:
-        raise MailerError('watch_via "daria-inbox" needs "watch_overlap_minutes" in the config: how far before the last read a watch looks again')
+    overlap = watch_overlap(cfg)
     state = watched_state(cfg)
     if not state.exists():
         return start
@@ -1880,12 +1916,7 @@ def _watch(cfg, box):
     if not sent:
         return []
     seen = {e["imap_message_id"] for e in ledger if e["event"] == "inbound"}
-    by_mid = {e["message_id"]: e["recipient_id"] for e in sent}
-    by_addr = {}
-    for e in sent:
-        for a in e["to"] + e["cc"]:
-            by_addr[a.lower()] = e["recipient_id"]
-    domains = {a.split("@")[1] for a in by_addr}
+    by_mid, by_addr, domains = sent_index(sent)
     since = min(datetime.fromisoformat(e["sent_at"]) for e in sent).astimezone(cfg["tz"]).replace(hour=0, minute=0, second=0, microsecond=0)
     via = cfg.get("watch_via", "imap")
     read_from = now_in(cfg)
@@ -1902,22 +1933,15 @@ def _watch(cfg, box):
             continue                 # an operator's mail is a command (handle_commands), never a clinic's answer
         text = text_of(msg)
         kind = classify(msg, text)
-        refs = set(re.findall(r"<[^>]+>", " ".join(filter(None, [msg.get("In-Reply-To"), msg.get("References")]))))
         raw_text = raw.decode("utf-8", "replace")
         down = {a for a in cfg["operators"] if a in raw_text.lower()} if kind == "bounce" else set()
         if down:                    # our own mail to an operator did not arrive: no clinic's bounce
             kind, rid, how = "operator_undeliverable", None, "address in report"
         else:
-            rid, how = next((by_mid[r] for r in refs if r in by_mid), None), "thread"
-            if not rid:
-                rid, how = next((by_mid[m] for m in by_mid if m in raw_text), None), "quoted message-id"
-            if not rid:
-                rid, how = by_addr.get(frm), "from address"
-            if not rid and kind in ("bounce", "complaint"):
-                rid, how = next((r for a, r in by_addr.items() if a in raw_text.lower()), None), "address in report"
+            rid, how = match_sent(msg, raw_text, kind, frm, by_mid, by_addr)
             if not rid:
                 if frm.split("@")[-1] not in domains:
-                    continue
+                    continue         # not from this campaign's clinics: `sweep` takes it
                 kind, how = "unmatched", None
         ans, actions = None, []
         if kind in ("reply", "auto_reply", "unmatched"):       # not read: the answer stays unlogged and is read again on resume
@@ -1945,6 +1969,76 @@ def _watch(cfg, box):
         tmp.replace(watched_state(cfg))
     print(f"watch {cfg['sender']} via {via}: {n_read} messages read in "
           f"{'all folders' if via == 'daria-inbox' else ', '.join(cfg['watch_folders'])} since {since:%Y-%m-%d}, {len(new)} new for this campaign")
+    return new
+
+
+def sweep(cfgs, box=None):
+    """Log and sort every new inbound message that no campaign's watch takes (Ivan, 2026-10-05: everything that reaches the box
+    goes through the classifier, not only what is tied to our letters). A watch takes what belongs to its campaign: a
+    thread, a quoted Message-ID, an address or a domain of its sent letters. Operators' mail is the desk's (commands), the
+    box's own mail is ours. What is left, from a clinic's other address or domain, a candidate, a service, an advertiser, is
+    read by the answer classifier and logged as an "inbound" event in the first campaign's ledger: "unmatched" and
+    forwarded like any unmatched mail, or "unrelated" (advertising) and only logged. One sweep at a time. It starts from the
+    moment it first runs, then from when the last one began, minus "watch_overlap_minutes": the first campaign days were
+    read by hand on 05.10 (610 messages, none missed). The classifier acts as for any answer; for a sender we never wrote
+    to, a redirect changes nothing (its address is not ours) and an opt_out blocks the addresses it names. A message the
+    classifier cannot read raises and is read again by the next sweep, the ones before it stay logged."""
+    with open(cfgs[0]["ledger"].with_name(cfgs[0]["ledger"].name + ".sweep.lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _sweep(cfgs, box)
+
+
+def swept_state(cfg):
+    return cfg["ledger"].with_name(cfg["ledger"].name + ".swept")
+
+
+def _sweep(cfgs, box):
+    cfg = cfgs[0]
+    ledgers = [read_ledger(c) for c in cfgs]
+    by_mid, by_addr, domains = sent_index([e for l in ledgers for e in l if e["event"] == "sent"])
+    seen = {e["imap_message_id"] for l in ledgers for e in l if e["event"] == "inbound"}
+    operators = {a for c in cfgs for a in c["operators"]}
+    read_from, state = now_in(cfg), swept_state(cfg)
+    since = (datetime.fromisoformat(json.loads(state.read_text())["read_from"]) if state.exists() else read_from) - watch_overlap(cfg)
+    if not state.exists():
+        print(f"first sweep: reading from {since:%Y-%m-%d %H:%M}")
+    new, n_read = [], 0
+    for folder, raw in inbox_messages(cfg, box, since, seen):
+        n_read += 1
+        msg = email.message_from_bytes(raw)
+        mid = (msg.get("Message-ID") or "").strip() or "sha256:" + hashlib.sha256(raw).hexdigest()
+        frm = parseaddr(msg.get("From", ""))[1].lower()
+        if mid in seen or frm == cfg["sender"].lower() or frm in operators:
+            continue
+        text = text_of(msg)
+        kind = classify(msg, text)
+        raw_text = raw.decode("utf-8", "replace")
+        if kind == "bounce" and any(a in raw_text.lower() for a in operators):
+            continue                 # our mail to an operator did not arrive: the campaigns' watch logs it
+        if match_sent(msg, raw_text, kind, frm, by_mid, by_addr)[0] or frm.split("@")[-1] in domains:
+            continue                 # a campaign's watch takes it
+        subject = " ".join(str(msg.get("Subject", "")).split())
+        try:
+            ans = classify_answer(cfg, raw, frm, None, [], kind == "auto_reply")
+            actions = [] if ans["pattern"] == "unrelated" else act_on_answer(cfg, ans, frm, None, [], subject, now_in(cfg), kind == "auto_reply")
+        except MailerError as e:
+            raise MailerError(f"could not read the mail from {frm} ({subject!r}): {e}")
+        kind = "unrelated" if ans["pattern"] == "unrelated" else "unmatched"
+        to = list(cfg["forward"][kind]) if cfg["operators"] and forwarded(kind, ans) else []
+        fwd = {"digest_to": to, "eml": spool_inbound(cfg, mid, raw)} if to else {}
+        ev = append_ledger(cfg, {"event": "inbound", "kind": kind, "recipient_id": None, "matched_by": None, "sweep": True,
+                                 "folder": folder, "from": frm, "subject": msg.get("Subject", ""), "date": msg.get("Date", ""),
+                                 "imap_message_id": mid, "pattern": ans["pattern"],
+                                 "pattern_fields": {k: ans[k] for k in ("addresses", "names", "phones", "already_ours", "scope")},
+                                 "quote": ans["quote"], "why": ans["why"], "actions": actions, **fwd})
+        seen.add(mid)
+        new.append(ev)
+        print(f"sweep {kind:9} from {frm} [{ans['pattern']}] {subject[:70]}")
+    tmp = state.with_suffix(".swept.tmp")
+    tmp.write_text(json.dumps({"read_from": read_from.isoformat(timespec="seconds")}))
+    tmp.replace(state)
+    print(f"sweep {cfg['sender']}: {n_read} messages read since {since:%Y-%m-%d %H:%M}, {len(new)} from no campaign, "
+          f"{sum(e['kind'] == 'unrelated' for e in new)} of them advertising")
     return new
 
 

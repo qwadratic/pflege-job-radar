@@ -84,6 +84,7 @@ class Desk:
         monkeypatch.setattr(D, "now", lambda d: NOW)
         self.sent, self.intents = [], {}
         monkeypatch.setattr(M, "smtp_send", lambda box, msg: self.sent.append(msg) or {})
+        monkeypatch.setattr(M, "sweep", lambda cfgs, box: [])         # the box is never read for real (see test_clinic_mailer)
         monkeypatch.setattr(D, "run_claude", self.classifier)
         self.jobs = queue.Queue()
 
@@ -633,25 +634,40 @@ def test_a_failed_redirect_letter_is_logged_and_mailed_and_does_not_stop_the_des
     assert m["Subject"] == "Письмо на новый адрес не ушло: волна 2" and m["To"] == ", ".join(OPS) and "SMTP refused ['pa@x.de']" in plain(m)
 
 
-def test_the_desk_reads_every_campaigns_answers_and_mails_one_that_stays_unreadable_once(desk, monkeypatch):
-    """Ivan, 2026-10-05: a batch process was the only reader of the clinics' answers, so one waited for the next process."""
-    watched = []
+def test_the_desk_reads_every_campaigns_answers_and_the_rest_and_mails_a_read_that_stays_failing_once(desk, monkeypatch):
+    """Ivan, 2026-10-05: a batch process was the only reader of the clinics' answers, so one waited for the next process;
+    and a mail from an address no letter went to was dropped."""
+    watched, swept = [], []
 
     def watch(cfg, box):
         watched.append(cfg["campaign"])
         if cfg["campaign"] == "w1":
-            raise M.MailerError("daria-inbox exited 1: HTTP 404")
+            raise M.MailerError("daria-inbox exited 1 on 4 tries in a row: HTTP 404")
         return []
     monkeypatch.setattr(M, "watch", watch)
+    monkeypatch.setattr(M, "sweep", lambda cfgs, box: swept.append([c["campaign"] for c in cfgs]) or [])
     failing = D.watch_campaigns(desk.d, {}, set())
-    assert failing == {"w1"} and watched == ["w1", "w2"]
+    assert failing == {"w1"} and watched == ["w1", "w2"] and swept == [["w1", "w2"]]
     (m,) = desk.sent
-    assert m["Subject"] == "Дарья не может прочитать ответы клиник: волна 1" and m["To"] == ", ".join(OPS)
-    assert "4 раза подряд: daria-inbox exited 1: HTTP 404" in plain(m)
+    assert m["Subject"] == "Дарья не может прочитать почту: волна 1" and m["To"] == ", ".join(OPS)
+    assert "4 раза подряд: daria-inbox exited 1 on 4 tries in a row: HTTP 404" in plain(m)
     assert D.watch_campaigns(desk.d, {}, failing) == {"w1"} and len(desk.sent) == 1          # the outage goes on: no second mail
     monkeypatch.setattr(M, "watch", lambda cfg, box: [])
     assert D.watch_campaigns(desk.d, {}, failing) == set()
     assert [(e["event"], e["campaign"]) for e in D.read_ledger(desk.d) if e["event"].startswith("watch_")] == [("watch_error", "w1"), ("watch_recovered", "w1")]
+
+
+def test_a_failing_sweep_is_mailed_once_and_does_not_stop_the_watches(desk, monkeypatch):
+    watched = []
+    monkeypatch.setattr(M, "watch", lambda cfg, box: watched.append(cfg["campaign"]) or [])
+
+    def sweep(cfgs, box):
+        raise M.MailerError("could not read the mail from x@y.de ('Hallo'): classifier: claude exited 1")
+    monkeypatch.setattr(M, "sweep", sweep)
+    failing = D.watch_campaigns(desk.d, {}, set())
+    assert failing == {D.SWEEP} and watched == ["w1", "w2"]
+    (m,) = desk.sent
+    assert m["Subject"] == "Дарья не может прочитать почту: входящие вне рассылок" and "could not read the mail from x@y.de" in plain(m)
 
 
 def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_refused(desk):

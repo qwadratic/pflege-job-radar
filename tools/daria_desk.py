@@ -18,8 +18,9 @@ Commands:
                              and status at once and answers everything else from a worker thread, one mail at a
                              time. A second thread sends the letters that clinics' redirects made (clinic_mailer.py
                              redirect_letters, TASK-345.12.9); a failure there is logged and mailed, not fatal. A third
-                             thread reads every campaign's inbox for clinic answers (clinic_mailer.watch), whether a
-                             batch runs or not; a campaign that cannot be read (after the helper's three retries) is logged and mailed once. A
+                             thread reads the box for every campaign's clinic answers (clinic_mailer.watch) and for all
+                             other mail (clinic_mailer.sweep), whether a batch runs or not; a read that fails (after the
+                             helper's three retries) is logged and mailed once. A
                              read of the operators' mail that fails (after the same retries) is mailed once per
                              outage; the desk goes on with the rest but stamps no heartbeat until a read succeeds. Any
                              other error ends the desk after a mail to the operators; the batches halt by themselves
@@ -73,6 +74,9 @@ LOCK = threading.Lock()          # ledger appends and SMTP sends from the main l
 
 
 # ---------- config, ledger, heartbeat ----------
+
+SWEEP = "sweep"      # the name of the sweep in the watch errors, beside the campaigns' names
+
 
 def load(path):
     path = Path(path).resolve()
@@ -343,10 +347,13 @@ def mailing_state_text(d):
                           "запланирован, ещё не анонсирован" + (f", анонс {M.mailer_announce.when(datetime.fromisoformat(ann['send_at']))}" if ann else "")
                           + f"; одобрение оператора: {'есть' if approved else 'нет, ждёт'}")
                        + "):\n" + M.state_text(cfg, batch, ledger))
-        inbound = [e for e in ledger if e["event"] == "inbound"]
+        inbound = [e for e in ledger if e["event"] == "inbound" and e["kind"] != "unrelated"]
         if inbound:
-            out.append("Входящие от клиник:")
+            out.append("Входящие письма (ответы клиник и всё, что не реклама):")
             out += [f"- {e['ts'][:16]} {e['kind']} от {e['from']} ({e.get('recipient_id')}): {e.get('subject', '')}" for e in inbound]
+        ads = sum(e["event"] == "inbound" and e["kind"] == "unrelated" for e in ledger)
+        if ads:
+            out.append(f"Реклама и рассылки (только в журнале): {ads}")
         out.append("")
     return "\n".join(out)
 
@@ -498,23 +505,24 @@ def redirect_letters(d, box):
 
 
 def watch_campaigns(d, box, failing):
-    """Read every campaign's inbox for clinic answers (clinic_mailer.watch: classify, log, act), with retries, whether or
-    not a batch of it runs (Ivan, 2026-10-05: a batch process was the only reader, so an answer waited for the next one:
-    52 minutes on 02.10, and after the last batch nobody would read). A campaign whose read still fails is logged
-    (watch_error) and mailed once per outage; the others go on. `failing` is the set of campaigns in an outage; returns it."""
-    for c in d["campaigns"]:
-        cfg = c["cfg"]
-        name = cfg["campaign"]
+    """Read the box for every campaign's clinic answers (clinic_mailer.watch: classify, log, act) and for everything that
+    belongs to no campaign (clinic_mailer.sweep, SWEEP), with the helper's retries, whether or not a batch runs (Ivan,
+    2026-10-05: a batch process was the only reader, so an answer waited for the next one: 52 minutes on 02.10, and after
+    the last batch nobody would read; and a mail from an address no letter went to was dropped). A read that still fails is
+    logged (watch_error) and mailed once per outage; the others go on. `failing` is the set of reads in an outage; returns it."""
+    reads = [(c["cfg"]["campaign"], c["label"], lambda c=c: M.watch(c["cfg"], box)) for c in d["campaigns"]]
+    reads.append((SWEEP, "входящие вне рассылок", lambda: M.sweep([c["cfg"] for c in d["campaigns"]], box)))
+    for name, label, read in reads:
         try:
-            M.watch(cfg, box)
+            read()
         except Exception as e:
             reason = str(e) or type(e).__name__
             if name not in failing:
                 log(d, {"event": "watch_error", "campaign": name, "reason": reason, "trace": traceback.format_exc()[-2000:]})
-                error_notice(d, box, f"Дарья не может прочитать ответы клиник: {c['label']}",
-                             f"{c['label']}: чтение ответов клиник не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
-                             "Стол пробует снова каждую минуту и ничего не пропустит: ответ, который не удалось прочитать, остаётся "
-                             "непрочитанным и будет прочитан при следующей удачной попытке.")
+                error_notice(d, box, f"Дарья не может прочитать почту: {label}",
+                             f"{label}: чтение не удалось {M.READ_RETRIES + 1} раза подряд: {reason}",
+                             "Стол пробует снова каждую минуту и ничего не пропустит: письмо, которое не удалось прочитать, остаётся "
+                             "непрочитанным и будет прочитано при следующей удачной попытке.")
             failing = failing | {name}
         else:
             if name in failing:

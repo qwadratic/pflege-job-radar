@@ -1365,3 +1365,80 @@ def test_a_failing_helper_is_tried_again_three_times_and_the_last_failure_is_rai
     with pytest.raises(M.MailerError, match=r"(?s)exited 1 on 4 tries in a row: .*HTTP Error 404"):
         M.helper_output(since)
     assert len(calls) == 4 and len(naps) == 3
+
+
+# ---------- mail from no campaign: the sweep ----------
+
+def stranger(w, frm, text, mid, subject="Anfrage", t="2026-09-29T10:03:00", **headers):
+    w.inbox.append(mail(frm, subject, text, at(t), mid, **headers))
+
+
+def test_a_mail_from_an_address_and_domain_no_letter_went_to_is_classified_logged_and_forwarded(scfg, monkeypatch, reader):
+    """Ivan, 2026-10-05: if a clinic writes from some other domain, we read it too; everything goes through the classifier.
+    Before, `_watch` dropped such a mail: not in the thread, not from an address or domain we wrote to."""
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "Personalabteilung <personal@klinikverbund-nord.example>", "Wir haben Interesse an Ihrer Pflegekraft.\n", "<s1@x>")
+    assert M.watch(scfg) == []                                         # a campaign's watch leaves it
+    (ev,) = M.sweep([scfg])
+    assert (ev["kind"], ev["recipient_id"], ev["pattern"], ev["sweep"], ev["digest_to"]) == ("unmatched", None, "other", True, OPS)
+    assert ev["from"] == "personal@klinikverbund-nord.example" and reader.asked[-1]["clinic"] is None and reader.asked[-1]["our_addresses"] == []
+    assert M.digest([scfg]) == {OPS[0]: 1, OPS[1]: 1}
+    d = _email.message_from_bytes(w.to_ops_of(OPS[0])[0][1].as_bytes(), policy=_email.policy.default)
+    assert "письмо не привязано к нашим письмам" in d.get_body(("plain",)).get_content()
+    assert M.sweep([scfg]) == [] and M.watch(scfg) == []              # read once
+
+
+def test_advertising_is_classified_and_logged_but_not_forwarded(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "steve@seo-leads.example", "Boost your pipeline today. Unsubscribe here.\n", "<s2@x>", subject="Re: quick question")
+    reader.says("Boost your pipeline", pattern="unrelated", quote="Boost your pipeline today.")
+    (ev,) = M.sweep([scfg])
+    assert (ev["kind"], ev["pattern"], ev["actions"], ev["digest_to"] if "digest_to" in ev else None) == ("unrelated", "unrelated", [], None)
+    assert "eml" not in ev and M.digest([scfg]) == {} and w.sent == [] and table(scfg) == []
+
+
+def test_the_sweep_leaves_what_a_watch_takes_and_the_operators_and_the_boxs_own_mail(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "x@elsewhere.example", "Danke, Konditionen?\n", "<t1@x>", In_Reply_To="<m1@x>")         # in the letter's thread
+    stranger(w, "hr@a.de", "Guten Tag\n", "<t2@x>")                                                      # a domain we wrote to
+    stranger(w, OPS[0], "stopp\n", "<t3@x>")                                                             # an operator's command
+    stranger(w, "me@example.org", "our own\n", "<t4@x>")
+    stranger(w, "postmaster@outlook.example", f"Your message to {OPS[1]} couldn't be delivered.\n", "<t5@x>", subject="Undeliverable: x")
+    stranger(w, "unknown@elsewhere.example", "Hallo\n", "<t6@x>")
+    assert [e["from"] for e in M.sweep([scfg])] == ["unknown@elsewhere.example"]
+    assert sorted((e["kind"], e["from"]) for e in M.watch(scfg)) == [("operator_undeliverable", "postmaster@outlook.example"),
+                                                                       ("reply", "x@elsewhere.example"), ("unmatched", "hr@a.de")]
+
+
+def test_a_sweep_starts_when_it_first_runs_and_goes_on_from_the_last_read_less_the_overlap(scfg, monkeypatch):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "old@elsewhere.example", "Vor Stunden\n", "<o1@x>", t="2026-09-29T08:00:00")           # before the first sweep
+    stranger(w, "new@elsewhere.example", "Jetzt\n", "<o2@x>", t="2026-09-29T10:00:00")
+    assert [e["from"] for e in M.sweep([scfg])] == ["new@elsewhere.example"]                           # now 10:05, overlap 10 min
+    state = json.loads(M.swept_state(scfg).read_text())
+    assert state == {"read_from": "2026-09-29T10:05:00+02:00"}
+    w.now = at("2026-09-29T10:30:00")
+    stranger(w, "later@elsewhere.example", "Spaeter\n", "<o3@x>", t="2026-09-29T10:16:00")
+    stranger(w, "before@elsewhere.example", "Davor\n", "<o4@x>", t="2026-09-29T09:50:00")             # older than the last read (10:05) less 10 min
+    assert [e["from"] for e in M.sweep([scfg])] == ["later@elsewhere.example"]
+
+
+def test_a_mail_the_classifier_cannot_read_stops_the_sweep_and_is_read_again(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "a@elsewhere.example", "Hallo eins\n", "<c1@x>")
+    stranger(w, "b@elsewhere.example", "boom\n", "<c2@x>")
+    stranger(w, "c@elsewhere.example", "Hallo drei\n", "<c3@x>")
+    with pytest.raises(M.MailerError, match=r"could not read the mail from b@elsewhere.example .*overloaded"):
+        M.sweep([scfg])
+    assert not M.swept_state(scfg).exists()
+    assert [e["from"] for e in w.events("inbound")] == ["a@elsewhere.example"]                          # the one before it stays logged
+    reader.broken = False
+    assert [e["from"] for e in M.sweep([scfg])] == ["b@elsewhere.example", "c@elsewhere.example"]
+
+
+def test_an_opt_out_from_a_sender_we_never_wrote_to_blocks_the_addresses_it_names(scfg, monkeypatch, reader):
+    w = answers_world(scfg, monkeypatch, ["pd@a.de"], [])
+    stranger(w, "hr@klinikverbund-nord.example", "Bitte streichen Sie pd@a.de aus Ihrem Verteiler.\n", "<p1@x>")
+    reader.says("streichen", pattern="opt_out", addresses=["pd@a.de"], scope="address", quote="Bitte streichen Sie pd@a.de aus Ihrem Verteiler.")
+    (ev,) = M.sweep([scfg])
+    assert ev["kind"] == "unmatched" and ev["actions"][0]["do"] == "opt_out" and [r["match"] for r in table(scfg)] == ["pd@a.de"]
