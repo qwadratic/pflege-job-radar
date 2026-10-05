@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-01 18:10'
-updated_date: '2026-10-01 18:42'
+updated_date: '2026-10-05 17:04'
 labels:
   - email
 dependencies: []
@@ -48,4 +48,6 @@ Two scheduled batches (nurse79 wave 1 until 09.10, nurse79-2 from 02.10) share d
 2026-10-01: implemented tools/daria_desk.py (run/ask/route), desk mode in tools/clinic_mailer.py (check_desk, poll_until, send_scheduled, commands_help) and desk texts in tools/mailer_announce.py. Desk config data/email-analysis/desk/daria.json (gitignored) lists nurse79 wave 1 and nurse79-2; both campaign configs now carry desk {heartbeat ../../../desk/heartbeat.json, max_age_seconds 600, poll_seconds 60}; wave 2 announces with w2/announce.txt (stop in this thread stops only wave 2). tests/test_daria_desk.py: 11 passed. Not deployed: the desk runs as root (campaign ledgers are root-owned), so Ivan starts it; the running wave-1 process (pid 3494830, old code) must be stopped and restarted after the desk is up, or it keeps answering operator mail itself.
 
 Ivan, 2026-10-01: the 10-minute heartbeat limit (desk.max_age_seconds 600) is confirmed ("да").
+
+Ivan 2026-10-05 evening: the desk crashed at 16:59 on a daria-inbox HTTP 404 (a message vanished between the list and the fetch). Now the read of the operators' mail is retried three times (10 s apart); if it still fails the desk logs read_error and mails the notify list once per outage, and goes on with the halt notices, the digest and the answer and redirect threads. It stamps no heartbeat and does not move its read position until a read succeeds (a stop by mail would go unread, so the batches halt themselves after their limit; the mail that arrived meanwhile is read afterwards). Also: the redirect letters (TASK-345.12.9) are sent from a desk thread; a stop by mail does not stop them (Ivan's decision). tools/daria_desk.py poll/read_operator_mail, tests/test_daria_desk.py.
 <!-- SECTION:NOTES:END -->

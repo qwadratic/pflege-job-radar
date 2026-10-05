@@ -8,6 +8,7 @@ import random
 import shlex
 import sqlite3
 import sys
+import types
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
@@ -208,23 +209,72 @@ def test_a_correction_mail_cannot_do_becomes_a_task_and_a_failed_answer_is_told(
 
 
 def test_a_desk_error_is_logged_and_mailed_before_the_desk_exits(desk, monkeypatch):
+    """An error outside the reading of the mail (an inbox that cannot be read is retried, see below) still ends the desk."""
     desk.intents["Какой статус рассылки?"] = ("status", [], [])
     monkeypatch.setattr(M, "mailbox", lambda a: {"ADDRESS": a})
-    calls = []
+    monkeypatch.setattr(D, "operator_mail", lambda d, since, seen: iter(()))
 
-    def inbox(d, since, seen):
-        calls.append(since)
-        if len(calls) > 1:
-            raise M.MailerError("daria-inbox exited 1: token expired")
-        return iter(())
-    monkeypatch.setattr(D, "operator_mail", inbox)
+    def status_check(d, box):
+        raise M.MailerError("halt notice failed: token expired")
+    monkeypatch.setattr(D, "status_check", status_check)
     with pytest.raises(M.MailerError, match="token expired"):
         D.run(desk.d)
     (stop,) = [e for e in D.read_ledger(desk.d) if e["event"] == "desk_stopped"]
-    assert stop["reason"] == "daria-inbox exited 1: token expired"
+    assert stop["reason"] == "halt notice failed: token expired"
     (m,) = desk.sent
     assert m["Subject"] == "Дарья не читает почту операторов" and "token expired" in plain(m) and m["To"] == ", ".join(OPS)
     assert json.loads(desk.d["heartbeat"].read_text())["ts"] == NOW.isoformat(timespec="seconds")
+
+
+def failing_inbox(monkeypatch, fails):
+    """D.operator_mail that raises `fails` times (a vanished message, HTTP 404) and then reads two mails; M.sleep is recorded."""
+    calls, naps = [], []
+
+    def inbox(d, since, seen):
+        calls.append(since)
+        if len(calls) <= fails:
+            raise M.MailerError("daria-inbox exited 1: HTTP 404")
+        return iter(())
+    monkeypatch.setattr(D, "operator_mail", inbox)
+    monkeypatch.setattr(M, "sleep", naps.append)
+    return calls, naps
+
+
+def test_an_inbox_read_is_retried_three_times_before_it_counts_as_failed(desk, monkeypatch):
+    calls, naps = failing_inbox(monkeypatch, 3)
+    assert D.read_operator_mail(desk.d, NOW, set()) == [] and len(calls) == 4 and naps == [D.READ_RETRY_SECONDS] * 3
+    calls, naps = failing_inbox(monkeypatch, 4)
+    with pytest.raises(M.MailerError, match="HTTP 404"):
+        D.read_operator_mail(desk.d, NOW, set())
+    assert len(calls) == 4 and len(naps) == 3
+
+
+def test_an_inbox_that_stays_unreadable_is_mailed_once_and_the_rest_of_the_desk_goes_on(desk, monkeypatch):
+    """Ivan, 2026-10-05: three retries, a notice, and the desk keeps running; the heartbeat is the one thing it must not fake."""
+    calls, naps = failing_inbox(monkeypatch, 99)
+    ran = []
+    monkeypatch.setattr(D, "status_check", lambda d, box: ran.append("status"))
+    monkeypatch.setattr(D, "digest_due", lambda d, t: True)
+    monkeypatch.setattr(M, "digest", lambda cfgs, box: ran.append("digest") or {})
+    since = NOW - timedelta(minutes=30)
+    assert D.poll(desk.d, {}, desk.jobs, since, False) == (since, True) and ran == ["status", "digest"]
+    (m,) = [m for m in desk.sent if m["Subject"] == "Дарья не может прочитать почту операторов"]
+    assert m["To"] == ", ".join(OPS) and "4 раза подряд: daria-inbox exited 1: HTTP 404" in plain(m)
+    assert not desk.d["heartbeat"].exists()                                         # a stop by mail would go unread
+    for _ in range(2):                                                              # the outage goes on: no second mail
+        assert D.poll(desk.d, {}, desk.jobs, since, True) == (since, True)
+    assert len(desk.sent) == 1 and ran == ["status", "digest"] * 3
+    assert [e["event"] for e in D.read_ledger(desk.d) if e["event"].startswith("read_")] == ["read_error"]
+
+
+def test_the_desk_reads_again_after_an_outage_from_where_it_stopped(desk, monkeypatch):
+    calls, naps = failing_inbox(monkeypatch, 0)
+    monkeypatch.setattr(D, "status_check", lambda d, box: None)
+    since = NOW - timedelta(minutes=30)
+    new_since, failing = D.poll(desk.d, {}, desk.jobs, since, True)
+    assert failing is False and calls == [since] and new_since == NOW - timedelta(minutes=desk.d["overlap_minutes"])
+    assert [e["event"] for e in D.read_ledger(desk.d) if e["event"] == "read_recovered"] == ["read_recovered"]
+    assert json.loads(desk.d["heartbeat"].read_text())["since"] == since.isoformat(timespec="seconds")
 
 
 def test_the_digest_goes_out_once_a_day_from_digest_at(desk, monkeypatch):
@@ -236,17 +286,13 @@ def test_the_digest_goes_out_once_a_day_from_digest_at(desk, monkeypatch):
     desk.intents["Какой статус рассылки?"] = ("status", [], [])
     monkeypatch.setattr(M, "mailbox", lambda a: {"ADDRESS": a})
     monkeypatch.setattr(D, "digest_due", lambda d, t: True)
-    monkeypatch.setattr(D.time, "sleep", lambda s: None)
     got = []
     monkeypatch.setattr(M, "digest", lambda cfgs, box: got.append(cfgs) or {OPS[0]: 2})
-    calls = []
+    monkeypatch.setattr(D, "operator_mail", lambda d, since, seen: iter(()))
 
-    def inbox(d, since, seen):
-        calls.append(since)
-        if len(calls) > 2:                          # the start reads once, the first round once
-            raise M.MailerError("stop here")
-        return iter(())
-    monkeypatch.setattr(D, "operator_mail", inbox)
+    def end_of_round(seconds):
+        raise M.MailerError("stop here")
+    monkeypatch.setattr(D, "time", types.SimpleNamespace(sleep=end_of_round))       # the main loop's sleep only, not the threads'
     with pytest.raises(M.MailerError, match="stop here"):
         D.run(desk.d)
     assert got == [[desk.d["campaigns"][0]["cfg"], desk.d["campaigns"][1]["cfg"]]]
