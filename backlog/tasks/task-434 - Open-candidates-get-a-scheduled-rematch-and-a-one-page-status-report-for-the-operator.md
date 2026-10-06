@@ -3,9 +3,11 @@ id: TASK-434
 title: >-
   Open candidates get a scheduled rematch and a one-page status report for the
   operator
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-10-06 07:51'
+updated_date: '2026-10-06 07:54'
 labels: []
 dependencies: []
 ordinal: 308000
@@ -25,3 +27,11 @@ Ivan, 2026-10-06: while a candidate has no job, rerun the clinic match on the li
 - [ ] #4 The one-page report and a detail page render from the same data
 - [ ] #5 No automatic live sends: new finds go to the digest and a wave needs Ivan's approval
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06, first slice: the booklet of the 13 still unwritten clinics of the prepared wave 3 (docs/status/2026-10-06-wave3-booklet/, index.html plus a PDF, German, candidate-anonymous, self-contained). Layout convention from the WA harness lane: docs/status/<yyyy-mm-dd>-<slug>/index.html, optional PDF, later detail.html; no external fonts, scripts or images; the unguessable URL token is made at publish time and never goes into git.
+
+First read-only rematch run, 2026-10-06 (about 10 s of compute): the 29.09 recheck scripts (build_universe, classify) do not run unchanged on today's board. department_hint is a list now (it was a string joined with a pipe), classify only knew wave 1 as written and fails on clinics missing from sb_facts.json and trips.json. A scheduled job needs a maintained version of them, with written clinics read from every campaign's recipients. The cheap funnel does not refresh mail history, housing, trip times or the liveness of ads on clinic sites; those were the expensive passes of 29.09 and belong to the heavy step for new finds only. Findings of the run: 6 of the 20 clinics that the 30.09 booklet draft labelled wave 3 had gone out in wave 2, so 14 were unwritten (13 with a live ad today); 2 new registry clinics; 7 old options lost their board ad.
+<!-- SECTION:NOTES:END -->
