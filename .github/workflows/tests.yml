@@ -5,14 +5,20 @@ name: tests
 #   offline   the suite that needs no mirror: everything except the tests that read real clinic boards (mirror), talk to a live
 #             system on purpose (network) or spawn the paid `claude` CLI (llm). No secret, no pull, so it also runs on fork PRs.
 #             A pull request runs the tests of the areas it touches; a push to main runs everything.
-#   adapters  the tests that replay real boards (-m mirror, about 40 minutes): pulls the mirror from the private Bunny zone first.
-#             Runs on a push to main and on a pull request that changes the adapters, the replay layer, the tests of them, the
-#             dependencies or this file, or whose offline scope is ALL. On a fork PR the repository secrets are empty and the
-#             pull step fails by itself, naming them: the job is red, never silently skipped.
+#   adapters  the tests that replay real boards (-m mirror, about 33 minutes): pulls the mirror from the private Bunny zone first.
+#             Runs when the pull request, or the push to main itself, changes something those tests can see: the adapters, the
+#             replay layer, the tests, Python they import, a data file, the dependencies or this file. On a fork PR the repository
+#             secrets are empty and the pull step fails by itself, naming them: the job is red, never silently skipped.
+#
+# Every night, and from the "Run workflow" button, both jobs run everything without asking the map. That run is what catches a
+# mistake in the map.
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 1 * * *"       # 01:17 UTC, before the board's 03:00 crawl; off the full hour, where GitHub's queue is longest
+  workflow_dispatch:
 
 # A newer push to a pull request drops the runs it supersedes; a push to main is never cancelled, it runs to the end.
 concurrency:
@@ -76,11 +82,15 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
+          : > "$RUNNER_TEMP/changed.txt"
           if [ "$EVENT" = "pull_request" ]; then
             git diff --name-only "origin/$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
-          else
-            : > "$RUNNER_TEMP/changed.txt"
+          elif [ "$EVENT" = "push" ]; then
+            # What this push brought. A push whose previous head cannot be read (a first push, a rewritten branch) is a full run.
+            git diff --name-only "$BEFORE" "$AFTER" > "$RUNNER_TEMP/changed.txt" || EVENT=full
           fi
           adapters=$(python3 tools/ci_scope.py --job adapters --event "$EVENT" < "$RUNNER_TEMP/changed.txt")
           echo "adapters=$adapters" >> "$GITHUB_OUTPUT"

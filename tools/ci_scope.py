@@ -2,14 +2,20 @@
 
     git diff --name-only origin/main...HEAD | python tools/ci_scope.py [--job offline] [--event pull_request]
     git diff --name-only origin/main...HEAD | python tools/ci_scope.py --job adapters
-    python tools/ci_scope.py --event push [--job adapters]       # no stdin read: everything runs
+    git diff --name-only BEFORE AFTER | python tools/ci_scope.py --event push --job adapters
+    python tools/ci_scope.py --event schedule [--job adapters]   # no stdin read: everything runs
     python tools/ci_scope.py --self-test
 
 CI has two jobs. `offline` runs `pytest -m "not mirror and not network and not llm"` without the mirror, without secrets, fork PRs
 included; `--job offline` (the default) prints one line: `ALL`, `NONE`, or the test files to run, space-separated, with the modules
 that are all `mirror` tests left out (they belong to `adapters`; pytest exits 5, "nothing collected", over a file that is all
-deselected). `adapters` pulls the mirror and runs `pytest -m mirror`; `--job adapters` prints `yes` or `no`. A push to main (any event
-that is not a pull request) never asks: it runs everything, which is what catches a mistake in this map.
+deselected). `adapters` pulls the mirror and runs `pytest -m mirror` (half a gigabyte and half an hour); `--job adapters` prints `yes`
+or `no`.
+
+Who asks this map:
+    pull request   both jobs, from the files the PR changed
+    push to main   `offline` runs everything; `adapters` runs when the push itself changed something the mirror tests can see
+    schedule, manual run, anything else   both jobs run everything, without asking. The nightly run is what catches a mistake here.
 
 Only leaf areas are scoped. Core code (pflege_jobs/, crawlers/, tools/, data/, sql/, edge/, harness/,
 app/ outside app/wa and app/cv*) runs everything, because app/crawl.py and app/data.py import the
@@ -133,11 +139,11 @@ def scope(changed, sources, closures=None):
     return picked
 
 
-# What can change what the mirror tests (`pytest -m mirror`, job `adapters`) see: the adapters, the replay layer and the recorder, the
-# tests themselves, the marker and the dependencies, the CI. The scope saying ALL starts the job too; this list is for the changes that
-# are not ALL (a test file of its own) and for saying why the rest is.
-ADAPTER_PATHS = ("crawlers/*", "tests/mirror.py", "tests/adapter_*.py", "tests/test_completeness_*.py", "tests/test_adapter_completeness.py",
-                 "tests/test_verify_pi_loga_live.py", "tools/mirror.py", "pytest.ini", "requirements.txt", ".github/workflows/*")
+# What always starts job `adapters` (`pytest -m mirror`): the adapters and the package under them (crawlers load adapters by name, which
+# no import shows), the replay layer and the recorder, the tests themselves, every conftest, the marker, the dependencies, the CI.
+ADAPTER_PATHS = ("crawlers/*", "pflege_jobs/*", "tests/mirror.py", "tests/adapter_*.py", "tests/test_completeness_*.py",
+                 "tests/test_adapter_completeness.py", "tests/test_verify_pi_loga_live.py", "tests/conftest.py", "tools/mirror.py", "conftest.py",
+                 "pytest.ini", "requirements.txt", ".github/workflows/*")
 
 
 def mirror_only(sources):
@@ -163,8 +169,22 @@ def offline(changed, sources, closures=None):
 
 
 def adapters(changed, sources, closures=None):
-    """-> True when job `adapters` (pull the mirror, `pytest -m mirror`) has to run for these changed paths."""
-    return scope(changed, sources, closures) == "ALL" or any(fnmatch(path, pat) for path in changed for pat in ADAPTER_PATHS)
+    """-> True when job `adapters` (pull the mirror, `pytest -m mirror`) has to run for these changed paths. A path starts it when
+    - it is one of ADAPTER_PATHS, or
+    - it is Python that a mirror test module imports through any chain of repo imports (app/data.py, a helper in tools/), or
+    - it is not Python and no leaf area claims it (a registry CSV, a JSON, SQL): nothing shows who reads such a file, so it counts.
+    Python that no mirror test imports does not start it: a tool of its own, the WhatsApp harness, a board route."""
+    closures = closures if closures is not None else import_closures()
+    seen = set().union(*(closures.get(name, set()) for name in mirror_only(sources)))
+    for path in changed:
+        if any(fnmatch(path, pat) for pat in ADAPTER_PATHS):
+            return True
+        if path.endswith(".py"):
+            if path in seen:
+                return True
+        elif scope([path], sources, closures) == "ALL":
+            return True
+    return False
 
 
 def _sources():
@@ -208,9 +228,16 @@ def _self_test():
     assert mirror_only(src) == {"test_completeness_dvinci.py"}
     assert offline(["tests/test_completeness_dvinci.py"], src) == set()                          # all deselected: pytest would exit 5
     assert offline(["tests/test_bite.py"], src) == {"test_bite.py"} and offline(["crawlers/x.py"], src) == "ALL"
-    assert adapters(["crawlers/x.py"], src) and adapters(["tests/test_completeness_dvinci.py"], src) and adapters(["tests/mirror.py"], src)
-    assert adapters([".github/workflows/tests.yml"], src) and adapters(["requirements.txt"], src) and adapters(["pytest.ini"], src)
-    assert not adapters(["docs/wa-dashboard.md"], src) and not adapters(["tests/test_bite.py"], src) and not adapters([], src)
+    clo = {"test_completeness_dvinci.py": {"tests/test_completeness_dvinci.py", "tests/mirror.py", "app/data.py", "tools/registry_build.py"},
+           "test_bite.py": {"tests/test_bite.py", "tools/status_page.py", "app/wa/config.py"}}
+    yes = lambda *paths: adapters(list(paths), src, clo)
+    assert yes("crawlers/x.py") and yes("tests/test_completeness_dvinci.py") and yes("tests/mirror.py") and yes("pflege_jobs/geo.py")
+    assert yes(".github/workflows/tests.yml") and yes("requirements.txt") and yes("pytest.ini") and yes("tests/conftest.py")
+    assert yes("app/data.py") and yes("tools/registry_build.py")                 # Python a mirror module imports
+    assert yes("data/registry/reha_bavaria.csv") and yes("sql/015_x.sql") and yes("LICENSE")   # not Python, no leaf claims it
+    assert not yes("tools/status_page.py") and not yes("app/wa/config.py") and not yes("app/wa_proxy.py")   # Python no mirror module imports
+    assert not yes("docs/wa-dashboard.md") and not yes("web/pro.html") and not yes("backlog/tasks/task-1 - x.md") and not yes("README.md")
+    assert not yes("tests/test_bite.py") and not yes() and yes("docs/x.md", "tools/status_page.py", "crawlers/x.py")
     print("ok")
 
 
@@ -218,11 +245,13 @@ def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--job", choices=("offline", "adapters"), default="offline")
-    ap.add_argument("--event", default="pull_request", help="anything but pull_request is a full run and reads no stdin")
+    ap.add_argument("--event", default="pull_request", help="pull_request: both jobs read the changed paths from stdin; push: only "
+                    "`adapters` does, `offline` runs everything; anything else is a full run and reads no stdin")
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
-    changed = [line.strip() for line in sys.stdin if line.strip()] if a.event == "pull_request" else None
+    asks = a.event == "pull_request" or (a.event == "push" and a.job == "adapters")
+    changed = [line.strip() for line in sys.stdin if line.strip()] if asks else None
     if a.job == "adapters":
         print("yes" if changed is None or adapters(changed, _sources()) else "no")
         return
