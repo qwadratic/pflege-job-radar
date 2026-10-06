@@ -12,29 +12,42 @@ from tools import status_page as SP
 DATA = json.loads((Path(__file__).parent / "fixtures" / "status_page" / "example.json").read_text(encoding="utf-8"))
 
 
-def test_the_headline_counts_what_she_wants_to_know_first():
+def test_the_page_says_where_we_applied_and_that_the_next_step_comes_by_chat():
     page = SP.render(DATA)
-    assert "<h1>Ihr Profil liegt bei 5 Kliniken. <em>2 haben geantwortet.</em></h1>" in page
-    one = {**DATA, "sent": [c for c in DATA["sent"] if c["state"] in ("interview_scheduled", "sent_to_clinic")]}
-    assert "<h1>Ihr Profil liegt bei 2 Kliniken. <em>1 hat geantwortet.</em></h1>" in SP.render(one)
-    quiet = {**DATA, "sent": [c for c in DATA["sent"] if c["state"] == "sent_to_clinic"]}
-    assert "<h1>Ihr Profil liegt bei <em>1 Klinik</em>.</h1>" in SP.render(quiet)
-    none = SP.render({**DATA, "sent": []})
-    assert "Wir haben es noch <em>nicht verschickt</em>." in none and "Noch bei keiner Klinik." in none
-
-
-def test_clinics_that_moved_come_first_and_an_unknown_state_is_shown_as_it_is():
-    page = SP.render(DATA)
+    assert "<h1>Wir haben Ihr Profil an <em>5 Kliniken</em> geschickt.</h1>" in page
+    assert "Jetzt warten wir auf die Kliniken. Sobald es einen nächsten Schritt gibt, schreiben wir Ihnen im WhatsApp-Chat." in page
+    assert "<b>5</b><span>Kliniken haben Ihr Profil</span>" in page and "<b>3</b><span>weitere Kliniken passen</span>" in page
     names = [c["name"] for c in DATA["sent"]]
-    assert sorted(names, key=page.index) == ["Kreisklinik Beispielheim", "Universitätsklinikum Probedorf", "Klinikum Musterstadt",
-                                              "St. Anna Krankenhaus Testingen", "Klinik am Musterberg"]
-    assert '<span class="st s-good">Gespräch · 02.10.</span>' in page and '<span class="st s-bad">Absage · 27.09.</span>' in page
-    assert '<span class="st ">on_hold · 25.09.</span>' in page
-    assert page.count('class="card moved"') == 2
+    assert sorted(names, key=page.index) == names                              # the order given, nothing is ranked
+    assert page.count('<span class="st">Gesendet · ') == 5 and '<span class="st">Gesendet · 22.09.</span>' in page
+    one = SP.render({**DATA, "sent": DATA["sent"][:1], "more": DATA["more"][:1]})
+    assert "an <em>1 Klinik</em> geschickt" in one and "<span>Klinik hat Ihr Profil</span>" in one and "<span>weitere Klinik passt</span>" in one
+    none = SP.render({**DATA, "sent": []})
+    assert "Wir haben es noch <em>nicht verschickt</em>." in none and "Noch an keine Klinik." in none
+
+
+def test_the_page_never_reports_how_a_clinic_answered():
+    """Ivan, 2026-10-06: the page does not report who answered. A reply, an interview or a refusal in the data must not reach it."""
+    loud = {**DATA, "sent": [{**c, "state": s, "state_at": "2026-10-02"} for c, s in zip(
+        DATA["sent"], ("interview_scheduled", "clinic_replied", "declined", "offer", "closed"))]}
+    assert SP.render(loud) == SP.render(DATA)
+    page = SP.render(DATA)
+    for word in ("geantwortet", "Absage", "Gespräch", "Angebot", "interview", "declined", "clinic_replied"):
+        assert word not in page, word
+
+
+def test_the_chat_button_goes_to_the_number_the_data_names_and_a_page_without_it_is_refused():
+    page = SP.render({**DATA, "chat_url": "https://wa.me/4915100000001"})
+    assert '<a href="https://wa.me/4915100000001">Zum WhatsApp-Chat</a>' in page
+    for bad in (None, "", "http://wa.me/4915100000001", "https://example.org/x", 'https://wa.me/49151"><b>'):
+        with pytest.raises(ValueError, match="chat_url"):
+            SP.render({**DATA, "chat_url": bad})
+    with pytest.raises(ValueError, match="chat_url"):
+        SP.render({k: v for k, v in DATA.items() if k != "chat_url"})
 
 
 def test_every_text_is_escaped_and_nothing_is_fetched_but_the_fonts():
-    evil = {**DATA, "wishes": [{"label": "<b>x", "text": '"><script>alert(1)</script>'}], "chat_url": 'javascript:"><img src=x>'}
+    evil = {**DATA, "wishes": [{"label": "<b>x", "text": '"><script>alert(1)</script>'}]}
     page = SP.render(evil)
     assert "<script" not in page and "<img" not in page and "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     assert "Augenklinik &lt;Beispiel&gt; &amp; Partner" in page
@@ -42,16 +55,7 @@ def test_every_text_is_escaped_and_nothing_is_fetched_but_the_fonts():
     assert "<script" not in page and "<img" not in page and "url(" not in page
     assert [x.split('"')[0] for x in page.split('href="')[1:]] == [
         "https://fonts.googleapis.com", "https://fonts.googleapis.com/css2?family=Archivo+Black&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap",
-        "https://wa.me/490000000000"]
-    assert "Zum WhatsApp-Chat" not in SP.render({**DATA, "chat_url": None})
-
-
-def test_the_states_are_the_harness_s_own_list():
-    """Luna answers status questions from the same states; a state the page has no word for would be shown raw."""
-    from typing import get_args
-
-    from app.wa.pro_models import HandoffStatus
-    assert set(SP.STATES) == set(get_args(HandoffStatus)) and set(SP.MOVED) < set(SP.STATES)
+        DATA["chat_url"]]
 
 
 @pytest.mark.parametrize("width", [320, 390, 768, 1280])
