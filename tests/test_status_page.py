@@ -46,16 +46,16 @@ def test_the_chat_button_goes_to_the_number_the_data_names_and_a_page_without_it
         SP.render({k: v for k, v in DATA.items() if k != "chat_url"})
 
 
-def test_every_text_is_escaped_and_nothing_is_fetched_but_the_fonts():
+def test_every_text_is_escaped_and_nothing_is_fetched_from_a_third_party():
     evil = {**DATA, "wishes": [{"label": "<b>x", "text": '"><script>alert(1)</script>'}]}
     page = SP.render(evil)
     assert "<script" not in page and "<img" not in page and "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     assert "Augenklinik &lt;Beispiel&gt; &amp; Partner" in page
     page = SP.render(DATA)
-    assert "<script" not in page and "<img" not in page and "url(" not in page
-    assert [x.split('"')[0] for x in page.split('href="')[1:]] == [
-        "https://fonts.googleapis.com", "https://fonts.googleapis.com/css2?family=Archivo+Black&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap",
-        DATA["chat_url"]]
+    assert "<script" not in page and "<img" not in page and "<link" not in page
+    assert [x.split(")")[0] for x in page.split("url(")[1:]] == ["/fonts/archivo-black.woff2", "/fonts/jetbrains-mono.woff2"]
+    assert [x.split('"')[0] for x in page.split('href="')[1:]] == [DATA["chat_url"]]
+    assert page.count("http") == 1                                             # the chat link; no third party is asked for anything
 
 
 @pytest.mark.parametrize("width", [320, 390, 768, 1280])
@@ -72,12 +72,14 @@ def test_the_page_fits_a_phone_without_sideways_scrolling(tmp_path, width):
         except Exception as exc:                                  # no browser binary in this env
             pytest.skip(f"chromium unavailable: {exc}")
         page = browser.new_page(viewport={"width": width, "height": 800})
-        page.route("https://fonts.g*/**", lambda r: r.abort())    # the fallback fonts are wider or equal: the stricter case, and no network
+        asked = []
+        page.on("request", lambda r: asked.append(r.url))        # /fonts/ is not served here: the fallback fonts, the wider case
         page.goto(f"http://127.0.0.1:{srv.server_address[1]}/index.html")
         assert page.evaluate("document.documentElement.scrollWidth") == width
         side = page.evaluate("[...document.querySelectorAll('h1,h2,.card,.wishes,.profile')].map(x=>x.getBoundingClientRect()).map(r=>[r.left,innerWidth-r.right])")
         assert min(min(pair) for pair in side) >= 16
         assert page.evaluate("parseFloat(getComputedStyle(document.body).fontSize)") >= 15
         assert page.locator(".card").count() == len(DATA["sent"]) + len(DATA["more"])
+        assert [u for u in asked if "127.0.0.1" not in u] == []
         browser.close()
     srv.shutdown()

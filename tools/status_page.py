@@ -8,9 +8,10 @@ corners). It says, in this order: where we sent her profile, what she asked for,
 clinics see of her. It does not report which clinic answered or how a clinic stands (Ivan, 2026-10-06): the page says
 where we applied and that the next step comes through the chat. Everything else she asks there.
 
-No script, no image, no request to this server: the only outside reference is the two webfonts, with a system
-fallback. A filled page is never committed: it holds one person's wishes. This module and the invented example in
-tests/fixtures/status_page/ are all the repository keeps.
+No script, no image, and no request to anyone but the board: the two typefaces come from /fonts/ on the server that
+serves the page (app/main.py), with a system fallback when the page is opened from a file. Nothing is loaded from a
+third party, so opening the link tells nobody else the reader's address. A filled page is never committed: it holds
+one person's wishes. This module and the invented example in tests/fixtures/status_page/ are all the repository keeps.
 
 DATA (every text is shown as given, escaped; German, formal address):
     as_of      "2026-10-06"                      the day the data was checked
@@ -36,7 +37,8 @@ FIT_KEYS = (("station", "Station"), ("near", "Nähe"), ("housing", "Wohnung"))
 FIT_MARK = {"yes": ("✓", "passt"), "part": ("~", "teilweise"), "no": ("✗", "passt nicht")}
 
 CSS = """
-:root{--bg:#FFFFFF;--surface:#F4F7F8;--ink:#23201E;--ink-2:#5B5855;--ink-3:#8C8985;--accent:#202D85;--sky:#C8F1FF;--neon:#9DE146;--red:#D82434;--line:#E1E6E9}
+@font-face{font-family:"Archivo Black";font-weight:400;font-display:swap;src:url(/fonts/archivo-black.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:400 500;font-display:swap;src:url(/fonts/jetbrains-mono.woff2) format("woff2")}:root{--bg:#FFFFFF;--surface:#F4F7F8;--ink:#23201E;--ink-2:#5B5855;--ink-3:#8C8985;--accent:#202D85;--sky:#C8F1FF;--neon:#9DE146;--red:#D82434;--line:#E1E6E9}
 *{box-sizing:border-box;border-radius:0}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -129,7 +131,6 @@ def render(data):
             (len(more), "weitere Klinik passt" if len(more) == 1 else "weitere Kliniken passen")]
     p = [f'<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
          f'<meta name="robots" content="noindex, nofollow"><meta name="color-scheme" content="light"><title>Ihr Stand · Pflege-Stellen Bayern</title>'
-         f'<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Archivo+Black&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">'
          f'<style>{CSS}.vh{{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}</style></head><body>',
          f'<header class="top"><div class="wrap"><div class="brand"><b>Pflege-Stellen</b><span>Bayern</span></div><div class="asof">Stand {_day(data["as_of"])}</div></div></header>',
          f'<main class="wrap"><div class="hero"><p class="eyebrow">Ihr Stand</p><h1>{h1}</h1>']
