@@ -58,7 +58,7 @@ spending twice (in flight → 409, same key with a different body → 422).
 | POST | `/ingest` | one envelope or `{"events":[…]}` → `{accepted, total, validate_only, results[{id,type,status,inbox_id\|problem}]}`; 202 when every item came out the same way, 207 when they did not |
 | GET | `/schedules/{id}/preview?day=` | `{schedule_id, target, mode, stagger_days, day, slice[], clinics, boards, via_adapter, via_firecrawl, est_credits, credits_left, next_run_at}` — the stagger slice a firing would take, without firing it |
 
-Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=L,XL`). `sort` = column or `-column`.
+Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=M,L`). `sort` = column or `-column`.
 `/clinics` and `/jobs` also take `fields=a,b,c` (sparse projection; an unknown name is a 400) and answer
 `Accept: application/x-ndjson` with one JSON object per line instead of the `{total, rows}` envelope.
 
@@ -93,7 +93,7 @@ Job row: `v_postings` columns (below) + `fresh`.
 `posting.observed` / `listing.observed` / `probe.ats_discovery` land in `inbox` and are drained by
 `cli inbox`; `clinic.upserted`, `clinic_link.asserted`, `posting.verified`, `crawl_run.finished` go straight
 to the edge ops. Dedupe is `(source, id)` in the request plus `source_url` against rows already in the inbox.
-`clinic.upserted` must carry all 17 clinic columns — an omitted key writes NULL over what is stored — and a
+`clinic.upserted` must carry all 18 clinic columns (`plz` since 2026-10-06) — an omitted key writes NULL over what is stored — and a
 partial payload is refused with 422 naming what is missing. `GET /ingest/schemas` has the JSON Schema per type.
 
 ## B. PostgREST — `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/<relation>`

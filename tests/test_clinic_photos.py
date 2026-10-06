@@ -44,8 +44,7 @@ def test_build_merges_photo_url_onto_the_clinic_row(fresh, monkeypatch):
         return clinics if table == "clinics" else []
 
     monkeypatch.setattr(A, "rest_get_all", fake_rest_get_all)
-    monkeypatch.setattr(D, "taxonomy", lambda: {})
-    monkeypatch.setattr(D, "_routing", lambda cs: {})
+    monkeypatch.setattr(D, "_routing", lambda cs: {})                   # the real taxonomy: size buckets have no default (TASK-431)
     snap = D._build()
     by_id = snap["by_clinic"]
     assert by_id["16104"]["photo_url"] == "/photos/16104"
@@ -116,8 +115,7 @@ def test_build_merges_presentation_onto_the_clinic_row(fresh, monkeypatch):
         return clinics if table == "clinics" else []
 
     monkeypatch.setattr(A, "rest_get_all", fake_rest_get_all)
-    monkeypatch.setattr(D, "taxonomy", lambda: {})
-    monkeypatch.setattr(D, "_routing", lambda cs: {})
+    monkeypatch.setattr(D, "_routing", lambda cs: {})                   # the real taxonomy: size buckets have no default (TASK-431)
     snap = D._build()
     by_id = snap["by_clinic"]
     assert by_id["16104"]["presentation"]["text_de"] == "Ein Fachkrankenhaus."

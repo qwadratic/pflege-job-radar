@@ -114,7 +114,7 @@ per-site count is a lower bound for group members.
 | `versorgungsstufe` | both | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus, `-` |
 | `status` (clinics) | clinics | Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan |
 | `fach` | clinics | Fachrichtungen codes (INN, CHI, PSY …), any-of; labels in `/api/taxonomy` |
-| `beds_min`/`beds_max`, `size` | clinics | integers; S/M/L/XL |
+| `beds_min`/`beds_max`, `size` | clinics | integers; S (< 100 beds) / M (100–299) / L (300 and more) |
 | `has_jobs` | clinics | 1/0 |
 | `q` | clinics | substring on name/operator/town/landkreis and badge values (ATS, Bezirk, codes, status, size); `/api/search` for fuzzy |
 | `role_class` | jobs | pflegefachkraft, fachpflege, pflegehelfer, praxisanleitung, leitung, apn_experte, hebamme, ota_ata, sonstige_pflege |
@@ -162,7 +162,7 @@ Terminology (TVöD, KeZ, GuK, Versorgungsstufe …): `/api/taxonomy` → `glossa
 B=https://pflege-board.exe.xyz/api
 curl "$B/stats"                                                     # headline numbers
 curl "$B/jobs?department_hint=Intensiv%2FIMC&regierungsbezirk=Oberbayern&verify=live&limit=1"   # total in body
-curl "$B/clinics?size=L,XL&traegerart=oeffentlich&has_jobs=0"      # big public sites without visible jobs
+curl "$B/clinics?size=L&traegerart=oeffentlich&has_jobs=0"      # big public sites without visible jobs
 curl "$B/search?q=klinkum%20augsbrg"                                # fuzzy
 curl -F file=@cv.pdf "$B/cv"                                        # CV match
 # PostgREST bulk

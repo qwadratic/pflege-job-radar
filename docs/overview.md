@@ -30,9 +30,10 @@ A posting counts as "at a hospital" only when it carries a `clinic_id` (KeZ). Ev
 |---|---|---|
 | `clinic_id` | PDF | 5-digit KeZ: digit 1 = Regierungsbezirk, 2–3 = Landkreis/Stadt, 4–5 = hospital |
 | `name`, `town`, `operator` | PDF | site name, town, Träger |
-| `landkreis`, `regierungsbezirk` | PDF | region |
+| `plz` | KHV / RHV | postcode of the site. Not in the plan PDF: `tools/fill_clinic_plz.py` takes it from the Krankenhausverzeichnis 2024 (RH rows by id, DK rows from their source text, KeZ rows by the KHV site in the clinic's municipality; 626 of 651, the rest stay empty), `data/sync_rhv_reha.py` carries the RHV's |
+| `landkreis`, `regierungsbezirk` | PDF | region; `landkreis` also picks the municipality when the town name is shared (`pflege_jobs.geo.clinic_centroid`) |
 | `status` | PDF | Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan |
-| `versorgungsstufe` | PDF | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus, `-` |
+| `versorgungsstufe` | PDF | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus; the table stores `-` (outside the levels) or empty (Reha, social), the API serves both as `null` |
 | `traegerart` | PDF | oeffentlich, freigemeinnuetzig, privat |
 | `beds`, `day_places` | PDF | zugelassene Betten / teilstationäre Plätze |
 | `fachrichtungen` | PDF | pipe-separated codes, see table below |
@@ -136,10 +137,11 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 ### Versorgungsstufe · Trägerart · status · size
 | dimension | values |
 |---|---|
-| versorgungsstufe | Grundversorgung (I) · Schwerpunkt (II) · Maximalversorgung (III) · Fachkrankenhaus · `-` (Vertrags-KH / HS-Klinik outside the levels) |
+| versorgungsstufe | Grundversorgung (I) · Schwerpunkt (II) · Maximalversorgung (III) · Fachkrankenhaus · `null` (Vertrags-KH / HS-Klinik outside the levels, Reha and social rows: 286 of 651) |
 | traegerart | oeffentlich (ö) · freigemeinnuetzig (fg) · privat (p) |
 | status | Plan-KH · Vertrags-KH · HS-Klinik · Bedarfsfeststellung · nicht_mehr_im_plan |
-| size bucket (beds) | S < 100 · M 100–299 · L 300–799 · XL 800+ |
+| size bucket (beds) | S < 100 · M 100–299 · L 300 and more (`size_buckets` in `taxonomy.json`, the one place); 0 or no beds: no size, `size_reason` = `no_bed_concept` · `day_places_only` · `planned_only` |
+| `is_university` | status `HS-Klinik` (7 sites of the 6 university hospitals), independent of size |
 
 ### ats_type (which adapter reads the board)
 | vendor | adapter | how it is read |

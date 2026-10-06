@@ -200,18 +200,42 @@ def taxonomy():
 
 
 def size_bucket(beds, tax=None):
+    """The size cohort of a bed count: the bucket of taxonomy.json `size_buckets` (S < 100, M 100-299, L >= 300), the one
+    place the thresholds are written (app/fallback/taxonomy.json is its committed copy). None for no count."""
     tax = tax or taxonomy()
-    for b in tax.get("size_buckets") or _DEFAULT_SIZES:
-        lo, hi = b.get("min", 0), b.get("max")
-        if beds is None:
-            return None
-        if beds >= lo and (hi is None or beds <= hi):
+    if beds is None:
+        return None
+    for b in tax["size_buckets"]:
+        if beds >= b.get("min", 0) and (b.get("max") is None or beds <= b["max"]):
             return b["key"]
     return None
 
 
-_DEFAULT_SIZES = [{"key": "S", "label": "< 100 Betten", "max": 99}, {"key": "M", "label": "100–299", "min": 100, "max": 299},
-                  {"key": "L", "label": "300–799", "min": 300, "max": 799}, {"key": "XL", "label": "800+", "min": 800}]
+SOCIAL_STATUS = "Sonstige Pflege-/Sozialeinrichtung"       # the Diakoneo social list (DK01..DK13): care homes and housing, no hospital beds
+UNIVERSITY_STATUS = "HS-Klinik"                            # the 7 sites of the 6 university hospitals (Art. 1 BayUniKlinG)
+
+
+def size_of(c, tax=None):
+    """(size, size_reason) of a registry clinic (TASK-431.3). With beds: the cohort of its bed count, no reason. With beds 0 or
+    NULL no cohort: a day clinic's or a social home's size is not a bed size; size_reason names which of the three it is --
+    no_bed_concept (social list), day_places_only (0 beds, day places), planned_only (Bedarfsfeststellung, 0 beds). A row
+    with neither size nor reason is a registry gap, not a cohort."""
+    beds = c.get("beds")
+    if beds:
+        return size_bucket(beds, tax), None
+    if c.get("status") == SOCIAL_STATUS:
+        return None, "no_bed_concept"
+    if beds == 0 and (c.get("day_places") or 0) > 0:
+        return None, "day_places_only"
+    if beds == 0 and c.get("status") == "Bedarfsfeststellung":
+        return None, "planned_only"
+    return None, None
+
+
+def _no_placeholder(v):
+    """The registry writes 'no care level' as '-' (plan rows outside the levels) or '' (Reha and social rows): None here."""
+    v = (v or "").strip()
+    return None if v in ("", "-") else v
 
 
 def _fresh(job, cutoff):
@@ -264,6 +288,7 @@ def _build():
     cutoff = (datetime.now(timezone.utc) - timedelta(days=A.FRESH_DAYS)).strftime("%Y-%m-%d")
     agg = defaultdict(lambda: {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0})
     for j in jobs:
+        j["versorgungsstufe"] = _no_placeholder(j.get("versorgungsstufe"))       # the view copies the clinic's value
         j["fresh"] = _fresh(j, cutoff)
         # department_hint is a "|"-joined string on the wire (TASK-97: classify.department_hint() can
         # name several departments on one posting, e.g. "Intensiv/IMC|Anästhesie" -- keeping the DB
@@ -283,12 +308,16 @@ def _build():
     photos = R.clinic_photos_map()
     blurbs = R.clinic_blurbs_map()
     for c in clinics:
-        c["fachrichtungen"] = [x for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
-        c["size"] = size_bucket(c.get("beds"), tax)
+        c["versorgungsstufe"] = _no_placeholder(c.get("versorgungsstufe"))
+        if c.get("operator"):
+            c["operator"] = c["operator"].strip()                    # the RHV writes 'Diakonie Herzogsägmühle gGmbH\xa0' on four rows
+        c["fachrichtungen"] = [t for t in (x.strip() for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|")) if t]
+        c["size"], c["size_reason"] = size_of(c, tax)
+        c["is_university"] = c.get("status") == UNIVERSITY_STATUS
         # A point for a map (TASK-200): the centre of the clinic's municipality, no address; null + null when the
         # geo table names no single point for the town (the unmatched ones are listed by tests/test_clinic_geo.py).
-        g = G.clinic_centroid(c.get("town"), c.get("plz"))
-        c["lat"], c["lon"], c["geo_source"], c["geo_name"] = (g.lat, g.lon, "municipality_centroid", g.matched_name) if g else (None, None, None, None)
+        g = G.clinic_centroid(c.get("town"), c.get("plz"), c.get("landkreis"))
+        c["lat"], c["lon"], c["geo_source"], c["geo_name"] = (g.lat, g.lon, g.rule, g.matched_name) if g else (None, None, None, None)
         c.update(agg.get(c["clinic_id"], {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0}))
         # Display-only signal for a human sorting/scanning the clinic list -- a big hospital with very
         # few open postings is worth a human's second look, but this number is never read by any
@@ -350,12 +379,12 @@ def _facets(jobs, clinics, tax):
         "versorgungsstufe": _count(clinics, "versorgungsstufe", tax.get("versorgungsstufe")),
         "status": _count(clinics, "status", tax.get("status")),
         "fachrichtungen": _count(clinics, "fachrichtungen", fach, split=True),
-        "size": _count(clinics, "size", {b["key"]: b.get("label") for b in (tax.get("size_buckets") or _DEFAULT_SIZES)}),
+        "size": _count(clinics, "size", {b["key"]: b.get("label") for b in tax["size_buckets"]}),
         "role_class": _count(jobs, "role_class", role_labels), "department_hint": _count(jobs, "department_hint", split=True),
         "employment_types": _count(jobs, "employment_types", split=True), "contract": _count(jobs, "contract"),
         "enr_tariff": _count(jobs, "enr_tariff"), "verify_status": _count(jobs, "verify_status"),
         "beds": {"min": min(beds) if beds else 0, "max": max(beds) if beds else 0},
-        "size_buckets": tax.get("size_buckets") or _DEFAULT_SIZES,
+        "size_buckets": tax["size_buckets"],
     }
 
 

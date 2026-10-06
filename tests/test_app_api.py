@@ -744,7 +744,7 @@ def test_multi_label_department_hint_facet_filter_and_search_agree(monkeypatch):
          "first_published": "2026-09-03"},
     ]
     monkeypatch.setattr(D, "_snap", {"at": time.time(), "jobs": jobs, "clinics": [{"clinic_id": "1"}], "by_clinic": {},
-                                      "facets": D._facets(jobs, [{"clinic_id": "1"}], {}), "taxonomy": {}, "loading": False, "error": None})
+                                      "facets": D._facets(jobs, [{"clinic_id": "1"}], D.taxonomy()), "taxonomy": {}, "loading": False, "error": None})
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
 
     # facet: both postings that carry Anästhesie count toward it, the third (no department) does not.

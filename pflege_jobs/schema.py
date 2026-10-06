@@ -23,7 +23,7 @@ ARRAY_COLUMNS = {c for c, t in OBS_SPEC if t.endswith("[]")}
 JSON_COLUMNS = {c for c, t in OBS_SPEC if t == "jsonb"}
 IDENTITY = ("source_id", "source_ref")
 EMP_SPEC = [("name_norm", "text"), ("name_display", "text"), ("employer_class", "text"), ("class_rule", "text"), ("aa_kundennummer_hashes", "text[]")]
-CLINIC_SPEC = [("clinic_id", "text"), ("name", "text"), ("town", "text"), ("operator", "text"), ("landkreis", "text"), ("regierungsbezirk", "text"),
+CLINIC_SPEC = [("clinic_id", "text"), ("name", "text"), ("town", "text"), ("plz", "text"), ("operator", "text"), ("landkreis", "text"), ("regierungsbezirk", "text"),
     ("status", "text"), ("versorgungsstufe", "text"), ("traegerart", "text"), ("beds", "int"), ("day_places", "int"), ("fachrichtungen", "text"),
     ("parse_quality", "text"), ("source", "text"), ("website", "text"), ("careers_url", "text"), ("ats_type", "text")]
 LINK_SPEC = [("posting_id", "bigint"), ("clinic_id", "text"), ("clinic_match_rule", "text"), ("clinic_match_score", "numeric")]

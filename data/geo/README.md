@@ -24,6 +24,13 @@ and was not added), and the GeoNames file is a plain TSV.
   a handful of municipalities whose full name is itself a bare preposition
   ("Am Mellensee", "An der Poststrasse"); it is inert, `resolve()` never
   looks an empty stem up.
+- `bayern_kreise.csv` — the 96 Bavarian Kreis keys (`code` = the first five digits of `ars` in
+  `gemeinden_de.csv`, `art` Kreisfreie Stadt or Landkreis, `name`). Copied from the `Kreis` sheet of
+  `data/registry/krankenhausverzeichnis_24.xlsx` (Statistische Aemter des Bundes und der Laender, Verzeichnis der
+  Kreisschluessel), rows `09...`. `pflege_jobs.geo.kreis_codes()` reads a registry `landkreis` string against it, and
+  `clinic_centroid()` lets that Kreis choose among several municipalities of one name (TASK-431).
+  `tests/test_clinic_geo_kreis.py` fails when it and `gemeinden_de.csv` stop naming the same 96 Kreise.
+- `clinic_town_overrides.json` — registry town strings the table cannot match by itself (TASK-200).
 - This README.
 
 ## Sources

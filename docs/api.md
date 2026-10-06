@@ -102,7 +102,7 @@ curl "$B/facets"
 # clinics: by city list, bezirk, beds range, size bucket, Fachrichtung, ATS, Träger, with jobs only
 curl "$B/clinics?city=München,Augsburg&has_jobs=1&sort=-jobs_open"
 curl "$B/clinics?regierungsbezirk=Oberbayern&beds_min=300&beds_max=800"
-curl "$B/clinics?size=L,XL&fach=INN,CHI&traegerart=oeffentlich"
+curl "$B/clinics?size=L&fach=INN,CHI&traegerart=oeffentlich"
 curl "$B/clinics?ats_type=softgarden&fetch=adapter"
 curl "$B/clinics?fetch=firecrawl"                # no adapter → Firecrawl would read it (route_reason says why)
 curl "$B/clinics?q=rexx"                         # q also matches badge values: ATS, Bezirk, Landkreis, codes, status, size
@@ -219,9 +219,10 @@ One envelope shape for every ontology entity, CloudEvents field names, no new ta
 `client_id` from the key's label. `posting.observed` / `listing.observed` / `probe.ats_discovery` become rows in
 `pflege_jobs.inbox` (`sql/010_inbox.sql`) and are drained by `cli inbox`; `clinic.upserted`, `clinic_link.asserted`,
 `posting.verified` and `crawl_run.finished` bypass the inbox and hit the edge ops directly, as `pflege_jobs/sinks.py`
-does. `clinic.upserted` must carry all 17 `CLINIC_SPEC` columns — the edge upsert assigns every column, so an
-omitted key writes NULL over what is stored; a partial payload is refused with 422 naming the missing columns
-(build the row with `pflege_jobs/registry.py: full_clinic_rows` / `merge_discovered`).
+does. `clinic.upserted` must carry all 18 `CLINIC_SPEC` columns (`plz` since 2026-10-06, TASK-431) — the edge upsert assigns every
+column, so an omitted key writes NULL over what is stored; a partial payload is refused with 422 naming the missing columns
+(build the row with `pflege_jobs/registry.py: full_clinic_rows` / `merge_discovered`). `ats_type`, `careers_url` and `plz` are the exception:
+sent empty or null they keep the stored value (the upsert coalesces them), so they can be replaced but not cleared.
 
 Dedupe is `(source, id)` inside the request plus the existing `source_url` dedupe against rows already in the
 inbox (`app/crawl.py:_post_inbox`) — `inbox.source_url` is deliberately not unique. Response is
@@ -293,10 +294,21 @@ does not interpret them.
 ### Clinic row
 `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile, photo_url, presentation`
 
-`lat`, `lon` (WGS84), `geo_source` (`municipality_centroid`) and `geo_name` (the Destatis municipality the point is the centre of) place the
-clinic on a map. It is the centre of the clinic's town, no address: clinics of one town share one point (München: 58). `null` in all four
+`lat`, `lon` (WGS84), `geo_source` and `geo_name` (the Destatis municipality the point is the centre of) place the
+clinic on a map. It is the centre of the clinic's municipality, no address: clinics of one town share one point (München: 58). `null` in all four
 when the geo table names no single point for the town; every one of the 651 registry clinics has one on 2026-10-02 (pflege_jobs/geo.py
-`clinic_centroid`, data/geo/clinic_town_overrides.json). Public like the rest of the row.
+`clinic_centroid`, data/geo/clinic_town_overrides.json). `geo_source` names the rule that placed the clinic (TASK-431): `plz` (the clinic's
+PLZ is in the geo table), `municipality_centroid_override` (the override file named the municipality), `municipality_centroid_by_kreis` (the town
+string names several Bavarian municipalities, the clinic's `landkreis` chose one: Altdorf, Auerbach, Aschau, Haag, Bernried, Bruckberg) or
+`municipality_centroid` (the town string names one municipality). Until 2026-10-06 the value was always `municipality_centroid`. Public like
+the rest of the row.
+
+`size` is the bed cohort: `S` (< 100 beds), `M` (100-299), `L` (300 and more; until 2026-10-06 `XL` was 800 and more and `L` 300-799), one rule, written in
+`size_buckets` of data/registry/taxonomy.json. A clinic with 0 or no beds has `size: null` and `size_reason` says why: `no_bed_concept` (the
+Diakoneo social list: care homes and housing, status `Sonstige Pflege-/Sozialeinrichtung`, 13 clinics), `day_places_only` (0 beds, day places: day
+clinics, 42) or `planned_only` (status `Bedarfsfeststellung`, 0 beds, 8); `size_reason` is `null` for every clinic with a `size`. Before
+2026-10-06 a clinic with 0 beds was `S`. `is_university` (boolean) is `true` for the 7 sites with status `HS-Klinik` (6 university hospitals, Art. 1
+BayUniKlinG), independent of `size`.
 
 `photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
 `clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key
