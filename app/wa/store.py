@@ -549,14 +549,20 @@ def _update_thread(c, t):
                t.get("last_inbound_at"), t.get("last_outbound_at"), t["phone"]))
 
 
-def record_inbound(c, phone, wamid, body, kind="text", meta=None):
+def record_inbound(c, phone, wamid, body, kind="text", meta=None, at=None):
     """-> True when this is the first sighting of ``wamid``, False when Meta is redelivering.
 
     The caller must not answer a False: the reply to that message already went out.
+
+    ``at``, when given, is the real moment this message arrived (RFC3339) -- app/wa/luna/replay.py
+    passes the sales_brain row's own historical ``occurred_at``, so a replayed scratch thread's
+    inbound rows carry their real historical timestamps rather than the moment the replay happened to
+    run (TASK-313 fix pass item 6), same convention as ``record_outbound``'s own ``at`` just below.
+    Every other caller is unaffected: ``at=None`` keeps the old ``now_iso()`` behaviour bit for bit.
     """
     try:
         c.execute("insert into wa_messages (phone, direction, wamid, body, kind, meta, at) values (?,?,?,?,?,?,?)",
-                  (phone, "in", wamid, body, kind, json.dumps(meta or {}, ensure_ascii=False), now_iso()))
+                  (phone, "in", wamid, body, kind, json.dumps(meta or {}, ensure_ascii=False), at or now_iso()))
         c.commit()
         return True
     except sqlite3.IntegrityError:
