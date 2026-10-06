@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 07:58'
+updated_date: '2026-10-06 11:06'
 labels:
   - registry
   - data-quality
@@ -27,3 +28,9 @@ ordinal: 310000
 - [ ] #2 Proposal for how the registry records the source of a bed number (field or table), consistent with the corrections table of TASK-180
 - [ ] #3 DB writes only after Ivan approves the exact counts
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 Ivan raised the registry model to architecture level: the `clinic_numbers` proposal of this task becomes the first version of the evidence catalogue of TASK-441 (claim S/M/L backed by evidence rows, each with kind, source, how collected, URL, date seen, agent note). The research result of this task stands (63 clinics, report in the job directory of pflege-clawl); how the numbers are recorded is decided in TASK-441, DB writes still wait for Ivan approving the exact counts.
+<!-- SECTION:NOTES:END -->
