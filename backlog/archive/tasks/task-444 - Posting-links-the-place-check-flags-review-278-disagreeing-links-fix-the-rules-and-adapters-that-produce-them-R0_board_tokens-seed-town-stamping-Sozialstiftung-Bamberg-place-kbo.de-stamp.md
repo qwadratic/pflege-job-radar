@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 12:37'
+updated_date: '2026-10-06 12:44'
 labels:
   - crawler-coverage
   - db-quality
@@ -28,3 +29,9 @@ Found by the experiment of TASK-431.9 (branch exp/place-confidence, report and d
 - [ ] #2 Each of the five defects fixed at its source with a red test first on the mirror, or recorded with the reason it is not a defect
 - [ ] #3 Corrections to links and rows written only after Ivan approves the exact counts; before and after counts of disagreeing links by rule
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 Folded into TASK-431.9 on Ivan's word ("the executor and fixing the data are one task"); acceptance criteria and defect list moved there. Archived.
+<!-- SECTION:NOTES:END -->
