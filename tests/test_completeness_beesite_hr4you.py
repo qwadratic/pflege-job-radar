@@ -26,6 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import adapter_harness as H  # noqa: E402
 from tests import mirror as M  # noqa: E402
+
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
 from crawlers.vendor_adapters import crawl_wp_jobs, find_job_urls  # noqa: E402
 from pflege_jobs.sources.beesite import crawl_beesite, is_beesite  # noqa: E402
 from pflege_jobs.sources.hr4you import crawl_hr4you  # noqa: E402

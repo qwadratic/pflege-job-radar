@@ -76,9 +76,10 @@ Disk clean-up rule: delete only what this table says is rebuildable or recorded 
 
 ## Mirror on Bunny
 
-The test mirror (`data/mirror/`: `INDEX.json` plus about 405 `*.sqlite.xz`, 492 MB, TASK-197) is kept in a private Bunny Storage Zone
+The test mirror (`data/mirror/`: `INDEX.json` plus about 403 board `*.sqlite.xz`, 492 MB, TASK-197) is kept in a private Bunny Storage Zone
 so a CI runner can fetch it. The zone has no pull zone: nothing is public, because the pages hold third-party HR names and contacts.
-`*.prev` files are never uploaded.
+`*.prev` files are never uploaded, and neither are the two `infra__*` snapshots (web fonts, registry read proxy): those are in the repo,
+`tests/fixtures/mirror_infra/`, so a run that needs no real board needs no pull (`pytest -m "not mirror"`; `-m mirror` is the part that reads boards).
 
 | env name | who | what |
 |---|---|---|

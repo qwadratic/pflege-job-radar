@@ -29,6 +29,9 @@ from tests import adapter_contract as AC  # noqa: E402
 from tests import adapter_harness as H  # noqa: E402
 from tests import mirror as M  # noqa: E402
 
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
+
 # --- the boards of the mirror, biggest first (the recorder sorts the same way) --------------------
 _BOARD_LIST = H.indexed_boards()
 _FAMILY_BOARDS = H.family_boards(_BOARD_LIST)

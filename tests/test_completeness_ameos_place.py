@@ -21,6 +21,9 @@ import requests
 from tests import adapter_harness as H
 from tests import mirror as M
 
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
+
 _PLACE = re.compile(r'itemprop="jobLocation"\s+content="([^"]*)"', re.I)
 
 

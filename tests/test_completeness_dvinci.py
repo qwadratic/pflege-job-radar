@@ -19,6 +19,9 @@ import requests
 from tests import adapter_contract as AC
 from tests import adapter_harness as H
 from tests import mirror as M
+
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
 from crawlers import vendor_adapters as VA
 
 _DVINCI_BOARDS = [b for b in H.indexed_boards() if b.get("vendor") == "dvinci"]

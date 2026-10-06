@@ -211,17 +211,18 @@ def test_a_web_font_is_answered_from_the_fonts_mirror(tmp_path, monkeypatch):
     pytest.importorskip("playwright.sync_api")
     from tests import mirror as M
     monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
+    monkeypatch.setenv("MIRROR_INFRA_ROOT", str(tmp_path / "infra"))  # where an infra__ board lives
     s = M.Store.new(M.FONTS_BOARD)
     s.add("fonts", "playwright", "GET", FONT_URL, None, 200, "OK", [("Content-Type", "text/css")], b"p{color:rgb(1,2,3)}")
     s.add("fonts", "playwright", "GET", FILE_URL, None, 200, "OK", [("Content-Type", "text/css")], b"p{background-color:rgb(4,5,6)}")
     s.save()
-    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "mirror")})
+    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "mirror"), "MIRROR_INFRA_ROOT": str(tmp_path / "infra")})
     assert rc == 0 and "2 passed" in out and "network guard hits: 0" in out, out
 
 
 def test_a_web_font_the_mirror_lacks_fails_the_test_and_names_the_url(tmp_path):
     pytest.importorskip("playwright.sync_api")
-    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "empty-mirror")})  # no fonts board at all
+    rc, out = _session(tmp_path, PAGE_WITH_FONT, env={"MIRROR_ROOT": str(tmp_path / "empty-mirror"), "MIRROR_INFRA_ROOT": str(tmp_path / "empty-infra")})  # no fonts board at all
     assert rc == 1 and "network guard" in out and FONT_URL in out and FILE_URL in out and "MIRROR_RECORD=1 pytest" in out
 
 
@@ -267,8 +268,9 @@ def test_a_run_with_mirror_record_records_the_fonts_it_loads_and_a_later_run_rep
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = str(s.getsockname()[1])
-    root = tmp_path / "mirror"
-    rc, out = _session(tmp_path, SERVE, env={"MIRROR_ROOT": str(root), "MIRROR_RECORD": "1", "FONT_PORT": port, "FONT_SERVER": "1"})
-    assert rc == 0 and (root / "infra__web-fonts.sqlite.xz").exists(), out
-    rc, out = _session(tmp_path, SERVE, env={"MIRROR_ROOT": str(root), "FONT_PORT": port})  # nothing listens on that port any more
+    root, infra = tmp_path / "mirror", tmp_path / "infra"  # the fonts board is an infra snapshot: it lives in MIRROR_INFRA_ROOT, not in the mirror root
+    env = {"MIRROR_ROOT": str(root), "MIRROR_INFRA_ROOT": str(infra), "FONT_PORT": port}
+    rc, out = _session(tmp_path, SERVE, env={**env, "MIRROR_RECORD": "1", "FONT_SERVER": "1"})
+    assert rc == 0 and (infra / "infra__web-fonts.sqlite.xz").exists() and not (root / "infra__web-fonts.sqlite.xz").exists(), out
+    rc, out = _session(tmp_path, SERVE, env=env)  # nothing listens on that port any more
     assert rc == 0 and "network guard hits: 0" in out, out

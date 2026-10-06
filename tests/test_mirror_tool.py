@@ -106,3 +106,14 @@ def test_a_recording_names_the_error_its_adapter_ended_with(monkeypatch):
     assert T.scenario({"board_id": BOARD})["adapter_error"] == "position page did not open for 77 of 77"
     e = dict(_board(), adapter_error="position page did not open for 77 of 77", checks={}, seconds=1, error=None)
     assert "ADAPTER-ERROR position page did not open for 77 of 77" in T.line(1, 1, e)
+
+
+def test_reindex_leaves_the_infra_snapshots_out_of_the_mirror_index(site, monkeypatch, tmp_path):
+    monkeypatch.setenv("MIRROR_INFRA_ROOT", str(tmp_path / "infra"))  # an infra__ board is saved there, never into the repo's tests/fixtures
+    for bid in (BOARD, "infra__web-fonts"):
+        s = M.Store.new(bid)
+        s.set_meta("index", _board(bid))
+        s.save()
+    (M.mirror_dir() / "infra__web-fonts.sqlite.xz").write_bytes(M.board_file("infra__web-fonts").read_bytes())  # an old copy in the mirror root
+    T.cmd_reindex(Namespace())
+    assert list(M.read_index()["boards"]) == [BOARD] and "infra" not in M.read_index()

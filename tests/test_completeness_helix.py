@@ -19,6 +19,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import adapter_harness as H  # noqa: E402
 from tests import mirror as M  # noqa: E402
+
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
 from crawlers import vendor_adapters as VA  # noqa: E402
 
 BADGE_WORDS = ("Vollzeit", "Teilzeit", "Festanstellung", "Befristet", "Treffer")

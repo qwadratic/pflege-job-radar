@@ -521,3 +521,41 @@ def test_a_miss_ends_the_browser_so_a_walker_does_not_wait_out_a_timeout_per_cli
                     seen.append(f"{type(e).__name__}: {e}")
                 b.close()
     assert seen and "Timeout" not in seen[0], f"the wait ran into its own timeout instead of ending with the browser: {seen}"
+
+
+# --------------------------------------------------------------------------------------------- infra snapshots: committed, so the repo is public
+def test_an_infra_board_lives_in_the_infra_dir_whatever_the_mirror_root_is(monkeypatch, tmp_path):
+    monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
+    monkeypatch.setenv("MIRROR_INFRA_ROOT", str(tmp_path / "infra"))
+    assert M.board_file("infra__web-fonts") == tmp_path / "infra" / "infra__web-fonts.sqlite.xz"
+    assert M.board_file(BOARD) == tmp_path / "mirror" / f"{BOARD}.sqlite.xz"
+    monkeypatch.delenv("MIRROR_INFRA_ROOT")
+    assert M.board_file("infra__registry-read-proxy") == M.ROOT / "tests" / "fixtures" / "mirror_infra" / "infra__registry-read-proxy.sqlite.xz"
+
+
+def test_saving_an_infra_board_keeps_only_the_headers_a_replay_needs_and_no_trace_of_the_rest(monkeypatch, tmp_path):
+    import lzma
+    monkeypatch.setenv("MIRROR_ROOT", str(tmp_path / "mirror"))
+    monkeypatch.setenv("MIRROR_INFRA_ROOT", str(tmp_path / "infra"))
+    answer = [("Content-Type", "application/json"), ("Set-Cookie", "__cf_bm=COOKIEVALUE0123; Path=/"), ("Sb-Project-Ref", "projectref0123456789"),
+              ("X-Trace-Id", "trace-0123"), ("Access-Control-Allow-Origin", "*")]
+    for bid in ("infra__x", BOARD):
+        s = M.Store.new(bid)
+        s.add("geo", "requests", "GET", "https://x.test/a", None, 200, "OK", answer, b"[]")
+        s.save()
+    raw = lzma.decompress((tmp_path / "infra" / "infra__x.sqlite.xz").read_bytes())
+    assert not [x for x in (b"COOKIEVALUE0123", b"projectref0123456789", b"trace-0123", b"Set-Cookie", b"Sb-Project-Ref") if x in raw]
+    assert [k for k, _v in M.Store.load("infra__x").rows()[0].headers] == ["Content-Type", "Access-Control-Allow-Origin"]
+    assert [k for k, _v in M.Store.load(BOARD).rows()[0].headers] == [k for k, _v in answer]  # a clinic board is kept whole
+
+
+def test_the_committed_infra_snapshots_carry_nothing_a_public_repo_must_not(monkeypatch):
+    import lzma
+    monkeypatch.delenv("MIRROR_INFRA_ROOT", raising=False)
+    folder = M.ROOT / "tests" / "fixtures" / "mirror_infra"
+    assert sorted(p.name for p in folder.glob("*")) == ["infra__registry-read-proxy.sqlite.xz", "infra__web-fonts.sqlite.xz"]
+    for f in sorted(folder.glob("*.sqlite.xz")):
+        bid = f.name.removesuffix(".sqlite.xz")
+        assert {k.lower() for r in M.Store.load(bid).rows() for k, _v in r.headers} <= M.INFRA_HEADERS, bid
+        raw = lzma.decompress(f.read_bytes()).lower()
+        assert not [x for x in (b"set-cookie", b"__cf_bm", b"sb-project", b"sb-jwt", b"x-trace", b"cf-ray", b"apikey", b"authorization", b"bearer") if x in raw], bid

@@ -27,6 +27,9 @@ from pflege_jobs import verify as V  # noqa: E402
 from tests import adapter_harness as H  # noqa: E402
 from tests import mirror as M  # noqa: E402
 
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
+
 SCOPE = "verify_board_list"
 
 SEEDS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

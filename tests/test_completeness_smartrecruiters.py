@@ -12,6 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import adapter_harness as H  # noqa: E402
 
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
+
 _SR_BOARDS = [b for b in H.indexed_boards() if b["kind"] == "vendor" and b.get("adapter", "").endswith(":crawl_smartrecruiters")]
 _PARAMS, _IDS = H.board_params(_SR_BOARDS, lambda b: H.board_host(b["url"]))
 

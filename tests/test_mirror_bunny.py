@@ -137,11 +137,12 @@ def bunny(tmp_path, monkeypatch):
 
 # --------------------------------------------------------------------------------------------- mirrors on disk
 def make_mirror(folder, tag="a", size=2000):
-    """INDEX.json, three boards, a .prev and an INDEX.lock: what data/mirror holds. Bytes differ by tag."""
+    """INDEX.json, three boards, a .prev, an INDEX.lock and an old copy of an infra snapshot (those live in the repo now, push leaves
+    them out): what data/mirror holds. Bytes differ by tag."""
     folder.mkdir(parents=True, exist_ok=True)
-    boards = ["wp_jobs__a.de", "rexx__b.de", "infra__web-fonts"]
-    (folder / "INDEX.json").write_text(json.dumps({"format": 1, "tag": tag, "boards": {b: {} for b in boards[:2]}, "infra": {boards[2]: {}}}))
-    for b in boards:
+    boards = ["wp_jobs__a.de", "rexx__b.de", "oracle__c.de"]
+    (folder / "INDEX.json").write_text(json.dumps({"format": 1, "tag": tag, "boards": {b: {} for b in boards}}))
+    for b in [*boards, "infra__web-fonts"]:
         (folder / f"{b}.sqlite.xz").write_bytes(hashlib.sha256((tag + b).encode()).digest() * (size // 32))
     (folder / "wp_jobs__a.de.sqlite.xz.prev").write_bytes(b"older recording, never uploaded")
     (folder / "INDEX.lock").write_bytes(b"")
@@ -149,8 +150,9 @@ def make_mirror(folder, tag="a", size=2000):
 
 
 def shipped(folder):
-    """The part of a mirror directory that travels: INDEX.json and every *.sqlite.xz, by name."""
-    return {p.name: p.read_bytes() for p in sorted(folder.iterdir()) if p.name == "INDEX.json" or p.name.endswith(".sqlite.xz")}
+    """The part of a mirror directory that travels: INDEX.json and every board *.sqlite.xz (no infra__ snapshot), by name."""
+    return {p.name: p.read_bytes() for p in sorted(folder.iterdir())
+            if p.name == "INDEX.json" or (p.name.endswith(".sqlite.xz") and not p.name.startswith("infra__"))}
 
 
 def listing(folder):
@@ -228,6 +230,7 @@ def test_the_archive_is_one_plain_tar_of_index_and_boards_named_by_time_and_sha(
     with tarfile.open(bunny.dir / names[0], "r:") as tar:  # "r:" = no compression at all
         assert [m.name for m in tar.getmembers()] == ["INDEX.json"] + sorted(n for n in shipped(src) if n != "INDEX.json")
         assert all(m.isreg() for m in tar.getmembers())
+        assert (src / "infra__web-fonts.sqlite.xz").exists() and not [m.name for m in tar.getmembers() if "infra" in m.name]  # those are in the repo
     latest = json.loads(bunny.read("latest.json"))
     archive = bunny.read(names[0])
     assert latest["archive"] == names[0] and latest["sha256"] == hashlib.sha256(archive).hexdigest() and latest["bytes"] == len(archive)
@@ -340,7 +343,7 @@ def test_pull_of_a_latest_json_that_names_no_archive_fails(bunny, tmp_path, monk
     assert listing(dst) == before
 
 
-@pytest.mark.parametrize("member", ["../evil.sqlite.xz", "sub/../../evil.sqlite.xz", "ABSOLUTE", "sub/nested.sqlite.xz", "notes.txt"])
+@pytest.mark.parametrize("member", ["../evil.sqlite.xz", "sub/../../evil.sqlite.xz", "ABSOLUTE", "sub/nested.sqlite.xz", "notes.txt", "infra__web-fonts.sqlite.xz"])
 def test_a_tar_member_with_an_unsafe_or_unexpected_path_is_refused(bunny, tmp_path, monkeypatch, member):
     dst, before = pushed_and_an_old_mirror(bunny, tmp_path, monkeypatch)
     member = str(tmp_path / "abs-evil.sqlite.xz") if member == "ABSOLUTE" else member

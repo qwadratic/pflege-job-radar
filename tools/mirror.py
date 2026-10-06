@@ -13,7 +13,8 @@ API is refused. The adapters' own sleeps stay while recording and the run is one
   diff <board_id> [--apply]                    record into memory, print added / removed / changed URLs, keep only on --apply
   status [--older-than DAYS]                   what is mirrored (age is information, never an automatic refresh)
   list-urls <board_id> [--scope S]  |  show <board_id> <url>  |  sql <board_id> "<select ...>"  |  reindex
-  record-infra                                 the registry read proxy snapshot behind tests/test_geo.py (our own DB, read-only)
+  record-infra                                 the registry read proxy snapshot behind tests/test_geo.py (our own DB, read-only); written to
+                                               tests/fixtures/mirror_infra/ (committed, headers cut), not to the mirror root
   push                                         the mirror to the private Bunny Storage Zone: one tar, then latest.json (env BUNNY_MIRROR_ZONE, BUNNY_MIRROR_RW_KEY)
   pull                                         the mirror from there into the mirror root (env BUNNY_MIRROR_ZONE, BUNNY_MIRROR_RO_KEY); docs/deploy.md
 """
@@ -292,8 +293,9 @@ def _entries():
 
 def cmd_status(a):
     idx = _entries()
-    for bid, e in M.read_index().get("infra", {}).items():
-        _log(f"{bid:56.56} infra  pages {e['pages']:5} raw {e['bytes_raw'] / 1e6:7.1f} MB xz {e.get('bytes_file', 0) / 1e6:6.2f} MB rows {e['rows']:>5} {e['recorded_at'][:10]}")
+    for f in sorted(M.infra_dir().glob("*.sqlite.xz")):  # committed in the repo, not in the mirror root
+        e = M.Store.load(f.name.removesuffix(".sqlite.xz")).meta("index")
+        _log(f"{e['board_id']:56.56} infra  pages {e['pages']:5} raw {e['bytes_raw'] / 1e6:7.1f} MB xz {f.stat().st_size / 1e6:6.2f} MB rows {e['rows']:>5} {e['recorded_at'][:10]}")
     now = datetime.now(timezone.utc)
     rows, tot = [], {"pages": 0, "raw": 0, "file": 0}
     for bid, e in sorted(idx.items(), key=lambda kv: kv[0]):
@@ -341,15 +343,18 @@ def cmd_sql(a):
 
 
 def cmd_reindex(a):
-    idx = {"format": M.FORMAT, "boards": {}, "infra": {}}
+    idx = {"format": M.FORMAT, "boards": {}}
     for f in sorted(M.mirror_dir().glob("*.sqlite.xz")):
+        if f.name.startswith(M.INFRA_PREFIX):  # an old copy: the infra snapshots are read from M.infra_dir() whatever is here
+            _log(f"{f.name}: an infra snapshot, they live in {M.infra_dir()}; skipped")
+            continue
         e = M.Store.load(f.name.removesuffix(".sqlite.xz")).meta("index")
         if not e:
             _log(f"{f.name}: no index entry in its meta (recorded by something else?), skipped")
             continue
-        idx["infra" if e.get("kind") == "infra" else "boards"][e["board_id"]] = dict(e, bytes_file=f.stat().st_size)
+        idx["boards"][e["board_id"]] = dict(e, bytes_file=f.stat().st_size)
     M.write_index(idx)
-    _log(f"INDEX.json rebuilt from {len(idx['boards'])} board file(s) and {len(idx['infra'])} infra snapshot(s)")
+    _log(f"INDEX.json rebuilt from {len(idx['boards'])} board file(s)")
 
 
 INFRA_BOARD = "infra__registry-read-proxy"
@@ -366,9 +371,8 @@ def cmd_record_infra(a):
     e = {"board_id": INFRA_BOARD, "kind": "infra", "url": AC.PROXY, "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
          "recorder_sha": M.git_sha(), "seconds": round(time.time() - t0, 1), **rec.store.stats(), "rows": len(pairs), "towns": len(towns), "error": None}
     rec.store.set_meta("index", e)
-    path = rec.save()
-    M.update_index(dict(e, bytes_file=path.stat().st_size), section="infra")
-    _log(f"{INFRA_BOARD}: {len(pairs)} (city, plz) pairs, {len(towns)} towns, {e['pages']} pages, raw {e['bytes_raw'] / 1e6:.1f} MB, xz {path.stat().st_size / 1e6:.2f} MB")
+    path = rec.save()  # into M.infra_dir() (tests/fixtures/mirror_infra, committed), headers cut to M.INFRA_HEADERS
+    _log(f"{INFRA_BOARD}: {len(pairs)} (city, plz) pairs, {len(towns)} towns, {e['pages']} pages, raw {e['bytes_raw'] / 1e6:.1f} MB, xz {path.stat().st_size / 1e6:.2f} MB -> {path}")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -407,10 +411,10 @@ def sha256_of(path):
 
 
 def cmd_push(a):
-    """One tar (INDEX.json + every *.sqlite.xz, no *.prev, no compression: the boards are xz already), then latest.json, last."""
+    """One tar (INDEX.json + every board *.sqlite.xz, no *.prev, no infra__* snapshots (they are in the repo), no compression: the boards are xz already), then latest.json, last."""
     prefix, key = bunny_zone("BUNNY_MIRROR_RW_KEY")
     root = M.mirror_dir()
-    boards = sorted(root.glob("*.sqlite.xz"))
+    boards = sorted(p for p in root.glob("*.sqlite.xz") if not p.name.startswith(M.INFRA_PREFIX))
     if not (root / "INDEX.json").is_file() or not boards:
         sys.exit(f"nothing to push: {root} needs INDEX.json and at least one *.sqlite.xz")
     repo_sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
@@ -454,8 +458,8 @@ def unpack(archive, out):
                 parts = PurePosixPath(m.name).parts
                 if PurePosixPath(m.name).is_absolute() or ".." in parts:
                     sys.exit(f"unsafe path in the archive: {m.name!r} (absolute or ..); nothing was unpacked")
-                if not m.isreg() or len(parts) != 1 or not (m.name == "INDEX.json" or m.name.endswith(".sqlite.xz")):
-                    sys.exit(f"unexpected member in the archive: {m.name!r} (only INDEX.json and *.sqlite.xz files are allowed); nothing was unpacked")
+                if not m.isreg() or len(parts) != 1 or not (m.name == "INDEX.json" or (m.name.endswith(".sqlite.xz") and not m.name.startswith(M.INFRA_PREFIX))):
+                    sys.exit(f"unexpected member in the archive: {m.name!r} (only INDEX.json and board *.sqlite.xz files are allowed, no infra__ snapshots); nothing was unpacked")
             if "INDEX.json" not in {m.name for m in members}:
                 sys.exit("the archive has no INDEX.json; nothing was unpacked")
             for m in members:

@@ -24,6 +24,9 @@ import pytest
 from tests import adapter_harness as H
 from tests import mirror as M
 
+# reads real boards from the mirror (INDEX.json, <board>.sqlite.xz): `-m "not mirror"` runs without a pulled mirror
+pytestmark = pytest.mark.mirror
+
 _LIST = re.compile(r"/recruitingCEJobRequisitions\?")
 BOARD_URL = "https://jobs.sana.de/de/sites/CX_4025/jobs"
 

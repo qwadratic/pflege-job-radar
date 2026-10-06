@@ -35,7 +35,10 @@ stay, and are skipped only after a request the store answered).
 
 Not a clinic site but the same rule: the web fonts our own pages load are the board `infra__web-fonts` (web_fonts, route_web_fonts,
 wired for every Chromium of a test by tests/conftest.py), and the registry read proxy snapshot behind tests/test_geo.py is
-`infra__registry-read-proxy` (tools/mirror.py record-infra).
+`infra__registry-read-proxy` (tools/mirror.py record-infra). These two (every board id starting `infra__`) are NOT in the
+git-ignored mirror root: they are committed in tests/fixtures/mirror_infra/ (MIRROR_INFRA_ROOT overrides), about 0.07 MB, with
+the response headers cut to INFRA_HEADERS when saved, so a run without the mirror still has them. tools/mirror.py push and pull
+leave them out. Tests that need real boards carry the pytest marker `mirror` (pytest.ini).
 """
 import contextlib
 import fcntl
@@ -105,8 +108,23 @@ def mirror_dir():
     return Path(os.environ["MIRROR_ROOT"]) if os.environ.get("MIRROR_ROOT") else _shared_root()
 
 
+INFRA_PREFIX = "infra__"
+# what an infra snapshot keeps of the response headers: it is committed to a public repo, so a header is kept only when a replay needs it
+# (the content type; the CORS and resource-policy headers Chromium wants for a font; the range of a PostgREST page). Everything else a
+# real answer carries -- set-cookie, the gateway's project ref, trace ids, the request's own path -- is dropped when the file is saved.
+INFRA_HEADERS = {"content-type", "content-range", "access-control-allow-origin", "cross-origin-resource-policy", "timing-allow-origin"}
+
+
+def infra_dir():
+    """Snapshots of OUR OWN services that tests read (the Google Fonts our pages load, the registry read proxy): small, headers scrubbed,
+    committed to the repo so a run needs no pull. MIRROR_INFRA_ROOT overrides (the tests of the recording path point it at a temp dir)."""
+    return Path(os.environ["MIRROR_INFRA_ROOT"]) if os.environ.get("MIRROR_INFRA_ROOT") else ROOT / "tests" / "fixtures" / "mirror_infra"
+
+
 def board_file(board_id):
-    return mirror_dir() / (board_id.replace("/", "_") + ".sqlite.xz")
+    """<mirror root>/<board_id>.sqlite.xz; an `infra__*` board lives in infra_dir() instead, whatever MIRROR_ROOT is."""
+    folder = infra_dir() if board_id.startswith(INFRA_PREFIX) else mirror_dir()
+    return folder / (board_id.replace("/", "_") + ".sqlite.xz")
 
 
 def _sha(b):
@@ -208,6 +226,12 @@ class Store:
             self.set_meta(k, v)
         self.set_meta("format", FORMAT)
         with self.lock:
+            if self.board_id.startswith(INFRA_PREFIX):  # committed to the repo: only the headers a replay needs go in
+                for seq, h in self.db.execute("SELECT seq, headers_json FROM responses WHERE headers_json IS NOT NULL").fetchall():
+                    kept = [[k, v] for k, v in json.loads(h) if k.lower() in INFRA_HEADERS]
+                    self.db.execute("UPDATE responses SET headers_json=? WHERE seq=?", (json.dumps(kept), seq))
+                self.db.commit()
+                self.db.execute("VACUUM")  # the dropped headers must not survive as free space inside the file
             self.db.commit()  # serialize() leaves out what is not committed (seen on a loaded store, not on a new one)
             raw = self.db.serialize()
         path = board_file(self.board_id)
@@ -747,8 +771,7 @@ def save_web_fonts():
         e = {"board_id": FONTS_BOARD, "kind": "infra", "url": "https://fonts.googleapis.com/", "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
              "recorder_sha": git_sha(), **m.store.stats(), "rows": m.store.count(), "error": None}
         m.store.set_meta("index", e)
-        path = m.save()
-        update_index(dict(e, bytes_file=path.stat().st_size), section="infra")
+        m.save()
 
 
 def _install():
