@@ -219,9 +219,10 @@ One envelope shape for every ontology entity, CloudEvents field names, no new ta
 `client_id` from the key's label. `posting.observed` / `listing.observed` / `probe.ats_discovery` become rows in
 `pflege_jobs.inbox` (`sql/010_inbox.sql`) and are drained by `cli inbox`; `clinic.upserted`, `clinic_link.asserted`,
 `posting.verified` and `crawl_run.finished` bypass the inbox and hit the edge ops directly, as `pflege_jobs/sinks.py`
-does. `clinic.upserted` must carry all 17 `CLINIC_SPEC` columns — the edge upsert assigns every column, so an
-omitted key writes NULL over what is stored; a partial payload is refused with 422 naming the missing columns
-(build the row with `pflege_jobs/registry.py: full_clinic_rows` / `merge_discovered`).
+does. `clinic.upserted` must carry all 18 `CLINIC_SPEC` columns (`plz` since 2026-10-06, TASK-431) — the edge upsert assigns every
+column, so an omitted key writes NULL over what is stored; a partial payload is refused with 422 naming the missing columns
+(build the row with `pflege_jobs/registry.py: full_clinic_rows` / `merge_discovered`). `ats_type`, `careers_url` and `plz` are the exception:
+sent empty or null they keep the stored value (the upsert coalesces them), so they can be replaced but not cleared.
 
 Dedupe is `(source, id)` inside the request plus the existing `source_url` dedupe against rows already in the
 inbox (`app/crawl.py:_post_inbox`) — `inbox.source_url` is deliberately not unique. Response is

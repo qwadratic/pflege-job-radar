@@ -14,7 +14,7 @@ const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 2, idle_timeout: 2
 const OBS_COLS_DEF = `source_id smallint, source_ref text, source_url text, observed_at timestamptz, title text, employer_name text, employer_name_norm text, employer_class text, employer_class_rule text, aa_kundennummer_hash text, offer_kind text, hauptberuf text, alle_berufe text[], role_class text, role_rule text, qualification_hint text, department_hint text, city text, plz text, region text, lat double precision, lon double precision, in_bavaria boolean, n_locations int, locations jsonb, employment_types text[], shift_night_weekend boolean, homeoffice boolean, quereinstieg boolean, contract text, fixed_term_months int, start_date date, salary_min numeric, salary_max numeric, salary_unit text, salary_note text, first_published date, last_modified timestamptz, valid_until date, external_url text, description text, department_raw text, enr_pay_grade text, enr_pay_text text, enr_requirements text, enr_experience text, enr_housing boolean, enr_housing_evidence text, enr_tariff text, enr_contact_emails text[], enr_language_req text, enr_bonus boolean, enr_childcare boolean, enr_anerkennung_mentioned boolean, details_fetched_at timestamptz, details_error text, fuzzy_key text, content_hash text, payload jsonb`;
 const EMP_COLS_DEF = `name_norm text, name_display text, employer_class text, class_rule text, aa_kundennummer_hashes text[]`;
 const VERIFY_COLS_DEF = `posting_id bigint, verify_status text, verify_http int, verified_at timestamptz, verify_note text`;
-const CLINIC_COLS_DEF = `clinic_id text, name text, town text, operator text, landkreis text, regierungsbezirk text, status text, versorgungsstufe text, traegerart text, beds int, day_places int, fachrichtungen text, parse_quality text, source text, website text, careers_url text, ats_type text`;
+const CLINIC_COLS_DEF = `clinic_id text, name text, town text, plz text, operator text, landkreis text, regierungsbezirk text, status text, versorgungsstufe text, traegerart text, beds int, day_places int, fachrichtungen text, parse_quality text, source text, website text, careers_url text, ats_type text`;
 const LINK_COLS_DEF = `posting_id bigint, clinic_id text, clinic_match_rule text, clinic_match_score numeric`;
 const CLINIC_COLS = CLINIC_COLS_DEF.split(",").map((c) => c.trim().split(/\s+/)[0]);
 const IDENTITY = "source_id,source_ref";
@@ -70,9 +70,11 @@ Deno.serve(async (req: Request) => {
         // registry CSV that supplies the other columns still has them blank. A plain
         // `col = excluded.col` therefore erased every discovered label on the next link-clinics run.
         // Discovery-owned columns keep the stored value unless the caller actually sends a new one.
+        // plz is the same kind of column (TASK-431): tools/fill_clinic_plz.py and the RHV sync know it, the plan
+        // PDF rows, the Diakoneo list and the discovery tools do not, and must not blank it by writing the row again.
         `insert into pflege_jobs.clinics (${CLINIC_COLS.join(",")}) select ${CLINIC_COLS.join(",")} from json_to_recordset($1::json) as t(${CLINIC_COLS_DEF})
          on conflict (clinic_id) do update set ${CLINIC_COLS.filter((c) => c !== "clinic_id").map((c) =>
-            ["ats_type", "careers_url"].includes(c)
+            ["ats_type", "careers_url", "plz"].includes(c)
               ? `${c}=coalesce(nullif(excluded.${c},''), pflege_jobs.clinics.${c})`
               : `${c}=excluded.${c}`).join(", ")}`, [sql.json(body.clinics)]);
       out.clinics = r.count;

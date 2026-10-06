@@ -112,6 +112,7 @@ def parse(xlsx_path=XLSX):
         row["clinic_id"] = "RH" + str(r[idx["RH_ID_Pseudo"]])
         row["name"] = r[idx["RH_Name"]]
         row["town"] = r[idx["Ort"]]
+        row["plz"] = str(r[idx["PLZ"]] or "").strip()           # TASK-431: the RHV states the PLZ of every site; the sync used to drop it
         row["operator"] = r[idx["Trägername"]]
         row["traegerart"] = TRAEGERART.get(str(r[idx["Trägerart"]]), "")
         row["landkreis"] = kreis_names.get(kreis_code, "")

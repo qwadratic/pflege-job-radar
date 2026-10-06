@@ -285,7 +285,7 @@ Job row: `v_postings` columns (below) + `fresh`.
 `posting.observed` / `listing.observed` / `probe.ats_discovery` land in `inbox` and are drained by
 `cli inbox`; `clinic.upserted`, `clinic_link.asserted`, `posting.verified`, `crawl_run.finished` go straight
 to the edge ops. Dedupe is `(source, id)` in the request plus `source_url` against rows already in the inbox.
-`clinic.upserted` must carry all 17 clinic columns — an omitted key writes NULL over what is stored — and a
+`clinic.upserted` must carry all 18 clinic columns (`plz` since 2026-10-06) — an omitted key writes NULL over what is stored — and a
 partial payload is refused with 422 naming what is missing. `GET /ingest/schemas` has the JSON Schema per type.
 
 ## B. PostgREST — `https://klkxfvieaxpjlplloljn.supabase.co/rest/v1/<relation>`

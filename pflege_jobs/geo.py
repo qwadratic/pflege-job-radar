@@ -186,6 +186,7 @@ class Geo:
     lon: Optional[float] = None
     plz: Optional[str] = None
     source: Optional[str] = None
+    ars: Optional[str] = None     # the municipality's 12-digit key (Destatis rows only; a GeoNames PLZ row has none)
 
 
 def _unknown(rule: str) -> Geo:
@@ -229,7 +230,7 @@ def _pick(rows):
 
 def _row_geo(row, land, rule):
     return Geo(land=land, land_name=LAND_NAMES[land], rule=rule, matched_name=row["gemeindename"],
-               lat=row["lat"], lon=row["lon"], plz=row["plz"], source=row["source"])
+               lat=row["lat"], lon=row["lon"], plz=row["plz"], source=row["source"], ars=row["ars"] or None)
 
 
 def _scalar(v):

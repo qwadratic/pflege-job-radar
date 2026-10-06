@@ -255,7 +255,7 @@ def test_ingest_schemas_are_generated_from_the_column_spec(client):
     s = client.get("/api/ingest/schemas").json()
     assert set(s["types"]) == set(AU.INGEST_SCOPE)
     clinic = s["types"]["clinic.upserted"]["data"]
-    assert clinic["required"] == [c for c, _ in CLINIC_SPEC] and len(clinic["properties"]) == 17
+    assert clinic["required"] == [c for c, _ in CLINIC_SPEC] and len(clinic["properties"]) == 18 and "plz" in clinic["required"]
     assert clinic["properties"]["beds"]["type"] == ["integer", "null"]
     assert s["types"]["posting.observed"]["target"] == "pflege_jobs.inbox (kind=jobposting)"
     assert s["envelope"]["required"] == ["id", "source", "type", "data"]

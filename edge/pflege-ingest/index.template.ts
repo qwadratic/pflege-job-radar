@@ -70,9 +70,11 @@ Deno.serve(async (req: Request) => {
         // registry CSV that supplies the other columns still has them blank. A plain
         // `col = excluded.col` therefore erased every discovered label on the next link-clinics run.
         // Discovery-owned columns keep the stored value unless the caller actually sends a new one.
+        // plz is the same kind of column (TASK-431): tools/fill_clinic_plz.py and the RHV sync know it, the plan
+        // PDF rows, the Diakoneo list and the discovery tools do not, and must not blank it by writing the row again.
         `insert into pflege_jobs.clinics (${CLINIC_COLS.join(",")}) select ${CLINIC_COLS.join(",")} from json_to_recordset($1::json) as t(${CLINIC_COLS_DEF})
          on conflict (clinic_id) do update set ${CLINIC_COLS.filter((c) => c !== "clinic_id").map((c) =>
-            ["ats_type", "careers_url"].includes(c)
+            ["ats_type", "careers_url", "plz"].includes(c)
               ? `${c}=coalesce(nullif(excluded.${c},''), pflege_jobs.clinics.${c})`
               : `${c}=excluded.${c}`).join(", ")}`, [sql.json(body.clinics)]);
       out.clinics = r.count;

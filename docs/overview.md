@@ -30,7 +30,8 @@ A posting counts as "at a hospital" only when it carries a `clinic_id` (KeZ). Ev
 |---|---|---|
 | `clinic_id` | PDF | 5-digit KeZ: digit 1 = Regierungsbezirk, 2–3 = Landkreis/Stadt, 4–5 = hospital |
 | `name`, `town`, `operator` | PDF | site name, town, Träger |
-| `landkreis`, `regierungsbezirk` | PDF | region |
+| `plz` | KHV / RHV | postcode of the site. Not in the plan PDF: `tools/fill_clinic_plz.py` takes it from the Krankenhausverzeichnis 2024 (RH rows by id, DK rows from their source text, KeZ rows by the KHV site in the clinic's municipality; 626 of 651, the rest stay empty), `data/sync_rhv_reha.py` carries the RHV's |
+| `landkreis`, `regierungsbezirk` | PDF | region; `landkreis` also picks the municipality when the town name is shared (`pflege_jobs.geo.clinic_centroid`) |
 | `status` | PDF | Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan |
 | `versorgungsstufe` | PDF | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus; the table stores `-` (outside the levels) or empty (Reha, social), the API serves both as `null` |
 | `traegerart` | PDF | oeffentlich, freigemeinnuetzig, privat |
