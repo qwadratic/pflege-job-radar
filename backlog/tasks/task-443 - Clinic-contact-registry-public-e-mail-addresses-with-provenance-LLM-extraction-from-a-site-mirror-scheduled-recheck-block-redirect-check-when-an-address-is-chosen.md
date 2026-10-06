@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 11:23'
+updated_date: '2026-10-06 11:43'
 labels:
   - email
   - registry
@@ -30,3 +31,17 @@ Requested by the e-mail lane (pflege-board-25 / daria-desk), Ivan 2026-10-06, nu
 - [ ] #4 A clinic with no address after a second recheck is recorded as "no address" and listed; a scheduled recheck runs
 - [ ] #5 Own entity and API, not part of the mailer; the first version covers the clinics of nurse-79 wave 3 before it widens
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Ivan's decisions, 2026-10-06 (wave-3 address recheck of one candidate's mailing; not yet planned work):
+- A printed address is taken as found. Where none is found, one more recheck, then the clinic is marked "no address", visibly. Whether to write at all depends on how likely the vacancy fits, how comfortable the fit is and how recent the ad is.
+- An address that already carried candidate offers or talks about candidates with the clinic is probably the right address for that clinic.
+- Mute instead of block: a refusal, a bounce and the like mute the address for one quarter, then it is unmuted again, so nothing stays muted and forgotten while the address is good. The mute stores its end date and reason.
+- Many cold letters with only an auto-reply say nothing: this is probed on our own system, not read from old data.
+- Old CRM data is never an input of decision code. It may be quoted in chat between Ivan and the session.
+- Corrections can come from both operators' mailboxes (the desk reads both); the registry should take them in later.
+- Open for Ivan: does a clinic's own PDF report (Qualitätsbericht) count as an official page, and does a shared Klinikdirektion mailbox count as the address of the role.
+First data: the case files of the 2026-10-06 recheck (gitignored, with quote, URL, fetched_at and provenance class per address).
+<!-- SECTION:NOTES:END -->
