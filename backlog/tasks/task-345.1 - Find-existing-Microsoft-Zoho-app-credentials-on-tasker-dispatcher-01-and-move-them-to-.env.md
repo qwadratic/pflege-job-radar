@@ -6,6 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-17 17:31'
+updated_date: '2026-10-06 05:11'
 labels:
   - email
 dependencies: []
@@ -19,7 +20,7 @@ ordinal: 112000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-These mailboxes were already operated from this server by earlier tooling, so an Entra app (tenant ndtgroup864) or Zoho API client may already exist; reusing it removes the dependency on the M365 admin. First attempt (2026-09-17) was blocked by the Claude Code auto-mode classifier as credential exploration; needs an explicit permission rule or a pointer from Ivan to where the old tooling lives. Scope: find and copy to .env only, change nothing.
+These mailboxes were already operated from this server by earlier tooling, so an Entra app (tenant <client tenant>) or Zoho API client may already exist; reusing it removes the dependency on the M365 admin. First attempt (2026-09-17) was blocked by the Claude Code auto-mode classifier as credential exploration; needs an explicit permission rule or a pointer from Ivan to where the old tooling lives. Scope: find and copy to .env only, change nothing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

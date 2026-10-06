@@ -10,8 +10,9 @@ def _client_config():
     """TASK-162: this repo is public, so the client's real identity (name, own/partner mail
     domains) lives in config/wa-client.json (gitignored), never in source -- see
     app/wa/config.py:client(). This script does not import the app package, so it is a tiny local
-    mirror of that loader: same path rule (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json),
-    same loud failure on a missing file, bad JSON or an empty/missing "name" ("No safety nets")."""
+    mirror of that loader: WA_CLIENT_CONFIG, else the main checkout's config/wa-client.json (hard-coded
+    like this script's other paths), and the same loud failure on a missing file, bad JSON, an
+    empty/missing "name" or a domain key that is not a list of strings ("No safety nets")."""
     path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or "/home/claude/repo/pflege-board/config/wa-client.json"
     if not os.path.exists(path):
         raise RuntimeError(f"client config not found at {path!r} -- create it (config/wa-client.example.json "
@@ -23,6 +24,10 @@ def _client_config():
             raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
     if not isinstance(data, dict) or not str(data.get("name", "")).strip():
         raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    for key in ("own_mail_domains", "partner_mail_domains"):
+        domains = data.get(key)
+        if not isinstance(domains, list) or not all(isinstance(d, str) and d.strip() for d in domains):
+            raise RuntimeError(f"client config at {path!r}: \"{key}\" must be a list of domain strings")
     return data
 
 

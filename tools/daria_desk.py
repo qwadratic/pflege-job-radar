@@ -71,7 +71,8 @@ def _client_config():
     (gitignored), never in source -- see app/wa/config.py:client(). This script does not import the
     app package, so it is a tiny local mirror of that loader rather than an import: same path rule
     (WA_CLIENT_CONFIG, else <repo root>/config/wa-client.json), same loud failure on a missing file,
-    bad JSON or an empty/missing "name" (CLAUDE.md, "No safety nets")."""
+    bad JSON, an empty/missing "name" or a domain key that is not a list of strings (CLAUDE.md, "No
+    safety nets")."""
     path = os.environ.get("WA_CLIENT_CONFIG", "").strip() or str(REPO / "config" / "wa-client.json")
     p = Path(path)
     if not p.exists():
@@ -83,6 +84,10 @@ def _client_config():
         raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
     if not isinstance(data, dict) or not str(data.get("name", "")).strip():
         raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    for key in ("own_mail_domains", "partner_mail_domains"):
+        domains = data.get(key)
+        if not isinstance(domains, list) or not all(isinstance(d, str) and d.strip() for d in domains):
+            raise RuntimeError(f"client config at {path!r}: \"{key}\" must be a list of domain strings")
     return data
 
 

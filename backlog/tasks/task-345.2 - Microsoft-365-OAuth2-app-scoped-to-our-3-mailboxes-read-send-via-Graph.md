@@ -4,7 +4,7 @@ title: Microsoft 365 OAuth2 app scoped to our 3 mailboxes (read + send via Graph
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:31'
-updated_date: '2026-09-17 17:31'
+updated_date: '2026-10-06 05:11'
 labels:
   - email
 dependencies: []
@@ -18,7 +18,7 @@ ordinal: 113000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-M365 IMAP basic auth is disabled (cannot read inbox or history of daria.s@pflege-connect.work, the warm box) and SMTP basic auth is switched off by default end of Dec 2026. All 3 M365 domains are in tenant ndtgroup864, so one app covers them. Skip if TASK-345.1 finds existing usable creds. Admin instruction is in runbook section 3.
+M365 IMAP basic auth is disabled (cannot read inbox or history of daria.s@pflege-connect.work, the warm box) and SMTP basic auth is switched off by default end of Dec 2026. All 3 M365 domains are in tenant <client tenant>, so one app covers them. Skip if TASK-345.1 finds existing usable creds. Admin instruction is in runbook section 3.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

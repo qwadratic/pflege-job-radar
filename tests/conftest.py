@@ -15,7 +15,7 @@ os.environ.setdefault("AUTH_DISABLED", "1")
 # the committed, synthetic config/wa-client.example.json instead, unless a test (or the environment
 # running pytest) already set WA_CLIENT_CONFIG itself. Set here, at collection time, before any test
 # module's own "from app.wa import ..." imports app/wa/luna/prompts.py or luna_brain.py -- both read
-# client() at import time (same reasoning _LIVE_CREDENTIALS above has for popping its own vars this
+# client() at import time (same reasoning _LIVE_CREDENTIALS below has for popping its own vars this
 # early). Absolute path from this file's own location, not the cwd pytest happened to be run from.
 os.environ.setdefault(
     "WA_CLIENT_CONFIG",

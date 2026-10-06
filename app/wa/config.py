@@ -482,8 +482,9 @@ def sales_brain_path():
 # synthetic stand-in with the same shape. Every place that used to hard-code the client's name or mail
 # domains (app/wa/luna/prompts.py, constitution.json, app/wa/luna_brain.py's greeting check,
 # tools/daria_desk.py's ANSWER_SYSTEM, the email tools' own-domain sets) now reads it from here.
-# "No safety nets" (CLAUDE.md): a missing file, unreadable JSON or a missing/empty "name" raises
-# loudly naming the path -- never a default that could pass for a real client identity.
+# "No safety nets" (CLAUDE.md): a missing file, unreadable JSON, a missing/empty "name" or a domain key
+# that is not a list of strings raises loudly naming the path -- never a default that could pass for a
+# real client identity.
 _CLIENT_CACHE = {}
 
 
@@ -506,6 +507,10 @@ def client():
         raise RuntimeError(f"client config at {path!r} is not valid JSON: {exc}") from exc
     if not isinstance(data, dict) or not str(data.get("name", "")).strip():
         raise RuntimeError(f"client config at {path!r} has no non-empty \"name\" key")
+    for key in ("own_mail_domains", "partner_mail_domains"):
+        domains = data.get(key)
+        if not isinstance(domains, list) or not all(isinstance(d, str) and d.strip() for d in domains):
+            raise RuntimeError(f"client config at {path!r}: \"{key}\" must be a list of domain strings")
     _CLIENT_CACHE[path] = data
     return data
 
