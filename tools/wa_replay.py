@@ -10,9 +10,10 @@ app/wa/luna/shadow_run.py.
 Exit code 0 on a clean run, 1 when any turn errored ("K of N turns errored"); the run itself goes on past
 an erroring turn.
 
-NOTHING LEAVES THIS MACHINE, and the sales_brain CRM is never written: every turn runs ``no_send=True``
+NOTHING IS SENT TO A CANDIDATE, and the sales_brain CRM is never written: every turn runs ``no_send=True``
 (replay.py's docstring has the chain, down to the two MCP tools that can send), and sales_brain.sqlite is
-opened ``mode=ro``.
+opened ``mode=ro``. What does leave ``--out``: the candidate's text goes to the model through ``claude -p``
+like any live turn, and the CLI keeps its turn transcripts under ``~/.claude/projects/``.
 
 ENV, BEFORE ``app.wa.config`` IS IMPORTED. config.py freezes every ``WA_*``/``META_WHATSAPP_*`` variable
 into a module constant at import (app/wa/envfile.py explains why that matters), so the setup sits behind
@@ -187,10 +188,16 @@ def cmd_candidate(args):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     board_db_path = args.board_db or (_main_checkout_root() / "data" / "app.sqlite")
-    APPC.SQLITE_PATH = copy_board_db(board_db_path, out_dir)   # BOARD, module docstring
-
-    result = RP.replay_candidate(args.candidate, out_dir, max_turns=args.max_turns,
-                                 sales_brain_path=args.sales_brain_path or C.sales_brain_path())
+    board_copy = copy_board_db(board_db_path, out_dir)
+    APPC.SQLITE_PATH = board_copy                              # BOARD, module docstring
+    try:
+        result = RP.replay_candidate(args.candidate, out_dir, max_turns=args.max_turns,
+                                     sales_brain_path=args.sales_brain_path or C.sales_brain_path())
+    finally:
+        # The board db also holds sessions, magic links and customers: the copy lives only for the
+        # run and never stays next to the replayed conversations.
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            pathlib.Path(str(board_copy) + suffix).unlink(missing_ok=True)
     print(f"candidate {result['candidate_id']}: {result['turns_run']} turn(s) run"
           + (" (truncated by --max-turns)" if result["truncated"] else " (end of history)"))
     print(f"  jsonl:  {result['jsonl_path']}")

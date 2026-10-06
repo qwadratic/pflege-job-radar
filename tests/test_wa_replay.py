@@ -360,6 +360,8 @@ def test_cli_clean_run_exits_zero_and_points_the_board_snapshot_at_the_copy(tmp_
     assert code == 0
     assert "0 of 1 turns errored" in out
     assert APPC.SQLITE_PATH == scratch_dir.resolve() / "board.sqlite"   # never the live registry
+    # the copy holds more than the brain reads (sessions, customers): gone when the run ends
+    assert not list(scratch_dir.resolve().glob("board.sqlite*"))
 
 
 def test_cli_exits_nonzero_and_says_k_of_n_when_a_turn_errored(tmp_path, scratch_dir, monkeypatch, capsys):
