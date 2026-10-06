@@ -6,7 +6,7 @@ tools/status_docs_publish.py publishes), and the link is appended here, never wr
 
     Wir haben Ihr Profil an diese Klinik geschickt, sie passt besonders gut zu Ihren Wünschen:
     {name}, {town}
-    Stellen: {job}; {job}
+    Stellen: „{job}“; „{job}“
     Wohnung: {housing}
     Weg: {travel}
 
@@ -16,7 +16,9 @@ tools/status_docs_publish.py publishes), and the link is appended here, never wr
 
 THE CLINIC is the one `sent` entry with `best: true`. The email lane picks it, so the message opens with the
 same clinic her page lists first; this module never ranks. N is the number of `sent` entries: the clinics her
-profile reached (the email lane already leaves out a clinic whose only answer was a bounce).
+profile reached (the email lane already leaves out a clinic whose only answer was a bounce). Each job title is
+quoted („…“) exactly as the posting has it, Ivan 2026-10-06: a title such as "Pflegefachkraft für unsere IMC" is
+the clinic speaking, and the quotes keep it from reading as ours.
 
 ANYTHING ELSE IS A LOUD ValueError, NEVER A GUESS (CLAUDE.md "no safety nets"): no best entry or more than one,
 a best entry missing a field, fewer than two clinics (the approved wording is plural only, and a singular is
@@ -66,7 +68,7 @@ def bubbles(status, url):
     first = "\n".join([
         P.STATUS_BEST_INTRO_DE,
         f"{best['name']}, {best['town']}",
-        f"{P.STATUS_JOBS_LABEL_DE} {'; '.join(best['jobs'])}",
+        f"{P.STATUS_JOBS_LABEL_DE} {'; '.join(f'„{job}“' for job in best['jobs'])}",
         f"{P.STATUS_HOUSING_LABEL_DE} {best['housing']}",
         f"{P.STATUS_TRAVEL_LABEL_DE} {best['travel']}",
     ])

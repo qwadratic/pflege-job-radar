@@ -49,7 +49,7 @@ def test_two_bubbles_best_clinic_then_count_and_link():
     assert SM.bubbles(status, URL) == [
         "Wir haben Ihr Profil an diese Klinik geschickt, sie passt besonders gut zu Ihren Wünschen:\n"
         "Klinik Zwei, Zweistadt\n"
-        "Stellen: Pflegefachkraft Intensivstation; Pflegefachkraft IMC\n"
+        "Stellen: „Pflegefachkraft Intensivstation“; „Pflegefachkraft IMC“\n"
         "Wohnung: ja: Personalwohnung\n"
         "Weg: ab Teststadt 20 Min.",
         "Insgesamt ist Ihr anonymisiertes Profil an 3 Kliniken gegangen. Wir warten jetzt auf deren Antworten.\n"
@@ -61,7 +61,7 @@ def test_two_bubbles_best_clinic_then_count_and_link():
 def test_every_job_of_the_best_clinic_is_listed():
     jobs = [f"Stelle {i}" for i in range(5)]
     first, _ = SM.bubbles(_status(_clinic("A", best=True, jobs=jobs), _clinic("B")), URL)
-    assert "Stellen: Stelle 0; Stelle 1; Stelle 2; Stelle 3; Stelle 4" in first
+    assert "Stellen: „Stelle 0“; „Stelle 1“; „Stelle 2“; „Stelle 3“; „Stelle 4“" in first
 
 
 @pytest.mark.parametrize("sent", [
