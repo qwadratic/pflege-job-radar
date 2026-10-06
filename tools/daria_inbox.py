@@ -3,18 +3,20 @@
 JSON line each on stdout: the Graph metadata, the folder's name, whether it is the Junk folder, and the raw MIME
 (base64). TASK-345.10.
 
-Ivan, 2026-09-28, granted the claude user this one command through sudo without a password, so Claude reads daria's
-mail and forwards it to him by hand. tools/daria_inbox_install.sh installs it root-owned as /usr/local/sbin/daria-inbox.
-It is self-contained (standard library and msal) so root never imports a file the claude user can change; python -I
-also drops the user site, PYTHON* variables and the script directory from sys.path.
+Ivan, 2026-09-28, granted the claude user this one command through sudo without a password, as the root-owned
+/usr/local/sbin/daria-inbox (tools/daria_inbox_install.sh), so Claude reads daria's mail and forwards it to him by hand.
+Ivan, 2026-10-06: the MSAL cache is deliberately the claude user's now (~/.local/state/pflege-mail, .env changed at 20:37
+on 05.10), so the root copy refused it and the mailing stopped; the command is now run by the claude user
+itself, `/usr/bin/python3 -I tools/daria_inbox.py --since ISO`, no sudo. It stays self-contained (standard library and
+msal); python -I drops the user site, PYTHON* variables and the script directory from sys.path.
 
-Read-only: Graph GET requests only, and root writes nothing. Unlike email_dump_graph, the refreshed MSAL cache is not
-written back: the cache may sit in a directory the claude user can write, where a root write-back could be redirected.
-The old refresh token stays valid, and the service that owns the cache keeps it fresh.
+Read-only: Graph GET requests only, nothing is written. Unlike email_dump_graph, the refreshed MSAL cache is not written
+back: the old refresh token stays valid, and whatever owns the cache keeps it fresh; a cache that went stale fails
+loudly here ("no Graph token").
 
-The Graph settings come from the repo's .env, which the claude user can edit, so they are checked before root uses
-them: the cache is opened without following a symlink and must be a regular file that root owns and only root can
-write; the authority must be login.microsoftonline.com. Anything else stops the command. Errors never print a value
+The Graph settings come from the repo's .env, so they are checked before they are used: the cache is opened without
+following a symlink and must be a regular file that the running user owns and only the owner can write; the authority
+must be login.microsoftonline.com. Anything else stops the command. Errors never print a value
 from .env.
 """
 import argparse
@@ -66,8 +68,8 @@ def token():
         stop(f"cannot open the MSAL cache named in .env ({e.strerror})")
     with os.fdopen(fd, encoding="utf-8") as f:
         s = os.fstat(f.fileno())
-        if not stat.S_ISREG(s.st_mode) or s.st_uid != 0 or s.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-            stop("the MSAL cache named in .env must be a regular file that root owns and only root can write")
+        if not stat.S_ISREG(s.st_mode) or s.st_uid != os.geteuid() or s.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            stop("the MSAL cache named in .env must be a regular file that the running user owns and only the owner can write")
         cache = msal.SerializableTokenCache()
         cache.deserialize(f.read())
     app = msal.PublicClientApplication(env["MICROSOFT_GRAPH_CLIENT_ID"], authority=env["MICROSOFT_GRAPH_AUTHORITY"],
