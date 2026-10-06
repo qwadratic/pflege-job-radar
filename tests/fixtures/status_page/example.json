@@ -1,0 +1,38 @@
+{
+  "as_of": "2026-10-06",
+  "chat_url": "https://wa.me/490000000000",
+  "profile_pdf": "profil.pdf",
+  "wishes": [
+    {"label": "Station", "text": "PIC, sonst Intensiv. Ähnlich: IMC, Überwachung, Chest Pain Unit, Herzkatheterlabor."},
+    {"label": "Ort", "text": "Am liebsten Erlangen oder Nürnberg, sonst Bayern."},
+    {"label": "Wohnung", "text": "Eine Stelle mit Wohnung oder Zimmer."}
+  ],
+  "profile": [
+    {"label": "Beruf", "value": "Pflegefachfrau, in Deutschland anerkannt"},
+    {"label": "Erfahrung", "value": "7 Jahre, davon 4 auf Intensiv"},
+    {"label": "Deutsch", "value": "B2, Zertifikat vorhanden"},
+    {"label": "Wunsch", "value": "Intensiv oder IMC, Vollzeit"},
+    {"label": "Start", "value": "Ab 1. Dezember 2026"}
+  ],
+  "sent": [
+    {"name": "Klinikum Musterstadt", "town": "Musterstadt", "travel": "ab Nürnberg 40 Min.", "sent_at": "2026-09-22",
+     "fit": {"station": "yes", "near": "yes", "housing": "no"}, "jobs": ["Intensivstation"], "housing": "keine Angabe der Klinik"},
+    {"best": true, "name": "Kreisklinik Beispielheim", "town": "Beispielheim", "travel": "ab Erlangen 55 Min.", "sent_at": "2026-10-02",
+     "fit": {"station": "yes", "near": "yes", "housing": "part"}, "jobs": ["Intensivstation", "IMC"], "housing": "Zimmer im Personalwohnheim für den Anfang"},
+    {"name": "Universitätsklinikum Probedorf", "town": "Probedorf", "travel": "Umzug nötig", "sent_at": "2026-09-30",
+     "note": "Weit von Erlangen und Nürnberg, Umzug nötig.",
+     "fit": {"station": "yes", "near": "no", "housing": "yes"}, "jobs": ["Herzchirurgische Intensivstation"], "housing": "Personalwohnheim mit 115 Apartments"},
+    {"name": "St. Anna Krankenhaus Testingen", "town": "Testingen", "travel": "ab Nürnberg 75 Min.", "sent_at": "2026-09-27",
+     "fit": {"station": "part", "near": "part", "housing": "yes"}},
+    {"name": "Klinik am Musterberg", "town": "Musterberg", "sent_at": "2026-09-25", "fit": {"station": "no"}}
+  ],
+  "more": [
+    {"group": "Ihre Wunschstation: Intensiv oder IMC", "name": "Klinikum Beispielstadt-Süd mit einem sehr langen Namen der Trägergesellschaft", "town": "Beispielstadt", "travel": "ab Erlangen 152 Min.",
+     "note": "Sehr weit von Erlangen und Nürnberg, Umzug nötig.", "fit": {"station": "yes", "near": "no", "housing": "yes"},
+     "jobs": ["Intensivstation", "Neurologisch-neurochirurgische Intensivstation"], "housing": "Betriebswohnungen direkt am Campus"},
+    {"group": "Ihre Wunschstation: Intensiv oder IMC", "name": "Fachklinik Probenau", "town": "Probenau", "travel": "ab Nürnberg 65 Min.",
+     "fit": {"station": "yes", "near": "part", "housing": "no"}, "jobs": ["Intensivpflege"], "housing": "nur für Auszubildende"},
+    {"group": "Andere Stationen", "name": "Augenklinik <Beispiel> & Partner", "town": "Musterstadt", "travel": "Umzug nötig",
+     "note": "OP-Ambulanz, keine Intensiv- oder IMC-Stelle.", "fit": {"station": "no", "near": "no", "housing": "part"}, "jobs": ["OP-Ambulanz"]}
+  ]
+}
