@@ -61,7 +61,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pflege_jobs import section  # noqa: E402
+from pflege_jobs import geo, section  # noqa: E402
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/125.0.0.0 Safari/537.36")
@@ -2772,18 +2772,6 @@ def dvinci_host(careers_url, session=None):
     return None
 
 
-def _town_a_facility_label_ends_with(label, towns):
-    """'Klinikum Bamberg' -> 'Bamberg', 'Zentrum für rehabilitative Medizin Bamberg' -> 'Bamberg': the longest trailing run of words of the
-    label's first part (before a comma) that is a registry town; None when the label ends in no town ('Ärztliche Praxiszentren') or
-    `towns` is not given. The text keeps the label's own spelling; `towns` is norm_text()-lowercased (app.data.towns())."""
-    words = re.split(r"\s+", (label or "").split(",")[0].strip())
-    for i in range(len(words)):
-        cand = " ".join(words[i:])
-        if cand.lower() in (towns or ()):
-            return cand
-    return None
-
-
 def parse_dvinci(j, org, list_url, towns=None):
     """One entry of jobPublication/list.json -> our row shape.
 
@@ -2799,7 +2787,7 @@ def parse_dvinci(j, org, list_url, towns=None):
     addr = ((jo.get("locations") or [{}])[0] or {}).get("address") or {}
     loc_text = jo.get("location")
     if loc_text and re.search(r"klinik|krankenhaus|hospital|zentrum|stiftung|gmbh", loc_text, re.I):
-        loc_text = _town_a_facility_label_ends_with(loc_text, towns)
+        loc_text = geo.town_label_ends_with(loc_text, towns)
     city = addr.get("city") or loc_text
     desc = _txt(" ".join(_html.unescape(p) for p in
                          (j.get("introduction"), j.get("tasks"), j.get("profile"), j.get("weOffer")) if p))

@@ -401,6 +401,19 @@ def fold_town(s):
     return re.sub(r"[^a-z0-9]+", "", x)
 
 
+def town_label_ends_with(label, towns):
+    """'Klinikum Bamberg' -> 'Bamberg', 'Zentrum für rehabilitative Medizin Bamberg' -> 'Bamberg': the longest trailing run of words of
+    the label's first part (before a comma) that is a registry town; None when the label ends in no town ('Ärztliche Praxiszentren',
+    'Standortübergreifend') or `towns` is not given. The text keeps the label's own spelling; `towns` is norm_text()-lowercased
+    (app.data.towns()). Read by the adapters whose pages state a posting's site only as a facility label (dvinci, umantis)."""
+    words = re.split(r"\s+", (label or "").split(",")[0].strip())
+    for i in range(len(words)):
+        cand = " ".join(words[i:])
+        if cand.lower() in (towns or ()):
+            return cand
+    return None
+
+
 def _kreis_key(s):
     return fold_town(_KREIS_WORDS.sub(" ", s))
 
