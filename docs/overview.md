@@ -32,7 +32,7 @@ A posting counts as "at a hospital" only when it carries a `clinic_id` (KeZ). Ev
 | `name`, `town`, `operator` | PDF | site name, town, Träger |
 | `landkreis`, `regierungsbezirk` | PDF | region |
 | `status` | PDF | Plan-KH, Vertrags-KH, HS-Klinik, Bedarfsfeststellung, nicht_mehr_im_plan |
-| `versorgungsstufe` | PDF | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus, `-` |
+| `versorgungsstufe` | PDF | Grundversorgung (I), Schwerpunkt (II), Maximalversorgung (III), Fachkrankenhaus; the table stores `-` (outside the levels) or empty (Reha, social), the API serves both as `null` |
 | `traegerart` | PDF | oeffentlich, freigemeinnuetzig, privat |
 | `beds`, `day_places` | PDF | zugelassene Betten / teilstationäre Plätze |
 | `fachrichtungen` | PDF | pipe-separated codes, see table below |
@@ -136,7 +136,7 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 ### Versorgungsstufe · Trägerart · status · size
 | dimension | values |
 |---|---|
-| versorgungsstufe | Grundversorgung (I) · Schwerpunkt (II) · Maximalversorgung (III) · Fachkrankenhaus · `-` (Vertrags-KH / HS-Klinik outside the levels) |
+| versorgungsstufe | Grundversorgung (I) · Schwerpunkt (II) · Maximalversorgung (III) · Fachkrankenhaus · `null` (Vertrags-KH / HS-Klinik outside the levels, Reha and social rows: 286 of 651) |
 | traegerart | oeffentlich (ö) · freigemeinnuetzig (fg) · privat (p) |
 | status | Plan-KH · Vertrags-KH · HS-Klinik · Bedarfsfeststellung · nicht_mehr_im_plan |
 | size bucket (beds) | S < 100 · M 100–299 · L 300–799 · XL 800+ |

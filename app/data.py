@@ -214,6 +214,12 @@ _DEFAULT_SIZES = [{"key": "S", "label": "< 100 Betten", "max": 99}, {"key": "M",
                   {"key": "L", "label": "300–799", "min": 300, "max": 799}, {"key": "XL", "label": "800+", "min": 800}]
 
 
+def _no_placeholder(v):
+    """The registry writes 'no care level' as '-' (plan rows outside the levels) or '' (Reha and social rows): None here."""
+    v = (v or "").strip()
+    return None if v in ("", "-") else v
+
+
 def _fresh(job, cutoff):
     """Published (or, when the source gives no date, first seen) within the last FRESH_DAYS."""
     v = job.get("first_published") or job.get("first_seen") or ""
@@ -264,6 +270,7 @@ def _build():
     cutoff = (datetime.now(timezone.utc) - timedelta(days=A.FRESH_DAYS)).strftime("%Y-%m-%d")
     agg = defaultdict(lambda: {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0})
     for j in jobs:
+        j["versorgungsstufe"] = _no_placeholder(j.get("versorgungsstufe"))       # the view copies the clinic's value
         j["fresh"] = _fresh(j, cutoff)
         # department_hint is a "|"-joined string on the wire (TASK-97: classify.department_hint() can
         # name several departments on one posting, e.g. "Intensiv/IMC|Anästhesie" -- keeping the DB
@@ -283,6 +290,9 @@ def _build():
     photos = R.clinic_photos_map()
     blurbs = R.clinic_blurbs_map()
     for c in clinics:
+        c["versorgungsstufe"] = _no_placeholder(c.get("versorgungsstufe"))
+        if c.get("operator"):
+            c["operator"] = c["operator"].strip()                    # the RHV writes 'Diakonie Herzogsägmühle gGmbH\xa0' on four rows
         c["fachrichtungen"] = [t for t in (x.strip() for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|")) if t]
         c["size"] = size_bucket(c.get("beds"), tax)
         # A point for a map (TASK-200): the centre of the clinic's municipality, no address; null + null when the

@@ -50,8 +50,7 @@
   "Grundversorgung (I)": "Krankenhaus der ersten Versorgungsstufe",
   "Schwerpunkt (II)": "Krankenhaus der zweiten Versorgungsstufe",
   "Maximalversorgung (III)": "Krankenhaus der dritten Versorgungsstufe",
-  "Fachkrankenhaus": "Fachkrankenhaus (F)",
-  "-": "außerhalb der Stufen (Vertrags-KH / HS-Klinik / Bedarfsfeststellung)"
+  "Fachkrankenhaus": "Fachkrankenhaus (F)"
  },
  "traegerart": {
   "oeffentlich": "öffentlich (ö)",
@@ -469,8 +468,7 @@
   "Grundversorgung (I)": "Basic care (level I)",
   "Schwerpunkt (II)": "Specialised care (level II)",
   "Maximalversorgung (III)": "Maximum care (level III)",
-  "Fachkrankenhaus": "Specialist hospital (F)",
-  "-": "outside the levels (contract / university / planned)"
+  "Fachkrankenhaus": "Specialist hospital (F)"
  },
  "traegerart_en": {
   "oeffentlich": "public",
