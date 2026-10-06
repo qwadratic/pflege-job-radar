@@ -16,3 +16,4 @@ mcp>=1.0  # app/wa/luna/tools_server.py -- the MCP server the claude CLI shells 
 psycopg2-binary>=2.9  # tools/ (registry build, ledger, clinic corrections) and their tests
 openpyxl>=3.1  # tools/sync_rhv_reha.py
 pytest-timeout>=2.3  # CI: a hung test fails after --timeout instead of blocking the run
+pyyaml>=6.0  # tests/test_ci_scope.py reads .github/workflows/tests.yml

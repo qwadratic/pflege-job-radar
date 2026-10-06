@@ -24,7 +24,8 @@ unrecoverable false promise:
 
 1. Opt-out (STOP) never reaches the model at all -- app/wa/api.py filters it before this
    module is called, same as the deterministic brain.
-2. The first turn a candidate becomes not-placeable, the reject bubble is the locked German
+2. Whenever the reply explains not-placeable on a not-placeable card (the first turn, and a
+   repeat the model chooses to answer), the reject bubble is the locked German
    text (prompts.REJECT_BODY_DE), not the model's own phrasing -- matching the source's
    "process-exact wording, the model must not rephrase" rule for this exact gate.
 3. A named region outside Bavaria gets the locked out-of-scope bubble
@@ -638,7 +639,9 @@ _OBJECTIVE_ORDER = (
     ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
     # TASK-211: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
-    ("housing", "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"),
+    # TASK-437, Ivan 2026-10-06: one noun -- "(Unterkunft)" here invited "eine Wohnung oder Unterkunft", which reads
+    # as an either/or a bare Ja cannot settle (YES/NO QUESTIONS).
+    ("housing", "ask ONE plain yes/no whether they need a flat at all, naming it with one noun -- no headcount in it yet"),
     ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-427
                   "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
@@ -1890,6 +1893,21 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # empty bubbles list is unambiguous regardless of what the flag says.
         bubbles = []
         action = str(out.get("action") or "no_send")
+    elif (out.get("action") == "explain_not_placeable"
+          and (card.get("qualification_ok") is False or card.get("qualification_path") == "reject")):
+        # TASK-380 follow-up: ``says_not_placeable`` above only catches the turn the card FIRST
+        # becomes not-placeable. A candidate who was already not-placeable before this turn and
+        # writes again (e.g. resends the identical opener) gets no new patch to trip that flag --
+        # but the model still comes back with its own action, "explain_not_placeable", and its own
+        # paraphrase, which is exactly the locked wording this gate exists to guarantee
+        # ("not placeable -> explain once, then stop", VENDORED.md; module docstring point 2
+        # above: never the model's own phrasing for this gate). The no_send/empty branch above
+        # already took priority, so a model that means to stay silent on a repeat still does
+        # (test_luis_reopening_with_the_identical_message_does_not_re_litigate_from_scratch); this
+        # branch only catches the case where it chose to speak instead. Reusing ``out["action"]``
+        # rather than a new field, same as the else branch below reads it.
+        bubbles = [P.REJECT_BODY_DE]
+        action = "explain_not_placeable"
     else:
         # TASK-373/375, the rules a prompt cannot guarantee: at most OFFER_LIMIT POSITIONS in one
         # message, every clinic it names really returned by a tool on this thread (or sitting in the

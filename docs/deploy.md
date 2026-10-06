@@ -9,58 +9,89 @@ code only after the restart below. Public URL: <https://pflege-board.exe.xyz> (e
 
 | unit | what | state |
 |---|---|---|
-| `pflege-web.service` | `uvicorn app.main:app` on :8501 — board, API, `/pro`, **and the crawl worker, in-process** | enabled, install file `deploy/pflege-web.service` |
+| `pflege-web.service` | `uvicorn app.main:app` on :8501 — board, API, `/pro`, and the scheduler thread that fires the cron schedules. It only inserts `queued` rows into `crawl_runs` and reads status; it runs no crawl | enabled, install file `deploy/pflege-web.service` |
+| `pflege-crawl.service` | `python -m app.crawl_worker` — the crawl worker: takes `queued` rows of `crawl_runs` in `run_id` order and runs them one at a time (`app.crawl.dispatch`) | install steps in the header of `deploy/pflege-crawl.service` and in "Switching to the crawl service" below |
 | `pflege-hunter.service` | `python -m app.hunter --daemon` — Firecrawl agent runs per clinic, own stop bar (`docs/firecrawl.md` §6) | enabled, install steps in the header of `deploy/pflege-hunter.service` |
 | `pflege.service` | old Streamlit app from `/home/exedev/app`, also :8501 | **disabled, keep it so** (port clash with `pflege-web`; unit is not in this repo) |
 
-Both active units read `/home/exedev/repo/.env` (`EnvironmentFile`). Key names are in `.env.example`; Stripe and auth keys are in
+All active units read `/home/exedev/repo/.env` (`EnvironmentFile`). Key names are in `.env.example`; Stripe and auth keys are in
 `docs/stripe.md` and `docs/auth.md`. Never commit `.env`.
 
 ```bash
 journalctl -u pflege-web -f
-systemctl is-active pflege-web pflege-hunter
+systemctl is-active pflege-web pflege-crawl pflege-hunter
+journalctl -u pflege-crawl -f
 ```
 
 ## Restart rule
 
-The crawl worker lives inside `pflege-web`. A restart **kills a running crawl**. New code reaches the service only after a restart
+The crawl worker is its own unit (`pflege-crawl`), so the services restart independently. New code reaches a service only after its restart
 (the pipeline CLI steps `inbox`, `link-cross`, `link-clinics` start fresh processes and pick up code at once; tracked as TASK-149).
 
-```bash
-sqlite3 data/app.sqlite "select run_id, mode, status from crawl_runs where status in ('running','queued')"   # must print nothing
-sudo systemctl restart pflege-web            # and pflege-hunter if app/hunter.py or code it imports changed
-```
-
-The nightly pass runs about 03:00 to 09:45 UTC. Restart after 10:00 UTC, or cancel the run first (`POST /api/crawl/runs/{id}/cancel`).
-Checked 2026-10-06: the unit has `KillMode=control-group`, and `start_worker` (`app/runs.py`) marks every row left `running` as
-`failed` with `process restarted` (run 235 lost 4 h 33 min that way). Lasting fix: TASK-435 (crawl worker outside the web process).
-
-### Manual run that survives a restart of `pflege-web`
-
-A run started through the web API (`POST /api/schedules/{id}/run-now`, owner login) is executed by the web worker and dies with a
-restart. A backend run is its own process: it does what `schedules.fire()` and the worker loop do (`create_run`, status `running`,
-`crawl.dispatch`), in a transient systemd unit, so neither a restart of `pflege-web` nor the end of the session that started it stops it.
-Only one crawl at a time: check first that nothing is `running` or `queued` (query above).
-
-```python
-# backend_run.py (run 237, 2026-10-06: schedule 1 "Daily full pass", all 643 clinics, adapter)
-import sys; sys.path.insert(0, "/home/exedev/repo")
-from app import crawl as CR, runs as R, schedules as SC, targets as T
-s = SC.get(1); ids = [c["clinic_id"] for c in T.clinics_for(s["target"])]
-params = {"max_credits": int(s.get("max_credits") or 0), "deep": bool(s.get("fetch_details")), "verify": True,
-          "schedule_id": s["id"], "schedule_name": s.get("name"), "stagger_days": int(s.get("stagger_days") or 1), "target": s["target"]}
-rid = R.create_run("clinic", ",".join(ids), s["mode"], params, ids, trigger="run-now")
-R.update_run(rid, status="running", started_at=R.now()); R.log(rid, "run started (own backend process)")
-CR.dispatch(rid)
-```
+| restart | a running crawl | a queued row |
+|---|---|---|
+| `pflege-web` | **untouched**, it keeps running in `pflege-crawl` (TASK-435) | stays queued, taken by `pflege-crawl` |
+| `pflege-crawl` | **killed** (`KillMode=control-group`); its row is marked `failed` with `process restarted` when the unit starts again | stays queued, taken after the start |
+| `pflege-hunter` | not related | not related |
 
 ```bash
-sudo systemd-run --unit=pflege-crawl-manual --uid=exedev --collect -p WorkingDirectory=/home/exedev/repo \
-  -p EnvironmentFile=/home/exedev/repo/.env /home/exedev/repo/.venv/bin/python backend_run.py
-journalctl -u pflege-crawl-manual -f          # output; the run's own log is in crawl_runs / run_log
+sudo systemctl restart pflege-web          # any time: app/main.py, app/*_api.py, web/, the scheduler changed
+sqlite3 data/app.sqlite "select run_id, mode, status from crawl_runs where status in ('running','queued')"   # before pflege-crawl: must print nothing
+sudo systemctl restart pflege-crawl        # when app/crawl.py, app/runs.py, app/crawl_worker.py, crawlers/ or pflege_jobs/ changed
+sudo systemctl restart pflege-hunter       # when app/hunter.py or code it imports changed
 ```
 
-The nightly schedule at 03:00 queues in the web worker; do not start a manual full pass that would still run then.
+The nightly pass runs about 03:00 to 09:45 UTC. Restart `pflege-crawl` after 10:00 UTC, or cancel the run first (`POST /api/crawl/runs/{id}/cancel`).
+Cancel needs no restart and no shared memory: a queued row becomes `cancelled` and is never taken, a running one is flagged
+(`cancel_requested`) and `crawl.execute()` stops at the next board or clinic.
+
+Three things that live on the other side of the process line now:
+
+- The cron schedules fire from the scheduler thread of `pflege-web` (checked every minute, a firing is picked up within 90 s of its cron time),
+  so a `pflege-web` restart that spans the cron minute skips that firing.
+- The board data `pflege-web` serves is a snapshot refreshed in the process that reads it. `pflege-crawl` refreshes its own after a run;
+  the web one catches up within 10 min (`data.TTL`) or at once with `POST /api/refresh-cache`.
+- The Firecrawl kill switch (`crawl.kill_switch`) runs in `pflege-crawl` and pauses the scheduler, which lives in `pflege-web`: the pause is the
+  `scheduler_pause` row of the `settings` table now, not a variable. So it also survives a `pflege-web` restart; `POST /api/scheduler/resume` lifts it.
+
+### Switching to the crawl service (once, TASK-435)
+
+Before the switch the crawl worker was a thread of `pflege-web`; a restart killed the run and marked it failed (run 235 lost 4 h 33 min).
+Order matters: restart the web first (the new web code runs no worker), then start the new unit. The other way round, the old web worker
+and the new service would both take the same queued row.
+
+```bash
+sqlite3 data/app.sqlite "select run_id, mode, status from crawl_runs where status = 'running'"   # must print nothing, see below
+sudo systemctl restart pflege-web          # the checkout in /home/exedev/repo already holds the merged code
+sudo cp deploy/pflege-crawl.service /etc/systemd/system/pflege-crawl.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now pflege-crawl
+journalctl -u pflege-crawl -n 20           # "crawl worker pid ..."
+```
+
+- A run `running` at that moment is lost: in the old web it dies with the restart, and the first start of `pflege-crawl` marks every row still
+  `running` as `failed` (`process restarted`), **also a run that lives in a transient unit** (`pflege-crawl-manual`, see "Manual run"), whose
+  process the new service knows nothing about. So wait until nothing is `running`; deploy between 10:00 and 03:00 UTC.
+- A row `queued` at that moment survives: it waits while the web restarts and until `pflege-crawl` is up, then it is taken (oldest `run_id` first).
+- Drill for "a restart of `pflege-web` leaves a running run running" (TASK-435 AC#1), on one clinic: queue it with `POST /api/crawl`
+  (`{"target": {"scope": "clinic", "values": ["<clinic_id>"]}, "mode": "adapter"}`), wait until the status query shows it `running`,
+  `sudo systemctl restart pflege-web`, then the query still shows it `running` and `GET /api/crawl/runs/<run_id>` ends `done`.
+
+### Manual run
+
+A run started from `/pro`, `POST /api/crawl`, `POST /api/schedules/{id}/run-now` (owner login) or by the scheduler is a `queued` row that
+`pflege-crawl` takes; none of them dies with a restart of `pflege-web`. Without an API session, insert the same row from the shell (what `run-now`
+does; schedule 1 is "Daily full pass", all clinics, adapter). `pflege-crawl` takes it within `POLL_SECONDS` (5 s):
+
+```bash
+cd /home/exedev/repo && set -a && . ./.env && set +a
+.venv/bin/python -c "from app import schedules as SC; print(SC.fire(SC.get(1), stagger=False, trigger='run-now'))"   # prints the run_id
+```
+
+One crawl at a time: a second queued row waits for the first. Look at what is queued or running first (query above). The row's own log is in
+`crawl_runs` / `run_log` (`GET /api/crawl/runs/{id}`), the process output in `journalctl -u pflege-crawl`.
+Before TASK-435 a backend run that survives a restart had to be started in a transient systemd unit (`systemd-run --unit=pflege-crawl-manual`,
+run 237); that is no longer needed.
 
 ## Schedules (inside the app)
 
@@ -102,6 +133,41 @@ The VM disk is 25 GB. Check with `df -h /`. What is big and what it is (all giti
 | `backups/` | 0.1 GB | before-images of hand-made data writes (`tools/apply_*`, `tools/ledger.py`) |
 
 Disk clean-up rule: delete only what this table says is rebuildable or recorded elsewhere, and look at the target first.
+
+## Mirror on Bunny
+
+The test mirror (`data/mirror/`: `INDEX.json` plus about 403 board `*.sqlite.xz`, 492 MB, TASK-197) is kept in a private Bunny Storage Zone
+so a CI runner can fetch it. The zone has no pull zone: nothing is public, because the pages hold third-party HR names and contacts.
+`*.prev` files are never uploaded, and neither are the two `infra__*` snapshots (web fonts, registry read proxy): those are in the repo,
+`tests/fixtures/mirror_infra/`, so a run that needs no real board needs no pull (`pytest -m "not mirror"`; `-m mirror` is the part that reads boards).
+
+| env name | who | what |
+|---|---|---|
+| `BUNNY_MIRROR_ZONE` | both | storage zone name |
+| `BUNNY_MIRROR_RW_KEY` | `push` | the zone's read-write password (header `AccessKey`) |
+| `BUNNY_MIRROR_RO_KEY` | `pull`, CI | the zone's read-only password |
+| `BUNNY_MIRROR_BASE_URL` | tests | default `https://storage.bunnycdn.com`; the tests point it at a local fake |
+
+```bash
+.venv/bin/python tools/mirror.py push    # after tools/mirror.py record|add
+.venv/bin/python tools/mirror.py pull    # CI, before pytest; or a fresh VM
+```
+
+`push` writes one uncompressed tar of `INDEX.json` and every `*.sqlite.xz` as `mirror-<UTC YYYYMMDD-HHMMSS>-<short git sha>.tar`
+(`PUT https://storage.bunnycdn.com/<zone>/<name>`, streamed from disk), then `latest.json` with `{archive, sha256, bytes, boards,
+pushed_at, repo_sha}`. `latest.json` goes last, so a failed upload never moves the pointer; old archives stay in the zone (a
+rollback is a `latest.json` that names an older one).
+`pull` reads `latest.json`, streams the archive it names to disk, checks bytes and sha256, unpacks beside the mirror and only then
+renames the files into place, so a pull that breaks halfway leaves the old mirror whole. It overwrites `INDEX.json` and the boards
+in the archive and leaves other files alone: push first if this machine holds recordings the zone lacks. Any failure (missing env
+name, HTTP status, size or sha256 mismatch, a tar member that is absolute or contains `..`) stops with a message and a non-zero exit;
+there is no retry and no fall back to a local copy.
+
+CI (`.github/workflows/tests.yml`, selection in `tools/ci_scope.py`): job `offline` runs `-m "not mirror and not network and not llm"`
+without a pull and without secrets (fork PRs too). Job `adapters` runs `tools/mirror.py pull`, then `-m mirror` (about 40 minutes), on a
+push to main and on a pull request that changes `crawlers/`, the replay layer or its tests, `pytest.ini`, `requirements.txt` or the
+workflow, or whose offline scope is ALL. Repository secrets: `BUNNY_MIRROR_ZONE` and `BUNNY_MIRROR_RO_KEY` (the read-only password;
+the write key never goes to GitHub). A fork PR has no secrets, so its `adapters` job fails at the pull naming them.
 
 ## Check after a deploy
 

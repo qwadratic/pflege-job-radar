@@ -92,6 +92,9 @@ def client(tmp_path, monkeypatch, inbox):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(R, "enqueue", lambda rid: None)            # never run a crawl in tests
     monkeypatch.setattr(S, "start", lambda: SC.init())
+    # TASK-197: with FIRECRAWL_API_KEY in the environment the routes behind /api/coverage and the spend gate ask api.firecrawl.dev for the
+    # account balance (a paid API; the guard refuses it). Without the key they read it as "unreachable", which is what these tests expect.
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
     from app.main import app
     with TestClient(app, base_url="https://testserver", follow_redirects=False) as c:
         c.app = app

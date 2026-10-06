@@ -148,6 +148,46 @@ reads `webhook_ready`, `outbound_ready`, `checks`, `reply_scope`, `autosend`, `t
 `synced_at` / `synced_source`: the engine's last confirmed contact with a rail, shown as "Rail contact 2 min ago ·
 bridge". The list envelope and the thread detail carry the same two fields.
 
+## Status documents (public token links)
+
+**What:** a candidate status document (an HTML one-pager, a detail page, a PDF -- candidate-anonymous: public
+clinic names, vacancy titles, travel minutes, housing quotes, her anonymised profile fields as the clinics see
+them, never a candidate name or phone) at a public,
+unguessable link anyone holding it can open with no login. Ivan, 2026-10-06. The documents themselves are produced
+on the harness host by the email lane (Daria) and published there by a local tool
+(`tools/status_docs_publish.py`, [whatsapp.md](whatsapp.md)) -- the board never receives or stores the files, only
+proxies to them.
+
+**Public URL:** `https://pflege-board.exe.xyz/s/<token>/`. `<token>` is the only secret in the URL (22 URL-safe
+characters) -- there is no owner-session gate on this route, and none is added: the token itself is the access
+control, the same way a password-reset link or an unlisted video works.
+
+**Board side (pflege-fe, TASK-436):** the public routes `GET /s/{token}`, `/s/{token}/` and `/s/{token}/{name}`,
+their place in the public-route list and how errors reach an anonymous visitor are documented in [auth.md](auth.md)
+and `app/wa_proxy.py`, not here. What the board relies on from the harness: `/s/{token}/` maps to
+`.../status/{token}/` and `/s/{token}/{name}` to `.../status/{token}/{name}`, with the existing `WA_API_TOKEN`
+bearer (no new secret); the harness never redirects, so the `/s/{token}` -> `/s/{token}/` redirect (needed for the
+documents' relative links) is the board's; every harness answer carries the status code, `Content-Type` and
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache` the board passes on.
+
+**Harness side (`app/wa/status_docs.py`):** `GET /api/wa/pro/status/{token}`, `GET /api/wa/pro/status/{token}/`
+and `GET /api/wa/pro/status/{token}/{name}` -- plus a catch-all `GET /api/wa/pro/status/{rest:path}` registered
+last, after these three, so FastAPI only ever reaches it for a path shape none of them matches. Together these
+mean no request under this prefix ever gets a redirect: the first two are both declared explicitly so neither
+needs Starlette's own undeclared-trailing-slash 307 (whose `Location` would name the harness host instead of the
+board), and the catch-all closes the remaining gap (an extra trailing slash after a name, a double trailing
+slash, a decoded path with more segments than any of the three) that would otherwise still hit that same 307, or
+Starlette's own unauthenticated `{"detail": "Not Found"}`, before auth ever ran. Same bearer check as every other
+board-scope Pro API route (`pro_api._authorize`, `SCOPE_BOARD` -- the board token or Daria's write token), on
+every one of these four routes including the catch-all; unconfigured is still `503`, a missing/wrong bearer still
+`401`. `token` must be exactly 22 URL-safe base64 characters; `name` must be `index.html`, `detail.html`, or a
+lowercase, bounded `.pdf` name -- anything else, or an unknown token, or a symlinked token directory or file, is
+`404` with an identical body (never reveals which check failed). See that module's own docstring for the full
+design and `docs/whatsapp.md`'s Pro API section for the publish tool.
+
+The harness's `FileResponse` honours `Range` (`206`) and refuses `HEAD` (`405`); the board forwards neither `Range`
+nor `If-*` and only `GET`, so a visitor always gets a full `200` or `404` body.
+
 ## Errors the view distinguishes
 
 | answer | what the view says |
@@ -158,3 +198,29 @@ bridge". The list envelope and the thread detail carry the same two fields.
 | anything else | the status and the message |
 
 Each of these replaces the view with an error card and a link to the demo. None of them renders as "0 leads".
+
+## Rail & jobs tab
+
+`/pro#/leads?tab=rail` is the second tab of this view. It shows the phone rail, read-only:
+
+- **Bridge**: the tunnel, the phone state, the watcher and the last sync, each with how long it has been so.
+- **Queue of phone ops**: counts by state over the whole ops mirror, and the same counts for the ops a human queued from Pro. A click on a count filters the list below.
+- **Automatic jobs**: one row per job with its state (ok, error with the code, overdue, never ran), the last run, the last ok run, the next run and the 24 h counts.
+- **Operations**: every phone op, newest first, with filters by state and origin.
+
+The binding field contract for both routes is [`wa-pro-activity.md`](wa-pro-activity.md) (wa-harness). What the view does with it:
+
+| Read | Used for |
+|---|---|
+| `GET /api/wa/activity` | bridge, queue, jobs. Polled every 5 s on this tab and every 15 s on the Leads tab, where it only colours the dot on the tab. |
+| `GET /api/wa/ops?status=&origin=&limit=50&before_id=` | the operations list |
+
+- **Headline.** The rail is *down* when the tunnel is down, the phone is `disconnected` or `blocked`, or the watcher is not alive. It has *warnings* when the phone is `recovering`, a job has an error or is overdue, or the queue mirror is stale. It is *unknown* when the tunnel, the phone and the watcher all report nothing (no snapshot has arrived yet): that outranks warnings, because a bridge nobody has heard from is not running. Each reason is listed under the headline.
+- **Stale.** All ages are `generated_at` minus the timestamp, so a browser clock that is off changes nothing. The queue mirror is called stale when `queue.as_of` is more than 60 s behind (the harness's own threshold for `relay_sync`), the bridge snapshot when `snapshot_at` is more than 180 s behind (3 times its 60 s cadence). A stale mirror gets a red note: the counts and the list are then the last known state.
+- **Ops are re-read, not appended.** An op keeps its `position` when its state changes, so `after_id` never shows that change. Every 5 s the view reads again from the newest op down to the oldest one on screen.
+- **No cap.** "Load older operations" follows `next_before_id` until it is `null`. A response without `next_before_id` is an error on screen, not the end of the list.
+- **Unknown values are shown raw**: an op state, kind or origin, a job key or an error code the view has no label for appears exactly as the harness sent it. `queue.other` states get their own count.
+- **Dashes, not zeros.** `ok_24h` / `failed_24h` are `null` for `relay_sync` and `broadcasts` and show as a dash. For `luna_reply` the first number is calls, not successes; the cell says so on hover.
+- **Errors.** A 404 on `/api/wa/activity` means this board's proxy is older than the harness and has no rail routes; the tab says so, and the Leads tab keeps working without a rail dot.
+
+`?mock=1#/leads?tab=rail` shows the demo: 72 invented ops and a queue that moves every 8 s.

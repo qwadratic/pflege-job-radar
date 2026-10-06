@@ -139,6 +139,47 @@ def test_disqualification_is_only_overridden_once(luna):
     assert d["bubbles"] == out["bubbles"]
 
 
+def test_a_reopened_not_placeable_thread_still_gets_the_locked_text_not_a_paraphrase(luna):
+    """TASK-380 follow-up: unlike test_disqualification_is_only_overridden_once above (a NORMAL
+    action, left alone), a candidate already not-placeable who writes again and gets the model's
+    OWN action, explain_not_placeable, with the model's OWN wording, must still see the locked
+    REJECT_BODY_DE, never that paraphrase -- "not placeable -> explain once, then stop" (VENDORED.md)
+    means every time it is said, not only the first."""
+    luna["slots"]["qualification_ok"] = False
+    model_said = "Leider können wir aktuell keine passende Stelle für Sie anbieten, wie bereits erwähnt."
+    out = _out(bubbles=[model_said], action="explain_not_placeable", card_patch={})
+    d = LB.turn("Hallo, ich suche Pflegejob, bin Pflegehilfskraft ohne Ausbildung.", luna,
+               client=fake_client(out))
+    assert d["bubbles"] == [LB.P.REJECT_BODY_DE]
+    assert model_said not in d["bubbles"]
+    assert d["action"] == "explain_not_placeable"
+
+
+def test_a_reopened_not_placeable_thread_with_no_send_stays_silent(luna):
+    """The no_send/empty-bubbles branch still takes priority over the reopened-reject gate above --
+    a model that means to say nothing on a repeat (already said, nothing new to add) stays silent,
+    exactly what test_luis_reopening_with_the_identical_message_does_not_re_litigate_from_scratch
+    (tests/test_wa_luna_personas.py) requires end to end."""
+    luna["slots"]["qualification_ok"] = False
+    out = _out(bubbles=[], action="explain_not_placeable", no_send=True, card_patch={})
+    d = LB.turn("Hallo, ich suche Pflegejob, bin Pflegehilfskraft ohne Ausbildung.", luna,
+               client=fake_client(out))
+    assert d["bubbles"] == []
+
+
+def test_a_card_moved_back_to_placeable_is_not_caught_by_the_reopened_reject_gate(luna):
+    """New qualification info (the model's patch flips qualification_ok back to true) must reach
+    the candidate through the model's own reply path, never the locked reject text -- the reopened
+    gate only fires while the card is STILL not-placeable after this turn's patch. The action is
+    explain_not_placeable on purpose, so only the post-patch card clause keeps the gate shut."""
+    luna["slots"]["qualification_ok"] = False
+    model_said = "Gute Nachricht, mit der Anerkennung können wir doch weitermachen!"
+    out = _out(bubbles=[model_said], action="explain_not_placeable",
+               card_patch={"qualification_ok": True})
+    d = LB.turn("Ich habe doch die Anerkennung, hatte mich vertan.", luna, client=fake_client(out))
+    assert d["bubbles"] == [model_said]
+
+
 # --- explicit button-confirmed consent (TASK-333): decided in code, never by the model ----------
 
 def test_offering_the_anonymized_send_attaches_real_buttons(luna):
@@ -547,7 +588,7 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
     assert "no yes/no frame around a list of cities" in labels["city_or_department"]
     # TASK-211 split the housing gate in two; both halves keep the TASK-339 shape (a plain yes/no, then an open
     # question), and neither offers options joined by "oder".
-    assert labels["housing"] == "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"
+    assert labels["housing"] == "ask ONE plain yes/no whether they need a flat at all, naming it with one noun -- no headcount in it yet"
     assert "ask how many people would live in it, as an open question" in LB._HOUSING_HEADCOUNT_OBJECTIVE
     assert "never as alone-or-with-family options" in LB._HOUSING_HEADCOUNT_OBJECTIVE
     system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
@@ -810,7 +851,7 @@ def test_the_housing_gate_asks_a_yes_no_before_any_headcount():
     card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "city": "München"}
     board = LB.requirement_scoreboard(card)
     assert board["housing"] == "open"
-    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat at all, naming it with one noun "
                                        "-- no headcount in it yet")
     after_yes = LB.requirement_scoreboard({**card, "housing_needed": True})
     assert after_yes["housing"] == "open", "a yes alone does not settle housing -- the headcount is still open"
@@ -919,7 +960,7 @@ def test_an_imported_card_with_only_the_flag_is_asked_the_housing_question_once(
                  "city": "Würzburg", "housing_known": True, **_DOC}
     board = LB.requirement_scoreboard(flag_only)
     assert board["housing"] == "open"
-    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat at all, naming it with one noun "
                                        "-- no headcount in it yet")
     snap = LB.market_snapshot(flag_only)
     assert snap["housing"]["needed"] is None, "null is 'never answered', distinguishable from an answered no"
@@ -995,7 +1036,8 @@ def test_the_prompt_and_constitution_stop_claiming_clinics_generally_provide_a_f
     assert "Most clinics offer a small apartment" not in system, (
         "a live run produced exactly this unbacked claim -- 12 percent of postings carry enr_housing")
     rule = _rule("HOUSING (TASK-211)")
-    for phrase in ("first ONE plain yes/no whether they need a flat (Unterkunft) at all",
+    for phrase in ("first ONE plain yes/no whether they need a flat at all, naming it with ONE noun",
+                   "never two nouns joined by",
                    "card_patch.housing_needed", "only after a yes, the open question how many people",
                    "A no settles housing: never ask a headcount then",
                    "a market_snapshot.shortlist entry with housing true",

@@ -24,6 +24,7 @@ def fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(IB, "PATH", str(tmp_path / "inbox.sqlite"))
     monkeypatch.setattr(CR, "_cli", lambda args, log, timeout=1800: 0)
     monkeypatch.setattr(R, "mirror_to_supabase", lambda run: None)
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)   # TASK-197: with the key set, a run asks api.firecrawl.dev for the balance (refused in a test)
     monkeypatch.setattr(CR, "plan_for", lambda *a, **k: {
         "clinics": [CLINIC], "adapter": [CLINIC], "firecrawl": [], "skipped": [], "boards": 1, "walled": 0, "credits_needed": 0, "credits_left": 0})
     board = {"kind": "vendor", "vendor": "wp_jobs", "clinics": [CLINIC]}
