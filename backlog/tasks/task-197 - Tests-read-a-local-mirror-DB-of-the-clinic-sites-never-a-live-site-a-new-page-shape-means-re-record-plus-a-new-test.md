@@ -3,11 +3,11 @@ id: TASK-197
 title: >-
   Tests read a local mirror DB of the clinic sites, never a live site; a new
   page shape means re-record plus a new test
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-10-01 21:25'
-updated_date: '2026-10-05 22:52'
+updated_date: '2026-10-06 09:24'
 labels:
   - harvester
   - adapter-testing
@@ -27,7 +27,7 @@ Ivan, 2026-10-01: tests hit real clinic sites. They must read a local database o
 - [x] #1 A mirror store under data/mirror/ (git-ignored) holds, per board, every response (hop by hop incl. redirects, status, headers, body, fetched_at) that the production crawl path and the completeness oracle fetches make; tools/mirror.py has record, add, diff, status
 - [x] #2 A replay layer serves requests, urllib and Playwright from the mirror; a request the mirror lacks raises MirrorMiss naming board, URL and the re-record command; nothing falls back to the live site
 - [x] #3 A conftest guard makes any non-local socket or DNS use in any test fail with the host; running pytest with no arguments produces zero guard hits
-- [ ] #4 tests/test_adapter_completeness.py (5 checks and the mutation meta-tests) runs over the mirror index with no network at collection or run; case count and run time reported before and after
+- [x] #4 tests/test_adapter_completeness.py (5 checks and the mutation meta-tests) runs over the mirror index with no network at collection or run; case count and run time reported before and after
 - [x] #5 Every other network-marked test is mirror-backed or deleted with a reason; the network marker is gone; boards that cannot be replayed (if any) are named, listed, and visible as explicit xfails
 - [x] #6 The rule is written down in CLAUDE.md: new page shape or board => tools/mirror.py record or add => red test on the mirror => fix => green; plus the proposed backlog Definition-of-Done line
 - [x] #7 A worked example from the AMEOS or Sana Oracle fix shows a test red on the old adapter and green on the new one, against a freshly recorded mirror
@@ -75,4 +75,17 @@ UPLOAD (for the CDN decision): data/mirror = 405 files *.sqlite.xz (403 boards +
 DoD LINE (AC 6, proposed, not applied): `backlog config set definitionOfDone` does not exist (config set takes no such key; the field is definition_of_done in backlog/config.yml). Proposal: definition_of_done: ["A new page shape or board is re-recorded (tools/mirror.py record|add) and covered by a test that is red on the mirror before the fix"]. CLAUDE.md carries the rule ("Tests never touch a live site", plus today's two lines: re-recording drops pages a test recorded under its own scope, run MIRROR_RECORD=1 pytest <that file> again; ADAPTER-ERROR is a finding).
 
 DISK: free 5.9 GB before (df, 75% used), 5.2 GB after; mirror dir 202 MB -> 540 MB with the .prev files.
+
+2026-10-06 LANDING (PR #10, squash 2c4298f on main). Mirror on Bunny: private Storage Zone, archive mirror-<UTC>-<sha>.tar + latest.json written last; tools/mirror.py push and pull (31 offline tests on a loopback fake zone, mutation-checked; pull checked against the real zone: identical files, sha256 match). pytest marker `mirror` on the 8 modules that read real boards (test_adapter_completeness, test_completeness_{ameos_place,beesite_hr4you,dvinci,helix,oracle_mirror,smartrecruiters}, test_verify_pi_loga_live); the two infra snapshots (infra__web-fonts, infra__registry-read-proxy) are committed in tests/fixtures/mirror_infra/ with headers cut to a whitelist, so the offline job needs no pull and no secret.
+CI (.github/workflows/tests.yml, selection in tools/ci_scope.py): job `offline` = -m "not mirror and not network and not llm", no secrets, also runs on fork PRs; job `adapters` = tools/mirror.py pull then -m mirror (secrets BUNNY_MIRROR_ZONE, BUNNY_MIRROR_RO_KEY), on push to main and on pull requests that touch the adapters, the replay layer, their tests, dependencies or the workflow; a fork PR is red at the pull, never skipped. Concurrency cancels superseded runs of a pull request only.
+MEASURED ON THE PR HEAD 5a75a65: offline 4853 passed, 0 failed, 9 min 26 s; adapters 1917 passed, 33 skipped, 187 xfailed (the named gaps), 0 failed, 30 min 48 s (the earlier local estimate was 41 min). A first adapters run was red at the pull step with 'unexpected member in the archive: infra__registry-read-proxy.sqlite.xz': the archive on the zone was older than the move of the infra snapshots into the repository; a fresh archive was pushed (403 boards + INDEX.json, no infra) and the job re-run green.
+DEVIATION from AC 5: the `network` marker is not gone. Main's WhatsApp lane (PR #1) brought three live tests on purpose (registry drift guard against the live PostgREST, one real clinic careers page fetch, live STT); they keep the marker, CI excludes it (-m "... and not network ..."), they are run by hand with MIRROR_RECORD=1 pytest -m network.
+AC 4 numbers: tests/test_adapter_completeness.py before 2,082 cases (collected against the live registry, network at collection), after 2,087 (403 boards x 5 checks + 72 mutation cases); run time after: 30 min 48 s in CI for the whole adapters job, about 34 min locally. A 'before' run time does not exist: the live version never finished in one go (recording the same boards takes about 8 hours of adapter time, from the recorder's own timings).
+Follow-ups: nightly full run (offline ALL plus adapters) and adapters on a push only when the push touches the adapter paths: pflege-fe's next CI PR. Findings of the re-record are tasks 428, 429, 430. The 29 local *.prev files (44 MB) are deleted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Tests read a local mirror of the clinic sites, never a live site: 403 boards recorded and replayable (requests, urllib, Playwright), a miss raises MirrorMiss, a conftest guard fails any non-local socket, 187 named gaps are visible xfails, three replay-layer defects fixed with red tests. The mirror archive lives in a private Bunny zone (push/pull with sha256 and size checks, safe unpack); CI runs two jobs: offline (4853 passed, 9 min, no secrets, also on fork PRs) and adapters (pull, 1917 passed + 187 xfailed, 31 min). Verified by the green PR run on head 5a75a65, a real pull from the zone into a throwaway directory (identical bytes), a red-then-green worked example for the Oracle fix, and mutation checks of the push/pull and ci_scope tests. Deviation: the network marker stays for three live WhatsApp tests (excluded in CI).
+<!-- SECTION:FINAL_SUMMARY:END -->
