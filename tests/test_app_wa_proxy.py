@@ -273,3 +273,103 @@ def test_owner_session_reaches_activity_and_ops(client, monkeypatch):
     _login(client)
     assert client.get("/api/wa/activity").status_code == 200
     assert client.get("/api/wa/ops").status_code == 200
+
+
+# --- status documents at public token links: GET /s/{token}/[name] (TASK-436) --------------------------
+TOKEN = "Ab3_dE-6hIjKlMnOpQrStU"                       # 22 characters of the url-safe alphabet, as the harness mints them
+DOC_HEADERS = {"content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow",
+               "referrer-policy": "no-referrer", "cache-control": "no-cache"}
+
+
+def _harness_docs(monkeypatch, handler):
+    monkeypatch.setenv("WA_API_BASE", "http://harness.internal:8502")
+    monkeypatch.setenv("WA_API_TOKEN", "s3cr3t-read-token")
+    calls = []
+
+    def wrapped(request):
+        calls.append(request)
+        return handler(request)
+
+    _mock(monkeypatch, wrapped)
+    return calls
+
+
+def test_an_anonymous_reader_gets_the_document_with_the_harness_s_headers_and_nothing_else(client, monkeypatch):
+    calls = _harness_docs(monkeypatch, lambda request: httpx.Response(
+        200, content="<h1>Weitere Kliniken</h1>".encode(), headers={**DOC_HEADERS, "x-harness-build": "abc", "set-cookie": "sid=1"}))
+    r = client.get(f"/s/{TOKEN}/", headers={"Range": "bytes=0-9", "If-None-Match": '"x"', "Cookie": "pb_session=zzz"})
+    assert (r.status_code, r.text) == (200, "<h1>Weitere Kliniken</h1>")
+    assert {k: r.headers[k] for k in DOC_HEADERS} == DOC_HEADERS
+    assert "x-harness-build" not in r.headers and "set-cookie" not in r.headers
+    sent = calls[0]
+    assert str(sent.url) == f"http://harness.internal:8502/api/wa/pro/status/{TOKEN}/"
+    assert sent.headers["authorization"] == "Bearer s3cr3t-read-token"
+    assert not {"range", "if-none-match", "cookie"} & set(sent.headers)
+    assert "s3cr3t-read-token" not in r.text and "authorization" not in r.headers
+
+
+@pytest.mark.parametrize("name,ctype", [("index.html", "text/html; charset=utf-8"), ("detail.html", "text/html; charset=utf-8"),
+                                        ("wave-3_kliniken.v2.pdf", "application/pdf")])
+def test_a_named_file_is_fetched_under_its_own_name_without_the_query_string(client, monkeypatch, name, ctype):
+    calls = _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"%PDF-1.7", headers={"content-type": ctype}))
+    r = client.get(f"/s/{TOKEN}/{name}?download=1&x=../../etc")
+    assert (r.status_code, r.content, r.headers["content-type"]) == (200, b"%PDF-1.7", ctype)
+    assert str(calls[0].url) == f"http://harness.internal:8502/api/wa/pro/status/{TOKEN}/{name}"
+
+
+def test_the_bare_token_redirects_to_the_directory_so_relative_links_resolve(client, monkeypatch):
+    calls = _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"x"))
+    r = client.get(f"/s/{TOKEN}")
+    assert (r.status_code, r.headers["location"]) == (308, f"/s/{TOKEN}/") and calls == []
+
+
+@pytest.mark.parametrize("path", [
+    "/s/short/", "/s/" + "A" * 23 + "/", "/s/Ab3_dE-6hIjKlMnOpQrSt%2E/", "/s/Ab3_dE-6hIjKlMnOpQrSt./",        # not a token
+    f"/s/{TOKEN}/Index.html", f"/s/{TOKEN}/notes.txt", f"/s/{TOKEN}/.pdf", f"/s/{TOKEN}/a.PDF",             # not a document name
+    f"/s/{TOKEN}/..%2Fx.pdf", f"/s/{TOKEN}/%2e%2e", f"/s/{TOKEN}/a/b.pdf", f"/s/{TOKEN}/" + "a" * 82 + ".pdf",
+    "/s/short"])
+def test_an_address_that_is_not_a_document_s_shape_is_a_404_and_never_reaches_the_harness(client, monkeypatch, path):
+    calls = _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"x"))
+    r = client.get(path)
+    assert r.status_code == 404 and calls == [], (path, r.status_code, [str(c.url) for c in calls])
+
+
+@pytest.mark.parametrize("upstream,expected", [(404, 404), (401, 502), (403, 502), (500, 502), (503, 502), (206, 502), (302, 502)])
+def test_a_failure_tells_the_reader_nothing_about_the_harness(client, monkeypatch, upstream, expected):
+    _harness_docs(monkeypatch, lambda request: httpx.Response(
+        upstream, json={"detail": "sqlite3.OperationalError at /home/claude/state", "token": TOKEN}, headers={"location": "http://harness.internal:8502/x"}))
+    r = client.get(f"/s/{TOKEN}/detail.html")
+    assert r.status_code == expected
+    assert r.json()["detail"] == ("not found" if expected == 404 else "the document could not be fetched")
+    for leak in ("sqlite3", "/home/claude", "harness.internal", "s3cr3t"):      # the reader's own path (problem+json "instance") is theirs already
+        assert leak not in r.text and leak not in str(dict(r.headers))
+
+
+def test_an_unreachable_or_slow_harness_and_a_board_without_one_are_fixed_texts(client, monkeypatch):
+    r = client.get(f"/s/{TOKEN}/")                                              # WA_API_BASE unset
+    assert (r.status_code, r.json()["detail"]) == (503, "documents are not available right now")
+
+    def refuse(request):
+        raise httpx.ConnectError("connection refused to http://harness.internal:8502", request=request)
+
+    _harness_docs(monkeypatch, refuse)
+    r = client.get(f"/s/{TOKEN}/")
+    assert (r.status_code, r.json()["detail"]) == (502, "the document could not be fetched") and "harness.internal" not in r.text
+
+    def slow(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    _harness_docs(monkeypatch, slow)
+    r = client.get(f"/s/{TOKEN}/")
+    assert (r.status_code, r.json()["detail"]) == (504, "the document did not arrive in time")
+
+
+def test_only_get_is_served_and_every_other_harness_route_stays_owner_only(client, monkeypatch):
+    calls = _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"x"))
+    for method in ("head", "post", "put", "delete"):
+        assert getattr(client, method)(f"/s/{TOKEN}/").status_code == 405
+    assert calls == []
+    for path in ("/api/wa/threads", "/api/wa/health", "/api/wa/activity", "/api/wa/ops"):        # the public door opens nothing else
+        assert client.get(path).status_code == 401
+    assert client.get(f"/api/wa/pro/status/{TOKEN}/").status_code == 404 and client.get(f"/api/s/{TOKEN}/").status_code == 404
+    assert calls == []

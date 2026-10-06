@@ -57,6 +57,8 @@ app.include_router(_hunter_router, prefix="/api", tags=["hunter"])
 # WA_API_BASE/WA_API_TOKEN, owner-gated, the token never reaching the browser.
 from .wa_proxy import router as _wa_proxy_router
 app.include_router(_wa_proxy_router, prefix="/api", tags=["wa-proxy"])
+from .wa_proxy import status_router as _status_router             # public /s/{token}/ document links (TASK-436)
+app.include_router(_status_router, tags=["status-docs"])
 from .billing import router as _billing_router                     # GET /api/billing (spend report)
 app.include_router(_billing_router, prefix="/api", tags=["billing"])
 from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)
