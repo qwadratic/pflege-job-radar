@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-05 11:42'
-updated_date: '2026-10-05 12:15'
+updated_date: '2026-10-06 12:50'
 labels: []
 dependencies: []
 parent_task_id: TASK-345.12
@@ -17,7 +17,7 @@ ordinal: 293000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-10-05: Daria writes to the operators too often; what accumulates may accumulate. Roles set the same day: Ivan gets every notice (announcement, round report, halt, resumed, done, desk stopped, errors) and every clinic answer; Valentyn gets no mailing notices and only the clinic answers nobody has handled yet (kinds reply and unmatched, config "forward" of each campaign), his commands and questions are still read and answered by the desk. Today each clinic answer is forwarded the minute it arrives (TASK-345.11.2, done) and every notice goes out alone, so a restart or a bad hour can mean several mails in a row.
+Ivan, 2026-10-05: Daria writes to the operators too often; what accumulates may accumulate. Roles set the same day: Ivan gets every notice (announcement, round report, halt, resumed, done, desk stopped, errors) and every clinic answer; the parallel operator gets no mailing notices and only the clinic answers nobody has handled yet (kinds reply and unmatched, config "forward" of each campaign), his commands and questions are still read and answered by the desk. Today each clinic answer is forwarded the minute it arrives (TASK-345.11.2, done) and every notice goes out alone, so a restart or a bad hour can mean several mails in a row.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,5 +38,5 @@ Ivan, 2026-10-05: Daria writes to the operators too often; what accumulates may 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Clinic answers are kept by the watch and mailed by the desk once a day (17:00 Berlin) as one HTML digest per address with a table and the originals attached; Ivan gets every kind, Valentyn replies and unmatched. Verified by tests; first live digest pending.
+Clinic answers are kept by the watch and mailed by the desk once a day (17:00 Berlin) as one HTML digest per address with a table and the originals attached; Ivan gets every kind, the parallel operator replies and unmatched. Verified by tests; first live digest pending.
 <!-- SECTION:FINAL_SUMMARY:END -->

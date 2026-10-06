@@ -4,6 +4,7 @@ title: 'Pro WA read API (topology B): token-gated harness endpoints the board pr
 status: To Do
 assignee: []
 created_date: '2026-09-29 23:08'
+updated_date: '2026-10-06 12:51'
 labels:
   - pro-api
 dependencies:
@@ -20,7 +21,7 @@ ordinal: 270000
 Ivan's decisions, 2026-09-29:
 - the harness serves a read-only, bearer-token /api/wa/*;
 - the board (161.210.92.90) proxies it server-side with WA_API_BASE / WA_API_TOKEN;
-- the owner gate applies at the board; Valentyn gets the Pro passphrase;
+- the owner gate applies at the board; the parallel operator gets the Pro passphrase;
 - phone_masked keeps at least the last 4 digits;
 - phase 1 is read-only.
 

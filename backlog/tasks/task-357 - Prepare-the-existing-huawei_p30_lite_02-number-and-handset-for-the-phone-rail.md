@@ -4,7 +4,7 @@ title: Prepare the existing huawei_p30_lite_02 number and handset for the phone 
 status: Done
 assignee: []
 created_date: '2026-09-21 01:23'
-updated_date: '2026-10-05 19:11'
+updated_date: '2026-10-06 12:51'
 labels:
   - wa-transport
 dependencies: []
@@ -20,12 +20,12 @@ ordinal: 136000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Plan M3, forced by decision-6 and revised by the plan ADDENDUM item 4 ("decisions, 2026-09-21 (Ivan)", written after decision-6 and after the first version of this task).
 
-NO NEW SIM. The +49 number already on huawei_p30_lite_02 becomes the bot sender. It is a candidate-role persona number ("Babu22"), not the WABA number, so "the Valentyn <client> number cannot move" does not apply to it: the client stays Cloud-API-registered, keeps its 29 APPROVED recruitment_* templates and the live nginx webhook at /candidate-action/webhooks/meta/whatsapp, and is not touched here.
+NO NEW SIM. The +49 number already on huawei_p30_lite_02 becomes the bot sender. It is a candidate-role persona number ("Babu22"), not the WABA number, so "the parallel-operator <client> number cannot move" does not apply to it: the client stays Cloud-API-registered, keeps its 29 APPROVED recruitment_* templates and the live nginx webhook at /candidate-action/webhooks/meta/whatsapp, and is not touched here.
 
 Scope is therefore "prepare the existing account", not "procure a SIM":
 
 1. Account health is UNKNOWN. The 2026-08-08 ban-check tasks on this handset were cancelled with no result, and the device has been offline since 2026-09-19. The FIRST physical action is to confirm the account is alive and unrestricted. If it is not, this whole milestone changes shape and the answer is needed before anything else is done.
-2. The WhatsApp profile still carries the "Babu22" persona name and 111 WhatsApp tasks from 2026-08-07..10 in the candidate role against Valentyn <client>. It must be re-identified as the business, and the fate of the old persona chats decided, before a single candidate sees the number.
+2. The WhatsApp profile still carries the "Babu22" persona name and 111 WhatsApp tasks from 2026-08-07..10 in the candidate role against parallel-operator <client>. It must be re-identified as the business, and the fate of the old persona chats decided, before a single candidate sees the number.
 3. Handset is huawei_p30_lite_02, the idle one. Explicitly NOT huawei_p30_lite_01: that one runs the colleague ChatGPT lead research at roughly 77k requests per day and is not ours. Whether _02 can actually be released has to be confirmed with the colleague, not assumed; if it cannot, the fallback is a bought handset AND a new number, which puts the SIM back on the table.
 
 The two-step verification PIN is an outage risk disguised as a checkbox. Losing it is a hard 7-day lockout with no way to expedite, and the recovery email is the only thing that shortens it.

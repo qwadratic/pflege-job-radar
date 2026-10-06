@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@pflege-fe'
 created_date: '2026-09-29 22:06'
-updated_date: '2026-10-01 21:55'
+updated_date: '2026-10-06 12:49'
 labels:
   - frontend
   - whatsapp
@@ -25,7 +25,7 @@ ordinal: 163000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Ivan, 2026-09-29: the Pro dashboard needs a WhatsApp view whose first job is to keep the leads that need human intervention in sight, and whose second job is to show the status of every other card (the "green" ones running on Luna). Until now nobody could see this without reading wa.sqlite by hand on tasker-dispatcher-01.
 
-Data comes from the WhatsApp harness (app/wa/*, PR #1 qwadratic/pflege-job-radar from the wa-harness session, branch feat/whatsapp-harness). Ivan decided on 2026-09-29: topology B (the harness serves a token-gated read API over HTTPS; the board proxies /api/wa/* server-side with WA_API_BASE / WA_API_TOKEN), Pro stays owner-gated (Valentyn gets the passphrase too), and phone numbers are only ever shown masked with the last 4 digits visible. The backend half (proxy, Pydantic models, owner gate, deny tests) belongs to wa-harness; this task is the web/ half.
+Data comes from the WhatsApp harness (app/wa/*, PR #1 qwadratic/pflege-job-radar from the wa-harness session, branch feat/whatsapp-harness). Ivan decided on 2026-09-29: topology B (the harness serves a token-gated read API over HTTPS; the board proxies /api/wa/* server-side with WA_API_BASE / WA_API_TOKEN), Pro stays owner-gated (the parallel operator gets the passphrase too), and phone numbers are only ever shown masked with the last 4 digits visible. The backend half (proxy, Pydantic models, owner gate, deny tests) belongs to wa-harness; this task is the web/ half.
 
 "Needs a human" is not invented here: the harness already names it. card._escalated with a code from the closed list in app/wa/luna/escalation.py (Ivan 2026-09-22: a predictable list, never model free text), stuck_reply (ball on us longer than WA_STUCK_REPLY_HOURS), wa_send_failures, wa_inbound_pending, and a consented card (funnel stage submitted), which app/wa/queue.py hands to a human. TASK-316 (P4 lead status, harness branch) will add an evaluator status plus reason later; the view must take it without a redesign.
 <!-- SECTION:DESCRIPTION:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-24 21:33'
-updated_date: '2026-10-05 18:02'
+updated_date: '2026-10-06 12:49'
 labels:
   - whatsapp
   - handover
@@ -90,7 +90,7 @@ items below.
 - [ ] #3 Decide the media-ack fix: MEDIA_REPLY reaches a real candidate before any brain call, with no next step, and the nudge ladder is deliberately disabled for exactly that state -- so it is the last message that will ever be sent unless she writes again
 - [ ] #4 Approve or reject any NEW German wording the four fixes need -- no agent may invent candidate-facing text (see app/wa/broadcast_template.py's docstring for why)
 - [ ] #5 Decide what to do about the escalation promise: card._escalated has exactly ONE reader in the whole product (the unfiltered 50-row GET /wa/threads list). Nothing pauses the brain, assigns the thread or notifies anyone -- and ~15 minutes after being told a colleague is taking over, the same bot asks 'sind Sie noch da?'
-- [ ] #6 Decide whether the holding message may be re-sent every turn: BLOCKED_REPLY_DE is stateless across turns, so a persistent failure re-serves the identical no-forward-step message on every inbound -- Valentyn's original complaint with one phrasing instead of three
+- [ ] #6 Decide whether the holding message may be re-sent every turn: BLOCKED_REPLY_DE is stateless across turns, so a persistent failure re-serves the identical no-forward-step message on every inbound -- the parallel operator's original complaint with one phrasing instead of three
 - [ ] #7 Resolve the two unconfirmed sends from 2026-09-23 23:15 and 23:18 (age >85000s): reconcile returns indeterminate because the visible window does not reach them. TASK-237's guard is working correctly by refusing to confirm off an older identical bubble
 - [ ] #8 Check for an orphaned phone_ops row: the executor was restarted while a reconcile op was in state 'running', which TASK-232 describes as never re-run, never terminal, never swept
 - [x] #9 Run the full tests/test_wa_*.py lane to completion on the final code and fix the fallout -- the run was killed at the 30-minute timeout twice and the ~27 pre-existing Supabase PostgREST 401 failures must be distinguished from anything new

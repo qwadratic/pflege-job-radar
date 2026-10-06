@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-23 19:43'
-updated_date: '2026-10-05 18:56'
+updated_date: '2026-10-06 12:49'
 labels: []
 dependencies: []
 priority: high
@@ -17,7 +17,7 @@ ordinal: 237000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Found live during the 2026-09-23 UAT broadcast to Valentyn (+436…6780). Sequence, all
+Found live during the 2026-09-23 UAT broadcast to the parallel operator. Sequence, all
 confirmed against the actual rows:
 
   19:21:19  broadcast sends the approved opening template. bridge/broadcast.py records it on the
@@ -31,7 +31,7 @@ confirmed against the actual rows:
             builds the prompt from wa_messages, which has NO record that we just sent anything --
             so the brain treats "Passau" as a cold first contact and drafts its OWN introduction
             ("Hallo! Ich bin Valentina, ein digitaler Assistent der <client>...") followed by a
-            qualification question, both real sends to Valentyns phone, both entirely off-script
+            qualification question, both real sends to the parallel operator's phone, both entirely off-script
             and inconsistent with the template that had just gone out ninety seconds earlier.
 
 The candidate now sees three different bot messages back to back: the real approved template, then

@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-25 00:02'
-updated_date: '2026-09-25 09:18'
+updated_date: '2026-10-06 12:49'
 labels: []
 dependencies: []
 priority: high
@@ -17,7 +17,7 @@ ordinal: 256000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-09-24/25, his own crystallised flow: a Sonnet session on medium effort, started by cron every 5 minutes inside a 09:00-22:00 window, responsible for exactly one backlog card. It decodes Russian feedback from Ivan or Valentyn arriving on the WhatsApp test threads, fills that card with the decoded request plus the relevant database context, and then messages the long-running session that does the work. Delivery of Russian messages into the queue is already solved by app/wa/luna/agent_note_gate.py; this task is only the worker and the hand-off.
+Ivan, 2026-09-24/25, his own crystallised flow: a Sonnet session on medium effort, started by cron every 5 minutes inside a 09:00-22:00 window, responsible for exactly one backlog card. It decodes Russian feedback from Ivan or the parallel operator arriving on the WhatsApp test threads, fills that card with the decoded request plus the relevant database context, and then messages the long-running session that does the work. Delivery of Russian messages into the queue is already solved by app/wa/luna/agent_note_gate.py; this task is only the worker and the hand-off.
 
 The hop was verified empirically on 2026-09-25 rather than assumed -- six independent probes, all delivered. What they established, and what this task must respect:
 - A headless 'claude -p' session CAN see the running session via ListAgents and SendMessage to it; the reverse direction also works, and an incoming message wakes an idle session rather than waiting for its next prompt.
