@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 07:58'
-updated_date: '2026-10-06 11:06'
+updated_date: '2026-10-06 11:11'
 labels:
   - registry
   - data-quality
@@ -35,4 +35,6 @@ Ivan 2026-10-06: a clinic can have several types, so type is a set of tags, not 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-06 Ivan: the size index is SML, with its own algorithm inside each clinic type (acute and Reha not pooled), and the claim S/M/L exists for every clinic, backed by evidence rows (TASK-441). The tag vocabulary and the statistics table of this task are the type part of that design; the evidence and provenance part is TASK-441.
+
+2026-10-06 CORRECTION (Ivan): SML and clinic type are two different things. SML is only the size of the establishment. Type is what the clinic has and specialises in: its sets of departments, its specialisation, university as a type of its own. Purpose of type: which vacancies we meet where depends on it, and the candidate search (for which candidate which clinic) will learn from successful hires by type later, so type needs a structure now. Therefore: type is a set of tags (TASK-431.6), size is a claim S/M/L (TASK-441) whose algorithm may differ inside a type, but size is not a tag. Statistics branch by tag combination as before.
 <!-- SECTION:NOTES:END -->

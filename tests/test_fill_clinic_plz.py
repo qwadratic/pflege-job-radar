@@ -165,6 +165,58 @@ def test_corrections_are_a_complete_file_for_the_generic_applier(synthetic):
     assert why["task"] == "TASK-431" and "khv_domain" in why["reason"] and "KHV" in why["evidence"][0]
 
 
+# ---- TASK-431.7: PLZ from evidence, read from data/registry/plz_review.csv ------------------------------------------------
+
+REVIEW = pathlib.Path(__file__).resolve().parent.parent / "data" / "registry" / "plz_review.csv"
+REVIEW_COLS = ["clinic_id", "town", "clinic_name", "state", "candidate_plz", "evidenced_plz", "verdict", "proposed_rule", "confidence",
+               "evidence_kinds", "source_url", "imprint_quote", "seen_at", "reason"]
+
+
+def _review(path, *rows):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=REVIEW_COLS)
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: "" for c in REVIEW_COLS} | r)
+    return path
+
+
+def test_verdicts_give_the_evidenced_plz_and_each_row_carries_its_own_evidence(tmp_path):
+    path = _review(tmp_path / "r.csv",
+                   {"clinic_id": "A1", "verdict": "ACCEPT", "candidate_plz": "80634", "evidenced_plz": "80637", "proposed_rule": "imprint",
+                    "source_url": "https://example.org/impressum", "imprint_quote": "Taxisstr. 3, 80637 München", "seen_at": "2026-10-06"},
+                   {"clinic_id": "B2", "verdict": "ACCEPT", "evidenced_plz": "91590", "proposed_rule": "klinikradar", "source_url": "https://example.org/k"},
+                   {"clinic_id": "C3", "verdict": "ACCEPT", "evidenced_plz": "91590", "proposed_rule": "imprint", "source_url": "https://example.org/c"},
+                   {"clinic_id": "D4", "verdict": "LEAVE", "reason": "unit is planned only"})
+    clinics = [_clinic("A1"), _clinic("B2", plz="91590"), _clinic("C3", plz="99999"), _clinic("D4")]
+    out = {o["clinic_id"]: o for o in F.outcomes_from_verdicts(clinics, path)}
+    assert {k: (o["status"], o["new_plz"], o["rule"]) for k, o in out.items()} == {
+        "A1": ("fill", "80637", "imprint"), "B2": ("unchanged", "91590", "klinikradar"), "C3": ("conflict", "91590", "imprint")}   # LEAVE: no outcome
+    todo = F.corrections(list(out.values()), "TASK-431")                                   # the ledger takes TASK-<n>, no dotted subtask ids
+    assert sorted(todo) == ["A1"]                                                          # never overwrites a stored PLZ
+    why = L.require_why(todo["A1"]["_why"], "clinic A1", {F.REASON_CODE})
+    assert "imprint" in why["reason"] and "Krankenhausverzeichnis" not in why["reason"]
+    assert why["evidence"] == ["https://example.org/impressum: 'Taxisstr. 3, 80637 München' (read 2026-10-06)"]
+    with pytest.raises(SystemExit, match="Z9"):
+        F.outcomes_from_verdicts(clinics, _review(tmp_path / "u.csv", {"clinic_id": "Z9", "verdict": "ACCEPT", "evidenced_plz": "91590", "proposed_rule": "imprint"}))
+
+
+def test_the_review_file_covers_exactly_the_clinics_the_first_fill_did_not_write():
+    clinics = json.loads(FIX.read_text(encoding="utf-8"))
+    khv, rhv = F.load_sites()
+    first = F.propose(clinics, khv, rhv)
+    written = {o["clinic_id"] for o in F.hold(first, {"rhv_id", "dk_source", "khv_domain", "khv_only_site_in_municipality"}) if o["status"] == "fill"}
+    rows = list(csv.DictReader(open(REVIEW, newline="", encoding="utf-8")))
+    assert len(rows) == 119 and len(written) == 532
+    assert {r["clinic_id"] for r in rows} | written == {c["clinic_id"] for c in clinics} and not {r["clinic_id"] for r in rows} & written
+    out = F.outcomes_from_verdicts(clinics, REVIEW)
+    assert collections.Counter(o["status"] for o in out) == {"fill": 117}
+    assert collections.Counter(o["rule"] for o in out) == {"imprint_khv_site": 95, "imprint": 17, "klinikradar": 3, "posting_modal": 2}
+    by = {o["clinic_id"]: o for o in out}
+    assert by["16223"]["new_plz"] == "80637" and by["16263"]["new_plz"] == "81673"        # the two where the evidence beats the weaker rule's candidate
+    assert "16257" not in by and "26108" not in by                                         # LEAVE: a planned unit, a two-campus clinic
+
+
 # ---- the command line ----------------------------------------------------------------------------------------------
 
 def test_dry_run_prints_the_counts_and_writes_nothing(tmp_path, monkeypatch, capsys):

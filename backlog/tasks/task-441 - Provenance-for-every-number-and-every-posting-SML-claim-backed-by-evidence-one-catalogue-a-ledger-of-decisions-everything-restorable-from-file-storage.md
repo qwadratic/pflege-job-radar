@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 11:06'
+updated_date: '2026-10-06 11:11'
 labels:
   - registry
   - provenance
@@ -30,3 +31,9 @@ Ivan 2026-10-06, architecture. (1) SML index: every clinic carries a size claim 
 - [ ] #4 Restore plan: every source missing from the file storage listed with who uploads it (CI runner or tool) and a restore drill that reads the storage only, never a live site
 - [ ] #5 Ivan approves the schema and the order of delivery before any database change
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 CORRECTION (Ivan): SML and clinic type are two different things. SML is only the size of the establishment. Type is what the clinic has and specialises in: its sets of departments, its specialisation, university as a type of its own. Purpose of type: which vacancies we meet where depends on it, and the candidate search (for which candidate which clinic) will learn from successful hires by type later, so type needs a structure now. Therefore: type is a set of tags (TASK-431.6), size is a claim S/M/L (TASK-441) whose algorithm may differ inside a type, but size is not a tag. Statistics branch by tag combination as before. Second reason for the full attribution chain (Ivan): the crawler must be easier to fix in the future; every posting says which step and which rule produced it.
+<!-- SECTION:NOTES:END -->

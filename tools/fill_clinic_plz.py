@@ -141,7 +141,28 @@ def propose(clinics, khv, rhv):
     return out
 
 
-RULES = ("rhv_id", "dk_source", "khv_domain", "khv_only_site_in_municipality", "khv_name_overlap", "khv_municipality_one_plz")
+RULES = ("rhv_id", "dk_source", "khv_domain", "khv_only_site_in_municipality", "khv_name_overlap", "khv_municipality_one_plz",
+         "imprint_khv_site", "imprint", "klinikradar", "posting_modal")                     # the last four: --verdicts, evidence of TASK-431.7
+
+
+def outcomes_from_verdicts(clinics, path):
+    """TASK-431.7: the ACCEPT rows of the review file, one outcome per row with its own evidence (page URL, quote, date read).
+    The PLZ written is the evidenced one, not the weaker rule's candidate. A clinic that already has a PLZ is unchanged or conflict, never fill."""
+    by = {c["clinic_id"]: c for c in clinics}
+    out = []
+    for r in csv.DictReader(open(path, newline="", encoding="utf-8")):
+        if r["verdict"] != "ACCEPT":
+            continue
+        if r["clinic_id"] not in by:
+            sys.exit(f"{path}: clinic {r['clinic_id']} is not in the registry")
+        old = (by[r["clinic_id"]].get("plz") or "").strip()
+        new = r["evidenced_plz"].strip()
+        quote = f" '{r['imprint_quote']}'" if r["imprint_quote"] else ""
+        out.append({"clinic_id": r["clinic_id"], "town": r["town"], "old_plz": old, "new_plz": new, "rule": r["proposed_rule"], "site": r["source_url"], "why": "",
+                    "status": "fill" if not old else "unchanged" if old == new else "conflict",
+                    "reason": f"clinics.plz was not written by the first fill (TASK-431.2); the review of TASK-431.7 found independent evidence that states it, rule {r['proposed_rule']}",
+                    "evidence": [f"{r['source_url']}:{quote} (read {r['seen_at']})"]})
+    return sorted(out, key=lambda o: o["clinic_id"])
 
 
 def hold(outcomes, rules):
@@ -156,8 +177,8 @@ def corrections(outcomes, task):
     """The file tools/apply_clinic_corrections.py reads: one {plz, _why} per clinic to fill."""
     return {o["clinic_id"]: {"plz": o["new_plz"], "_why": {
         "code": REASON_CODE, "task": task,
-        "reason": f"clinics.plz was never filled (0 of 651); the Krankenhausverzeichnis 2024 states it, matched by rule {o['rule']}",
-        "evidence": [f"data/registry/krankenhausverzeichnis_24.xlsx (Statistische Aemter, Stand 31.12.2024): {o['site']} -> PLZ {o['new_plz']}"]}}
+        "reason": o.get("reason") or f"clinics.plz was never filled (0 of 651); the Krankenhausverzeichnis 2024 states it, matched by rule {o['rule']}",
+        "evidence": o.get("evidence") or [f"data/registry/krankenhausverzeichnis_24.xlsx (Statistische Aemter, Stand 31.12.2024): {o['site']} -> PLZ {o['new_plz']}"]}}
         for o in outcomes if o["status"] == "fill"}
 
 
@@ -191,6 +212,7 @@ def main(argv=None):
     ap.add_argument("--by", help="who writes (required with --apply)")
     ap.add_argument("--task", default="TASK-431", help="the task the correction rows name")
     ap.add_argument("--rules", help="comma list: write only the fills made by these rules, report the others as held (default: all rules)")
+    ap.add_argument("--verdicts", help="the review file (data/registry/plz_review.csv, TASK-431.7): fill from its ACCEPT rows with their own evidence instead of matching the directory")
     a = ap.parse_args(argv)
     if a.apply and not (a.by or "").strip():
         sys.exit("--apply needs --by: pflege_jobs.corrections records who made the change")
@@ -201,7 +223,7 @@ def main(argv=None):
         from app import config as A
         clinics = A.rest_get_all("clinics", {"select": "*", "order": "clinic_id"})
     khv, rhv = load_sites(a.xlsx)
-    outcomes = propose(clinics, khv, rhv)
+    outcomes = outcomes_from_verdicts(clinics, a.verdicts) if a.verdicts else propose(clinics, khv, rhv)
     if a.rules:
         outcomes = hold(outcomes, [r.strip() for r in a.rules.split(",") if r.strip()])
     report(outcomes)
