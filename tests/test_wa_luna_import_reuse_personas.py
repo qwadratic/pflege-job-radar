@@ -39,7 +39,9 @@ URKUNDE_TEXT = "Urkunde über die Erlaubnis zum Führen der Berufsbezeichnung Pf
 
 # The Urkunde yes/no gate question ("Haben Sie die deutsche Urkunde schon?"), not the reuse question.
 URKUNDE_GATE_RE = re.compile(r"\b(haben|besitzen) sie\b[^?]*\b(urkunde|anerkennung)\b[^?]*\?", re.I)
-HOUSING_RE = re.compile(r"wie viele personen|wohnung[^?]*\?", re.I)
+# One sentence only: `[^?.!\n]*` stops at the sentence end, so a statement that merely names "Wohnung" does not pair up with
+# a "?" in a later sentence or bubble (tests/test_wa_luna_persona_regexes.py pins both shapes offline).
+HOUSING_RE = re.compile(r"wie viele personen|wohnung[^?.!\n]*\?", re.I)
 REUSE_RE = re.compile(r"\b(verwenden|nutzen|benutzen|übernehmen|zurückgreifen|weiterverwenden)\b[^?]*\?", re.I)
 EARLIER_RE = re.compile(r"\b(früher|bereits|schon|damals|letztes mal|zuvor|vorher)\b", re.I)
 NEW_FILES_RE = re.compile(r"\b(schicken|senden|zusenden|hochladen|foto|pdf)\b", re.I)
