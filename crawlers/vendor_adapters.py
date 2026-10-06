@@ -3335,26 +3335,24 @@ def crawl_group_portal(c, g, session=None, towns=None):
                 # The group's own JSON-LD jobLocation is the group HQ, never the real work site
                 # (see GROUP_PORTALS' hq_location_untrusted comment) -- it must not survive into
                 # the row at all. The site block's own address wins, then a title-named site;
-                # failing both, read the page's own Einsatzort/PLZ-Ort text (the same extraction
-                # pflege_jobs.verify uses); failing that, leave city/plz/region None -- an honest
-                # "unknown" beats the wrong HQ.
+                # failing both, read the page's own "Einsatzort:" label; failing that, leave
+                # city/plz/region None -- an honest "unknown" beats the wrong HQ. The first
+                # "<PLZ> <Ort>" pair of the page is NOT a rung here: on this site it is always page
+                # furniture (the Postfach 80502 Muenchen of every page, a contact person's address;
+                # pflege_jobs.verify.TRUSTED_LOC says the same: plz_ort only ever confirms). It
+                # stamped 'Muenchen 80538' on 5 stored postings and 'Ingolstadt E-Mail', 'Tel' as
+                # cities on the mirrored pages with their site block taken out (TASK-431.9).
                 if site_city:
                     j["loc"] = [{"city": site_city, "plz": site_plz, "region": None}]
                 else:
                     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
-                    city = plz = None
+                    city = None
                     em = _EINSATZORT.search(text)
                     if em:
                         cand = _clean_city(em.group(1))
                         if cand and _placeable(cand, None, towns):
                             city = cand
-                    if not city:
-                        pm = _PLZ_ORT.search(text)
-                        if pm:
-                            cand = _clean_city(pm.group(2))
-                            if _placeable(cand, pm.group(1), towns):
-                                city, plz = cand, pm.group(1)
-                    j["loc"] = [{"city": city, "plz": plz, "region": None}]
+                    j["loc"] = [{"city": city, "plz": None, "region": None}]
             elif site_city:
                 j["loc"] = [{"city": site_city, "plz": site_plz or j["loc"][0].get("plz"),
                              "region": j["loc"][0].get("region")}]
