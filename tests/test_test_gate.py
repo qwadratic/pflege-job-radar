@@ -1,15 +1,23 @@
-"""tools/test_gate.py: path classification, the LLM trigger, stamp handling, pre-push sha-range
-computation from stdin (new-branch, ordinary-update and delete refs included), the scratch worktree,
-the staged-index materialization, and the merge/cherry-pick skip. Lane running and git plumbing are
-exercised through injected fakes wherever a fake will do (per the task's own requirement that this
-suite never spawns a real pytest-in-pytest); ScratchWorktree and materialize_staged_index wrap real
-git machinery closely enough that their tests run it for real, against a throwaway repo under
-pytest's own tmp_path (this gate's own lane runs pytest with --basetemp under /dev/shm, so that is
-where tmp_path lands too).
+"""tools/test_gate.py: path classification, stamp handling (including the merge-at-write-time stamp
+race fix and the "crashed"/"skipped-passed"/"skipped-failed" nightly.tsv rows), pre-push sha-range
+parsing from stdin (new-branch, ordinary-update and delete refs included), the scratch worktree, the
+staged-index materialization, the merge/cherry-pick skip, and pre-deploy's informational LLM-stamp
+visibility line. Lane running and git plumbing are exercised through injected fakes wherever a fake
+will do (per the task's own requirement that this suite never spawns a real pytest-in-pytest);
+ScratchWorktree and materialize_staged_index wrap real git machinery closely enough that their tests
+run it for real, against a throwaway repo under pytest's own tmp_path (this gate's own lane runs
+pytest with --basetemp under /dev/shm, so that is where tmp_path lands too).
+
+tools/llm_lane_cron.sh is exercised two ways, at the end of this file: a real subprocess run for
+whatever is safe to run for real (only the day/hour window gate -- it exits 0 BEFORE the script ever
+touches its state dir, which has no override point, unlike tools/test_wa_agent_note_cron.py's own
+script), plus source-text characterization for what happens past that gate (mkdir failing loudly,
+flock's dedicated -E 75 lock-conflict code) -- see that section's own header comment for why.
 """
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -162,70 +170,9 @@ def test_materialize_staged_index_excludes_a_staged_delete(tmp_path):
     assert not (dest / "gone.txt").exists()
 
 
-# --- LLM-lane trigger --------------------------------------------------------------------------------
-
-@pytest.mark.parametrize("path", [
-    "app/wa/luna_brain.py",
-    "app/wa/luna/campaign.py",
-    "app/wa/api.py",
-    "app/wa/slots.py",
-    "app/wa/store.py",
-    "app/data.py",
-    "app/cv.py",
-    "app/cv_extra.py",
-    "prompts/system.txt",
-    "evals/cv/cases.json",
-    "skill/SKILL.md",
-    "tests/test_wa_luna_e2e_funnel.py",
-    "tests/test_cv_classify_document.py",
-])
-def test_touches_llm_paths_true_for_relevant_paths(path):
-    assert G.touches_llm_paths([path]) is True
-
-
-@pytest.mark.parametrize("path", [
-    "app/wa/bridge.py",
-    "app/wa/config.py",
-    "tests/test_wa_router.py",
-    "docs/whatsapp.md",
-])
-def test_touches_llm_paths_false_for_irrelevant_paths(path):
-    assert G.touches_llm_paths([path]) is False
-
-
-def test_touches_llm_paths_false_for_empty_set():
-    assert G.touches_llm_paths([]) is False
-
-
-def test_llm_lane_decision_env_force_run_wins_even_without_relevant_paths():
-    run, reason = G.llm_lane_decision([], {"PFLEGE_GATE_LLM": "1"})
-    assert run is True
-    assert "forced" in reason
-
-
-def test_llm_lane_decision_env_force_skip_wins_even_with_relevant_paths():
-    run, reason = G.llm_lane_decision(["app/cv.py"], {"PFLEGE_GATE_LLM": "0"})
-    assert run is False
-    assert "forced" in reason
-
-
-def test_llm_lane_decision_by_path_when_env_unset():
-    run, reason = G.llm_lane_decision(["app/wa/luna/campaign.py"], {})
-    assert run is True
-    assert "LLM-relevant" in reason
-
-
-def test_llm_lane_decision_skip_when_no_relevant_path_and_env_unset():
-    run, reason = G.llm_lane_decision(["app/wa/bridge.py"], {})
-    assert run is False
-    assert "no LLM-relevant" in reason
-
-
-def test_llm_lane_decision_runs_when_change_set_unknown():
-    run, reason = G.llm_lane_decision(None, {})
-    assert run is True
-    assert "unknown" in reason
-
+# --- LLM-lane trigger: removed 2026-10-06 (LLM_RELEVANT_PREFIXES, touches_llm_paths,
+# llm_lane_decision) -- once PFLEGE_GATE_LLM became the only lever pre-deploy reads, path relevance
+# never drove a decision again. See the module docstring for the history.
 
 # --- pre-push stdin parsing --------------------------------------------------------------------------
 
@@ -268,122 +215,15 @@ def test_parse_pre_push_stdin_rejects_malformed_line():
 def test_is_delete_true_when_local_sha_is_zero():
     ref = G.RefUpdate("refs/heads/x", ZERO40, "refs/heads/x", "a" * 40)
     assert G.is_delete(ref) is True
-    assert G.is_new_branch(ref) is False
 
 
-def test_is_new_branch_true_when_remote_sha_is_zero_and_not_a_delete():
-    ref = G.RefUpdate("refs/heads/x", "a" * 40, "refs/heads/x", ZERO40)
-    assert G.is_new_branch(ref) is True
-    assert G.is_delete(ref) is False
-
-
-def test_is_new_branch_false_for_ordinary_update():
+def test_is_delete_false_for_an_ordinary_update():
     ref = G.RefUpdate("refs/heads/x", "a" * 40, "refs/heads/x", "b" * 40)
-    assert G.is_new_branch(ref) is False
     assert G.is_delete(ref) is False
 
 
-def test_commits_in_range_empty_for_a_delete():
-    ref = G.RefUpdate("refs/heads/x", ZERO40, "refs/heads/x", "a" * 40)
-    calls = []
-
-    def fake_git_run(args):
-        calls.append(args)
-        return ["should-never-be-reached"]
-
-    assert G.commits_in_range(ref, fake_git_run) == []
-    assert calls == []  # a delete never shells out
-
-
-def test_commits_in_range_existing_branch_uses_dotdot_range():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", "old1")
-    seen = {}
-
-    def fake_git_run(args):
-        seen["args"] = args
-        return ["c1", "c2", ""]
-
-    out = G.commits_in_range(ref, fake_git_run)
-    assert seen["args"] == ["rev-list", "old1..new1"]
-    assert out == ["c1", "c2"]  # blank line dropped
-
-
-def test_commits_in_range_new_branch_excludes_remotes():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", ZERO40)
-    seen = {}
-
-    def fake_git_run(args):
-        seen["args"] = args
-        return ["c1"]
-
-    out = G.commits_in_range(ref, fake_git_run)
-    assert seen["args"] == ["rev-list", "new1", "--not", "--remotes"]
-    assert out == ["c1"]
-
-
-def test_changed_paths_in_range_unions_every_commit_diff_tree():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", "old1")
-
-    def fake_git_run(args):
-        if args[0] == "rev-list":
-            return ["c1", "c2"]
-        assert args[0] == "diff-tree"
-        commit = args[-1]
-        return {"c1": ["app/a.py", "app/b.py"], "c2": ["app/b.py", "docs/x.md"]}[commit]
-
-    paths = G.changed_paths_in_range(ref, fake_git_run)
-    assert paths == {"app/a.py", "app/b.py", "docs/x.md"}
-
-
-def test_changed_paths_in_range_empty_when_no_commits():
-    ref = G.RefUpdate("refs/heads/x", "same1", "refs/heads/x", "same1")
-
-    def fake_git_run(args):
-        return []
-
-    assert G.changed_paths_in_range(ref, fake_git_run) == set()
-
-
-# --- pre-push: determine_changed_paths (m3) ----------------------------------------------------------
-
-def test_determine_changed_paths_ordinary_update_diffs_remote_sha_dot_dot_local_sha():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", "old1")
-    seen = {}
-
-    def fake_git_run(args):
-        seen["args"] = args
-        return ["app/a.py", "", "app/merge_resolution.py"]
-
-    paths, reason = G.determine_changed_paths(ref, fake_git_run)
-    assert seen["args"] == ["diff", "--name-only", "old1", "new1"]
-    assert paths == {"app/a.py", "app/merge_resolution.py"}
-    assert "diff" in reason
-
-
-def test_determine_changed_paths_new_branch_keeps_merge_base_logic():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", ZERO40)
-
-    def fake_git_run(args):
-        if args[0] == "rev-list":
-            return ["c1"]
-        assert args[0] == "diff-tree"
-        return ["app/new.py"]
-
-    paths, reason = G.determine_changed_paths(ref, fake_git_run)
-    assert paths == {"app/new.py"}
-    assert "new branch" in reason
-
-
-def test_determine_changed_paths_unknown_when_remote_sha_not_present_locally():
-    ref = G.RefUpdate("refs/heads/x", "new1", "refs/heads/x", "old1")
-
-    def fake_git_run(args):
-        raise subprocess.CalledProcessError(128, args)
-
-    paths, reason = G.determine_changed_paths(ref, fake_git_run)
-    assert paths is None
-    assert "unknown" in reason
-    assert "old1"[:12] in reason or "old1" in reason
+# is_new_branch, commits_in_range, changed_paths_in_range and determine_changed_paths were removed
+# 2026-10-06 along with the changed-path count they fed on pre-deploy -- see the module docstring.
 
 
 # --- stamp handling -----------------------------------------------------------------------------------
@@ -827,38 +667,8 @@ def test_run_llm_lane_still_fails_on_a_genuine_test_failure(tmp_path):
     assert result.failing_tests == ["tests/test_cv_intake.py::test_a"]
 
 
-# --- main_checkout_root / main_checkout_head, against a real throwaway git repo + linked worktree ---
-
-def _add_linked_worktree(repo, worktree_path, sha):
-    subprocess.run(["git", "worktree", "add", "--detach", str(worktree_path), sha],
-                    cwd=repo, check=True, capture_output=True, text=True)
-
-
-def test_main_checkout_root_from_the_main_checkout_itself_is_itself(tmp_path):
-    repo = _make_throwaway_repo(tmp_path / "repo")
-    _commit_file(repo, "a.txt", "one\n", "first")
-    assert G.main_checkout_root(repo) == repo.resolve()
-
-
-def test_main_checkout_root_from_a_linked_worktree_is_the_main_checkout(tmp_path):
-    repo = _make_throwaway_repo(tmp_path / "repo")
-    sha1 = _commit_file(repo, "a.txt", "one\n", "first")
-    worktree = tmp_path / "linked-worktree"
-    _add_linked_worktree(repo, worktree, sha1)
-    assert G.main_checkout_root(worktree) == repo.resolve()
-
-
-def test_main_checkout_head_reads_the_main_checkouts_head_not_the_worktrees(tmp_path):
-    repo = _make_throwaway_repo(tmp_path / "repo")
-    sha1 = _commit_file(repo, "a.txt", "one\n", "first")
-    sha2 = _commit_file(repo, "a.txt", "two\n", "second")
-    # a linked worktree detached at the OLDER sha -- main_checkout_head must still report sha2, the
-    # main checkout's own HEAD, not whatever this worktree happens to have checked out.
-    worktree = tmp_path / "linked-worktree"
-    _add_linked_worktree(repo, worktree, sha1)
-    assert G.main_checkout_head(worktree) == sha2
-    assert G.main_checkout_head(repo) == sha2
-
+# main_checkout_root / main_checkout_head were removed 2026-10-06 with the `--deployed` default they
+# existed only to compute -- see the module docstring.
 
 # --- M4 / ScratchWorktree, against a real throwaway git repo ----------------------------------------
 
@@ -1092,6 +902,29 @@ def test_run_lanes_for_sha_skips_entirely_when_an_already_passed_stamp_covers(tm
     assert calls == []  # a PASSED stamp still short-circuits exactly as before (unchanged behavior)
 
 
+# --- _run_lanes_for_sha: decision 4, STAMP RACE -- a concurrent writer's own lane key (e.g. nightly
+# stamping "llm" for this sha while THIS run's offline lane is still in flight) must survive the final
+# write, never be clobbered by a wholesale write of the stale copy this run read at the top. ---------
+
+def test_run_lanes_for_sha_merges_onto_a_concurrent_write_instead_of_clobbering_it(tmp_path):
+    def offline_lane(scratch, *, fail_fast):
+        # Simulates a concurrent nightly run stamping its own "llm" key for this sha WHILE this run's
+        # offline lane is still executing -- after this run's own early stamp read, before its write.
+        G.write_stamp("deadbeef", {"llm": {"passed": True, "duration_s": 999.0}}, stamp_dir=tmp_path)
+        return _fake_lane_result("offline", True)
+
+    rc = G._run_lanes_for_sha(
+        "deadbeef", need_llm=False, llm_reason="x", parent_pid=1, stamp_dir=tmp_path,
+        scratch_factory=_FakeScratch, offline_lane=offline_lane,
+        llm_lane=lambda s: _fake_lane_result("llm", True),
+    )
+    assert rc == 0
+    stamp = G.read_stamp("deadbeef", stamp_dir=tmp_path)
+    assert stamp["lanes"]["offline"]["passed"] is True
+    # the concurrent write survived -- a stale wholesale write would have erased it
+    assert stamp["lanes"]["llm"] == {"passed": True, "duration_s": 999.0}
+
+
 # --- _run_lanes_for_sha: failed-lane log file (Ivan, 2026-10-05 -- a failed 44-min LLM lane's output
 # used to be lost with the scratch dir, forcing a blind rerun) ---------------------------------------
 
@@ -1143,7 +976,7 @@ def test_run_lanes_for_sha_does_not_save_a_log_for_a_passing_lane(tmp_path):
     assert not log_dir.exists()
 
 
-# --- cmd_pre_push, with fakes -- offline lane only, LLM lane moved to pre-deploy -------------------
+# --- cmd_pre_push, with fakes -- offline lane only, LLM lane never runs here (nightly owns it) -----
 
 def test_cmd_pre_push_runs_lanes_for_each_non_delete_ref_in_order():
     seen_shas = []
@@ -1209,20 +1042,22 @@ def test_cmd_pre_push_never_requests_the_llm_lane():
            "olda0000000000000000000000000000000000000\n"
     G.cmd_pre_push(Path("/unused"), stdin_text=text, parent_pid=1, run_lanes=fake_run_lanes)
     assert seen["need_llm"] is False
-    assert "pre-deploy" in seen["reason"]
+    assert "nightly" in seen["reason"]
+    assert "pre-deploy" not in seen["reason"]  # Opus review: must not point at the wrong stage
 
 
 # --- cmd_pre_deploy, with fakes -- offline lane only by default (Ivan, 2026-10-06: the LLM lane
-# moved off pre-deploy too, onto cmd_nightly below) -------------------------------------------------
+# moved off pre-deploy too, onto cmd_nightly below). `--deployed` and the changed-path count it fed
+# are gone (2026-10-06, dead code) -- `target` is the only rev pre-deploy takes. Every call below
+# pins stamp_dir/log_dir/nightly_tsv to tmp_path so these tests never touch the real, shared
+# ~/.local/state/pflege-gate. -------------------------------------------------------------------
 
 def _same_rev(rev):
     """Stands in for resolve_commit where the test's fake shas are already "full"."""
     return rev
 
 
-def test_cmd_pre_deploy_never_runs_llm_lane_without_force_even_when_paths_are_llm_relevant():
-    """2026-10-06: pre-deploy runs the offline lane ONLY by default -- a diff touching an
-    LLM-relevant path (app/data.py) has no effect any more without PFLEGE_GATE_LLM=1."""
+def test_cmd_pre_deploy_never_runs_llm_lane_without_force(tmp_path):
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
@@ -1233,17 +1068,18 @@ def test_cmd_pre_deploy_never_runs_llm_lane_without_force_even_when_paths_are_ll
         return 0
 
     rc = G.cmd_pre_deploy(
-        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: ["app/data.py"], parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["sha"] == "target1111111111111111111111111111111111"
     assert seen["need_llm"] is False
-    assert "PFLEGE_GATE_LLM=1" in seen["reason"]
+    assert "offline lane only by default" in seen["reason"]
     assert seen["label"] == "pre-deploy"
 
 
-def test_cmd_pre_deploy_never_runs_llm_lane_without_force_when_nothing_is_llm_relevant_either():
+def test_cmd_pre_deploy_pflege_gate_llm_1_forces_the_llm_lane(tmp_path):
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
@@ -1252,33 +1088,16 @@ def test_cmd_pre_deploy_never_runs_llm_lane_without_force_when_nothing_is_llm_re
         return 0
 
     rc = G.cmd_pre_deploy(
-        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
-    )
-    assert rc == 0
-    assert seen["need_llm"] is False
-    assert "offline lane only by default" in seen["reason"]
-
-
-def test_cmd_pre_deploy_pflege_gate_llm_1_forces_the_llm_lane():
-    seen = {}
-
-    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
-        seen["need_llm"] = need_llm
-        seen["reason"] = llm_reason
-        return 0
-
-    rc = G.cmd_pre_deploy(
-        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={"PFLEGE_GATE_LLM": "1"}, git_run=lambda args: ["app/wa/bridge.py"], parent_pid=1, resolve=_same_rev,
-        run_lanes=fake_run_lanes,
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={"PFLEGE_GATE_LLM": "1"}, stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["need_llm"] is True
     assert "forced" in seen["reason"]
 
 
-def test_cmd_pre_deploy_pflege_gate_llm_0_is_a_no_op_since_skip_is_already_the_default():
+def test_cmd_pre_deploy_pflege_gate_llm_0_is_a_no_op_since_skip_is_already_the_default(tmp_path):
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
@@ -1286,47 +1105,101 @@ def test_cmd_pre_deploy_pflege_gate_llm_0_is_a_no_op_since_skip_is_already_the_d
         return 0
 
     rc = G.cmd_pre_deploy(
-        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={"PFLEGE_GATE_LLM": "0"}, git_run=lambda args: ["app/data.py"], parent_pid=1, resolve=_same_rev,
-        run_lanes=fake_run_lanes,
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={"PFLEGE_GATE_LLM": "0"}, stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
     )
     assert rc == 0
     assert seen["need_llm"] is False
 
 
-def test_cmd_pre_deploy_defaults_deployed_to_the_main_checkouts_head_when_omitted():
-    seen = {}
-
-    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
-        return 0
-
-    def fake_get_main_checkout_head(worktree):
-        seen["worktree"] = worktree
-        return "mainheadsha11111111111111111111111111111"
-
-    diffed = {}
-
-    def fake_git_run(args):
-        diffed["args"] = args
-        return []
-
+def test_cmd_pre_deploy_propagates_the_lane_runners_exit_code(tmp_path):
     rc = G.cmd_pre_deploy(
-        Path("/some/worktree"), "target1111111111111111111111111111111111", None,
-        env={}, git_run=fake_git_run, get_main_checkout_head=fake_get_main_checkout_head,
-        parent_pid=1, resolve=_same_rev, run_lanes=fake_run_lanes,
-    )
-    assert rc == 0
-    assert seen["worktree"] == Path("/some/worktree")
-    assert "mainheadsha11111111111111111111111111111" in diffed["args"]
-
-
-def test_cmd_pre_deploy_propagates_the_lane_runners_exit_code():
-    rc = G.cmd_pre_deploy(
-        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
-        env={}, git_run=lambda args: [], parent_pid=1, resolve=_same_rev,
-        run_lanes=lambda *a, **k: 1,
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 1,
     )
     assert rc == 1
+
+
+# --- cmd_pre_deploy: decision 1, VISIBILITY -- an informational line about the target sha's own LLM
+# stamp and the last nightly.tsv row, printed before the lanes run; never a gate (rc is driven only
+# by run_lanes, exactly as above, regardless of what these lines say). ------------------------------
+
+def test_cmd_pre_deploy_prints_not_judged_when_the_target_has_no_llm_stamp(tmp_path, capsys):
+    G.cmd_pre_deploy(
+        Path("/unused"), "deadbeef1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    out = capsys.readouterr().out
+    assert "LLM lane on deadbeef1111" in out
+    assert "not judged" in out
+
+
+def test_cmd_pre_deploy_prints_passed_when_the_targets_llm_lane_passed(tmp_path, capsys):
+    G.write_stamp("deadbeef1111111111111111111111111111111111",
+                  {"llm": {"passed": True, "duration_s": 5.0}}, stamp_dir=tmp_path)
+    G.cmd_pre_deploy(
+        Path("/unused"), "deadbeef1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    out = capsys.readouterr().out
+    assert "LLM lane on deadbeef1111: passed" in out
+
+
+def test_cmd_pre_deploy_prints_failed_with_the_log_path_when_the_targets_llm_lane_failed(tmp_path, capsys):
+    G.write_stamp("deadbeef1111111111111111111111111111111111",
+                  {"llm": {"passed": False, "duration_s": 5.0}}, stamp_dir=tmp_path)
+    log_dir = tmp_path / "logs"
+    G.cmd_pre_deploy(
+        Path("/unused"), "deadbeef1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=log_dir, nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    out = capsys.readouterr().out
+    expected_log = log_dir / "deadbeef1111111111111111111111111111111111-llm.log"
+    assert f"LLM lane on deadbeef1111: FAILED ({expected_log})" in out
+
+
+def test_cmd_pre_deploy_prints_none_yet_when_nightly_tsv_is_missing(tmp_path, capsys):
+    G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    out = capsys.readouterr().out
+    assert "last nightly.tsv row: (none yet)" in out
+
+
+def test_cmd_pre_deploy_prints_the_last_nightly_tsv_row_when_one_exists(tmp_path, capsys):
+    tsv = tmp_path / "nightly.tsv"
+    G._append_nightly_tsv(tsv, sha="sha1", result="passed", duration_s=1.0, log_path="a",
+                           today=lambda: "2026-10-05")
+    G._append_nightly_tsv(tsv, sha="sha2", result="failed", duration_s=2.0, log_path="b",
+                           today=lambda: "2026-10-06")
+    G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tsv,
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    out = capsys.readouterr().out
+    assert "last nightly.tsv row: 2026-10-06\tsha2\tfailed\t2.0\tb" in out
+    assert "sha1" not in out.split("last nightly.tsv row:")[1].splitlines()[0]
+
+
+def test_cmd_pre_deploy_informational_line_never_affects_the_exit_code(tmp_path):
+    """A FAILED LLM stamp on the target is purely informational -- rc still comes only from
+    run_lanes (Ivan: deploy does not wait for LLM tests)."""
+    G.write_stamp("deadbeef1111111111111111111111111111111111",
+                  {"llm": {"passed": False, "duration_s": 5.0}}, stamp_dir=tmp_path)
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "deadbeef1111111111111111111111111111111111",
+        env={}, stamp_dir=tmp_path, log_dir=tmp_path / "logs", nightly_tsv=tmp_path / "nightly.tsv",
+        parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
+    )
+    assert rc == 0
 
 
 def test_resolve_commit_turns_head_a_branch_and_a_short_sha_into_the_full_sha(tmp_path):
@@ -1358,11 +1231,13 @@ def test_cmd_pre_deploy_keys_lanes_by_the_full_sha_when_given_symbolic_revs(tmp_
         seen["need_llm"] = need_llm
         return 0
 
-    rc = G.cmd_pre_deploy(repo, "HEAD", "HEAD~1", env={}, parent_pid=1, run_lanes=fake_run_lanes)
+    gate_state = tmp_path / "gate-state"
+    rc = G.cmd_pre_deploy(repo, "HEAD", env={}, stamp_dir=gate_state, log_dir=gate_state / "logs",
+                          nightly_tsv=gate_state / "nightly.tsv", parent_pid=1, run_lanes=fake_run_lanes)
     assert rc == 0
     assert seen["sha"] == sha2
-    # HEAD~1..HEAD touches app/data.py, but that no longer matters (2026-10-06): the sha-keying fix
-    # under test is unrelated to the LLM-lane trigger, which is now PFLEGE_GATE_LLM-only.
+    # app/data.py is in the committed tree, but that no longer matters (2026-10-06): the sha-keying
+    # fix under test is unrelated to the LLM-lane trigger, which is now PFLEGE_GATE_LLM-only.
     assert seen["need_llm"] is False
     assert sha1 != sha2
 
@@ -1407,6 +1282,8 @@ def test_append_nightly_tsv_creates_the_parent_directory(tmp_path):
 # --- cmd_nightly, with fakes -- the LLM lane's new (and only) home (Ivan, 2026-10-06) ----------------
 
 def test_cmd_nightly_skips_when_a_passed_llm_result_is_already_stamped(tmp_path, capsys):
+    """Decision 2 (RED SHA): a GREEN skip's tsv row says "skipped-passed", carries the earlier run's
+    own log path (not an empty one), and rc stays 0 -- the sha is green."""
     G.write_stamp("deadbeef", {"llm": {"passed": True, "duration_s": 5.0}}, stamp_dir=tmp_path)
     calls = []
 
@@ -1415,8 +1292,9 @@ def test_cmd_nightly_skips_when_a_passed_llm_result_is_already_stamped(tmp_path,
         return _fake_lane_result("llm", True)
 
     tsv = tmp_path / "nightly.tsv"
+    log_dir = tmp_path / "logs"
     rc = G.cmd_nightly(
-        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=log_dir,
         nightly_tsv=tsv, resolve=_same_rev, scratch_factory=_FakeScratch, llm_lane=llm_lane,
         today=lambda: "2026-10-06",
     )
@@ -1424,10 +1302,14 @@ def test_cmd_nightly_skips_when_a_passed_llm_result_is_already_stamped(tmp_path,
     assert calls == []  # never re-run -- a stamped result, pass or fail, is never re-judged for free
     out = capsys.readouterr().out
     assert "deadbeef"[:12] in out and "passed" in out
-    assert tsv.read_text() == "2026-10-06\tdeadbeef\tskipped\t0.0\t\n"
+    assert "pre-deploy --target" in out  # names the re-judge path
+    expected_log = log_dir / "deadbeef-llm.log"
+    assert tsv.read_text() == f"2026-10-06\tdeadbeef\tskipped-passed\t0.0\t{expected_log}\n"
 
 
 def test_cmd_nightly_skips_when_a_failed_llm_result_is_already_stamped(tmp_path, capsys):
+    """Decision 2 (RED SHA): a RED skip's tsv row says "skipped-failed", carries the earlier log
+    path, and rc is 1 -- the sha is STILL red, even though nightly ran nothing new this tick."""
     G.write_stamp("deadbeef", {"llm": {"passed": False, "duration_s": 5.0}}, stamp_dir=tmp_path)
     calls = []
 
@@ -1435,14 +1317,18 @@ def test_cmd_nightly_skips_when_a_failed_llm_result_is_already_stamped(tmp_path,
         calls.append("ran")
         return _fake_lane_result("llm", True)
 
+    tsv = tmp_path / "nightly.tsv"
+    log_dir = tmp_path / "logs"
     rc = G.cmd_nightly(
-        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
-        nightly_tsv=tmp_path / "nightly.tsv", resolve=_same_rev, scratch_factory=_FakeScratch,
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=log_dir,
+        nightly_tsv=tsv, resolve=_same_rev, scratch_factory=_FakeScratch,
         llm_lane=llm_lane, today=lambda: "2026-10-06",
     )
-    assert rc == 0
+    assert rc == 1
     assert calls == []  # a FAILED result also counts as already judged -- nightly never re-runs it
     assert "failed" in capsys.readouterr().out
+    expected_log = log_dir / "deadbeef-llm.log"
+    assert tsv.read_text() == f"2026-10-06\tdeadbeef\tskipped-failed\t0.0\t{expected_log}\n"
 
 
 def test_cmd_nightly_runs_stamps_and_writes_the_tsv_line_when_no_result_yet(tmp_path):
@@ -1554,3 +1440,186 @@ def test_cmd_nightly_explicit_target_skips_the_fetch(tmp_path):
     )
     assert rc == 0
     assert seen["fetch_called"] is False
+
+
+# --- cmd_nightly: decision 4, STAMP RACE -- same fix as _run_lanes_for_sha, merged at write time. ---
+
+def test_cmd_nightly_merges_onto_a_concurrent_offline_stamp_instead_of_clobbering_it(tmp_path):
+    def llm_lane(scratch):
+        # Simulates a concurrent pre-push stamping its own "offline" key for this sha WHILE
+        # cmd_nightly's own LLM lane is still executing.
+        G.write_stamp("deadbeef", {"offline": {"passed": True, "duration_s": 42.0}}, stamp_dir=tmp_path)
+        return G.LaneResult("llm", True, 1.0, 0, [], "ok\n")
+
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", resolve=_same_rev, scratch_factory=_FakeScratch,
+        llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    stamp = G.read_stamp("deadbeef", stamp_dir=tmp_path)
+    assert stamp["lanes"]["llm"]["passed"] is True
+    # the concurrent write survived -- a stale wholesale write would have erased it
+    assert stamp["lanes"]["offline"] == {"passed": True, "duration_s": 42.0}
+
+
+# --- cmd_nightly: decision 3, CRASH -- any exception writes a "crashed" tsv row (error class and
+# message in the log_path column, there being no lane log to point to) and is then re-raised
+# unchanged; a `git fetch` failure specifically prints git's own stderr first. ----------------------
+
+def test_cmd_nightly_crash_inside_the_llm_lane_writes_a_crashed_row_and_reraises(tmp_path):
+    def llm_lane(scratch):
+        raise RuntimeError("boom from the llm lane")
+
+    tsv = tmp_path / "nightly.tsv"
+    with pytest.raises(RuntimeError, match="boom from the llm lane"):
+        G.cmd_nightly(
+            Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+            nightly_tsv=tsv, resolve=_same_rev, scratch_factory=_FakeScratch, llm_lane=llm_lane,
+            today=lambda: "2026-10-06",
+        )
+    row = tsv.read_text().strip()
+    assert row == "2026-10-06\tdeadbeef\tcrashed\t0.0\tRuntimeError: boom from the llm lane"
+    # no stamp was written for a sha that never got a real verdict
+    assert G.read_stamp("deadbeef", stamp_dir=tmp_path) is None
+
+
+def test_cmd_nightly_crash_before_sha_is_resolved_uses_unknown_in_the_tsv_row(tmp_path):
+    def exploding_resolve(rev):
+        raise RuntimeError("resolve exploded")
+
+    tsv = tmp_path / "nightly.tsv"
+    with pytest.raises(RuntimeError, match="resolve exploded"):
+        G.cmd_nightly(
+            Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+            nightly_tsv=tsv, resolve=exploding_resolve, scratch_factory=_FakeScratch,
+            llm_lane=lambda s: _fake_lane_result("llm", True), today=lambda: "2026-10-06",
+        )
+    row = tsv.read_text().strip()
+    assert row == "2026-10-06\tunknown\tcrashed\t0.0\tRuntimeError: resolve exploded"
+
+
+def test_cmd_nightly_default_git_fetch_failure_prints_gits_stderr_and_crashes(tmp_path, capsys):
+    """No `fetch` override, no `resolve` override: exercises the REAL default `git fetch origin`
+    inside a throwaway repo that has no "origin" remote, so the fetch fails for real and the
+    default fetch function must print git's own stderr before raising (decision 3)."""
+    repo = _make_throwaway_repo(tmp_path / "repo")
+    _commit_file(repo, "a.txt", "one\n", "first")
+    tsv = tmp_path / "nightly.tsv"
+
+    with pytest.raises(RuntimeError, match="git fetch origin failed"):
+        G.cmd_nightly(
+            repo, None, stamp_dir=tmp_path / "state", log_dir=tmp_path / "logs", nightly_tsv=tsv,
+            today=lambda: "2026-10-06",
+        )
+    err = capsys.readouterr().err
+    assert err.strip()  # git's own stderr was printed, not swallowed
+    row = tsv.read_text().strip()
+    assert row.startswith("2026-10-06\tunknown\tcrashed\t0.0\tRuntimeError: git fetch origin failed")
+
+
+# --- tools/llm_lane_cron.sh: decision 7, CRON SCRIPT ------------------------------------------------
+# Exercised two ways (see this file's own module docstring for why): (a) a real subprocess run, but
+# ONLY for the day/hour window gate -- it exits 0 BEFORE this script ever touches its state dir, which
+# (decision 7, on purpose) has no override point any more, unlike tools/test_wa_agent_note_cron.py's
+# own WA_AGENT_NOTE_STATE_DIR -- running this script past that gate for real would mkdir/flock/log
+# against the REAL, shared ~/.local/state/pflege-gate on this box, which no test here ever does; and
+# (b) source-text characterization for what happens PAST that gate (mkdir failing loudly, flock's
+# dedicated -E 75 lock-conflict code), which is exactly what decision 7 changed. The flock -E 75
+# mechanics those source-text checks rely on are proven for real below, against a THROWAWAY lock file
+# (never the script's own hardcoded, real one).
+
+LLM_LANE_CRON_SCRIPT = Path(__file__).resolve().parent.parent / "tools" / "llm_lane_cron.sh"
+
+
+def _cron_script_text():
+    return LLM_LANE_CRON_SCRIPT.read_text()
+
+
+def _run_llm_lane_cron(extra_env, timeout=20):
+    env = {**os.environ, **extra_env}
+    return subprocess.run(["bash", str(LLM_LANE_CRON_SCRIPT)], env=env,
+                           capture_output=True, text=True, timeout=timeout)
+
+
+@pytest.mark.parametrize("dow,hour", [("6", "18"), ("7", "18"), ("1", "17"), ("5", "19")])
+def test_llm_lane_cron_outside_the_window_exits_0_before_touching_any_state(dow, hour):
+    """Sat (6) / Sun (7), or a weekday (1, 5) at the wrong hour -- exits via the window gate, BEFORE
+    the mkdir/flock code decision 7 changed, so this is safe to run for real: it never reaches
+    ~/.local/state/pflege-gate, which has no override point any more."""
+    proc = _run_llm_lane_cron({"WA_LLM_LANE_TEST_DOW": dow, "WA_LLM_LANE_TEST_HOUR": hour})
+    assert proc.returncode == 0
+
+
+def test_llm_lane_cron_a_leading_zero_hour_is_read_as_decimal_not_octal():
+    """`date +%H` prints '08' for 8 AM -- bash reads a leading-zero numeral as octal, and '08'/'09'
+    are not valid octal digits, which crashes the arithmetic outright without the base-10 fix. Hour
+    08 is outside the 18:00-only window, so this stays safe to run for real."""
+    proc = _run_llm_lane_cron({"WA_LLM_LANE_TEST_DOW": "3", "WA_LLM_LANE_TEST_HOUR": "08"})
+    assert proc.returncode == 0
+    assert "invalid" not in (proc.stderr or "").lower()
+
+
+def test_llm_lane_cron_state_dir_knob_was_removed():
+    """Decision 7: WA_LLM_LANE_STATE_DIR must no longer be READ as an env override (a `${...}`
+    substitution) -- the lock and log dir are always the real ~/.local/state/pflege-gate, matching
+    tools/test_gate.py's own (equally un-overridable) STAMP_DIR/LOG_DIR. The name may still appear in
+    a comment explaining why the knob was removed; that is not a live override."""
+    assert "${WA_LLM_LANE_STATE_DIR" not in _cron_script_text()
+    assert 'STATE_DIR=/home/claude/.local/state/pflege-gate' in _cron_script_text()
+
+
+def test_llm_lane_cron_day_hour_test_overrides_remain():
+    """Decision 7 keeps these -- only the state-dir knob goes."""
+    text = _cron_script_text()
+    assert "WA_LLM_LANE_TEST_DOW" in text
+    assert "WA_LLM_LANE_TEST_HOUR" in text
+
+
+def test_llm_lane_cron_mkdir_does_not_silently_swallow_a_failure():
+    """Decision 7: the old `mkdir -p ... 2>/dev/null || true` made a real mkdir failure invisible and
+    let the script carry on as if the directory existed. The fixed line checks mkdir's own exit
+    status and fails loudly instead (CLAUDE.md: no safety nets)."""
+    text = _cron_script_text()
+    assert "2>/dev/null" not in text
+    assert "|| true" not in text
+    mkdir_lines = [line for line in text.splitlines() if "mkdir -p" in line and "STATE_DIR" in line]
+    assert mkdir_lines, 'expected a `mkdir -p "$STATE_DIR" ...` line'
+    assert any("if ! mkdir" in line for line in mkdir_lines)
+
+
+def test_llm_lane_cron_flock_uses_the_dedicated_conflict_exit_code():
+    """Decision 7: `flock -n -E 75 9` makes a LOCK CONFLICT exit 75 specifically, and the script
+    exits 0 ONLY on that code -- any other flock failure (a bad fd, an unwritable lock file, ...)
+    must exit loud and nonzero instead of being folded into the same quiet skip."""
+    text = _cron_script_text()
+    assert "flock -n -E 75 9" in text
+    assert '"$flock_rc" -eq 75' in text
+    assert '"$flock_rc" -ne 0' in text  # the "every other failure is loud" branch
+
+
+def test_flock_dash_e_75_semantics_match_what_the_cron_script_assumes(tmp_path):
+    """Direct proof, against a THROWAWAY lock file (never the real, shared one the script itself
+    hardcodes), of the primitive decision 7 relies on: `flock -n -E 75 9` exits 75 on conflict and 0
+    when uncontended -- exactly what tools/llm_lane_cron.sh's own rc checks assume."""
+    lock_file = tmp_path / "test.lock"
+    holder = subprocess.Popen(["bash", "-c", f'exec 8>"{lock_file}"; flock 8; sleep 5'])
+    try:
+        for _ in range(50):
+            if lock_file.exists():
+                break
+            time.sleep(0.05)
+        conflict = subprocess.run(
+            ["bash", "-c", f'exec 9>"{lock_file}"; flock -n -E 75 9; echo $?'],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert conflict.stdout.strip() == "75"
+    finally:
+        holder.kill()
+        holder.wait()
+
+    uncontended = subprocess.run(
+        ["bash", "-c", f'exec 9>"{lock_file}"; flock -n -E 75 9; echo $?'],
+        capture_output=True, text=True, timeout=10,
+    )
+    assert uncontended.stdout.strip() == "0"

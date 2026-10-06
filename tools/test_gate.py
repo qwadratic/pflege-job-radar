@@ -26,20 +26,28 @@ PFLEGE_GATE_LLM=1/0 overrode it).
 
 2026-10-06 (Ivan): even gated on path relevance, the LLM lane on pre-deploy still ran too often --
 most deploys touch *something* under app/wa/ or app/data.py, so in practice it fired on nearly every
-one. Decision: `pre-deploy --target <sha> [--deployed <sha>]` (deployed still defaults to the MAIN
-checkout's HEAD, via main_checkout_root -- never this invocation's own worktree, which may be a dev
-worktree like this one) now runs the OFFLINE lane ONLY, always -- a deploy no longer waits on the LLM
-lane at all, and touching an LLM-relevant path no longer has any effect there. PFLEGE_GATE_LLM=1 still
-forces the LLM lane there explicitly, for the rare case of wanting it inline with a deploy;
-PFLEGE_GATE_LLM=0 is accepted too, for symmetry, though it changes nothing since skipping is already
-the default. The LLM lane instead gets its OWN schedule: `tools/test_gate.py nightly [--target REV]`
-(target defaults to origin/main after a git fetch), run once a day at the END of the workday (18:00
-Europe/Vienna, Mon-Fri) by tools/llm_lane_cron.sh -- never more than once a day, and skipped outright
-for a sha that already has ANY recorded LLM-lane result (passed or failed; see stamp handling below),
-so a sha nightly already judged is never re-judged for free. The now-unused path-relevance machinery
-(LLM_RELEVANT_PREFIXES, touches_llm_paths, llm_lane_decision) stays in this module -- not deleted,
-still exercised by its own unit tests -- as the record of the 2026-10-05 reasoning; no CLI subcommand
-calls it any more.
+one. Decision: `pre-deploy --target <sha>` now runs the OFFLINE lane ONLY, always -- a deploy no
+longer waits on the LLM lane at all, and touching an LLM-relevant path no longer has any effect there.
+PFLEGE_GATE_LLM=1 still forces the LLM lane there explicitly, for the rare case of wanting it inline
+with a deploy; PFLEGE_GATE_LLM=0 is accepted too, for symmetry, though it changes nothing since
+skipping is already the default. The LLM lane instead gets its OWN schedule: `tools/test_gate.py
+nightly [--target REV]` (target defaults to origin/main after a git fetch), run once a day at the END
+of the workday (18:00 Europe/Vienna, Mon-Fri) by tools/llm_lane_cron.sh -- never more than once a day,
+and skipped outright for a sha that already has ANY recorded LLM-lane result (passed or failed; see
+stamp handling below), so a sha nightly already judged is never re-judged for free -- `PFLEGE_GATE_LLM=1
+tools/test_gate.py pre-deploy --target <sha>` re-judges one explicitly (see cmd_nightly's own comment).
+`pre-deploy` prints, before its lanes run, one informational line naming the target sha's own LLM-lane
+stamp (passed/FAILED-with-log-path/not judged) and the last nightly.tsv row -- informational only,
+never a gate: a deploy never waits on the LLM lane either way (see cmd_pre_deploy).
+
+Opus review, same date: once PFLEGE_GATE_LLM became the only lever pre-deploy reads, the 2026-10-05
+path-relevance machinery (LLM_RELEVANT_PREFIXES, touches_llm_paths, llm_lane_decision) never drove a
+decision again -- removed outright, this paragraph is now the only record that it ever existed. The
+changed-path COUNT pre-deploy printed alongside it (determine_changed_paths, changed_paths_in_range,
+commits_in_range, is_new_branch, and the `--deployed`/`--git_run` plumbing that fed them) was reader
+information only, nothing downstream ever branched on it -- removed too (grep confirmed the only
+caller was this module itself; the deploy runbook calls only `pre-deploy --target <sha>`, never
+`--deployed`). `pre-deploy` keeps only `--target`.
 
 Either command, on a lane failure, saves that lane's full stdout to
 ~/.local/state/pflege-gate/logs/<sha>-<lane>.log (never swept, unlike the /dev/shm scratch dirs below)
@@ -166,34 +174,6 @@ LLM_LANE_FILES = (
     "tests/test_wa_luna_import_reuse_personas.py",
     "tests/test_wa_luna_personas.py",
 )
-
-# Paths whose change should pull in the LLM lane on pre-deploy (prefixes, matched against repo-root-
-# relative git paths with "/" separators). Opus review m2: the e2e funnel (traced by actually
-# importing tests/test_wa_luna_e2e_funnel.py and diffing sys.modules, 2026-10-05) drives
-# app/wa/api.py (document ingestion onto the card), app/wa/slots.py and app/wa/store.py (the slot
-# state machine and thread persistence the brain reads/writes every turn), app/data.py (the postings
-# snapshot the brain scores against) and skill/SKILL.md (NOT docs here -- app/wa/luna/tools_server.py
-# serves it verbatim to the live model, and tests/test_wa_luna_tools.py asserts on its content). The
-# same trace also reaches app/wa/config.py, app/wa/brain.py, app/autopilot/matching.py, app/crawl.py,
-# app/config.py and several app/wa/{bridge,bridge_ids,meta,phones,stt,suppression,transport}.py
-# modules; none of those are added here because every one of them is deterministic infra/config with
-# no live-model dependency of its own, already fully exercised by the *offline* lane's own test files
-# (test_bridge_*.py, test_wa_stt.py, test_wa_suppression.py, ...) -- a break there fails the offline
-# lane regardless of whether the LLM lane also runs, so forcing the slow+costly LLM lane on every
-# touch of (say) app/wa/phones.py would buy nothing.
-LLM_RELEVANT_PREFIXES = (
-    "app/wa/luna_brain.py",
-    "app/wa/luna/",
-    "app/wa/api.py",
-    "app/wa/slots.py",
-    "app/wa/store.py",
-    "app/data.py",
-    "app/cv.py",
-    "app/cv_",  # any sibling app/cv_*.py module
-    "prompts/",
-    "evals/",
-    "skill/SKILL.md",
-) + LLM_LANE_FILES
 
 CLAUDE_OAUTH_TOKEN_FILE = Path.home() / ".config" / "pflege-ci" / "claude-oauth-token"
 
@@ -325,37 +305,9 @@ def materialize_staged_index(worktree: Path, dest: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------------------
-# LLM-lane trigger.
-
-def touches_llm_paths(paths: Iterable[str]) -> bool:
-    for p in paths:
-        if any(p == pre or p.startswith(pre) for pre in LLM_RELEVANT_PREFIXES):
-            return True
-    return False
-
-
-def llm_lane_decision(paths: Iterable[str] | None, env: dict) -> tuple[bool, str]:
-    """Whether the LLM lane should run, and why. PFLEGE_GATE_LLM in env overrides path detection.
-    `paths=None` means the change set is unknown (a force push whose previous remote tip this clone
-    never had -- Opus review m3): run the LLM lane rather than guess it is irrelevant."""
-    forced = env.get("PFLEGE_GATE_LLM")
-    if forced == "1":
-        return True, "PFLEGE_GATE_LLM=1 (forced run)"
-    if forced == "0":
-        return False, "PFLEGE_GATE_LLM=0 (forced skip)"
-    if paths is None:
-        return True, "change set unknown (base sha not present locally) -- running the LLM lane"
-    paths = list(paths)
-    if touches_llm_paths(paths):
-        return True, "changed range touches an LLM-relevant path"
-    return False, "no LLM-relevant path in the pushed range"
-
-
-# --------------------------------------------------------------------------------------------------
-# Pre-push: parsing stdin, sha-range computation. `git_run` is injected so tests never shell out.
-
-GitRun = Callable[[Sequence[str]], list[str]]
-
+# Pre-push: parsing stdin. `is_delete` is still read by cmd_pre_push; sha-range/changed-path
+# computation (commits_in_range, changed_paths_in_range, determine_changed_paths, is_new_branch) was
+# removed 2026-10-06 along with the path-relevance LLM trigger it fed -- see the module docstring.
 
 @dataclasses.dataclass(frozen=True)
 class RefUpdate:
@@ -384,75 +336,11 @@ def is_delete(ref: RefUpdate) -> bool:
     return ref.local_sha in ZERO_OIDS
 
 
-def is_new_branch(ref: RefUpdate) -> bool:
-    return not is_delete(ref) and ref.remote_sha in ZERO_OIDS
-
-
-def commits_in_range(ref: RefUpdate, git_run: GitRun) -> list[str]:
-    """Commits newly introduced by this ref update. A delete introduces none. A new branch's range is
-    "whatever isn't already on some remote-tracking ref" (handles a push that forks off an existing
-    branch without needing to know the default branch's name)."""
-    if is_delete(ref):
-        return []
-    if is_new_branch(ref):
-        out = git_run(["rev-list", ref.local_sha, "--not", "--remotes"])
-    else:
-        out = git_run(["rev-list", f"{ref.remote_sha}..{ref.local_sha}"])
-    return [line for line in out if line]
-
-
-def changed_paths_in_range(ref: RefUpdate, git_run: GitRun) -> set[str]:
-    """Union of paths touched by every commit in this ref's range, via `diff-tree` per commit. This
-    is the merge-base range logic kept for a brand-new branch, which has no single remote sha to diff
-    against. For an ordinary update, prefer determine_changed_paths below: `diff-tree` on a merge
-    commit alone prints nothing, so a merge's own conflict resolution would otherwise never trigger
-    the LLM lane (Opus review m3)."""
-    paths: set[str] = set()
-    for commit in commits_in_range(ref, git_run):
-        lines = git_run(["diff-tree", "--no-commit-id", "--name-only", "-r", commit])
-        paths.update(line for line in lines if line)
-    return paths
-
-
-def determine_changed_paths(ref: RefUpdate, git_run: GitRun) -> tuple[set[str] | None, str]:
-    """Paths touched by this ref update, for the LLM-lane trigger, and why. A brand-new branch keeps
-    the merge-base `diff-tree` union above (no single remote sha to diff against). An ordinary update
-    diffs remote_sha..local_sha directly with `git diff --name-only`, so a merge's own resolution
-    counts (Opus review m3) -- not just each parent's separate diff-tree, which is empty for the
-    merge commit itself. A force push whose remote_sha this clone never fetched makes that diff fail;
-    the change set is then unknown, not empty, and the caller should run the LLM lane to be safe."""
-    if is_new_branch(ref):
-        return changed_paths_in_range(ref, git_run), "new branch (merge-base range)"
-    try:
-        lines = git_run(["diff", "--name-only", ref.remote_sha, ref.local_sha])
-    except subprocess.CalledProcessError:
-        return None, f"remote sha {ref.remote_sha[:12]} not present locally -- change set unknown"
-    return {line for line in lines if line}, "diff remote_sha..local_sha"
-
-
-def real_git_run(args: Sequence[str], cwd: Path = REPO_ROOT) -> list[str]:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
-    return proc.stdout.splitlines()
-
-
 # --------------------------------------------------------------------------------------------------
-# Pre-deploy: finding "the main checkout" from any worktree.
-
-def main_checkout_root(worktree: Path) -> Path:
-    """The MAIN checkout's root directory -- never `worktree` itself when `worktree` is a linked
-    worktree (e.g. a dev worktree like this one) -- derived exactly the way githooks/pre-commit and
-    githooks/pre-push derive it in shell: `dirname -- "$(git rev-parse --path-format=absolute
-    --git-common-dir)")`. git's common dir is shared by every worktree and always lives inside the
-    main checkout's own .git, so this resolves correctly whether `worktree` IS the main checkout (its
-    .git IS the common dir) or a linked worktree (whose .git file points at
-    <main>/.git/worktrees/<name>, and --git-common-dir follows that back to <main>/.git). Never
-    hardcoded, so this keeps working if the main checkout ever moves."""
-    out = subprocess.run(
-        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=worktree, capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    return Path(out).parent
-
+# resolve_commit is still used by pre-deploy/nightly to key a stamp by the FULL sha, never a symbolic
+# rev (10-05 review, MAJOR 1). main_checkout_root/main_checkout_head existed only to default
+# pre-deploy's now-removed `--deployed` to the main checkout's own HEAD -- removed with it 2026-10-06
+# (grep-confirmed no other caller; see the module docstring).
 
 def resolve_commit(rev: str, cwd: Path) -> str:
     """Full sha of the commit ``rev`` names in ``cwd`` (a sha, short sha, branch, tag or HEAD). Raises
@@ -464,16 +352,6 @@ def resolve_commit(rev: str, cwd: Path) -> str:
     if proc.returncode != 0 or not sha:
         raise RuntimeError(f"{rev!r} does not name a commit in {cwd}")
     return sha
-
-
-def main_checkout_head(worktree: Path) -> str:
-    """HEAD of the MAIN checkout (see main_checkout_root), for pre-deploy's `--deployed` default: the
-    sha currently live is whatever the main checkout -- the one production actually runs from -- is
-    sitting on, not this invocation's own (possibly unrelated) worktree."""
-    main_checkout = main_checkout_root(worktree)
-    out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=main_checkout,
-                          capture_output=True, text=True, check=True).stdout.strip()
-    return out
 
 
 # --------------------------------------------------------------------------------------------------
@@ -507,6 +385,23 @@ def write_stamp(
         payload["failed_parent_pid"] = failed_parent_pid
     p.write_text(json.dumps(payload, indent=2) + "\n")
     return p
+
+
+def write_stamp_merged(
+    sha: str, new_lanes: dict, stamp_dir: Path = STAMP_DIR, *, failed_parent_pid: int | None = None,
+) -> Path:
+    """Re-reads the stamp right before writing and merges only `new_lanes` -- this run's OWN lane
+    keys -- onto whatever is on disk at that moment, never onto the (possibly stale) copy the caller
+    read earlier. _run_lanes_for_sha and cmd_nightly both read a stamp near the top (to decide whether
+    to skip, or whether an LLM result already exists) and only run their own lane(s) afterwards, which
+    can take tens of minutes -- plenty of time for a concurrent writer (nightly stamping "llm" while a
+    push's own pre-push stamps "offline" for the same sha, say) to land its own key in between. Writing
+    the caller's stale copy wholesale would silently erase that concurrent write; this re-read-then-
+    merge makes the two writes additive instead of last-one-wins (Opus review: stamp race)."""
+    current = read_stamp(sha, stamp_dir=stamp_dir)
+    lanes = dict(current.get("lanes", {})) if current else {}
+    lanes.update(new_lanes)
+    return write_stamp(sha, lanes, stamp_dir=stamp_dir, failed_parent_pid=failed_parent_pid)
 
 
 def stamp_covers(stamp: dict | None, need_llm: bool) -> bool:
@@ -636,8 +531,9 @@ def run_llm_lane(
 ) -> LaneResult:
     if not token_file.exists():
         raise RuntimeError(
-            f"LLM lane needs CLAUDE_CODE_OAUTH_TOKEN and {token_file} is missing -- "
-            "no silent skip (CLAUDE.md: no safety nets); fix the token file or pass PFLEGE_GATE_LLM=0"
+            f"LLM lane needs CLAUDE_CODE_OAUTH_TOKEN and {token_file} is missing -- no silent skip "
+            "(CLAUDE.md: no safety nets); this runs from nightly (tools/llm_lane_cron.sh) or a forced "
+            "pre-deploy, never gated by PFLEGE_GATE_LLM=0 -- fix the token/PATH"
         )
     token = token_file.read_text().strip()
     if not token:
@@ -659,7 +555,8 @@ def run_llm_lane(
         raise RuntimeError(
             f"LLM lane needs {claude_bin!r} to resolve on the PATH it will hand pytest "
             f"({env.get('PATH', '')!r}) and it did not -- no silent skip (CLAUDE.md: no safety nets); "
-            "fix PATH or WA_LUNA_CLAUDE_BIN, or pass PFLEGE_GATE_LLM=0"
+            "this runs from nightly (tools/llm_lane_cron.sh) or a forced pre-deploy, never gated by "
+            "PFLEGE_GATE_LLM=0 -- fix PATH or WA_LUNA_CLAUDE_BIN"
         )
 
     basetemp = _new_run_dir(scratch_root)
@@ -830,13 +727,42 @@ def _append_nightly_tsv(
     path: Path, *, sha: str, result: str, duration_s: float, log_path: str,
     today: Callable[[], str] = _today_utc,
 ) -> None:
-    """Append one tab-separated row -- date, sha, result ("passed"/"failed"/"skipped"), duration_s,
-    log_path -- to `path`, creating it (and its parent dir) if needed. No header row, matching this
-    repo's other hand-appended tsv (tools/status_docs_publish.py's tokens.tsv): a human or a `cut -f`
-    reads it, never a csv.DictReader. `today` is injectable so a test can pin the date column."""
+    """Append one tab-separated row -- date, sha, result, duration_s, log_path -- to `path`, creating
+    it (and its parent dir) if needed. No header row, matching this repo's other hand-appended tsv
+    (tools/status_docs_publish.py's tokens.tsv): a human or a `cut -f` reads it, never a
+    csv.DictReader. `today` is injectable so a test can pin the date column. `result` is one of
+    "passed"/"failed" (a fresh run), "skipped-passed"/"skipped-failed" (the sha already carried that
+    verdict -- Opus review: a RED sha's skip must say so, carrying the earlier log path in `log_path`,
+    not an empty one, so the day's row is never mistaken for "nothing to report"), or "crashed" (any
+    exception inside `cmd_nightly`, re-raised after this row is written -- `log_path` then holds the
+    exception's class and message, since there is no lane log to point to)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(f"{today()}\t{sha}\t{result}\t{duration_s:.1f}\t{log_path}\n")
+
+
+def _last_nightly_tsv_line(path: Path) -> str | None:
+    """The last row of nightly.tsv, verbatim, or None if the file is missing or has no rows yet --
+    cmd_pre_deploy prints this as part of its informational (never gating) LLM-lane visibility line."""
+    if not path.exists():
+        return None
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    return lines[-1] if lines else None
+
+
+def _llm_stamp_status_line(sha: str, *, stamp_dir: Path = STAMP_DIR, log_dir: Path = LOG_DIR) -> str:
+    """"passed" / "FAILED (<log path>)" / "not judged" for `sha`'s own recorded LLM-lane result --
+    the text cmd_pre_deploy prints before its lanes run (informational only, never a gate: a deploy
+    never waits on this). The log path, when there is one, is logs/<sha>-llm.log exactly as
+    _save_lane_log names it -- nightly (the only place that writes an LLM-lane stamp) always saves
+    that log, pass or fail."""
+    stamp = read_stamp(sha, stamp_dir=stamp_dir)
+    llm = stamp.get("lanes", {}).get("llm") if stamp else None
+    if llm is None:
+        return "not judged"
+    if llm.get("passed"):
+        return "passed"
+    return f"FAILED ({log_dir / f'{sha}-llm.log'})"
 
 
 # --------------------------------------------------------------------------------------------------
@@ -867,7 +793,10 @@ def _run_lanes_for_sha(
               "not re-running; fix and push again")
         return 1
 
-    lanes_result: dict[str, dict] = dict(stamp.get("lanes", {})) if stamp else {}
+    # Opus review (stamp race): ONLY this run's own lane key(s), never a copy of `stamp` above --
+    # that read can be tens of minutes stale by the time a lane finishes, and write_stamp_merged below
+    # re-reads fresh at write time so a concurrent writer's own key is merged in, not clobbered.
+    lanes_result: dict[str, dict] = {}
     overall_ok = True
 
     with scratch_factory(sha) as scratch:
@@ -905,16 +834,16 @@ def _run_lanes_for_sha(
             print(f"{label}: LLM lane SKIPPED -- {llm_skip_reason}")
 
     if overall_ok:
-        write_stamp(sha, lanes_result, stamp_dir=stamp_dir)
+        write_stamp_merged(sha, lanes_result, stamp_dir=stamp_dir)
     else:
-        write_stamp(sha, lanes_result, stamp_dir=stamp_dir, failed_parent_pid=pid)
+        write_stamp_merged(sha, lanes_result, stamp_dir=stamp_dir, failed_parent_pid=pid)
     return 0 if overall_ok else 1
 
 
 # --------------------------------------------------------------------------------------------------
-# CLI: pre-push -- the FAST push gate. Offline lane only, always: the LLM lane moved to pre-deploy
-# below (Ivan, 2026-10-05), so neither a touched LLM-relevant path nor PFLEGE_GATE_LLM=1 has any
-# effect here any more -- that override now only does something on pre-deploy.
+# CLI: pre-push -- the FAST push gate. Offline lane only, always: the LLM lane never runs here
+# (Ivan, 2026-10-05) and has its own once-a-day schedule now (2026-10-06, see cmd_nightly) -- neither
+# a touched LLM-relevant path nor PFLEGE_GATE_LLM has any effect on pre-push.
 
 def cmd_pre_push(
     worktree: Path, *,
@@ -929,7 +858,8 @@ def cmd_pre_push(
         return 0
 
     pid = parent_pid if parent_pid is not None else os.getppid()
-    llm_reason = "pre-push never runs the LLM lane -- it moved to pre-deploy (Ivan, 2026-10-05)"
+    llm_reason = ("pre-push never runs the LLM lane -- it runs on its own nightly schedule instead "
+                  "(tools/test_gate.py nightly, via tools/llm_lane_cron.sh)")
 
     for ref in updates:
         if is_delete(ref):
@@ -948,44 +878,40 @@ def cmd_pre_push(
 # (Ivan, 2026-10-06: the LLM lane moved off pre-deploy entirely, onto its own once-a-day schedule --
 # see cmd_nightly and the module docstring's 2026-10-06 entry). PFLEGE_GATE_LLM=1 still forces the LLM
 # lane here too, for the rare case of wanting it inline with a deploy; path relevance (what used to
-# drive this on 2026-10-05) no longer has any effect. Run by hand or by the deploy pipeline -- never
-# by a git hook, so there is no stdin to parse and no push-URL double-firing to dedupe; the parent-pid
-# fail-stamp dedup in _run_lanes_for_sha still applies harmlessly (a second pre-deploy invocation with
-# a different pid just re-runs, which is correct).
+# drive this on 2026-10-05) no longer has any effect, and neither does `--deployed` -- removed, along
+# with the changed-path count it fed, once grep confirmed nothing downstream read either (module
+# docstring). Run by hand or by the deploy pipeline -- never by a git hook, so there is no stdin to
+# parse and no push-URL double-firing to dedupe; the parent-pid fail-stamp dedup in _run_lanes_for_sha
+# still applies harmlessly (a second pre-deploy invocation with a different pid just re-runs, which is
+# correct).
+#
+# Opus review (visibility): before the lanes run, prints one informational line naming the TARGET
+# sha's own recorded LLM-lane result (passed / FAILED with its log path / not judged) and the last
+# nightly.tsv row -- informational only, never a gate, exactly like the rest of this function: Ivan,
+# 2026-10-06, "deploy does not wait for LLM tests". This just answers "is the thing I'm about to
+# deploy LLM-clean" without making the deploy wait on an answer.
 
 def cmd_pre_deploy(
-    worktree: Path, target: str, deployed: str | None = None, *,
+    worktree: Path, target: str, *,
     env: dict | None = None,
-    git_run: GitRun | None = None,
-    get_main_checkout_head: Callable[[Path], str] = main_checkout_head,
+    stamp_dir: Path = STAMP_DIR,
+    log_dir: Path = LOG_DIR,
+    nightly_tsv: Path = NIGHTLY_TSV,
     parent_pid: int | None = None,
     run_lanes: Callable[..., int] = _run_lanes_for_sha,
     resolve: Callable[[str], str] | None = None,
 ) -> int:
     env = env if env is not None else os.environ
-    if git_run is None:
-        def git_run(args: Sequence[str]) -> list[str]:
-            return real_git_run(args, cwd=worktree)
     if resolve is None:
         def resolve(rev: str) -> str:
             return resolve_commit(rev, worktree)
 
     target = resolve(target)
-    if deployed is None:
-        deployed = get_main_checkout_head(worktree)
-        print(f"pre-deploy: --deployed not given -- using the main checkout's HEAD {deployed[:12]}")
-    deployed = resolve(deployed)
 
-    # Reuses determine_changed_paths (same function pre-push used to call for its own old..new sha
-    # range) via a synthetic ref: deployed -> target is an ordinary update as far as that function is
-    # concerned (is_new_branch is false whenever `deployed` is a real, non-zero sha, which it always
-    # is here -- either given explicitly or read as the main checkout's own HEAD). Kept purely for the
-    # printed path count below -- it no longer drives the LLM-lane decision (2026-10-06).
-    synthetic_ref = RefUpdate("pre-deploy-target", target, "pre-deploy-deployed", deployed)
-    paths, path_reason = determine_changed_paths(synthetic_ref, git_run)
-    n_paths = "unknown" if paths is None else str(len(paths))
-    print(f"pre-deploy: testing {target[:12]} against deployed {deployed[:12]} "
-          f"({n_paths} changed path(s), {path_reason})")
+    llm_status = _llm_stamp_status_line(target, stamp_dir=stamp_dir, log_dir=log_dir)
+    print(f"pre-deploy: LLM lane on {target[:12]}: {llm_status}")
+    last_row = _last_nightly_tsv_line(nightly_tsv)
+    print(f"pre-deploy: last nightly.tsv row: {last_row if last_row is not None else '(none yet)'}")
 
     # 2026-10-06: offline lane only, by default -- no path-based LLM trigger any more. PFLEGE_GATE_LLM=1
     # still forces the LLM lane here too; PFLEGE_GATE_LLM=0 is accepted for symmetry, though it changes
@@ -995,7 +921,8 @@ def cmd_pre_deploy(
     else:
         need_llm, llm_reason = False, (
             "pre-deploy runs the offline lane only by default (Ivan, 2026-10-06) -- the LLM lane "
-            "moved to the nightly run; set PFLEGE_GATE_LLM=1 to force it here too"
+            "runs nightly instead (tools/test_gate.py nightly, via tools/llm_lane_cron.sh); set "
+            "PFLEGE_GATE_LLM=1 to force it here too"
         )
 
     pid = parent_pid if parent_pid is not None else os.getpid()
@@ -1010,6 +937,24 @@ def cmd_pre_deploy(
 # nightly already judged stays judged, even if it failed, so a fix lands on a NEW sha and gets its
 # own fresh nightly run rather than re-spending ~44 minutes re-judging one already on record. Run by
 # tools/llm_lane_cron.sh, once a day -- never by a git hook.
+#
+# Opus review (red sha): a skip is per sha, not a clean slate -- the skipped sha carries whatever
+# verdict it already had. The tsv row says so explicitly ("skipped-passed"/"skipped-failed", never a
+# bare "skipped" that would read as "nothing to report"), with `log_path` pointing at the EARLIER run's
+# own log (logs/<sha>-llm.log -- _save_lane_log's name for it, which cmd_nightly always writes, pass or
+# fail), and the exit code tracks the verdict too: 0 while the sha is green, 1 while it is still red,
+# so a monitor reading only `rc` (not the tsv) still sees a red sha as red on every later tick, not
+# just the one that first judged it. To re-judge a specific sha on purpose (overwrite its stamp with a
+# fresh LLM-lane run instead of skipping): `PFLEGE_GATE_LLM=1 tools/test_gate.py pre-deploy --target
+# <sha>` -- pre-deploy ignores the nightly stamp's skip logic entirely and always runs when forced.
+#
+# Opus review (crash): any exception raised anywhere in this function -- including one from `fetch`,
+# `resolve`, or the LLM lane itself -- is recorded as a "crashed" tsv row (log_path holds the
+# exception's class and message, there being no lane log to point to) before it is re-raised
+# unchanged (CLAUDE.md: no safety nets, failures stay loud). Without this, a crash before the lane
+# ever got to write a row would leave that day's nightly.tsv silent about it -- indistinguishable from
+# "cron never fired" -- rather than a mark of exactly what broke. `sha` is "unknown" when the crash
+# happens before resolve() ever runs (e.g. `git fetch` itself failing).
 
 def cmd_nightly(
     worktree: Path, target: str | None = None, *,
@@ -1022,48 +967,61 @@ def cmd_nightly(
     llm_lane: Callable[..., LaneResult] = run_llm_lane,
     today: Callable[[], str] = _today_utc,
 ) -> int:
-    if resolve is None:
-        def resolve(rev: str) -> str:
-            return resolve_commit(rev, worktree)
+    sha: str | None = None
+    try:
+        if resolve is None:
+            def resolve(rev: str) -> str:
+                return resolve_commit(rev, worktree)
 
-    if target is None:
-        # Default target: origin/main AFTER a fetch -- the latest merged code, of which the deployed
-        # main checkout's HEAD is always an ancestor. An explicit --target skips the fetch: the
-        # caller named a specific rev, already resolvable as-is.
-        if fetch is None:
-            def fetch() -> None:
-                subprocess.run(["git", "fetch", "origin"], cwd=worktree, check=True,
-                                capture_output=True, text=True)
-        fetch()
-        target = "origin/main"
-    sha = resolve(target)
+        if target is None:
+            # Default target: origin/main AFTER a fetch -- the latest merged code, of which the
+            # deployed main checkout's HEAD is always an ancestor. An explicit --target skips the
+            # fetch: the caller named a specific rev, already resolvable as-is.
+            if fetch is None:
+                def fetch() -> None:
+                    proc = subprocess.run(["git", "fetch", "origin"], cwd=worktree,
+                                           capture_output=True, text=True)
+                    if proc.returncode != 0:
+                        print(proc.stderr, file=sys.stderr)
+                        raise RuntimeError(
+                            f"git fetch origin failed (exit {proc.returncode}) -- see git's stderr above"
+                        )
+            fetch()
+            target = "origin/main"
+        sha = resolve(target)
 
-    stamp = read_stamp(sha, stamp_dir=stamp_dir)
-    existing_llm = stamp.get("lanes", {}).get("llm") if stamp else None
-    if existing_llm is not None:
-        earlier = "passed" if existing_llm.get("passed") else "failed"
-        print(f"nightly: {sha[:12]} already has an LLM lane result ({earlier}) -- skipping")
-        _append_nightly_tsv(nightly_tsv, sha=sha, result="skipped", duration_s=0.0, log_path="",
-                             today=today)
-        return 0
+        stamp = read_stamp(sha, stamp_dir=stamp_dir)
+        existing_llm = stamp.get("lanes", {}).get("llm") if stamp else None
+        if existing_llm is not None:
+            passed = bool(existing_llm.get("passed"))
+            earlier = "passed" if passed else "failed"
+            earlier_log = log_dir / f"{sha}-llm.log"
+            print(f"nightly: {sha[:12]} already has an LLM lane result ({earlier}) -- skipping "
+                  f"(re-judge with: PFLEGE_GATE_LLM=1 tools/test_gate.py pre-deploy --target {sha[:12]})")
+            _append_nightly_tsv(nightly_tsv, sha=sha, result=f"skipped-{earlier}", duration_s=0.0,
+                                 log_path=str(earlier_log), today=today)
+            return 0 if passed else 1
 
-    print(f"nightly: {sha[:12]} has no recorded LLM lane result yet -- running it")
-    with scratch_factory(sha) as scratch:
-        llm = llm_lane(scratch)
-    log_path = _save_lane_log(sha, llm, log_dir=log_dir)
-    print(f"nightly: llm lane {'passed' if llm.passed else 'FAILED'} ({llm.duration_s:.1f}s) -- "
-          f"full output saved to {log_path}")
-    if not llm.passed:
-        print("nightly: failing test(s):")
-        for test_id in llm.failing_tests:
-            print(f"  {test_id}")
+        print(f"nightly: {sha[:12]} has no recorded LLM lane result yet -- running it")
+        with scratch_factory(sha) as scratch:
+            llm = llm_lane(scratch)
+        log_path = _save_lane_log(sha, llm, log_dir=log_dir)
+        print(f"nightly: llm lane {'passed' if llm.passed else 'FAILED'} ({llm.duration_s:.1f}s) -- "
+              f"full output saved to {log_path}")
+        if not llm.passed:
+            print("nightly: failing test(s):")
+            for test_id in llm.failing_tests:
+                print(f"  {test_id}")
 
-    lanes = dict(stamp.get("lanes", {})) if stamp else {}
-    lanes["llm"] = {"passed": llm.passed, "duration_s": llm.duration_s}
-    write_stamp(sha, lanes, stamp_dir=stamp_dir)
-    _append_nightly_tsv(nightly_tsv, sha=sha, result="passed" if llm.passed else "failed",
-                         duration_s=llm.duration_s, log_path=str(log_path), today=today)
-    return 0 if llm.passed else 1
+        write_stamp_merged(sha, {"llm": {"passed": llm.passed, "duration_s": llm.duration_s}},
+                            stamp_dir=stamp_dir)
+        _append_nightly_tsv(nightly_tsv, sha=sha, result="passed" if llm.passed else "failed",
+                             duration_s=llm.duration_s, log_path=str(log_path), today=today)
+        return 0 if llm.passed else 1
+    except Exception as exc:
+        _append_nightly_tsv(nightly_tsv, sha=sha or "unknown", result="crashed", duration_s=0.0,
+                             log_path=f"{type(exc).__name__}: {exc}", today=today)
+        raise
 
 
 # --------------------------------------------------------------------------------------------------
@@ -1081,9 +1039,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("--target", required=True,
                             help="the commit about to be deployed (any rev; resolved to its full sha) -- "
                                  "tested in a scratch worktree")
-            p.add_argument("--deployed", default=None,
-                            help="the sha currently deployed (default: the MAIN checkout's HEAD, via "
-                                 "main_checkout_root)")
         if name == "nightly":
             p.add_argument("--target", default=None,
                             help="the commit to run the LLM lane on (any rev; resolved to its full "
@@ -1098,7 +1053,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_pre_push(args.worktree)
     if args.command == "pre-deploy":
         _cleanup_dead_scratch_worktrees()
-        return cmd_pre_deploy(args.worktree, args.target, args.deployed)
+        return cmd_pre_deploy(args.worktree, args.target)
     if args.command == "nightly":
         _cleanup_dead_scratch_worktrees()
         return cmd_nightly(args.worktree, args.target)

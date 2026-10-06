@@ -28,7 +28,11 @@ export HOME=/home/claude
 export PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 REPO_DIR="${WA_LLM_LANE_REPO_DIR:-/home/claude/repo/pflege-board}"
-STATE_DIR="${WA_LLM_LANE_STATE_DIR:-/home/claude/.local/state/pflege-gate}"
+# No override point here (Opus review): tools/test_gate.py's own stamp/log/tsv writes are always
+# ~/.local/state/pflege-gate, with no env knob of their own -- a separate WA_LLM_LANE_STATE_DIR for
+# just this script's lock+log dir gave the false impression that pointing it elsewhere isolated a
+# test run, when the python side underneath would still write the real path regardless.
+STATE_DIR=/home/claude/.local/state/pflege-gate
 LOCK_FILE="$STATE_DIR/nightly.lock"
 LOG_DIR="$STATE_DIR/nightly"
 VENV_PY="$REPO_DIR/.venv/bin/python"
@@ -44,14 +48,25 @@ if [ "$DOW" -gt 5 ] || [ "$HOUR" -ne 18 ]; then
     exit 0
 fi
 
-mkdir -p "$STATE_DIR" "$LOG_DIR" 2>/dev/null || true
+if ! mkdir -p "$STATE_DIR" "$LOG_DIR"; then
+    echo "llm_lane_cron: mkdir -p $STATE_DIR $LOG_DIR failed -- no silent skip" >&2
+    exit 1
+fi
 
 # --- lock: a second run never overlaps (flock -n, non-blocking). A tick that finds the lock held
 # skips outright rather than queuing behind it -- the LLM lane can run tens of minutes, and by the
-# time a queued tick could start, today's window may already be over.
+# time a queued tick could start, today's window may already be over. -E 75 pins the lock-conflict
+# exit code to 75 (EX_TEMPFAIL) so it can be told apart from every OTHER way flock can fail (bad fd,
+# can't open the lock file, ...) -- only rc 75 is a quiet "someone else is already running this",
+# everything else is a real problem and exits loud (CLAUDE.md: no safety nets).
 exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
+flock -n -E 75 9
+flock_rc=$?
+if [ "$flock_rc" -eq 75 ]; then
     exit 0
+elif [ "$flock_rc" -ne 0 ]; then
+    echo "llm_lane_cron: flock -n on $LOCK_FILE failed unexpectedly (exit $flock_rc)" >&2
+    exit "$flock_rc"
 fi
 
 # Vars a stray inherited shell can carry that would make a test reach the live rail (see
