@@ -317,6 +317,15 @@ def test_a_named_file_is_fetched_under_its_own_name_without_the_query_string(cli
     assert str(calls[0].url) == f"http://harness.internal:8502/api/wa/pro/status/{TOKEN}/{name}"
 
 
+def test_a_header_the_harness_and_its_nginx_both_set_is_passed_on_once(client, monkeypatch):
+    """Seen live on 2026-10-06: nginx in front of the harness adds its own X-Robots-Tag to the harness's."""
+    twice = [("content-type", "text/html; charset=utf-8"), ("x-robots-tag", "noindex, nofollow"), ("X-Robots-Tag", "noindex, nofollow"),
+             ("cache-control", "no-cache"), ("Cache-Control", "no-store")]
+    _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"x", headers=twice))
+    r = client.get(f"/s/{TOKEN}/")
+    assert r.headers["x-robots-tag"] == "noindex, nofollow" and r.headers["cache-control"] == "no-cache, no-store"
+
+
 def test_the_bare_token_redirects_to_the_directory_so_relative_links_resolve(client, monkeypatch):
     calls = _harness_docs(monkeypatch, lambda request: httpx.Response(200, content=b"x"))
     r = client.get(f"/s/{TOKEN}")

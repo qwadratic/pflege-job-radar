@@ -164,8 +164,9 @@ async def _status(token: str, name: str) -> Response:
         raise HTTPException(404, "not found")
     if resp.status_code != 200:                 # 401/403 = this board's WA_API_TOKEN is wrong; 5xx; anything the contract does not name
         raise HTTPException(502, "the document could not be fetched")
+    # nginx in front of the harness sets X-Robots-Tag as well, so the header arrives twice: each distinct value once.
     return Response(content=resp.content, status_code=200,
-                    headers={k: resp.headers[k] for k in _STATUS_HEADERS if k in resp.headers})
+                    headers={k: ", ".join(dict.fromkeys(resp.headers.get_list(k))) for k in _STATUS_HEADERS if k in resp.headers})
 
 
 @status_router.get("/s/{token}")
