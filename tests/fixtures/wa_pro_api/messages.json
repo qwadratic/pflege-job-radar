@@ -1,0 +1,417 @@
+{
+  "t_0000000000000001": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-20T08:00:00+00:00",
+        "body": "Guten Tag Frau Test, neue Stellen fuer Sie.",
+        "deleted": false,
+        "direction": "out",
+        "id": 1,
+        "kind": "template",
+        "meta": {
+          "action": "campaign",
+          "buttons": [],
+          "template": "test_campaign"
+        },
+        "status": null
+      },
+      {
+        "at": "2026-09-20T08:05:00+00:00",
+        "body": "Hallo, ich interessiere mich fuer eine Stelle in Bayern.",
+        "deleted": false,
+        "direction": "in",
+        "id": 2,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-20T08:05:30+00:00",
+        "body": "Willkommen bei Pflege Job Radar! Erzaehlen Sie mir etwas ueber sich.",
+        "deleted": false,
+        "direction": "out",
+        "id": 3,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000002": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-18T09:00:00+00:00",
+        "body": "Guten Tag, ich bin examinierte Pflegefachkraft und suche eine Stelle in Schwaben.",
+        "deleted": false,
+        "direction": "in",
+        "id": 4,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-18T09:05:00+00:00",
+        "body": "Schoen, dass Sie sich melden! Haben Sie schon eine Anerkennungs-Urkunde?",
+        "deleted": false,
+        "direction": "out",
+        "id": 5,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-19T10:00:00+00:00",
+        "body": "Meine Urkunde liegt schon vor, ich arbeite auf der Intensivstation.",
+        "deleted": false,
+        "direction": "in",
+        "id": 6,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-19T10:05:00+00:00",
+        "body": "Verstanden. In welcher Stadt moechten Sie arbeiten, und brauchen Sie eine Wohnung?",
+        "deleted": false,
+        "direction": "out",
+        "id": 7,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-20T11:00:00+00:00",
+        "body": "Ich moechte am liebsten in Augsburg arbeiten, und ja, ich brauche eine Wohnung fuer eine Person, aber eine Klinik ohne Wohnung waere auch in Ordnung.",
+        "deleted": false,
+        "direction": "in",
+        "id": 8,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-20T11:05:00+00:00",
+        "body": "Danke! Bitte schicken Sie mir noch Ihren Lebenslauf und Ihre Urkunde.",
+        "deleted": false,
+        "direction": "out",
+        "id": 9,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-20T11:08:00+00:00",
+        "body": "",
+        "deleted": false,
+        "direction": "in",
+        "id": 10,
+        "kind": "document",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-22T14:02:00+00:00",
+        "body": "Danke fuer den Lebenslauf! Die Urkunde fehlt uns noch.",
+        "deleted": false,
+        "direction": "out",
+        "id": 11,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-22T14:10:00+00:00",
+        "body": "Kann ich bitte mit einem Menschen sprechen?",
+        "deleted": false,
+        "direction": "in",
+        "id": 12,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-22T14:15:00+00:00",
+        "body": "Habe notiert -- eine Kollegin meldet sich persoenlich bei Ihnen, sobald die Anerkennungs-Urkunde da ist.",
+        "deleted": false,
+        "direction": "out",
+        "id": 13,
+        "kind": "draft",
+        "meta": {
+          "action": "qualification_document_request"
+        },
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000003": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-25T07:35:00+00:00",
+        "body": "Hallo, ich suche eine Stelle in Niederbayern.",
+        "deleted": false,
+        "direction": "in",
+        "id": 14,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-25T07:40:00+00:00",
+        "body": "Schoen! Erzaehlen Sie mir mehr.",
+        "deleted": false,
+        "direction": "out",
+        "id": 15,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-27T06:00:00+00:00",
+        "body": "Ich habe noch eine Frage zu den Unterlagen, bitte rufen Sie mich zurueck.",
+        "deleted": false,
+        "direction": "in",
+        "id": 16,
+        "kind": "audio",
+        "meta": {
+          "transcript": "Ich habe noch eine Frage zu den Unterlagen, bitte rufen Sie mich zurueck."
+        },
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000004": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-10T11:00:00+00:00",
+        "body": "Hallo, wer sind Sie?",
+        "deleted": false,
+        "direction": "in",
+        "id": 17,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-10T11:05:00+00:00",
+        "body": "Willkommen bei Pflege Job Radar!",
+        "deleted": false,
+        "direction": "out",
+        "id": 18,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-12T09:00:00+00:00",
+        "body": "STOP",
+        "deleted": false,
+        "direction": "in",
+        "id": 19,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000006": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-23T15:00:00+00:00",
+        "body": "Hallo, ich suche eine Stelle in Unterfranken.",
+        "deleted": false,
+        "direction": "in",
+        "id": 20,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-23T15:10:00+00:00",
+        "body": "Willkommen! Erzaehlen Sie mir etwas ueber sich.",
+        "deleted": false,
+        "direction": "out",
+        "id": 21,
+        "kind": "text",
+        "meta": {},
+        "status": "failed"
+      },
+      {
+        "at": "2026-09-24T09:00:00+00:00",
+        "body": null,
+        "deleted": true,
+        "direction": "in",
+        "id": 22,
+        "kind": "deleted",
+        "meta": {},
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000008": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-05T08:00:00+00:00",
+        "body": "Hallo, ich interessiere mich fuer eine Stelle in der Oberpfalz.",
+        "deleted": false,
+        "direction": "in",
+        "id": 23,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-05T08:05:00+00:00",
+        "body": "Schoen, dass Sie sich melden! Erzaehlen Sie mir mehr.",
+        "deleted": false,
+        "direction": "out",
+        "id": 24,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-06T08:30:00+00:00",
+        "body": "Nein danke, ich habe schon eine Stelle gefunden.",
+        "deleted": false,
+        "direction": "in",
+        "id": 25,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-06T08:31:00+00:00",
+        "body": "Alles Gute fuer die neue Stelle!",
+        "deleted": false,
+        "direction": "out",
+        "id": 26,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      }
+    ]
+  },
+  "t_0000000000000009": {
+    "next_before_id": null,
+    "rows": [
+      {
+        "at": "2026-09-01T08:00:00+00:00",
+        "body": "Hallo, ich bin examinierte Pflegefachkraft und interessiere mich fuer eine Stelle in Oberbayern.",
+        "deleted": false,
+        "direction": "in",
+        "id": 27,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-01T08:05:00+00:00",
+        "body": "Freut uns! In welcher Stadt und Abteilung moechten Sie arbeiten?",
+        "deleted": false,
+        "direction": "out",
+        "id": 28,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-05T09:00:00+00:00",
+        "body": "Ich arbeite am liebsten in der Inneren Medizin in Muenchen, eine Wohnung brauche ich nicht.",
+        "deleted": false,
+        "direction": "in",
+        "id": 29,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-05T09:05:00+00:00",
+        "body": "Super. Bitte schicken Sie uns Ihren Lebenslauf und Ihre Urkunde.",
+        "deleted": false,
+        "direction": "out",
+        "id": 30,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-08T10:00:00+00:00",
+        "body": "",
+        "deleted": false,
+        "direction": "in",
+        "id": 31,
+        "kind": "document",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-08T10:05:00+00:00",
+        "body": "Danke fuer den Lebenslauf! Die Urkunde fehlt uns noch.",
+        "deleted": false,
+        "direction": "out",
+        "id": 32,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-09T10:00:00+00:00",
+        "body": "",
+        "deleted": false,
+        "direction": "in",
+        "id": 33,
+        "kind": "document",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-09T10:05:00+00:00",
+        "body": "Vollstaendig! Duerfen wir Ihr Profil anonymisiert an passende Kliniken senden?",
+        "deleted": false,
+        "direction": "out",
+        "id": 34,
+        "kind": "buttons",
+        "meta": {
+          "action": "consent_offer",
+          "buttons": [
+            {
+              "id": "consent:yes",
+              "title": "Ja"
+            },
+            {
+              "id": "consent:no",
+              "title": "Nein"
+            }
+          ]
+        },
+        "status": null
+      },
+      {
+        "at": "2026-09-15T10:30:00+00:00",
+        "body": "Ja",
+        "deleted": false,
+        "direction": "in",
+        "id": 35,
+        "kind": "interactive",
+        "meta": {},
+        "status": null
+      },
+      {
+        "at": "2026-09-29T10:00:00+00:00",
+        "body": "Danke, bis dann!",
+        "deleted": false,
+        "direction": "in",
+        "id": 36,
+        "kind": "text",
+        "meta": {},
+        "status": null
+      }
+    ]
+  }
+}

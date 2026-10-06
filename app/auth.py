@@ -455,8 +455,12 @@ OWNER_WRITE_PATHS = ("/api/auth/password",)
 # so it gets the same owner gate as the rest of the proxy rather than staying reachable like the
 # harness original. /api/wa/webhook is unaffected either way -- it is not mounted on the board at
 # all (app/main.py) and authenticates itself with Meta's own signature when it is, on the harness.
+# "/api/wa/activity" and "/api/wa/ops" joined 2026-10-01 (TASK-283.7): the board-side proxy routes
+# for the Pro activity rail (app/wa_proxy.py -> app/wa/pro_api.py's own /wa/pro/activity, /wa/pro/
+# ops), same PII class as /api/wa/threads (phone_masked, thread ids) plus bridge/queue internals.
 OWNER_READ_PREFIXES = ("/api/billing", "/api/hunter", "/api/settings", "/api/coverage", "/api/inbox", "/api/firecrawl", "/api/crawl", "/api/campaign",
-                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue", "/api/wa/ownership", "/api/wa/health")
+                       "/api/autopilot", "/api/schedules", "/api/wa/threads", "/api/wa/queue", "/api/wa/ownership", "/api/wa/health",
+                       "/api/wa/activity", "/api/wa/ops")
 GATED_PAGES = ("/pro", "/pro/", "/autopilot", "/autopilot/")
 # Pages a customer may not read either. /deck is the internal next-steps briefing: unfixed security facts,
 # deploy detail, the open decisions -- it was in GATED_PAGES, which is the level a paying customer reaches

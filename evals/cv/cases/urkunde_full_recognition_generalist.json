@@ -1,0 +1,14 @@
+{
+  "id": "urkunde_full_recognition_generalist",
+  "description": "synthetic: foreign-trained nurse, Anerkennung + Urkunde fully granted, 5y experience, internal medicine, Nürnberg -- clean case, both paths expected to agree",
+  "cv_text": "Lebenslauf\nAusgebildete Krankenschwester (Ausland), Anerkennung als Pflegefachfrau in Deutschland vollständig abgeschlossen\nUrkunde erhalten im letzten Jahr\n5 Jahre Berufserfahrung, davon 3 Jahre auf einer internistischen Station in Nürnberg\nSprachen: Deutsch B2, Englisch B1\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft"],
+    "qualifications_all": ["GuK", "Anerkennung"],
+    "departments_any": ["Innere Medizin"],
+    "experience_years": 5,
+    "languages_all": ["Deutsch B2", "Englisch B1"],
+    "cities_any": ["Nürnberg"],
+    "min_matches": 1
+  }
+}
