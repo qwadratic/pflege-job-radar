@@ -4,10 +4,12 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from . import runs as R
 from . import schedules as SC
 
 _thread = None
-_state = {"last_tick": None, "fired": [], "paused": False, "paused_reason": None}
+_state = {"last_tick": None, "fired": []}
+PAUSE_KEY = "scheduler_pause"       # settings row, not a variable: crawl.kill_switch() pauses from the crawl worker process, this thread lives in the web process
 
 
 def next_run_at(now=None):
@@ -17,17 +19,15 @@ def next_run_at(now=None):
 def pause(reason=None):
     """Stop the scheduler from firing anything -- set by the Firecrawl 24h kill switch's 'disable' tier
     (app/crawl.py kill_switch()) when >=30% of plan credits were spent in a rolling 24h."""
-    _state["paused"] = True
-    _state["paused_reason"] = reason
+    R.set_setting(PAUSE_KEY, {"reason": reason})
 
 
 def resume():
-    _state["paused"] = False
-    _state["paused_reason"] = None
+    R.set_setting(PAUSE_KEY, None)
 
 
 def is_paused():
-    return _state["paused"]
+    return R.get_setting(PAUSE_KEY) is not None
 
 
 def tick(force=False, now=None):
@@ -36,8 +36,9 @@ def tick(force=False, now=None):
     since that is an explicit human action, not the automatic loop)."""
     now = now or datetime.now(timezone.utc)
     _state["last_tick"] = now.isoformat(timespec="minutes")
-    if _state["paused"] and not force:
-        return {"runs": [], "fired": [], "paused": True, "paused_reason": _state["paused_reason"]}
+    paused = R.get_setting(PAUSE_KEY)
+    if paused is not None and not force:
+        return {"runs": [], "fired": [], "paused": True, "paused_reason": paused["reason"]}
     fired = []
     for s in SC.list_all():
         if force and s["enabled"] or (not force and SC.is_due(s, now)):
@@ -69,5 +70,6 @@ def start():
 
 
 def status():
+    paused = R.get_setting(PAUSE_KEY)
     return {**SC.status(), "last_tick": _state["last_tick"], "last_fired": _state["fired"],
-            "paused": _state["paused"], "paused_reason": _state["paused_reason"]}
+            "paused": paused is not None, "paused_reason": paused["reason"] if paused else None}

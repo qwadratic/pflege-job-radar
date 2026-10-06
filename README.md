@@ -27,7 +27,7 @@ No labour agency, no job boards. Scope: experienced nursing roles only (trainees
 ## Layout
 
 ```
-app/                FastAPI backend: /api, scrape worker, cron/preset schedules, CV match, Firecrawl, mechanics (port 8501)
+app/                FastAPI backend: /api, crawl worker (own process: app/crawl_worker.py), cron/preset schedules, CV match, Firecrawl, mechanics (port 8501)
   wa/               inbound WhatsApp harness: answers Pflege leads as Valentina, asking the question the board data says narrows the list most (docs/whatsapp.md, port 8502); WA_BRAIN=luna swaps in a Claude-driven brain with the same persona and gates (app/wa/luna/)
 web/                two single-file SPAs: index.template.html (default at /, light: Hospitals → Jobs, Cities) and pro.template.html (/pro, dark: + Plan (the PDF as a table), Clawl (targets, schedules, runs), Docs (ontology graph), Settings (mechanics))
 pflege_jobs/        pipeline: classify (patterns.json), resolve, link-clinics, verify, CLI; mechanics.py = the ten rules explained + testable
@@ -48,6 +48,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env                          # keys
 set -a; . ./.env; set +a
 .venv/bin/uvicorn app.main:app --port 8501    # board + API  (systemd unit: deploy/pflege-web.service; production setup: docs/deploy.md)
+.venv/bin/python -m app.crawl_worker          # crawl worker: takes the queued crawl runs (systemd unit: deploy/pflege-crawl.service); the web only queues them
 .venv/bin/uvicorn app.wa.asgi:app --port 8502 # inbound WhatsApp harness (systemd unit: deploy/pflege-wa.service)
 crontab deploy/crontab                        # host cron: weekly purge of the raw crawler queue
 

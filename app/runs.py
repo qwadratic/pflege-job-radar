@@ -1,4 +1,4 @@
-"""Local state (SQLite) + the crawl worker queue.
+"""Local state (SQLite) + the crawl run queue (the crawl_runs table; app/crawl_worker.py is the process that works it off).
 
 Tables: crawl_runs (one per triggered crawl), run_log (lines), career_profiles (Firecrawl career discovery per clinic),
 clinic_photos (one cached photo path per clinic + source, e.g. 'maps' -- served via GET /photos/{clinic_id}),
@@ -12,7 +12,6 @@ Finished runs are mirrored, best effort, into pflege_jobs.crawl_runs so the publ
 """
 import hashlib
 import json
-import queue
 import sqlite3
 import threading
 import time
@@ -21,9 +20,6 @@ from datetime import datetime, timezone
 from . import config as A
 
 _lock = threading.RLock()
-_queue = queue.Queue()
-_worker = None
-_executor = None          # set by app.crawl: callable(run_id) that performs the run
 
 SCHEMA = """
 create table if not exists crawl_runs (
@@ -548,39 +544,9 @@ def clinic_blurbs_map():
 
 # --- worker ---------------------------------------------------------------------------------
 def enqueue(run_id):
-    _queue.put(run_id)
-
-
-def _loop():
-    while True:
-        run_id = _queue.get()
-        try:
-            if (get_run(run_id, with_log=False) or {}).get("status") == "cancelled":
-                continue    # cancelled while still queued (POST /api/crawl/runs/{id}/cancel); finally still runs task_done()
-            update_run(run_id, status="running", started_at=now())
-            log(run_id, "run started")
-            _executor(run_id)
-        except Exception as e:                                   # executor sets its own status; this is the last resort
-            log(run_id, f"FAILED: {type(e).__name__}: {str(e)[:400]}")
-            update_run(run_id, status="failed", finished_at=now(), error=str(e)[:400])
-        finally:
-            _queue.task_done()
-
-
-def start_worker(executor):
-    """Start the single background worker (one crawl at a time keeps host politeness simple)."""
-    global _worker, _executor
-    _executor = executor
-    init()
-    # runs left 'running' by a previous process are dead
-    with _lock, db() as c:
-        c.execute("update crawl_runs set status='failed', error='process restarted', finished_at=? where status='running'", (now(),))
-        stale = [r[0] for r in c.execute("select run_id from crawl_runs where status='queued' order by run_id").fetchall()]
-    for rid in stale:
-        _queue.put(rid)
-    if _worker is None or not _worker.is_alive():
-        _worker = threading.Thread(target=_loop, name="crawl-worker", daemon=True)
-        _worker.start()
+    """Hand a run to the crawl worker. create_run() already inserted the row as 'queued', and the crawl worker
+    (app/crawl_worker.py, its own process, deploy/pflege-crawl.service) polls the table for queued rows, so nothing
+    is left to do in the calling process; the call stays so every place that creates a run still reads the same."""
 
 
 def mirror_to_supabase(run):
