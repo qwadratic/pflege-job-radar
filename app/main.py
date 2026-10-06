@@ -57,6 +57,8 @@ app.include_router(_hunter_router, prefix="/api", tags=["hunter"])
 # WA_API_BASE/WA_API_TOKEN, owner-gated, the token never reaching the browser.
 from .wa_proxy import router as _wa_proxy_router
 app.include_router(_wa_proxy_router, prefix="/api", tags=["wa-proxy"])
+from .wa_proxy import status_router as _status_router             # public /s/{token}/ document links (TASK-436)
+app.include_router(_status_router, tags=["status-docs"])
 from .billing import router as _billing_router                     # GET /api/billing (spend report)
 app.include_router(_billing_router, prefix="/api", tags=["billing"])
 from .auth import router as _auth_router                            # GET /api/me, magic-link login (owner / tailnet / customer)
@@ -1230,7 +1232,19 @@ def dock_css():
     return _web("dock.css", "text/css")
 
 
-SKILL_SUFFIXES = (".md", ".py")           # what web/build.py writes into web/skill/: the docs and query.py
+FONTS = ("archivo-black.woff2", "jetbrains-mono.woff2")     # web/fonts/: Archivo Black and JetBrains Mono, latin subset, SIL OFL 1.1
+
+
+@app.get("/fonts/{name}")
+def font(name: str):
+    """The board's two typefaces from this server. A candidate's status page (/s/{token}/, tools/status_page.py) loads them
+    from here and from nowhere else: a font fetched from a third party would hand it the reader's address."""
+    if name not in FONTS:
+        raise HTTPException(404, "not found")
+    return _web("fonts/" + name, "font/woff2")
+
+
+SKILL_SUFFIXES = (".md", ".py")          # what web/build.py writes into web/skill/: the docs and query.py
 
 
 @app.get("/skill/{name:path}")
