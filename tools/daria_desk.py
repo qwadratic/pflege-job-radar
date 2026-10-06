@@ -34,7 +34,8 @@ announcement until its "рассылка завершена" notice or a halt th
 active batches with their clinics; a stop names the batches it means (none named: every one in scope), a skip acts
 on the batch that holds each named clinic.
 
-Desk config (JSON; paths relative to it): sender, sender_name, tz, operators, watch_via ("daria-inbox"), campaigns
+Desk config (JSON; paths relative to it): sender, sender_name, tz, operators, command_only (addresses whose mail is read as a
+command but who are never written to: an operator's second mailbox, Ivan 2026-10-06), watch_via ("daria-inbox"), campaigns
 [{config, label}], ledger, heartbeat, session_dir, start (ISO: mail received before it is not the desk's),
 poll_seconds, overlap_minutes, classifier {model, claude_bin, run_as, timeout_seconds}, answerer {model, effort,
 claude_bin, run_as, timeout_seconds, python, mcp_timeout_ms}, brain, docs {name: path}.
@@ -130,6 +131,7 @@ def load(path):
     d["docs"] = {k: str((path.parent / v).resolve()) for k, v in d.get("docs", {}).items()}
     d["tz"] = ZoneInfo(d["tz"])
     d["operators"] = [a.lower() for a in d["operators"]]
+    d["command_only"] = [a.lower() for a in d.get("command_only", [])]     # may command, gets no answer and no notice
     d["digest_at"] = datetime.strptime(d["digest_at"], "%H:%M").time()      # the daily mail of the clinics' answers, local time
     d["halt_grace"] = timedelta(minutes=d["halt_grace_minutes"])           # a halt resumed within it (a restart) is never mailed
     d["notify"] = [a.lower() for a in d["notify"]]               # who is told that the desk stopped (Ivan, 2026-10-05)
@@ -295,7 +297,7 @@ def classify(d, subject, text, bs):
 # ---------- commands ----------
 
 def help_text(d):
-    return (f"Команды — письмом на {d['sender']} с адреса {' или '.join(d['operators'])}: «стоп» или «отмена» — остановить "
+    return (f"Команды — письмом на {d['sender']} с адреса {' или '.join(d['operators'] + d['command_only'])}: «стоп» или «отмена» — остановить "
             "рассылку (можно назвать волну; без названия — все идущие), фоллоу-апы тоже; «не отправлять в <клинику>» — убрать "
             "клинику; «статус». " + M.DESK_HELP)
 
@@ -609,7 +611,7 @@ def operator_mail(d, since, seen):
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         frm = parseaddr(str(msg.get("From") or ""))[1].lower()
         mid = str(msg.get("Message-ID") or "").strip() or "sha256:" + hashlib.sha256(raw).hexdigest()
-        if frm in d["operators"] and mid not in seen:
+        if frm in d["operators"] + d["command_only"] and mid not in seen:
             yield folder, msg, mid, frm
 
 
@@ -706,7 +708,7 @@ def _run(d):
     watchers = threading.Thread(target=watch_worker, args=(d, box), daemon=True)
     watchers.start()
     log(d, {"event": "desk_started", "pid": os.getpid(), "since": since.isoformat(timespec="seconds"), "requeued": len(left)})
-    print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, mail since {since:%Y-%m-%d %H:%M}, "
+    print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, command only {', '.join(d['command_only']) or '-'}, mail since {since:%Y-%m-%d %H:%M}, "
           f"{len(active(d))} active batches, {len(left)} questions still to answer")
     before = {s: signal.signal(s, M.ended) for s in (signal.SIGTERM, signal.SIGHUP)}
     failing = False

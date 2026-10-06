@@ -1,6 +1,7 @@
 """tools/daria_desk.py and tools/daria_tools.py: one reader of the operators' mail for every batch (TASK-345.12.1),
 Daria's scoped toolset (TASK-345.12.2). No network, no CLI: the classifier, SMTP and Daria's answer are fakes."""
 import importlib.util
+import email
 import json
 import queue
 import re
@@ -23,6 +24,7 @@ from mailer_doc import STYLE  # noqa: E402
 STYLE_TD = STYLE["td"]
 
 OPS = ["op1@example.org", "op2@example.net"]
+CMD = "cmd@example.com"      # an operator's second mailbox: may command, is never written to
 NOW = datetime.fromisoformat("2026-10-02T09:30:00+02:00")
 
 
@@ -72,7 +74,7 @@ class Desk:
         monkeypatch.setattr(M, "now_in", lambda cfg: NOW)
         self.c1, self.b1 = campaign(tmp_path, "w1", ["a1", "a2"], monkeypatch)
         self.c2, self.b2 = campaign(tmp_path, "w2", ["b1", "b2", "b3"], monkeypatch)
-        conf = {"sender": "me@example.org", "sender_name": "Daria", "tz": "Europe/Berlin", "operators": [OPS[0].upper(), OPS[1]], "notify": OPS,
+        conf = {"sender": "me@example.org", "sender_name": "Daria", "tz": "Europe/Berlin", "operators": [OPS[0].upper(), OPS[1]], "command_only": [CMD.upper()], "notify": OPS,
                 "watch_via": "daria-inbox", "campaigns": [{"config": "w1/c.json", "label": "волна 1"}, {"config": "w2/c.json", "label": "волна 2"}],
                 "ledger": "desk.jsonl", "heartbeat": "heartbeat.json", "session_dir": "sessions", "start": "2026-10-01T00:00:00+02:00",
                 "poll_seconds": 60, "digest_at": "17:00", "halt_grace_minutes": 15, "tmux": {"session": "dsk-mailing", "view": ["nurse79", "dsk-mailing"]}, "overlap_minutes": 5, "brain": str(tmp_path / "brain.sqlite"), "docs": {"notes": "w2/notes.txt"},
@@ -676,3 +678,21 @@ def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_
     desk.d["_path"].write_text(json.dumps(conf))
     with pytest.raises(M.MailerError, match='"watch_via" must be "daria-inbox".*got .graph.'):
         D.load(desk.d["_path"])
+
+
+def test_a_command_only_address_commands_but_is_never_written_to(desk, monkeypatch):
+    """Ivan, 2026-10-06: Valentyn's second mailbox may command the mailings; every answer goes to the operators' main mailboxes."""
+    raws = []
+    for frm, mid in ((OPS[1], "<a@op>"), (CMD, "<b@cmd>"), ("clinic@example.de", "<c@clinic>")):
+        m = EmailMessage()
+        m["From"], m["To"], m["Subject"], m["Message-ID"] = frm, "me@example.org", "Re: Рассылка", mid
+        m.set_content("статус")
+        raws.append(("inbox", m.as_bytes()))
+    monkeypatch.setattr(M, "inbox_messages", lambda cfg, box, since, seen: iter(raws))
+    assert [mid for _, _, mid, _ in D.operator_mail(desk.d, NOW, set())] == ["<a@op>", "<b@cmd>"]
+    desk.intents["статус"] = ("status", [], [])
+    cmd_mail = email.message_from_bytes(raws[1][1], policy=email.policy.default)
+    D.handle(desk.d, {}, desk.jobs, "inbox", cmd_mail, "<b@cmd>", CMD)
+    (r,) = desk.sent
+    assert r["To"] == ", ".join(OPS) and not r["Cc"] and CMD not in r.as_string()
+    assert CMD in D.help_text(desk.d) and OPS[0] in D.help_text(desk.d)
