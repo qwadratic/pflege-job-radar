@@ -476,6 +476,32 @@ def sales_brain_path():
     return os.environ.get("WA_SALES_BRAIN_PATH", "").strip() or "/opt/clinic-dispatcher/var/sales_brain.sqlite"
 
 
+# --- Status documents (candidate-anonymous HTML/PDF one-pagers at a public token link, Ivan
+# 2026-10-06; see app/wa/status_docs.py's own module docstring for the whole design) ----------------
+# Read at request/call time, same reasoning as pro_api_token/pro_api_write_token/sales_brain_path
+# just above: a test's monkeypatch.setenv sees it immediately, with no module reload. This repo is
+# PUBLIC (TASK-162) -- both the served files and the slug->token map live under this path, entirely
+# outside the repo, so a token can never enter git.
+
+def status_docs_home():
+    """WA_STATUS_DOCS_HOME: the directory tools/status_docs_publish.py (Daria's own publish tool,
+    the email lane, run as this same user) writes into, and app/wa/status_docs.py's routes read
+    from. Holds www/<token>/ (the served files) and tokens.tsv (the slug->token map). Default:
+    ~/.local/state/pflege-status -- outside both this repo and app.config.DATA_DIR, the same
+    process/health-state convention AGENT_NOTE_STATE_DIR above already uses."""
+    raw = os.environ.get("WA_STATUS_DOCS_HOME", "").strip()
+    return pathlib.Path(raw) if raw else pathlib.Path.home() / ".local" / "state" / "pflege-status"
+
+
+def status_docs_public_base():
+    """WA_STATUS_DOCS_PUBLIC_BASE: the board's public URL prefix for a status-document link --
+    tools/status_docs_publish.py appends the token plus a trailing "/" and prints the result.
+    Default is the board's real public domain; override only for a test or a board that is not
+    live there yet."""
+    raw = os.environ.get("WA_STATUS_DOCS_PUBLIC_BASE", "").strip()
+    return raw or "https://pflege-board.exe.xyz/s/"
+
+
 # --- Client identity (TASK-162: this repo is public, the client's name/domains are never committed
 # here) -----------------------------------------------------------------------------------------
 # config/wa-client.json is the real file (gitignored); config/wa-client.example.json is the committed,

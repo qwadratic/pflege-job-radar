@@ -782,6 +782,12 @@ Surprising, truthful behavior the generator surfaced (worth knowing before trust
 
 **Pro activity rail (TASK-283.7): bridge queue + job health.** Two more board-token routes, `GET /wa/pro/activity` and `GET /wa/pro/ops` — the board's "Leads | Rail & jobs" tab. Same auth/thread-identity/reads-never-lock discipline as above, but their own contract, closed value lists and freshness semantics are documented separately in [`docs/wa-pro-activity.md`](wa-pro-activity.md), not here (`docs/wa-dashboard.md` does not cover them either).
 
+### Status documents (public token links)
+
+Candidate status documents (an HTML one-pager, a detail page, a PDF — candidate-anonymous, never a candidate name or phone) are reachable at a public, unguessable token link, Ivan 2026-10-06: `https://pflege-board.exe.xyz/s/<token>/`. `GET /wa/pro/status/{token}[/{name}]` (`app/wa/status_docs.py`, mounted next to `pro_router`, same `/api` prefix, same board-or-write bearer) serves the files; the board adds the public, unauthenticated `/s/{token}/` route that proxies to it server-side — the full contract (both sides) is in [`docs/wa-dashboard.md`](wa-dashboard.md#status-documents-public-token-links). Publishing is `tools/status_docs_publish.py`, below, not an upload API: the files are produced on this host by the email lane (Daria), which runs as the same user.
+
+**`tools/status_docs_publish.py`** — `<slug> <src_dir>` publishes (or republishes, atomically, same token) one candidate's documents; `--list` prints every published slug and its URL. `src_dir` must hold exactly `index.html` plus, optionally, `detail.html` and any number of PDFs matching the route's own name allow-list (`app/wa/status_docs.py:allowed_name`, shared verbatim, never a second copy) — anything else (a subdirectory, a dotfile, a symlink, an unmatched name) is a loud refusal naming the entry, nothing published. The slug → token map (`tokens.tsv`) and every served file live under `status_docs_home()` (`WA_STATUS_DOCS_HOME`, default `~/.local/state/pflege-status`) — entirely outside this repository, so a token never enters git (this repo is public, TASK-162).
+
 ## Deliberately missing
 
 - **No LLM by default.** The question ladder above is deterministic so every rule has a test. `WA_BRAIN=luna` (above) switches to Claude when the full persona/conversation is needed.

@@ -148,6 +148,45 @@ reads `webhook_ready`, `outbound_ready`, `checks`, `reply_scope`, `autosend`, `t
 `synced_at` / `synced_source`: the engine's last confirmed contact with a rail, shown as "Rail contact 2 min ago ·
 bridge". The list envelope and the thread detail carry the same two fields.
 
+## Status documents (public token links)
+
+**What:** a candidate status document (an HTML one-pager, a detail page, a PDF -- candidate-anonymous: public
+clinic names, vacancy titles, travel minutes, housing quotes, never a candidate name or phone) at a public,
+unguessable link anyone holding it can open with no login. Ivan, 2026-10-06. The documents themselves are produced
+on the harness host by the email lane (Daria) and published there by a local tool
+(`tools/status_docs_publish.py`, [whatsapp.md](whatsapp.md)) -- the board never receives or stores the files, only
+proxies to them.
+
+**Public URL:** `https://pflege-board.exe.xyz/s/<token>/`. `<token>` is the only secret in the URL (22 URL-safe
+characters) -- there is no owner-session gate on this route, and none is added: the token itself is the access
+control, the same way a password-reset link or an unlisted video works.
+
+**Board side (pflege-fe, TASK-436):** the public routes `GET /s/{token}`, `/s/{token}/` and `/s/{token}/{name}`,
+their place in the public-route list and how errors reach an anonymous visitor are documented in [auth.md](auth.md)
+and `app/wa_proxy.py`, not here. What the board relies on from the harness: `/s/{token}/` maps to
+`.../status/{token}/` and `/s/{token}/{name}` to `.../status/{token}/{name}`, with the existing `WA_API_TOKEN`
+bearer (no new secret); the harness never redirects, so the `/s/{token}` -> `/s/{token}/` redirect (needed for the
+documents' relative links) is the board's; every harness answer carries the status code, `Content-Type` and
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache` the board passes on.
+
+**Harness side (`app/wa/status_docs.py`):** `GET /api/wa/pro/status/{token}`, `GET /api/wa/pro/status/{token}/`
+and `GET /api/wa/pro/status/{token}/{name}` -- plus a catch-all `GET /api/wa/pro/status/{rest:path}` registered
+last, after these three, so FastAPI only ever reaches it for a path shape none of them matches. Together these
+mean no request under this prefix ever gets a redirect: the first two are both declared explicitly so neither
+needs Starlette's own undeclared-trailing-slash 307 (whose `Location` would name the harness host instead of the
+board), and the catch-all closes the remaining gap (an extra trailing slash after a name, a double trailing
+slash, a decoded path with more segments than any of the three) that would otherwise still hit that same 307, or
+Starlette's own unauthenticated `{"detail": "Not Found"}`, before auth ever ran. Same bearer check as every other
+board-scope Pro API route (`pro_api._authorize`, `SCOPE_BOARD` -- the board token or Daria's write token), on
+every one of these four routes including the catch-all; unconfigured is still `503`, a missing/wrong bearer still
+`401`. `token` must be exactly 22 URL-safe base64 characters; `name` must be `index.html`, `detail.html`, or a
+lowercase, bounded `.pdf` name -- anything else, or an unknown token, or a symlinked token directory or file, is
+`404` with an identical body (never reveals which check failed). See that module's own docstring for the full
+design and `docs/whatsapp.md`'s Pro API section for the publish tool.
+
+The harness's `FileResponse` honours `Range` (`206`) and refuses `HEAD` (`405`); the board forwards neither `Range`
+nor `If-*` and only `GET`, so a visitor always gets a full `200` or `404` body.
+
 ## Errors the view distinguishes
 
 | answer | what the view says |
