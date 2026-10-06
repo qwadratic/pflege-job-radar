@@ -110,7 +110,7 @@ def cadence_rules(cfg, info):
     hol = ", ".join(f"{d:%d.%m.%Y}" for d in sorted(cfg["holidays"])[:6]) + (" …" if len(cfg["holidays"]) > 6 else "")
     lo, hi = cfg["pause_seconds"]
     reports = [r["report"] for r in info["rounds"] if r["report"]]
-    lines += [f"<li>Окно отправки: {days} {w['from']}–{w['to']} ({cfg['tz'].key}), кроме праздников: {esc(hol) or '—'}.</li>",
+    lines += [f"<li>Дни отправки: {days}, в любое время суток ({cfg['tz'].key}), кроме праздников: {esc(hol) or '—'}.</li>",
               f"<li>Между письмами случайная пауза {lo}–{hi} секунд; минута отправки никогда не кратна 5 (не 10:00, не 10:05).</li>",
               f"<li>Анонс уходит не позже чем за {info['window_minutes']} мин. до первого письма.</li>",
               "<li>Фоллоу-апы уходят сами в указанное в таблице время: одобрение этого плана покрывает и их.</li>"]

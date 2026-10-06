@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-28 14:39'
-updated_date: '2026-09-28 16:20'
+updated_date: '2026-10-06 12:09'
 labels:
   - email
 dependencies: []
@@ -50,4 +50,6 @@ e2e #2 (2026-09-28 17:57-18:18, batch nurse79-e2e-20260928-1752, compressed cade
 Fixes found by e2e #2: email.policy.default folding split a Cyrillic subject into encoded words right at a space and readers dropped it ('первыеписьма'); MailPolicy now encodes a non-ASCII Subject with email.header.Header (verified live: Exchange parses the space); wording: 'фоллоу-ап 1 ушёл', a one-letter report says 'в 18:23' instead of a span, the round notice gives the report time then the letters, a stop answer omits the command list. Unit tests 33/33.
 
 Real batch planned: nurse79-20260928-1809 (announce 2026-09-28 18:25 or when Ivan starts the send; first letters Tue 29.09 09:02-09:23; fu1 Fri 02.10, report 08:00; fu2 Fri 09.10, report 08:00). Awaiting Ivan's approval and his live run.
+
+2026-10-06 (Ivan): the hours of the send window are gone, two in the afternoon is fine. tools/clinic_mailer.py: in_window is send_day (a weekday of the config's "window" that is no holiday, any time of day); schedule, timed, send, watch and redirect_letters check the day only; load_config refuses a window that still has "from" or "to", loudly, so a stale config cannot look as if hours still applied. The announcement's rules list says "Дни отправки" with no hours. Weekdays and holidays stay (business-day cadence, no letters on a closed day): Ivan decides whether weekends open too. Deploy order: every campaign config drops from/to in the same step as the desk and send-process restart, otherwise the new code refuses the old config at load.
 <!-- SECTION:NOTES:END -->

@@ -44,7 +44,7 @@ def campaign(root, name, ids, monkeypatch):
          "vars": {"ANREDE": "Sehr geehrte Damen und Herren", "BEREICH": "Intensivstation"}} for i in ids]))
     (d / "allowlist.txt").write_text("\n".join([f"pd-{i}@example.org" for i in ids] + OPS) + "\n")
     conf = {"campaign": name, "sender": "me@example.org", "sender_name": "Daria", "tz": "Europe/Berlin",
-            "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:00"}, "holidays": [], "pause_seconds": [90, 180],
+            "window": {"weekdays": [1, 2, 3, 4, 5]}, "holidays": [], "pause_seconds": [90, 180],
             "stop_on": ["reply", "stop", "bounce"], "halt_on": ["bounce", "stop"], "watch_folders": ["inbox"],
             "watch_via": "daria-inbox", "watch_overlap_minutes": 10,
             "cadence": [{"step": "initial", "template": "t0.txt"}, {"step": "fu1", "after": "3bd", "in_thread": True, "template": "t1.txt"}],
