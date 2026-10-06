@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 11:29'
-updated_date: '2026-10-06 11:31'
+updated_date: '2026-10-06 11:35'
 labels:
   - registry
   - data-quality
@@ -30,3 +30,9 @@ Ivan 2026-10-06. A clinic can have several PLZ (several sites), so the rule is O
 - [ ] #3 One query returns every PLZ of a clinic with its chain down to the mirror page, with no separate extended field; the schema is consistent with the corrections table (TASK-180) and the evidence catalogue (TASK-441)
 - [ ] #4 Red tests first for the board-stamped PLZ (kbo.de), the two-campus clinic, and two close PLZ inside one municipality
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-06 Ivan: the aim is attribution (matching the posting to the right clinic), not the PLZ query; a city in any spelling must also end at a PLZ, so city and PLZ are one linked thing, and every version of a place carries a weight. The main PLZ of this task is one input of the confidence match of TASK-431.9, which is done first as an additive experiment on the mirror in a separate branch; the tree here stays simple.
+<!-- SECTION:NOTES:END -->
