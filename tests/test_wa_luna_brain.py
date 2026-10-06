@@ -139,6 +139,47 @@ def test_disqualification_is_only_overridden_once(luna):
     assert d["bubbles"] == out["bubbles"]
 
 
+def test_a_reopened_not_placeable_thread_still_gets_the_locked_text_not_a_paraphrase(luna):
+    """TASK-380 follow-up: unlike test_disqualification_is_only_overridden_once above (a NORMAL
+    action, left alone), a candidate already not-placeable who writes again and gets the model's
+    OWN action, explain_not_placeable, with the model's OWN wording, must still see the locked
+    REJECT_BODY_DE, never that paraphrase -- "not placeable -> explain once, then stop" (VENDORED.md)
+    means every time it is said, not only the first."""
+    luna["slots"]["qualification_ok"] = False
+    model_said = "Leider können wir aktuell keine passende Stelle für Sie anbieten, wie bereits erwähnt."
+    out = _out(bubbles=[model_said], action="explain_not_placeable", card_patch={})
+    d = LB.turn("Hallo, ich suche Pflegejob, bin Pflegehilfskraft ohne Ausbildung.", luna,
+               client=fake_client(out))
+    assert d["bubbles"] == [LB.P.REJECT_BODY_DE]
+    assert model_said not in d["bubbles"]
+    assert d["action"] == "explain_not_placeable"
+
+
+def test_a_reopened_not_placeable_thread_with_no_send_stays_silent(luna):
+    """The no_send/empty-bubbles branch still takes priority over the reopened-reject gate above --
+    a model that means to say nothing on a repeat (already said, nothing new to add) stays silent,
+    exactly what test_luis_reopening_with_the_identical_message_does_not_re_litigate_from_scratch
+    (tests/test_wa_luna_personas.py) requires end to end."""
+    luna["slots"]["qualification_ok"] = False
+    out = _out(bubbles=[], action="explain_not_placeable", no_send=True, card_patch={})
+    d = LB.turn("Hallo, ich suche Pflegejob, bin Pflegehilfskraft ohne Ausbildung.", luna,
+               client=fake_client(out))
+    assert d["bubbles"] == []
+
+
+def test_a_card_moved_back_to_placeable_is_not_caught_by_the_reopened_reject_gate(luna):
+    """New qualification info (the model's patch flips qualification_ok back to true) must reach
+    the candidate through the model's own reply path, never the locked reject text -- the reopened
+    gate only fires while the card is STILL not-placeable after this turn's patch. The action is
+    explain_not_placeable on purpose, so only the post-patch card clause keeps the gate shut."""
+    luna["slots"]["qualification_ok"] = False
+    model_said = "Gute Nachricht, mit der Anerkennung können wir doch weitermachen!"
+    out = _out(bubbles=[model_said], action="explain_not_placeable",
+               card_patch={"qualification_ok": True})
+    d = LB.turn("Ich habe doch die Anerkennung, hatte mich vertan.", luna, client=fake_client(out))
+    assert d["bubbles"] == [model_said]
+
+
 # --- explicit button-confirmed consent (TASK-333): decided in code, never by the model ----------
 
 def test_offering_the_anonymized_send_attaches_real_buttons(luna):

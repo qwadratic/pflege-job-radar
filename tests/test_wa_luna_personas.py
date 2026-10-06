@@ -917,9 +917,17 @@ def test_no_location_preference_at_all_still_moves_the_funnel_forward(board):
     assert not final["slots"].get("_escalated"), (
         f"'egal, wo' is a complete answer, not a reason to escalate: "
         f"{final['slots'].get('_escalate_reason')!r} {transcript!r}")
-    said = " ".join(_all_bubbles(results))
-    assert not re.search(r"welche stadt|in welcher stadt|welche region", said, re.I), (
+    # The re-ask regex is scoped to the turns from the no-preference answer on (results[2:]), not
+    # every turn in the transcript (_all_bubbles) -- turn 2's own question ("In welcher Stadt
+    # oder Gegend in Bayern...") is asked BEFORE "Ist mir eigentlich egal, wo." and is a
+    # legitimate question at that point, not a re-ask of an answer not yet given.
+    said_after = " ".join(b for r in results[2:] for b in r["bubbles"])
+    assert not re.search(r"welche stadt|in welcher stadt|welche region", said_after, re.I), (
         f"the funnel re-asked for a preference the candidate already said they don't have: {transcript!r}")
+    # "Moves the funnel forward" (the test's own name/docstring): the reply is not silence
+    # and actually asks the next thing (here, the housing headcount), not just an acknowledgement.
+    assert said_after and "?" in said_after, (
+        f"'egal, wo' must move the funnel forward with a next question, not stall: {transcript!r}")
 
 
 # --- Group 9: the closed escalation list (2026-09-22, Ivan's "predictable list" round) -----------
