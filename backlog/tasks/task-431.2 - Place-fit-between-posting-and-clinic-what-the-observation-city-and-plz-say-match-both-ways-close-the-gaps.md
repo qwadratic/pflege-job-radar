@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-06 07:20'
-updated_date: '2026-10-06 08:12'
+updated_date: '2026-10-06 10:24'
 labels:
   - registry
   - data-quality
@@ -44,4 +44,6 @@ Place fields in observations (6119): city 99.9 percent, valid PLZ 39.9 percent, 
 Side finding: geo.clinic_centroid ignores landkreis: 6 clinics get the wrong municipality (DK01 Bruckberg, 57403 Altdorf, 18302 Haag, 18710 Aschau, RH2421 Auerbach, RH2229 Bernried).
 Unsolvable here: bare names without PLZ, non-place values (adapter fix), multi-place strings, 1132 postings (22 percent) whose city is the seed clinic town, site choice in multi-clinic towns, non-Bavarian places. Not verified: no oracle for the true clinic (117/144 not hand-labelled), C1/C2 split is a token heuristic, KeZ-to-KHV match is heuristic, ward rule tested only on Muenchen/Erlangen.
 Status: awaiting Ivan's decisions on the change list; no data changed.
+
+2026-10-06 PLZ WRITTEN (pflege-clawl, Ivan: write the reliable ones). PR #14 merged (bad6466); pflege-ingest edge function v15 deployed through the Supabase connector (plz in the clinic columns; a clinic row sent without plz keeps the stored value; smoke test without writes: wrong secret 403, empty body ok); sql/015 applied (reason code source_supplement). tools/fill_clinic_plz.py got --rules (4179979, red test first) and was run with rhv_id, dk_source, khv_domain, khv_only_site_in_municipality --apply --by pflege-clawl: 532 PLZ set, backup backups/fill_clinic_plz_20261006T102258Z.json, read back: 532 of 651 clinics have a PLZ, 532 correction rows with reason source_supplement. Held back: 94 (khv_name_overlap 72, khv_municipality_one_plz 22) and 25 unresolved: data/registry/plz_review.csv, TASK-431.7. Effect on the public API shows after the next restart of pflege-web (geo_source plz for the 532).
 <!-- SECTION:NOTES:END -->
