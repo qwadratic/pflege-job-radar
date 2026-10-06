@@ -63,7 +63,7 @@ from . import test_threads as TT
 #
 # wa_agent_notes is DELIBERATELY NOT HERE (TASK-303, Ivan 2026-09-25, round-1 review, finding A1 --
 # "correctness of the operator-note state machine" lens). It used to be, and that was a bug, not a
-# feature: those rows are OPERATOR notes -- Ivan/Valentyn instructions to whoever maintains this system,
+# feature: those rows are OPERATOR notes -- Ivan/the parallel operator instructions to whoever maintains this system,
 # recorded by app/wa/api.py._route_agent_note and worked by app/wa/luna/agent_note_worker.py -- never
 # candidate CONVERSATION history, even though they arrive on a thread this harness marks is_test (the
 # same test threads operators use to reach the worker). Wiping them nightly at 03:00 Europe/Berlin

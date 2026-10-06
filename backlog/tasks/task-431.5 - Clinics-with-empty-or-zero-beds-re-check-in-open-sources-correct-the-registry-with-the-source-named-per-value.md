@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-06 07:58'
-updated_date: '2026-10-06 11:06'
+updated_date: '2026-10-06 14:04'
 labels:
   - registry
   - data-quality
@@ -33,4 +33,6 @@ ordinal: 310000
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-06 Ivan raised the registry model to architecture level: the `clinic_numbers` proposal of this task becomes the first version of the evidence catalogue of TASK-441 (claim S/M/L backed by evidence rows, each with kind, source, how collected, URL, date seen, agent note). The research result of this task stands (63 clinics, report in the job directory of pflege-clawl); how the numbers are recorded is decided in TASK-441, DB writes still wait for Ivan approving the exact counts.
+
+2026-10-06 DECIDED by pflege-clawl after the impact check (Ivan: "yes, re-check, decide yourself when sure"). (1) 36302 Weiden is NOT hand-overridden from 0 to 32 beds: the registry holds the approved number of the Krankenhausplan 2026 (0 beds, 12 places) by design, the operator page (32 beds in operation since April 2026, article of 2026-07-10) is a different kind of number, and its day places (18) differ from the plan target (33), so the match is medium. It goes in as an evidence row (kind beds_reported, beds_planned) when the catalogue of TASK-441 exists. Impact avoided: one clinic and one open posting; size would move None to S (S 259 to 260, None 63 to 62). No DB write. (2) The 8 planned values (plan columns "in Planung") become evidence rows of kind beds_planned and places_planned in TASK-441, not new columns of clinics: no existing consumer, no impact today. (3) Diakoneo (13): clinics.beds stays NULL and size stays no_bed_concept; the places (stated or derived x + 2y) become evidence rows of kind places_social. No impact on size or statistics today. (4) Vertrags-KH rows as fragments of a Plan-KH site: the principle is right (size is the size of the site), but impact is 6 rows of 651 (S 259 to 254, M 247 to 250, L 82 to 84) for the 4 verified sites, 16 more rows are unverified, and the site key does not exist yet. Deferred to TASK-441 (site groups come with the evidence catalogue); no code now.
 <!-- SECTION:NOTES:END -->

@@ -4,6 +4,7 @@ title: 'Fix Zoho mailbox access: IMAP on boxes 2, 4, 5 and password for box 1'
 status: To Do
 assignee: []
 created_date: '2026-09-17 17:31'
+updated_date: '2026-10-06 12:51'
 labels:
   - email
 dependencies: []
@@ -17,7 +18,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Preflight 2026-09-17: anastasiya.yeremenko@bewerbung-pflege.work fails SMTP and IMAP with invalid credentials; maria@bewerbung-pflege.work, evelina.vihandt@bewerbungpflege.work, dana@pflege.works have IMAP disabled. Needed to read their history and to use them later.
+Preflight 2026-09-17: anastasiya.yeremenko@bewerbung-pflege.work fails SMTP and IMAP with invalid credentials; maria@bewerbung-pflege.work, <mailbox>@bewerbungpflege.work, dana@pflege.works have IMAP disabled. Needed to read their history and to use them later.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

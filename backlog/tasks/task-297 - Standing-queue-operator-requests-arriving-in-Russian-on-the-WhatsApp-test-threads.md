@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-24 21:25'
-updated_date: '2026-09-25 08:00'
+updated_date: '2026-10-06 12:49'
 labels:
   - whatsapp
   - operator-inbox
@@ -21,7 +21,7 @@ ordinal: 250000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 THE ONE PLACE this coding session looks for work that did not come from Ivan directly.
 
-WHY IT EXISTS (Ivan, 2026-09-24). Valentyn tests the bot in German and writes his findings and
+WHY IT EXISTS (Ivan, 2026-09-24). The parallel operator tests the bot in German and writes his findings and
 requests in Russian, and was told they would queue up and be worked on. Two earlier designs were
 rejected: a five-minute poll of the WhatsApp inbox burns tokens all day for nothing, and a separate
 git branch merged back later creates conflicts nobody wants to referee. This task is the queue
@@ -36,7 +36,7 @@ HOW THIS SESSION SEES IT. A UserPromptSubmit hook reads this task and injects an
 criterion. It costs tokens only on a turn that was happening anyway; an idle day costs nothing.
 
 PRIORITY RULE (Ivan): an unchecked criterion here outranks whatever Ivan asks in the same turn.
-He set that order deliberately -- he is present and can re-prioritise in one sentence, Valentyn is
+He set that order deliberately -- he is present and can re-prioritise in one sentence, the parallel operator is
 not.
 
 THIS TASK IS NEVER DONE. It stays In Progress for the life of the rail. Completing an item means

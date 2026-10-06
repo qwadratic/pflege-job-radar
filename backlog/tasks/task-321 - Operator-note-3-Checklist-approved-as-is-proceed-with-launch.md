@@ -4,7 +4,7 @@ title: 'Operator note #3: Checklist approved as-is, proceed with launch'
 status: Done
 assignee: []
 created_date: '2026-09-29 10:10'
-updated_date: '2026-09-30 18:28'
+updated_date: '2026-10-06 12:53'
 labels:
   - operator-note
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 266000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Origin
-- Operator note #3, test thread +436…6780
+- Operator note #3, test thread <parallel operator's number>
 - Received: 2026-09-29T10:09:34+00:00 UTC / 2026-09-29 12:09 CEST
 - Transcribed voice note
 - Note wamid: wab.i.autolink.0654c7e0c262240756681551e7f387fa
@@ -32,13 +32,13 @@ Operator confirms nothing needs to change in the checklist since it was already 
 - "Запускать" is generic for 'launch/start/run' — unclear what specific process, test, or campaign is being launched; the previous note (#2) mentions a German-language bridge test, so this may refer to restarting that.
 
 ## Database context
-### Recent messages (+436…6780)
+### Recent messages
 - [2026-09-29T10:08:53+00:00] in text: 🎤 Sprachnachricht (0:19)
 - [2026-09-29T10:09:20+00:00] in audio: Нет, в чек-листе ничего не надо менять, так как ты его скинул, он может быть таким образом. Все, тогда давай запускать. Давай запускать.
 
 ### Thread card
 ```json
-{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T10:09:20+00:00", "last_outbound_at": "2026-09-29T10:07:13+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "+436…6780", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 2}
+{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T10:09:20+00:00", "last_outbound_at": "2026-09-29T10:07:13+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "<parallel operator's number>", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 2}
 ```
 
 ### Earlier notes from this phone
@@ -54,5 +54,5 @@ Operator confirms nothing needs to change in the checklist since it was already 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-29 (wa-harness): checklist unchanged per Valentyn; thread wiped again; note closed.
+2026-09-29 (wa-harness): checklist unchanged per the parallel operator; thread wiped again; note closed.
 <!-- SECTION:NOTES:END -->

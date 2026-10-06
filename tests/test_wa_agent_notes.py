@@ -25,7 +25,7 @@ from app.wa.luna import reporting as REP
 from app.wa.luna import shadow_run as SR
 
 PHONE_ID = "555000111"
-OPERATOR = "+4915550200001"        # marked is_test: Ivan's / Valentyn's own number
+OPERATOR = "+4915550200001"        # marked is_test: Ivan's / the parallel operator's own number
 CANDIDATE = "+4915550200002"       # a real lead, never touched by this feature
 
 RU_NOTE = "Отправь мне рассылку еще раз, хочу проверить, что на новой версии кода все работает."

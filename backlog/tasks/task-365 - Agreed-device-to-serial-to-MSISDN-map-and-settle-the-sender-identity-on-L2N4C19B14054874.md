@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-21 09:10'
-updated_date: '2026-09-22 06:10'
+updated_date: '2026-10-06 12:51'
 labels:
   - wa-transport
 dependencies: []
@@ -34,7 +34,7 @@ Two read-only settles, both needing a human:
 1. Graph: GET /v25.0/{META_WHATSAPP_PHONE_NUMBER_ID}?fields=display_phone_number,verified_name.
 2. Ask the colleague to re-run his own proven read-only identify task (task_f60da4c83e63 goal text) against huawei_p30_lite_01 rather than _02.
 
-Blocking rule: until both answers are in hand AND DIFFER, the rail carries nothing. If the answer is Valentyn personal number, the rail is dead -- at the first milestone, not at ramp-up. Whether we need a SIM after all is re-opened by decision-8, not re-answered.
+Blocking rule: until both answers are in hand AND DIFFER, the rail carries nothing. If the answer is the parallel operator personal number, the rail is dead -- at the first milestone, not at ramp-up. Whether we need a SIM after all is re-opened by decision-8, not re-answered.
 
 Carried over from TASK-357 because they survive the handset correction: two-step verification with a PIN AND a recovery email, stored where someone who did not set them up can find them at 3am; no address-book sync; upsert_contact dropped from the design entirely (wa.me deep links work without a saved contact); nothing on his stack is enabled, flipped or configured.
 <!-- SECTION:DESCRIPTION:END -->

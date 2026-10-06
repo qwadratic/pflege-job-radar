@@ -459,7 +459,7 @@ def test_scheduled_send_announces_at_nine_and_sends_on_time(scfg, monkeypatch):
 def test_stop_before_the_first_letter_cancels(scfg, monkeypatch):
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()
-    w.inbox.append(mail("Valentyn <op2@example.net>", "Re: Рассылка c", "Стоп, отменяй.\n\n> old quoted plan\n", at("2026-09-29T09:20:00"), "<c1@op>"))
+    w.inbox.append(mail("Operator Two <op2@example.net>", "Re: Рассылка c", "Стоп, отменяй.\n\n> old quoted plan\n", at("2026-09-29T09:20:00"), "<c1@op>"))
     w.inbox.append(mail("op1@example.org", "стоп", "стоп", at("2026-09-29T08:59:00"), "<early@op>"))     # before the announcement
     M.send(scfg, w.bid, live=False)
     assert w.to_clinics() == []
@@ -941,7 +941,7 @@ def test_two_watches_of_one_ledger_run_one_after_the_other(scfg, monkeypatch):
 
 
 def test_notices_go_to_the_notify_list_and_answers_by_kind_to_the_forward_list(scfg, monkeypatch):
-    """Ivan, 2026-10-05: Valentyn hears of no start, round or halt, only of clinic answers nobody has handled yet; a batch
+    """Ivan, 2026-10-05: the parallel operator hears of no start, round or halt, only of clinic answers nobody has handled yet; a batch
     planned while he was on its notices keeps none for him."""
     scfg["notify"], scfg["forward"] = OPS[:1], {k: OPS[:1] for k in M.FORWARD_KINDS} | {"reply": OPS, "unmatched": OPS}
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
@@ -962,7 +962,7 @@ def test_notices_go_to_the_notify_list_and_answers_by_kind_to_the_forward_list(s
 
 
 def test_an_undeliverable_operator_mail_is_no_clinic_bounce_and_goes_to_the_other_operator(scfg, monkeypatch):
-    """05.10: Valentyn's address bounced; the report quoted a forwarded clinic answer, so wave 1 took it for a clinic's
+    """05.10: the parallel operator's address bounced; the report quoted a forwarded clinic answer, so wave 1 took it for a clinic's
     bounce and halted. Now it is its own kind, never matched to a clinic and never mailed back to the dead address."""
     w = World(scfg, monkeypatch, "2026-09-29T08:40:00")
     w.plan()

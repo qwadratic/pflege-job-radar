@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-09-28 14:39'
-updated_date: '2026-10-06 12:09'
+updated_date: '2026-10-06 12:50'
 labels:
   - email
 dependencies: []
@@ -19,7 +19,7 @@ ordinal: 264000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-09-28, for the nurse-79 launch (10 clinic letters from daria.s@pflege-connect.work): no fixed pause between a first letter and the rest; instead the whole plan is announced at 09:00 sharp to Ivan and Valentyn in one mail with one PDF (schedule to the minute, the common letter and follow-up templates, the cadence rules, every anonymised Kurzprofil version side by side on one page, one example letter with signature on one page), then one hour passes before the first letter. Every send time is odd (never a round minute), with random pauses. At any time after the announcement Ivan or Valentyn can stop or cancel the mailing by writing to daria; a small Haiku classifier decides whether their mail is a stop/cancel or another mailing command, the process executes what it can and answers both of them with the result, or says it cannot and an operator is needed. Clinic letters still need Ivan's approval of the exact batch and his own live run.
+Ivan, 2026-09-28, for the nurse-79 launch (10 clinic letters from daria.s@pflege-connect.work): no fixed pause between a first letter and the rest; instead the whole plan is announced at 09:00 sharp to Ivan and the parallel operator in one mail with one PDF (schedule to the minute, the common letter and follow-up templates, the cadence rules, every anonymised Kurzprofil version side by side on one page, one example letter with signature on one page), then one hour passes before the first letter. Every send time is odd (never a round minute), with random pauses. At any time after the announcement Ivan or the parallel operator can stop or cancel the mailing by writing to daria; a small Haiku classifier decides whether their mail is a stop/cancel or another mailing command, the process executes what it can and answers both of them with the result, or says it cannot and an operator is needed. Clinic letters still need Ivan's approval of the exact batch and his own live run.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

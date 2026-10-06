@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 18:54'
+updated_date: '2026-10-06 12:50'
 labels:
   - email
   - infra
@@ -18,7 +19,7 @@ ordinal: 285000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ivan, 2026-10-01: "также еженедельный апдейт по здоровью нашего кода (репо) и инфры (мини, сервер, сервисы, логи)". Nobody looks at the whole state on a schedule: failures sit in logs until someone trips over them (for example TASK-392, a relay that crash-loops on a port clash). Daria (TASK-345.12) has no shell, because a forged operator address must not reach the server, and she never touches the phone, the bridge or the Mac mini (Ivan, the same day, for WhatsApp: "сам телефон не трогает"). So every fact she reports must reach her read-only. Open with Ivan before work starts: the day and time, and whether Valentyn gets it too.
+Ivan, 2026-10-01: "также еженедельный апдейт по здоровью нашего кода (репо) и инфры (мини, сервер, сервисы, логи)". Nobody looks at the whole state on a schedule: failures sit in logs until someone trips over them (for example TASK-392, a relay that crash-loops on a port clash). Daria (TASK-345.12) has no shell, because a forged operator address must not reach the server, and she never touches the phone, the bridge or the Mac mini (Ivan, the same day, for WhatsApp: "сам телефон не трогает"). So every fact she reports must reach her read-only. Open with Ivan before work starts: the day and time, and whether the parallel operator gets it too.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

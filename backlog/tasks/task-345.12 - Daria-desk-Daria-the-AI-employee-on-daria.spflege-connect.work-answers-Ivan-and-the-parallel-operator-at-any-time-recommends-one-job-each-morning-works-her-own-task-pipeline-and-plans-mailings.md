@@ -2,12 +2,13 @@
 id: TASK-345.12
 title: >-
   Daria desk: Daria, the AI employee on daria.s@pflege-connect.work, answers
-  Ivan and Valentyn at any time, recommends one job each morning, works her own
-  task pipeline and plans mailings
+  Ivan and the parallel operator at any time, recommends one job each morning,
+  works her own task pipeline and plans mailings
 status: To Do
 assignee:
   - '@claude'
 created_date: '2026-10-01 18:09'
+updated_date: '2026-10-06 12:50'
 labels:
   - email
 dependencies: []

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 14:24'
-updated_date: '2026-10-05 18:52'
+updated_date: '2026-10-06 12:49'
 labels: []
 dependencies: []
 type: feature
@@ -48,7 +48,7 @@ Repair round 1 (final verifier 2026-09-14): decline persona tests run on the app
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-14: Implemented decline flag -> prompts.DECLINE_ACK_DE once (action decline_ack), card.declined/declined_reason/declined_at code-owned, declined_no_send until re_engaged; NO_SEND_STATE (skipped_no_send) final in claim_reply_turn, process_owed_turn no_send_recorded pre-check, ball_for 'silent', phones_owed_a_reply excludes it; stages declined/already_placed; followups TERMINAL_STAGES + skip never-wrote; _freeform_window_open False without inbound. Adjusted fixtures that relied on the old behaviour: test_wa_harness window test, test_wa_process_owed_turn (_arrived helper), test_wa_luna_followups (_seed_them writes an inbound by default), test_wa_luna_shadow_run (last_inbound_at), test_wa_store_claims (skipped_no_send final).
 
-REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-204: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-203). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "Valentyn <client>".
+REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-204: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-203). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "parallel-operator <client>".
 
 2026-09-14: llm decline by button x2 and decline by text then 'ok danke' (silent, ball silent) x2 passed. Full offline suite 1374 passed.
 

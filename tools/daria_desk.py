@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daria's desk: the one reader of the operators' mail on daria.s@pflege-connect.work (TASK-345.12.1, .12.2).
 
-Ivan, 2026-10-01: Daria answers him and Valentyn at any time; stop, skip and status by mail stay; anything else (a
+Ivan, 2026-10-01: Daria answers him and the parallel operator at any time; stop, skip and status by mail stay; anything else (a
 question, a harder correction) is answered by Daria herself with her toolset: sales_brain read-only, the board tools
 the WA harness gives Luna, the mailing state, the case documents, and her own backlog project "daria" as a task
 pipeline. She has no shell.
@@ -34,7 +34,8 @@ announcement until its "рассылка завершена" notice or a halt th
 active batches with their clinics; a stop names the batches it means (none named: every one in scope), a skip acts
 on the batch that holds each named clinic.
 
-Desk config (JSON; paths relative to it): sender, sender_name, tz, operators, watch_via ("daria-inbox"), campaigns
+Desk config (JSON; paths relative to it): sender, sender_name, tz, operators, command_only (addresses whose mail is read as a
+command but who are never written to: an operator's second mailbox, Ivan 2026-10-06), watch_via ("daria-inbox"), campaigns
 [{config, label}], ledger, heartbeat, session_dir, start (ISO: mail received before it is not the desk's),
 poll_seconds, overlap_minutes, classifier {model, claude_bin, run_as, timeout_seconds}, answerer {model, effort,
 claude_bin, run_as, timeout_seconds, python, mcp_timeout_ms}, brain, docs {name: path}.
@@ -96,12 +97,12 @@ def _client_name():
 
 
 def _client_partner_domain():
-    """Valentyn's own mail domain (he talks to the clinics) -- the client's domain spelled out in it is
+    """The parallel operator's own mail domain (he talks to the clinics) -- the client's domain spelled out in it is
     exactly the thing TASK-162 keeps out of source, so ANSWER_SYSTEM below builds his address from the
     configured partner_mail_domains rather than a literal domain."""
     domains = _client_config().get("partner_mail_domains") or []
     if not domains:
-        raise RuntimeError("client config has no \"partner_mail_domains\" entry -- needed for Valentyn's "
+        raise RuntimeError("client config has no \"partner_mail_domains\" entry -- needed for the parallel operator's "
                            "address in ANSWER_SYSTEM")
     return domains[0]
 
@@ -130,6 +131,7 @@ def load(path):
     d["docs"] = {k: str((path.parent / v).resolve()) for k, v in d.get("docs", {}).items()}
     d["tz"] = ZoneInfo(d["tz"])
     d["operators"] = [a.lower() for a in d["operators"]]
+    d["command_only"] = [a.lower() for a in d.get("command_only", [])]     # may command, gets no answer and no notice
     d["digest_at"] = datetime.strptime(d["digest_at"], "%H:%M").time()      # the daily mail of the clinics' answers, local time
     d["halt_grace"] = timedelta(minutes=d["halt_grace_minutes"])           # a halt resumed within it (a restart) is never mailed
     d["notify"] = [a.lower() for a in d["notify"]]               # who is told that the desk stopped (Ivan, 2026-10-05)
@@ -295,7 +297,7 @@ def classify(d, subject, text, bs):
 # ---------- commands ----------
 
 def help_text(d):
-    return (f"Команды — письмом на {d['sender']} с адреса {' или '.join(d['operators'])}: «стоп» или «отмена» — остановить "
+    return (f"Команды — письмом на {d['sender']} с адреса {' или '.join(d['operators'] + d['command_only'])}: «стоп» или «отмена» — остановить "
             "рассылку (можно назвать волну; без названия — все идущие), фоллоу-апы тоже; «не отправлять в <клинику>» — убрать "
             "клинику; «статус». " + M.DESK_HELP)
 
@@ -345,7 +347,7 @@ def act(d, c, bs, frm, mid):
 
 # ---------- Daria's answer ----------
 
-# TASK-162: the employer name and Valentyn's own mail domain come from the gitignored client config
+# TASK-162: the employer name and the parallel operator's own mail domain come from the gitignored client config
 # (_client_name/_client_partner_domain above) -- with its "name" and "partner_mail_domains" set to
 # the old literal values (see git history pre-TASK-162), this f-string renders byte-identical to the
 # old literal text.
@@ -609,7 +611,7 @@ def operator_mail(d, since, seen):
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         frm = parseaddr(str(msg.get("From") or ""))[1].lower()
         mid = str(msg.get("Message-ID") or "").strip() or "sha256:" + hashlib.sha256(raw).hexdigest()
-        if frm in d["operators"] and mid not in seen:
+        if frm in d["operators"] + d["command_only"] and mid not in seen:
             yield folder, msg, mid, frm
 
 
@@ -706,7 +708,7 @@ def _run(d):
     watchers = threading.Thread(target=watch_worker, args=(d, box), daemon=True)
     watchers.start()
     log(d, {"event": "desk_started", "pid": os.getpid(), "since": since.isoformat(timespec="seconds"), "requeued": len(left)})
-    print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, mail since {since:%Y-%m-%d %H:%M}, "
+    print(f"desk up: {d['sender']}, operators {', '.join(d['operators'])}, command only {', '.join(d['command_only']) or '-'}, mail since {since:%Y-%m-%d %H:%M}, "
           f"{len(active(d))} active batches, {len(left)} questions still to answer")
     before = {s: signal.signal(s, M.ended) for s in (signal.SIGTERM, signal.SIGHUP)}
     failing = False

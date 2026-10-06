@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-06 07:20'
-updated_date: '2026-10-06 08:12'
+updated_date: '2026-10-06 14:04'
 labels:
   - registry
   - data-quality
@@ -41,4 +41,6 @@ U list: the 7 HS-Klinik rows are 6 institutions per Art. 1 BayUniKlinG (Augsburg
 Metrics by cohort (T1 + U): postings per 100 beds / share with a posting / share of boards with a posting: S 1.84 / 34 / 43; M 1.69 / 56 / 58; L 2.44 / 85 / 94; L without U 2.19 / 84 / 94; U 3.62 / 100 / 100; day clinics n/a / 19 / 26; social n/a / 92. Acute-only S/M/L 2.81 / 2.49 / 2.63; Reha-only 0.74 / 0.36 / 0.38.
 Not verified: gesetze-bayern.de answered 503 (statute read via a mirror); 1114 postings have no clinic_id so all ratios are lower bounds; group-board attribution (TASK-185) unresolved and inflates S per-site counts.
 Status: awaiting Ivan's decisions (XL, U vs size, tag A); no data changed.
+
+2026-10-06 DECIDED by pflege-clawl after the impact check (Ivan: "tails 1 and 3 yes, re-check them; decide yourself when sure, look at the impact"). Local data: registry fixture of 2026-10-06 and open postings per clinic of the audit (2 338 open on registry clinics). (a) XL stays folded into L (SML is Ivan's own scheme). Impact: XL (800+ beds) is 12 clinics with 508 open postings (21.7 percent), 3.44 open per 100 beds; L 300-799 is 70 clinics with 720 open (30.8 percent), 2.22 per 100 beds. The density differs by 55 percent, but statistics are per 100 beds and read the bed number, not the label, so nothing is lost; an 800+ cut stays available from beds if a view needs it. (b) University tag U stays independent of size. Impact: 7 clinics (342 open postings, 14.6 percent), six L and one M (197 beds); a size-only label would hide the M one. (c) Tag A (academic teaching hospital) is not introduced: no source in the registry, no consumer; revisit with TASK-441.
 <!-- SECTION:NOTES:END -->

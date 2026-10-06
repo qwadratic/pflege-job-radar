@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-29 10:00'
-updated_date: '2026-10-05 18:56'
+updated_date: '2026-10-06 12:53'
 labels:
   - operator-note
 dependencies: []
@@ -19,7 +19,7 @@ ordinal: 265000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Origin
-- Operator note #2, test thread +436…6780
+- Operator note #2, test thread <parallel operator's number>
 - Received: 2026-09-29T09:55:04+00:00 UTC / 2026-09-29 11:55 CEST
 - Transcribed voice note
 - Note wamid: wab.i.autolink.c6e5c570c6e891ef9c39dbba51f6b4bf
@@ -36,7 +36,7 @@ Operator reports that the bot replied to the inbound message with information bu
 - Is there an existing checklist document, or does one need to be created before it can be sent to the operator?
 
 ## Database context
-### Recent messages (+436…6780)
+### Recent messages
 - [2026-09-29T09:45:27+00:00] in text: Hallo, suche eine Stelle
 - [2026-09-29T09:52:42+00:00] out text: Hallo! Schön, dass Sie sich melden. 😊 Ich bin Valentina von der <client> – aktuell haben wir 2.878 offene Pflegestellen an bayerischen Kliniken.
 - [2026-09-29T09:54:18+00:00] in text: 🎤 Sprachnachricht (0:53)
@@ -44,7 +44,7 @@ Operator reports that the bot replied to the inbound message with information bu
 
 ### Thread card
 ```json
-{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T09:54:45+00:00", "last_outbound_at": "2026-09-29T09:55:53+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "+436…6780", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 3}
+{"asked": [], "is_test": true, "last_inbound_at": "2026-09-29T09:54:45+00:00", "last_outbound_at": "2026-09-29T09:55:53+00:00", "matches_sent_at": null, "opened_at": "2026-09-21T12:35:39+00:00", "phone": "<parallel operator's number>", "rail": "bridge", "slots": {}, "stopped": false, "stopped_reason": null, "test_marked_at": "2026-09-22T20:33:54+00:00", "turns": 3}
 ```
 
 ### Earlier notes from this phone
@@ -62,7 +62,7 @@ Operator reports that the bot replied to the inbound message with information bu
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-29 10:05 UTC (wa-harness): root cause of 'no question' was not the prompt. Bridge answered 503 (phone lock busy inside the bridge process since 08:36) mid-turn; bubble 1 went out, bubble 2 ('Suchen Sie eine Stelle in Bayern?') never did, and every catch-up re-drive then failed recording the replayed bubble 1 (UNIQUE wa_messages.wamid). Fixed: api._send skips re-recording a replayed wamid (store.outbound_recorded) + test; bridge restarted on the mini. Thread wiped (purge_test_history). Checklist sent in the completion note; asked Valentyn whether qualification should move before region. AC#1 already a prompt rule (rule 8) + closing gate; AC#2 waits for his answer.
+2026-09-29 10:05 UTC (wa-harness): root cause of 'no question' was not the prompt. Bridge answered 503 (phone lock busy inside the bridge process since 08:36) mid-turn; bubble 1 went out, bubble 2 ('Suchen Sie eine Stelle in Bayern?') never did, and every catch-up re-drive then failed recording the replayed bubble 1 (UNIQUE wa_messages.wamid). Fixed: api._send skips re-recording a replayed wamid (store.outbound_recorded) + test; bridge restarted on the mini. Thread wiped (purge_test_history). Checklist sent in the completion note; asked the parallel operator whether qualification should move before region. AC#1 already a prompt rule (rule 8) + closing gate; AC#2 waits for his answer.
 
-Valentyn (note #3): checklist order stays as is. Closed.
+The parallel operator (note #3): checklist order stays as is. Closed.
 <!-- SECTION:NOTES:END -->

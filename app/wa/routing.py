@@ -86,7 +86,7 @@ def route_decision(conn, phone):
     if C.OWN_ALL_CHATS:
         # The migration switch (app/wa/config.py::OWN_ALL_CHATS). Authoritative over an existing
         # record too: a phone recorded 'them' before the move must not keep being forwarded away
-        # after it, which is exactly how Valentyn's two messages reached the real system and never
+        # after it, which is exactly how the parallel operator's two messages reached the real system and never
         # this harness's database (found live 2026-09-23).
         row = conn.execute("select owner from wa_ownership where phone=?", (phone,)).fetchone()
         if row is None or row["owner"] != "us":

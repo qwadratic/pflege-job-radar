@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-14 14:24'
-updated_date: '2026-10-05 18:44'
+updated_date: '2026-10-06 12:49'
 labels: []
 dependencies: []
 type: feature
@@ -50,7 +50,7 @@ Repair round 1 (final verifier 2026-09-14): (a) ALREADY PLACED: ask about openne
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-14: Implemented store.record_campaign_send (card.campaign contract), api.parse_message tpl:<payload> + reply_to_wamid/context, luna_brain.turn_context/turn_marker (marker _luna_last_turn on the card; legacy sessions derive the last model row), payload fields outbound_since_last_turn/last_turn_at/reply_context/fresh_session, is_button_reply false for template taps, prompt rules (THINK 1/4, IDENTITY the client, OUR OUTBOUND, CAMPAIGN, TEMPLATE BUTTON, ALREADY PLACED), constitution owner_note/identity/region, MCP server renamed jobs (tool prefix model-visible). shadow_run passes the same context. Offline: tests/test_wa_luna_campaign.py 34 passed; WA offline suite 496 passed.
 
-REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-204: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-203). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "Valentyn <client>".
+REAL CAMPAIGN TEMPLATE (approved 2026-09-14, read-only lookup on WABA <WABA id>): id 1791710088522158, name recruitment_bayern_stellen_interesse_de, language de, MARKETING, parameter_format POSITIONAL. HEADER text "Neue Stellen in Bayern für Pflegekräfte"; BODY "Hallo, {{1}}. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele neue Stellen in Bayern. Haben Sie noch Interesse?" ({{1}} = candidate name); QUICK_REPLY buttons "Ja, ich habe Interesse" and "Nein, kein Interesse" (a tap arrives as type=button with that text/payload). The No button is a decline (TASK-204: fixed ack once, then silence); the Yes button is interest in Bayern (TASK-203). Test sends at 15:46 UTC to two test numbers (old-system test candidate id 14 and Ivan) were accepted by Meta; they were not recorded in wa.sqlite. Phone number verified_name is "parallel-operator <client>".
 
 2026-09-14: docs/whatsapp.md section 'Campaign replies, our outbound, declines (TASK-203/101)' + persona/tools/window/stage/followup lines; VENDORED.md identity update. Deterministic brain reads a template tap as its label (process_owed_turn, shadow_run). Full offline suite: 1374 passed, 126 skipped. llm group 1 (campaign Ja text, yes button, who-are-you, decline button, decline text + ok danke; each twice): 10 passed.
 

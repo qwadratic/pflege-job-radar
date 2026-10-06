@@ -1,6 +1,6 @@
 """Daria's own tools, a stdio MCP server the `claude` CLI starts for each of her answers (TASK-345.12.2).
 
-Ivan, 2026-10-01: Daria answers him and Valentyn with "брейн, тот же тулсет что у wa harness для доски, + свой раздел в
+Ivan, 2026-10-01: Daria answers him and the parallel operator with "брейн, тот же тулсет что у wa harness для доски, + свой раздел в
 беклоге (пайплайн задач)". The board tools come from app/wa/luna/tools_server.py (server "jobs"); this server adds the
 rest:
 
