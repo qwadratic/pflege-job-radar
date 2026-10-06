@@ -434,8 +434,10 @@ def _vendor_rows(board, c, session, log, group_cache=None, towns=None):
         # a "Standort <Ort>" mention in the page's own body prose when it has no structured location
         # field at all (TASK-118) -- every other vendor function's own signature is a hard contract
         # this generic caller cannot vary per-vendor, so this is a targeted special-case, not a
-        # kwarg every VENDORS entry must now accept.
-        rows = fn(c, session=session, towns=towns) if fn is VA.crawl_wp_jobs else fn(c, session=session)
+        # kwarg every VENDORS entry must now accept. crawl_dvinci is the second one: a posting's
+        # facility label ("Klinikum Bamberg") names its town only against the registry towns
+        # (TASK-431.9).
+        rows = fn(c, session=session, towns=towns) if fn in (VA.crawl_wp_jobs, VA.crawl_dvinci) else fn(c, session=session)
     ids = [x["clinic_id"] for x in board.get("clinics") or [c]]
     # TASK-99: a shared-vendor-ACCOUNT board (Artemed/SmartRecruiters, Gesundheitswelt Chiemgau) keeps
     # each clinic on its own distinct careers_url, so board.get("clinics") above is correctly just this

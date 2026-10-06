@@ -2772,18 +2772,34 @@ def dvinci_host(careers_url, session=None):
     return None
 
 
-def parse_dvinci(j, org, list_url):
+def _town_a_facility_label_ends_with(label, towns):
+    """'Klinikum Bamberg' -> 'Bamberg', 'Zentrum für rehabilitative Medizin Bamberg' -> 'Bamberg': the longest trailing run of words of the
+    label's first part (before a comma) that is a registry town; None when the label ends in no town ('Ärztliche Praxiszentren') or
+    `towns` is not given. The text keeps the label's own spelling; `towns` is norm_text()-lowercased (app.data.towns())."""
+    words = re.split(r"\s+", (label or "").split(",")[0].strip())
+    for i in range(len(words)):
+        cand = " ".join(words[i:])
+        if cand.lower() in (towns or ()):
+            return cand
+    return None
+
+
+def parse_dvinci(j, org, list_url, towns=None):
     """One entry of jobPublication/list.json -> our row shape.
 
     jobOpening.location is free text -- usually a town ("Rosenheim") but sometimes the facility
-    name itself ("Klinikum Bamberg", seen when the tenant has no structured address at all). Reject
-    the latter shape here rather than mislabel it as a city; the caller fills in the registry town.
+    name itself ("Klinikum Bamberg", seen when the tenant has no structured address at all). Such a
+    label is not a city; the town it ends with is the posting's place when `towns` names it
+    (Sozialstiftung Bamberg: 112 of 113 labelled postings are Bamberg facilities, one a Forchheim
+    practice centre -- the caller used to stamp the TRIGGERING clinic's town on all of them, Forchheim
+    on the board whose first clinic is there, TASK-431.9). A label that ends in no town leaves the city
+    empty and the caller fills in the registry town, marked as a seed stamp.
     """
     jo = j.get("jobOpening") or {}
     addr = ((jo.get("locations") or [{}])[0] or {}).get("address") or {}
     loc_text = jo.get("location")
     if loc_text and re.search(r"klinik|krankenhaus|hospital|zentrum|stiftung|gmbh", loc_text, re.I):
-        loc_text = None
+        loc_text = _town_a_facility_label_ends_with(loc_text, towns)
     city = addr.get("city") or loc_text
     desc = _txt(" ".join(_html.unescape(p) for p in
                          (j.get("introduction"), j.get("tasks"), j.get("profile"), j.get("weOffer")) if p))
@@ -2808,7 +2824,7 @@ def parse_dvinci(j, org, list_url):
             "description": desc}
 
 
-def crawl_dvinci(c, session=None):
+def crawl_dvinci(c, session=None, towns=None):
     cu = (c.get("careers_url") or "").strip()
     if not cu:
         return []
@@ -2857,7 +2873,7 @@ def crawl_dvinci(c, session=None):
     # respect; jobs[:max_jobs] used to silently truncate boards past 300 for no benefit.
     out = []
     for j in jobs:
-        p = parse_dvinci(j, c["name"], list_url)
+        p = parse_dvinci(j, c["name"], list_url, towns)
         if not p.get("title"):
             continue
         if not p["loc"][0]["city"] and c.get("town"):
