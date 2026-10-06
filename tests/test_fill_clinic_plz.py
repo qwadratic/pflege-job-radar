@@ -34,6 +34,21 @@ def test_626_of_651_clinics_get_a_plz_and_the_rule_is_recorded(real):
     assert all(o["rule"] and o["site"] and len(o["new_plz"]) == 5 for o in out if o["status"] == "fill")
 
 
+def test_only_the_named_rules_are_written_and_the_rest_is_held_back(real):
+    # Ivan 2026-10-06: write the reliable matches (exact id, domain, only site in the municipality, Diakoneo source text) and
+    # keep the two weaker rules (name overlap 72, one PLZ in the municipality 22) out until they are reviewed.
+    _, out = real
+    strong = {"rhv_id", "dk_source", "khv_domain", "khv_only_site_in_municipality"}
+    kept = F.hold(out, strong)
+    assert collections.Counter(o["status"] for o in kept) == {"fill": 532, "held": 94, "unresolved": 25}
+    assert {o["rule"] for o in kept if o["status"] == "held"} == {"khv_name_overlap", "khv_municipality_one_plz"}
+    todo = F.corrections(kept, "TASK-431")
+    assert len(todo) == 532 and not {o["clinic_id"] for o in kept if o["status"] == "held"} & set(todo)
+    assert all(o["status"] == "fill" for o in out if o["clinic_id"] in todo)            # the input list is not changed
+    with pytest.raises(SystemExit):
+        F.hold(out, {"no_such_rule"})                                                   # a typo must not silently hold everything back
+
+
 def test_the_unresolved_are_the_big_city_sites_the_directory_cannot_tell_apart(real):
     _, out = real
     un = {o["clinic_id"]: o["why"] for o in out if o["status"] == "unresolved"}

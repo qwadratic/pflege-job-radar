@@ -141,6 +141,17 @@ def propose(clinics, khv, rhv):
     return out
 
 
+RULES = ("rhv_id", "dk_source", "khv_domain", "khv_only_site_in_municipality", "khv_name_overlap", "khv_municipality_one_plz")
+
+
+def hold(outcomes, rules):
+    """A copy of the outcomes in which a would-be fill by a rule outside `rules` becomes status 'held': reported, not written."""
+    unknown = set(rules) - set(RULES)
+    if unknown:
+        sys.exit(f"unknown rule(s) {sorted(unknown)}; the rules are {', '.join(RULES)}")
+    return [{**o, "status": "held"} if o["status"] == "fill" and o["rule"] not in rules else dict(o) for o in outcomes]
+
+
 def corrections(outcomes, task):
     """The file tools/apply_clinic_corrections.py reads: one {plz, _why} per clinic to fill."""
     return {o["clinic_id"]: {"plz": o["new_plz"], "_why": {
@@ -156,12 +167,12 @@ CSV_FIELDS = ["clinic_id", "town", "old_plz", "new_plz", "status", "rule", "site
 def report(outcomes, out=None):
     out = out or sys.stdout
     by =collections.Counter(o["status"] for o in outcomes)
-    rules = collections.Counter(o["rule"] for o in outcomes if o["status"] in ("fill", "unchanged", "conflict"))
-    print(f"{len(outcomes)} clinics: " + ", ".join(f"{k} {by[k]}" for k in ("fill", "unchanged", "conflict", "unresolved")), file=out)
+    rules = collections.Counter(o["rule"] for o in outcomes if o["status"] in ("fill", "held", "unchanged", "conflict"))
+    print(f"{len(outcomes)} clinics: " + ", ".join(f"{k} {by[k]}" for k in ("fill", "held", "unchanged", "conflict", "unresolved") if k != "held" or by[k]), file=out)
     for rule, n in rules.most_common():
         print(f"  {rule:32} {n}", file=out)
     for o in outcomes:
-        if o["status"] in ("fill", "conflict"):
+        if o["status"] in ("fill", "conflict", "held"):
             print(f"  {o['status']:8} {o['clinic_id']:7} {o['town'][:24]:24} {o['old_plz'] or '-':>5} -> {o['new_plz']}  {o['rule']}  {o['site'][:60]}", file=out)
     why = collections.Counter(re.sub(r"\d+", "N", o["why"]) for o in outcomes if o["status"] == "unresolved")
     for o in outcomes:
@@ -179,6 +190,7 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true", help="write the PLZ through tools/apply_clinic_corrections.py --push")
     ap.add_argument("--by", help="who writes (required with --apply)")
     ap.add_argument("--task", default="TASK-431", help="the task the correction rows name")
+    ap.add_argument("--rules", help="comma list: write only the fills made by these rules, report the others as held (default: all rules)")
     a = ap.parse_args(argv)
     if a.apply and not (a.by or "").strip():
         sys.exit("--apply needs --by: pflege_jobs.corrections records who made the change")
@@ -190,6 +202,8 @@ def main(argv=None):
         clinics = A.rest_get_all("clinics", {"select": "*", "order": "clinic_id"})
     khv, rhv = load_sites(a.xlsx)
     outcomes = propose(clinics, khv, rhv)
+    if a.rules:
+        outcomes = hold(outcomes, [r.strip() for r in a.rules.split(",") if r.strip()])
     report(outcomes)
     if a.csv:
         with open(a.csv, "w", newline="", encoding="utf-8") as f:
