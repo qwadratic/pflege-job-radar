@@ -13,6 +13,7 @@ import requests
 from pflege_jobs import geo
 from pflege_jobs.geo import resolve, UNKNOWN, LAND_NAMES
 from pflege_jobs.sources.career_crawl import in_bavaria
+from tests import mirror as M
 
 
 # ==================== 1. the five polluted-towns-set false positives (career_crawl bug #2) =========
@@ -422,7 +423,6 @@ def _own_land_for_plz(csv_plz_to_lands, plz):
     return next(iter(lands))
 
 
-@pytest.mark.network
 def test_live_posting_observations_no_regression_vs_old_detector():
     """Pull every (city, plz) pair the live pipeline has actually seen, run OLD in_bavaria and NEW
     resolve() over each, print the full disagreement table, and assert only the one thing that
@@ -431,19 +431,18 @@ def test_live_posting_observations_no_regression_vs_old_detector():
     in the other direction (OLD wrongly said True, or OLD had no opinion) are exactly what this
     module is FOR -- they are printed, not asserted against.
 
-    Needs network (keyless Supabase read proxy); deselect offline with `-m "not network"`.
+    Reads the registry read proxy as it was recorded into the local mirror (tests/mirror.py, TASK-197; our own database, not a
+    clinic site, but a test does not talk to that either). Refresh it with `.venv/bin/python tools/mirror.py record-infra`.
     """
-    try:
+    with M.mirror_board("infra__registry-read-proxy", scope="geo"):
         rows = _fetch_live_city_plz_pairs()
-    except requests.exceptions.RequestException as e:
-        pytest.skip(f"no network access to the Supabase read proxy: {e}")
+        towns = _load_towns()
 
     with open("data/geo/gemeinden_de.csv", newline="", encoding="utf-8") as f:
         csv_plz_to_lands = {}
         for r in csv.DictReader(f):
             csv_plz_to_lands.setdefault(r["plz"], set()).add(r["land"])
 
-    towns = _load_towns()
     pairs = {(r.get("city"), r.get("plz")) for r in rows}
 
     disagreements = []

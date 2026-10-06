@@ -134,6 +134,41 @@ The VM disk is 25 GB. Check with `df -h /`. What is big and what it is (all giti
 
 Disk clean-up rule: delete only what this table says is rebuildable or recorded elsewhere, and look at the target first.
 
+## Mirror on Bunny
+
+The test mirror (`data/mirror/`: `INDEX.json` plus about 403 board `*.sqlite.xz`, 492 MB, TASK-197) is kept in a private Bunny Storage Zone
+so a CI runner can fetch it. The zone has no pull zone: nothing is public, because the pages hold third-party HR names and contacts.
+`*.prev` files are never uploaded, and neither are the two `infra__*` snapshots (web fonts, registry read proxy): those are in the repo,
+`tests/fixtures/mirror_infra/`, so a run that needs no real board needs no pull (`pytest -m "not mirror"`; `-m mirror` is the part that reads boards).
+
+| env name | who | what |
+|---|---|---|
+| `BUNNY_MIRROR_ZONE` | both | storage zone name |
+| `BUNNY_MIRROR_RW_KEY` | `push` | the zone's read-write password (header `AccessKey`) |
+| `BUNNY_MIRROR_RO_KEY` | `pull`, CI | the zone's read-only password |
+| `BUNNY_MIRROR_BASE_URL` | tests | default `https://storage.bunnycdn.com`; the tests point it at a local fake |
+
+```bash
+.venv/bin/python tools/mirror.py push    # after tools/mirror.py record|add
+.venv/bin/python tools/mirror.py pull    # CI, before pytest; or a fresh VM
+```
+
+`push` writes one uncompressed tar of `INDEX.json` and every `*.sqlite.xz` as `mirror-<UTC YYYYMMDD-HHMMSS>-<short git sha>.tar`
+(`PUT https://storage.bunnycdn.com/<zone>/<name>`, streamed from disk), then `latest.json` with `{archive, sha256, bytes, boards,
+pushed_at, repo_sha}`. `latest.json` goes last, so a failed upload never moves the pointer; old archives stay in the zone (a
+rollback is a `latest.json` that names an older one).
+`pull` reads `latest.json`, streams the archive it names to disk, checks bytes and sha256, unpacks beside the mirror and only then
+renames the files into place, so a pull that breaks halfway leaves the old mirror whole. It overwrites `INDEX.json` and the boards
+in the archive and leaves other files alone: push first if this machine holds recordings the zone lacks. Any failure (missing env
+name, HTTP status, size or sha256 mismatch, a tar member that is absolute or contains `..`) stops with a message and a non-zero exit;
+there is no retry and no fall back to a local copy.
+
+CI (`.github/workflows/tests.yml`, selection in `tools/ci_scope.py`): job `offline` runs `-m "not mirror and not network and not llm"`
+without a pull and without secrets (fork PRs too). Job `adapters` runs `tools/mirror.py pull`, then `-m mirror` (about 40 minutes), on a
+push to main and on a pull request that changes `crawlers/`, the replay layer or its tests, `pytest.ini`, `requirements.txt` or the
+workflow, or whose offline scope is ALL. Repository secrets: `BUNNY_MIRROR_ZONE` and `BUNNY_MIRROR_RO_KEY` (the read-only password;
+the write key never goes to GitHub). A fork PR has no secrets, so its `adapters` job fails at the pull naming them.
+
 ## Check after a deploy
 
 ```bash

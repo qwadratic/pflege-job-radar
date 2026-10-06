@@ -42,6 +42,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "refresh", lambda: D._snap)
     monkeypatch.setattr(R, "enqueue", lambda rid: None)
     monkeypatch.setattr(S, "start", lambda: SC.init())
+    # TASK-197: with FIRECRAWL_API_KEY in the environment the routes behind /api/coverage and the spend gate ask api.firecrawl.dev for the
+    # account balance (a paid API; the guard refuses it). Without the key they read it as "unreachable", which is what these tests expect.
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
     # TASK-130: inbox_summary() (GET /api/inbox) calls these directly against live Postgres,
     # bypassing D -- unstubbed, they made the "offline" suite hang/fail during a real outage.
     monkeypatch.setattr(A, "rest_count", lambda path, params=None, timeout=60: 0)
