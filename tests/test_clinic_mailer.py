@@ -1359,7 +1359,7 @@ def test_a_failing_helper_is_tried_again_three_times_and_the_last_failure_is_rai
     since = at("2026-10-05T10:00:00")
     fails = 3
     assert M.helper_output(since) == '{"a": 1}\n' and len(calls) == 4 and naps == [M.READ_RETRY_SECONDS] * 3
-    assert calls[0] == ["sudo", "-n", M.DARIA_INBOX, "--since", "2026-10-05T10:00:00+02:00"]
+    assert calls[0] == ["/usr/bin/python3", "-I", M.DARIA_INBOX, "--since", "2026-10-05T10:00:00+02:00"] and M.DARIA_INBOX.endswith("tools/daria_inbox.py")
     calls.clear(), naps.clear()
     fails = 4
     with pytest.raises(M.MailerError, match=r"(?s)exited 1 on 4 tries in a row: .*HTTP Error 404"):
