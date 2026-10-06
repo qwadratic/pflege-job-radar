@@ -11,7 +11,7 @@
                       the text, and the original attached as message/rfc822. Every forward is logged in
                       forwarded.jsonl next to FETCH, and a message forwarded once is not sent again.
 
-FETCH is written by `sudo -n /usr/local/sbin/daria-inbox --since ISO > FETCH` (tools/daria_inbox.py).
+FETCH is written by `python3 -I tools/daria_inbox.py --since ISO > FETCH` (no sudo since 2026-10-06).
 """
 import argparse
 import base64

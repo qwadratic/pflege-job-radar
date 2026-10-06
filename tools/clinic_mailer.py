@@ -46,9 +46,9 @@ Commands:
                                  Graph's well-known names: inbox, junkemail). Graph uses the shared MSAL cache, which
                                  is root-owned: run every command that watches (watch, send) as
                                  sudo -E python3 tools/clinic_mailer.py ...
-                                 "watch_via": "daria-inbox" reads through the root-owned helper `sudo -n
-                                 /usr/local/sbin/daria-inbox` (tools/daria_inbox.py), for runs as the claude user: no
-                                 sudo password, no root. The helper cannot skip what was read, so a watch reads from when
+                                 "watch_via": "daria-inbox" reads through tools/daria_inbox.py, run as the claude user
+                                 (no sudo, no root; Ivan, 2026-10-06: the MSAL cache is the claude user's, in
+                                 ~/.local/state/pflege-mail). The helper cannot skip what was read, so a watch reads from when
                                  the last one began (ledger.jsonl.watched) minus "watch_overlap_minutes", which the config
                                  must give; the first read starts on the campaign's first day (about 2 minutes).
   status CONFIG [--now ISO]      one line per recipient: steps sent, state, next step and when it is due.
@@ -157,7 +157,7 @@ from mailer_doc import Doc, Table, Quote, doc_of  # noqa: E402
 
 ENV = Path(__file__).resolve().parent.parent / ".env"
 DARIA = "daria.s@pflege-connect.work"
-DARIA_INBOX = "/usr/local/sbin/daria-inbox"          # root-owned, the claude user's one sudo command (TASK-345.10)
+DARIA_INBOX = str(Path(__file__).with_name("daria_inbox.py"))          # TASK-345.10; run by the claude user, no sudo since 2026-10-06
 STEP_AFTER = re.compile(r"^(\d+)(m|h|d|bd)$")
 PLACEHOLDER = re.compile(r"\[[A-ZÄÖÜ_/]+\]")
 
@@ -2062,7 +2062,7 @@ def helper_output(since):
     delivery) answers 404 and ends the helper. The retry lists again. This took the desk down at 16:59 and a batch at 19:47
     on 05.10. The last failure is raised."""
     for attempt in range(READ_RETRIES + 1):
-        p = subprocess.run(["sudo", "-n", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
+        p = subprocess.run(["/usr/bin/python3", "-I", DARIA_INBOX, "--since", since.isoformat(timespec="seconds")],
                            capture_output=True, text=True, timeout=900)
         if not p.returncode:
             return p.stdout
