@@ -138,12 +138,22 @@ def scope(changed, sources, closures=None):
 # are not ALL (a test file of its own) and for saying why the rest is.
 ADAPTER_PATHS = ("crawlers/*", "tests/mirror.py", "tests/adapter_*.py", "tests/test_completeness_*.py", "tests/test_adapter_completeness.py",
                  "tests/test_verify_pi_loga_live.py", "tools/mirror.py", "pytest.ini", "requirements.txt", ".github/workflows/*")
-_MIRROR_MARK = re.compile(r"^pytestmark\s*=\s*pytest\.mark\.mirror\b", re.M)
 
 
 def mirror_only(sources):
-    """Test files that assign `pytestmark = pytest.mark.mirror` at module level: all their tests need the pulled mirror."""
-    return {name for name, text in sources.items() if _MIRROR_MARK.search(text)}
+    """Test files whose module-level `pytestmark` holds `pytest.mark.mirror` (alone, or in a list or tuple of marks): all their tests
+    need the pulled mirror. A file that does not parse is no mirror module here; pytest's own collection fails on it, loudly."""
+    out = set()
+    for name, text in sources.items():
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets):
+                if any(ast.unparse(n) == "pytest.mark.mirror" for n in ast.walk(node.value)):
+                    out.add(name)
+    return out
 
 
 def offline(changed, sources, closures=None):

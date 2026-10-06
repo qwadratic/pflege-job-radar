@@ -23,12 +23,23 @@ SRC = {
     "test_completeness_dvinci.py": "import pytest\n\n# reads real boards\npytestmark = pytest.mark.mirror\n",
     "test_completeness_pi_asp.py": "import pytest\n",                       # fixtures only: not a mirror module
     "test_mirror_bunny.py": "# a mention: pytestmark = pytest.mark.mirror (not an assignment)\n",
+    "test_list_form.py": "import pytest\n\npytestmark = [pytest.mark.completeness, pytest.mark.mirror]\n",
+    "test_list_multiline.py": "import pytest\n\npytestmark = [\n    pytest.mark.slow,\n    pytest.mark.mirror,\n]\n",
+    "test_list_other.py": "import pytest\n\npytestmark = [pytest.mark.completeness, pytest.mark.slow]\n",     # a list without the mirror mark
+    "test_tuple_form.py": "import pytest\n\npytestmark = (pytest.mark.mirror, pytest.mark.slow)\n",
 }
 
 
 # --------------------------------------------------------------------------------------------- which tests `offline` runs
 def test_mirror_modules_are_the_ones_that_assign_the_marker_at_module_level():
-    assert CS.mirror_only(SRC) == {"test_adapter_completeness.py", "test_completeness_dvinci.py"}
+    assert CS.mirror_only(SRC) == {"test_adapter_completeness.py", "test_completeness_dvinci.py", "test_list_form.py", "test_list_multiline.py",
+                                   "test_tuple_form.py"}
+
+
+def test_the_list_form_of_the_marker_counts_and_a_list_without_it_does_not():
+    assert {"test_list_form.py", "test_list_multiline.py", "test_tuple_form.py"} <= CS.mirror_only(SRC)
+    assert "test_list_other.py" not in CS.mirror_only(SRC)
+    assert CS.offline(["tests/test_list_form.py"], SRC) == set() and CS.offline(["tests/test_list_other.py"], SRC) == {"test_list_other.py"}
 
 
 def test_offline_leaves_out_the_modules_that_need_the_mirror_so_pytest_never_ends_with_nothing_collected():
@@ -97,6 +108,10 @@ def wf():
 
 def steps_text(job):
     return "\n".join(str(s.get("run", "")) + " " + str(s.get("uses", "")) for s in job["steps"])
+
+
+def test_a_pull_request_drops_its_superseded_runs_but_a_push_to_main_always_runs_to_the_end(wf):
+    assert wf["concurrency"]["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
 
 
 def test_the_workflow_has_two_jobs_on_push_to_main_and_every_pull_request(wf):
