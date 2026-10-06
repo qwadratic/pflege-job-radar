@@ -192,8 +192,9 @@ class Matcher:
         the same way when employer is ALSO inherited (city_inherited and employer_inherited commonly
         travel together, but are gated independently here since either alone is enough to fabricate a
         false agreement with the seed). A copied city/name is dropped for the board fallback only --
-        content-side matching (_match_content, above) is unaffected."""
-        r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
+        content-side matching (_match_content, above) is unaffected, except that a copied city neither confirms nor
+        refuses an R_jd_text hit (TASK-132)."""
+        r = self._match_content(employer, city, description, employer_inherited=employer_inherited, city_stamped=city_inherited)
         if r: return r
         if board:
             en = "" if employer_inherited else employer_norm(employer or "")
@@ -202,9 +203,12 @@ class Matcher:
             return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
         return None
 
-    def _match_content(self, employer, city, description=None, employer_inherited=False):
+    def _match_content(self, employer, city, description=None, employer_inherited=False, city_stamped=False):
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
-        if not en: return self._match_jd(description)
+        # R_jd_text is the one rung that names a clinic from prose; the posting's own place outranks a mention (TASK-132). A copied seed town is
+        # not the posting's place, so it neither confirms nor refuses (the same line the board fallback draws).
+        jd_ck = "" if city_stamped else ck
+        if not en: return self._match_jd(description, jd_ck)
         c = [] if employer_inherited else self.by_name.get(en, [])
         # Gated on town the same way its own R1_exact_town sibling two lines below always was: a
         # UNIQUE employer-name hit is still a wrong match when the posting's own city is known and
@@ -321,9 +325,9 @@ class Matcher:
         cands = [(overlap(et, x["_ntoks"] | x["_otoks"]), x) for x in same_town]
         best = [x for j, x in cands if j >= 0.5]
         if len(best) == 1 and len(same_town) == 1: return best[0]["clinic_id"], "R5_loose", 0.6
-        return self._match_jd(description)
+        return self._match_jd(description, jd_ck)
 
-    def _match_jd(self, description):
+    def _match_jd(self, description, ck=""):
         """Last content-side check before falling back to board: does exactly one clinic's own name or
         operator appear, verbatim as a token set, in the job description? Conservative on purpose --
         a JD mentioning a clinic in passing ("Kooperation mit Klinikum X") is rare enough that requiring
@@ -352,7 +356,9 @@ class Matcher:
         dt = toks(description[:2000])
         hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and
                 ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
-        if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
+        # TASK-132: the posting's own known town refuses a hit in another town (ck falsy passes through, as in every town-aware rung)
+        if len(hits) == 1 and (not ck or _town_match(city_key(hits[0].get("town")), ck)):
+            return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
 
     def _named_elsewhere(self, et, x):

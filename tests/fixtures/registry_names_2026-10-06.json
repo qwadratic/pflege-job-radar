@@ -1,0 +1,5210 @@
+[
+{
+"clinic_id":"16101",
+"name":"Klinikum Ingolstadt",
+"town":"Ingolstadt",
+"operator":"Klinikum Ingolstadt GmbH",
+"beds":798,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16102",
+"name":"Privatklinik Dr. Maul, Don Bosconeum",
+"town":"Ingolstadt",
+"operator":"Klinik Dr. Maul GmbH",
+"beds":38,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16104",
+"name":"kbo-Heckscher-Klinikum Ingolstadt",
+"town":"Ingolstadt",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16105",
+"name":"Danuvius Klinik Ingolstadt",
+"town":"Ingolstadt",
+"operator":"Danuvius Klinik GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16106",
+"name":"kbo-Heckscher-Klinikum Ingolstadt, Transitionspsychiatrie",
+"town":"Ingolstadt",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16107",
+"name":"Zentrum für psychische Gesundheit (ZPG) Ingolstadt",
+"town":"Ingolstadt",
+"operator":"kbo-Donau-Altmühl-Kliniken gGmbH",
+"beds":275,
+"parse_quality":"new_2026_verified"
+},
+{
+"clinic_id":"16201",
+"name":"München Klinik Schwabing",
+"town":"München",
+"operator":"München Klinik gGmbH",
+"beds":521,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16202",
+"name":"München Klinik Harlaching",
+"town":"München",
+"operator":"München Klinik gGmbH",
+"beds":660,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16203",
+"name":"München Klinik Neuperlach",
+"town":"München",
+"operator":"München Klinik gGmbH",
+"beds":545,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16204",
+"name":"München Klinik Thalkirchner Straße",
+"town":"München",
+"operator":"München Klinik gGmbH",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16205",
+"name":"München Klinik Bogenhausen",
+"town":"München",
+"operator":"München Klinik gGmbH",
+"beds":1020,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16207",
+"name":"HELIOS Klinikum München West",
+"town":"München",
+"operator":"HELIOS Kliniken GmbH",
+"beds":412,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16208",
+"name":"HELIOS Klinik München Perlach",
+"town":"München",
+"operator":"HELIOS Kliniken GmbH",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16209",
+"name":"Schön Klinik München Harlaching",
+"town":"München",
+"operator":"Schön Klinik München Harlaching SE & Co. KG",
+"beds":148,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16211",
+"name":"kbo-Kinderzentrum München, Fachklinik für Sozialpädiatrie",
+"town":"München",
+"operator":"kbo-Kinderzentrum München gGmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16212",
+"name":"kbo-Heckscher-Klinikum München",
+"town":"München",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":78,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16213",
+"name":"Klinikum Dritter Orden, München-Nymphenburg",
+"town":"München",
+"operator":"Ordenskliniken München-Passau gGmbH",
+"beds":574,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16214",
+"name":"Krankenhaus Barmherzige Brüder München",
+"town":"München",
+"operator":"Ordenskliniken München-Passau gGmbH",
+"beds":404,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16215",
+"name":"Rotkreuzklinikum München, Betriebsstätte Nymphenburger Straße",
+"town":"München",
+"operator":"Rotkreuzklinikum München gGmbH",
+"beds":280,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16217",
+"name":"Augustinum Klinik München",
+"town":"München",
+"operator":"Augustinum Wohnstifte gGmbH",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16218",
+"name":"Krankenhaus Martha-Maria, München-Solln",
+"town":"München",
+"operator":"Martha-Maria Krankenhaus gGmbH; Nürnberg",
+"beds":110,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16219",
+"name":"Krankenhaus Neuwittelsbach",
+"town":"München",
+"operator":"Kongregation der Barmherzigen Schwestern vom hl. Vinzenz von Paul",
+"beds":122,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16221",
+"name":"Klinik Josephinum",
+"town":"München",
+"operator":"Klinik Josephinum gAG",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16222",
+"name":"Krankenhaus für Naturheilweisen, München-Harlaching",
+"town":"München",
+"operator":"Stiftung für Integrative Medizin und Naturheilkunde",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16223",
+"name":"Rotkreuzklinikum München, Betriebsstätte Taxisstraße",
+"town":"München",
+"operator":"Rotkreuzklinikum München gGmbH",
+"beds":155,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16224",
+"name":"Schön Klinik München Schwabing",
+"town":"München",
+"operator":"Schön Klinik München Schwabing SE & Co. KG",
+"beds":165,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16226",
+"name":"Maria-Theresia-Klinik",
+"town":"München",
+"operator":"Kongregation der Barmherzigen Schwestern vom hl. Vinzenz von Paul",
+"beds":52,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16227",
+"name":"Augenklinik Herzog Carl Theodor",
+"town":"München",
+"operator":"Stiftung Augenklinik Herzog Carl Theodor",
+"beds":47,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16228",
+"name":"Artemed Klinikum München Süd",
+"town":"München",
+"operator":"Artemed Klinikum München Süd GmbH & Co. KG",
+"beds":110,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16230",
+"name":"Internistisches Klinikum München Süd",
+"town":"München",
+"operator":"Internistisches Klinikum München Süd GmbH",
+"beds":125,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16232",
+"name":"Paracelsus-Klinik München",
+"town":"München",
+"operator":"Paracelsus-Kliniken Deutschland GmbH & Co. KGaA",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16233",
+"name":"Sana Klinik München",
+"town":"München",
+"operator":"Sana Klinik München GmbH",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16234",
+"name":"ISAR Klinikum (München Innenstadt)",
+"town":"München",
+"operator":"Isar Kliniken GmbH",
+"beds":175,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16235",
+"name":"Artemed Fachklinik München",
+"town":"München",
+"operator":"Artemed Fachklinik München GmbH & Co. KG",
+"beds":52,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16236",
+"name":"Dr. Lubos Kliniken Bogenhausen",
+"town":"München",
+"operator":"Dr. Lubos Kliniken Bogenhausen GmbH",
+"beds":85,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16239",
+"name":"Dr. Lubos Kliniken Pasing",
+"town":"München",
+"operator":"Dr. Lubos Kliniken Pasing GmbH & Co. KG",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16241",
+"name":"Frauenklinik Dr. Geisenhofer",
+"town":"München",
+"operator":"Frauenklinik Dr. Geisenhofer GmbH",
+"beds":82,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16242",
+"name":"Clinic Dr. Decker",
+"town":"München",
+"operator":"Clinic Dr. Decker GmbH",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16246",
+"name":"Arabella-Klinik",
+"town":"München",
+"operator":"Arabella-Klinik GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16249",
+"name":"Privatklinik Dr. Gaertner",
+"town":"München",
+"operator":"HNO-Klinik Bogenhausen Dr. Gaertner GmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16251",
+"name":"kbo-Isar-Amper-Klinikum München-Nord",
+"town":"München",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":181,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16252",
+"name":"kbo-Isar-Amper-Klinikum Atriumhaus",
+"town":"München",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":15,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16253",
+"name":"Klinik Menterschwaige",
+"town":"München",
+"operator":"Klinik für Dynamische Psychiatrie München GmbH",
+"beds":62,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16254",
+"name":"Tagesklinik Süd für Psychiatrie und Psychotherapie",
+"town":"München",
+"operator":"Bayerisches Rotes Kreuz, Kreisverband München",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16256",
+"name":"Tagklinik Westend",
+"town":"München",
+"operator":"Psychosomatische Klinik GmbH & Co. Windach/Ammersee KG",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16257",
+"name":"kbo-Isar-Amper-Klinikum München-Pasing für PSY",
+"town":"München",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16258",
+"name":"ATOS Starmed Klinik",
+"town":"München",
+"operator":"ATOS Starmed Klinik München GmbH",
+"beds":16,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16259",
+"name":"KIRINUS Tagesklinik Schwabing",
+"town":"München",
+"operator":"KIRINUS Tagesklinik GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16260",
+"name":"Schön Klinik Tagesklinik München",
+"town":"München",
+"operator":"MindDoc Healthcare GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16261",
+"name":"kbo-Isar-Amper-Klinikum Tagesklinik am kbo Kinderzentrum München",
+"town":"München",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16262",
+"name":"Algesiologikum Tagesklinik für Schmerzmedizin",
+"town":"München",
+"operator":"Algesiologikum GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16263",
+"name":"kbo-Isar-Amper-Klinikum Tagesklinik für PSY Berg am Laim",
+"town":"München",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16264",
+"name":"kbo-Heckscher-Klinikum für KJP am kbo-Kinderzentrum München",
+"town":"München",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":16,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16265",
+"name":"Max-Planck-Institut für Psychiatrie",
+"town":"München",
+"operator":"Max-Planck-Gesellschaft zur Förderung der Wissenschaften e.V.",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16266",
+"name":"KIRINUS Tagesklinik München Nymphenburg",
+"town":"München",
+"operator":"KIRINUS Tagesklinik 2 GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16267",
+"name":"ProSomno Klinik für Schlafmedizin",
+"town":"München",
+"operator":"ProSomno-GmbH",
+"beds":12,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16268",
+"name":"Marion von Tessin Memory Tagesklinik",
+"town":"München",
+"operator":"Marion von Tessin Memory-Zentrum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16290",
+"name":"Klinikum der Ludwig-Maximilians-Universität München",
+"town":"München",
+"operator":"Freistaat Bayern",
+"beds":2062,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16291",
+"name":"Klinikum der Technischen Universität München (TUM) - Klinikum Rechts der Isar (MRI)",
+"town":"München",
+"operator":"Freistaat Bayern",
+"beds":1176,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16292",
+"name":"Klinikum der Technischen Universität München (TUM) - Deutsches Herzzentrum München (DHM)",
+"town":"München",
+"operator":"Freistaat Bayern",
+"beds":197,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16301",
+"name":"RoMed Klinikum Rosenheim",
+"town":"Rosenheim",
+"operator":"Kliniken der Stadt und des Landkreises Rosenheim GmbH",
+"beds":622,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16304",
+"name":"kbo-Inn-Salzach-Klinikum Rosenheim",
+"town":"Rosenheim",
+"operator":"kbo-Inn-Salzach-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16305",
+"name":"kbo-Heckscher-Klinikum Rosenheim",
+"town":"Rosenheim",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16306",
+"name":"Schön Klinik Roseneck - Haus Rosenheim",
+"town":"Rosenheim",
+"operator":"Schön Klinik Roseneck SE & Co. KG",
+"beds":99,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"16307",
+"name":"Augenklinik Rosenheim",
+"town":"Rosenheim",
+"operator":"Augenklinik Rosenheim Betriebs-GmbH & Co. KG",
+"beds":10,
+"parse_quality":"new_2026_verified"
+},
+{
+"clinic_id":"16370",
+"name":"Schön Klinik Roseneck - Haus Rosenheim",
+"town":"Rosenheim",
+"operator":"Schön Klinik Roseneck SE & Co. KG",
+"beds":24,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17101",
+"name":"InnKlinikum Altötting",
+"town":"Altötting",
+"operator":"InnKlinikum gKU Altötting und Mühldorf",
+"beds":407,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17102",
+"name":"InnKlinikum Burghausen",
+"town":"Burghausen",
+"operator":"InnKlinikum gKU Altötting und Mühldorf",
+"beds":139,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17105",
+"name":"Tagesklinik für KJP am Zentrum für Kinder und Jugendliche",
+"town":"Altötting",
+"operator":"Zentrum für Kinder und Jugendliche Inn-Salzach e.V.",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17106",
+"name":"kbo-Inn-Salzach-Klinikum Altötting",
+"town":"Altötting",
+"operator":"kbo-Inn-Salzach-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17201",
+"name":"Kreisklinik Bad Reichenhall",
+"town":"Bad Reichenhall",
+"operator":"Kliniken Südostbayern AG",
+"beds":240,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17202",
+"name":"Kreisklinik Berchtesgaden",
+"town":"Berchtesgaden",
+"operator":"Kliniken Südostbayern AG",
+"beds":118,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17204",
+"name":"kbo-Inn-Salzach-Klinikum Freilassing",
+"town":"Freilassing",
+"operator":"kbo-Inn-Salzach-Klinikum gGmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17205",
+"name":"Salus Gesundheitszentrum",
+"town":"Bad Reichenhall",
+"operator":"Salus Gesundheitszentrum GmbH & Co.KG",
+"beds":55,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17206",
+"name":"Schön Klinik Berchtesgadener Land",
+"town":"Schönau am Königssee",
+"operator":"Schön Klinik Berchtesgadener Land SE & Co. KG",
+"beds":116,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17207",
+"name":"CJD Berchtesgaden - Asthmazentrum",
+"town":"Berchtesgaden",
+"operator":"Christliches Jugenddorfwerk Deutschland e.V.",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17274",
+"name":"Klinik für Schlafstörungen",
+"town":"Bad Reichenhall",
+"operator":"Klinik für Schlafstörungen GmbH",
+"beds":4,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17276",
+"name":"Schön Klinik Berchtesgadener Land",
+"town":"Schönau am Königssee",
+"operator":"Schön Klinik Berchtesgadener Land SE & Co. KG",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17301",
+"name":"Kreisklinik Wolfratshausen",
+"town":"Wolfratshausen",
+"operator":"Kreisklinik Wolfratshausen gGmbH",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17302",
+"name":"Asklepios Stadtklinik Bad Tölz",
+"town":"Bad Tölz",
+"operator":"Asklepios Stadtklinik Bad Tölz GmbH",
+"beds":230,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17305",
+"name":"KIRINUS Schlemmer Klinik, Bad Tölz",
+"town":"Bad Tölz",
+"operator":"KIRINUS Schlemmer Klinik GmbH",
+"beds":153,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17306",
+"name":"kbo-Lech-Mangfall-Tagesklinik für PSY, PSO an der Kreisklinik Wolfratshausen",
+"town":"Wolfratshausen",
+"operator":"kbo-Lech-Mangfall-Kliniken gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17307",
+"name":"m&i-Fachklinik Bad Heilbrunn",
+"town":"Bad Heilbrunn",
+"operator":"m&i Klinikbetriebsgesellschaft GmbH",
+"beds":127,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17308",
+"name":"kbo-Heckscher-Klinikum Rottmannshöhe, Tagesklinik für KJP",
+"town":"Wolfratshausen",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17401",
+"name":"HELIOS Amper-Klinikum Dachau",
+"town":"Dachau",
+"operator":"Amper Kliniken AG",
+"beds":435,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17402",
+"name":"HELIOS Amper-Klinik Indersdorf",
+"town":"Markt Indersdorf",
+"operator":"Amper Kliniken AG",
+"beds":35,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17405",
+"name":"kbo-Isar-Amper-Klinikum Dachau",
+"town":"Dachau",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17501",
+"name":"Kreisklinik Ebersberg",
+"town":"Ebersberg",
+"operator":"Klinikum Ebersberg - München Ost gGmbH",
+"beds":328,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17502",
+"name":"Tagesklinik Ebersberg, Zweigstelle des kbo-Inn-Salzach-Klinikums",
+"town":"Ebersberg",
+"operator":"kbo-Inn-Salzach-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17601",
+"name":"Klinik Eichstätt",
+"town":"Eichstätt",
+"operator":"Kliniken im Naturpark Altmühltal, KU des Landkreises Eichstätt, AöR",
+"beds":152,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17602",
+"name":"Klinik Kösching",
+"town":"Kösching",
+"operator":"Kliniken im Naturpark Altmühltal, KU des Landkreises Eichstätt, AöR",
+"beds":181,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17605",
+"name":"VITREA Klinik Kipfenberg",
+"town":"Kipfenberg",
+"operator":"VITREA Klinik Kipfenberg GmbH",
+"beds":125,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17606",
+"name":"Tagesklinik für Psychiatrie Eichstätt",
+"town":"Eichstätt",
+"operator":"kbo-Donau-Altmühl-Kliniken gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17701",
+"name":"Klinikum Landkreis Erding",
+"town":"Erding",
+"operator":"Landkreis Erding",
+"beds":288,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17702",
+"name":"Klinikum Landkreis Erding - Außenstelle Dorfen",
+"town":"Dorfen",
+"operator":"Landkreis Erding",
+"beds":42,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17704",
+"name":"kbo-Isar-Amper-Klinikum Taufkirchen (Vils)",
+"town":"Taufkirchen (Vils)",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":212,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17705",
+"name":"Klinik Wartenberg",
+"town":"Wartenberg",
+"operator":"Klinik Wartenberg Prof. Dr. Selmair GmbH & Co.KG",
+"beds":55,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17706",
+"name":"kbo-Isar-Amper-Klinikum Tagesklinik für PSY am Klinikum Erding",
+"town":"Erding",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17772",
+"name":"Airport Clinic München, Terminal 1",
+"town":"München-Flughafen",
+"operator":"MediCare Flughafen München Medizinisches Zentrum GmbH",
+"beds":8,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17801",
+"name":"Klinikum Freising",
+"town":"Freising",
+"operator":"Klinikum Freising GmbH",
+"beds":335,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17803",
+"name":"kbo-Isar-Amper-Klinikum Freising",
+"town":"Freising",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17901",
+"name":"Klinikum Fürstenfeldbruck",
+"town":"Fürstenfeldbruck",
+"operator":"Kreisklinik Fürstenfeldbruck/ Seniorenheim Jesenwang, AöR",
+"beds":380,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"17902",
+"name":"kbo-Isar-Amper-Klinikum Fürstenfeldbruck",
+"town":"Fürstenfeldbruck",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":88,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18001",
+"name":"Klinikum Garmisch-Partenkirchen",
+"town":"Garmisch-Partenkirchen",
+"operator":"Klinikum Garmisch-Partenkirchen GmbH",
+"beds":415,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18002",
+"name":"Deutsches Zentrum für Kinder- und Jugendrheumatologie",
+"town":"Garmisch-Partenkirchen",
+"operator":"Kinderklinik Garmisch-Partenkirchen gGmbH",
+"beds":110,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18003",
+"name":"Klinikum Garmisch-Partenkirchen - Außenstelle Murnau",
+"town":"Murnau",
+"operator":"Klinikum Garmisch-Partenkirchen GmbH",
+"beds":75,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18004",
+"name":"Klinik Oberammergau - Zentrum für Rheumatologie, Orthopädie und Schmerztherapie",
+"town":"Oberammergau",
+"operator":"Waldburg-Zeil Kliniken GmbH & Co. -Rheumaklinik KG-",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18005",
+"name":"kbo-Lech-Mangfall-Klinik Garmisch-Partenkirchen",
+"town":"Garmisch-Partenkirchen",
+"operator":"kbo-Lech-Mangfall-Kliniken gGmbH",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18006",
+"name":"KJF Klinik Hochried",
+"town":"Murnau",
+"operator":"Katholische Jugendfürsorge der Diözese Augsburg e.V.",
+"beds":22,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18007",
+"name":"Berufsgenossenschaftliche Unfallklinik",
+"town":"Murnau",
+"operator":"BG Klinikum Murnau gGmbH",
+"beds":240,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18101",
+"name":"Klinikum Landsberg am Lech",
+"town":"Landsberg",
+"operator":"Klinikum Landsberg am Lech -KU-",
+"beds":218,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18102",
+"name":"Psychosomatische Klinik Windach",
+"town":"Windach a. Ammersee",
+"operator":"Psychosomatische Klinik GmbH & Co. Windach/Ammersee KG",
+"beds":181,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18103",
+"name":"kbo-Lech-Mangfall-Klinik Landsberg am Lech",
+"town":"Landsberg am Lech",
+"operator":"kbo-Lech-Mangfall-Kliniken gGmbH",
+"beds":92,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18104",
+"name":"kbo-Heckscher-Klinikum Landsberg am Lech",
+"town":"Landsberg am Lech",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18105",
+"name":"Psychosomatische Klinik Kloster Dießen",
+"town":"Dießen am Ammersee",
+"operator":"Psychosomatische Klinik Kloster Dießen GmbH & Co.KG",
+"beds":58,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18201",
+"name":"Krankenhaus Agatharied",
+"town":"Hausham",
+"operator":"Krankenhaus Agatharied KU",
+"beds":350,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18202",
+"name":"kbo-Lech-Mangfall-Klinik Agatharied",
+"town":"Hausham",
+"operator":"kbo-Lech-Mangfall-Kliniken gGmbH",
+"beds":135,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18301",
+"name":"InnKlinikum Mühldorf am Inn",
+"town":"Mühldorf",
+"operator":"InnKlinikum gKU Altötting und Mühldorf",
+"beds":275,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18302",
+"name":"InnKlinikum Haag in OB",
+"town":"Haag in OB",
+"operator":"InnKlinikum gKU Altötting und Mühldorf",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18401",
+"name":"WolfartKlinik",
+"town":"Gräfelfing",
+"operator":"WolfartKlinik GmbH",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18402",
+"name":"kbo-Isar-Amper-Klinikum München-Ost",
+"town":"Haar",
+"operator":"kbo-Isar-Amper-Klinikum gGmbH",
+"beds":750,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18404",
+"name":"Urologische Klinik München-Planegg",
+"town":"Planegg",
+"operator":"Medical Team Clinic GmbH",
+"beds":65,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18406",
+"name":"kbo-Heckscher-Klinikum Haar",
+"town":"Haar",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18475",
+"name":"Urologische Klinik Planegg",
+"town":"Planegg",
+"operator":"Medical Team Clinic GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18501",
+"name":"AMEOS Klinikum St. Elisabeth Neuburg",
+"town":"Neuburg/Donau",
+"operator":"AMEOS Krankenhausgesellschaft Neuburg mbH",
+"beds":298,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18504",
+"name":"Kreiskrankenhaus Schrobenhausen",
+"town":"Schrobenhausen",
+"operator":"Kreiskrankenhaus Schrobenhausen GmbH",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18505",
+"name":"Danuvius Klinik Neuburg a.d. Donau",
+"town":"Neuburg/Donau",
+"operator":"Danuvius Klinik GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18601",
+"name":"Ilmtalklinik Pfaffenhofen",
+"town":"Pfaffenhofen",
+"operator":"Ilmtalklinik GmbH",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18605",
+"name":"Danuvius Klinik Pfaffenhofen",
+"town":"Pfaffenhofen",
+"operator":"Danuvius Klinik GmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18701",
+"name":"RoMed Klinik Wasserburg am Inn",
+"town":"Wasserburg am Inn",
+"operator":"Kliniken der Stadt und des Landkreises Rosenheim GmbH",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18702",
+"name":"RoMed Klinik Bad Aibling",
+"town":"Bad Aibling",
+"operator":"Kliniken der Stadt und des Landkreises Rosenheim GmbH",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18707",
+"name":"Schön Klinik Vogtareuth",
+"town":"Vogtareuth",
+"operator":"Schön Klinik Vogtareuth SE & Co. KG",
+"beds":240,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18710",
+"name":"Orthopädische Kinderklinik Aschau im Chiemgau",
+"town":"Aschau im Chiemgau",
+"operator":"Behandlungszentrum Aschau GmbH",
+"beds":69,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18711",
+"name":"Klinik Bad Trissl, Oberaudorf",
+"town":"Oberaudorf",
+"operator":"Klinik Bad Trissl GmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18712",
+"name":"kbo-Inn-Salzach-Klinikum Wasserburg am Inn",
+"town":"Wasserburg am Inn",
+"operator":"kbo-Inn-Salzach-Klinikum gGmbH",
+"beds":518,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18713",
+"name":"Simssee Klinik",
+"town":"Bad Endorf",
+"operator":"Simssee Klinik GmbH",
+"beds":179,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18715",
+"name":"RoMed Klinik Prien am Chiemsee",
+"town":"Prien am Chiemsee",
+"operator":"Kliniken der Stadt und des Landkreises Rosenheim GmbH",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18716",
+"name":"Schön Klinik Roseneck",
+"town":"Prien am Chiemsee",
+"operator":"Schön Klinik Roseneck SE & Co. KG",
+"beds":234,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18717",
+"name":"Schön Klinik Bad Aibling",
+"town":"Bad Aibling",
+"operator":"Schön Klinik Bad Aibling SE & Co. KG",
+"beds":287,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18718",
+"name":"kbo-Heckscher-Klinikum Wasserburg am Inn",
+"town":"Wasserburg am Inn",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18719",
+"name":"Clinicum St. Georg",
+"town":"Bad Aibling",
+"operator":"Clinicum St. Georg GmbH & Co. KG",
+"beds":15,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18720",
+"name":"Medical Park Chiemseeblick",
+"town":"Bernau am Chiemsee",
+"operator":"Medical Park Chiemseeblick GmbH & Co. KG",
+"beds":136,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18721",
+"name":"Klinik St. Irmingard",
+"town":"Prien am Chiemsee",
+"operator":"Klinik St. Irmingard GmbH",
+"beds":75,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18775",
+"name":"Veramed-Klinik am Wendelstein",
+"town":"Brannenburg",
+"operator":"Veramed-Klinik am Wendelstein KG",
+"beds":86,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18776",
+"name":"Schön Klinik Roseneck",
+"town":"Prien am Chiemsee",
+"operator":"Schön Klinik Roseneck SE & Co. KG",
+"beds":179,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18781",
+"name":"Medical Park Chiemseeblick",
+"town":"Bernau am Chiemsee",
+"operator":"Medical Park Chiemseeblick GmbH & Co. KG",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18783",
+"name":"Klinik Bad Trissl",
+"town":"Oberaudorf",
+"operator":"Klinik Bad Trissl GmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18801",
+"name":"Klinikum Starnberg",
+"town":"Starnberg",
+"operator":"Kreiskrankenhaus Starnberg GmbH",
+"beds":308,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18802",
+"name":"Benedictus Krankenhaus Tutzing",
+"town":"Tutzing",
+"operator":"Benedictus Krankenhaus Tutzing GmbH & Co.KG",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18803",
+"name":"Klinikum Herrsching Schindlbeck",
+"town":"Herrsching",
+"operator":"Dr. Schindlbeck Klinik Seefeld/Herrsching GmbH",
+"beds":110,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18804",
+"name":"Klinikum Seefeld",
+"town":"Seefeld",
+"operator":"Dr. Schindlbeck Klinik Seefeld/Herrsching GmbH",
+"beds":72,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18808",
+"name":"Marianne-Strauß-Klinik, Behandlungszentrum Kempfenhausen",
+"town":"Berg",
+"operator":"Behandlungszentrum Kempfenhausen für Multiple Sklerose Kranke gGmbH",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18809",
+"name":"Klinikum Fünfseenland Gauting",
+"town":"Gauting",
+"operator":"Klinikum Fünfseenland Gauting GmbH",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18810",
+"name":"kbo-Heckscher-Klinikum Rottmannshöhe",
+"town":"Berg",
+"operator":"kbo-Heckscher-Klinikum gGmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18811",
+"name":"Asklepios Lungenklink Gauting",
+"town":"Gauting",
+"operator":"Asklepios Klinik Gauting GmbH",
+"beds":250,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18813",
+"name":"Benedictus Krankenhaus Feldafing",
+"town":"Feldafing",
+"operator":"Benedictus Krankenhaus Feldafing GmbH & Co. KG",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18872",
+"name":"Benedictus Krankenhaus Feldafing",
+"town":"Feldafing",
+"operator":"Benedictus Krankenhaus Feldafing GmbH & Co. KG",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18901",
+"name":"Klinikum Traunstein",
+"town":"Traunstein",
+"operator":"Kliniken Südostbayern AG",
+"beds":548,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18902",
+"name":"Kreisklinik Trostberg",
+"town":"Trostberg",
+"operator":"Kliniken Südostbayern AG",
+"beds":223,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"18905",
+"name":"Salzachklinik Fridolfing",
+"town":"Fridolfing",
+"operator":"Gemeinde Fridolfing",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"19001",
+"name":"Krankenhaus Schongau",
+"town":"Schongau",
+"operator":"Krankenhaus GmbH Landkreis Weilheim-Schongau",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"19002",
+"name":"Krankenhaus Weilheim",
+"town":"Weilheim",
+"operator":"Krankenhaus GmbH Landkreis Weilheim-Schongau",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"19003",
+"name":"Klinikum Penzberg",
+"town":"Penzberg",
+"operator":"Krankenhaus Penzberg GmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"19005",
+"name":"kbo-Lech-Mangfall-Klinik Peißenberg",
+"town":"Peißenberg",
+"operator":"kbo-Lech-Mangfall-Kliniken gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26101",
+"name":"Klinikum Landshut",
+"town":"Landshut",
+"operator":"Klinikum Landshut AdöR der Stadt Landshut",
+"beds":520,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26103",
+"name":"LA-Regio Kliniken Kinderklinik St. Marien Landshut",
+"town":"Landshut",
+"operator":"LA-Regio Kliniken gKU, AdöR des Landkreises und der Stadt Landshut",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26105",
+"name":"Krankenhaus Landshut-Achdorf",
+"town":"Landshut",
+"operator":"Landshuter KU für medizinische Versorgung, AöR - La.KUMed-",
+"beds":342,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26107",
+"name":"Bezirkskrankenhaus Landshut",
+"town":"Landshut",
+"operator":"Bezirk Niederbayern",
+"beds":260,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26108",
+"name":"LA-Regio Kliniken Landshut",
+"town":"Landshut",
+"operator":"LA-Regio Kliniken gKU, AdöR des Landkreises und der Stadt Landshut",
+"beds":862,
+"parse_quality":"new_2026_verified"
+},
+{
+"clinic_id":"26201",
+"name":"Klinikum Passau",
+"town":"Passau",
+"operator":"Kreisfreie Stadt Passau",
+"beds":660,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26202",
+"name":"Kinderklinik Dritter Orden Passau",
+"town":"Passau",
+"operator":"Ordenskliniken München-Passau gGmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26204",
+"name":"Bezirkskrankenhaus Passau - Fachklinik für Kinder- und Jugendpsychiatrie und Psychotherapie",
+"town":"Passau",
+"operator":"Bezirk Niederbayern",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26205",
+"name":"Bezirkskrankenhaus Passau - Fachklinik für Erwachsenenpsychiatrie und Psychotherapie",
+"town":"Passau",
+"operator":"Bezirk Niederbayern",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26206",
+"name":"Psychosomatische Tagesklinik Passau (PTP)",
+"town":"Passau",
+"operator":"Landkreis Passau Krankenhaus gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"26301",
+"name":"Barmherzige Brüder Klinikum St. Elisabeth, Straubing",
+"town":"Straubing",
+"operator":"Barmherzige Brüder Klinikum St. Elisabeth Straubing GmbH",
+"beds":475,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27104",
+"name":"Fachklinik Osterhofen",
+"town":"Osterhofen",
+"operator":"Fachklinik Osterhofen GmbH",
+"beds":127,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27105",
+"name":"Bezirksklinikum Mainkofen",
+"town":"Deggendorf",
+"operator":"Bezirk Niederbayern",
+"beds":562,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27106",
+"name":"DONAUISAR Klinikum Deggendorf",
+"town":"Deggendorf",
+"operator":"DONAUISAR Klinikum Deggendorf-Dingolfing-Landau gKU",
+"beds":465,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27107",
+"name":"Tagesklinik für KJP am Klinikum Deggendorf",
+"town":"Deggendorf",
+"operator":"Bezirk Niederbayern",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27108",
+"name":"Klinik Angermühle Deggendorf",
+"town":"Deggendorf",
+"operator":"Klinik Angermühle GmbH",
+"beds":18,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27201",
+"name":"Kreiskrankenhaus Grafenau",
+"town":"Grafenau",
+"operator":"Kliniken am Goldenen Steig gGmbH",
+"beds":105,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27204",
+"name":"Kreiskrankenhaus Freyung",
+"town":"Freyung",
+"operator":"Kliniken am Goldenen Steig gGmbH",
+"beds":260,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27301",
+"name":"Caritas-Krankenhaus St. Lukas",
+"town":"Kelheim",
+"operator":"Caritas Krankenhaus St. Lukas GmbH",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27302",
+"name":"Krankenhaus Mainburg",
+"town":"Mainburg",
+"operator":"Ilmtalklinik GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27306",
+"name":"Asklepios Klinikum Bad Abbach",
+"town":"Bad Abbach",
+"operator":"Asklepios Klinikum Bad Abbach GmbH",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27307",
+"name":"Passauer Wolf Bad Gögging - Klinik für Neurologie",
+"town":"Neustadt an der Donau",
+"operator":"Passauer Wolf Bad Gögging GmbH & Co. KG",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27401",
+"name":"LA-Regio Kliniken Krankenhaus Vilsbiburg",
+"town":"Vilsbiburg",
+"operator":"LA-Regio Kliniken gKU, AdöR des Landkreises und der Stadt Landshut",
+"beds":185,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27402",
+"name":"LA-Regio Kliniken Schlossklinik Rottenburg",
+"town":"Rottenburg",
+"operator":"LA-Regio Kliniken gKU, AdöR des Landkreises und der Stadt Landshut",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27501",
+"name":"Kreiskrankenhaus Rotthalmünster",
+"town":"Rotthalmünster",
+"operator":"Landkreis Passau Krankenhaus gGmbH",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27502",
+"name":"Kreiskrankenhaus Vilshofen",
+"town":"Vilshofen",
+"operator":"Landkreis Passau Krankenhaus gGmbH",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27503",
+"name":"Kreiskrankenhaus Wegscheid",
+"town":"Wegscheid",
+"operator":"Landkreis Passau Krankenhaus gGmbH",
+"beds":79,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27509",
+"name":"Fachklinik Johannesbad Bad Füssing",
+"town":"Bad Füssing",
+"operator":"Johannesbad Reha-Kliniken GmbH & Co. KG",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27510",
+"name":"Fachklinik St. Lukas",
+"town":"Bad Griesbach",
+"operator":"Fachklinik St. Lukas GmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27511",
+"name":"Passauer Wolf Bad Griesbach - Klinik für Neurologie",
+"town":"Bad Griesbach",
+"operator":"Passauer Wolf Bad Griesbach GmbH & Co. KG",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27601",
+"name":"ARBERLANDKlinik Zwiesel",
+"town":"Zwiesel",
+"operator":"Arberlandkliniken KU",
+"beds":166,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27602",
+"name":"ARBERLANDKlinik Viechtach",
+"town":"Viechtach",
+"operator":"Arberlandkliniken KU",
+"beds":166,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27701",
+"name":"Psychosomatische Fachklinik Simbach am Inn",
+"town":"Simbach am Inn",
+"operator":"KU Rottal-Inn-Kliniken",
+"beds":190,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27702",
+"name":"Kreiskrankenhaus Pfarrkirchen",
+"town":"Pfarrkirchen",
+"operator":"KU Rottal-Inn-Kliniken",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27705",
+"name":"Kreiskrankenhaus Eggenfelden",
+"town":"Eggenfelden",
+"operator":"KU Rottal-Inn-Kliniken",
+"beds":275,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27706",
+"name":"AMEOS Klinikum Inntal",
+"town":"Simbach am Inn",
+"operator":"AMEOS Klinikum Inntal GmbH",
+"beds":60,
+"parse_quality":"new_2026_verified"
+},
+{
+"clinic_id":"27773",
+"name":"AMEOS Klinikum Inntal",
+"town":"Simbach am Inn",
+"operator":"AMEOS Klinikum Inntal GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27801",
+"name":"Klinik Bogen",
+"town":"Bogen",
+"operator":"Kreiskliniken Bogen-Mallersdorf, AöR",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27803",
+"name":"Orthopädische Klinik Schwarzach",
+"town":"Schwarzach",
+"operator":"Pfarrer-Michael-Graf-Stiftung",
+"beds":105,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27805",
+"name":"Klinik Mallersdorf",
+"town":"Mallersdorf-Pfaffenberg",
+"operator":"Kreiskliniken Bogen-Mallersdorf, AöR",
+"beds":145,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27901",
+"name":"DONAUISAR Klinikum Dingolfing",
+"town":"Dingolfing",
+"operator":"DONAUISAR Klinikum Deggendorf-Dingolfing-Landau gKU",
+"beds":110,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"27904",
+"name":"DONAUISAR Klinikum Landau",
+"town":"Landau",
+"operator":"DONAUISAR Klinikum Deggendorf-Dingolfing-Landau gKU",
+"beds":85,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36101",
+"name":"Klinikum St. Marien Amberg",
+"town":"Amberg",
+"operator":"KU Klinikum St. Marien Amberg, AöR",
+"beds":535,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36102",
+"name":"Psychiatrische Tagesklinik Amberg",
+"town":"Amberg",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36201",
+"name":"Krankenhaus Barmherzige Brüder",
+"town":"Regensburg",
+"operator":"Barmherzige Brüder gemeinnützige Krankenhaus GmbH",
+"beds":985,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36202",
+"name":"Krankenhaus St. Josef, Regensburg",
+"town":"Regensburg",
+"operator":"Caritasverband für die Diözese Regensburg e.V.",
+"beds":325,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36209",
+"name":"Bezirksklinikum Regensburg",
+"town":"Regensburg",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":623,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36290",
+"name":"Klinikum der Universität Regensburg",
+"town":"Regensburg",
+"operator":"Freistaat Bayern",
+"beds":839,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36301",
+"name":"Klinikum Weiden",
+"town":"Weiden",
+"operator":"Kliniken Nordoberpfalz AG",
+"beds":649,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"36302",
+"name":"Psychiatrische Tagesklinik Weiden",
+"town":"Weiden",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37101",
+"name":"St. Anna Krankenhaus Sulzbach-Rosenberg",
+"town":"Sulzbach-Rosenberg",
+"operator":"KU Krankenhäuser des Landkreises Amberg-Sulzbach, AöR",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37102",
+"name":"St. Johannes-Klinik Auerbach",
+"town":"Auerbach/OPf.",
+"operator":"KU Krankenhäuser des Landkreises Amberg-Sulzbach, AöR",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37202",
+"name":"Sana Kliniken - Krankenhaus Cham",
+"town":"Cham",
+"operator":"Sana Kliniken des Landkreises Cham GmbH",
+"beds":235,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37203",
+"name":"Sana Kliniken - Krankenhaus Bad Kötzting",
+"town":"Bad Kötzting",
+"operator":"Sana Kliniken des Landkreises Cham GmbH",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37205",
+"name":"Heiligenfeld Klinik Waldmünchen",
+"town":"Waldmünchen",
+"operator":"Heiligenfeld GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37208",
+"name":"Psychiatrische Klinik Cham",
+"town":"Cham",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37273",
+"name":"Spezialkliniken Neukirchen und Rötz",
+"town":"Neukirchen b Hl. Blut",
+"operator":"Spezialklinik Neukirchen/Rötz GmbH & Co.KG",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37275",
+"name":"TCM Klinik Bad Kötzting",
+"town":"Bad Kötzting",
+"operator":"TCM Klinik Bad Kötzting GmbH",
+"beds":75,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37301",
+"name":"Klinikum Neumarkt",
+"town":"Neumarkt i.d.OPf.",
+"operator":"Klinikum Neumarkt - AdöR des Landkreises Neumarkt i.d.OPf.",
+"beds":485,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37304",
+"name":"Klinik für Psychosomatische Medizin und Psychotherapie",
+"town":"Parsberg",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37404",
+"name":"Bezirkskrankenhaus Wöllershof",
+"town":"Störnstein",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":193,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37501",
+"name":"Kreisklinik Wörth a.d. Donau",
+"town":"Wörth an der Donau",
+"operator":"Landkreis Regensburg",
+"beds":125,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37504",
+"name":"Caritas-Krankenhaus St. Maria",
+"town":"Donaustauf",
+"operator":"Caritas Krankenhaus St. Maria gGmbH",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37601",
+"name":"St. Barbara Krankenhaus Schwandorf",
+"town":"Schwandorf",
+"operator":"Barmherzige Brüder gemeinnützige Krankenhaus GmbH",
+"beds":267,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37602",
+"name":"Asklepios Klinik im Städtedreieck",
+"town":"Burglengenfeld",
+"operator":"Asklepios Südpfalzkliniken GmbH",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37607",
+"name":"Asklepios Orthopädische Klinik Lindenlohe",
+"town":"Schwandorf",
+"operator":"Asklepios Klinik Lindenlohe GmbH",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37608",
+"name":"Asklepios Klinik Oberviechtach",
+"town":"Oberviechtach",
+"operator":"Asklepios Klinikum Bad Abbach GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37609",
+"name":"Passauer Wolf Nittenau - Klinik für Neurologie",
+"town":"Nittenau",
+"operator":"Reha-Zentrum Nittenau GmbH",
+"beds":17,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37701",
+"name":"Krankenhaus Tirschenreuth",
+"town":"Tirschenreuth",
+"operator":"Kliniken Nordoberpfalz AG",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"37703",
+"name":"Krankenhaus Kemnath",
+"town":"Kemnath",
+"operator":"Kliniken Nordoberpfalz AG",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46101",
+"name":"Klinikum Bamberg - Betriebsstätte am Bruderwald",
+"town":"Bamberg",
+"operator":"Sozialstiftung Bamberg",
+"beds":911,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46103",
+"name":"Klinikum Bamberg - Betriebsstätte am Michelsberg",
+"town":"Bamberg",
+"operator":"Sozialstiftung Bamberg",
+"beds":225,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46110",
+"name":"Tagesklinik für KJP am Klinikum Bamberg - Betriebsstätte am Bruderwald",
+"town":"Bamberg",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46170",
+"name":"Klinikum Bamberg - Betriebsstätte am Bruderwald",
+"town":"Bamberg",
+"operator":"Sozialstiftung Bamberg",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46201",
+"name":"Klinikum Bayreuth",
+"town":"Bayreuth",
+"operator":"Klinikum Bayreuth GmbH",
+"beds":662,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46203",
+"name":"Bezirkskrankenhaus Bayreuth",
+"town":"Bayreuth",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":339,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46204",
+"name":"Klinik Hohe Warte",
+"town":"Bayreuth",
+"operator":"Klinikum Bayreuth GmbH",
+"beds":316,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46301",
+"name":"Sana Klinikum Coburg",
+"town":"Coburg",
+"operator":"Sana Kliniken Oberfranken Coburg GmbH",
+"beds":550,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46306",
+"name":"Tagesklinik Coburg für PSY des Bezirksklinikum Obermain",
+"town":"Coburg",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46307",
+"name":"Tagesklinik Coburg für KJP des BKH Bayreuth",
+"town":"Coburg",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46401",
+"name":"Sana Klinikum Hof",
+"town":"Hof",
+"operator":"Sana Klinikum Hof GmbH",
+"beds":465,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"46405",
+"name":"Tagesklinik Hof für KJP des BKH Bayreuth",
+"town":"Hof",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47101",
+"name":"Juraklinik Scheßlitz",
+"town":"Scheßlitz",
+"operator":"Gem. Krankenhausgesellschaft des Landkreises Bamberg mbH",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47102",
+"name":"Steigerwaldklinik Burgebrach",
+"town":"Burgebrach",
+"operator":"Gem. Krankenhausgesellschaft des Landkreises Bamberg mbH",
+"beds":128,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47201",
+"name":"Sana Klinik Pegnitz",
+"town":"Pegnitz",
+"operator":"Sana Klinik Pegnitz GmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47301",
+"name":"Sana Klinikum Neustadt",
+"town":"Neustadt bei Coburg",
+"operator":"Sana Kliniken Oberfranken Neustadt GmbH",
+"beds":73,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47302",
+"name":"Medical Park Bad Rodach",
+"town":"Bad Rodach",
+"operator":"Medical Park Bad Rodach GmbH & Co. KG",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47370",
+"name":"Medical Park Bad Rodach",
+"town":"Bad Rodach",
+"operator":"Medical Park Bad Rodach GmbH & Co. KG",
+"beds":5,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47401",
+"name":"Klinikum Forchheim",
+"town":"Forchheim",
+"operator":"Klinikum Forchheim - Fränkische Schweiz gGmbH",
+"beds":225,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47402",
+"name":"Klinik Fränkische Schweiz Ebermannstadt",
+"town":"Ebermannstadt",
+"operator":"Klinikum Forchheim - Fränkische Schweiz gGmbH",
+"beds":85,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47403",
+"name":"Psychiatrische Tagesklinik Bamberg Forchheim",
+"town":"Forchheim",
+"operator":"Psychiatrische Tagesklinik Bamberg-Forchheim gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47501",
+"name":"Klinik Münchberg",
+"town":"Münchberg",
+"operator":"KU Kliniken HochFranken, AöR",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47502",
+"name":"Klinik Naila",
+"town":"Naila",
+"operator":"KU Kliniken HochFranken, AöR",
+"beds":165,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47503",
+"name":"Bezirksklinik Rehau",
+"town":"Rehau",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":146,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47504",
+"name":"Klinik am Park",
+"town":"Bad Steben",
+"operator":"Rehaklinik am Park GmbH & Co. OHG",
+"beds":31,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47570",
+"name":"Klinik am Park",
+"town":"Bad Steben",
+"operator":"Klinik am Park Bad Steben GmbH",
+"beds":3,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47601",
+"name":"HELIOS Frankenwaldklinik Kronach",
+"town":"Kronach",
+"operator":"Frankenwaldklinik Kronach GmbH",
+"beds":282,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47602",
+"name":"Tagesklinik Kronach für PSY des Bezirksklinikums Obermain",
+"town":"Kronach",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47701",
+"name":"Klinikum Kulmbach",
+"town":"Kulmbach",
+"operator":"Zweckverband Klinikum Kulmbach",
+"beds":540,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47702",
+"name":"Fachklinik Stadtsteinach",
+"town":"Stadtsteinach",
+"operator":"Zweckverband Klinikum Kulmbach",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47770",
+"name":"Privatklinik für Psychiatrie und Psychotherapie Wirsberg",
+"town":"Wirsberg",
+"operator":"Willi Pinkow",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47801",
+"name":"Sana Klinikum Lichtenfels",
+"town":"Lichtenfels",
+"operator":"Sana Helmut-G.-Walther-Klinikum Lichtenfels GmbH",
+"beds":276,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47802",
+"name":"Bezirksklinikum Obermain",
+"town":"Ebensfeld",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":278,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47805",
+"name":"Schön Klinik Bad Staffelstein",
+"town":"Bad Staffelstein",
+"operator":"Schön Klinik Bad Staffelstein SE & Co. KG",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47870",
+"name":"Schön Klinik Bad Staffelstein",
+"town":"Bad Staffelstein",
+"operator":"Schön Klinik Bad Staffelstein SE & Co. KG",
+"beds":51,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47871",
+"name":"Bezirksklinikum Obermain",
+"town":"Ebensfeld",
+"operator":"KU Gesundheitseinrichtungen des Bezirks Oberfranken (GeBO)",
+"beds":24,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47901",
+"name":"Klinikum Fichtelgebirge Marktredwitz",
+"town":"Marktredwitz",
+"operator":"Klinikum Fichtelgebirge, AöR",
+"beds":300,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"47902",
+"name":"Krankenhaus Selb",
+"town":"Selb",
+"operator":"Klinikum Fichtelgebirge, AöR",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56101",
+"name":"ANregiomed Klinikum Ansbach",
+"town":"Ansbach",
+"operator":"ANregiomed gKU, AöR des Landkreises Ansbach und der Stadt Ansbach",
+"beds":360,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56102",
+"name":"Bezirksklinikum Ansbach",
+"town":"Ansbach",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":377,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56103",
+"name":"Diakoneo Rangauklinik Ansbach",
+"town":"Ansbach",
+"operator":"Diakoneo Rangauklinik Ansbach GmbH",
+"beds":75,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56201",
+"name":"Waldkrankenhaus St. Marien, Erlangen",
+"town":"Erlangen",
+"operator":"Malteser Waldkrankenhaus Erlangen gGmbH",
+"beds":290,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56202",
+"name":"Klinikum am Europakanal",
+"town":"Erlangen",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":363,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56290",
+"name":"Klinikum der Friedrich-Alexander-Universität Erlangen-Nürnberg",
+"town":"Erlangen",
+"operator":"Freistaat Bayern",
+"beds":1462,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56301",
+"name":"Klinikum Fürth",
+"town":"Fürth",
+"operator":"Klinikum Fürth, AöR der Stadt Fürth",
+"beds":771,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56303",
+"name":"Psych. Tagesklinik Fürth des Klinikums am Europakanal",
+"town":"Fürth",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56304",
+"name":"Medic-Center Klinik Fürth",
+"town":"Fürth",
+"operator":"Medic-Center Klinik GmbH & Co. KG",
+"beds":6,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56401",
+"name":"Klinikum Nürnberg - Betriebsstätte Nord",
+"town":"Nürnberg",
+"operator":"KU Klinikum Nürnberg",
+"beds":1276,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56402",
+"name":"Krankenhaus Martha-Maria St. Theresien, Standort St. Theresien",
+"town":"Nürnberg",
+"operator":"Martha-Maria Krankenhaus gGmbH; Nürnberg",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56403",
+"name":"Krankenhaus Martha-Maria St. Theresien, Standort Martha-Maria",
+"town":"Nürnberg",
+"operator":"Martha-Maria Krankenhaus gGmbH; Nürnberg",
+"beds":300,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56404",
+"name":"Klinik Hallerwiese - Cnopfsche Kinderklinik",
+"town":"Nürnberg",
+"operator":"DIAKONEO KdöR",
+"beds":279,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56405",
+"name":"Klinik am Birkenwald",
+"town":"Nürnberg",
+"operator":"Klinik am Birkenwald GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56406",
+"name":"Cnopf'sche Kinderklinik Nürnberg",
+"town":"Nürnberg",
+"operator":"DIAKONEO KdöR",
+"beds":139,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56407",
+"name":"Klinik Dr. Erler, Nürnberg",
+"town":"Nürnberg",
+"operator":"Kliniken Dr. Erler gGmbH",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56408",
+"name":"Maximilians-Augenklinik Nürnberg",
+"town":"Nürnberg",
+"operator":"Maximilians-Augenklinik GmbH",
+"beds":22,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56409",
+"name":"Internistische Klinik Dr. Steger Nürnberg",
+"town":"Nürnberg",
+"operator":"Internistischen Klinik Dr. Steger GmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56410",
+"name":"Klinikum Nürnberg - Betriebsstätte Süd",
+"town":"Nürnberg",
+"operator":"KU Klinikum Nürnberg",
+"beds":957,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56412",
+"name":"310Klinik Nürnberg",
+"town":"Nürnberg",
+"operator":"310Klinik GmbH",
+"beds":41,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56413",
+"name":"KIRINUS Tagesklinik Am Rosenaupark",
+"town":"Nürnberg",
+"operator":"KIRINUS Tagesklinik 3 GmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"56501",
+"name":"Diakoneo Krankenhaus Schwabach",
+"town":"Schwabach",
+"operator":"Krankenhaus Schwabach gGmbH",
+"beds":170,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57102",
+"name":"ANregiomed Klinik Dinkelsbühl",
+"town":"Dinkelsbühl",
+"operator":"ANregiomed gKU, AöR des Landkreises Ansbach und der Stadt Ansbach",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57103",
+"name":"ANregiomed Klinik Rothenburg o.d.T.",
+"town":"Rothenburg o.d. Tauber",
+"operator":"ANregiomed gKU, AöR des Landkreises Ansbach und der Stadt Ansbach",
+"beds":145,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57201",
+"name":"Kreiskrankenhaus St. Anna Höchstadt a.d. Aisch",
+"town":"Höchstadt",
+"operator":"Landkreis Erlangen-Höchstadt",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57202",
+"name":"m&i-Fachklinik Herzogenaurach",
+"town":"Herzogenaurach",
+"operator":"m&i - Klinikgesellschaft in Herzogenaurach GmbH",
+"beds":62,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57401",
+"name":"Krankenhaus Lauf a.d. Pegnitz",
+"town":"Lauf a.d.Pegnitz",
+"operator":"Krankenhäuser Nürnberger Land GmbH",
+"beds":178,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57403",
+"name":"Krankenhaus Altdorf b. Nürnberg",
+"town":"Altdorf",
+"operator":"Krankenhäuser Nürnberger Land GmbH",
+"beds":79,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57407",
+"name":"Frankenalb-Klinik Engelthal",
+"town":"Engelthal",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":191,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57408",
+"name":"Krankenhaus Rummelsberg, Schwarzenbruck",
+"town":"Schwarzenbruck",
+"operator":"Krankenhaus Rummelsberg GmbH",
+"beds":300,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57409",
+"name":"KIRINUS PsoriSol Klinik",
+"town":"Hersbruck",
+"operator":"PsoriSol Hautklinik GmbH",
+"beds":142,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57501",
+"name":"Klinik Neustadt a.d. Aisch",
+"town":"Neustadt a.d. Aisch",
+"operator":"KU Kliniken des Landkreises Neustadt a.d. Aisch-Bad Windsheim, AöR",
+"beds":181,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57502",
+"name":"Klinik Bad Windsheim",
+"town":"Bad Windsheim",
+"operator":"KU Kliniken des Landkreises Neustadt a.d. Aisch-Bad Windsheim, AöR",
+"beds":135,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57503",
+"name":"Heiligenfeld Klinik Uffenheim",
+"town":"Uffenheim",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57504",
+"name":"Tagesklinik für Psychiatrie und Psychotherapie Neustadt a. d. Aisch",
+"town":"Neustadt a.d. Aisch",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57505",
+"name":"Dr. Becker Kiliani-Klinik Bad Windsheim",
+"town":"Bad Windsheim",
+"operator":"Dr. Becker Klinikgesellschaft SE & Co. KG",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57506",
+"name":"Tagesklinik für KJP Neustadt a. d. Aisch",
+"town":"Neustadt a. d. Aisch",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57570",
+"name":"Dr. Becker Kiliani-Klinik Bad Windsheim",
+"town":"Bad Windsheim",
+"operator":"Dr. Becker Klinikgesellschaft SE & Co. KG",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57601",
+"name":"Kreisklinik Roth",
+"town":"Roth",
+"operator":"KU Kreisklinik Roth, AöR des Landkreises Roth",
+"beds":270,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57605",
+"name":"Tagesklinik für Psychiatrie an der Kreisklinik Roth",
+"town":"Roth",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57701",
+"name":"Klinikum Altmühlfranken Weißenburg",
+"town":"Weißenburg i.Bay.",
+"operator":"KU Klinikum Altmühlfranken, AöR",
+"beds":190,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57705",
+"name":"Klinikum Altmühlfranken Gunzenhausen",
+"town":"Gunzenhausen",
+"operator":"KU Klinikum Altmühlfranken, AöR",
+"beds":210,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57706",
+"name":"Psychiatrische Tagesklinik Weißenburg",
+"town":"Weißenburg i.Bay.",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"57707",
+"name":"Klinik Altmühltal - Fachklinik für Psychosomatische Medizin und Psychotherapie",
+"town":"Treuchtlingen",
+"operator":"KU Bezirkskliniken Mittelfranken, AöR",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66101",
+"name":"Klinikum Aschaffenburg-Alzenau - Standort Aschaffenburg",
+"town":"Aschaffenburg",
+"operator":"Klinikum Aschaffenburg-Alzenau gGmbH",
+"beds":731,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66102",
+"name":"Bergman Clinics Hofgartenklinik Aschaffenburg",
+"town":"Aschaffenburg",
+"operator":"Bergman Deutsche Klinik Aschaffenburg GmbH",
+"beds":42,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66103",
+"name":"Klinik am Ziegelberg Frauenklinik Aschaffenburg",
+"town":"Aschaffenburg",
+"operator":"Priv.Doz. Dr. Dr. M. Halbach",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66104",
+"name":"Tagesklinik Aschaffenburg des BKH Lohr am Main",
+"town":"Aschaffenburg",
+"operator":"Bezirk Unterfranken",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66105",
+"name":"Psychiatrische Klinik Aschaffenburg des BKH Lohr am Main",
+"town":"Aschaffenburg",
+"operator":"Bezirk Unterfranken",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66202",
+"name":"Krankenhaus St. Josef Schweinfurt",
+"town":"Schweinfurt",
+"operator":"Krankenhaus St. Josef gGmbH",
+"beds":272,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66204",
+"name":"Leopoldina Krankenhaus der Stadt Schweinfurt",
+"town":"Schweinfurt",
+"operator":"Leopoldina Krankenhaus der Stadt Schweinfurt GmbH",
+"beds":640,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66205",
+"name":"Tagesklinik für Psychiatrie Schweinfurt des BKH Werneck",
+"town":"Schweinfurt",
+"operator":"Bezirk Unterfranken",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66301",
+"name":"Klinikum Würzburg Mitte",
+"town":"Würzburg",
+"operator":"Klinikum Würzburg Mitte gGmbH",
+"beds":647,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66303",
+"name":"Rotkreuzklinik Würzburg",
+"town":"Würzburg",
+"operator":"Rotkreuz-Klinik Würzburg gGmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66305",
+"name":"Klinik König-Ludwig-Haus, Würzburg",
+"town":"Würzburg",
+"operator":"Bezirk Unterfranken",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66310",
+"name":"Tagesklinik für KJP Würzburg",
+"town":"Würzburg",
+"operator":"Diakonisches Werk Würzburg e.V.",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66312",
+"name":"Klinik am Greinberg",
+"town":"Würzburg",
+"operator":"Bezirk Unterfranken",
+"beds":15,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"66390",
+"name":"Klinikum der Julius-Maximilians-Universität Würzburg",
+"town":"Würzburg",
+"operator":"Freistaat Bayern",
+"beds":1523,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67101",
+"name":"Klinikum Aschaffenburg-Alzenau - Standort Alzenau",
+"town":"Alzenau",
+"operator":"Klinikum Aschaffenburg-Alzenau gGmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67170",
+"name":"Vital-Klinik Alzenau",
+"town":"Alzenau",
+"operator":"Vital-Klinik GmbH & Co.KG",
+"beds":42,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67201",
+"name":"HELIOS St. Elisabeth-Krankenhaus Bad Kissingen",
+"town":"Bad Kissingen",
+"operator":"St. Elisabeth-Krankenhaus GmbH",
+"beds":175,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67205",
+"name":"HESCURO KLINIK Bad Brückenau",
+"town":"Bad Brückenau",
+"operator":"HESCURO KLINIK Bad Brückenau GmbH",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67206",
+"name":"Thoraxzentrum Bezirk Unterfranken",
+"town":"Münnerstadt",
+"operator":"Bezirk Unterfranken",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67208",
+"name":"Fachklinik Heiligenfeld",
+"town":"Bad Kissingen",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":97,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67273",
+"name":"Fachklinik Heiligenfeld",
+"town":"Bad Kissingen",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":38,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67274",
+"name":"Klinik Bavaria",
+"town":"Bad Kissingen",
+"operator":"Klinik Bavaria GmbH & Co. KG, Rehabilitationsklinik Bad Kissingen",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67307",
+"name":"Psychosomatische Klinik Bad Neustadt a.d. Saale",
+"town":"Bad Neustadt a.d. Saale",
+"operator":"RHÖN KLINIKUM AG",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67308",
+"name":"RHÖN-KLINIKUM Campus Bad Neustadt a.d. Saale",
+"town":"Bad Neustadt a. d. Saale",
+"operator":"RHÖN KLINIKUM AG",
+"beds":750,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67370",
+"name":"Psychosomatische Klinik Bad Neustadt a.d. Saale",
+"town":"Bad Neustadt a.d. Saale",
+"operator":"RHÖN KLINIKUM AG",
+"beds":51,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67401",
+"name":"Haßberg-Kliniken - Haus Haßfurt",
+"town":"Haßfurt",
+"operator":"KU Haßberg-Kliniken, AöR",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67402",
+"name":"Haßberg-Kliniken - Haus Ebern-",
+"town":"Ebern",
+"operator":"KU Haßberg-Kliniken, AöR",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67501",
+"name":"Klinik Kitzinger Land",
+"town":"Kitzingen",
+"operator":"KU Klinik Kitzinger Land, AöR",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67504",
+"name":"Fachklinikum Mainschleife",
+"town":"Volkach",
+"operator":"Fachklinikum Mainschleife GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67601",
+"name":"HELIOS Klinik Erlenbach a. Main",
+"town":"Erlenbach a. Main",
+"operator":"Kliniken Miltenberg-Erlenbach GmbH",
+"beds":267,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67702",
+"name":"Klinikum Main-Spessart Lohr",
+"town":"Lohr a. Main",
+"operator":"Landkreis Main-Spessart",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67705",
+"name":"Bezirkskrankenhaus Lohr am Main",
+"town":"Lohr a. Main",
+"operator":"Bezirk Unterfranken",
+"beds":295,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67801",
+"name":"Geomed-Kreisklinik Gerolzhofen",
+"town":"Gerolzhofen",
+"operator":"Geomed-Kreisklinik GmbH",
+"beds":95,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67802",
+"name":"Krankenhaus Markt Werneck",
+"town":"Werneck",
+"operator":"KU Krankenhaus Markt Werneck",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67803",
+"name":"Orthopädisches Krankenhaus Schloss Werneck",
+"town":"Werneck",
+"operator":"Bezirk Unterfranken",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67804",
+"name":"Bezirkskrankenhaus Werneck",
+"town":"Werneck",
+"operator":"Bezirk Unterfranken",
+"beds":290,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67805",
+"name":"Augenklinik Schweinfurt-Gerolzhofen",
+"town":"Gerolzhofen",
+"operator":"Augenklinik Schweinfurt Gerolzhofen GmbH",
+"beds":7,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"67901",
+"name":"Main-Klinik Ochsenfurt",
+"town":"Ochsenfurt",
+"operator":"Main-Klinik Ochsenfurt gGmbH",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76107",
+"name":"Evangelische Diakonissenanstalt Augsburg",
+"town":"Augsburg",
+"operator":"Evangelische Diakonissenanstalt Augsburg",
+"beds":135,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76108",
+"name":"Klinik Vincentinum",
+"town":"Augsburg",
+"operator":"Klinik Vincentinum Augsburg GmbH & Co. KG",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76110",
+"name":"Fachklinik KJF Josefinum",
+"town":"Augsburg",
+"operator":"KJF Klinik Josefinum gGmbH",
+"beds":306,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76111",
+"name":"Orthopädische Fachkliniken der Hessing Stiftung",
+"town":"Augsburg-Göggingen",
+"operator":"Hessing Stiftung",
+"beds":150,
+"parse_quality":null
+},
+{
+"clinic_id":"76114",
+"name":"Bezirkskrankenhaus Augsburg",
+"town":"Augsburg",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":326,
+"parse_quality":null
+},
+{
+"clinic_id":"76190",
+"name":"Universitätsklinikum Augsburg",
+"town":"Augsburg",
+"operator":"Freistaat Bayern",
+"beds":1699,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76201",
+"name":"Klinikum Kaufbeuren",
+"town":"Kaufbeuren",
+"operator":"Kliniken Ostallgäu-Kaufbeuren, AöR des Landkreises Ostallgäu und der Stadt Kaufbeuren",
+"beds":434,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76203",
+"name":"Bezirkskrankenhaus Kaufbeuren",
+"town":"Kaufbeuren",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":202,
+"parse_quality":null
+},
+{
+"clinic_id":"76301",
+"name":"Klinikum Kempten",
+"town":"Kempten",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":510,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76304",
+"name":"Bezirkskrankenhaus Kempten",
+"town":"Kempten",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":120,
+"parse_quality":null
+},
+{
+"clinic_id":"76305",
+"name":"Klinik für KJP des Josefinums Augsburg, Kempten",
+"town":"Kempten",
+"operator":"KJF Klinik Josefinum gGmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76401",
+"name":"Klinikum Memmingen",
+"town":"Memmingen",
+"operator":"Klinikum Memmingen, AöR der Stadt Memmingen",
+"beds":500,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"76403",
+"name":"Bezirkskrankenhaus Memmingen",
+"town":"Memmingen",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":40,
+"parse_quality":null
+},
+{
+"clinic_id":"77101",
+"name":"Kliniken an der Paar Krankenhaus Aichach",
+"town":"Aichach",
+"operator":"Landkreis Aichach-Friedberg",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77102",
+"name":"Kliniken an der Paar Krankenhaus Friedberg",
+"town":"Friedberg",
+"operator":"Landkreis Aichach-Friedberg",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77201",
+"name":"Wertachklinik Schwabmünchen",
+"town":"Schwabmünchen",
+"operator":"Wertachkliniken Bobingen und Schwabmünchen, AöR",
+"beds":126,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77202",
+"name":"Wertachklinik Bobingen",
+"town":"Bobingen",
+"operator":"Wertachkliniken Bobingen und Schwabmünchen, AöR",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77204",
+"name":"Waldhausklinik Deuringen",
+"town":"Stadtbergen",
+"operator":"Waldhausklinik Deuringen GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77301",
+"name":"Kreisklinik St. Elisabeth Dillingen",
+"town":"Dillingen a.d.Donau",
+"operator":"Kreiskliniken Dillingen-Wertingen gGmbH",
+"beds":182,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77302",
+"name":"Kreisklinik Wertingen",
+"town":"Wertingen",
+"operator":"Kreiskliniken Dillingen-Wertingen gGmbH",
+"beds":117,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77401",
+"name":"Klinik Günzburg",
+"town":"Günzburg",
+"operator":"Kreiskliniken Günzburg-Krumbach, AöR",
+"beds":240,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77402",
+"name":"Klinik Krumbach",
+"town":"Krumbach",
+"operator":"Kreiskliniken Günzburg-Krumbach, AöR",
+"beds":164,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77404",
+"name":"m&i-Fachklinik Ichenhausen",
+"town":"Ichenhausen",
+"operator":"m&i Klinikgesellschaft in Ichenhausen GmbH",
+"beds":126,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77406",
+"name":"Bezirkskrankenhaus Günzburg",
+"town":"Günzburg",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":422,
+"parse_quality":null
+},
+{
+"clinic_id":"77407",
+"name":"Krankenhaus St. Camillus",
+"town":"Ursberg",
+"operator":"Zweckverband Krankenhaus St. Camillus Ursberg",
+"beds":28,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77408",
+"name":"Therapiezentrum Burgau",
+"town":"Burgau",
+"operator":"Gemeinnütz. Gesellschaft zur neurologischen Rehabilitation nach erworbenen cerebralen Schäden mbH",
+"beds":113,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77473",
+"name":"m&i-Fachklinik Ichenhausen",
+"town":"Ichenhausen",
+"operator":"m&i Klinikgesellschaft in Ichenhausen GmbH",
+"beds":12,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77502",
+"name":"Donauklinik Neu-Ulm",
+"town":"Neu-Ulm",
+"operator":"Kreisspitalstiftung Weißenhorn",
+"beds":170,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77503",
+"name":"Stiftungsklinik Weißenhorn",
+"town":"Weißenhorn",
+"operator":"Kreisspitalstiftung Weißenhorn",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77602",
+"name":"Asklepios Klinik Lindau",
+"town":"Lindau",
+"operator":"Asklepios Klinik Lindau GmbH",
+"beds":125,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77605",
+"name":"Tagesklinik im Elisabethenhaus Lindau",
+"town":"Lindau",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":0,
+"parse_quality":null
+},
+{
+"clinic_id":"77606",
+"name":"Panorama Fachklinik für Psychosomatik",
+"town":"Scheidegg im Allgäu",
+"operator":"Panorama Fachklinik GmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77607",
+"name":"Hochgrat-Klinik Wolfsried",
+"town":"Stiefenhofen",
+"operator":"Hochgrat-Klinik Wolfsried - Dr. Reisach GmbH & Co. KG",
+"beds":27,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77672",
+"name":"Hochgrat-Klinik Wolfsried",
+"town":"Stiefenhofen",
+"operator":"Hochgrat-Klinik Wolfsried - Dr. Reisach GmbH & Co. KG",
+"beds":78,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77673",
+"name":"Panorama-Klinik für Psychosomatik, Psychotherapie und Naturheilverfahren",
+"town":"Scheidegg im Allgäu",
+"operator":"Panorama Fachklinik GmbH",
+"beds":81,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77701",
+"name":"Klinik Füssen",
+"town":"Füssen",
+"operator":"Kliniken Ostallgäu-Kaufbeuren, AöR des Landkreises Ostallgäu und der Stadt Kaufbeuren",
+"beds":120,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77703",
+"name":"Klinik St. Josef Buchloe",
+"town":"Buchloe",
+"operator":"Kliniken Ostallgäu-Kaufbeuren, AöR des Landkreises Ostallgäu und der Stadt Kaufbeuren",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77705",
+"name":"St. Vinzenz Klinik",
+"town":"Pfronten",
+"operator":"St. Vinzenz Klinik Pfronten im Allgäu GmbH",
+"beds":115,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77706",
+"name":"m&i-Fachklinik Enzensberg",
+"town":"Hopfen am See/Füssen",
+"operator":"m&i Klinikbetriebsgesellschaft GmbH",
+"beds":197,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77707",
+"name":"Günztalklinik Allgäu, Klinik für Psychosomatik und Psychotherapie",
+"town":"Obergünzburg",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":60,
+"parse_quality":null
+},
+{
+"clinic_id":"77708",
+"name":"Alpcura Fachklinik Allgäu",
+"town":"Pfronten",
+"operator":"Alpcura Fachklinik Allgäu Betriebsgesellschaft mbH",
+"beds":32,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77801",
+"name":"Klinik Mindelheim",
+"town":"Mindelheim",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":135,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77802",
+"name":"Klinik Ottobeuren",
+"town":"Ottobeuren",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":118,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77805",
+"name":"Heiligenfeld Klinik Bad Wörishofen",
+"town":"Bad Wörishofen",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":65,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77873",
+"name":"Heiligenfeld Klinik Bad Wörishofen",
+"town":"Bad Wörishofen",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":68,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77901",
+"name":"Donau-Ries Klinik Donauwörth",
+"town":"Donauwörth",
+"operator":"Donau-Ries Kliniken und Seniorenheime gKU",
+"beds":255,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77902",
+"name":"Stiftungskrankenhaus Nördlingen",
+"town":"Nördlingen",
+"operator":"Donau-Ries Kliniken und Seniorenheime gKU",
+"beds":172,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77903",
+"name":"Donau-Ries Klinik Oettingen",
+"town":"Oettingen i. Bay.",
+"operator":"Donau-Ries Kliniken und Seniorenheime gKU",
+"beds":62,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"77907",
+"name":"Bezirkskrankenhaus Donauwörth",
+"town":"Donauwörth",
+"operator":"Bezirkskliniken Schwaben KU",
+"beds":40,
+"parse_quality":null
+},
+{
+"clinic_id":"77908",
+"name":"Tagesklinik für KJP des Josefinums Augsburg, Nördlingen",
+"town":"Nördlingen",
+"operator":"KJF Klinik Josefinum gGmbH",
+"beds":0,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"78001",
+"name":"Klinik Immenstadt",
+"town":"Immenstadt",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":190,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"78002",
+"name":"Klinik Oberstdorf",
+"town":"Oberstdorf",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"78003",
+"name":"Klinik Sonthofen",
+"town":"Sonthofen",
+"operator":"Klinikverbund Allgäu gGmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"78008",
+"name":"Adula-Klinik Oberstdorf",
+"town":"Oberstdorf",
+"operator":"Adula-Klinik Oberstdorf - Dr. Reisach GmbH & Co. KG",
+"beds":39,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"78071",
+"name":"Adula-Klinik Oberstdorf",
+"town":"Oberstdorf",
+"operator":"Adula-Klinik Oberstdorf - Dr. Reisach GmbH & Co. KG",
+"beds":107,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"DK01",
+"name":"Diakoneo Wohnen Bruckberg",
+"town":"Bruckberg",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK02",
+"name":"Diakoneo Wohnheim für Menschen mit Behinderung Obernzenn",
+"town":"Obernzenn",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK03",
+"name":"Diakoneo Seniorenhof Büchenbach",
+"town":"Büchenbach",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK04",
+"name":"Diakoneo Laurentiushaus Lützelbuch",
+"town":"Coburg",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK05",
+"name":"Diakoneo Wohnen Dinkelsbühl",
+"town":"Dinkelsbühl",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK06",
+"name":"Diakoneo Bodelschwingh-Haus",
+"town":"Erlangen",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK07",
+"name":"Diakoneo Kompetenzzentrum Forchheim",
+"town":"Forchheim",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK08",
+"name":"Diakoneo Haus an den Rangau Wiesen",
+"town":"Bad Windsheim",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK09",
+"name":"Diakoneo Wohnen Oettingen",
+"town":"Oettingen",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK10",
+"name":"Diakoneo Wohnen Polsingen",
+"town":"Polsingen",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK11",
+"name":"Diakoneo Hans-Roser-Haus",
+"town":"Roth",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK12",
+"name":"Diakoneo Seniorenzentrum Rothenburg",
+"town":"Rothenburg ob der Tauber",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"DK13",
+"name":"Diakoneo Ambulanter Pflegedienst Stein",
+"town":"Stein",
+"operator":"DIAKONEO KdöR",
+"beds":null,
+"parse_quality":"manual"
+},
+{
+"clinic_id":"RH1008",
+"name":"Therapiezentrum Grafrath",
+"town":"Grafrath",
+"operator":"Deutscher Orden Deutsche Provinz der Brüder vom Deutschen Haus St. Mariens in Jerusalem KdöR",
+"beds":34,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1017",
+"name":"Rehabilitationszentrum Herzogsägmühle",
+"town":"Peiting",
+"operator":"Diakonie Herzogsägmühle gGmbH ",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1044",
+"name":"Caritas Fachklinik Haselbach",
+"town":"Haselbach",
+"operator":"Caritasverband für die Diözese Regensburg e.V.",
+"beds":38,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1051",
+"name":"Der Jägerwinkel Privatklinik GmbH",
+"town":"Bad Wiessee",
+"operator":"Der Jägerwinkel Privatklinik GmbH",
+"beds":72,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1054",
+"name":"Geriatrisches Reha-Zentrum Alexander von Humboldt Klinik GRZ Betriebs GmbH",
+"town":"Bad Steben",
+"operator":"Geriatrisches Reha-Zentrum Alexander von Humboldt Klinik GRZ Betriebs GmbH",
+"beds":86,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1070",
+"name":"Marbachtalklinik Bad Kissingen",
+"town":"Bad Kissingen",
+"operator":"Deutsche Rentenversicherung Oldenburg-Bremen",
+"beds":158,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1087",
+"name":"Sanatorium 'Residenz im Kurpark'",
+"town":"Bad Bayersoien",
+"operator":"PH Hotelbetriebsgesellschaft mbH",
+"beds":53,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1090",
+"name":"Höhenklinik der Deutschen Rentenversicherung Nordbayern",
+"town":"Bischofsgrün",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1104",
+"name":"Sanatorium Fontenay",
+"town":"Bad Wörishofen",
+"operator":"Holzbock GmbH",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1111",
+"name":"Geriatrische Rehabilitationsklinik",
+"town":"Würzburg",
+"operator":"Arbeiterwohlfahrt Bezirksverband Unterfranken e.V.",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1123",
+"name":"Lauterbacher Mühle Klinik GmbH & Co. KG",
+"town":"Seeshaupt",
+"operator":"Lauterbacher Mühle Klinik GmbH & Co. KG",
+"beds":84,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1138",
+"name":"Reha-Klinik Am Kurpark GmbH & Co. KG",
+"town":"Grafenau",
+"operator":"Reha-Klinik Am Kurpark GmbH & Co. KG",
+"beds":272,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1171",
+"name":"Johannesbad Lechbruck Betriebs GmbH",
+"town":"Lechbruck am See",
+"operator":"Johannesbad Lechbruck Betriebs GmbH",
+"beds":191,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1193",
+"name":"Römerbad-Klinik Bad Gögging",
+"town":"Neustadt a. d. Donau",
+"operator":"Römerbad Klinik GmbH",
+"beds":176,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1198",
+"name":"Evangelische Mutter-Kind-Kurklinik Scheidegg Prävention und Rehabilitation",
+"town":"Scheidegg",
+"operator":"Evang. Müttergenesung Württemberg gGmbH",
+"beds":103,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1200",
+"name":"Klinik Hochried Zentrum für Kinder, Jugendliche und Familien",
+"town":"Murnau",
+"operator":"Katholische Jugendfürsorge der Diözese Augsburg e.V.",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1205",
+"name":"Geriatriezentrum Neuburg GmbH Geriatrische Fachklinik",
+"town":"Neuburg a. d. Donau",
+"operator":"Geriatriezentrum Neuburg GmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1206",
+"name":"Kurhotel Wiedemann KG",
+"town":"Füssen",
+"operator":"Kurhotel Wiedemann KG",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1249",
+"name":"Kreisklinik Roth Geriatrische Rehabilitation",
+"town":"Roth",
+"operator":"Kreisklinik Roth AdöR des Landkreises Roth",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1255",
+"name":"m&i-Fachklinik Enzensberg Hopfen am See Medizinische Rehabilitation",
+"town":"Füssen",
+"operator":"m&i-Klinikbetriebsgesellschaft GmbH",
+"beds":322,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1257",
+"name":"Medical Park Bad Rodach GmbH & Co. KG - Rehabilitation",
+"town":"Bad Rodach",
+"operator":"Medical Park Bad Rodach GmbH & Co. KG",
+"beds":412,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1261",
+"name":"Fachklinik St. Marien Wertach GmbH Vorsorge u. Rehabilitation für Frauen in Familienverantwortung",
+"town":"Wertach",
+"operator":"Fachklinik St. Marien Wertach GmbH",
+"beds":75,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1270",
+"name":"Kurhotel SONNENHOF GmbH & Co. Betriebs KG",
+"town":"Bad Füssing",
+"operator":"Kurhotel SONNENHOF GmbH & Co. Betriebs KG",
+"beds":10,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1279",
+"name":"Bezirksklinikum Regensburg Klinik für neurologische Rehabilitation",
+"town":"Regensburg",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":33,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1280",
+"name":"Kompass Drogenhilfe GmbH Kompass Kompakt",
+"town":"Augsburg",
+"operator":"Kompass Drogenhilfe GmbH",
+"beds":24,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1289",
+"name":"RPK Lichthof",
+"town":"Hof",
+"operator":"Gesellschaft zur Förderung beruflicher und sozialer Integration (gfi) gemeinnützige GmbH",
+"beds":18,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1320",
+"name":"Mutter / Vater & Kind Kurheim Alpenhof",
+"town":"Rettenberg",
+"operator":"Alberga gemeinnützige GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1330",
+"name":"Klinik Bad Wörishofen Fachklinik für Herzkreislauf-Erkrankungen und Orthopädie",
+"town":"Bad Wörishofen",
+"operator":"Deutsche Rentenversicherung Schwaben",
+"beds":170,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1334",
+"name":"Kurhaus Ihlingshof Oberreute/Allgäu",
+"town":"Oberreute/Allgäu",
+"operator":"Reinhold Schwärzler",
+"beds":3,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1338",
+"name":"Klinik Sonnenalm GmbH & Co. KG",
+"town":"Oberstaufen",
+"operator":"Klinik Sonnenalm GmbH & Co. KG",
+"beds":170,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1354",
+"name":"Suchttherapiezentrum Fachklinik Alpenland",
+"town":"Bad Aibling",
+"operator":"Deutscher Orden Deutsche Provinz der Brüder vom Deutschen Haus St. Mariens in Jerusalem KdöR",
+"beds":86,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1364",
+"name":"Schlossreha Rottenburg Fachklinik Geriatrische Reha u. Orthopädische Reha",
+"town":"Rottenburg",
+"operator":"Landshuter Kommunalunternehmen für medizinische Versorgung AöR",
+"beds":69,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1382",
+"name":"Kurzentrum Sonnenschein GmbH & Co. KG",
+"town":"Zwiesel",
+"operator":"Kurzentrum Sonnenschein GmbH & Co. KG",
+"beds":265,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1386",
+"name":"Simssee Klinik GmbH",
+"town":"Bad Endorf",
+"operator":"Simssee Klinik GmbH",
+"beds":248,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1395",
+"name":"BG Klinik für Berufskrankheiten Bad Reichenhall gGmbH",
+"town":"Bad Reichenhall",
+"operator":"BG Klinik für Berufskrankheiten Bad Reichenhall gGmbH",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1435",
+"name":"Medical Park Bad Wiessee GmbH & Co. KG St. Hubertus",
+"town":"Bad Wiessee",
+"operator":"Medical Park Bad Wiessee GmbH & Co. KG",
+"beds":432,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1448",
+"name":"Klinik Hohes Licht gemeinnützige GmbH Prävention und Rehabilitation für Frauen",
+"town":"Oberstdorf",
+"operator":"Klinik Hohes Licht gemeinnützige GmbH im FrauenWerk Stein",
+"beds":51,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1449",
+"name":"Fachklinik Gaißach Zentrum für chron. Erkrankungen Kinder-Jugendliche-Eltern",
+"town":"Gaißach",
+"operator":"Deutsche Rentenversicherung Bayern Süd",
+"beds":159,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1459",
+"name":"Kaiser Trajan Hotel und Klinik GmbH",
+"town":"Neustadt a. d. Donau",
+"operator":"Kaiser Trajan Hotel und Klinik GmbH",
+"beds":126,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1465",
+"name":"AWO Klinik zur Solequelle Gesundheit für Mutter und Kind",
+"town":"Bad Windsheim",
+"operator":"AWO Bezirksverband Ober- und Mittelfranken e.V.",
+"beds":86,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1468",
+"name":"HESCURO – Klinik REGINA – GmbH & Co. KG",
+"town":"Bad Kissingen",
+"operator":"HESCURO - Klinik REGINA - GmbH & Co. KG",
+"beds":193,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1469",
+"name":"Sanatorium Am Mühlbach",
+"town":"Bad Füssing",
+"operator":"Das Mühlbach e.K.",
+"beds":21,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1470",
+"name":"Sana Klinikum Neustadt – Fachklinik für Geriatrie und Rehabilitation",
+"town":"Neustadt b. Coburg",
+"operator":"Sana Kliniken Oberfranken Neustadt GmbH",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1480",
+"name":"MEDIAN Frankenparkklinik GmbH & Co. KG",
+"town":"Bad Kissingen",
+"operator":"MEDIAN Frankenpark Klinik GmbH & Co. KG",
+"beds":183,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1481",
+"name":"Benedictus Krankenhaus Feldafing GmbH & Co. KG",
+"town":"Feldafing",
+"operator":"Benedictus Krankenhaus Feldafing GmbH & Co. KG",
+"beds":105,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1487",
+"name":"Klinik Lindenhof",
+"town":"Bayerbach",
+"operator":"Klinik Lindenhof Betriebs GmbH",
+"beds":196,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1498",
+"name":"Deutsche Rentenversicherung Bund Reha-Zentrum Bad Brückenau Klinik Hartwald",
+"town":"Bad Brückenau",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":228,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1501",
+"name":"Waldburg-Zeil Kliniken GmbH Klinik Niederbayern I",
+"town":"Bad Füssing",
+"operator":"Waldburg-Zeil Kliniken GmbH & Co. Bad Füssing KG",
+"beds":220,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1503",
+"name":"Medical Park Loipl GmbH & Co. KG",
+"town":"Bischofswiesen",
+"operator":"Medical Park Loipl GmbH & Co. KG",
+"beds":151,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1522",
+"name":"Thoraxzentrum Bezirk Unterfranken Rehabilitation",
+"town":"Münnerstadt",
+"operator":"Bezirk Unterfranken",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1530",
+"name":"Paracelsus Klinik Scheidegg",
+"town":"Scheidegg",
+"operator":"Paracelsus-Kliniken Deutschland GmbH & Co. KGaA",
+"beds":212,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1534",
+"name":"Fachklinik König-Ludwig",
+"town":"Schwangau",
+"operator":"Lingenfelder GmbH + Co. OHG",
+"beds":179,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1564",
+"name":"Johannesbad Reha-Klinik Bad Füssing",
+"town":"Bad Füssing",
+"operator":"Johannesbad Reha-Kliniken AG & Co. KG",
+"beds":485,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1576",
+"name":"Deutsche Rentenversicherung Bund Reha-Zentrum Bad Aibling Klinik Wendelstein und Rheumaklinik",
+"town":"Bad Aibling",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":398,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1585",
+"name":"Orthopädische Rehabilitationsklinik der Hessing Stiftung",
+"town":"Augsburg",
+"operator":"Hofrat Friedrich Hessing’sche orthopädische Heilanstalt in Göggingen-Augsburg",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1590",
+"name":"Schön Klinik Vogtareuth SE & Co. KG – Rehabilitation",
+"town":"Vogtareuth",
+"operator":"Schön Klinik Vogtareuth SE & Co. KG",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1591",
+"name":"Kurhotel Zink",
+"town":"Bad Füssing",
+"operator":"Kurhotel Zink e.K.",
+"beds":70,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1594",
+"name":"Dr. Becker Kiliani-Klinik",
+"town":"Bad Windsheim",
+"operator":"Dr. Becker Klinikgesellschaft mbH & Co. KG",
+"beds":250,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1600",
+"name":"Waldburg-Zeil Kliniken GmbH & Co. Rheumaklinik KG – Rehabilitation",
+"town":"Oberammergau",
+"operator":"Waldburg-Zeil Kliniken GmbH & Co. Rheuma-Klinik KG",
+"beds":205,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1605",
+"name":"Rehaklinik am Park GmbH",
+"town":"Bad Steben",
+"operator":"Klinik am Park Bad Steben GmbH",
+"beds":125,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1611",
+"name":"Sozialstiftung Bamberg Saludis gGmbH Geriatrische und Neurologische Rehabilitation",
+"town":"Bamberg",
+"operator":"Sozialstiftung Bamberg Saludis gGmbH",
+"beds":126,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1627",
+"name":"AWO-Fachklinik Schönau",
+"town":"Grünenbach",
+"operator":"Arbeiterwohlfahrt Bezirksverband Schwaben e.V.",
+"beds":33,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1630",
+"name":"St. Theresien-Krankenhaus Nürnberg Gemeinnützige GmbH",
+"town":"Nürnberg",
+"operator":"St. Theresien Krankenhaus gGmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1634",
+"name":"Kliniken Ostallgäu-Kaufbeuren Klinik Füssen Geriatrische Rehabilitation",
+"town":"Füssen",
+"operator":"Kliniken Ostallgäu-Kaufbeuren Anstalt des öffentlichen Rechts des Landkreises Ostallgäu und der Stadt Kaufbeuren",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1638",
+"name":"Klinik Alpenland GmbH & Co. KG",
+"town":"Bad Reichenhall",
+"operator":"Klinik Alpenland GmbH & Co. KG",
+"beds":134,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1641",
+"name":"Würmtalklinik Gräfelfing",
+"town":"Gräfelfing",
+"operator":"Deutscher Orden Deutsche Provinz der Brüder vom Deutschen Haus St. Mariens in Jerusalem KdöR",
+"beds":36,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1652",
+"name":"Klinik Frankenwarte",
+"town":"Bad Steben",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":166,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1672",
+"name":"Prävention und Rehabilitation Heilbad Krumbad",
+"town":"Krumbach",
+"operator":"Heilbad Krumbad GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1684",
+"name":"Therapiezentrum Burgau Rehabilitation",
+"town":"Burgau",
+"operator":"Gemeinnützige Gesellschaft zur neurologischen Rehabilitation nach erworbenen cerebralen Schäden mbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1699",
+"name":"Lympho-Opt GmbH",
+"town":"Pommelsbrunn",
+"operator":"Lympho-Opt GmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1707",
+"name":"Kompass Drogenhilfe GmbH Kompass-Impuls",
+"town":"Ottobeuren",
+"operator":"Kompass Drogenhilfe GmbH",
+"beds":16,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1712",
+"name":"Klinik Sonnenbichl gGmbH Prävention und Rehabilitation für Mutter und Kind",
+"town":"Aschau i.Chiemgau",
+"operator":"Klinik Sonnenbichl gGmbH im FrauenWerk Stein e.V.",
+"beds":97,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1728",
+"name":"AWO-Fachklinik Legau",
+"town":"Legau",
+"operator":"Arbeiterwohlfahrt Bezirksverband Schwaben e.V.",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1739",
+"name":"Klinik Prof. Schedel GmbH",
+"town":"Thyrnau",
+"operator":"Klinik Prof. Schedel GmbH",
+"beds":205,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1740",
+"name":"VAMED Klinik Kipfenberg GmbH – Rehabilitation",
+"town":"Kipfenberg",
+"operator":"VAMED Klinik Kipfenberg GmbH",
+"beds":86,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1741",
+"name":"Bezirksklinik Hochstadt Rehabilitation",
+"town":"Hochstadt am Main",
+"operator":"Kommunalunternehmen Gesundheitseinrichtungen des Bezirks Oberfranken AöR",
+"beds":85,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1742",
+"name":"Fachklinik Schlehreut gGmbH",
+"town":"Wegscheid",
+"operator":"Fachklinik Schlehreut Rehabilitationseinrichtung für suchtkranke Frauen und deren Kinder gGmbH",
+"beds":42,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1745",
+"name":"DR. ERLER REHA am Kontumazgarten",
+"town":"Nürnberg",
+"operator":"Kliniken Dr. Erler gGmbH",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1752",
+"name":"m&i-Fachklinik Herzogenaurach Medizinische Rehabilitation",
+"town":"Herzogenaurach",
+"operator":"m&i-Klinikgesellschaft in Herzogenaurach GmbH",
+"beds":335,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1765",
+"name":"Kreisklinik Berchtesgaden Orthopädische Rehabilitation",
+"town":"Berchtesgaden",
+"operator":"Kliniken Südostbayern AG",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1775",
+"name":"Frankenklinik Deutsche Rentenversicherung Nordbayern",
+"town":"Bad Kissingen",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":145,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1777",
+"name":"Rehabilitationszentrum Klinik Rosenhof GmbH & Co. Betriebs KG",
+"town":"Bad Birnbach",
+"operator":"Rehabilitationszentrum Klinik Rosenhof GmbH & Co. Betriebs KG",
+"beds":269,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1785",
+"name":"Kurhotel Mürz GmbH & Co. KG",
+"town":"Bad Füssing",
+"operator":"Kurhotel Mürz GmbH & Co. KG",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1791",
+"name":"Klinik Herzoghöhe Bayreuth Rehabilitation",
+"town":"Bayreuth",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":210,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1802",
+"name":"Klinik Maximilian GmbH & Co. KG",
+"town":"Scheidegg",
+"operator":"Klinik Maximilian GmbH & Co. KG",
+"beds":350,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1817",
+"name":"Asklepios Klinik St. Wolfgang Rehabilitation",
+"town":"Bad Griesbach-Therme",
+"operator":"Asklepios Klinik Bad Griesbach GmbH & Cie. OHG",
+"beds":61,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1828",
+"name":"Sanatorium Am Birkenhang",
+"town":"Fischen",
+"operator":"Hotel Sonnenbichl GmbH & Co. KG",
+"beds":18,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1833",
+"name":"Sanatorium Allgäuer Rosenalp",
+"town":"Oberstaufen",
+"operator":"Allgäuer Rosenalp GmbH & Co. KG",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1835",
+"name":"Karl-Arnold Schüle KG",
+"town":"Oberstdorf",
+"operator":"Karl-Arnold Schüle KG",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1838",
+"name":"Fachklinik Weihersmühle für junge Suchtkranke",
+"town":"Großhabersdorf",
+"operator":"Deutscher Orden Deutsche Provinz der Brüder vom Deutschen Haus St. Mariens in Jerusalem KdöR",
+"beds":65,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1841",
+"name":"Klinik Bad Trissl GmbH Rehabilitation",
+"town":"Oberaudorf",
+"operator":"Klinik Bad Trissl GmbH",
+"beds":95,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1842",
+"name":"Malteser Waldkrankenhaus Erlangen gGmbH",
+"town":"Erlangen",
+"operator":"Malteser Waldkrankenhaus Erlangen gGmbH",
+"beds":26,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1847",
+"name":"Rehaklinik FRISIA Munkert GmbH",
+"town":"Bad Tölz",
+"operator":"Rehaklinik FRISIA Munkert GmbH",
+"beds":127,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1854",
+"name":"Fachklinik Hirtenstein",
+"town":"Bolsterlang",
+"operator":"Deutscher Orden Deutsche Provinz der Brüder vom Deutschen Haus St. Mariens in Jerusalem KdöR",
+"beds":74,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1866",
+"name":"Therapiezentrum Wolkersdorf",
+"town":"Schwabach",
+"operator":"Stadtmission Nürnberg e.V.",
+"beds":28,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1885",
+"name":"Sanatorium Sedlmayr GmbH",
+"town":"Bad Tölz",
+"operator":"Sanatorium Sedlmayr GmbH",
+"beds":28,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1887",
+"name":"Oberberg Fachklinik Scheidegg im Allgäu",
+"town":"Scheidegg",
+"operator":"Oberberg Klinik Scheidegg GmbH",
+"beds":55,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1891",
+"name":"Physio Klinik im Aitrachtal GmbH",
+"town":"Mengkofen",
+"operator":"Physio Klinikum Aitrachtal GmbH",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1892",
+"name":"Reha-Zentrum Ingolstadt GmbH",
+"town":"Ingolstadt",
+"operator":"Reha-Zentrum Ingolstadt GmbH",
+"beds":38,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1895",
+"name":"Deegenbergklinik für Innere Krankheiten AHB- und Reha-Klinik",
+"town":"Bad Kissingen",
+"operator":"AHB- und Rehaklinik Familienkommanditgesellschaft Deeg GmbH & Co.",
+"beds":212,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1900",
+"name":"Angerer Schmidtchen Kneipp Sanatorium Bad Clevers Klinik f. Naturheilverfahren e.K.",
+"town":"Bad Grönenbach",
+"operator":"Angerer Schmidtchen Kneipp Sanatorium Bad Clevers Klinik f. Naturheilverfahren e.K.",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1901",
+"name":"Reha-Zentrum Bad Kissingen Klinik Saale der Deutschen Rentenversicherung Bund",
+"town":"Bad Kissingen",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":190,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1906",
+"name":"bwlv – Fachklinik Schloss Eichelsdorf",
+"town":"Hofheim",
+"operator":"BWLV-Geschäftsstelle",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1962",
+"name":"RHÖN-KLINIKUM Campus Bad Neustadt",
+"town":"Bad Neustadt a. d. Saale",
+"operator":"RHÖN-KLINIKUM AG",
+"beds":407,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1968",
+"name":"Schön Klinik Berchtesgadener Land SE & Co. KG – Rehabilitation",
+"town":"Schönau am Königssee",
+"operator":"Schön Klinik Berchtesgadener Land SE & Co. KG",
+"beds":112,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1970",
+"name":"PARITÄTISCHE Haus am Kurpark gGmbH",
+"town":"Bad Königshofen",
+"operator":"PARITÄTISCHE Haus am Kurpark gGmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1981",
+"name":"Kliniken des Landkreises Neustadt a. d. Aisch-Bad Windsheim – Geriatrische Rehabilitation",
+"town":"Bad Windsheim",
+"operator":"KU Kliniken des Landkreises Neustadt a.d.Aisch-Bad Windsheim AöR",
+"beds":28,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1996",
+"name":"Klinik Bavaria",
+"town":"Bad Kissingen",
+"operator":"Klinik Bavaria GmbH & Co. KG",
+"beds":300,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH1997",
+"name":"Schmid-Falter Kurhotel",
+"town":"Bad Reichenhall",
+"operator":"Oliver Schmid-Falter",
+"beds":10,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2000",
+"name":"Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG",
+"town":"Wartenberg",
+"operator":"Klinik Wartenberg Professor Dr. Selmair GmbH und Co. KG",
+"beds":149,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2014",
+"name":"Medical Park Prien Kronprinz Betriebs GmbH & Co.KG",
+"town":"Prien am Chiemsee",
+"operator":"Medical Park Prien Kronprinz Betriebs GmbH & Co.KG",
+"beds":204,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2019",
+"name":"Rehabilitationszentrum für psychisch Kranke – Herzogsägmühle",
+"town":"Peiting",
+"operator":"Diakonie Herzogsägmühle gGmbH ",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2025",
+"name":"Johannesbad Klinik Furth im Wald GmbH & Co. KG Therapiez. f. Abhängigkeitserkr. und Psychosom.",
+"town":"Furth im Wald",
+"operator":"Johannesbad Klinik Fachklinik Furth im Wald GmbH & Co. KG",
+"beds":200,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2031",
+"name":"Rehabilitationsklinik Lautergrund der Deutschen Rentenversicherung Berlin-Brandenburg Schwabthal",
+"town":"Bad Staffelstein",
+"operator":"Deutsche Rentenversicherung Berlin-Brandenburg",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2063",
+"name":"RPK Landsberg",
+"town":"Landsberg am Lech",
+"operator":"Diakonie Herzogsägmühle gGmbH ",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2067",
+"name":"Klinik St. Lukas",
+"town":"Bad Griesbach-Zentrum",
+"operator":"Kliniken St. Lukas GmbH",
+"beds":43,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2069",
+"name":"Klinik Lindenberg-Ried Fachklinik für Psychosomatik und Orthopädie",
+"town":"Lindenberg",
+"operator":"Deutsche Rentenversicherung Schwaben",
+"beds":145,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2079",
+"name":"Asklepios Klinik Schaufling GmbH",
+"town":"Schaufling",
+"operator":"Asklepios Klinik Schaufling GmbH",
+"beds":350,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2081",
+"name":"Fachklinik Osterhofen GmbH",
+"town":"Osterhofen",
+"operator":"Fachklinik Osterhofen GmbH",
+"beds":35,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2091",
+"name":"Klinik St. Irmingard GmbH – Rehabilitation",
+"town":"Prien am Chiemsee",
+"operator":"Klinik St. Irmingard GmbH",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2095",
+"name":"Kurhotel Josef Holzapfel GmbH „Zum Thermalbad“",
+"town":"Bad Füssing",
+"operator":"Kurhotel Josef Holzapfel GmbH „Zum Thermalbad“",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2099",
+"name":"KWA Klinik Stift Rottal Klinik für neurologische und geriatrische Rehabilitation",
+"town":"Bad Griesbach-Zentrum",
+"operator":"KWA Kuratorium Wohnen im Alter gAG",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2100",
+"name":"Vorsorgeklinik Berchtesgadener Land Bischofswiesen",
+"town":"Bischofswiesen",
+"operator":"Augustinum gemeinnützige GmbH",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2116",
+"name":"Schön Klinik Bad Staffelstein SE & Co. KG – Rehabilitation",
+"town":"Bad Staffelstein",
+"operator":"Schön Klinik Bad Staffelstein SE & Co. KG",
+"beds":151,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2121",
+"name":"Klinikum Aschaffenburg-Alzenau Abt. Geriatrische Rehabilitation Standort Alzenau",
+"town":"Alzenau",
+"operator":"Klinikum Aschaffenburg-Alzenau gemeinnützige GmbH",
+"beds":33,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2122",
+"name":"Fachklinik Stadtsteinach",
+"town":"Stadtsteinach",
+"operator":"Zweckverband Klinikum Kulmbach",
+"beds":62,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2129",
+"name":"Saaletalklinik, Klinik Neumühle, Adaption",
+"town":"Bad Neustadt a. d. Saale",
+"operator":"Haus Saaletal GmbH",
+"beds":242,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2135",
+"name":"Klinik Dr. Beger",
+"town":"Garmisch-Partenkirchen",
+"operator":"Anton Klotz",
+"beds":69,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2143",
+"name":"Bezirksklinikum Mainkofen neurologische Frührehabilitation",
+"town":"Deggendorf",
+"operator":"Bezirk Niederbayern",
+"beds":13,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2161",
+"name":"Deutsche Rentenversicherung Bund Rehabilitationszentrum Bad Steben Klinik Auental und Klinik Franken",
+"town":"Bad Steben",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":360,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2167",
+"name":"Das Alpreflect GmbH & Co. KG Rehabilitation",
+"town":"Füssen",
+"operator":"Das Alpreflect GmbH & Co. KG",
+"beds":134,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2178",
+"name":"Schön Klinik München Schwabing SE & Co. KG - Rehabilitation",
+"town":"München",
+"operator":"Schön Klinik München Schwabing SE & Co. KG",
+"beds":14,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2190",
+"name":"HESCURO KLINIKEN Bad Bocklet",
+"town":"Bad Bocklet",
+"operator":"Kliniken Bad Bocklet AG",
+"beds":435,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2192",
+"name":"Kurklinik Eggensberger OHG Physio- & amb. Therapiezentrum Hopfen am See",
+"town":"Füssen-Hopfen am See",
+"operator":"EGGENSBERGER OHG",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2207",
+"name":"Berufsgenossenschaftliche Unfallklinik Murnau",
+"town":"Murnau",
+"operator":"BG Klinikum Murnau gGmbH",
+"beds":171,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2217",
+"name":"Sana Kliniken des Landkreises Cham GmbH – Rehabilitation",
+"town":"Roding",
+"operator":"Sana Kliniken des Landkreises Cham GmbH",
+"beds":25,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2220",
+"name":"Medizinische Jugendrehabilitation",
+"town":"Peiting",
+"operator":"Diakonie Herzogsägmühle gGmbH ",
+"beds":29,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2229",
+"name":"Deutsche Rentenversicherung Bayern Süd Klinik Höhenried gGmbH",
+"town":"Bernried/Obb.",
+"operator":"Klinik Höhenried gGmbH der DRV Bayern Süd",
+"beds":524,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2243",
+"name":"Fachklinik für Orthopädie und Rheumatologie",
+"town":"Oberstdorf",
+"operator":"Deutsche Rentenversicherung Schwaben",
+"beds":165,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2250",
+"name":"VAMED Rehaklinik Berching Fachklinik für geriatrische Rehabilitation",
+"town":"Berching",
+"operator":"VAMED Rehaklinik Berching GmbH",
+"beds":77,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2251",
+"name":"AWO Seenlandklinik Lindenhof Gesundheit für Mutter und Kind",
+"town":"Gunzenhausen",
+"operator":"AWO Bezirksverband Ober- und Mittelfranken e.V.",
+"beds":82,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2255",
+"name":"Klinik Bad Reichenhall Zentrum für Rehabilitation, Pneumologie und Orthopädie",
+"town":"Bad Reichenhall",
+"operator":"Deutsche Rentenversicherung Bayern Süd",
+"beds":269,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2272",
+"name":"Bezirksklinikum Ansbach Rehabilitation für Suchtkranke",
+"town":"Ansbach",
+"operator":"Bezirkskliniken Mittelfranken",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2278",
+"name":"Sinntalklinik Bad Brückenau Fachklinik für medizinische Rehabilitation der Deutschen Rentenversicherung Nordbayern",
+"town":"Bad Brückenau",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2284",
+"name":"NürnbergStift Geriatrische Rehabilitation",
+"town":"Nürnberg",
+"operator":"Stadt Nürnberg",
+"beds":45,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2287",
+"name":"Klinik Schönsicht Rehabilitation für Kinder und Jugendliche Kind-Mutter-Heilbehandlung",
+"town":"Berchtesgaden",
+"operator":"Klinik Schönsicht GmbH",
+"beds":88,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2294",
+"name":"Frankenland-Klinik",
+"town":"Bad Windsheim",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":187,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2304",
+"name":"Bayerwald-Klinik GmbH & Co. KG",
+"town":"Cham",
+"operator":"Bayerwald-Klinik GmbH & Co. KG",
+"beds":130,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2314",
+"name":"Rehaklinik St. Vinzenz Pfronten im Allgäu GmbH",
+"town":"Pfronten",
+"operator":"Rehaklinik St. Vinzenz Pfronten im Allgäu GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2318",
+"name":"Rangauklinik Ansbach GmbH Rehabilitationsklinik für Pneumologie und Onkologie",
+"town":"Ansbach",
+"operator":"Diakoneo Rangauklinik Ansbach GmbH",
+"beds":74,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2357",
+"name":"Rehaklinik Prinzregent Luitpold Bad Reichenhall GmbH",
+"town":"Bad Reichenhall",
+"operator":"Rehaklinik Prinzregent Luitpold Bad Reichenhall GmbH",
+"beds":115,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2374",
+"name":"Medical Park Chiemsee GmbH & Co. KG",
+"town":"Bernau a. Chiemsee",
+"operator":"Medical Park Chiemsee GmbH & Co. KG",
+"beds":245,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2376",
+"name":"Alpenklinik Santa Maria für Kinder und Jugendliche Oberjoch",
+"town":"Bad Hindelang",
+"operator":"Katholische Jugendfürsorge der Diözese Augsburg e.V.",
+"beds":180,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2386",
+"name":"Rehafachzentrum Bad Füssing – Passau",
+"town":"Bad Füssing",
+"operator":"Deutsche Rentenversicherung Bayern Süd",
+"beds":370,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2395",
+"name":"Klinik Alpenhof",
+"town":"Chieming",
+"operator":"Klinik Alpenhof GmbH & Co. Betriebs KG",
+"beds":240,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2398",
+"name":"Bezirksklinikum Ansbach Klinik für Geriatrische Rehabilitation Hs. 15",
+"town":"Ansbach",
+"operator":"Bezirkskliniken Mittelfranken",
+"beds":28,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2399",
+"name":"Hochgebirgsklinik für Physikalische Medizin und Rehabilitation für Kinder und Jugendliche",
+"town":"Oy-Mittelberg",
+"operator":"Alois Wagner-Stiftung Mittelberg",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2402",
+"name":"Haus Kühberg Mutter-Kind-Kuren GmbH",
+"town":"Blaichach",
+"operator":"Mutter-Kind-Kuren GmbH",
+"beds":50,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2404",
+"name":"m&i-Klinikgesellschaft in Ichenhausen GmbH",
+"town":"Ichenhausen",
+"operator":"m&i-Klinikgesellschaft in Ichenhausen GmbH",
+"beds":280,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2408",
+"name":"Geriatrische Rehabilitation am Krankenhaus Schongau",
+"town":"Schongau",
+"operator":"Krankenhaus GmbH Landkreis Weilheim-Schongau",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2420",
+"name":"Klinik Jesuitenschlößl Betriebs GmbH",
+"town":"Passau",
+"operator":"Klinik Jesuitenschlößl Betriebs GmbH",
+"beds":173,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2421",
+"name":"St. Johannes-Klinik Geriatrische Rehabilitation",
+"town":"Auerbach",
+"operator":"Kommunalunternehmen Krankenhäuser des Landkreises Amberg-Sulzbach",
+"beds":53,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2431",
+"name":"Kreisspitalstiftung Weißenhorn Illertalklinik Illertissen Geriatrische Rehabilitation",
+"town":"Illertissen",
+"operator":"Kreisspitalstiftung Weißenhorn, kreiskommunale Stiftung des öffentlichen Rechts",
+"beds":49,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2437",
+"name":"Kompass Drogenhilfe GmbH Kompass Hof",
+"town":"Mindelheim",
+"operator":"Kompass Drogenhilfe GmbH",
+"beds":32,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2456",
+"name":"Klinikum Altmühlfranken Gunzenhausen Geriatrische Rehabilitation",
+"town":"Gunzenhausen",
+"operator":"Kommunalunternehmen Klinikum Altmühlfranken",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2466",
+"name":"Reha-Zentrum Isarwinkel",
+"town":"Bad Tölz",
+"operator":"ReAL gGmbH",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2467",
+"name":"Rehaklinik Am Kurpark",
+"town":"Bad Kissingen",
+"operator":"Reha Zentren der Deutschen Rentenversicherung Baden Württemberg gGmbH",
+"beds":183,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2482",
+"name":"Alpcura Fachklinik Allgäu",
+"town":"Pfronten",
+"operator":"Alpcura Fachklinik Allgäu Betriebsgesellschaft mbH",
+"beds":236,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2496",
+"name":"Klinikum Fürth Geriatrische Rehabilitation",
+"town":"Fürth",
+"operator":"Klinikum Fürth AdöR der Stadt Fürth",
+"beds":36,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2511",
+"name":"Bezirksklinikum Wöllershof Rehabilitation Entwöhnungsbehandlung",
+"town":"Störnstein",
+"operator":"Medizinische Einrichtungen des Bezirks Oberpfalz - KU (AöR)",
+"beds":32,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2538",
+"name":"Donau-Ries-Klinik Oettingen Geriatrische Rehabilitation",
+"town":"Oettingen",
+"operator":"Donau-Ries Kliniken und Seniorenheime gKU",
+"beds":33,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2544",
+"name":"Helios Amper-Klinik Indersdorf",
+"town":"Markt Indersdorf",
+"operator":"Amper Kliniken AG",
+"beds":67,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2547",
+"name":"MediClin Reha-Zentrum Roter Hügel Fachklinik für Neurologie, Orthopädie und Geriatrie",
+"town":"Bayreuth",
+"operator":"MediClin GmbH & Co. KG",
+"beds":284,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2567",
+"name":"Kurklinik Schwangau",
+"town":"Schwangau",
+"operator":"Josef und Luise Helmer GmbH & Co. KG",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2593",
+"name":"Silberberg Klinik Bodenmais GmbH",
+"town":"Bodenmais",
+"operator":"Silberberg Klinik Bodenmais GmbH",
+"beds":150,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2595",
+"name":"Kliniken Nordoberpfalz AG Steinwald-Klinik Erbendorf Fachklinik für geriatrische Rehab.",
+"town":"Erbendorf",
+"operator":"Kliniken Nordoberpfalz AG",
+"beds":80,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2610",
+"name":"Malteser Klinik Dr. v. Weckbecker gGmbH",
+"town":"Bad Brückenau",
+"operator":"Malteser Klinik Dr. v. Weckbecker gGmbH",
+"beds":100,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2617",
+"name":"Medical Park Bad Feilnbach Betriebs GmbH & Co. KG Reithofpark",
+"town":"Bad Feilnbach",
+"operator":"Reithofpark-Klinik GmbH & Co. KG",
+"beds":248,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2643",
+"name":"Kurklinik Allgäuer Bergbad",
+"town":"Oberstdorf",
+"operator":"Karl Wessel Kurklinik Allgäuer Bergbad GmbH & Co. KG",
+"beds":79,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2648",
+"name":"VAMED Rehaklinik Bad Grönenbach",
+"town":"Bad Grönenbach",
+"operator":"VAMED Rehaklinik Bad Grönenbach GmbH",
+"beds":277,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2651",
+"name":"Medical Park Chiemseeblick GmbH & Co.KG",
+"town":"Bernau a. Chiemsee",
+"operator":"Medical Park Chiemseeblick GmbH & Co.KG",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2655",
+"name":"MEDIAN Buchberg Klinik",
+"town":"Bad Tölz",
+"operator":"MEDIAN Buchberg Klinik GmbH & Co. KG",
+"beds":301,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2661",
+"name":"Fachklinik Prinzregent Luitpold",
+"town":"Scheidegg",
+"operator":"Katholische Jugendfürsorge der Diözese Augsburg e.V.",
+"beds":235,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2682",
+"name":"Mittelbayerisches Rehabilitationszentrum Klinikum Luitpold und Klinikum Maximilian",
+"town":"Bad Kötzting",
+"operator":"Visio Klinik GmbH",
+"beds":294,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2705",
+"name":"Medical Park Bad Wiessee GmbH & Co. KG Privatklinik für Orthopädie",
+"town":"Bad Wiessee",
+"operator":"Medical Park Bad Wiessee GmbH & Co. KG",
+"beds":84,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2706",
+"name":"Krankenhaus Rummelsberg GmbH – Rehabilitation",
+"town":"Schwarzenbruck",
+"operator":"Krankenhaus Rummelsberg GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2712",
+"name":"HESCURO Klinik Bad Brückenau - Geriatrische Rehabilitation",
+"town":"Bad Brückenau",
+"operator":"HESCURO KLINIK Bad Brückenau GmbH",
+"beds":30,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2718",
+"name":"Geriatrische Rehabilitation am Kreiskrankenhaus Pfarrkirchen",
+"town":"Pfarrkirchen",
+"operator":"Rottal-Inn Kliniken Kommunalunternehmen",
+"beds":52,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2720",
+"name":"Klinikum am Europakanal Neurologische Rehabilitation",
+"town":"Erlangen",
+"operator":"Bezirkskliniken Mittelfranken",
+"beds":40,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2724",
+"name":"Geriatrische Rehabilitation der Hessing Stiftung",
+"town":"Augsburg",
+"operator":"Hofrat Friedrich Hessing’sche orthopädische Heilanstalt in Göggingen-Augsburg",
+"beds":140,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2733",
+"name":"Passauer Wolf Bad Gögging GmbH & Co. KG - Rehabilitation",
+"town":"Neustadt a. d. Donau",
+"operator":"Passauer Wolf Bad Gögging GmbH & Co. KG",
+"beds":477,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2736",
+"name":"Geriatrische Rehabilitation im Rotkreuzklinikum München",
+"town":"München",
+"operator":"Rotkreuzklinikum München gGmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2738",
+"name":"Medical Park Bad Wiessee GmbH & Co. KG Fachklinik",
+"town":"Bad Wiessee",
+"operator":"Medical Park Bad Wiessee GmbH & Co. KG",
+"beds":81,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2739",
+"name":"Sanatorium Uibeleisen GmbH & Co. KG",
+"town":"Bad Kissingen",
+"operator":"Sanatorium Uibeleisen GmbH & Co. KG",
+"beds":46,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2743",
+"name":"Medical Park Bad Feilnbach Betriebs GmbH & Co. KG Blumenhof",
+"town":"Bad Feilnbach",
+"operator":"Medical Park Bad Feilnbach Betriebs GmbH & Co. KG",
+"beds":187,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2747",
+"name":"Gesundheitszentrum Oberammergau GmbH",
+"town":"Oberammergau",
+"operator":"Gesundheitszentrum Oberammergau GmbH",
+"beds":147,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2748",
+"name":"Reha-Klinik Allgäu gGmbH",
+"town":"Sonthofen",
+"operator":"Reha-Klinik Allgäu gGmbH",
+"beds":114,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2766",
+"name":"Deutsche Rentenversicherung Ohlstadtklinik",
+"town":"Ohlstadt",
+"operator":"Deutsche Rentenversicherung Nordbayern",
+"beds":152,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2772",
+"name":"Asklepios Klinikum Bad Abbach Orthopädische und Rheumatologische Rehabilitation",
+"town":"Bad Abbach",
+"operator":"Asklepios Klinikum Bad Abbach GmbH",
+"beds":268,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2777",
+"name":"Asklepios Gesundheitszentrum Bad Tölz GmbH",
+"town":"Bad Tölz",
+"operator":"Asklepios Gesundheitszentrum Bad Tölz GmbH",
+"beds":59,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2785",
+"name":"Klinik Inntaler Hof GmbH & Co. KG",
+"town":"Neuburg am Inn",
+"operator":"Klinik Inntaler Hof GmbH & Co. KG",
+"beds":230,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2794",
+"name":"Passauer Wolf Reha-Zentrum Nittenau Neurologie-Onkologie-Geriatrie-Urologie",
+"town":"Nittenau",
+"operator":"Reha-Zentrum Nittenau GmbH",
+"beds":154,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2801",
+"name":"Mutter-Kind-Kurheim Marianne Osterried",
+"town":"Obermaiselstein",
+"operator":"Marianne Osterried",
+"beds":55,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2811",
+"name":"InnKlinikum Altötting und Mühldorf Geriatrische Rehabilitation",
+"town":"Burghausen",
+"operator":"InnKlinikum gKU Altötting und Mühldorf AöR",
+"beds":22,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2813",
+"name":"Chiemgau-Klinik Deutsche Rentenversicherung Knappschaft-Bahn-See",
+"town":"Marquartstein",
+"operator":"Deutsche Rentenversicherung Knappschaft-Bahn-See",
+"beds":179,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2833",
+"name":"Sanatorium Werlich-Barié",
+"town":"Bad Kissingen",
+"operator":"Hotel und Sanatorium Werlich Barié KG",
+"beds":14,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2842",
+"name":"Helios Klinik Erlenbach Geriatrische Rehabilitation",
+"town":"Erlenbach am Main",
+"operator":"Kliniken Miltenberg-Erlenbach GmbH",
+"beds":32,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2843",
+"name":"Orthopädische Klinik Tegernsee Schwerpunktklinik für Orthopädie",
+"town":"Tegernsee",
+"operator":"Deutsche Rentenversicherung Bayern Süd",
+"beds":166,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2847",
+"name":"AMEOS Reha Klinikum Inntal",
+"town":"Simbach am Inn",
+"operator":"AMEOS Klinikum Inntal GmbH",
+"beds":90,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2853",
+"name":"Geriatrische Rehabilitation Diakoniewerk München-Maxvorstadt",
+"town":"München",
+"operator":"Diakoniewerk München-Maxvorstadt KdöR",
+"beds":42,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2855",
+"name":"Klinikum Main-Spessart Geriatrisches Zentrum Lohr",
+"town":"Lohr am Main",
+"operator":"Klinikum Main-Spessart",
+"beds":2,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2868",
+"name":"Heiligenfeld Kliniken Rehabilitation für psychische und psychosomatische, orthopädische, internistische und onkologische Erkrankungen",
+"town":"Bad Kissingen",
+"operator":"Heiligenfeld Kliniken GmbH",
+"beds":260,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2871",
+"name":"Fachklinik Haus Immanuel für suchtkranke Frauen",
+"town":"Thurnau",
+"operator":"Deutscher Gemeinschafts-Diakonieverband GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2886",
+"name":"KIRINUS Alpenpark Klinik GmbH",
+"town":"Bad Wiessee",
+"operator":"KIRINUS Alpenpark Klinik GmbH",
+"beds":102,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2891",
+"name":"Schön Klinik Bad Aibling SE & Co. KG – Rehabilitation",
+"town":"Bad Aibling",
+"operator":"Schön Klinik Bad Aibling SE & Co. KG",
+"beds":136,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2902",
+"name":"Asklepios Klinik Schaufling GmbH Betriebsstätte Aidenbach",
+"town":"Aidenbach",
+"operator":"Asklepios Klinik Schaufling GmbH",
+"beds":102,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2904",
+"name":"Sana Klinikum Coburg",
+"town":"Coburg",
+"operator":"Sana Kliniken Oberfranken Coburg GmbH",
+"beds":53,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2908",
+"name":"Hephata Fachklinik Weibersbrunn",
+"town":"Weibersbrunn",
+"operator":"Hephata Hessisches Diakoniezentrum e.V.",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2910",
+"name":"Klinikum Forchheim - Fränkische Schweiz gGmbH Fachkrankenhaus für Geriatrische Rehabilitation",
+"town":"Ebermannstadt",
+"operator":"Klinikum Forchheim - Fränkische Schweiz gGmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2920",
+"name":"Geriatrische Rehabilitation",
+"town":"Nürnberg",
+"operator":"Martha-Maria Krankenhaus gemeinnützige GmbH",
+"beds":20,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2921",
+"name":"Altmühlseeklinik Hensoltshöhe der Stiftung Hensoltshöhe gGmbH",
+"town":"Gunzenhausen",
+"operator":"Stiftung Hensoltshöhe gGmbH",
+"beds":143,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2930",
+"name":"Reha-Zentrum Bayerisch Gmain Klinik Hochstaufen",
+"town":"Bayerisch Gmain",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":225,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2939",
+"name":"Reha-Zentrum Passauer Wolf Bad Griesbach Reha",
+"town":"Bad Griesbach-Therme",
+"operator":"Passauer Wolf Bad Griesbach GmbH & Co. KG",
+"beds":235,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2954",
+"name":"Reha-Zentrum Bad Kissingen Klinik Rhön der Deutschen Rentenversicherung Bund",
+"town":"Bad Kissingen",
+"operator":"Deutsche Rentenversicherung Bund",
+"beds":160,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2968",
+"name":"Geriatrische Rehabilitation Oberbayern – Bruckmühl GmbH",
+"town":"Bruckmühl",
+"operator":"Gesundheitsbetriebe Dr. N. Netzer GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2979",
+"name":"Fachklinik Lenggries für Geriatrische Rehabilitation",
+"town":"Lenggries",
+"operator":"Gesundheitsbetriebe Isarwinkel GmbH",
+"beds":60,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2980",
+"name":"m&i-Fachklinik Bad Heilbrunn Medizinische Rehabilitation",
+"town":"Bad Heilbrunn",
+"operator":"m&i-Klinikbetriebsgesellschaft GmbH",
+"beds":360,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2986",
+"name":"Rehaklinik Buching Psychosomatische Fachklinik",
+"town":"Halblech",
+"operator":"Kur+Reha GmbH des Paritätischen Wohlfahrtsverbandes Landesverband Baden-Württemberg",
+"beds":116,
+"parse_quality":"ok"
+},
+{
+"clinic_id":"RH2991",
+"name":"Kursanatorium Landhaus König GmbH",
+"town":"Grünenbach",
+"operator":"Kursanatorium Landhaus König GmbH",
+"beds":32,
+"parse_quality":"ok"
+}
+]
