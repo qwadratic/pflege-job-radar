@@ -547,7 +547,7 @@ def test_no_gate_label_or_constitution_line_invites_a_yes_no_frame_around_option
     assert "no yes/no frame around a list of cities" in labels["city_or_department"]
     # TASK-211 split the housing gate in two; both halves keep the TASK-339 shape (a plain yes/no, then an open
     # question), and neither offers options joined by "oder".
-    assert labels["housing"] == "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"
+    assert labels["housing"] == "ask ONE plain yes/no whether they need a flat at all, naming it with one noun -- no headcount in it yet"
     assert "ask how many people would live in it, as an open question" in LB._HOUSING_HEADCOUNT_OBJECTIVE
     assert "never as alone-or-with-family options" in LB._HOUSING_HEADCOUNT_OBJECTIVE
     system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
@@ -810,7 +810,7 @@ def test_the_housing_gate_asks_a_yes_no_before_any_headcount():
     card = {"region": "Bayern", "qualification_path": "urkunde", "qualification_ok": True, "city": "München"}
     board = LB.requirement_scoreboard(card)
     assert board["housing"] == "open"
-    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat at all, naming it with one noun "
                                        "-- no headcount in it yet")
     after_yes = LB.requirement_scoreboard({**card, "housing_needed": True})
     assert after_yes["housing"] == "open", "a yes alone does not settle housing -- the headcount is still open"
@@ -919,7 +919,7 @@ def test_an_imported_card_with_only_the_flag_is_asked_the_housing_question_once(
                  "city": "Würzburg", "housing_known": True, **_DOC}
     board = LB.requirement_scoreboard(flag_only)
     assert board["housing"] == "open"
-    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat (Unterkunft) at all "
+    assert board["next_objective"] == ("ask ONE plain yes/no whether they need a flat at all, naming it with one noun "
                                        "-- no headcount in it yet")
     snap = LB.market_snapshot(flag_only)
     assert snap["housing"]["needed"] is None, "null is 'never answered', distinguishable from an answered no"
@@ -995,7 +995,8 @@ def test_the_prompt_and_constitution_stop_claiming_clinics_generally_provide_a_f
     assert "Most clinics offer a small apartment" not in system, (
         "a live run produced exactly this unbacked claim -- 12 percent of postings carry enr_housing")
     rule = _rule("HOUSING (TASK-211)")
-    for phrase in ("first ONE plain yes/no whether they need a flat (Unterkunft) at all",
+    for phrase in ("first ONE plain yes/no whether they need a flat at all, naming it with ONE noun",
+                   "never two nouns joined by",
                    "card_patch.housing_needed", "only after a yes, the open question how many people",
                    "A no settles housing: never ask a headcount then",
                    "a market_snapshot.shortlist entry with housing true",

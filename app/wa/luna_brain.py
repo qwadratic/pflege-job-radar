@@ -638,7 +638,9 @@ _OBJECTIVE_ORDER = (
     ("city_or_department", "ask which city in Bayern they want to work in, as an open question (a department "
                            "they name instead settles this too) -- no yes/no frame around a list of cities"),
     # TASK-211: the yes/no comes first; the headcount only after a yes (_HOUSING_HEADCOUNT_OBJECTIVE).
-    ("housing", "ask ONE plain yes/no whether they need a flat (Unterkunft) at all -- no headcount in it yet"),
+    # TASK-437, Ivan 2026-10-06: one noun -- "(Unterkunft)" here invited "eine Wohnung oder Unterkunft", which reads
+    # as an either/or a bare Ja cannot settle (YES/NO QUESTIONS).
+    ("housing", "ask ONE plain yes/no whether they need a flat at all, naming it with one noun -- no headcount in it yet"),
     ("documents", "ask for {missing} -- the close needs both the CV and the qualification document actually "   # TASK-427
                   "received, so name what is still missing again every turn until it arrives"),
     ("handoff_consent", "run the close sequence: state the shortlist, then ask anonymized-send consent"),
