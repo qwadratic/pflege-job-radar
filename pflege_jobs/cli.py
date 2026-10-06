@@ -498,8 +498,10 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
             if o["role_class"] in C.EXCLUDED_ROLE_CLASSES:
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o['role_class']} (not an experienced nursing role)"}); continue
             if o["in_bavaria"] is False: ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o["employer_name"], o["city"], board=_pooled(o.pop("_board", None), o["source_ref"], pools), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o), description=o.get("description"))
+            emp_inh = o.pop("_emp_inherited", False)
+            mt = m.match(o["employer_name"], o["city"], board=_pooled(o.pop("_board", None), o["source_ref"], pools), employer_inherited=emp_inh,
+                        city_inherited=_city_inherited(o), description=o.get("description"),
+                        employer_class=None if emp_inh else o.get("employer_class"))
             o["_kez"] = mt[0] if mt else None; o["_rule"] = mt[1] if mt else None
             if o["_kez"]: o["employer_class"] = "clinic"; o["employer_class_rule"] = "registry_match|" + o["employer_class_rule"]
             obs.append(o); ack.append({"inbox_id": r["inbox_id"], "note": "loaded" + (f" -> {o['_kez']}" if o["_kez"] else " (no site match)")})
@@ -516,8 +518,10 @@ def _process_rows(rows, a, url, H, m, towns, ack_fn, queue="postgres", resolve=T
                 ack.append({"inbox_id": r["inbox_id"], "note": f"skipped: {o.get('role_class')} (not an experienced nursing role)"}); continue
             if o.get("in_bavaria") is False:
                 ack.append({"inbox_id": r["inbox_id"], "note": "skipped: outside Bavaria"}); continue
-            mt = m.match(o.get("employer_name"), o.get("city"), board=_pooled(o.pop("_board", None), o.get("source_ref"), pools), employer_inherited=o.pop("_emp_inherited", False),
-                        city_inherited=_city_inherited(o), description=o.get("description"))
+            emp_inh = o.pop("_emp_inherited", False)
+            mt = m.match(o.get("employer_name"), o.get("city"), board=_pooled(o.pop("_board", None), o.get("source_ref"), pools), employer_inherited=emp_inh,
+                        city_inherited=_city_inherited(o), description=o.get("description"),
+                        employer_class=None if emp_inh else o.get("employer_class"))
             # A seed's own preset _kez is NOT a fallback for a refused match (TASK-166): with the
             # board pool passed above, the Matcher only returns None here when the posting's own
             # city names a town no board clinic is in, or the pool stays ambiguous -- so falling back

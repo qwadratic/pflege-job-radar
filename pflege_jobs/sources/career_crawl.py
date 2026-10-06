@@ -91,6 +91,19 @@ def _jsonld_jobpostings(html):
     return out
 
 
+# The site chip of a Haufe umantis detail page: <i class="home-icon"></i><div>Klinikum Ansbach</div>. A structured field of the posting,
+# so it outranks the text rungs of extract_location (a "Standorte Ansbach, Dinkelsbuehl und Rothenburg" sentence or a "Kinderkrippe am
+# Standort Ansbach" benefit read as the posting's Einsatzort) and the bare PLZ-Ort pair (TASK-431.9).
+_SITE_LABEL = re.compile(r'<i class="home-icon"></i>\s*<div>\s*(.*?)\s*</div>', re.S)
+
+
+def _site_label_town(html, towns):
+    """The registry town the umantis site chip ends with ('Klinikum Ansbach' -> 'Ansbach', 'MVZ Dinkelsbühl' -> 'Dinkelsbühl'); None
+    for a page without the chip or a chip that ends in no town ('Standortübergreifend')."""
+    m = _SITE_LABEL.search(html)
+    return geo.town_label_ends_with(_html.unescape(re.sub(r"<[^>]+>", " ", m.group(1))), towns) if m else None
+
+
 def _strip(html):
     html = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
     html = re.sub(r"<br\s*/?>|</p>|</li>|</div>|</h\d>", "\n", html, flags=re.I)
@@ -647,6 +660,8 @@ class Crawler:
         tm = re.search(r"(?:\bin|\bam|\bim|\bfür|Standort|Klinik(?:um)?)\s+(?:BKH|Klinikum|Klinik|Krankenhaus)?\s*([A-ZÄÖÜ][\wäöüß\-]+(?: (?:am|an der|im|bei|in der) [A-ZÄÖÜ][\wäöüß\-]+)?)", title)
         if tm and norm_text(tm.group(1)).split()[0] in self.towns and norm_text(tm.group(1)) not in ("bayern",):
             city, found_city = tm.group(1), True
+        elif _site_label_town(html, self.towns):
+            city, found_city = _site_label_town(html, self.towns), True
         else:
             lc, lp, src = extract_location(html, self.towns)
             if lc and src in TRUSTED_LOC:

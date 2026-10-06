@@ -170,7 +170,7 @@ class Matcher:
         if not ck: return []
         return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
 
-    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False):
+    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False, employer_class=None):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
@@ -192,19 +192,30 @@ class Matcher:
         the same way when employer is ALSO inherited (city_inherited and employer_inherited commonly
         travel together, but are gated independently here since either alone is enough to fabricate a
         false agreement with the seed). A copied city/name is dropped for the board fallback only --
-        content-side matching (_match_content, above) is unaffected."""
-        r = self._match_content(employer, city, description, employer_inherited=employer_inherited)
+        content-side matching (_match_content, above) is unaffected, except that a copied city neither confirms nor
+        refuses an R_jd_text hit (TASK-132)."""
+        r = self._match_content(employer, city, description, employer_inherited=employer_inherited, city_stamped=city_inherited)
         if r: return r
         if board:
+            # The board names a clinic only as provenance: nothing in the posting does. For an employer the pipeline itself classifies
+            # non_clinic (care homes, rescue services, schools; employers.employer_class, patterns.json employer.non_clinic) that is no
+            # evidence at all, and a link would relabel the employer 'clinic' at ingest. Content rungs above are untouched; the posting stays
+            # unlinked, with its own city and employer (TASK-431.9). The caller passes the class of an employer READ off the posting; a
+            # copied one is the seed clinic's own name and says nothing.
+            if employer_class == "non_clinic":
+                return None
             en = "" if employer_inherited else employer_norm(employer or "")
             et = set() if employer_inherited else toks(employer)
             ck = None if city_inherited else city_key(city)
             return self._match_board([self.by_id[i] for i in map(str, board) if i in self.by_id], en, et, ck)
         return None
 
-    def _match_content(self, employer, city, description=None, employer_inherited=False):
+    def _match_content(self, employer, city, description=None, employer_inherited=False, city_stamped=False):
         en = employer_norm(employer or ""); et = toks(employer); ck = city_key(city)
-        if not en: return self._match_jd(description)
+        # R_jd_text is the one rung that names a clinic from prose; the posting's own place outranks a mention (TASK-132). A copied seed town is
+        # not the posting's place, so it neither confirms nor refuses (the same line the board fallback draws).
+        jd_ck = "" if city_stamped else ck
+        if not en: return self._match_jd(description, jd_ck)
         c = [] if employer_inherited else self.by_name.get(en, [])
         # Gated on town the same way its own R1_exact_town sibling two lines below always was: a
         # UNIQUE employer-name hit is still a wrong match when the posting's own city is known and
@@ -321,9 +332,9 @@ class Matcher:
         cands = [(overlap(et, x["_ntoks"] | x["_otoks"]), x) for x in same_town]
         best = [x for j, x in cands if j >= 0.5]
         if len(best) == 1 and len(same_town) == 1: return best[0]["clinic_id"], "R5_loose", 0.6
-        return self._match_jd(description)
+        return self._match_jd(description, jd_ck)
 
-    def _match_jd(self, description):
+    def _match_jd(self, description, ck=""):
         """Last content-side check before falling back to board: does exactly one clinic's own name or
         operator appear, verbatim as a token set, in the job description? Conservative on purpose --
         a JD mentioning a clinic in passing ("Kooperation mit Klinikum X") is rare enough that requiring
@@ -352,8 +363,20 @@ class Matcher:
         dt = toks(description[:2000])
         hits = [c for c in self.clinics if c.get("parse_quality") != "partial" and
                 ((len(c["_ntoks"]) >= 2 and c["_ntoks"] <= dt) or (len(c["_otoks"]) >= 2 and c["_otoks"] <= dt))]
-        if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
+        # TASK-132: the posting's own known town refuses a hit in another town (ck falsy passes through, as in every town-aware rung)
+        if len(hits) == 1 and (not ck or _town_match(city_key(hits[0].get("town")), ck)):
+            return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
+
+    def _named_elsewhere(self, et, x):
+        """True when the employer text carries every distinguishing token of another registry clinic that has MORE of them than x.
+
+        R0_board_tokens asks how much of x's own name the employer text covers (overlap() divides by the smaller set). For a clinic whose
+        name minus its town is one generic token ('HELIOS Klinik Erlenbach a. Main' -> {helios}, 201 of 651 registry clinics are like
+        that) every employer of the group covers 100 percent, so 'Helios Amper-Klinik Indersdorf' without a place of its own was filed
+        under Erlenbach. When the text names a bigger part of ANOTHER clinic's name ({amper, helios} of 17402), x is not the site it
+        names: the rung refuses and the posting stays unlinked (TASK-431.9)."""
+        return any(y is not x and len(y["_ntoks"]) > len(x["_ntoks"]) and y["_ntoks"] <= et for y in self.clinics)
 
     def _match_board(self, pool, en, et, ck):
         """The board a posting was fetched from is provenance, not a guess: the site must be one of the
@@ -383,7 +406,8 @@ class Matcher:
         same_town_only = lambda x: not ck or _town_match(city_key(x.get("town")), ck)
         for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en and same_town_only(x)),
                                  ("R0_board_town", 0.85, lambda x: ck and _town_match(city_key(x.get("town")), ck)),
-                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x))):
+                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x)
+                                                    and not self._named_elsewhere(et, x))):
             hit = [x for x in pool if sel(x)]
             if len(hit) == 1: return hit[0]["clinic_id"], rule, score
             if len(hit) > 1:
