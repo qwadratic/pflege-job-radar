@@ -63,6 +63,8 @@ exec 9>"$LOCK_FILE"
 flock -n -E 75 9
 flock_rc=$?
 if [ "$flock_rc" -eq 75 ]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] nightly tick skipped: the lock is held by a running nightly" \
+        >> "$LOG_DIR/$(TZ=Europe/Vienna date +%Y-%m-%d).log"
     exit 0
 elif [ "$flock_rc" -ne 0 ]; then
     echo "llm_lane_cron: flock -n on $LOCK_FILE failed unexpectedly (exit $flock_rc)" >&2
@@ -81,5 +83,16 @@ LOG_FILE="$LOG_DIR/$(TZ=Europe/Vienna date +%Y-%m-%d).log"
     rc=$?
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] nightly tick end rc=$rc"
 } >> "$LOG_FILE" 2>&1
+
+# A red or crashed night reaches Ivan by mail, through the same channel as the SIP guard's alerts
+# (tools/sip_guard_watch.py send_mail, the daria box). A log nobody opens is not a loud failure.
+if [ "$rc" -ne 0 ]; then
+    subject="pflege-board: nightly LLM lane FAILED (rc=$rc)"
+    body="$(printf 'Log: %s\nLast nightly.tsv row: %s\n\nLast log lines:\n%s\n' "$LOG_FILE" \
+        "$(tail -n 1 "$STATE_DIR/nightly.tsv" 2>&1)" "$(tail -n 40 "$LOG_FILE")")"
+    if ! ( cd "$REPO_DIR" && "$VENV_PY" -c 'import sys; sys.path.insert(0, "tools"); import sip_guard_watch as S; print(S.send_mail(sys.argv[1], sys.argv[2]))' "$subject" "$body" ) >> "$LOG_FILE" 2>&1; then
+        echo "llm_lane_cron: ALERT MAIL FAILED for a failed nightly (rc=$rc), see $LOG_FILE" | tee -a "$LOG_FILE" >&2
+    fi
+fi
 
 exit "$rc"

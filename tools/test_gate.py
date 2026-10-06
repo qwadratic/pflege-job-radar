@@ -750,6 +750,19 @@ def _last_nightly_tsv_line(path: Path) -> str | None:
     return lines[-1] if lines else None
 
 
+def _last_nightly_status_line(path: Path, *, today: Callable[[], str] = _today_utc) -> str:
+    """The last nightly.tsv row WITH ITS AGE in days, or a plain statement that there is none: a cron
+    that was never installed (or died) must not read like a quiet one. The age is today's UTC date
+    minus the row's own date column."""
+    row = _last_nightly_tsv_line(path)
+    if row is None:
+        return ("last nightly.tsv row: NONE -- no nightly run has ever written a row "
+                "(is tools/llm_lane_cron.sh in the crontab?)")
+    fmt = "%Y-%m-%d"
+    age = (datetime.strptime(today(), fmt) - datetime.strptime(row.split("\t", 1)[0], fmt)).days
+    return f"last nightly.tsv row ({age} day(s) old): {row}"
+
+
 def _llm_stamp_status_line(sha: str, *, stamp_dir: Path = STAMP_DIR, log_dir: Path = LOG_DIR) -> str:
     """"passed" / "FAILED (<log path>)" / "not judged" for `sha`'s own recorded LLM-lane result --
     the text cmd_pre_deploy prints before its lanes run (informational only, never a gate: a deploy
@@ -910,8 +923,7 @@ def cmd_pre_deploy(
 
     llm_status = _llm_stamp_status_line(target, stamp_dir=stamp_dir, log_dir=log_dir)
     print(f"pre-deploy: LLM lane on {target[:12]}: {llm_status}")
-    last_row = _last_nightly_tsv_line(nightly_tsv)
-    print(f"pre-deploy: last nightly.tsv row: {last_row if last_row is not None else '(none yet)'}")
+    print(f"pre-deploy: {_last_nightly_status_line(nightly_tsv)}")
 
     # 2026-10-06: offline lane only, by default -- no path-based LLM trigger any more. PFLEGE_GATE_LLM=1
     # still forces the LLM lane here too; PFLEGE_GATE_LLM=0 is accepted for symmetry, though it changes

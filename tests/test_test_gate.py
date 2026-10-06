@@ -1170,7 +1170,7 @@ def test_cmd_pre_deploy_prints_none_yet_when_nightly_tsv_is_missing(tmp_path, ca
         parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
     )
     out = capsys.readouterr().out
-    assert "last nightly.tsv row: (none yet)" in out
+    assert "last nightly.tsv row: NONE -- no nightly run has ever written a row" in out
 
 
 def test_cmd_pre_deploy_prints_the_last_nightly_tsv_row_when_one_exists(tmp_path, capsys):
@@ -1185,8 +1185,23 @@ def test_cmd_pre_deploy_prints_the_last_nightly_tsv_row_when_one_exists(tmp_path
         parent_pid=1, resolve=_same_rev, run_lanes=lambda *a, **k: 0,
     )
     out = capsys.readouterr().out
-    assert "last nightly.tsv row: 2026-10-06\tsha2\tfailed\t2.0\tb" in out
-    assert "sha1" not in out.split("last nightly.tsv row:")[1].splitlines()[0]
+    assert "day(s) old): 2026-10-06\tsha2\tfailed\t2.0\tb" in out
+    assert "sha1" not in out.split("last nightly.tsv row")[1].splitlines()[0]
+
+
+def test_last_nightly_status_line_says_how_old_the_row_is(tmp_path):
+    tsv = tmp_path / "nightly.tsv"
+    G._append_nightly_tsv(tsv, sha="sha1", result="passed", duration_s=1.0, log_path="a",
+                           today=lambda: "2026-10-01")
+    line = G._last_nightly_status_line(tsv, today=lambda: "2026-10-06")
+    assert line.startswith("last nightly.tsv row (5 day(s) old): 2026-10-01\tsha1\tpassed")
+
+
+def test_llm_lane_cron_mails_ivan_on_a_failed_night_and_logs_a_held_lock():
+    text = LLM_LANE_CRON_SCRIPT.read_text()
+    assert 'if [ "$rc" -ne 0 ]' in text and "sip_guard_watch" in text and "send_mail" in text
+    assert "ALERT MAIL FAILED" in text          # a failed alert is itself loud
+    assert "skipped: the lock is held" in text  # a skipped tick leaves a line
 
 
 def test_cmd_pre_deploy_informational_line_never_affects_the_exit_code(tmp_path):
