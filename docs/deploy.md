@@ -32,6 +32,35 @@ sudo systemctl restart pflege-web            # and pflege-hunter if app/hunter.p
 ```
 
 The nightly pass runs about 03:00 to 09:45 UTC. Restart after 10:00 UTC, or cancel the run first (`POST /api/crawl/runs/{id}/cancel`).
+Checked 2026-10-06: the unit has `KillMode=control-group`, and `start_worker` (`app/runs.py`) marks every row left `running` as
+`failed` with `process restarted` (run 235 lost 4 h 33 min that way). Lasting fix: TASK-435 (crawl worker outside the web process).
+
+### Manual run that survives a restart of `pflege-web`
+
+A run started through the web API (`POST /api/schedules/{id}/run-now`, owner login) is executed by the web worker and dies with a
+restart. A backend run is its own process: it does what `schedules.fire()` and the worker loop do (`create_run`, status `running`,
+`crawl.dispatch`), in a transient systemd unit, so neither a restart of `pflege-web` nor the end of the session that started it stops it.
+Only one crawl at a time: check first that nothing is `running` or `queued` (query above).
+
+```python
+# backend_run.py (run 237, 2026-10-06: schedule 1 "Daily full pass", all 643 clinics, adapter)
+import sys; sys.path.insert(0, "/home/exedev/repo")
+from app import crawl as CR, runs as R, schedules as SC, targets as T
+s = SC.get(1); ids = [c["clinic_id"] for c in T.clinics_for(s["target"])]
+params = {"max_credits": int(s.get("max_credits") or 0), "deep": bool(s.get("fetch_details")), "verify": True,
+          "schedule_id": s["id"], "schedule_name": s.get("name"), "stagger_days": int(s.get("stagger_days") or 1), "target": s["target"]}
+rid = R.create_run("clinic", ",".join(ids), s["mode"], params, ids, trigger="run-now")
+R.update_run(rid, status="running", started_at=R.now()); R.log(rid, "run started (own backend process)")
+CR.dispatch(rid)
+```
+
+```bash
+sudo systemd-run --unit=pflege-crawl-manual --uid=exedev --collect -p WorkingDirectory=/home/exedev/repo \
+  -p EnvironmentFile=/home/exedev/repo/.env /home/exedev/repo/.venv/bin/python backend_run.py
+journalctl -u pflege-crawl-manual -f          # output; the run's own log is in crawl_runs / run_log
+```
+
+The nightly schedule at 03:00 queues in the web worker; do not start a manual full pass that would still run then.
 
 ## Schedules (inside the app)
 
