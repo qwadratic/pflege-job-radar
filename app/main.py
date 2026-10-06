@@ -111,7 +111,7 @@ async def _security_headers(request, call_next):
 
 @app.on_event("startup")
 def _startup():
-    R.start_worker(CR.dispatch)
+    R.init()                    # the crawl worker is its own process (app/crawl_worker.py): a restart here never touches a run
     threading.Thread(target=D.refresh, daemon=True).start()
     S.start()
 
