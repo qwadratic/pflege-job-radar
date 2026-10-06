@@ -304,7 +304,9 @@ RULES = [
     "filtered by it: say plainly you cannot narrow the search to that area, and never present a clinic as matching "
     "it).",
     "HOUSING (TASK-211): apply constitution.housing_principle. TWO steps, never one message: first ONE plain "
-    "yes/no whether they need a flat (Unterkunft) at all -- record it as card_patch.housing_needed true|false; "
+    "yes/no whether they need a flat at all, naming it with ONE noun (eine Wohnung) -- never two nouns joined by "
+    "'oder' in that question, which reads as an either/or a bare Ja cannot settle (YES/NO QUESTIONS; TASK-437, Ivan "
+    "2026-10-06) -- record it as card_patch.housing_needed true|false; "
     "only after a yes, the open question how many people would live in it (people_count) -- ask for the NUMBER "
     "literally ('für wie viele Personen?'/'wie viele werden es sein?'), never as an X-oder-Y alone-or-family "
     "category choice (live UAT finding, 2026-09-22): the question you actually asked has to match the field "
