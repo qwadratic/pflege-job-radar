@@ -283,7 +283,7 @@ def _build():
     photos = R.clinic_photos_map()
     blurbs = R.clinic_blurbs_map()
     for c in clinics:
-        c["fachrichtungen"] = [x for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|") if x]
+        c["fachrichtungen"] = [t for t in (x.strip() for x in (c.get("fachrichtungen") or "").replace(",", "|").split("|")) if t]
         c["size"] = size_bucket(c.get("beds"), tax)
         # A point for a map (TASK-200): the centre of the clinic's municipality, no address; null + null when the
         # geo table names no single point for the town (the unmatched ones are listed by tests/test_clinic_geo.py).
