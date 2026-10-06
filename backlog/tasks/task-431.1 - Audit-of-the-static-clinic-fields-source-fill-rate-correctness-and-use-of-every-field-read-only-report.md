@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-06 07:20'
-updated_date: '2026-10-06 08:12'
+updated_date: '2026-10-06 14:04'
 labels:
   - registry
   - data-quality
@@ -41,4 +41,6 @@ Groups: 379 raw / 366 normalised operators; 407 clinics (63 percent) in 122 mult
 Completeness prototype C = (0.40 R + 0.30 V + 0.10 G + 0.20 Q) / weights that apply; run 233 as base: complete >=0.85 287 (44 percent), partly 154 (24 percent), thin 210 (32 percent); mean 0.74. Thin because: board crawl issue 115, postings attributed to no clinic 56, no board 22. Partly: missing posting fields (employment type empty for 65 percent of postings) 80, operator vs board 44. Open for Ivan: weights, cut points, whether a healthy board without an in-scope vacancy counts as known.
 Not verified: the PDF against the legal source, beds per site (KHV counts a hospital, the plan a KeZ site), ats_type beyond 18 fingerprints, PLZ for 268 KH chosen among several KHV sites.
 Status: awaiting Ivan's decisions on the change list; nothing changed in any data.
+
+2026-10-06 DECIDED by pflege-clawl: completeness weights 0.40 / 0.30 / 0.10 / 0.20 and cuts 0.85 / 0.65 stay. Sensitivity over the 651 clinics (label counts complete / partly / thin): cuts 0.85/0.65 = 287 / 154 / 210; 0.90/0.70 = 196 / 236 / 219; 0.80/0.60 = 362 / 87 / 202; 0.85/0.60 = 287 / 162 / 202; 0.90/0.65 = 196 / 245 / 210. The class that is acted on, thin, stays between 202 and 219 (plus or minus 4 percent) for every alternative; only the split between complete and partly moves with the upper cut and no action hangs on it. Confidence high for thin, labels are ordinal.
 <!-- SECTION:NOTES:END -->
