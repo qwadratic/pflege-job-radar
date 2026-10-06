@@ -9,7 +9,9 @@ import re
 from pflege_jobs import place_conf as P
 from tools.place_analysis import clinic_side, host, load_data, load_replay, posting_claims
 
-OWN_KINDS = ("text_einsatzort", "text_plz_ort", "title_or_url_city")
+STAMP_DETAIL = {}      # (board, value, mode) -> (carriers, carriers with an independent place, of those contradicting)
+CASES = ("46110", "17205", "76114", "16290", "26108", "16264", "17772")      # the cases named in TASK-431.7 / 431.8
+OWN_KINDS =("text_einsatzort", "title_or_url_city")      # labelled places only: an unlabelled '12345 Ort' never counts against a board value
 STRUCT_KINDS = ("structured_plz_city", "structured_city", "jsonld_address")
 
 
@@ -62,9 +64,10 @@ def attach_replay(postings, obs_by, by_url):
     return out
 
 
-def find_stamps(gaz, boards, by_board, pclaims, prep):
-    """{(board, value, mode): 'stamp' | 'suspect'}; mode 'stored' = the structured field of the stored observations, 'page' = the raw
-    JSON-LD / microdata place of the mirrored page against what the adapter and the text say."""
+def find_stamps(gaz, boards, by_board, pclaims, replay_by_board):
+    """{(board, value, mode): 'stamp' | 'suspect'}. mode 'stored': the structured field of the stored observations of a board's postings
+    against the labelled places in their text. mode 'page': the raw JSON-LD / microdata place of EVERY replayed page of the board (not only
+    the ones a stored posting points at) against what the adapter read from the same posting and its labelled text place."""
     n_munis = {}
     for b, st in boards.items():
         ms = set()
@@ -73,20 +76,26 @@ def find_stamps(gaz, boards, by_board, pclaims, prep):
         n_munis[b] = len(ms)
     stamps = {}
     for b, pids in by_board.items():
-        rows, rows2 = [], []
+        rows = []
         for pid in pids:
             first = next((c for c in pclaims[pid] if c[0] in ("structured_plz_city", "structured_city")), None)
             if first:
                 rows.append({"id": pid, "plz": first[1], "city": first[2], "own": own_places(pclaims[pid])})
-            for r in prep[pid][:1]:
-                pp = r.get("page_place")
-                if pp and pp["src"] in ("jsonld", "microdata"):
-                    rows2.append({"id": pid, "plz": pp.get("plz"), "city": pp.get("city"),
-                                  "own": own_places(pclaims[pid]) + [{"city": l.get("city"), "plz": l.get("plz")} for l in r.get("loc") or []]})
-        for k, v in P.board_stamps(gaz, rows, n_munis.get(b)).items():
+        det = {}
+        for k, v in P.board_stamps(gaz, rows, n_munis.get(b), detail=det).items():
             stamps[(b, k, "stored")] = v
-        for k, v in P.board_stamps(gaz, rows2, n_munis.get(b)).items():
+            STAMP_DETAIL[(b, k, "stored")] = det[k]
+    for b, rrs in replay_by_board.items():
+        rows = []
+        for r in rrs:
+            pp = r.get("page_place")
+            if pp and pp["src"] in ("jsonld", "microdata"):
+                rows.append({"id": r.get("url"), "plz": pp.get("plz"), "city": pp.get("city"),
+                             "own": [{"city": l.get("city"), "plz": l.get("plz")} for l in r.get("loc") or []] + [{"city": c, "plz": None} for k, _, c in r.get("text") or [] if k == "text_einsatzort"]})
+        det = {}
+        for k, v in P.board_stamps(gaz, rows, n_munis.get(b), detail=det).items():
             stamps[(b, k, "page")] = v
+            STAMP_DETAIL[(b, k, "page")] = det[k]
     return stamps
 
 
@@ -108,7 +117,13 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         by_board[b].append(pid)
 
     # -- D. board stamps; a structured claim whose value is flagged on its board is a stamp, not the posting's place
-    stamps = find_stamps(gaz, boards, by_board, pclaims, prep)
+    replay_by_board, seen_rows = collections.defaultdict(list), set()
+    for rows in by_url.values():
+        for r in rows:
+            if id(r) not in seen_rows:
+                seen_rows.add(id(r))
+                replay_by_board[r["board_id"]].append(r)
+    stamps = find_stamps(gaz, boards, by_board, pclaims, replay_by_board)
     n_rekind = collections.Counter()
     for pid, cl in pclaims.items():
         new = []
@@ -198,11 +213,49 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         agree = {c for c in candidates(pc) if P.match(gaz, pc, cclaims[c]).category == "agree"}
         unl["own_place_no_clinic_there" if not agree else "one_clinic_there" if len(agree) == 1 else "several_clinics_there"] += 1
 
+    # -- agree only by municipality although another clinic of the table has this very PLZ: the municipality is right, the site may not be
+    site_doubt, by_level = collections.Counter(), collections.Counter()
+    for po in postings:
+        pid, cid = po["posting_id"], po.get("clinic_id")
+        if not cid or results[pid].category != "agree":
+            continue
+        by_level[results[pid].level] += 1
+        best = results[pid].best[0]
+        sg = gaz.claim_signature(best)
+        if results[pid].level == "municipality" and sg[0] and by_plz.get(sg[0], set()) - {cid}:
+            site_doubt[rule_group(po["clinic_match_rule"])] += 1
+    conflicts = collections.Counter(rule_group(po["clinic_match_rule"]) for po in postings if po.get("clinic_id") and results[po["posting_id"]].conflict)
+
+    # -- the written PLZ of a clinic against the PLZ its linked postings state (the link may be wrong, so this is a lead, not a verdict)
+    linked = collections.defaultdict(list)
+    for po in postings:
+        if po.get("clinic_id"):
+            linked[po["clinic_id"]].append(po["posting_id"])
+    plz_rows = []
+    for cid, pids in sorted(linked.items()):
+        cnt = collections.Counter()
+        for pid in pids:
+            for plz in {P.clean_plz(p) for k, p, c, _ in pclaims[pid] if k in ("structured_plz_city", "jsonld_address") and P.clean_plz(p) and gaz.plz_info(p).valid}:
+                cnt[plz] += 1
+        if not cnt:
+            continue
+        modal, n = cnt.most_common(1)[0]
+        csig = [s for c, s in cls_sig[cid] if c.plz and s[0]]
+        msig = gaz.claim_signature(P.Claim("structured_plz_city", modal, None))
+        lvl = max((P._level(msig, s) for s in csig), key=P._RANK.get, default="unknown")
+        plz_rows.append({"clinic_id": cid, "name": clinic_by[cid]["name"], "town": clinic_by[cid]["town"], "written_plz": clinic_by[cid]["plz"],
+                         "kind": cinfo[cid]["kind"], "other_plz": " ".join(cinfo[cid]["other_plz"]), "linked": len(pids), "with_plz": sum(cnt.values()),
+                         "modal_plz": modal, "modal_n": n, "plz_spread": " ".join(f"{p}:{m}" for p, m in cnt.most_common(6)), "modal_vs_written": lvl,
+                         "modal_in_other_plz": int(modal in cinfo[cid]["other_plz"])})
+    n_conflict = sum(1 for cl in pclaims.values() for k, p, c, _ in cl if k in STRUCT_KINDS and c and gaz.place_signature(p, c)[6])
+
     # -- write
+    wcsv(out_dir, "clinic_plz_vs_postings.csv", plz_rows)
     wcsv(out_dir, "disagreements.csv", sorted(dis_rows, key=lambda r: (r["rule"] or "", r["clinic_id"], r["posting_id"])))
     wcsv(out_dir, "unresolved_cities.csv", [{"city": c, "n": n, "status": per_str[c].status if c in per_str else ""} for c, n in unresolved.most_common()])
-    wcsv(out_dir, "board_stamps.csv", [{"board": b, "value": k, "mode": mode, "verdict": v,
-                                        "postings": sum(1 for pid in by_board[b] if any(stamp_key(gaz, p, c) == k for _, p, c, _ in pclaims[pid]))}
+    wcsv(out_dir, "board_stamps.csv", [{"board": b, "value": k, "mode": mode, "verdict": v, "carriers": STAMP_DETAIL[(b, k, mode)][0],
+                                        "with_own_place": STAMP_DETAIL[(b, k, mode)][1], "contradicted": STAMP_DETAIL[(b, k, mode)][2],
+                                        "db_postings": sum(1 for pid in by_board.get(b, ()) if any(stamp_key(gaz, p, c) == k for _, p, c, _ in pclaims[pid]))}
                                        for (b, k, mode), v in sorted(stamps.items())])
     wcsv(out_dir, "clinic_places.csv", [{"clinic_id": cid, "name": clinic_by[cid]["name"], "town": clinic_by[cid]["town"], "plz": i["plz"], "kind": i["kind"],
                                          "evidence": i["evidence"], "other_plz": " ".join(i["other_plz"]), "ars": i["ars"]} for cid, i in sorted(cinfo.items())])
@@ -230,18 +283,43 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         "stamps": {"flagged": {f"{b}|{k}|{m}": v for (b, k, m), v in stamps.items()}, "rekinded_claims": dict(n_rekind), "suspect_is_stamp": suspect_is_stamp},
         "match": {"per_rule": cat_rows},
         "unlinked": dict(unl),
+        "plz_vs_city_conflicts_in_one_claim": n_conflict,
+        "agree_by_level": dict(by_level), "agree_municipality_but_another_clinic_has_the_plz": dict(site_doubt),
+        "own_claims_conflict": dict(conflicts),
+        "unknown_reasons": {g: dict(collections.Counter(results[po["posting_id"]].detail for po in postings if po.get("clinic_id") and rule_group(po["clinic_match_rule"]) == g
+                                                        and results[po["posting_id"]].category == "unknown")) for g in cat_by_rule if g != "ALL linked"},
+        "clinic_plz_vs_postings": dict(collections.Counter(r["modal_vs_written"] for r in plz_rows)),
     }
     json.dump(summary, open(os.path.join(out_dir, "summary.json"), "w"), ensure_ascii=False, indent=1, default=str)
     return summary, pclaims, cclaims, results, board_of
 
 
-def run(data_dir, replay_dir, geonames, out_dir):
+def run(data_dir, replay_dir, geonames, out_dir, suspect_is_stamp=True):
     os.makedirs(out_dir, exist_ok=True)
     gaz = P.Gazetteer(geonames=geonames)
     clinics, postings, obs = load_data(data_dir)
     boards, by_url = load_replay(replay_dir)
     print(f"gazetteer {len(gaz.munis)} municipalities, {len(gaz._plz)} PLZ; replay boards {len(boards)}, urls {len(by_url)}", flush=True)
-    summary = measure(gaz, clinics, postings, obs, boards, by_url, out_dir)[0]
+    summary, pclaims, cclaims, results, board_of = measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_stamp)
+    by_id = {c["clinic_id"]: c for c in clinics}
+    lines = []
+    for cid in CASES:
+        c = by_id[cid]
+        mine = [po for po in postings if po.get("clinic_id") == cid]
+        lines.append(f"== clinic {cid} {c['name']} | town {c['town']} | plz {c['plz']} | landkreis {c['landkreis']}")
+        lines.append("   clinic claims: " + fmt_cclaims(cclaims[cid]))
+        lines.append(f"   linked postings {len(mine)}: " + str(dict(collections.Counter(results[po['posting_id']].category for po in mine))) +
+                     "  rules " + str(dict(collections.Counter(po["clinic_match_rule"] for po in mine))))
+        spread = collections.Counter(p for po in mine for k, p, _, _ in pclaims[po["posting_id"]] if k in ("structured_plz_city", "jsonld_address") and p)
+        lines.append(f"   PLZ the linked postings state: {dict(spread)}")
+        for po in mine[:14]:
+            r = results[po["posting_id"]]
+            lines.append(f"   {po['posting_id']:>6} {po['status']:7} {po['clinic_match_rule']:22} {r.category:10} {r.level:12} conf {r.confidence:.2f}  {fmt_claims(pclaims[po['posting_id']])[:150]}")
+    for b, v in sorted(summary["stamps"]["flagged"].items()):
+        if "kbo" in b:
+            lines.append(f"stamp {b} {v}")
+    with open(os.path.join(out_dir, "cases.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
     print(json.dumps({k: summary[k] for k in ("replay", "clinics", "stamps", "unlinked")}, ensure_ascii=False, indent=1, default=str)[:5000])
     for r in summary["match"]["per_rule"][:25]:
         print(r)

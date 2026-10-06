@@ -202,6 +202,7 @@ def main(argv=None):
     d.add_argument("--replay", required=True)
     d.add_argument("--geonames", required=True)
     d.add_argument("--out", required=True)
+    d.add_argument("--suspect-is-stamp", choices=("yes", "no"), default="yes", help="a value that is only suspect (repeats on a multi-municipality board, no other signal) counts as a stamp")
     args = ap.parse_args(argv)
     if args.cmd == "replay-board":
         replay_board(args.board_id, args.out)
@@ -211,7 +212,7 @@ def main(argv=None):
         pull(args.out_dir)
     elif args.cmd == "analyze":
         from tools import place_measure
-        place_measure.run(args.data, args.replay, args.geonames, args.out)
+        place_measure.run(args.data, args.replay, args.geonames, args.out, args.suspect_is_stamp == "yes")
 
 
 if __name__ == "__main__":

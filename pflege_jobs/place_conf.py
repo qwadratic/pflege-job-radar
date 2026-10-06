@@ -207,10 +207,22 @@ class Gazetteer:
         self.plz_of_muni = {}                # ars -> [plz] (seat first)
         self.by_kreis = {}
         self._sig = {}
+        self.alias = {}
         self._load_destatis(csv_path or (_GEO / "gemeinden_de.csv"))
         if geonames:
             self._load_geonames(geonames)
         self._finish()
+        self._load_aliases(_GEO / "clinic_town_overrides.json")
+
+    def _load_aliases(self, path):
+        """data/geo/clinic_town_overrides.json: the spellings and parts of towns the registry uses ('München-Flughafen' is Oberding,
+        'Augsburg-Göggingen' is Augsburg) are alternate names of the municipality they name."""
+        import json
+        by_name = {m.name: m for m in self.munis if m.land == "BY"}
+        self.alias = {}
+        for k, v in json.load(open(path, encoding="utf-8")).items():
+            if not k.startswith("_") and v in by_name:
+                self.alias.setdefault(_fold1(k), []).append(by_name[v])
 
     # -- loading
     def _load_destatis(self, path):
@@ -295,6 +307,8 @@ class Gazetteer:
 
     def _lookup_name(self, text):
         k1, k2 = _fold1(text), _fold2(text)
+        if k1 in self.alias:
+            return list(self.alias[k1]), "exact"
         if k1 in self.full1:
             return list(self.full1[k1]), "exact"
         if k2 in self.full2:
@@ -503,12 +517,13 @@ def text_places(text):
 # ---------------------------------------------------------------------------------------------------------------------------
 # D. the board stamp
 # ---------------------------------------------------------------------------------------------------------------------------
-def board_stamps(gaz, rows, n_board_municipalities=None):
+def board_stamps(gaz, rows, n_board_municipalities=None, detail=None):
     """rows: the postings of ONE board, each {'plz', 'city', 'own': [{'city', 'plz'}]} -- the board's structured place, and the places
     the posting names independently of it (its text, title, URL). A value is a board value when it repeats on at least two postings and
-      stamp    most of the carriers that name another place of their own name one in another Kreis (kbo.de: 80538 Muenchen, TASK-68)
+      stamp    more than half of ALL the carriers name another place of their own, one in another Kreis (kbo.de: 80538 Muenchen, TASK-68)
       suspect  no such evidence, but the value is the ONLY place on a board whose clinics span two or more municipalities
-    Returns {value: 'stamp' | 'suspect'}; the value is the PLZ, or 'city:<AGS>' for a row with no PLZ."""
+    Returns {value: 'stamp' | 'suspect'}; the value is the PLZ, or 'city:<AGS>' for a row with no PLZ. `detail`, a dict, receives
+    {value: (carriers, carriers with an independent place, of those the ones that name another Kreis)} for every repeating value."""
     def key_of(r):
         p = clean_plz(r.get("plz"))
         if p:
@@ -537,7 +552,9 @@ def board_stamps(gaz, rows, n_board_municipalities=None):
             indep += 1
             if kreise and all(not (s[3] & kreise) for s in sigs):
                 contra += 1
-        if indep and contra * 2 > indep:
+        if detail is not None:
+            detail[k] = (len(rs), indep, contra)
+        if contra * 2 > len(rs):
             out[k] = "stamp"
         elif not indep and len(carriers) == 1 and (n_board_municipalities or 0) >= 2 and len(rs) == placed:
             out[k] = "suspect"
@@ -613,11 +630,20 @@ def match(gaz, posting_claims, clinic_claims) -> Match:
         return Match("unknown", "unknown", conf, detail="no own place of the posting")
     top = max(POSTING_WEIGHT[c.kind] for c in pool)
     decisive = [c for c in pool if POSTING_WEIGHT[c.kind] == top]
-    best = max((p for p in pairs if p[0] in decisive), key=lambda p: (_RANK[p[4]], score(*p)))
-    cat = _VERDICT[best[4]]
     agree = {"agree", "agree_weak"}
-    conflict = cat != "unknown" and any(
-        (_VERDICT[max((q[4] for q in pairs if q[0] == o), key=_RANK.get)] in agree) != (cat in agree)
-        for o in pool if o not in decisive and any(q[0] == o for q in pairs))
+
+    def best_of(c):
+        return max((p for p in pairs if p[0] is c), key=lambda p: (_RANK[p[4]], score(*p)))
+
+    per_claim = {id(c): best_of(c) for c in decisive}
+    best = max(per_claim.values(), key=lambda p: (_RANK[p[4]], score(*p)))
+    cat = _VERDICT[best[4]]
+    n_agree = sum(1 for p in per_claim.values() if _VERDICT[p[4]] in agree)
+    # equally strong readings of the posting's place that disagree with each other (the stored city says Bamberg, the adapter says
+    # Forchheim): one reading agreeing is agree, but only n_agree / n of the confidence
+    share = n_agree / len(decisive) if cat in agree else 1.0
+    conflict = (cat in agree and n_agree < len(decisive)) or (cat != "unknown" and any(
+        (_VERDICT[best_of(o)[4]] in agree) != (cat in agree) for o in pool if o not in decisive))
     own_conf = max((score(*p) for p in pairs if p[0] in pool), default=0.0)
-    return Match(cat, best[4], own_conf if cat != "disagree" else 0.0, (best[0], best[2]), conflict)
+    return Match(cat, best[4], own_conf * share if cat != "disagree" else 0.0, (best[0], best[2]), conflict,
+                 "own claim not comparable with any place of the clinic" if cat == "unknown" else "")

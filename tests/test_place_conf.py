@@ -204,6 +204,15 @@ def test_a_posting_whose_only_place_is_a_stamp_is_unknown_never_agree_or_disagre
     assert P.match(GG, [P.Claim("structured_city", None, "Bamberg")], []).category == "unknown"
 
 
+def test_two_equally_strong_readings_that_disagree_halve_the_confidence_and_say_so(GG):
+    # Sozialstiftung Bamberg board: the stored city says Bamberg, the adapter replayed from the mirror says Forchheim
+    one = P.match(GG, [P.Claim("structured_city", None, "Bamberg")], [P.Claim("registry_town", None, "Bamberg")])
+    two = P.match(GG, [P.Claim("structured_city", None, "Bamberg"), P.Claim("structured_city", None, "Forchheim")], [P.Claim("registry_town", None, "Bamberg")])
+    assert (one.category, one.conflict) == ("agree", False)
+    assert (two.category, two.level, two.conflict) == ("agree", "municipality", True)
+    assert two.confidence == pytest.approx(one.confidence / 2)
+
+
 def test_a_typo_plz_is_no_evidence_and_the_city_decides(GG):
     # 17205: postings carry 83453 (a typo, there is no such PLZ in the table) next to the city Bad Reichenhall
     m = P.match(GG, [P.Claim("structured_plz_city", "83453", "Bad Reichenhall")], [P.Claim("imprint_plz", "83435", None)])
@@ -234,6 +243,13 @@ def test_a_labelled_workplace_in_another_land_decides_against_the_seed_clinic(GG
     m = P.match(GG, [P.Claim("seed_stamp", None, "Aschaffenburg"), P.Claim("text_einsatzort", None, "Seligenstadt")],
                 [P.Claim("registry_town", None, "Aschaffenburg")])
     assert (m.category, m.level, m.confidence) == ("disagree", "none", 0.0)
+
+
+def test_one_posting_naming_another_place_does_not_make_the_board_value_a_stamp(GG):
+    # Sozialstiftung Bamberg board: 29 postings in Bamberg, one of them names a place in another Kreis in its text
+    board = [_post("96049", "Bamberg", ("Bamberg", None))] * 4 + [_post("96049", "Bamberg", ("Rehau", "95111"))]
+    assert P.board_stamps(GG, board) == {}
+    assert P.board_stamps(GG, board[:2] + [_post("96049", "Bamberg", ("Rehau", "95111"))] * 3) == {"96049": "stamp"}
 
 
 def test_a_place_read_by_a_token_scan_does_not_make_a_board_value_a_stamp(GG):
