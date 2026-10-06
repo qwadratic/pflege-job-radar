@@ -143,7 +143,11 @@ def scope(changed, sources, closures=None):
 # no import shows), the replay layer and the recorder, the tests themselves, every conftest, the marker, the dependencies, the CI.
 ADAPTER_PATHS = ("crawlers/*", "pflege_jobs/*", "tests/mirror.py", "tests/adapter_*.py", "tests/test_completeness_*.py",
                  "tests/test_adapter_completeness.py", "tests/test_verify_pi_loga_live.py", "tests/conftest.py", "tools/mirror.py", "conftest.py",
-                 "pytest.ini", "requirements.txt", ".github/workflows/*")
+                 "pytest.ini", "requirements.txt", ".github/workflows/*",
+                 "data/registry/*.json", "data/geo/*")      # read by path at run time: the seeds (crawlers/routing.py), the geodata (pflege_jobs/geo.py)
+# Registry sheets that only offline tests read (tests/test_fill_clinic_plz.py, tests/test_sync_rhv_reha.py), never an adapter or a
+# mirror test (the crawler lane, 2026-10-06): a commit of registry data does not start `adapters`.
+NOT_ADAPTER_PATHS = ("data/registry/*.csv", "data/registry/*.xlsx", "data/registry/*.pdf")
 
 
 def mirror_only(sources):
@@ -172,7 +176,8 @@ def adapters(changed, sources, closures=None):
     """-> True when job `adapters` (pull the mirror, `pytest -m mirror`) has to run for these changed paths. A path starts it when
     - it is one of ADAPTER_PATHS, or
     - it is Python that a mirror test module imports through any chain of repo imports (app/data.py, a helper in tools/), or
-    - it is not Python and no leaf area claims it (a registry CSV, a JSON, SQL): nothing shows who reads such a file, so it counts.
+    - it is not Python and no leaf area claims it (SQL, the edge function, a new data file): nothing shows who reads such a file,
+      so it counts, except the registry sheets in NOT_ADAPTER_PATHS, which only offline tests read.
     Python that no mirror test imports does not start it: a tool of its own, the WhatsApp harness, a board route."""
     closures = closures if closures is not None else import_closures()
     seen = set().union(*(closures.get(name, set()) for name in mirror_only(sources)))
@@ -182,7 +187,7 @@ def adapters(changed, sources, closures=None):
         if path.endswith(".py"):
             if path in seen:
                 return True
-        elif scope([path], sources, closures) == "ALL":
+        elif scope([path], sources, closures) == "ALL" and not any(fnmatch(path, pat) for pat in NOT_ADAPTER_PATHS):
             return True
     return False
 
@@ -234,7 +239,9 @@ def _self_test():
     assert yes("crawlers/x.py") and yes("tests/test_completeness_dvinci.py") and yes("tests/mirror.py") and yes("pflege_jobs/geo.py")
     assert yes(".github/workflows/tests.yml") and yes("requirements.txt") and yes("pytest.ini") and yes("tests/conftest.py")
     assert yes("app/data.py") and yes("tools/registry_build.py")                 # Python a mirror module imports
-    assert yes("data/registry/reha_bavaria.csv") and yes("sql/015_x.sql") and yes("LICENSE")   # not Python, no leaf claims it
+    assert yes("data/registry/pi_seeds.json") and yes("data/geo/ambiguous_stems.txt") and yes("sql/015_x.sql") and yes("LICENSE")
+    assert not yes("data/registry/reha_bavaria.csv") and not yes("data/registry/krankenhausverzeichnis_24.xlsx")   # offline tests only
+    assert offline(["data/registry/reha_bavaria.csv"], src) == "ALL"                # ... and offline still runs everything for them
     assert not yes("tools/status_page.py") and not yes("app/wa/config.py") and not yes("app/wa_proxy.py")   # Python no mirror module imports
     assert not yes("docs/wa-dashboard.md") and not yes("web/pro.html") and not yes("backlog/tasks/task-1 - x.md") and not yes("README.md")
     assert not yes("tests/test_bite.py") and not yes() and yes("docs/x.md", "tools/status_page.py", "crawlers/x.py")

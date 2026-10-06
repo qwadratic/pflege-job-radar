@@ -64,8 +64,9 @@ CLO = {"test_adapter_completeness.py": {"tests/test_adapter_completeness.py", "t
     ["tests/test_verify_pi_loga_live.py"], ["tools/mirror.py"], ["pytest.ini"], ["requirements.txt"], [".github/workflows/tests.yml"],
     ["pflege_jobs/sources/bite.py"], ["tests/conftest.py"], ["conftest.py"],
     ["app/data.py"], ["tools/registry_build.py"],          # Python a mirror module imports, through any chain
-    ["data/registry/reha_bavaria.csv"], ["sql/015_source_supplement.sql"], ["edge/pflege-ingest/index.ts"], ["LICENSE"],   # not Python, no leaf claims it
-    ["docs/deploy.md", "crawlers/a.py"], ["tools/status_page.py", "data/registry/taxonomy.json"],
+    ["sql/015_source_supplement.sql"], ["edge/pflege-ingest/index.ts"], ["LICENSE"], ["data/new_thing.bin"],   # not Python, no leaf claims it
+    ["data/registry/pi_seeds.json"], ["data/registry/taxonomy.json"], ["data/geo/ambiguous_stems.txt"], ["data/geo/kreise.geojson"],   # read by path at run time
+    ["docs/deploy.md", "crawlers/a.py"], ["tools/status_page.py", "data/registry/taxonomy.json"], ["data/registry/reha_bavaria.csv", "data/registry/bite_seeds.json"],
 ])
 def test_adapters_run_when_the_change_is_something_the_mirror_tests_can_see(changed):
     assert CS.adapters(changed, SRC, CLO) is True
@@ -75,6 +76,7 @@ def test_adapters_run_when_the_change_is_something_the_mirror_tests_can_see(chan
     ["docs/deploy.md"], ["web/pro.template.html"], ["README.md"], ["tests/test_geo.py"], ["backlog/tasks/task-1 - x.md"], [],
     ["tools/status_page.py"], ["tools/wa_status_message.py"], ["app/wa_proxy.py"], ["app/wa/status_docs.py"], ["app/main.py"],   # Python no mirror module imports
     ["tools/status_page.py", "tests/test_status_page.py", "docs/auth.md"],
+    ["data/registry/reha_bavaria.csv"], ["data/registry/plz_review.csv", "data/registry/krankenhausverzeichnis_24.xlsx"],   # sheets only offline tests read
 ])
 def test_adapters_stay_out_of_a_change_that_cannot_reach_them(changed):
     assert CS.adapters(changed, SRC, CLO) is False
@@ -89,6 +91,10 @@ def test_in_this_repository_the_board_and_the_harness_do_not_start_adapters_and_
         assert CS.adapters([path], src, clo) is False, path
     for path in ("crawlers/vendor_adapters.py", "pflege_jobs/geo.py", "tests/mirror.py", "tests/adapter_contract.py", "tools/mirror.py"):
         assert CS.adapters([path], src, clo) is True, path
+    for path in sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data" / "registry").glob("*.json")) + ["data/geo/ambiguous_stems.txt"]:
+        assert CS.adapters([path], src, clo) is True, path                          # every seed file there is, by its real name
+    for path in sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data" / "registry").glob("*.csv")):
+        assert CS.adapters([path], src, clo) is False and CS.offline([path], src, clo) == "ALL", path
 
 
 # --------------------------------------------------------------------------------------------- the command line the workflow calls
