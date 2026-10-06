@@ -58,10 +58,12 @@ def _row(board_id, o, pool, emp_inherited):
             or o.get("in_bavaria") is False):
         return None
     return {"board_id": board_id, "url": o.get("source_url"), "employer": o.get("employer_name"), "city": o.get("city"), "pool": pool,
-            "employer_inherited": emp_inherited, "city_inherited": cli._city_inherited(o), "description": o.get("description"), "title": o.get("title")}
+            "employer_inherited": emp_inherited, "city_inherited": cli._city_inherited(o), "description": o.get("description"), "title": o.get("title"),
+            "employer_class": o.get("employer_class")}
 
 
 def match(m, row):
     """Matcher.match with exactly what _process_rows passes (the pool of one copy; the union over copies is not needed by the cases here)."""
     return m.match(row["employer"], row["city"], board=row["pool"], employer_inherited=row["employer_inherited"],
-                   city_inherited=row["city_inherited"], description=row["description"])
+                   city_inherited=row["city_inherited"], description=row["description"],
+                   employer_class=None if row["employer_inherited"] else row["employer_class"])

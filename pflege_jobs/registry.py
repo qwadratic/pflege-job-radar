@@ -170,7 +170,7 @@ class Matcher:
         if not ck: return []
         return [c for k, cs in self.by_town.items() if _town_match(k, ck) for c in cs]
 
-    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False):
+    def match(self, employer, city, board=None, description=None, employer_inherited=False, city_inherited=False, employer_class=None):
         """Priority: content match first (employer/operator fuzzy, then a JD-text mention) -- reliable
         regardless of which board hosted it. Board membership is a fallback ONLY, for the case content
         can't disambiguate (one generic employer name shared by every site on a group board, e.g. kbo).
@@ -197,6 +197,13 @@ class Matcher:
         r = self._match_content(employer, city, description, employer_inherited=employer_inherited, city_stamped=city_inherited)
         if r: return r
         if board:
+            # The board names a clinic only as provenance: nothing in the posting does. For an employer the pipeline itself classifies
+            # non_clinic (care homes, rescue services, schools; employers.employer_class, patterns.json employer.non_clinic) that is no
+            # evidence at all, and a link would relabel the employer 'clinic' at ingest. Content rungs above are untouched; the posting stays
+            # unlinked, with its own city and employer (TASK-431.9). The caller passes the class of an employer READ off the posting; a
+            # copied one is the seed clinic's own name and says nothing.
+            if employer_class == "non_clinic":
+                return None
             en = "" if employer_inherited else employer_norm(employer or "")
             et = set() if employer_inherited else toks(employer)
             ck = None if city_inherited else city_key(city)
