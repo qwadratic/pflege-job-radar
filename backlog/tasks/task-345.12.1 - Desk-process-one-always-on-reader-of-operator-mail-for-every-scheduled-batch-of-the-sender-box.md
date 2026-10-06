@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-10-01 18:10'
-updated_date: '2026-10-06 05:40'
+updated_date: '2026-10-06 11:54'
 labels:
   - email
 dependencies: []
@@ -62,4 +62,6 @@ Ivan 2026-10-05 night, on the sweep's open points. (1) No daily full re-read of 
 Ivan 2026-10-06 morning: the mailing had stood since 05.10 20:38. At 20:37 someone (Ivan, deliberately: "оставить кеш claude, это нарочно") put copies of the Microsoft token cache and the account map into ~/.local/state/pflege-mail/ (claude-owned) and pointed .env at them. The root helper /usr/local/sbin/daria-inbox refuses a cache root does not own, so the desk and the three batches died on 'the MSAL cache named in .env must be a regular file that root owns' and nothing was read for 11 hours (nothing lost: the .watched and .swept states held the read point). Fix: tools/daria_inbox.py is now run by the claude user itself, '/usr/bin/python3 -I tools/daria_inbox.py --since ISO', no sudo; the only change in the script is that the cache must be owned by the running user instead of root. It still never writes the cache back; a stale cache fails loudly ('no Graph token'). The root copy in /usr/local/sbin and its sudoers line are unused now. clinic_mailer.DARIA_INBOX points at the script, helper_output runs it, tests follow. Desk and the three batches restarted 07:26 Berlin on it, 25 messages read, spam classified unrelated. Seen while checking: Daria's Sent Items hold four replies to cold-sales senders written overnight (04:42 and 06:23 Berlin, 'RE: ...' to four of the senders), not from this desk or any batch; the author is unknown.
 
 Ivan 2026-10-06: 'if I updated it, update it; the full cycle must work'. daria_inbox.py now saves the MSAL cache back when a read refreshed a token (nobody else keeps the claude-owned copy fresh): under a lock <cache>.lock taken before the cache is opened, atomically (temporary file in the same directory, mode 600, fsync, rename), only when the cache's state changed; a stale cache still fails loudly. First live save 07:33 Berlin by the desk's own read (cache 40692 -> 28866 bytes, expired access tokens dropped; 5 accounts and 6 refresh tokens kept). tests/test_daria_inbox.py (fake msal): save-back, untouched when unchanged, stale fails and stays, group-writable and symlink refused, authority check.
+
+2026-10-06 (Ivan): an operator's second mailbox may command the mailings but never gets mail; the main (Gmail) mailbox is the recipient. New optional desk config key command_only: tools/daria_desk.py reads mail from operators and command_only, answers and notices go to operators and notify only; test_a_command_only_address_commands_but_is_never_written_to (red before, green after). The campaign configs must list the address under operators too (their notify and forward lists stay as they are), or the batches' and the sweep's own classification treats its mail as a clinic's; running batches read their config at start, so that takes effect at their next restart (the planned move to units). Needs Ivan's deploy word and a desk restart.
 <!-- SECTION:NOTES:END -->
