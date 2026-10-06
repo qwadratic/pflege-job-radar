@@ -132,14 +132,8 @@
   },
   {
    "key": "L",
-   "label": "300–799 Betten",
-   "min": 300,
-   "max": 799
-  },
-  {
-   "key": "XL",
-   "label": "800+ Betten",
-   "min": 800
+   "label": "300+ Betten",
+   "min": 300
   }
  ],
  "regierungsbezirk": [

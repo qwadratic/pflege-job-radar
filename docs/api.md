@@ -102,7 +102,7 @@ curl "$B/facets"
 # clinics: by city list, bezirk, beds range, size bucket, Fachrichtung, ATS, Träger, with jobs only
 curl "$B/clinics?city=München,Augsburg&has_jobs=1&sort=-jobs_open"
 curl "$B/clinics?regierungsbezirk=Oberbayern&beds_min=300&beds_max=800"
-curl "$B/clinics?size=L,XL&fach=INN,CHI&traegerart=oeffentlich"
+curl "$B/clinics?size=L&fach=INN,CHI&traegerart=oeffentlich"
 curl "$B/clinics?ats_type=softgarden&fetch=adapter"
 curl "$B/clinics?fetch=firecrawl"                # no adapter → Firecrawl would read it (route_reason says why)
 curl "$B/clinics?q=rexx"                         # q also matches badge values: ATS, Bezirk, Landkreis, codes, status, size
@@ -301,6 +301,13 @@ PLZ is in the geo table), `municipality_centroid_override` (the override file na
 string names several Bavarian municipalities, the clinic's `landkreis` chose one: Altdorf, Auerbach, Aschau, Haag, Bernried, Bruckberg) or
 `municipality_centroid` (the town string names one municipality). Until 2026-10-06 the value was always `municipality_centroid`. Public like
 the rest of the row.
+
+`size` is the bed cohort: `S` (< 100 beds), `M` (100-299), `L` (300 and more; until 2026-10-06 `XL` was 800 and more and `L` 300-799), one rule, written in
+`size_buckets` of data/registry/taxonomy.json. A clinic with 0 or no beds has `size: null` and `size_reason` says why: `no_bed_concept` (the
+Diakoneo social list: care homes and housing, status `Sonstige Pflege-/Sozialeinrichtung`, 13 clinics), `day_places_only` (0 beds, day places: day
+clinics, 42) or `planned_only` (status `Bedarfsfeststellung`, 0 beds, 8); `size_reason` is `null` for every clinic with a `size`. Before
+2026-10-06 a clinic with 0 beds was `S`. `is_university` (boolean) is `true` for the 7 sites with status `HS-Klinik` (6 university hospitals, Art. 1
+BayUniKlinG), independent of `size`.
 
 `photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
 `clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key

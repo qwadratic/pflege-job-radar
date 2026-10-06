@@ -171,8 +171,8 @@
     {
      "name": "size_buckets",
      "desc": {
-      "de": "S <100, M 100–299, L 300–799, XL 800+",
-      "en": "S <100, M 100–299, L 300–799, XL 800+"
+      "de": "S <100, M 100–299, L ab 300 Betten; 0 oder fehlende Betten: keine Größe, size_reason nennt den Grund",
+      "en": "S <100, M 100–299, L 300+ beds; 0 or missing beds: no size, size_reason says why"
      }
     },
     {

@@ -69,9 +69,8 @@ def test_the_clinic_row_carries_the_point(fresh, monkeypatch):
     # answer that with no rows too, not with these clinic-shaped rows (they have no posting_id).
     monkeypatch.setattr(A, "rest_get_all",
                         lambda table, params: clinics if table == "clinics" else [])
-    monkeypatch.setattr(D, "taxonomy", lambda: {})
     monkeypatch.setattr(D, "_routing", lambda cs: {})
-    by_id = D._build()["by_clinic"]
+    by_id = D._build()["by_clinic"]               # the real taxonomy: the size buckets are read from it, there is no default (TASK-431)
     assert {k: by_id["16104"][k] for k in ("lat", "lon", "geo_source", "geo_name")} == {
         "lat": 48.137683, "lon": 11.575997, "geo_source": "municipality_centroid", "geo_name": "München, Landeshauptstadt"}
     assert {k: by_id["99999"][k] for k in ("lat", "lon", "geo_source", "geo_name")} == {"lat": None, "lon": None, "geo_source": None, "geo_name": None}

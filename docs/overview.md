@@ -139,7 +139,8 @@ GuK (Gesundheits- und Krankenpflege) · GKiK (Kinderkrankenpflege) · Altenpfleg
 | versorgungsstufe | Grundversorgung (I) · Schwerpunkt (II) · Maximalversorgung (III) · Fachkrankenhaus · `null` (Vertrags-KH / HS-Klinik outside the levels, Reha and social rows: 286 of 651) |
 | traegerart | oeffentlich (ö) · freigemeinnuetzig (fg) · privat (p) |
 | status | Plan-KH · Vertrags-KH · HS-Klinik · Bedarfsfeststellung · nicht_mehr_im_plan |
-| size bucket (beds) | S < 100 · M 100–299 · L 300–799 · XL 800+ |
+| size bucket (beds) | S < 100 · M 100–299 · L 300 and more (`size_buckets` in `taxonomy.json`, the one place); 0 or no beds: no size, `size_reason` = `no_bed_concept` · `day_places_only` · `planned_only` |
+| `is_university` | status `HS-Klinik` (7 sites of the 6 university hospitals), independent of size |
 
 ### ats_type (which adapter reads the board)
 | vendor | adapter | how it is read |

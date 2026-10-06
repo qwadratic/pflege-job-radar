@@ -58,7 +58,7 @@ spending twice (in flight → 409, same key with a different body → 422).
 | POST | `/ingest` | one envelope or `{"events":[…]}` → `{accepted, total, validate_only, results[{id,type,status,inbox_id\|problem}]}`; 202 when every item came out the same way, 207 when they did not |
 | GET | `/schedules/{id}/preview?day=` | `{schedule_id, target, mode, stagger_days, day, slice[], clinics, boards, via_adapter, via_firecrawl, est_credits, credits_left, next_run_at}` — the stagger slice a firing would take, without firing it |
 
-Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=L,XL`). `sort` = column or `-column`.
+Multi-value filters are comma lists (`city=München,Augsburg`, `fach=INN,CHI`, `size=M,L`). `sort` = column or `-column`.
 `/clinics` and `/jobs` also take `fields=a,b,c` (sparse projection; an unknown name is a 400) and answer
 `Accept: application/x-ndjson` with one JSON object per line instead of the `{total, rows}` envelope.
 
