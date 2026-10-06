@@ -80,7 +80,9 @@ def find_stamps(gaz, boards, by_board, pclaims, replay_by_board):
         for pid in pids:
             first = next((c for c in pclaims[pid] if c[0] in ("structured_plz_city", "structured_city")), None)
             if first:
-                rows.append({"id": pid, "plz": first[1], "city": first[2], "own": own_places(pclaims[pid])})
+                # the freshly replayed adapter reading of the same page counts as an independent place: a stored value the adapter no longer reads is not stable
+                again = [{"city": c, "plz": p} for k, p, c, src in pclaims[pid] if src.startswith("adapter loc") and k in STRUCT_KINDS]
+                rows.append({"id": pid, "plz": first[1], "city": first[2], "own": own_places(pclaims[pid]) + again})
         det = {}
         for k, v in P.board_stamps(gaz, rows, n_munis.get(b), detail=det).items():
             stamps[(b, k, "stored")] = v
@@ -112,6 +114,8 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         first = obs_by[pid][0].get("source_url") if obs_by[pid] else None
         board_of[pid] = prep[pid][0]["board_id"] if prep[pid] else "host:" + host(first or po.get("external_url"))
         pclaims[pid] = posting_claims(gaz, po, obs_by[pid], prep[pid])
+    cover = {"by_status": {s: [sum(1 for po in postings if po["status"] == s and prep[po["posting_id"]]), sum(1 for po in postings if po["status"] == s)] for s in ("open", "expired")},
+             "no_replay_top_hosts": collections.Counter(board_of[pid] for pid in prep if not prep[pid]).most_common(15)}
     by_board = collections.defaultdict(list)
     for pid, b in board_of.items():
         by_board[b].append(pid)
@@ -274,7 +278,7 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         "replay": {"boards_in_status": len(boards), "result": dict(collections.Counter(s.get("result") for s in boards.values())),
                    "rows": sum(s.get("rows") or 0 for s in boards.values()), "urls": len(by_url),
                    "postings_with_replay_row": sum(1 for v in prep.values() if v), "postings_with_page_place": sum(1 for v in prep.values() if any(r.get("page_place") for r in v)),
-                   "postings": len(postings)},
+                   "postings": len(postings), "coverage": cover},
         "clinics": {"n": len(clinics), "with_plz": sum(1 for i in cinfo.values() if i["plz"]), "kinds": dict(collections.Counter(i["kind"] for i in cinfo.values() if i["plz"])),
                     "with_other_plz": sum(1 for i in cinfo.values() if i["other_plz"]), "town_status": dict(town_stat)},
         "spelling": {"occurrences": sum(cities.values()), "distinct_strings": len(per_str), "status": dict(res_stat),
