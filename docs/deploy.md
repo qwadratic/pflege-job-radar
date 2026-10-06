@@ -163,6 +163,12 @@ in the archive and leaves other files alone: push first if this machine holds re
 name, HTTP status, size or sha256 mismatch, a tar member that is absolute or contains `..`) stops with a message and a non-zero exit;
 there is no retry and no fall back to a local copy.
 
+CI (`.github/workflows/tests.yml`, selection in `tools/ci_scope.py`): job `offline` runs `-m "not mirror and not network and not llm"`
+without a pull and without secrets (fork PRs too). Job `adapters` runs `tools/mirror.py pull`, then `-m mirror` (about 40 minutes), on a
+push to main and on a pull request that changes `crawlers/`, the replay layer or its tests, `pytest.ini`, `requirements.txt` or the
+workflow, or whose offline scope is ALL. Repository secrets: `BUNNY_MIRROR_ZONE` and `BUNNY_MIRROR_RO_KEY` (the read-only password;
+the write key never goes to GitHub). A fork PR has no secrets, so its `adapters` job fails at the pull naming them.
+
 ## Check after a deploy
 
 ```bash

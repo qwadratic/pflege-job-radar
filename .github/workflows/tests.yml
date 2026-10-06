@@ -1,7 +1,14 @@
 name: tests
 
-# The offline suite: everything except the tests that talk to live clinic boards (network) and the ones
-# that spawn the paid `claude` CLI (llm). Those two stay manual for now.
+# Two jobs, picked by tools/ci_scope.py (its map and its tests hold the logic, not this file).
+#
+#   offline   the suite that needs no mirror: everything except the tests that read real clinic boards (mirror), talk to a live
+#             system on purpose (network) or spawn the paid `claude` CLI (llm). No secret, no pull, so it also runs on fork PRs.
+#             A pull request runs the tests of the areas it touches; a push to main runs everything.
+#   adapters  the tests that replay real boards (-m mirror, about 40 minutes): pulls the mirror from the private Bunny zone first.
+#             Runs on a push to main and on a pull request that changes the adapters, the replay layer, the tests of them, the
+#             dependencies or this file, or whose offline scope is ALL. On a fork PR the repository secrets are empty and the
+#             pull step fails by itself, naming them: the job is red, never silently skipped.
 on:
   push:
     branches: [main]
@@ -19,17 +26,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # A pull request runs the tests of the areas it touches; tools/ci_scope.py holds the map.
-      # A push to main runs everything.
       - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            tests=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | python3 tools/ci_scope.py)
+          if [ "$EVENT" = "pull_request" ]; then
+            git diff --name-only "origin/$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
           else
-            tests=ALL
+            : > "$RUNNER_TEMP/changed.txt"
           fi
+          tests=$(python3 tools/ci_scope.py --job offline --event "$EVENT" < "$RUNNER_TEMP/changed.txt")
           echo "tests=$tests" >> "$GITHUB_OUTPUT"
-          echo "Scope: $tests" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scope (offline): $tests" >> "$GITHUB_STEP_SUMMARY"
       - if: steps.scope.outputs.tests != 'NONE'
         uses: actions/setup-python@v5
         with:
@@ -44,10 +53,57 @@ jobs:
       # Placeholders, not credentials: several modules read these at import or call time. The offline
       # suite never connects to them; 127.0.0.1:9 refuses at once if a test tries.
       - if: steps.scope.outputs.tests != 'NONE'
-        run: python -m pytest -q -m "not network and not llm" --timeout=300 ${{ steps.scope.outputs.tests != 'ALL' && steps.scope.outputs.tests || '' }}
+        run: python -m pytest -q -m "not mirror and not network and not llm" --timeout=300 ${{ steps.scope.outputs.tests != 'ALL' && steps.scope.outputs.tests || '' }}
         env:
           # The adapter-completeness modules read the clinic registry from the internal read proxy at
           # import; this is their own switch for a run that cannot reach it (tests/adapter_contract.py).
+          PFLEGE_TESTS_OFFLINE: "1"
+          SUPABASE_URL: http://127.0.0.1:9
+          SUPABASE_ANON_KEY: ci-placeholder
+          PFLEGE_INGEST_URL: http://127.0.0.1:9/ingest
+          PFLEGE_INGEST_SECRET: ci-placeholder
+          FIRECRAWL_API_KEY: ci-placeholder
+
+  adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            git diff --name-only "origin/$BASE...HEAD" > "$RUNNER_TEMP/changed.txt"
+          else
+            : > "$RUNNER_TEMP/changed.txt"
+          fi
+          adapters=$(python3 tools/ci_scope.py --job adapters --event "$EVENT" < "$RUNNER_TEMP/changed.txt")
+          echo "adapters=$adapters" >> "$GITHUB_OUTPUT"
+          echo "Scope (adapters): $adapters" >> "$GITHUB_STEP_SUMMARY"
+      # The pip cache holds packages only; nothing here caches the mirror, so a failed pull cannot hide behind a stale copy.
+      - if: steps.scope.outputs.adapters == 'yes'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - if: steps.scope.outputs.adapters == 'yes'
+        run: pip install -r requirements.txt
+      - if: steps.scope.outputs.adapters == 'yes'
+        run: python -m playwright install --with-deps chromium
+      # About 0.5 GB to download and as much again to unpack. A pull that fails (secrets missing on a fork PR, an HTTP error, a size
+      # or sha256 mismatch) ends the job here: tools/mirror.py pull exits non-zero, there is no fallback.
+      - if: steps.scope.outputs.adapters == 'yes'
+        run: python tools/mirror.py pull
+        env:
+          BUNNY_MIRROR_ZONE: ${{ secrets.BUNNY_MIRROR_ZONE }}
+          BUNNY_MIRROR_RO_KEY: ${{ secrets.BUNNY_MIRROR_RO_KEY }}
+      - if: steps.scope.outputs.adapters == 'yes'
+        run: python -m pytest -q -m mirror --timeout=900
+        env:
           PFLEGE_TESTS_OFFLINE: "1"
           SUPABASE_URL: http://127.0.0.1:9
           SUPABASE_ANON_KEY: ci-placeholder
