@@ -7,6 +7,7 @@ is checked before every send, because an opt-out that can be overtaken by a queu
 rather than per thread, read by app/wa/suppression.py before every send on either rail.
 Slots are a JSON blob: they are the conversation's memory, and their vocabulary lives in app/wa/slots.py.
 """
+import fcntl
 import hashlib
 import json
 import os
@@ -324,10 +325,43 @@ def db():
     C.SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(C.SQLITE_PATH, timeout=30)
     c.row_factory = sqlite3.Row
-    c.execute("pragma journal_mode=wal")
+    _enable_wal(c)
     c.executescript(SCHEMA)
     _migrate(c)
     return c
+
+
+@contextmanager
+def _wal_switch_lock():
+    """Exclusive flock on ``<db>.wal-switch.lock``, held only while a connection switches the file from the
+    rollback journal to WAL -- see _enable_wal. Blocking: the holder runs one pragma (itself bounded by
+    db()'s 30 s busy timeout) and the kernel drops the lock with the process, so a crashed holder frees it.
+    A sidecar file, not the database file: closing any extra descriptor of the database file would drop the
+    POSIX locks SQLite itself holds on it."""
+    fd = os.open(C.SQLITE_PATH.with_name(C.SQLITE_PATH.name + ".wal-switch.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)   # releases the flock
+
+
+def _enable_wal(c):
+    """WAL is a property of the file and persists, so every db() after the first one finds it set and only
+    reads it (a read takes the busy handler like any other statement).
+
+    Only the one-time switch of a rollback-journal file (a brand-new file, or one created by anything that
+    never set WAL) needs the lock above. ``pragma journal_mode=wal`` opens a read transaction and then
+    upgrades it to a write lock inside the same statement, and SQLite answers an upgrade that would
+    deadlock with SQLITE_BUSY at once, WITHOUT calling the busy handler: a second connection doing the same
+    in that window failed with "database is locked" after 0 s, not after the 30 s timeout (CI run
+    37465687798, tests/test_wa_job_state_migration.py::test_migration_is_race_safe_across_concurrent_threads).
+    One switcher at a time, across threads and processes, leaves no second connection to collide with: the
+    others wait on the flock, then find WAL set and the pragma changes nothing."""
+    if c.execute("pragma journal_mode").fetchone()[0] == "wal":
+        return
+    with _wal_switch_lock():
+        c.execute("pragma journal_mode=wal").fetchone()
 
 
 def db_ro():

@@ -279,6 +279,49 @@ def test_migration_is_race_safe_across_concurrent_threads(tmp_path, monkeypatch)
         assert state_rows[job]["last_started_at"] == expected["last_run_at"]
 
 
+def test_db_open_waits_while_another_connection_switches_the_file_to_wal(tmp_path, monkeypatch):
+    """The failure of the thread test above (CI run 37465687798, "database is locked" on
+    ``pragma journal_mode=wal``), made deterministic. A file nobody has put into WAL yet (every new file, and
+    this one: it was written by a plain sqlite3 connection) is switched by the first db() that gets to it; a
+    second connection running the same pragma while the first holds the write lock is answered with
+    SQLITE_BUSY at once, the 30 s busy timeout never consulted (the pragma already holds a read
+    transaction when it asks for the write lock, which SQLite refuses to wait for). db() must therefore
+    queue behind the switcher instead of racing it. The switcher here is a connection holding the write
+    lock of the rollback-journal file plus store._wal_switch_lock, exactly what a db() in the middle of
+    its switch holds."""
+    path = tmp_path / "wa.sqlite"
+    _build_old_db(path, n_per_job=20, span_days=3)
+    monkeypatch.setattr(C, "SQLITE_PATH", path)
+
+    switcher = sqlite3.connect(path, isolation_level=None)
+    done = threading.Event()
+    errors = []
+
+    def _open():
+        try:
+            ST.db().close()
+        except BaseException as exc:   # pragma: no cover -- only ever populated on a real failure
+            errors.append(exc)
+        finally:
+            done.set()
+
+    opener = threading.Thread(target=_open)
+    with ST._wal_switch_lock():
+        switcher.execute("begin immediate")
+        opener.start()
+        assert not done.wait(1.0), f"db() went on while the switch was in flight: {errors}"
+        switcher.execute("commit")
+    opener.join(timeout=30)
+    assert done.is_set() and not errors, errors
+    switcher.close()
+
+    ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        assert ro.execute("pragma journal_mode").fetchone()[0] == "wal"
+    finally:
+        ro.close()
+
+
 def _worker_env():
     env = {k: v for k, v in os.environ.items() if k not in _SCRUB}
     env["PYTHONPATH"] = str(ROOT)
