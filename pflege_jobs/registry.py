@@ -355,6 +355,16 @@ class Matcher:
         if len(hits) == 1: return hits[0]["clinic_id"], "R_jd_text", 0.65
         return None
 
+    def _named_elsewhere(self, et, x):
+        """True when the employer text carries every distinguishing token of another registry clinic that has MORE of them than x.
+
+        R0_board_tokens asks how much of x's own name the employer text covers (overlap() divides by the smaller set). For a clinic whose
+        name minus its town is one generic token ('HELIOS Klinik Erlenbach a. Main' -> {helios}, 201 of 651 registry clinics are like
+        that) every employer of the group covers 100 percent, so 'Helios Amper-Klinik Indersdorf' without a place of its own was filed
+        under Erlenbach. When the text names a bigger part of ANOTHER clinic's name ({amper, helios} of 17402), x is not the site it
+        names: the rung refuses and the posting stays unlinked (TASK-431.9)."""
+        return any(y is not x and len(y["_ntoks"]) > len(x["_ntoks"]) and y["_ntoks"] <= et for y in self.clinics)
+
     def _match_board(self, pool, en, et, ck):
         """The board a posting was fetched from is provenance, not a guess: the site must be one of the
         clinics sharing that board, so the candidate set is that board and nothing else. Undecidable
@@ -383,7 +393,8 @@ class Matcher:
         same_town_only = lambda x: not ck or _town_match(city_key(x.get("town")), ck)
         for rule, score, sel in (("R0_board_name", 0.9, lambda x: employer_norm(x["name"]) == en and same_town_only(x)),
                                  ("R0_board_town", 0.85, lambda x: ck and _town_match(city_key(x.get("town")), ck)),
-                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x))):
+                                 ("R0_board_tokens", 0.7, lambda x: x["_ntoks"] and overlap(et, x["_ntoks"]) >= 0.6 and same_town_only(x)
+                                                    and not self._named_elsewhere(et, x))):
             hit = [x for x in pool if sel(x)]
             if len(hit) == 1: return hit[0]["clinic_id"], rule, score
             if len(hit) > 1:
