@@ -239,7 +239,7 @@ body.gated #pj-dock,body.gated #pj-launcher{display:none!important}
 /* leads (WhatsApp harness, docs/wa-dashboard.md) */
 .vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 nav.main a .bd.hot{background:var(--red);color:#fff} nav.main a .bd.off{background:var(--surface-2);color:var(--ink-3);box-shadow:inset 0 0 0 1px var(--line)}
-h1 .n.bad{color:var(--red)}
+h1 .n.bad,h1.rl-h.bad{color:var(--red)} h1.rl-h.warn{color:#E1A33F}
 .lb{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:0 7px;line-height:19px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap;vertical-align:middle}
 .lb.manager{background:var(--red);border-color:var(--red);color:#fff} .lb.reply{background:#E1A33F;border-color:#E1A33F;color:#0B0D12} .lb.handoff{background:var(--sky);border-color:var(--sky);color:#0B0D12}
 .lb.green{color:var(--neon);border-color:rgba(157,225,70,.45)} .lb.green::before{content:"";width:6px;height:6px;background:var(--neon);box-shadow:0 0 6px var(--neon)}
@@ -250,6 +250,19 @@ h1 .n.bad{color:var(--red)}
 .wa-strip .val{font-weight:500} .wa-strip .val.ok{color:var(--neon)} .wa-strip .val.warn{color:#E1A33F} .wa-strip .val.bad{color:var(--red)} .wa-strip .sub{color:var(--ink-3);font-size:12px}
 .wa-strip .live{display:inline-block;width:7px;height:7px;background:var(--neon);box-shadow:0 0 6px var(--neon);animation:pulse 2s infinite;align-self:center}
 .wa-count{color:var(--ink-3);font-size:12.5px;margin:-6px 0 14px}
+.wa-tabs{margin:0 0 18px} .wa-tabs button{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;padding:8px 14px}
+.dot{display:inline-block;width:7px;height:7px;flex:none;background:var(--ink-3)} .dot.ok{background:var(--neon);box-shadow:0 0 6px var(--neon)} .dot.warn{background:#E1A33F} .dot.bad{background:var(--red)}
+.rl-why{margin:0 0 14px;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px} .rl-why li{font-size:12.5px;padding:2px 9px;border:1px solid rgba(225,163,63,.55);color:#E1A33F} .rl-why li.bad{border-color:var(--red);color:var(--red)}
+.rl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 8px}
+.rl-t{background:var(--surface);padding:12px 14px;min-width:0} .rl-t .lbl{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.rl-t .v{font-size:17px;font-weight:500;margin:4px 0 3px;display:flex;align-items:center;gap:8px} .rl-t .v.ok{color:var(--neon)} .rl-t .v.warn{color:#E1A33F} .rl-t .v.bad{color:var(--red)} .rl-t .m{font-size:12px;overflow-wrap:anywhere}
+.rl-fresh{color:var(--ink-3);font-size:12px;margin:0} .rl-fresh .warn,.rl-t .ec,td .ec{color:#E1A33F} td .ec.bad,.rl-t .ec.bad{color:var(--red)}
+.rl-q{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;align-items:center;margin:0 0 6px} .rl-q dt{color:var(--ink-2);font-size:12.5px} .rl-q dd{margin:0;display:flex;flex-wrap:wrap;gap:6px}
+@media(max-width:560px){.rl-q{grid-template-columns:1fr;gap:4px} .rl-q dd{margin-bottom:8px}}
+.qc{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--line);background:transparent;color:var(--ink-2);font:inherit;font-size:12.5px;min-height:28px;padding:0 10px;cursor:pointer}
+.qc b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums} .qc.failed b{color:var(--red)} .qc.zero b{color:var(--ink-3)} .qc:hover,.qc[aria-pressed=true]{border-color:var(--sky);color:var(--ink)}
+.lb.st-running,.lb.pro{color:var(--sky);border-color:rgba(200,241,255,.45)} .lb.st-done{color:var(--neon);border-color:rgba(157,225,70,.45)} .lb.st-failed{background:var(--red);border-color:var(--red);color:#fff} .lb.st-queued{color:#E1A33F;border-color:rgba(225,163,63,.55)}
+td code.raw{color:var(--ink-3);font-size:11px;margin-left:6px} .rl-more{display:flex;gap:12px;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}
 .wa-h2{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:22px 0 10px} .wa-h2 h2{margin:0} .wa-h2 .m{margin:0}
 .lh-list{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
 .lh-g{background:var(--bg);padding:12px 14px 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)} .lh-g b{color:var(--ink);font-weight:500;margin-left:8px}
@@ -426,6 +439,21 @@ const I18N={
   wa_f_q:"Suche: Nummer-Endung, Ort, Fach, Code …",wa_f_test:"Testnummern zeigen",wa_none:"Keine Leads für diese Filter.",
   wa_hh:"Harness",wa_h_ready:"bereit",wa_h_incomplete:"unvollständig",wa_h_missing:"fehlt",wa_h_scope:"Antworten an",wa_h_scope_all:"alle",wa_h_scope_test:"nur Testnummern",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: echte Leads bekommen Lunas Antwort nur als Entwurf.",wa_h_autosend:"Autosend",wa_h_on:"an",wa_h_off:"aus",wa_h_off_x:"WA_AUTOSEND aus: Antworten landen als Entwurf, nichts erreicht Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail-Kontakt",wa_ago:"vor {d}",wa_h_refresh:"Aktualisieren",wa_h_err:"Health nicht abrufbar",
   wa_e_title:"WhatsApp-Daten nicht verfügbar",wa_e_404:"Dieses Board ist noch nicht mit dem Harness verbunden: /api/wa/threads antwortet 404. Es fehlt der Proxy (WA_API_BASE / WA_API_TOKEN).",wa_e_auth:"Nur für Betreiber – bitte als Owner anmelden.",wa_e_up:"Keine Verbindung zum Harness ({s}): {m}",wa_e_other:"Fehler {s}: {m}",wa_e_contract:"Antwort ohne next_offset – verletzt den Vertrag in docs/wa-dashboard.md, die Liste wäre unvollständig.",wa_e_demo:"Demo mit Beispieldaten",wa_e_stale:"Aktualisierung fehlgeschlagen ({m}) – angezeigt ist der Stand von {t}.",wa_demo:"Demo-Daten (?mock=1): erfundene Nummern und Gespräche, keine echten Kandidatinnen.",
+  wa_tab_leads:"Leads",wa_tab_rail:"Rail & Jobs",wa_r_h_ok:"Die Telefon-Rail läuft",wa_r_h_warn:"Die Telefon-Rail läuft, mit Hinweisen",wa_r_h_bad:"Die Telefon-Rail ist gestört",wa_r_h_unk:"Zustand der Telefon-Rail unbekannt",
+  wa_r_lead:"Die Brücke zum Telefon, die Warteschlange der Telefon-Aufträge, die automatischen Jobs und die Aufträge, die ein Mensch aus Pro eingestellt hat. Nur lesen.",
+  wa_r_bridge:"Brücke",wa_r_tunnel:"Tunnel",wa_r_up:"steht",wa_r_down:"unten",wa_r_unk:"unbekannt",wa_r_phone:"Telefon",wa_r_watcher:"Watcher",wa_r_alive:"lebt",wa_r_dead:"antwortet nicht",wa_r_sync:"Letzter Sync",wa_r_never:"noch nie",wa_r_hb:"Herzschlag vor {d}",wa_r_nohb:"noch kein Herzschlag",
+  wa_pp_ready:"bereit",wa_pp_recovering:"erholt sich",wa_pp_blocked:"blockiert",wa_pp_disconnected:"getrennt",wa_pp_unknown:"unbekannt",wa_pp_recovering_x:"Verbunden. In den letzten 24 h gab es eine Wiederherstellung.",wa_pp_blocked_x:"Ein hängender Auftrag blockiert die Warteschlange.",wa_pp_disconnected_x:"Der Treiber meldet: nicht verbunden.",wa_pp_unknown_x:"Noch kein Snapshot hat einen Zustand gemeldet.",
+  wa_r_fresh_snap:"Brücken-Snapshot vor {d}",wa_r_fresh_mirror:"Queue-Spiegel vor {d}",wa_r_fresh_none_snap:"noch kein Brücken-Snapshot",wa_r_fresh_none_mirror:"Queue-Spiegel ist noch nie gelaufen",wa_r_stale:"veraltet",wa_r_stale_x:"Der Queue-Spiegel steht seit {d}. Warteschlange und Vorgänge unten zeigen den letzten bekannten Stand, nicht den aktuellen.",
+  wa_r_w_err1:"1 Job mit Fehler",wa_r_w_err:"{n} Jobs mit Fehler",wa_r_w_over1:"1 Job überfällig",wa_r_w_over:"{n} Jobs überfällig",wa_r_w_stale:"Queue-Spiegel veraltet",
+  wa_r_queue:"Warteschlange der Telefon-Aufträge",wa_r_q_all:"Alle Aufträge",wa_r_q_human:"Von Menschen aus Pro",wa_r_q_note:"Gezählt über den ganzen Spiegel, nicht über ein Zeitfenster. Ein Klick filtert die Vorgänge unten.",
+  wa_ps_queued:"wartet",wa_ps_running:"läuft",wa_ps_done:"erledigt",wa_ps_failed:"fehlgeschlagen",
+  wa_r_jobs:"Automatische Jobs",wa_r_j_job:"Job",wa_r_j_state:"Zustand",wa_r_j_last:"Letzter Lauf",wa_r_j_ok:"Zuletzt ok",wa_r_j_next:"Nächster Lauf",wa_r_j_24:"24 h: ok / Fehler",wa_r_js_ok:"ok",wa_r_js_err:"Fehler",wa_r_js_over:"überfällig",wa_r_js_never:"noch nie gelaufen",wa_r_js_off:"abgeschaltet",wa_r_j_demand:"bei Bedarf",wa_r_j_in:"in {d}",wa_r_j_due:"fällig seit {d}",wa_r_j_calls:"Aufrufe in 24 h, nicht Erfolge: das Harness kennt den Ausgang einzelner Aufrufe nicht.",
+  wa_pj_catchup:"Verpasste Nachrichten nachholen",wa_pj_followups:"Nachfassen (mit Erinnerungen)",wa_pj_tunnel_watch:"Tunnel-Wächter",wa_pj_purge_test:"Testverläufe löschen",wa_pj_agent_notes:"Agenten-Notizen",wa_pj_relay_sync:"Relay-Sync",wa_pj_luna_reply:"Luna-Antworten",wa_pj_broadcasts:"Broadcasts",
+  wa_r_ops:"Vorgänge",wa_r_o_time:"Eingestellt",wa_r_o_kind:"Vorgang",wa_r_o_origin:"Auslöser",wa_r_o_phone:"Nummer",wa_r_o_dur:"Dauer",wa_r_o_err:"Fehler",wa_r_o_none:"Keine Vorgänge für diese Filter.",wa_r_o_more:"Ältere Vorgänge laden",wa_r_o_all:"alle",wa_r_o_auto:"automatisch",wa_r_o_pro:"von Menschen (Pro)",wa_r_o_bg:"ohne Nummer",wa_r_o_wait:"wartet seit {d}",wa_r_o_run:"läuft seit {d}",wa_r_sec:"{n} s",wa_r_o_shown1:"1 Vorgang geladen",wa_r_o_shown:"{n} Vorgänge geladen",wa_r_o_end:"Das ist der älteste Vorgang.",
+  wa_pk_send:"Nachricht senden",wa_pk_send_photos:"Fotos senden",wa_pk_send_gallery:"Galerie senden",wa_pk_send_document:"Dokument senden",wa_pk_reconcile:"Abgleich",wa_pk_list_chats:"Chatliste lesen",wa_pk_read_thread:"Verlauf lesen",
+  wa_po_luna:"Luna",wa_po_luna_tool:"Luna (Werkzeug)",wa_po_followups:"Nachfassen",wa_po_nudges:"Erinnerungen",wa_po_catchup:"Nachholen",wa_po_campaign:"Kampagne",wa_po_broadcast:"Broadcast",wa_po_operator:"Operator",wa_po_agent_notes:"Agenten-Notizen",wa_po_bridge:"Brücke",wa_po_pro_human:"Mensch (Pro)",wa_po_unknown:"unbekannt",
+  wa_pe_op_expired:"Zeit abgelaufen",wa_pe_op_cancelled:"abgebrochen",wa_pe_restarted_while_running:"Brücke startete währenddessen neu",wa_pe_invalid_request:"ungültige Anfrage",wa_pe_not_on_whatsapp:"Nummer nicht auf WhatsApp",wa_pe_send_unconfirmed:"Versand unbestätigt",wa_pe_device_unavailable:"Telefon nicht verfügbar",wa_pe_rail_parked:"Rail pausiert (Ruhezeit oder Limit)",wa_pe_executor_error:"Fehler in der Brücke",wa_pe_chat_not_found:"Chat nicht gefunden",wa_pe_chat_identity_mismatch:"falscher Chat geöffnet",wa_pe_idempotency_conflict:"Schlüssel-Konflikt",wa_pe_tunnel_down:"Tunnel unten",wa_pe_messages_errored:"Nachrichten mit Fehler",wa_pe_purge_problems:"Probleme beim Löschen",wa_pe_nonzero_exit:"Lauf endete mit Fehler",wa_pe_send_failed:"Versand fehlgeschlagen",wa_pe_relay_sync_failed:"Relay-Sync fehlgeschlagen",wa_pe_broadcast_runner_error:"Fehler im Broadcast-Runner",wa_pe_legacy_unrecorded:"alter Lauf ohne Fehlercode",
+  wa_r_e_404:"Dieses Board kennt /api/wa/activity und /api/wa/ops noch nicht: sein Proxy ist älter als das Harness.",wa_r_e_ops:"Vorgänge nicht abrufbar ({m}).",wa_e_contract_ops:"Antwort ohne next_before_id – verletzt den Vertrag in docs/wa-pro-activity.md, die Liste wäre unvollständig.",
   wa_d_close:"Schließen",wa_d_why:"Warum ein Mensch gefragt ist",wa_d_green:"Nichts zu tun – Luna führt das Gespräch.",wa_d_card:"Karte",wa_d_next:"Luna fragt als Nächstes (intern)",wa_d_branch:"Übergabe-Umfang",wa_b_narrow:"Top 5",wa_b_pool:"alle passenden Kliniken",wa_d_handoff:"Übergabe",wa_d_consented:"Einwilligung",wa_d_clinics:"Kliniken",wa_d_docs:"Dokumente",wa_d_nodocs:"Keine Dokumente.",wa_attention:"braucht Aufmerksamkeit",wa_d_targets:"Stand je Klinik",wa_d_matches:"Passende Kliniken",wa_ts_sent_to_clinic:"an Klinik gesendet",wa_ts_followup_sent:"nachgefasst",wa_ts_clinic_replied:"Klinik hat geantwortet",wa_ts_interview_scheduled:"Gespräch vereinbart",wa_ts_trial_scheduled:"Probetag vereinbart",wa_ts_offer:"Angebot",wa_ts_contract_signed:"Vertrag unterschrieben",wa_ts_declined:"abgesagt",wa_ts_closed:"abgeschlossen",wa_ts_halted:"angehalten",wa_d_chat:"Verlauf",wa_d_older:"Ältere Nachrichten laden",wa_d_new:"Neue Nachrichten ↓",wa_d_readonly:"Nur lesen – Antworten, Pausieren und Notizen kommen in Phase 2.",wa_d_opened:"Erster Kontakt",wa_d_turns:"Runden",wa_d_campaign:"Kampagne",wa_d_stopped:"STOP erhalten – nie wieder schreiben",wa_d_suppressed:"Auf der Sperrliste (alle Rails)",wa_d_id:"Thread-ID",wa_d_poll_err:"Aktualisierung fehlgeschlagen",
   wa_m_draft:"Entwurf – nicht gesendet",wa_m_deleted:"Nachricht vergessen (Operator)",wa_m_audio:"Sprachnachricht",wa_m_notranscript:"(kein Transkript)",wa_m_document:"Dokument",wa_m_image:"Bild",wa_m_video:"Video",wa_m_template:"Vorlage",wa_m_buttons:"Buttons",wa_m_empty:"Noch keine Nachrichten.",wa_ms_sent:"gesendet",wa_ms_delivered:"zugestellt",wa_ms_read:"gelesen",wa_ms_failed:"fehlgeschlagen",
   wa_v_housing_yes:"ja, {n} Personen",wa_v_housing_yes1:"ja, 1 Person",wa_v_housing_q:"ja, Personenzahl offen",wa_v_housing_no:"nein",wa_v_received:"erhalten",wa_v_flex:" · auch ohne",wa_v_dept_any:"Fach egal",wa_v_asked:"angefragt",
@@ -492,6 +520,21 @@ const I18N={
   wa_f_q:"Search: number ending, town, department, code …",wa_f_test:"Show test numbers",wa_none:"No leads for these filters.",
   wa_hh:"Harness",wa_h_ready:"ready",wa_h_incomplete:"incomplete",wa_h_missing:"missing",wa_h_scope:"Replies to",wa_h_scope_all:"everyone",wa_h_scope_test:"test numbers only",wa_h_scope_test_x:"WA_REPLY_SCOPE=test_only: real leads get Luna's reply as a draft only.",wa_h_autosend:"Autosend",wa_h_on:"on",wa_h_off:"off",wa_h_off_x:"WA_AUTOSEND off: replies land as drafts, nothing reaches Meta.",wa_h_transport:"Transport",wa_h_rails:"Rails",wa_h_synced:"Rail contact",wa_ago:"{d} ago",wa_h_refresh:"Refresh",wa_h_err:"Health unavailable",
   wa_e_title:"WhatsApp data unavailable",wa_e_404:"This board is not connected to the harness yet: /api/wa/threads answers 404. The proxy (WA_API_BASE / WA_API_TOKEN) is missing.",wa_e_auth:"Owners only – sign in as owner.",wa_e_up:"No connection to the harness ({s}): {m}",wa_e_other:"Error {s}: {m}",wa_e_contract:"Response without next_offset – breaks the contract in docs/wa-dashboard.md, the list would be incomplete.",wa_e_demo:"Demo with sample data",wa_e_stale:"Refresh failed ({m}) – showing data from {t}.",wa_demo:"Demo data (?mock=1): invented numbers and conversations, no real candidates.",
+  wa_tab_leads:"Leads",wa_tab_rail:"Rail & jobs",wa_r_h_ok:"The phone rail is running",wa_r_h_warn:"The phone rail is running, with warnings",wa_r_h_bad:"The phone rail is down",wa_r_h_unk:"Phone rail state unknown",
+  wa_r_lead:"The bridge to the phone, the queue of phone ops, the automatic jobs and the tasks a human queued from Pro. Read-only.",
+  wa_r_bridge:"Bridge",wa_r_tunnel:"Tunnel",wa_r_up:"up",wa_r_down:"down",wa_r_unk:"unknown",wa_r_phone:"Phone",wa_r_watcher:"Watcher",wa_r_alive:"alive",wa_r_dead:"not responding",wa_r_sync:"Last sync",wa_r_never:"never",wa_r_hb:"heartbeat {d} ago",wa_r_nohb:"no heartbeat yet",
+  wa_pp_ready:"ready",wa_pp_recovering:"recovering",wa_pp_blocked:"blocked",wa_pp_disconnected:"disconnected",wa_pp_unknown:"unknown",wa_pp_recovering_x:"Connected. A recovery ran in the last 24 h.",wa_pp_blocked_x:"A stuck op is blocking the queue.",wa_pp_disconnected_x:"The driver reports: not connected.",wa_pp_unknown_x:"No snapshot has reported a state yet.",
+  wa_r_fresh_snap:"bridge snapshot {d} ago",wa_r_fresh_mirror:"queue mirror {d} ago",wa_r_fresh_none_snap:"no bridge snapshot yet",wa_r_fresh_none_mirror:"the queue mirror has never run",wa_r_stale:"stale",wa_r_stale_x:"The queue mirror stopped {d} ago. The queue and the operations below show the last known state, not the current one.",
+  wa_r_w_err1:"1 job with an error",wa_r_w_err:"{n} jobs with an error",wa_r_w_over1:"1 job overdue",wa_r_w_over:"{n} jobs overdue",wa_r_w_stale:"queue mirror stale",
+  wa_r_queue:"Queue of phone ops",wa_r_q_all:"All ops",wa_r_q_human:"Queued by a human in Pro",wa_r_q_note:"Counted over the whole mirror, not a time window. A click filters the operations below.",
+  wa_ps_queued:"queued",wa_ps_running:"running",wa_ps_done:"done",wa_ps_failed:"failed",
+  wa_r_jobs:"Automatic jobs",wa_r_j_job:"Job",wa_r_j_state:"State",wa_r_j_last:"Last run",wa_r_j_ok:"Last ok",wa_r_j_next:"Next run",wa_r_j_24:"24 h: ok / failed",wa_r_js_ok:"ok",wa_r_js_err:"error",wa_r_js_over:"overdue",wa_r_js_never:"never ran",wa_r_js_off:"disabled",wa_r_j_demand:"on demand",wa_r_j_in:"in {d}",wa_r_j_due:"due for {d}",wa_r_j_calls:"Calls in 24 h, not successes: the harness does not know each call's outcome.",
+  wa_pj_catchup:"Catch up on missed messages",wa_pj_followups:"Follow-ups (with nudges)",wa_pj_tunnel_watch:"Tunnel watch",wa_pj_purge_test:"Purge test history",wa_pj_agent_notes:"Agent notes",wa_pj_relay_sync:"Relay sync",wa_pj_luna_reply:"Luna replies",wa_pj_broadcasts:"Broadcasts",
+  wa_r_ops:"Operations",wa_r_o_time:"Queued",wa_r_o_kind:"Op",wa_r_o_origin:"Origin",wa_r_o_phone:"Number",wa_r_o_dur:"Duration",wa_r_o_err:"Error",wa_r_o_none:"No operations for these filters.",wa_r_o_more:"Load older operations",wa_r_o_all:"all",wa_r_o_auto:"automatic",wa_r_o_pro:"by a human (Pro)",wa_r_o_bg:"no number",wa_r_o_wait:"waiting {d}",wa_r_o_run:"running {d}",wa_r_sec:"{n} s",wa_r_o_shown1:"1 operation loaded",wa_r_o_shown:"{n} operations loaded",wa_r_o_end:"This is the oldest operation.",
+  wa_pk_send:"Send message",wa_pk_send_photos:"Send photos",wa_pk_send_gallery:"Send gallery",wa_pk_send_document:"Send document",wa_pk_reconcile:"Reconcile",wa_pk_list_chats:"List chats",wa_pk_read_thread:"Read thread",
+  wa_po_luna:"Luna",wa_po_luna_tool:"Luna (tool)",wa_po_followups:"Follow-ups",wa_po_nudges:"Nudges",wa_po_catchup:"Catch-up",wa_po_campaign:"Campaign",wa_po_broadcast:"Broadcast",wa_po_operator:"Operator",wa_po_agent_notes:"Agent notes",wa_po_bridge:"Bridge",wa_po_pro_human:"Human (Pro)",wa_po_unknown:"unknown",
+  wa_pe_op_expired:"timed out",wa_pe_op_cancelled:"cancelled",wa_pe_restarted_while_running:"bridge restarted mid-op",wa_pe_invalid_request:"invalid request",wa_pe_not_on_whatsapp:"number not on WhatsApp",wa_pe_send_unconfirmed:"send unconfirmed",wa_pe_device_unavailable:"phone unavailable",wa_pe_rail_parked:"rail parked (quiet hours or a cap)",wa_pe_executor_error:"bridge error",wa_pe_chat_not_found:"chat not found",wa_pe_chat_identity_mismatch:"wrong chat on screen",wa_pe_idempotency_conflict:"idempotency conflict",wa_pe_tunnel_down:"tunnel down",wa_pe_messages_errored:"messages errored",wa_pe_purge_problems:"purge problems",wa_pe_nonzero_exit:"run exited non-zero",wa_pe_send_failed:"send failed",wa_pe_relay_sync_failed:"relay sync failed",wa_pe_broadcast_runner_error:"broadcast runner error",wa_pe_legacy_unrecorded:"old run, no code recorded",
+  wa_r_e_404:"This board does not know /api/wa/activity and /api/wa/ops yet: its proxy is older than the harness.",wa_r_e_ops:"Operations unavailable ({m}).",wa_e_contract_ops:"Response without next_before_id: this breaks the contract in docs/wa-pro-activity.md, the list would be incomplete.",
   wa_d_close:"Close",wa_d_why:"Why a human is needed",wa_d_green:"Nothing to do – Luna is running the conversation.",wa_d_card:"Card",wa_d_next:"Luna asks next (internal)",wa_d_branch:"Handoff scope",wa_b_narrow:"top 5",wa_b_pool:"every matching clinic",wa_d_handoff:"Handoff",wa_d_consented:"Consent",wa_d_clinics:"Clinics",wa_d_docs:"Documents",wa_d_nodocs:"No documents.",wa_attention:"needs attention",wa_d_targets:"Status per clinic",wa_d_matches:"Matching clinics",wa_ts_sent_to_clinic:"sent to clinic",wa_ts_followup_sent:"follow-up sent",wa_ts_clinic_replied:"clinic replied",wa_ts_interview_scheduled:"interview scheduled",wa_ts_trial_scheduled:"trial day scheduled",wa_ts_offer:"offer",wa_ts_contract_signed:"contract signed",wa_ts_declined:"declined",wa_ts_closed:"closed",wa_ts_halted:"halted",wa_d_chat:"Conversation",wa_d_older:"Load older messages",wa_d_new:"New messages ↓",wa_d_readonly:"Read-only – reply, pause and notes come in phase 2.",wa_d_opened:"First contact",wa_d_turns:"Turns",wa_d_campaign:"Campaign",wa_d_stopped:"STOP received – never write again",wa_d_suppressed:"On the do-not-contact list (every rail)",wa_d_id:"Thread ID",wa_d_poll_err:"Refresh failed",
   wa_m_draft:"Draft – not sent",wa_m_deleted:"Message forgotten (operator)",wa_m_audio:"Voice note",wa_m_notranscript:"(no transcript)",wa_m_document:"Document",wa_m_image:"Image",wa_m_video:"Video",wa_m_template:"Template",wa_m_buttons:"Buttons",wa_m_empty:"No messages yet.",wa_ms_sent:"sent",wa_ms_delivered:"delivered",wa_ms_read:"read",wa_ms_failed:"failed",
   wa_v_housing_yes:"yes, {n} people",wa_v_housing_yes1:"yes, 1 person",wa_v_housing_q:"yes, headcount open",wa_v_housing_no:"no",wa_v_received:"received",wa_v_flex:" · or without",wa_v_dept_any:"any department",wa_v_asked:"asked",
@@ -1680,24 +1723,26 @@ function waStrip(){ const h=WA.health, grp=(l,v,cls,tip)=>el("div",{class:"grp"}
     el("span",{class:"sub"},t("wa_updated")+" ",WA.at?el("time",{datetime:new Date(WA.at).toISOString(),text:waClock(WA.at)}):"–",WA.env?.source?" · "+t("wa_src")+" "+WA.env.source:null),
     el("button",{class:"btn s",type:"button",onclick:e=>waNow(e.currentTarget),text:"⟳ "+t("wa_h_refresh")})));
   return el("div",{class:"card wa-strip"},...kids); }
-function waErrCard(e,path="/api/wa/threads"){ const s=e?.status, m=e?.message||"";
-  const msg=s===404?t("wa_e_404"):s===401||s===403?t("wa_e_auth"):s>=502&&s<=504?t("wa_e_up",{s,m}):s==="contract"?m:t("wa_e_other",{s:s??"–",m});
+function waErrCard(e,path="/api/wa/threads",k404="wa_e_404",doc="wa-dashboard.md"){ const s=e?.status, m=e?.message||"";
+  const msg=s===404?t(k404):s===401||s===403?t("wa_e_auth"):s>=502&&s<=504?t("wa_e_up",{s,m}):s==="contract"?m:t("wa_e_other",{s:s??"–",m});
   return el("div",{class:"card",role:"alert"},el("h2",{text:t("wa_e_title")}),el("p",{class:"lead",text:msg}),
     el("p",{class:"m"},el("code",{text:"GET "+path+" → "+(s??"network")+(m&&s!=="contract"?" · "+m:"")})),
-    el("div",{class:"row"},el("a",{class:"btn",href:"?mock=1#/leads",text:t("wa_e_demo")}),el("a",{class:"btn",href:"#/docs/wa-dashboard.md",text:"docs/wa-dashboard.md"}))); }
+    el("div",{class:"row"},el("a",{class:"btn",href:"?mock=1"+location.hash,text:t("wa_e_demo")}),el("a",{class:"btn",href:"#/docs/"+doc,text:"docs/"+doc}))); }
 async function waNow(btn){ if(btn) btn.disabled=true; try{ if(WA.view) await WA.view(); else await waRefresh(); }finally{ if(btn) btn.disabled=false; } }
 
 async function pageLeads(p){
+  if(p.tab==="rail") return pageRail(p);
   const F={q:p.q||"",status:p.status||"",stage:p.stage||"",test:p.test==="1",sort:p.sort||"status"};
   WA_PARAMS=()=>({q:F.q,status:F.status,stage:F.stage,test:F.test,sort:F.sort==="status"?"":F.sort,t:LD.id||""});
-  await Promise.all([waRefresh(),waHealth()]);
-  if(!WA.rows) return waErrCard(WA.err);
-  const live=el("div",{class:"vh",role:"status"}), head=el("div"), note=el("div"), strip=el("div"), need=el("div"), funnel=el("div"), seg=el("div"), board=el("div");
+  await Promise.all([waRefresh(),waHealth(),waActivity()]);
+  if(!WA.rows) return el("div",{},waTabs("leads"),waErrCard(WA.err));
+  const live=el("div",{class:"vh",role:"status"}), tabs=el("div"), head=el("div"), note=el("div"), strip=el("div"), need=el("div"), funnel=el("div"), seg=el("div"), board=el("div");
   const upd=patch=>{ Object.assign(F,patch); setParams(WA_PARAMS()); paint(); };
   const qIn=el("input",{type:"search",value:F.q,placeholder:t("wa_f_q"),"aria-label":t("wa_f_q"),autocomplete:"off"}); qIn.addEventListener("input",debounce(()=>upd({q:qIn.value}),200));
   const test=el("input",{type:"checkbox"}); test.checked=F.test; test.addEventListener("change",()=>upd({test:test.checked}));
   let lastN=null;
   function paint(){ const all=WA.rows, rows=F.test?all:all.filter(r=>!r.is_test), real=all.filter(r=>!r.is_test), n=real.filter(waNeeds).length, tests=all.length-real.length;
+    tabs.replaceChildren(waTabs("leads"));
     head.replaceChildren(el("h1",{},n?el("span",{class:"n bad",text:num(n)}):null,n?" "+(n===1?t("wa_h1"):t("wa_hn")):t("wa_h0")),el("p",{class:"lead",text:t("wa_lead")}),
       el("p",{class:"wa-count",text:[num(real.length)+" "+t("wa_sub_leads"),num(real.filter(r=>waStatus(r)==="green").length)+" "+t("wa_sub_green"),
         num(real.filter(waEnded).length)+" "+t("wa_ended_n"),tests?num(tests)+" "+t("wa_sub_test"):null].filter(Boolean).join(" · ")}));
@@ -1708,12 +1753,121 @@ async function pageLeads(p){
     funnel.replaceChildren(waFunnel(rows,F,upd)); seg.replaceChildren(waSeg(rows,F,upd));
     board.replaceChildren(waTable(waSort(waFilter(rows,F),F.sort),F,upd));
     if(lastN!=null&&lastN!==n) live.textContent=n?t("wa_nav_tip",{n}):t("wa_h0"); lastN=n; }
-  const refresh=async()=>{ await Promise.all([waRefresh(),waHealth()]); if(WA.view===refresh) paint(); };
+  const refresh=async()=>{ await Promise.all([waRefresh(),waHealth(),waActivity()]); if(WA.view===refresh) paint(); };
   WA.view=refresh; everyWhile(refresh,15000);
   paint(); if(p.t) setTimeout(()=>waOpen(p.t,true),0);
-  return el("div",{"aria-live":"off"},live,head,note,strip,need,
+  return el("div",{"aria-live":"off"},live,tabs,head,note,strip,need,
     el("div",{class:"wa-h2"},el("h2",{text:t("wa_all")})),el("p",{class:"wa-rule",text:t("wa_rule")}),funnel,
     el("div",{class:"wa-fl"},qIn,seg,el("label",{class:"toggle"},test,t("wa_f_test"))),board); }
+
+// ---- rail & jobs (#/leads?tab=rail): the bridge, the phone-op queue, the jobs, the ops. Contract: docs/wa-pro-activity.md ----
+const RA={act:null,err:null,at:0,errAt:0,p:null};
+// When a frozen timestamp is called stale. Mirror: the harness's own flat relay_sync threshold. Snapshot: 3x its 60 s cadence.
+const WA_STALE={mirror:60e3,snap:180e3};
+const WA_JOB_DEMAND=["luna_reply","broadcasts","agent_notes"];     // event-driven: no cadence, so no next run and never overdue
+function waActivity(){ return RA.p||(RA.p=(async()=>{
+    try{ RA.act=await api("/api/wa/activity"); RA.at=Date.now(); RA.err=null; }catch(e){ RA.err=e; RA.errAt=Date.now(); } })().finally(()=>{ RA.p=null; })); }
+const waAge=(env,s)=>s&&env?.generated_at?waMs(env.generated_at)-waMs(s):null;    // the server's clock on both sides, so a browser clock that is off changes nothing
+const waDurS=ms=>ms<6e4?t("wa_r_sec",{n:Math.max(0,Math.round(ms/1e3))}):waDur(ms);
+const waSince=s=>s?el("time",{datetime:s,title:fmtDT(s),text:t("wa_since",{d:waAgo(s)})}):null;
+function waErrEl(e,bad){ if(!e?.code) return null; const l=waLbl("wa_pe_"+e.code,null);
+  return el("span",{class:"ec"+(bad?" bad":"")},l||el("code",{text:e.code}),l?el("code",{class:"raw",text:e.code}):null); }
+function waRailSev(a){ const r=a.rail||{}, ps=r.phone?.state, bad=[], warn=[], jobs=a.jobs||[];
+  if(r.tunnel?.up===false) bad.push(t("wa_r_tunnel")+" "+t("wa_r_down"));
+  if(ps==="disconnected"||ps==="blocked") bad.push(t("wa_r_phone")+" "+t("wa_pp_"+ps));
+  if(r.watcher?.alive===false) bad.push(t("wa_r_watcher")+" "+t("wa_r_dead"));
+  if(ps==="recovering") warn.push(t("wa_r_phone")+" "+t("wa_pp_recovering"));
+  const je=jobs.filter(j=>j.last_error).length, jo=jobs.filter(j=>j.overdue&&!j.last_error).length;
+  if(je) warn.push(t(je===1?"wa_r_w_err1":"wa_r_w_err",{n:je})); if(jo) warn.push(t(jo===1?"wa_r_w_over1":"wa_r_w_over",{n:jo}));
+  if(waAge(a,a.queue?.as_of)>WA_STALE.mirror) warn.push(t("wa_r_w_stale"));
+  const unk=r.tunnel?.up==null&&r.watcher?.alive==null&&(!ps||ps==="unknown");
+  return {sev:bad.length?"bad":unk?"unk":warn.length?"warn":"ok",bad,warn}; }   // nothing known about the bridge is never "running", whatever the jobs say
+function waTabs(cur){ const s=RA.act?waRailSev(RA.act):null, n=waCount();
+  const b=(k,l,...x)=>el("button",{type:"button",role:"tab","aria-selected":String(cur===k),onclick:()=>{ if(cur!==k) location.hash="#/leads"+(k==="rail"?"?tab=rail":""); }},l,...x);
+  return el("div",{class:"tabs wa-tabs",role:"tablist"},b("leads",t("wa_tab_leads"),n?el("span",{class:"lb manager",text:num(n)}):null),
+    b("rail",t("wa_tab_rail"),s?el("span",{class:"dot "+s.sev,"aria-hidden":"true"}):null,s?el("span",{class:"vh",text:t("wa_r_h_"+s.sev)}):null)); }
+function waRailTiles(a){ const r=a.rail||{}, tu=r.tunnel||{}, ph=r.phone||{}, wt=r.watcher||{}, ps=ph.state||"unknown";
+  const tile=(l,v,cls,...sub)=>el("div",{class:"rl-t"},el("div",{class:"lbl",text:l}),el("div",{class:"v"+(cls?" "+cls:"")},el("span",{class:"dot"+(cls?" "+cls:""),"aria-hidden":"true"}),v),...sub.filter(Boolean).map(x=>el("div",{class:"m"},x)));
+  const b3=(v,yes,no)=>v===true?[t(yes),"ok"]:v===false?[t(no),"bad"]:[t("wa_r_unk"),null];
+  return el("div",{class:"rl-grid"},
+    tile(t("wa_r_tunnel"),...b3(tu.up,"wa_r_up","wa_r_down"),waSince(tu.since),waErrEl(tu.last_error,tu.up===false)),
+    tile(t("wa_r_phone"),waLbl("wa_pp_"+ps,ps),{ready:"ok",recovering:"warn",blocked:"bad",disconnected:"bad"}[ps]||null,waSince(ph.since),ps!=="ready"?waLbl("wa_pp_"+ps+"_x",null):null),
+    tile(t("wa_r_watcher"),...b3(wt.alive,"wa_r_alive","wa_r_dead"),wt.heartbeat_at?el("time",{datetime:wt.heartbeat_at,title:fmtDT(wt.heartbeat_at),text:t("wa_r_hb",{d:waDurS(waAge(a,wt.heartbeat_at))})}):t("wa_r_nohb")),
+    tile(t("wa_r_sync"),r.last_sync_at?el("time",{datetime:r.last_sync_at,title:fmtDT(r.last_sync_at),text:t("wa_ago",{d:waDurS(waAge(a,r.last_sync_at))})}):t("wa_r_never"),null,a.synced_source)); }
+function waRailFresh(a){ const part=(s,lim,kNone,k)=>{ const age=waAge(a,s); return age==null?el("span",{class:"warn",text:t(kNone)})
+      :el("time",{datetime:s,title:fmtDT(s),class:age>lim?"warn":null,text:t(k,{d:waDurS(age)})+(age>lim?" · "+t("wa_r_stale"):"")}); };
+  return el("p",{class:"rl-fresh"},part(a.snapshot_at,WA_STALE.snap,"wa_r_fresh_none_snap","wa_r_fresh_snap")," · ",part(a.queue?.as_of,WA_STALE.mirror,"wa_r_fresh_none_mirror","wa_r_fresh_mirror"),
+    " · "+t("wa_updated")+" ",el("time",{datetime:new Date(RA.at).toISOString(),text:waClock(RA.at)}),a.source?" · "+t("wa_src")+" "+a.source:null); }
+function waRailQueue(a,F,setF){ const line=(l,q,origin)=>{ q=q||{};
+    const chip=(k,n,lab)=>el("button",{type:"button",class:"qc "+k+(n?"":" zero"),"aria-pressed":String(F.ost===k&&F.oor===origin),onclick:()=>setF(F.ost===k&&F.oor===origin?{ost:"",oor:""}:{ost:k,oor:origin})},lab+" ",el("b",{text:num(n??0)}));
+    return [el("dt",{text:l}),el("dd",{},...["queued","running","done","failed"].map(k=>chip(k,q[k],t("wa_ps_"+k))),...Object.entries(q.other||{}).map(([k,n])=>chip(k,n,k)))]; };
+  return el("div",{class:"card"},el("dl",{class:"rl-q"},...line(t("wa_r_q_all"),a.queue,""),...line(t("wa_r_q_human"),a.human,"pro")),el("p",{class:"m",style:"margin:0",text:t("wa_r_q_note")})); }
+function waRailJobs(a){ const now=waMs(a.generated_at), cols=["wa_r_j_job","wa_r_j_state","wa_r_j_last","wa_r_j_ok","wa_r_j_next","wa_r_j_24"];
+  const row=j=>{ const st=j.enabled===false?"off":j.last_error?"err":j.overdue?"over":j.last_run_at?"ok":"never", due=j.next_run_at?waMs(j.next_run_at)-now:null;
+    const next=due==null?(WA_JOB_DEMAND.includes(j.job)?t("wa_r_j_demand"):"–"):el("time",{datetime:j.next_run_at,title:fmtDT(j.next_run_at),class:due<=0&&j.overdue?"ec":null,text:due>0?t("wa_r_j_in",{d:waDurS(due)}):t("wa_r_j_due",{d:waDurS(-due)})});
+    const c24=j.ok_24h==null&&j.failed_24h==null?"–":[num(j.ok_24h)+" / ",el("span",{class:j.failed_24h?"ec bad":null,text:num(j.failed_24h)})];
+    return el("tr",{"data-job":j.job},el("td",{"data-l":t(cols[0])},waLbl("wa_pj_"+j.job,j.job),el("code",{class:"raw",text:j.job})),
+      el("td",{"data-l":t(cols[1])},el("span",{class:"lb "+{ok:"green",err:"manager",over:"flag",never:"ended",off:"ended"}[st],text:t("wa_r_js_"+st)}),j.last_error?[" ",waErrEl(j.last_error,true)]:null),
+      el("td",{"data-l":t(cols[2])},waTime(j.last_run_at)),el("td",{"data-l":t(cols[3])},waTime(j.last_ok_at)),el("td",{"data-l":t(cols[4])},next),
+      el("td",{class:"num","data-l":t(cols[5]),"data-tip":j.job==="luna_reply"?t("wa_r_j_calls"):null,tabindex:j.job==="luna_reply"?"0":null},c24)); };
+  return el("div",{class:"tbl"},el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},...cols.map((c,i)=>el("th",{class:i===5?"num":null,text:t(c)})))),el("tbody",{},...(a.jobs||[]).map(row))))); }
+function waOpRow(o,now){ const run=o.started_at&&o.finished_at?waDurS(waMs(o.finished_at)-waMs(o.started_at)):o.status==="running"&&o.started_at?t("wa_r_o_run",{d:waDurS(now-waMs(o.started_at))}):o.status==="queued"?t("wa_r_o_wait",{d:waDurS(now-waMs(o.created_at))}):"–";
+  const st=["queued","running","done","failed"].includes(o.status)?o.status:"", a=o.thread_id?el("a",{class:"pn",href:waHref(o.thread_id),text:o.phone_masked||o.thread_id}):null;
+  if(a) a.addEventListener("click",e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.button) return; e.preventDefault(); waOpen(o.thread_id); });
+  return el("tr",{"data-op":o.id,"data-st":o.status},el("td",{"data-l":t("wa_r_o_time")},waTime(o.created_at)),
+    el("td",{"data-l":t("wa_r_o_kind")},waLbl("wa_pk_"+o.kind,o.kind)),
+    el("td",{"data-l":t("wa_r_o_origin")},o.origin==="pro_human"?el("span",{class:"lb pro",text:t("wa_po_pro_human")}):waLbl("wa_po_"+o.origin,o.origin)),
+    el("td",{"data-l":t("wa_c_status")},el("span",{class:"lb"+(st?" st-"+st:""),text:waLbl("wa_ps_"+o.status,o.status)})),
+    el("td",{"data-l":t("wa_r_o_phone")},a||(o.phone_masked?el("span",{class:"pn",text:o.phone_masked}):el("span",{class:"m",text:t("wa_r_o_bg")}))),
+    el("td",{class:"num","data-l":t("wa_r_o_dur")},run),el("td",{"data-l":t("wa_r_o_err")},waErrEl(o.error,true)||"–")); }
+function waRailOps(O,F,setF,older){ const now=waMs(O.env?.generated_at)||Date.now(), cols=["wa_r_o_time","wa_r_o_kind","wa_r_o_origin","wa_c_status","wa_r_o_phone","wa_r_o_dur","wa_r_o_err"];
+  const seg=(key,label,opts)=>el("div",{class:"seg",role:"group","aria-label":label},...opts.map(([k,l])=>el("button",{type:"button",class:"sg","aria-pressed":String(F[key]===k),onclick:()=>setF({[key]:k}),text:l})));
+  const sts=[["",t("wa_r_o_all")],...["queued","running","done","failed"].map(k=>[k,t("wa_ps_"+k)])]; if(F.ost&&!sts.some(([k])=>k===F.ost)) sts.push([F.ost,F.ost]);   // a state the bridge added: shown raw
+  const ors=[["",t("wa_r_o_all")],["auto",t("wa_r_o_auto")],["pro",t("wa_r_o_pro")]]; if(F.oor&&!ors.some(([k])=>k===F.oor)) ors.push([F.oor,waLbl("wa_po_"+F.oor,F.oor)]);
+  return el("div",{},el("div",{class:"wa-fl"},seg("ost",t("wa_c_status"),sts),seg("oor",t("wa_r_o_origin"),ors)),
+    O.err?el("div",{class:"wa-note bad",role:"alert",text:O.err.status==="contract"?O.err.message:t("wa_r_e_ops",{m:[O.err.status,O.err.message].filter(Boolean).join(" ")})}):null,
+    el("div",{class:"tbl"},el("div",{class:"tw"},el("table",{class:"cards"},el("thead",{},el("tr",{},...cols.map((c,i)=>el("th",{class:i===5?"num":null,text:t(c)})))),
+      el("tbody",{},O.rows.length?O.rows.map(o=>waOpRow(o,now)):el("tr",{},el("td",{colspan:String(cols.length),class:"empty",text:t("wa_r_o_none")}))))),
+      O.rows.length?el("div",{class:"rl-more"},O.more?el("button",{class:"btn s",type:"button",id:"rl-older",onclick:e=>older(e.currentTarget),text:t("wa_r_o_more")}):null,
+        el("span",{class:"m",text:t(O.rows.length===1?"wa_r_o_shown1":"wa_r_o_shown",{n:num(O.rows.length)})+(O.more?"":" · "+t("wa_r_o_end"))})):null)); }
+
+async function pageRail(p){
+  const F={ost:p.ost||"",oor:p.oor||""}, O={rows:[],more:false,err:null,env:null}; let seq=0, tick=0;
+  WA_PARAMS=()=>({tab:"rail",ost:F.ost,oor:F.oor,t:LD.id||""});
+  const opsPage=async before=>{ const env=await api("/api/wa/ops"+qs({status:F.ost,origin:F.oor,limit:50,before_id:before??""}));
+    if(!env||!("next_before_id" in env)) throw Object.assign(new Error(t("wa_e_contract_ops")),{status:"contract"}); return env; };
+  // Every pass re-reads from the newest op down to the oldest one on screen. An op keeps its position when its status changes,
+  // so asking only for newer positions would leave "queued" on screen for an op that finished long ago.
+  async function opsLoad(){ const my=++seq, min=O.rows.length?O.rows[O.rows.length-1].position:null, rows=[]; let before=null, env;
+    try{ for(;;){ env=await opsPage(before); rows.push(...(env.rows||[])); if(env.next_before_id==null||min==null||env.next_before_id<=min) break; before=env.next_before_id; }
+      if(my!==seq) return; const keep=min==null?rows:rows.filter(r=>r.position>=min);
+      Object.assign(O,{rows:keep,more:env.next_before_id!=null||keep.length<rows.length,env,err:null}); }
+    catch(e){ if(my===seq) O.err=e; } }
+  async function older(btn){ btn.disabled=true; const my=++seq;
+    try{ const env=await opsPage(O.rows[O.rows.length-1].position); if(my!==seq) return; O.rows.push(...(env.rows||[])); O.more=env.next_before_id!=null; O.err=null; }catch(e){ if(my===seq) O.err=e; }
+    paint(); }
+  await Promise.all([waRefresh(),waHealth(),waActivity(),opsLoad()]);
+  if(!RA.act) return el("div",{},waTabs("rail"),waErrCard(RA.err,"/api/wa/activity","wa_r_e_404","wa-pro-activity.md"));
+  const live=el("div",{class:"vh",role:"status"}), tabs=el("div"), head=el("div"), note=el("div"), strip=el("div"), bridge=el("div"), queue=el("div"), jobs=el("div"), ops=el("div");
+  const setF=async patch=>{ Object.assign(F,patch); O.rows=[]; setParams(WA_PARAMS()); await opsLoad(); paint(); };
+  let lastSev=null;
+  function paint(){ const a=RA.act, s=waRailSev(a), mAge=waAge(a,a.queue?.as_of);
+    tabs.replaceChildren(waTabs("rail"));
+    head.replaceChildren(el("h1",{class:"rl-h "+s.sev,text:t("wa_r_h_"+s.sev)}),el("p",{class:"lead",text:t("wa_r_lead")}),
+      s.bad.length||s.warn.length?el("ul",{class:"rl-why"},...s.bad.map(x=>el("li",{class:"bad",text:x})),...s.warn.map(x=>el("li",{text:x}))):null);
+    note.replaceChildren(...[MOCK_ON?el("div",{class:"wa-note",text:t("wa_demo")}):null,
+      RA.err&&RA.errAt>RA.at?el("div",{class:"wa-note bad",role:"alert",text:t("wa_e_stale",{m:(RA.err.status??"")+" "+RA.err.message,t:waClock(RA.at)})}):null,
+      mAge>WA_STALE.mirror?el("div",{class:"wa-note bad",role:"alert",text:t("wa_r_stale_x",{d:waDurS(mAge)})}):null].filter(Boolean));
+    strip.replaceChildren(waStrip());
+    bridge.replaceChildren(waRailTiles(a),waRailFresh(a));
+    queue.replaceChildren(waRailQueue(a,F,setF)); jobs.replaceChildren(waRailJobs(a)); ops.replaceChildren(waRailOps(O,F,setF,older));
+    if(lastSev!=null&&lastSev!==s.sev) live.textContent=t("wa_r_h_"+s.sev)+(s.bad.length?": "+s.bad.join(", "):""); lastSev=s.sev; }
+  // 5 s for the rail and the ops (the contract's rail-tab cadence); the lead list and the harness health keep their 15 s.
+  const refresh=async()=>{ await Promise.all([waActivity(),opsLoad(),...(tick++%3?[]:[waRefresh(),waHealth()])]); if(WA.view===refresh) paint(); };
+  WA.view=refresh; everyWhile(refresh,5000);
+  paint(); if(p.t) setTimeout(()=>waOpen(p.t,true),0);
+  const h2=k=>el("div",{class:"wa-h2"},el("h2",{text:t(k)}));
+  return el("div",{"aria-live":"off"},live,tabs,head,note,strip,h2("wa_r_bridge"),bridge,h2("wa_r_queue"),queue,h2("wa_r_jobs"),jobs,h2("wa_r_ops"),ops); }
 
 // ---- lead drawer: card, documents, conversation (non-modal side panel, like the crawl plan) ----
 const LD={id:null,rows:[],before:null,timer:null,ret:null,tick:0,detail:null};
@@ -1952,6 +2106,12 @@ function mockApi(path,opt){
 function waMockApi(p,g,M){ const W=waMock(M.clinics), wrap=v=>new Promise(r=>setTimeout(()=>r(JSON.parse(JSON.stringify(v))),60));
   const nf=()=>Promise.reject(Object.assign(new Error("unknown thread"),{status:404})); let m; waMockLive(W);
   if(p==="/api/wa/health") return wrap(W.health);
+  if(p==="/api/wa/activity"){ waMockRail(W); return wrap(waMockActivity(W)); }
+  if(p==="/api/wa/ops"){ waMockRail(W); const lim=+(g.limit||50), now=new Date().toISOString();
+    let rows=W.ops.filter(o=>(!g.status||o.status===g.status)&&(!g.origin||(g.origin==="auto"?o.origin!=="pro_human":g.origin==="pro"?o.origin==="pro_human":o.origin===g.origin)));
+    if(g.after_id!=null){ rows=rows.filter(o=>o.position>+g.after_id).slice(0,lim); return wrap({generated_at:now,source:"mock",synced_at:now,synced_source:"mock",mirrored_at:now,rows,next_before_id:null}); }
+    rows=rows.filter(o=>g.before_id==null||o.position<+g.before_id).reverse(); const page=rows.slice(0,lim);     // newest first, like the harness
+    return wrap({generated_at:now,source:"mock",synced_at:now,synced_source:"mock",mirrored_at:now,rows:page,next_before_id:page.length&&rows.length>page.length?page[page.length-1].position:null}); }
   if(p==="/api/wa/threads"){ const rows=g.include_test==="1"?W.threads:W.threads.filter(r=>!r.is_test), off=+(g.offset||0), lim=+(g.limit||20);   // 20 a page: the demo walks next_offset like the real proxy
     return wrap({total:rows.length,limit:lim,offset:off,next_offset:off+lim<rows.length?off+lim:null,test_threads:rows.filter(r=>r.is_test).length,generated_at:new Date().toISOString(),source:"mock",rows:rows.slice(off,off+lim)}); }
   if((m=p.match(/^\/api\/wa\/threads\/([^/]+)\/messages$/))){ const all=W.msgs[decodeURIComponent(m[1])]; if(!all) return nf();
@@ -2095,6 +2255,30 @@ function waMock(clinics){ if(waMock.W) return waMock.W; const now=Date.now(), is
     webhook_ready:true,outbound_ready:true,autosend:true,brain:"luna",transport:"bridge",synced_at:iso(2*mi),synced_source:"bridge",reply_scope:"test_only",meta_scope:"all",bridge_ready:true,bridge_inbound_ready:true,stt_ready:false,stt_model:"whisper-1",rails:{}};
   T.forEach(r=>health.rails[r.rail]=(health.rails[r.rail]||0)+1);
   return waMock.W={threads:T,msgs:MSG,detail:DET,health,t0:now}; }
+// The demo rail: 72 phone ops over the last day, every kind, origin and state the tab labels, and a queue that moves:
+// every 8 s the running op finishes, the next queued one starts and Luna queues a new send.
+function waMockRail(W){ const s=1e3, mi=6e4, th=W.threads.filter(r=>!r.is_test);
+  if(!W.ops){ W.ops=[]; W.rtick=0; const N=72, iso=a=>new Date(W.t0-a).toISOString();
+    const kinds=["send","send","send","send_document","send","read_thread","send","send_photos","reconcile","send","list_chats","send_gallery"];
+    const origins=["luna","luna","followups","luna_tool","campaign","operator","catchup","luna","bridge","agent_notes","bridge","campaign"];
+    const errs={9:"op_expired",23:"not_on_whatsapp",31:"send_unconfirmed",40:"rail_parked",52:"device_unavailable",61:"restarted_while_running"};
+    for(let i=1;i<=N;i++){ const kind=kinds[i%12], bg=kind==="reconcile"||kind==="list_chats", r=bg?null:th[(i*5)%th.length], left=N-i, ago=left<4?left*25*s+12*s:left*19*mi;
+      const status=left===0||left===1||left===3?"queued":left===2?"running":errs[i]?"failed":"done", origin=left===1||i===57?"pro_human":bg?"bridge":origins[i%12];
+      W.ops.push({id:"op_demo"+String(i).padStart(4,"0"),position:i,kind,origin,status,thread_id:r?r.thread_id:null,phone_masked:r?r.phone_masked:null,created_at:iso(ago),
+        started_at:status==="queued"?null:iso(ago-3*s),finished_at:status==="done"||status==="failed"?iso(ago-3*s-(4+i%9)*s):null,attempts:null,error:errs[i]&&status==="failed"?{code:errs[i]}:null}); } }
+  for(const n=Math.floor((Date.now()-W.t0)/8000);W.rtick<n;W.rtick++){ const at=new Date().toISOString(), run=W.ops.find(o=>o.status==="running"), q=W.ops.find(o=>o.status==="queued"), r=th[(W.rtick*3)%th.length];
+    if(run) Object.assign(run,{status:"done",finished_at:at}); if(q) Object.assign(q,{status:"running",started_at:at});
+    W.ops.push({id:"op_demo"+String(W.ops.length+1).padStart(4,"0"),position:W.ops.length+1,kind:"send",origin:"luna",status:"queued",thread_id:r.thread_id,phone_masked:r.phone_masked,created_at:at,started_at:null,finished_at:null,attempts:null,error:null}); } }
+function waMockActivity(W){ const now=Date.now(), iso=a=>new Date(now-a).toISOString(), s=1e3, mi=6e4, h=36e5;
+  const cnt=rows=>({queued:0,running:0,done:0,failed:0,...rows.reduce((c,o)=>(c[o.status]=(c[o.status]||0)+1,c),{}),other:{},as_of:iso(2*s)});
+  const job=(job,last,every,o={})=>({job,enabled:true,last_run_at:last==null?null:iso(last),last_ok_at:last==null?null:iso(o.okAgo??last),last_error:o.err?{code:o.err}:null,
+    next_run_at:every&&last!=null?iso(last-every):null,ok_24h:o.ok??null,failed_24h:o.failed??null,overdue:every&&last!=null?last>2*every:null});
+  return {generated_at:iso(0),snapshot_at:iso(21*s),synced_at:iso(2*s),synced_source:"bridge_relay_pull",source:"mock",
+    rail:{tunnel:{up:true,since:iso(5*h+12*mi),last_error:null},phone:{state:"ready",since:iso(5*h+11*mi)},watcher:{alive:true,heartbeat_at:iso(21*s)},last_sync_at:iso(2*s)},
+    queue:cnt(W.ops),human:cnt(W.ops.filter(o=>o.origin==="pro_human")),
+    jobs:[job("catchup",(now/1e3%180)*s,180*s,{ok:479,failed:1}),job("followups",(now/1e3%900)*s,900*s,{ok:96,failed:0}),job("tunnel_watch",(now/1e3%30)*s,30*s,{ok:2874,failed:2}),
+      job("purge_test",9*h+14*mi,24*h,{ok:1,failed:0}),job("agent_notes",3*h+2*mi,null,{ok:4,failed:0}),job("relay_sync",2*s,3*s),
+      job("luna_reply",4*mi,null,{ok:37,failed:1,err:"send_failed"}),job("broadcasts",null,null)]}; }
 // Eight seconds in, Luna answers the thread whose reply is owed -- the open drawer's 5 s poll has something to pick up.
 function waMockLive(W){ if(W.live||Date.now()-W.t0<8000) return; W.live=true;
   const r=W.threads.find(x=>x.phone_masked==="+63 ••• ••• 7218"), msgs=W.msgs[r.thread_id], at=new Date().toISOString();
