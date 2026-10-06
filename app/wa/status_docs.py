@@ -1,5 +1,6 @@
 """Status documents: candidate-anonymous HTML/PDF one-pagers (public clinic names, vacancy titles,
-travel minutes, housing quotes -- never a candidate name or phone), reachable at a public,
+travel minutes, housing quotes, her anonymised profile fields as the clinics see them -- never a
+candidate name or phone), reachable at a public,
 unguessable token link (Ivan, 2026-10-06): https://pflege-board.exe.xyz/s/<token>/.
 
 WHY THIS PREFIX, WHY NO NGINX CHANGE. Nobody has sudo on this host, so there is no new nginx

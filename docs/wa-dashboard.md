@@ -151,7 +151,8 @@ bridge". The list envelope and the thread detail carry the same two fields.
 ## Status documents (public token links)
 
 **What:** a candidate status document (an HTML one-pager, a detail page, a PDF -- candidate-anonymous: public
-clinic names, vacancy titles, travel minutes, housing quotes, never a candidate name or phone) at a public,
+clinic names, vacancy titles, travel minutes, housing quotes, her anonymised profile fields as the clinics see
+them, never a candidate name or phone) at a public,
 unguessable link anyone holding it can open with no login. Ivan, 2026-10-06. The documents themselves are produced
 on the harness host by the email lane (Daria) and published there by a local tool
 (`tools/status_docs_publish.py`, [whatsapp.md](whatsapp.md)) -- the board never receives or stores the files, only

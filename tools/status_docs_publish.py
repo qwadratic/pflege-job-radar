@@ -5,8 +5,8 @@
     python tools/status_docs_publish.py --list
 
 WHY A LOCAL TOOL, NOT AN UPLOAD API. The documents (an HTML one-pager, a detail page, any number of
-PDFs -- candidate-anonymous: clinic names, vacancy titles, travel minutes, housing quotes, never a
-candidate name or phone) are produced on THIS host, by the email lane (Daria), which runs as the
+PDFs -- candidate-anonymous: clinic names, vacancy titles, travel minutes, housing quotes, her
+anonymised profile fields as the clinics see them, never a candidate name or phone) are produced on THIS host, by the email lane (Daria), which runs as the
 SAME user this tool runs as. Publishing is therefore a local filesystem operation, not a network
 call -- this script makes no network call at all. See app/wa/status_docs.py's own module docstring
 for the route side of this design (the board's public /s/{token}/ proxies to it).

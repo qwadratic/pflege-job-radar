@@ -788,6 +788,8 @@ Candidate status documents (an HTML one-pager, a detail page, a PDF — candidat
 
 **`tools/status_docs_publish.py`** — `<slug> <src_dir>` publishes (or republishes, atomically, same token) one candidate's documents; `--list` prints every published slug and its URL. `src_dir` must hold exactly `index.html` plus, optionally, `detail.html` and any number of PDFs matching the route's own name allow-list (`app/wa/status_docs.py:allowed_name`, shared verbatim, never a second copy) — anything else (a subdirectory, a dotfile, a symlink, an unmatched name) is a loud refusal naming the entry, nothing published. The slug → token map (`tokens.tsv`) and every served file live under `status_docs_home()` (`WA_STATUS_DOCS_HOME`, default `~/.local/state/pflege-status`) — entirely outside this repository, so a token never enters git (this repo is public, TASK-162).
 
+**Revoking a link.** Delete `www/<token>/`: the link answers 404 at once. A republish of the same slug brings the same token back, which is right for a routine update and wrong after a link leaked (it sits in the board's access log and in any chat it was pasted into). After a leak also delete the slug's row in `tokens.tsv`, so the next publish mints a new token.
+
 ## Deliberately missing
 
 - **No LLM by default.** The question ladder above is deterministic so every rule has a test. `WA_BRAIN=luna` (above) switches to Claude when the full persona/conversation is needed.
