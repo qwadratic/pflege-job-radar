@@ -840,3 +840,16 @@ BLOCKED_REPLY_DE = (
     "Entschuldigen Sie bitte — da will ich Ihnen nichts Falsches sagen. Eine Kollegin schaut "
     "sich Ihre Frage an und meldet sich hier bei Ihnen."
 )
+
+# TASK-439, approved verbatim by Ivan 2026-10-06: the status message to a candidate whose profile went out
+# to clinics. Code assembles both bubbles (app/wa/luna/status_message.py), never the model: bubble 1 is the
+# one clinic the email lane marked best on her status page, bubble 2 the count plus the status-page link,
+# which code appends (the model never writes a URL, TASK-373). The wording is plural only.
+STATUS_BEST_INTRO_DE = "Wir haben Ihr Profil an diese Klinik geschickt, sie passt besonders gut zu Ihren Wünschen:"
+STATUS_JOBS_LABEL_DE = "Stellen:"
+STATUS_HOUSING_LABEL_DE = "Wohnung:"
+STATUS_TRAVEL_LABEL_DE = "Weg:"
+STATUS_COUNT_DE = (
+    "Insgesamt ist Ihr anonymisiertes Profil an {n} Kliniken gegangen. Wir warten jetzt auf deren Antworten."
+)
+STATUS_LINK_LEAD_DE = "Alle Kliniken und den vollständigen Bericht finden Sie hier:"
