@@ -51,23 +51,50 @@ def test_offline_leaves_out_the_modules_that_need_the_mirror_so_pytest_never_end
     assert CS.offline(["pflege_jobs/classify.py"], SRC) == "ALL"
 
 
+# what the two invented mirror modules import; test_geo.py imports a tool and the harness, which no mirror module does
+CLO = {"test_adapter_completeness.py": {"tests/test_adapter_completeness.py", "tests/adapter_contract.py", "tests/mirror.py", "app/data.py"},
+       "test_completeness_dvinci.py": {"tests/test_completeness_dvinci.py", "tools/registry_build.py"},
+       "test_geo.py": {"tests/test_geo.py", "tools/status_page.py", "app/wa/status_docs.py", "app/main.py", "app/wa_proxy.py"}}
+
+
 # --------------------------------------------------------------------------------------------- when `adapters` runs
 @pytest.mark.parametrize("changed", [
     ["crawlers/vendor_adapters.py"], ["crawlers/x/y.py"], ["tests/mirror.py"], ["tests/adapter_harness.py"], ["tests/adapter_contract.py"],
     ["tests/test_completeness_dvinci.py"], ["tests/test_completeness_pi_asp.py"], ["tests/test_adapter_completeness.py"],
     ["tests/test_verify_pi_loga_live.py"], ["tools/mirror.py"], ["pytest.ini"], ["requirements.txt"], [".github/workflows/tests.yml"],
-    ["pflege_jobs/sources/bite.py"],                       # the offline scope says ALL
-    ["docs/deploy.md", "crawlers/a.py"],
+    ["pflege_jobs/sources/bite.py"], ["tests/conftest.py"], ["conftest.py"],
+    ["app/data.py"], ["tools/registry_build.py"],          # Python a mirror module imports, through any chain
+    ["sql/015_source_supplement.sql"], ["edge/pflege-ingest/index.ts"], ["LICENSE"], ["data/new_thing.bin"],   # not Python, no leaf claims it
+    ["data/registry/pi_seeds.json"], ["data/registry/taxonomy.json"], ["data/geo/ambiguous_stems.txt"], ["data/geo/kreise.geojson"],   # read by path at run time
+    ["docs/deploy.md", "crawlers/a.py"], ["tools/status_page.py", "data/registry/taxonomy.json"], ["data/registry/reha_bavaria.csv", "data/registry/bite_seeds.json"],
 ])
-def test_adapters_run_when_the_adapters_the_replay_or_the_ci_change_or_the_scope_says_all(changed):
-    assert CS.adapters(changed, SRC) is True
+def test_adapters_run_when_the_change_is_something_the_mirror_tests_can_see(changed):
+    assert CS.adapters(changed, SRC, CLO) is True
 
 
 @pytest.mark.parametrize("changed", [
     ["docs/deploy.md"], ["web/pro.template.html"], ["README.md"], ["tests/test_geo.py"], ["backlog/tasks/task-1 - x.md"], [],
+    ["tools/status_page.py"], ["tools/wa_status_message.py"], ["app/wa_proxy.py"], ["app/wa/status_docs.py"], ["app/main.py"],   # Python no mirror module imports
+    ["tools/status_page.py", "tests/test_status_page.py", "docs/auth.md"],
+    ["data/registry/reha_bavaria.csv"], ["data/registry/plz_review.csv", "data/registry/krankenhausverzeichnis_24.xlsx"],   # sheets only offline tests read
 ])
 def test_adapters_stay_out_of_a_change_that_cannot_reach_them(changed):
-    assert CS.adapters(changed, SRC) is False
+    assert CS.adapters(changed, SRC, CLO) is False
+
+
+def test_in_this_repository_the_board_and_the_harness_do_not_start_adapters_and_the_crawler_core_does():
+    """The real import closures, not the invented ones above: the day's own cases. On 2026-10-06 four pull requests that touched
+    only a page generator, a message builder and a board route each waited 33 minutes for the adapters job."""
+    src, clo = CS._sources(), CS.import_closures()
+    assert len(CS.mirror_only(src)) >= 8
+    for path in ("tools/status_page.py", "tools/wa_status_message.py", "app/wa_proxy.py", "app/wa/status_docs.py", "app/wa/luna_brain.py"):
+        assert CS.adapters([path], src, clo) is False, path
+    for path in ("crawlers/vendor_adapters.py", "pflege_jobs/geo.py", "tests/mirror.py", "tests/adapter_contract.py", "tools/mirror.py"):
+        assert CS.adapters([path], src, clo) is True, path
+    for path in sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data" / "registry").glob("*.json")) + ["data/geo/ambiguous_stems.txt"]:
+        assert CS.adapters([path], src, clo) is True, path                          # every seed file there is, by its real name
+    for path in sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "data" / "registry").glob("*.csv")):
+        assert CS.adapters([path], src, clo) is False and CS.offline([path], src, clo) == "ALL", path
 
 
 # --------------------------------------------------------------------------------------------- the command line the workflow calls
@@ -78,8 +105,11 @@ def run_cli(*args, stdin=""):
 
 
 @pytest.mark.parametrize("job,event,stdin,want", [
-    ("offline", "push", "", "ALL"), ("adapters", "push", "", "yes"),                      # a push to main runs everything, whatever stdin holds
-    ("offline", "push", "docs/deploy.md\n", "ALL"), ("adapters", "push", "docs/deploy.md\n", "yes"),
+    ("offline", "push", "docs/deploy.md\n", "ALL"), ("offline", "push", "", "ALL"),       # a push to main: offline runs everything
+    ("adapters", "push", "docs/deploy.md\n", "no"), ("adapters", "push", "backlog/tasks/task-1 - x.md\n", "no"), ("adapters", "push", "", "no"),
+    ("adapters", "push", "crawlers/vendor_adapters.py\n", "yes"), ("adapters", "push", "backlog/tasks/task-1 - x.md\ntests/mirror.py\n", "yes"),
+    ("adapters", "schedule", "docs/deploy.md\n", "yes"), ("offline", "schedule", "docs/deploy.md\n", "ALL"),   # the nightly run asks nobody
+    ("adapters", "workflow_dispatch", "", "yes"), ("adapters", "full", "", "yes"),
     ("offline", "pull_request", "crawlers/vendor_adapters.py\n", "ALL"), ("adapters", "pull_request", "crawlers/vendor_adapters.py\n", "yes"),
     ("adapters", "pull_request", "tests/mirror.py\n", "yes"), ("adapters", "pull_request", "docs/deploy.md\n", "no"),
     ("offline", "pull_request", "tests/test_completeness_dvinci.py\n", "NONE"), ("adapters", "pull_request", "tests/test_completeness_dvinci.py\n", "yes"),
@@ -119,6 +149,15 @@ def test_the_workflow_has_two_jobs_on_push_to_main_and_every_pull_request(wf):
     triggers = wf[True] if True in wf else wf["on"]            # PyYAML reads the key `on` as the boolean True
     assert triggers["push"]["branches"] == ["main"] and "pull_request" in triggers
     assert triggers["pull_request"] in (None, {}), "a pull_request filter (paths, branches) would skip the jobs silently"
+    assert len(triggers["schedule"]) == 1 and "workflow_dispatch" in triggers      # the nightly full run, and the button
+
+
+def test_a_push_hands_adapters_its_own_changes_and_becomes_a_full_run_when_they_cannot_be_read(wf):
+    scope = wf["jobs"]["adapters"]["steps"][1]
+    assert scope["env"] == {"EVENT": "${{ github.event_name }}", "BASE": "${{ github.base_ref }}",
+                            "BEFORE": "${{ github.event.before }}", "AFTER": "${{ github.sha }}"}
+    assert 'git diff --name-only "$BEFORE" "$AFTER" > "$RUNNER_TEMP/changed.txt" || EVENT=full' in scope["run"]
+    assert scope["run"].index("|| EVENT=full") < scope["run"].index('--event "$EVENT"')
 
 
 def test_offline_needs_no_secret_and_no_pull_and_leaves_out_mirror_network_and_llm_tests(wf):
