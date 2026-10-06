@@ -65,7 +65,10 @@ def fresh(tmp_path, monkeypatch):
 def test_the_clinic_row_carries_the_point(fresh, monkeypatch):
     clinics = [{"clinic_id": "16104", "name": "A", "town": "München", "plz": None, "beds": 0, "fachrichtungen": "", "ats_type": "", "website": "", "careers_url": ""},
                {"clinic_id": "99999", "name": "B", "town": "Atlantis", "plz": None, "beds": 0, "fachrichtungen": "", "ats_type": "", "website": "", "careers_url": ""}]
-    monkeypatch.setattr(A, "rest_get_all", lambda table, params: [] if table == "v_postings" else clinics)
+    # _build() also reads the "postings" table for housing evidence (app/data.py:_housing_evidence) --
+    # answer that with no rows too, not with these clinic-shaped rows (they have no posting_id).
+    monkeypatch.setattr(A, "rest_get_all",
+                        lambda table, params: clinics if table == "clinics" else [])
     monkeypatch.setattr(D, "taxonomy", lambda: {})
     monkeypatch.setattr(D, "_routing", lambda cs: {})
     by_id = D._build()["by_clinic"]

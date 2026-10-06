@@ -1,0 +1,34 @@
+# Wipes the history of every phone marked as a test number (app/wa/luna/purge_test_history.py,
+# TASK-109, docs/whatsapp.md "Test numbers (TASK-109)"): messages, model calls, follow-ups, claims,
+# campaign send rows, the consent-queue entry, stored documents with their files, the Claude Code
+# session transcript and the card -- so an operator's next manual test starts from nothing. The
+# thread row survives, still marked as a test number and not stopped; no other phone is touched.
+#
+# The two arguments are the whole operational decision and are set HERE, not in the code:
+#   --older-than-hours N   leave a test thread alone while its last activity is younger than N hours;
+#                          0 = wipe every test thread (Ivan 2026-09-16: a full wipe every night)
+#   --apply                actually delete. Without it the job is a dry run that writes nothing --
+#                          run it by hand first and read the report.
+# The schedule is deploy/pflege-wa-purge-test.timer (daily 03:00 Europe/Berlin).
+#
+# Install (not done by the build -- a human decides when the nightly wipe goes live):
+#   sudo cp deploy/pflege-wa-purge-test.service deploy/pflege-wa-purge-test.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-purge-test.timer
+#   journalctl -u pflege-wa-purge-test -f
+# Runs against the REAL database and deletes for real. It sends nothing: no Meta call anywhere in it.
+# Same EnvironmentFile as pflege-wa.service (WA_DOCUMENTS_DIR must be the same one the webhook writes,
+# or the files stay); CLAUDE_CONFIG_DIR must be the CLI config of this same User=, or the session
+# transcripts are not found (the report then shows 0 transcripts for a thread that has a session id).
+[Unit]
+Description=Pflege-Board WhatsApp test-number history wipe (app.wa.luna.purge_test_history, TASK-109)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.wa.luna.purge_test_history --older-than-hours 0 --apply

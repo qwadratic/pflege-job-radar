@@ -1,0 +1,145 @@
+{
+  "generated_at": "2026-09-30T12:02:00+00:00",
+  "human": {
+    "as_of": "2026-09-30T11:59:58+00:00",
+    "done": 0,
+    "failed": 0,
+    "other": {},
+    "queued": 1,
+    "running": 0
+  },
+  "jobs": [
+    {
+      "enabled": true,
+      "failed_24h": 0,
+      "job": "catchup",
+      "last_error": null,
+      "last_ok_at": "2026-09-30T11:57:00+00:00",
+      "last_run_at": "2026-09-30T11:57:00+00:00",
+      "next_run_at": "2026-09-30T12:00:00+00:00",
+      "ok_24h": 3,
+      "overdue": false,
+      "running_since": "2026-09-30T11:59:40+00:00"
+    },
+    {
+      "enabled": true,
+      "failed_24h": 0,
+      "job": "followups",
+      "last_error": null,
+      "last_ok_at": "2026-09-30T09:30:00+00:00",
+      "last_run_at": "2026-09-30T09:30:00+00:00",
+      "next_run_at": "2026-09-30T09:45:00+00:00",
+      "ok_24h": 2,
+      "overdue": true,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": 1,
+      "job": "tunnel_watch",
+      "last_error": {
+        "code": "PermissionError"
+      },
+      "last_ok_at": "2026-09-30T11:55:00+00:00",
+      "last_run_at": "2026-09-30T11:58:00+00:00",
+      "next_run_at": "2026-09-30T11:58:30+00:00",
+      "ok_24h": 2,
+      "overdue": true,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": 0,
+      "job": "purge_test",
+      "last_error": null,
+      "last_ok_at": "2026-09-30T03:00:04+00:00",
+      "last_run_at": "2026-09-30T03:00:04+00:00",
+      "next_run_at": "2026-10-01T03:00:04+00:00",
+      "ok_24h": 1,
+      "overdue": false,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": 0,
+      "job": "agent_notes",
+      "last_error": null,
+      "last_ok_at": "2026-09-30T11:55:00+00:00",
+      "last_run_at": "2026-09-30T11:55:00+00:00",
+      "next_run_at": null,
+      "ok_24h": 3,
+      "overdue": null,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": null,
+      "job": "relay_sync",
+      "last_error": {
+        "code": "relay_sync_failed"
+      },
+      "last_ok_at": "2026-09-30T11:55:00+00:00",
+      "last_run_at": "2026-09-30T11:55:00+00:00",
+      "next_run_at": "2026-09-30T11:55:03+00:00",
+      "ok_24h": null,
+      "overdue": true,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": 1,
+      "job": "luna_reply",
+      "last_error": {
+        "code": "send_failed"
+      },
+      "last_ok_at": "2026-09-30T11:54:02+00:00",
+      "last_run_at": "2026-09-30T11:54:02+00:00",
+      "next_run_at": null,
+      "ok_24h": 1,
+      "overdue": null,
+      "running_since": null
+    },
+    {
+      "enabled": true,
+      "failed_24h": null,
+      "job": "broadcasts",
+      "last_error": null,
+      "last_ok_at": null,
+      "last_run_at": null,
+      "next_run_at": null,
+      "ok_24h": null,
+      "overdue": null,
+      "running_since": null
+    }
+  ],
+  "queue": {
+    "as_of": "2026-09-30T11:59:58+00:00",
+    "done": 6,
+    "failed": 3,
+    "other": {},
+    "queued": 3,
+    "running": 2
+  },
+  "rail": {
+    "last_sync_at": "2026-09-30T11:55:00+00:00",
+    "phone": {
+      "since": "2026-09-30T11:40:00+00:00",
+      "state": "recovering"
+    },
+    "tunnel": {
+      "last_error": {
+        "code": "RelayError"
+      },
+      "since": "2026-09-30T12:01:30+00:00",
+      "up": false
+    },
+    "watcher": {
+      "alive": true,
+      "heartbeat_at": "2026-09-30T11:58:42+00:00"
+    }
+  },
+  "snapshot_at": "2026-09-30T11:58:42+00:00",
+  "source": "harness@fixture-host",
+  "synced_at": "2026-09-30T11:55:00+00:00",
+  "synced_source": "bridge_relay_pull"
+}

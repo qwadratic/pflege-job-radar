@@ -1,0 +1,13 @@
+{
+  "id": "hebamme_geburtshilfe",
+  "description": "synthetic: midwife, Geburtshilfe/Kreißsaal, Würzburg -- clean case for the hebamme role",
+  "cv_text": "Lebenslauf\nHebamme, 5 Jahre Berufserfahrung im Kreißsaal\nTätig in der Geburtshilfe, Würzburg\nDeutsch Muttersprache, Englisch B1\n",
+  "expected": {
+    "roles_any": ["hebamme"],
+    "departments_any": ["Geburtshilfe"],
+    "languages_all": ["Englisch B1"],
+    "experience_years": 5,
+    "cities_any": ["Würzburg"],
+    "min_matches": 1
+  }
+}

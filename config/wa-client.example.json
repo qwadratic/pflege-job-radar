@@ -1,0 +1,6 @@
+{
+  "_comment": "Synthetic example (TASK-162: the repo is public, the client's real name is never committed). The real file is config/wa-client.json, gitignored -- see .gitignore and app/wa/config.py:client(). \"name\": the client's name, used wherever Luna/Daria name their employer to a candidate or an operator. \"own_mail_domains\": mail domains the email tools (tools/email_index.py, email_ledgers.py, email_stage2b.py) treat as ours, not an external clinic/candidate. \"partner_mail_domains\": mail domains the email tools treat as the client's own partner (e.g. the person who talks to clinics), unioned into the own-domain set where that tool already did so.",
+  "name": "Beispiel Group",
+  "own_mail_domains": ["kindt.agency", "ki-agent.agency", "beispiel-ki.example", "ki-workflow.agency"],
+  "partner_mail_domains": ["beispiel-group.example"]
+}
