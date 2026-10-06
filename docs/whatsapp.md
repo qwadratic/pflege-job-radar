@@ -292,7 +292,7 @@ Tests: `tests/test_wa_test_threads.py` (offline, tmp SQLite plus tmp document/se
 
 ## Operator inbox: Russian notes to the engineer (TASK-296/297, worker TASK-303)
 
-Ivan and Valentyn test the rail from their own numbers ([Test numbers](#test-numbers-task-212)) and sometimes write to the engineer instead of role-playing a candidate — in Russian, on the same thread they test in German. That instruction must never reach the candidate brain (live incident, 2026-09-24: a Russian voice note asking to re-send a broadcast got answered in German four times, as "Valentina", asking if the sender wanted a job in Bavaria). This is the fix, end to end.
+Ivan and the parallel operator test the rail from their own numbers ([Test numbers](#test-numbers-task-212)) and sometimes write to the engineer instead of role-playing a candidate — in Russian, on the same thread they test in German. That instruction must never reach the candidate brain (live incident, 2026-09-24: a Russian voice note asking to re-send a broadcast got answered in German four times, as "Valentina", asking if the sender wanted a job in Bavaria). This is the fix, end to end.
 
 **The flow of one note:**
 

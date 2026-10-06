@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daria's desk: the one reader of the operators' mail on daria.s@pflege-connect.work (TASK-345.12.1, .12.2).
 
-Ivan, 2026-10-01: Daria answers him and Valentyn at any time; stop, skip and status by mail stay; anything else (a
+Ivan, 2026-10-01: Daria answers him and the parallel operator at any time; stop, skip and status by mail stay; anything else (a
 question, a harder correction) is answered by Daria herself with her toolset: sales_brain read-only, the board tools
 the WA harness gives Luna, the mailing state, the case documents, and her own backlog project "daria" as a task
 pipeline. She has no shell.
@@ -97,12 +97,12 @@ def _client_name():
 
 
 def _client_partner_domain():
-    """Valentyn's own mail domain (he talks to the clinics) -- the client's domain spelled out in it is
+    """The parallel operator's own mail domain (he talks to the clinics) -- the client's domain spelled out in it is
     exactly the thing TASK-162 keeps out of source, so ANSWER_SYSTEM below builds his address from the
     configured partner_mail_domains rather than a literal domain."""
     domains = _client_config().get("partner_mail_domains") or []
     if not domains:
-        raise RuntimeError("client config has no \"partner_mail_domains\" entry -- needed for Valentyn's "
+        raise RuntimeError("client config has no \"partner_mail_domains\" entry -- needed for the parallel operator's "
                            "address in ANSWER_SYSTEM")
     return domains[0]
 
@@ -347,7 +347,7 @@ def act(d, c, bs, frm, mid):
 
 # ---------- Daria's answer ----------
 
-# TASK-162: the employer name and Valentyn's own mail domain come from the gitignored client config
+# TASK-162: the employer name and the parallel operator's own mail domain come from the gitignored client config
 # (_client_name/_client_partner_domain above) -- with its "name" and "partner_mail_domains" set to
 # the old literal values (see git history pre-TASK-162), this f-string renders byte-identical to the
 # old literal text.

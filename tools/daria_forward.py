@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Forward mail of daria.s@pflege-connect.work to Ivan and Valentyn by hand (TASK-345.10; Ivan, 2026-09-28: "а ты разве
-не можешь мне пересылать руками?"; Ivan, 2026-10-05: every forward goes to the operators; Valentyn's address bounced, copies to Ivan only for now).
+"""Forward mail of daria.s@pflege-connect.work to Ivan and the parallel operator by hand (TASK-345.10; Ivan, 2026-09-28: "а ты разве
+не можешь мне пересылать руками?"; Ivan, 2026-10-05: every forward goes to the operators; the parallel operator's address bounced, copies to Ivan only for now).
 
   list FETCH          the inbound messages of a daria-inbox output file (not sent by daria, not drafts): received,
                       folder, sender, subject, and whether each was forwarded already
   send FETCH KEY... [--to ADDR...]
                       forward these messages (--to: to these addresses instead of the default operator list, for a
                       message that reached only part of them). KEY is a message's internetMessageId, or a sender's address for every
-                      inbound message from that sender in FETCH. One mail each from daria to Ivan and Valentyn: the header lines,
+                      inbound message from that sender in FETCH. One mail each from daria to Ivan and the parallel operator: the header lines,
                       the text, and the original attached as message/rfc822. Every forward is logged in
                       forwarded.jsonl next to FETCH, and a message forwarded once is not sent again.
 
@@ -33,7 +33,7 @@ import clinic_mailer as M  # noqa: E402
 from mailer_doc import Doc, Quote, Table  # noqa: E402
 
 BOX = "daria.s@pflege-connect.work"
-TO = ["ivan.d.kotelnikov@gmail.com"]     # Valentyn is back here once he has a working address (Ivan, 2026-10-05)
+TO = ["ivan.d.kotelnikov@gmail.com"]     # the parallel operator is back here once he has a working address (Ivan, 2026-10-05)
 TZ = ZoneInfo("Europe/Berlin")
 
 

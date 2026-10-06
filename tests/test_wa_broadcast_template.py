@@ -17,15 +17,15 @@ IVAN = ("Neue Stellen in Bayern für Pflegekräfte\n"
         "\n"
         "Hallo, Ivan. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir viele "
         "neue Stellen in Bayern. Haben Sie noch Interesse?")
-VALENTYN = ("Neue Stellen in Bayern für Pflegekräfte\n"
+MIRA = ("Neue Stellen in Bayern für Pflegekräfte\n"
             "\n"
-            "Hallo, Valentyn. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir "
+            "Hallo, Mira. Sie haben sich als Pflegekraft in Bayern beworben. Aktuell haben wir "
             "viele neue Stellen in Bayern. Haben Sie noch Interesse?")
 
 
 def test_the_wording_is_exactly_what_the_handset_shows():
     assert BT.render("Ivan") == IVAN
-    assert BT.render("Valentyn") == VALENTYN
+    assert BT.render("Mira") == MIRA
 
 
 def test_the_header_is_its_own_line_followed_by_a_blank_one():
@@ -35,8 +35,8 @@ def test_the_header_is_its_own_line_followed_by_a_blank_one():
 
 
 def test_the_name_is_the_only_thing_that_varies():
-    a, b = BT.render("Ivan"), BT.render("Valentyn")
-    assert a.replace("Ivan", "X") == b.replace("Valentyn", "X")
+    a, b = BT.render("Ivan"), BT.render("Mira")
+    assert a.replace("Ivan", "X") == b.replace("Mira", "X")
 
 
 # Ivan, 2026-09-24: a lead list without a first name is normal ("может быть случай когда имя
@@ -81,10 +81,10 @@ def _tool():
 
 def test_template_mode_renders_every_recipient_from_their_name():
     rows = [{"line": 1, "to": "+436600000001", "body": None, "name": "Ivan"},
-            {"line": 2, "to": "+436600000002", "body": None, "name": "Valentyn"},
+            {"line": 2, "to": "+436600000002", "body": None, "name": "Mira"},
             {"line": 3, "to": "+4915550000589", "body": None, "name": None}]
     items = _tool().plan_broadcast(rows, None, template=True)
-    assert [i["body"] for i in items] == [IVAN, VALENTYN, NO_NAME], (
+    assert [i["body"] for i in items] == [IVAN, MIRA, NO_NAME], (
         "a recipient with no name still gets the approved wording, just the plain greeting")
 
 
@@ -98,6 +98,6 @@ def test_template_mode_refuses_a_recipient_who_also_carries_their_own_body():
 
 def test_without_template_mode_nothing_changes():
     rows = [{"line": 1, "to": "+436600000001", "body": "eigener Text", "name": "Ivan"},
-            {"line": 2, "to": "+436600000002", "body": None, "name": "Valentyn"}]
+            {"line": 2, "to": "+436600000002", "body": None, "name": "Mira"}]
     items = _tool().plan_broadcast(rows, "gemeinsamer Text")
     assert [i["body"] for i in items] == ["eigener Text", "gemeinsamer Text"]

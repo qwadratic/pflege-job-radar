@@ -138,7 +138,7 @@ if BRAIN not in ("deterministic", "luna"):
     raise RuntimeError(f"WA_BRAIN={BRAIN!r} is not 'deterministic' or 'luna'")
 
 # Claude model + reasoning effort for the luna brain. Raised to Opus 5 at "max" effort, Ivan
-# 2026-09-24, in direct response to Valentyn's live CONVERGE incident (his test thread:
+# 2026-09-24, in direct response to the parallel operator's live CONVERGE incident (his test thread:
 # "Wo ist die Klinik?" asked twice, three non-converging replies, empty card -- see
 # luna_brain.py::_checked_reply's CONVERGE check, added the same day). Ivan's own words: "повысь
 # до опуса 5. повысь thinking." -- an explicit, later override of TASK-287's "high"/Sonnet choice

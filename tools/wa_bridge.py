@@ -73,7 +73,7 @@ does not canonicalize, a repeated recipient, a row with no body and no common bo
 is refused, naming the line. Nothing is sent from a file we cannot read completely -- a broadcast
 that silently skips a recipient is a broadcast nobody can audit.
 
-The real test-handset numbers (Ivan, Valentyn) live in the gitignored ``config/wa-test-numbers.json``
+The real test-handset numbers (Ivan, the parallel operator) live in the gitignored ``config/wa-test-numbers.json``
 -- shape: ``config/wa-test-numbers.example.json``. Use it as ``--file config/wa-test-numbers.json``.
 
 THE HUMAN ESCAPE HATCH (TASK-360 round 5, decision-9 2026-09-22). Automatic attachment is gone:

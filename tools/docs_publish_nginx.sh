@@ -5,7 +5,7 @@
 #
 # Host: ki-workflow.agency (colleague's secondary hostname of the marketing site, valid LE cert).
 # We ONLY insert one additive prefix location; his locations (/, = /outlook-signature.html,
-# ~ ^/valentyn-signature, acme-challenge) are never touched or shadowed — a prefix match on
+# ~ ^/<operator>-signature, acme-challenge) are never touched or shadowed — a prefix match on
 # /pflege-docs/ cannot capture any of them. Config is backed up, nginx -t'd, auto-rolled-back,
 # and his site is regression-checked after the reload.
 set -euo pipefail

@@ -6,7 +6,7 @@
 # the real client identity (name, mail domains); see config/wa-client.example.json -- this repo is
 # public and TASK-162 says the client's name is never committed here
 config/wa-client.json
-# real WhatsApp test-handset numbers (Ivan/Valentyn); see config/wa-test-numbers.example.json
+# real WhatsApp test-handset numbers (Ivan/the parallel operator); see config/wa-test-numbers.example.json
 config/wa-test-numbers.json
 config/wa-test-numbers-reset.csv
 # same reason -- old recipient-file location, kept gitignored so an existing local copy on a
