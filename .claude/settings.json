@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/claude/repo/pflege-board/tools/operator_queue_hook.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/operator_queue_hook.py\""
           }
         ]
       }
