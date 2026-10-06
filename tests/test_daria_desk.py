@@ -681,7 +681,7 @@ def test_a_desk_config_that_reads_the_mailbox_any_other_way_than_daria_inbox_is_
 
 
 def test_a_command_only_address_commands_but_is_never_written_to(desk, monkeypatch):
-    """Ivan, 2026-10-06: Valentyn's second mailbox may command the mailings; every answer goes to the operators' main mailboxes."""
+    """Ivan, 2026-10-06: an operator's second mailbox may command the mailings; every answer goes to the operators' main mailboxes."""
     raws = []
     for frm, mid in ((OPS[1], "<a@op>"), (CMD, "<b@cmd>"), ("clinic@example.de", "<c@clinic>")):
         m = EmailMessage()
