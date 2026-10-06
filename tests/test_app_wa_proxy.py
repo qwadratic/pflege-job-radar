@@ -373,3 +373,11 @@ def test_only_get_is_served_and_every_other_harness_route_stays_owner_only(clien
         assert client.get(path).status_code == 401
     assert client.get(f"/api/wa/pro/status/{TOKEN}/").status_code == 404 and client.get(f"/api/s/{TOKEN}/").status_code == 404
     assert calls == []
+
+
+def test_the_two_typefaces_come_from_this_server_and_nothing_else_does(client):
+    for name in ("archivo-black.woff2", "jetbrains-mono.woff2"):
+        r = client.get(f"/fonts/{name}")
+        assert (r.status_code, r.headers["content-type"], r.content[:4]) == (200, "font/woff2", b"wOF2")
+    for name in ("x.woff2", "..%2Fpro.html", "archivo-black.woff2.bak", "%2e%2e%2f%2e%2e%2f.env"):
+        assert client.get(f"/fonts/{name}").status_code == 404

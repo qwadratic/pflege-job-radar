@@ -374,7 +374,7 @@ def test_required_role_matrix():
 PUBLIC_ROUTES = [
     ("GET", "/"), ("GET", "/login"), ("GET", "/health"), ("GET", "/dock.css"), ("GET", "/dock.js"),
     ("GET", "/docs/{name}"), ("GET", "/docs/krankenhausplan_2026.pdf"), ("GET", "/skill/{name}"),
-    ("GET", "/s/{token}"), ("GET", "/s/{token}/"), ("GET", "/s/{token}/{name}"),     # status documents: the token in the link is the access check (TASK-436)
+    ("GET", "/fonts/{name}"), ("GET", "/s/{token}"), ("GET", "/s/{token}/"), ("GET", "/s/{token}/{name}"),     # status documents: the token in the link is the access check (TASK-436)
     ("GET", "/photos/{clinic_id}"),
     ("GET", "/api/docs"), ("GET", "/api/stats"), ("GET", "/api/facets"), ("GET", "/api/taxonomy"),
     ("GET", "/api/ontology"), ("GET", "/api/cities"), ("GET", "/api/plan"), ("GET", "/api/search"),
