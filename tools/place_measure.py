@@ -264,14 +264,14 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
     wcsv(out_dir, "clinic_places.csv", [{"clinic_id": cid, "name": clinic_by[cid]["name"], "town": clinic_by[cid]["town"], "plz": i["plz"], "kind": i["kind"],
                                          "evidence": i["evidence"], "other_plz": " ".join(i["other_plz"]), "ars": i["ars"]} for cid, i in sorted(cinfo.items())])
     wcsv(out_dir, "boards_status.csv", [{"board": b, "result": s.get("result"), "rows": s.get("rows"), "seconds": s.get("seconds"),
-                                         "html_pages_for_rows": s.get("html_pages_for_rows"), "page_place": s.get("page_place"), "error": (s.get("error") or "")[:300]}
+                                         "html_pages_for_rows": s.get("html_pages_for_rows"), "page_place": s.get("page_place"), "adapter_error": (s.get("adapter_error") or "")[:200], "error": (s.get("error") or "")[:300]}
                                         for b, s in sorted(boards.items())])
     cat_rows = [{"rule": g, "n": sum(c.values()), **{k: c.get(k, 0) for k in ("agree", "agree_weak", "disagree", "unknown")},
                  "mean_confidence": round(sum(conf_sum[g]) / max(len(conf_sum[g]), 1), 3)}
                 for g, c in sorted(cat_by_rule.items(), key=lambda kv: -sum(kv[1].values()))]
     wcsv(out_dir, "per_rule.csv", cat_rows)
     wcsv(out_dir, "posting_match.csv", [{"posting_id": pid, "clinic_id": po["clinic_id"], "rule": po["clinic_match_rule"], "category": results[pid].category,
-                                         "level": results[pid].level, "confidence": round(results[pid].confidence, 4), "conflict": int(results[pid].conflict),
+                                         "level": results[pid].level, "posting_kind": results[pid].best[0].kind if results[pid].best else "", "clinic_kind": results[pid].best[1].kind if results[pid].best else "", "confidence": round(results[pid].confidence, 4), "conflict": int(results[pid].conflict),
                                          "board": board_of[pid]} for po in postings for pid in [po["posting_id"]] if pid in results])
     summary = {
         "gazetteer": {"municipalities": len(gaz.munis), "plz": len(gaz._plz)},
@@ -288,7 +288,7 @@ def measure(gaz, clinics, postings, obs, boards, by_url, out_dir, suspect_is_sta
         "match": {"per_rule": cat_rows},
         "unlinked": dict(unl),
         "plz_vs_city_conflicts_in_one_claim": n_conflict,
-        "agree_by_level": dict(by_level), "agree_municipality_but_another_clinic_has_the_plz": dict(site_doubt),
+        "agree_by_level": dict(by_level), "agree_by_clinic_claim_kind": dict(collections.Counter(f'{results[po["posting_id"]].level}/{results[po["posting_id"]].best[1].kind}' for po in postings if po.get("clinic_id") and results[po["posting_id"]].category == "agree")), "agree_municipality_but_another_clinic_has_the_plz": dict(site_doubt),
         "own_claims_conflict": dict(conflicts),
         "unknown_reasons": {g: dict(collections.Counter(results[po["posting_id"]].detail for po in postings if po.get("clinic_id") and rule_group(po["clinic_match_rule"]) == g
                                                         and results[po["posting_id"]].category == "unknown")) for g in cat_by_rule if g != "ALL linked"},
