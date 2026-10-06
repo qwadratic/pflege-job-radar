@@ -1781,7 +1781,7 @@ function waRailSev(a){ const r=a.rail||{}, ps=r.phone?.state, bad=[], warn=[], j
   if(je) warn.push(t(je===1?"wa_r_w_err1":"wa_r_w_err",{n:je})); if(jo) warn.push(t(jo===1?"wa_r_w_over1":"wa_r_w_over",{n:jo}));
   if(waAge(a,a.queue?.as_of)>WA_STALE.mirror) warn.push(t("wa_r_w_stale"));
   const unk=r.tunnel?.up==null&&r.watcher?.alive==null&&(!ps||ps==="unknown");
-  return {sev:bad.length?"bad":warn.length?"warn":unk?"unk":"ok",bad,warn}; }
+  return {sev:bad.length?"bad":unk?"unk":warn.length?"warn":"ok",bad,warn}; }   // nothing known about the bridge is never "running", whatever the jobs say
 function waTabs(cur){ const s=RA.act?waRailSev(RA.act):null, n=waCount();
   const b=(k,l,...x)=>el("button",{type:"button",role:"tab","aria-selected":String(cur===k),onclick:()=>{ if(cur!==k) location.hash="#/leads"+(k==="rail"?"?tab=rail":""); }},l,...x);
   return el("div",{class:"tabs wa-tabs",role:"tablist"},b("leads",t("wa_tab_leads"),n?el("span",{class:"lb manager",text:num(n)}):null),

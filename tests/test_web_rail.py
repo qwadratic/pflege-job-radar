@@ -5,6 +5,7 @@ The first and the last test run the built page against its own offline mock. The
 each state (a dead tunnel, a frozen mirror, an unknown value, a missing cursor) is one the test wrote down itself.
 """
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -116,6 +117,22 @@ def test_a_dead_bridge_is_the_headline_and_shows_on_the_leads_tab_too(browser_an
     _done(page)
 
 
+def test_a_bridge_nobody_has_heard_from_is_unknown_never_running(browser_and_base):
+    """The live harness on 2026-10-06: no snapshot yet, the relay sync failing for days. Jobs with errors must not turn
+    an unknown bridge into "running, with warnings"."""
+    none = {"queued": 0, "running": 0, "done": 0, "failed": 0, "other": {}, "as_of": None}
+    act = _activity(snapshot_at=None, queue=dict(none), human=dict(none),
+                    rail={"tunnel": {"up": None, "since": None, "last_error": None}, "phone": {"state": "unknown", "since": None},
+                          "watcher": {"alive": None, "heartbeat_at": None}, "last_sync_at": "2026-09-27T11:22:26+00:00"},
+                    jobs=[_job("catchup"), _job("relay_sync", last_error={"code": "relay_sync_failed"}, overdue=True, ok_24h=None, failed_24h=None)])
+    page = _page(browser_and_base, act, lambda q: {**_ops([]), "mirrored_at": None})
+    assert page.inner_text("h1") == "Phone rail state unknown"
+    assert [x.text_content() for x in page.locator(".rl-why li").all()] == ["1 job with an error"]
+    assert [x.text_content() for x in page.locator(".rl-t .v").all()][:3] == ["unknown", "unknown", "unknown"]
+    assert page.locator(".wa-tabs button", has_text="Rail & jobs").locator(".dot.unk").count() == 1
+    _done(page)
+
+
 def test_a_frozen_queue_mirror_is_called_stale_and_job_states_are_named(browser_and_base):
     act = _activity(queue={"queued": 2, "running": 0, "done": 4, "failed": 1, "other": {"parked": 3}, "as_of": "2026-09-30T11:50:00+00:00"},
                     jobs=[_job("followups", overdue=True, next_run_at="2026-09-30T11:45:00+00:00"),
@@ -205,4 +222,26 @@ def test_the_rail_tab_fits_a_phone(browser_and_base):
     page = _open(browser, f"{base}/pro.html?mock=1#/leads?tab=rail", width=390)
     page.wait_for_selector(".rl-grid")
     assert not page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth + 1")
+    _done(page)
+
+
+def test_the_tab_reads_the_harness_s_own_fixtures(browser_and_base):
+    """tests/fixtures/wa_pro_api/ is what the harness's serializers emit (tests/test_wa_pro_fixtures.py holds them to it),
+    so this is the contract check between the two sides: every field the tab reads is where the harness puts it."""
+    fx = Path(__file__).parent / "fixtures" / "wa_pro_api"
+    load = lambda n: json.loads((fx / f"{n}.json").read_text(encoding="utf-8"))
+    first, second = load("ops"), load("ops_page2")
+    page = _page(browser_and_base, load("activity_tunnel_down"), lambda q: second if "before_id" in q else first)
+    assert page.inner_text("h1") == "The phone rail is down"
+    assert page.locator(".rl-why li.bad").first.text_content() == "Tunnel down"
+    assert "RelayError" in page.locator(".rl-t").nth(0).text_content()
+    assert [r.get_attribute("data-job") for r in page.locator("tr[data-job]").all()] == [j["job"] for j in load("activity")["jobs"]]
+    assert [r.get_attribute("data-op") for r in page.locator("tr[data-op]").all()] == [r["id"] for r in first["rows"]]
+    page.click("#rl-older")
+    page.wait_for_selector(f'tr[data-op="{second["rows"][-1]["id"]}"]')
+    assert [r.get_attribute("data-op") for r in page.locator("tr[data-op]").all()] == [r["id"] for r in first["rows"] + second["rows"]]
+    assert [q["before_id"] for q in page.ops_queries if "before_id" in q][0] == str(first["next_before_id"])
+    # the tunnel went down 30 s before this answer, the mirror is 2 min old: the one alert is the frozen mirror, no contract error
+    assert [x.text_content()[:38] for x in page.locator(".wa-note.bad").all()] == ["The queue mirror stopped 2 min ago. Th"]
+    assert page.locator("#rl-older").count() == 0
     _done(page)
