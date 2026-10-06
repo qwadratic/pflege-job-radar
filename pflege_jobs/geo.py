@@ -40,7 +40,7 @@ alone which branch fired and why -- same convention as pflege_jobs.classify (rol
 """
 import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
@@ -367,6 +367,21 @@ def resolve(city=None, plz=None, region=None, *, text=None) -> Geo:
 # The registry has no coordinates of its own. A clinic's point is the centre of its municipality (the Destatis
 # row of this table), which is what a map of 651 sites needs and all the data supports: clinics of one town
 # share one point, and the source says so ("municipality_centroid"), it is no address.
+#
+# TASK-431 step 1: a town string alone can name several Bavarian municipalities (Altdorf, Auerbach, Aschau, Haag,
+# Bernried, Bruckberg ...) and the first row of the table used to win. The clinic's Landkreis decides among them
+# (data/geo/bayern_kreise.csv: the 96 Kreis keys, ARS[:5]); and `rule` of the returned Geo is the public geo_source:
+#   plz                              the clinic's PLZ is in the table
+#   municipality_centroid_override   data/geo/clinic_town_overrides.json named the municipality
+#   municipality_centroid_by_kreis   the town string names several municipalities (or none by name), the Landkreis chose
+#   municipality_centroid            the town string names one municipality
+_KREISE_PATH = _DATA_DIR / "bayern_kreise.csv"
+# The Krankenhausplan's short form of Landkreis 'Neustadt a.d.Aisch-Bad Windsheim' (7 registry rows).
+_KREIS_ALIASES = {"Neustadt / Bad Windsheim": "09575"}
+_KREIS_ART = re.compile(r"^\s*(landkreis|kreisfreie\s+stadt|landeshauptstadt)\b", re.I)
+_KREIS_WORDS = re.compile(r"\b(landkreis|kreisfreie\s+stadt|landeshauptstadt|stadt|kreis)\b", re.I)
+_KREIS_BY_KEY = {}  # fold of a Kreis name -> [(art, code)]; 'Ansbach' is both a Stadt and a Landkreis
+_BY_KREIS = {}      # Kreis code -> [Bavarian destatis rows]
 _TOWN_OVERRIDES_PATH = _DATA_DIR / "clinic_town_overrides.json"
 _FOLD_SUBS = ((r"\ba\.\s*d\.|\ban der\b", "ad"), (r"\bo\.\s*d\.|\bob der\b", "od"), (r"\bi\.\s*d\.|\bin der\b", "id"),
               (r"\ba\.|\bam\b|\ban\b", "a"), (r"\bb\.|\bbei\b", "b"), (r"\bi\.|\bim\b|\bin\b", "i"), (r"/", " "))
@@ -385,14 +400,37 @@ def fold_town(s):
     return re.sub(r"[^a-z0-9]+", "", x)
 
 
+def _kreis_key(s):
+    return fold_town(_KREIS_WORDS.sub(" ", s))
+
+
+def kreis_codes(landkreis):
+    """The Bavarian Kreis keys (ARS[:5], e.g. '09571') a registry Landkreis string names: 'Landkreis Ansbach' ->
+    {'09571'}, 'Kreisfreie Stadt Ansbach' -> {'09561'}, the bare 'Ansbach' of the Reha rows -> both. Empty set when
+    the string is empty or names no Bavarian Kreis."""
+    s = (landkreis or "").strip()
+    if not s:
+        return set()
+    m = _KREIS_ART.match(s)
+    art = None if not m else ("Landkreis" if m.group(1).lower() == "landkreis" else "Kreisfreie Stadt")
+    return {code for a, code in _KREIS_BY_KEY.get(_kreis_key(s), ()) if art in (None, a)}
+
+
 def _load_towns():
     import json
     for rows in _NAME_ROWS.values():
         for r in rows:
             if r["land"] == "BY":
-                _BY_FOLDED.setdefault(fold_town(r["gemeindename"]), []).append(r)
+                r["_fold"] = fold_town(r["gemeindename"])
+                _BY_FOLDED.setdefault(r["_fold"], []).append(r)
+                _BY_KREIS.setdefault(r["ars"][:5], []).append(r)
                 _BY_EXACT[r["gemeindename"]] = r
                 _BY_EXACT[f"{r['gemeindename']}@{r['plz']}"] = r
+    with open(_KREISE_PATH, newline="", encoding="utf-8") as f:
+        for k in csv.DictReader(f):
+            _KREIS_BY_KEY.setdefault(_kreis_key(k["name"]), []).append((k["art"], k["code"]))
+    for alias, code in _KREIS_ALIASES.items():
+        _KREIS_BY_KEY.setdefault(_kreis_key(alias), []).append(("Landkreis", code))
     with open(_TOWN_OVERRIDES_PATH, encoding="utf-8") as f:
         _TOWN_OVERRIDES.update({k: v for k, v in json.load(f).items() if not k.startswith("_")})
     missing = sorted(set(_TOWN_OVERRIDES.values()) - set(_BY_EXACT))
@@ -403,23 +441,53 @@ def _load_towns():
 _load_towns()
 
 
-def clinic_centroid(town, plz=None) -> Optional[Geo]:
-    """Centre of the Bavarian municipality a clinic's `town` (and `plz`) names, None when nothing in the table
-    names exactly one point. Order: the override file (a registry town the table spells differently, or a
-    part of a town: 'Augsburg-Göggingen'), resolve() with the PLZ, then the folded Destatis name (one point
-    only: 'Neustadt' alone stays None, 'Neustadt a.d. Aisch' is found)."""
+def _named_in_kreis(town, codes):
+    """The one municipality (a Destatis row) of the Kreise `codes` that the town string names -- its full name, its
+    folded name, its bare stem, or a longer name that starts with that stem ('Bernried/Obb.' -> 'Bernried am Starnberger
+    See') -- None when none or several different points do."""
+    name = normalize_name(town)
+    stem = bare_stem(name)
+    fold = fold_town(town)
+    hits = [r for c in sorted(codes) for r in _BY_KREIS.get(c, ())
+            if r["normalized_name"] == name or r["_fold"] == fold or (stem and (r["bare_stem"] == stem or r["normalized_name"].startswith(stem + " ")))]
+    return hits[0] if hits and len({(r["lat"], r["lon"]) for r in hits}) == 1 else None
+
+
+def _points_named(town):
+    """The distinct points of all Bavarian municipalities the town string names by full name, folded name or bare stem."""
+    name = normalize_name(town)
+    rows = [r for r in _NAME_ROWS.get(name, []) if r["land"] == "BY"] + _BY_FOLDED.get(fold_town(town), []) \
+        + [r for r in _STEM_ROWS.get(bare_stem(name), []) if r["land"] == "BY"]
+    return {(r["lat"], r["lon"]) for r in rows}
+
+
+def clinic_centroid(town, plz=None, landkreis=None) -> Optional[Geo]:
+    """Centre of the Bavarian municipality a clinic's `town`, `plz` and `landkreis` name, None when nothing in the
+    table names exactly one point; `rule` of the result says which of the four rules above placed it. Order: the
+    override file (a registry town the table spells differently, or a part of a town: 'Augsburg-Göggingen'), the
+    PLZ, the municipality of the clinic's Landkreis that the town string names, then resolve() / the folded Destatis
+    name / the Bavarian bare stem on the town alone (one point only: 'Neustadt' alone stays None, 'Neustadt a.d.
+    Aisch' is found)."""
     t = (town or "").strip()
     if t in _TOWN_OVERRIDES:
-        return _row_geo(_BY_EXACT[_TOWN_OVERRIDES[t]], "BY", "clinic_town_override")      # "Berg@82335": two Bavarian Gemeinden are called Berg
+        return _row_geo(_BY_EXACT[_TOWN_OVERRIDES[t]], "BY", "municipality_centroid_override")      # "Berg@82335": two Bavarian Gemeinden are called Berg
     g = resolve(city=t or None, plz=plz)
+    if g.land == "BY" and g.lat is not None and g.rule.startswith("plz_exact:"):
+        return replace(g, rule="plz")
+    codes = kreis_codes(landkreis)
+    row = _named_in_kreis(t, codes) if t and codes else None
+    if row:
+        # the Landkreis only decided when the town string alone does not lead to this very point
+        by_name = _points_named(t) == {(row["lat"], row["lon"])}
+        return _row_geo(row, "BY", "municipality_centroid" if by_name else "municipality_centroid_by_kreis")
     if g.land == "BY" and g.lat is not None:
-        return g
+        return replace(g, rule="municipality_centroid")
     rows = _BY_FOLDED.get(fold_town(t)) if t else None
     if rows and len({(r["lat"], r["lon"]) for r in rows}) == 1:
-        return _row_geo(rows[0], "BY", "clinic_town_folded")
+        return _row_geo(rows[0], "BY", "municipality_centroid")
     # The registry lists Bavarian clinics only, so a bare name ('Weiden', 'Lindau') may be read against the
     # Bavarian municipalities alone: it counts when exactly one of them starts with it ('Weiden i.d.OPf.').
     rows = [r for r in _STEM_ROWS.get(bare_stem(normalize_name(t)), []) if r["land"] == "BY"] if t else []
     if rows and len({(r["lat"], r["lon"]) for r in rows}) == 1:
-        return _row_geo(rows[0], "BY", "clinic_town_bavarian_stem")
+        return _row_geo(rows[0], "BY", "municipality_centroid")
     return None

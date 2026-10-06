@@ -293,10 +293,14 @@ does not interpret them.
 ### Clinic row
 `clinic_id, name, town, operator, landkreis, regierungsbezirk, versorgungsstufe, traegerart, beds, day_places, fachrichtungen[], status, website, careers_url, ats_type, fetch (adapter|firecrawl), fetch_label, routable, route_reason, walled, jobs_open, jobs_fresh, jobs_live, last_crawl_at, last_crawl_status, last_crawl_mode, career_profile, photo_url, presentation`
 
-`lat`, `lon` (WGS84), `geo_source` (`municipality_centroid`) and `geo_name` (the Destatis municipality the point is the centre of) place the
-clinic on a map. It is the centre of the clinic's town, no address: clinics of one town share one point (München: 58). `null` in all four
+`lat`, `lon` (WGS84), `geo_source` and `geo_name` (the Destatis municipality the point is the centre of) place the
+clinic on a map. It is the centre of the clinic's municipality, no address: clinics of one town share one point (München: 58). `null` in all four
 when the geo table names no single point for the town; every one of the 651 registry clinics has one on 2026-10-02 (pflege_jobs/geo.py
-`clinic_centroid`, data/geo/clinic_town_overrides.json). Public like the rest of the row.
+`clinic_centroid`, data/geo/clinic_town_overrides.json). `geo_source` names the rule that placed the clinic (TASK-431): `plz` (the clinic's
+PLZ is in the geo table), `municipality_centroid_override` (the override file named the municipality), `municipality_centroid_by_kreis` (the town
+string names several Bavarian municipalities, the clinic's `landkreis` chose one: Altdorf, Auerbach, Aschau, Haag, Bernried, Bruckberg) or
+`municipality_centroid` (the town string names one municipality). Until 2026-10-06 the value was always `municipality_centroid`. Public like
+the rest of the row.
 
 `photo_url` is `/photos/{clinic_id}` when a photo is on file for this clinic, else `null`. Backed by the
 `clinic_photos` table (app/runs.py: `clinic_id, path, source default 'maps', fetched_at`, primary key

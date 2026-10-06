@@ -287,8 +287,8 @@ def _build():
         c["size"] = size_bucket(c.get("beds"), tax)
         # A point for a map (TASK-200): the centre of the clinic's municipality, no address; null + null when the
         # geo table names no single point for the town (the unmatched ones are listed by tests/test_clinic_geo.py).
-        g = G.clinic_centroid(c.get("town"), c.get("plz"))
-        c["lat"], c["lon"], c["geo_source"], c["geo_name"] = (g.lat, g.lon, "municipality_centroid", g.matched_name) if g else (None, None, None, None)
+        g = G.clinic_centroid(c.get("town"), c.get("plz"), c.get("landkreis"))
+        c["lat"], c["lon"], c["geo_source"], c["geo_name"] = (g.lat, g.lon, g.rule, g.matched_name) if g else (None, None, None, None)
         c.update(agg.get(c["clinic_id"], {"jobs_open": 0, "jobs_fresh": 0, "jobs_live": 0}))
         # Display-only signal for a human sorting/scanning the clinic list -- a big hospital with very
         # few open postings is worth a human's second look, but this number is never read by any

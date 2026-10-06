@@ -173,3 +173,27 @@ def registry_snapshot(monkeypatch):
 
     monkeypatch.setattr(A, "rest_get_all", _fake_rest_get_all)
     return fixture
+
+
+@pytest.fixture(scope="module")
+def full_registry(tmp_path_factory):
+    """The 651 registry rows of 2026-10-06 (tests/fixtures/registry_clinics_2026-10-06.json: raw `clinics` table values,
+    only the fields the clean-up tests read) run through app/data.py:_build(), the way the live snapshot is built, with
+    the real taxonomy. Returns the snapshot dict. Built once per module; offline (rest_get_all is the fixture, the
+    SQLite file is a temp one)."""
+    from app import config as A
+    from app import data as D
+    from app import runs as R
+
+    rows = json.loads((pathlib.Path(__file__).resolve().parent / "fixtures" / "registry_clinics_2026-10-06.json").read_text(encoding="utf-8"))
+    tmp = tmp_path_factory.mktemp("full_registry")
+    mp = pytest.MonkeyPatch()
+    mp.setattr(A, "SQLITE_PATH", tmp / "app.sqlite")
+    mp.setattr(A, "DATA_DIR", tmp)
+    mp.setattr(A, "rest_get_all", lambda path, params=None, page=1000, timeout=120: copy.deepcopy(rows) if path == "clinics" else [])
+    mp.setattr(D, "_routing", lambda cs: {})
+    try:
+        R.init()
+        yield D._build()
+    finally:
+        mp.undo()
