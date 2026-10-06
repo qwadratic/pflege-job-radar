@@ -17,8 +17,13 @@ def test_the_page_says_where_we_applied_and_that_the_next_step_comes_by_chat():
     assert "<h1>Wir haben Ihr Profil an <em>5 Kliniken</em> geschickt.</h1>" in page
     assert "Jetzt warten wir auf die Kliniken. Sobald es einen nächsten Schritt gibt, schreiben wir Ihnen im WhatsApp-Chat." in page
     assert "<b>5</b><span>Kliniken haben Ihr Profil</span>" in page and "<b>3</b><span>weitere Kliniken passen</span>" in page
-    names = [c["name"] for c in DATA["sent"]]
-    assert sorted(names, key=page.index) == names                              # the order given, nothing is ranked
+    names = [c["name"] for c in DATA["sent"]]                                  # the best match first, the rest in the order given
+    assert sorted(names, key=page.index) == ["Kreisklinik Beispielheim"] + [n for n in names if n != "Kreisklinik Beispielheim"]
+    assert page.count('class="card best"') == 1 and page.count("Passt am besten") == 1
+    assert page.index('class="card best"') < page.index("Kreisklinik Beispielheim") < page.index("Klinikum Musterstadt")
+    with pytest.raises(ValueError, match="at most one"):
+        SP.render({**DATA, "sent": [{**c, "best": True} for c in DATA["sent"]]})
+    assert 'class="card best"' not in SP.render({**DATA, "sent": [{**c, "best": False} for c in DATA["sent"]]})
     assert page.count('<span class="st">Gesendet · ') == 5 and '<span class="st">Gesendet · 22.09.</span>' in page
     one = SP.render({**DATA, "sent": DATA["sent"][:1], "more": DATA["more"][:1]})
     assert "an <em>1 Klinik</em> geschickt" in one and "<span>Klinik hat Ihr Profil</span>" in one and "<span>weitere Klinik passt</span>" in one
@@ -46,6 +51,15 @@ def test_the_chat_button_goes_to_the_number_the_data_names_and_a_page_without_it
         SP.render({k: v for k, v in DATA.items() if k != "chat_url"})
 
 
+def test_her_profile_can_be_downloaded_as_a_pdf_lying_next_to_the_page():
+    page = SP.render(DATA)
+    assert '<a class="dl" href="profil.pdf" download>Profil als PDF herunterladen' in page
+    assert 'class="dl"' not in SP.render({k: v for k, v in DATA.items() if k != "profile_pdf"})
+    for bad in ("../profil.pdf", "/etc/x.pdf", "Profil.pdf", "https://example.org/a.pdf", "profil.html", ""):
+        with pytest.raises(ValueError, match="profile_pdf"):
+            SP.render({**DATA, "profile_pdf": bad})
+
+
 def test_every_text_is_escaped_and_nothing_is_fetched_from_a_third_party():
     evil = {**DATA, "wishes": [{"label": "<b>x", "text": '"><script>alert(1)</script>'}]}
     page = SP.render(evil)
@@ -54,7 +68,7 @@ def test_every_text_is_escaped_and_nothing_is_fetched_from_a_third_party():
     page = SP.render(DATA)
     assert "<script" not in page and "<img" not in page and "<link" not in page
     assert [x.split(")")[0] for x in page.split("url(")[1:]] == ["/fonts/archivo-black.woff2", "/fonts/jetbrains-mono.woff2"]
-    assert [x.split('"')[0] for x in page.split('href="')[1:]] == [DATA["chat_url"]]
+    assert [x.split('"')[0] for x in page.split('href="')[1:]] == ["profil.pdf", DATA["chat_url"]]
     assert page.count("http") == 1                                             # the chat link; no third party is asked for anything
 
 

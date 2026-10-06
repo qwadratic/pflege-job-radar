@@ -19,7 +19,10 @@ DATA (every text is shown as given, escaped; German, formal address):
                Required, and only this form: the page ends in a button back to that chat, and a page without it is refused.
     wishes     [{"label": "Station", "text": "PIC, sonst Intensiv"}]          what she asked for, most important first
     profile    [{"label": "Beruf", "value": "Pflegefachfrau"}]                what the clinics see, nothing else is shown
-    sent       clinics that have her profile, in the order given:
+    profile_pdf  optional file name of her anonymised profile as a PDF, lying next to index.html ("profil.pdf"); the page
+               links to it for download. The name has the shape the harness serves (app/wa/status_docs.py PDF_NAME_RE).
+    sent       clinics that have her profile, in the order given; the one marked "best": true (at most one) comes first
+               and is labelled as the best match, the clinic the WhatsApp message describes:
                {"name", "town", "travel", "sent_at", "note", "jobs": [..], "housing", "fit": {..}}
                sent_at "2026-09-22" is the only thing said about the clinic's side; a clinic's reply is not a field
     more       clinics that fit and do not have her profile yet: the same fields without sent_at, plus
@@ -33,6 +36,7 @@ import sys
 from datetime import date
 
 CHAT_URL = re.compile(r"https://wa\.me/\d{6,15}")
+PDF_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,80}\.pdf")     # app/wa/status_docs.py PDF_NAME_RE
 FIT_KEYS = (("station", "Station"), ("near", "Nähe"), ("housing", "Wohnung"))
 FIT_MARK = {"yes": ("✓", "passt"), "part": ("~", "teilweise"), "no": ("✗", "passt nicht")}
 
@@ -61,7 +65,9 @@ section{padding:34px 0 0} h2{font-size:clamp(20px,5.2vw,26px)} .sub{color:var(--
 .card .hd{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
 .card h3{font:500 15.5px/1.3 inherit;font-family:inherit;margin:0;overflow-wrap:anywhere} .card .where{color:var(--ink-2);font-size:12.5px;margin:2px 0 0}
 .st{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;white-space:nowrap;border:1px solid var(--accent);color:var(--accent)}
+.card.best{border-color:var(--ink);box-shadow:inset 4px 0 0 var(--neon)} .card .tag{display:inline-block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;background:var(--neon);color:var(--ink);padding:1px 7px;margin:0 0 8px}
 .card .note{margin:9px 0 0;font-size:13.5px}
+.dl{display:inline-block;margin:14px 0 0;border:1px solid var(--accent);color:var(--accent);padding:8px 14px;text-decoration:none;font-weight:500} .dl small{font-weight:400;color:var(--ink-3);margin-left:6px}
 .fit{display:flex;flex-wrap:wrap;gap:6px;margin:11px 0 0;padding:0;list-style:none} .fit li{font-size:12px;padding:2px 8px 2px 6px;white-space:nowrap;border:1px solid var(--line);color:var(--ink-3)}
 .fit li b{font-weight:500;margin-right:5px} .fit .yes{background:var(--neon);border-color:var(--neon);color:var(--ink)} .fit .part{background:var(--sky);border-color:var(--sky);color:var(--ink)} .fit .no b{color:var(--red)}
 .facts{margin:11px 0 0;font-size:13px;color:var(--ink-2)} .facts div{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;padding:3px 0} .facts dt{color:var(--ink-3);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding-top:2px} .facts dd{margin:0;overflow-wrap:anywhere}
@@ -90,7 +96,9 @@ def _n(n, one, many):
 
 
 def _card(c, sent):
-    out = [f'<article class="card"><div class="hd"><div><h3>{e(c["name"])}</h3>']
+    best = sent and c.get("best") is True
+    out = [f'<article class="card{" best" if best else ""}">' + ('<p class="tag">Passt am besten</p>' if best else "") +
+           f'<div class="hd"><div><h3>{e(c["name"])}</h3>']
     where = " · ".join(x for x in (c.get("town"), c.get("travel")) if x)
     if where:
         out.append(f'<p class="where">{e(where)}</p>')
@@ -121,6 +129,12 @@ def render(data):
     if not CHAT_URL.fullmatch(chat):
         raise ValueError(f"chat_url must be https://wa.me/<digits>, the number the candidate already chats with; got {chat!r}")
     sent, more = data.get("sent") or [], data.get("more") or []
+    if sum(c.get("best") is True for c in sent) > 1:
+        raise ValueError("at most one clinic in `sent` is the best match")
+    sent = sorted(sent, key=lambda c: c.get("best") is not True)               # stable: the best match first, the rest as given
+    pdf = data.get("profile_pdf")
+    if pdf is not None and not PDF_NAME.fullmatch(pdf):
+        raise ValueError(f"profile_pdf must be a file name like profil.pdf (lowercase, no path); got {pdf!r}")
     if sent:
         h1 = f'Wir haben Ihr Profil an <em>{_n(len(sent), "Klinik", "Kliniken")}</em> geschickt.'
         lead = "Jetzt warten wir auf die Kliniken. Sobald es einen nächsten Schritt gibt, schreiben wir Ihnen im WhatsApp-Chat."
@@ -144,7 +158,7 @@ def render(data):
     legend = ('<p class="legend"><span><b>✓</b> passt</span><span><b>~</b> teilweise</span><span><b>✗</b> passt nicht</span></p>')
     p.append('<section><h2>Dorthin haben wir Ihr Profil geschickt</h2>')
     if sent:
-        p.append('<p class="sub">Die Zeichen zeigen, wie die Klinik zu Ihren Wünschen passt.</p>' + legend)
+        p.append('<p class="sub">Die ganze Liste. Die Zeichen zeigen, wie die Klinik zu Ihren Wünschen passt.</p>' + legend)
         p.append('<div class="cards">' + "".join(_card(c, True) for c in sent) + "</div>")
     else:
         p.append('<p class="empty">Noch an keine Klinik.</p>')
@@ -168,10 +182,11 @@ def render(data):
     if data.get("profile"):
         p.append('<section><h2>Das sehen die Kliniken von Ihnen</h2><p class="sub">Ohne Ihren Namen und ohne Ihre Telefonnummer. '
                  'Die bekommt eine Klinik erst, wenn Sie zustimmen.</p><dl class="profile">' + "".join(
-                     f'<div><dt>{e(f["label"])}</dt><dd>{e(f["value"])}</dd></div>' for f in data["profile"]) + "</dl></section>")
+                     f'<div><dt>{e(f["label"])}</dt><dd>{e(f["value"])}</dd></div>' for f in data["profile"]) + "</dl>" +
+                 (f'<a class="dl" href="{e(pdf)}" download>Profil als PDF herunterladen<small>PDF</small></a>' if pdf else "") + "</section>")
 
-    p.append('<div class="ask"><h2>Fragen? Schreiben Sie uns.</h2><p>Alles Weitere beantworten wir im WhatsApp-Chat: wie es bei einer Klinik steht, '
-             'Details zu einer Stelle oder eine Änderung an Ihren Wünschen.</p>')
+    p.append('<div class="ask"><h2>Fragen? Schreiben Sie uns.</h2><p>Alles Weitere beantworten wir im WhatsApp-Chat: Details zu einer Klinik oder Stelle '
+             'oder eine Änderung an Ihren Wünschen.</p>')
     p.append(f'<a href="{e(chat)}">Zum WhatsApp-Chat</a>')
     p.append(f'</div><footer>Stand {_day(data["as_of"])}. Stellen und Wohnungen: Angaben der Kliniken, sie ändern sich schnell. '
              f'Eine Antwort der Klinik ist nicht sicher. Dieser Link ist nur für Sie: Wer ihn hat, kann diese Seite lesen.</footer></main></body></html>')

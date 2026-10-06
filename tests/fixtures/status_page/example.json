@@ -1,6 +1,7 @@
 {
   "as_of": "2026-10-06",
   "chat_url": "https://wa.me/490000000000",
+  "profile_pdf": "profil.pdf",
   "wishes": [
     {"label": "Station", "text": "PIC, sonst Intensiv. Ähnlich: IMC, Überwachung, Chest Pain Unit, Herzkatheterlabor."},
     {"label": "Ort", "text": "Am liebsten Erlangen oder Nürnberg, sonst Bayern."},
@@ -16,7 +17,7 @@
   "sent": [
     {"name": "Klinikum Musterstadt", "town": "Musterstadt", "travel": "ab Nürnberg 40 Min.", "sent_at": "2026-09-22",
      "fit": {"station": "yes", "near": "yes", "housing": "no"}, "jobs": ["Intensivstation"], "housing": "keine Angabe der Klinik"},
-    {"name": "Kreisklinik Beispielheim", "town": "Beispielheim", "travel": "ab Erlangen 55 Min.", "sent_at": "2026-10-02",
+    {"best": true, "name": "Kreisklinik Beispielheim", "town": "Beispielheim", "travel": "ab Erlangen 55 Min.", "sent_at": "2026-10-02",
      "fit": {"station": "yes", "near": "yes", "housing": "part"}, "jobs": ["Intensivstation", "IMC"], "housing": "Zimmer im Personalwohnheim für den Anfang"},
     {"name": "Universitätsklinikum Probedorf", "town": "Probedorf", "travel": "Umzug nötig", "sent_at": "2026-09-30",
      "note": "Weit von Erlangen und Nürnberg, Umzug nötig.",
