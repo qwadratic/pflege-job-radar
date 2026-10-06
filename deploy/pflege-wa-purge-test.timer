@@ -1,0 +1,22 @@
+# Drives deploy/pflege-wa-purge-test.service (app.wa.luna.purge_test_history, TASK-109) once a night
+# at 03:00 Europe/Berlin -- Ivan 2026-09-16: wipe a test number's history completely, once a day, at
+# night, so a manual test run during the day is never wiped under the operator's hands. Change the
+# hour here and the retention in the .service (--older-than-hours); nothing about either is in the code.
+# Persistent=true: a box that was off at 03:00 runs the wipe once after it comes back.
+#
+# Install (not done by the build -- a human decides when the nightly wipe goes live):
+#   sudo cp deploy/pflege-wa-purge-test.service deploy/pflege-wa-purge-test.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-purge-test.timer
+#   systemctl list-timers pflege-wa-purge-test.timer
+[Unit]
+Description=Timer for Pflege-Board WhatsApp test-number history wipe (TASK-109)
+
+[Timer]
+Unit=pflege-wa-purge-test.service
+OnCalendar=*-*-* 03:00:00 Europe/Berlin
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,26 @@
+#!/bin/sh
+# pflege-board pre-commit gate (versioned: tools/test_gate.py does the work, this is a thin shim).
+# Tests the staged index of the worktree being committed to -- see tools/test_gate.py.
+#
+# tools/install_githooks.sh copies this file into <git common dir>/pflege-githooks/ and points the
+# shared core.hooksPath there -- outside every working tree, so no branch checkout (of the main
+# checkout or of any worktree) can make the hook vanish and silently stop gating (Opus review N2).
+# Re-run the installer after changing this file.
+#
+# The gate is the MAIN checkout's tools/test_gate.py (the parent of the git common dir; production
+# runs from it, on the deploy branch). If it is missing -- the main checkout is on a branch without
+# the gate -- this fails loudly instead of skipping. The worktree being tested is the one git runs
+# the hook for: `git rev-parse --show-toplevel` names it even from a linked worktree.
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+main_checkout=$(dirname -- "$(git rev-parse --path-format=absolute --git-common-dir)")
+gate="$main_checkout/tools/test_gate.py"
+if [ ! -f "$gate" ]; then
+    echo "pre-commit: $gate is missing -- the main checkout $main_checkout must be on the deploy branch (feat/whatsapp-harness) before committing" >&2
+    exit 1
+fi
+
+unset WA_TRANSPORT WA_BRIDGE_URL WA_BRIDGE_TOKEN WA_BRIDGE_INBOUND_TOKEN WA_BRIDGE_PHONE_NUMBER_ID \
+      WA_AUTOSEND META_WHATSAPP_ACCESS_TOKEN
+exec /home/claude/repo/pflege-board/.venv/bin/python "$gate" pre-commit --worktree "$repo_root"

@@ -1,0 +1,20 @@
+# Alerts on a prolonged outage of the phone rail's reverse tunnel (app/wa/tunnel_watch.py,
+# TASK-294). One plain TCP probe of the local forwarded port per run, driven by
+# deploy/pflege-wa-tunnel-watch.timer -- never touches the mini or the bridge executor itself.
+#
+# Install:
+#   sudo cp deploy/pflege-wa-tunnel-watch.service deploy/pflege-wa-tunnel-watch.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-tunnel-watch.timer
+#   journalctl -u pflege-wa-tunnel-watch -f
+[Unit]
+Description=Pflege-Board phone-rail tunnel watch (app.wa.tunnel_watch, TASK-294)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=claude
+WorkingDirectory=/home/claude/repo/pflege-board
+EnvironmentFile=/home/claude/.local/state/pflege-wa-bridge/relay.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/claude/repo/pflege-board/.venv/bin/python -m app.wa.tunnel_watch

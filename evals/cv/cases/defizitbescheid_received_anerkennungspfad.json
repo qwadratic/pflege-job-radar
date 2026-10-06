@@ -1,0 +1,14 @@
+{
+  "id": "defizitbescheid_received_anerkennungspfad",
+  "description": "synthetic: foreign registered nurse, Defizitbescheid already received (placeable per qualification_knowledge.json), currently on an internal-medicine ward in Augsburg, targeting intensive care -- deterministic gets this right on every run; the LLM is genuinely borderline here (observed flipping the GuK/pflegefachkraft fields pass/fail across repeated runs of the identical prompt), see evals/cv/README.md",
+  "cv_text": "CV\nRegistered Nurse aus dem Ausland, aktuell im Anerkennungsverfahren für Pflegefachkraft\nDefizitbescheid bereits erhalten, Anpassungslehrgang läuft\nArbeite seit 2 Jahren auf einer internistischen Station in Augsburg, Zielrichtung Intensivstation\nDeutsch B2\n",
+  "expected": {
+    "roles_any": ["pflegefachkraft"],
+    "qualifications_all": ["GuK", "Anerkennung"],
+    "departments_any": ["Intensiv/IMC", "Innere Medizin"],
+    "experience_years": 2,
+    "languages_all": ["Deutsch B2"],
+    "cities_any": ["Augsburg"],
+    "min_matches": 1
+  }
+}

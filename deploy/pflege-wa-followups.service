@@ -1,0 +1,28 @@
+# Proactive follow-up nudger for the WhatsApp harness (app/wa/luna/followups.py, TASK-85,
+# docs/whatsapp.md "Proactive follow-up nudges (TASK-85)"): re-engages a candidate who went
+# silent after our last message, at tiered intervals (default 15/60/240 minutes,
+# WA_FOLLOWUP_TIERS_MINUTES) -- this harness otherwise only ever replies, it never speaks first.
+# Runs as its own periodic oneshot job, driven by deploy/pflege-wa-followups.timer, rather than
+# inside pflege-wa.service itself, so a slow or stuck sweep can never delay an inbound webhook
+# reply, and a crash here never takes the live webhook process down with it.
+#
+# Install (not done by the build -- a human decides when proactive nudges go live):
+#   sudo cp deploy/pflege-wa-followups.service deploy/pflege-wa-followups.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-wa-followups.timer
+#   journalctl -u pflege-wa-followups -f
+# Runs against the REAL database and, with WA_AUTOSEND=1 set in the EnvironmentFile, actually
+# sends the fixed German nudge text via Meta -- same webhook secrets/tokens as pflege-wa.service,
+# same EnvironmentFile, so both units must be kept in sync by hand.
+[Unit]
+Description=Pflege-Board WhatsApp follow-up nudger (app.wa.luna.followups, TASK-85)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.wa.luna.followups

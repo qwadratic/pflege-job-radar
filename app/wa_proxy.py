@@ -7,10 +7,11 @@ place that holds `WA_API_TOKEN` -- it is read from the environment, attached to 
 request, and never echoed back to the browser in any response header or body.
 
 This is NOT under app/wa/ (that package is the harness itself, a different process/deployment) --
-it is a thin board-side adapter, four GETs, each a straight forward of the matching
+it is a thin board-side adapter, each route a straight forward of the matching
 `{WA_API_BASE}/api/wa/pro/...` call with the query string carried over verbatim. The contract for
-every field these responses carry is docs/wa-dashboard.md (pflege-fe); this module does not
-interpret the body at all, so it cannot drift from what the harness actually sends.
+every field these responses carry is docs/wa-dashboard.md (pflege-fe) for /threads*/health, and
+docs/wa-pro-activity.md (TASK-283.7) for /activity and /ops; this module does not interpret either
+body at all, so it cannot drift from what the harness actually sends.
 
 Error mapping (the view depends on these being distinguishable, docs/wa-dashboard.md "Errors the
 view distinguishes"):
@@ -108,3 +109,19 @@ async def wa_thread_messages(request: Request, thread_id: str):
 @router.get("/wa/health")
 async def wa_health(request: Request):
     return await _forward(request, "/api/wa/pro/health")
+
+
+@router.get("/wa/activity")
+async def wa_activity(request: Request):
+    """TASK-283.7 (board side): the Pro activity rail (rail/queue/job health) --
+    docs/wa-pro-activity.md. Owner-gated the same way as every route above
+    (app/auth.py:OWNER_READ_PREFIXES carries "/api/wa/activity")."""
+    return await _forward(request, "/api/wa/pro/activity")
+
+
+@router.get("/wa/ops")
+async def wa_ops(request: Request):
+    """TASK-283.7 (board side): the ops mirror list, query string carried over verbatim (status/
+    origin/before_id/after_id/limit -- docs/wa-pro-activity.md). Owner-gated
+    (app/auth.py:OWNER_READ_PREFIXES carries "/api/wa/ops")."""
+    return await _forward(request, "/api/wa/pro/ops")
