@@ -1,0 +1,27 @@
+# Pflege-Board crawl worker (app/crawl_worker.py): takes the queued rows of crawl_runs (schedules, run-now, POST /api/crawl)
+# and runs them one at a time through app.crawl.dispatch. Its own process, so a restart of pflege-web never touches a run
+# (TASK-435); the web side only inserts the queued row and reads status, cancel is the flag in crawl_runs. They share the
+# SQLite state in data/app.sqlite. A restart of THIS unit is the one thing that fails a running run ('process restarted').
+#
+# Install (not done by the build -- deploy when no run is 'running', see docs/deploy.md "Switching to the crawl service"):
+#   sudo cp deploy/pflege-crawl.service /etc/systemd/system/pflege-crawl.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pflege-crawl
+#   journalctl -u pflege-crawl -f
+[Unit]
+Description=Pflege-Board crawl worker (app.crawl_worker)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/repo
+EnvironmentFile=/home/exedev/repo/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/exedev/repo/.venv/bin/python -m app.crawl_worker
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
