@@ -1,9 +1,13 @@
 #!/bin/sh
-# pflege-board pre-push gate, offline lane only -- the LLM lane runs before a deploy, via `tools/test_gate.py
-# pre-deploy --target <sha>` (versioned: tools/test_gate.py does the work, this is a
-# thin shim). Remote "fork" has two push URLs (GitHub + macmini:pflege-wa-bridge.git, whose
-# post-receive restarts the bridge), so this can fire twice for one push; tools/test_gate.py stamps
-# per sha under ~/.local/state/pflege-gate/ so the second firing does not re-run.
+# pflege-board pre-push gate, offline lane only -- the LLM lane never runs here, and not by default on
+# deploy either (2026-10-06): it has its own once-a-day schedule, `tools/test_gate.py nightly`, run by
+# tools/llm_lane_cron.sh. `tools/test_gate.py pre-deploy --target <sha>` prints that sha's own LLM-lane
+# stamp (informational only -- a deploy never waits on it) and can force the LLM lane inline with
+# PFLEGE_GATE_LLM=1; a missing token or PATH there is a real failure to fix, never a reason to pass
+# PFLEGE_GATE_LLM=0 (versioned: tools/test_gate.py does the work, this is a thin shim). Remote "fork"
+# has two push URLs (GitHub + macmini:pflege-wa-bridge.git, whose post-receive restarts the bridge), so
+# this can fire twice for one push; tools/test_gate.py stamps per sha under ~/.local/state/pflege-gate/
+# so the second firing does not re-run.
 # Tests THE PUSHED COMMIT in a scratch worktree, never the working tree -- see tools/test_gate.py.
 #
 # tools/install_githooks.sh copies this file into <git common dir>/pflege-githooks/ and points the
