@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """tools/test_gate.py -- versioned git-hook test gate (2026-10-05, Ivan: "тесты гонять норм, можно
-прекомит хук"), plus a `pre-deploy` CLI subcommand for the deploy pipeline (also 2026-10-05, Ivan:
-"run the LLM tests only before deploying, not on every push").
+прекомит хук"), plus `pre-deploy` and `nightly` CLI subcommands for the deploy pipeline and for the
+LLM lane's own schedule (2026-10-05, Ivan: "run the LLM tests only before deploying, not on every
+push"; 2026-10-06, Ivan: "избыточно раним LLM-тесты" -- see below, the LLM lane moved off pre-deploy
+too).
 
 Two hooks share this module: githooks/pre-commit (fast, skips when nothing staged can affect code)
 and githooks/pre-push (the FAST push gate: tests the pushed commit itself in a scratch worktree,
@@ -17,17 +19,36 @@ The LLM lane (Luna persona/e2e + CV classification, 73 tests, ~44 min of real Op
 run on pre-push any more. Until 2026-10-05 it did, whenever the pushed range touched an LLM-relevant
 path -- Ivan found that too slow for every push ("run the LLM tests only before deploying, not on
 every push") and a failed 44-minute run's output was being thrown away with the scratch dir on top of
-that, forcing a blind rerun. Both are fixed by moving the LLM lane to a separate `pre-deploy`
-subcommand, run by hand or by the deploy pipeline, never by a git hook: `tools/test_gate.py
-pre-deploy --target <sha> [--deployed <sha>]` (deployed defaults to the MAIN checkout's HEAD, via
-main_checkout_root -- never this invocation's own worktree, which may be a dev worktree like this
-one). pre-deploy diffs deployed..target the same way pre-push used to diff a push's old..new sha,
-runs the offline lane always, and the LLM lane only when that diff touches LLM_RELEVANT_PREFIXES (or
-PFLEGE_GATE_LLM=1/0 overrides it) -- same llm_lane_decision/touches_llm_paths logic, same stamps under
-~/.local/state/pflege-gate/. Either command, on a lane failure, now also saves that lane's full stdout
-to ~/.local/state/pflege-gate/logs/<sha>-<lane>.log (never swept, unlike the /dev/shm scratch dirs
-below) and prints the path, so a failed LLM lane's output survives to be read instead of re-spending
-the ~44 minutes just to see it again.
+that, forcing a blind rerun. Both were fixed on 2026-10-05 by moving the LLM lane to a separate
+`pre-deploy` subcommand, run by hand or by the deploy pipeline, never by a git hook, which then ran
+the offline lane always and the LLM lane whenever deployed..target touched LLM_RELEVANT_PREFIXES (or
+PFLEGE_GATE_LLM=1/0 overrode it).
+
+2026-10-06 (Ivan): even gated on path relevance, the LLM lane on pre-deploy still ran too often --
+most deploys touch *something* under app/wa/ or app/data.py, so in practice it fired on nearly every
+one. Decision: `pre-deploy --target <sha> [--deployed <sha>]` (deployed still defaults to the MAIN
+checkout's HEAD, via main_checkout_root -- never this invocation's own worktree, which may be a dev
+worktree like this one) now runs the OFFLINE lane ONLY, always -- a deploy no longer waits on the LLM
+lane at all, and touching an LLM-relevant path no longer has any effect there. PFLEGE_GATE_LLM=1 still
+forces the LLM lane there explicitly, for the rare case of wanting it inline with a deploy;
+PFLEGE_GATE_LLM=0 is accepted too, for symmetry, though it changes nothing since skipping is already
+the default. The LLM lane instead gets its OWN schedule: `tools/test_gate.py nightly [--target REV]`
+(target defaults to origin/main after a git fetch), run once a day at the END of the workday (18:00
+Europe/Vienna, Mon-Fri) by tools/llm_lane_cron.sh -- never more than once a day, and skipped outright
+for a sha that already has ANY recorded LLM-lane result (passed or failed; see stamp handling below),
+so a sha nightly already judged is never re-judged for free. The now-unused path-relevance machinery
+(LLM_RELEVANT_PREFIXES, touches_llm_paths, llm_lane_decision) stays in this module -- not deleted,
+still exercised by its own unit tests -- as the record of the 2026-10-05 reasoning; no CLI subcommand
+calls it any more.
+
+Either command, on a lane failure, saves that lane's full stdout to
+~/.local/state/pflege-gate/logs/<sha>-<lane>.log (never swept, unlike the /dev/shm scratch dirs below)
+and prints the path, so a failed LLM lane's output survives to be read instead of re-spending the
+~44 minutes just to see it again. `nightly` always saves that log, pass or fail (a passing run is
+still worth re-reading without paying the ~44 minutes again) and always appends one summary line --
+date, sha, result (passed/failed/skipped), duration, log path -- to
+~/.local/state/pflege-gate/nightly.tsv, a skip included, so that file is a complete day-by-day record
+of the decision, not just the days the lane actually ran.
 
 Measured 2026-10-05 on this box, offline WA lane set (tests/test_wa_*.py tests/test_bridge_*.py
 tests/test_app_wa_proxy.py tests/test_auth.py tests/test_app_api.py, -m "not llm and not network"):
@@ -86,6 +107,7 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
@@ -181,6 +203,9 @@ STAMP_DIR = Path.home() / ".local" / "state" / "pflege-gate"
 # run that produced it -- a failed LLM lane used to lose its only copy of the output when its scratch
 # dir was removed, costing a ~44-minute rerun just to see it again (Ivan, 2026-10-05).
 LOG_DIR = STAMP_DIR / "logs"
+
+# One summary line per `nightly` invocation -- including a skip -- appended by _append_nightly_tsv.
+NIGHTLY_TSV = STAMP_DIR / "nightly.tsv"
 
 # Everything this gate ever writes to /dev/shm (lane basetemps, pre-commit's materialized index tree,
 # pre-push's scratch worktrees) lives under one root so a single sweep at hook start can find and
@@ -777,17 +802,41 @@ def cmd_pre_commit(worktree: Path) -> int:
 
 
 # --------------------------------------------------------------------------------------------------
-# A failed lane's full stdout, saved somewhere that outlives this run's scratch cleanup.
+# A lane's full stdout, saved somewhere that outlives this run's scratch cleanup.
 
 def _save_lane_log(sha: str, lane: LaneResult, *, log_dir: Path = LOG_DIR) -> Path:
-    """Write `lane`'s full stdout to <log_dir>/<sha>-<lane.name>.log and return the path. Called only
-    for a FAILED lane -- a passed lane's output is uninteresting and the stamp already records the
-    pass. Unlike the /dev/shm scratch dirs, log_dir is never swept by anything in this module, so the
-    file is still there after the run (and its ScratchWorktree/basetemp) is gone."""
+    """Write `lane`'s full stdout to <log_dir>/<sha>-<lane.name>.log and return the path.
+    _run_lanes_for_sha (pre-commit/pre-push/pre-deploy) calls this only for a FAILED lane -- a passed
+    lane's output there is uninteresting and the stamp already records the pass. cmd_nightly (2026-
+    10-06) calls it for EVERY run, pass or fail, since a nightly LLM-lane run is rare (once a day at
+    most) and its own output is worth keeping either way, not just when it fails. Unlike the /dev/shm
+    scratch dirs, log_dir is never swept by anything in this module, so the file is still there after
+    the run (and its ScratchWorktree/basetemp) is gone."""
     log_dir.mkdir(parents=True, exist_ok=True)
     path = log_dir / f"{sha}-{lane.name}.log"
     path.write_text(lane.stdout)
     return path
+
+
+# --------------------------------------------------------------------------------------------------
+# nightly.tsv: one summary line per `nightly` invocation, a skip included, so the file is a complete
+# day-by-day record of the decision rather than only the days the lane actually ran.
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _append_nightly_tsv(
+    path: Path, *, sha: str, result: str, duration_s: float, log_path: str,
+    today: Callable[[], str] = _today_utc,
+) -> None:
+    """Append one tab-separated row -- date, sha, result ("passed"/"failed"/"skipped"), duration_s,
+    log_path -- to `path`, creating it (and its parent dir) if needed. No header row, matching this
+    repo's other hand-appended tsv (tools/status_docs_publish.py's tokens.tsv): a human or a `cut -f`
+    reads it, never a csv.DictReader. `today` is injectable so a test can pin the date column."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(f"{today()}\t{sha}\t{result}\t{duration_s:.1f}\t{log_path}\n")
 
 
 # --------------------------------------------------------------------------------------------------
@@ -895,12 +944,14 @@ def cmd_pre_push(
 
 
 # --------------------------------------------------------------------------------------------------
-# CLI: pre-deploy -- the DEPLOY gate. Always the offline lane; the LLM lane too when deployed..target
-# touches an LLM-relevant path (same trigger pre-push used to apply on every push, moved here instead
-# -- Ivan, 2026-10-05: "run the LLM tests only before deploying, not on every push"). Run by hand or
-# by the deploy pipeline -- never by a git hook, so there is no stdin to parse and no push-URL
-# double-firing to dedupe; the parent-pid fail-stamp dedup in _run_lanes_for_sha still applies
-# harmlessly (a second pre-deploy invocation with a different pid just re-runs, which is correct).
+# CLI: pre-deploy -- the DEPLOY gate. Always the offline lane, ONLY the offline lane by default
+# (Ivan, 2026-10-06: the LLM lane moved off pre-deploy entirely, onto its own once-a-day schedule --
+# see cmd_nightly and the module docstring's 2026-10-06 entry). PFLEGE_GATE_LLM=1 still forces the LLM
+# lane here too, for the rare case of wanting it inline with a deploy; path relevance (what used to
+# drive this on 2026-10-05) no longer has any effect. Run by hand or by the deploy pipeline -- never
+# by a git hook, so there is no stdin to parse and no push-URL double-firing to dedupe; the parent-pid
+# fail-stamp dedup in _run_lanes_for_sha still applies harmlessly (a second pre-deploy invocation with
+# a different pid just re-runs, which is correct).
 
 def cmd_pre_deploy(
     worktree: Path, target: str, deployed: str | None = None, *,
@@ -928,16 +979,91 @@ def cmd_pre_deploy(
     # Reuses determine_changed_paths (same function pre-push used to call for its own old..new sha
     # range) via a synthetic ref: deployed -> target is an ordinary update as far as that function is
     # concerned (is_new_branch is false whenever `deployed` is a real, non-zero sha, which it always
-    # is here -- either given explicitly or read as the main checkout's own HEAD).
+    # is here -- either given explicitly or read as the main checkout's own HEAD). Kept purely for the
+    # printed path count below -- it no longer drives the LLM-lane decision (2026-10-06).
     synthetic_ref = RefUpdate("pre-deploy-target", target, "pre-deploy-deployed", deployed)
     paths, path_reason = determine_changed_paths(synthetic_ref, git_run)
-    need_llm, llm_reason = llm_lane_decision(paths, env)
     n_paths = "unknown" if paths is None else str(len(paths))
     print(f"pre-deploy: testing {target[:12]} against deployed {deployed[:12]} "
           f"({n_paths} changed path(s), {path_reason})")
 
+    # 2026-10-06: offline lane only, by default -- no path-based LLM trigger any more. PFLEGE_GATE_LLM=1
+    # still forces the LLM lane here too; PFLEGE_GATE_LLM=0 is accepted for symmetry, though it changes
+    # nothing since skipping is already the default.
+    if env.get("PFLEGE_GATE_LLM") == "1":
+        need_llm, llm_reason = True, "PFLEGE_GATE_LLM=1 (forced run)"
+    else:
+        need_llm, llm_reason = False, (
+            "pre-deploy runs the offline lane only by default (Ivan, 2026-10-06) -- the LLM lane "
+            "moved to the nightly run; set PFLEGE_GATE_LLM=1 to force it here too"
+        )
+
     pid = parent_pid if parent_pid is not None else os.getpid()
     return run_lanes(target, need_llm, llm_reason, parent_pid=pid, label="pre-deploy")
+
+
+# --------------------------------------------------------------------------------------------------
+# CLI: nightly -- the LLM lane's new (and only) home (Ivan, 2026-10-06, see the module docstring).
+# Tests ONLY the LLM lane -- the offline lane already runs on every pre-commit/pre-push and does not
+# need a nightly repeat -- in a scratch worktree of the target sha (same ScratchWorktree pre-deploy
+# uses), and skips entirely once that sha has ANY recorded LLM-lane result, pass or fail: a sha
+# nightly already judged stays judged, even if it failed, so a fix lands on a NEW sha and gets its
+# own fresh nightly run rather than re-spending ~44 minutes re-judging one already on record. Run by
+# tools/llm_lane_cron.sh, once a day -- never by a git hook.
+
+def cmd_nightly(
+    worktree: Path, target: str | None = None, *,
+    stamp_dir: Path = STAMP_DIR,
+    log_dir: Path = LOG_DIR,
+    nightly_tsv: Path = NIGHTLY_TSV,
+    fetch: Callable[[], None] | None = None,
+    resolve: Callable[[str], str] | None = None,
+    scratch_factory: Callable[[str], "object"] = ScratchWorktree,
+    llm_lane: Callable[..., LaneResult] = run_llm_lane,
+    today: Callable[[], str] = _today_utc,
+) -> int:
+    if resolve is None:
+        def resolve(rev: str) -> str:
+            return resolve_commit(rev, worktree)
+
+    if target is None:
+        # Default target: origin/main AFTER a fetch -- the latest merged code, of which the deployed
+        # main checkout's HEAD is always an ancestor. An explicit --target skips the fetch: the
+        # caller named a specific rev, already resolvable as-is.
+        if fetch is None:
+            def fetch() -> None:
+                subprocess.run(["git", "fetch", "origin"], cwd=worktree, check=True,
+                                capture_output=True, text=True)
+        fetch()
+        target = "origin/main"
+    sha = resolve(target)
+
+    stamp = read_stamp(sha, stamp_dir=stamp_dir)
+    existing_llm = stamp.get("lanes", {}).get("llm") if stamp else None
+    if existing_llm is not None:
+        earlier = "passed" if existing_llm.get("passed") else "failed"
+        print(f"nightly: {sha[:12]} already has an LLM lane result ({earlier}) -- skipping")
+        _append_nightly_tsv(nightly_tsv, sha=sha, result="skipped", duration_s=0.0, log_path="",
+                             today=today)
+        return 0
+
+    print(f"nightly: {sha[:12]} has no recorded LLM lane result yet -- running it")
+    with scratch_factory(sha) as scratch:
+        llm = llm_lane(scratch)
+    log_path = _save_lane_log(sha, llm, log_dir=log_dir)
+    print(f"nightly: llm lane {'passed' if llm.passed else 'FAILED'} ({llm.duration_s:.1f}s) -- "
+          f"full output saved to {log_path}")
+    if not llm.passed:
+        print("nightly: failing test(s):")
+        for test_id in llm.failing_tests:
+            print(f"  {test_id}")
+
+    lanes = dict(stamp.get("lanes", {})) if stamp else {}
+    lanes["llm"] = {"passed": llm.passed, "duration_s": llm.duration_s}
+    write_stamp(sha, lanes, stamp_dir=stamp_dir)
+    _append_nightly_tsv(nightly_tsv, sha=sha, result="passed" if llm.passed else "failed",
+                         duration_s=llm.duration_s, log_path=str(log_path), today=today)
+    return 0 if llm.passed else 1
 
 
 # --------------------------------------------------------------------------------------------------
@@ -946,7 +1072,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(prog="test_gate.py")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("pre-commit", "pre-push", "pre-deploy"):
+    for name in ("pre-commit", "pre-push", "pre-deploy", "nightly"):
         p = sub.add_parser(name)
         p.add_argument("--worktree", type=Path, default=REPO_ROOT,
                         help="the worktree whose content to test (passed by the shim as the one git "
@@ -958,6 +1084,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             p.add_argument("--deployed", default=None,
                             help="the sha currently deployed (default: the MAIN checkout's HEAD, via "
                                  "main_checkout_root)")
+        if name == "nightly":
+            p.add_argument("--target", default=None,
+                            help="the commit to run the LLM lane on (any rev; resolved to its full "
+                                 "sha) -- default: origin/main after a git fetch")
     args = parser.parse_args(argv)
 
     _cleanup_dead_run_dirs()
@@ -969,6 +1099,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "pre-deploy":
         _cleanup_dead_scratch_worktrees()
         return cmd_pre_deploy(args.worktree, args.target, args.deployed)
+    if args.command == "nightly":
+        _cleanup_dead_scratch_worktrees()
+        return cmd_nightly(args.worktree, args.target)
     parser.error(f"unknown command {args.command!r}")
     return 2
 

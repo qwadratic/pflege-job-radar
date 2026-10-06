@@ -1212,19 +1212,23 @@ def test_cmd_pre_push_never_requests_the_llm_lane():
     assert "pre-deploy" in seen["reason"]
 
 
-# --- cmd_pre_deploy, with fakes -- the LLM lane's new home (Ivan, 2026-10-05) ------------------------
+# --- cmd_pre_deploy, with fakes -- offline lane only by default (Ivan, 2026-10-06: the LLM lane
+# moved off pre-deploy too, onto cmd_nightly below) -------------------------------------------------
 
 def _same_rev(rev):
     """Stands in for resolve_commit where the test's fake shas are already "full"."""
     return rev
 
 
-def test_cmd_pre_deploy_runs_llm_lane_when_diff_touches_an_llm_relevant_path():
+def test_cmd_pre_deploy_never_runs_llm_lane_without_force_even_when_paths_are_llm_relevant():
+    """2026-10-06: pre-deploy runs the offline lane ONLY by default -- a diff touching an
+    LLM-relevant path (app/data.py) has no effect any more without PFLEGE_GATE_LLM=1."""
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
         seen["sha"] = sha
         seen["need_llm"] = need_llm
+        seen["reason"] = llm_reason
         seen["label"] = label
         return 0
 
@@ -1234,11 +1238,12 @@ def test_cmd_pre_deploy_runs_llm_lane_when_diff_touches_an_llm_relevant_path():
     )
     assert rc == 0
     assert seen["sha"] == "target1111111111111111111111111111111111"
-    assert seen["need_llm"] is True
+    assert seen["need_llm"] is False
+    assert "PFLEGE_GATE_LLM=1" in seen["reason"]
     assert seen["label"] == "pre-deploy"
 
 
-def test_cmd_pre_deploy_skips_llm_lane_when_diff_touches_nothing_llm_relevant():
+def test_cmd_pre_deploy_never_runs_llm_lane_without_force_when_nothing_is_llm_relevant_either():
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
@@ -1252,14 +1257,15 @@ def test_cmd_pre_deploy_skips_llm_lane_when_diff_touches_nothing_llm_relevant():
     )
     assert rc == 0
     assert seen["need_llm"] is False
-    assert "no LLM-relevant" in seen["reason"]
+    assert "offline lane only by default" in seen["reason"]
 
 
-def test_cmd_pre_deploy_env_force_run_still_works():
+def test_cmd_pre_deploy_pflege_gate_llm_1_forces_the_llm_lane():
     seen = {}
 
     def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
         seen["need_llm"] = need_llm
+        seen["reason"] = llm_reason
         return 0
 
     rc = G.cmd_pre_deploy(
@@ -1269,6 +1275,23 @@ def test_cmd_pre_deploy_env_force_run_still_works():
     )
     assert rc == 0
     assert seen["need_llm"] is True
+    assert "forced" in seen["reason"]
+
+
+def test_cmd_pre_deploy_pflege_gate_llm_0_is_a_no_op_since_skip_is_already_the_default():
+    seen = {}
+
+    def fake_run_lanes(sha, need_llm, llm_reason, *, parent_pid, label):
+        seen["need_llm"] = need_llm
+        return 0
+
+    rc = G.cmd_pre_deploy(
+        Path("/unused"), "target1111111111111111111111111111111111", "deployed222222222222222222222",
+        env={"PFLEGE_GATE_LLM": "0"}, git_run=lambda args: ["app/data.py"], parent_pid=1, resolve=_same_rev,
+        run_lanes=fake_run_lanes,
+    )
+    assert rc == 0
+    assert seen["need_llm"] is False
 
 
 def test_cmd_pre_deploy_defaults_deployed_to_the_main_checkouts_head_when_omitted():
@@ -1338,7 +1361,9 @@ def test_cmd_pre_deploy_keys_lanes_by_the_full_sha_when_given_symbolic_revs(tmp_
     rc = G.cmd_pre_deploy(repo, "HEAD", "HEAD~1", env={}, parent_pid=1, run_lanes=fake_run_lanes)
     assert rc == 0
     assert seen["sha"] == sha2
-    assert seen["need_llm"] is True    # HEAD~1..HEAD touches app/data.py
+    # HEAD~1..HEAD touches app/data.py, but that no longer matters (2026-10-06): the sha-keying fix
+    # under test is unrelated to the LLM-lane trigger, which is now PFLEGE_GATE_LLM-only.
+    assert seen["need_llm"] is False
     assert sha1 != sha2
 
 
@@ -1349,3 +1374,183 @@ def test_save_lane_log_writes_stdout_and_returns_the_path(tmp_path):
     path = G._save_lane_log("deadbeef", lane, log_dir=tmp_path / "logs")
     assert path == tmp_path / "logs" / "deadbeef-offline.log"
     assert path.read_text() == "some pytest output\n"
+
+
+# --- _append_nightly_tsv -------------------------------------------------------------------------
+
+def test_append_nightly_tsv_writes_one_tab_separated_row_with_no_header(tmp_path):
+    path = tmp_path / "nightly.tsv"
+    G._append_nightly_tsv(path, sha="deadbeef", result="passed", duration_s=12.3,
+                           log_path="/x/deadbeef-llm.log", today=lambda: "2026-10-06")
+    assert path.read_text() == "2026-10-06\tdeadbeef\tpassed\t12.3\t/x/deadbeef-llm.log\n"
+
+
+def test_append_nightly_tsv_appends_rather_than_overwrites(tmp_path):
+    path = tmp_path / "nightly.tsv"
+    G._append_nightly_tsv(path, sha="sha1", result="passed", duration_s=1.0, log_path="a",
+                           today=lambda: "2026-10-06")
+    G._append_nightly_tsv(path, sha="sha2", result="failed", duration_s=2.0, log_path="b",
+                           today=lambda: "2026-10-07")
+    lines = path.read_text().splitlines()
+    assert len(lines) == 2
+    assert lines[0] == "2026-10-06\tsha1\tpassed\t1.0\ta"
+    assert lines[1] == "2026-10-07\tsha2\tfailed\t2.0\tb"
+
+
+def test_append_nightly_tsv_creates_the_parent_directory(tmp_path):
+    path = tmp_path / "nested" / "state" / "nightly.tsv"
+    G._append_nightly_tsv(path, sha="s", result="passed", duration_s=0.0, log_path="",
+                           today=lambda: "2026-10-06")
+    assert path.exists()
+
+
+# --- cmd_nightly, with fakes -- the LLM lane's new (and only) home (Ivan, 2026-10-06) ----------------
+
+def test_cmd_nightly_skips_when_a_passed_llm_result_is_already_stamped(tmp_path, capsys):
+    G.write_stamp("deadbeef", {"llm": {"passed": True, "duration_s": 5.0}}, stamp_dir=tmp_path)
+    calls = []
+
+    def llm_lane(scratch):
+        calls.append("ran")
+        return _fake_lane_result("llm", True)
+
+    tsv = tmp_path / "nightly.tsv"
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tsv, resolve=_same_rev, scratch_factory=_FakeScratch, llm_lane=llm_lane,
+        today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    assert calls == []  # never re-run -- a stamped result, pass or fail, is never re-judged for free
+    out = capsys.readouterr().out
+    assert "deadbeef"[:12] in out and "passed" in out
+    assert tsv.read_text() == "2026-10-06\tdeadbeef\tskipped\t0.0\t\n"
+
+
+def test_cmd_nightly_skips_when_a_failed_llm_result_is_already_stamped(tmp_path, capsys):
+    G.write_stamp("deadbeef", {"llm": {"passed": False, "duration_s": 5.0}}, stamp_dir=tmp_path)
+    calls = []
+
+    def llm_lane(scratch):
+        calls.append("ran")
+        return _fake_lane_result("llm", True)
+
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", resolve=_same_rev, scratch_factory=_FakeScratch,
+        llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    assert calls == []  # a FAILED result also counts as already judged -- nightly never re-runs it
+    assert "failed" in capsys.readouterr().out
+
+
+def test_cmd_nightly_runs_stamps_and_writes_the_tsv_line_when_no_result_yet(tmp_path):
+    def llm_lane(scratch):
+        return G.LaneResult("llm", True, 12.3, 0, [], "73 passed in 12.3s\n")
+
+    tsv = tmp_path / "nightly.tsv"
+    log_dir = tmp_path / "logs"
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=log_dir, nightly_tsv=tsv,
+        resolve=_same_rev, scratch_factory=_FakeScratch, llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    stamp = G.read_stamp("deadbeef", stamp_dir=tmp_path)
+    assert stamp["lanes"]["llm"] == {"passed": True, "duration_s": 12.3}
+    assert tsv.read_text() == f"2026-10-06\tdeadbeef\tpassed\t12.3\t{log_dir / 'deadbeef-llm.log'}\n"
+
+
+def test_cmd_nightly_saves_the_log_on_a_pass_too(tmp_path):
+    """Ivan, 2026-10-06: nightly saves the lane log every time, pass or fail -- unlike
+    _run_lanes_for_sha's own _save_lane_log calls, which only fire on a failure."""
+    def llm_lane(scratch):
+        return G.LaneResult("llm", True, 12.3, 0, [], "73 passed in 12.3s\n")
+
+    log_dir = tmp_path / "logs"
+    G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=log_dir,
+        nightly_tsv=tmp_path / "nightly.tsv", resolve=_same_rev, scratch_factory=_FakeScratch,
+        llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    log_path = log_dir / "deadbeef-llm.log"
+    assert log_path.read_text() == "73 passed in 12.3s\n"
+
+
+def test_cmd_nightly_saves_the_log_and_exits_nonzero_on_a_failure(tmp_path):
+    def llm_lane(scratch):
+        return G.LaneResult("llm", False, 3.0, 1, ["tests/x.py::t"], "FAILED tests/x.py::t\n")
+
+    tsv = tmp_path / "nightly.tsv"
+    log_dir = tmp_path / "logs"
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=log_dir, nightly_tsv=tsv,
+        resolve=_same_rev, scratch_factory=_FakeScratch, llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    assert rc == 1
+    stamp = G.read_stamp("deadbeef", stamp_dir=tmp_path)
+    assert stamp["lanes"]["llm"]["passed"] is False
+    log_path = log_dir / "deadbeef-llm.log"
+    assert log_path.read_text() == "FAILED tests/x.py::t\n"
+    assert tsv.read_text() == f"2026-10-06\tdeadbeef\tfailed\t3.0\t{log_path}\n"
+
+
+def test_cmd_nightly_preserves_an_existing_offline_lane_stamp_when_adding_llm(tmp_path):
+    """The sha may already carry an offline-lane stamp from an earlier pre-push -- cmd_nightly adds
+    its own "llm" key without clobbering it."""
+    G.write_stamp("deadbeef", {"offline": {"passed": True, "duration_s": 60.0}}, stamp_dir=tmp_path)
+
+    def llm_lane(scratch):
+        return G.LaneResult("llm", True, 5.0, 0, [], "ok\n")
+
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", resolve=_same_rev, scratch_factory=_FakeScratch,
+        llm_lane=llm_lane, today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    stamp = G.read_stamp("deadbeef", stamp_dir=tmp_path)
+    assert stamp["lanes"]["offline"]["passed"] is True
+    assert stamp["lanes"]["llm"]["passed"] is True
+
+
+def test_cmd_nightly_default_target_fetches_then_resolves_origin_main(tmp_path):
+    seen = {}
+
+    def fake_fetch():
+        seen["fetched"] = True
+
+    def fake_resolve(rev):
+        seen["resolved_rev"] = rev
+        return "mainsha1111111111111111111111111111111111"
+
+    G.write_stamp("mainsha1111111111111111111111111111111111", {"llm": {"passed": True}},
+                  stamp_dir=tmp_path)
+
+    rc = G.cmd_nightly(
+        Path("/unused"), None, stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", fetch=fake_fetch, resolve=fake_resolve,
+        scratch_factory=_FakeScratch, llm_lane=lambda s: _fake_lane_result("llm", True),
+        today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    assert seen["fetched"] is True
+    assert seen["resolved_rev"] == "origin/main"
+
+
+def test_cmd_nightly_explicit_target_skips_the_fetch(tmp_path):
+    seen = {"fetch_called": False}
+
+    def fake_fetch():
+        seen["fetch_called"] = True
+
+    G.write_stamp("deadbeef", {"llm": {"passed": True}}, stamp_dir=tmp_path)
+
+    rc = G.cmd_nightly(
+        Path("/unused"), "deadbeef", stamp_dir=tmp_path, log_dir=tmp_path / "logs",
+        nightly_tsv=tmp_path / "nightly.tsv", fetch=fake_fetch, resolve=_same_rev,
+        scratch_factory=_FakeScratch, llm_lane=lambda s: _fake_lane_result("llm", True),
+        today=lambda: "2026-10-06",
+    )
+    assert rc == 0
+    assert seen["fetch_called"] is False
