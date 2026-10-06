@@ -207,7 +207,7 @@ def load_config(path):
     if cfg.get("desk"):
         cfg["desk"]["heartbeat"] = (path.parent / cfg["desk"]["heartbeat"]).resolve()
     cfg["operators"] = [a.lower() for a in cfg.get("operators", [])]       # who may command the mailing
-    if cfg["operators"]:        # Ivan, 2026-10-05: Valentyn gets no start, round or error notices, only the answers nobody has handled yet
+    if cfg["operators"]:        # Ivan, 2026-10-05: the parallel operator gets no start, round or error notices, only the answers nobody has handled yet
         cfg["notify"] = [a.lower() for a in cfg["notify"]]                    # announcement, reports, halt, resumed, done
         cfg["forward"] = {k: [a.lower() for a in v] for k, v in cfg["forward"].items()}     # inbound kind -> who gets the answer
     cfg["tz"] = ZoneInfo(cfg["tz"])
@@ -1046,7 +1046,7 @@ def operator_mail(cfg, batch, subject, body, in_reply_to=None, references=None, 
 
 
 def notified(cfg, batch):
-    """The batch with its recipients cut to the notify list: a batch planned while Valentyn was still on it keeps no
+    """The batch with its recipients cut to the notify list: a batch planned while the parallel operator was still on it keeps no
     notices for him."""
     return {**batch, "operators": [a for a in batch["operators"] if a in cfg["notify"]]}
 

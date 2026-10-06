@@ -397,7 +397,7 @@ def test_the_pipeline_reads_and_writes_only_project_daria(tools, monkeypatch):
     assert tools.pipeline_view("TASK-1") == "ok"
     with pytest.raises(tools.ToolError, match="not in project daria"):
         tools.pipeline_view("TASK-2")
-    tools.pipeline_create("Plan wave 3", "Valentyn asked by mail on 2026-10-02", ["plan exists"], painless=True)
+    tools.pipeline_create("Plan wave 3", "the parallel operator asked by mail on 2026-10-02", ["plan exists"], painless=True)
     create = calls[-1]
     assert create[:3] == ("task", "create", "Plan wave 3") and create[create.index("--project") + 1] == "daria"
     assert create[create.index("-l") + 1] == "daria,painless" and create[create.index("--ac") + 1] == "plan exists"
