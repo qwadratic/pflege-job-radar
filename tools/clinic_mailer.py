@@ -59,7 +59,8 @@ config's window weekdays minus its holidays). A step with "in_thread": true answ
 (In-Reply-To/References). A recipient's "last_step" (a step name) ends its sequence after that step, for a clinic
 that gets fewer letters than the cadence has. A recipient leaves the sequence on any inbound kind listed in "stop_on"; a running
 batch halts on any kind in "halt_on". Sends happen one at a time, with a random pause from "pause_seconds",
-only inside "window" (config timezone), and the inbox is read during every pause.
+only on a send day (a weekday of the config's "window" that is no holiday, config timezone) and at any time of
+day (Ivan, 2026-10-06: the hours of the window are gone), and the inbox is read during every pause.
 
 Every mail to the operators (announcement, reports, notices, answers to commands, the digest, the desk's answers, the manual
 forward) is multipart/alternative: a text part with aligned rows and an HTML part with real tables (tools/mailer_doc.py,
@@ -100,7 +101,7 @@ both (to, planned_to). A blocking entry is only read by plan, not at send time.
 Redirect letters (Ivan, 2026-10-05: the classifier writes the entry and the letter goes too): a redirect to an address
 no letter of the campaign went to makes a new recipient, "<old id>r<n>" with "redirect_of" (redirect_letter: same clinic,
 files and cadence, To the new address, a general greeting, no Cc) and ends the old recipient's sequence ("redirected" in the
-ledger). The desk calls redirect_letters on every poll: in the send window, on an odd minute, it plans that recipient's due
+ledger). The desk calls redirect_letters on every poll: on a send day, on an odd minute, it plans that recipient's due
 step as a batch of its own, renames its pending approval itself and sends it live, the first letter at once, the follow-ups
 as the cadence says, each in the thread of the recipient's own first letter. Every (recipient, step) is tried once, a
 "redirect_attempt" event first; a failure is raised, written to the desk ledger and mailed to the notify list. A wave's
@@ -212,6 +213,8 @@ def load_config(path):
         cfg["forward"] = {k: [a.lower() for a in v] for k, v in cfg["forward"].items()}     # inbound kind -> who gets the answer
     cfg["tz"] = ZoneInfo(cfg["tz"])
     cfg["holidays"] = {date.fromisoformat(d) for d in cfg["holidays"]}
+    if {"from", "to"} & set(cfg["window"]):
+        raise MailerError('"window" has no hours any more (Ivan, 2026-10-06): keep only "weekdays" and delete "from" and "to"')
     return cfg
 
 
@@ -276,22 +279,22 @@ def after_pause(prev, lo, hi):
 
 def schedule(cfg, start, n):
     """Send times of n letters from `start`: the first a pause after it, each next one a pause after the previous;
-    every one inside the send window."""
+    every one on a send day."""
     lo, hi = cfg["pause_seconds"]
     times = [after_pause(start, lo, hi)]
     while len(times) < n:
         times.append(after_pause(times[-1], lo, hi))
-    outside = [t for t in times if not in_window(cfg, t)]
-    if outside:
-        raise MailerError(f"{len(outside)} of {n} send times fall outside the send window ({outside[0]:%a %Y-%m-%d %H:%M} first): "
-                          "start earlier")
+    off = [t for t in times if not send_day(cfg, t)]
+    if off:
+        raise MailerError(f"{len(off)} of {n} send times fall on a day without sending ({off[0]:%a %Y-%m-%d %H:%M} first): "
+                          "no sending on a weekday outside the config's window or on a holiday; start on a send day")
     return times
 
 
-def in_window(cfg, t):
-    w = cfg["window"]
-    return (t.isoweekday() in w["weekdays"] and t.date() not in cfg["holidays"]
-            and w["from"] <= t.strftime("%H:%M") < w["to"])
+def send_day(cfg, t):
+    """A weekday of the config's "window" that is no holiday. The time of day is free (Ivan, 2026-10-06: two in the
+    afternoon is fine, the hours of the window are gone)."""
+    return t.isoweekday() in cfg["window"]["weekdays"] and t.date() not in cfg["holidays"]
 
 
 def add_after(cfg, t, after):
@@ -306,7 +309,7 @@ def add_after(cfg, t, after):
     d = t
     while n:
         d += timedelta(days=1)
-        if d.isoweekday() in cfg["window"]["weekdays"] and d.date() not in cfg["holidays"]:
+        if send_day(cfg, d):
             n -= 1
     return d
 
@@ -623,9 +626,9 @@ def timed(cfg, items, start_at, window):
         for it in (x for x in items if x["round"] == rnd):
             prev = next(x for x in items if x["recipient_id"] == it["recipient_id"] and x["round"] == rnd - 1)
             it["send_at"] = add_after(cfg, prev["send_at"], next(s for s in cfg["cadence"] if s["step"] == it["step"])["after"])
-    bad = next((it for it in items if not (in_window(cfg, it["send_at"]) and odd_minute(it["send_at"]))), None)
+    bad = next((it for it in items if not (send_day(cfg, it["send_at"]) and odd_minute(it["send_at"]))), None)
     if bad:
-        raise MailerError(f"{bad['clinic']} {bad['step']} would go at {bad['send_at']:%a %d.%m %H:%M}, outside the send window or "
+        raise MailerError(f"{bad['clinic']} {bad['step']} would go at {bad['send_at']:%a %d.%m %H:%M}, on a day without sending or "
                           "on a minute divisible by 5: change the cadence")
     first0, reports = min(it["send_at"] for it in firsts), []
     for rnd in range(1, rounds):
@@ -876,8 +879,8 @@ def _send(cfg, batch_id, live, watch_inbox):
             print(f"skip {it['recipient_id']} {it['step']}: {stop['kind']} arrived after planning")
             continue
         now = now_in(cfg)
-        if not in_window(cfg, now):
-            raise MailerError(f"outside the send window at {now:%a %Y-%m-%d %H:%M}; {len(batch['items']) - n} left, rerun send inside the window")
+        if not send_day(cfg, now):
+            raise MailerError(f"no sending on {now:%a %Y-%m-%d}; {len(batch['items']) - n} left, rerun send on a send day")
         try:
             out = routed(cfg, it, live)
         except Blocked as b:
@@ -1455,8 +1458,8 @@ def send_scheduled(cfg, batch, live):
                 else:
                     while not odd_minute(tt := now_in(cfg)):           # late on a round minute: the next minute is odd
                         sleep(60 - tt.second - tt.microsecond / 1e6 + random.uniform(1, 20))
-                    if not in_window(cfg, now_in(cfg)):
-                        raise MailerError(f"outside the send window at {now_in(cfg):%a %H:%M}")
+                    if not send_day(cfg, now_in(cfg)):
+                        raise MailerError(f"no sending on {now_in(cfg):%a %Y-%m-%d}")
                     try:
                         out = routed(cfg, threaded(cfg, it, ledger), live)
                     except Blocked as b:
@@ -1710,21 +1713,20 @@ def redirect_letter(cfg, rid, targets):
         append_ledger(cfg, {"event": "redirected", "kind": "redirected", "recipient_id": rid, "to_recipient": made["id"], "targets": asked})
     if not fresh:
         return {"id": None, "to": [], "ru": f"для этого перенаправления получатель {made['id']} уже сделан, ничего не менял"}
-    w = cfg["window"]
     return {"id": made["id"], "to": asked,
-            "ru": (f"сделал получателя {made['id']}: первое письмо на {', '.join(asked)} уйдёт в ближайшее окно отправки "
-                   f"({w['from']}-{w['to']}, будни), дальше по каденции; последовательность старого адреса закрыта")}
+            "ru": (f"сделал получателя {made['id']}: первое письмо на {', '.join(asked)} уйдёт при ближайшем опросе в рабочий день, "
+                   "в любое время суток, дальше по каденции; последовательность старого адреса закрыта")}
 
 
 def redirect_letters(cfg):
-    """Send what is due for the recipients redirect_letter made, in the send window and on an odd minute: the step the
+    """Send what is due for the recipients redirect_letter made, on a send day and on an odd minute: the step the
     cadence says, as a batch of its own that plan writes, an approval that this call renames itself (Ivan, 2026-10-05: no
     go-ahead per letter), and send --live with the inbox watched. Every (recipient, step) is tried once: a "redirect_attempt"
     event is written before anything else, so a failure at any point is raised and recorded and does not repeat on the next
     call. Returns the batch id, or None when nothing is due."""
     rows = [r for r in json.loads(cfg["recipients"].read_text()) if r.get("redirect_of")]
     now = now_in(cfg)
-    if not rows or not in_window(cfg, now):
+    if not rows or not send_day(cfg, now):
         return None
     ledger, due = read_ledger(cfg), []
     for rec in rows:

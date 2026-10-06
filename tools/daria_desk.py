@@ -535,7 +535,7 @@ def status_check(d, box):
 
 def redirect_letters(d, box):
     """Send the letters that clinics' redirects made (Ivan, 2026-10-05: the classifier writes the table entry and the letter
-    goes too), for every campaign. The first one goes in the next send window; a failure is written to the desk ledger and
+    goes too), for every campaign. The first one goes on the next send day; a failure is written to the desk ledger and
     mailed to the notify list, once, because the mailer tries every (recipient, step) once. It does not stop the desk: the
     operators' mail goes on being read."""
     for c in d["campaigns"]:

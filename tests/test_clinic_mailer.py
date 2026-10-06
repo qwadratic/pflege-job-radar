@@ -23,7 +23,7 @@ def cfg(tmp_path):
         {"id": "1", "clinic": "Klinik A", "to": ["pd@a.example"], "cc": ["st@a.example"], "vars": {"ANREDE": "Sehr geehrte Frau A", "BEREICH": "Intensivstation"}}]))
     (tmp_path / "allowlist.txt").write_text("# test\ncat1@example.org\ncat2@example.org\n")
     conf = {"campaign": "c", "sender": "me@example.org", "sender_name": "Me", "tz": "Europe/Berlin",
-            "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "16:00"}, "holidays": ["2026-10-02"],
+            "window": {"weekdays": [1, 2, 3, 4, 5]}, "holidays": ["2026-10-02"],
             "pause_seconds": [0, 0], "stop_on": ["reply", "stop", "bounce"], "halt_on": ["bounce", "stop"], "watch_folders": ["INBOX"],
             "watch_via": "daria-inbox", "watch_overlap_minutes": 10,
             "cadence": [{"step": "initial", "template": "t0.txt"}, {"step": "fu1", "after": "4bd", "in_thread": True, "template": "t1.txt"}],
@@ -276,7 +276,7 @@ OPS = ["op1@example.org", "op2@example.net"]
 
 
 def scheduled_config(cfg, monkeypatch, cadence):
-    """Three clinics, window 08:00-12:00, announcement template, operators and a classifier; the plan PDF is a stub."""
+    """Three clinics, announcement template, operators and a classifier; the plan PDF is a stub."""
     d = cfg.parent
     (d / "announce.txt").write_text("Betreff: Рассылка [KAMPAGNE]: план на [DATUM]\n\nАнонс в [ANKUENDIGUNG], письма [ERSTER]–[LETZTER]:\n[PLAN]\n\n"
                                     "[ABLAUF]\n\nКоманды до [ENDE].\n\n[NOTIZEN]\n")
@@ -287,7 +287,7 @@ def scheduled_config(cfg, monkeypatch, cadence):
          "vars": {"ANREDE": f"Sehr geehrte Frau {n}", "BEREICH": "Intensivstation"}} for k, n in ((1, "A"), (2, "B"), (3, "C"))]))
     (d / "allowlist.txt").write_text("\n".join(["pd1@example.org", "pd2@example.org", "pd3@example.org"] + OPS) + "\n")
     conf = json.loads(cfg.read_text()) | {
-        "window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:00"}, "pause_seconds": [90, 180],
+        "window": {"weekdays": [1, 2, 3, 4, 5]}, "pause_seconds": [90, 180],
         "operators": [o.upper() if k == 0 else o for k, o in enumerate(OPS)], "command_poll_seconds": 60,
         "notify": OPS, "forward": {k: OPS for k in M.FORWARD_KINDS},
         "announce": {"window_minutes": 60, "template": "announce.txt", "notes": "notes.txt"},
@@ -320,15 +320,29 @@ def fcfg(cfg, monkeypatch):
     return c
 
 
-def test_send_times_are_odd_minutes_with_pauses_inside_the_window(scfg):
+def test_send_times_are_odd_minutes_with_pauses_on_send_days_at_any_time_of_day(scfg):
     for seed in range(300):
         random.seed(seed)
         times = M.schedule(scfg, at("2026-09-29T10:00:00"), 10)
         assert times[0] - at("2026-09-29T10:00:00") >= timedelta(seconds=90)
-        assert all(t.minute % 5 and t.microsecond == 0 and M.in_window(scfg, t) for t in times)
+        assert all(t.minute % 5 and t.microsecond == 0 and M.send_day(scfg, t) for t in times)
         assert all(timedelta(seconds=90) <= b - a <= timedelta(seconds=180) for a, b in zip(times, times[1:]))
-    with pytest.raises(M.MailerError, match="outside the send window"):
-        M.schedule(scfg, at("2026-09-29T11:50:00"), 10)
+    random.seed(1)
+    afternoon = M.schedule(scfg, at("2026-09-29T14:00:00"), 10)        # Ivan, 2026-10-06: two in the afternoon is fine, no hours of a window
+    assert afternoon[0] > at("2026-09-29T14:00:00") and all(M.send_day(scfg, t) for t in afternoon)
+    assert M.send_day(scfg, at("2026-09-29T23:30:00")) and M.send_day(scfg, at("2026-09-29T00:10:00"))
+    with pytest.raises(M.MailerError, match="no sending on"):
+        M.schedule(scfg, at("2026-10-03T10:00:00"), 3)                   # a Saturday
+    with pytest.raises(M.MailerError, match="no sending on"):
+        M.schedule(scfg, at("2026-10-02T10:00:00"), 3)                   # a holiday of the config
+
+
+def test_a_window_with_hours_is_refused_when_the_config_loads(cfg):
+    cfg.write_text(json.dumps(json.loads(cfg.read_text()) | {"window": {"weekdays": [1, 2, 3, 4, 5], "from": "08:00", "to": "12:30"}}))
+    with pytest.raises(M.MailerError, match="no hours"):
+        M.load_config(cfg)
+
+
     with pytest.raises(M.MailerError, match="widen pause_seconds"):
         M.after_pause(at("2026-09-29T10:04:30"), 30, 60)            # 10:05:00-10:05:30: only a round minute
 
@@ -862,7 +876,7 @@ def test_a_blocked_letter_of_a_simple_batch_is_skipped_loudly_and_the_others_go(
     c["suppression_db"] = None
     sent = []
     for name, fn in (("smtp_send", lambda box, msg: sent.append(msg) or {}), ("mailbox", lambda a: {"ADDRESS": a}),
-                     ("check_inbox", lambda cfg, box: None), ("watch", lambda cfg, box=None: []), ("in_window", lambda cfg, t: True),
+                     ("check_inbox", lambda cfg, box: None), ("watch", lambda cfg, box=None: []), ("send_day", lambda cfg, t: True),
                      ("sleep", lambda s: None)):
         monkeypatch.setattr(M, name, fn)
     monkeypatch.setattr(M.time, "sleep", lambda s: None)
@@ -1239,14 +1253,14 @@ def test_a_redirect_recipient_is_not_planned_into_a_waves_batch(fcfg, monkeypatc
     assert "1r1" not in {it["recipient_id"] for it in json.loads((fcfg["batches"] / f"{bid}.json").read_text())["items"]}
 
 
-def test_redirect_letters_go_in_the_window_each_step_once_and_the_follow_up_in_its_own_thread(fcfg, monkeypatch):
-    w = World(fcfg, monkeypatch, "2026-09-29T07:00:00")
+def test_redirect_letters_go_on_a_send_day_each_step_once_and_the_follow_up_in_its_own_thread(fcfg, monkeypatch):
+    w = World(fcfg, monkeypatch, "2026-10-03T09:00:00")
     M.append_ledger(fcfg, {"event": "sent", "batch_id": "b0", "recipient_id": "1", "clinic": "Klinik A", "step": "initial", "to": ["pd1@example.org"],
                            "cc": [], "sent_at": "2026-09-29T07:00:00+02:00", "message_id": "<m0@x>"})
     assert M.redirect_letters(fcfg) is None                                  # no redirect recipient yet
     M.redirect_letter(fcfg, "1", ["new@a.example"])
-    assert M.redirect_letters(fcfg) is None and w.sent == []                 # 07:00: outside the window
-    w.now = at("2026-09-29T09:00:00")                                        # a round minute: the letter waits for an odd one
+    assert M.redirect_letters(fcfg) is None and w.sent == []                 # a Saturday: no sending
+    w.now = at("2026-09-29T14:00:00")                                        # two in the afternoon is fine; a round minute: the letter waits for an odd one
     bid = M.redirect_letters(fcfg)
     (t, first), = w.sent
     assert t.minute % 5 and first["To"] == "new@a.example" and first["Subject"] == "Pflegekraft für Intensivstation" and not first["In-Reply-To"]
@@ -1254,7 +1268,7 @@ def test_redirect_letters_go_in_the_window_each_step_once_and_the_follow_up_in_i
     assert [(e["recipient_id"], e["step"], e["to"]) for e in w.events("sent") if e["recipient_id"] == "1r1"] == [("1r1", "initial", ["new@a.example"])]
     assert [(e["recipient_id"], e["step"]) for e in w.events("redirect_attempt")] == [("1r1", "initial")]
     assert M.redirect_letters(fcfg) is None and len(w.sent) == 1             # the follow-up is not due: 3 business days
-    w.now = at("2026-10-05T10:00:00")                                        # 29.09 + 3 business days, 02.10 a holiday
+    w.now = at("2026-10-05T14:30:00")                                        # 29.09 + 3 business days at the first letter's time of day, 02.10 a holiday
     M.redirect_letters(fcfg)
     (_, fu1) = w.sent[1]
     assert fu1["To"] == "new@a.example" and fu1["In-Reply-To"] == first["Message-ID"] and fu1["Subject"].startswith("Re:")
