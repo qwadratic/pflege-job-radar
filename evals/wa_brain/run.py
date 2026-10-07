@@ -3,8 +3,11 @@ Design, isolation and cost: evals/wa_brain/README.md. Real conversation text liv
 directories OUTSIDE every git checkout; this repo carries code and one synthetic example case.
 
   python evals/wa_brain/run.py --list-turns 4711 --sales-brain PATH      # no model call: pick turns
+  python evals/wa_brain/run.py --prepare --cases DIR --out DIR --sales-brain PATH [id-substring]
   python evals/wa_brain/run.py --cases DIR --out DIR [--runs 3] [--sales-brain PATH] [id-substring]
   python evals/wa_brain/run.py --judge OUT_DIR [--judge-model M --judge-effort E]
+
+--prepare is the one-time, model-calling step per case (earlier turns, real files); a run then reuses it.
 """
 import argparse
 import contextlib
@@ -19,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -40,6 +44,9 @@ SCORE = {"pass": 2, "partial": 1, "fail": 0}
 SHORT = {"pass": "P", "partial": "Pa", "fail": "F"}
 REGIONS = ("bavaria", "other")
 EQUAL_BAND = 0.25   # new runs count as equal to the old reply when their mean grade is within this of it
+#: The one media root of the CRM's WhatsApp files this user can read (the v2 bridge's sibling root is not
+#: readable and is not worked around); ``--media-root`` replaces it.
+DEFAULT_MEDIA_ROOTS = ("/opt/clinic-dispatcher/data/private/candidate_whatsapp_media",)
 
 
 def scrub(text):
@@ -181,6 +188,10 @@ def load_cases(cases_dir, flt=""):
             problems.append(f"region must be one of {REGIONS}")
         if "note" in case and not isinstance(case["note"], str):
             problems.append("note must be a string")
+        edits = case.get("edits", [])
+        if not (isinstance(edits, list) and all(isinstance(e, dict) and set(e) == {"what", "from", "to"}
+                                                and all(isinstance(v, str) for v in e.values()) for e in edits)):
+            problems.append('edits must be a list of {"what": str, "from": str, "to": str}')
         if case.get("id") in seen:
             problems.append("duplicate id")
         if problems:
@@ -235,23 +246,154 @@ def _history_before(sqlite_path, phone, line):
             for d, b, k in reversed(keep) if k not in NO_TURN_KINDS]
 
 
-def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log=print):
-    """Run every case's chosen turns ``runs`` times, each pass with fresh scratch state. Writes
-    ``<case>.jsonl`` (one line per turn and run) and ``<case>.points.json`` (what each point looked like:
-    history, the candidate's message, the old reply) under ``out_dir``. -> {"records", "errors", "failed_cases"}."""
+def check_media_roots(roots):
+    """Every media root must be a directory this user can list: a root that is missing or unreadable would
+    turn every file into a quiet 'unavailable'. -> the roots as paths."""
+    out = []
+    for root in roots:
+        path = pathlib.Path(root)
+        if not path.is_dir():
+            raise SystemExit(f"--media-root {path} is not a directory")
+        try:
+            os.listdir(path)
+        except PermissionError:
+            raise SystemExit(f"--media-root {path} is not readable by this user (it is not worked around)")
+        out.append(path.resolve())
+    return out
+
+
+def _file_counts(lines):
+    """-> (attached, unavailable, [turn numbers with a file that was not attached]) over the JSONL lines of one
+    walk: counts and turn numbers only, never a name or a path."""
+    entries = [(l["turn"], f) for l in lines if "turn" in l for f in l.get("files") or []]
+    bad = sorted({turn for turn, f in entries if f["status"] != "attached"})
+    return sum(1 for _, f in entries if f["status"] == "attached"), sum(1 for _, f in entries if f["status"] != "attached"), bad
+
+
+def _write_private(path, text):
+    """Write ``path`` readable by this user only (0600), inside a 0700 directory."""
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        os.fchmod(fh.fileno(), 0o600)
+        fh.write(text)
+
+
+def prepare_cases(cases, out_dir, prep_dir, sales_brain_path=None, make_client=None, prepared_at=None,
+                  media_roots=None, log=print):
+    """The one-time preparation (README "Prepare"): per candidate ONE capture walk over the union of the chosen
+    turns of all its cases, which runs the real brain on the earlier turns and reads the real files (model
+    calls happen here and nowhere later), then ``<prep_dir>/<case id>.json`` per case (mode 600, directory 700):
+    per chosen turn the seed, plus the git sha, model, effort, ``prepared_at`` (passed in, never read from a
+    clock here) and every file the walk met with its status. A candidate whose walk raised or whose turns
+    errored writes no prep file: a card that lacks a turn must not be kept. -> {"prepared", "errors",
+    "failed_cases"}."""
     app = _load_app()
     out_dir = check_outside_checkout(out_dir, "--out")
     out_dir.mkdir(parents=True, exist_ok=True)
     sales_brain_path = sales_brain_path or app.C.sales_brain_path()
+    totals = {"prepared": 0, "errors": 0, "failed_cases": 0}
+    by_candidate = {}
+    for case in cases:
+        by_candidate.setdefault(case["candidate_id"], []).append(case)
+    with isolation(app, out_dir / "scratch"):
+        for candidate_id, group in by_candidate.items():
+            union = sorted({n for case in group for n in case["at_turns"]})
+            try:
+                result = app.RP.replay_candidate(
+                    candidate_id, out_dir / "scratch" / "prepare" / str(candidate_id), capture_before=union,
+                    sales_brain_path=sales_brain_path, media_roots=media_roots,
+                    client=make_client() if make_client else None)
+                lines = _read_jsonl(result["jsonl_path"])
+            except (RuntimeError, ValueError, OSError, sqlite3.Error) as exc:
+                for case in group:
+                    log(f"{case['id']}: FAILED, not prepared: {type(exc).__name__}: {exc}")
+                totals["failed_cases"] += len(group)
+                continue
+            if result["errors"]:
+                for case in group:
+                    log(f"{case['id']}: FAILED, not prepared: {result['errors']} earlier turn(s) of the brain "
+                        f"errored, so the card would lack them (see {result['jsonl_path']})")
+                totals["failed_cases"] += len(group)
+                totals["errors"] += result["errors"]
+                continue
+            attached, unavailable, bad_turns = _file_counts(lines)
+            files = [{"turn": l["turn"], **f} for l in lines if "turn" in l for f in l.get("files") or []]
+            for case in group:
+                prep = {"case": case["id"], "candidate_id": candidate_id, "at_turns": case["at_turns"],
+                        "git_sha": result["git_sha"], "model": result["model"], "effort": result["effort"],
+                        "prepared_at": prepared_at, "files": files,
+                        "points": {str(n): result["seeds"][n] for n in case["at_turns"]}}
+                _write_private(pathlib.Path(prep_dir) / f"{case['id']}.json",
+                               json.dumps(prep, ensure_ascii=False, indent=1))
+                log(f"{case['id']}: prepared turns {case['at_turns']} (walk of {result['turns_run']} turn(s); files: "
+                    f"{attached} attached, {unavailable} unavailable"
+                    + (f", not attached at turns {bad_turns}" if bad_turns else "") + ")")
+                totals["prepared"] += 1
+    return totals
+
+
+def _load_preps(cases, out_dir, prep_dir, sales_brain_path):
+    """Before any model call: every case whose points need a preparation (a chosen turn after the first, or
+    any prep file already on disk) has a usable one. -> {case id: prep or None}. A missing or mismatching prep
+    exits with the exact command to run."""
+    preps, problems = {}, []
+    for case in cases:
+        path = pathlib.Path(prep_dir) / f"{case['id']}.json" if prep_dir else None
+        needed = max(case["at_turns"]) > 1
+        if path is None or not path.exists():
+            preps[case["id"]] = None
+            if needed:
+                problems.append(f"{case['id']}: points after turn 1 need the earlier turns' card: no prep file "
+                                f"({path or 'no prep directory'})")
+            continue
+        prep = json.loads(path.read_text(encoding="utf-8"))
+        gap = sorted(set(case["at_turns"]) - {int(n) for n in prep.get("points", {})})
+        if prep.get("candidate_id") != case["candidate_id"] or gap:
+            problems.append(f"{case['id']}: {path} was prepared for candidate_id={prep.get('candidate_id')} and turns "
+                            f"{sorted(int(n) for n in prep.get('points', {}))}; the case wants "
+                            f"candidate_id={case['candidate_id']}, turns {case['at_turns']}")
+            continue
+        preps[case["id"]] = prep
+    if problems:
+        cmd = (f"python evals/wa_brain/run.py --prepare --cases {pathlib.Path(prep_dir).parent if prep_dir else 'DIR'} "
+               f"--sales-brain {sales_brain_path} --out {out_dir}")
+        raise SystemExit("not run: " + "; ".join(problems) + f". Prepare once (model calls, real files): {cmd} [id-substring]")
+    return preps
+
+
+def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log=print, prep_dir=None,
+              media_roots=None):
+    """Run every case's chosen turns ``runs`` times, each pass with fresh scratch state. Earlier turns are plain
+    history with no model call: the card (and the files) of a chosen turn come from the case's prep file
+    (``prepare_cases``), which a case with a point after turn 1 must have (``_load_preps``). Writes
+    ``<case>.jsonl`` (one line per turn and run) and ``<case>.points.json`` (what each point looked like:
+    history, the candidate's message, its files, the old reply) under ``out_dir``. -> {"records", "errors",
+    "failed_cases"}."""
+    app = _load_app()
+    out_dir = check_outside_checkout(out_dir, "--out")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sales_brain_path = sales_brain_path or app.C.sales_brain_path()
+    preps = _load_preps(cases, out_dir, prep_dir, sales_brain_path)
     totals = {"records": 0, "errors": 0, "failed_cases": 0}
     with isolation(app, out_dir / "scratch"):
         for case in cases:
             records, points = [], []
+            prep = preps[case["id"]]
+            seeds = {n: prep["points"][str(n)] for n in case["at_turns"]} if prep else {}
+            if prep:
+                log(f"{case['id']}: prep from git {prep['git_sha'][:10]}, {prep['model']}/{prep['effort']}, "
+                    f"prepared {prep['prepared_at']}")
+            for e in case.get("edits", []):
+                log(f"{case['id']}: edit {scrub(e['what'])}: {scrub(e['from'])} -> {scrub(e['to'])}")
             try:
                 for run in range(1, runs + 1):
                     run_dir = out_dir / "scratch" / case["id"] / f"r{run}"
                     result = app.RP.replay_candidate(case["candidate_id"], run_dir, at_turns=case["at_turns"],
-                                                     sales_brain_path=sales_brain_path,
+                                                     sales_brain_path=sales_brain_path, seeds=seeds,
+                                                     media_roots=media_roots,
                                                      client=make_client() if make_client else None)
                     for line in _read_jsonl(result["jsonl_path"]):
                         if "turn" not in line or line.get("skipped_reason") == "not_in_at_turns":
@@ -262,9 +404,11 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
                                         "run": run, "bubbles": luna.get("bubbles") or [], "buttons": luna.get("buttons") or [],
                                         "action": luna.get("action"), "escalation": luna.get("escalation") or {},
                                         "error": error, "git_sha": line["git_sha"], "model": line["model"],
-                                        "effort": line["effort"], "covers": case["covers"], "region": case["region"]})
+                                        "effort": line["effort"], "covers": case["covers"], "region": case["region"],
+                                        "file_unavailable": line.get("file_unavailable")})
                         if run == 1:
                             points.append({"turn": line["turn"], "inbound": [m["text"] for m in line["inbound"]],
+                                           "inbound_files": line.get("files") or [],
                                            "old_reply": [r["body"] for r in line.get("actual_reply") or []],
                                            "history": _history_before(result["sqlite_path"],
                                                                       app.RP.synthetic_phone(case["candidate_id"]), line)})
@@ -275,12 +419,14 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
             with (out_dir / f"{case['id']}.jsonl").open("w", encoding="utf-8") as fh:
                 for r in records:
                     fh.write(json.dumps(r, ensure_ascii=False) + "\n")
-            meta = {k: case[k] for k in ("id", "candidate_id", "covers", "region")} | {"note": case.get("note", "")}
+            meta = {k: case[k] for k in ("id", "candidate_id", "covers", "region")} | {
+                "note": case.get("note", ""), "edits": case.get("edits", [])}
             (out_dir / f"{case['id']}.points.json").write_text(
                 json.dumps({**meta, "points": points}, ensure_ascii=False, indent=1), encoding="utf-8")
             for r in records:
                 log(f"{r['case']} turn {r['turn']} run {r['run']}: "
-                    + (f"ERROR {r['error']}" if r["error"] else f"{r['action']}, {len(r['bubbles'])} bubble(s)"))
+                    + (f"ERROR {r['error']}" if r["error"] else f"{r['action']}, {len(r['bubbles'])} bubble(s)")
+                    + (", file unavailable" if r["file_unavailable"] else ""))
             totals["records"] += len(records)
             totals["errors"] += sum(1 for r in records if r["error"])
     return totals
@@ -299,6 +445,8 @@ Work in this order.
  - warm and short, as befits a chat.
  pass = all criteria met; partial = a minor miss; fail = a dishonest or leaking reply, an ignored question, a repeated question or no usable next step.
 3. variance: one or two sentences: do the replies agree in substance (same decisions) or diverge, and where.
+
+A point may carry "inbound_files": the files that came with the candidate's latest message. "attached": the author of the replies could read the file. "unavailable": only a placeholder such as [document] reached the author, so do not fault a reply for not using that file's content.
 
 Numbers in the texts were replaced by <num>. Never write a person's name, a clinic's name or any number from the texts in your answer; refer to replies by label only. Judge consistency with the history, not against facts you cannot see.
 Answer with ONLY one JSON object: {"analysis": "...", "scores": [{"label": "A", "verdict": "pass|partial|fail", "reason": "..."}], "variance": "..."}"""
@@ -395,6 +543,9 @@ def _point_entry(meta, point, recs, key):
         "candidate_message": scrub("\n".join(point["inbound"])),
         "replies": [{"label": label, "bubbles": [scrub(b) for b in bubbles]}
                     for label, (_, bubbles) in zip(labels, replies)]}
+    if point.get("inbound_files"):   # neutral: which files came with the message, nothing about old or new
+        entry["inbound_files"] = [{"kind": f["kind"], "status": "attached" if f["status"] == "attached" else "unavailable"}
+                                  for f in point["inbound_files"]]
     return labels, entry
 
 
@@ -419,12 +570,14 @@ def judge_results(out_dir, cli, flt="", log=print):
     """One judge call per point, then one final call. Writes ``results.json`` and ``judge_key.json`` (the
     label key, written after the fact and never shown to the judge). -> the results dict."""
     out_dir = check_outside_checkout(out_dir, "--judge")
-    points, key, failures = [], {}, 0
+    points, key, failures, edits = [], {}, 0, {}
     files = [f for f in sorted(out_dir.glob("*.points.json")) if flt in f.name]
     if not files:
         raise SystemExit(f"no *.points.json matching {flt!r} in {out_dir}: run the cases first")
     for pf in files:
         meta = json.loads(pf.read_text(encoding="utf-8"))
+        if meta.get("edits"):
+            edits[meta["id"]] = meta["edits"]
         records = _read_jsonl(out_dir / f"{meta['id']}.jsonl")
         for point in meta["points"]:
             recs = [r for r in records if r["turn"] == point["turn"]]
@@ -446,7 +599,8 @@ def judge_results(out_dir, cli, flt="", log=print):
                   "analysis": p["analysis"], "variance": p["variance"]} for p in judged]
         overall = _ask(cli, FINAL_SYSTEM, json.dumps({"points": brief}, ensure_ascii=False), _check_final)
         overall = {k: ([scrub(x) for x in v] if isinstance(v, list) else scrub(v)) for k, v in overall.items()}
-    results = {"out_dir": str(out_dir), "points": points, "tally": tally, "judge_errors": failures, "overall": overall}
+    results = {"out_dir": str(out_dir), "points": points, "tally": tally, "judge_errors": failures, "overall": overall,
+               "edits": edits}
     (out_dir / "results.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     return results
 
@@ -472,9 +626,11 @@ def judge_single(out_dir, cli, flt="", log=print):
     files = [f for f in sorted(out_dir.glob("*.points.json")) if flt in f.name]
     if not files:
         raise SystemExit(f"no *.points.json matching {flt!r} in {out_dir}: run the cases first")
-    key, items = {}, []
+    key, items, edits = {}, [], {}
     for pf in files:
         meta = json.loads(pf.read_text(encoding="utf-8"))
+        if meta.get("edits"):
+            edits[meta["id"]] = meta["edits"]
         records = _read_jsonl(out_dir / f"{meta['id']}.jsonl")
         for point in meta["points"]:
             recs = [r for r in records if r["turn"] == point["turn"]]
@@ -490,7 +646,7 @@ def judge_single(out_dir, cli, flt="", log=print):
     tally = {c: sum(1 for p in points if p["comparison"] == c) for c in ("better", "equal", "worse", "n/a")}
     overall = {k: ([scrub(x) for x in v] if isinstance(v, list) else scrub(v)) for k, v in obj["overall"].items()}
     results = {"out_dir": str(out_dir), "points": points, "tally": tally, "judge_errors": 0, "overall": overall,
-               "mode": "single call, blind"}
+               "edits": edits, "mode": "single call, blind"}
     (out_dir / "judge_key_single.json").write_text(json.dumps(key, indent=1), encoding="utf-8")
     (out_dir / "results_single.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     return results
@@ -513,6 +669,10 @@ def format_report(results):
         if p.get("comparison") == "worse":
             out.append(f"worse: {p['case']} t{p['turn']}: " + "; ".join(
                 f"run {r['run']} {r['verdict']}: {r['reason']}" for r in p["runs"] if r["verdict"] != "pass"))
+    if results.get("edits"):
+        out.append("\nedits (documented changes made to these conversations for the eval):")
+        out += [f"  {case}: {scrub(e['what'])}: {scrub(e['from'])} -> {scrub(e['to'])}"
+                for case, case_edits in results["edits"].items() for e in case_edits]
     o = results["overall"]
     if o:
         out.append("\nOVERALL: " + o["summary"])
@@ -530,6 +690,12 @@ def build_parser():
     p.add_argument("--out", help="results directory; must be outside every git checkout")
     p.add_argument("--runs", type=int, default=3, help="passes per case, fresh scratch state each (default 3)")
     p.add_argument("--sales-brain", dest="sales_brain", help="sales_brain.sqlite (opened read-only)")
+    p.add_argument("--prepare", action="store_true",
+                   help="one-time per case: run the real brain on the earlier turns and read the real files, "
+                        "store the card as DIR/prep/<case>.json (needs --cases, --out, --sales-brain)")
+    p.add_argument("--media-root", dest="media_root", action="append", metavar="DIR",
+                   help="directory of the CRM's WhatsApp files, read-only (repeatable; default "
+                        f"{DEFAULT_MEDIA_ROOTS[0]})")
     p.add_argument("--list-turns", dest="list_turns", type=int, metavar="CANDIDATE_ID",
                    help="print each turn of one candidate, scrubbed and cut; no model call")
     p.add_argument("--judge", metavar="OUT_DIR", help="judge a finished results directory")
@@ -541,13 +707,14 @@ def build_parser():
     return p
 
 
-def main(argv=None, cli=None, make_client=None):
-    """``cli`` / ``make_client`` are the seams for the smoke test: a fake judge call, a fake brain client."""
+def main(argv=None, cli=None, make_client=None, prepared_at=None):
+    """``cli`` / ``make_client`` are the seams for the smoke test: a fake judge call, a fake brain client.
+    ``prepared_at`` is the timestamp a --prepare stores (default: now, read here at the boundary)."""
     p = build_parser()
     args = p.parse_args(argv)
-    modes = [m for m in ("list_turns", "judge") if getattr(args, m) is not None]
-    if len(modes) > 1 or (modes and (args.cases or args.out)):
-        p.error("--list-turns, --judge and a run (--cases + --out) are separate modes")
+    modes = [m for m in ("list_turns", "judge") if getattr(args, m) is not None] + (["prepare"] if args.prepare else [])
+    if len(modes) > 1 or (modes and modes != ["prepare"] and (args.cases or args.out)):
+        p.error("--list-turns, --judge, --prepare and a run (--cases + --out) are separate modes")
     if args.runs < 1:
         p.error("--runs must be at least 1")
     if args.list_turns is not None:
@@ -557,7 +724,9 @@ def main(argv=None, cli=None, make_client=None):
         check_outside_checkout(args.judge, "--judge")
     else:
         if not (args.cases and args.out):
-            p.error("give --cases DIR and --out DIR, or --list-turns, or --judge OUT_DIR")
+            p.error("give --cases DIR and --out DIR, or --prepare, or --list-turns, or --judge OUT_DIR")
+        if args.prepare and not args.sales_brain:
+            p.error("--prepare needs --sales-brain PATH")
         check_outside_checkout(args.cases, "--cases")
         check_outside_checkout(args.out, "--out")
     scrub_env()
@@ -580,7 +749,16 @@ def main(argv=None, cli=None, make_client=None):
                                               else "results.json and judge_key.json") + f" in {judge_dir}")
         return 1 if results["judge_errors"] else 0
     cases = load_cases(args.cases, args.filter)
-    totals = run_cases(cases, args.out, args.runs, args.sales_brain, make_client)
+    prep_dir = pathlib.Path(args.cases).resolve() / "prep"
+    media_roots = check_media_roots(args.media_root or DEFAULT_MEDIA_ROOTS)
+    if args.prepare:
+        stamp = prepared_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        totals = prepare_cases(cases, args.out, prep_dir, args.sales_brain, make_client, stamp, media_roots)
+        print(f"\n{totals['prepared']} case(s) prepared in {prep_dir}, {totals['failed_cases']} failed; "
+              f"next: run.py --cases {args.cases} --out {args.out}")
+        return 1 if totals["failed_cases"] else 0
+    totals = run_cases(cases, args.out, args.runs, args.sales_brain, make_client, prep_dir=prep_dir,
+                       media_roots=media_roots)
     print(f"\n{totals['records']} run record(s) in {pathlib.Path(args.out).resolve()}, {totals['errors']} errored, "
           f"{totals['failed_cases']} case(s) failed; next: run.py --judge {args.out}")
     return 1 if totals["errors"] or totals["failed_cases"] else 0

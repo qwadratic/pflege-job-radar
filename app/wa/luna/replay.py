@@ -3,8 +3,9 @@
 For every turn: what Luna says now next to what really followed in the chat.
 
 SOURCE. The colleague's CRM, ``candidate_whatsapp_messages`` in sales_brain.sqlite (old bot and humans,
-not this harness). Opened ``mode=ro`` only (``fetch_rows``/``list_candidates``). Columns read: id,
-direction, message_type, body, caption, media_filename, occurred_at. NEVER ``provider_metadata_json`` (the
+not this harness). Opened ``mode=ro`` only (``fetch_rows``/``list_candidates``/``fetch_attachment``). Columns
+read: id, direction, message_type, body, caption, media_filename, attachment_id, occurred_at; of
+``candidate_attachments`` only id, storage_path, sha256, mime_type. NEVER ``provider_metadata_json`` (the
 raw Meta webhook envelope: it holds a real phone number and user id even on a row with an empty body),
 never ``phone_e164``/``contact_name``/``wamid``. A synthetic phone (``synthetic_phone``) stands in for
 every candidate, so the brain and its MCP tools never see a real number.
@@ -45,10 +46,44 @@ a listing is ``at_turns=[]``) runs the brain ONLY on those turns. Every other tu
 history, inbound rows and the real reply rows exactly as the full replay records them, with NO model
 call; its JSONL line carries ``skipped_reason: "not_in_at_turns"`` (inbound, actual_reply and
 ``prior_context_len`` still there). The walk stops after the last chosen turn (a ``truncated`` line when
-conversation is left). KNOWN LIMIT: the card is advanced only by turns that really run, so a late chosen
-turn sees a card the skipped turns before it did not update (and no LAST_TURN_KEY marker for them: the
-brain sees every outbound row since its last real turn). A chosen number past the thread's last turn is
-a loud error, after the file is written. Exclusive with ``max_turns``.
+conversation is left). A chosen number past the thread's last turn is a loud error, after the file is
+written. Exclusive with ``max_turns``. On its own the card is advanced only by turns that really run, so a
+chosen turn after skipped ones sees a card they did not update: CAPTURE and SEEDS below are the cure.
+
+CAPTURE AND SEEDS (one-time preparation, then free). ``capture_before={T, ...}``: the walk runs the REAL
+brain on every turn before the last chosen one and, if ``media_roots`` is given, reads every inbound
+document/image the thread held (FILES). Right before the brain would run turn T, AFTER T's own inbound rows
+and files are recorded and ingested (exactly the state the brain sees), it captures a seed and goes on; it
+stops at the last chosen turn WITHOUT running it. ``result["seeds"]`` is ``{T: seed}``, JSON-serialisable,
+one object per turn: ``slots`` (the whole card, underscore keys included: ``_session_id``, the LAST_TURN_KEY
+marker, ``_documents_just_received`` ... nothing is dropped; ``_run_turn`` drops ``_session_id`` itself),
+``asked``, ``stopped``/``stopped_reason``, ``documents`` (every wa_documents row of the scratch phone, all
+columns: text, classification, path) and ``files`` (the turn's file entries, FILES). ``seeds={T: seed}`` is the
+run side: the walk records every earlier row as plain history (no model call, no file read), and right
+before turn T replaces the card, ``asked`` and stop flags with the seed, replaces the phone's wa_documents
+rows with the seed's (explicit ids, the card refers to them; each ``path`` points at the read-only source
+file) and runs the brain on T. A seed is only applied to a turn in ``at_turns``; a seed whose turn the
+walk never reaches is a loud error. A chosen turn without a seed behaves as before. Capture is exclusive
+with ``at_turns``/``max_turns``/``seeds``. The ids in a seed's card (``LAST_TURN_KEY`` marker, documents)
+hold in the seed run because both walks record the same rows in the same order.
+
+FILES. ``media_roots`` (a list of directories this user can read) turns file handling on. An inbound
+document/image row resolves like ``import_history.resolve_path``: ``candidate_attachments.storage_path``
+under the roots; when not there, any OTHER attachment row with the same sha256 whose file is on a root. No readable file (no
+attachment row, not on a given root) means UNAVAILABLE: the row keeps its placeholder text and the turn's
+JSONL line carries ``file_unavailable: true`` plus ``files``, one entry per file row
+``{source_id, kind, status, reason, found_via, document_id, document_type, certificate_level}`` (status
+``attached``/``unavailable``/``not_read``; no name, no path). A voice note (audio row, or a document with an
+audio mime type) is never read here (no STT): its old transcript in ``body`` is the text, without one it is
+an unavailable entry. A root this user cannot read is a loud error, not a skip: give only roots you can read.
+A file whose bytes do not match the recorded sha256 is a loud error. In capture mode the file is read
+(read-only on the source), stored as a wa_documents row (``ST.record_document``, ``path`` = the source file,
+nothing copied) and run through ``api._ingest_media``, the function a live media message goes through:
+real ``read_and_classify``, card slots updated the same way, ``_documents_just_received`` set. The brain
+then gets the turn text a live media message gets: nothing (``""``) for an attached file, the file's
+placeholder otherwise. A file that fails to read or classify raises (the capture is not a seed then).
+Without ``media_roots`` nothing of this happens (placeholders, as before). With roots but without a seed, a
+chosen turn that holds a readable file is a loud error: the file must go through a capture.
 
 TURNS. One turn per inbound burst, as ``app/wa/luna/catchup.py``'s owed pass does it (not one per
 message, as the webhook path does). Consecutive inbound rows accumulate and are joined with ``"\\n"`` into
@@ -59,8 +94,8 @@ after it still gets a turn; its ``actual_reply`` is empty. A STOP turn ends the 
 does: every later burst is a ``skipped_reason: "stopped"`` line (rows still recorded, brain not called).
 
 ROWS. Inbound text/button/interactive rows are recorded as given. Media (document/image/audio) with an
-empty body gets a bracketed placeholder and the turn carries ``media_placeholder: true`` (no file to
-re-derive text from, so any document/photo gate behaves differently than on the real attachment). A
+empty body gets a bracketed placeholder and the turn carries ``media_placeholder: true`` (the placeholder is
+also what the row records when its file is attached: FILES). A
 DOCUMENT placeholder keeps only the extension, ``"[document].pdf"`` or plain ``"[document]"`` (the stored
 filename never appears: PII); image/audio keep their ``media_filename``. A non-empty body on an audio row
 is the old system's STT transcript and counts as real text. A button tap with no stored text (the real
@@ -93,14 +128,14 @@ INSTRUMENTATION (AC#3). Every line carries ``model``/``effort`` (``config.LUNA_M
 They need a change to its return contract first; nothing is invented here.
 
 KNOWN LIMITS, read before trusting a report built on this:
-  - sales_brain has no media files: any document/photo-gated rule, and ``show_clinic_photos``'s "has a
-    photo" branch, run against metadata and today's board, not the real attachment;
+  - a file the CRM holds no readable copy of (FILES) is a placeholder: any document-gated rule runs
+    against that, and the turn says so (``file_unavailable``); voice notes are never read;
   - every candidate starts from FRESH state (no card, no session): a history that began mid-relationship
     (an import, a resumed campaign) replays as a first contact;
   - every board tool call (search_postings, get_posting, market_snapshot, ...) answers from the board as
     it is NOW, not on the replayed date;
   - the card carries forward whatever Luna's own turn wrote to it (``card_patch``, warming stamps,
-    funnel stage), not what the real replies imply; later turns read that card;
+    funnel stage), not what the real replies imply; later turns read that card (a seed is such a card);
   - a brain exception on turn N leaves the card and ``LAST_TURN_KEY`` as they were before N (``turn()``
     works on a copy and returns it only on success), so turn N+1 reads turn N-1's checkpoint;
   - a button tap replays as free text (see ROWS);
@@ -112,6 +147,8 @@ KNOWN LIMITS, read before trusting a report built on this:
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import pathlib
 import sqlite3
@@ -121,11 +158,14 @@ from datetime import datetime
 from .. import config as C
 from .. import store as ST
 from .. import luna_brain as LB
+from .import_history import resolve_path
 
 #: message_type values that are recorded but never drive turn logic in either direction (ROWS).
 NO_TURN_TYPES = frozenset({"reaction", "unsupported"})
 #: Kinds whose empty body is a real file this replay cannot see (ROWS, KNOWN LIMITS).
 MEDIA_TYPES = frozenset({"document", "image", "audio"})
+#: Inbound kinds ``read_and_classify`` can read: the rows FILES resolves a file for.
+FILE_KINDS = frozenset({"document", "image"})
 
 #: Prefix of every synthetic id written into the scratch store: never a real wamid from sales_brain.
 _WAMID_PREFIX = "replay"
@@ -186,7 +226,7 @@ def fetch_rows(candidate_id, sales_brain_path):
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "select id, direction, message_type, body, caption, media_filename, occurred_at "
+            "select id, direction, message_type, body, caption, media_filename, attachment_id, occurred_at "
             "from candidate_whatsapp_messages where candidate_id=? order by occurred_at, id",
             (candidate_id,)).fetchall()
     finally:
@@ -213,6 +253,123 @@ def list_candidates(sales_brain_path):
     finally:
         conn.close()
     return [dict(r) for r in rows]
+
+
+# --- files (FILES in the module docstring) -------------------------------------------------------------
+
+def _attachment_query(sales_brain_path, sql, params):
+    conn = sqlite3.connect(f"file:{sales_brain_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def fetch_attachment(attachment_id, sales_brain_path):
+    """-> {id, storage_path, sha256, mime_type} of one ``candidate_attachments`` row, or None. Read-only; no
+    other column is read."""
+    rows = _attachment_query(sales_brain_path, "select id, storage_path, sha256, mime_type "
+                             "from candidate_attachments where id=?", (attachment_id,))
+    return rows[0] if rows else None
+
+
+def fetch_attachments_by_sha(sha256, sales_brain_path, exclude_id):
+    """-> the OTHER attachment rows holding the same bytes (same sha256), same columns, oldest id first."""
+    return _attachment_query(sales_brain_path, "select id, storage_path, sha256, mime_type from "
+                             "candidate_attachments where sha256=? and id<>? order by id", (sha256, exclude_id))
+
+
+def _wants_file_entry(row):
+    """True for an inbound row FILES reports on: every document/image, and a voice note without a transcript."""
+    if row["direction"] != "inbound":
+        return False
+    return row["message_type"] in FILE_KINDS or (row["message_type"] == "audio" and not (row["body"] or "").strip())
+
+
+def _file_entry(row, status, reason=None, found_via=None):
+    return {"source_id": row["id"], "kind": row["message_type"], "status": status, "reason": reason,
+            "found_via": found_via, "document_id": None, "document_type": None, "certificate_level": None}
+
+
+def _locate_row_file(row, sales_brain_path, media_roots):
+    """-> (entry, located). ``located`` is {path, sha256, mime_type} when a readable file exists (entry status
+    ``found``, which the caller turns into ``attached`` or ``not_read``), else None with an ``unavailable``
+    entry that says why. Opens nothing but the attachment tables, read-only."""
+    if row["message_type"] == "audio":
+        return _file_entry(row, "unavailable", "voice_note_not_transcribed"), None
+    if row["attachment_id"] is None:
+        return _file_entry(row, "unavailable", "no_attachment_row"), None
+    att = fetch_attachment(row["attachment_id"], sales_brain_path)
+    if att is None:
+        return _file_entry(row, "unavailable", "attachment_row_missing"), None
+    if (att["mime_type"] or "").strip().lower().startswith("audio/"):
+        return _file_entry(row, "unavailable", "voice_note_not_transcribed"), None
+    roots = [pathlib.Path(r).resolve() for r in media_roots]
+    path, via = resolve_path(att["storage_path"], roots), "own_path"
+    if path is None:
+        for alt in fetch_attachments_by_sha(att["sha256"], sales_brain_path, att["id"]):
+            path = resolve_path(alt["storage_path"], roots)
+            if path is not None:
+                via = "same_sha256"
+                break
+    if path is None:
+        return _file_entry(row, "unavailable", "not_on_a_readable_root"), None
+    return _file_entry(row, "found", found_via=via), {"path": path, "sha256": att["sha256"],
+                                                      "mime_type": att["mime_type"]}
+
+
+def _ingest_file(conn, t, candidate_id, row, located, entry):
+    """Capture mode: read the file (read-only), store it as a wa_documents row and run it through the live
+    media path (``api._ingest_media``: ``read_and_classify``, card slots, ``_documents_just_received``).
+    Fills ``entry`` in place. Raises on a sha256 mismatch and on every read or classification failure."""
+    from .. import api as WAPI   # imported lazily: api pulls in FastAPI
+    blob = pathlib.Path(located["path"]).read_bytes()
+    sha256 = hashlib.sha256(blob).hexdigest()
+    if sha256 != located["sha256"]:
+        raise RuntimeError(f"file of source row {row['id']} (candidate_id={candidate_id}) does not match the "
+                           f"sha256 sales_brain records for it")
+    doc_id = ST.record_document(conn, t["phone"], _wamid(candidate_id, row["id"]), None, row["message_type"],
+                                located["mime_type"], row["media_filename"], str(located["path"]), sha256, len(blob))
+    conn.execute("update wa_documents set received_at=? where id=?", (row["occurred_at"], doc_id))
+    conn.commit()
+    WAPI._ingest_media(conn, t, {"kind": row["message_type"], "media_filename": row["media_filename"]},
+                       {"id": doc_id, "blob": blob, "mime_type": located["mime_type"]})
+    ST.save_thread(conn, t)   # as the live path does, before the reply turn
+    summary = t["slots"]["documents"][-1]
+    entry.update(status="attached", document_id=doc_id, document_type=summary["document_type"],
+                 certificate_level=summary["certificate_level"])
+
+
+def _json_copy(obj):
+    """A deep copy that proves ``obj`` is JSON-serialisable (loudly, never by dropping what is not)."""
+    return json.loads(json.dumps(obj, ensure_ascii=False))
+
+
+def _capture_seed(conn, t, burst):
+    """The state the brain would see right now (CAPTURE AND SEEDS): the whole card, ``asked``, the stop
+    flags, every wa_documents row of the phone, and this turn's file entries."""
+    return _json_copy({"slots": t["slots"], "asked": t["asked"], "stopped": bool(t.get("stopped")),
+                       "stopped_reason": t.get("stopped_reason"),
+                       "documents": ST.documents_for(conn, t["phone"], include_deleted=True),
+                       "files": [m["file"] for m in burst if m.get("file")]})
+
+
+def _apply_seed(conn, t, seed):
+    """Replace the card, ``asked``, the stop flags and the phone's wa_documents rows with ``seed``'s, and save
+    the thread, so the brain and the MCP tools server see the captured state."""
+    t["slots"], t["asked"] = copy.deepcopy(seed["slots"]), copy.deepcopy(seed["asked"])
+    t["stopped"], t["stopped_reason"] = bool(seed["stopped"]), seed["stopped_reason"]
+    known = {r[1] for r in conn.execute("pragma table_info(wa_documents)")}
+    conn.execute("delete from wa_documents where phone=?", (t["phone"],))
+    for doc in seed["documents"]:
+        unknown = sorted(set(doc) - known)
+        if unknown:
+            raise RuntimeError(f"seed document row has columns wa_documents lacks: {unknown}")
+        conn.execute(f"insert into wa_documents ({', '.join(doc)}) values ({', '.join('?' for _ in doc)})",
+                     tuple(doc.values()))
+    conn.commit()
+    ST.save_thread(conn, t)
 
 
 def _unlink_sqlite(path):
@@ -272,10 +429,10 @@ def _pending_turn_work(rows_tail):
 
 
 def _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=None):
-    """One brain turn for ``burst`` (a non-empty list of {"text","kind","at","media_placeholder",
-    "wamid"} items, oldest first). -> the JSON line's fields up to, not including, ``actual_reply``,
-    which the caller adds once it knows what really followed. Never raises: a brain exception is caught
-    and recorded as ``error`` (loud, not skipped), leaving ``t`` as it was before the call (``turn()``
+    """One brain turn for ``burst`` (a non-empty list of {"text","kind","at","media_placeholder","wamid",
+    "turn_text","file","row"} items, oldest first). -> the JSON line's fields up to, not including,
+    ``actual_reply``, which the caller adds once it knows what really followed. Never raises: a brain
+    exception is caught and recorded as ``error`` (loud, not skipped), leaving ``t`` as it was before the call (``turn()``
     works on its own copy of the card and returns it only on success)."""
     phone = t["phone"]
     prior_card = dict(t.get("slots") or {})
@@ -299,7 +456,8 @@ def _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=None):
     # no-marker branch reads the card's _session_id.
     t["slots"].pop("_session_id", None)
 
-    text = "\n".join(m["text"] for m in burst)
+    # An attached file contributes no text, as on the live path (a media message's text is empty).
+    text = "\n".join(m["turn_text"] for m in burst if m["turn_text"])
     turn_key = burst[-1]["wamid"]
     try:
         t["turn_context"] = LB.turn_context(conn, t, turn_key)
@@ -345,14 +503,55 @@ def _record_row(conn, phone, candidate_id, row, text, meta=None):
            meta=meta or _meta(row), at=row["occurred_at"])
 
 
-def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=None, client=None, at_turns=None):
+def _seed_burst(burst, seed, turn_idx, candidate_id):
+    """Seed mode: the turn's file entries come from the seed (no file is read) and an attached file gives
+    no turn text. A seed that does not list exactly the files the turn holds is stale: loud."""
+    entries = {f["source_id"]: f for f in seed["files"]}
+    wanted = [m for m in burst if _wants_file_entry(m["row"])]
+    if sorted(entries) != sorted(m["row"]["id"] for m in wanted):
+        raise RuntimeError(f"seed of turn {turn_idx} of candidate_id={candidate_id!r} lists files "
+                           f"{sorted(entries)} but the turn holds {sorted(m['row']['id'] for m in wanted)}: "
+                           f"the seed is stale, prepare again")
+    for m in wanted:
+        m["file"] = entries[m["row"]["id"]]
+        if m["file"]["status"] == "attached":
+            m["turn_text"] = ""
+
+
+def _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots):
+    """A chosen turn with no seed runs on placeholders; that is only honest for a file nobody can read. A
+    readable one must go through a capture first (FILES): loud."""
+    for m in burst:
+        if not _wants_file_entry(m["row"]):
+            continue
+        entry, located = _locate_row_file(m["row"], sales_brain_path, media_roots)
+        if located is not None:
+            raise RuntimeError(f"turn {turn_idx} of candidate_id={candidate_id!r} holds a readable file (source "
+                               f"row {m['row']['id']}) and has no seed: the file is read once, in a preparation "
+                               f"(evals/wa_brain/run.py --prepare)")
+        m["file"] = entry
+
+
+def _file_fields(line, burst):
+    """FILES: the turn's file entries and the unavailable flag onto its JSONL line (nothing when it has none)."""
+    files = [m["file"] for m in burst if m.get("file")]
+    if files:
+        line["files"] = files
+        line["file_unavailable"] = any(f["status"] != "attached" for f in files)
+
+
+def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=None, client=None, at_turns=None,
+                     capture_before=None, seeds=None, media_roots=None):
     """Replay one candidate's whole recorded history. -> {"candidate_id", "turns_run", "truncated",
-    "errors", "jsonl_path", "sqlite_path"}. ``turns_run`` counts the turns walked; with ``at_turns`` the brain
-    ran on the chosen ones only (AT TURNS in the module docstring).
+    "errors", "jsonl_path", "sqlite_path"}, plus {"seeds", "git_sha", "model", "effort"} in capture mode.
+    ``turns_run`` counts the turns walked; with ``at_turns`` the brain ran on the chosen ones only (AT TURNS),
+    with ``capture_before`` on every one before the last chosen (CAPTURE AND SEEDS), ``seeds`` is the run side
+    of that and ``media_roots`` turns FILES on.
 
     ``errors`` counts the turns whose JSONL line carries ``"error"``. The run never stops on one (it
     continues, as a real restart would); the caller must still be able to tell a clean run from a broken
-    one without opening the JSONL, and ``tools/wa_replay.py`` turns the count into a nonzero exit.
+    one without opening the JSONL, and ``tools/wa_replay.py`` turns the count into a nonzero exit. A capture
+    with errors holds a card that lacks those turns: the caller must not keep its seeds.
 
     The scratch SQLite (``<out_dir>/<candidate_id>.sqlite``, always fresh) and the JSONL report
     (``<out_dir>/<candidate_id>.jsonl``, overwritten) go under the RESOLVED ``out_dir``, and so do
@@ -367,7 +566,19 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
     if at_turns is not None and max_turns is not None:
         raise ValueError("at_turns and max_turns are exclusive")
     at = None if at_turns is None else frozenset(int(n) for n in at_turns)
+    capture = None if capture_before is None else frozenset(int(n) for n in capture_before)
+    seeds = {int(k): v for k, v in (seeds or {}).items()}
+    if capture is not None:
+        if not capture:
+            raise ValueError("capture_before is empty")
+        if at is not None or max_turns is not None or seeds:
+            raise ValueError("capture_before is exclusive with at_turns, max_turns and seeds")
+        if media_roots is None:
+            raise ValueError("capture_before needs media_roots (a list of directories to read files from)")
+    if seeds and not set(seeds) <= (at or frozenset()):
+        raise ValueError(f"seeds for turns {sorted(set(seeds) - (at or frozenset()))} that are not in at_turns")
     stop_after = max(at) if at else max_turns   # an empty ``at`` is a listing: no model turn, no early stop
+    last_capture = max(capture) if capture else None
 
     out_dir = pathlib.Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -384,12 +595,42 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
 
     turn_idx = 0
     truncated = False
+    done = False          # a capture reached its last turn: nothing after it is walked
     n_errors = 0
+    captured, applied = {}, set()
     burst = []
     n = len(rows)
     i = 0
+
+    def do_turn():
+        """Capture, seed, skip or run the burst just completed (``turn_idx`` already counts it). -> the JSONL
+        line, ``actual_reply`` not yet added."""
+        nonlocal n_errors, done
+        if capture is not None:
+            if turn_idx in capture:
+                captured[turn_idx] = _capture_seed(conn, t, burst)
+            if turn_idx == last_capture:
+                done = True
+                line = _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
+                line["skipped_reason"] = "captured_not_run"
+                _file_fields(line, burst)
+                return line
+        elif at is not None and turn_idx not in at:
+            return _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
+        elif turn_idx in seeds:
+            _seed_burst(burst, seeds[turn_idx], turn_idx, candidate_id)
+            _apply_seed(conn, t, seeds[turn_idx])
+            applied.add(turn_idx)
+        elif media_roots is not None:
+            _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots)
+        line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
+        _file_fields(line, burst)
+        if "error" in line:
+            n_errors += 1
+        return line
+
     with jsonl_path.open("w", encoding="utf-8") as fh:
-        while i < n:
+        while i < n and not done:
             row = rows[i]
             text, was_placeholder = _display_text(row)
 
@@ -400,9 +641,19 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
 
             if row["direction"] == "inbound":
                 _record_row(conn, phone, candidate_id, row, text)
-                burst.append({"text": text, "kind": row["message_type"], "at": row["occurred_at"],
-                              "media_placeholder": was_placeholder and row["message_type"] in MEDIA_TYPES,
-                              "wamid": _wamid(candidate_id, row["id"])})
+                item = {"text": text, "kind": row["message_type"], "at": row["occurred_at"],
+                        "media_placeholder": was_placeholder and row["message_type"] in MEDIA_TYPES,
+                        "wamid": _wamid(candidate_id, row["id"]), "turn_text": text, "file": None, "row": row}
+                if capture is not None and _wants_file_entry(row):
+                    entry, located = _locate_row_file(row, sales_brain_path, media_roots)
+                    if located is not None and t.get("stopped"):
+                        entry.update(status="not_read", reason="thread_stopped")
+                    elif located is not None:
+                        _ingest_file(conn, t, candidate_id, row, located, entry)
+                    if entry["status"] == "attached":
+                        item["turn_text"] = ""
+                    item["file"] = entry
+                burst.append(item)
                 i += 1
                 continue
 
@@ -422,12 +673,10 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                 continue
 
             turn_idx += 1
-            if at is not None and turn_idx not in at:
-                line = _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
-            else:
-                line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
-                if "error" in line:
-                    n_errors += 1
+            line = do_turn()
+            if done:
+                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+                break
             last_inbound_at = burst[-1]["at"]
             burst = []
 
@@ -451,20 +700,16 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                 truncated = True
                 break
 
-        if not truncated and burst:
+        if not truncated and not done and burst:
             # A trailing burst at the end of recorded history: a real turn with nothing to compare to.
             if stop_after is not None and turn_idx >= stop_after:
                 truncated = True
             else:
                 turn_idx += 1
-                if at is not None and turn_idx not in at:
-                    line = _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
-                else:
-                    line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
-                    if "error" in line:
-                        n_errors += 1
-                line["actual_reply"] = []
-                line["actual_reply_delay_s"] = None
+                line = do_turn()
+                if not done:
+                    line["actual_reply"] = []
+                    line["actual_reply_delay_s"] = None
                 fh.write(json.dumps(line, ensure_ascii=False) + "\n")
                 ST.save_thread(conn, t)
 
@@ -473,9 +718,16 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                                  "turns_run": turn_idx}, ensure_ascii=False) + "\n")
 
     conn.close()
-    missing = sorted(at - set(range(1, turn_idx + 1))) if at else []
+    missing = sorted((at or capture or frozenset()) - set(range(1, turn_idx + 1)))
     if missing:
-        raise RuntimeError(f"at_turns {missing} are past the last turn of candidate_id={candidate_id!r} "
+        kind = "capture_before" if capture else "at_turns"
+        raise RuntimeError(f"{kind} {missing} are past the last turn of candidate_id={candidate_id!r} "
                            f"({turn_idx} turn(s)); the JSONL up to there is at {jsonl_path}")
-    return {"candidate_id": candidate_id, "turns_run": turn_idx, "truncated": truncated,
-            "errors": n_errors, "jsonl_path": str(jsonl_path), "sqlite_path": str(sqlite_path)}
+    if set(seeds) - applied:
+        raise RuntimeError(f"seeds for turns {sorted(set(seeds) - applied)} of candidate_id={candidate_id!r} "
+                           f"were never applied: the walk did not reach them")
+    result = {"candidate_id": candidate_id, "turns_run": turn_idx, "truncated": truncated,
+              "errors": n_errors, "jsonl_path": str(jsonl_path), "sqlite_path": str(sqlite_path)}
+    if capture is not None:
+        result.update(seeds=captured, git_sha=git_sha, model=C.LUNA_MODEL, effort=C.LUNA_EFFORT)
+    return result

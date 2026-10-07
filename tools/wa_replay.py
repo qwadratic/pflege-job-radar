@@ -9,7 +9,9 @@ app/wa/luna/shadow_run.py.
     python tools/wa_replay.py --candidate 9001 --out /dev/shm/wa-replay-9001 --board-db PATH
 
 ``--at-turns 3,7`` runs the brain on turns 3 and 7 only; every other turn is recorded as plain history with
-no model call (replay.py's docstring, AT TURNS, has the card limitation that follows).
+no model call. The card of a chosen late turn then lacks what the skipped turns would have added, and a file
+stays a placeholder: for a mid-conversation point with its real card and files use evals/wa_brain/run.py
+``--prepare`` (replay.py's docstring, CAPTURE AND SEEDS and FILES).
 
 Exit code 0 on a clean run, 1 when any turn errored ("K of N turns errored"); the run itself goes on past
 an erroring turn.
