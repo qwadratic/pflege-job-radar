@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:48'
-updated_date: '2026-10-05 18:02'
+updated_date: '2026-10-07 15:11'
 labels:
   - dialog
   - architecture
@@ -122,10 +122,21 @@ Folded here: TASK-307, TASK-301, TASK-300, TASK-250. Their full text is kept in 
 - [ ] #21 [TASK-250] send_gallery gets governor pacing and ledger idempotency, with a test that fails without the fix and passes with it
 - [ ] #22 The real candidate phone number is gone from the closing_gate.py docstring
 - [ ] #23 One brain answers a test user on both numbers: a reply goes out on the rail its inbound arrived on (Meta webhook -> Meta, handset -> bridge), replacing TASK-220's pin-forever rule; proactive sends use the last inbound's rail
+- [ ] #24 [Ivan 2026-10-07, supersedes AC 8 and 11] The follow-up tick is selective: a periodic job picks silent candidates, a model chooses whom to follow up, exactly one message per candidate, no pre-scheduled series
+- [ ] #25 [Ivan 2026-10-07] Every card carries next_step (what we expect from her, or the one follow-up planned), set by a brain tool on every run, and shown to the next turn together with the card scoreboard
+- [ ] #26 [Ivan 2026-10-07] A candidate with no or pending diploma recognition gets a next_step to ask again in about a week instead of a terminal dead end
+- [ ] #27 [Ivan 2026-10-07] No identical reminder can be sent: the follow-up text comes from next_step and the card state, with no fixed nudge constant left
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-27: send-scope kill switches live (b5c78c7): WA_REPLY_SCOPE=test_only (both rails) and WA_META_SCOPE=test_only (Meta channel muted; set to all to re-activate). A refused send is stored as a draft with meta.scope_refusal. Why: WA_OWN_ALL_CHATS=1 (b69d336, 2026-09-23) also captured Meta-webhook inbound, so the bot answered a real candidate via the Cloud API on 09-23..25 (thread of that candidate; two call requests answered with 'a colleague will call'; 9 fixed nudges). Still open: the thread rail is pinned forever, so a bridge-pinned test user writing to the Meta number is answered from the handset (new AC above).
+
+Ivan 2026-10-07 (voice, after an audit of origin/main against 20 old-bot conversations; no candidate data here):
+- SUPERSEDES AC 8 and 11 (the TASK-301 cadence over every active conversation; silence only under mute): the follow-up tick is SELECTIVE. A periodic job lists candidates silent long enough, a model decides whom to follow up, and sends exactly ONE message per candidate. No pre-scheduled series. The fixed nudge series (tiers 15/60/240 min, up to 4 per streak, one constant text) goes away (AC 13 stands).
+- next_step: every card carries a next_step: what we expect from her, or the single follow-up planned. Each brain run judges the conversation, may amend the card and sets next_step with a tool. Call it next_step, NOT agent_note (that name is taken by app/wa/luna/agent_note_gate.py = operator notes). The author of the next step must see the card scoreboard and states (documents already received etc.), so nothing is asked twice. Identical reminders are excluded by this, not by a separate guard.
+- No diploma / recognition pending is not a dead end: next_step = ask about the diploma again in about a week. Today not_placeable is terminal in followups.py and the locked reject text ends the thread. Which exact states count as pending: ask Ivan. Any German wording needs his verbatim approval.
+- AC 15 stands and widens: besides the two shipped strings (MEDIA_REPLY, BLOCKED_REPLY_DE) the model itself must never promise human contact. The manager handoff is internal only and tied to card temperature (TASK-316).
+- Output check (internal labels, dates, phones on outgoing text): NOT a per-turn exit check; AC 2 stays at exactly three. It is a regular job, deferred, own card.
 <!-- SECTION:NOTES:END -->
