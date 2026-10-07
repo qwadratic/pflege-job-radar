@@ -47,10 +47,11 @@ The session that does a task closes it. When it considers the work finished and 
 
 ## Iterating on the WhatsApp brain
 
-A change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is checked with the brain eval, `evals/wa_brain/` (Ivan, 2026-10-07). It runs by hand when a feature is built or changed: never in CI, never part of `pytest`. Tests only prove the eval harness itself runs.
+A change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is checked with the brain eval, `evals/wa_brain/` (Ivan, 2026-10-07). It runs by hand when a feature is built or changed: never in CI, never part of `pytest`. Tests only prove the harness itself runs.
 
-- **A case** is one candidate's own history plus our best answer for every earlier assistant turn, then the turn under test with the best answer for it, written as notes (what it must do, what it must not). Never the old bot's messages as history: they carry its mistakes. Cases in this public repo are synthetic; real candidate text stays out of git.
-- **Several runs per case**, because one run says nothing about variance. A judge model then reads every run of every case against the best-answer notes and gives a verdict and a comment.
-- **Nothing is sent.** The harness runs on the replay isolation (scratch DB, no rail, sales brain read-only, output outside any checkout).
-- **Every report states** the git sha, runs per case, failed runs, and the weekly budget before and after.
+- **Phase 1, old vs new (now):** a test point is a real old conversation as it was, the old bot's replies standing in for our own history, with the brain run at chosen turns (`--at-turns`). Several points per candidate, several runs per point. No answer is composed in advance: a judge model works out the best reply for the situation, scores the old reply and the unlabelled new runs side by side, then comments across all points.
+- **Phase 2, features (once our bot runs live):** histories hold our own bot's replies, and each new feature gets its own points.
+- **The eval collects communication patterns**, so region does not matter: the set keeps Bavarian conversations plus one other-region point; anything else is re-set on the Bavarian fixture.
+- **Nothing is sent.** The harness runs on the replay isolation (scratch DB, no rail, sales brain read-only). Case files, results and scratch state hold real conversations and live outside every checkout; the tool refuses paths inside one.
+- **Every report states** the git sha, runs per point, failed runs, and the weekly budget before and after.
 - **Candidate-facing fixed wording is never composed from a judge's complaint.** A finding about a locked German text goes to Ivan for his verbatim wording.
