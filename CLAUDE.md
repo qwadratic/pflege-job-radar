@@ -44,3 +44,14 @@ New task ids are born only on `origin/main`, never on a feature branch. Two bran
 ## Closing tasks
 
 The session that does a task closes it. When it considers the work finished and no re-check is planned, it follows `backlog instructions task-finalization` in the same change set: evidence per acceptance criterion, final summary, status Done. If a re-check is planned, the notes say who re-checks and what, and the task stays open until then. Do not leave a finished task `In Progress` for someone else to close.
+
+## Iterating on the WhatsApp brain
+
+Any change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is iterated only through replay of real conversations, judged blind (Ivan, 2026-10-07). No tuning by reading one transcript and guessing.
+
+1. **Replay, nothing sent.** `tools/wa_replay.py` (`app/wa/luna/replay.py`) runs the current brain over a recorded conversation of the old bot. It never reaches a rail, opens the sales brain read-only, and writes outside any checkout (`--out` on disk, not `/dev/shm`). In a fresh worktree set `WA_CLIENT_CONFIG` to the main checkout's `config/wa-client.json`.
+2. **Two sets.** *Regression set*: every conversation already read for tuning. Re-run it after every change; compare new reply vs old bot's actual reply and vs the previous brain's reply. *Held-out tens*: unseen conversations, one Workflow per ten: a planner picks the turns and seals its reasons and expectations in a file; the executor gets only candidate and turn numbers; the judge gets shuffled A/B and knows nothing of the plan. A held-out conversation whose replies were read for a fix joins the regression set and never counts as held-out again.
+3. **Judge blind.** Pairwise, A/B shuffled by code, the key unsealed only after all verdicts are in. Report counts per side at all confidence levels and at high+medium only, defects per side, failed turns, and any truncated run as truncated, never as success.
+4. **Read the confounds before the verdict.** Replay shows today's job pool, the old bot saw its day's. Turns after the first carry the old bot's own earlier messages as history, so its mistakes can be continued. Files and buttons arrive as placeholders.
+5. **Every report states the budget** (weekly % before and after) and the stop level agreed with Ivan.
+6. **Candidate-facing fixed wording is never composed from a judge's complaint.** A finding about a locked German text goes to Ivan for his verbatim wording.
