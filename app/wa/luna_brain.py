@@ -1138,6 +1138,17 @@ class SessionNotFound(RuntimeError):
         super().__init__(f"no transcript left for session {stale_session_id}")
 
 
+class NonJsonReply(RuntimeError):
+    """The model answered, but not with the one JSON object it was told to return (seen: a plain
+    candidate-facing text and no JSON at all). A RuntimeError like before, so every existing except
+    path is unchanged; its own class so Client.reply can retry exactly this failure and no other, and
+    carrying the session the failed attempt ran in so the retry resumes it."""
+
+    def __init__(self, detail, session_id):
+        self.session_id = session_id
+        super().__init__(detail)
+
+
 class Client:
     """Runs the turn through the `claude` CLI's non-interactive print mode, not the Anthropic
     Python SDK -- so this rides whatever auth the CLI already has on the host (see
@@ -1267,11 +1278,18 @@ class Client:
         try:
             out = _parse_reply_json(result)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"claude -p's result text was not the expected JSON object: {exc}: {result[:300]!r}")
+            raise NonJsonReply(f"claude -p's result text was not the expected JSON object: {exc}: {result[:300]!r}",
+                               str(envelope.get("session_id") or this_session_id))
         return out, str(envelope.get("session_id") or this_session_id)
 
     def reply(self, system_text, user_text, session_id=None):
-        out, next_session_id = self._reply(system_text, user_text, session_id)
+        try:
+            out, next_session_id = self._reply(system_text, user_text, session_id)
+        except NonJsonReply as first:
+            # One retry, in the session the failed attempt ran in, with a short hint (Ivan, 2026-10-07:
+            # "just bake in a retry where the answer is not JSON"). A second failure raises as before.
+            log.warning("luna reply was not a JSON object, retrying once in the same session: %s", first)
+            out, next_session_id = self._reply(system_text, _non_json_hint_payload(), first.session_id)
         return _validate(out), next_session_id
 
 
@@ -1570,6 +1588,20 @@ def _closing_hint_payload():
     short hint, not the harness's complaint quoted back at the model. The session is the same one, so
     the model can still see its own first attempt -- nothing needs to be restated here."""
     return json.dumps({"instruction": CLOSING_HINT}, ensure_ascii=False, indent=2)
+
+
+NON_JSON_HINT = (
+    "Your last answer was NOT sent: it was not a single JSON object, so nothing could be read from it. "
+    "Give the SAME answer again -- same facts, same wording, nothing withdrawn -- as the one JSON "
+    "object in the required shape, with no text before or after it. Do not repeat any tool action you "
+    "already took in that attempt."
+)
+
+
+def _non_json_hint_payload():
+    """Same idiom as _closing_hint_payload: a short hint into the same session, where the model can still
+    see its own first attempt, not a restatement of it."""
+    return json.dumps({"instruction": NON_JSON_HINT}, ensure_ascii=False, indent=2)
 
 
 class _NotClosed(AssertionError):

@@ -1302,6 +1302,60 @@ def test_live_reply_raises_session_not_found_only_on_a_resumes_own_signature(lun
     assert not isinstance(raised3.value, LB.SessionNotFound)
 
 
+def test_live_reply_raises_non_json_reply_carrying_the_failed_attempts_session(luna, monkeypatch):
+    """A plain-text answer (no JSON at all) is a NonJsonReply that still IS a RuntimeError -- every
+    existing except path is unchanged -- and carries the session it ran in, so the retry resumes it."""
+    stdout = json.dumps({"is_error": False, "result": "just a friendly sentence, no braces",
+                         "session_id": "failed-attempt-session"})
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=stdout))
+    with pytest.raises(LB.NonJsonReply) as raised:
+        LB.Client()._live_reply("s", "u", None)
+    assert isinstance(raised.value, RuntimeError)
+    assert raised.value.session_id == "failed-attempt-session"
+
+
+def test_reply_retries_a_non_json_answer_once_in_the_same_session():
+    calls = []
+
+    def fn(system, user, session_id):
+        calls.append((user, session_id))
+        if len(calls) == 1:
+            raise LB.NonJsonReply("not json", "failed-attempt-session")
+        return _out(), "failed-attempt-session"
+
+    out, session_id = LB.Client(reply=fn).reply("sys", "the real payload", None)
+    assert len(calls) == 2
+    assert calls[0] == ("the real payload", None)
+    # the retry resumes the failed attempt's own session and sends the short hint, not the payload again
+    assert calls[1][1] == "failed-attempt-session"
+    assert json.loads(calls[1][0]) == {"instruction": LB.NON_JSON_HINT}
+    assert session_id == "failed-attempt-session" and out["action"]
+
+
+def test_reply_raises_after_a_second_non_json_answer_and_never_tries_a_third_time():
+    calls = []
+
+    def fn(system, user, session_id):
+        calls.append(session_id)
+        raise LB.NonJsonReply("not json", f"attempt-{len(calls)}")
+
+    with pytest.raises(LB.NonJsonReply):
+        LB.Client(reply=fn).reply("sys", "payload", None)
+    assert len(calls) == 2
+
+
+def test_reply_does_not_retry_any_other_failure():
+    calls = []
+
+    def fn(system, user, session_id):
+        calls.append(1)
+        raise RuntimeError("claude -p did not answer within 600s")
+
+    with pytest.raises(RuntimeError):
+        LB.Client(reply=fn).reply("sys", "payload", None)
+    assert len(calls) == 1
+
+
 def test_turn_recovers_from_a_stale_session_id_by_retrying_once_as_a_fresh_contact(luna, monkeypatch):
     """TASK-239: before this fix, SessionNotFound (then a bare RuntimeError) propagated straight out of
     turn() -- BEFORE card["_session_id"] was ever updated -- so the card was saved unchanged and catch-up
