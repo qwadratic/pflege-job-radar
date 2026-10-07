@@ -40,6 +40,16 @@ way it does there: ``outbound_since_last_turn``/``last_turn_at``/``introduced`` 
 over the scratch DB. Luna's own predicted bubbles never enter the scratch DB or a later turn: turn N+1
 sees the REAL outbound that followed turn N, as if a colleague (or the old bot) had answered.
 
+AT TURNS. ``at_turns`` (a list of 1-based turn numbers, as ``--list-turns``-style listings count them:
+a listing is ``at_turns=[]``) runs the brain ONLY on those turns. Every other turn is recorded as plain
+history, inbound rows and the real reply rows exactly as the full replay records them, with NO model
+call; its JSONL line carries ``skipped_reason: "not_in_at_turns"`` (inbound, actual_reply and
+``prior_context_len`` still there). The walk stops after the last chosen turn (a ``truncated`` line when
+conversation is left). KNOWN LIMIT: the card is advanced only by turns that really run, so a late chosen
+turn sees a card the skipped turns before it did not update (and no LAST_TURN_KEY marker for them: the
+brain sees every outbound row since its last real turn). A chosen number past the thread's last turn is
+a loud error, after the file is written. Exclusive with ``max_turns``.
+
 TURNS. One turn per inbound burst, as ``app/wa/luna/catchup.py``'s owed pass does it (not one per
 message, as the webhook path does). Consecutive inbound rows accumulate and are joined with ``"\\n"`` into
 the turn's text; the first real outbound row after them is where production would have answered, so
@@ -316,6 +326,18 @@ def _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=None):
     return line
 
 
+def _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha):
+    """The JSONL line of a turn ``at_turns`` did not choose: what ``_run_turn`` records before the model runs,
+    plus ``skipped_reason``. No brain call, the card and the thread are untouched (AT TURNS)."""
+    return {"candidate_id": candidate_id, "turn": turn_idx,
+            "turn_kind": "burst" if len(burst) > 1 else "single",
+            "inbound": [{"text": m["text"], "kind": m["kind"], "at": m["at"]} for m in burst],
+            "media_placeholder": any(m["media_placeholder"] for m in burst),
+            "prior_context_len": ST.last_message_id(conn, t["phone"]),
+            "model": C.LUNA_MODEL, "effort": C.LUNA_EFFORT, "git_sha": git_sha,
+            "skipped_reason": "not_in_at_turns"}
+
+
 def _record_row(conn, phone, candidate_id, row, text, meta=None):
     """Write one sales_brain row into the scratch store with its historical ``occurred_at``."""
     record = ST.record_inbound if row["direction"] == "inbound" else ST.record_outbound
@@ -323,9 +345,10 @@ def _record_row(conn, phone, candidate_id, row, text, meta=None):
            meta=meta or _meta(row), at=row["occurred_at"])
 
 
-def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=None, client=None):
+def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=None, client=None, at_turns=None):
     """Replay one candidate's whole recorded history. -> {"candidate_id", "turns_run", "truncated",
-    "errors", "jsonl_path", "sqlite_path"}.
+    "errors", "jsonl_path", "sqlite_path"}. ``turns_run`` counts the turns walked; with ``at_turns`` the brain
+    ran on the chosen ones only (AT TURNS in the module docstring).
 
     ``errors`` counts the turns whose JSONL line carries ``"error"``. The run never stops on one (it
     continues, as a real restart would); the caller must still be able to tell a clean run from a broken
@@ -341,6 +364,10 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
     if not rows:
         raise RuntimeError(f"no sales_brain rows for candidate_id={candidate_id!r} in {sales_brain_path!r}")
     git_sha = _git_sha()
+    if at_turns is not None and max_turns is not None:
+        raise ValueError("at_turns and max_turns are exclusive")
+    at = None if at_turns is None else frozenset(int(n) for n in at_turns)
+    stop_after = max(at) if at else max_turns   # an empty ``at`` is a listing: no model turn, no early stop
 
     out_dir = pathlib.Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -395,9 +422,12 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                 continue
 
             turn_idx += 1
-            line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
-            if "error" in line:
-                n_errors += 1
+            if at is not None and turn_idx not in at:
+                line = _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
+            else:
+                line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
+                if "error" in line:
+                    n_errors += 1
             last_inbound_at = burst[-1]["at"]
             burst = []
 
@@ -417,19 +447,22 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
             fh.write(json.dumps(line, ensure_ascii=False) + "\n")
             ST.save_thread(conn, t)
 
-            if max_turns is not None and turn_idx >= max_turns and _pending_turn_work(rows[i:]):
+            if stop_after is not None and turn_idx >= stop_after and _pending_turn_work(rows[i:]):
                 truncated = True
                 break
 
         if not truncated and burst:
             # A trailing burst at the end of recorded history: a real turn with nothing to compare to.
-            if max_turns is not None and turn_idx >= max_turns:
+            if stop_after is not None and turn_idx >= stop_after:
                 truncated = True
             else:
                 turn_idx += 1
-                line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
-                if "error" in line:
-                    n_errors += 1
+                if at is not None and turn_idx not in at:
+                    line = _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha)
+                else:
+                    line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
+                    if "error" in line:
+                        n_errors += 1
                 line["actual_reply"] = []
                 line["actual_reply_delay_s"] = None
                 fh.write(json.dumps(line, ensure_ascii=False) + "\n")
@@ -440,5 +473,9 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                                  "turns_run": turn_idx}, ensure_ascii=False) + "\n")
 
     conn.close()
+    missing = sorted(at - set(range(1, turn_idx + 1))) if at else []
+    if missing:
+        raise RuntimeError(f"at_turns {missing} are past the last turn of candidate_id={candidate_id!r} "
+                           f"({turn_idx} turn(s)); the JSONL up to there is at {jsonl_path}")
     return {"candidate_id": candidate_id, "turns_run": turn_idx, "truncated": truncated,
             "errors": n_errors, "jsonl_path": str(jsonl_path), "sqlite_path": str(sqlite_path)}

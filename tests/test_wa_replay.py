@@ -943,3 +943,32 @@ def test_main_checkout_root_from_a_linked_worktree_is_the_main_checkout(tmp_path
     _SPEC.loader.exec_module(real)   # a fresh copy: the autouse fixture patched CLI's own function
     assert real._main_checkout_root(linked).resolve() == main.resolve()
     assert real._main_checkout_root(main).resolve() == main.resolve()
+
+
+def test_at_turns_runs_only_the_chosen_turns_and_records_the_rest_as_plain_history(tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9030, "inbound", "text", "2030-09-01T10:00:00+00:00", body="eins"),
+        _row(2, 9030, "outbound", "text", "2030-09-01T10:00:05+00:00", body="ok 1"),
+        _row(3, 9030, "inbound", "text", "2030-09-01T10:00:10+00:00", body="zwei"),
+        _row(4, 9030, "outbound", "text", "2030-09-01T10:00:15+00:00", body="ok 2"),
+        _row(5, 9030, "inbound", "text", "2030-09-01T10:00:20+00:00", body="drei"),
+        _row(6, 9030, "outbound", "text", "2030-09-01T10:00:25+00:00", body="ok 3"),
+    ])
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9030, scratch_dir, at_turns=[2], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["zwei"]                       # one model call, turn 2 only
+    assert fake.calls[0]["outbound_since_last_turn"] == ["ok 1"]             # turn 1 is history, reply row included
+    assert (result["turns_run"], result["errors"], result["truncated"]) == (2, 0, True)
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert lines[0]["skipped_reason"] == "not_in_at_turns" and lines[0]["actual_reply"][0]["body"] == "ok 1"
+    assert lines[1]["luna"]["bubbles"] == ["reply #1"] and lines[1]["actual_reply"][0]["body"] == "ok 2"
+    assert lines[2] == {"candidate_id": 9030, "truncated": True, "turns_run": 2}
+
+    listing = RP.replay_candidate(9030, scratch_dir, at_turns=[], sales_brain_path=db)   # a listing: no model call
+    assert len(fake.calls) == 1 and listing["turns_run"] == 3
+
+    with pytest.raises(RuntimeError, match=r"at_turns \[7\] are past the last turn"):
+        RP.replay_candidate(9030, scratch_dir, at_turns=[7], sales_brain_path=db)
+    with pytest.raises(ValueError, match="exclusive"):
+        RP.replay_candidate(9030, scratch_dir, at_turns=[1], max_turns=1, sales_brain_path=db)

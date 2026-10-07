@@ -5,7 +5,11 @@ app/wa/luna/shadow_run.py.
 
     python tools/wa_replay.py --list
     python tools/wa_replay.py --candidate 9001 --out /dev/shm/wa-replay-9001 --max-turns 2
+    python tools/wa_replay.py --candidate 9001 --out /dev/shm/wa-replay-9001 --at-turns 3,7
     python tools/wa_replay.py --candidate 9001 --out /dev/shm/wa-replay-9001 --board-db PATH
+
+``--at-turns 3,7`` runs the brain on turns 3 and 7 only; every other turn is recorded as plain history with
+no model call (replay.py's docstring, AT TURNS, has the card limitation that follows).
 
 Exit code 0 on a clean run, 1 when any turn errored ("K of N turns errored"); the run itself goes on past
 an erroring turn.
@@ -86,6 +90,17 @@ def check_out_dir(out_dir):
                              f"e.g. under /dev/shm.")
 
 
+def _turn_list(text):
+    """argparse type for --at-turns: ``"3,7"`` -> [3, 7], positive integers only."""
+    try:
+        turns = [int(part) for part in text.split(",")]
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a comma-separated list of turn numbers")
+    if not turns or any(n < 1 for n in turns):
+        raise argparse.ArgumentTypeError(f"{text!r}: turn numbers start at 1")
+    return turns
+
+
 def build_parser():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--list", action="store_true", help="list every candidate_id sales_brain holds, with counts")
@@ -93,6 +108,9 @@ def build_parser():
     p.add_argument("--out", help="directory for the scratch sqlite + JSONL report (required with --candidate); "
                                 "refused inside any repo checkout, use e.g. /dev/shm")
     p.add_argument("--max-turns", type=int, default=None, help="stop after this many turns (default: all)")
+    p.add_argument("--at-turns", dest="at_turns", type=_turn_list, default=None,
+                   help="comma-separated turn numbers to run the brain on, e.g. 3,7; the others are plain "
+                        "history, no model call (exclusive with --max-turns)")
     p.add_argument("--sales-brain-path", dest="sales_brain_path", default=None,
                    help="override the sales_brain.sqlite path (default: app.wa.config.sales_brain_path())")
     p.add_argument("--board-db", dest="board_db", default=None,
@@ -111,6 +129,8 @@ def parse_args(argv):
         p.error("give --list or --candidate ID --out DIR")
     if not args.out:
         p.error("--candidate requires --out DIR")
+    if args.at_turns is not None and args.max_turns is not None:
+        p.error("--at-turns and --max-turns are exclusive")
     check_out_dir(args.out)
     return args
 
@@ -192,18 +212,21 @@ def cmd_candidate(args):
     APPC.SQLITE_PATH = board_copy                              # BOARD, module docstring
     try:
         result = RP.replay_candidate(args.candidate, out_dir, max_turns=args.max_turns,
+                                     at_turns=args.at_turns,
                                      sales_brain_path=args.sales_brain_path or C.sales_brain_path())
     finally:
         # The board db also holds sessions, magic links and customers: the copy lives only for the
         # run and never stays next to the replayed conversations.
         for suffix in ("", "-wal", "-shm", "-journal"):
             pathlib.Path(str(board_copy) + suffix).unlink(missing_ok=True)
-    print(f"candidate {result['candidate_id']}: {result['turns_run']} turn(s) run"
-          + (" (truncated by --max-turns)" if result["truncated"] else " (end of history)"))
+    # --at-turns: only the chosen turns ran through the brain, the others are plain history.
+    ran = len(set(args.at_turns)) if args.at_turns is not None else result["turns_run"]
+    print(f"candidate {result['candidate_id']}: {result['turns_run']} turn(s) walked, {ran} run through the brain"
+          + (" (truncated)" if result["truncated"] else " (end of history)"))
     print(f"  jsonl:  {result['jsonl_path']}")
     print(f"  sqlite: {result['sqlite_path']}")
     # LOUD: an erroring turn never stops the run, but the run must not read as clean.
-    print(f"  {result['errors']} of {result['turns_run']} turns errored")
+    print(f"  {result['errors']} of {ran} turns errored")
     return 1 if result["errors"] > 0 else 0
 
 
