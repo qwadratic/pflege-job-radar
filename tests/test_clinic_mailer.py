@@ -1474,7 +1474,7 @@ def tcfg(scfg, monkeypatch, reader):
     d = scfg["ledger"].parent
     (d / "terms.txt").write_text(TERMS_LETTER)
     (d / "terms.html").write_text(TERMS_HTML)
-    scfg["terms"] = {"template": d / "terms.txt", "pdf_html": d / "terms.html", "stand": "06.10.2026"}
+    scfg["terms"] = {"template": d / "terms.txt", "pdf_html": d / "terms.html", "stand": "06.10.2026", "file_prefix": "Acme_Terms"}
     scfg["_pdfs"] = made = []
 
     def fake_render(html_text, out):
@@ -1505,11 +1505,11 @@ def test_a_terms_request_gets_the_letter_and_a_pdf_made_for_the_clinic_at_once_i
     assert plain(msg).startswith("Sehr geehrte Frau Berger,\n\ngerne unsere Konditionen.")
     assert "http" not in plain(msg) and "http" not in msg.get_body(("html",)).get_content()
     (pdf,) = msg.iter_attachments()
-    assert pdf.get_filename() == "NDT_Konditionen_Klinik_A_GmbH.pdf" and pdf.get_content() == b"%PDF-1.4 stub"
+    assert pdf.get_filename() == "Acme_Terms_Klinik_A_GmbH.pdf" and pdf.get_content() == b"%PDF-1.4 stub"
     assert tcfg["_pdfs"] == ["<html><body><h1>Klinik A GmbH</h1><div>z. Hd. Frau Anna Berger</div><p>Stand 06.10.2026</p></body></html>"]
     (sent,) = w.events("terms_sent")
     assert (sent["recipient_id"], sent["to"], sent["message_id"], sent["in_reply_to"], sent["attachment"]) == \
-           ("1", ["anna.berger@klinikverbund.example"], msg["Message-ID"], "<r1@x>", "NDT_Konditionen_Klinik_A_GmbH.pdf")
+           ("1", ["anna.berger@klinikverbund.example"], msg["Message-ID"], "<r1@x>", "Acme_Terms_Klinik_A_GmbH.pdf")
     assert sent["names"] == {"clinic": ["Klinik A GmbH", "thread"], "person": ["Anna Berger", "thread"], "greeting": ["Sehr geehrte Frau Berger", "thread"]}
     assert len(w.events("sent")) == 1                                    # the one answers_world wrote: no cadence step was added
     assert ev["actions"][0]["do"] == "terms_letter" and ev["actions"][0]["sent"] is True and "имена взяты: clinic: thread" in ev["actions"][0]["ru"]
@@ -1531,7 +1531,7 @@ def test_names_the_thread_does_not_carry_are_replaced_by_fixed_fallbacks_and_the
     (ev,) = M.watch(tcfg)
     ((_, msg),) = w.sent
     assert plain(msg).startswith("Sehr geehrte Damen und Herren,") and msg.get_body(("html",)) is not None
-    assert [a.get_filename() for a in msg.iter_attachments()] == ["NDT_Konditionen_Klinik_A.pdf"]
+    assert [a.get_filename() for a in msg.iter_attachments()] == ["Acme_Terms_Klinik_A.pdf"]
     assert tcfg["_pdfs"] == ["<html><body><h1>Klinik A</h1><div>z. Hd. Anna Berger</div><p>Stand 06.10.2026</p></body></html>"]
     assert w.events("terms_sent")[0]["names"] == {"clinic": ["Klinik A", "board"], "person": ["Anna Berger", "from-line"],
                                                   "greeting": ["Sehr geehrte Damen und Herren", "general"]}
@@ -1628,7 +1628,7 @@ def test_the_terms_command_previews_a_letter_and_sends_by_hand_what_the_automati
     w = terms_world(tcfg, monkeypatch)
     cfg_file = tcfg["_dir"] / "c.json"
     conf = json.loads(cfg_file.read_text())
-    conf["terms"] = {"template": "terms.txt", "pdf_html": "terms.html", "stand": "06.10.2026"}
+    conf["terms"] = {"template": "terms.txt", "pdf_html": "terms.html", "stand": "06.10.2026", "file_prefix": "Acme_Terms"}
     cfg_file.write_text(json.dumps(conf))
     eml = tmp_path / "asked.eml"
     eml.write_bytes(mail(BERGER, "AW: Pflegekraft", ASKED, at("2026-09-29T10:03:00"), "<r1@x>", In_Reply_To="<m1@x>")[2])
@@ -1642,3 +1642,12 @@ def test_the_terms_command_previews_a_letter_and_sends_by_hand_what_the_automati
     assert len(w.sent) == 1 and w.events("terms_sent")[0]["by_hand"] is True and w.events("terms_sent")[0]["names"]["clinic"] == ["Klinik A GmbH", "operator"]
     assert M.main(hand) == 0 and len(w.sent) == 1             # but a letter that went is never repeated
     assert M.main(["terms", str(cfg_file), "1", str(eml), "--clinic", "K", "--greeting", "Hallo"]) == 2
+
+
+def test_a_terms_block_without_a_file_prefix_is_refused_when_the_config_loads(tcfg):
+    cfg_file = tcfg["_dir"] / "c.json"
+    conf = json.loads(cfg_file.read_text())
+    conf["terms"] = {"template": "terms.txt", "pdf_html": "terms.html", "stand": "06.10.2026"}
+    cfg_file.write_text(json.dumps(conf))
+    with pytest.raises(M.MailerError, match='"terms" needs "file_prefix"'):
+        M.load_config(cfg_file)

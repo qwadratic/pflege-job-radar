@@ -116,10 +116,11 @@ Terms letter (TASK-345.12.16; Ivan, 2026-10-07): a clinic that asks for the agen
 classifier's pattern terms_request) gets them at once, in its own thread, by the watch itself: no plan, no announcement,
 no approval, no send window. Only a campaign whose config has a "terms" block does it ({"template": the letter, a template
 like the steps' whose "Betreff:" line holds [BETREFF_KLINIK], the clinic's subject without its reply prefix; "pdf_html": the
-HTML of the PDF with [KLINIK], [EMPFAENGER_ZEILE] and [STAND]; "stand": the date the terms are valid from}). Only an answer
+HTML of the PDF with [KLINIK], [EMPFAENGER_ZEILE] and [STAND]; "stand": the date the terms are valid from; "file_prefix": the start of the PDF's file name, the sender's own name
+for the document, kept in the git-ignored config like every client name}). Only an answer
 matched to a recipient and written by a person is answered (an automatic reply or an unmatched mail changes nothing, as
 before). The letter goes To the address the answer came from, Cc to the others on its To and Cc lines, with In-Reply-To
-the answer and References the whole chain, and "NDT_Konditionen_<clinic>.pdf" made for the clinic (mailer_terms,
+the answer and References the whole chain, and a PDF "<file_prefix>_<clinic>.pdf" made for the clinic (mailer_terms,
 headless Chrome, like the announcement PDF). The names on it come from the classifier, which reads the whole thread (the answer with
 its quoted history, the From line, how our first letter greeted): the clinic's name, the writer's name and
 the greeting; mailer_terms.resolve_names keeps each only when the thread carries it and otherwise takes a fixed fallback (the
@@ -227,7 +228,7 @@ def load_config(path):
     if cfg.get("desk"):
         cfg["desk"]["heartbeat"] = (path.parent / cfg["desk"]["heartbeat"]).resolve()
     if cfg.get("terms"):
-        for k in ("template", "pdf_html", "stand"):
+        for k in ("template", "pdf_html", "stand", "file_prefix"):
             if not cfg["terms"].get(k):
                 raise MailerError(f'"terms" needs "{k}" in {path}')
         for k in ("template", "pdf_html"):
@@ -1832,7 +1833,7 @@ def terms_letter(cfg, rid, raw, names, preview=None, by_hand=False):
         stamp = now_in(cfg).strftime("%Y%m%dT%H%M%S")
         out_dir = cfg["ledger"].parent / "terms"
         out_dir.mkdir(exist_ok=True)
-        name = f"NDT_Konditionen_{mailer_terms.file_slug(clinic)}.pdf"
+        name = f"{t['file_prefix']}_{mailer_terms.file_slug(clinic)}.pdf"
         pdf = mailer_terms.render_pdf(mailer_terms.fill_pdf_html(t["pdf_html"].read_text(encoding="utf-8"), clinic,
                                                                  f"{title} {person}".strip(), t["stand"]), out_dir / f"{rid}-{stamp}-{name}")
     except mailer_terms.TermsError as e:
