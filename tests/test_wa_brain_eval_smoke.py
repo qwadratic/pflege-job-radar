@@ -81,6 +81,23 @@ def test_eval_harness_runs_end_to_end_offline(tmp_path, monkeypatch):
     assert (out / "results.json").exists() and (out / "judge_key.json").exists()
     assert "OVERALL: ok" in RUN.format_report(results)
 
+    # --single: ONE blind call for every point and the overall comment; old/new tally still computed by code
+    single_payloads = []
+
+    def fake_single(system, payload):
+        single_payloads.append(payload)
+        body = json.loads(payload)
+        pts = [{"id": pt["id"], "analysis": "a", "variance": "v",
+                "scores": [{"label": r["label"], "verdict": "pass" if "Verstanden" in r["bubbles"][0] else "fail",
+                            "reason": "fine"} for r in pt["replies"]]} for pt in body["points"]]
+        return json.dumps({"points": pts, "overall": {"better": ["x"], "worse": [], "look_first": ["y"], "summary": "one call"}})
+
+    single = RUN.judge_single(out, fake_single)
+    assert len(single_payloads) == 1 and "old" not in single_payloads[0] and "run1" not in single_payloads[0]
+    assert [p["comparison"] for p in single["points"]] == ["better", "better"]
+    assert (out / "results_single.json").exists() and (out / "judge_key_single.json").exists()
+    assert "OVERALL: one call" in RUN.format_report(single)
+
     # an --out / --cases / --judge directory inside a checkout is refused before anything happens
     for flags in (["--cases", str(ROOT / "evals"), "--out", str(tmp_path / "o2")],
                   ["--cases", str(cases_dir), "--out", str(ROOT / "evals" / "wa_brain" / "out")],

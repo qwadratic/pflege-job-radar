@@ -382,18 +382,23 @@ def compare(old_verdict, new_verdicts):
     return "better" if delta >= EQUAL_BAND else "worse" if delta <= -EQUAL_BAND else "equal"
 
 
-def _judge_point(cli, meta, point, recs, key):
+def _point_entry(meta, point, recs, key):
+    """The blind input of one point: the old reply and the new runs as unlabelled, shuffled replies. The label
+    -> source key is written to ``key`` for unsealing after the fact and never goes to the judge."""
     replies = [("old", point["old_reply"] or ["(no reply was sent)"])]
     replies += [(f"run{r['run']}", r["bubbles"] or ["(no message was sent)"]) for r in recs if not r["error"]]
     random.Random(f"{meta['id']}:{point['turn']}").shuffle(replies)   # by code; the key never goes to the judge
     labels = dict(zip(string.ascii_uppercase, (src for src, _ in replies)))
     key.setdefault(meta["id"], {})[str(point["turn"])] = labels
-    payload = json.dumps({
+    entry = {
         "history": [{"from": h["from"], "text": scrub(h["text"])} for h in point["history"]],
         "candidate_message": scrub("\n".join(point["inbound"])),
         "replies": [{"label": label, "bubbles": [scrub(b) for b in bubbles]}
-                    for label, (_, bubbles) in zip(labels, replies)]}, ensure_ascii=False)
-    obj = _ask(cli, JUDGE_SYSTEM, payload, lambda o: _check_point(o, list(labels)))
+                    for label, (_, bubbles) in zip(labels, replies)]}
+    return labels, entry
+
+
+def _point_result(meta, point, recs, labels, obj):
     by_source = {labels[s["label"]]: {"verdict": s["verdict"], "reason": scrub(s["reason"])} for s in obj["scores"]}
     runs = [{"run": r["run"], **by_source[f"run{r['run']}"]} if not r["error"] else
             {"run": r["run"], "verdict": "fail", "reason": f"the run errored: {scrub(str(r['error']))[:200]}"}
@@ -402,6 +407,12 @@ def _judge_point(cli, meta, point, recs, key):
             "analysis": scrub(obj["analysis"]), "old": by_source["old"], "runs": runs,
             "comparison": compare(by_source["old"]["verdict"], [r["verdict"] for r in runs]),
             "variance": scrub(obj["variance"])}
+
+
+def _judge_point(cli, meta, point, recs, key):
+    labels, entry = _point_entry(meta, point, recs, key)
+    obj = _ask(cli, JUDGE_SYSTEM, json.dumps(entry, ensure_ascii=False), lambda o: _check_point(o, list(labels)))
+    return _point_result(meta, point, recs, labels, obj)
 
 
 def judge_results(out_dir, cli, flt="", log=print):
@@ -440,6 +451,51 @@ def judge_results(out_dir, cli, flt="", log=print):
     return results
 
 
+SINGLE_SYSTEM = JUDGE_SYSTEM.rsplit("Answer with ONLY", 1)[0] + """You get ALL points of the eval in ONE request: a list under "points", each with an "id", its history, the candidate's latest message and its unlabelled replies. Do steps 1-3 for EVERY point, using that point's own labels only. Then give one overall comment across all points, written after you have seen them all: in "better" the kinds of replies that are recurrently strong and why, in "worse" those that are recurrently weak and why (cite point ids), in "look_first" up to 3 things to examine first, and a short "summary". You are not told which reply came from which assistant: do not guess. Never write a person's name, a clinic's name or any number from the texts.
+Answer with ONLY one JSON object: {"points": [{"id": "...", "analysis": "...", "scores": [{"label": "A", "verdict": "pass|partial|fail", "reason": "..."}], "variance": "..."}], "overall": {"better": ["..."], "worse": ["..."], "look_first": ["..."], "summary": "..."}}"""
+
+
+def _check_single(obj, label_sets):
+    pts = obj["points"]
+    if sorted(p["id"] for p in pts) != sorted(label_sets):
+        raise ValueError(f"points must cover exactly the ids {sorted(label_sets)}")
+    for p in pts:
+        _check_point(p, label_sets[p["id"]])
+    _check_final(obj["overall"])
+
+
+def judge_single(out_dir, cli, flt="", log=print):
+    """ONE judge call for every point plus the overall comment, blind: the judge never sees which reply is old,
+    so its overall comment speaks of reply kinds and the old/new tally is added by code after unsealing. Writes
+    ``results_single.json`` and ``judge_key_single.json``. -> the results dict (same shape as judge_results)."""
+    out_dir = check_outside_checkout(out_dir, "--judge")
+    files = [f for f in sorted(out_dir.glob("*.points.json")) if flt in f.name]
+    if not files:
+        raise SystemExit(f"no *.points.json matching {flt!r} in {out_dir}: run the cases first")
+    key, items = {}, []
+    for pf in files:
+        meta = json.loads(pf.read_text(encoding="utf-8"))
+        records = _read_jsonl(out_dir / f"{meta['id']}.jsonl")
+        for point in meta["points"]:
+            recs = [r for r in records if r["turn"] == point["turn"]]
+            labels, entry = _point_entry(meta, point, recs, key)
+            items.append((meta, point, recs, labels, {"id": f"{meta['id']}:{point['turn']}", **entry}))
+    label_sets = {entry["id"]: list(labels) for _, _, _, labels, entry in items}
+    obj = _ask(cli, SINGLE_SYSTEM, json.dumps({"points": [it[4] for it in items]}, ensure_ascii=False),
+               lambda o: _check_single(o, label_sets))
+    by_id = {p["id"]: p for p in obj["points"]}
+    points = [_point_result(meta, point, recs, labels, by_id[entry["id"]]) for meta, point, recs, labels, entry in items]
+    for res in points:
+        log(f"judged {res['case']} turn {res['turn']}: {res['comparison']}")
+    tally = {c: sum(1 for p in points if p["comparison"] == c) for c in ("better", "equal", "worse", "n/a")}
+    overall = {k: ([scrub(x) for x in v] if isinstance(v, list) else scrub(v)) for k, v in obj["overall"].items()}
+    results = {"out_dir": str(out_dir), "points": points, "tally": tally, "judge_errors": 0, "overall": overall,
+               "mode": "single call, blind"}
+    (out_dir / "judge_key_single.json").write_text(json.dumps(key, indent=1), encoding="utf-8")
+    (out_dir / "results_single.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    return results
+
+
 def format_report(results):
     out = [f"{'point':<30} {'covers':<38} {'old':<4} {'new runs':<12} vs old"]
     for p in results["points"]:
@@ -460,7 +516,8 @@ def format_report(results):
     o = results["overall"]
     if o:
         out.append("\nOVERALL: " + o["summary"])
-        for title, items in (("better", o["better"]), ("worse", o["worse"]), ("look first", o["look_first"])):
+        names = ("strong", "weak") if results.get("mode") else ("better", "worse")   # single blind call: reply kinds, not new-vs-old
+        for title, items in ((names[0], o["better"]), (names[1], o["worse"]), ("look first", o["look_first"])):
             out += [f"  {title}: {item}" for item in items]
     return "\n".join(out)
 
@@ -476,6 +533,8 @@ def build_parser():
     p.add_argument("--list-turns", dest="list_turns", type=int, metavar="CANDIDATE_ID",
                    help="print each turn of one candidate, scrubbed and cut; no model call")
     p.add_argument("--judge", metavar="OUT_DIR", help="judge a finished results directory")
+    p.add_argument("--single", action="store_true",
+                   help="with --judge: ONE blind call for all points plus the overall comment (results_single.json)")
     p.add_argument("--judge-model", dest="judge_model", help="default: config AGENT_NOTE_DECODE_MODEL (sonnet tier)")
     p.add_argument("--judge-effort", dest="judge_effort", help="default: config AGENT_NOTE_DECODE_EFFORT")
     p.add_argument("--judge-timeout", dest="judge_timeout", type=int, help="seconds per judge call")
@@ -515,9 +574,10 @@ def main(argv=None, cli=None, make_client=None):
             work = judge_dir / "judge_cwd"   # outside the repo, so the CLI reads no project instructions
             work.mkdir(parents=True, exist_ok=True)
             cli = make_claude_cli(app, model, effort, args.judge_timeout or app.C.AGENT_NOTE_DECODE_TIMEOUT_SEC, work)
-        results = judge_results(judge_dir, cli, args.filter)
+        results = (judge_single if args.single else judge_results)(judge_dir, cli, args.filter)
         print(format_report(results))
-        print(f"\njudge: {model}/{effort}; results.json and judge_key.json in {judge_dir}")
+        print(f"\njudge: {model}/{effort}; " + ("results_single.json and judge_key_single.json" if args.single
+                                              else "results.json and judge_key.json") + f" in {judge_dir}")
         return 1 if results["judge_errors"] else 0
     cases = load_cases(args.cases, args.filter)
     totals = run_cases(cases, args.out, args.runs, args.sales_brain, make_client)
