@@ -1283,13 +1283,16 @@ class Client:
         return out, str(envelope.get("session_id") or this_session_id)
 
     def reply(self, system_text, user_text, session_id=None):
-        try:
-            out, next_session_id = self._reply(system_text, user_text, session_id)
-        except NonJsonReply as first:
-            # One retry, in the session the failed attempt ran in, with a short hint (Ivan, 2026-10-07:
-            # "just bake in a retry where the answer is not JSON"). A second failure raises as before.
-            log.warning("luna reply was not a JSON object, retrying once in the same session: %s", first)
-            out, next_session_id = self._reply(system_text, _non_json_hint_payload(), first.session_id)
+        # Ask again, in the session the failed attempt ran in and with a short hint, until a JSON object
+        # comes back (Ivan, 2026-10-07: the answer must come). No attempt cap on purpose; a timeout or a
+        # CLI failure still raises and ends it, exactly as before.
+        while True:
+            try:
+                out, next_session_id = self._reply(system_text, user_text, session_id)
+                break
+            except NonJsonReply as failed:
+                log.warning("luna reply was not a JSON object, asking again in the same session: %s", failed)
+                user_text, session_id = _non_json_hint_payload(), failed.session_id
         return _validate(out), next_session_id
 
 

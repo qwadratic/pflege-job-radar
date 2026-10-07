@@ -1314,34 +1314,20 @@ def test_live_reply_raises_non_json_reply_carrying_the_failed_attempts_session(l
     assert raised.value.session_id == "failed-attempt-session"
 
 
-def test_reply_retries_a_non_json_answer_once_in_the_same_session():
+def test_reply_asks_again_until_a_json_object_comes_back():
     calls = []
 
     def fn(system, user, session_id):
         calls.append((user, session_id))
-        if len(calls) == 1:
-            raise LB.NonJsonReply("not json", "failed-attempt-session")
-        return _out(), "failed-attempt-session"
+        if len(calls) < 3:
+            raise LB.NonJsonReply("not json", f"attempt-{len(calls)}")
+        return _out(), "attempt-3"
 
     out, session_id = LB.Client(reply=fn).reply("sys", "the real payload", None)
-    assert len(calls) == 2
-    assert calls[0] == ("the real payload", None)
-    # the retry resumes the failed attempt's own session and sends the short hint, not the payload again
-    assert calls[1][1] == "failed-attempt-session"
-    assert json.loads(calls[1][0]) == {"instruction": LB.NON_JSON_HINT}
-    assert session_id == "failed-attempt-session" and out["action"]
-
-
-def test_reply_raises_after_a_second_non_json_answer_and_never_tries_a_third_time():
-    calls = []
-
-    def fn(system, user, session_id):
-        calls.append(session_id)
-        raise LB.NonJsonReply("not json", f"attempt-{len(calls)}")
-
-    with pytest.raises(LB.NonJsonReply):
-        LB.Client(reply=fn).reply("sys", "payload", None)
-    assert len(calls) == 2
+    assert [c[1] for c in calls] == [None, "attempt-1", "attempt-2"]
+    assert calls[0][0] == "the real payload"
+    assert all(json.loads(c[0]) == {"instruction": LB.NON_JSON_HINT} for c in calls[1:])
+    assert session_id == "attempt-3" and out["action"]
 
 
 def test_reply_does_not_retry_any_other_failure():

@@ -47,11 +47,10 @@ The session that does a task closes it. When it considers the work finished and 
 
 ## Iterating on the WhatsApp brain
 
-Any change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is iterated only through replay of real conversations, judged blind (Ivan, 2026-10-07). No tuning by reading one transcript and guessing.
+A change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is checked with the brain eval, `evals/wa_brain/` (Ivan, 2026-10-07). It runs by hand when a feature is built or changed: never in CI, never part of `pytest`. Tests only prove the eval harness itself runs.
 
-1. **Replay, nothing sent.** `tools/wa_replay.py` (`app/wa/luna/replay.py`) runs the current brain over a recorded conversation of the old bot. It never reaches a rail, opens the sales brain read-only, and writes outside any checkout (`--out` on disk, not `/dev/shm`). In a fresh worktree set `WA_CLIENT_CONFIG` to the main checkout's `config/wa-client.json`.
-2. **Two sets.** *Regression set*: every conversation already read for tuning. Re-run it after every change; compare new reply vs old bot's actual reply and vs the previous brain's reply. *Held-out tens*: unseen conversations, one Workflow per ten: a planner picks the turns and seals its reasons and expectations in a file; the executor gets only candidate and turn numbers; the judge gets shuffled A/B and knows nothing of the plan. A held-out conversation whose replies were read for a fix joins the regression set and never counts as held-out again.
-3. **Judge blind.** Pairwise, A/B shuffled by code, the key unsealed only after all verdicts are in. Report counts per side at all confidence levels and at high+medium only, defects per side, failed turns, and any truncated run as truncated, never as success.
-4. **Read the confounds before the verdict.** Replay shows today's job pool, the old bot saw its day's. Turns after the first carry the old bot's own earlier messages as history, so its mistakes can be continued. Files and buttons arrive as placeholders.
-5. **Every report states the budget** (weekly % before and after) and the stop level agreed with Ivan.
-6. **Candidate-facing fixed wording is never composed from a judge's complaint.** A finding about a locked German text goes to Ivan for his verbatim wording.
+- **A case** is one candidate's own history plus our best answer for every earlier assistant turn, then the turn under test with the best answer for it, written as notes (what it must do, what it must not). Never the old bot's messages as history: they carry its mistakes. Cases in this public repo are synthetic; real candidate text stays out of git.
+- **Several runs per case**, because one run says nothing about variance. A judge model then reads every run of every case against the best-answer notes and gives a verdict and a comment.
+- **Nothing is sent.** The harness runs on the replay isolation (scratch DB, no rail, sales brain read-only, output outside any checkout).
+- **Every report states** the git sha, runs per case, failed runs, and the weekly budget before and after.
+- **Candidate-facing fixed wording is never composed from a judge's complaint.** A finding about a locked German text goes to Ivan for his verbatim wording.
