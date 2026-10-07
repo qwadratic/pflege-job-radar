@@ -2335,3 +2335,176 @@ def test_a_non_live_posting_never_reaches_the_model_round_5(small, monkeypatch):
                 client=fake_client(_out(bubbles=["Beim Klinikum Augsburg 1 ist die Stelle noch frei."])))
     assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
     assert "STALE" in d["slots"]["_escalate_reason"]
+
+
+# --- PROMISE (Ivan, 2026-10-07): no hand-off nobody keeps ---------------------------------------------
+# The model must never tell a candidate that a colleague, manager, team or "we" will call, get in touch,
+# look at it, check it, take care of it or forward it: nothing here does any of that, so she would wait
+# for nothing. Ivan asked for a regex on the text (grounding.PROMISE_RE) -- German first, plain Russian and
+# English too because replies follow the candidate's language. The sentences below are invented.
+
+PROMISE_HITS = [
+    # German
+    "Ein Kollege meldet sich bei Ihnen.",
+    "Eine Kollegin schaut sich das an und meldet sich.",
+    "Unser Team prüft das und meldet sich bei Ihnen.",
+    "Wir melden uns bei Ihnen.",
+    "Wir melden uns schnellstmöglich mit mehr Informationen.",
+    "Ich melde mich, sobald ich mehr weiß.",
+    "Dann melden wir uns bei Ihnen.",
+    "Unser Manager wird sich bei Ihnen melden.",
+    "Ein Mitarbeiter wird sich zeitnah bei Ihnen melden.",
+    "Ein Mitarbeiter unseres Hauses meldet sich dazu.",
+    "Dann meldet sich ein Kollege bei Ihnen.",
+    "Die Kollegen rufen Sie morgen an.",
+    "Ein Kollege ruft Sie morgen an.",
+    "Wir rufen Sie an.",
+    "Ich rufe Sie morgen zurück.",
+    "Wir werden Sie anrufen.",
+    "Unsere Managerin wird Sie zurückrufen.",
+    "Sie erhalten einen Rückruf.",
+    "Wir schauen uns das an.",
+    "Wir prüfen das und kommen auf Sie zurück.",
+    "Wir prüfen Ihre Unterlagen in Ruhe.",
+    "Wir kümmern uns darum.",
+    "Mein Team kümmert sich darum.",
+    "Ein Berater prüft Ihre Unterlagen.",
+    "Das wird ein Kollege für Sie prüfen.",
+    "Jemand aus dem Team meldet sich.",
+    "Wir kontaktieren Sie, sobald wir mehr wissen.",
+    "Ich gebe das an einen Kollegen weiter.",
+    "Das gebe ich an die Kollegen weiter.",
+    "Ich leite Ihre Frage an unser Team weiter.",
+    "Ein Kollege leitet Ihre Anfrage weiter.",
+    "Wir geben Ihnen Bescheid, sobald es etwas Neues gibt.",
+    "Ich sage Ihnen Bescheid.",
+    "Die Kollegen geben Ihnen Bescheid.",
+    # Russian
+    "Наш коллега свяжется с вами.",
+    "С вами свяжутся в ближайшее время.",
+    "Мы свяжемся с вами позже.",
+    "Менеджер вам позвонит.",
+    "Мы позвоним вам завтра.",
+    "Коллега посмотрит ваш вопрос и ответит.",
+    "Наша команда проверит это.",
+    "Я передам ваш вопрос коллегам.",
+    # English
+    "A colleague will call you tomorrow.",
+    "Someone from our team will get in touch.",
+    "We'll contact you as soon as we know more.",
+    "We will look into it and get back to you.",
+    "Our manager will check this for you.",
+    "I'll get back to you shortly.",
+    "A colleague will take care of it.",
+    "I will pass it on to a colleague.",
+    "Our team will follow up with you.",
+    "We’ll take care of that.",
+]
+
+PROMISE_NON_HITS = [
+    # the candidate gets in touch, or is asked to
+    "Sie können sich jederzeit bei uns melden.",
+    "Melden Sie sich gern, wenn Sie Fragen haben.",
+    "Schön, dass Sie sich melden.",
+    "Danke, dass Sie sich gemeldet haben.",
+    "Rufen Sie uns gern an.",
+    "Schicken Sie mir bitte Ihren Lebenslauf.",
+    "Wenn Sie mit einem Kollegen sprechen möchten, sagen Sie kurz Bescheid.",
+    "Feel free to contact us any time.",
+    "You can contact our team any time.",
+    "Свяжитесь с нами в любое время.",
+    "Пришлите, пожалуйста, ваше резюме.",
+    # kept actions: forwarding her profile or documents after consent, the bot's own lookups
+    "Mit Ihrer Einwilligung leiten wir Ihr Profil an passende Kliniken weiter.",
+    "Ihre Unterlagen werden an die Klinik weitergeleitet.",
+    "Wir leiten Ihren Lebenslauf an die Klinik weiter, sobald Sie zustimmen.",
+    "Dürfen wir Ihr anonymisiertes Profil an passende Kliniken weitergeben?",
+    "Мы передадим ваш профиль в клиники после вашего согласия.",
+    "Я посмотрю вакансии в Мюнхене.",
+    "Please send me your CV and I will forward it to the clinics you choose.",
+    "We will forward your profile to the clinics once you agree.",
+    "I will look up the postings for you.",
+    "I will check the board now.",
+    "Ich schaue mir gleich die Stellen in Augsburg an.",
+    "Ich prüfe das für Sie.",
+    "Ich melde Ihnen die Zahl gleich.",
+    "Gemeinsam schauen wir, welche Stadt passt.",
+    "Wir schauen gemeinsam, welche Stadt zu Ihnen passt.",
+    "Danke, die Freundin können wir später anschauen.",
+    # ordinary talk about people and teams, and honest not-knowing
+    "Im Team der Station arbeiten viele Kolleginnen aus dem Ausland.",
+    "Im Klinikum arbeiten Kollegen aus vielen Ländern.",
+    "Das steht bei dieser Stelle nicht dabei, das klärt die Klinik.",
+    "Zu früheren Bewerbungen habe ich hier keine Angaben.",
+    "Haben Sie schon die deutsche Urkunde?",
+    "Wie viele Personen würden in der Wohnung wohnen?",
+]
+
+
+@pytest.mark.parametrize("bubble", PROMISE_HITS)
+def test_a_hand_off_promise_is_a_violation(small, bubble):
+    """Every shape Ivan named, in the candidate's three languages: the reply is rejected and the
+    violation says which rule and quotes what was promised."""
+    with pytest.raises(GR.ReplyRejected, match="PROMISE") as caught:
+        GR.check_reply([bubble], set())
+    assert GR.promise_in(bubble) in str(caught.value)
+
+
+@pytest.mark.parametrize("bubble", PROMISE_NON_HITS)
+def test_an_honest_sentence_is_not_a_promise(small, bubble):
+    """What must keep going out: the candidate writing to us, a forward of her own documents or
+    profile to a clinic after her consent, the bot looking something up itself, and ordinary
+    sentences that merely mention colleagues or a team."""
+    assert GR.check_reply([bubble], set()) == []
+
+
+def test_the_promise_rule_reads_every_bubble_not_only_the_first(small):
+    with pytest.raises(GR.ReplyRejected, match="PROMISE"):
+        GR.check_reply(["Danke für Ihre Antwort.", "Ein Kollege meldet sich bei Ihnen."], set())
+
+
+def test_the_promise_violation_is_written_the_way_the_other_rules_are(small):
+    """In English, names the rule and what was promised, and tells the model both halves of the
+    fix: be evasive the honest way, and lead the candidate on to the next open gate."""
+    with pytest.raises(GR.ReplyRejected) as caught:
+        GR.check_reply(["Ein Kollege meldet sich bei Ihnen."], set())
+    message = str(caught.value)
+    assert "PROMISE" in message and "'Kollege meldet'" in message
+    assert "say what we do know" in message and "never that a person will contact or review it" in message
+    assert "next open gate" in message and "requirement_scoreboard.next_objective" in message
+    assert "Offending bubble: 'Ein Kollege meldet sich bei Ihnen.'" in message
+
+
+def test_a_promise_reply_is_rejected_the_model_is_told_and_its_corrected_reply_goes_out(small):
+    """Through the brain seam: the first reply promises a call, the model gets the PROMISE violation
+    in the same session, and the rewrite -- not the promise -- is what the candidate receives. No
+    escalation: a corrected reply is an answer, not a failure."""
+    seen, attempts = {}, []
+
+    def reply(system, user, session_id):
+        attempts.append(user)
+        if len(attempts) == 1:
+            return _out(bubbles=["Dazu meldet sich ein Kollege bei Ihnen. Haben Sie schon die Urkunde?"]), session_id
+        seen.update(json.loads(user))
+        return _out(bubbles=["Dazu habe ich hier keine Angaben. Haben Sie schon die deutsche Urkunde?"]), session_id
+
+    d = LB.turn("Wie sieht es mit dem Gehalt aus?", {"slots": {"region": "Bayern"}, "asked": []},
+                client=fake_client(reply))
+    assert len(attempts) == 2
+    assert "PROMISE" in seen["harness_rejected_your_reply"]
+    assert "meldet sich ein Kollege" in seen["harness_rejected_your_reply"], "name the offending text"
+    assert "PROMISE" in seen["instruction"], "the correction instruction lists the rule"
+    assert d["bubbles"] == ["Dazu habe ich hier keine Angaben. Haben Sie schon die deutsche Urkunde?"]
+    assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
+
+
+def test_a_second_promise_in_a_row_ends_like_every_other_rule_broken_twice(small):
+    """Retry count and failure behaviour are the existing ones: one corrective attempt, then the
+    harness's holding message and a flag for a human (nothing new is invented for this rule)."""
+    def reply(system, user, session_id):
+        return _out(bubbles=["Wir melden uns bei Ihnen. Passt das?"]), session_id
+
+    d = LB.turn("Wie sieht es mit dem Gehalt aus?", {"slots": {"region": "Bayern"}, "asked": []},
+                client=fake_client(reply))
+    assert d["bubbles"] == [P.BLOCKED_REPLY_DE] and d["action"] == "reply_blocked_escalated"
+    assert d["slots"]["_escalated"] is True and "PROMISE" in d["slots"]["_escalate_reason"]

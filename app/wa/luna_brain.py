@@ -1562,7 +1562,7 @@ def _check(bubbles, max_bubbles=MAX_BUBBLES):
 
 CORRECTION_INSTRUCTION = (
     "Your reply was NOT sent: it broke one of the harness's checked rules, which are Ivan's own "
-    "(VOLUME, NO INVENTION, COUNT, BRANCHES, LINK, STALE, CONVERGE). The violation is below, in the "
+    "(VOLUME, NO INVENTION, COUNT, BRANCHES, LINK, STALE, PROMISE, CONVERGE). The violation is below, in the "
     "harness's words. Write the SAME turn again so that it holds: keep what was true, drop or fix "
     "what broke the rule, and do not argue with the check. You may call a board tool first if the "
     "rule was about evidence you do not have yet. Answer with the same single JSON object as "

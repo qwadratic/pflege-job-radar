@@ -1524,3 +1524,52 @@ def test_webhook_uses_the_luna_brain_when_selected(luna, monkeypatch):
 
 def test_webhook_default_config_still_uses_the_deterministic_brain(luna):
     assert C.BRAIN == "deterministic", "the default must not have flipped for every other test"
+
+
+# --- Ivan, 2026-10-07: language follows the candidate, off-region answer, no hand-off promises -------
+# These are instructions to the model, so what is pinned is what the prompt tells it; the code that
+# enforces the third is tested in tests/test_wa_luna_dialog_rules.py (PROMISE).
+
+def test_the_language_rule_follows_the_candidates_latest_message_with_german_as_the_default():
+    rule = _rule("LANGUAGE")
+    assert "in the language of the candidate's LATEST message" in rule
+    assert "follow a switch mid-thread" in rule
+    assert "German is the default whenever the latest message gives no language to follow" in rule
+    assert "a bare Ja/Ok/Danke, an emoji" in rule and "or mixes languages" in rule
+    assert "The fixed texts the harness sends itself stay German" in rule
+    # what used to forbid a Russian reply to a Russian-writing candidate is gone, the rest is kept
+    assert "German only" not in rule and "Never mix in Russian" not in rule
+    assert "Vary your wording" in rule and "Never re-ask a fact already answered" in rule
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "reply in German, LANGUAGE" not in system
+    assert "reply in the language of that transcript, LANGUAGE" in _rule("VOICE NOTE")
+
+
+def test_the_off_region_rule_says_we_do_not_serve_it_offers_bavaria_with_the_count_and_waits():
+    rule = _rule("OFF REGION")
+    assert "in her language (LANGUAGE)" in rule
+    assert "we do not know that region and do not serve it, we specialise in Bavaria" in rule
+    assert "market_snapshot.open_jobs" in rule and "her region question is itself a criterion" in rule
+    assert "ONE plain yes/no question whether Bavaria would be an option, then WAIT" in rule
+    assert "no next gate in the same message" in rule
+    assert "never written into card_patch (no region, no city) as if we served it" in rule
+    # the three places that forbid a board-wide total while the card is empty name the exception
+    assert "OFF REGION" in LB.P.THINK_ORDER[0]
+    assert "OFF REGION is the one other case" in _rule("TOOLS (mandatory")
+    assert "OFF REGION applies" in _rule("CAMPAIGN (TASK-203)")
+    # and the two rules that used to answer the single-Land case point at it instead of repeating it
+    assert "is OFF REGION below" in _rule("REGION:")
+    assert "wanting a job only in that other Land: OFF REGION" in _rule("CAMPAIGN (TASK-203)")
+
+
+def test_the_prompt_forbids_hand_off_promises_and_no_instruction_still_asks_for_one():
+    rule = _rule("NO HAND-OFF PROMISES")
+    assert "will call, call back, get in touch, look at it, check it, take care of it or forward it" in rule
+    assert "escalate_to_manager only flags the thread" in rule
+    assert "say what we do know" in rule and "requirement_scoreboard.next_objective" in rule
+    assert "forwarding her profile or documents to clinics once she consented" in rule
+    # the two rules that used to tell the model to announce that a colleague looks or checks
+    assert "say a colleague will look at it" not in _rule("OTHER MESSAGE KINDS")
+    assert "never a new promise that a colleague will look at it" in _rule("OTHER MESSAGE KINDS")
+    assert "say a human colleague will check" not in _rule("PRIOR CONTACT")
+    assert "never that a colleague will check" in _rule("PRIOR CONTACT")
